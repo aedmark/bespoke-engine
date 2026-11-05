@@ -7,7 +7,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 ### Added
 - Completed Phase 5 (Display Bridge & Vertical Slice): implemented `src/display.zig` featuring double-buffered `DisplayBridge`, read-only `RenderFrame` captures, and terminal visualization (P5-01, D-001).
 - Executed the complete 20-line Tavern Heist vertical slice in `src/main.zig` with live tick-by-tick simulation, Bard charm preemption, Cat theft, and time-travel rewind to pre-heist state (P5-02).
-- Completed Phase 4 (Language Front-End & Compiler): implemented zero-LLVM hand-written compiler front-end in `src/compiler.zig`, featuring indentation-aware lexer (`src/compiler/lexer.zig`), AST parser (`src/compiler/parser.zig`), and direct bytecode code generator (`src/compiler/codegen.zig`) (P4-01 through P4-03, D-002).
+- Completed Phase 4 (Language Front-End & Compiler): implemented hand-written compiler front-end in `src/compiler.zig`, featuring indentation-aware lexer (`src/compiler/lexer.zig`), AST parser (`src/compiler/parser.zig`), and direct bytecode code generator (`src/compiler/codegen.zig`) (P4-01 through P4-03, D-002).
 - Added `compile_source` high-level entry point compiling raw BeSpoke DSL scripts directly to VM bytecode chunks.
 - Completed Phase 3 (Spatial Topology & Motor Subsystem): implemented `src/spatial.zig` featuring discrete 2D integer waypoints, rooms, and A* graph pathfinding (P3-01, D-005).
 - Implemented multi-tick motor stepping (`SpatialSystem.walk_to`) integrated with VM fiber suspension via `Opcode.walk_to` and `waiting_motor` state (P3-02, D-001, D-004).
@@ -21,6 +21,6 @@ User-visible changes to the BeSpoke Engine, newest first.
 - Sub-microsecond pattern matching queries (`has_fact`, `find_first`, `get_property`) with wildcard support (P1-03, D-006).
 - Deterministic memory snapshot save/restore with CRC32 integrity verification and time-travel rewind demo (P1-04, D-001).
 - Initial specification of the BeSpoke Engine architecture (Engine-as-Spine, D-001).
-- Decision records for Zero-LLVM Zig Bytecode VM (D-002), Flat Relational Fact Model (D-003), Fiber Temporal Primitives (D-004), Room/Waypoint Graph Spatial Topology (D-005), Linear Scan Baseline (D-006), and Unified Ternary Facts (D-007).
+- Decision records for Custom Zig Bytecode VM (D-002), Flat Relational Fact Model (D-003), Fiber Temporal Primitives (D-004), Room/Waypoint Graph Spatial Topology (D-005), Linear Scan Baseline (D-006), and Unified Ternary Facts (D-007).
 - The Manifold repository memory framework adoption and self-verification test suite via `tools/check_docs.py`.
 - Formal 5-phase engineering roadmap spanning core world store, bytecode VM, spatial topology, compiler front-end, and display bridge.

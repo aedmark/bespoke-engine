@@ -5,7 +5,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("===================================================================\n", .{});
     try stdout.print("       BeSpoke Engine: The Tavern Heist Vertical Slice Demo        \n", .{});
-    try stdout.print("   (Engine-as-Spine * Zero-LLVM Bytecode * Relational & Temporal)  \n", .{});
+    try stdout.print("   (Engine-as-Spine * Custom Bytecode * Relational & Temporal)  \n", .{});
     try stdout.print("===================================================================\n\n", .{});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

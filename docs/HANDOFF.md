@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 1, on `main`: completed all 5 Roadmap Phases (World foundations, Bytecode VM, spatial navigation, zero-LLVM compiler, display bridge, and Tavern Heist with live rewind)._
+_Last updated: 2026-11-04, session 1, on `main`: completed all 5 Roadmap Phases (World foundations, Bytecode VM, spatial navigation, custom compiler front-end, display bridge, and Tavern Heist with live rewind)._
 
 **Where things stand, in one paragraph:**
-All initial roadmap phases (Phase 1 through Phase 5) are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime and language: raw BeSpoke scripts compile directly to bytecode with zero LLVM, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. The reference implementation in `src/main.zig` runs the full 20-line Tavern Heist vertical slice with real-time ASCII visualization and instant time-travel rewind.
+All initial roadmap phases (Phase 1 through Phase 5) are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime and language: raw BeSpoke scripts compile directly to compact bytecode, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. The reference implementation in `src/main.zig` runs the full 20-line Tavern Heist vertical slice with real-time ASCII visualization and instant time-travel rewind.
 
 **Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
 
@@ -37,7 +37,7 @@ All initial roadmap phases (Phase 1 through Phase 5) are complete and operationa
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, and CRC32-checked snapshots (P1-01 through P1-04).
 - **Bytecode VM & Scheduler:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, and interrupt stacks (P2-01 through P2-04).
 - **Spatial Topology & Motor System:** 2D integer waypoints, rooms, A* graph pathfinding, and asynchronous motor intents (`walk_to`) (P3-01, P3-02, D-005).
-- **Zero-LLVM Compiler:** Lexer, AST parser, and bytecode code generator (`compile_source`) (P4-01 through P4-03, D-002).
+- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`) (P4-01 through P4-03, D-002).
 - **Display Bridge & Time-Travel:** Double-buffered render frames (`DisplayBridge`), text/terminal visualizer, and instant snapshot rewind (P5-01, P5-02, D-001).
 
 **Not verified**

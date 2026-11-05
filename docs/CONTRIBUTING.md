@@ -13,7 +13,7 @@ Workflow for contributing to the BeSpoke Engine. Agent-specific standing instruc
 - Keep each change reviewable, focused, and scoped.
 - Preserve deterministic tick semantics and memory-arena snapshot invariants.
 - Update documentation according to [the documentation triggers](README.md#update-triggers).
-- Never introduce external C/C++ or LLVM dependencies into the compiler or core runtime.
+- Keep the core runtime and compiler self-contained with zero external dependencies.
 
 ## Verify
 

@@ -1,7 +1,7 @@
 # BeSpoke Engine
 
 **A bespoke narrative and systemic simulation engine & language.**
-*Engine-as-Spine Architecture · Zero-LLVM Zig Bytecode VM · Relational & Temporal Primitives*
+*Engine-as-Spine Architecture · Custom Zig Bytecode VM · Relational & Temporal Primitives*
 
 BeSpoke is a game development language and standalone simulation runtime designed from the ground up for systemic depth, emergent behavior, and whimsical narrative games. 
 
@@ -12,7 +12,7 @@ Drawing spiritual inspiration from the tight, deterministic simulation models of
 ## Core Tenets
 
 1. **Engine-as-Spine:** The Zig runtime is `main()`. It owns the master tick clock, entity lifecycles, spatial topology, and relational facts. Rendering and audio (Raylib, Sokol) are downstream, stateless display peripherals.
-2. **Zero-LLVM Bytecode VM:** A hand-written Zig compiler front-end compiles BeSpoke source code directly into compact bytecode. Instant compilation, sub-millisecond hot-reloading, and no heavy C++ toolchain dependencies.
+2. **Custom Bytecode VM:** A hand-written Zig compiler front-end compiles BeSpoke source code directly into compact bytecode. Instant compilation, sub-millisecond hot-reloading, and lightweight runtime execution.
 3. **Flat Relational State with Built-in TTL:** No pointer graphs or nested object hierarchies. Facts are contiguous rows (`subject, relation, object, expires_at_tick`) stored in `std.MultiArrayList(Fact)`. Save states, time travel, and replays are pure `memcpy` operations.
 4. **Temporal Primitives & Interrupt Stacks:** Built-in `wait`, `wait until`, and `interrupt ... with` eliminate state-machine boilerplate, frame timers, and callback spaghetti.
 

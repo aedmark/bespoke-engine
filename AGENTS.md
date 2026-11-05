@@ -81,7 +81,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 ## Engineering conventions
 
 - **Language:** Zig (0.13+) for runtime and compiler; Python 3 stdlib for documentation tooling.
-- **Dependencies:** Zero external C/C++ or LLVM dependencies for the core compiler and VM. Optional Raylib or Sokol C bindings strictly for peripheral display.
+- **Dependencies:** Zero external dependencies for the core compiler and VM. Optional Raylib or Sokol C bindings strictly for peripheral display.
 - **Memory:** Contiguous arena allocation for world state; zero raw pointers inside serialized fact structures.
 - **Timing:** Pure discrete tick clock (e.g. 20 or 60 Hz). No floating-point delta accumulation in core simulation logic.
 
