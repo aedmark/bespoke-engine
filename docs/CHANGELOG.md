@@ -5,6 +5,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 5 (Display Bridge & Vertical Slice): implemented `src/display.zig` featuring double-buffered `DisplayBridge`, read-only `RenderFrame` captures, and terminal visualization (P5-01, D-001).
+- Executed the complete 20-line Tavern Heist vertical slice in `src/main.zig` with live tick-by-tick simulation, Bard charm preemption, Cat theft, and time-travel rewind to pre-heist state (P5-02).
 - Completed Phase 4 (Language Front-End & Compiler): implemented zero-LLVM hand-written compiler front-end in `src/compiler.zig`, featuring indentation-aware lexer (`src/compiler/lexer.zig`), AST parser (`src/compiler/parser.zig`), and direct bytecode code generator (`src/compiler/codegen.zig`) (P4-01 through P4-03, D-002).
 - Added `compile_source` high-level entry point compiling raw BeSpoke DSL scripts directly to VM bytecode chunks.
 - Completed Phase 3 (Spatial Topology & Motor Subsystem): implemented `src/spatial.zig` featuring discrete 2D integer waypoints, rooms, and A* graph pathfinding (P3-01, D-005).

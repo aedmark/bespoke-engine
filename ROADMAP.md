@@ -40,5 +40,5 @@ Goal: Create the hand-written Zig compiler front-end that compiles the BeSpoke s
 
 Goal: Connect a downstream rendering peripheral and execute the 20-line Tavern Heist vertical slice with live rewind.
 
-- [ ] P5-01 Peripheral bridge exporting double-buffered read-only render state and audio cue events to Raylib or Sokol. (D-001)
-- [ ] P5-02 Reference implementation executing the Tavern Heist vertical slice with real-time rewind. (D-001, D-003, D-004)
+- [x] P5-01 Peripheral bridge exporting double-buffered read-only render state and audio cue events to Raylib or Sokol. (D-001; completed 2026-11-04, verified via `zig test src/display.zig`)
+- [x] P5-02 Reference implementation executing the Tavern Heist vertical slice with real-time rewind. (D-001, D-003, D-004; completed 2026-11-04, verified via `zig build run`)

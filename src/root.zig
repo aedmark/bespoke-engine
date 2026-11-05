@@ -5,6 +5,7 @@ pub const bytecode = @import("bytecode.zig");
 pub const vm = @import("vm.zig");
 pub const spatial = @import("spatial.zig");
 pub const compiler = @import("compiler.zig");
+pub const display = @import("display.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -24,6 +25,8 @@ pub const Waypoint = spatial.Waypoint;
 pub const WaypointId = spatial.WaypointId;
 pub const compile_source = compiler.compile_source;
 pub const CompiledProgram = compiler.CompiledProgram;
+pub const DisplayBridge = display.DisplayBridge;
+pub const RenderFrame = display.RenderFrame;
 
 test "root test imports all modules" {
     _ = @import("world.zig");
@@ -31,4 +34,5 @@ test "root test imports all modules" {
     _ = @import("vm.zig");
     _ = @import("spatial.zig");
     _ = @import("compiler.zig");
+    _ = @import("display.zig");
 }

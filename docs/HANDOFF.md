@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 1, on `main`: completed Phases 1, 2, 3, and 4, implementing World relational database, Bytecode VM, spatial waypoint navigation, and hand-written compiler front-end (lexer, parser, codegen) in Zig._
+_Last updated: 2026-11-04, session 1, on `main`: completed all 5 Roadmap Phases (World foundations, Bytecode VM, spatial navigation, zero-LLVM compiler, display bridge, and Tavern Heist with live rewind)._
 
 **Where things stand, in one paragraph:**
-Phases 1 through 4 are complete. The BeSpoke Engine features an end-to-end pipeline: raw BeSpoke DSL source scripts are tokenized by a hand-written lexer (`src/compiler/lexer.zig`), parsed into an AST (`src/compiler/parser.zig`), and lowered directly into compact custom bytecode (`src/compiler/codegen.zig`) with zero LLVM dependencies (D-002). The VM executes the compiled bytecode over the relational `World` store (`src/world.zig`) and discrete spatial waypoint graph (`src/spatial.zig`), supporting asynchronous motor walking, multi-fiber routines, and preemption interrupts. Next work begins Phase 5 (P5-01: display bridge and peripheral consumer).
+All initial roadmap phases (Phase 1 through Phase 5) are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime and language: raw BeSpoke scripts compile directly to bytecode with zero LLVM, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. The reference implementation in `src/main.zig` runs the full 20-line Tavern Heist vertical slice with real-time ASCII visualization and instant time-travel rewind.
 
 **Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
 
@@ -29,26 +29,28 @@ Phases 1 through 4 are complete. The BeSpoke Engine features an end-to-end pipel
 | `zig test src/compiler/lexer.zig` | **1/1 passed** |
 | `zig test src/compiler/parser.zig` | **2/2 passed** |
 | `zig test src/compiler/codegen.zig` | **1/1 passed** |
+| `zig test src/display.zig` | **1/1 passed** |
 | `zig build test` | **passed** |
-| `zig build run` | **End-to-end source compilation and simulation passed** |
+| `zig build run` | **Tavern Heist full simulation with live rewind passed** |
 
 **What works**
-- **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL expiration, and CRC32-checked snapshots (P1-01 through P1-04).
-- **Bytecode Instruction Set & VM:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, and interrupt stacks (P2-01 through P2-04).
+- **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, and CRC32-checked snapshots (P1-01 through P1-04).
+- **Bytecode VM & Scheduler:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, and interrupt stacks (P2-01 through P2-04).
 - **Spatial Topology & Motor System:** 2D integer waypoints, rooms, A* graph pathfinding, and asynchronous motor intents (`walk_to`) (P3-01, P3-02, D-005).
-- **Hand-written Compiler Front-End:** Zero-LLVM compiler with indentation-aware lexer, AST parser, and direct bytecode code generator (`compile_source`) (P4-01 through P4-03, D-002).
+- **Zero-LLVM Compiler:** Lexer, AST parser, and bytecode code generator (`compile_source`) (P4-01 through P4-03, D-002).
+- **Display Bridge & Time-Travel:** Double-buffered render frames (`DisplayBridge`), text/terminal visualizer, and instant snapshot rewind (P5-01, P5-02, D-001).
 
 **Not verified**
-- Peripheral display bridge and external rendering frontend (Phase 5).
+- Peripheral C bindings (e.g. Raylib or Sokol graphics window) for native GPU sprite drawing; currently verified via headless terminal visualizer.
 
 **Gotchas for the next session**
-- When compiling DSL source text containing nested statement blocks, ensure indentation levels use uniform space widths (e.g. 2 spaces per indent level).
+- When restoring snapshots via `restore_state`, the world memory buffer is rewound in place; external display layers should call `DisplayBridge.capture_frame()` immediately following a restore to synchronize visualization.
 
 ---
 
 ## Session log
 
 ### Session 1 (2026-11-04)
-- **Goal:** Synthesize architectural brainstorming, adopt The Manifold repository framework, produce formal engineering spec, and implement Phase 1 through Phase 4.
-- **Work:** Analyzed initial brainstorming files (`whitepaper.md`, `architecture.md`, `script_spec.md`). Debated boundary of responsibility (drop-in decision box vs. unified engine-as-spine). Selected BeSpoke standalone engine path (D-001). Initialized git repository. Adopted The Manifold documentation system with `tools/check_docs.py`. Authored `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, `docs/CONTRIBUTING.md`, and `docs/CHANGELOG.md`. Resolved Q-001, Q-002, and Q-003 into D-005 (Room/Waypoint Graph), D-006 (Linear Scan Baseline), and D-007 (Unified Ternary Facts). Installed Zig 0.13.0. Built `src/world.zig`, `src/bytecode.zig`, `src/spatial.zig`, `src/vm.zig`, `src/compiler/lexer.zig`, `src/compiler/parser.zig`, `src/compiler/codegen.zig`, `src/compiler.zig`, `src/root.zig`, `src/main.zig`, and `build.zig`. Completed P1-01 through P1-04, P2-01 through P2-04, P3-01 through P3-02, and P4-01 through P4-03. Pushed commits to remote GitHub repository.
-- **Outcome:** All 30 unit tests passing. End-to-end pipeline compiling DSL source text to bytecode and executing full spatial simulation. Documentation check passing with 0 errors and 0 warnings. Phases 1, 2, 3, and 4 complete.
+- **Goal:** Synthesize architectural brainstorming, adopt The Manifold repository framework, produce formal engineering spec, and implement the entire 5-phase BeSpoke Engine roadmap.
+- **Work:** Analyzed initial brainstorming files (`whitepaper.md`, `architecture.md`, `script_spec.md`). Debated boundary of responsibility (drop-in decision box vs. unified engine-as-spine). Selected BeSpoke standalone engine path (D-001). Initialized git repository. Adopted The Manifold documentation system with `tools/check_docs.py`. Authored `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, `docs/CONTRIBUTING.md`, and `docs/CHANGELOG.md`. Resolved Q-001, Q-002, and Q-003 into D-005 (Room/Waypoint Graph), D-006 (Linear Scan Baseline), and D-007 (Unified Ternary Facts). Installed Zig 0.13.0. Implemented Phase 1 (`src/world.zig`), Phase 2 (`src/bytecode.zig`, `src/vm.zig`), Phase 3 (`src/spatial.zig`), Phase 4 (`src/compiler/`), and Phase 5 (`src/display.zig`). Connected the full pipeline in `src/main.zig` executing the Tavern Heist with live rewind. Pushed all commits to remote GitHub repository.
+- **Outcome:** All 32 unit tests passing. End-to-end simulation executing smoothly. Full repository documentation verified with 0 errors and 0 warnings. Phases 1 through 5 complete.
