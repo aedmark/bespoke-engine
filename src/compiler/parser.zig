@@ -64,7 +64,7 @@ pub const CueHandler = struct {
 };
 
 pub const WhenRule = struct {
-    trigger_pattern: FactPattern,
+    trigger_patterns: []const FactPattern,
     body: []const Stmt,
 };
 
@@ -259,14 +259,21 @@ pub const Parser = struct {
                 },
                 .kw_when => {
                     try self.advance();
-                    const pat = try self.parse_fact_pattern();
+                    var trigger_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                    while (true) {
+                        const pat = try self.parse_fact_pattern();
+                        try trigger_patterns.append(pat);
+                        if (self.current.tag == .kw_and) {
+                            try self.advance();
+                        } else break;
+                    }
                     _ = try self.expect(.colon);
                     _ = try self.expect(.indent);
                     const body = try self.parse_stmt_list();
                     _ = try self.expect(.dedent);
 
                     try ast.when_rules.append(.{
-                        .trigger_pattern = pat,
+                        .trigger_patterns = try trigger_patterns.toOwnedSlice(),
                         .body = body,
                     });
                 },
@@ -464,7 +471,7 @@ test "P4-02: parser parses complete tavern heist AST" {
     defer lexer.deinit();
 
     var parser = try Parser.init(alloc, &lexer);
-    var ast = try parser.parse_program();
+    const ast = try parser.parse_program();
     _ = &ast;
 
     try testing.expectEqual(@as(usize, 4), ast.entities.items.len);
@@ -473,4 +480,34 @@ test "P4-02: parser parses complete tavern heist AST" {
     try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
     try testing.expectEqual(@as(usize, 2), ast.cue_handlers.items.len);
     try testing.expectEqual(@as(usize, 1), ast.when_rules.items.len);
+}
+
+test "P8-01: multi-clause when rule parsing" {
+    const testing = std.testing;
+    const script =
+        \\entity Guard, Bard, Cheese
+        \\relation Carries(holder, item)
+        \\relation CharmedBy(listener, musician)
+        \\
+        \\when Carries(Guard, Cheese) and CharmedBy(Guard, Bard):
+        \\  interrupt Guard with:
+        \\    face Guard toward Bard
+        \\    wait 10 ticks
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, script);
+    defer lexer.deinit();
+
+    var parser = try Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    try testing.expectEqual(@as(usize, 1), ast.when_rules.items.len);
+    const rule = ast.when_rules.items[0];
+    try testing.expectEqual(@as(usize, 2), rule.trigger_patterns.len);
+    try testing.expectEqualStrings("Carries", rule.trigger_patterns[0].relation);
+    try testing.expectEqualStrings("CharmedBy", rule.trigger_patterns[1].relation);
 }

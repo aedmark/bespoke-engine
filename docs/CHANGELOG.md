@@ -5,6 +5,11 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 8 (Reactive Simulation Rules): implemented multi-clause relational pattern matcher, VM continuous reactive `when` evaluation engine with edge-triggered preemption, and priority rule cascades for systemic AI (P8-01 through P8-03, D-002, D-003, D-004, D-006, D-007, D-010).
+- Implemented multi-clause relational pattern matcher in `src/world.zig` (`PatternTerm`, `PatternClause`, `VariableBindings`, `find_first_match`, `has_multi_match`, `find_all_matches`) supporting conjunctions (`where A and B and C`) and variable joins across active facts (P8-01, D-006, D-010).
+- Extended compiler parser (`src/compiler/parser.zig`) and code generator (`src/compiler/codegen.zig`) to compile multi-clause `when` rules (`when Pattern1 and Pattern2:`) into `CompiledWhenRule` structures with unified variable bindings (P8-01, P8-02, D-010).
+- Implemented VM continuous reactive rule evaluation engine in `src/vm.zig` (`ReactiveRule`, `add_reactive_rule`, `evaluate_reactive_rules`, `load_compiled_rules`) evaluating rules on tick boundaries and edge-triggering fiber interrupts on positive transition (`false -> true`) without polling boilerplate (P8-02, D-002, D-004, D-010).
+- Implemented priority-tiered interrupt stacks and rule cascades (`active_priority`, `interrupt_entity_priority`) enabling high-priority states (e.g. theft alerts) to preempt lower-priority states (e.g. charmed listening) and cleanly resume routines in sequence (P8-03, D-004, D-010).
 - Completed Phase 7 (Adventure Game Primitives): implemented scene hotspots, classic adventure verbs (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`), relational inventory, and branching dialogue trees with speech balloons (P7-01 through P7-04, D-001, D-002, D-003, D-007, D-009).
 - Implemented static scene hotspots in `src/spatial.zig` (`Hotspot` registration, bounds, examine text) and 2D prop rendering in `src/display/renderer.zig` for Tavern Fireplace with flame glow, Bar Counter, and Wine Cask (P7-01, D-009).
 - Added compiler language extensions for verbs and dialogue: `verb Name(args)` and `say Speaker: "text"` in lexer (`src/compiler/lexer.zig`), parser (`src/compiler/parser.zig`), and bytecode lowering via `emit_cue` in codegen (`src/compiler/codegen.zig`) (P7-02, P7-04, D-002, D-009).

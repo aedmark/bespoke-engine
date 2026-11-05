@@ -15,17 +15,30 @@ pub const EntityId = world_mod.EntityId;
 pub const RelationKind = world_mod.RelationKind;
 pub const SpatialSystem = spatial_mod.SpatialSystem;
 
+/// Compiled reactive simulation rule representation (P8-02, D-010).
+pub const CompiledWhenRule = struct {
+    clauses: []const world_mod.PatternClause,
+    target_entity: EntityId,
+    priority: u16,
+    handler_pc: usize,
+};
+
 pub const CompiledProgram = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
     when_rule_entries: std.ArrayList(usize),
     cue_handler_entries: std.StringHashMap(usize),
+    reactive_rules: std.ArrayList(CompiledWhenRule),
 
     pub fn deinit(self: *CompiledProgram) void {
         self.chunk.deinit();
         self.routine_entries.deinit();
         self.when_rule_entries.deinit();
         self.cue_handler_entries.deinit();
+        for (self.reactive_rules.items) |r| {
+            self.chunk.allocator.free(r.clauses);
+        }
+        self.reactive_rules.deinit();
     }
 };
 
@@ -37,6 +50,7 @@ pub const Codegen = struct {
     routine_entries: std.StringHashMap(usize),
     when_rule_entries: std.ArrayList(usize),
     cue_handler_entries: std.StringHashMap(usize),
+    reactive_rules: std.ArrayList(CompiledWhenRule),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -47,6 +61,7 @@ pub const Codegen = struct {
             .routine_entries = std.StringHashMap(usize).init(allocator),
             .when_rule_entries = std.ArrayList(usize).init(allocator),
             .cue_handler_entries = std.StringHashMap(usize).init(allocator),
+            .reactive_rules = std.ArrayList(CompiledWhenRule).init(allocator),
         };
     }
 
@@ -81,15 +96,70 @@ pub const Codegen = struct {
             _ = try mut_self.chunk.emit_op(.halt);
         }
 
-        // 5. Compile when rules
+        // 5. Compile when rules into reactive simulation rules (P8-02, D-010)
         for (ast.when_rules.items) |rule| {
+            var var_map = std.StringHashMap(u8).init(mut_self.allocator);
+            defer var_map.deinit();
+            var next_var: u8 = 0;
+
+            var clauses = std.ArrayList(world_mod.PatternClause).init(mut_self.allocator);
+            for (rule.trigger_patterns) |pat| {
+                const rel = try mut_self.resolve_relation(pat.relation);
+                const subj = try mut_self.resolve_pattern_term(pat.args[0], &var_map, &next_var);
+                const obj = if (pat.args.len > 1)
+                    try mut_self.resolve_pattern_term(pat.args[1], &var_map, &next_var)
+                else
+                    world_mod.PatternTerm{ .wildcard = {} };
+
+                try clauses.append(.{
+                    .relation = rel,
+                    .subject = subj,
+                    .object = obj,
+                });
+            }
+
+            // Determine target entity, priority, and compile handler body
+            var target_entity: EntityId = .none;
+            var priority: u16 = 50;
+
+            for (clauses.items) |c| {
+                if (mut_self.world.get_relation_meta(c.relation)) |meta| {
+                    if (std.mem.indexOf(u8, meta.name, "Alert") != null or
+                        std.mem.indexOf(u8, meta.name, "Theft") != null)
+                    {
+                        priority = 100;
+                    }
+                }
+            }
+
             const entry_pc = mut_self.chunk.count();
             try mut_self.when_rule_entries.append(entry_pc);
 
-            for (rule.body) |stmt| {
-                try mut_self.compile_stmt(stmt);
+            if (rule.body.len > 0 and rule.body[0] == .interrupt_with) {
+                const iw = rule.body[0].interrupt_with;
+                target_entity = try mut_self.resolve_entity(iw.entity);
+                for (iw.body) |s| {
+                    try mut_self.compile_stmt(s);
+                }
+            } else {
+                if (clauses.items.len > 0) {
+                    switch (clauses.items[0].subject) {
+                        .constant => |c| target_entity = EntityId.from_int(c),
+                        else => {},
+                    }
+                }
+                for (rule.body) |s| {
+                    try mut_self.compile_stmt(s);
+                }
             }
             _ = try mut_self.chunk.emit_op(.resume_routine);
+
+            try mut_self.reactive_rules.append(.{
+                .clauses = try clauses.toOwnedSlice(),
+                .target_entity = target_entity,
+                .priority = priority,
+                .handler_pc = entry_pc,
+            });
         }
 
         // 6. Compile cue handlers
@@ -108,6 +178,7 @@ pub const Codegen = struct {
             .routine_entries = mut_self.routine_entries,
             .when_rule_entries = mut_self.when_rule_entries,
             .cue_handler_entries = mut_self.cue_handler_entries,
+            .reactive_rules = mut_self.reactive_rules,
         };
     }
 
@@ -282,6 +353,32 @@ pub const Codegen = struct {
         }
     }
 
+    fn resolve_pattern_term(
+        self: *Codegen,
+        arg: []const u8,
+        var_map: *std.StringHashMap(u8),
+        next_var: *u8,
+    ) !world_mod.PatternTerm {
+        if (std.mem.eql(u8, arg, "_")) {
+            return .{ .wildcard = {} };
+        }
+        if (arg.len > 0 and (arg[0] == '?' or std.ascii.isLower(arg[0]))) {
+            if (var_map.get(arg)) |v_idx| {
+                return .{ .variable = v_idx };
+            }
+            const v_idx = next_var.*;
+            next_var.* += 1;
+            try var_map.put(arg, v_idx);
+            return .{ .variable = v_idx };
+        }
+        if (std.fmt.parseInt(u32, arg, 10)) |num| {
+            return .{ .constant = num };
+        } else |_| {
+            const ent = try self.resolve_entity(arg);
+            return .{ .constant = ent.to_int() };
+        }
+    }
+
     fn resolve_waypoint(self: *Codegen, name: []const u8) !u16 {
         if (self.spatial) |sp| {
             for (sp.graph.waypoints.items) |wp| {
@@ -367,4 +464,65 @@ test "P7-02: codegen compiles verb declarations and say statements into cue emit
     defer compiled.deinit();
 
     try testing.expect(compiled.cue_handler_entries.contains("TalkTo"));
+}
+
+test "P8-02: codegen compiles multi-clause when rules into reactive rules executed on VM" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const source =
+        \\entity Guard, Bard, Cheese
+        \\relation Carries(holder, item)
+        \\relation CharmedBy(listener, musician)
+        \\
+        \\routine StandWatch(Guard):
+        \\  wait 20 ticks
+        \\
+        \\when Carries(Guard, Cheese) and CharmedBy(Guard, Bard):
+        \\  interrupt Guard with:
+        \\    wait 5 ticks
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    var codegen = Codegen.init(alloc, &world, null);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    try testing.expectEqual(@as(usize, 1), compiled.reactive_rules.items.len);
+    const rule = compiled.reactive_rules.items[0];
+    try testing.expectEqual(@as(usize, 2), rule.clauses.len);
+
+    // Verify VM loads and evaluates compiled reactive rules
+    var vm = vm_mod.VM.init(alloc, &world, &compiled.chunk);
+    defer vm.deinit();
+    try vm.load_compiled_rules(&compiled);
+
+    const guard = try world.intern_entity("Guard");
+    const bard = try world.intern_entity("Bard");
+    const cheese = try world.intern_entity("Cheese");
+    const carries = try world.intern_relation("Carries", .set);
+    const charmed = try world.intern_relation("CharmedBy", .set);
+
+    _ = try vm.spawn_routine(guard, compiled.routine_entries.get("StandWatch").?);
+
+    // Tick 1: Guard starts StandWatch. Only carries cheese, not charmed -> rule does not fire
+    try world.remember(guard, carries, cheese.to_int(), 0);
+    try vm.step_tick();
+    try testing.expectEqual(@as(usize, 0), vm.fibers.items[0].interrupt_stack.items.len);
+
+    // Bard charms Guard -> both clauses match -> reactive rule edge-triggers interrupt!
+    try world.remember(guard, charmed, bard.to_int(), 10);
+    try vm.step_tick();
+    try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
 }

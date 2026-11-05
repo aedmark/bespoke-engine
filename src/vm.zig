@@ -37,12 +37,23 @@ pub const InterruptFrame = struct {
     pc: usize,
     sp: usize,
     state: FiberState,
+    priority: u16 = 0,
 };
 
 pub const EmittedCue = struct {
     cue_id: u16,
     args: [4]u32,
     arg_count: u8,
+};
+
+/// Reactive simulation rule evaluated continuously on tick boundary and state mutations (P8-02, D-010).
+pub const ReactiveRule = struct {
+    id: u32,
+    clauses: []const world_mod.PatternClause,
+    target_entity: EntityId,
+    priority: u16,
+    handler_pc: usize,
+    is_active: bool = false,
 };
 
 pub const Fiber = struct {
@@ -52,6 +63,7 @@ pub const Fiber = struct {
     stack: [MAX_STACK]u32,
     sp: usize,
     state: FiberState,
+    active_priority: u16 = 0,
     interrupt_stack: std.ArrayList(InterruptFrame),
 
     pub fn init(allocator: std.mem.Allocator, id: FiberId, owner: EntityId, entry_pc: usize) Fiber {
@@ -62,6 +74,7 @@ pub const Fiber = struct {
             .stack = undefined,
             .sp = 0,
             .state = .{ .ready = {} },
+            .active_priority = 0,
             .interrupt_stack = std.ArrayList(InterruptFrame).init(allocator),
         };
     }
@@ -96,6 +109,7 @@ pub const VM = struct {
     fibers: std.ArrayList(Fiber),
     next_fiber_id: FiberId,
     emitted_cues: std.ArrayList(EmittedCue),
+    reactive_rules: std.ArrayList(ReactiveRule),
     prng: std.rand.DefaultPrng,
 
     pub fn init(allocator: std.mem.Allocator, world: *World, chunk: *const BytecodeChunk) VM {
@@ -107,6 +121,7 @@ pub const VM = struct {
             .fibers = std.ArrayList(Fiber).init(allocator),
             .next_fiber_id = 1,
             .emitted_cues = std.ArrayList(EmittedCue).init(allocator),
+            .reactive_rules = std.ArrayList(ReactiveRule).init(allocator),
             .prng = std.rand.DefaultPrng.init(42),
         };
     }
@@ -117,6 +132,10 @@ pub const VM = struct {
         }
         self.fibers.deinit();
         self.emitted_cues.deinit();
+        for (self.reactive_rules.items) |r| {
+            self.allocator.free(r.clauses);
+        }
+        self.reactive_rules.deinit();
     }
 
     /// Spawns a new routine fiber owned by an entity.
@@ -128,23 +147,101 @@ pub const VM = struct {
         return id;
     }
 
-    /// Preempts an entity's active fiber with an interruption routine (D-004, P2-04).
-    pub fn interrupt_entity(self: *VM, target: EntityId, handler_pc: u16) !bool {
+    /// Preempts an entity's active fiber with an interruption routine and assigned priority (D-004, P2-04, P8-03).
+    pub fn interrupt_entity_priority(self: *VM, target: EntityId, handler_pc: u16, priority: u16) !bool {
         for (self.fibers.items) |*f| {
             if (f.owner == target and f.state != .halted) {
+                if (priority < f.active_priority and f.interrupt_stack.items.len > 0) {
+                    // Cannot preempt a higher-priority active interrupt
+                    return false;
+                }
                 // Push current execution context onto interrupt stack
                 try f.interrupt_stack.append(.{
                     .pc = f.pc,
                     .sp = f.sp,
                     .state = f.state,
+                    .priority = f.active_priority,
                 });
-                // Switch execution to interrupt handler
+                // Switch execution to interrupt handler with new priority
                 f.pc = handler_pc;
                 f.state = .{ .ready = {} };
+                f.active_priority = priority;
                 return true;
             }
         }
         return false;
+    }
+
+    /// Preempts an entity's active fiber with default priority (0).
+    pub fn interrupt_entity(self: *VM, target: EntityId, handler_pc: u16) !bool {
+        return self.interrupt_entity_priority(target, handler_pc, 0);
+    }
+
+    /// Registers a reactive simulation rule evaluated continuously on tick and state changes (P8-02, D-010).
+    pub fn add_reactive_rule(
+        self: *VM,
+        target_entity: EntityId,
+        clauses: []const world_mod.PatternClause,
+        priority: u16,
+        handler_pc: usize,
+    ) !u32 {
+        const id: u32 = @intCast(self.reactive_rules.items.len + 1);
+        const owned_clauses = try self.allocator.dupe(world_mod.PatternClause, clauses);
+        try self.reactive_rules.append(.{
+            .id = id,
+            .clauses = owned_clauses,
+            .target_entity = target_entity,
+            .priority = priority,
+            .handler_pc = handler_pc,
+            .is_active = false,
+        });
+        return id;
+    }
+
+    /// Evaluates reactive 'when' rules against active relational facts in descending priority order (P8-02, P8-03, D-010).
+    /// Fires edge-triggered interrupts on target entities when conditions transition from false to true.
+    pub fn evaluate_reactive_rules(self: *VM) !usize {
+        var fired_count: usize = 0;
+
+        // Sort rules by priority descending so higher priority rules take precedence
+        std.sort.insertion(ReactiveRule, self.reactive_rules.items, {}, struct {
+            fn lessThan(_: void, a: ReactiveRule, b: ReactiveRule) bool {
+                return a.priority > b.priority;
+            }
+        }.lessThan);
+
+        var i: usize = 0;
+        while (i < self.reactive_rules.items.len) : (i += 1) {
+            var rule = &self.reactive_rules.items[i];
+            const matches = self.world.has_multi_match(rule.clauses);
+
+            if (matches) {
+                if (!rule.is_active) {
+                    // Positive edge transition: false -> true
+                    rule.is_active = true;
+                    const interrupted = try self.interrupt_entity_priority(
+                        rule.target_entity,
+                        @intCast(rule.handler_pc),
+                        rule.priority,
+                    );
+                    if (interrupted) {
+                        fired_count += 1;
+                    }
+                }
+            } else {
+                // Negative edge: condition cleared -> re-arm rule
+                rule.is_active = false;
+            }
+        }
+
+        return fired_count;
+    }
+
+    /// Registers all reactive simulation rules from a compiled program (P8-02, D-010).
+    pub fn load_compiled_rules(self: *VM, compiled: anytype) !void {
+        for (compiled.reactive_rules.items) |r| {
+            _ = try self.add_reactive_rule(r.target_entity, r.clauses, r.priority, r.handler_pc);
+        }
     }
 
     /// Advances the master simulation clock by 1 tick and dispatches all active fibers.
@@ -160,7 +257,10 @@ pub const VM = struct {
         // 3. Clear peripheral cue buffer from prior tick
         self.emitted_cues.clearRetainingCapacity();
 
-        // 4. Wake fibers whose sleep duration or spatial motor intent has completed
+        // 4. Evaluate reactive 'when' simulation rules (P8-02, P8-03, D-010)
+        _ = try self.evaluate_reactive_rules();
+
+        // 5. Wake fibers whose sleep duration or spatial motor intent has completed
         for (self.fibers.items) |*f| {
             switch (f.state) {
                 .waiting_ticks => |wake_tick| {
@@ -185,7 +285,7 @@ pub const VM = struct {
             }
         }
 
-        // 5. Run ready fibers
+        // 6. Run ready fibers
         for (self.fibers.items) |*f| {
             if (f.state == .ready) {
                 try self.run_fiber(f);
@@ -497,8 +597,10 @@ pub const VM = struct {
                         f.pc = frame.pc;
                         f.sp = frame.sp;
                         f.state = frame.state;
+                        f.active_priority = frame.priority;
                     } else {
                         f.state = .{ .halted = {} };
+                        f.active_priority = 0;
                     }
                     return;
                 },
@@ -738,4 +840,163 @@ test "P3-02: VM fiber executes walk_to, suspends during transit, and wakes upon 
     try testing.expect(world.has_fact(guard, carries, cheese.to_int()));
     try testing.expectEqual(FiberStateTag.halted, std.meta.activeTag(vm.fibers.items[0].state));
     try testing.expectEqual(cellar, spatial.get_current_waypoint(guard).?);
+}
+
+test "P8-02: reactive when rule evaluation on tick boundary with edge triggering" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const guard = try world.intern_entity("Guard");
+    const bard = try world.intern_entity("Bard");
+    const charmed = try world.intern_relation("CharmedBy", .set);
+    const listens = try world.intern_relation("ListensTo", .set);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    // Baseline routine: wait 100 ticks
+    const baseline_pc = chunk.count();
+    try chunk.emit_wait_ticks(100);
+    _ = try chunk.emit_op(.halt);
+
+    // Interrupt handler for Charm rule: remember ListensTo(Guard, Bard), wait 2 ticks, resume
+    const charm_handler_pc = chunk.count();
+    try chunk.emit_push_entity(guard);
+    try chunk.emit_push_relation(listens);
+    try chunk.emit_push_entity(bard);
+    try chunk.emit_remember(0);
+    try chunk.emit_wait_ticks(2);
+    _ = try chunk.emit_op(.resume_routine);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    // Register reactive rule: when CharmedBy(Guard, Bard) -> interrupt Guard
+    const clauses = [_]world_mod.PatternClause{
+        .{
+            .relation = charmed,
+            .subject = .{ .constant = guard.to_int() },
+            .object = .{ .constant = bard.to_int() },
+        },
+    };
+    _ = try vm.add_reactive_rule(guard, &clauses, 50, charm_handler_pc);
+
+    _ = try vm.spawn_routine(guard, baseline_pc);
+
+    // Tick 1: Baseline routine starts and sleeps for 100 ticks. No charm -> rule does not fire.
+    try vm.step_tick();
+    try testing.expect(!world.has_fact(guard, listens, bard.to_int()));
+    try testing.expectEqual(@as(usize, 0), vm.fibers.items[0].interrupt_stack.items.len);
+
+    // Now emit fact: CharmedBy(Guard, Bard) with TTL 4 ticks
+    try world.remember(guard, charmed, bard.to_int(), 4);
+
+    // Tick 2: step_tick evaluates reactive rule -> condition is true -> edge triggers interrupt!
+    try vm.step_tick();
+    try testing.expect(world.has_fact(guard, listens, bard.to_int()));
+    try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
+
+    // Tick 3: Condition is still true, but rule is already active -> does NOT interrupt again
+    try vm.step_tick();
+    try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
+
+    // Ticks 4, 5: Advance past TTL -> CharmedBy expires, handler finishes and resumes baseline
+    try vm.step_tick();
+    try vm.step_tick();
+    try vm.step_tick();
+
+    // Interrupt stack popped and resumed
+    try testing.expectEqual(@as(usize, 0), vm.fibers.items[0].interrupt_stack.items.len);
+    try testing.expect(!world.has_fact(guard, charmed, bard.to_int()));
+}
+
+test "P8-03: priority rule cascades preemption and nesting" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const guard = try world.intern_entity("Guard");
+    const bard = try world.intern_entity("Bard");
+    const cat = try world.intern_entity("Cat");
+    const cheese = try world.intern_entity("Cheese");
+
+    const carries = try world.intern_relation("Carries", .set);
+    const charmed = try world.intern_relation("CharmedBy", .set);
+    const alert_rel = try world.intern_relation("AlertState", .property);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    // Baseline routine: wait 100 ticks
+    const baseline_pc = chunk.count();
+    try chunk.emit_wait_ticks(100);
+    _ = try chunk.emit_op(.halt);
+
+    // Handler 1: Charm handler (priority 50): wait 10 ticks, resume
+    const charm_handler_pc = chunk.count();
+    try chunk.emit_wait_ticks(10);
+    _ = try chunk.emit_op(.resume_routine);
+
+    // Handler 2: Theft Alert handler (priority 100): remember AlertState(Guard, 1), wait 3 ticks, resume
+    const alert_handler_pc = chunk.count();
+    try chunk.emit_push_entity(guard);
+    try chunk.emit_push_relation(alert_rel);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
+    try chunk.emit_wait_ticks(3);
+    _ = try chunk.emit_op(.resume_routine);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    // Register Charm rule (Priority 50)
+    const charm_clauses = [_]world_mod.PatternClause{
+        .{
+            .relation = charmed,
+            .subject = .{ .constant = guard.to_int() },
+            .object = .{ .constant = bard.to_int() },
+        },
+    };
+    _ = try vm.add_reactive_rule(guard, &charm_clauses, 50, charm_handler_pc);
+
+    // Register Theft Alert rule (Priority 100): when Carries(Cat, Cheese)
+    const theft_clauses = [_]world_mod.PatternClause{
+        .{
+            .relation = carries,
+            .subject = .{ .constant = cat.to_int() },
+            .object = .{ .constant = cheese.to_int() },
+        },
+    };
+    _ = try vm.add_reactive_rule(guard, &theft_clauses, 100, alert_handler_pc);
+
+    _ = try vm.spawn_routine(guard, baseline_pc);
+
+    // Tick 1: Start baseline
+    try vm.step_tick();
+    try testing.expectEqual(@as(u16, 0), vm.fibers.items[0].active_priority);
+
+    // Bard charms Guard -> Priority 50 triggers
+    try world.remember(guard, charmed, bard.to_int(), 20);
+    try vm.step_tick();
+    try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
+    try testing.expectEqual(@as(u16, 50), vm.fibers.items[0].active_priority);
+
+    // Now Cat steals Cheese -> Theft alert (Priority 100) preempts Charm (Priority 50)!
+    try world.remember(cat, carries, cheese.to_int(), 0);
+    try vm.step_tick();
+
+    // Nested interrupt: interrupt stack depth is now 2!
+    try testing.expectEqual(@as(usize, 2), vm.fibers.items[0].interrupt_stack.items.len);
+    try testing.expectEqual(@as(u16, 100), vm.fibers.items[0].active_priority);
+    try testing.expect(world.has_fact(guard, alert_rel, 1));
+
+    // Finish Alert handler: 3 ticks
+    try vm.step_tick();
+    try vm.step_tick();
+    try vm.step_tick();
+
+    // Alert popped: back to Charm handler (priority 50, depth 1)
+    try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
+    try testing.expectEqual(@as(u16, 50), vm.fibers.items[0].active_priority);
 }

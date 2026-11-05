@@ -65,9 +65,9 @@ Goal: Expand the BeSpoke language syntax and runtime with first-class point-and-
 
 Goal: Implement continuous pattern-matching rule triggers in the engine spine so complex world conditions react without manual polling.
 
-- [ ] P8-01 Multi-clause relational pattern matcher: support relational conjunctions (`where A and B and C`) and join queries across active facts. (D-003, D-006, D-007)
-- [ ] P8-02 VM reactive `when` evaluation engine: evaluate `when <condition>:` rules on fact mutation or tick boundary and automatically trigger fiber interrupts. (D-002, D-004)
-- [ ] P8-03 Systemic AI behaviors: priority rule cascades for NPC moods, systemic theft, guards chasing thieves, and alert states. (D-003, D-004)
+- [x] P8-01 Multi-clause relational pattern matcher: support relational conjunctions (`where A and B and C`) and join queries across active facts. (D-003, D-006, D-007, D-010; completed 2026-11-04, verified via `zig test src/world.zig` and `zig test src/compiler/parser.zig`)
+- [x] P8-02 VM reactive `when` evaluation engine: evaluate `when <condition>:` rules on fact mutation or tick boundary and automatically trigger fiber interrupts. (D-002, D-004, D-010; completed 2026-11-04, verified via `zig test src/vm.zig` and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P8-03 Systemic AI behaviors: priority rule cascades for NPC moods, systemic theft, guards chasing thieves, and alert states. (D-003, D-004, D-010; completed 2026-11-04, verified via `zig test src/vm.zig` and `zig build run -- --headless`)
 
 ## Phase 9: Interactive Time-Travel Debugger & REPL
 

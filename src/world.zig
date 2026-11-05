@@ -49,6 +49,39 @@ pub const RelationMeta = struct {
     rel_type: RelationType,
 };
 
+/// Multi-clause pattern matching slot (P8-01, D-010).
+pub const PatternTerm = union(enum) {
+    wildcard: void,
+    constant: u32,
+    variable: u8, // Variable slot index 0..7
+};
+
+/// Single relational pattern clause with subject and object terms (P8-01, D-010).
+pub const PatternClause = struct {
+    relation: RelationKind,
+    subject: PatternTerm,
+    object: PatternTerm,
+};
+
+/// Variable bindings result from relational pattern unification (P8-01, D-010).
+pub const VariableBindings = struct {
+    values: [8]?u32 = [_]?u32{null} ** 8,
+
+    pub fn get(self: VariableBindings, var_idx: u8) ?u32 {
+        if (var_idx >= 8) return null;
+        return self.values[var_idx];
+    }
+
+    pub fn set(self: *VariableBindings, var_idx: u8, val: u32) bool {
+        if (var_idx >= 8) return false;
+        if (self.values[var_idx]) |existing| {
+            return existing == val; // Must match consistently across joined clauses
+        }
+        self.values[var_idx] = val;
+        return true;
+    }
+};
+
 pub const DEFAULT_ARENA_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 pub const DEFAULT_MAX_FACTS: usize = 8192;
 
@@ -405,6 +438,119 @@ pub const World = struct {
         };
     }
 
+    // --- Multi-Clause Pattern Matching & Relational Joins (P8-01, D-006, D-010) ---
+
+    /// Recursively backtracks across multi-clause patterns against the fact table (P8-01).
+    fn match_multi_step(
+        self: *const World,
+        clauses: []const PatternClause,
+        clause_idx: usize,
+        bindings: VariableBindings,
+    ) ?VariableBindings {
+        if (clause_idx >= clauses.len) {
+            return bindings;
+        }
+
+        const clause = clauses[clause_idx];
+        const slice = self.facts.slice();
+        const subjects = slice.items(.subject);
+        const relations = slice.items(.relation);
+        const objects = slice.items(.object_or_value);
+
+        for (0..self.facts.len) |i| {
+            if (relations[i] != clause.relation) continue;
+
+            var next_bindings = bindings;
+
+            // Check & unify subject
+            const fact_subj = subjects[i].to_int();
+            switch (clause.subject) {
+                .wildcard => {},
+                .constant => |c| if (fact_subj != c) continue,
+                .variable => |v| if (!next_bindings.set(v, fact_subj)) continue,
+            }
+
+            // Check & unify object
+            const fact_obj = objects[i];
+            switch (clause.object) {
+                .wildcard => {},
+                .constant => |c| if (fact_obj != c) continue,
+                .variable => |v| if (!next_bindings.set(v, fact_obj)) continue,
+            }
+
+            // Unification succeeded for this fact; advance to next clause
+            if (self.match_multi_step(clauses, clause_idx + 1, next_bindings)) |solution| {
+                return solution;
+            }
+        }
+
+        return null;
+    }
+
+    /// Finds the first satisfying set of variable bindings for a conjunction of relational clauses (P8-01).
+    pub fn find_first_match(self: *const World, clauses: []const PatternClause) ?VariableBindings {
+        if (clauses.len == 0) return VariableBindings{};
+        return self.match_multi_step(clauses, 0, VariableBindings{});
+    }
+
+    /// Tests whether a conjunction of relational clauses is satisfied in the active fact store (P8-01).
+    pub fn has_multi_match(self: *const World, clauses: []const PatternClause) bool {
+        return self.find_first_match(clauses) != null;
+    }
+
+    fn collect_multi_matches(
+        self: *const World,
+        clauses: []const PatternClause,
+        clause_idx: usize,
+        bindings: VariableBindings,
+        results: *std.ArrayList(VariableBindings),
+    ) !void {
+        if (clause_idx >= clauses.len) {
+            try results.append(bindings);
+            return;
+        }
+
+        const clause = clauses[clause_idx];
+        const slice = self.facts.slice();
+        const subjects = slice.items(.subject);
+        const relations = slice.items(.relation);
+        const objects = slice.items(.object_or_value);
+
+        for (0..self.facts.len) |i| {
+            if (relations[i] != clause.relation) continue;
+
+            var next_bindings = bindings;
+
+            const fact_subj = subjects[i].to_int();
+            switch (clause.subject) {
+                .wildcard => {},
+                .constant => |c| if (fact_subj != c) continue,
+                .variable => |v| if (!next_bindings.set(v, fact_subj)) continue,
+            }
+
+            const fact_obj = objects[i];
+            switch (clause.object) {
+                .wildcard => {},
+                .constant => |c| if (fact_obj != c) continue,
+                .variable => |v| if (!next_bindings.set(v, fact_obj)) continue,
+            }
+
+            try self.collect_multi_matches(clauses, clause_idx + 1, next_bindings, results);
+        }
+    }
+
+    /// Finds all satisfying variable bindings for a multi-clause join query (P8-01).
+    pub fn find_all_matches(
+        self: *const World,
+        alloc: std.mem.Allocator,
+        clauses: []const PatternClause,
+    ) ![]VariableBindings {
+        var results = std.ArrayList(VariableBindings).init(alloc);
+        if (clauses.len == 0) return results.toOwnedSlice();
+        try self.collect_multi_matches(clauses, 0, VariableBindings{}, &results);
+        return results.toOwnedSlice();
+    }
+
     // --- Deterministic Snapshot Serialization (P1-04, D-001, D-003) ---
 
     /// Writes a complete deterministic memory snapshot of the World state to a writer.
@@ -681,4 +827,111 @@ test "P1-04: deterministic save_state and restore_state" {
     try testing.expectEqual(@as(usize, 2), world.fact_count());
     // Also verify Cat is gone from restored world
     try testing.expect(!world.has_fact(cat, carries, cheese.to_int()));
+}
+
+test "P8-01: multi-clause relational pattern matcher and variable join queries" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const guard = try world.intern_entity("Guard");
+    const bard = try world.intern_entity("Bard");
+    const cat = try world.intern_entity("Cat");
+    const cheese = try world.intern_entity("Cheese");
+    const key = try world.intern_entity("Key");
+
+    const carries = try world.intern_relation("Carries", .set);
+    const charmed_by = try world.intern_relation("CharmedBy", .set);
+    const in_room = try world.intern_relation("InRoom", .property);
+    const tavern = try world.intern_entity("Tavern");
+    const cellar = try world.intern_entity("Cellar");
+
+    // Facts:
+    // Guard carries Cheese, is CharmedBy Bard, is InRoom Tavern
+    try world.remember(guard, carries, cheese.to_int(), 0);
+    try world.remember(guard, charmed_by, bard.to_int(), 0);
+    try world.remember(guard, in_room, tavern.to_int(), 0);
+
+    // Cat carries Key, is InRoom Tavern
+    try world.remember(cat, carries, key.to_int(), 0);
+    try world.remember(cat, in_room, tavern.to_int(), 0);
+
+    // Query 1: Join on ?holder (var 0): Carries(?holder, Cheese) and CharmedBy(?holder, Bard)
+    const clauses1 = [_]PatternClause{
+        .{
+            .relation = carries,
+            .subject = .{ .variable = 0 },
+            .object = .{ .constant = cheese.to_int() },
+        },
+        .{
+            .relation = charmed_by,
+            .subject = .{ .variable = 0 },
+            .object = .{ .constant = bard.to_int() },
+        },
+    };
+
+    try testing.expect(world.has_multi_match(&clauses1));
+    const match1 = world.find_first_match(&clauses1);
+    try testing.expect(match1 != null);
+    try testing.expectEqual(guard.to_int(), match1.?.get(0).?);
+
+    // Query 2: Contradictory join: Carries(?holder, Key) and CharmedBy(?holder, Bard)
+    // Cat carries Key, but is NOT CharmedBy Bard -> should return null
+    const clauses2 = [_]PatternClause{
+        .{
+            .relation = carries,
+            .subject = .{ .variable = 0 },
+            .object = .{ .constant = key.to_int() },
+        },
+        .{
+            .relation = charmed_by,
+            .subject = .{ .variable = 0 },
+            .object = .{ .constant = bard.to_int() },
+        },
+    };
+    try testing.expect(!world.has_multi_match(&clauses2));
+    try testing.expect(world.find_first_match(&clauses2) == null);
+
+    // Query 3: Multi-variable join: Carries(?actor, ?item) and InRoom(?actor, Tavern)
+    // Both Guard and Cat should match!
+    const clauses3 = [_]PatternClause{
+        .{
+            .relation = carries,
+            .subject = .{ .variable = 0 }, // ?actor
+            .object = .{ .variable = 1 }, // ?item
+        },
+        .{
+            .relation = in_room,
+            .subject = .{ .variable = 0 }, // ?actor
+            .object = .{ .constant = tavern.to_int() },
+        },
+    };
+
+    const all_matches = try world.find_all_matches(testing.allocator, &clauses3);
+    defer testing.allocator.free(all_matches);
+
+    try testing.expectEqual(@as(usize, 2), all_matches.len);
+    // Verify one of them is Guard with Cheese, and one is Cat with Key
+    var found_guard = false;
+    var found_cat = false;
+    for (all_matches) |m| {
+        if (m.get(0).? == guard.to_int() and m.get(1).? == cheese.to_int()) {
+            found_guard = true;
+        }
+        if (m.get(0).? == cat.to_int() and m.get(1).? == key.to_int()) {
+            found_cat = true;
+        }
+    }
+    try testing.expect(found_guard);
+    try testing.expect(found_cat);
+
+    // Cellar has nobody in it
+    const clauses_cellar = [_]PatternClause{
+        .{
+            .relation = in_room,
+            .subject = .{ .variable = 0 },
+            .object = .{ .constant = cellar.to_int() },
+        },
+    };
+    try testing.expect(!world.has_multi_match(&clauses_cellar));
 }

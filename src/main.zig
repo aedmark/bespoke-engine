@@ -56,6 +56,11 @@ pub fn main() !void {
         \\  interrupt Guard with:
         \\    face Guard toward Bard
         \\    wait 4 ticks
+        \\
+        \\when Carries(Cat, Cheese):
+        \\  interrupt Guard with:
+        \\    face Guard toward Cat
+        \\    wait 2 ticks
     ;
 
     try stdout.print("[Compiler] Lowering BeSpoke DSL script to bytecode...\n", .{});
@@ -79,11 +84,11 @@ pub fn main() !void {
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
 
     var display_bridge = bespoke.DisplayBridge.init();
 
     const patrol_pc = compiled.routine_entries.get("Patrol").?;
-    const charmed_rule_pc: u16 = @intCast(compiled.when_rule_entries.items[0]);
 
     _ = try vm.spawn_routine(guard, patrol_pc);
 
@@ -126,7 +131,6 @@ pub fn main() !void {
         while (world.current_tick < 18) {
             if (world.current_tick == 1) {
                 try world.remember(guard, charmed, bard.to_int(), 4);
-                _ = try vm.interrupt_entity(guard, charmed_rule_pc);
                 try stdout.print("\n*** [CUE] Bard plays enchanting melody on lute! Guard charmed! ***\n", .{});
             }
 
@@ -392,7 +396,6 @@ pub fn main() !void {
                 // Scripted narrative cues for the vertical slice
                 if (world.current_tick == 1) {
                     try world.remember(guard, charmed, bard.to_int(), 4);
-                    _ = try vm.interrupt_entity(guard, charmed_rule_pc);
                     window.set_cue_banner("♫ [CUE] Bard charms Guard with lute melody! ♫", 60);
                     try stdout.print("\n*** [CUE] Bard plays enchanting melody on lute! Guard charmed! ***\n", .{});
                 }

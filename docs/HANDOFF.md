@@ -12,46 +12,52 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 3, on `main`: completed Phase 7 (Adventure Game Primitives: Verbs, Inventory, Dialog & Hotspots)._
+_Last updated: 2026-11-04, session 4, on `main`: completed Phase 8 (Reactive Simulation Rules: Multi-Clause Joins, Reactive `when` Engine, Priority Cascades)._
 
 **Where things stand, in one paragraph:**
-Phase 1 through Phase 7 are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime, language, and graphical simulation: raw BeSpoke scripts compile directly to compact bytecode, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. Phase 7 expands BeSpoke with first-class point-and-click adventure primitives: static scene hotspots (Fireplace, Bar Counter, Wine Cask), classic adventure verbs (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`) with active highlighting and right-click cycling, a relational inventory system querying `InInventory` and `Carries` facts into an on-screen inventory tray, and branching dialogue trees with parchment speech balloons and interactive choice pills. Headless simulation is fully supported via `--headless`.
+Phase 1 through Phase 8 are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime, language, and graphical simulation: raw BeSpoke scripts compile directly to compact bytecode, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. Phase 8 introduces autonomous systemic reactivity: a multi-clause relational pattern matcher supporting conjunctions (`where A and B and C`) and variable joins across active facts, continuous VM reactive `when` evaluation on tick boundaries with edge-triggered fiber interrupts, and priority-tiered interrupt stacks where high-priority alerts preempt lower-priority states and cleanly resume routines. Headless simulation is fully supported via `--headless`.
 
 **Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings** |
-| `zig test src/world.zig` | **4/4 passed** |
+| `zig test src/world.zig` | **5/5 passed** |
 | `zig test src/bytecode.zig` | **5/5 passed** |
 | `zig test src/spatial.zig` | **7/7 passed** |
-| `zig test src/vm.zig` | **11/11 passed** |
+| `zig test src/vm.zig` | **15/15 passed** |
 | `zig test src/compiler/lexer.zig` | **2/2 passed** |
-| `zig test src/compiler/parser.zig` | **3/3 passed** |
+| `zig test src/compiler/parser.zig` | **4/4 passed** |
 | `zig test -lc -lSDL2 src/display.zig` | **16/16 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **23/23 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **28/28 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 
 **What works**
-- **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03).
-- **Bytecode VM & Scheduler:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, and interrupt stacks (P2-01 through P2-04).
+- **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
+- **Bytecode VM & Scheduler:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, priority interrupt stacks (`active_priority`, `interrupt_entity_priority`), and continuous reactive rule evaluation (`evaluate_reactive_rules`, `load_compiled_rules`) (P2-01 through P2-04, P8-02, P8-03, D-004, D-010).
 - **Spatial Topology & Hotspots:** 2D integer waypoints, rooms, A* graph pathfinding, asynchronous motor intents (`walk_to`), and static scene hotspots (`Fireplace`, `BarCounter`, `WineCask`) with examine text and spatial hitboxes (P3-01, P3-02, P7-01, D-005, D-009).
-- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`), with extended grammar for `verb Name(args)` and `say Speaker: "text"` dialogue statements lowered to `emit_cue` (P4-01 through P4-03, P7-02, P7-04, D-002, D-009).
+- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`), with grammar for verbs, dialogue (`say`), multi-clause `when` rules (`when Pattern1 and Pattern2:`), and automatic `CompiledWhenRule` generation (P4-01 through P4-03, P7-02, P7-04, P8-01, P8-02, D-002, D-009, D-010).
 - **Display Bridge & Time-Travel:** Double-buffered render frames (`DisplayBridge`), text/terminal visualizer, and instant snapshot rewind (P5-01, P5-02, D-001).
 - **SDL2 Peripheral 2D Display & Controls:** Hardware-accelerated 2D renderer, built-in 5x7 bitmap font, room/waypoint scene graph, animated actor tokens, point-and-click mouse navigation for Cat, and live time-travel rewind hotkey (P6-01 through P6-04, D-008).
 - **Adventure Game Primitives:** 5-verb UI bar (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`) with active button highlights and right-click cycling, actor and prop interaction, relational inventory tray rendering, and branching dialogue parchment balloons with interactive choice buttons (P7-01 through P7-04, D-009).
+- **Reactive Simulation & Systemic AI:** Continuous pattern-matched rule evaluation, edge-triggered fiber interrupts on positive transition (`false -> true`), and priority cascades (e.g., theft alerts preempting charmed states) (P8-01 through P8-03, D-010).
 
 **Not verified**
 - Peripheral audio sound effects / music playback; visual cues, floating banners, and speech balloons are fully verified.
 
 **Gotchas for the next session**
 - When restoring snapshots via `restore_state`, the world memory buffer is rewound in place; external display layers should call `DisplayBridge.capture_frame()` immediately following a restore to synchronize visualization.
-- Dialogue balloons are rendered by the display peripheral based on high-level state; clicking a dialogue choice dismisses the balloon and can emit cues or remember facts in the simulation spine.
+- Reactive rules are edge-triggered: they fire once when a condition transitions from false to true. The rule re-arms when the condition clears, preventing infinite interrupt loops while conditions remain active.
 
 ---
 
 ## Session log
+
+### Session 4 (2026-11-04)
+- **Goal:** Implement Phase 8: Reactive Simulation Rules (`when` Engine in VM).
+- **Work:** Recorded architectural decision `D-010` (Reactive Simulation Engine with Multi-Clause Relational Joins and Priority Rule Cascades). Implemented multi-clause relational pattern matcher in `src/world.zig` (`PatternTerm`, `PatternClause`, `VariableBindings`, `find_first_match`, `has_multi_match`, `find_all_matches`) with backtracking variable unification. Extended compiler parser (`src/compiler/parser.zig`) to parse conjoined `when` rules (`when Pattern1 and Pattern2:`). Updated code generator (`src/compiler/codegen.zig`) to lower `when` rules into `CompiledWhenRule` structures with resolved pattern terms and priority. Implemented VM continuous reactive rule engine in `src/vm.zig` (`ReactiveRule`, `add_reactive_rule`, `evaluate_reactive_rules`, `load_compiled_rules`) with edge-triggered preemption (`false -> true`) on tick boundary. Implemented priority-tiered interrupt stacks in `src/vm.zig` (`active_priority`, `interrupt_entity_priority`, `.resume_routine` priority popping) allowing higher-priority interrupts (e.g. theft alert) to preempt lower-priority interrupts (e.g. charm) and cleanly resume routines. Integrated compiled reactive rules into `src/main.zig`, enabling autonomous charm and theft reaction without manual interrupt calls in the application loop.
+- **Outcome:** All 81 tests passing across all suites (`zig build test`, `zig test -lc -lSDL2 src/root.zig`, `zig test -lc -lSDL2 src/display.zig`, `zig test src/world.zig`, `zig test src/spatial.zig`, `zig test src/vm.zig`, `zig test src/compiler/lexer.zig`, `zig test src/compiler/parser.zig`). Headless simulation verified. Documentation verified with 0 errors and 0 warnings. Phase 8 roadmap items (`P8-01` through `P8-03`) complete.
 
 ### Session 3 (2026-11-04)
 - **Goal:** Implement Phase 7: Adventure Game Primitives (Verbs, Inventory, Dialog & Hotspots).
