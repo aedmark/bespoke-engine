@@ -25,8 +25,8 @@ Goal: Build the custom bytecode instruction set, virtual machine dispatcher, and
 
 Goal: Implement the native spatial graph and asynchronous motor intents in the engine spine.
 
-- [ ] P3-01 Implement discrete spatial topology (room/waypoint graph or tilemap) and A* pathfinder in the engine spine. (D-001, D-005, Q-001)
-- [ ] P3-02 Implement desugared `walk <entity> to <target>` asynchronous motor intent with arrival/obstruction events. (D-001, D-004)
+- [x] P3-01 Implement discrete spatial topology (room/waypoint graph or tilemap) and A* pathfinder in the engine spine. (D-001, D-005, Q-001; completed 2026-11-04, verified via `zig test src/spatial.zig`)
+- [x] P3-02 Implement desugared `walk <entity> to <target>` asynchronous motor intent with arrival/obstruction events. (D-001, D-004; completed 2026-11-04, verified via `zig test src/spatial.zig` and `zig test src/vm.zig`)
 
 ## Phase 4: Language Front-End & Compiler
 

@@ -1,12 +1,14 @@
 const std = @import("std");
 const world_mod = @import("world.zig");
 const bytecode_mod = @import("bytecode.zig");
+const spatial_mod = @import("spatial.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
 pub const RelationKind = world_mod.RelationKind;
 pub const Opcode = bytecode_mod.Opcode;
 pub const BytecodeChunk = bytecode_mod.BytecodeChunk;
+pub const SpatialSystem = spatial_mod.SpatialSystem;
 
 pub const MAX_STACK: usize = 256;
 pub const MAX_INSTRUCTIONS_PER_TICK: usize = 10000;
@@ -17,6 +19,7 @@ pub const FiberStateTag = enum {
     ready,
     waiting_ticks,
     waiting_cond,
+    waiting_motor,
     halted,
     paused,
 };
@@ -25,6 +28,7 @@ pub const FiberState = union(FiberStateTag) {
     ready: void,
     waiting_ticks: u64, // target tick to wake up
     waiting_cond: u16, // cond_pc to evaluate
+    waiting_motor: EntityId, // waiting for entity to finish walking (P3-02)
     halted: void,
     paused: void,
 };
@@ -88,6 +92,7 @@ pub const VM = struct {
     allocator: std.mem.Allocator,
     world: *World,
     chunk: *const BytecodeChunk,
+    spatial: ?*SpatialSystem,
     fibers: std.ArrayList(Fiber),
     next_fiber_id: FiberId,
     emitted_cues: std.ArrayList(EmittedCue),
@@ -98,6 +103,7 @@ pub const VM = struct {
             .allocator = allocator,
             .world = world,
             .chunk = chunk,
+            .spatial = null,
             .fibers = std.ArrayList(Fiber).init(allocator),
             .next_fiber_id = 1,
             .emitted_cues = std.ArrayList(EmittedCue).init(allocator),
@@ -146,10 +152,15 @@ pub const VM = struct {
         // 1. Advance relational world and prune expired facts (P1-02)
         _ = self.world.step_tick();
 
-        // 2. Clear peripheral cue buffer from prior tick
+        // 2. Step spatial motor navigation (P3-02)
+        if (self.spatial) |sp| {
+            sp.step_tick();
+        }
+
+        // 3. Clear peripheral cue buffer from prior tick
         self.emitted_cues.clearRetainingCapacity();
 
-        // 3. Wake fibers whose sleep duration has expired
+        // 4. Wake fibers whose sleep duration or spatial motor intent has completed
         for (self.fibers.items) |*f| {
             switch (f.state) {
                 .waiting_ticks => |wake_tick| {
@@ -163,11 +174,18 @@ pub const VM = struct {
                         f.state = .{ .ready = {} };
                     }
                 },
+                .waiting_motor => |target_entity| {
+                    if (self.spatial) |sp| {
+                        if (sp.has_arrived(target_entity)) {
+                            f.state = .{ .ready = {} };
+                        }
+                    }
+                },
                 else => {},
             }
         }
 
-        // 4. Run ready fibers
+        // 5. Run ready fibers
         for (self.fibers.items) |*f| {
             if (f.state == .ready) {
                 try self.run_fiber(f);
@@ -457,6 +475,15 @@ pub const VM = struct {
                     f.state = .{ .waiting_cond = cond_pc };
                     return;
                 },
+                .walk_to => {
+                    const dest = try f.pop();
+                    const entity = try f.pop();
+                    if (self.spatial) |sp| {
+                        _ = try sp.walk_to(EntityId.from_int(entity), @intCast(dest));
+                        f.state = .{ .waiting_motor = EntityId.from_int(entity) };
+                        return;
+                    }
+                },
 
                 // --- Preemption & Interruption (P2-04, D-004) ---
                 .interrupt => {
@@ -655,4 +682,60 @@ test "P2-04: interrupt stack preemption and clean resumption" {
     // Guard finished patrol and picked up cheese!
     try testing.expect(world.has_fact(guard, carries, cheese.to_int()));
     try testing.expectEqual(FiberStateTag.halted, std.meta.activeTag(vm.fibers.items[0].state));
+}
+
+test "P3-02: VM fiber executes walk_to, suspends during transit, and wakes upon arrival" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const tavern = EntityId.from_int(1);
+    const guard = try world.intern_entity("Guard");
+    const cheese = try world.intern_entity("Cheese");
+    const carries = try world.intern_relation("Carries", .set);
+
+    const hearth = try spatial.graph.add_waypoint(tavern, 0, 0, "Hearth");
+    const cellar = try spatial.graph.add_waypoint(tavern, 20, 0, "Cellar");
+    try spatial.graph.connect(hearth, cellar, null);
+
+    // Guard starts at Hearth with speed 5 units/tick
+    try spatial.register_entity(guard, hearth, 5);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    // Routine: walk Guard to Cellar (distance 20 @ 5 units/tick = 4 ticks), then pick up Cheese
+    try chunk.emit_walk_to(guard, cellar);
+    try chunk.emit_push_entity(guard);
+    try chunk.emit_push_relation(carries);
+    try chunk.emit_push_entity(cheese);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.halt);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+
+    _ = try vm.spawn_routine(guard, 0);
+
+    // Tick 1: Routine starts, issues walk_to, enters waiting_motor state
+    try vm.step_tick();
+    try testing.expectEqual(FiberStateTag.waiting_motor, std.meta.activeTag(vm.fibers.items[0].state));
+    try testing.expect(!world.has_fact(guard, carries, cheese.to_int()));
+
+    // Ticks 2, 3, 4: Walking along path
+    try vm.step_tick();
+    try vm.step_tick();
+    try vm.step_tick();
+    try testing.expectEqual(FiberStateTag.waiting_motor, std.meta.activeTag(vm.fibers.items[0].state));
+    try testing.expect(!world.has_fact(guard, carries, cheese.to_int()));
+
+    // Tick 5: Reaches Cellar! Motor arrival triggers fiber wake-up -> picks up Cheese and halts!
+    try vm.step_tick();
+    try testing.expect(world.has_fact(guard, carries, cheese.to_int()));
+    try testing.expectEqual(FiberStateTag.halted, std.meta.activeTag(vm.fibers.items[0].state));
+    try testing.expectEqual(cellar, spatial.get_current_waypoint(guard).?);
 }

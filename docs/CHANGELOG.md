@@ -5,6 +5,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 3 (Spatial Topology & Motor Subsystem): implemented `src/spatial.zig` featuring discrete 2D integer waypoints, rooms, and A* graph pathfinding (P3-01, D-005).
+- Implemented multi-tick motor stepping (`SpatialSystem.walk_to`) integrated with VM fiber suspension via `Opcode.walk_to` and `waiting_motor` state (P3-02, D-001, D-004).
 - Completed Phase 2 (Bytecode VM & Fiber Scheduler): implemented `src/bytecode.zig` and `src/vm.zig` with compact instruction set, fiber scheduler, temporal waits, and interrupt preemption (P2-01 through P2-04).
 - Implemented `wait_ticks` and `wait_until` condition block evaluation (P2-03, D-004).
 - Implemented `interrupt_entity` and `resume_routine` stack preemption for priority event handling (P2-04, D-004).

@@ -55,6 +55,8 @@ pub const Opcode = enum(u8) {
     wait_ticks = 0x41,
     /// Suspends active fiber until condition block at cond_pc evaluates to non-zero. Operand: cond_pc: u16.
     wait_until = 0x42,
+    /// Pops: destination_wp: u16, entity: u32. Initiates spatial walk and suspends fiber until arrival (P3-02).
+    walk_to = 0x43,
 
     // --- Interruption Primitives (D-004) ---
     /// Preempts target entity's active routine, pushing an interrupt frame.
@@ -140,6 +142,12 @@ pub const BytecodeChunk = struct {
     pub fn emit_wait_ticks(self: *BytecodeChunk, ticks: u32) !void {
         try self.emit_push_const(ticks);
         _ = try self.emit_op(.wait_ticks);
+    }
+
+    pub fn emit_walk_to(self: *BytecodeChunk, entity: EntityId, dest: u16) !void {
+        try self.emit_push_entity(entity);
+        try self.emit_push_const(dest);
+        _ = try self.emit_op(.walk_to);
     }
 
     pub fn emit_roll_dice(self: *BytecodeChunk, count_val: u8, sides: u8) !void {
