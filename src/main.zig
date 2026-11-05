@@ -9,72 +9,103 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // 1. Initialize Relational World
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
-    try stdout.print("1. Initialized World arena ({d} KB pre-allocated)\n", .{bespoke.world.DEFAULT_ARENA_SIZE / 1024});
-
-    // 1. Intern Entities and Relations
     const guard = try world.intern_entity("Guard");
-    const cheese = try world.intern_entity("Cheese");
     const bard = try world.intern_entity("Bard");
+    const cheese = try world.intern_entity("Cheese");
     const carries = try world.intern_relation("Carries", .set);
     const alertness = try world.intern_relation("Alertness", .property);
     const charmed = try world.intern_relation("CharmedBy", .set);
 
-    try stdout.print("   - Entities: Guard ({d}), Cheese ({d}), Bard ({d})\n", .{
+    try stdout.print("1. World Initialized:\n", .{});
+    try stdout.print("   - Entities: Guard ({d}), Bard ({d}), Cheese ({d})\n", .{
         guard.to_int(),
-        cheese.to_int(),
         bard.to_int(),
+        cheese.to_int(),
     });
     try stdout.print("   - Relations: Carries (set), Alertness (property), CharmedBy (set)\n\n", .{});
 
-    // 2. Declarative Mutations (P1-02, D-003, D-007)
-    try world.remember(guard, carries, cheese.to_int(), 0); // Permanent
-    try world.remember(guard, alertness, 100, 0); // Property
-    try world.remember(guard, charmed, bard.to_int(), 3); // Expires in 3 ticks
+    // 2. Compile Bytecode Routines
+    var chunk = bespoke.BytecodeChunk.init(allocator);
+    defer chunk.deinit();
 
-    try stdout.print("2. Mutated Relational World (Active facts: {d})\n", .{world.fact_count()});
-    try stdout.print("   - Guard carries Cheese (permanent)\n", .{});
-    try stdout.print("   - Guard alertness: {d}%\n", .{world.get_property(guard, alertness).?});
-    try stdout.print("   - Guard charmed by Bard for 3 ticks\n\n", .{});
+    // --- Routine: Patrol(Guard) (pc: 0) ---
+    // Sets Alertness = 20, waits 10 ticks, then picks up Cheese
+    const patrol_pc: usize = chunk.code.items.len;
+    try chunk.emit_push_entity(guard);
+    try chunk.emit_push_relation(alertness);
+    try chunk.emit_push_const(20);
+    try chunk.emit_remember(0);
 
-    // 3. Pattern Matching Query (P1-03, D-006)
-    try stdout.print("3. Querying Relational State:\n", .{});
-    if (world.find_first(guard, carries, null)) |match| {
-        try stdout.print("   - Pattern query: Carries(Guard, _) -> Found item {d} ({s})\n", .{
-            match.object_or_value,
-            world.get_entity_name(bespoke.EntityId.from_int(match.object_or_value)).?,
-        });
-    }
+    try chunk.emit_wait_ticks(10); // Wait 10 ticks in patrol
 
-    // 4. Deterministic Save Snapshot (P1-04, D-001)
-    var snapshot_buf = std.ArrayList(u8).init(allocator);
-    defer snapshot_buf.deinit();
-    try world.save_state(snapshot_buf.writer());
-    try stdout.print("4. Saved state snapshot at tick {d} ({d} bytes)\n\n", .{
+    try chunk.emit_push_entity(guard);
+    try chunk.emit_push_relation(carries);
+    try chunk.emit_push_entity(cheese);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.halt);
+
+    // --- Interrupt Routine: CharmedReaction (pc: 33) ---
+    // Sets Alertness = 0, waits 5 ticks while listening to music, resumes patrol
+    const charmed_pc: u16 = @intCast(chunk.code.items.len);
+    try chunk.emit_push_entity(guard);
+    try chunk.emit_push_relation(alertness);
+    try chunk.emit_push_const(0);
+    try chunk.emit_remember(0);
+
+    try chunk.emit_wait_ticks(5); // Distracted by music for 5 ticks
+    _ = try chunk.emit_op(.resume_routine);
+
+    try stdout.print("2. Bytecode Routines Compiled ({d} bytes):\n", .{chunk.count()});
+    try stdout.print("   - Patrol routine entry at pc {d}\n", .{patrol_pc});
+    try stdout.print("   - Charmed interrupt handler at pc {d}\n\n", .{charmed_pc});
+
+    // 3. Initialize VM and Spawn Patrol Routine
+    var vm = bespoke.VM.init(allocator, &world, &chunk);
+    defer vm.deinit();
+
+    const fiber_id = try vm.spawn_routine(guard, patrol_pc);
+    try stdout.print("3. Spawned Fiber {d} for Guard Patrol\n\n", .{fiber_id});
+
+    // 4. Run Simulation Loop
+    try stdout.print("4. Executing Simulation Ticks:\n", .{});
+
+    // Tick 1: Patrol starts, sets alertness = 20, enters 10-tick wait
+    try vm.step_tick();
+    try stdout.print("   - Tick {d}: Guard alertness={d}%, fiber state: waiting\n", .{
         world.current_tick,
-        snapshot_buf.items.len,
+        world.get_property(guard, alertness).?,
     });
 
-    // 5. Advance Simulation Clock and TTL Decay
-    try stdout.print("5. Stepping simulation ticks:\n", .{});
-    for (1..5) |t| {
-        const pruned = world.step_tick();
-        try stdout.print("   - Tick {d}: Guard charmed? {s} (pruned {d} expired facts)\n", .{
-            t,
-            if (world.has_fact(guard, charmed, bard.to_int())) "YES" else "NO (expired)",
-            pruned,
-        });
-    }
-    try stdout.print("   - Post-decay active facts: {d}\n\n", .{world.fact_count()});
+    // Tick 2: Bard plays lute! Systemic cue charms Guard for 5 ticks and triggers interrupt
+    try world.remember(guard, charmed, bard.to_int(), 5);
+    try stdout.print("   - Tick {d}: >> Bard plays lute! CharmedBy(Guard, Bard) remembered <<\n", .{world.current_tick});
+    _ = try vm.interrupt_entity(guard, charmed_pc);
+    try stdout.print("   - Tick {d}: >> Interrupted Guard with CharmedReaction! <<\n", .{world.current_tick});
 
-    // 6. Time-Travel Restore from Snapshot (D-001)
-    var read_stream = std.io.fixedBufferStream(snapshot_buf.items);
-    try world.restore_state(read_stream.reader());
-    try stdout.print("6. Rewound world to snapshot at tick {d}!\n", .{world.current_tick});
-    try stdout.print("   - Restored active facts: {d}\n", .{world.fact_count()});
-    try stdout.print("   - Guard charmed? {s}\n", .{
-        if (world.has_fact(guard, charmed, bard.to_int())) "YES" else "NO",
+    // Tick 3: Guard is executing interrupt handler: alertness drops to 0% (charmed)
+    try vm.step_tick();
+    try stdout.print("   - Tick {d}: Guard charmed! Alertness dropped to {d}%\n", .{
+        world.current_tick,
+        world.get_property(guard, alertness).?,
+    });
+
+    // Advance 6 ticks to let charmed distraction expire and resume patrol
+    for (0..6) |_| {
+        try vm.step_tick();
+    }
+    try stdout.print("   - Tick {d}: Charm expired! Prior patrol routine resumed.\n", .{world.current_tick});
+
+    // Advance remaining ticks to complete patrol
+    for (0..10) |_| {
+        try vm.step_tick();
+    }
+
+    try stdout.print("\n5. Simulation Complete at Tick {d}:\n", .{world.current_tick});
+    try stdout.print("   - Guard carrying Cheese? {s}\n", .{
+        if (world.has_fact(guard, carries, cheese.to_int())) "YES (Patrol finished successfully!)" else "NO",
     });
 }

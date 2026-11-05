@@ -16,10 +16,10 @@ Goal: Build the contiguous Zig `World` storage, fact tuples, relational pattern 
 
 Goal: Build the custom bytecode instruction set, virtual machine dispatcher, and cooperative fiber scheduler with interrupt stacks.
 
-- [ ] P2-01 Define core bytecode opcode set (control flow, stack manipulation, relational queries, temporal yields). (D-002)
-- [ ] P2-02 Implement fiber runtime with cooperatively scheduled routine fibers and master tick clock. (D-004)
-- [ ] P2-03 Implement `wait <ticks>` and `wait until <cond>` suspension/resumption in the VM. (D-004)
-- [ ] P2-04 Implement `interrupt ... with` stack frame push, execution, and clean resumption. (D-004)
+- [x] P2-01 Define core bytecode opcode set (control flow, stack manipulation, relational queries, temporal yields). (D-002; completed 2026-11-04, verified via `zig test src/bytecode.zig`)
+- [x] P2-02 Implement fiber runtime with cooperatively scheduled routine fibers and master tick clock. (D-004; completed 2026-11-04, verified via `zig test src/vm.zig`)
+- [x] P2-03 Implement `wait <ticks>` and `wait until <cond>` suspension/resumption in the VM. (D-004; completed 2026-11-04, verified via `zig test src/vm.zig`)
+- [x] P2-04 Implement `interrupt ... with` stack frame push, execution, and clean resumption. (D-004; completed 2026-11-04, verified via `zig test src/vm.zig`)
 
 ## Phase 3: Spatial Topology & Motor Subsystem
 
