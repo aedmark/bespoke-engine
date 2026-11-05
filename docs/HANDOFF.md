@@ -12,12 +12,12 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 1, on `main`: adopted The Manifold repository memory framework, synthesized design documents, and established formal roadmap and architectural decisions._
+_Last updated: 2026-11-04, session 1, on `main` at `3b2c826`: adopted The Manifold repository memory framework, synthesized design documents, and established formal roadmap and architectural decisions._
 
 **Where things stand, in one paragraph:**
 The conceptual architecture for the BeSpoke Engine is established. We resolved the fundamental structural question: BeSpoke is a unified, standalone narrative/systemic simulation engine (Engine-as-Spine) in Zig rather than a drop-in plugin for third-party engines (D-001). The project has adopted The Manifold specification framework. Implementation work is queued starting with Phase 1 (P1-01 through P1-04).
 
-**Verified** (2026-11-04, on `main`, Linux x86_64)
+**Verified** (2026-11-04, on `3b2c826`, Linux x86_64)
 
 | Suite | Result |
 | --- | --- |
