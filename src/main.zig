@@ -30,6 +30,15 @@ pub fn main() !void {
     try spatial.graph.connect(hearth_wp, bar_wp, null);
     try spatial.graph.connect(bar_wp, cellar_wp, null);
 
+    // Register scene hotspots / inspectable props (P7-01, D-009)
+    const fireplace = try world.intern_entity("Fireplace");
+    const bar_counter = try world.intern_entity("BarCounter");
+    const wine_cask = try world.intern_entity("WineCask");
+
+    try spatial.add_hotspot(fireplace, tavern, .{ .x = 0, .y = -6 }, 8, "Fireplace", "A warm stone fireplace crackling with cozy embers.");
+    try spatial.add_hotspot(bar_counter, tavern, .{ .x = 20, .y = -6 }, 8, "Bar Counter", "A sturdy oak counter with empty tankards and spilled ale.");
+    try spatial.add_hotspot(wine_cask, cellar_room, .{ .x = 40, .y = -6 }, 8, "Wine Cask", "A massive oak barrel filled with vintage elven wine.");
+
     // 3. The 20-line DSL Source Script from script_spec.md
     const script =
         \\entity Guard, Bard, Cat, Cheese
@@ -165,7 +174,11 @@ pub fn main() !void {
         try stdout.print("===================================================================\n", .{});
     } else {
         try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (960x540) <<<\n", .{});
-        try stdout.print("Interactive Controls:\n", .{});
+        try stdout.print("Interactive Adventure Controls:\n", .{});
+        try stdout.print("   - [Right Click]:         Cycle Verb (WALK, LOOK, TALK, TAKE, USE)\n", .{});
+        try stdout.print("   - [Verb Bar Buttons]:    Click WALK, LOOK, TALK, TAKE, or USE to activate\n", .{});
+        try stdout.print("   - [Left Click Actor]:    Interact with Guard, Bard, or Cat with active verb\n", .{});
+        try stdout.print("   - [Left Click Prop]:     Interact with Fireplace, Bar Counter, or Wine Cask\n", .{});
         try stdout.print("   - [Left Click Waypoint]: Direct Cat (Player) to walk\n", .{});
         try stdout.print("   - [Space]:               Pause / Resume Simulation\n", .{});
         try stdout.print("   - [N]:                   Single-step Simulation Tick\n", .{});
@@ -205,6 +218,156 @@ pub fn main() !void {
                     var banner_buf: [64]u8 = undefined;
                     const text = std.fmt.bufPrint(&banner_buf, "Directing Cat to Waypoint #{d}", .{wp_id}) catch "Directing Cat";
                     window.set_cue_banner(text, 60);
+                },
+                .examine_hotspot => |hs_idx| {
+                    const frame = display_bridge.get_frame();
+                    if (hs_idx < frame.hotspot_count) {
+                        const hs = frame.hotspots[hs_idx];
+                        var banner_buf: [128]u8 = undefined;
+                        const text = std.fmt.bufPrint(&banner_buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Examined";
+                        window.set_cue_banner(text, 120);
+                        try stdout.print("\n[Look] {s}: \"{s}\"\n", .{ hs.get_name(), hs.get_examine_text() });
+                    }
+                },
+                .interact_actor => |act| {
+                    const frame = display_bridge.get_frame();
+                    if (act.actor_index < frame.entity_count) {
+                        const target_entity = frame.entities[act.actor_index];
+                        const tname = target_entity.get_name();
+                        var buf: [128]u8 = undefined;
+
+                        switch (act.verb) {
+                            .look_at => {
+                                const desc = if (std.mem.eql(u8, tname, "Guard"))
+                                    "A stern tavern guard watching for troublemakers."
+                                else if (std.mem.eql(u8, tname, "Bard"))
+                                    "A flamboyant musician with an enchanted lute."
+                                else
+                                    "A nimble feline mastermind.";
+                                const text = std.fmt.bufPrint(&buf, "[Look] {s}: {s}", .{ tname, desc }) catch "Look";
+                                window.set_cue_banner(text, 120);
+                                try stdout.print("\n[Look] {s}: {s}\n", .{ tname, desc });
+                            },
+                            .talk_to => {
+                                const pt = bespoke.display.renderer.world_to_screen(target_entity.x, target_entity.y, window.width, window.height);
+                                if (std.mem.eql(u8, tname, "Guard")) {
+                                    const choices = [_][]const u8{
+                                        "1. Meow innocently (Purr)",
+                                        "2. Hiss at the Guard!",
+                                        "3. [Slink away]",
+                                    };
+                                    window.show_dialogue(target_entity.entity, pt, "Guard", "Move along, cat! No mischief on my watch!", &choices);
+                                } else if (std.mem.eql(u8, tname, "Bard")) {
+                                    const choices = [_][]const u8{
+                                        "1. Play a soothing melody! (Distract)",
+                                        "2. What news of the cellar key?",
+                                        "3. [Walk away]",
+                                    };
+                                    window.show_dialogue(target_entity.entity, pt, "Bard", "Care to hear a jaunty tavern ballad?", &choices);
+                                } else {
+                                    window.show_dialogue(target_entity.entity, pt, "Cat", "Meow! (I only speak in cunning heists.)", &[_][]const u8{});
+                                }
+                                try stdout.print("\n[Dialogue Started with {s}]\n", .{tname});
+                            },
+                            .pick_up => {
+                                if (frame.cheese_holder == target_entity.entity) {
+                                    _ = world.forget(target_entity.entity, carries, cheese.to_int());
+                                    try world.remember(cat, carries, cheese.to_int(), 0);
+                                    window.set_cue_banner("★ You snatched the Cheese from the Guard! ★", 120);
+                                    try stdout.print("\n★ [HEIST] Player snatched Cheese from {s}! ★\n", .{tname});
+                                } else {
+                                    const text = std.fmt.bufPrint(&buf, "You cannot pick up {s}!", .{tname}) catch "Error";
+                                    window.set_cue_banner(text, 90);
+                                }
+                            },
+                            .use_with => {
+                                if (world.has_fact(cat, carries, cheese.to_int())) {
+                                    const text = std.fmt.bufPrint(&buf, "You offer a crumb of cheese to {s}.", .{tname}) catch "Used";
+                                    window.set_cue_banner(text, 90);
+                                    try stdout.print("\n[Use] Offered cheese to {s}!\n", .{tname});
+                                } else {
+                                    window.set_cue_banner("You have nothing to use!", 90);
+                                }
+                            },
+                            .walk => {},
+                        }
+                    }
+                },
+                .interact_hotspot => |hs_act| {
+                    const frame = display_bridge.get_frame();
+                    if (hs_act.hotspot_index < frame.hotspot_count) {
+                        const hs = frame.hotspots[hs_act.hotspot_index];
+                        var buf: [128]u8 = undefined;
+
+                        switch (hs_act.verb) {
+                            .look_at => {
+                                const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Look";
+                                window.set_cue_banner(text, 120);
+                                try stdout.print("\n[Look] {s}: \"{s}\"\n", .{ hs.get_name(), hs.get_examine_text() });
+                            },
+                            .talk_to => {
+                                const pt = bespoke.display.renderer.world_to_screen(hs.x, hs.y, window.width, window.height);
+                                window.show_dialogue(hs.entity, pt, hs.get_name(), "...", &[_][]const u8{});
+                                const text = std.fmt.bufPrint(&buf, "You speak to the {s}, but it stays silent.", .{hs.get_name()}) catch "Talk";
+                                window.set_cue_banner(text, 90);
+                                try stdout.print("\n[Dialogue] {s}\n", .{text});
+                            },
+                            .pick_up => {
+                                const text = std.fmt.bufPrint(&buf, "The {s} is far too heavy to carry!", .{hs.get_name()}) catch "PickUp";
+                                window.set_cue_banner(text, 90);
+                            },
+                            .use_with => {
+                                if (world.has_fact(cat, carries, cheese.to_int())) {
+                                    if (std.mem.eql(u8, hs.get_name(), "Fireplace")) {
+                                        window.set_cue_banner("You toast cheese by the embers! A delicious snack!", 120);
+                                        try stdout.print("\n[Use] Toasted cheese at the Fireplace!\n", .{});
+                                    } else if (std.mem.eql(u8, hs.get_name(), "Wine Cask")) {
+                                        window.set_cue_banner("You pair fine vintage wine with cheese! Magnifique!", 120);
+                                        try stdout.print("\n[Use] Paired cheese with Wine Cask!\n", .{});
+                                    } else {
+                                        const text = std.fmt.bufPrint(&buf, "You place cheese on the {s}.", .{hs.get_name()}) catch "Use";
+                                        window.set_cue_banner(text, 90);
+                                    }
+                                } else {
+                                    const text = std.fmt.bufPrint(&buf, "Nothing interesting happens with the {s}.", .{hs.get_name()}) catch "Use";
+                                    window.set_cue_banner(text, 90);
+                                }
+                            },
+                            .walk => {},
+                        }
+                    }
+                },
+                .dialogue_choice => |choice_idx| {
+                    if (window.active_balloon) |b| {
+                        const sname = b.get_speaker_name();
+                        if (std.mem.eql(u8, sname, "Bard")) {
+                            if (choice_idx == 0) {
+                                // Choice 0: Play a soothing melody!
+                                try world.remember(guard, charmed, bard.to_int(), 40);
+                                window.set_cue_banner("♪ Bard plays an enchanting tune! Guard is Charmed! ♪", 120);
+                                try stdout.print("\n[Dialogue Choice] Bard plays lute! Guard is charmed!\n", .{});
+                            } else if (choice_idx == 1) {
+                                window.set_cue_banner("Bard: \"Rumor has it the cellar cask is full of elven wine!\"", 120);
+                                try stdout.print("\n[Dialogue Choice] Bard shares cellar rumors!\n", .{});
+                            } else {
+                                window.set_cue_banner("You slip away quietly.", 60);
+                            }
+                        } else if (std.mem.eql(u8, sname, "Guard")) {
+                            if (choice_idx == 0) {
+                                window.set_cue_banner("Guard: \"Heh, good kitty... now shoo!\"", 90);
+                                try stdout.print("\n[Dialogue Choice] Guard pets Cat and says shoo!\n", .{});
+                            } else if (choice_idx == 1) {
+                                window.set_cue_banner("Guard: \"Watch the claws, mangy flea-bag!\"", 90);
+                                try stdout.print("\n[Dialogue Choice] Guard grumbles at Cat!\n", .{});
+                            } else {
+                                window.set_cue_banner("You slink into the shadows.", 60);
+                            }
+                        }
+                    }
+                    window.dismiss_dialogue();
+                },
+                .dismiss_dialogue => {
+                    window.dismiss_dialogue();
                 },
                 .rewind => {
                     if (history_snapshots.items.len > 2) {

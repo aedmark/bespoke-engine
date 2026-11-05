@@ -220,6 +220,15 @@ pub const Codegen = struct {
                 _ = try self.chunk.emit_op(.interrupt);
                 try self.chunk.emit_u16(handler_pc);
             },
+            .say => |s| {
+                const speaker = try self.resolve_entity(s.speaker);
+                const text_id = try self.world.intern_entity(s.text);
+                try self.chunk.emit_push_entity(speaker);
+                try self.chunk.emit_push_entity(text_id);
+                _ = try self.chunk.emit_op(.emit_cue);
+                try self.chunk.emit_u16(2); // cue 2 = say
+                try self.chunk.emit_u8(2); // 2 args (speaker, text_entity)
+            },
         }
     }
 
@@ -330,4 +339,32 @@ test "P4-03: end-to-end compilation from source text to bytecode chunk" {
         try world.intern_relation("Carries", .set),
         (try world.intern_entity("Cheese")).to_int(),
     ));
+}
+
+test "P7-02: codegen compiles verb declarations and say statements into cue emitters" {
+    const testing = std.testing;
+    const source =
+        \\entity Guard
+        \\verb TalkTo(speaker, target):
+        \\  say speaker: "Greetings traveler!"
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    var codegen = Codegen.init(alloc, &world, null);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.cue_handler_entries.contains("TalkTo"));
 }

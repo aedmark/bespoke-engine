@@ -50,11 +50,43 @@ pub const RenderEdge = struct {
     to: WaypointId,
 };
 
+/// A read-only representation of a scene hotspot / inspectable prop (P7-01, D-009).
+pub const RenderHotspot = struct {
+    entity: EntityId,
+    room: EntityId,
+    x: i32,
+    y: i32,
+    radius: u32,
+    name: [32]u8,
+    name_len: u8,
+    examine_text: [128]u8,
+    examine_len: u8,
+
+    pub fn get_name(self: *const RenderHotspot) []const u8 {
+        return self.name[0..self.name_len];
+    }
+
+    pub fn get_examine_text(self: *const RenderHotspot) []const u8 {
+        return self.examine_text[0..self.examine_len];
+    }
+};
+
 /// An external visual/audio cue emitted during a simulation tick (D-001).
 pub const RenderCue = struct {
     cue_id: u16,
     args: [4]u32,
     arg_count: u8,
+};
+
+/// An inventory item held by the player (P7-03, D-007).
+pub const RenderInventoryItem = struct {
+    entity: EntityId,
+    name: [32]u8,
+    name_len: u8,
+
+    pub fn get_name(self: *const RenderInventoryItem) []const u8 {
+        return self.name[0..self.name_len];
+    }
 };
 
 /// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
@@ -66,6 +98,10 @@ pub const RenderFrame = struct {
     waypoint_count: usize,
     edges: [64]RenderEdge,
     edge_count: usize,
+    hotspots: [16]RenderHotspot,
+    hotspot_count: usize,
+    inventory: [8]RenderInventoryItem,
+    inventory_count: usize,
     cues: [16]RenderCue,
     cue_count: usize,
     fact_count: usize,
@@ -152,7 +188,35 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.edge_count = edge_count;
 
-        // 4. Capture emitted cues
+        // 4. Capture spatial hotspots (P7-01, D-009)
+        var hs_count: usize = 0;
+        for (spatial.hotspots.items) |hs| {
+            if (hs_count >= self.back_buffer.hotspots.len) break;
+            var rh = RenderHotspot{
+                .entity = hs.entity,
+                .room = hs.room,
+                .x = hs.pos.x,
+                .y = hs.pos.y,
+                .radius = hs.radius,
+                .name = undefined,
+                .name_len = 0,
+                .examine_text = undefined,
+                .examine_len = 0,
+            };
+            const n_len = @min(hs.name.len, rh.name.len);
+            @memcpy(rh.name[0..n_len], hs.name[0..n_len]);
+            rh.name_len = @intCast(n_len);
+
+            const e_len = @min(hs.examine_text.len, rh.examine_text.len);
+            @memcpy(rh.examine_text[0..e_len], hs.examine_text[0..e_len]);
+            rh.examine_len = @intCast(e_len);
+
+            self.back_buffer.hotspots[hs_count] = rh;
+            hs_count += 1;
+        }
+        self.back_buffer.hotspot_count = hs_count;
+
+        // 5. Capture emitted cues
         var c_count: usize = 0;
         for (vm.emitted_cues.items) |cue| {
             if (c_count >= self.back_buffer.cues.len) break;
@@ -180,6 +244,48 @@ pub const DisplayBridge = struct {
                 self.back_buffer.charmed_target = f.subject;
             }
         }
+
+        // 6. Capture player inventory (P7-03, D-007)
+        var inv_count: usize = 0;
+        if (world.lookup_entity("Cat")) |cat_id| {
+            if (world.lookup_relation("InInventory")) |inv_rel| {
+                var it_inv = world.query(cat_id, inv_rel, null);
+                while (it_inv.next()) |f| {
+                    if (inv_count >= self.back_buffer.inventory.len) break;
+                    var item = RenderInventoryItem{
+                        .entity = EntityId.from_int(f.object_or_value),
+                        .name = undefined,
+                        .name_len = 0,
+                    };
+                    if (world.get_entity_name(item.entity)) |n| {
+                        const len = @min(n.len, item.name.len);
+                        @memcpy(item.name[0..len], n[0..len]);
+                        item.name_len = @intCast(len);
+                    }
+                    self.back_buffer.inventory[inv_count] = item;
+                    inv_count += 1;
+                }
+            }
+            if (world.lookup_relation("Carries")) |carries_rel| {
+                var it_carr = world.query(cat_id, carries_rel, null);
+                while (it_carr.next()) |f| {
+                    if (inv_count >= self.back_buffer.inventory.len) break;
+                    var item = RenderInventoryItem{
+                        .entity = EntityId.from_int(f.object_or_value),
+                        .name = undefined,
+                        .name_len = 0,
+                    };
+                    if (world.get_entity_name(item.entity)) |n| {
+                        const len = @min(n.len, item.name.len);
+                        @memcpy(item.name[0..len], n[0..len]);
+                        item.name_len = @intCast(len);
+                    }
+                    self.back_buffer.inventory[inv_count] = item;
+                    inv_count += 1;
+                }
+            }
+        }
+        self.back_buffer.inventory_count = inv_count;
     }
 
     /// Swaps front and back buffers so display consumer reads the latest completed tick (D-001).

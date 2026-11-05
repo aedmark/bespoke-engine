@@ -56,10 +56,10 @@ Goal: Connect an SDL2 2D display window as a downstream consumer of the `Display
 
 Goal: Expand the BeSpoke language syntax and runtime with first-class point-and-click adventure game constructs.
 
-- [ ] P7-01 Hotspots and inspectable scene objects: static interactable regions with examine text, hover cursors, and condition-guarded interaction cues. (D-001)
-- [ ] P7-02 Classic adventure verbs: grammar and bytecode support for `LookAt`, `PickUp`, `UseWith`, `TalkTo`, and contextual verb interactions. (D-002)
-- [ ] P7-03 Relational inventory system: first-class inventory state (`InInventory(Player, Item)`), inventory combining, and inventory bar UI. (D-003, D-007)
-- [ ] P7-04 Branching dialogue & speech: `say Actor: "text"` primitive with temporal speech balloon suspension, click-to-dismiss, and dialogue choice trees. (D-002, D-004)
+- [x] P7-01 Hotspots and inspectable scene objects: static interactable regions with examine text, hover cursors, and condition-guarded interaction cues. (D-001, D-009; completed 2026-11-04, verified via `zig test src/spatial.zig` and `zig test -lc -lSDL2 src/display.zig`)
+- [x] P7-02 Classic adventure verbs: grammar and bytecode support for `LookAt`, `PickUp`, `UseWith`, `TalkTo`, and contextual verb interactions. (D-002, D-009; completed 2026-11-04, verified via `zig test src/compiler/lexer.zig`, `zig test src/compiler/parser.zig`, and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P7-03 Relational inventory system: first-class inventory state (`InInventory(Player, Item)`), inventory combining, and inventory bar UI. (D-003, D-007; completed 2026-11-04, verified via `zig test src/world.zig`, `zig test -lc -lSDL2 src/display.zig`, and `zig build run -- --headless`)
+- [x] P7-04 Branching dialogue & speech: `say Actor: "text"` primitive with temporal speech balloon suspension, click-to-dismiss, and dialogue choice trees. (D-002, D-004, D-009; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/root.zig` and `zig test -lc -lSDL2 src/display.zig`)
 
 ## Phase 8: Reactive Simulation Rules (`when` Engine in VM)
 

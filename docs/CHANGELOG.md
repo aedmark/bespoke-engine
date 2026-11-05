@@ -5,6 +5,12 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 7 (Adventure Game Primitives): implemented scene hotspots, classic adventure verbs (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`), relational inventory, and branching dialogue trees with speech balloons (P7-01 through P7-04, D-001, D-002, D-003, D-007, D-009).
+- Implemented static scene hotspots in `src/spatial.zig` (`Hotspot` registration, bounds, examine text) and 2D prop rendering in `src/display/renderer.zig` for Tavern Fireplace with flame glow, Bar Counter, and Wine Cask (P7-01, D-009).
+- Added compiler language extensions for verbs and dialogue: `verb Name(args)` and `say Speaker: "text"` in lexer (`src/compiler/lexer.zig`), parser (`src/compiler/parser.zig`), and bytecode lowering via `emit_cue` in codegen (`src/compiler/codegen.zig`) (P7-02, P7-04, D-002, D-009).
+- Implemented interactive 5-verb UI bar (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`) with active highlight, right-click verb cycling, actor hit testing, and prop interaction (P7-02, D-009).
+- Added multi-fact relational query iterator (`World.query`) and relational inventory system capturing `InInventory` and `Carries` facts into `RenderFrame.inventory` and rendering the inventory tray (P7-03, D-003, D-007).
+- Implemented branching dialogue trees and parchment speech balloon renderer with speaker headers, dialog text, and interactive choice selection in `src/display/renderer.zig` (P7-04, D-009).
 - Completed Phase 6 (Peripheral Graphics Window): implemented native SDL2 2D graphical display consumer in `src/display/renderer.zig` and built-in 5x7 bitmap pixel font in `src/display/font.zig` (P6-01 through P6-04, D-001, D-008).
 - Implemented real-time 60 Hz 2D rendering loop with double-buffered `DisplayBridge` consumer decoupled from simulation ticks (P6-01, D-001).
 - Implemented 2D scene visualization rendering room backdrops (Tavern & Cellar), waypoint nodes, corridor paths, and animated actor tokens with held items and status indicators (P6-02, D-005, D-008).

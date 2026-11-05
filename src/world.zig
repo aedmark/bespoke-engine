@@ -357,6 +357,54 @@ pub const World = struct {
         return null;
     }
 
+    pub const QueryIterator = struct {
+        world: *const World,
+        subject: ?EntityId,
+        relation: ?RelationKind,
+        object_or_value: ?u32,
+        index: usize = 0,
+
+        pub fn next(self: *QueryIterator) ?Fact {
+            if (self.world.facts.len == 0) return null;
+            const slice = self.world.facts.slice();
+            const subjects = slice.items(.subject);
+            const relations = slice.items(.relation);
+            const objects = slice.items(.object_or_value);
+            const expirations = slice.items(.expires_at_tick);
+
+            while (self.index < self.world.facts.len) {
+                const i = self.index;
+                self.index += 1;
+                if (self.subject != null and subjects[i] != self.subject.?) continue;
+                if (self.relation != null and relations[i] != self.relation.?) continue;
+                if (self.object_or_value != null and objects[i] != self.object_or_value.?) continue;
+
+                return Fact{
+                    .subject = subjects[i],
+                    .relation = relations[i],
+                    .object_or_value = objects[i],
+                    .expires_at_tick = expirations[i],
+                };
+            }
+            return null;
+        }
+    };
+
+    /// Iterates over all facts matching the given pattern with wildcards (P1-03, P7-03, D-006).
+    pub fn query(
+        self: *const World,
+        subject: ?EntityId,
+        relation: ?RelationKind,
+        object_or_value: ?u32,
+    ) QueryIterator {
+        return QueryIterator{
+            .world = self,
+            .subject = subject,
+            .relation = relation,
+            .object_or_value = object_or_value,
+        };
+    }
+
     // --- Deterministic Snapshot Serialization (P1-04, D-001, D-003) ---
 
     /// Writes a complete deterministic memory snapshot of the World state to a writer.

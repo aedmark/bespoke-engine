@@ -29,11 +29,14 @@ pub const TokenTag = enum {
     kw_to,
     kw_face,
     kw_toward,
+    kw_verb,
+    kw_say,
 
     // Identifiers & Literals
     identifier,
     number,
     dice, // e.g. 2d6
+    string_literal,
 
     // Symbols & Punctuation
     lparen,
@@ -258,6 +261,22 @@ pub const Lexer = struct {
                         return Token{ .tag = .neq, .slice = "!=", .line = self.line, .col = start_col };
                     }
                 },
+                '"' => {
+                    const str_start = self.pos;
+                    while (self.peek_char()) |sc| {
+                        if (sc == '"') {
+                            _ = self.advance_char();
+                            break;
+                        }
+                        _ = self.advance_char();
+                    }
+                    return Token{
+                        .tag = .string_literal,
+                        .slice = self.source[str_start .. self.pos - 1],
+                        .line = self.line,
+                        .col = start_col,
+                    };
+                },
                 else => {},
             }
 
@@ -348,6 +367,8 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "to", .kw_to },
         .{ "face", .kw_face },
         .{ "toward", .kw_toward },
+        .{ "verb", .kw_verb },
+        .{ "say", .kw_say },
     });
 
     return map.get(ident) orelse .identifier;
@@ -381,4 +402,32 @@ test "P4-01: lexer tokenizes vertical slice script" {
     }
 
     try testing.expect(token_count > 20);
+}
+
+test "P7-02: lexer tokenizes verbs, say statements, and string literals" {
+    const testing = std.testing;
+    const src =
+        \\verb LookAt(actor, target):
+        \\  say actor: "A cozy hearth."
+    ;
+    var lexer = Lexer.init(testing.allocator, src);
+    defer lexer.deinit();
+
+    try testing.expectEqual(TokenTag.kw_verb, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // LookAt
+    try testing.expectEqual(TokenTag.lparen, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // actor
+    try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // target
+    try testing.expectEqual(TokenTag.rparen, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.indent, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.kw_say, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // actor
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+
+    const str_tok = try lexer.next();
+    try testing.expectEqual(TokenTag.string_literal, str_tok.tag);
+    try testing.expectEqualStrings("A cozy hearth.", str_tok.slice);
 }

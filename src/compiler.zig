@@ -34,3 +34,9 @@ pub fn compile_source(
     var cg = Codegen.init(allocator, world, spatial);
     return try cg.compile(&ast);
 }
+
+test {
+    _ = @import("compiler/lexer.zig");
+    _ = @import("compiler/parser.zig");
+    _ = @import("compiler/codegen.zig");
+}

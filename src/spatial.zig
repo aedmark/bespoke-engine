@@ -249,17 +249,29 @@ pub const MotorAgent = struct {
     }
 };
 
-/// Manages spatial world navigation and motor intents for all entities (P3-01, P3-02).
+/// A static interactable scene region / prop (P7-01, D-009).
+pub const Hotspot = struct {
+    entity: EntityId,
+    room: EntityId,
+    pos: Point2D,
+    radius: u32,
+    name: []const u8,
+    examine_text: []const u8,
+};
+
+/// Manages spatial world navigation, motor intents, and hotspots (P3-01, P3-02, P7-01).
 pub const SpatialSystem = struct {
     allocator: std.mem.Allocator,
     graph: SpatialGraph,
     agents: std.AutoHashMap(EntityId, MotorAgent),
+    hotspots: std.ArrayList(Hotspot),
 
     pub fn init(allocator: std.mem.Allocator) SpatialSystem {
         return SpatialSystem{
             .allocator = allocator,
             .graph = SpatialGraph.init(allocator),
             .agents = std.AutoHashMap(EntityId, MotorAgent).init(allocator),
+            .hotspots = std.ArrayList(Hotspot).init(allocator),
         };
     }
 
@@ -270,6 +282,37 @@ pub const SpatialSystem = struct {
         }
         self.agents.deinit();
         self.graph.deinit();
+        self.hotspots.deinit();
+    }
+
+    /// Registers a static scene hotspot / inspectable prop (P7-01, D-009).
+    pub fn add_hotspot(
+        self: *SpatialSystem,
+        entity: EntityId,
+        room: EntityId,
+        pos: Point2D,
+        radius: u32,
+        name: []const u8,
+        examine_text: []const u8,
+    ) !void {
+        try self.hotspots.append(.{
+            .entity = entity,
+            .room = room,
+            .pos = pos,
+            .radius = radius,
+            .name = name,
+            .examine_text = examine_text,
+        });
+    }
+
+    /// Finds a hotspot near a spatial position within its radius.
+    pub fn find_hotspot_at(self: *const SpatialSystem, pos: Point2D) ?Hotspot {
+        for (self.hotspots.items) |h| {
+            if (h.pos.distance_to(pos) <= h.radius) {
+                return h;
+            }
+        }
+        return null;
     }
 
     /// Registers an entity at a starting waypoint.
@@ -418,4 +461,35 @@ test "P3-02: motor agent stepping and walk intent arrival" {
     try testing.expectEqual(wp3, spatial.get_current_waypoint(guard).?);
     try testing.expect(!spatial.is_moving(guard));
     try testing.expect(spatial.has_arrived(guard));
+}
+
+test "P7-01: spatial system registers and hit-tests scene hotspots" {
+    const testing = std.testing;
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const tavern = EntityId.from_int(1);
+    const fireplace = EntityId.from_int(50);
+
+    try spatial.add_hotspot(
+        fireplace,
+        tavern,
+        .{ .x = 0, .y = -5 },
+        10,
+        "Fireplace",
+        "A roaring stone hearth.",
+    );
+
+    try testing.expectEqual(@as(usize, 1), spatial.hotspots.items.len);
+
+    // Hit test within radius
+    const hit = spatial.find_hotspot_at(.{ .x = 2, .y = -3 });
+    try testing.expect(hit != null);
+    try testing.expectEqual(fireplace, hit.?.entity);
+    try testing.expectEqualStrings("Fireplace", hit.?.name);
+    try testing.expectEqualStrings("A roaring stone hearth.", hit.?.examine_text);
+
+    // Hit test outside radius
+    const miss = spatial.find_hotspot_at(.{ .x = 50, .y = 50 });
+    try testing.expect(miss == null);
 }

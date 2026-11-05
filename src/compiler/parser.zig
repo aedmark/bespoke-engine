@@ -44,6 +44,10 @@ pub const Stmt = union(enum) {
         entity: []const u8,
         body: []const Stmt,
     },
+    say: struct {
+        speaker: []const u8,
+        text: []const u8,
+    },
 };
 
 pub const Routine = struct {
@@ -217,6 +221,42 @@ pub const Parser = struct {
                         .body = body,
                     });
                 },
+                .kw_verb => {
+                    try self.advance(); // consume 'verb' (P7-02, D-009)
+                    const verb_name = (try self.expect(.identifier)).slice;
+                    _ = try self.expect(.lparen);
+                    var params = std.ArrayList([]const u8).init(self.allocator);
+                    while (self.current.tag != .rparen and self.current.tag != .eof) {
+                        try params.append(self.current.slice);
+                        try self.advance();
+                        if (self.current.tag == .comma) try self.advance();
+                    }
+                    _ = try self.expect(.rparen);
+
+                    var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                    if (self.current.tag == .kw_where) {
+                        try self.advance();
+                        while (true) {
+                            const pat = try self.parse_fact_pattern();
+                            try where_patterns.append(pat);
+                            if (self.current.tag == .kw_and) {
+                                try self.advance();
+                            } else break;
+                        }
+                    }
+
+                    _ = try self.expect(.colon);
+                    _ = try self.expect(.indent);
+                    const body = try self.parse_stmt_list();
+                    _ = try self.expect(.dedent);
+
+                    try ast.cue_handlers.append(.{
+                        .cue_name = verb_name,
+                        .params = try params.toOwnedSlice(),
+                        .where_patterns = try where_patterns.toOwnedSlice(),
+                        .body = body,
+                    });
+                },
                 .kw_when => {
                     try self.advance();
                     const pat = try self.parse_fact_pattern();
@@ -309,6 +349,13 @@ pub const Parser = struct {
                     const int_body = try self.parse_stmt_list();
                     _ = try self.expect(.dedent);
                     try list.append(.{ .interrupt_with = .{ .entity = ent, .body = int_body } });
+                },
+                .kw_say => {
+                    try self.advance(); // consume 'say' (P7-04, D-009)
+                    const speaker = (try self.expect(.identifier)).slice;
+                    _ = try self.expect(.colon);
+                    const text = (try self.expect(.string_literal)).slice;
+                    try list.append(.{ .say = .{ .speaker = speaker, .text = text } });
                 },
                 else => {
                     _ = try self.advance();
