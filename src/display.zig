@@ -10,6 +10,11 @@ pub const WaypointId = spatial_mod.WaypointId;
 pub const VM = vm_mod.VM;
 pub const EmittedCue = vm_mod.EmittedCue;
 
+pub const font = @import("display/font.zig");
+pub const renderer = @import("display/renderer.zig");
+pub const DisplayWindow = renderer.DisplayWindow;
+pub const UserAction = renderer.UserAction;
+
 /// A lightweight, read-only representation of an entity for display peripherals (D-001, P5-01).
 pub const RenderEntity = struct {
     entity: EntityId,
@@ -25,6 +30,26 @@ pub const RenderEntity = struct {
     }
 };
 
+/// A read-only representation of a waypoint node for peripheral rendering (D-001, D-005, P6-02).
+pub const RenderWaypoint = struct {
+    id: WaypointId,
+    room: EntityId,
+    x: i32,
+    y: i32,
+    name: [32]u8,
+    name_len: u8,
+
+    pub fn get_name(self: *const RenderWaypoint) []const u8 {
+        return self.name[0..self.name_len];
+    }
+};
+
+/// A read-only representation of a corridor/edge between waypoints (D-001, D-005, P6-02).
+pub const RenderEdge = struct {
+    from: WaypointId,
+    to: WaypointId,
+};
+
 /// An external visual/audio cue emitted during a simulation tick (D-001).
 pub const RenderCue = struct {
     cue_id: u16,
@@ -32,14 +57,20 @@ pub const RenderCue = struct {
     arg_count: u8,
 };
 
-/// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01).
+/// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
 pub const RenderFrame = struct {
     tick: u64,
     entities: [64]RenderEntity,
     entity_count: usize,
+    waypoints: [32]RenderWaypoint,
+    waypoint_count: usize,
+    edges: [64]RenderEdge,
+    edge_count: usize,
     cues: [16]RenderCue,
     cue_count: usize,
     fact_count: usize,
+    cheese_holder: EntityId,
+    charmed_target: EntityId,
 };
 
 /// Double-buffered display bridge separating simulation spine from peripheral consumers (D-001, P5-01).
@@ -54,7 +85,7 @@ pub const DisplayBridge = struct {
         };
     }
 
-    /// Captures a read-only snapshot of simulation state into the back buffer (D-001).
+    /// Captures a read-only snapshot of simulation state into the back buffer (D-001, P6-02).
     pub fn capture_frame(
         self: *DisplayBridge,
         world: *const World,
@@ -89,7 +120,39 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.entity_count = e_count;
 
-        // 2. Capture emitted cues
+        // 2. Capture spatial waypoints
+        var wp_count: usize = 0;
+        for (spatial.graph.waypoints.items) |wp| {
+            if (wp_count >= self.back_buffer.waypoints.len) break;
+            var rw = RenderWaypoint{
+                .id = wp.id,
+                .room = wp.room,
+                .x = wp.pos.x,
+                .y = wp.pos.y,
+                .name = undefined,
+                .name_len = 0,
+            };
+            const len = @min(wp.name.len, rw.name.len);
+            @memcpy(rw.name[0..len], wp.name[0..len]);
+            rw.name_len = @intCast(len);
+            self.back_buffer.waypoints[wp_count] = rw;
+            wp_count += 1;
+        }
+        self.back_buffer.waypoint_count = wp_count;
+
+        // 3. Capture spatial edges
+        var edge_count: usize = 0;
+        for (spatial.graph.edges.items) |e| {
+            if (edge_count >= self.back_buffer.edges.len) break;
+            self.back_buffer.edges[edge_count] = .{
+                .from = e.from,
+                .to = e.to,
+            };
+            edge_count += 1;
+        }
+        self.back_buffer.edge_count = edge_count;
+
+        // 4. Capture emitted cues
         var c_count: usize = 0;
         for (vm.emitted_cues.items) |cue| {
             if (c_count >= self.back_buffer.cues.len) break;
@@ -101,6 +164,22 @@ pub const DisplayBridge = struct {
             c_count += 1;
         }
         self.back_buffer.cue_count = c_count;
+
+        // 5. Query relational facts for status indicators
+        self.back_buffer.cheese_holder = .none;
+        self.back_buffer.charmed_target = .none;
+        if (world.lookup_entity("Cheese")) |cheese_id| {
+            if (world.lookup_relation("Carries")) |carries_rel| {
+                if (world.find_first(null, carries_rel, @intFromEnum(cheese_id))) |f| {
+                    self.back_buffer.cheese_holder = f.subject;
+                }
+            }
+        }
+        if (world.lookup_relation("CharmedBy")) |charmed_rel| {
+            if (world.find_first(null, charmed_rel, null)) |f| {
+                self.back_buffer.charmed_target = f.subject;
+            }
+        }
     }
 
     /// Swaps front and back buffers so display consumer reads the latest completed tick (D-001).
@@ -172,4 +251,11 @@ test "P5-01: display bridge captures double-buffered render frames" {
     try testing.expectEqual(@as(usize, 1), frame.entity_count);
     try testing.expectEqualStrings("Guard", frame.entities[0].get_name());
     try testing.expectEqual(@as(i32, 0), frame.entities[0].x);
+    try testing.expectEqual(@as(usize, 1), frame.waypoint_count);
+    try testing.expectEqualStrings("Hearth", frame.waypoints[0].get_name());
+}
+
+test {
+    _ = renderer;
+    _ = font;
 }

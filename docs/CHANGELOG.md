@@ -5,6 +5,11 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 6 (Peripheral Graphics Window): implemented native SDL2 2D graphical display consumer in `src/display/renderer.zig` and built-in 5x7 bitmap pixel font in `src/display/font.zig` (P6-01 through P6-04, D-001, D-008).
+- Implemented real-time 60 Hz 2D rendering loop with double-buffered `DisplayBridge` consumer decoupled from simulation ticks (P6-01, D-001).
+- Implemented 2D scene visualization rendering room backdrops (Tavern & Cellar), waypoint nodes, corridor paths, and animated actor tokens with held items and status indicators (P6-02, D-005, D-008).
+- Implemented point-and-click mouse input handling: left-clicking any room waypoint issues an asynchronous `walk_to` motor intent directing the Cat (player character) along the A* waypoint path (P6-03, D-005, D-008).
+- Implemented interactive visual HUD: top simulation status bar, bottom hotkey legend, floating cue announcements, spacebar pause/resume, and instant time-travel rewind hotkey `[R]` (P6-04, D-001, D-008).
 - Completed Phase 5 (Display Bridge & Vertical Slice): implemented `src/display.zig` featuring double-buffered `DisplayBridge`, read-only `RenderFrame` captures, and terminal visualization (P5-01, D-001).
 - Executed the complete 20-line Tavern Heist vertical slice in `src/main.zig` with live tick-by-tick simulation, Bard charm preemption, Cat theft, and time-travel rewind to pre-heist state (P5-02).
 - Completed Phase 4 (Language Front-End & Compiler): implemented hand-written compiler front-end in `src/compiler.zig`, featuring indentation-aware lexer (`src/compiler/lexer.zig`), AST parser (`src/compiler/parser.zig`), and direct bytecode code generator (`src/compiler/codegen.zig`) (P4-01 through P4-03, D-002).

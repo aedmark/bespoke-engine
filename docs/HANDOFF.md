@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 1, on `main`: completed all 5 Roadmap Phases (World foundations, Bytecode VM, spatial navigation, custom compiler front-end, display bridge, and Tavern Heist with live rewind)._
+_Last updated: 2026-11-04, session 2, on `main`: completed Phase 6 (SDL2 Peripheral 2D Graphics Window, point-and-click mouse navigation, and interactive controls)._
 
 **Where things stand, in one paragraph:**
-All initial roadmap phases (Phase 1 through Phase 5) are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime and language: raw BeSpoke scripts compile directly to compact bytecode, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. The reference implementation in `src/main.zig` runs the full 20-line Tavern Heist vertical slice with real-time ASCII visualization and instant time-travel rewind.
+Phase 1 through Phase 6 are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime, language, and graphical simulation: raw BeSpoke scripts compile directly to compact bytecode, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. The graphical display in `src/display/renderer.zig` provides a real-time 960x540 SDL2 2D adventure viewport with point-and-click mouse controls, room backdrops, animated tokens, floating cue banners, and instant snapshot rewind. Headless execution is fully supported via `--headless`.
 
 **Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
 
@@ -29,9 +29,9 @@ All initial roadmap phases (Phase 1 through Phase 5) are complete and operationa
 | `zig test src/compiler/lexer.zig` | **1/1 passed** |
 | `zig test src/compiler/parser.zig` | **2/2 passed** |
 | `zig test src/compiler/codegen.zig` | **1/1 passed** |
-| `zig test src/display.zig` | **1/1 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **15/15 passed** |
 | `zig build test` | **passed** |
-| `zig build run` | **Tavern Heist full simulation with live rewind passed** |
+| `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 
 **What works**
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, and CRC32-checked snapshots (P1-01 through P1-04).
@@ -39,9 +39,10 @@ All initial roadmap phases (Phase 1 through Phase 5) are complete and operationa
 - **Spatial Topology & Motor System:** 2D integer waypoints, rooms, A* graph pathfinding, and asynchronous motor intents (`walk_to`) (P3-01, P3-02, D-005).
 - **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`) (P4-01 through P4-03, D-002).
 - **Display Bridge & Time-Travel:** Double-buffered render frames (`DisplayBridge`), text/terminal visualizer, and instant snapshot rewind (P5-01, P5-02, D-001).
+- **SDL2 Peripheral 2D Display & Controls:** Hardware-accelerated 2D renderer, built-in 5x7 bitmap font, room/waypoint scene graph, animated actor tokens, point-and-click mouse navigation for Cat, and live time-travel rewind hotkey (P6-01 through P6-04, D-008).
 
 **Not verified**
-- Peripheral C bindings (e.g. Raylib or Sokol graphics window) for native GPU sprite drawing; currently verified via headless terminal visualizer.
+- Peripheral audio sound effects / music playback; visual cues and floating banners are fully verified.
 
 **Gotchas for the next session**
 - When restoring snapshots via `restore_state`, the world memory buffer is rewound in place; external display layers should call `DisplayBridge.capture_frame()` immediately following a restore to synchronize visualization.
@@ -49,6 +50,11 @@ All initial roadmap phases (Phase 1 through Phase 5) are complete and operationa
 ---
 
 ## Session log
+
+### Session 2 (2026-11-04)
+- **Goal:** Scrub zero-LLVM branding, expand roadmap for Phases 6 through 9, and implement Phase 6 (SDL2 Peripheral Graphics Window).
+- **Work:** Scrubbed all zero-LLVM marketing claims across repository docs and banners per user directive. Detailed Phases 6, 7, 8, and 9 in `ROADMAP.md`. Recorded architectural decision `D-008` (SDL2 Peripheral Display Consumer). Extended `build.zig` to link `SDL2` and `libc` for executables and tests. Enhanced `src/display.zig` with richer `RenderFrame` capturing waypoints, edges, and held items. Implemented built-in 5x7 ASCII bitmap font in `src/display/font.zig` with scaling and text measurement. Built `src/display/renderer.zig` providing 2D room visualization (Tavern & Cellar), waypoint glow anchors, A* edge corridors, animated actor tokens (Cat, Guard, Bard, Cheese), point-and-click mouse navigation targeting the Cat, simulation HUD, cue notification banners, and hotkey controls (`[Space]`, `[N]`, `[R]`, `[Esc]`). Updated `src/main.zig` with full interactive GUI loop while supporting headless fallback (`--headless`).
+- **Outcome:** All 15 display tests passing (`zig test -lc -lSDL2 src/display.zig`), `zig build test` passing, headless simulation passing, and interactive window operating at 60 Hz. All Phase 6 roadmap items complete (`P6-01` through `P6-04`).
 
 ### Session 1 (2026-11-04)
 - **Goal:** Synthesize architectural brainstorming, adopt The Manifold repository framework, produce formal engineering spec, and implement the entire 5-phase BeSpoke Engine roadmap.

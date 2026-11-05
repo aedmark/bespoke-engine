@@ -45,12 +45,12 @@ Goal: Connect a downstream rendering peripheral and execute the 20-line Tavern H
 
 ## Phase 6: Peripheral Graphics Window (2D Display)
 
-Goal: Connect a native 2D display window (e.g. via Sokol or Raylib) as a downstream consumer of the `DisplayBridge`, rendering waypoint topology, actor positions, and handling point-and-click mouse input.
+Goal: Connect an SDL2 2D display window as a downstream consumer of the `DisplayBridge`, rendering waypoint topology, actor positions, and handling point-and-click mouse input.
 
-- [ ] P6-01 Window and rendering loop consumer that opens a native display window and polls `DisplayBridge.poll()` at 60 Hz. (D-001)
-- [ ] P6-02 2D scene visualization: render room boundaries, waypoint nodes, edge corridors, and actor tokens/sprites with orientations. (D-001, D-005)
-- [ ] P6-03 Point-and-click mouse input handling: map clicks on waypoints to simulation motor intents (`walk_to`) or player interaction cues. (D-001, D-005)
-- [ ] P6-04 Visual cue HUD and event banner: display floating on-screen cue notifications, dialogue balloons, and simulation clock state. (D-001)
+- [x] P6-01 Window and rendering loop consumer that opens an SDL2 display window and polls `DisplayBridge.poll()` at 60 Hz. (D-001, D-008; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig`)
+- [x] P6-02 2D scene visualization: render room boundaries, waypoint nodes, edge corridors, and actor tokens/sprites with orientations. (D-001, D-005, D-008; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig`)
+- [x] P6-03 Point-and-click mouse input handling: map clicks on waypoints to simulation motor intents (`walk_to`) for the player character. (D-001, D-005, D-008; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig` and interactive run)
+- [x] P6-04 Visual cue HUD and event banner: display floating on-screen cue notifications, dialogue balloons, and simulation clock state. (D-001, D-008; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build run`)
 
 ## Phase 7: Adventure Game Primitives (Verbs, Inventory, Dialog & Hotspots)
 

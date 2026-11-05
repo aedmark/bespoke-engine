@@ -85,71 +85,181 @@ pub fn main() !void {
         history_snapshots.deinit();
     }
 
-    try stdout.print("\n>>> STARTING SIMULATION CLOCK <<<\n", .{});
-
-    // Capture initial tick 0
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.swap();
-    try display_bridge.render_terminal(stdout);
-
-    // Save snapshot 0
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history_snapshots.append(snap0);
-
-    // Run forward simulation for 18 ticks
-    while (world.current_tick < 18) {
-        // Systemic cue injection: at tick 2, Bard plays lute
-        if (world.current_tick == 1) {
-            try world.remember(guard, charmed, bard.to_int(), 4);
-            _ = try vm.interrupt_entity(guard, charmed_rule_pc);
-            try stdout.print("\n*** [CUE] Bard plays enchanting melody on lute! Guard charmed! ***\n", .{});
+    // Check command line arguments for --headless
+    var is_headless_arg = false;
+    var args_it = try std.process.argsWithAllocator(allocator);
+    defer args_it.deinit();
+    _ = args_it.next(); // Skip binary name
+    while (args_it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--headless")) {
+            is_headless_arg = true;
         }
+    }
 
-        // Systemic cue injection: at tick 3, Cat steals Cheese while Guard is charmed!
-        if (world.current_tick == 3) {
-            if (world.has_fact(guard, charmed, bard.to_int()) and world.has_fact(guard, carries, cheese.to_int())) {
-                _ = world.forget(guard, carries, cheese.to_int());
-                try world.remember(cat, carries, cheese.to_int(), 0);
-                try stdout.print("\n*** [HEIST] Cat stealthily steals Cheese from charmed Guard! ***\n", .{});
-            }
-        }
+    // Initialize SDL2 Peripheral Display Window (D-008, P6-01)
+    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 960, 540);
+    defer window.deinit();
 
-        try vm.step_tick();
+    if (window.is_headless or is_headless_arg) {
+        try stdout.print("\n>>> STARTING SIMULATION CLOCK (Headless Mode) <<<\n", .{});
 
-        // Save tick snapshot for rewind
-        var snap = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap.writer());
-        try history_snapshots.append(snap);
-
-        // Update display bridge
+        // Capture initial tick 0
         display_bridge.capture_frame(&world, &spatial, &vm);
         display_bridge.swap();
         try display_bridge.render_terminal(stdout);
+
+        // Save snapshot 0
+        var snap0 = std.ArrayList(u8).init(allocator);
+        try world.save_state(snap0.writer());
+        try history_snapshots.append(snap0);
+
+        // Run forward simulation for 18 ticks
+        while (world.current_tick < 18) {
+            if (world.current_tick == 1) {
+                try world.remember(guard, charmed, bard.to_int(), 4);
+                _ = try vm.interrupt_entity(guard, charmed_rule_pc);
+                try stdout.print("\n*** [CUE] Bard plays enchanting melody on lute! Guard charmed! ***\n", .{});
+            }
+
+            if (world.current_tick == 3) {
+                if (world.has_fact(guard, charmed, bard.to_int()) and world.has_fact(guard, carries, cheese.to_int())) {
+                    _ = world.forget(guard, carries, cheese.to_int());
+                    try world.remember(cat, carries, cheese.to_int(), 0);
+                    try stdout.print("\n*** [HEIST] Cat stealthily steals Cheese from charmed Guard! ***\n", .{});
+                }
+            }
+
+            try vm.step_tick();
+
+            var snap = std.ArrayList(u8).init(allocator);
+            try world.save_state(snap.writer());
+            try history_snapshots.append(snap);
+
+            display_bridge.capture_frame(&world, &spatial, &vm);
+            display_bridge.swap();
+            try display_bridge.render_terminal(stdout);
+        }
+
+        try stdout.print("\n===================================================================\n", .{});
+        try stdout.print("Heist Outcome at Tick {d}:\n", .{world.current_tick});
+        try stdout.print("   - Guard carries Cheese? {s}\n", .{if (world.has_fact(guard, carries, cheese.to_int())) "YES" else "NO"});
+        try stdout.print("   - Cat carries Cheese?   {s}\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
+        try stdout.print("===================================================================\n\n", .{});
+
+        // 5. Time-Travel Rewind Demo
+        try stdout.print(">>> DEMONSTRATING TIME-TRAVEL REWIND: REWINDING TO TICK 2 (BEFORE HEIST) <<<\n", .{});
+        const target_rewind_tick: usize = 2;
+        const target_snapshot = history_snapshots.items[target_rewind_tick];
+
+        var stream = std.io.fixedBufferStream(target_snapshot.items);
+        try world.restore_state(stream.reader());
+
+        display_bridge.capture_frame(&world, &spatial, &vm);
+        display_bridge.swap();
+        try display_bridge.render_terminal(stdout);
+
+        try stdout.print("\nRewound State Verification:\n", .{});
+        try stdout.print("   - Simulation Clock Restored: Tick {d}\n", .{world.current_tick});
+        try stdout.print("   - Guard carries Cheese?      {s} (Restored!)\n", .{if (world.has_fact(guard, carries, cheese.to_int())) "YES" else "NO"});
+        try stdout.print("   - Cat carries Cheese?        {s} (Undone!)\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
+        try stdout.print("===================================================================\n", .{});
+    } else {
+        try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (960x540) <<<\n", .{});
+        try stdout.print("Interactive Controls:\n", .{});
+        try stdout.print("   - [Left Click Waypoint]: Direct Cat (Player) to walk\n", .{});
+        try stdout.print("   - [Space]:               Pause / Resume Simulation\n", .{});
+        try stdout.print("   - [N]:                   Single-step Simulation Tick\n", .{});
+        try stdout.print("   - [R]:                   Instant Time-Travel Rewind to Tick 2\n", .{});
+        try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
+
+        // Initial snapshot at tick 0
+        display_bridge.capture_frame(&world, &spatial, &vm);
+        display_bridge.swap();
+
+        var snap0 = std.ArrayList(u8).init(allocator);
+        try world.save_state(snap0.writer());
+        try history_snapshots.append(snap0);
+
+        var is_paused = false;
+        var last_tick_time = std.time.milliTimestamp();
+        const tick_interval_ms: i64 = 250; // 4 ticks/sec for clear visual perception
+
+        window.set_cue_banner("Welcome to BeSpoke Engine! Left-click nodes to move Cat.", 90);
+
+        // Interactive 60 Hz Display Loop (D-001, P6-01)
+        while (true) {
+            // 1. Poll peripheral inputs
+            const action = window.poll_events(display_bridge.get_frame());
+            var should_step_now = false;
+
+            switch (action) {
+                .quit => break,
+                .toggle_pause => {
+                    is_paused = !is_paused;
+                },
+                .step_tick => {
+                    should_step_now = true;
+                },
+                .walk_player => |wp_id| {
+                    _ = try spatial.walk_to(cat, wp_id);
+                    var banner_buf: [64]u8 = undefined;
+                    const text = std.fmt.bufPrint(&banner_buf, "Directing Cat to Waypoint #{d}", .{wp_id}) catch "Directing Cat";
+                    window.set_cue_banner(text, 60);
+                },
+                .rewind => {
+                    if (history_snapshots.items.len > 2) {
+                        const target_snapshot = history_snapshots.items[2];
+                        var stream = std.io.fixedBufferStream(target_snapshot.items);
+                        try world.restore_state(stream.reader());
+                        // Sync display frame
+                        display_bridge.capture_frame(&world, &spatial, &vm);
+                        display_bridge.swap();
+                        window.set_cue_banner("<<< REWOUND TO PRE-HEIST TICK 2 <<<", 90);
+                        try stdout.print("[Time-Travel] Rewound simulation to Tick 2!\n", .{});
+                    }
+                },
+                .none => {},
+            }
+
+            // 2. Advance simulation clock if unpaused or single-stepped
+            const now = std.time.milliTimestamp();
+            if (should_step_now or (!is_paused and now - last_tick_time >= tick_interval_ms)) {
+                last_tick_time = now;
+
+                // Scripted narrative cues for the vertical slice
+                if (world.current_tick == 1) {
+                    try world.remember(guard, charmed, bard.to_int(), 4);
+                    _ = try vm.interrupt_entity(guard, charmed_rule_pc);
+                    window.set_cue_banner("♫ [CUE] Bard charms Guard with lute melody! ♫", 60);
+                    try stdout.print("\n*** [CUE] Bard plays enchanting melody on lute! Guard charmed! ***\n", .{});
+                }
+
+                if (world.current_tick == 3) {
+                    if (world.has_fact(guard, charmed, bard.to_int()) and world.has_fact(guard, carries, cheese.to_int())) {
+                        _ = world.forget(guard, carries, cheese.to_int());
+                        try world.remember(cat, carries, cheese.to_int(), 0);
+                        window.set_cue_banner("★ [HEIST] Cat stealthily snatches Cheese from Guard! ★", 60);
+                        try stdout.print("\n*** [HEIST] Cat stealthily steals Cheese from charmed Guard! ***\n", .{});
+                    }
+                }
+
+                try vm.step_tick();
+
+                // Save snapshot for potential rewind
+                var snap = std.ArrayList(u8).init(allocator);
+                try world.save_state(snap.writer());
+                try history_snapshots.append(snap);
+
+                // Synchronize display bridge
+                display_bridge.capture_frame(&world, &spatial, &vm);
+                display_bridge.swap();
+            }
+
+            // 3. Render 2D Frame at Display Refresh Rate (P6-02, P6-04)
+            window.render_frame(display_bridge.get_frame(), is_paused);
+
+            // Cap display loop ~60 FPS
+            std.time.sleep(16 * std.time.ns_per_ms);
+        }
     }
-
-    try stdout.print("\n===================================================================\n", .{});
-    try stdout.print("Heist Outcome at Tick {d}:\n", .{world.current_tick});
-    try stdout.print("   - Guard carries Cheese? {s}\n", .{if (world.has_fact(guard, carries, cheese.to_int())) "YES" else "NO"});
-    try stdout.print("   - Cat carries Cheese?   {s}\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
-    try stdout.print("===================================================================\n\n", .{});
-
-    // 5. Time-Travel Rewind Demo (P5-02, D-001, D-003)
-    try stdout.print(">>> DEMONSTRATING TIME-TRAVEL REWIND: REWINDING TO TICK 2 (BEFORE HEIST) <<<\n", .{});
-    const target_rewind_tick: usize = 2;
-    const target_snapshot = history_snapshots.items[target_rewind_tick];
-
-    var stream = std.io.fixedBufferStream(target_snapshot.items);
-    try world.restore_state(stream.reader());
-
-    // Sync display bridge with rewound world
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.swap();
-    try display_bridge.render_terminal(stdout);
-
-    try stdout.print("\nRewound State Verification:\n", .{});
-    try stdout.print("   - Simulation Clock Restored: Tick {d}\n", .{world.current_tick});
-    try stdout.print("   - Guard carries Cheese?      {s} (Restored!)\n", .{if (world.has_fact(guard, carries, cheese.to_int())) "YES" else "NO"});
-    try stdout.print("   - Cat carries Cheese?        {s} (Undone!)\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
-    try stdout.print("===================================================================\n", .{});
 }

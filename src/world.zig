@@ -168,6 +168,16 @@ pub const World = struct {
         return new_kind;
     }
 
+    /// Read-only lookup of an interned EntityId by name.
+    pub fn lookup_entity(self: *const World, name: []const u8) ?EntityId {
+        return self.entity_map.get(name);
+    }
+
+    /// Read-only lookup of an interned RelationKind by name.
+    pub fn lookup_relation(self: *const World, name: []const u8) ?RelationKind {
+        return self.relation_map.get(name);
+    }
+
     /// Gets the metadata of a RelationKind.
     pub fn get_relation_meta(self: *const World, kind: RelationKind) ?RelationMeta {
         const int_val = kind.to_int();
