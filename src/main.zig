@@ -13,13 +13,6 @@ pub fn main() !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
-    const guard = try world.intern_entity("Guard");
-    const bard = try world.intern_entity("Bard");
-    const cheese = try world.intern_entity("Cheese");
-    const carries = try world.intern_relation("Carries", .set);
-    const alertness = try world.intern_relation("Alertness", .property);
-    const charmed = try world.intern_relation("CharmedBy", .set);
-
     // 2. Initialize Spatial Waypoint Graph (Phase 3, D-005)
     var spatial = bespoke.SpatialSystem.init(allocator);
     defer spatial.deinit();
@@ -34,62 +27,54 @@ pub fn main() !void {
     try spatial.graph.connect(hearth_wp, bar_wp, null);
     try spatial.graph.connect(bar_wp, cellar_wp, null);
 
-    // Guard starts at Hearth with speed 10 units/tick (transit Hearth -> Cellar is 40 units = 4 ticks)
+    // 3. Compile Raw BeSpoke DSL Script (Phase 4, P4-01, P4-02, P4-03)
+    const script =
+        \\entity Guard, Bard, Cheese
+        \\relation Carries(holder, item)
+        \\property Alertness(agent, value)
+        \\relation CharmedBy(listener, musician)
+        \\
+        \\routine Patrol(Guard):
+        \\  walk Guard to Cellar
+        \\  remember Carries(Guard, Cheese)
+        \\  wait 5 ticks
+        \\  walk Guard to Hearth
+        \\
+        \\when CharmedBy(Guard, Bard):
+        \\  interrupt Guard with:
+        \\    face Guard toward Bard
+        \\    wait 3 ticks
+    ;
+
+    try stdout.print("1. Compiling BeSpoke DSL Source Script:\n", .{});
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, script);
+    defer compiled.deinit();
+
+    try stdout.print("   - Successfully lowered DSL AST directly to {d} bytes of VM bytecode!\n", .{compiled.chunk.count()});
+    try stdout.print("   - Registered Routines: {d}\n", .{compiled.routine_entries.count()});
+    try stdout.print("   - Registered When-Rules: {d}\n\n", .{compiled.when_rule_entries.items.len});
+
+    // Register Guard in spatial system at Hearth
+    const guard = try world.intern_entity("Guard");
+    const bard = try world.intern_entity("Bard");
+    const cheese = try world.intern_entity("Cheese");
+    const carries = try world.intern_relation("Carries", .set);
+    const charmed = try world.intern_relation("CharmedBy", .set);
     try spatial.register_entity(guard, hearth_wp, 10);
 
-    try stdout.print("1. World & Spatial Topology Initialized:\n", .{});
-    try stdout.print("   - Entities: Guard ({d}), Bard ({d}), Cheese ({d})\n", .{
-        guard.to_int(),
-        bard.to_int(),
-        cheese.to_int(),
-    });
-    try stdout.print("   - Waypoints: Hearth (0,0) <-> Bar (20,0) <-> Cellar (40,0)\n", .{});
-    try stdout.print("   - Guard speed: 10 units/tick\n\n", .{});
-
-    // 3. Compile Bytecode Routines
-    var chunk = bespoke.BytecodeChunk.init(allocator);
-    defer chunk.deinit();
-
-    // --- Routine: Patrol(Guard) (pc: 0) ---
-    // walk Guard to Cellar, pick up Cheese, wait 5 ticks, walk Guard to Hearth
-    const patrol_pc: usize = chunk.code.items.len;
-    try chunk.emit_walk_to(guard, cellar_wp);
-
-    try chunk.emit_push_entity(guard);
-    try chunk.emit_push_relation(carries);
-    try chunk.emit_push_entity(cheese);
-    try chunk.emit_remember(0);
-
-    try chunk.emit_wait_ticks(5);
-
-    try chunk.emit_walk_to(guard, hearth_wp);
-    _ = try chunk.emit_op(.halt);
-
-    // --- Interrupt Routine: CharmedDistraction (pc: 43) ---
-    // Sets Alertness = 0, pauses for 3 ticks listening to lute, then resumes walking!
-    const charmed_pc: u16 = @intCast(chunk.code.items.len);
-    try chunk.emit_push_entity(guard);
-    try chunk.emit_push_relation(alertness);
-    try chunk.emit_push_const(0);
-    try chunk.emit_remember(0);
-
-    try chunk.emit_wait_ticks(3);
-    _ = try chunk.emit_op(.resume_routine);
-
-    try stdout.print("2. Bytecode Routines Compiled ({d} bytes):\n", .{chunk.count()});
-    try stdout.print("   - Patrol routine entry at pc {d} (asynchronous motor walk & cheese pickup)\n", .{patrol_pc});
-    try stdout.print("   - Charmed interrupt handler at pc {d}\n\n", .{charmed_pc});
-
-    // 4. Initialize VM with Spatial System
-    var vm = bespoke.VM.init(allocator, &world, &chunk);
+    // 4. Initialize VM with Compiled Bytecode and Spatial Engine
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
 
+    const patrol_pc = compiled.routine_entries.get("Patrol").?;
+    const charmed_rule_pc: u16 = @intCast(compiled.when_rule_entries.items[0]);
+
     _ = try vm.spawn_routine(guard, patrol_pc);
-    try stdout.print("3. Spawned Guard Patrol Routine\n\n", .{});
+    try stdout.print("2. Spawned Guard Patrol Routine (pc: {d})\n\n", .{patrol_pc});
 
     // 5. Run Live Simulation
-    try stdout.print("4. Executing Simulation Ticks:\n", .{});
+    try stdout.print("3. Executing Simulation Ticks:\n", .{});
 
     // Tick 1: Guard begins walking to Cellar
     try vm.step_tick();
@@ -99,7 +84,7 @@ pub fn main() !void {
         spatial.get_position(guard).?.y,
     });
 
-    // Tick 2: Guard reaches x=10. Bard plays lute!
+    // Tick 2: Guard in transit
     try vm.step_tick();
     try stdout.print("   - Tick {d}: Guard pos=({d}, {d}) in transit.\n", .{
         world.current_tick,
@@ -107,11 +92,12 @@ pub fn main() !void {
         spatial.get_position(guard).?.y,
     });
 
+    // Trigger When-Rule: Bard charms Guard for 4 ticks
     try world.remember(guard, charmed, bard.to_int(), 4);
-    _ = try vm.interrupt_entity(guard, charmed_pc);
-    try stdout.print("   - Tick {d}: >> Bard charms Guard! Interrupted motor routine with CharmedDistraction <<\n", .{world.current_tick});
+    _ = try vm.interrupt_entity(guard, charmed_rule_pc);
+    try stdout.print("   - Tick {d}: >> Systemic Event: Bard charms Guard! Preempted patrol with compiled When-Rule <<\n", .{world.current_tick});
 
-    // Ticks 3, 4, 5: Guard is charmed, listening to music
+    // Ticks 3, 4, 5: Guard is distracted listening to Bard
     for (0..3) |_| {
         try vm.step_tick();
         try stdout.print("   - Tick {d}: Guard distracted by music (pos={d})\n", .{
@@ -120,8 +106,8 @@ pub fn main() !void {
         });
     }
 
-    // Tick 6+: Distraction finishes, Guard resumes walking to Cellar!
-    try stdout.print("   - Tick {d}: Charm ended! Guard resumes walking toward Cellar...\n", .{world.current_tick});
+    // Tick 6+: Distraction clears, Guard resumes walking to Cellar, grabs Cheese, walks back to Hearth!
+    try stdout.print("   - Tick {d}: Charm expired! Guard resumes patrol to Cellar...\n", .{world.current_tick});
     while (world.current_tick < 18) {
         try vm.step_tick();
         try stdout.print("   - Tick {d}: Guard pos=({d}, {d}) [Carrying cheese? {s}]\n", .{
@@ -132,7 +118,7 @@ pub fn main() !void {
         });
     }
 
-    try stdout.print("\n5. Simulation Complete at Tick {d}!\n", .{world.current_tick});
+    try stdout.print("\n4. Simulation Complete at Tick {d}!\n", .{world.current_tick});
     try stdout.print("   - Final Guard Position: ({d}, {d}) at waypoint {d} ({s})\n", .{
         spatial.get_position(guard).?.x,
         spatial.get_position(guard).?.y,

@@ -32,9 +32,9 @@ Goal: Implement the native spatial graph and asynchronous motor intents in the e
 
 Goal: Create the hand-written Zig compiler front-end that compiles the BeSpoke syntax into bytecode.
 
-- [ ] P4-01 Hand-written Zig lexer for the BeSpoke language syntax. (D-002)
-- [ ] P4-02 Parser generating AST for entities, relations, routines, cues, and rules. (D-002)
-- [ ] P4-03 Bytecode code generator emitting compact VM binaries from AST. (D-002)
+- [x] P4-01 Hand-written Zig lexer for the BeSpoke language syntax. (D-002; completed 2026-11-04, verified via `zig test src/compiler/lexer.zig`)
+- [x] P4-02 Parser generating AST for entities, relations, routines, cues, and rules. (D-002; completed 2026-11-04, verified via `zig test src/compiler/parser.zig`)
+- [x] P4-03 Bytecode code generator emitting compact VM binaries from AST. (D-002; completed 2026-11-04, verified via `zig test src/compiler/codegen.zig`)
 
 ## Phase 5: Display Bridge & Vertical Slice
 

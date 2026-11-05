@@ -5,6 +5,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 4 (Language Front-End & Compiler): implemented zero-LLVM hand-written compiler front-end in `src/compiler.zig`, featuring indentation-aware lexer (`src/compiler/lexer.zig`), AST parser (`src/compiler/parser.zig`), and direct bytecode code generator (`src/compiler/codegen.zig`) (P4-01 through P4-03, D-002).
+- Added `compile_source` high-level entry point compiling raw BeSpoke DSL scripts directly to VM bytecode chunks.
 - Completed Phase 3 (Spatial Topology & Motor Subsystem): implemented `src/spatial.zig` featuring discrete 2D integer waypoints, rooms, and A* graph pathfinding (P3-01, D-005).
 - Implemented multi-tick motor stepping (`SpatialSystem.walk_to`) integrated with VM fiber suspension via `Opcode.walk_to` and `waiting_motor` state (P3-02, D-001, D-004).
 - Completed Phase 2 (Bytecode VM & Fiber Scheduler): implemented `src/bytecode.zig` and `src/vm.zig` with compact instruction set, fiber scheduler, temporal waits, and interrupt preemption (P2-01 through P2-04).
