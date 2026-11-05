@@ -7,10 +7,10 @@ Item IDs are permanent: `P<phase>-<nn>`. Never renumber; append new items at the
 
 Goal: Build the contiguous Zig `World` storage, fact tuples, relational pattern matching, and memory snapshot serialization.
 
-- [ ] P1-01 Initialize Zig project structure and contiguous `World` memory arena with `MultiArrayList(Fact)`. (D-002, D-003)
-- [ ] P1-02 Implement declarative `remember`, `forget`, and tick-based TTL expiration pruning. (D-003, D-007, Q-003)
-- [ ] P1-03 Implement linear and wildcard relation pattern-matching queries (`where Relation(a, _)`). (D-003, D-006, Q-002)
-- [ ] P1-04 Implement deterministic memory snapshot serialization (`save_state` and `restore_state` via arena `memcpy`). (D-001, D-003)
+- [x] P1-01 Initialize Zig project structure and contiguous `World` memory arena with `MultiArrayList(Fact)`. (D-002, D-003; completed 2026-11-04, verified via `zig test src/world.zig`)
+- [x] P1-02 Implement declarative `remember`, `forget`, and tick-based TTL expiration pruning. (D-003, D-007, Q-003; completed 2026-11-04, verified via `zig test src/world.zig`)
+- [x] P1-03 Implement linear and wildcard relation pattern-matching queries (`where Relation(a, _)`). (D-003, D-006, Q-002; completed 2026-11-04, verified via `zig test src/world.zig`)
+- [x] P1-04 Implement deterministic memory snapshot serialization (`save_state` and `restore_state` via arena `memcpy`). (D-001, D-003; completed 2026-11-04, verified via `zig test src/world.zig`)
 
 ## Phase 2: Bytecode VM & Fiber Scheduler
 

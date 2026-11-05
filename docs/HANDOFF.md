@@ -12,32 +12,38 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 1, on `main` at `a680c47`: adopted The Manifold repository memory framework, synthesized design documents, and established formal roadmap and architectural decisions._
+_Last updated: 2026-11-04, session 1, on `main`: completed Phase 1 foundations, implementing World relational database, string interning, declarative mutations, wildcard queries, and snapshot serialization in Zig._
 
 **Where things stand, in one paragraph:**
-The conceptual architecture for the BeSpoke Engine is established. We resolved the fundamental structural question: BeSpoke is a unified, standalone narrative/systemic simulation engine (Engine-as-Spine) in Zig rather than a drop-in plugin for third-party engines (D-001). Initial open questions Q-001, Q-002, and Q-003 have been resolved into accepted decisions D-005 (room/waypoint graph), D-006 (linear scan baseline), and D-007 (unified ternary facts). Implementation work is queued starting with Phase 1 (P1-01 through P1-04).
+Phase 1 (Foundations) is complete. The Zig runtime has a functional `World` relational database backed by a contiguous arena and `MultiArrayList(Fact)` (P1-01). Declarative `remember`, `forget`, and TTL expiration tick pruning are implemented and verified (P1-02). Linear pattern matching queries with wildcards (`has_fact`, `find_first`, `get_property`) are operational (P1-03). Deterministic save state snapshot serialization and restoration with CRC32 integrity checks are implemented and tested (P1-04). Next work begins Phase 2 (P2-01: opcode set definition and fiber scheduler).
 
-**Verified** (2026-11-04, on `a680c47`, Linux x86_64)
+**Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings** |
+| `zig test src/world.zig` | **4/4 passed** |
+| `zig build test` | **passed** |
+| `zig build run` | **Tavern Heist slice demo passed** |
 
 **What works**
-- **Specification & Documentation Baseline:** Complete repository memory framework with verified cross-references, architecture contracts, answered questions (Q-001, Q-002, Q-003), decisions (D-001 through D-007), and roadmap phases (Phase 1 through Phase 5).
-- **Domain Slice Spec:** The 20-line Tavern Heist DSL script specification ([`script_spec.md`](../script_spec.md)) and original whitepaper ([`whitepaper.md`](../whitepaper.md)) are cataloged.
+- **Zig Toolchain & World Arena:** Zig 0.13.0 installed to `~/.local/bin`. Contiguous pre-allocated arena buffer initializes `MultiArrayList(Fact)` and dynamic string interner for entities and relations (P1-01, D-002, D-003).
+- **Declarative Mutations & Decay:** `remember` supports permanent facts, TTL expiration (`expires_at_tick = current_tick + ttl`), and functional property auto-overwrites (P1-02, D-003, D-007). `step_tick` prunes expired facts deterministically.
+- **Pattern Queries:** `has_fact`, `find_first`, and `get_property` support wildcard matching over SoA slices in sub-microsecond time (P1-03, D-006).
+- **Save States & Rewind:** `save_state` and `restore_state` serialize and deserialize exact simulation states with CRC32 verification (P1-04, D-001).
 
 **Not verified**
-- Zig source code has not yet been authored; tests in Phase 1 (P1-01) remain unwritten.
+- Bytecode interpretation and fiber scheduling (Phase 2).
+- Spatial room/waypoint navigation (Phase 3).
 
 **Gotchas for the next session**
-- When creating Zig source files, ensure the allocator strategy enforces contiguous arenas so that `save_state` via `memcpy` remains valid without raw pointers inside fact elements.
+- When instantiating `World` in tests with small arena buffers, ensure `DEFAULT_MAX_FACTS` (8192 facts = ~144 KB) fits comfortably within the assigned arena size.
 
 ---
 
 ## Session log
 
 ### Session 1 (2026-11-04)
-- **Goal:** Synthesize architectural brainstorming, adopt The Manifold repository framework, and produce the formal engineering spec.
-- **Work:** Analyzed initial brainstorming files (`whitepaper.md`, `architecture.md`, `script_spec.md`). Debated the boundary of responsibility (drop-in decision box vs. unified engine-as-spine). Selected the BeSpoke standalone engine path (D-001). Initialized git repository. Adopted The Manifold documentation system with `tools/check_docs.py`. Authored `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, `docs/CONTRIBUTING.md`, and `docs/CHANGELOG.md`. Resolved Q-001, Q-002, and Q-003 into D-005 (Room/Waypoint Graph), D-006 (Linear Scan Baseline), and D-007 (Unified Ternary Facts).
-- **Outcome:** Clean `check_docs.py` run (0 errors, 0 warnings). Ready to begin Phase 1 implementation.
+- **Goal:** Synthesize architectural brainstorming, adopt The Manifold repository framework, produce formal engineering spec, and implement Phase 1 foundations.
+- **Work:** Analyzed initial brainstorming files (`whitepaper.md`, `architecture.md`, `script_spec.md`). Debated boundary of responsibility (drop-in decision box vs. unified engine-as-spine). Selected BeSpoke standalone engine path (D-001). Initialized git repository. Adopted The Manifold documentation system with `tools/check_docs.py`. Authored `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, `docs/CONTRIBUTING.md`, and `docs/CHANGELOG.md`. Resolved Q-001, Q-002, and Q-003 into D-005 (Room/Waypoint Graph), D-006 (Linear Scan Baseline), and D-007 (Unified Ternary Facts). Installed Zig 0.13.0. Built `src/world.zig`, `src/root.zig`, `src/main.zig`, and `build.zig`. Completed P1-01, P1-02, P1-03, and P1-04.
+- **Outcome:** All 4 unit tests passing. Demo binary verified with live rewind. Documentation check passing with 0 errors and 0 warnings. Phase 1 complete.
