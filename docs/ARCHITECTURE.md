@@ -1,0 +1,97 @@
+# Architecture
+
+How the BeSpoke Engine fits together. This document maps the core components, data flow, invariants, and boundaries. Rationale and alternatives live in [DECISIONS.md](DECISIONS.md).
+
+## The Shape, in One Paragraph
+
+The BeSpoke Engine inverts traditional game engine architecture into an **Engine-as-Spine** model (D-001). The Zig runtime is `main()`, owning the master simulation clock, entity IDs, contiguous relational fact tables (`MultiArrayList(Fact)`), and cooperative fiber scheduler. Game scripts written in the BeSpoke domain-specific language are compiled by a hand-written Zig front-end directly into compact custom bytecode (D-002) with zero LLVM dependencies. Downstream graphics and audio (e.g. Raylib or Sokol) act as stateless peripheral consumers that read a double-buffered snapshot of the simulation state each frame.
+
+## Code Map
+
+| Area | Where | Entry point | Talks to |
+| --- | --- | --- | --- |
+| Relational Store | `src/world.zig` | `World.init()` | Memory allocator; stores entities and facts (D-003) |
+| Fiber VM & Scheduler | `src/vm.zig` | `VM.step_tick()` | Relational store; dispatches bytecode routines (D-004) |
+| Spatial Topology | `src/spatial.zig` | `SpatialGraph.init()` | World store; resolves waypoints, line-of-sight, pathfinding |
+| Compiler Front-End | `src/compiler/` | `compile_source()` | Lexer, parser, bytecode emitter; outputs VM bytecode |
+| Display Bridge | `src/display.zig` | `DisplayBridge.poll()` | External multimedia frontend (Raylib/Sokol); read-only |
+
+## Memory Layout & Core Structs (Zig)
+
+Relational facts are stored using Zig's native `std.MultiArrayList` for optimal CPU cache utilization (Structure-of-Arrays layout):
+
+```zig
+const std = @import("std");
+
+pub const EntityId = enum(u32) {
+    none = 0,
+    _,
+};
+
+pub const RelationKind = enum(u16) {
+    _,
+};
+
+pub const Fact = struct {
+    subject: EntityId,
+    relation: RelationKind,
+    object: EntityId,
+    expires_at_tick: u64, // 0 = permanent
+};
+
+pub const World = struct {
+    facts: std.MultiArrayList(Fact),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) World {
+        return .{
+            .facts = .{},
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *World) void {
+        self.facts.deinit(self.allocator);
+    }
+};
+```
+
+## Interfaces and Data Flow
+
+```text
+BeSpoke Source Script -> Lexer -> Parser -> AST -> Bytecode Emitter -> VM Bytecode
+                                                                           |
+World Ticks (Discrete Clock) --------------------------------------------->|
+                                                                           v
+[Relational Fact Database (SoA)] <-> [Fiber Scheduler / Interrupt Stack] <-> [Spatial Graph]
+                                     |
+                                     v
+                 [Double-Buffered Render State & Cue Bus]
+                                     |
+                                     v
+                       [Stateless Peripheral: Raylib / Sokol]
+```
+
+| Interface | Producer | Consumer | Contract / compatibility |
+| --- | --- | --- | --- |
+| Bytecode binary | Compiler | Virtual Machine | Compact opcode stream with opcode table and constant pool |
+| State snapshot | World Store | Disk / Memory Buffer | Flat contiguous memory arena; restorable via `memcpy` |
+| Render state slice | VM / World Store | Display Peripheral | Read-only double-buffered struct containing active entity positions, facing, and visual cues |
+| External cues | Input / Peripheral | VM Cue Dispatcher | Named cue events (e.g. `PlayLute(Bard, Target)`) queued for next tick |
+
+## Invariants
+
+Rules that hold everywhere across the engine and runtime:
+
+- **The VM is the single source of truth:** Downstream renderers never modify game state directly. Enforced by: display bridge read-only pointer semantics (D-001).
+- **Pointerless relational facts:** All facts are flat integer tuples `(subject, relation, object, expires_at_tick)`. Enforced by: `Fact` struct definition in `src/world.zig` (D-003).
+- **Deterministic save/restore:** The entire active game state resides in a contiguous arena such that saving or restoring is a pure memory copy without pointer swizzling. Enforced by: arena allocator layout in `src/world.zig` (D-003).
+- **Reversible interruption:** An interrupt block must push the fiber's program counter and local registers to the entity's interrupt stack and restore them when the condition clears. Enforced by: interrupt frame management in `src/vm.zig` (D-004).
+
+## Boundaries
+
+| Boundary | Comes in as | Checked by | Rule |
+| --- | --- | --- | --- |
+| DSL Source Script | UTF-8 text file | Compiler lexer & parser | Reject malformed grammar, undefined relations, or invalid entity declarations |
+| External Input / Cues | Hardware event / input packet | Display bridge & cue validator | Validate cue arguments against known entity IDs before dispatching to VM queue |
+| State Snapshot Save File | Binary blob on disk | Snapshot loader | Check header magic bytes, version number, and arena checksum before `memcpy` |
