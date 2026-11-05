@@ -5,6 +5,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Added
+- Completed Phase 9 (Interactive Time-Travel Debugger & REPL): implemented in-engine developer dashboard overlay, interactive time-travel timeline scrubber, and live REPL console drawer (P9-01 through P9-03, D-001, D-002, D-003, D-011).
+- Implemented in-engine relational world inspector overlay (`src/display/renderer.zig`, `src/display.zig`, toggle with `[F1]` or `[D]`) displaying active relational facts with remaining TTL, cooperative fiber call stacks with program counters and priorities, and entity spatial coordinates (P9-01, D-011).
+- Implemented interactive time-travel timeline scrubber (`src/display/renderer.zig`, `src/main.zig`) rendering historical timeline bar with click-to-scrub and `[<]` / `[>]` arrow navigation across serialized snapshot states with instantaneous live visual replay (P9-02, D-001, D-003, D-011).
+- Implemented live interactive REPL console drawer (`src/repl.zig`, `src/display/renderer.zig`, toggle with `[Tab]`, `[C]`, or `[~]`) allowing live simulation query and mutation via `remember`, `forget`, `cue`, `walk`, `step`, and `facts` with zero GUI dependencies in the core simulation spine (P9-03, D-001, D-002, D-011).
 - Completed Phase 8 (Reactive Simulation Rules): implemented multi-clause relational pattern matcher, VM continuous reactive `when` evaluation engine with edge-triggered preemption, and priority rule cascades for systemic AI (P8-01 through P8-03, D-002, D-003, D-004, D-006, D-007, D-010).
 - Implemented multi-clause relational pattern matcher in `src/world.zig` (`PatternTerm`, `PatternClause`, `VariableBindings`, `find_first_match`, `has_multi_match`, `find_all_matches`) supporting conjunctions (`where A and B and C`) and variable joins across active facts (P8-01, D-006, D-010).
 - Extended compiler parser (`src/compiler/parser.zig`) and code generator (`src/compiler/codegen.zig`) to compile multi-clause `when` rules (`when Pattern1 and Pattern2:`) into `CompiledWhenRule` structures with unified variable bindings (P8-01, P8-02, D-010).

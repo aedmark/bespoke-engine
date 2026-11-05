@@ -93,6 +93,13 @@ pub const UserAction = union(enum) {
     toggle_pause,
     step_tick,
     rewind,
+    scrub_to_tick: u64, // Interactive time-travel timeline scrubber (P9-02, D-011)
+    repl_command: struct {
+        buf: [128]u8,
+        len: usize,
+    }, // Live interactive REPL console command (P9-03, D-011)
+    toggle_debug,
+    toggle_console,
 };
 
 pub const WAYPOINT_SCREEN_RADIUS = 16;
@@ -272,6 +279,14 @@ pub const DisplayWindow = struct {
     cue_banner_text: [64]u8 = undefined,
     cue_banner_len: usize = 0,
     cue_banner_ticks: u32 = 0,
+    // Phase 9 Debug, Scrubber & REPL (P9-01, P9-02, P9-03, D-011)
+    show_debug_overlay: bool = false,
+    show_console: bool = false,
+    console_input: [128]u8 = undefined,
+    console_len: usize = 0,
+    console_history: [5][128]u8 = undefined,
+    console_history_lens: [5]usize = [_]usize{0} ** 5,
+    console_history_count: usize = 0,
 
     pub fn init(title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
@@ -391,6 +406,26 @@ pub const DisplayWindow = struct {
         self.hovered_choice = null;
     }
 
+    /// Appends a line to the REPL console history buffer (P9-03, D-011).
+    pub fn add_console_history(self: *DisplayWindow, text: []const u8) void {
+        if (self.console_history_count < 5) {
+            const idx = self.console_history_count;
+            const len = @min(text.len, self.console_history[idx].len);
+            @memcpy(self.console_history[idx][0..len], text[0..len]);
+            self.console_history_lens[idx] = len;
+            self.console_history_count += 1;
+        } else {
+            var i: usize = 0;
+            while (i < 4) : (i += 1) {
+                self.console_history[i] = self.console_history[i + 1];
+                self.console_history_lens[i] = self.console_history_lens[i + 1];
+            }
+            const len = @min(text.len, self.console_history[4].len);
+            @memcpy(self.console_history[4][0..len], text[0..len]);
+            self.console_history_lens[4] = len;
+        }
+    }
+
     /// Polls peripheral input events and returns high-level simulation intents (P6-01, P6-03).
     pub fn poll_events(self: *DisplayWindow, frame: *const RenderFrame) UserAction {
         if (self.is_headless) return .none;
@@ -446,14 +481,29 @@ pub const DisplayWindow = struct {
                         // Right-click cycles the active adventure verb (P7-02, D-009)
                         self.active_verb = self.active_verb.next();
                     } else if (event.button.button == c.SDL_BUTTON_LEFT) {
-                        // 1. Check Verb Bar buttons
+                        // 1. Check Timeline Scrubber (P9-02, D-011)
+                        const tb_x: i32 = 20;
+                        const tb_w: i32 = self.width - 40;
+                        if (event.button.y >= 50 and event.button.y <= 74 and
+                            event.button.x >= tb_x and event.button.x <= tb_x + tb_w)
+                        {
+                            if (frame.max_history_tick > 0) {
+                                const rel_x: f32 = @as(f32, @floatFromInt(event.button.x - tb_x));
+                                const ratio: f32 = rel_x / @as(f32, @floatFromInt(tb_w));
+                                const max_t: f32 = @as(f32, @floatFromInt(frame.max_history_tick));
+                                const target_tick: u64 = @min(frame.max_history_tick, @as(u64, @intFromFloat(ratio * max_t)));
+                                return .{ .scrub_to_tick = target_tick };
+                            }
+                        }
+
+                        // 2. Check Verb Bar buttons
                         const clicked_verb = hit_test_verb_button(event.button.x, event.button.y, self.height);
                         if (clicked_verb) |verb| {
                             self.active_verb = verb;
                             return .none;
                         }
 
-                        // 2. Check Actors
+                        // 3. Check Actors
                         const clicked_actor = hit_test_actor(
                             event.button.x,
                             event.button.y,
@@ -464,7 +514,7 @@ pub const DisplayWindow = struct {
                         if (clicked_actor) |actor_idx| {
                             action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
                         } else {
-                            // 3. Check Hotspots / Props
+                            // 4. Check Hotspots / Props
                             const clicked_hs = hit_test_hotspot(
                                 event.button.x,
                                 event.button.y,
@@ -475,7 +525,7 @@ pub const DisplayWindow = struct {
                             if (clicked_hs) |hs_idx| {
                                 action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
                             } else {
-                                // 4. Check Waypoints
+                                // 5. Check Waypoints
                                 const clicked_wp = hit_test_waypoint(
                                     event.button.x,
                                     event.button.y,
@@ -493,11 +543,51 @@ pub const DisplayWindow = struct {
                         }
                     }
                 },
+                c.SDL_TEXTINPUT => {
+                    if (self.show_console) {
+                        var i: usize = 0;
+                        while (event.text.text[i] != 0 and self.console_len < 127) : (i += 1) {
+                            self.console_input[self.console_len] = event.text.text[i];
+                            self.console_len += 1;
+                        }
+                    }
+                },
                 c.SDL_KEYDOWN => {
-                    switch (event.key.keysym.sym) {
+                    const sym = event.key.keysym.sym;
+                    if (self.show_console) {
+                        if (sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER) {
+                            if (self.console_len > 0) {
+                                const cmd_text = self.console_input[0..self.console_len];
+                                self.add_console_history(cmd_text);
+                                const act = UserAction{ .repl_command = .{ .buf = self.console_input, .len = self.console_len } };
+                                self.console_len = 0;
+                                return act;
+                            }
+                        } else if (sym == c.SDLK_BACKSPACE) {
+                            if (self.console_len > 0) {
+                                self.console_len -= 1;
+                            }
+                        } else if (sym == c.SDLK_ESCAPE or sym == c.SDLK_TAB or sym == c.SDLK_BACKQUOTE) {
+                            self.show_console = false;
+                            return .toggle_console;
+                        }
+                        return .none;
+                    }
+
+                    switch (sym) {
                         c.SDLK_SPACE => action = .toggle_pause,
                         c.SDLK_n => action = .step_tick,
                         c.SDLK_r => action = .rewind,
+                        c.SDLK_LEFT => action = .{ .scrub_to_tick = if (frame.tick > 0) frame.tick - 1 else 0 },
+                        c.SDLK_RIGHT => action = .{ .scrub_to_tick = @min(frame.tick + 1, frame.max_history_tick) },
+                        c.SDLK_F1, c.SDLK_d => {
+                            self.show_debug_overlay = !self.show_debug_overlay;
+                            return .toggle_debug;
+                        },
+                        c.SDLK_BACKQUOTE, c.SDLK_TAB, c.SDLK_c => {
+                            self.show_console = !self.show_console;
+                            return .toggle_console;
+                        },
                         c.SDLK_ESCAPE => return .quit,
                         else => {},
                     }
@@ -791,6 +881,33 @@ pub const DisplayWindow = struct {
         const status_col = if (is_paused) Color.status_paused else Color.status_running;
         self.draw_text(top_text, 20, 16, 2, status_col);
 
+        // 6b. Interactive Time-Travel Timeline Scrubber Bar (P9-02, D-011)
+        const tb_x: i32 = 20;
+        const tb_y: i32 = 50;
+        const tb_w: i32 = self.width - 40;
+        const tb_h: i32 = 22;
+
+        self.fill_rect(tb_x, tb_y, tb_w, tb_h, Color{ .r = 15, .g = 23, .b = 42, .a = 230 });
+        self.draw_rect_outline(tb_x, tb_y, tb_w, tb_h, Color{ .r = 71, .g = 85, .b = 105 });
+
+        if (frame.max_history_tick > 0) {
+            const cur_t: f32 = @as(f32, @floatFromInt(frame.tick));
+            const max_t: f32 = @as(f32, @floatFromInt(frame.max_history_tick));
+            const ratio: f32 = @min(1.0, cur_t / max_t);
+            const playhead_x = tb_x + @as(i32, @intFromFloat(ratio * @as(f32, @floatFromInt(tb_w))));
+
+            // Elapsed bar fill
+            self.fill_rect(tb_x + 2, tb_y + 3, playhead_x - tb_x, tb_h - 6, Color{ .r = 37, .g = 99, .b = 235, .a = 180 });
+
+            // Playhead indicator
+            self.fill_rect(playhead_x - 3, tb_y - 2, 6, tb_h + 4, Color.white);
+            self.draw_rect_outline(playhead_x - 3, tb_y - 2, 6, tb_h + 4, Color.cue_alert);
+        }
+
+        var tb_text_buf: [80]u8 = undefined;
+        const tb_text = std.fmt.bufPrint(&tb_text_buf, "TIMELINE [Tick {d:02}/{d:02}] (Click or [< / >] to Scrub | Space: Pause)", .{ frame.tick, frame.max_history_tick }) catch "TIMELINE";
+        self.draw_text(tb_text, tb_x + 8, tb_y + 4, 1, Color.hud_text);
+
         // 7. Adventure Verb Bar & Inventory Tray (P7-02, P7-03, D-009)
         const bar_y = self.height - 80;
         self.fill_rect(0, bar_y - 6, self.width, 42, Color{ .r = 15, .g = 23, .b = 42, .a = 240 });
@@ -839,7 +956,7 @@ pub const DisplayWindow = struct {
         self.fill_rect(0, self.height - 44, self.width, 44, Color.hud_bg);
         self.draw_line(0, self.height - 44, self.width, self.height - 44, Color.tavern_border);
         self.draw_text(
-            "[Left Click]: Perform Action | [Right Click]: Cycle Verb | [Space]: Pause | [R]: Rewind",
+            "[Click]: Act | [Right-Click]: Verb | [F1/D]: Debug HUD | [C]: REPL | [< / >]: Scrub | [Space]: Pause",
             20,
             self.height - 28,
             2,
@@ -899,7 +1016,97 @@ pub const DisplayWindow = struct {
             }
         }
 
-        // 10. Present Frame
+        // 10. In-Engine Debug Inspector Overlay (P9-01, D-011)
+        if (self.show_debug_overlay) {
+            const dbg_w: i32 = 340;
+            const dbg_h: i32 = self.height - 180;
+            const dbg_x: i32 = self.width - dbg_w - 20;
+            const dbg_y: i32 = 80;
+
+            self.fill_rect(dbg_x, dbg_y, dbg_w, dbg_h, Color{ .r = 10, .g = 15, .b = 30, .a = 240 });
+            self.draw_rect_outline(dbg_x, dbg_y, dbg_w, dbg_h, Color.wp_hover);
+            self.draw_text("=== RELATIONAL WORLD INSPECTOR (F1/D) ===", dbg_x + 12, dbg_y + 10, 1, Color.wp_hover);
+
+            var cur_y: i32 = dbg_y + 26;
+            self.draw_text("ACTIVE FACTS:", dbg_x + 12, cur_y, 1, Color.hud_subtext);
+            cur_y += 14;
+
+            var fi: usize = 0;
+            while (fi < frame.debug_fact_count and fi < 10) : (fi += 1) {
+                const df = &frame.debug_facts[fi];
+                var fbuf: [96]u8 = undefined;
+                const fstr = if (df.expires_at_tick > 0)
+                    std.fmt.bufPrint(&fbuf, " - {s}({s}, {s}) [exp:{d}]", .{ df.get_relation(), df.get_subject(), df.get_object(), df.expires_at_tick }) catch "?"
+                else
+                    std.fmt.bufPrint(&fbuf, " - {s}({s}, {s})", .{ df.get_relation(), df.get_subject(), df.get_object() }) catch "?";
+                self.draw_text(fstr, dbg_x + 12, cur_y, 1, Color.hud_text);
+                cur_y += 12;
+            }
+
+            cur_y += 6;
+            self.draw_line(dbg_x + 10, cur_y, dbg_x + dbg_w - 10, cur_y, Color{ .r = 71, .g = 85, .b = 105 });
+            cur_y += 6;
+
+            self.draw_text("ACTIVE FIBERS & STACKS:", dbg_x + 12, cur_y, 1, Color.hud_subtext);
+            cur_y += 14;
+
+            var fib_i: usize = 0;
+            while (fib_i < frame.debug_fiber_count and fib_i < 5) : (fib_i += 1) {
+                const fib = &frame.debug_fibers[fib_i];
+                var fib_buf: [96]u8 = undefined;
+                const fib_str = std.fmt.bufPrint(&fib_buf, " #{d} [{s}] pc:{d:03} depth:{d} prio:{d} ({s})", .{
+                    fib.id, fib.get_owner(), fib.pc, fib.interrupt_depth, fib.priority, fib.get_state(),
+                }) catch "?";
+                self.draw_text(fib_str, dbg_x + 12, cur_y, 1, Color.hud_text);
+                cur_y += 12;
+            }
+
+            cur_y += 6;
+            self.draw_line(dbg_x + 10, cur_y, dbg_x + dbg_w - 10, cur_y, Color{ .r = 71, .g = 85, .b = 105 });
+            cur_y += 6;
+
+            self.draw_text("SPATIAL TOPOLOGY & AGENTS:", dbg_x + 12, cur_y, 1, Color.hud_subtext);
+            cur_y += 14;
+            for (frame.entities[0..frame.entity_count]) |e| {
+                var ent_buf: [64]u8 = undefined;
+                const status = if (e.is_moving) "moving" else "idle";
+                const ent_str = std.fmt.bufPrint(&ent_buf, " * {s}: ({d}, {d}) [{s}]", .{ e.get_name(), e.x, e.y, status }) catch "?";
+                self.draw_text(ent_str, dbg_x + 12, cur_y, 1, Color.white);
+                cur_y += 12;
+            }
+        }
+
+        // 11. Live Interactive REPL Console Drawer (P9-03, D-011)
+        if (self.show_console) {
+            const con_x: i32 = 20;
+            const con_w: i32 = self.width - 40;
+            const con_h: i32 = 160;
+            const con_y: i32 = self.height - con_h - 48;
+
+            self.fill_rect(con_x, con_y, con_w, con_h, Color{ .r = 8, .g = 12, .b = 24, .a = 245 });
+            self.draw_rect_outline(con_x, con_y, con_w, con_h, Color{ .r = 245, .g = 158, .b = 11 });
+            self.draw_text(">>> BESPOKE LIVE REPL (Tab/C to Close | Type 'help' for commands) <<<", con_x + 14, con_y + 10, 1, Color{ .r = 245, .g = 158, .b = 11 });
+
+            // History log
+            var log_y: i32 = con_y + 26;
+            var hi: usize = 0;
+            while (hi < self.console_history_count) : (hi += 1) {
+                const htext = self.console_history[hi][0..self.console_history_lens[hi]];
+                self.draw_text(htext, con_x + 14, log_y, 1, Color.hud_subtext);
+                log_y += 16;
+            }
+
+            // Input prompt line
+            self.fill_rect(con_x + 10, con_y + con_h - 32, con_w - 20, 24, Color{ .r = 15, .g = 23, .b = 42 });
+            self.draw_rect_outline(con_x + 10, con_y + con_h - 32, con_w - 20, 24, Color{ .r = 71, .g = 85, .b = 105 });
+
+            var prompt_buf: [140]u8 = undefined;
+            const cur_input = self.console_input[0..self.console_len];
+            const prompt_text = std.fmt.bufPrint(&prompt_buf, "> {s}_", .{cur_input}) catch "> _";
+            self.draw_text(prompt_text, con_x + 18, con_y + con_h - 26, 2, Color.white);
+        }
+
+        // 12. Present Frame
         if (self.renderer) |r| {
             c.SDL_RenderPresent(r);
         }

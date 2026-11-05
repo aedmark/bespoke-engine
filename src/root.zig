@@ -6,6 +6,7 @@ pub const vm = @import("vm.zig");
 pub const spatial = @import("spatial.zig");
 pub const compiler = @import("compiler.zig");
 pub const display = @import("display.zig");
+pub const repl = @import("repl.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -30,6 +31,8 @@ pub const compile_source = compiler.compile_source;
 pub const CompiledProgram = compiler.CompiledProgram;
 pub const DisplayBridge = display.DisplayBridge;
 pub const RenderFrame = display.RenderFrame;
+pub const Repl = repl.Repl;
+pub const ReplResult = repl.ReplResult;
 
 test "root test imports all modules" {
     _ = @import("world.zig");
@@ -38,4 +41,5 @@ test "root test imports all modules" {
     _ = @import("spatial.zig");
     _ = @import("compiler.zig");
     _ = @import("display.zig");
+    _ = @import("repl.zig");
 }

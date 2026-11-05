@@ -73,6 +73,6 @@ Goal: Implement continuous pattern-matching rule triggers in the engine spine so
 
 Goal: Build an interactive developer dashboard and time-travel timeline scrubber for inspecting and manipulating simulation state live.
 
-- [ ] P9-01 In-engine debug overlay / HUD: live inspector displaying active relational facts, active fibers, call stacks, and spatial coordinates. (D-001)
-- [ ] P9-02 Interactive time-travel timeline scrubber: pause, step forward, and scrub backward across historical snapshot states with instantaneous live visual replay. (D-001, D-003)
-- [ ] P9-03 Live interactive REPL / console: inject facts (`remember ...`), emit cues (`PlayLute`), and test scripts in a running simulation. (D-001, D-002)
+- [x] P9-01 In-engine debug overlay / HUD: live inspector displaying active relational facts, active fibers, call stacks, and spatial coordinates. (D-001, D-011; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig` and interactive window)
+- [x] P9-02 Interactive time-travel timeline scrubber: pause, step forward, and scrub backward across historical snapshot states with instantaneous live visual replay. (D-001, D-003, D-011; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig`, `zig build run -- --headless`, and timeline scrubber)
+- [x] P9-03 Live interactive REPL / console: inject facts (`remember ...`), emit cues (`PlayLute`), and test scripts in a running simulation. (D-001, D-002, D-011; completed 2026-11-04, verified via `zig test src/repl.zig`, `zig build test`, and interactive drawer)

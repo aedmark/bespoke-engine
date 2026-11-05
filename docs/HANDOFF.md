@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 4, on `main`: completed Phase 8 (Reactive Simulation Rules: Multi-Clause Joins, Reactive `when` Engine, Priority Cascades)._
+_Last updated: 2026-11-04, session 5, on `main`: completed Phase 9 (Interactive Time-Travel Debugger & REPL: In-Engine Debug Overlay, Timeline Scrubber, Live REPL Console)._
 
 **Where things stand, in one paragraph:**
-Phase 1 through Phase 8 are complete and operational. The BeSpoke Engine is a fully functioning "Engine-as-Spine" runtime, language, and graphical simulation: raw BeSpoke scripts compile directly to compact bytecode, executing over contiguous relational state arenas and discrete waypoint graphs with cooperative fibers and priority preemption. Phase 8 introduces autonomous systemic reactivity: a multi-clause relational pattern matcher supporting conjunctions (`where A and B and C`) and variable joins across active facts, continuous VM reactive `when` evaluation on tick boundaries with edge-triggered fiber interrupts, and priority-tiered interrupt stacks where high-priority alerts preempt lower-priority states and cleanly resume routines. Headless simulation is fully supported via `--headless`.
+All 9 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, and autonomous reactive rule cascades. Phase 9 completes the developer experience with an in-engine relational inspector overlay (`[F1]`/`[D]`), an interactive timeline scrubber bar with click-to-scrub and arrow navigation across serialized memory snapshots, and a live REPL console drawer (`[Tab]`/`[C]`/`[~]`) for injecting facts, cues, and motor commands on the fly. Headless execution is fully supported via `--headless`.
 
 **Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
 
@@ -23,13 +23,14 @@ Phase 1 through Phase 8 are complete and operational. The BeSpoke Engine is a fu
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings** |
 | `zig test src/world.zig` | **5/5 passed** |
-| `zig test src/bytecode.zig` | **5/5 passed** |
-| `zig test src/spatial.zig` | **7/7 passed** |
+| `zig test src/bytecode.zig` | **6/6 passed** |
+| `zig test src/spatial.zig` | **8/8 passed** |
 | `zig test src/vm.zig` | **15/15 passed** |
+| `zig test src/repl.zig` | **16/16 passed** |
 | `zig test src/compiler/lexer.zig` | **2/2 passed** |
 | `zig test src/compiler/parser.zig` | **4/4 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **16/16 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **28/28 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **19/19 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **29/29 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 
@@ -42,6 +43,9 @@ Phase 1 through Phase 8 are complete and operational. The BeSpoke Engine is a fu
 - **SDL2 Peripheral 2D Display & Controls:** Hardware-accelerated 2D renderer, built-in 5x7 bitmap font, room/waypoint scene graph, animated actor tokens, point-and-click mouse navigation for Cat, and live time-travel rewind hotkey (P6-01 through P6-04, D-008).
 - **Adventure Game Primitives:** 5-verb UI bar (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`) with active button highlights and right-click cycling, actor and prop interaction, relational inventory tray rendering, and branching dialogue parchment balloons with interactive choice buttons (P7-01 through P7-04, D-009).
 - **Reactive Simulation & Systemic AI:** Continuous pattern-matched rule evaluation, edge-triggered fiber interrupts on positive transition (`false -> true`), and priority cascades (e.g., theft alerts preempting charmed states) (P8-01 through P8-03, D-010).
+- **Developer Dashboard & Inspector:** Live HUD overlay (`src/display/renderer.zig`, toggle `[F1]`/`[D]`) displaying active relational facts with TTL timers, active fiber call stacks with program counters and priorities, and agent spatial positions (P9-01, D-011).
+- **Interactive Timeline Scrubber:** Full graphical scrubber bar with interactive click-to-scrub and `[<]` / `[>]` arrow stepping across serialized snapshots with instantaneous visual replay and divergent timeline truncation (P9-02, D-001, D-003, D-011).
+- **Live Interactive REPL Console:** Pure Zig simulation command dispatcher (`src/repl.zig`) and in-engine drawer overlay (`[Tab]`/`[C]`/`[~]`) executing `remember`, `forget`, `cue`, `walk`, `step`, and `facts` commands live during simulation (P9-03, D-011).
 
 **Not verified**
 - Peripheral audio sound effects / music playback; visual cues, floating banners, and speech balloons are fully verified.
@@ -49,10 +53,16 @@ Phase 1 through Phase 8 are complete and operational. The BeSpoke Engine is a fu
 **Gotchas for the next session**
 - When restoring snapshots via `restore_state`, the world memory buffer is rewound in place; external display layers should call `DisplayBridge.capture_frame()` immediately following a restore to synchronize visualization.
 - Reactive rules are edge-triggered: they fire once when a condition transitions from false to true. The rule re-arms when the condition clears, preventing infinite interrupt loops while conditions remain active.
+- When stepping forward after scrubbing backward in time, subsequent future snapshots are pruned to record the newly divergent simulation timeline.
 
 ---
 
 ## Session log
+
+### Session 5 (2026-11-04)
+- **Goal:** Implement Phase 9: Interactive Time-Travel Debugger & REPL (P9-01 through P9-03).
+- **Work:** Recorded architectural decision `D-011` (In-Engine Developer Dashboard, Snapshot Scrubber, and Live REPL Console). Implemented pure Zig command engine `src/repl.zig` with zero SDL2/GUI dependencies, supporting `help`, `remember`, `forget`, `cue`, `walk`, `step`, and `facts` command execution directly on `World`, `SpatialSystem`, and `VM`. Extended `DisplayBridge` and `RenderFrame` in `src/display.zig` to slice active relational facts, fiber execution stacks, and `max_history_tick` into double buffers. Enhanced peripheral renderer `src/display/renderer.zig` with interactive Timeline Scrubber bar (hit testing, elapsed progress, tick label, arrow key scrubbing), Developer Dashboard overlay (`[F1]`/`[D]`), and Live Interactive REPL Console drawer (`[Tab]`/`[C]`/`[~]`, `SDL_TEXTINPUT`, command execution, history log). Wired timeline scrubbing with divergent timeline handling, REPL command injection, and debug overlays into `src/main.zig`.
+- **Outcome:** All 104 unit tests passing across all suites (`zig build test`, `zig test -lc -lSDL2 src/root.zig`, `zig test -lc -lSDL2 src/display.zig`, `zig test src/repl.zig`, `zig test src/world.zig`, `zig test src/spatial.zig`, `zig test src/vm.zig`, `zig test src/bytecode.zig`, `zig test src/compiler/lexer.zig`, `zig test src/compiler/parser.zig`). Headless simulation verified with full Tavern Heist execution and rewind. Documentation verified with 0 errors and 0 warnings. Phase 9 roadmap items (`P9-01` through `P9-03`) complete. All 9 roadmap phases complete.
 
 ### Session 4 (2026-11-04)
 - **Goal:** Implement Phase 8: Reactive Simulation Rules (`when` Engine in VM).

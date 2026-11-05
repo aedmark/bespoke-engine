@@ -89,6 +89,47 @@ pub const RenderInventoryItem = struct {
     }
 };
 
+/// Debug information for an active relational fact (P9-01, D-011).
+pub const RenderDebugFact = struct {
+    subject_name: [24]u8,
+    subject_len: u8,
+    relation_name: [24]u8,
+    relation_len: u8,
+    object_name: [24]u8,
+    object_len: u8,
+    expires_at_tick: u64,
+
+    pub fn get_subject(self: *const RenderDebugFact) []const u8 {
+        return self.subject_name[0..self.subject_len];
+    }
+    pub fn get_relation(self: *const RenderDebugFact) []const u8 {
+        return self.relation_name[0..self.relation_len];
+    }
+    pub fn get_object(self: *const RenderDebugFact) []const u8 {
+        return self.object_name[0..self.object_len];
+    }
+};
+
+/// Debug information for an active fiber and its call/interrupt stack (P9-01, D-011).
+pub const RenderDebugFiber = struct {
+    id: u32,
+    owner_name: [24]u8,
+    owner_len: u8,
+    pc: usize,
+    sp: usize,
+    interrupt_depth: usize,
+    priority: u16,
+    state_name: [24]u8,
+    state_len: u8,
+
+    pub fn get_owner(self: *const RenderDebugFiber) []const u8 {
+        return self.owner_name[0..self.owner_len];
+    }
+    pub fn get_state(self: *const RenderDebugFiber) []const u8 {
+        return self.state_name[0..self.state_len];
+    }
+};
+
 /// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
 pub const RenderFrame = struct {
     tick: u64,
@@ -107,6 +148,11 @@ pub const RenderFrame = struct {
     fact_count: usize,
     cheese_holder: EntityId,
     charmed_target: EntityId,
+    debug_facts: [32]RenderDebugFact,
+    debug_fact_count: usize,
+    debug_fibers: [8]RenderDebugFiber,
+    debug_fiber_count: usize,
+    max_history_tick: u64,
 };
 
 /// Double-buffered display bridge separating simulation spine from peripheral consumers (D-001, P5-01).
@@ -121,6 +167,12 @@ pub const DisplayBridge = struct {
         };
     }
 
+    /// Sets the maximum simulation tick reached in recorded history for the timeline scrubber (P9-02, D-011).
+    pub fn set_max_history_tick(self: *DisplayBridge, max_tick: u64) void {
+        self.back_buffer.max_history_tick = max_tick;
+        self.front_buffer.max_history_tick = max_tick;
+    }
+
     /// Captures a read-only snapshot of simulation state into the back buffer (D-001, P6-02).
     pub fn capture_frame(
         self: *DisplayBridge,
@@ -128,6 +180,7 @@ pub const DisplayBridge = struct {
         spatial: *const SpatialSystem,
         vm: *const VM,
     ) void {
+        const prev_max_history = self.back_buffer.max_history_tick;
         self.back_buffer.tick = world.current_tick;
         self.back_buffer.fact_count = world.fact_count();
 
@@ -286,6 +339,89 @@ pub const DisplayBridge = struct {
             }
         }
         self.back_buffer.inventory_count = inv_count;
+
+        // 7. Capture active relational facts for debug inspector (P9-01, D-011)
+        var df_count: usize = 0;
+        const slice = world.facts.slice();
+        const subjects = slice.items(.subject);
+        const relations = slice.items(.relation);
+        const objects = slice.items(.object_or_value);
+        const expirations = slice.items(.expires_at_tick);
+
+        var fi: usize = 0;
+        while (fi < world.facts.len and df_count < self.back_buffer.debug_facts.len) : (fi += 1) {
+            var df = RenderDebugFact{
+                .subject_name = undefined,
+                .subject_len = 0,
+                .relation_name = undefined,
+                .relation_len = 0,
+                .object_name = undefined,
+                .object_len = 0,
+                .expires_at_tick = expirations[fi],
+            };
+
+            if (world.get_entity_name(subjects[fi])) |sn| {
+                const len = @min(sn.len, df.subject_name.len);
+                @memcpy(df.subject_name[0..len], sn[0..len]);
+                df.subject_len = @intCast(len);
+            }
+
+            if (world.get_relation_meta(relations[fi])) |rm| {
+                const len = @min(rm.name.len, df.relation_name.len);
+                @memcpy(df.relation_name[0..len], rm.name[0..len]);
+                df.relation_len = @intCast(len);
+            }
+
+            if (world.get_entity_name(EntityId.from_int(objects[fi]))) |on| {
+                const len = @min(on.len, df.object_name.len);
+                @memcpy(df.object_name[0..len], on[0..len]);
+                df.object_len = @intCast(len);
+            } else {
+                var num_buf: [16]u8 = undefined;
+                const formatted = std.fmt.bufPrint(&num_buf, "{d}", .{objects[fi]}) catch "?";
+                const len = @min(formatted.len, df.object_name.len);
+                @memcpy(df.object_name[0..len], formatted[0..len]);
+                df.object_len = @intCast(len);
+            }
+
+            self.back_buffer.debug_facts[df_count] = df;
+            df_count += 1;
+        }
+        self.back_buffer.debug_fact_count = df_count;
+
+        // 8. Capture active fibers for debug inspector (P9-01, D-011)
+        var fib_count: usize = 0;
+        for (vm.fibers.items) |f| {
+            if (fib_count >= self.back_buffer.debug_fibers.len) break;
+            var dfib = RenderDebugFiber{
+                .id = f.id,
+                .owner_name = undefined,
+                .owner_len = 0,
+                .pc = f.pc,
+                .sp = f.sp,
+                .interrupt_depth = f.interrupt_stack.items.len,
+                .priority = f.active_priority,
+                .state_name = undefined,
+                .state_len = 0,
+            };
+
+            if (world.get_entity_name(f.owner)) |on| {
+                const len = @min(on.len, dfib.owner_name.len);
+                @memcpy(dfib.owner_name[0..len], on[0..len]);
+                dfib.owner_len = @intCast(len);
+            }
+
+            const s_tag = std.meta.activeTag(f.state);
+            const s_str = @tagName(s_tag);
+            const slen = @min(s_str.len, dfib.state_name.len);
+            @memcpy(dfib.state_name[0..slen], s_str[0..slen]);
+            dfib.state_len = @intCast(slen);
+
+            self.back_buffer.debug_fibers[fib_count] = dfib;
+            fib_count += 1;
+        }
+        self.back_buffer.debug_fiber_count = fib_count;
+        self.back_buffer.max_history_tick = prev_max_history;
     }
 
     /// Swaps front and back buffers so display consumer reads the latest completed tick (D-001).

@@ -87,6 +87,7 @@ pub fn main() !void {
     try vm.load_compiled_rules(&compiled);
 
     var display_bridge = bespoke.DisplayBridge.init();
+    var repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
 
     const patrol_pc = compiled.routine_entries.get("Patrol").?;
 
@@ -184,6 +185,9 @@ pub fn main() !void {
         try stdout.print("   - [Left Click Actor]:    Interact with Guard, Bard, or Cat with active verb\n", .{});
         try stdout.print("   - [Left Click Prop]:     Interact with Fireplace, Bar Counter, or Wine Cask\n", .{});
         try stdout.print("   - [Left Click Waypoint]: Direct Cat (Player) to walk\n", .{});
+        try stdout.print("   - [Timeline Scrubber]:   Click or drag timeline bar (or [< / >] arrows) to scrub history\n", .{});
+        try stdout.print("   - [F1 / D]:              Toggle Debug Inspector (Active Facts, Fibers, Stacks, Spatial)\n", .{});
+        try stdout.print("   - [Tab / ` / C]:         Toggle Live REPL Console Drawer ('help', 'remember', 'walk')\n", .{});
         try stdout.print("   - [Space]:               Pause / Resume Simulation\n", .{});
         try stdout.print("   - [N]:                   Single-step Simulation Tick\n", .{});
         try stdout.print("   - [R]:                   Instant Time-Travel Rewind to Tick 2\n", .{});
@@ -191,6 +195,7 @@ pub fn main() !void {
 
         // Initial snapshot at tick 0
         display_bridge.capture_frame(&world, &spatial, &vm);
+        display_bridge.set_max_history_tick(0);
         display_bridge.swap();
 
         var snap0 = std.ArrayList(u8).init(allocator);
@@ -375,15 +380,59 @@ pub fn main() !void {
                 },
                 .rewind => {
                     if (history_snapshots.items.len > 2) {
+                        is_paused = true;
                         const target_snapshot = history_snapshots.items[2];
                         var stream = std.io.fixedBufferStream(target_snapshot.items);
                         try world.restore_state(stream.reader());
                         // Sync display frame
                         display_bridge.capture_frame(&world, &spatial, &vm);
+                        display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
                         display_bridge.swap();
-                        window.set_cue_banner("<<< REWOUND TO PRE-HEIST TICK 2 <<<", 90);
+                        window.set_cue_banner("<<< REWOUND TO PRE-HEIST TICK 2 (PAUSED) <<<", 90);
                         try stdout.print("[Time-Travel] Rewound simulation to Tick 2!\n", .{});
                     }
+                },
+                .scrub_to_tick => |target_tick| {
+                    if (history_snapshots.items.len > 0) {
+                        const clamped = @min(target_tick, history_snapshots.items.len - 1);
+                        is_paused = true;
+                        const target_snapshot = history_snapshots.items[clamped];
+                        var stream = std.io.fixedBufferStream(target_snapshot.items);
+                        try world.restore_state(stream.reader());
+                        display_bridge.capture_frame(&world, &spatial, &vm);
+                        display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                        display_bridge.swap();
+
+                        var banner_buf: [96]u8 = undefined;
+                        const text = std.fmt.bufPrint(&banner_buf, "<<< TIME-TRAVEL: SCRUBBED TO TICK {d} (PAUSED) <<<", .{world.current_tick}) catch "Scrubbed";
+                        window.set_cue_banner(text, 90);
+                        try stdout.print("[Time-Travel] Scrubbed simulation to Tick {d} (of {d})\n", .{ world.current_tick, history_snapshots.items.len - 1 });
+                    }
+                },
+                .repl_command => |cmd| {
+                    const line = cmd.buf[0..cmd.len];
+                    const res = repl_instance.execute(line);
+                    window.add_console_history(res.get_text());
+                    if (res.output_len > 0) {
+                        window.set_cue_banner(res.get_text(), 120);
+                        try stdout.print("[REPL] > {s}\n       {s}\n", .{ line, res.get_text() });
+                    }
+                    if (world.current_tick >= history_snapshots.items.len) {
+                        var snap = std.ArrayList(u8).init(allocator);
+                        try world.save_state(snap.writer());
+                        try history_snapshots.append(snap);
+                    }
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                    display_bridge.swap();
+                },
+                .toggle_debug => {
+                    const status_str = if (window.show_debug_overlay) "ENABLED" else "DISABLED";
+                    try stdout.print("[Dashboard] Debug Fact & Fiber Inspector {s}\n", .{status_str});
+                },
+                .toggle_console => {
+                    const status_str = if (window.show_console) "OPENED" else "CLOSED";
+                    try stdout.print("[Console] Live REPL Console Drawer {s}\n", .{status_str});
                 },
                 .none => {},
             }
@@ -392,6 +441,15 @@ pub fn main() !void {
             const now = std.time.milliTimestamp();
             if (should_step_now or (!is_paused and now - last_tick_time >= tick_interval_ms)) {
                 last_tick_time = now;
+
+                // If simulation clock was scrubbed into the past and is advancing,
+                // discard invalidated future snapshots to record a divergent timeline.
+                if (world.current_tick + 1 < history_snapshots.items.len) {
+                    for (history_snapshots.items[world.current_tick + 1 ..]) |*s| {
+                        s.deinit();
+                    }
+                    history_snapshots.shrinkRetainingCapacity(world.current_tick + 1);
+                }
 
                 // Scripted narrative cues for the vertical slice
                 if (world.current_tick == 1) {
@@ -418,6 +476,7 @@ pub fn main() !void {
 
                 // Synchronize display bridge
                 display_bridge.capture_frame(&world, &spatial, &vm);
+                display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
                 display_bridge.swap();
             }
 
