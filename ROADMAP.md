@@ -8,8 +8,8 @@ Item IDs are permanent: `P<phase>-<nn>`. Never renumber; append new items at the
 Goal: Build the contiguous Zig `World` storage, fact tuples, relational pattern matching, and memory snapshot serialization.
 
 - [ ] P1-01 Initialize Zig project structure and contiguous `World` memory arena with `MultiArrayList(Fact)`. (D-002, D-003)
-- [ ] P1-02 Implement declarative `remember`, `forget`, and tick-based TTL expiration pruning. (D-003, Q-003)
-- [ ] P1-03 Implement linear and wildcard relation pattern-matching queries (`where Relation(a, _)`). (D-003, Q-002)
+- [ ] P1-02 Implement declarative `remember`, `forget`, and tick-based TTL expiration pruning. (D-003, D-007, Q-003)
+- [ ] P1-03 Implement linear and wildcard relation pattern-matching queries (`where Relation(a, _)`). (D-003, D-006, Q-002)
 - [ ] P1-04 Implement deterministic memory snapshot serialization (`save_state` and `restore_state` via arena `memcpy`). (D-001, D-003)
 
 ## Phase 2: Bytecode VM & Fiber Scheduler
@@ -25,7 +25,7 @@ Goal: Build the custom bytecode instruction set, virtual machine dispatcher, and
 
 Goal: Implement the native spatial graph and asynchronous motor intents in the engine spine.
 
-- [ ] P3-01 Implement discrete spatial topology (room/waypoint graph or tilemap) and A* pathfinder in the engine spine. (D-001, Q-001)
+- [ ] P3-01 Implement discrete spatial topology (room/waypoint graph or tilemap) and A* pathfinder in the engine spine. (D-001, D-005, Q-001)
 - [ ] P3-02 Implement desugared `walk <entity> to <target>` asynchronous motor intent with arrival/obstruction events. (D-001, D-004)
 
 ## Phase 4: Language Front-End & Compiler

@@ -35,7 +35,7 @@ pub const RelationKind = enum(u16) {
 pub const Fact = struct {
     subject: EntityId,
     relation: RelationKind,
-    object: EntityId,
+    object_or_value: u32, // EntityId or immediate scalar value (D-007)
     expires_at_tick: u64, // 0 = permanent
 };
 
@@ -84,7 +84,7 @@ World Ticks (Discrete Clock) --------------------------------------------->|
 Rules that hold everywhere across the engine and runtime:
 
 - **The VM is the single source of truth:** Downstream renderers never modify game state directly. Enforced by: display bridge read-only pointer semantics (D-001).
-- **Pointerless relational facts:** All facts are flat integer tuples `(subject, relation, object, expires_at_tick)`. Enforced by: `Fact` struct definition in `src/world.zig` (D-003).
+- **Pointerless relational facts:** All facts are flat integer tuples `(subject, relation, object_or_value, expires_at_tick)`. Enforced by: `Fact` struct definition in `src/world.zig` (D-003, D-007).
 - **Deterministic save/restore:** The entire active game state resides in a contiguous arena such that saving or restoring is a pure memory copy without pointer swizzling. Enforced by: arena allocator layout in `src/world.zig` (D-003).
 - **Reversible interruption:** An interrupt block must push the fiber's program counter and local registers to the entity's interrupt stack and restore them when the condition clears. Enforced by: interrupt frame management in `src/vm.zig` (D-004).
 

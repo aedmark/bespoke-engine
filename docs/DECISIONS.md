@@ -50,10 +50,32 @@ Format:
 - Behavior Trees: rejected because linear narrative flows with interrupts become overly complex node trees.
 **Consequences:** Writing complex multi-step behaviors with emergency interruptions feels like sequential code while running fully cooperatively and deterministically.
 
+## D-005 Room/Waypoint Node Graphs for Spatial Topology (2026-11-04, status: accepted)
+**Context:** Choosing the initial spatial representation model for the BeSpoke Engine spine.
+**Decision:** Implement a Room and Waypoint Node Graph model as the primary spatial topology, tailored for graphical point-and-click adventure games (in the tradition of Sierra SCI and LucasArts SCUMM). Rooms are container entities; waypoints and walk-boxes define navigation within rooms; portals link rooms. 2D discrete tile grids are deferred to future roadmap phases.
+**Alternatives:**
+- 2D Discrete Tile Grid as primary: deferred; better suited for top-down construction/management simulations, but less natural for cinematic adventure scenes with perspective scaling and walk-polygons.
+- Full continuous 3D physics mesh: rejected per D-001; creates unnecessary complexity and bloat.
+**Consequences:** Pathfinding is fast A* graph traversal over sparse waypoint networks. Moving between rooms is modeled as discrete portal transitions.
+
+## D-006 Linear Scan Baseline for Relational Queries (2026-11-04, status: accepted)
+**Context:** Determining indexing strategy for pattern-matching queries like `where Relation(subject, _)`.
+**Decision:** Use contiguous linear scans over `MultiArrayList(Fact)` Structure-of-Arrays (SoA) columns as the engine's query baseline.
+**Alternatives:**
+- Secondary hash tables or entity-indexed sparse bitsets: rejected for initial phases; secondary indices add overhead to every `remember`/`forget` mutation and complicate pure `memcpy` arena serialization.
+**Consequences:** In adventure game scenes with hundreds to low thousands of facts, scanning contiguous 2-byte relation slices in L1 cache executes in nanoseconds with zero allocation overhead. Secondary indexing can be introduced transparently in the future if profiling indicates a bottleneck.
+
+## D-007 Unified Ternary Facts with Functional Property Overwrites (2026-11-04, status: accepted)
+**Context:** Deciding how to represent continuous stats (e.g. Health, Gold, Alertness) vs. entity-entity relations.
+**Decision:** Unify all state into ternary relational facts where the third slot (`object_or_value: u32`) can hold either an `EntityId` or an immediate scalar value. Relations are categorized as either sets (multiple rows allowed per subject, e.g. `Carries`) or functional properties (single row per subject, e.g. `Alertness`), where `remember Property(subject, new_val)` automatically overwrites any existing value for that property.
+**Alternatives:**
+- Dedicated component stats tables per entity: rejected; bifurcates the query syntax and introduces multiple distinct storage paradigms into the engine.
+**Consequences:** The entire engine state remains in one contiguous fact table with uniform DSL query syntax (`where Alertness(Guard, lvl) and lvl > 50`).
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
 
-- **Q-001** Spatial topology representation: Should the default spatial model in the spine be a discrete 2D tile grid (like RollerCoaster Tycoon / Dwarf Fortress), a room/waypoint node graph (like classic Sierra SCI / SCUMM adventure games), or a hybrid? (asked 2026-11-04 by agent; blocks P3-01; recommendation: start with a node/room waypoint graph for narrative scenes, extensible to 2D tile grids for simulation areas).
-- **Q-002** Fact query indexing: At what scale does linear scanning over `MultiArrayList(Fact)` need to be augmented with sparse bitsets or entity-indexed hash tables for queries like `where CharmedBy(victim, _)`? (asked 2026-11-04 by agent; blocks P1-03; recommendation: implement linear scan first as the baseline; add sparse subject/relation index tables when fact count exceeds 10,000).
-- **Q-003** Continuous numerical stats representation: Should continuous/metered stats (e.g., RCT-style Hunger, Nausea, Alertness: 0..100) be stored in a dedicated numeric table/struct per entity, or represented as ternary relational facts? (asked 2026-11-04 by agent; blocks P1-02; recommendation: evaluate a dedicated SoA stats block indexed by EntityId for rapid decay updates, unified under the relational query syntax).
+- **Q-001** ~~Spatial topology representation: Should the default spatial model in the spine be a discrete 2D tile grid, a room/waypoint node graph, or a hybrid?~~ Answered 2026-11-04: Room/waypoint node graph adopted for graphical adventure game priority; 2D tile grids deferred, D-005.
+- **Q-002** ~~Fact query indexing: At what scale does linear scanning over `MultiArrayList(Fact)` need to be augmented with sparse bitsets or entity-indexed hash tables?~~ Answered 2026-11-04: Linear scan over SoA columns adopted as baseline; cache-efficient and preserves zero-overhead `memcpy` saves, D-006.
+- **Q-003** ~~Continuous numerical stats representation: Should continuous/metered stats be stored in a dedicated numeric table/struct per entity, or represented as ternary relational facts?~~ Answered 2026-11-04: Unified ternary facts with functional property auto-overwrite adopted, D-007.
