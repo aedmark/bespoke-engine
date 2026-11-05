@@ -12,12 +12,12 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 1, on `main`: completed Phase 1 foundations, implementing World relational database, string interning, declarative mutations, wildcard queries, and snapshot serialization in Zig._
+_Last updated: 2026-11-04, session 1, on `main` at `9e3c148`: completed Phase 1 foundations, implementing World relational database, string interning, declarative mutations, wildcard queries, and snapshot serialization in Zig._
 
 **Where things stand, in one paragraph:**
 Phase 1 (Foundations) is complete. The Zig runtime has a functional `World` relational database backed by a contiguous arena and `MultiArrayList(Fact)` (P1-01). Declarative `remember`, `forget`, and TTL expiration tick pruning are implemented and verified (P1-02). Linear pattern matching queries with wildcards (`has_fact`, `find_first`, `get_property`) are operational (P1-03). Deterministic save state snapshot serialization and restoration with CRC32 integrity checks are implemented and tested (P1-04). Next work begins Phase 2 (P2-01: opcode set definition and fiber scheduler).
 
-**Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
+**Verified** (2026-11-04, on `9e3c148`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
