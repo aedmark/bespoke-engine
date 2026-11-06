@@ -46,13 +46,20 @@ pub const EmittedCue = struct {
     arg_count: u8,
 };
 
-/// Reactive simulation rule evaluated continuously on tick boundary and state mutations (P8-02, D-010).
+pub const ReactiveEdge = enum {
+    rising,
+    falling,
+    on_expire,
+};
+
+/// Reactive simulation rule evaluated continuously on tick boundary and state mutations (P8-02, P10-02, D-010, D-012).
 pub const ReactiveRule = struct {
     id: u32,
     clauses: []const world_mod.PatternClause,
     target_entity: EntityId,
     priority: u16,
     handler_pc: usize,
+    edge: ReactiveEdge = .rising,
     is_active: bool = false,
 };
 
@@ -185,6 +192,18 @@ pub const VM = struct {
         priority: u16,
         handler_pc: usize,
     ) !u32 {
+        return self.add_reactive_rule_edge(target_entity, clauses, priority, handler_pc, .rising);
+    }
+
+    /// Registers a reactive simulation rule with a specified edge trigger kind (P10-02, D-012).
+    pub fn add_reactive_rule_edge(
+        self: *VM,
+        target_entity: EntityId,
+        clauses: []const world_mod.PatternClause,
+        priority: u16,
+        handler_pc: usize,
+        edge: ReactiveEdge,
+    ) !u32 {
         const id: u32 = @intCast(self.reactive_rules.items.len + 1);
         const owned_clauses = try self.allocator.dupe(world_mod.PatternClause, clauses);
         try self.reactive_rules.append(.{
@@ -193,13 +212,14 @@ pub const VM = struct {
             .target_entity = target_entity,
             .priority = priority,
             .handler_pc = handler_pc,
+            .edge = edge,
             .is_active = false,
         });
         return id;
     }
 
-    /// Evaluates reactive 'when' rules against active relational facts in descending priority order (P8-02, P8-03, D-010).
-    /// Fires edge-triggered interrupts on target entities when conditions transition from false to true.
+    /// Evaluates reactive 'when' rules against active relational facts in descending priority order (P8-02, P8-03, P10-02, D-010, D-012).
+    /// Fires edge-triggered interrupts on target entities on rising edges, falling edges, and TTL fact expirations.
     pub fn evaluate_reactive_rules(self: *VM) !usize {
         var fired_count: usize = 0;
 
@@ -210,37 +230,91 @@ pub const VM = struct {
             }
         }.lessThan);
 
+        // 1. Check TTL fact expiration rules (on_expire) (P10-02, D-012)
+        const expired = self.world.get_recently_expired();
+        for (expired) |ef| {
+            var i: usize = 0;
+            while (i < self.reactive_rules.items.len) : (i += 1) {
+                const rule = &self.reactive_rules.items[i];
+                if (rule.edge == .on_expire) {
+                    if (rule.clauses.len > 0) {
+                        const clause = rule.clauses[0];
+                        var match = true;
+                        if (clause.relation != ef.relation) match = false;
+                        switch (clause.subject) {
+                            .constant => |c| if (c != ef.subject.to_int()) {
+                                match = false;
+                            },
+                            else => {},
+                        }
+                        if (match) {
+                            const interrupted = try self.interrupt_entity_priority(
+                                rule.target_entity,
+                                @intCast(rule.handler_pc),
+                                rule.priority,
+                            );
+                            if (interrupted) {
+                                fired_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Check rising and falling edge rules (P8-02, P10-02, D-010, D-012)
         var i: usize = 0;
         while (i < self.reactive_rules.items.len) : (i += 1) {
             var rule = &self.reactive_rules.items[i];
+            if (rule.edge == .on_expire) continue;
+
             const matches = self.world.has_multi_match(rule.clauses);
 
             if (matches) {
                 if (!rule.is_active) {
                     // Positive edge transition: false -> true
                     rule.is_active = true;
-                    const interrupted = try self.interrupt_entity_priority(
-                        rule.target_entity,
-                        @intCast(rule.handler_pc),
-                        rule.priority,
-                    );
-                    if (interrupted) {
-                        fired_count += 1;
+                    if (rule.edge == .rising) {
+                        const interrupted = try self.interrupt_entity_priority(
+                            rule.target_entity,
+                            @intCast(rule.handler_pc),
+                            rule.priority,
+                        );
+                        if (interrupted) {
+                            fired_count += 1;
+                        }
                     }
                 }
             } else {
-                // Negative edge: condition cleared -> re-arm rule
-                rule.is_active = false;
+                if (rule.is_active) {
+                    // Negative edge transition: true -> false
+                    rule.is_active = false;
+                    if (rule.edge == .falling) {
+                        const interrupted = try self.interrupt_entity_priority(
+                            rule.target_entity,
+                            @intCast(rule.handler_pc),
+                            rule.priority,
+                        );
+                        if (interrupted) {
+                            fired_count += 1;
+                        }
+                    }
+                }
             }
         }
 
         return fired_count;
     }
 
-    /// Registers all reactive simulation rules from a compiled program (P8-02, D-010).
+    /// Registers all reactive simulation rules from a compiled program (P8-02, P10-02, D-010, D-012).
     pub fn load_compiled_rules(self: *VM, compiled: anytype) !void {
         for (compiled.reactive_rules.items) |r| {
-            _ = try self.add_reactive_rule(r.target_entity, r.clauses, r.priority, r.handler_pc);
+            const edge: ReactiveEdge = switch (r.edge) {
+                .rising => .rising,
+                .falling => .falling,
+                .on_expire => .on_expire,
+            };
+            _ = try self.add_reactive_rule_edge(r.target_entity, r.clauses, r.priority, r.handler_pc, edge);
         }
     }
 
@@ -999,4 +1073,82 @@ test "P8-03: priority rule cascades preemption and nesting" {
     // Alert popped: back to Charm handler (priority 50, depth 1)
     try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
     try testing.expectEqual(@as(u16, 50), vm.fibers.items[0].active_priority);
+}
+
+test "P10-02: falling edge and on_expire reactive rule execution" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const organiser = try world.intern_entity("Organiser");
+    const scene = try world.intern_entity("Scene");
+
+    const distracted = try world.intern_relation("Distracted", .set);
+    const wind = try world.intern_relation("WindBlowing", .set);
+    const post_rel = try world.intern_relation("BackAtPost", .property);
+    const calm_rel = try world.intern_relation("WindCalm", .property);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    // Baseline routine for Organiser: wait 200 ticks
+    const baseline_pc = chunk.count();
+    try chunk.emit_wait_ticks(200);
+    _ = try chunk.emit_op(.halt);
+
+    // Handler 1: On-expire handler for Distracted -> remembers BackAtPost, resumes
+    const expire_handler_pc = chunk.count();
+    try chunk.emit_push_entity(organiser);
+    try chunk.emit_push_relation(post_rel);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.resume_routine);
+
+    // Handler 2: Falling edge handler for Wind -> remembers WindCalm, resumes
+    const falling_handler_pc = chunk.count();
+    try chunk.emit_push_entity(scene);
+    try chunk.emit_push_relation(calm_rel);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.resume_routine);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    _ = try vm.spawn_routine(organiser, baseline_pc);
+
+    // 1. Register on_expire rule: when Organiser forgets Distracted
+    const expire_clause = [_]world_mod.PatternClause{.{
+        .relation = distracted,
+        .subject = .{ .constant = organiser.to_int() },
+        .object = .{ .wildcard = {} },
+    }};
+    _ = try vm.add_reactive_rule_edge(organiser, &expire_clause, 50, expire_handler_pc, .on_expire);
+
+    // 2. Register falling edge rule: when Wind stops being blowing
+    const falling_clause = [_]world_mod.PatternClause{.{
+        .relation = wind,
+        .subject = .{ .constant = scene.to_int() },
+        .object = .{ .wildcard = {} },
+    }};
+    _ = try vm.add_reactive_rule_edge(organiser, &falling_clause, 40, falling_handler_pc, .falling);
+
+    // Initial state: Organiser is distracted for 3 ticks, Wind is blowing
+    try world.remember(organiser, distracted, 1, 3);
+    try world.remember(scene, wind, 1, 0);
+
+    // Tick 1: Wind is blowing -> rule arms (is_active = true), but does not fire falling
+    try vm.step_tick();
+    try testing.expect(!world.has_fact(scene, calm_rel, 1));
+    try testing.expect(!world.has_fact(organiser, post_rel, 1));
+
+    // Tick 2: Wind stops blowing! (forget fact)
+    _ = world.forget(scene, wind, null);
+    try vm.step_tick();
+    // Falling edge rule triggered!
+    try testing.expect(world.has_fact(scene, calm_rel, 1));
+
+    // Tick 3: Distracted expires on TTL tick 3 -> on_expire rule triggers!
+    try vm.step_tick();
+    try testing.expect(world.has_fact(organiser, post_rel, 1));
 }

@@ -118,6 +118,10 @@ pub const World = struct {
     relation_meta: std.ArrayListUnmanaged(RelationMeta),
     relation_map: std.StringHashMapUnmanaged(RelationKind),
 
+    // TTL Expiration tracking (P10-02, D-012)
+    recently_expired: [16]Fact,
+    recently_expired_count: usize,
+
     pub fn init(backing_allocator: std.mem.Allocator, arena_size: usize) !World {
         return initWithMaxFacts(backing_allocator, arena_size, DEFAULT_MAX_FACTS);
     }
@@ -140,6 +144,8 @@ pub const World = struct {
             .entity_map = .{},
             .relation_meta = .{},
             .relation_map = .{},
+            .recently_expired = undefined,
+            .recently_expired_count = 0,
         };
     }
 
@@ -322,6 +328,7 @@ pub const World = struct {
 
     /// Prunes facts whose expires_at_tick is non-zero and <= current_tick.
     pub fn prune_expired(self: *World) usize {
+        self.recently_expired_count = 0;
         var pruned: usize = 0;
         var i: usize = 0;
 
@@ -330,6 +337,15 @@ pub const World = struct {
             const exp = slice.items(.expires_at_tick)[i];
 
             if (exp > 0 and exp <= self.current_tick) {
+                if (self.recently_expired_count < self.recently_expired.len) {
+                    self.recently_expired[self.recently_expired_count] = .{
+                        .subject = slice.items(.subject)[i],
+                        .relation = slice.items(.relation)[i],
+                        .object_or_value = slice.items(.object_or_value)[i],
+                        .expires_at_tick = exp,
+                    };
+                    self.recently_expired_count += 1;
+                }
                 self.facts.swapRemove(i);
                 pruned += 1;
             } else {
@@ -338,6 +354,11 @@ pub const World = struct {
         }
 
         return pruned;
+    }
+
+    /// Gets slice of facts that expired during the most recent step_tick() (P10-02, D-012).
+    pub fn get_recently_expired(self: *const World) []const Fact {
+        return self.recently_expired[0..self.recently_expired_count];
     }
 
     // --- Pattern Matching & Queries (P1-03, D-006) ---

@@ -31,6 +31,25 @@ pub const TokenTag = enum {
     kw_toward,
     kw_verb,
     kw_say,
+    kw_scene,
+    kw_cast,
+    kw_props,
+    kw_marks,
+    kw_now,
+    kw_is,
+    kw_are,
+    kw_stops,
+    kw_forgets,
+    kw_being,
+    kw_animate,
+    kw_stop,
+    kw_during,
+    kw_state,
+    kw_resume,
+    kw_done,
+    kw_currently,
+    kw_in,
+    kw_the,
 
     // Identifiers & Literals
     identifier,
@@ -41,6 +60,8 @@ pub const TokenTag = enum {
     // Symbols & Punctuation
     lparen,
     rparen,
+    lbracket,
+    rbracket,
     comma,
     colon,
     underscore,
@@ -137,7 +158,7 @@ pub const Lexer = struct {
                 }
 
                 // If blank line or comment, skip
-                if (scan < self.source.len and (self.source[scan] == '\n' or self.source[scan] == '\r' or self.source[scan] == '#')) {
+                if (scan < self.source.len and (self.source[scan] == '\n' or self.source[scan] == '\r' or self.source[scan] == '#' or self.source[scan] == '~')) {
                     self.pos = scan;
                     _ = self.advance_char();
                     continue;
@@ -186,8 +207,8 @@ pub const Lexer = struct {
                 _ = self.advance_char();
             }
 
-            // Skip comments
-            if (self.pos < self.source.len and self.source[self.pos] == '#') {
+            // Skip comments (# or ~)
+            if (self.pos < self.source.len and (self.source[self.pos] == '#' or self.source[self.pos] == '~')) {
                 while (self.pos < self.source.len and self.source[self.pos] != '\n') {
                     _ = self.advance_char();
                 }
@@ -213,6 +234,8 @@ pub const Lexer = struct {
             switch (c) {
                 '(' => return Token{ .tag = .lparen, .slice = "(", .line = self.line, .col = start_col },
                 ')' => return Token{ .tag = .rparen, .slice = ")", .line = self.line, .col = start_col },
+                '[' => return Token{ .tag = .lbracket, .slice = "[", .line = self.line, .col = start_col },
+                ']' => return Token{ .tag = .rbracket, .slice = "]", .line = self.line, .col = start_col },
                 ',' => return Token{ .tag = .comma, .slice = ",", .line = self.line, .col = start_col },
                 ':' => return Token{ .tag = .colon, .slice = ":", .line = self.line, .col = start_col },
                 '_' => {
@@ -303,7 +326,7 @@ pub const Lexer = struct {
             // Identifier or Keyword
             if (std.ascii.isAlphabetic(c) or c == '_') {
                 while (self.peek_char()) |peek| {
-                    if (std.ascii.isAlphanumeric(peek) or peek == '_') {
+                    if (std.ascii.isAlphanumeric(peek) or peek == '_' or peek == '-') {
                         _ = self.advance_char();
                     } else break;
                 }
@@ -369,6 +392,27 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "toward", .kw_toward },
         .{ "verb", .kw_verb },
         .{ "say", .kw_say },
+        .{ "says", .kw_say },
+        .{ "scene", .kw_scene },
+        .{ "cast", .kw_cast },
+        .{ "props", .kw_props },
+        .{ "marks", .kw_marks },
+        .{ "now", .kw_now },
+        .{ "is", .kw_is },
+        .{ "are", .kw_are },
+        .{ "stops", .kw_stops },
+        .{ "forgets", .kw_forgets },
+        .{ "being", .kw_being },
+        .{ "animate", .kw_animate },
+        .{ "stop", .kw_stop },
+        .{ "during", .kw_during },
+        .{ "state", .kw_state },
+        .{ "resume", .kw_resume },
+        .{ "done", .kw_done },
+        .{ "currently", .kw_currently },
+        .{ "in", .kw_in },
+        .{ "the", .kw_the },
+        .{ "towards", .kw_toward },
     });
 
     return map.get(ident) orelse .identifier;
@@ -431,3 +475,72 @@ test "P7-02: lexer tokenizes verbs, say statements, and string literals" {
     try testing.expectEqual(TokenTag.string_literal, str_tok.tag);
     try testing.expectEqualStrings("A cozy hearth.", str_tok.slice);
 }
+
+test "P10-01: lexer tokenizes stageplay taxonomy, state keywords, brackets, and tilde comments" {
+    const testing = std.testing;
+    const src =
+        \\scene: Spitting Competition
+        \\cast: Guybrush, Organiser
+        \\props: Flags
+        \\marks: Starting Line, Offstage
+        \\remember Distracted[Organiser, Onlookers] for 100 ticks ~ inline comment
+        \\now Flags are tampered with
+        \\animate wind-blowing
+        \\
+    ;
+    var lexer = Lexer.init(testing.allocator, src);
+    defer lexer.deinit();
+
+    try testing.expectEqual(TokenTag.kw_scene, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Spitting
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Competition
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_cast, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Guybrush
+    try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Organiser
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_props, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Flags
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_marks, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Starting
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Line
+    try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Offstage
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_remember, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Distracted
+    try testing.expectEqual(TokenTag.lbracket, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Organiser
+    try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Onlookers
+    try testing.expectEqual(TokenTag.rbracket, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.kw_for, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.number, (try lexer.next()).tag); // 100
+    try testing.expectEqual(TokenTag.kw_ticks, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_now, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Flags
+    try testing.expectEqual(TokenTag.kw_are, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // tampered
+    try testing.expectEqual(TokenTag.kw_with, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_animate, (try lexer.next()).tag);
+    const anim_tok = try lexer.next();
+    try testing.expectEqual(TokenTag.identifier, anim_tok.tag);
+    try testing.expectEqualStrings("wind-blowing", anim_tok.slice);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
+}
+

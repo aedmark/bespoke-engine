@@ -7,6 +7,7 @@ pub const spatial = @import("spatial.zig");
 pub const compiler = @import("compiler.zig");
 pub const display = @import("display.zig");
 pub const repl = @import("repl.zig");
+pub const spitting_contest = @import("spitting_contest.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -42,4 +43,5 @@ test "root test imports all modules" {
     _ = @import("compiler.zig");
     _ = @import("display.zig");
     _ = @import("repl.zig");
+    _ = @import("spitting_contest.zig");
 }

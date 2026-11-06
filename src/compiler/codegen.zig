@@ -14,6 +14,7 @@ pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
 pub const RelationKind = world_mod.RelationKind;
 pub const SpatialSystem = spatial_mod.SpatialSystem;
+pub const WhenEdge = parser_mod.WhenEdge;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
 pub const CompiledWhenRule = struct {
@@ -21,6 +22,7 @@ pub const CompiledWhenRule = struct {
     target_entity: EntityId,
     priority: u16,
     handler_pc: usize,
+    edge: WhenEdge = .rising,
 };
 
 pub const CompiledProgram = struct {
@@ -67,9 +69,55 @@ pub const Codegen = struct {
 
     /// Compiles an entire AST into a CompiledProgram (P4-03).
     pub fn compile(mut_self: *Codegen, ast: *const AST) !CompiledProgram {
-        // 1. Intern declared entities
+        // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
             _ = try mut_self.world.intern_entity(name);
+        }
+        for (ast.scenes.items) |name| {
+            _ = try mut_self.world.intern_entity(name);
+        }
+        for (ast.cast.items) |name| {
+            _ = try mut_self.world.intern_entity(name);
+        }
+        for (ast.props.items) |name| {
+            _ = try mut_self.world.intern_entity(name);
+        }
+        for (ast.marks.items) |name| {
+            _ = try mut_self.world.intern_entity(name);
+        }
+
+        // Register stage marks and props in SpatialSystem if present
+        if (mut_self.spatial) |sp| {
+            const sent = if (ast.scenes.items.len > 0)
+                mut_self.world.lookup_entity(ast.scenes.items[0]) orelse try mut_self.world.intern_entity(ast.scenes.items[0])
+            else
+                try mut_self.world.intern_entity("DefaultScene");
+
+            var prev_wp: ?u16 = null;
+            for (ast.marks.items, 0..) |mname, idx| {
+                const wx: i32 = @as(i32, @intCast(idx)) * 20;
+                var found = false;
+                for (sp.graph.waypoints.items) |wp| {
+                    if (std.mem.eql(u8, wp.name, mname)) {
+                        found = true;
+                        prev_wp = wp.id;
+                        break;
+                    }
+                }
+                if (!found) {
+                    const wp_id = try sp.graph.add_waypoint(sent, wx, 0, mname);
+                    if (prev_wp) |p| {
+                        sp.graph.connect(p, wp_id, null) catch {};
+                    }
+                    prev_wp = wp_id;
+                }
+            }
+
+            for (ast.props.items, 0..) |pname, idx| {
+                const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
+                const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
+                sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
+            }
         }
 
         // 2. Intern declared relations
@@ -159,6 +207,7 @@ pub const Codegen = struct {
                 .target_entity = target_entity,
                 .priority = priority,
                 .handler_pc = entry_pc,
+                .edge = rule.edge,
             });
         }
 
@@ -299,6 +348,18 @@ pub const Codegen = struct {
                 _ = try self.chunk.emit_op(.emit_cue);
                 try self.chunk.emit_u16(2); // cue 2 = say
                 try self.chunk.emit_u8(2); // 2 args (speaker, text_entity)
+            },
+            .animate => |a| {
+                const target_id = try self.resolve_entity(a.target);
+                const clip_id = try self.world.intern_entity(a.clip);
+                try self.chunk.emit_push_entity(target_id);
+                try self.chunk.emit_push_entity(clip_id);
+                _ = try self.chunk.emit_op(.emit_cue);
+                try self.chunk.emit_u16(if (a.is_stop) 4 else 3); // cue 3 = animate, cue 4 = stop animate
+                try self.chunk.emit_u8(2); // 2 args (target, clip)
+            },
+            .resume_stmt => {
+                _ = try self.chunk.emit_op(.resume_routine);
             },
         }
     }

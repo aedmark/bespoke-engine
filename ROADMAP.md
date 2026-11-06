@@ -76,3 +76,12 @@ Goal: Build an interactive developer dashboard and time-travel timeline scrubber
 - [x] P9-01 In-engine debug overlay / HUD: live inspector displaying active relational facts, active fibers, call stacks, and spatial coordinates. (D-001, D-011; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig` and interactive window)
 - [x] P9-02 Interactive time-travel timeline scrubber: pause, step forward, and scrub backward across historical snapshot states with instantaneous live visual replay. (D-001, D-003, D-011; completed 2026-11-04, verified via `zig test -lc -lSDL2 src/display.zig`, `zig build run -- --headless`, and timeline scrubber)
 - [x] P9-03 Live interactive REPL / console: inject facts (`remember ...`), emit cues (`PlayLute`), and test scripts in a running simulation. (D-001, D-002, D-011; completed 2026-11-04, verified via `zig test src/repl.zig`, `zig build test`, and interactive drawer)
+
+## Phase 10: The Booty Island Spitting Contest Scenario & Extended Narrative DSL
+
+Goal: Expand BeSpoke with high-level stageplay declarations, falling-edge and expiration triggers, and implement the complete Monkey Island 2 Spitting Contest puzzle slice.
+
+- [x] P10-01 Declarative stageplay syntax & state declarations: grammar and compiler support for `scene:`, `cast:`, `props:`, `marks:`, and natural state transitions (`now <Entity> is [not] <State>`). (D-001, D-002, D-012; completed 2026-11-06, verified via `zig test src/compiler/lexer.zig`, `zig test src/compiler/parser.zig`, and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P10-02 Falling-edge and TTL expiration hooks: VM reactive rule engine support for falling edges (`when <Condition> stops being <State>:`) and fact expiration triggers (`when <Entity> forgets <Relation>:`). (D-004, D-010, D-012; completed 2026-11-06, verified via `zig test src/world.zig`, `zig test src/vm.zig`, and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P10-03 The Booty Island Spitting Contest vertical slice: complete multi-step puzzle scenario featuring Guybrush, crowd egging routine, wind cycling, horn distraction, flag moving, thick spit drink, and wind-timed spit resolution. (D-001, D-008, D-009, D-012; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/root.zig`, `zig build test`, and `zig build run -- --spitting-contest`)
+

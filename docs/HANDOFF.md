@@ -12,12 +12,12 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-04, session 5, on `main`: completed Phase 9 (Interactive Time-Travel Debugger & REPL: In-Engine Debug Overlay, Timeline Scrubber, Live REPL Console)._
+_Last updated: 2026-11-06, session 6, on `main`: completed Phase 10 (The Booty Island Spitting Contest Scenario & Extended Narrative DSL: Stageplay Syntax, Falling-Edge & Expiration Triggers, Vertical Slice Scenario)._
 
 **Where things stand, in one paragraph:**
-All 9 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, and autonomous reactive rule cascades. Phase 9 completes the developer experience with an in-engine relational inspector overlay (`[F1]`/`[D]`), an interactive timeline scrubber bar with click-to-scrub and arrow navigation across serialized memory snapshots, and a live REPL console drawer (`[Tab]`/`[C]`/`[~]`) for injecting facts, cues, and motor commands on the fly. Headless execution is fully supported via `--headless`.
+All 10 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, and declarative stageplay structures. Phase 10 expands the compiler and VM to natively support stageplay scene taxonomies (`scene:`, `cast:`, `props:`, `marks:`), natural state assertions and expressions (`now X is [not] Y`, `X is [not] Y in the scene`), falling-edge rule triggers (`when X stops being Y:`), and fact TTL expiration hooks (`when Entity forgets Relation:`). The full multi-step *Monkey Island 2* Booty Island Spitting Contest puzzle scenario is implemented in `src/spitting_contest.zig` and runnable via `--spitting-contest`.
 
-**Verified** (2026-11-04, on `main`, Linux x86_64, Zig 0.13.0)
+**Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
@@ -25,14 +25,15 @@ All 9 phases of the BeSpoke Engine roadmap are complete, verified, and operation
 | `zig test src/world.zig` | **5/5 passed** |
 | `zig test src/bytecode.zig` | **6/6 passed** |
 | `zig test src/spatial.zig` | **8/8 passed** |
-| `zig test src/vm.zig` | **15/15 passed** |
+| `zig test src/vm.zig` | **16/16 passed** |
 | `zig test src/repl.zig` | **16/16 passed** |
-| `zig test src/compiler/lexer.zig` | **2/2 passed** |
-| `zig test src/compiler/parser.zig` | **4/4 passed** |
+| `zig test src/compiler/lexer.zig` | **3/3 passed** |
+| `zig test src/compiler/parser.zig` | **6/6 passed** |
 | `zig test -lc -lSDL2 src/display.zig` | **19/19 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **29/29 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **35/35 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
+| `zig build run -- --spitting-contest` | **Booty Island Spitting Contest full scenario with rewind passed** |
 
 **What works**
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
@@ -58,6 +59,11 @@ All 9 phases of the BeSpoke Engine roadmap are complete, verified, and operation
 ---
 
 ## Session log
+
+### Session 6 (2026-11-06)
+- **Goal:** Implement Phase 10: The Booty Island Spitting Contest Scenario & Extended Narrative DSL (P10-01 through P10-03, D-012).
+- **Work:** Recorded architectural decision `D-012` (High-Level Stageplay Taxonomy, Falling-Edge Triggers, and TTL Expiration Hooks). Extended lexer (`src/compiler/lexer.zig`) with stageplay keywords (`scene`, `cast`, `props`, `marks`, `now`, `is`, `are`, `stops`, `forgets`, `being`, `animate`, `stop`, `during`, `state`, `resume`, `done`, `currently`, `in`, `the`, `says`), square brackets (`[` / `]`), tilde comments (`~`), and hyphenated animation clip identifiers (`wind-blowing`). Enhanced parser (`src/compiler/parser.zig`) to parse stageplay taxonomy headers, automatic waypoint and hotspot registration for marks and props, natural state assertions (`now X is [not] Y`, `X is [not] Y in the scene`), falling-edge when rules (`when X stops being Y:`), and expiration rules (`when Entity forgets Relation:`). Extended code generator (`src/compiler/codegen.zig`) to lower `.animate` cues and `.resume_stmt` operations. Enhanced `World` (`src/world.zig`) with a `recently_expired: [16]Fact` ring buffer populated during `prune_expired()`. Extended VM reactive rule engine (`src/vm.zig`) with `ReactiveEdge` (`.rising`, `.falling`, `.on_expire`) to evaluate expiration triggers against `recently_expired` and falling edges on `true -> false` transitions. Implemented the complete Booty Island Spitting Contest vertical slice in `src/spitting_contest.zig` with full CLI support in `src/main.zig` (`--spitting-contest`, `--spit`, `--scenario spitting-contest`), featuring crowd egging routine, wind cycling, ship horn distraction, flag tampering, thick spit green drink, wind-timed spit resolution, TTL expiration resumption, and time-travel rewind verification.
+- **Outcome:** All 35 tests passing on `src/root.zig`, `zig build test` passing, both `--headless` Tavern Heist and `--spitting-contest` Booty Island scenarios executing cleanly. Documentation verified with 0 errors and 0 warnings. Phase 10 roadmap items (`P10-01` through `P10-03`) complete.
 
 ### Session 5 (2026-11-04)
 - **Goal:** Implement Phase 9: Interactive Time-Travel Debugger & REPL (P9-01 through P9-03).

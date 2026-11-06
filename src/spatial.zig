@@ -65,6 +65,14 @@ pub const SpatialGraph = struct {
         return self.waypoints.items[id - 1];
     }
 
+    /// Finds a waypoint by name.
+    pub fn find_waypoint(self: *const SpatialGraph, name: []const u8) ?WaypointId {
+        for (self.waypoints.items) |wp| {
+            if (std.mem.eql(u8, wp.name, name)) return wp.id;
+        }
+        return null;
+    }
+
     /// Connects two waypoints bidirectionally. If cost is null, uses Euclidean distance.
     pub fn connect(self: *SpatialGraph, a: WaypointId, b: WaypointId, cost: ?u32) !void {
         const wp_a = self.get_waypoint(a) orelse return error.WaypointNotFound;

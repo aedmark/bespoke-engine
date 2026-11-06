@@ -3,14 +3,40 @@ const bespoke = @import("root.zig");
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    try stdout.print("===================================================================\n", .{});
-    try stdout.print("       BeSpoke Engine: The Tavern Heist Vertical Slice Demo        \n", .{});
-    try stdout.print("   (Engine-as-Spine * Custom Bytecode * Relational & Temporal)  \n", .{});
-    try stdout.print("===================================================================\n\n", .{});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    // Check command line arguments
+    var is_headless_arg = false;
+    var is_spitting_contest = false;
+    var args_it = try std.process.argsWithAllocator(allocator);
+    defer args_it.deinit();
+    _ = args_it.next(); // Skip binary name
+    while (args_it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--headless")) {
+            is_headless_arg = true;
+        } else if (std.mem.eql(u8, arg, "--spitting-contest") or std.mem.eql(u8, arg, "--spit")) {
+            is_spitting_contest = true;
+        } else if (std.mem.eql(u8, arg, "--scenario")) {
+            if (args_it.next()) |scen| {
+                if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
+                    is_spitting_contest = true;
+                }
+            }
+        }
+    }
+
+    if (is_spitting_contest) {
+        try bespoke.spitting_contest.run_headless(allocator, stdout);
+        return;
+    }
+
+    try stdout.print("===================================================================\n", .{});
+    try stdout.print("       BeSpoke Engine: The Tavern Heist Vertical Slice Demo        \n", .{});
+    try stdout.print("   (Engine-as-Spine * Custom Bytecode * Relational & Temporal)  \n", .{});
+    try stdout.print("===================================================================\n\n", .{});
 
     // 1. Initialize Relational World
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
@@ -98,17 +124,6 @@ pub fn main() !void {
     defer {
         for (history_snapshots.items) |*buf| buf.deinit();
         history_snapshots.deinit();
-    }
-
-    // Check command line arguments for --headless
-    var is_headless_arg = false;
-    var args_it = try std.process.argsWithAllocator(allocator);
-    defer args_it.deinit();
-    _ = args_it.next(); // Skip binary name
-    while (args_it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--headless")) {
-            is_headless_arg = true;
-        }
     }
 
     // Initialize SDL2 Peripheral Display Window (D-008, P6-01)
