@@ -11,6 +11,7 @@ pub fn main() !void {
     // Check command line arguments
     var is_headless_arg = false;
     var is_spitting_contest = false;
+    var is_gk3 = false;
     var args_it = try std.process.argsWithAllocator(allocator);
     defer args_it.deinit();
     _ = args_it.next(); // Skip binary name
@@ -19,13 +20,26 @@ pub fn main() !void {
             is_headless_arg = true;
         } else if (std.mem.eql(u8, arg, "--spitting-contest") or std.mem.eql(u8, arg, "--spit")) {
             is_spitting_contest = true;
+        } else if (std.mem.eql(u8, arg, "--gk3") or std.mem.eql(u8, arg, "--cat-moustache")) {
+            is_gk3 = true;
         } else if (std.mem.eql(u8, arg, "--scenario")) {
             if (args_it.next()) |scen| {
                 if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
                     is_spitting_contest = true;
+                } else if (std.mem.eql(u8, scen, "gk3") or std.mem.eql(u8, scen, "cat-moustache")) {
+                    is_gk3 = true;
                 }
             }
         }
+    }
+
+    if (is_gk3) {
+        if (is_headless_arg) {
+            try bespoke.gk3_moustache.run_headless(allocator, stdout);
+        } else {
+            try bespoke.gk3_moustache.run_interactive(allocator, stdout);
+        }
+        return;
     }
 
     if (is_spitting_contest) {

@@ -12,17 +12,17 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-06, session 9, on `main`: completed Phase 13 (Relational Dialogue Trees & Dynamic Choice Pruning, P13-01..P13-03, D-015) and updated 3x Developer Guide (docs/manual.html)._
+_Last updated: 2026-11-06, session 10, on `main`: completed Phase 14 (The Gabriel Knight 3 Cat Moustache Scenario, P14-01..P14-03, D-016) and updated 3x Developer Guide (docs/manual.html)._
 
 **Where things stand, in one paragraph:**
-All 13 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, and dynamic dialogue choice pruning. Conditionally guarded dialogue choices (`choice "..." if Condition:`, `kw_choice`, `DialogueChoice`, `Stmt.choice_block`) are dynamically evaluated by the VM against the contiguous relational `World` fact store at balloon spawn time (`VM.prune_dialogue_choices`, `VM.has_fact_pattern`), culling unsatisfied branches before display. The 2D display renderer (`src/display/renderer.zig`) supports variable-length choice sets (up to 9 choices) with dynamic height calculation, bounds clamping, scroll offset tracking via mouse wheel and arrow keys, numbered hotkey tags (`[1]..[9]`), and dual input handling via mouse click or keyboard hotkeys (`1-9` / keypad `1-9`).
+All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, and multi-step item crafting. The complete *Gabriel Knight 3* Cat Moustache vertical slice (`src/gk3_moustache.zig`) runs seamlessly across 3 partitioned scenes (Hotel Corridor, Courtyard Garden, Bike Rental Shop), verifying ambient actor schedules (`MoselyPacing`, `CatNapping`), two-operand inventory crafting (`Uses(Gabriel, CatHair, Syrup)`), dynamic fact conjunction guards (`Disguised(Gabriel)`), dialogue choice pruning with Madame Buthane, and instant time-travel state rewinds.
 
 **Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings (includes 3x manual check)** |
-| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 33 entries, 0 warnings)** |
+| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 34 entries, 0 warnings)** |
 | `python3 tools/manual.py review scheme/bespoke.manual.json --strict` | **passed (0 items for human attention)** |
 | `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check` | **passed (build check passed)** |
 | `python3 -m unittest discover -s tests -v` | **29/29 passed** |
@@ -33,11 +33,12 @@ All 13 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 | `zig test src/repl.zig` | **32/32 passed** |
 | `zig test src/compiler/lexer.zig` | **5/5 passed** |
 | `zig test src/compiler/parser.zig` | **11/11 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **38/38 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **49/49 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **39/39 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **52/52 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 | `zig build run -- --spitting-contest --headless` | **Booty Island Spitting Contest full scenario with rewind passed** |
+| `zig build run -- --gk3 --headless` | **Gabriel Knight 3 Cat Moustache full scenario with rewind passed** |
 
 **What works**
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
@@ -65,6 +66,11 @@ All 13 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 ---
 
 ## Session log
+
+### Session 10 (2026-11-06)
+- **Goal:** Implement Phase 14: The Gabriel Knight 3 Cat Moustache Scenario (P14-01 through P14-03, D-016), authenticate visual backdrops and custom actor tokens, verify headless and interactive modes, and update 3x documentation.
+- **Work:** Recorded architectural decision `D-016` (The Gabriel Knight 3 Cat Moustache Puzzle Scenario and Multi-Scene Narrative Integration). Implemented `src/gk3_moustache.zig` declaring `GK3_MOUSTACHE_SCRIPT` with 3 partitioned scenes (`Hotel Corridor`, `Hotel Garden`, `Bike Rental Shop`), ambient routines (`MoselyPacing`, `CatNapping`), item-on-item crafting (`Uses(Gabriel, CatHair, Syrup)`, `Uses(Gabriel, Marker, MoselyPassport)`), and dynamic fact-guarded dialogue choice validation with Madame Buthane. Implemented deterministic 13-step headless simulation runner with time-travel rewind to pre-heist state and 60 Hz interactive runner. Extended `src/display.zig` `RenderFrame` and `capture_frame` with GK3 scenario flags (`fence_taped`, `cat_startled`, `cat_hair_collected`, `gabriel_disguised`, `bike_rented`) and inventory extraction for Gabriel. Added authentic French provincial scene backdrops (Hotel Corridor damask wallpaper and doors 25/33, Courtyard stone wall and picket fence with taped hole, Bike Rental Shop timber beams, Languedoc map, and motorcycle display) and custom actor tokens (Gabriel Knight in trench coat with disguise toggle, Franklin Mosely, Madame Buthane, and stray cat) in `src/display/renderer.zig`. Added CLI options `--gk3` and `--cat-moustache` to `src/main.zig`. Exported `gk3_moustache` in `src/root.zig`. Added entry `gabriel-knight-cat-moustache-scenario` to `scheme/bespoke.manual.json` and compiled `docs/manual.html`.
+- **Outcome:** All 52 tests passing on `src/root.zig`, 39/39 on `src/display.zig`, `zig build test` passing, all three headless scenario runners (`--headless`, `--spitting-contest --headless`, `--gk3 --headless`) passing with full verification. 3x manual lint, check, review, and build tests passing with 0 warnings. `python3 tools/check_docs.py` reported 0 errors and 0 warnings. Phase 14 roadmap items (`P14-01` through `P14-03`) complete.
 
 ### Session 9 (2026-11-06)
 - **Goal:** Implement Phase 13: Relational Dialogue Trees & Dynamic Choice Pruning (P13-01 through P13-03, D-015), establish VM runtime fact-guard choice evaluation, dynamic renderer balloon scaling, scrolling, and keyboard hotkeys.

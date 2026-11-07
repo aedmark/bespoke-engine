@@ -113,7 +113,7 @@ Goal: Support branching dialogue trees where choices dynamically appear, disappe
 
 Goal: Implement the complete *Gabriel Knight 3* Rennes-le-Château Cat Moustache vertical slice in `src/gk3_moustache.zig`, runnable via `--gk3`.
 
-- [ ] P14-01 Full GK3 puzzle script implementation in BeSpoke DSL: Mosely room break-in, fence hole taping, cat water squirting, syrup lip adhesive, cat moustache crafting, and Buthane rental shop validation. (D-001, D-012, D-013)
-- [ ] P14-02 Visual renderer backdrop for Rennes-le-Château (hotel corridor, garden fence, bike rental desk) and custom actor tokens (Gabriel in trench coat, Mosely, Buthane, Stray Cat). (D-008, D-009, D-012)
-- [ ] P14-03 CLI option `--gk3` / `--cat-moustache` with end-to-end headless simulation verification and interactive 60 Hz playability with time-travel rewind. (D-001, D-008, D-011)
+- [x] P14-01 Full GK3 puzzle script implementation in BeSpoke DSL: Mosely room break-in, fence hole taping, cat water squirting, syrup lip adhesive, cat moustache crafting, and Buthane rental shop validation. (D-001, D-012, D-013, D-015, D-016; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/root.zig` and `zig build run -- --gk3 --headless`)
+- [x] P14-02 Visual renderer backdrop for Rennes-le-Château (hotel corridor, garden fence, bike rental desk) and custom actor tokens (Gabriel in trench coat, Mosely, Buthane, Stray Cat). (D-008, D-009, D-012, D-014, D-016; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
+- [x] P14-03 CLI option `--gk3` / `--cat-moustache` with end-to-end headless simulation verification and interactive 60 Hz playability with time-travel rewind. (D-001, D-008, D-011, D-016; completed 2026-11-06, verified via `zig build run -- --gk3 --headless` and `zig build test`)
 

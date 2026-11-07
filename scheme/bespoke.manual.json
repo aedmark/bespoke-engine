@@ -634,6 +634,28 @@
             {"label": "Spitting Contest Scenario Integration", "target": "src/spitting_contest.zig", "kind": "source"}
           ],
           "related": ["commutative-item-combining", "classic-adventure-verbs"]
+        },
+        {
+          "id": "gabriel-knight-cat-moustache-scenario",
+          "title": "The Gabriel Knight 3 Cat Moustache Scenario",
+          "summary": "Multi-scene vertical slice demonstrating ambient routines, in-hand crafting, fact-guarded dialogue pruning, and disguise evaluation.",
+          "synopsis": "zig build run -- --gk3 [--headless]",
+          "tags": ["gk3", "scenario", "crafting", "multi-scene", "dialogue"],
+          "what": "Implements the classic multi-step disguise puzzle across three partitioned scenes (Hotel Corridor, Courtyard Garden, Bike Rental Desk), combining stolen passport, tape fence traps, spray bottles, syrup adhesive, and fact-guarded dialogue choice validation.",
+          "how": [
+            "Declares three partitioned scenes with distinct waypoints, marks, hotspots, and ambient actor routines.",
+            "Uses two-operand inventory combining (Uses(Gabriel, Syrup, CatHair)) to craft composite items.",
+            "Evaluates composite disguise validity via relational fact conjunctions (passport, hair, syrup, marker).",
+            "Runs dialogue choice pruning when interacting with Madame Buthane, granting motorcycle keys only when the disguise condition holds."
+          ],
+          "why": "Proves that BeSpoke's engine spine effortlessly coordinates complex adventure game logic across multiple scenes, ambient actor schedules, dynamic fact guards, and time-travel snapshot state without custom ad-hoc engine extensions.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-016", "target": "docs/DECISIONS.md#d-016", "kind": "decision"},
+            {"label": "GK3 Cat Moustache Scenario Script", "target": "src/gk3_moustache.zig", "kind": "source"},
+            {"label": "GK3 Scene Renderer & Actor Tokens", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["stageplay-taxonomy", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
         }
       ]
     },
@@ -711,12 +733,13 @@
           "id": "headless-and-interactive-cli",
           "title": "Dual Interactive & Headless CLI Modes",
           "summary": "Command-line flags supporting headless deterministic simulation runs and interactive graphics mode.",
-          "synopsis": "zig build run -- [--headless] [--spitting-contest] [--help]",
+          "synopsis": "zig build run -- [--headless] [--spitting-contest] [--gk3] [--help]",
           "tags": ["cli", "headless", "runner"],
           "what": "Provides flexible command-line execution modes for CI pipelines, automated integration testing, and interactive human gameplay.",
           "how": [
             "--headless runs the simulation without creating an SDL2 window, printing tick snapshots to standard output.",
             "--spitting-contest launches the Monkey Island 2 Booty Island Spitting Contest puzzle scenario.",
+            "--gk3 or --cat-moustache launches the Gabriel Knight 3 Cat Moustache puzzle scenario.",
             "Running without flags launches the interactive graphical Tavern Heist simulation at 60 Hz."
           ],
           "why": "Continuous integration servers and developer workstations without display servers must be able to run and verify entire multi-scene simulation scenarios with zero GUI dependencies.",
@@ -724,6 +747,7 @@
           "evidence": [
             {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
             {"label": "Main CLI Argument Parsing", "target": "src/main.zig", "kind": "source"},
+            {"label": "GK3 Cat Moustache Scenario Script", "target": "src/gk3_moustache.zig", "kind": "source"},
             {"label": "Testing Strategy & Recipes", "target": "docs/TESTING.md", "kind": "document"}
           ],
           "related": ["zero-external-dependencies", "test-verification-hierarchy"]

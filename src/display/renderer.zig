@@ -10,7 +10,7 @@ const RenderInventoryItem = display_mod.RenderInventoryItem;
 const WaypointId = display_mod.WaypointId;
 const EntityId = display_mod.EntityId;
 
-const c = @cImport({
+pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
 
@@ -52,6 +52,24 @@ pub const Color = struct {
     pub const sand_color = Color{ .r = 180, .g = 160, .b = 110 };
     pub const ocean_blue = Color{ .r = 14, .g = 70, .b = 110 };
     pub const sky_dusk = Color{ .r = 16, .g = 24, .b = 48 };
+
+    // Gabriel Knight 3 Scenario Colors (P14-02, D-016)
+    pub const gabriel_coat = Color{ .r = 180, .g = 115, .b = 50 }; // Tan leather trench coat
+    pub const gabriel_hair = Color{ .r = 245, .g = 215, .b = 110 }; // Signature blonde hair
+    pub const mosely_suit = Color{ .r = 40, .g = 50, .b = 85 }; // Detective navy suit
+    pub const buthane_vest = Color{ .r = 190, .g = 45, .b = 60 }; // Crimson shopkeeper vest
+    pub const buthane_hair = Color{ .r = 180, .g = 70, .b = 30 }; // Auburn hair
+    pub const stray_cat_color = Color{ .r = 25, .g = 25, .b = 30 }; // Black stray cat
+    pub const cat_eye_color = Color{ .r = 50, .g = 220, .b = 90 }; // Piercing green eyes
+    pub const hotel_wallpaper = Color{ .r = 95, .g = 25, .b = 32 }; // Burgundy damask
+    pub const hotel_wainscot = Color{ .r = 45, .g = 22, .b = 15 }; // Dark polished mahogany
+    pub const hotel_door = Color{ .r = 65, .g = 35, .b = 20 }; // French room door
+    pub const garden_sky = Color{ .r = 140, .g = 185, .b = 225 }; // Southern French sky
+    pub const garden_grass = Color{ .r = 55, .g = 115, .b = 50 }; // Courtyard greenery
+    pub const garden_fence = Color{ .r = 150, .g = 95, .b = 50 }; // Wooden picket fence
+    pub const rental_wall = Color{ .r = 75, .g = 65, .b = 55 }; // French stone plaster
+    pub const rental_counter = Color{ .r = 160, .g = 100, .b = 45 }; // Pine shop counter
+    pub const motorcycle_red = Color{ .r = 220, .g = 38, .b = 38 }; // Shiny red motorcycle
 
     pub const hud_bg = Color{ .r = 15, .g = 23, .b = 42, .a = 230 };
     pub const hud_text = Color{ .r = 248, .g = 250, .b = 252 };
@@ -969,11 +987,14 @@ pub const DisplayWindow = struct {
     pub fn render_frame(self: *DisplayWindow, frame: *const RenderFrame, is_paused: bool) void {
         if (self.is_headless or self.renderer == null) return;
 
-        // Detect active scene theme (P12-03, D-014)
+        // Detect active scene theme (P12-03, P14-02, D-014, D-016)
         const cur_scene = frame.get_current_scene();
         var is_spitting_scene = false;
         var is_wine_cellar_scene = false;
         var is_tavern_scene = false;
+        var is_hotel_scene = false;
+        var is_garden_scene = false;
+        var is_bike_rental_scene = false;
 
         if (cur_scene.len > 0) {
             if (std.mem.indexOf(u8, cur_scene, "Spit") != null or
@@ -986,20 +1007,48 @@ pub const DisplayWindow = struct {
                        std.mem.indexOf(u8, cur_scene, "Common") != null)
             {
                 is_tavern_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Hotel") != null or
+                       std.mem.indexOf(u8, cur_scene, "Corridor") != null)
+            {
+                is_hotel_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Garden") != null) {
+                is_garden_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Bike") != null or
+                       std.mem.indexOf(u8, cur_scene, "Rental") != null or
+                       std.mem.indexOf(u8, cur_scene, "Shop") != null)
+            {
+                is_bike_rental_scene = true;
             }
         }
 
         // Fallback detection if current_scene wasn't explicitly set
-        if (!is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene) {
+        if (!is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
+            !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene)
+        {
             for (frame.waypoints[0..frame.waypoint_count]) |wp| {
                 if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
                     std.mem.indexOf(u8, wp.get_name(), "Offstage") != null)
                 {
                     is_spitting_scene = true;
                     break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Room25") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "Room33") != null)
+                {
+                    is_hotel_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Fence") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "CatLounge") != null)
+                {
+                    is_garden_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Counter") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "BikeMark") != null)
+                {
+                    is_bike_rental_scene = true;
+                    break;
                 }
             }
-            if (!is_spitting_scene) {
+            if (!is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene) {
                 for (frame.entities[0..frame.entity_count]) |e| {
                     const ename = e.get_name();
                     if (std.mem.eql(u8, ename, "Guybrush") or
@@ -1008,13 +1057,28 @@ pub const DisplayWindow = struct {
                     {
                         is_spitting_scene = true;
                         break;
+                    } else if (std.mem.eql(u8, ename, "Gabriel") or std.mem.eql(u8, ename, "Mosely")) {
+                        is_hotel_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "StrayCat")) {
+                        is_garden_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Buthane")) {
+                        is_bike_rental_scene = true;
+                        break;
                     }
                 }
             }
-            if (!is_spitting_scene) {
+            if (!is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene) {
                 for (frame.hotspots[0..frame.hotspot_count]) |hs| {
                     if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
                         is_spitting_scene = true;
+                        break;
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Fence") != null) {
+                        is_garden_scene = true;
+                        break;
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Motorcycle") != null) {
+                        is_bike_rental_scene = true;
                         break;
                     }
                 }
@@ -1128,6 +1192,124 @@ pub const DisplayWindow = struct {
             // Title Header
             self.draw_text("TAVERN - COMMON ROOM", tavern_x + 16, tavern_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
             self.draw_text("(WARM FIREPLACE, CLINKING TANKARDS)", tavern_x + 16, tavern_y + 36, 1, Color.hud_subtext);
+        } else if (is_hotel_scene) {
+            // Hotel des Couronnes Corridor (P14-02, D-016)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 20, .g = 12, .b = 15 });
+
+            const hotel_x: i32 = 40;
+            const hotel_y: i32 = 110;
+            const hotel_w: i32 = self.width - 80;
+            const hotel_h: i32 = 320;
+
+            // Burgundy wallpaper
+            self.fill_rect(hotel_x, hotel_y, hotel_w, hotel_h, Color.hotel_wallpaper);
+            self.draw_rect_outline(hotel_x, hotel_y, hotel_w, hotel_h, Color{ .r = 140, .g = 40, .b = 45 });
+
+            // Dark mahogany wainscoting
+            self.fill_rect(hotel_x, hotel_y + 200, hotel_w, hotel_h - 200, Color.hotel_wainscot);
+            self.draw_line(hotel_x, hotel_y + 200, hotel_x + hotel_w, hotel_y + 200, Color{ .r = 180, .g = 120, .b = 50 });
+
+            // Door 25 (Gabriel's room) and Door 33 (Mosely's room)
+            const d25_x = hotel_x + 80;
+            self.fill_rect(d25_x, hotel_y + 60, 70, 140, Color.hotel_door);
+            self.draw_rect_outline(d25_x, hotel_y + 60, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
+            self.draw_text("25", d25_x + 24, hotel_y + 70, 2, Color.wp_hover);
+
+            const d33_x = hotel_x + 320;
+            self.fill_rect(d33_x, hotel_y + 60, 70, 140, Color.hotel_door);
+            self.draw_rect_outline(d33_x, hotel_y + 60, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
+            self.draw_text("33", d33_x + 24, hotel_y + 70, 2, Color.wp_hover);
+
+            // Brass sconces
+            self.fill_circle(hotel_x + 40, hotel_y + 90, 6, Color.wp_hover);
+            self.fill_circle(hotel_x + hotel_w - 40, hotel_y + 90, 6, Color.wp_hover);
+
+            // Title
+            self.draw_text("HOTEL DES COURONNES - CORRIDOR", hotel_x + 16, hotel_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(FRENCH DAMASK WALLS * ROOM 25 & ROOM 33)", hotel_x + 16, hotel_y + 36, 1, Color.hud_subtext);
+        } else if (is_garden_scene) {
+            // Hotel Courtyard Garden (P14-02, D-016)
+            self.fill_rect(0, 0, self.width, self.height, Color.garden_sky);
+
+            const garden_x: i32 = 40;
+            const garden_y: i32 = 110;
+            const garden_w: i32 = self.width - 80;
+            const garden_h: i32 = 320;
+
+            // Courtyard greenery
+            self.fill_rect(garden_x, garden_y + 100, garden_w, garden_h - 100, Color.garden_grass);
+            self.draw_rect_outline(garden_x, garden_y, garden_w, garden_h, Color{ .r = 40, .g = 90, .b = 40 });
+
+            // Wooden picket fence across the garden
+            const fence_y = garden_y + 170;
+            self.fill_rect(garden_x, fence_y, garden_w, 14, Color.garden_fence);
+            var pi: i32 = 0;
+            while (pi < garden_w - 20) : (pi += 24) {
+                self.fill_rect(garden_x + pi, fence_y - 40, 12, 54, Color.garden_fence);
+                self.draw_rect_outline(garden_x + pi, fence_y - 40, 12, 54, Color{ .r = 90, .g = 55, .b = 25 });
+            }
+
+            // Fence hole at bottom (around middle)
+            const hole_x = garden_x + @divTrunc(garden_w, 2) - 40;
+            self.fill_rect(hole_x, fence_y - 20, 50, 36, Color{ .r = 25, .g = 40, .b = 20 });
+            self.draw_rect_outline(hole_x, fence_y - 20, 50, 36, Color{ .r = 180, .g = 120, .b = 50 });
+
+            // Masking tape indicator if taped
+            if (frame.fence_taped) {
+                self.fill_rect(hole_x - 4, fence_y + 2, 58, 8, Color{ .r = 254, .g = 243, .b = 199 });
+                self.draw_rect_outline(hole_x - 4, fence_y + 2, 58, 8, Color{ .r = 217, .g = 119, .b = 6 });
+                self.draw_text("[MASKING TAPE ATTACHED]", hole_x - 30, fence_y - 36, 1, Color.wp_hover);
+            }
+
+            // Title
+            self.draw_text("HOTEL COURTYARD - GARDEN FENCE", garden_x + 16, garden_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(SUNNY VILLAGE COURTYARD * FENCE HOLE ESCAPE ROUTE)", garden_x + 16, garden_y + 36, 1, Color.hud_subtext);
+        } else if (is_bike_rental_scene) {
+            // Madame Buthane's Bike Rental Shop (P14-02, D-016)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 25, .g = 20, .b = 20 });
+
+            const shop_x: i32 = 40;
+            const shop_y: i32 = 110;
+            const shop_w: i32 = self.width - 80;
+            const shop_h: i32 = 320;
+
+            self.fill_rect(shop_x, shop_y, shop_w, shop_h, Color.rental_wall);
+            self.draw_rect_outline(shop_x, shop_y, shop_w, shop_h, Color{ .r = 110, .g = 95, .b = 85 });
+
+            // Stone floor
+            self.fill_rect(shop_x, shop_y + 220, shop_w, shop_h - 220, Color{ .r = 45, .g = 40, .b = 38 });
+
+            // Road touring map of Languedoc on the wall
+            const map_x = shop_x + 60;
+            self.fill_rect(map_x, shop_y + 55, 140, 90, Color{ .r = 254, .g = 243, .b = 199 });
+            self.draw_rect_outline(map_x, shop_y + 55, 140, 90, Color{ .r = 180, .g = 83, .b = 9 });
+            self.draw_text("MAP OF LANGUEDOC", map_x + 8, shop_y + 65, 1, Color{ .r = 120, .g = 53, .b = 15 });
+            self.draw_text("RENNES-LE-CHATEAU", map_x + 8, shop_y + 80, 1, Color{ .r = 180, .g = 83, .b = 9 });
+
+            // Pine rental counter
+            const cnt_x = shop_x + 240;
+            self.fill_rect(cnt_x, shop_y + 140, 220, 80, Color.rental_counter);
+            self.draw_rect_outline(cnt_x, shop_y + 140, 220, 80, Color{ .r = 217, .g = 119, .b = 6 });
+            self.draw_text("RENTAL COUNTER", cnt_x + 20, shop_y + 155, 2, Color{ .r = 60, .g = 35, .b = 15 });
+
+            // Red Motorcycle display
+            const mc_x = shop_x + shop_w - 200;
+            self.fill_circle(mc_x + 25, shop_y + 210, 20, Color.black);
+            self.fill_circle(mc_x + 105, shop_y + 210, 20, Color.black);
+            self.draw_circle_outline(mc_x + 25, shop_y + 210, 20, Color{ .r = 200, .g = 200, .b = 200 });
+            self.draw_circle_outline(mc_x + 105, shop_y + 210, 20, Color{ .r = 200, .g = 200, .b = 200 });
+            self.fill_rect(mc_x + 25, shop_y + 180, 80, 25, Color.motorcycle_red);
+            self.draw_line(mc_x + 35, shop_y + 165, mc_x + 60, shop_y + 180, Color.white);
+
+            if (frame.bike_rented) {
+                self.draw_text("[RENTED TO MOSELY!]", mc_x + 10, shop_y + 150, 2, Color.status_running);
+            } else {
+                self.draw_text("[RESERVED: MOSELY]", mc_x + 10, shop_y + 150, 2, Color.cue_alert);
+            }
+
+            // Title
+            self.draw_text("RENNES-LE-CHATEAU - BIKE RENTAL SHOP", shop_x + 16, shop_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(VINTAGE MOTORCYCLE * MADAME BUTHANE AT THE DESK)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
         } else {
             // 1. Clear background
             self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
@@ -1188,6 +1370,30 @@ pub const DisplayWindow = struct {
                 } else {
                     self.draw_text("Flags", flag_x - 14, pt.y + 14, 2, Color.hud_text);
                 }
+            } else if (std.mem.indexOf(u8, name, "Fence") != null or std.mem.indexOf(u8, name, "Hole") != null) {
+                // Garden Fence Hole (P14-02, D-016)
+                self.fill_rect(pt.x - 20, pt.y - 16, 40, 32, Color.garden_fence);
+                self.fill_rect(pt.x - 12, pt.y - 4, 24, 20, Color.black);
+                if (frame.fence_taped) {
+                    self.fill_rect(pt.x - 14, pt.y + 4, 28, 6, Color{ .r = 254, .g = 243, .b = 199 });
+                }
+                self.draw_text("Fence Hole", pt.x - 20, pt.y + 20, 2, Color.hud_text);
+            } else if (std.mem.indexOf(u8, name, "Door") != null) {
+                // Mosely's Door (P14-02, D-016)
+                self.fill_rect(pt.x - 16, pt.y - 24, 32, 48, Color.hotel_door);
+                self.draw_rect_outline(pt.x - 16, pt.y - 24, 32, 48, Color{ .r = 180, .g = 120, .b = 50 });
+                self.draw_text("Door 33", pt.x - 16, pt.y + 28, 2, Color.hud_text);
+            } else if (std.mem.indexOf(u8, name, "Desk") != null) {
+                // Hotel Room Desk (P14-02, D-016)
+                self.fill_rect(pt.x - 22, pt.y - 12, 44, 24, Color.hotel_wainscot);
+                self.draw_rect_outline(pt.x - 22, pt.y - 12, 44, 24, Color{ .r = 140, .g = 80, .b = 40 });
+                self.draw_text("Desk", pt.x - 12, pt.y + 16, 2, Color.hud_text);
+            } else if (std.mem.indexOf(u8, name, "Motorcycle") != null) {
+                // Motorcycle prop (P14-02, D-016)
+                self.fill_rect(pt.x - 20, pt.y - 12, 40, 24, Color.motorcycle_red);
+                self.fill_circle(pt.x - 14, pt.y + 12, 8, Color.black);
+                self.fill_circle(pt.x + 14, pt.y + 12, 8, Color.black);
+                self.draw_text("Motorcycle", pt.x - 24, pt.y + 24, 2, Color.hud_text);
             } else {
                 // Default prop
                 self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
@@ -1387,6 +1593,88 @@ pub const DisplayWindow = struct {
                 if (frame.organiser_distracted) {
                     const sw = font.text_width("[Looking Offstage]", 2);
                     self.draw_text("[Looking Offstage]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.cue_alert);
+                }
+            } else if (std.mem.eql(u8, name, "Gabriel")) {
+                // Gabriel Knight: Leather trench coat, signature blonde hair, dark shades (P14-02, D-016)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.gabriel_coat);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Blonde hair
+                self.fill_circle(pt.x, pt.y - 8, 8, Color.gabriel_hair);
+
+                // Dark sunglasses
+                self.fill_rect(pt.x - 7, pt.y - 4, 14, 4, Color.black);
+
+                // Cat-hair moustache if disguised
+                if (frame.gabriel_disguised) {
+                    self.fill_rect(pt.x - 6, pt.y + 2, 12, 4, Color.black);
+                    self.draw_rect_outline(pt.x - 6, pt.y + 2, 12, 4, Color{ .r = 250, .g = 204, .b = 21 });
+                }
+
+                // Label
+                const nw = font.text_width("Gabriel", 2);
+                self.draw_text("Gabriel", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.gabriel_hair);
+
+                // Status
+                if (frame.gabriel_disguised) {
+                    const d_str = "[DISGUISED AS MOSELY!]";
+                    const sw = font.text_width(d_str, 2);
+                    self.draw_text(d_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.status_running);
+                } else {
+                    const u_str = "[Undisguised]";
+                    const sw = font.text_width(u_str, 2);
+                    self.draw_text(u_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                }
+            } else if (std.mem.eql(u8, name, "Mosely")) {
+                // Detective Franklin Mosely: Navy suit, genuine moustache (P14-02, D-016)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.mosely_suit);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Brown hair & real moustache
+                self.fill_circle(pt.x, pt.y - 8, 8, Color{ .r = 90, .g = 55, .b = 30 });
+                self.fill_rect(pt.x - 6, pt.y + 2, 12, 4, Color.black);
+
+                // Label
+                const nw = font.text_width("Mosely", 2);
+                self.draw_text("Mosely", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 147, .g = 197, .b = 253 });
+                const sw = font.text_width("[Detective]", 2);
+                self.draw_text("[Detective]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+            } else if (std.mem.eql(u8, name, "Buthane")) {
+                // Madame Buthane: Crimson vest, auburn hair (P14-02, D-016)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.buthane_vest);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Auburn hair
+                self.fill_circle(pt.x, pt.y - 8, 8, Color.buthane_hair);
+
+                // Label
+                const nw = font.text_width("Madame Buthane", 2);
+                self.draw_text("Madame Buthane", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 252, .g = 165, .b = 165 });
+                const sw = font.text_width("[Rental Desk]", 2);
+                self.draw_text("[Rental Desk]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+            } else if (std.mem.eql(u8, name, "StrayCat")) {
+                // Stray Cat: Black cat token with green eyes & ears (P14-02, D-016)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.stray_cat_color);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.white);
+
+                // Ears
+                self.fill_rect(pt.x - 8, pt.y - ACTOR_SCREEN_RADIUS - 4, 4, 6, Color.stray_cat_color);
+                self.fill_rect(pt.x + 4, pt.y - ACTOR_SCREEN_RADIUS - 4, 4, 6, Color.stray_cat_color);
+
+                // Green eyes
+                self.fill_rect(pt.x - 5, pt.y - 3, 3, 3, Color.cat_eye_color);
+                self.fill_rect(pt.x + 2, pt.y - 3, 3, 3, Color.cat_eye_color);
+
+                // Label
+                const nw = font.text_width("Stray Cat", 2);
+                self.draw_text("Stray Cat", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.hud_text);
+
+                if (frame.cat_startled) {
+                    const sw = font.text_width("[STARTLED!]", 2);
+                    self.draw_text("[STARTLED!]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.cue_alert);
+                } else {
+                    const sw = font.text_width("[Napping]", 2);
+                    self.draw_text("[Napping]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
                 }
             } else {
                 // Generic actor token
@@ -1933,4 +2221,60 @@ test "P13-03: display renderer dynamic balloon sizing, scrolling, and choice sel
     // 4. Dismiss dialogue
     win.dismiss_dialogue();
     try testing.expect(win.active_balloon == null);
+}
+
+test "P14-02: display renderer dynamically recognizes Gabriel Knight 3 scene themes and actors" {
+    const testing = std.testing;
+
+    var frame = std.mem.zeroes(RenderFrame);
+
+    // 1. Hotel corridor theme
+    const hotel_scene = "Hotel Corridor";
+    @memcpy(frame.current_scene[0..hotel_scene.len], hotel_scene);
+    frame.current_scene_len = hotel_scene.len;
+    try testing.expectEqualStrings("Hotel Corridor", frame.get_current_scene());
+
+    // 2. Garden fence theme
+    const garden_scene = "Hotel Garden";
+    @memcpy(frame.current_scene[0..garden_scene.len], garden_scene);
+    frame.current_scene_len = garden_scene.len;
+    try testing.expectEqualStrings("Hotel Garden", frame.get_current_scene());
+
+    // 3. Bike rental theme
+    const shop_scene = "Bike Rental Shop";
+    @memcpy(frame.current_scene[0..shop_scene.len], shop_scene);
+    frame.current_scene_len = shop_scene.len;
+    try testing.expectEqualStrings("Bike Rental Shop", frame.get_current_scene());
+
+    // 4. Add GK3 actors and props to frame
+    frame.entity_count = 4;
+    const gabriel_name = "Gabriel";
+    @memcpy(frame.entities[0].name[0..gabriel_name.len], gabriel_name);
+    frame.entities[0].name_len = gabriel_name.len;
+    frame.entities[0].entity = EntityId.from_int(10);
+
+    const mosely_name = "Mosely";
+    @memcpy(frame.entities[1].name[0..mosely_name.len], mosely_name);
+    frame.entities[1].name_len = mosely_name.len;
+    frame.entities[1].entity = EntityId.from_int(11);
+
+    const buthane_name = "Buthane";
+    @memcpy(frame.entities[2].name[0..buthane_name.len], buthane_name);
+    frame.entities[2].name_len = buthane_name.len;
+    frame.entities[2].entity = EntityId.from_int(12);
+
+    const cat_name = "StrayCat";
+    @memcpy(frame.entities[3].name[0..cat_name.len], cat_name);
+    frame.entities[3].name_len = cat_name.len;
+    frame.entities[3].entity = EntityId.from_int(13);
+
+    frame.gabriel_disguised = true;
+    frame.fence_taped = true;
+    frame.bike_rented = true;
+
+    // Verify headless window can render the frame without issue
+    var win = try DisplayWindow.init("GK3 Test", 960, 540);
+    defer win.deinit();
+
+    win.render_frame(&frame, false);
 }

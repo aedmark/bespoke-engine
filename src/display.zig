@@ -148,11 +148,16 @@ pub const RenderFrame = struct {
     fact_count: usize,
     cheese_holder: EntityId,
     charmed_target: EntityId,
-    // Scenario status flags (P10-03)
+    // Scenario status flags (P10-03, P14-02)
     spit_is_thick: bool = false,
     flags_tampered: bool = false,
     wind_blowing: bool = false,
     organiser_distracted: bool = false,
+    fence_taped: bool = false,
+    cat_startled: bool = false,
+    cat_hair_collected: bool = false,
+    gabriel_disguised: bool = false,
+    bike_rented: bool = false,
     debug_facts: [32]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
@@ -327,9 +332,33 @@ pub const DisplayBridge = struct {
             self.back_buffer.organiser_distracted = world.has_fact(null, rel, null);
         }
 
+        // GK3 Cat Moustache scenario status flags (P14-02)
+        self.back_buffer.fence_taped = false;
+        if (world.lookup_relation("taped") orelse world.lookup_relation("Taped")) |rel| {
+            self.back_buffer.fence_taped = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.cat_startled = false;
+        if (world.lookup_relation("startled") orelse world.lookup_relation("Startled")) |rel| {
+            self.back_buffer.cat_startled = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.cat_hair_collected = false;
+        if (world.lookup_relation("Carries")) |c_rel| {
+            if (world.lookup_entity("CatHair")) |ch_id| {
+                self.back_buffer.cat_hair_collected = world.has_fact(null, c_rel, ch_id.to_int());
+            }
+        }
+        self.back_buffer.gabriel_disguised = false;
+        if (world.lookup_relation("disguised") orelse world.lookup_relation("Disguised")) |rel| {
+            self.back_buffer.gabriel_disguised = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.bike_rented = false;
+        if (world.lookup_relation("HasBikeKeys") orelse world.lookup_relation("BikeRented")) |rel| {
+            self.back_buffer.bike_rented = world.has_fact(null, rel, null);
+        }
+
         // 6. Capture player inventory (P7-03, D-007)
         var inv_count: usize = 0;
-        const player_id = world.lookup_entity("Guybrush") orelse world.lookup_entity("Cat");
+        const player_id = world.lookup_entity("Gabriel") orelse world.lookup_entity("Guybrush") orelse world.lookup_entity("Cat");
         if (player_id) |pid| {
             if (world.lookup_relation("InInventory")) |inv_rel| {
                 var it_inv = world.query(pid, inv_rel, null);

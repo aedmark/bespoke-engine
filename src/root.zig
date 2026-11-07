@@ -8,6 +8,7 @@ pub const compiler = @import("compiler.zig");
 pub const display = @import("display.zig");
 pub const repl = @import("repl.zig");
 pub const spitting_contest = @import("spitting_contest.zig");
+pub const gk3_moustache = @import("gk3_moustache.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -44,4 +45,5 @@ test "root test imports all modules" {
     _ = @import("display.zig");
     _ = @import("repl.zig");
     _ = @import("spitting_contest.zig");
+    _ = @import("gk3_moustache.zig");
 }
