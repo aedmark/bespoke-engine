@@ -1,0 +1,2275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BeSpoke Engine - A Bespoke Narrative & Systemic Simulation Engine</title>
+  <meta name="description" content="A standalone simulation engine and domain-specific language written in pure Zig. Engine-as-Spine architecture, flat relational facts, cooperative fibers, and instant time-travel rewinds.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2232%22%20height=%2232%22><rect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f172a%22/><text x=%2216%22 y=%2222%22 font-family=%22monospace%22 font-weight=%22bold%22 font-size=%2220%22 fill=%22%23fbbf24%22 text-anchor=%22middle%22>B</text></svg>">
+  <style>
+    /* ==========================================================================
+       BeSpoke Engine - Artisanal Retro-Chic Theme (Neocities Edition)
+       ========================================================================== */
+    :root {
+      --bg-dark: #0a0d14;
+      --bg-card: #111827;
+      --bg-card-hover: #162032;
+      --bg-terminal: #070a10;
+      --border-color: #1f293d;
+      --border-highlight: #334155;
+      --accent-gold: #fbbf24;
+      --accent-gold-dark: #d97706;
+      --accent-amber: #f59e0b;
+      --accent-green: #34d399;
+      --accent-green-dark: #059669;
+      --accent-cyan: #38bdf8;
+      --accent-rose: #fb7185;
+      --accent-purple: #c084fc;
+      --text-main: #f3f4f6;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font-mono: ui-monospace, SFMono-Regular, "Liberation Mono", Menlo, Consolas, Monaco, "Courier New", monospace;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      padding-bottom: 60px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(rgba(30, 41, 59, 0.4) 1px, transparent 1px),
+        radial-gradient(rgba(15, 23, 42, 0.6) 1px, transparent 1px);
+      background-size: 32px 32px;
+      background-position: 0 0, 16px 16px;
+    }
+
+    /* Scanline effect toggleable */
+    body.scanlines::before {
+      content: " ";
+      display: block;
+      position: fixed;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+      background-size: 100% 4px;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+
+    a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+    a:hover {
+      color: var(--accent-gold);
+      text-decoration: underline;
+    }
+
+    /* ==========================================================================
+       Layout & Navigation
+       ========================================================================== */
+    .container {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    header.nav-header {
+      background: rgba(10, 13, 20, 0.85);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      padding: 12px 0;
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-weight: bold;
+      font-size: 1.15rem;
+      letter-spacing: -0.5px;
+      color: var(--accent-gold);
+    }
+
+    .brand-badge {
+      background: #1e1b4b;
+      color: #a5b4fc;
+      border: 1px solid #4338ca;
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+    }
+    .nav-links a:hover {
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .nav-toggles {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-toggle {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-toggle:hover, .btn-toggle.active {
+      background: #334155;
+      color: var(--accent-gold);
+      border-color: var(--accent-gold-dark);
+    }
+
+    /* ==========================================================================
+       Hero Section
+       ========================================================================== */
+    .hero {
+      padding: 56px 0 40px;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero-ascii {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.15;
+      color: var(--accent-gold);
+      white-space: pre;
+      margin: 0 auto 24px;
+      text-shadow: 0 0 16px rgba(251, 191, 36, 0.35);
+      display: inline-block;
+      text-align: left;
+    }
+
+    @media (max-width: 640px) {
+      .hero-ascii { display: none; }
+    }
+
+    .hero-title {
+      font-family: var(--font-mono);
+      font-size: clamp(2rem, 5vw, 3.25rem);
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #ffffff 40%, var(--accent-gold) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-tagline {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 760px;
+      margin: 0 auto 28px;
+      font-weight: 400;
+    }
+
+    .hero-tagline strong {
+      color: var(--accent-gold);
+    }
+
+    .hero-pill-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+
+    .hero-pill {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 6px 14px;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--border-highlight);
+      border-radius: 9999px;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hero-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    .hero-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, #f59e0b, #d97706);
+      color: #0b0f19;
+      font-family: var(--font-mono);
+      font-weight: bold;
+      font-size: 0.95rem;
+      padding: 12px 24px;
+      border-radius: 6px;
+      border: 1px solid #fbbf24;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+      color: #000;
+      text-decoration: none;
+    }
+
+    .btn-secondary {
+      background: #1e293b;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      padding: 12px 24px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      border-color: #94a3b8;
+      text-decoration: none;
+      color: #fff;
+    }
+
+    /* ==========================================================================
+       Interactive Simulator Section (Neocities Main Event)
+       ========================================================================== */
+    .playground-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 60px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+      position: relative;
+    }
+
+    .playground-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .playground-title-group h2 {
+      font-family: var(--font-mono);
+      font-size: 1.35rem;
+      color: var(--accent-gold);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .playground-title-group p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .scenario-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tab-btn {
+      background: #1e293b;
+      color: var(--text-muted);
+      border: 1px solid #334155;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tab-btn:hover {
+      background: #334155;
+      color: var(--text-main);
+    }
+    .tab-btn.active {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--accent-gold);
+      border-color: var(--accent-gold);
+      box-shadow: 0 0 12px rgba(251, 191, 36, 0.2);
+    }
+
+    /* Screen Frame & Canvas */
+    .viewport-box {
+      background: #000;
+      border: 2px solid #334155;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .viewport-topbar {
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+
+    .viewport-leds {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .led-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+    }
+
+    .led-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .led-dot.green { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .led-dot.amber { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    .led-dot.blue { background: #38bdf8; box-shadow: 0 0 8px #38bdf8; }
+
+    #sim-canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      background: #0d1117;
+      cursor: crosshair;
+    }
+
+    /* Timeline Scrubber */
+    .scrubber-panel {
+      background: #0b0f19;
+      border-top: 1px solid #1e293b;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+    }
+
+    .timeline-slider-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input[type=range].timeline-range {
+      width: 100%;
+      height: 6px;
+      background: #1e293b;
+      border-radius: 3px;
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+    input[type=range].timeline-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--accent-gold);
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.7);
+    }
+
+    /* Interactive Simulation Controls */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    @media (min-width: 900px) {
+      .controls-grid {
+        grid-template-columns: 1.4fr 1fr;
+      }
+    }
+
+    .interactive-card {
+      background: var(--bg-terminal);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .interactive-card-title {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .button-bank {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .sim-btn {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sim-btn:hover {
+      background: #334155;
+      border-color: #64748b;
+      color: #fff;
+    }
+    .sim-btn.action-primary {
+      background: #78350f;
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+    .sim-btn.action-primary:hover {
+      background: #92400e;
+      color: #fff;
+    }
+
+    /* Fact Table & Log */
+    .fact-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+
+    .fact-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: rgba(30, 41, 59, 0.4);
+      border: 1px solid #1e293b;
+      border-radius: 4px;
+    }
+
+    .fact-tag {
+      color: var(--accent-green);
+    }
+
+    .ttl-pill {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--accent-amber);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .terminal-log {
+      height: 120px;
+      overflow-y: auto;
+      background: #04070d;
+      border: 1px solid #1e293b;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+
+    .terminal-log .log-entry {
+      margin-bottom: 4px;
+    }
+    .terminal-log .log-cue { color: var(--accent-gold); }
+    .terminal-log .log-rule { color: var(--accent-purple); }
+    .terminal-log .log-info { color: var(--accent-cyan); }
+
+    /* ==========================================================================
+       Feature Pillars ("The Triad of Power")
+       ========================================================================== */
+    .section-title-wrap {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .section-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 12px auto 0;
+      font-size: 1.05rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+      margin-bottom: 60px;
+    }
+
+    @media (min-width: 800px) {
+      .grid-3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 24px;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-highlight);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-icon {
+      font-size: 1.8rem;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .card-title {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+
+    .card-body {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+
+    .code-chip {
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--accent-cyan);
+      overflow-x: auto;
+    }
+
+    /* ==========================================================================
+       Scenario Showcase Cards
+       ========================================================================== */
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 28px;
+      margin-bottom: 60px;
+    }
+
+    .scenario-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 900px) {
+      .scenario-card {
+        grid-template-columns: 1fr 1.1fr;
+      }
+    }
+
+    .scenario-info {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .scenario-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent-amber);
+      margin-bottom: 8px;
+    }
+
+    .scenario-heading {
+      font-family: var(--font-mono);
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+
+    .scenario-text {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      margin-bottom: 18px;
+    }
+
+    .scenario-invariants {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+
+    .invariant-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 4px 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      color: var(--text-main);
+    }
+
+    .scenario-code {
+      background: #080c14;
+      border-top: 1px solid var(--border-color);
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      overflow-x: auto;
+      line-height: 1.65;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    @media (min-width: 900px) {
+      .scenario-code {
+        border-top: none;
+        border-left: 1px solid var(--border-color);
+      }
+    }
+
+    .code-kw { color: #f43f5e; font-weight: bold; }
+    .code-ident { color: #38bdf8; }
+    .code-str { color: #a3e635; }
+    .code-num { color: #fbbf24; }
+    .code-comment { color: #64748b; font-style: italic; }
+
+    /* ==========================================================================
+       Architecture / Comparison Section
+       ========================================================================== */
+    .compare-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 32px 24px;
+      margin-bottom: 60px;
+    }
+
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 20px;
+    }
+
+    .compare-table th, .compare-table td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .compare-table th {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--accent-gold);
+      background: #0f172a;
+    }
+
+    .compare-table td:first-child {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .badge-no {
+      color: #f87171;
+      font-weight: bold;
+    }
+    .badge-yes {
+      color: #4ade80;
+      font-weight: bold;
+    }
+
+    /* ==========================================================================
+       Neocities Artisanal Footer
+       ========================================================================== */
+    footer.neocities-footer {
+      border-top: 1px solid var(--border-color);
+      padding-top: 48px;
+      text-align: center;
+    }
+
+    .retro-badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    /* 88x31 retro button styling */
+    .retro-badge {
+      display: inline-block;
+      width: 88px;
+      height: 31px;
+      border: 1px solid #475569;
+      background: #1e293b;
+      font-family: var(--font-mono);
+      font-size: 8px;
+      font-weight: 800;
+      text-align: center;
+      line-height: 14px;
+      text-transform: uppercase;
+      color: #fff;
+      padding: 1px 2px;
+      box-shadow: 2px 2px 0 #000;
+      cursor: pointer;
+      user-select: none;
+    }
+    .retro-badge span {
+      display: block;
+      padding: 1px 0;
+    }
+    .retro-badge.zig { background: #f59e0b; color: #000; border-color: #d97706; }
+    .retro-badge.pure { background: #10b981; color: #000; border-color: #059669; }
+    .retro-badge.scumm { background: #3b82f6; color: #fff; border-color: #1d4ed8; }
+    .retro-badge.retro { background: #8b5cf6; color: #fff; border-color: #6d28d9; }
+
+    .footer-quote {
+      font-style: italic;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto 20px;
+      font-size: 0.95rem;
+    }
+
+    .footer-meta {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body class="scanlines">
+
+  <!-- ========================================================================
+       Navigation Header
+       ======================================================================== -->
+  <header class="nav-header">
+    <div class="container nav-inner">
+      <div class="brand">
+        <span>⚡ BESPOKE ENGINE</span>
+        <span class="brand-badge">v0.1.0-dev</span>
+      </div>
+
+      <nav class="nav-links">
+        <a href="#playground">Playground</a>
+        <a href="#tenets">Tenets</a>
+        <a href="#scenarios">Scenarios</a>
+        <a href="#architecture">Architecture</a>
+        <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+
+      <div class="nav-toggles">
+        <button id="toggle-crt" class="btn-toggle active" title="Toggle retro CRT scanlines">CRT: ON</button>
+        <button id="toggle-sound" class="btn-toggle" title="Toggle 8-bit sound effects">AUDIO: MUTED</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       Hero Section
+       ======================================================================== -->
+  <main class="container">
+    <section class="hero">
+      <pre class="hero-ascii">
+ ____             ____             _              _____             _            
+|  _ \           / ___| _ __   ___| | _____      | ____|_ __   __ _(_)_ __   ___ 
+| |_) |  _____   \___ \| '_ \ / _ \ |/ / _ \_____|  _| | '_ \ / _` | | '_ \ / _ \
+|  _ <  |_____|   ___) | |_) |  __/   <  __/_____| |___| | | | (_| | | | | |  __/
+|_| \_\          |____/| .__/ \___|_|\_\___|     |_____|_| |_|\__, |_|_| |_|\___|
+                       |_|                                     |___/             
+      </pre>
+
+      <h1 class="hero-title">The Simulation Runtime IS the Spine.</h1>
+      <p class="hero-tagline">
+        A bespoke simulation engine & DSL written in pure Zig. 
+        Where games are <strong>flat relational facts</strong>, <strong>cooperative fibers</strong>, 
+        and <strong>instant time-travel rewinds</strong>.
+      </p>
+
+      <div class="hero-pill-bar">
+        <div class="hero-pill"><span class="dot"></span> Pure Zig 0.13</div>
+        <div class="hero-pill"><span class="dot"></span> Zero C++ Bloat</div>
+        <div class="hero-pill"><span class="dot"></span> 4-Tuple Relational Facts</div>
+        <div class="hero-pill"><span class="dot"></span> Built-in TTL Decay</div>
+        <div class="hero-pill"><span class="dot"></span> Instant Snapshot Rewind</div>
+        <div class="hero-pill"><span class="dot"></span> 60 Hz Discrete Clock</div>
+      </div>
+
+      <div class="hero-buttons">
+        <a href="#playground" class="btn-primary">
+          <span>▶</span> Test Live In-Browser Playground
+        </a>
+        <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener" class="btn-secondary">
+          <span>★</span> Star on GitHub
+        </a>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         Interactive Simulator Playground
+         ======================================================================== -->
+    <section id="playground" class="playground-section">
+      <div class="playground-header">
+        <div class="playground-title-group">
+          <h2><span>🎮</span> Live Interactive Simulation Viewport</h2>
+          <p>Real-time discrete simulation executing deterministic bytecode state transitions.</p>
+        </div>
+
+        <div class="scenario-tabs">
+          <button class="tab-btn active" data-scenario="tavern">
+            <span>🍺</span> 1. Tavern Heist
+          </button>
+          <button class="tab-btn" data-scenario="spitting">
+            <span>🌴</span> 2. Booty Island Spit
+          </button>
+          <button class="tab-btn" data-scenario="gk3">
+            <span>🐱</span> 3. GK3 Cat Moustache
+          </button>
+        </div>
+      </div>
+
+      <!-- Retro Monitor Viewport -->
+      <div class="viewport-box">
+        <div class="viewport-topbar">
+          <div class="viewport-leds">
+            <span class="led-indicator"><span class="led-dot green" id="sim-led"></span> <span id="sim-state-text">SIMULATION RUNNING</span></span>
+            <span class="led-indicator"><span class="led-dot amber"></span> TICK: <span id="tick-counter" style="color:var(--accent-gold); font-weight:bold;">0</span></span>
+            <span class="led-indicator"><span class="led-dot blue"></span> FACTS: <span id="fact-counter" style="color:var(--accent-cyan); font-weight:bold;">1</span></span>
+          </div>
+          <div id="scene-banner" style="color:var(--accent-gold); font-weight:bold;">
+            TAVERN - COMMON ROOM
+          </div>
+        </div>
+
+        <!-- HTML5 Canvas Rendering BeSpoke 2D Visualizer -->
+        <canvas id="sim-canvas" width="1280" height="720"></canvas>
+
+        <!-- Timeline Scrubber Bar -->
+        <div class="scrubber-panel">
+          <button class="sim-btn" id="btn-play-pause"><span>⏸</span> Pause</button>
+          <button class="sim-btn" id="btn-step"><span>⏭</span> Step (N)</button>
+          <button class="sim-btn" id="btn-rewind"><span>⏮</span> Rewind (&lt;)</button>
+          <div class="timeline-slider-wrap">
+            <span style="color:var(--text-muted); font-size:0.75rem;">TIMELINE</span>
+            <input type="range" class="timeline-range" id="timeline-slider" min="0" max="0" value="0">
+            <span id="timeline-label" style="min-width:60px; color:var(--accent-gold); font-size:0.75rem;">0/0</span>
+          </div>
+          <button class="sim-btn" id="btn-reset"><span>↺</span> Reset</button>
+        </div>
+      </div>
+
+      <!-- Controls & Live Inspectors -->
+      <div class="controls-grid">
+        <!-- Interactive Actions for Current Scenario -->
+        <div class="interactive-card">
+          <div class="interactive-card-title">
+            <span>Interactive Scenario Actions</span>
+            <span style="font-size:0.7rem; color:var(--text-dim);">EMIT CUES & ASSERT FACTS</span>
+          </div>
+          <div class="button-bank" id="scenario-action-bank">
+            <!-- Injected dynamically by JS based on current scenario -->
+          </div>
+        </div>
+
+        <!-- Live Relational Fact Inspector -->
+        <div class="interactive-card">
+          <div class="interactive-card-title">
+            <span>Active Relational Fact Arena</span>
+            <span style="font-size:0.7rem; color:var(--accent-green);">MultiArrayList(Fact)</span>
+          </div>
+          <div class="fact-list" id="fact-inspector-list">
+            <!-- Injected dynamically by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Narrative Log -->
+      <div style="margin-top:16px;">
+        <div class="interactive-card">
+          <div class="interactive-card-title">
+            <span>Simulation Event & Dialogue Stream</span>
+            <span style="font-size:0.7rem; color:var(--text-dim);">DETERMINISTIC LOG</span>
+          </div>
+          <div class="terminal-log" id="terminal-event-log">
+            <!-- Injected dynamically by JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         Core Tenets ("The Triad of Power")
+         ======================================================================== -->
+    <section id="tenets" style="margin-bottom:60px;">
+      <div class="section-title-wrap">
+        <div class="section-eyebrow">The Architectural Pillars</div>
+        <h2 class="section-title">Why BeSpoke Flips the Paradigm</h2>
+        <p class="section-desc">
+          Modern game development drowns in pointer spaghetti, OOP inheritance, and frame-rate delta accumulation. 
+          BeSpoke reclaims the craft of simulation.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Pillar 1 -->
+        <div class="card">
+          <div class="card-icon">🏛️</div>
+          <h3 class="card-title">Engine-as-Spine</h3>
+          <p class="card-body">
+            The VM is <code>main()</code>. It owns the master discrete tick clock, the entity IDs, 
+            spatial topologies, and relational facts. Visuals (SDL2, Raylib, Sokol, WebCanvas) are merely downstream, 
+            stateless peripheral display bridges.
+          </p>
+          <div class="code-chip">
+            // Core simulation is zero-dependency Zig<br>
+            var world = World.init(allocator);<br>
+            var vm = VM.init(&world, &chunk);
+          </div>
+        </div>
+
+        <!-- Pillar 2 -->
+        <div class="card">
+          <div class="card-icon">🗄️</div>
+          <h3 class="card-title">Flat Relational State</h3>
+          <p class="card-body">
+            No class hierarchies. No pointers inside serialized state. Truth consists of contiguous 4-tuples: 
+            <code>(Subject, Relation, Object, TTL)</code>. Built-in TTL decay allows charms, distractions, 
+            and buffs to expire naturally without cleanup spaghetti.
+          </p>
+          <div class="code-chip">
+            remember Carries(Guard, Cheese)<br>
+            remember CharmedBy(Guard, Bard) for 180 ticks
+          </div>
+        </div>
+
+        <!-- Pillar 3 -->
+        <div class="card">
+          <div class="card-icon">⏳</div>
+          <h3 class="card-title">Fibers & Time Travel</h3>
+          <p class="card-body">
+            Write game logic like a play script using cooperative fibers with built-in <code>wait</code> and <code>wait until</code>. 
+            Because state is a flat contiguous array, snapshots are a single <code>memcpy</code>. Rewind time instantly!
+          </p>
+          <div class="code-chip">
+            walk Guard to Cellar<br>
+            wait 120 ticks<br>
+            walk Guard to Hearth
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         Vertical Slice Scenario Showcase
+         ======================================================================== -->
+    <section id="scenarios" style="margin-bottom:60px;">
+      <div class="section-title-wrap">
+        <div class="section-eyebrow">Real World Testbeds</div>
+        <h2 class="section-title">The Three Verified Scenarios</h2>
+        <p class="section-desc">
+          Every engine claims to be elegant in theory. BeSpoke proves its invariants across three classic, 
+          systemically distinct adventure game vertical slices.
+        </p>
+      </div>
+
+      <div class="scenario-grid">
+        <!-- Scenario 1: Tavern Heist -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Vertical Slice 01 · Systemic Emergence</span>
+            <h3 class="scenario-heading">The Tavern Heist</h3>
+            <p class="scenario-text">
+              A classic systemic stealth scenario. A patrolling Guard holds delicious Cheese. 
+              A Bard plays an enchanting melody on his lute, charming the guard. A sneaky Cat seizes the 
+              opportunity to swipe the cheese right under the guard's charmed nose!
+            </p>
+            <div class="scenario-invariants">
+              <span class="invariant-pill">Priority Rule Preemption</span>
+              <span class="invariant-pill">TTL Decay</span>
+              <span class="invariant-pill">Dice Rolls</span>
+              <span class="invariant-pill">A* Graph Navigation</span>
+            </div>
+          </div>
+          <pre class="scenario-code"><code><span class="code-kw">entity</span> Guard, Bard, Cat, Cheese
+<span class="code-kw">relation</span> Carries(holder, item)
+<span class="code-kw">relation</span> CharmedBy(listener, musician)
+
+<span class="code-kw">routine</span> Patrol(Guard):
+  <span class="code-kw">loop</span>:
+    <span class="code-kw">walk</span> Guard <span class="code-kw">to</span> Cellar
+    <span class="code-kw">wait</span> <span class="code-num">120 ticks</span>
+    <span class="code-kw">walk</span> Guard <span class="code-kw">to</span> Hearth
+    <span class="code-kw">wait</span> <span class="code-num">120 ticks</span>
+
+<span class="code-kw">on cue</span> PlayLute(Bard, target):
+  <span class="code-kw">if</span> roll <span class="code-num">2d6</span> >= <span class="code-num">8</span>:
+    <span class="code-kw">remember</span> CharmedBy(target, Bard) <span class="code-kw">for</span> <span class="code-num">180 ticks</span>
+
+<span class="code-kw">on cue</span> Steal(Cat, victim) <span class="code-kw">where</span> CharmedBy(victim, _) <span class="code-kw">and</span> Carries(victim, loot):
+  <span class="code-kw">forget</span> Carries(victim, loot)
+  <span class="code-kw">remember</span> Carries(Cat, loot)</code></pre>
+        </div>
+
+        <!-- Scenario 2: Spitting Contest -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Vertical Slice 02 · Environmental Hooks</span>
+            <h3 class="scenario-heading">Booty Island Spitting Contest</h3>
+            <p class="scenario-text">
+              An homage to <em>Monkey Island 2</em>. Guybrush must win the championship spit. 
+              The crowd and judge watch closely. Guybrush sounds the ship's horn to distract them, 
+              tampers with the distance flags, downs a thick green drink, and waits for a gust of wind 
+              to blow toward the target!
+            </p>
+            <div class="scenario-invariants">
+              <span class="invariant-pill">Falling-Edge Triggers</span>
+              <span class="invariant-pill">TTL Expiration Hooks</span>
+              <span class="invariant-pill">Stageplay Headers</span>
+              <span class="invariant-pill">Interactive Scrubber</span>
+            </div>
+          </div>
+          <pre class="scenario-code"><code><span class="code-kw">scene</span>: Booty Island Spitting Field
+<span class="code-kw">cast</span>: Guybrush, Organiser, Onlookers
+<span class="code-kw">props</span>: DistanceFlags, ShipHorn
+<span class="code-kw">marks</span>: StartingLine, ThirdPlace, ChampionLine
+
+<span class="code-kw">when</span> Wind <span class="code-kw">stops being</span> blowing:
+  <span class="code-kw">say</span> Organiser: <span class="code-str">"Wind has died down, mates!"</span>
+
+<span class="code-kw">when</span> Organiser <span class="code-kw">forgets</span> Distracted:
+  <span class="code-kw">walk</span> Organiser <span class="code-kw">to</span> StartingLine
+  <span class="code-kw">say</span> Organiser: <span class="code-str">"Alright, contest back in order!"</span>
+
+<span class="code-kw">on cue</span> Uses(Guybrush, ShipHorn):
+  <span class="code-kw">remember</span> Distracted(Organiser, true) <span class="code-kw">for</span> <span class="code-num">100 ticks</span>
+  <span class="code-kw">walk</span> Organiser <span class="code-kw">to</span> LookingOffstage</code></pre>
+        </div>
+
+        <!-- Scenario 3: Cat Moustache -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Vertical Slice 03 · Multi-Scene & Crafting</span>
+            <h3 class="scenario-heading">Gabriel Knight 3: The Cat Moustache</h3>
+            <p class="scenario-text">
+              Jane Jensen's infamous 1999 puzzle recreated with systemic dignity. Gabriel must rent Mosely's 
+              motorcycle from Madame Buthane. He scavenges tape, marker, and syrup from his desk, snatches Mosely's passport, 
+              tapes a garden fence hole, squirts the cat to harvest fur, crafts a cat-hair moustache with syrup, and fools Buthane!
+            </p>
+            <div class="scenario-invariants">
+              <span class="invariant-pill">Multi-Scene Partitioning</span>
+              <span class="invariant-pill">Item Combining Crafting</span>
+              <span class="invariant-pill">Fact-Guarded Dialogue Trees</span>
+              <span class="invariant-pill">Multi-Stage Scavenging</span>
+            </div>
+          </div>
+          <pre class="scenario-code"><code><span class="code-kw">scene</span>: Hotel Corridor
+<span class="code-kw">cast</span>: Gabriel, Mosely | <span class="code-kw">props</span>: MoselyDoor, RoomDesk
+
+<span class="code-kw">scene</span>: Hotel Garden
+<span class="code-kw">cast</span>: StrayCat | <span class="code-kw">props</span>: FenceHole, GardenShrub
+
+<span class="code-kw">scene</span>: Bike Rental Shop
+<span class="code-kw">cast</span>: Buthane | <span class="code-kw">props</span>: RentalCounter, Motorcycle
+
+<span class="code-kw">on cue</span> Uses(Gabriel, CatHair, Syrup):
+  <span class="code-kw">say</span> Gabriel: <span class="code-str">"Dabbing warm syrup... presto: a moustache!"</span>
+  <span class="code-kw">remember</span> Carries(Gabriel, CatMoustache)
+
+<span class="code-kw">on cue</span> TalksTo(Gabriel, Buthane):
+  <span class="code-kw">choice</span> <span class="code-str">"I'd like to rent a motorcycle."</span> <span class="code-kw">if not</span> Disguised(Gabriel):
+    <span class="code-kw">say</span> Buthane: <span class="code-str">"Désolé, reserved for detective Mosely!"</span>
+  <span class="code-kw">choice</span> <span class="code-str">"I am Mosely. Here for my bike."</span> <span class="code-kw">if</span> Disguised(Gabriel):
+    <span class="code-kw">say</span> Buthane: <span class="code-str">"Magnificent moustache, monsieur! Here are the keys!"</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         Architecture Comparison Table
+         ======================================================================== -->
+    <section id="architecture" class="compare-box">
+      <div class="section-title-wrap">
+        <div class="section-eyebrow">Engine Architecture</div>
+        <h2 class="section-title">BeSpoke vs The Industry Standard</h2>
+      </div>
+
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Architecture Characteristic</th>
+            <th>Traditional Engines (Unity, Unreal)</th>
+            <th>BeSpoke Engine</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Who owns <code>main()</code>?</td>
+            <td>Massive 3D graphics & physics engine</td>
+            <td><span class="badge-yes">Simulation VM Spine (Pure Zig)</span></td>
+          </tr>
+          <tr>
+            <td>World State Representation</td>
+            <td>Dangling pointers, class hierarchies, C# garbage collector</td>
+            <td><span class="badge-yes">Flat Relational Tuples in Arena</span></td>
+          </tr>
+          <tr>
+            <td>Time-Travel & Save States</td>
+            <td>Expensive custom serializers, deep tree cloning</td>
+            <td><span class="badge-yes">1-Line <code>memcpy</code> Snapshot Rewind</span></td>
+          </tr>
+          <tr>
+            <td>Temporal Logic (Waiting, Routines)</td>
+            <td>Delta-time accumulation, coroutine allocations, state booleans</td>
+            <td><span class="badge-yes">Built-in <code>wait</code>, <code>wait until</code>, <code>loop</code></span></td>
+          </tr>
+          <tr>
+            <td>State Decay (Buffs, Alerts)</td>
+            <td>Manual timestamp polling and cleanup callbacks</td>
+            <td><span class="badge-yes">First-Class Relational TTL Decay</span></td>
+          </tr>
+          <tr>
+            <td>Compile Time & Footprint</td>
+            <td>Gigabytes of SDKs, slow C++ compilation</td>
+            <td><span class="badge-yes">Sub-millisecond Zig Compiler, Zero Dependencies</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ========================================================================
+         Artisanal Neocities Footer
+         ======================================================================== -->
+    <footer class="neocities-footer">
+      <!-- 88x31 Neocities Badges -->
+      <div class="retro-badge-row">
+        <div class="retro-badge zig"><span>MADE WITH</span><span>ZIG 0.13</span></div>
+        <div class="retro-badge pure"><span>ENGINE AS</span><span>SPINE</span></div>
+        <div class="retro-badge scumm"><span>HOMAGE TO</span><span>SCUMM / SCI</span></div>
+        <div class="retro-badge retro"><span>ZERO BLOAT</span><span>NO LLVM</span></div>
+      </div>
+
+      <p class="footer-quote">
+        "Games were never meant to be giant movie studios pretending to be interactive.<br>
+        They are living clocks of emergent rules, waiting for a player to turn the gears."
+      </p>
+
+      <p class="footer-meta">
+        Authored with care for the retro, narrative, and simulation web.<br>
+        Open source on <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub</a> · 
+        Standalone 3x Manual available in <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/manual.html" target="_blank">docs/manual.html</a>
+      </p>
+    </footer>
+  </main>
+
+  <!-- ========================================================================
+       Vanilla JS Simulation Engine (Mirroring BeSpoke Zig VM in Browser)
+       ======================================================================== -->
+  <script>
+    (function() {
+      // Audio Synthesizer (Zero external dependencies)
+      let audioCtx = null;
+      let soundEnabled = false;
+
+      function playBeep(freq = 440, type = 'square', duration = 0.08, vol = 0.1) {
+        if (!soundEnabled) return;
+        try {
+          if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + duration);
+        } catch (e) {}
+      }
+
+      function playRewindSound() {
+        if (!soundEnabled) return;
+        playBeep(300, 'sawtooth', 0.05, 0.08);
+        setTimeout(() => playBeep(450, 'sawtooth', 0.05, 0.08), 40);
+        setTimeout(() => playBeep(600, 'sawtooth', 0.06, 0.08), 80);
+      }
+
+      function playFanfare() {
+        if (!soundEnabled) return;
+        const notes = [523, 659, 783, 1046];
+        notes.forEach((freq, idx) => {
+          setTimeout(() => playBeep(freq, 'triangle', 0.15, 0.15), idx * 100);
+        });
+      }
+
+      // DOM Elements
+      const canvas = document.getElementById('sim-canvas');
+      const ctx = canvas.getContext('2d');
+      const btnPlayPause = document.getElementById('btn-play-pause');
+      const btnStep = document.getElementById('btn-step');
+      const btnRewind = document.getElementById('btn-rewind');
+      const btnReset = document.getElementById('btn-reset');
+      const slider = document.getElementById('timeline-slider');
+      const sliderLabel = document.getElementById('timeline-label');
+      const tickCounter = document.getElementById('tick-counter');
+      const factCounter = document.getElementById('fact-counter');
+      const simLed = document.getElementById('sim-led');
+      const simStateText = document.getElementById('sim-state-text');
+      const sceneBanner = document.getElementById('scene-banner');
+      const actionBank = document.getElementById('scenario-action-bank');
+      const factList = document.getElementById('fact-inspector-list');
+      const eventLog = document.getElementById('terminal-event-log');
+      const toggleCrt = document.getElementById('toggle-crt');
+      const toggleSound = document.getElementById('toggle-sound');
+      const scenarioTabs = document.querySelectorAll('.tab-btn');
+
+      // Toggles
+      toggleCrt.addEventListener('click', () => {
+        document.body.classList.toggle('scanlines');
+        const active = document.body.classList.contains('scanlines');
+        toggleCrt.textContent = active ? 'CRT: ON' : 'CRT: OFF';
+        toggleCrt.classList.toggle('active', active);
+        playBeep(600, 'sine', 0.04);
+      });
+
+      toggleSound.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        toggleSound.textContent = soundEnabled ? 'AUDIO: ON' : 'AUDIO: MUTED';
+        toggleSound.classList.toggle('active', soundEnabled);
+        if (soundEnabled) playBeep(880, 'sine', 0.1, 0.2);
+      });
+
+      // Simulation State
+      let currentScenario = 'tavern';
+      let isPaused = false;
+      let tick = 0;
+      let history = []; // Array of snapshot states: { tick, facts, actors, banner, logSnippet }
+      let speechBubble = null; // { text, x, y, ticks }
+
+      // ========================================================================
+      // SCENARIOS DEFINITIONS
+      // ========================================================================
+      const Scenarios = {
+        tavern: {
+          name: "Tavern Heist",
+          sceneTitle: "TAVERN - COMMON ROOM & WINE CELLAR",
+          init: () => ({
+            facts: [
+              { subj: "Guard", rel: "Carries", obj: "Cheese", ttl: null }
+            ],
+            actors: [
+              { name: "Guard", x: 200, y: 380, targetX: 200, targetY: 380, color: "#2563eb", status: "at Hearth" },
+              { name: "Bard", x: 640, y: 380, targetX: 640, targetY: 380, color: "#9333ea", status: "at Bar" },
+              { name: "Cat", x: 260, y: 380, targetX: 260, targetY: 380, color: "#ea580c", status: "lurking" }
+            ],
+            waypoints: [
+              { name: "Hearth", x: 200, y: 380 },
+              { name: "Bar", x: 640, y: 380 },
+              { name: "Cellar", x: 1040, y: 380 }
+            ],
+            guardPatrolDest: "Cellar",
+            guardWait: 0
+          }),
+          actions: [
+            {
+              label: "🎶 Play Lute (Bard)",
+              handler: () => {
+                const roll = Math.floor(Math.random() * 6 + 1) + Math.floor(Math.random() * 6 + 1);
+                if (roll >= 7) {
+                  setFact("Guard", "CharmedBy", "Bard", 120);
+                  log("CUE PlayLute", `Bard plays enchanting melody! Roll ${roll}>=7. Guard is CHARMED for 120 ticks!`, "cue");
+                  showSpeech("Bard", "♪♫ Enchanting ballad! ♫♪", 640, 310);
+                  playBeep(784, 'triangle', 0.2, 0.2);
+                } else {
+                  log("CUE PlayLute", `Bard plucks a dissonant chord (Roll ${roll}). Guard ignores it.`, "info");
+                  showSpeech("Bard", "Oops, missed a note!", 640, 310);
+                  playBeep(220, 'square', 0.15, 0.1);
+                }
+              }
+            },
+            {
+              label: "🐾 Steal Cheese (Cat)",
+              handler: () => {
+                const isCharmed = hasFact("Guard", "CharmedBy", "Bard");
+                const guardHasCheese = hasFact("Guard", "Carries", "Cheese");
+                if (isCharmed && guardHasCheese) {
+                  removeFact("Guard", "Carries", "Cheese");
+                  setFact("Cat", "Carries", "Cheese", null);
+                  log("HEIST SUCCESS", "Cat stealthily swipes the cheese from the charmed Guard!", "rule");
+                  showSpeech("Cat", "Mrow! (Got the cheese!)", 260, 310);
+                  playFanfare();
+                } else if (!isCharmed) {
+                  log("HEIST FAILED", "Guard is watchful! Cat retreats back into the shadows.", "info");
+                  showSpeech("Guard", "Hey! Shoo, cat!", 200, 310);
+                  playBeep(180, 'square', 0.15, 0.15);
+                } else {
+                  log("HEIST", "The cheese has already been taken!", "info");
+                }
+              }
+            },
+            {
+              label: "🚶 Patrol Guard to Hearth/Cellar",
+              handler: () => {
+                const guard = getActor("Guard");
+                if (guard.targetX === 200) {
+                  guard.targetX = 1040;
+                  guard.status = "walking to Cellar";
+                  log("MOTOR INTENT", "Guard begins patrol toward Wine Cellar.", "info");
+                } else {
+                  guard.targetX = 200;
+                  guard.status = "walking to Hearth";
+                  log("MOTOR INTENT", "Guard begins patrol toward Hearth.", "info");
+                }
+                playBeep(400, 'sine', 0.05);
+              }
+            }
+          ]
+        },
+
+        spitting: {
+          name: "Booty Island Spit",
+          sceneTitle: "BOOTY ISLAND - SPITTING COMPETITION",
+          init: () => ({
+            facts: [],
+            actors: [
+              { name: "Guybrush", x: 240, y: 400, targetX: 240, targetY: 400, color: "#1e40af", status: "Starting Line" },
+              { name: "Organiser", x: 240, y: 350, targetX: 240, targetY: 350, color: "#b91c1c", status: "Watching" },
+              { name: "Onlookers", x: 120, y: 380, targetX: 120, targetY: 380, color: "#78508c", status: "Cheering" }
+            ],
+            waypoints: [
+              { name: "Start", x: 240, y: 420 },
+              { name: "3rd Place", x: 440, y: 420 },
+              { name: "2nd Place", x: 720, y: 420 },
+              { name: "1st Place", x: 1000, y: 420 }
+            ],
+            flagsX: 720,
+            windBlowing: false,
+            windTimer: 0
+          }),
+          actions: [
+            {
+              label: "🍺 Drink Green Drink",
+              handler: () => {
+                setFact("Guybrush", "SpitIs", "Thick", null);
+                log("INVENTORY USE", "Guybrush downs the thick green drink! 'Glug glug glug...'", "cue");
+                showSpeech("Guybrush", "Ptooey! That's thick!", 240, 320);
+                playBeep(440, 'triangle', 0.15);
+              }
+            },
+            {
+              label: "📯 Blow Ship's Horn",
+              handler: () => {
+                setFact("Organiser", "Distracted", "ShipArrival", 80);
+                const org = getActor("Organiser");
+                org.targetX = 1100;
+                org.status = "Looking Offstage";
+                log("CUE ShipHorn", "HOOOOONK! Organiser runs to look offstage! (Distracted 80 ticks)", "cue");
+                showSpeech("Organiser", "About time that damn ship arrived!", 240, 270);
+                playBeep(150, 'sawtooth', 0.4, 0.25);
+              }
+            },
+            {
+              label: "🚩 Tamper Distance Flags",
+              handler: () => {
+                if (hasFact("Organiser", "Distracted", "ShipArrival")) {
+                  state.flagsX = 480;
+                  setFact("DistanceFlags", "Is", "Tampered", null);
+                  log("TAMPER FLAGS", "Guybrush stealthily moves the 2nd place distance flag closer!", "rule");
+                  showSpeech("Guybrush", "Heh heh, nobody will notice.", 240, 320);
+                  playBeep(650, 'sine', 0.1);
+                } else {
+                  log("CAUGHT", "Organiser is watching! Guybrush backs off.", "info");
+                  showSpeech("Organiser", "Keep your hands off the flags, pirate!", 240, 270);
+                  playBeep(200, 'square', 0.15);
+                }
+              }
+            },
+            {
+              label: "💨 Toggle Wind Gust",
+              handler: () => {
+                state.windBlowing = !state.windBlowing;
+                if (state.windBlowing) {
+                  log("WIND CHANGE", ">>> Rising Edge: STRONG TAILWIND blowing east! >>>", "info");
+                  playBeep(880, 'sine', 0.2, 0.1);
+                } else {
+                  log("WIND CHANGE", "Wind has died down to calm.", "info");
+                  playBeep(330, 'sine', 0.1, 0.1);
+                }
+              }
+            },
+            {
+              label: "💦 SPIT!",
+              actionPrimary: true,
+              handler: () => {
+                const thick = hasFact("Guybrush", "SpitIs", "Thick");
+                const flagsMoved = hasFact("DistanceFlags", "Is", "Tampered");
+                const wind = state.windBlowing;
+
+                if (thick && flagsMoved && wind) {
+                  log("VICTORY!", "★ CHAMPION! Thick Spit + Moved Flags + Tailwind = 1ST PLACE! ★", "cue");
+                  showSpeech("Guybrush", "FIRST PLACE CHAMPION!", 240, 320);
+                  playFanfare();
+                } else if (thick && flagsMoved) {
+                  log("SPIT RESULT", "Second place! So close, but you need a tailwind to reach the gold!", "info");
+                  showSpeech("Guybrush", "Almost! Just need wind!", 240, 320);
+                  playBeep(494, 'triangle', 0.15);
+                } else if (thick) {
+                  log("SPIT RESULT", "Third place! Thick spit, but the flags are still too far away.", "info");
+                  showSpeech("Guybrush", "Third place... not good enough.", 240, 320);
+                  playBeep(370, 'triangle', 0.15);
+                } else {
+                  log("SPIT RESULT", "Dribbles on chin! Third place!", "info");
+                  showSpeech("Guybrush", "*dribble*", 240, 320);
+                  playBeep(180, 'square', 0.15);
+                }
+              }
+            }
+          ]
+        },
+
+        gk3: {
+          name: "GK3 Cat Moustache",
+          sceneTitle: "HOTEL COURTYARD - GARDEN FENCE & ESCAPE GAP",
+          init: () => ({
+            facts: [
+              { subj: "FenceHole", rel: "Is", obj: "Untaped", ttl: null },
+              { subj: "StrayCat", rel: "Is", obj: "Calm", ttl: null }
+            ],
+            actors: [
+              { name: "Gabriel", x: 280, y: 380, targetX: 280, targetY: 380, color: "#b47332", status: "Undisguised" },
+              { name: "StrayCat", x: 890, y: 380, targetX: 890, targetY: 380, color: "#19191e", status: "Napping" }
+            ],
+            waypoints: [
+              { name: "Hotel Exit", x: 280, y: 380 },
+              { name: "Fence Hole", x: 604, y: 380 },
+              { name: "Cat Lounge", x: 892, y: 380 }
+            ],
+            fenceTaped: false,
+            fenceHair: false
+          }),
+          actions: [
+            {
+              label: "📦 Scavenge Hotel Desk",
+              handler: () => {
+                setFact("Gabriel", "Carries", "Marker", null);
+                setFact("Gabriel", "Carries", "MaskingTape", null);
+                setFact("Gabriel", "Carries", "Syrup", null);
+                log("SCAVENGE", "Gabriel searched his room desk: Acquired Felt Marker, Masking Tape, and Breakfast Syrup!", "cue");
+                showSpeech("Gabriel", "Supplies acquired.", 280, 300);
+                playBeep(523, 'sine', 0.1);
+              }
+            },
+            {
+              label: "🚪 Snatch Mosely's Passport",
+              handler: () => {
+                setFact("Gabriel", "Carries", "MoselyPassport", null);
+                log("SNATCH", "Gabriel snuck into Room 33 and snatched Mosely's passport from his coat!", "cue");
+                showSpeech("Gabriel", "Sorry Mosely, official Shadow Hunter business.", 280, 300);
+                playBeep(587, 'sine', 0.1);
+              }
+            },
+            {
+              label: "🖊️ Draw Moustache on Passport",
+              handler: () => {
+                if (hasFact("Gabriel", "Carries", "Marker") && hasFact("Gabriel", "Carries", "MoselyPassport")) {
+                  setFact("Gabriel", "PassportModified", "true", null);
+                  log("CRAFTING", "Drew a dashing felt-tip moustache on Mosely's passport photo!", "rule");
+                  showSpeech("Gabriel", "Now Mosely has a moustache in his photo!", 280, 300);
+                  playBeep(659, 'sine', 0.1);
+                } else {
+                  log("CRAFTING", "You need both the felt marker and Mosely's passport!", "info");
+                }
+              }
+            },
+            {
+              label: "🩹 Tape Fence Gap",
+              handler: () => {
+                if (hasFact("Gabriel", "Carries", "MaskingTape")) {
+                  state.fenceTaped = true;
+                  setFact("FenceHole", "Is", "Taped", null);
+                  log("FENCE", "Stretched sticky masking tape across the base of the wooden fence hole!", "cue");
+                  showSpeech("Gabriel", "Sticky tape stretched taut.", 604, 300);
+                  playBeep(698, 'sine', 0.1);
+                } else {
+                  log("FENCE", "Need masking tape first!", "info");
+                }
+              }
+            },
+            {
+              label: "💦 Squirt Cat with Bottle",
+              handler: () => {
+                if (state.fenceTaped) {
+                  state.fenceHair = true;
+                  setFact("FenceHole", "Has", "CatFur", null);
+                  log("CAT SQUIRTED", "Squirting stray cat! Startled cat bolts through the fence gap, leaving a thick strip of fur on the tape!", "cue");
+                  showSpeech("StrayCat", "MEOWWW!", 890, 300);
+                  playBeep(880, 'sawtooth', 0.2, 0.2);
+                } else {
+                  log("CAT", "Squirting the cat now won't help; the fence hole isn't taped!", "info");
+                  showSpeech("Gabriel", "Gotta tape the fence hole first.", 280, 300);
+                  playBeep(220, 'square', 0.1);
+                }
+              }
+            },
+            {
+              label: "🐈 Peel Fur & Craft Moustache",
+              handler: () => {
+                if (state.fenceHair && hasFact("Gabriel", "Carries", "Syrup")) {
+                  setFact("Gabriel", "Carries", "CatMoustache", null);
+                  state.fenceHair = false;
+                  state.fenceTaped = false;
+                  log("CRAFTING", "Applied warm breakfast syrup to upper lip and firmly pressed cat hair in place! Cat Moustache crafted!", "rule");
+                  showSpeech("Gabriel", "Dab syrup, attach hair... magnificent!", 280, 300);
+                  playBeep(784, 'triangle', 0.15);
+                } else {
+                  log("CRAFTING", "Need black cat hair stuck to the fence and syrup from the desk!", "info");
+                }
+              }
+            },
+            {
+              label: "🥸 Don Disguise & Rent Bike",
+              actionPrimary: true,
+              handler: () => {
+                const hasMoustache = hasFact("Gabriel", "Carries", "CatMoustache");
+                const passportFixed = hasFact("Gabriel", "PassportModified", "true");
+
+                if (hasMoustache && passportFixed) {
+                  setFact("Gabriel", "Disguised", "Mosely", null);
+                  setFact("Gabriel", "Has", "MotorcycleKeys", null);
+                  const gabriel = getActor("Gabriel");
+                  gabriel.status = "DISGUISED AS MOSELY";
+                  log("VICTORY!", "★ Madame Buthane: 'Ah, Monsieur Mosely! That is a magnificent moustache. Here are your keys!' ★", "cue");
+                  showSpeech("Gabriel", "I am Detective Franklin Mosely!", 280, 300);
+                  playFanfare();
+                } else if (hasMoustache) {
+                  log("REJECTED", "Madame Buthane: 'Monsieur Mosely has no moustache in his passport photo!' Fix the passport first!", "info");
+                  showSpeech("Gabriel", "Damn, passport photo doesn't match yet.", 280, 300);
+                  playBeep(250, 'square', 0.15);
+                } else {
+                  log("REJECTED", "Madame Buthane: 'The motorcycle is reserved for Detective Mosely!'", "info");
+                  showSpeech("Gabriel", "I need a complete disguise.", 280, 300);
+                  playBeep(200, 'square', 0.15);
+                }
+              }
+            }
+          ]
+        }
+      };
+
+      // Current runtime state instance
+      let state = Scenarios.tavern.init();
+
+      function loadScenario(name) {
+        currentScenario = name;
+        state = Scenarios[name].init();
+        tick = 0;
+        history = [];
+        speechBubble = null;
+        sceneBanner.textContent = Scenarios[name].sceneTitle;
+        log("SYSTEM", `Initialized ${Scenarios[name].name} scenario.`, "info");
+        renderActionButtons();
+        recordSnapshot();
+        updateUI();
+      }
+
+      function renderActionButtons() {
+        actionBank.innerHTML = '';
+        Scenarios[currentScenario].actions.forEach(act => {
+          const btn = document.createElement('button');
+          btn.className = 'sim-btn' + (act.actionPrimary ? ' action-primary' : '');
+          btn.innerHTML = act.label;
+          btn.addEventListener('click', () => {
+            act.handler();
+            recordSnapshot();
+            updateUI();
+          });
+          actionBank.appendChild(btn);
+        });
+      }
+
+      // Relational Fact Operations
+      function setFact(subj, rel, obj, ttlTicks = null) {
+        removeFact(subj, rel, obj);
+        state.facts.push({
+          subj, rel, obj,
+          ttl: ttlTicks,
+          maxTtl: ttlTicks
+        });
+      }
+
+      function hasFact(subj, rel, obj = null) {
+        return state.facts.some(f => f.subj === subj && f.rel === rel && (obj === null || f.obj === obj));
+      }
+
+      function removeFact(subj, rel, obj = null) {
+        state.facts = state.facts.filter(f => !(f.subj === subj && f.rel === rel && (obj === null || f.obj === obj)));
+      }
+
+      function getActor(name) {
+        return state.actors.find(a => a.name === name);
+      }
+
+      function showSpeech(speaker, text, x, y) {
+        speechBubble = { speaker, text, x, y, ticks: 70 };
+      }
+
+      function log(prefix, msg, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.innerHTML = `<span style="opacity:0.6;">[T:${tick}]</span> <strong>[${prefix}]</strong> ${msg}`;
+        eventLog.appendChild(entry);
+        eventLog.scrollTop = eventLog.scrollHeight;
+      }
+
+      // Snapshot & Time Travel Rewind
+      function recordSnapshot() {
+        // Deep copy facts and actors
+        const snap = {
+          tick,
+          facts: JSON.parse(JSON.stringify(state.facts)),
+          actors: JSON.parse(JSON.stringify(state.actors)),
+          flagsX: state.flagsX,
+          windBlowing: state.windBlowing,
+          fenceTaped: state.fenceTaped,
+          fenceHair: state.fenceHair
+        };
+        // If we scrubbed back and are now advancing, truncate divergent future
+        if (slider.value < history.length - 1) {
+          history = history.slice(0, parseInt(slider.value) + 1);
+        }
+        history.push(snap);
+        slider.max = history.length - 1;
+        slider.value = history.length - 1;
+      }
+
+      function restoreSnapshot(index) {
+        if (index < 0 || index >= history.length) return;
+        const snap = history[index];
+        tick = snap.tick;
+        state.facts = JSON.parse(JSON.stringify(snap.facts));
+        state.actors = JSON.parse(JSON.stringify(snap.actors));
+        state.flagsX = snap.flagsX;
+        state.windBlowing = snap.windBlowing;
+        state.fenceTaped = snap.fenceTaped;
+        state.fenceHair = snap.fenceHair;
+        speechBubble = null;
+        playRewindSound();
+        updateUI();
+      }
+
+      // Step Tick Logic
+      function stepTick() {
+        tick += 1;
+
+        // 1. Decay Fact TTLs
+        state.facts.forEach(f => {
+          if (f.ttl !== null) {
+            f.ttl -= 1;
+          }
+        });
+        const expired = state.facts.filter(f => f.ttl !== null && f.ttl <= 0);
+        if (expired.length > 0) {
+          expired.forEach(ef => {
+            log("TTL EXPIRED", `Fact ${ef.rel}(${ef.subj}, ${ef.obj}) expired naturally.`, "rule");
+          });
+          state.facts = state.facts.filter(f => f.ttl === null || f.ttl > 0);
+        }
+
+        // 2. Scenario-specific Tick Behavior
+        if (currentScenario === 'tavern') {
+          const guard = getActor("Guard");
+          if (guard.x < guard.targetX) guard.x = Math.min(guard.targetX, guard.x + 8);
+          if (guard.x > guard.targetX) guard.x = Math.max(guard.targetX, guard.x - 8);
+          if (guard.x === guard.targetX) {
+            guard.status = guard.x === 200 ? "at Hearth" : "at Cellar";
+          }
+        } else if (currentScenario === 'spitting') {
+          const org = getActor("Organiser");
+          if (org.x < org.targetX) org.x = Math.min(org.targetX, org.x + 12);
+          if (org.x > org.targetX) org.x = Math.max(org.targetX, org.x - 12);
+          if (!hasFact("Organiser", "Distracted", "ShipArrival")) {
+            org.targetX = 240;
+            if (org.x === 240) org.status = "Watching";
+          }
+        }
+
+        // 3. Speech bubble tick decay
+        if (speechBubble) {
+          speechBubble.ticks -= 1;
+          if (speechBubble.ticks <= 0) speechBubble = null;
+        }
+
+        recordSnapshot();
+        updateUI();
+      }
+
+      function updateUI() {
+        tickCounter.textContent = tick;
+        factCounter.textContent = state.facts.length;
+        sliderLabel.textContent = `${slider.value}/${slider.max}`;
+
+        // Render Fact Inspector
+        factList.innerHTML = '';
+        if (state.facts.length === 0) {
+          factList.innerHTML = '<div style="color:var(--text-dim); padding:6px 0;">No active facts in arena (Empty)</div>';
+        } else {
+          state.facts.forEach(f => {
+            const row = document.createElement('div');
+            row.className = 'fact-row';
+            const ttlText = f.ttl !== null ? `<span class="ttl-pill">TTL: ${f.ttl}</span>` : `<span style="color:var(--text-dim); font-size:0.7rem;">STATIC</span>`;
+            row.innerHTML = `
+              <span><strong class="fact-tag">${f.rel}</strong>(${f.subj}, ${f.obj})</span>
+              ${ttlText}
+            `;
+            factList.appendChild(row);
+          });
+        }
+      }
+
+      // ========================================================================
+      // HTML5 CANVAS RENDERING
+      // ========================================================================
+      function drawScene() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (currentScenario === 'tavern') {
+          drawTavernScene();
+        } else if (currentScenario === 'spitting') {
+          drawSpittingScene();
+        } else if (currentScenario === 'gk3') {
+          drawGk3Scene();
+        }
+
+        // Draw Speech Bubble
+        if (speechBubble) {
+          drawSpeechBubble(speechBubble);
+        }
+      }
+
+      function drawTavernScene() {
+        // Room background (Common Room on left, Cellar on right)
+        ctx.fillStyle = "#1e1410";
+        ctx.fillRect(40, 80, 680, 480);
+        ctx.strokeStyle = "#453328";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(40, 80, 680, 480);
+
+        ctx.fillStyle = "#141c28";
+        ctx.fillRect(720, 80, 520, 480);
+        ctx.strokeStyle = "#2d3748";
+        ctx.strokeRect(720, 80, 520, 480);
+
+        // Ceiling beams
+        ctx.fillStyle = "#2d1a12";
+        ctx.fillRect(40, 140, 680, 16);
+        ctx.fillRect(40, 220, 680, 12);
+
+        // Stone cellar archway pillars
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(720, 80, 30, 480);
+        ctx.fillRect(1210, 80, 30, 480);
+
+        // Hearth fire glow at Hearth (x=200)
+        ctx.fillStyle = "#451a03";
+        ctx.fillRect(160, 280, 80, 100);
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(200, 360, 24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#f59e0b";
+        ctx.beginPath();
+        ctx.arc(200, 365, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Polished Bar Counter at Bar (x=640)
+        ctx.fillStyle = "#78350f";
+        ctx.fillRect(580, 340, 120, 50);
+        ctx.strokeStyle = "#92400e";
+        ctx.strokeRect(580, 340, 120, 50);
+        ctx.fillStyle = "#b45309";
+        ctx.fillRect(585, 345, 110, 8);
+
+        // Wine Casks in Cellar
+        ctx.fillStyle = "#451a03";
+        ctx.fillRect(1000, 300, 80, 90);
+        ctx.strokeStyle = "#78350f";
+        ctx.strokeRect(1000, 300, 80, 90);
+
+        // Corridors / Waypoints
+        drawWaypoint(200, 380, "Hearth");
+        drawWaypoint(640, 380, "Bar");
+        drawWaypoint(1040, 380, "Cellar");
+
+        // Edge Lines
+        ctx.strokeStyle = "#38281f";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(200, 380);
+        ctx.lineTo(640, 380);
+        ctx.lineTo(1040, 380);
+        ctx.stroke();
+
+        // Actors
+        state.actors.forEach(act => {
+          drawActor(act);
+        });
+      }
+
+      function drawSpittingScene() {
+        // Sky
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Contest Green Grass & Ocean
+        ctx.fillStyle = "#1e4d2b";
+        ctx.fillRect(40, 100, 940, 460);
+        ctx.strokeStyle = "#2d6a3e";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(40, 100, 940, 460);
+
+        // Ocean
+        ctx.fillStyle = "#0c4a6e";
+        ctx.fillRect(980, 100, 260, 460);
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 16px monospace";
+        ctx.fillText("CARIBBEAN SEA", 1020, 140);
+
+        // Ground track lines
+        ctx.strokeStyle = "rgba(255,255,255,0.3)";
+        ctx.lineWidth = 2;
+        [240, 440, 720, 1000].forEach((x, i) => {
+          ctx.beginPath();
+          ctx.moveTo(x, 180);
+          ctx.lineTo(x, 520);
+          ctx.stroke();
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "12px monospace";
+          const names = ["START LINE", "3RD PLACE", "2ND PLACE", "1ST PLACE"];
+          ctx.fillText(names[i], x - 30, 540);
+        });
+
+        // Distance Flags
+        const fx = state.flagsX || 720;
+        ctx.fillStyle = hasFact("DistanceFlags", "Is", "Tampered") ? "#f59e0b" : "#ef4444";
+        ctx.fillRect(fx - 4, 340, 8, 80);
+        ctx.fillRect(fx + 4, 340, 40, 24);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 12px monospace";
+        ctx.fillText(hasFact("DistanceFlags", "Is", "Tampered") ? "FLAGS [MOVED]" : "FLAGS", fx - 20, 440);
+
+        // Wind Gust Indicator
+        if (state.windBlowing) {
+          ctx.fillStyle = "#38bdf8";
+          ctx.font = "bold 16px monospace";
+          ctx.fillText(">>> WIND GUST: STRONG TAILWIND (BLOWING EAST) >>>", 100, 150);
+        }
+
+        // Actors
+        state.actors.forEach(act => {
+          drawActor(act);
+        });
+      }
+
+      function drawGk3Scene() {
+        // Courtyard Garden (Sky & Sunlight)
+        ctx.fillStyle = "#8cb9e1";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Sun
+        ctx.fillStyle = "#fef08a";
+        ctx.beginPath();
+        ctx.arc(1060, 140, 40, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Grass Lawn
+        ctx.fillStyle = "#377332";
+        ctx.fillRect(360, 220, 880, 360);
+
+        // Hotel Wall (Limestone on left)
+        ctx.fillStyle = "#d7c3a0";
+        ctx.fillRect(40, 100, 320, 480);
+        ctx.strokeStyle = "#968264";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(40, 100, 320, 480);
+
+        // French Window with olive shutters
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(150, 140, 80, 100);
+        ctx.fillStyle = "#2d5037";
+        ctx.fillRect(120, 140, 30, 100);
+        ctx.fillRect(230, 140, 30, 100);
+
+        // Hotel Exit Door
+        ctx.fillStyle = "#3b1e10";
+        ctx.fillRect(230, 340, 90, 140);
+        ctx.fillStyle = "#fef08a";
+        ctx.font = "bold 12px monospace";
+        ctx.fillText("HOTEL EXIT", 235, 330);
+
+        // Centerpiece Birdbath Fountain
+        ctx.fillStyle = "#94a3b8";
+        ctx.beginPath();
+        ctx.arc(460, 440, 32, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(460, 440, 24, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Wooden Picket Fence
+        ctx.fillStyle = "#965f32";
+        ctx.fillRect(360, 340, 880, 14);
+        for (let px = 360; px < 1180; px += 24) {
+          if (px >= 580 && px <= 630) continue; // Fence hole gap
+          ctx.fillRect(px, 300, 12, 70);
+        }
+
+        // The Low Fence Hole Gap
+        ctx.fillStyle = "#141e12";
+        ctx.fillRect(580, 340, 60, 46);
+        ctx.strokeStyle = "#78461e";
+        ctx.strokeRect(580, 340, 60, 46);
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "11px monospace";
+        ctx.fillText("FENCE GAP", 580, 330);
+
+        // Masking tape overlay
+        if (state.fenceTaped) {
+          ctx.fillStyle = "#fef3c7";
+          ctx.fillRect(572, 355, 76, 12);
+          ctx.strokeStyle = "#d97706";
+          ctx.strokeRect(572, 355, 76, 12);
+          if (state.fenceHair) {
+            ctx.fillStyle = "#000";
+            ctx.fillRect(595, 352, 30, 18);
+            ctx.fillStyle = "#fbbf24";
+            ctx.fillText("★ CAT FUR ★", 570, 320);
+          } else {
+            ctx.fillText("[TAPE READY]", 575, 320);
+          }
+        }
+
+        // Potting Bench & Lavender Bush at x=890
+        ctx.fillStyle = "#28873c";
+        ctx.beginPath();
+        ctx.arc(890, 340, 36, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#c084fc";
+        ctx.beginPath();
+        ctx.arc(890, 325, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#734b28";
+        ctx.fillRect(810, 350, 50, 24);
+
+        // Waypoints
+        drawWaypoint(280, 380, "Hotel Exit");
+        drawWaypoint(604, 380, "Fence Hole");
+        drawWaypoint(892, 380, "Cat Lounge");
+
+        // Flagstone stepping stone path
+        ctx.strokeStyle = "#c3b49b";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(280, 380);
+        ctx.lineTo(604, 380);
+        ctx.lineTo(892, 380);
+        ctx.stroke();
+
+        // Actors
+        state.actors.forEach(act => {
+          drawActor(act);
+        });
+      }
+
+      function drawWaypoint(x, y, label) {
+        ctx.fillStyle = "#334155";
+        ctx.beginPath();
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "12px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(label, x, y + 30);
+      }
+
+      function drawActor(act) {
+        ctx.fillStyle = act.color;
+        ctx.beginPath();
+        ctx.arc(act.x, act.y, 20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Actor Name
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 13px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(act.name, act.x, act.y - 28);
+
+        // Status pill
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "11px monospace";
+        ctx.fillText(`[${act.status}]`, act.x, act.y + 44);
+      }
+
+      function drawSpeechBubble(b) {
+        ctx.fillStyle = "#fffbeb";
+        ctx.strokeStyle = "#b45309";
+        ctx.lineWidth = 2;
+
+        ctx.font = "14px monospace";
+        const width = ctx.measureText(b.text).width + 24;
+        const x = b.x - width / 2;
+        const y = b.y - 65;
+
+        ctx.fillRect(x, y, width, 32);
+        ctx.strokeRect(x, y, width, 32);
+
+        ctx.fillStyle = "#78350f";
+        ctx.textAlign = "center";
+        ctx.fillText(b.text, b.x, y + 21);
+      }
+
+      // ========================================================================
+      // LOOP & EVENT LISTENERS
+      // ========================================================================
+      let lastTickTime = performance.now();
+      const tickInterval = 250; // ms per discrete simulation tick
+
+      function loop(now) {
+        if (!isPaused && (now - lastTickTime >= tickInterval)) {
+          stepTick();
+          lastTickTime = now;
+        }
+        drawScene();
+        requestAnimationFrame(loop);
+      }
+
+      btnPlayPause.addEventListener('click', () => {
+        isPaused = !isPaused;
+        btnPlayPause.innerHTML = isPaused ? '<span>▶</span> Resume' : '<span>⏸</span> Pause';
+        simLed.className = 'led-dot ' + (isPaused ? 'amber' : 'green');
+        simStateText.textContent = isPaused ? 'SIMULATION PAUSED' : 'SIMULATION RUNNING';
+        playBeep(isPaused ? 400 : 600, 'sine', 0.05);
+      });
+
+      btnStep.addEventListener('click', () => {
+        stepTick();
+        playBeep(520, 'sine', 0.05);
+      });
+
+      btnRewind.addEventListener('click', () => {
+        if (slider.value > 0) {
+          slider.value = parseInt(slider.value) - 1;
+          restoreSnapshot(parseInt(slider.value));
+        }
+      });
+
+      slider.addEventListener('input', () => {
+        restoreSnapshot(parseInt(slider.value));
+      });
+
+      btnReset.addEventListener('click', () => {
+        loadScenario(currentScenario);
+        playBeep(350, 'sine', 0.1);
+      });
+
+      scenarioTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          scenarioTabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          loadScenario(tab.getAttribute('data-scenario'));
+          playBeep(700, 'triangle', 0.08);
+        });
+      });
+
+      // Canvas Interaction: Click to walk or inspect
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clickX = (e.clientX - rect.left) * scaleX;
+        const clickY = (e.clientY - rect.top) * scaleY;
+
+        // Find closest waypoint
+        if (state.waypoints) {
+          let closest = null;
+          let minDist = 40;
+          state.waypoints.forEach(wp => {
+            const dist = Math.hypot(wp.x - clickX, wp.y - clickY);
+            if (dist < minDist) {
+              minDist = dist;
+              closest = wp;
+            }
+          });
+
+          if (closest) {
+            // Direct first player actor to clicked waypoint
+            const player = state.actors[0];
+            player.targetX = closest.x;
+            player.targetY = closest.y;
+            player.status = `walking to ${closest.name}`;
+            log("POINT & CLICK", `Directing ${player.name} to ${closest.name}.`, "info");
+            playBeep(480, 'sine', 0.06);
+            recordSnapshot();
+            updateUI();
+          }
+        }
+      });
+
+      // Keyboard hotkeys
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          btnPlayPause.click();
+        } else if (e.code === 'KeyN') {
+          btnStep.click();
+        } else if (e.code === 'Comma' || e.code === 'ArrowLeft') {
+          btnRewind.click();
+        }
+      });
+
+      // Start initial scenario
+      loadScenario('tavern');
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
