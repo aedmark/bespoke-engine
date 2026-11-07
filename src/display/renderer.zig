@@ -6,6 +6,7 @@ const RenderFrame = display_mod.RenderFrame;
 const RenderWaypoint = display_mod.RenderWaypoint;
 const RenderHotspot = display_mod.RenderHotspot;
 const RenderEntity = display_mod.RenderEntity;
+const RenderInventoryItem = display_mod.RenderInventoryItem;
 const WaypointId = display_mod.WaypointId;
 const EntityId = display_mod.EntityId;
 
@@ -215,6 +216,23 @@ pub fn hit_test_verb_button(screen_x: i32, screen_y: i32, screen_h: i32) ?Advent
         if (screen_x >= btn_x and screen_x <= btn_x + btn_w) {
             return @enumFromInt(@as(u8, @intCast(i)));
         }
+    }
+    return null;
+}
+
+/// Hit-tests screen coordinates against visible inventory tray items (P7-03, D-007).
+pub fn hit_test_inventory_item(screen_x: i32, screen_y: i32, screen_h: i32, inventory: []const RenderInventoryItem) ?usize {
+    const bar_y = screen_h - 78;
+    if (screen_y < bar_y or screen_y > bar_y + 26) return null;
+
+    var cur_x: i32 = 480;
+    for (inventory, 0..) |item, idx| {
+        const iname = item.get_name();
+        const iw = font.text_width(iname, 2) + 24;
+        if (screen_x >= cur_x and screen_x <= cur_x + iw) {
+            return idx;
+        }
+        cur_x += iw + 8;
     }
     return null;
 }
@@ -521,6 +539,14 @@ pub const DisplayWindow = struct {
                             return .none;
                         }
 
+                        // 2b. Check Inventory items
+                        const clicked_item_idx = hit_test_inventory_item(event.button.x, event.button.y, self.height, frame.inventory[0..frame.inventory_count]);
+                        if (clicked_item_idx) |idx| {
+                            const iname = frame.inventory[idx].get_name();
+                            if (std.mem.eql(u8, iname, "Horn")) return .sound_horn;
+                            if (std.mem.eql(u8, iname, "GreenDrink")) return .drink_green_drink;
+                        }
+
                         // 3. Check Actors
                         const clicked_actor = hit_test_actor(
                             event.button.x,
@@ -734,6 +760,26 @@ pub const DisplayWindow = struct {
                 break;
             }
         }
+        if (!is_spitting_scene) {
+            for (frame.entities[0..frame.entity_count]) |e| {
+                const ename = e.get_name();
+                if (std.mem.eql(u8, ename, "Guybrush") or
+                    std.mem.eql(u8, ename, "Organiser") or
+                    std.mem.eql(u8, ename, "Onlookers"))
+                {
+                    is_spitting_scene = true;
+                    break;
+                }
+            }
+        }
+        if (!is_spitting_scene) {
+            for (frame.hotspots[0..frame.hotspot_count]) |hs| {
+                if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
+                    is_spitting_scene = true;
+                    break;
+                }
+            }
+        }
 
         if (is_spitting_scene) {
             // Sky
@@ -764,21 +810,21 @@ pub const DisplayWindow = struct {
             self.draw_text("BOOTY ISLAND - SPITTING COMPETITION", field_x + 16, field_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
 
             // Ground distance track lines
-            // Starting Line at x=340
-            self.draw_line(340, field_y + 60, 340, field_y + field_h - 20, Color.white);
-            self.draw_text("START LINE", 305, field_y + field_h - 16, 1, Color.white);
+            // Starting Line at x=200 (world_x = 0)
+            self.draw_line(200, field_y + 60, 200, field_y + field_h - 20, Color.white);
+            self.draw_text("START LINE", 165, field_y + field_h - 16, 1, Color.white);
 
-            // 3rd Place Line at x=460
-            self.draw_line(460, field_y + 70, 460, field_y + field_h - 30, Color.hud_subtext);
-            self.draw_text("3RD PLACE", 435, field_y + field_h - 26, 1, Color.hud_subtext);
+            // 3rd Place Line at x=340 (world_x = 10)
+            self.draw_line(340, field_y + 70, 340, field_y + field_h - 30, Color.hud_subtext);
+            self.draw_text("3RD PLACE", 315, field_y + field_h - 26, 1, Color.hud_subtext);
 
-            // 2nd Place Line at x=580
-            self.draw_line(580, field_y + 70, 580, field_y + field_h - 30, Color{ .r = 245, .g = 158, .b = 11 });
-            self.draw_text("2ND PLACE", 555, field_y + field_h - 26, 1, Color{ .r = 245, .g = 158, .b = 11 });
+            // 2nd Place Line at x=508 (world_x = 22, where Flags stand)
+            self.draw_line(508, field_y + 70, 508, field_y + field_h - 30, Color{ .r = 245, .g = 158, .b = 11 });
+            self.draw_text("2ND PLACE", 483, field_y + field_h - 26, 1, Color{ .r = 245, .g = 158, .b = 11 });
 
-            // 1st Place Champion Line at x=680
-            self.draw_line(680, field_y + 60, 680, field_y + field_h - 20, Color{ .r = 250, .g = 204, .b = 21 });
-            self.draw_text("CHAMPION LINE (1ST PLACE)", 605, field_y + field_h - 16, 1, Color{ .r = 250, .g = 204, .b = 21 });
+            // 1st Place Champion Line at x=676 (world_x = 34)
+            self.draw_line(676, field_y + 60, 676, field_y + field_h - 20, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_text("CHAMPION LINE (1ST PLACE)", 600, field_y + field_h - 16, 1, Color{ .r = 250, .g = 204, .b = 21 });
 
             // Wind Indicator
             if (frame.wind_blowing) {

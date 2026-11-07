@@ -43,6 +43,9 @@ pub const SpatialGraph = struct {
     }
 
     pub fn deinit(self: *SpatialGraph) void {
+        for (self.waypoints.items) |wp| {
+            self.allocator.free(wp.name);
+        }
         self.waypoints.deinit();
         self.edges.deinit();
     }
@@ -50,11 +53,12 @@ pub const SpatialGraph = struct {
     /// Adds a waypoint in a given room.
     pub fn add_waypoint(self: *SpatialGraph, room: EntityId, x: i32, y: i32, name: []const u8) !WaypointId {
         const id: WaypointId = @intCast(self.waypoints.items.len + 1);
+        const owned_name = try self.allocator.dupe(u8, name);
         try self.waypoints.append(.{
             .id = id,
             .room = room,
             .pos = .{ .x = x, .y = y },
-            .name = name,
+            .name = owned_name,
         });
         return id;
     }
@@ -290,6 +294,10 @@ pub const SpatialSystem = struct {
         }
         self.agents.deinit();
         self.graph.deinit();
+        for (self.hotspots.items) |h| {
+            self.allocator.free(h.name);
+            self.allocator.free(h.examine_text);
+        }
         self.hotspots.deinit();
     }
 
@@ -303,13 +311,15 @@ pub const SpatialSystem = struct {
         name: []const u8,
         examine_text: []const u8,
     ) !void {
+        const owned_name = try self.allocator.dupe(u8, name);
+        const owned_examine = try self.allocator.dupe(u8, examine_text);
         try self.hotspots.append(.{
             .entity = entity,
             .room = room,
             .pos = pos,
             .radius = radius,
-            .name = name,
-            .examine_text = examine_text,
+            .name = owned_name,
+            .examine_text = owned_examine,
         });
     }
 

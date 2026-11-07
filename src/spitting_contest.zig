@@ -168,13 +168,44 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const organiser = world.lookup_entity("Organiser").?;
     const onlookers = world.lookup_entity("Onlookers").?;
     const flags = world.lookup_entity("Flags").?;
+    const room_ent = world.lookup_entity("Spitting Competition") orelse try world.intern_entity("Spitting Competition");
 
     const starting_line_wp = spatial.graph.find_waypoint("Starting Line") orelse 1;
     const offstage_wp = spatial.graph.find_waypoint("Looking Offstage") orelse 2;
+    const onlookers_wp = spatial.graph.find_waypoint("Onlookers") orelse
+        try spatial.graph.add_waypoint(room_ent, -8, 3, "Onlookers");
+    const judging_wp = spatial.graph.find_waypoint("Judging Post") orelse
+        try spatial.graph.add_waypoint(room_ent, 2, -4, "Judging Post");
+
+    if (spatial.graph.get_waypoint(starting_line_wp)) |_| {
+        spatial.graph.waypoints.items[starting_line_wp - 1].pos = .{ .x = 0, .y = 0 };
+    }
+    if (spatial.graph.get_waypoint(offstage_wp)) |_| {
+        spatial.graph.waypoints.items[offstage_wp - 1].pos = .{ .x = 42, .y = 0 };
+    }
+
+    try spatial.graph.connect(onlookers_wp, starting_line_wp, null);
+    try spatial.graph.connect(starting_line_wp, judging_wp, null);
+    try spatial.graph.connect(starting_line_wp, offstage_wp, null);
+
+    // Position Flags hotspot in the field at x=22
+    for (spatial.hotspots.items) |*hs| {
+        if (std.mem.indexOf(u8, hs.name, "Flag") != null) {
+            hs.pos = .{ .x = 22, .y = -2 };
+            break;
+        }
+    }
 
     try spatial.register_entity(guybrush, starting_line_wp, 10);
-    try spatial.register_entity(organiser, starting_line_wp, 20);
-    try spatial.register_entity(onlookers, starting_line_wp, 30);
+    try spatial.register_entity(organiser, judging_wp, 12);
+    try spatial.register_entity(onlookers, onlookers_wp, 15);
+
+    // Initial items for Guybrush
+    const carries_rel = try world.intern_relation("Carries", .set);
+    const horn_ent = try world.intern_entity("Horn");
+    const drink_ent = try world.intern_entity("GreenDrink");
+    try world.remember(guybrush, carries_rel, horn_ent.to_int(), 0);
+    try world.remember(guybrush, carries_rel, drink_ent.to_int(), 0);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -324,18 +355,48 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     const organiser = world.lookup_entity("Organiser").?;
     const onlookers = world.lookup_entity("Onlookers").?;
     const flags = world.lookup_entity("Flags").?;
+    const room_ent = world.lookup_entity("Spitting Competition") orelse try world.intern_entity("Spitting Competition");
 
     const starting_line_wp = spatial.graph.find_waypoint("Starting Line") orelse 1;
     const offstage_wp = spatial.graph.find_waypoint("Looking Offstage") orelse 2;
+    const onlookers_wp = spatial.graph.find_waypoint("Onlookers") orelse
+        try spatial.graph.add_waypoint(room_ent, -8, 3, "Onlookers");
+    const judging_wp = spatial.graph.find_waypoint("Judging Post") orelse
+        try spatial.graph.add_waypoint(room_ent, 2, -4, "Judging Post");
+
+    if (spatial.graph.get_waypoint(starting_line_wp)) |_| {
+        spatial.graph.waypoints.items[starting_line_wp - 1].pos = .{ .x = 0, .y = 0 };
+    }
+    if (spatial.graph.get_waypoint(offstage_wp)) |_| {
+        spatial.graph.waypoints.items[offstage_wp - 1].pos = .{ .x = 42, .y = 0 };
+    }
+
+    try spatial.graph.connect(onlookers_wp, starting_line_wp, null);
+    try spatial.graph.connect(starting_line_wp, judging_wp, null);
+    try spatial.graph.connect(starting_line_wp, offstage_wp, null);
+
+    // Position Flags hotspot in the field at x=22
+    for (spatial.hotspots.items) |*hs| {
+        if (std.mem.indexOf(u8, hs.name, "Flag") != null) {
+            hs.pos = .{ .x = 22, .y = -2 };
+            break;
+        }
+    }
 
     try spatial.register_entity(guybrush, starting_line_wp, 10);
-    try spatial.register_entity(organiser, starting_line_wp, 20);
-    try spatial.register_entity(onlookers, starting_line_wp, 30);
+    try spatial.register_entity(organiser, judging_wp, 12);
+    try spatial.register_entity(onlookers, onlookers_wp, 15);
+
+    // Initial items for Guybrush
+    const carries_rel = try world.intern_relation("Carries", .set);
+    const horn_ent = try world.intern_entity("Horn");
+    const drink_ent = try world.intern_entity("GreenDrink");
+    try world.remember(guybrush, carries_rel, horn_ent.to_int(), 0);
+    try world.remember(guybrush, carries_rel, drink_ent.to_int(), 0);
 
     const thick_rel = try world.intern_relation("thick", .set);
     const tampered_rel = try world.intern_relation("tampered", .set);
     const distracted_rel = try world.intern_relation("Distracted", .set);
-    const scene_ent = try world.intern_entity("Scene");
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -349,7 +410,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
         _ = try vm.spawn_routine(organiser, entry);
     }
     if (compiled.routine_entries.get("WindBlowing")) |entry| {
-        _ = try vm.spawn_routine(scene_ent, entry);
+        _ = try vm.spawn_routine(room_ent, entry);
     }
 
     var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
