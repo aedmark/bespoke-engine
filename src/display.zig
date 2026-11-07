@@ -157,7 +157,13 @@ pub const RenderFrame = struct {
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
     debug_fiber_count: usize,
+    current_scene: [32]u8 = undefined,
+    current_scene_len: u8 = 0,
     max_history_tick: u64,
+
+    pub fn get_current_scene(self: *const RenderFrame) []const u8 {
+        return self.current_scene[0..self.current_scene_len];
+    }
 };
 
 /// Double-buffered display bridge separating simulation spine from peripheral consumers (D-001, P5-01).
@@ -445,6 +451,20 @@ pub const DisplayBridge = struct {
             fib_count += 1;
         }
         self.back_buffer.debug_fiber_count = fib_count;
+
+        // 8. Capture active scene (P12-03, D-014)
+        if (vm.current_scene) |scene_id| {
+            if (world.get_entity_name(scene_id)) |sname| {
+                const len = @min(sname.len, self.back_buffer.current_scene.len);
+                @memcpy(self.back_buffer.current_scene[0..len], sname[0..len]);
+                self.back_buffer.current_scene_len = @intCast(len);
+            } else {
+                self.back_buffer.current_scene_len = 0;
+            }
+        } else {
+            self.back_buffer.current_scene_len = 0;
+        }
+
         self.back_buffer.max_history_tick = prev_max_history;
     }
 

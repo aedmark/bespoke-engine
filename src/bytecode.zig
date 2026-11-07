@@ -57,6 +57,9 @@ pub const Opcode = enum(u8) {
     wait_until = 0x42,
     /// Pops: destination_wp: u16, entity: u32. Initiates spatial walk and suspends fiber until arrival (P3-02).
     walk_to = 0x43,
+    /// Transitions simulation to target scene entity, pausing old scene fibers and waking new ones (P12-01, D-014).
+    /// Operand: target_scene: u32 (EntityId).
+    transition_scene = 0x44,
 
     // --- Interruption Primitives (D-004) ---
     /// Preempts target entity's active routine, pushing an interrupt frame.
@@ -155,6 +158,11 @@ pub const BytecodeChunk = struct {
         try self.emit_u8(count_val);
         try self.emit_u8(sides);
     }
+
+    pub fn emit_transition_scene(self: *BytecodeChunk, scene_id: EntityId) !void {
+        _ = try self.emit_op(.transition_scene);
+        try self.emit_u32(scene_id.to_int());
+    }
 };
 
 test "bytecode chunk emission and opcode reading" {
@@ -167,6 +175,7 @@ test "bytecode chunk emission and opcode reading" {
     try chunk.emit_push_entity(EntityId.from_int(101));
     try chunk.emit_push_relation(RelationKind.from_int(7));
     try chunk.emit_remember(120);
+    try chunk.emit_transition_scene(EntityId.from_int(202));
     _ = try chunk.emit_op(.halt);
 
     const bytes = chunk.code.items;
@@ -178,4 +187,11 @@ test "bytecode chunk emission and opcode reading" {
     try testing.expectEqual(@as(u8, @intFromEnum(Opcode.push_entity)), bytes[6]);
     const entity_val = std.mem.readInt(u32, bytes[7..11], .little);
     try testing.expectEqual(@as(u32, 101), entity_val);
+
+    // Verify transition_scene opcode and payload
+    // remember is at byte 14 (op 0x30, 4 bytes payload -> 14..19)
+    // transition_scene is at byte 19: opcode 0x44, 4 bytes payload 202
+    try testing.expectEqual(@as(u8, @intFromEnum(Opcode.transition_scene)), bytes[19]);
+    const scene_val = std.mem.readInt(u32, bytes[20..24], .little);
+    try testing.expectEqual(@as(u32, 202), scene_val);
 }

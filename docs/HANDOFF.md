@@ -12,29 +12,29 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-06, session 7, on `main`: completed Phase 11 (Item-on-Item Inventory Combining & In-Hand Crafting, P11-01..P11-03, D-013) and introduced the 3x Documentation Scheme & Developer Guide (docs/manual.html)._
+_Last updated: 2026-11-06, session 8, on `main`: completed Phase 12 (Multi-Scene Transitions & Stage Director, P12-01..P12-03, D-014) and expanded 3x Developer Guide (docs/manual.html)._
 
 **Where things stand, in one paragraph:**
-All 11 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, and declarative stageplay structures. The 3x Documentation Scheme has been introduced (`tools/manual.py`, `scheme/manual.schema.json`, `scheme/bespoke.manual.json`), serving doubly as the definitive, interactive offline BeSpoke Architecture & Developer Guide (`docs/manual.html`) with 8 comprehensive sections, 32 entries, full What/How/Why triads, interactive clickable evidence links, strict provenance review, and automated CI verification in `tools/check_docs.py`.
+All 12 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, and multi-scene stage directing. First-class scene transitions (`transition to scene: TargetScene`, `Opcode.transition_scene`) pause departed scene ambient fibers, wake target scene routines, partition spatial waypoints and interactables, and dynamically switch graphical rendering backdrops (Spitting Competition seaside, Wine Cellar subterranean vault, and Tavern common room) while continuously preserving all global relational facts (player inventory, item states, cross-scene puzzle progression) in the relational World arena.
 
 **Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings (includes 3x manual check)** |
-| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 32 entries, 0 warnings)** |
+| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 33 entries, 0 warnings)** |
 | `python3 tools/manual.py review scheme/bespoke.manual.json --strict` | **passed (0 items for human attention)** |
 | `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check` | **passed (build check passed)** |
 | `python3 -m unittest discover -s tests -v` | **29/29 passed** |
 | `zig test src/world.zig` | **5/5 passed** |
 | `zig test src/bytecode.zig` | **6/6 passed** |
-| `zig test src/spatial.zig` | **8/8 passed** |
-| `zig test src/vm.zig` | **17/17 passed** |
-| `zig test src/repl.zig` | **16/16 passed** |
-| `zig test src/compiler/lexer.zig` | **3/3 passed** |
-| `zig test src/compiler/parser.zig` | **6/6 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **22/22 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **38/38 passed** |
+| `zig test src/spatial.zig` | **9/9 passed** |
+| `zig test src/vm.zig` | **19/19 passed** |
+| `zig test src/repl.zig` | **20/20 passed** |
+| `zig test src/compiler/lexer.zig` | **4/4 passed** |
+| `zig test src/compiler/parser.zig` | **9/9 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **25/25 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **45/45 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 | `zig build run -- --spitting-contest --headless` | **Booty Island Spitting Contest full scenario with rewind passed** |
@@ -43,7 +43,7 @@ All 11 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
 - **Bytecode VM & Scheduler:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, priority interrupt stacks (`active_priority`, `interrupt_entity_priority`), and continuous reactive rule evaluation (`evaluate_reactive_rules`, `load_compiled_rules`) (P2-01 through P2-04, P8-02, P8-03, D-004, D-010).
 - **Spatial Topology & Hotspots:** 2D integer waypoints, rooms, A* graph pathfinding, asynchronous motor intents (`walk_to`), and static scene hotspots (`Fireplace`, `BarCounter`, `WineCask`) with examine text and spatial hitboxes (P3-01, P3-02, P7-01, D-005, D-009).
-- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`), with grammar for verbs, dialogue (`say`), multi-clause `when` rules (`when Pattern1 and Pattern2:`), and automatic `CompiledWhenRule` generation (P4-01 through P4-03, P7-02, P7-04, P8-01, P8-02, D-002, D-009, D-010).
+- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`), with grammar for verbs, dialogue (`say`), multi-clause `when` rules (`when Pattern1 and Pattern2:`), automatic `CompiledWhenRule` generation, and scene transitions (`transition to scene: TargetScene`) (P4-01 through P4-03, P7-02, P7-04, P8-01, P8-02, P12-01, D-002, D-009, D-010, D-014).
 - **Display Bridge & Time-Travel:** Double-buffered render frames (`DisplayBridge`), text/terminal visualizer, and instant snapshot rewind (P5-01, P5-02, D-001).
 - **SDL2 Peripheral 2D Display & Controls:** Hardware-accelerated 2D renderer, built-in 5x7 bitmap font, room/waypoint scene graph, animated actor tokens, point-and-click mouse navigation for Cat, and live time-travel rewind hotkey (P6-01 through P6-04, D-008).
 - **Adventure Game Primitives:** 5-verb UI bar (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`) with active button highlights and right-click cycling, actor and prop interaction, relational inventory tray rendering, and branching dialogue parchment balloons with interactive choice buttons (P7-01 through P7-04, D-009).
@@ -51,6 +51,7 @@ All 11 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **Developer Dashboard & Inspector:** Live HUD overlay (`src/display/renderer.zig`, toggle `[F1]`/`[D]`) displaying active relational facts with TTL timers, active fiber call stacks with program counters and priorities, and agent spatial positions (P9-01, D-011).
 - **Interactive Timeline Scrubber:** Full graphical scrubber bar with interactive click-to-scrub and `[<]` / `[>]` arrow stepping across serialized snapshots with instantaneous visual replay and divergent timeline truncation (P9-02, D-001, D-003, D-011).
 - **Live Interactive REPL Console:** Pure Zig simulation command dispatcher (`src/repl.zig`) and in-engine drawer overlay (`[Tab]`/`[C]`/`[~]`) executing `remember`, `forget`, `cue`, `walk`, `step`, and `facts` commands live during simulation (P9-03, D-011).
+- **Multi-Scene Transitions & Stage Director:** First-class syntax and bytecode instruction `transition to scene: <TargetScene>` (`Opcode.transition_scene`), VM scene tracking, fiber routine pausing and resuming, topological spatial graph partitioning by scene/room, and dynamic visual theme/backdrop switching (Spitting Competition, Wine Cellar, Tavern Common Room) with continuous global relational fact preservation (P12-01 through P12-03, D-014).
 
 **Not verified**
 - Peripheral audio sound effects / music playback; visual cues, floating banners, and speech balloons are fully verified.
@@ -63,6 +64,11 @@ All 11 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 ---
 
 ## Session log
+
+### Session 8 (2026-11-06)
+- **Goal:** Implement Phase 12: Multi-Scene Transitions & Stage Director (P12-01 through P12-03, D-014), establish topological spatial graph partitioning, dynamic visual backdrop themes, and document the architectural pattern in the 3x Developer Guide.
+- **Work:** Recorded architectural decision `D-014` (Multi-Scene Graph Partitioning, Routine Scoping, and Dynamic Backdrop Transitions). Extended compiler lexer (`src/compiler/lexer.zig`) with `kw_transition` token for `transition` keyword. Extended AST and parser (`src/compiler/parser.zig`) to parse `transition to scene: <TargetScene>` statements into `Stmt.transition_scene` at both top-level and inside routines/cue handlers; introduced `SceneDef` to group `cast`, `props`, and `marks` per scene header. Extended bytecode instruction set (`src/bytecode.zig`) with `Opcode.transition_scene` (`0x44`) and `emit_transition_scene`. Updated code generator (`src/compiler/codegen.zig`) to lower `.transition_scene` statements and register marks and props in `SpatialSystem` scoped to their respective scenes. Extended VM (`src/vm.zig`) with `current_scene: ?EntityId`, `transition_to_scene`, and opcode execution pausing ambient fibers owned by the departed scene while waking/resuming target scene fibers and emitting `SceneTransition` cues. Partitioned `SpatialGraph` and `SpatialSystem` (`src/spatial.zig`) by scene/room with `count_waypoints_in_room`, `find_waypoint_in_room`, `get_first_waypoint_in_room`, `find_hotspot_at_in_room`, `count_hotspots_in_room`, and `transition_actor` to reposition agents onto new room entry marks. Extended `RenderFrame` in `src/display.zig` with `current_scene` capture from `vm.current_scene`. Enhanced display renderer (`src/display/renderer.zig`) to dynamically switch rendering backdrops and palettes for Spitting Competition (Caribbean grass & sea), Wine Cellar (subterranean stone vault, archway pillars, flagstone floor, torchlight sconces), and Tavern Common Room (warm wood, timber ceiling beams, hearth). Added entry `multi-scene-transitions-spatial-partitioning` to `scheme/bespoke.manual.json` and compiled updated `docs/manual.html`.
+- **Outcome:** All 45 tests passing on `src/root.zig`, 25/25 on `src/display.zig`, 19/19 on `src/vm.zig`, 9/9 on `src/spatial.zig`, 9/9 on `src/compiler/parser.zig`, 29/29 on `tests/test_manual.py`, `zig build test` passing, both `--headless` Tavern Heist and `--spitting-contest` Booty Island scenarios executing cleanly. `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` passed with 0 warnings. `python3 tools/manual.py review scheme/bespoke.manual.json --strict` passed with 0 items. Documentation verified with 0 errors and 0 warnings. Phase 12 roadmap items (`P12-01` through `P12-03`) complete.
 
 ### Session 7 (2026-11-06)
 - **Goal:** Implement Phase 11: Item-on-Item Inventory Combining & In-Hand Crafting (P11-01 through P11-03, D-013), resolve multi-actor/stage mark label collisions, and introduce the 3x Documentation Scheme adapted as an Architecture & Developer Guide.

@@ -903,33 +903,54 @@ pub const DisplayWindow = struct {
     pub fn render_frame(self: *DisplayWindow, frame: *const RenderFrame, is_paused: bool) void {
         if (self.is_headless or self.renderer == null) return;
 
-        // Detect if rendering Booty Island Spitting Contest or Tavern Heist
+        // Detect active scene theme (P12-03, D-014)
+        const cur_scene = frame.get_current_scene();
         var is_spitting_scene = false;
-        for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-            if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
-                std.mem.indexOf(u8, wp.get_name(), "Offstage") != null)
+        var is_wine_cellar_scene = false;
+        var is_tavern_scene = false;
+
+        if (cur_scene.len > 0) {
+            if (std.mem.indexOf(u8, cur_scene, "Spit") != null or
+                std.mem.indexOf(u8, cur_scene, "Booty") != null)
             {
                 is_spitting_scene = true;
-                break;
+            } else if (std.mem.indexOf(u8, cur_scene, "Cellar") != null) {
+                is_wine_cellar_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Tavern") != null or
+                       std.mem.indexOf(u8, cur_scene, "Common") != null)
+            {
+                is_tavern_scene = true;
             }
         }
-        if (!is_spitting_scene) {
-            for (frame.entities[0..frame.entity_count]) |e| {
-                const ename = e.get_name();
-                if (std.mem.eql(u8, ename, "Guybrush") or
-                    std.mem.eql(u8, ename, "Organiser") or
-                    std.mem.eql(u8, ename, "Onlookers"))
+
+        // Fallback detection if current_scene wasn't explicitly set
+        if (!is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene) {
+            for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+                if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "Offstage") != null)
                 {
                     is_spitting_scene = true;
                     break;
                 }
             }
-        }
-        if (!is_spitting_scene) {
-            for (frame.hotspots[0..frame.hotspot_count]) |hs| {
-                if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
-                    is_spitting_scene = true;
-                    break;
+            if (!is_spitting_scene) {
+                for (frame.entities[0..frame.entity_count]) |e| {
+                    const ename = e.get_name();
+                    if (std.mem.eql(u8, ename, "Guybrush") or
+                        std.mem.eql(u8, ename, "Organiser") or
+                        std.mem.eql(u8, ename, "Onlookers"))
+                    {
+                        is_spitting_scene = true;
+                        break;
+                    }
+                }
+            }
+            if (!is_spitting_scene) {
+                for (frame.hotspots[0..frame.hotspot_count]) |hs| {
+                    if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
+                        is_spitting_scene = true;
+                        break;
+                    }
                 }
             }
         }
@@ -988,11 +1009,64 @@ pub const DisplayWindow = struct {
             } else {
                 self.draw_text("WIND: CALM (Wait for tailwind gust)", field_x + 16, field_y + 44, 2, Color.hud_subtext);
             }
+        } else if (is_wine_cellar_scene) {
+            // Subterranean Stone Vault Theme (P12-03, D-014)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 15, .g = 18, .b = 26 });
+
+            const cellar_x: i32 = 40;
+            const cellar_y: i32 = 110;
+            const cellar_w: i32 = self.width - 80;
+            const cellar_h: i32 = 320;
+
+            // Vault chamber floor and stone wall
+            self.fill_rect(cellar_x, cellar_y, cellar_w, cellar_h, Color.cellar_room);
+            self.draw_rect_outline(cellar_x, cellar_y, cellar_w, cellar_h, Color.cellar_border);
+
+            // Archway stone pillars on left and right borders
+            self.fill_rect(cellar_x, cellar_y, 48, cellar_h, Color{ .r = 25, .g = 32, .b = 48 });
+            self.draw_rect_outline(cellar_x, cellar_y, 48, cellar_h, Color{ .r = 45, .g = 55, .b = 75 });
+            self.fill_rect(cellar_x + cellar_w - 48, cellar_y, 48, cellar_h, Color{ .r = 25, .g = 32, .b = 48 });
+            self.draw_rect_outline(cellar_x + cellar_w - 48, cellar_y, 48, cellar_h, Color{ .r = 45, .g = 55, .b = 75 });
+
+            // Stone flagstone grid lines across floor
+            var row_y = cellar_y + 80;
+            while (row_y < cellar_y + cellar_h) : (row_y += 60) {
+                self.draw_line(cellar_x + 48, row_y, cellar_x + cellar_w - 48, row_y, Color{ .r = 35, .g = 42, .b = 58 });
+            }
+
+            // Cellar Vault Title Header
+            self.draw_text("WINE CELLAR - SUBTERRANEAN VAULT", cellar_x + 60, cellar_y + 16, 2, Color{ .r = 192, .g = 132, .b = 252 });
+            self.draw_text("(COOL, DAMP AIR WITH OAK & MUSTY BOUQUET)", cellar_x + 60, cellar_y + 36, 1, Color.hud_subtext);
+
+            // Cellar torchlight sconces on stone pillars
+            self.fill_circle(cellar_x + 24, cellar_y + 60, 6, Color{ .r = 245, .g = 158, .b = 11 });
+            self.fill_circle(cellar_x + 24, cellar_y + 58, 3, Color{ .r = 254, .g = 240, .b = 138 });
+            self.fill_circle(cellar_x + cellar_w - 24, cellar_y + 60, 6, Color{ .r = 245, .g = 158, .b = 11 });
+            self.fill_circle(cellar_x + cellar_w - 24, cellar_y + 58, 3, Color{ .r = 254, .g = 240, .b = 138 });
+        } else if (is_tavern_scene) {
+            // Dedicated Warm Wooden Tavern Common Room Theme (P12-03, D-014)
+            self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
+
+            const tavern_x: i32 = 40;
+            const tavern_y: i32 = 110;
+            const tavern_w: i32 = self.width - 80;
+            const tavern_h: i32 = 320;
+
+            self.fill_rect(tavern_x, tavern_y, tavern_w, tavern_h, Color.tavern_room);
+            self.draw_rect_outline(tavern_x, tavern_y, tavern_w, tavern_h, Color.tavern_border);
+
+            // Timber ceiling beams
+            self.fill_rect(tavern_x, tavern_y + 50, tavern_w, 8, Color{ .r = 30, .g = 20, .b = 15 });
+            self.fill_rect(tavern_x, tavern_y + 100, tavern_w, 6, Color{ .r = 30, .g = 20, .b = 15 });
+
+            // Title Header
+            self.draw_text("TAVERN - COMMON ROOM", tavern_x + 16, tavern_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(WARM FIREPLACE, CLINKING TANKARDS)", tavern_x + 16, tavern_y + 36, 1, Color.hud_subtext);
         } else {
             // 1. Clear background
             self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
 
-            // 2. Render Rooms (Tavern Hall & Wine Cellar)
+            // 2. Render Rooms (Tavern Hall & Wine Cellar side-by-side)
             const tavern_rect_x = 100;
             const tavern_rect_y = 120;
             const tavern_rect_w = 480;
@@ -1674,4 +1748,34 @@ test "P11-03: inventory item hit testing and two-operand combining interaction" 
     // Deselect
     win.selected_inventory_item = null;
     try testing.expect(win.selected_inventory_item == null);
+}
+
+test "P12-03: display renderer dynamically recognizes scene themes from RenderFrame" {
+    const testing = std.testing;
+
+    var frame = std.mem.zeroes(RenderFrame);
+
+    // 1. Spitting competition theme
+    const spit_scene = "Spitting Competition";
+    @memcpy(frame.current_scene[0..spit_scene.len], spit_scene);
+    frame.current_scene_len = spit_scene.len;
+    try testing.expectEqualStrings("Spitting Competition", frame.get_current_scene());
+
+    // 2. Wine cellar theme
+    const cellar_scene = "Wine Cellar";
+    @memcpy(frame.current_scene[0..cellar_scene.len], cellar_scene);
+    frame.current_scene_len = cellar_scene.len;
+    try testing.expectEqualStrings("Wine Cellar", frame.get_current_scene());
+
+    // 3. Tavern theme
+    const tavern_scene = "Tavern";
+    @memcpy(frame.current_scene[0..tavern_scene.len], tavern_scene);
+    frame.current_scene_len = tavern_scene.len;
+    try testing.expectEqualStrings("Tavern", frame.get_current_scene());
+
+    // Verify headless window can render all frames without panic
+    var win = try DisplayWindow.init("Scene Switcher Test", 960, 540);
+    defer win.deinit();
+
+    win.render_frame(&frame, false);
 }

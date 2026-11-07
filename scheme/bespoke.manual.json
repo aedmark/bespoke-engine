@@ -425,6 +425,29 @@
             {"label": "Layout Stagger Implementation", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["asynchronous-motor-intents", "stageplay-taxonomy"]
+        },
+        {
+          "id": "multi-scene-transitions-spatial-partitioning",
+          "title": "Multi-Scene Graph Partitioning & Transitions",
+          "summary": "Spatial waypoints and props partition by scene while global facts persist across transitions.",
+          "synopsis": "pub fn transition_actor(self: *SpatialSystem, entity: EntityId, target_room: EntityId, entry_wp: ?WaypointId) !bool",
+          "tags": ["scenes", "transitions", "spatial", "partitioning"],
+          "what": "Partitions spatial waypoints and interactive hotspots across distinct narrative scenes and rooms, allowing actors to transition between environments via transition to scene statements.",
+          "how": [
+            "Waypoints and hotspots store room EntityIds, scoping navigable nodes and interactables to the active scene.",
+            "The compiler AST groups cast, props, and marks under each scene declaration, registering them under the scene entity.",
+            "Executing transition to scene updates vm.current_scene, pauses ambient fibers of the previous scene, and wakes target scene fibers.",
+            "SpatialSystem.transition_actor relocates actors onto the designated or primary entry waypoint of the new room.",
+            "All relational facts in World (inventory, causal puzzle state) persist continuously across scene changes."
+          ],
+          "why": "Destroying world state on room transitions loses cross-scene inventory and puzzle facts, while a single monolithic coordinate space clutters the screen and leaks ambient events across distant rooms. Partitioned spatial graphs with continuous relational facts give clean scene encapsulation with zero serialization overhead.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-014", "target": "docs/DECISIONS.md#d-014", "kind": "decision"},
+            {"label": "Spatial Partitioning Implementation", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "VM Scene Transition Logic", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["waypoint-room-graph", "stageplay-taxonomy", "relational-facts"]
         }
       ]
     },

@@ -97,9 +97,9 @@ Goal: Expand the BeSpoke language, compiler, VM, and display renderer with first
 
 Goal: Support multiple narrative scenes in a single simulation (`transition to scene: <TargetScene>`), swapping active spatial graph waypoints and visual backdrops while preserving global relational world facts across scene boundaries.
 
-- [ ] P12-01 Language grammar and bytecode instruction for scene transitions (`transition to scene: Name`), pausing current scene routines and activating target scene routines. (D-001, D-002, D-004)
-- [ ] P12-02 Spatial graph partitioning by scene/room, allowing actors and stage marks to transition between distinct topological environments. (D-001, D-005)
-- [ ] P12-03 Display renderer support for dynamic scene backdrops and visual themes switched on scene change events. (D-001, D-008)
+- [x] P12-01 Language grammar and bytecode instruction for scene transitions (`transition to scene: Name`), pausing current scene routines and activating target scene routines. (D-001, D-002, D-004, D-014; completed 2026-11-06, verified via `zig test src/compiler/parser.zig`, `zig test src/vm.zig`, and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P12-02 Spatial graph partitioning by scene/room, allowing actors and stage marks to transition between distinct topological environments. (D-001, D-005, D-014; completed 2026-11-06, verified via `zig test src/spatial.zig` and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P12-03 Display renderer support for dynamic scene backdrops and visual themes switched on scene change events. (D-001, D-008, D-014; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
 
 ## Phase 13: Relational Dialogue Trees & Dynamic Choice Pruning
 

@@ -53,6 +53,9 @@ pub const Stmt = union(enum) {
         clip: []const u8,
         is_stop: bool = false,
     },
+    transition_scene: struct {
+        target_scene: []const u8,
+    },
     resume_stmt: void,
 };
 
@@ -86,6 +89,28 @@ pub const RelationDecl = struct {
     is_property: bool,
 };
 
+pub const SceneDef = struct {
+    name: []const u8,
+    cast: std.ArrayList([]const u8),
+    props: std.ArrayList([]const u8),
+    marks: std.ArrayList([]const u8),
+
+    pub fn init(allocator: std.mem.Allocator, name: []const u8) SceneDef {
+        return .{
+            .name = name,
+            .cast = std.ArrayList([]const u8).init(allocator),
+            .props = std.ArrayList([]const u8).init(allocator),
+            .marks = std.ArrayList([]const u8).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *SceneDef) void {
+        self.cast.deinit();
+        self.props.deinit();
+        self.marks.deinit();
+    }
+};
+
 pub const AST = struct {
     entities: std.ArrayList([]const u8),
     relations: std.ArrayList(RelationDecl),
@@ -94,6 +119,7 @@ pub const AST = struct {
     cue_handlers: std.ArrayList(CueHandler),
     when_rules: std.ArrayList(WhenRule),
     scenes: std.ArrayList([]const u8),
+    scene_defs: std.ArrayList(SceneDef),
     cast: std.ArrayList([]const u8),
     props: std.ArrayList([]const u8),
     marks: std.ArrayList([]const u8),
@@ -108,6 +134,7 @@ pub const AST = struct {
             .cue_handlers = std.ArrayList(CueHandler).init(allocator),
             .when_rules = std.ArrayList(WhenRule).init(allocator),
             .scenes = std.ArrayList([]const u8).init(allocator),
+            .scene_defs = std.ArrayList(SceneDef).init(allocator),
             .cast = std.ArrayList([]const u8).init(allocator),
             .props = std.ArrayList([]const u8).init(allocator),
             .marks = std.ArrayList([]const u8).init(allocator),
@@ -123,6 +150,10 @@ pub const AST = struct {
         self.cue_handlers.deinit();
         self.when_rules.deinit();
         self.scenes.deinit();
+        for (self.scene_defs.items) |*sd| {
+            sd.deinit();
+        }
+        self.scene_defs.deinit();
         self.cast.deinit();
         self.props.deinit();
         self.marks.deinit();
@@ -213,6 +244,14 @@ pub const Parser = struct {
                 .kw_remember => {
                     const stmt = try self.parse_remember_stmt();
                     try ast.initial_stmts.append(stmt);
+                },
+                .kw_transition => {
+                    try self.advance(); // consume 'transition'
+                    _ = try self.expect(.kw_to);
+                    _ = try self.expect(.kw_scene);
+                    if (self.current.tag == .colon) try self.advance();
+                    const target_scene = try self.parse_name();
+                    try ast.initial_stmts.append(.{ .transition_scene = .{ .target_scene = target_scene } });
                 },
                 .kw_routine => {
                     try self.advance();
@@ -391,6 +430,7 @@ pub const Parser = struct {
                     const name = try self.parse_name();
                     try ast.scenes.append(name);
                     try ast.entities.append(name);
+                    try ast.scene_defs.append(SceneDef.init(self.allocator, name));
                 },
                 .kw_cast => {
                     try self.advance();
@@ -399,6 +439,9 @@ pub const Parser = struct {
                         const name = try self.parse_name();
                         try ast.cast.append(name);
                         try ast.entities.append(name);
+                        if (ast.scene_defs.items.len > 0) {
+                            try ast.scene_defs.items[ast.scene_defs.items.len - 1].cast.append(name);
+                        }
                         if (self.current.tag == .comma) {
                             try self.advance();
                         } else break;
@@ -411,6 +454,9 @@ pub const Parser = struct {
                         const name = try self.parse_name();
                         try ast.props.append(name);
                         try ast.entities.append(name);
+                        if (ast.scene_defs.items.len > 0) {
+                            try ast.scene_defs.items[ast.scene_defs.items.len - 1].props.append(name);
+                        }
                         if (self.current.tag == .comma) {
                             try self.advance();
                         } else break;
@@ -423,6 +469,9 @@ pub const Parser = struct {
                         const name = try self.parse_name();
                         try ast.marks.append(name);
                         try ast.entities.append(name);
+                        if (ast.scene_defs.items.len > 0) {
+                            try ast.scene_defs.items[ast.scene_defs.items.len - 1].marks.append(name);
+                        }
                         if (self.current.tag == .comma) {
                             try self.advance();
                         } else break;
@@ -495,6 +544,14 @@ pub const Parser = struct {
                 },
                 .kw_now => {
                     try list.append(try self.parse_now_stmt());
+                },
+                .kw_transition => {
+                    try self.advance(); // consume 'transition'
+                    _ = try self.expect(.kw_to);
+                    _ = try self.expect(.kw_scene);
+                    if (self.current.tag == .colon) try self.advance();
+                    const target_scene = try self.parse_name();
+                    try list.append(.{ .transition_scene = .{ .target_scene = target_scene } });
                 },
                 .kw_walk => {
                     try self.advance();
@@ -916,4 +973,92 @@ test "P10-01: parser parses stageplay taxonomy, state declarations, and falling-
     try testing.expectEqual(WhenEdge.rising, ast.when_rules.items[0].edge);
     try testing.expectEqual(WhenEdge.falling, ast.when_rules.items[1].edge);
     try testing.expectEqual(WhenEdge.on_expire, ast.when_rules.items[2].edge);
+}
+
+test "P12-01: parser parses scene transition statements" {
+    const testing = std.testing;
+    const script =
+        \\scene: Tavern
+        \\cast: Guybrush
+        \\transition to scene: Wine Cellar
+        \\
+        \\routine EnterCellar(Guybrush):
+        \\  transition to scene Wine Cellar
+        \\  wait 10 ticks
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, script);
+    defer lexer.deinit();
+
+    var parser = try Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    // Verify top-level initial transition statement
+    try testing.expectEqual(@as(usize, 1), ast.initial_stmts.items.len);
+    switch (ast.initial_stmts.items[0]) {
+        .transition_scene => |ts| try testing.expectEqualStrings("Wine Cellar", ts.target_scene),
+        else => try testing.expect(false),
+    }
+
+    // Verify routine statement transition
+    try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
+    const routine = ast.routines.items[0];
+    try testing.expectEqualStrings("EnterCellar", routine.name);
+    try testing.expectEqual(@as(usize, 2), routine.body.len);
+    switch (routine.body[0]) {
+        .transition_scene => |ts| try testing.expectEqualStrings("Wine Cellar", ts.target_scene),
+        else => try testing.expect(false),
+    }
+}
+
+test "P12-02: parser groups multiple scenes with scoped cast, props, and marks" {
+    const testing = std.testing;
+    const script =
+        \\scene: Tavern
+        \\cast: Guybrush, Barkeep
+        \\props: Mug
+        \\marks: Hearth, Counter
+        \\
+        \\scene: Wine Cellar
+        \\cast: Guard
+        \\props: Cask
+        \\marks: CaskMark, SecretDoor
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, script);
+    defer lexer.deinit();
+
+    var parser = try Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    try testing.expectEqual(@as(usize, 2), ast.scene_defs.items.len);
+
+    const s1 = ast.scene_defs.items[0];
+    try testing.expectEqualStrings("Tavern", s1.name);
+    try testing.expectEqual(@as(usize, 2), s1.cast.items.len);
+    try testing.expectEqualStrings("Guybrush", s1.cast.items[0]);
+    try testing.expectEqualStrings("Barkeep", s1.cast.items[1]);
+    try testing.expectEqual(@as(usize, 1), s1.props.items.len);
+    try testing.expectEqualStrings("Mug", s1.props.items[0]);
+    try testing.expectEqual(@as(usize, 2), s1.marks.items.len);
+    try testing.expectEqualStrings("Hearth", s1.marks.items[0]);
+    try testing.expectEqualStrings("Counter", s1.marks.items[1]);
+
+    const s2 = ast.scene_defs.items[1];
+    try testing.expectEqualStrings("Wine Cellar", s2.name);
+    try testing.expectEqual(@as(usize, 1), s2.cast.items.len);
+    try testing.expectEqualStrings("Guard", s2.cast.items[0]);
+    try testing.expectEqual(@as(usize, 1), s2.props.items.len);
+    try testing.expectEqualStrings("Cask", s2.props.items[0]);
+    try testing.expectEqual(@as(usize, 2), s2.marks.items.len);
+    try testing.expectEqualStrings("CaskMark", s2.marks.items[0]);
+    try testing.expectEqualStrings("SecretDoor", s2.marks.items[1]);
 }

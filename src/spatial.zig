@@ -77,6 +77,31 @@ pub const SpatialGraph = struct {
         return null;
     }
 
+    /// Counts waypoints in a given room/scene (P12-02, D-014).
+    pub fn count_waypoints_in_room(self: *const SpatialGraph, room: EntityId) usize {
+        var count: usize = 0;
+        for (self.waypoints.items) |wp| {
+            if (wp.room == room) count += 1;
+        }
+        return count;
+    }
+
+    /// Finds a waypoint by name within a specific room/scene (P12-02, D-014).
+    pub fn find_waypoint_in_room(self: *const SpatialGraph, room: EntityId, name: []const u8) ?WaypointId {
+        for (self.waypoints.items) |wp| {
+            if (wp.room == room and std.mem.eql(u8, wp.name, name)) return wp.id;
+        }
+        return null;
+    }
+
+    /// Returns the first waypoint registered in a room/scene (P12-02, D-014).
+    pub fn get_first_waypoint_in_room(self: *const SpatialGraph, room: EntityId) ?WaypointId {
+        for (self.waypoints.items) |wp| {
+            if (wp.room == room) return wp.id;
+        }
+        return null;
+    }
+
     /// Connects two waypoints bidirectionally. If cost is null, uses Euclidean distance.
     pub fn connect(self: *SpatialGraph, a: WaypointId, b: WaypointId, cost: ?u32) !void {
         const wp_a = self.get_waypoint(a) orelse return error.WaypointNotFound;
@@ -333,6 +358,47 @@ pub const SpatialSystem = struct {
         return null;
     }
 
+    /// Finds a hotspot near a spatial position within a specific room/scene (P12-02, D-014).
+    pub fn find_hotspot_at_in_room(self: *const SpatialSystem, room: EntityId, pos: Point2D) ?Hotspot {
+        for (self.hotspots.items) |h| {
+            if (h.room == room and h.pos.distance_to(pos) <= h.radius) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    /// Counts hotspots in a specific room/scene (P12-02, D-014).
+    pub fn count_hotspots_in_room(self: *const SpatialSystem, room: EntityId) usize {
+        var count: usize = 0;
+        for (self.hotspots.items) |h| {
+            if (h.room == room) count += 1;
+        }
+        return count;
+    }
+
+    /// Repositions an actor onto an entry waypoint in a target scene/room (P12-02, D-014).
+    pub fn transition_actor(self: *SpatialSystem, entity: EntityId, target_room: EntityId, entry_wp: ?WaypointId) !bool {
+        const dest_wp_id = entry_wp orelse (self.graph.get_first_waypoint_in_room(target_room) orelse return false);
+        const wp = self.graph.get_waypoint(dest_wp_id) orelse return false;
+
+        if (self.agents.getPtr(entity)) |agent| {
+            if (agent.path) |p| {
+                self.allocator.free(p);
+                agent.path = null;
+            }
+            agent.pos = wp.pos;
+            agent.current_wp = dest_wp_id;
+            agent.target_wp = null;
+            agent.is_moving = false;
+            agent.arrived = true;
+            return true;
+        } else {
+            try self.register_entity(entity, dest_wp_id, 2);
+            return true;
+        }
+    }
+
     /// Registers an entity at a starting waypoint.
     pub fn register_entity(
         self: *SpatialSystem,
@@ -510,4 +576,52 @@ test "P7-01: spatial system registers and hit-tests scene hotspots" {
     // Hit test outside radius
     const miss = spatial.find_hotspot_at(.{ .x = 50, .y = 50 });
     try testing.expect(miss == null);
+}
+
+test "P12-02: spatial graph room partitioning and actor transition between scenes" {
+    const testing = std.testing;
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const tavern = EntityId.from_int(10);
+    const cellar = EntityId.from_int(20);
+    const guybrush = EntityId.from_int(100);
+
+    // Add waypoints in tavern
+    const hearth_wp = try spatial.graph.add_waypoint(tavern, 0, 0, "Hearth");
+    const bar_wp = try spatial.graph.add_waypoint(tavern, 20, 0, "Bar");
+    try spatial.graph.connect(hearth_wp, bar_wp, null);
+
+    // Add waypoints in cellar
+    const cellar_entry_wp = try spatial.graph.add_waypoint(cellar, 100, 50, "Cellar Entry");
+    const casks_wp = try spatial.graph.add_waypoint(cellar, 120, 50, "Wine Casks");
+    try spatial.graph.connect(cellar_entry_wp, casks_wp, null);
+
+    // Add hotspots in each room
+    try spatial.add_hotspot(EntityId.from_int(201), tavern, .{ .x = 0, .y = -5 }, 10, "Fireplace", "Warm flames.");
+    try spatial.add_hotspot(EntityId.from_int(202), cellar, .{ .x = 120, .y = 45 }, 10, "Cask", "Old oak cask.");
+
+    // Verify room partitioning counts and queries
+    try testing.expectEqual(@as(usize, 2), spatial.graph.count_waypoints_in_room(tavern));
+    try testing.expectEqual(@as(usize, 2), spatial.graph.count_waypoints_in_room(cellar));
+    try testing.expectEqual(hearth_wp, spatial.graph.find_waypoint_in_room(tavern, "Hearth").?);
+    try testing.expectEqual(casks_wp, spatial.graph.find_waypoint_in_room(cellar, "Wine Casks").?);
+    try testing.expect(spatial.graph.find_waypoint_in_room(tavern, "Wine Casks") == null);
+
+    try testing.expectEqual(@as(usize, 1), spatial.count_hotspots_in_room(tavern));
+    try testing.expectEqual(@as(usize, 1), spatial.count_hotspots_in_room(cellar));
+    try testing.expect(spatial.find_hotspot_at_in_room(tavern, .{ .x = 120, .y = 45 }) == null);
+    try testing.expect(spatial.find_hotspot_at_in_room(cellar, .{ .x = 120, .y = 45 }) != null);
+
+    // Register Guybrush in Tavern at Hearth
+    try spatial.register_entity(guybrush, hearth_wp, 5);
+    try testing.expectEqual(hearth_wp, spatial.get_current_waypoint(guybrush).?);
+
+    // Transition Guybrush from Tavern to Cellar
+    const ok = try spatial.transition_actor(guybrush, cellar, null);
+    try testing.expect(ok);
+    try testing.expectEqual(cellar_entry_wp, spatial.get_current_waypoint(guybrush).?);
+    try testing.expectEqual(@as(i32, 100), spatial.get_position(guybrush).?.x);
+    try testing.expectEqual(@as(i32, 50), spatial.get_position(guybrush).?.y);
+    try testing.expect(spatial.has_arrived(guybrush));
 }

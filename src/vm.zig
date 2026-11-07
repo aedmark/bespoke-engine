@@ -117,6 +117,7 @@ pub const VM = struct {
     next_fiber_id: FiberId,
     emitted_cues: std.ArrayList(EmittedCue),
     reactive_rules: std.ArrayList(ReactiveRule),
+    current_scene: ?EntityId = null,
     prng: std.rand.DefaultPrng,
 
     pub fn init(allocator: std.mem.Allocator, world: *World, chunk: *const BytecodeChunk) VM {
@@ -129,6 +130,7 @@ pub const VM = struct {
             .next_fiber_id = 1,
             .emitted_cues = std.ArrayList(EmittedCue).init(allocator),
             .reactive_rules = std.ArrayList(ReactiveRule).init(allocator),
+            .current_scene = null,
             .prng = std.rand.DefaultPrng.init(42),
         };
     }
@@ -353,6 +355,43 @@ pub const VM = struct {
 
         // Spawn a routine fiber executing the handler
         return try self.spawn_routine(actor, handler_pc);
+    }
+
+    /// Transitions simulation to target scene entity, pausing old scene fibers and waking/resuming target scene fibers (P12-01, D-014).
+    pub fn transition_to_scene(self: *VM, target_scene: EntityId) !void {
+        const old_scene = self.current_scene;
+        if (old_scene) |os| {
+            if (os == target_scene) return;
+        }
+
+        self.current_scene = target_scene;
+
+        // 1. Pause ambient routines whose owner is the old scene
+        if (old_scene) |os| {
+            for (self.fibers.items) |*f| {
+                if (f.owner == os and f.state != .halted) {
+                    f.state = .{ .paused = {} };
+                }
+            }
+        }
+
+        // 2. Resume paused routines whose owner is the target scene
+        for (self.fibers.items) |*f| {
+            if (f.owner == target_scene and f.state == .paused) {
+                f.state = .{ .ready = {} };
+            }
+        }
+
+        // 3. Emit a SceneTransition cue for peripheral / rule tracking (P12-01, D-014)
+        const st_cue_id = (try self.world.intern_entity("SceneTransition")).to_int() & 0xFFFF;
+        var emitted = EmittedCue{
+            .cue_id = @intCast(st_cue_id),
+            .args = [_]u32{0} ** 4,
+            .arg_count = 2,
+        };
+        emitted.args[0] = if (old_scene) |os| os.to_int() else 0;
+        emitted.args[1] = target_scene.to_int();
+        try self.emitted_cues.append(emitted);
     }
 
     /// Advances the master simulation clock by 1 tick and dispatches all active fibers.
@@ -694,6 +733,11 @@ pub const VM = struct {
                         f.state = .{ .waiting_motor = EntityId.from_int(entity) };
                         return;
                     }
+                },
+                .transition_scene => {
+                    const target_scene_val = std.mem.readInt(u32, code[f.pc..][0..4], .little);
+                    f.pc += 4;
+                    try self.transition_to_scene(EntityId.from_int(target_scene_val));
                 },
 
                 // --- Preemption & Interruption (P2-04, D-004) ---
@@ -1254,4 +1298,91 @@ test "P11-02: VM.fire_cue executes 3-argument item combining cue with commutativ
     // Step tick executes handler -> Gabriel carries CatMoustache!
     try vm.step_tick();
     try testing.expect(world.has_fact(gabriel, carries, moustache.to_int()));
+}
+
+test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new scene fibers, and preserves world facts" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    const tavern = try world.intern_entity("Tavern");
+    const cellar = try world.intern_entity("Wine Cellar");
+    const guybrush = try world.intern_entity("Guybrush");
+    const horn = try world.intern_entity("Horn");
+    const carries = try world.intern_relation("Carries", .set);
+
+    // Initial fact in world: Guybrush carries Horn
+    try world.remember(guybrush, carries, horn.to_int(), 0);
+
+    // Routine 1: TavernAmbience (owner: tavern) -> loop wait 5 ticks
+    const tavern_pc = chunk.count();
+    try chunk.emit_wait_ticks(5);
+    _ = try chunk.emit_op(.halt);
+
+    // Routine 2: CellarDrips (owner: cellar) -> wait 5 ticks
+    const cellar_pc = chunk.count();
+    try chunk.emit_wait_ticks(5);
+    _ = try chunk.emit_op(.halt);
+
+    // Routine 3: Guybrush transitions to cellar:
+    // emit transition_scene cellar, then wait 10 ticks
+    const guybrush_pc = chunk.count();
+    try chunk.emit_transition_scene(cellar);
+    try chunk.emit_wait_ticks(10);
+    _ = try chunk.emit_op(.halt);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    // Start in Tavern
+    try vm.transition_to_scene(tavern);
+    try testing.expectEqual(tavern, vm.current_scene.?);
+
+    const f_tavern = try vm.spawn_routine(tavern, tavern_pc);
+    const f_cellar = try vm.spawn_routine(cellar, cellar_pc);
+    const f_guybrush = try vm.spawn_routine(guybrush, guybrush_pc);
+
+    // Manually pause cellar routine since it belongs to inactive cellar
+    vm.fibers.items[f_cellar - 1].state = .{ .paused = {} };
+
+    // Before tick: f_tavern is ready, f_cellar is paused
+    try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_tavern - 1].state);
+    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[f_cellar - 1].state);
+
+    // Step 1 tick: Guybrush executes transition_scene(cellar)
+    try vm.step_tick();
+
+    // Current scene should now be cellar!
+    try testing.expectEqual(cellar, vm.current_scene.?);
+
+    // Tavern fiber is now paused!
+    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[f_tavern - 1].state);
+
+    // Cellar fiber is unpaused and ready!
+    try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_cellar - 1].state);
+
+    // Guybrush's fiber transitioned to waiting_ticks(10)
+    switch (vm.fibers.items[f_guybrush - 1].state) {
+        .waiting_ticks => {},
+        else => try testing.expect(false),
+    }
+
+    // World relational facts (Carries(Guybrush, Horn)) remain fully preserved!
+    try testing.expect(world.has_fact(guybrush, carries, horn.to_int()));
+
+    // SceneTransition cue was emitted
+    var found_transition_cue = false;
+    for (vm.emitted_cues.items) |c| {
+        if (world.get_entity_name(EntityId.from_int(c.cue_id))) |cname| {
+            if (std.mem.eql(u8, cname, "SceneTransition")) {
+                found_transition_cue = true;
+                try testing.expectEqual(tavern.to_int(), c.args[0]);
+                try testing.expectEqual(cellar.to_int(), c.args[1]);
+            }
+        }
+    }
+    try testing.expect(found_transition_cue);
 }

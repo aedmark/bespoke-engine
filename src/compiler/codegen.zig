@@ -135,35 +135,66 @@ pub const Codegen = struct {
 
         // Register stage marks and props in SpatialSystem if present
         if (mut_self.spatial) |sp| {
-            const sent = if (ast.scenes.items.len > 0)
-                mut_self.world.lookup_entity(ast.scenes.items[0]) orelse try mut_self.world.intern_entity(ast.scenes.items[0])
-            else
-                try mut_self.world.intern_entity("DefaultScene");
+            if (ast.scene_defs.items.len > 0) {
+                for (ast.scene_defs.items) |*sc_def| {
+                    const sent = mut_self.world.lookup_entity(sc_def.name) orelse try mut_self.world.intern_entity(sc_def.name);
+                    var prev_wp: ?u16 = null;
+                    for (sc_def.marks.items, 0..) |mname, idx| {
+                        const wx: i32 = @as(i32, @intCast(idx)) * 20;
+                        var found = false;
+                        for (sp.graph.waypoints.items) |wp| {
+                            if (std.mem.eql(u8, wp.name, mname)) {
+                                found = true;
+                                prev_wp = wp.id;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            const wp_id = try sp.graph.add_waypoint(sent, wx, 0, mname);
+                            if (prev_wp) |p| {
+                                sp.graph.connect(p, wp_id, null) catch {};
+                            }
+                            prev_wp = wp_id;
+                        }
+                    }
 
-            var prev_wp: ?u16 = null;
-            for (ast.marks.items, 0..) |mname, idx| {
-                const wx: i32 = @as(i32, @intCast(idx)) * 20;
-                var found = false;
-                for (sp.graph.waypoints.items) |wp| {
-                    if (std.mem.eql(u8, wp.name, mname)) {
-                        found = true;
-                        prev_wp = wp.id;
-                        break;
+                    for (sc_def.props.items, 0..) |pname, idx| {
+                        const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
+                        const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
+                        sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
                     }
                 }
-                if (!found) {
-                    const wp_id = try sp.graph.add_waypoint(sent, wx, 0, mname);
-                    if (prev_wp) |p| {
-                        sp.graph.connect(p, wp_id, null) catch {};
-                    }
-                    prev_wp = wp_id;
-                }
-            }
+            } else {
+                const sent = if (ast.scenes.items.len > 0)
+                    mut_self.world.lookup_entity(ast.scenes.items[0]) orelse try mut_self.world.intern_entity(ast.scenes.items[0])
+                else
+                    try mut_self.world.intern_entity("DefaultScene");
 
-            for (ast.props.items, 0..) |pname, idx| {
-                const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
-                const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
-                sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
+                var prev_wp: ?u16 = null;
+                for (ast.marks.items, 0..) |mname, idx| {
+                    const wx: i32 = @as(i32, @intCast(idx)) * 20;
+                    var found = false;
+                    for (sp.graph.waypoints.items) |wp| {
+                        if (std.mem.eql(u8, wp.name, mname)) {
+                            found = true;
+                            prev_wp = wp.id;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        const wp_id = try sp.graph.add_waypoint(sent, wx, 0, mname);
+                        if (prev_wp) |p| {
+                            sp.graph.connect(p, wp_id, null) catch {};
+                        }
+                        prev_wp = wp_id;
+                    }
+                }
+
+                for (ast.props.items, 0..) |pname, idx| {
+                    const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
+                    const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
+                    sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
+                }
             }
         }
 
@@ -429,6 +460,10 @@ pub const Codegen = struct {
                 _ = try self.chunk.emit_op(.emit_cue);
                 try self.chunk.emit_u16(if (a.is_stop) 4 else 3); // cue 3 = animate, cue 4 = stop animate
                 try self.chunk.emit_u8(2); // 2 args (target, clip)
+            },
+            .transition_scene => |ts| {
+                const scene_ent = try self.resolve_entity(ts.target_scene);
+                try self.chunk.emit_transition_scene(scene_ent);
             },
             .resume_stmt => {
                 _ = try self.chunk.emit_op(.resume_routine);
@@ -699,4 +734,62 @@ test "P11-01 / P11-02: codegen compiles 3-parameter item-combining cues with com
     _ = pc3;
     // Since fallback "Uses" is registered for base cue name, check specific signature
     try testing.expect(compiled.cue_handler_entries.get("Uses:Gabriel:MapleSyrup:NonExistent") == null);
+}
+
+test "P12-01: codegen compiles multi-scene transitions and registers scoped marks" {
+    const testing = std.testing;
+    const source =
+        \\scene: Tavern
+        \\cast: Guybrush
+        \\props: HearthProp
+        \\marks: Counter, Door
+        \\
+        \\scene: Wine Cellar
+        \\cast: Guard
+        \\props: KegProp
+        \\marks: KegMark, Hatch
+        \\
+        \\routine EnterCellar(Guybrush):
+        \\  transition to scene: Wine Cellar
+        \\  wait 10 ticks
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+
+    var spatial = spatial_mod.SpatialSystem.init(alloc);
+    defer spatial.deinit();
+
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    var codegen = Codegen.init(alloc, &world, &spatial);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    // Verify scene entities interned
+    const tavern_id = world.lookup_entity("Tavern").?;
+    const cellar_id = world.lookup_entity("Wine Cellar").?;
+
+    // Verify waypoints scoped to their respective rooms
+    try testing.expectEqual(@as(usize, 2), spatial.graph.count_waypoints_in_room(tavern_id));
+    try testing.expectEqual(@as(usize, 2), spatial.graph.count_waypoints_in_room(cellar_id));
+
+    // Verify props scoped to their respective rooms
+    try testing.expectEqual(@as(usize, 1), spatial.count_hotspots_in_room(tavern_id));
+    try testing.expectEqual(@as(usize, 1), spatial.count_hotspots_in_room(cellar_id));
+
+    // Verify routine compiled and contains transition_scene opcode (0x44)
+    const pc = compiled.routine_entries.get("EnterCellar").?;
+    const op_byte = compiled.chunk.code.items[pc];
+    try testing.expectEqual(@as(u8, @intFromEnum(Opcode.transition_scene)), op_byte);
+    const target_scene_val = std.mem.readInt(u32, compiled.chunk.code.items[pc + 1 ..][0..4], .little);
+    try testing.expectEqual(cellar_id.to_int(), target_scene_val);
 }

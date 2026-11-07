@@ -50,6 +50,7 @@ pub const TokenTag = enum {
     kw_currently,
     kw_in,
     kw_the,
+    kw_transition,
 
     // Identifiers & Literals
     identifier,
@@ -413,6 +414,7 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "in", .kw_in },
         .{ "the", .kw_the },
         .{ "towards", .kw_toward },
+        .{ "transition", .kw_transition },
     });
 
     return map.get(ident) orelse .identifier;
@@ -541,6 +543,37 @@ test "P10-01: lexer tokenizes stageplay taxonomy, state keywords, brackets, and 
     try testing.expectEqual(TokenTag.identifier, anim_tok.tag);
     try testing.expectEqualStrings("wind-blowing", anim_tok.slice);
     try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
+}
+
+test "P12-01: lexer tokenizes scene transition keywords" {
+    const testing = std.testing;
+    const script =
+        \\transition to scene: Wine Cellar
+        \\transition to scene Garden
+    ;
+
+    var lexer = Lexer.init(testing.allocator, script);
+    defer lexer.deinit();
+
+    try testing.expectEqual(TokenTag.kw_transition, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.kw_to, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.kw_scene, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    const wc_tok = try lexer.next();
+    try testing.expectEqual(TokenTag.identifier, wc_tok.tag);
+    try testing.expectEqualStrings("Wine", wc_tok.slice);
+    const cellar_tok = try lexer.next();
+    try testing.expectEqual(TokenTag.identifier, cellar_tok.tag);
+    try testing.expectEqualStrings("Cellar", cellar_tok.slice);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_transition, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.kw_to, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.kw_scene, (try lexer.next()).tag);
+    const garden_tok = try lexer.next();
+    try testing.expectEqual(TokenTag.identifier, garden_tok.tag);
+    try testing.expectEqualStrings("Garden", garden_tok.slice);
     try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
 }
 
