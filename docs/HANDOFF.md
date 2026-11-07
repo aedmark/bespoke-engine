@@ -12,12 +12,12 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-06, session 10, on `main`: completed Phase 14 (The Gabriel Knight 3 Cat Moustache Scenario, P14-01..P14-03, D-016) and updated 3x Developer Guide (docs/manual.html)._
+_Last updated: 2026-11-07, session 11, on `main`: empty inventory startup, in-world item scavenging, and multi-scene scoping for the Gabriel Knight 3 Cat Moustache Scenario (P14-01..P14-03, D-016)._
 
 **Where things stand, in one paragraph:**
-All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, and multi-step item crafting. The complete *Gabriel Knight 3* Cat Moustache vertical slice (`src/gk3_moustache.zig`) runs seamlessly across 3 partitioned scenes (Hotel Corridor, Courtyard Garden, Bike Rental Shop), verifying ambient actor schedules (`MoselyPacing`, `CatNapping`), two-operand inventory crafting (`Uses(Gabriel, CatHair, Syrup)`), dynamic fact conjunction guards (`Disguised(Gabriel)`), dialogue choice pruning with Madame Buthane, and instant time-travel state rewinds.
+All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, and multi-step item crafting. The complete *Gabriel Knight 3* Cat Moustache vertical slice (`src/gk3_moustache.zig`) runs across 3 partitioned scenes (Hotel Corridor, Courtyard Garden, Bike Rental Shop). Gabriel starts with an empty inventory (`ITEMS: (Empty)`), requiring players to scavenge supplies from the environment (Room Desk for marker, tape, and syrup; Courtyard Shrub potting bench for spray bottle; Room 33 for Mosely's passport) before crafting the moustache disguise and claiming Mosely's motorcycle keys from Madame Buthane.
 
-**Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
+**Verified** (2026-11-07, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
@@ -38,7 +38,7 @@ All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 | `zig build run -- --spitting-contest --headless` | **Booty Island Spitting Contest full scenario with rewind passed** |
-| `zig build run -- --gk3 --headless` | **Gabriel Knight 3 Cat Moustache full scenario with rewind passed** |
+| `zig build run -- --gk3 --headless` | **Gabriel Knight 3 Cat Moustache 15-step scenario with rewind passed** |
 
 **What works**
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
@@ -66,6 +66,11 @@ All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 ---
 
 ## Session log
+
+### Session 11 (2026-11-07)
+- **Goal:** Fix Gabriel Knight 3 cat moustache puzzle playability: ensure Gabriel starts with an empty inventory, enable in-world item scavenging (Room Desk, Garden Shrub, Mosely's Door), and provide dev shortcuts.
+- **Work:** Replaced initial inventory `remember` declarations in `GK3_MOUSTACHE_SCRIPT` (`src/gk3_moustache.zig`) with reactive scavenging cue handlers for `Uses(Gabriel, RoomDesk)` and `Uses(Gabriel, GardenShrub)`. Updated `run_headless` to start with empty inventory, adding Step 3 (scavenge Room Desk for marker, tape, syrup) and Step 7 (scavenge Garden Shrub for spray bottle), and verifying that time-travel state rewind restores inventory back to empty. Updated `run_interactive` to initialize Gabriel with `ITEMS: (Empty)`. Enhanced `examine_hotspot` and `interact_hotspot` to dynamically adapt examine descriptions and grant items when inspecting/interacting with `RoomDesk` and `GardenShrub`. Added `[0]` dev quick-scavenge shortcut hotkey and updated HUD bottom bar legend to `[0-8]: Steps` in `src/display/renderer.zig`.
+- **Outcome:** All 53 unit tests passing on `src/root.zig` and `zig build test`. Full 15-step headless simulation (`zig build run -- --gk3 --headless`) passes with empty inventory assertion and clean rewind. Interactive graphical mode starts with `ITEMS: (Empty)` and enables intuitive point-and-click scavenging and item combining. `python3 tools/check_docs.py` reported 0 errors and 0 warnings.
 
 ### Session 10 (2026-11-06)
 - **Goal:** Implement Phase 14: The Gabriel Knight 3 Cat Moustache Scenario (P14-01 through P14-03, D-016), authenticate visual backdrops and custom actor tokens, verify headless and interactive modes, and update 3x documentation.
@@ -112,7 +117,4 @@ All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **Work:** Scrubbed all zero-LLVM marketing claims across repository docs and banners per user directive. Detailed Phases 6, 7, 8, and 9 in `ROADMAP.md`. Recorded architectural decision `D-008` (SDL2 Peripheral Display Consumer). Extended `build.zig` to link `SDL2` and `libc` for executables and tests. Enhanced `src/display.zig` with richer `RenderFrame` capturing waypoints, edges, and held items. Implemented built-in 5x7 ASCII bitmap font in `src/display/font.zig` with scaling and text measurement. Built `src/display/renderer.zig` providing 2D room visualization (Tavern & Cellar), waypoint glow anchors, A* edge corridors, animated actor tokens (Cat, Guard, Bard, Cheese), point-and-click mouse navigation targeting the Cat, simulation HUD, cue notification banners, and hotkey controls (`[Space]`, `[N]`, `[R]`, `[Esc]`). Updated `src/main.zig` with full interactive GUI loop while supporting headless fallback (`--headless`).
 - **Outcome:** All 15 display tests passing (`zig test -lc -lSDL2 src/display.zig`), `zig build test` passing, headless simulation passing, and interactive window operating at 60 Hz. All Phase 6 roadmap items complete (`P6-01` through `P6-04`).
 
-### Session 1 (2026-11-04)
-- **Goal:** Synthesize architectural brainstorming, adopt The Manifold repository framework, produce formal engineering spec, and implement the entire 5-phase BeSpoke Engine roadmap.
-- **Work:** Analyzed initial brainstorming files (`whitepaper.md`, `architecture.md`, `script_spec.md`). Debated boundary of responsibility (drop-in decision box vs. unified engine-as-spine). Selected BeSpoke standalone engine path (D-001). Initialized git repository. Adopted The Manifold documentation system with `tools/check_docs.py`. Authored `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TESTING.md`, `docs/SECURITY.md`, `docs/CONTRIBUTING.md`, and `docs/CHANGELOG.md`. Resolved Q-001, Q-002, and Q-003 into D-005 (Room/Waypoint Graph), D-006 (Linear Scan Baseline), and D-007 (Unified Ternary Facts). Installed Zig 0.13.0. Implemented Phase 1 (`src/world.zig`), Phase 2 (`src/bytecode.zig`, `src/vm.zig`), Phase 3 (`src/spatial.zig`), Phase 4 (`src/compiler/`), and Phase 5 (`src/display.zig`). Connected the full pipeline in `src/main.zig` executing the Tavern Heist with live rewind. Pushed all commits to remote GitHub repository.
-- **Outcome:** All 32 unit tests passing. End-to-end simulation executing smoothly. Full repository documentation verified with 0 errors and 0 warnings. Phases 1 through 5 complete.
+Older sessions: Session 1 in [archive/SESSION_LOG_2026_11.md](archive/SESSION_LOG_2026_11.md).
