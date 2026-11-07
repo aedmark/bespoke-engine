@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-06, session 6, on `main`: completed Phase 10; expanded roadmap with Phases 11-14 (Item-on-Item Crafting, Multi-Scene Transitions, Dynamic Dialogue Pruning, GK3 Scenario) and recorded D-013._
+_Last updated: 2026-11-06, session 7, on `main`: completed Phase 11 (Item-on-Item Inventory Combining & In-Hand Crafting, P11-01..P11-03, D-013) and eliminated actor/mark label overlap._
 
 **Where things stand, in one paragraph:**
-All 10 initial phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, and declarative stageplay structures. The roadmap has been expanded with Phases 11 through 14 to enable full execution of multi-step, multi-scene adventure game puzzles, specifically targeting the infamous *Gabriel Knight 3* Cat Moustache puzzle slice. Decision D-013 is accepted, establishing two-operand inventory combining and in-hand crafting semantics.
+All 11 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, and declarative stageplay structures. Phase 11 implements first-class two-operand inventory interactions (`on cue Uses(Actor, ItemA, ItemB):`) with commutative item lookup in both the compiler and VM, in-hand selection state (`selected_inventory_item`), glowing golden inventory tray borders, in-hand HUD indicators, and banner guidance. Furthermore, multi-actor visual stacking and text label collisions were completely eliminated with generous horizontal standoff (60px) and staggered vertical elevations for names, statuses, and stage mark prompts.
 
 **Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
 
@@ -25,15 +25,15 @@ All 10 initial phases of the BeSpoke Engine roadmap are complete, verified, and 
 | `zig test src/world.zig` | **5/5 passed** |
 | `zig test src/bytecode.zig` | **6/6 passed** |
 | `zig test src/spatial.zig` | **8/8 passed** |
-| `zig test src/vm.zig` | **16/16 passed** |
+| `zig test src/vm.zig` | **17/17 passed** |
 | `zig test src/repl.zig` | **16/16 passed** |
 | `zig test src/compiler/lexer.zig` | **3/3 passed** |
 | `zig test src/compiler/parser.zig` | **6/6 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **20/20 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **35/35 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **22/22 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **38/38 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
-| `zig build run -- --spitting-contest` | **Booty Island Spitting Contest full scenario with rewind passed** |
+| `zig build run -- --spitting-contest --headless` | **Booty Island Spitting Contest full scenario with rewind passed** |
 
 **What works**
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
@@ -59,6 +59,11 @@ All 10 initial phases of the BeSpoke Engine roadmap are complete, verified, and 
 ---
 
 ## Session log
+
+### Session 7 (2026-11-06)
+- **Goal:** Implement Phase 11: Item-on-Item Inventory Combining & In-Hand Crafting (P11-01 through P11-03, D-013) and resolve multi-actor/stage mark label collisions.
+- **Work:** Extended compiler code generator (`src/compiler/codegen.zig`) to lower ternary `Uses` cue signatures (`Uses:Actor:ItemA:ItemB`) alongside commutative inverted signatures (`Uses:Actor:ItemB:ItemA`) and multi-level resolution (`find_cue_handler`). Enhanced VM (`src/vm.zig`) with 3-argument cue execution in `fire_cue(compiled, "Uses", actor, target_a, target_b)`. Extended peripheral display renderer (`src/display/renderer.zig`) with `UserAction` variants for `combine_inventory_items`, `use_inventory_on_actor`, and `use_inventory_on_hotspot`. Implemented two-step inventory click flow with `selected_inventory_item` state: first click selects item into hand with glowing golden double outline, amber tray fill, and top-of-verb-bar in-hand cursor indicator; second click on another inventory item combines them; clicking an actor or hotspot applies the held item; and right-clicking cancels in-hand state. Resolved multi-actor and waypoint label collisions via `EntityScreenLayout` and `get_entity_screen_layout`: expanded actor horizontal separation to 60px and staggered vertical elevations for names (16px / 32px) and statuses (4px / 18px), while shifting hovered stage mark prompts below actor statuses (34px) when actors occupy the mark. Wired inventory combining and in-hand usage handlers into `src/main.zig` and `src/spitting_contest.zig`.
+- **Outcome:** All 38 tests passing on `src/root.zig`, 22/22 on `src/display.zig`, 17/17 on `src/vm.zig`, `zig build test` passing, both `--headless` Tavern Heist and `--spitting-contest` Booty Island scenarios executing cleanly. Documentation verified with 0 errors and 0 warnings. Phase 11 roadmap items (`P11-01` through `P11-03`) complete.
 
 ### Session 6 (2026-11-06)
 - **Goal:** Implement Phase 10: The Booty Island Spitting Contest Scenario & Extended Narrative DSL (P10-01 through P10-03, D-012), calibrate visual layout, and fix actor positioning.

@@ -119,6 +119,19 @@ pub const UserAction = union(enum) {
     sound_horn,
     drink_green_drink,
     tamper_flags,
+    // P11-03: Two-operand inventory combining & in-hand actions (D-008, D-009, D-013)
+    combine_inventory_items: struct {
+        primary_index: usize,
+        secondary_index: usize,
+    },
+    use_inventory_on_actor: struct {
+        item_index: usize,
+        actor_index: usize,
+    },
+    use_inventory_on_hotspot: struct {
+        item_index: usize,
+        hotspot_index: usize,
+    },
 };
 
 pub const WAYPOINT_SCREEN_RADIUS = 16;
@@ -159,14 +172,21 @@ pub fn hit_test_waypoint(
     return null;
 }
 
-/// Computes screen position for an entity, applying visual standoff separation
-/// when multiple actors occupy the same waypoint or proximity cluster (D-008, D-012).
-pub fn get_entity_screen_pos(
+pub const EntityScreenLayout = struct {
+    pos: Point,
+    label_y: i32,
+    status_y: i32,
+};
+
+/// Computes screen position and non-overlapping label layout for an entity,
+/// applying visual standoff separation and vertical staggering when multiple
+/// actors occupy the same waypoint or proximity cluster (D-008, D-012).
+pub fn get_entity_screen_layout(
     idx: usize,
     entities: []const RenderEntity,
     screen_w: i32,
     screen_h: i32,
-) Point {
+) EntityScreenLayout {
     const base = world_to_screen(entities[idx].x, entities[idx].y, screen_w, screen_h);
 
     var cluster_rank: usize = 0;
@@ -182,21 +202,50 @@ pub fn get_entity_screen_pos(
         }
     }
 
-    if (cluster_total <= 1) return base;
+    if (cluster_total <= 1) {
+        return .{
+            .pos = base,
+            .label_y = base.y - ACTOR_SCREEN_RADIUS - 16,
+            .status_y = base.y + ACTOR_SCREEN_RADIUS + 4,
+        };
+    }
 
-    // Distribute entities in the cluster so they stand side-by-side cleanly without clipping
+    // Distribute entities in the cluster with generous spacing and staggered labels
     if (cluster_total == 2) {
         if (cluster_rank == 0) {
-            return .{ .x = base.x - 22, .y = base.y + 6 };
+            return .{
+                .pos = .{ .x = base.x - 30, .y = base.y + 6 },
+                .label_y = base.y - ACTOR_SCREEN_RADIUS - 16,
+                .status_y = base.y + ACTOR_SCREEN_RADIUS + 4,
+            };
         } else {
-            return .{ .x = base.x + 24, .y = base.y - 12 };
+            return .{
+                .pos = .{ .x = base.x + 30, .y = base.y - 12 },
+                .label_y = base.y - ACTOR_SCREEN_RADIUS - 32, // Staggered higher
+                .status_y = base.y + ACTOR_SCREEN_RADIUS + 18, // Staggered lower
+            };
         }
     } else {
-        // 3 or more: fan out
-        const offset: i32 = @as(i32, @intCast(cluster_rank)) * 32 - @as(i32, @intCast(cluster_total - 1)) * 16;
+        // 3 or more: fan out horizontally and vertically
+        const offset: i32 = @as(i32, @intCast(cluster_rank)) * 36 - @as(i32, @intCast(cluster_total - 1)) * 18;
         const y_offset: i32 = if (cluster_rank % 2 == 1) -14 else 6;
-        return .{ .x = base.x + offset, .y = base.y + y_offset };
+        const label_offset: i32 = if (cluster_rank % 2 == 1) -32 else -16;
+        const status_offset: i32 = if (cluster_rank % 2 == 1) 18 else 4;
+        return .{
+            .pos = .{ .x = base.x + offset, .y = base.y + y_offset },
+            .label_y = base.y - ACTOR_SCREEN_RADIUS + label_offset,
+            .status_y = base.y + ACTOR_SCREEN_RADIUS + status_offset,
+        };
     }
+}
+
+pub fn get_entity_screen_pos(
+    idx: usize,
+    entities: []const RenderEntity,
+    screen_w: i32,
+    screen_h: i32,
+) Point {
+    return get_entity_screen_layout(idx, entities, screen_w, screen_h).pos;
 }
 
 /// Hit-tests screen coordinates against visible actors (P7-02).
@@ -355,6 +404,8 @@ pub const DisplayWindow = struct {
     cue_banner_text: [64]u8 = undefined,
     cue_banner_len: usize = 0,
     cue_banner_ticks: u32 = 0,
+    // Phase 11 Inventory In-Hand Selection & Combining (P11-03, D-013)
+    selected_inventory_item: ?usize = null,
     // Phase 9 Debug, Scrubber & REPL (P9-01, P9-02, P9-03, D-011)
     show_debug_overlay: bool = false,
     show_console: bool = false,
@@ -554,7 +605,13 @@ pub const DisplayWindow = struct {
                     }
 
                     if (event.button.button == c.SDL_BUTTON_RIGHT) {
-                        // Right-click cycles the active adventure verb (P7-02, D-009)
+                        // Right-click cancels in-hand item selection if active (P11-03, D-013)
+                        if (self.selected_inventory_item != null) {
+                            self.selected_inventory_item = null;
+                            self.set_cue_banner("Action cancelled.", 60);
+                            return .none;
+                        }
+                        // Otherwise cycles the active adventure verb (P7-02, D-009)
                         self.active_verb = self.active_verb.next();
                     } else if (event.button.button == c.SDL_BUTTON_LEFT) {
                         // 1. Check Timeline Scrubber (P9-02, D-011)
@@ -575,19 +632,51 @@ pub const DisplayWindow = struct {
                         // 2. Check Verb Bar buttons
                         const clicked_verb = hit_test_verb_button(event.button.x, event.button.y, self.height);
                         if (clicked_verb) |verb| {
+                            if (self.selected_inventory_item != null) {
+                                self.selected_inventory_item = null;
+                                self.set_cue_banner("Action cancelled.", 60);
+                            }
                             self.active_verb = verb;
                             return .none;
                         }
 
-                        // 2b. Check Inventory items
+                        // 3. Check Inventory items (P11-03, D-013)
                         const clicked_item_idx = hit_test_inventory_item(event.button.x, event.button.y, self.height, frame.inventory[0..frame.inventory_count]);
                         if (clicked_item_idx) |idx| {
-                            const iname = frame.inventory[idx].get_name();
-                            if (std.mem.eql(u8, iname, "Horn")) return .sound_horn;
-                            if (std.mem.eql(u8, iname, "GreenDrink")) return .drink_green_drink;
+                            if (self.selected_inventory_item) |primary_idx| {
+                                if (primary_idx == idx) {
+                                    // Clicking same selected item deselects it
+                                    self.selected_inventory_item = null;
+                                    self.set_cue_banner("Item unselected.", 60);
+                                    return .none;
+                                } else {
+                                    // Combining two distinct inventory items
+                                    self.selected_inventory_item = null;
+                                    var buf: [64]u8 = undefined;
+                                    const p_name = if (primary_idx < frame.inventory_count) frame.inventory[primary_idx].get_name() else "item";
+                                    const s_name = if (idx < frame.inventory_count) frame.inventory[idx].get_name() else "item";
+                                    const banner = std.fmt.bufPrint(&buf, "Using {s} on {s}...", .{ p_name, s_name }) catch "Combining items...";
+                                    self.set_cue_banner(banner, 90);
+                                    return .{
+                                        .combine_inventory_items = .{
+                                            .primary_index = primary_idx,
+                                            .secondary_index = idx,
+                                        },
+                                    };
+                                }
+                            } else {
+                                // Select item into hand
+                                self.selected_inventory_item = idx;
+                                self.active_verb = .use_with;
+                                var buf: [64]u8 = undefined;
+                                const iname = if (idx < frame.inventory_count) frame.inventory[idx].get_name() else "item";
+                                const banner = std.fmt.bufPrint(&buf, "Use {s} with...", .{iname}) catch "Use item with...";
+                                self.set_cue_banner(banner, 180);
+                                return .none;
+                            }
                         }
 
-                        // 3. Check Actors
+                        // 4. Check Actors
                         const clicked_actor = hit_test_actor(
                             event.button.x,
                             event.button.y,
@@ -596,9 +685,19 @@ pub const DisplayWindow = struct {
                             self.height,
                         );
                         if (clicked_actor) |actor_idx| {
-                            action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
+                            if (self.selected_inventory_item) |item_idx| {
+                                self.selected_inventory_item = null;
+                                return .{
+                                    .use_inventory_on_actor = .{
+                                        .item_index = item_idx,
+                                        .actor_index = actor_idx,
+                                    },
+                                };
+                            } else {
+                                action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
+                            }
                         } else {
-                            // 4. Check Hotspots / Props
+                            // 5. Check Hotspots / Props
                             const clicked_hs = hit_test_hotspot(
                                 event.button.x,
                                 event.button.y,
@@ -607,9 +706,19 @@ pub const DisplayWindow = struct {
                                 self.height,
                             );
                             if (clicked_hs) |hs_idx| {
-                                action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
+                                if (self.selected_inventory_item) |item_idx| {
+                                    self.selected_inventory_item = null;
+                                    return .{
+                                        .use_inventory_on_hotspot = .{
+                                            .item_index = item_idx,
+                                            .hotspot_index = hs_idx,
+                                        },
+                                    };
+                                } else {
+                                    action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
+                                }
                             } else {
-                                // 5. Check Waypoints
+                                // 6. Check Waypoints
                                 const clicked_wp = hit_test_waypoint(
                                     event.button.x,
                                     event.button.y,
@@ -618,6 +727,10 @@ pub const DisplayWindow = struct {
                                     self.height,
                                 );
                                 if (clicked_wp) |wp_id| {
+                                    if (self.selected_inventory_item != null) {
+                                        self.selected_inventory_item = null;
+                                        self.set_cue_banner("Action cancelled.", 60);
+                                    }
                                     if (self.active_verb == .walk) {
                                         self.target_wp = wp_id;
                                         action = .{ .walk_player = wp_id };
@@ -1008,7 +1121,20 @@ pub const DisplayWindow = struct {
                     var buf: [64]u8 = undefined;
                     const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
                     const text_w = font.text_width(prompt, 2);
-                    self.draw_text(prompt, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.wp_hover);
+
+                    // Check if actors are stationed at this waypoint coordinate
+                    var has_actors = false;
+                    for (frame.entities[0..frame.entity_count]) |ent| {
+                        if (ent.x == wp.x and ent.y == wp.y) {
+                            has_actors = true;
+                            break;
+                        }
+                    }
+                    const prompt_y = if (has_actors)
+                        pt.y + WAYPOINT_SCREEN_RADIUS + 34
+                    else
+                        pt.y + WAYPOINT_SCREEN_RADIUS + 8;
+                    self.draw_text(prompt, pt.x - @divTrunc(text_w, 2), prompt_y, 2, Color.wp_hover);
                 } else {
                     // Subtle ground mark anchor
                     self.draw_circle_outline(pt.x, pt.y, 5, Color{ .r = 255, .g = 255, .b = 255, .a = 100 });
@@ -1020,7 +1146,8 @@ pub const DisplayWindow = struct {
         // 5. Render Actors
         for (frame.entities[0..frame.entity_count], 0..) |e, idx| {
             const name = e.get_name();
-            const pt = get_entity_screen_pos(idx, frame.entities[0..frame.entity_count], self.width, self.height);
+            const layout = get_entity_screen_layout(idx, frame.entities[0..frame.entity_count], self.width, self.height);
+            const pt = layout.pos;
 
             if (std.mem.eql(u8, name, "Cat")) {
                 // Cat (Player): Orange token with cat ears
@@ -1032,7 +1159,7 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x + 6, pt.y - ACTOR_SCREEN_RADIUS - 4, 6, 6, Color.cat_color);
 
                 // Label
-                self.draw_text("Cat (Player)", pt.x - 36, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.cat_color);
+                self.draw_text("Cat (Player)", pt.x - 36, layout.label_y, 2, Color.cat_color);
 
                 // Carried Cheese
                 if (frame.cheese_holder == e.entity) {
@@ -1049,7 +1176,7 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 8, pt.y - 4, 16, 6, Color.white);
 
                 // Label
-                self.draw_text("Guard", pt.x - 16, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.guard_color);
+                self.draw_text("Guard", pt.x - 16, layout.label_y, 2, Color.guard_color);
 
                 // Carried Cheese
                 if (frame.cheese_holder == e.entity) {
@@ -1060,7 +1187,7 @@ pub const DisplayWindow = struct {
 
                 // Charmed status
                 if (frame.charmed_target == e.entity) {
-                    self.draw_text("[Charmed!]", pt.x - 28, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
+                    self.draw_text("[Charmed!]", pt.x - 28, layout.status_y, 2, Color.cue_alert);
                 }
             } else if (std.mem.eql(u8, name, "Bard")) {
                 // Bard: Purple token
@@ -1071,7 +1198,7 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 6, 4, 8, Color.white);
 
                 // Label
-                self.draw_text("Bard", pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.bard_color);
+                self.draw_text("Bard", pt.x - 12, layout.label_y, 2, Color.bard_color);
             } else if (std.mem.eql(u8, name, "Guybrush")) {
                 // Guybrush (Player): Blonde hair, pirate blue coat
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.guybrush_coat);
@@ -1082,13 +1209,13 @@ pub const DisplayWindow = struct {
 
                 // Label
                 const nw = font.text_width("Guybrush", 2);
-                self.draw_text("Guybrush", pt.x - @divTrunc(nw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.guybrush_hair);
+                self.draw_text("Guybrush", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.guybrush_hair);
 
                 // Spit Status
                 const spit_str = if (frame.spit_is_thick) "[Thick Spit Ready!]" else "[Spit: Thin]";
                 const spit_col = if (frame.spit_is_thick) Color.spit_color else Color.hud_subtext;
                 const sw = font.text_width(spit_str, 2);
-                self.draw_text(spit_str, pt.x - @divTrunc(sw, 2), pt.y + ACTOR_SCREEN_RADIUS + 4, 2, spit_col);
+                self.draw_text(spit_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, spit_col);
             } else if (std.mem.eql(u8, name, "Organiser")) {
                 // Organiser: Velvet red coat, fancy hat
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.organiser_coat);
@@ -1100,13 +1227,13 @@ pub const DisplayWindow = struct {
 
                 // Label
                 const nw = font.text_width("Organiser", 2);
-                self.draw_text("Organiser", pt.x - @divTrunc(nw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.organiser_coat);
+                self.draw_text("Organiser", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.organiser_coat);
 
                 // Distracted / watching status
                 const org_str = if (frame.organiser_distracted) "[DISTRACTED!]" else "[Watching]";
                 const org_col = if (frame.organiser_distracted) Color.cue_alert else Color.status_running;
                 const sw = font.text_width(org_str, 2);
-                self.draw_text(org_str, pt.x - @divTrunc(sw, 2), pt.y + ACTOR_SCREEN_RADIUS + 4, 2, org_col);
+                self.draw_text(org_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, org_col);
             } else if (std.mem.eql(u8, name, "Onlookers")) {
                 // Onlookers: Crowd of spectator circles
                 self.fill_circle(pt.x - 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.onlookers_color);
@@ -1116,17 +1243,17 @@ pub const DisplayWindow = struct {
 
                 // Label
                 const nw = font.text_width("Onlookers", 2);
-                self.draw_text("Onlookers", pt.x - @divTrunc(nw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.onlookers_color);
+                self.draw_text("Onlookers", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.onlookers_color);
                 if (frame.organiser_distracted) {
                     const sw = font.text_width("[Looking Offstage]", 2);
-                    self.draw_text("[Looking Offstage]", pt.x - @divTrunc(sw, 2), pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
+                    self.draw_text("[Looking Offstage]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.cue_alert);
                 }
             } else {
                 // Generic actor token
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 70, .g = 80, .b = 95 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
                 const tw = font.text_width(name, 2);
-                self.draw_text(name, pt.x - @divTrunc(tw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.hud_text);
+                self.draw_text(name, pt.x - @divTrunc(tw, 2), layout.label_y, 2, Color.hud_text);
             }
         }
 
@@ -1198,20 +1325,39 @@ pub const DisplayWindow = struct {
             }
         }
 
-        // Inventory Tray (P7-03)
+        // Inventory Tray (P7-03, P11-03)
         self.draw_text("ITEMS:", 400, bar_y + 6, 2, Color.hud_subtext);
         var item_x: i32 = 480;
         if (frame.inventory_count == 0) {
             self.draw_text("(Empty)", item_x, bar_y + 6, 2, Color{ .r = 100, .g = 116, .b = 139 });
         } else {
-            for (frame.inventory[0..frame.inventory_count]) |item| {
+            for (frame.inventory[0..frame.inventory_count], 0..) |item, idx| {
                 const iname = item.get_name();
                 const iw = font.text_width(iname, 2) + 24;
-                self.fill_rect(item_x, bar_y, iw, 26, Color{ .r = 45, .g = 35, .b = 20 });
-                self.draw_rect_outline(item_x, bar_y, iw, 26, Color.cheese_color);
-                self.fill_circle(item_x + 10, bar_y + 13, 5, Color.cheese_color);
-                self.draw_text(iname, item_x + 18, bar_y + 6, 2, Color.cheese_color);
+                const is_selected = (self.selected_inventory_item != null and self.selected_inventory_item.? == idx);
+                const bg_col = if (is_selected) Color{ .r = 85, .g = 65, .b = 25 } else Color{ .r = 45, .g = 35, .b = 20 };
+                const border_col = if (is_selected) Color{ .r = 250, .g = 204, .b = 21 } else Color.cheese_color;
+                const text_col = if (is_selected) Color{ .r = 254, .g = 240, .b = 138 } else Color.cheese_color;
+
+                self.fill_rect(item_x, bar_y, iw, 26, bg_col);
+                self.draw_rect_outline(item_x, bar_y, iw, 26, border_col);
+                if (is_selected) {
+                    // Double border for glowing selected highlight
+                    self.draw_rect_outline(item_x + 1, bar_y + 1, iw - 2, 24, Color{ .r = 253, .g = 224, .b = 71 });
+                }
+                self.fill_circle(item_x + 10, bar_y + 13, 5, border_col);
+                self.draw_text(iname, item_x + 18, bar_y + 6, 2, text_col);
                 item_x += iw + 8;
+            }
+        }
+
+        // In-Hand Item Cursor / Status (P11-03, D-013)
+        if (self.selected_inventory_item) |sel_idx| {
+            if (sel_idx < frame.inventory_count) {
+                const sel_name = frame.inventory[sel_idx].get_name();
+                var in_hand_buf: [96]u8 = undefined;
+                const in_hand_text = std.fmt.bufPrint(&in_hand_buf, "[IN HAND: {s}] (Click target/item to use | Right-Click to cancel)", .{sel_name}) catch "[IN HAND]";
+                self.draw_text(in_hand_text, 20, bar_y - 18, 1, Color{ .r = 250, .g = 204, .b = 21 });
             }
         }
 
@@ -1469,17 +1615,63 @@ test "renderer coordinate conversion and hit testing" {
             .name_len = 0,
         },
     };
-    const e0_pos = get_entity_screen_pos(0, &entities, 960, 540);
-    const e1_pos = get_entity_screen_pos(1, &entities, 960, 540);
-    // Entity 0 shifted left by 22, entity 1 shifted right by 24
-    try testing.expect(e0_pos.x < e1_pos.x);
-    try testing.expectEqual(@as(i32, 200 - 22), e0_pos.x);
-    try testing.expectEqual(@as(i32, 200 + 24), e1_pos.x);
+    const e0_layout = get_entity_screen_layout(0, &entities, 960, 540);
+    const e1_layout = get_entity_screen_layout(1, &entities, 960, 540);
+    // Entity 0 shifted left by 30, entity 1 shifted right by 30 with non-overlapping staggered labels
+    try testing.expect(e0_layout.pos.x < e1_layout.pos.x);
+    try testing.expectEqual(@as(i32, 200 - 30), e0_layout.pos.x);
+    try testing.expectEqual(@as(i32, 200 + 30), e1_layout.pos.x);
+    try testing.expect(e0_layout.label_y != e1_layout.label_y);
+    try testing.expect(e0_layout.status_y != e1_layout.status_y);
 
     // Hit test actor coordinates
-    const act0_hit = hit_test_actor(e0_pos.x, e0_pos.y, &entities, 960, 540);
+    const act0_hit = hit_test_actor(e0_layout.pos.x, e0_layout.pos.y, &entities, 960, 540);
     try testing.expectEqual(@as(?usize, 0), act0_hit);
 
-    const act1_hit = hit_test_actor(e1_pos.x, e1_pos.y, &entities, 960, 540);
+    const act1_hit = hit_test_actor(e1_layout.pos.x, e1_layout.pos.y, &entities, 960, 540);
     try testing.expectEqual(@as(?usize, 1), act1_hit);
+}
+
+test "P11-03: inventory item hit testing and two-operand combining interaction" {
+    const testing = std.testing;
+
+    var inv = [_]RenderInventoryItem{
+        .{
+            .entity = EntityId.from_int(101),
+            .name = undefined,
+            .name_len = 0,
+        },
+        .{
+            .entity = EntityId.from_int(102),
+            .name = undefined,
+            .name_len = 0,
+        },
+    };
+    const name0 = "Syrup";
+    @memcpy(inv[0].name[0..name0.len], name0);
+    inv[0].name_len = name0.len;
+
+    const name1 = "Tape";
+    @memcpy(inv[1].name[0..name1.len], name1);
+    inv[1].name_len = name1.len;
+
+    // Hit test item 0 and item 1
+    // screen_h = 540, bar_y = 540 - 78 = 462
+    const hit_item0 = hit_test_inventory_item(490, 470, 540, &inv);
+    try testing.expectEqual(@as(?usize, 0), hit_item0);
+
+    const hit_item1 = hit_test_inventory_item(600, 470, 540, &inv);
+    try testing.expectEqual(@as(?usize, 1), hit_item1);
+
+    // Test selection and cancellation state in DisplayWindow
+    var win = try DisplayWindow.init("Test Window", 960, 540);
+    defer win.deinit();
+
+    try testing.expect(win.selected_inventory_item == null);
+    win.selected_inventory_item = 0;
+    try testing.expectEqual(@as(?usize, 0), win.selected_inventory_item);
+
+    // Deselect
+    win.selected_inventory_item = null;
+    try testing.expect(win.selected_inventory_item == null);
 }

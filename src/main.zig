@@ -453,6 +453,47 @@ pub fn main() !void {
                     const status_str = if (window.show_console) "OPENED" else "CLOSED";
                     try stdout.print("[Console] Live REPL Console Drawer {s}\n", .{status_str});
                 },
+                .combine_inventory_items => |comb| {
+                    const frame = display_bridge.get_frame();
+                    if (comb.primary_index < frame.inventory_count and comb.secondary_index < frame.inventory_count) {
+                        const p_name = frame.inventory[comb.primary_index].get_name();
+                        const s_name = frame.inventory[comb.secondary_index].get_name();
+                        var buf: [96]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "You attempt to combine {s} and {s}, but nothing happens.", .{ p_name, s_name }) catch "No combination";
+                        window.set_cue_banner(msg, 90);
+                        try stdout.print("\n[Combine] {s} + {s} -> no combination\n", .{ p_name, s_name });
+                    }
+                },
+                .use_inventory_on_actor => |act| {
+                    const frame = display_bridge.get_frame();
+                    if (act.item_index < frame.inventory_count and act.actor_index < frame.entity_count) {
+                        const item_name = frame.inventory[act.item_index].get_name();
+                        const target_entity = frame.entities[act.actor_index];
+                        const tname = target_entity.get_name();
+                        var buf: [96]u8 = undefined;
+                        const text = std.fmt.bufPrint(&buf, "You offer {s} to {s}.", .{ item_name, tname }) catch "Used";
+                        window.set_cue_banner(text, 90);
+                        try stdout.print("\n[Use In-Hand] Offered {s} to {s}!\n", .{ item_name, tname });
+                    }
+                },
+                .use_inventory_on_hotspot => |hs_act| {
+                    const frame = display_bridge.get_frame();
+                    if (hs_act.item_index < frame.inventory_count and hs_act.hotspot_index < frame.hotspot_count) {
+                        const item_name = frame.inventory[hs_act.item_index].get_name();
+                        const hs = frame.hotspots[hs_act.hotspot_index];
+                        var buf: [96]u8 = undefined;
+                        if (std.mem.eql(u8, hs.get_name(), "Fireplace")) {
+                            window.set_cue_banner("You toast cheese by the embers! A delicious snack!", 120);
+                            try stdout.print("\n[Use In-Hand] Toasted {s} at the Fireplace!\n", .{item_name});
+                        } else if (std.mem.eql(u8, hs.get_name(), "Wine Cask")) {
+                            window.set_cue_banner("You pair fine vintage wine with cheese! Magnifique!", 120);
+                            try stdout.print("\n[Use In-Hand] Paired {s} with Wine Cask!\n", .{item_name});
+                        } else {
+                            const text = std.fmt.bufPrint(&buf, "You place {s} on the {s}.", .{ item_name, hs.get_name() }) catch "Use";
+                            window.set_cue_banner(text, 90);
+                        }
+                    }
+                },
                 .spit_contest_spit, .sound_horn, .drink_green_drink, .tamper_flags => {},
                 .none => {},
             }

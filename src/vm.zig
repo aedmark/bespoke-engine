@@ -318,6 +318,43 @@ pub const VM = struct {
         }
     }
 
+    /// Fires an adventure cue for an actor with up to two optional target entities (P11-02, D-009, D-013).
+    /// Spawns a fiber executing the matching cue handler and records an EmittedCue for display peripherals.
+    pub fn fire_cue(
+        self: *VM,
+        compiled: anytype,
+        cue_name: []const u8,
+        actor: EntityId,
+        target_a: ?EntityId,
+        target_b: ?EntityId,
+    ) !?FiberId {
+        const actor_name = self.world.get_entity_name(actor);
+        const name_a = if (target_a) |ta| self.world.get_entity_name(ta) else null;
+        const name_b = if (target_b) |tb| self.world.get_entity_name(tb) else null;
+
+        const handler_pc = compiled.find_cue_handler(cue_name, actor_name, name_a, name_b) orelse return null;
+
+        // Record cue emission for peripheral visual/audio bridge
+        var emitted = EmittedCue{
+            .cue_id = @intCast((try self.world.intern_entity(cue_name)).to_int() & 0xFFFF),
+            .args = [_]u32{0} ** 4,
+            .arg_count = 1,
+        };
+        emitted.args[0] = actor.to_int();
+        if (target_a) |ta| {
+            emitted.args[1] = ta.to_int();
+            emitted.arg_count = 2;
+        }
+        if (target_b) |tb| {
+            emitted.args[2] = tb.to_int();
+            emitted.arg_count = 3;
+        }
+        try self.emitted_cues.append(emitted);
+
+        // Spawn a routine fiber executing the handler
+        return try self.spawn_routine(actor, handler_pc);
+    }
+
     /// Advances the master simulation clock by 1 tick and dispatches all active fibers.
     pub fn step_tick(self: *VM) !void {
         // 1. Advance relational world and prune expired facts (P1-02)
@@ -1151,4 +1188,70 @@ test "P10-02: falling edge and on_expire reactive rule execution" {
     // Tick 3: Distracted expires on TTL tick 3 -> on_expire rule triggers!
     try vm.step_tick();
     try testing.expect(world.has_fact(organiser, post_rel, 1));
+}
+
+test "P11-02: VM.fire_cue executes 3-argument item combining cue with commutative matching" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const gabriel = try world.intern_entity("Gabriel");
+    const syrup = try world.intern_entity("MapleSyrup");
+    const tape = try world.intern_entity("CatHairTape");
+    const moustache = try world.intern_entity("CatMoustache");
+    const carries = try world.intern_relation("Carries", .set);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    // Cue Handler for Uses(Gabriel, MapleSyrup, CatHairTape):
+    // push Gabriel, push Carries, push CatMoustache, remember 0, halt
+    const handler_pc = chunk.count();
+    try chunk.emit_push_entity(gabriel);
+    try chunk.emit_push_relation(carries);
+    try chunk.emit_push_const(moustache.to_int());
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.halt);
+
+    // Mock compiled program with commutative signatures
+    var cue_map = std.StringHashMap(usize).init(testing.allocator);
+    defer cue_map.deinit();
+    try cue_map.put("Uses:Gabriel:MapleSyrup:CatHairTape", handler_pc);
+    try cue_map.put("Uses:Gabriel:CatHairTape:MapleSyrup", handler_pc);
+
+    const MockProgram = struct {
+        cue_handler_entries: std.StringHashMap(usize),
+        pub fn find_cue_handler(
+            self: *const @This(),
+            cue_name: []const u8,
+            actor: ?[]const u8,
+            target_a: ?[]const u8,
+            target_b: ?[]const u8,
+        ) ?usize {
+            var buf: [128]u8 = undefined;
+            if (actor != null and target_a != null and target_b != null) {
+                if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ cue_name, actor.?, target_a.?, target_b.? })) |sig| {
+                    if (self.cue_handler_entries.get(sig)) |pc| return pc;
+                } else |_| {}
+                if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ cue_name, actor.?, target_b.?, target_a.? })) |sig| {
+                    if (self.cue_handler_entries.get(sig)) |pc| return pc;
+                } else |_| {}
+            }
+            return null;
+        }
+    };
+    const mock_prog = MockProgram{ .cue_handler_entries = cue_map };
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    // Fire cue with commutative argument order: Tape on Syrup!
+    const fib_id = try vm.fire_cue(&mock_prog, "Uses", gabriel, tape, syrup);
+    try testing.expect(fib_id != null);
+    try testing.expectEqual(@as(usize, 1), vm.emitted_cues.items.len);
+    try testing.expectEqual(@as(u8, 3), vm.emitted_cues.items[0].arg_count);
+
+    // Step tick executes handler -> Gabriel carries CatMoustache!
+    try vm.step_tick();
+    try testing.expect(world.has_fact(gabriel, carries, moustache.to_int()));
 }

@@ -592,6 +592,60 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
             },
             .toggle_debug => {},
             .toggle_console => {},
+            .combine_inventory_items => |comb| {
+                const frame = display_bridge.get_frame();
+                const p_name = if (comb.primary_index < frame.inventory_count)
+                    frame.inventory[comb.primary_index].get_name()
+                else
+                    "item";
+                const s_name = if (comb.secondary_index < frame.inventory_count)
+                    frame.inventory[comb.secondary_index].get_name()
+                else
+                    "item";
+                var buf: [96]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "You can't combine {s} with {s}.", .{ p_name, s_name }) catch "Can't combine";
+                window.set_cue_banner(msg, 90);
+            },
+            .use_inventory_on_actor => |act| {
+                const frame = display_bridge.get_frame();
+                if (act.item_index < frame.inventory_count and act.actor_index < frame.entity_count) {
+                    const item_name = frame.inventory[act.item_index].get_name();
+                    const actor_name = frame.entities[act.actor_index].get_name();
+                    if (std.mem.eql(u8, item_name, "GreenDrink") and std.mem.eql(u8, actor_name, "Guybrush")) {
+                        try world.remember(guybrush, thick_rel, 1, 0);
+                        window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
+                    } else if (std.mem.eql(u8, item_name, "Horn")) {
+                        try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
+                        _ = try spatial.walk_to(organiser, offstage_wp);
+                        _ = try spatial.walk_to(onlookers, offstage_wp);
+                        window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
+                    } else {
+                        var buf: [96]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, actor_name }) catch "No effect";
+                        window.set_cue_banner(msg, 90);
+                    }
+                }
+            },
+            .use_inventory_on_hotspot => |hs_act| {
+                const frame = display_bridge.get_frame();
+                if (hs_act.item_index < frame.inventory_count and hs_act.hotspot_index < frame.hotspot_count) {
+                    const item_name = frame.inventory[hs_act.item_index].get_name();
+                    const hs_name = frame.hotspots[hs_act.hotspot_index].get_name();
+                    if (std.mem.indexOf(u8, hs_name, "Flag") != null) {
+                        const is_distracted = world.has_fact(organiser, distracted_rel, null);
+                        if (is_distracted) {
+                            try world.remember(flags, tampered_rel, 1, 0);
+                            window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
+                        } else {
+                            window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
+                        }
+                    } else {
+                        var buf: [96]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, hs_name }) catch "No effect";
+                        window.set_cue_banner(msg, 90);
+                    }
+                }
+            },
             .none => {},
         }
 

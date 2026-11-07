@@ -30,6 +30,7 @@ pub const CompiledProgram = struct {
     routine_entries: std.StringHashMap(usize),
     when_rule_entries: std.ArrayList(usize),
     cue_handler_entries: std.StringHashMap(usize),
+    allocated_cue_keys: std.ArrayList([]const u8),
     reactive_rules: std.ArrayList(CompiledWhenRule),
 
     pub fn deinit(self: *CompiledProgram) void {
@@ -37,10 +38,54 @@ pub const CompiledProgram = struct {
         self.routine_entries.deinit();
         self.when_rule_entries.deinit();
         self.cue_handler_entries.deinit();
+        for (self.allocated_cue_keys.items) |k| {
+            self.chunk.allocator.free(k);
+        }
+        self.allocated_cue_keys.deinit();
         for (self.reactive_rules.items) |r| {
             self.chunk.allocator.free(r.clauses);
         }
         self.reactive_rules.deinit();
+    }
+
+    /// Finds entry PC for a cue handler matching cue name and arguments (P11-01, P11-02, D-013).
+    /// Supports ternary item-combining with commutative matching (ItemA on ItemB == ItemB on ItemA).
+    pub fn find_cue_handler(
+        self: *const CompiledProgram,
+        cue_name: []const u8,
+        actor: ?[]const u8,
+        target_a: ?[]const u8,
+        target_b: ?[]const u8,
+    ) ?usize {
+        var buf: [128]u8 = undefined;
+
+        // 1. Try ternary signature (Actor + ItemA + ItemB)
+        if (actor != null and target_a != null and target_b != null) {
+            if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ cue_name, actor.?, target_a.?, target_b.? })) |sig| {
+                if (self.cue_handler_entries.get(sig)) |pc| return pc;
+            } else |_| {}
+            // Commutative permutation
+            if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ cue_name, actor.?, target_b.?, target_a.? })) |sig| {
+                if (self.cue_handler_entries.get(sig)) |pc| return pc;
+            } else |_| {}
+        }
+
+        // 2. Try binary signature (Actor + TargetA)
+        if (actor != null and target_a != null) {
+            if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}", .{ cue_name, actor.?, target_a.? })) |sig| {
+                if (self.cue_handler_entries.get(sig)) |pc| return pc;
+            } else |_| {}
+        }
+
+        // 3. Try unary signature (Actor only)
+        if (actor != null) {
+            if (std.fmt.bufPrint(&buf, "{s}:{s}", .{ cue_name, actor.? })) |sig| {
+                if (self.cue_handler_entries.get(sig)) |pc| return pc;
+            } else |_| {}
+        }
+
+        // 4. Fallback to cue name alone
+        return self.cue_handler_entries.get(cue_name);
     }
 };
 
@@ -52,6 +97,7 @@ pub const Codegen = struct {
     routine_entries: std.StringHashMap(usize),
     when_rule_entries: std.ArrayList(usize),
     cue_handler_entries: std.StringHashMap(usize),
+    allocated_cue_keys: std.ArrayList([]const u8),
     reactive_rules: std.ArrayList(CompiledWhenRule),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
@@ -63,6 +109,7 @@ pub const Codegen = struct {
             .routine_entries = std.StringHashMap(usize).init(allocator),
             .when_rule_entries = std.ArrayList(usize).init(allocator),
             .cue_handler_entries = std.StringHashMap(usize).init(allocator),
+            .allocated_cue_keys = std.ArrayList([]const u8).init(allocator),
             .reactive_rules = std.ArrayList(CompiledWhenRule).init(allocator),
         };
     }
@@ -211,10 +258,34 @@ pub const Codegen = struct {
             });
         }
 
-        // 6. Compile cue handlers
+        // 6. Compile cue handlers (P11-01, P11-02, D-013)
         for (ast.cue_handlers.items) |cue| {
             const entry_pc = mut_self.chunk.count();
-            try mut_self.cue_handler_entries.put(cue.cue_name, entry_pc);
+
+            // Register fallback key
+            if (!mut_self.cue_handler_entries.contains(cue.cue_name)) {
+                try mut_self.cue_handler_entries.put(cue.cue_name, entry_pc);
+            }
+
+            if (cue.params.len == 1) {
+                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}", .{ cue.cue_name, cue.params[0] });
+                try mut_self.allocated_cue_keys.append(sig);
+                try mut_self.cue_handler_entries.put(sig, entry_pc);
+            } else if (cue.params.len == 2) {
+                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}", .{ cue.cue_name, cue.params[0], cue.params[1] });
+                try mut_self.allocated_cue_keys.append(sig);
+                try mut_self.cue_handler_entries.put(sig, entry_pc);
+            } else if (cue.params.len >= 3) {
+                // Primary signature: Uses:Actor:ItemA:ItemB
+                const sig1 = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue.params[0], cue.params[1], cue.params[2] });
+                try mut_self.allocated_cue_keys.append(sig1);
+                try mut_self.cue_handler_entries.put(sig1, entry_pc);
+
+                // Commutative permutation for in-hand item combining: Uses:Actor:ItemB:ItemA
+                const sig2 = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue.params[0], cue.params[2], cue.params[1] });
+                try mut_self.allocated_cue_keys.append(sig2);
+                try mut_self.cue_handler_entries.put(sig2, entry_pc);
+            }
 
             for (cue.body) |stmt| {
                 try mut_self.compile_stmt(stmt);
@@ -227,6 +298,7 @@ pub const Codegen = struct {
             .routine_entries = mut_self.routine_entries,
             .when_rule_entries = mut_self.when_rule_entries,
             .cue_handler_entries = mut_self.cue_handler_entries,
+            .allocated_cue_keys = mut_self.allocated_cue_keys,
             .reactive_rules = mut_self.reactive_rules,
         };
     }
@@ -586,4 +658,45 @@ test "P8-02: codegen compiles multi-clause when rules into reactive rules execut
     try world.remember(guard, charmed, bard.to_int(), 10);
     try vm.step_tick();
     try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
+}
+
+test "P11-01 / P11-02: codegen compiles 3-parameter item-combining cues with commutative matching" {
+    const testing = std.testing;
+    const source =
+        \\entity Gabriel, MapleSyrup, CatHairTape, CatMoustache
+        \\relation Carries(holder, item)
+        \\
+        \\on cue Uses(Gabriel, MapleSyrup, CatHairTape):
+        \\  remember Carries(Gabriel, CatMoustache)
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    var codegen = Codegen.init(alloc, &world, null);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    // 1. Both permutations match the exact same handler PC (D-013)
+    const pc1 = compiled.find_cue_handler("Uses", "Gabriel", "MapleSyrup", "CatHairTape");
+    const pc2 = compiled.find_cue_handler("Uses", "Gabriel", "CatHairTape", "MapleSyrup");
+    try testing.expect(pc1 != null);
+    try testing.expect(pc2 != null);
+    try testing.expectEqual(pc1.?, pc2.?);
+
+    // 2. Non-matching pair returns fallback or null
+    const pc3 = compiled.find_cue_handler("Uses", "Gabriel", "MapleSyrup", "NonExistent");
+    _ = pc3;
+    // Since fallback "Uses" is registered for base cue name, check specific signature
+    try testing.expect(compiled.cue_handler_entries.get("Uses:Gabriel:MapleSyrup:NonExistent") == null);
 }

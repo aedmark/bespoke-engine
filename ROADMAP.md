@@ -89,9 +89,9 @@ Goal: Expand BeSpoke with high-level stageplay declarations, falling-edge and ex
 
 Goal: Expand the BeSpoke language, compiler, VM, and display renderer with first-class two-operand inventory interactions (`on cue Uses(actor, item_a, item_b)`), allowing items to be combined or applied in-hand before acting on the world.
 
-- [ ] P11-01 Compiler grammar and AST support for two-target `Uses` cue declarations (`on cue Uses(Player, ItemA, ItemB):`). (D-002, D-009, D-013)
-- [ ] P11-02 VM and cue dispatcher support for 3-argument cues `(actor, primary_item, secondary_item)` with commutative matching. (D-004, D-009, D-013)
-- [ ] P11-03 Peripheral UI interaction in `src/display/renderer.zig`: selecting an active inventory item and clicking a second inventory item in the tray, with visual highlight, in-hand cursor, and banner feedback. (D-008, D-009, D-013)
+- [x] P11-01 Compiler grammar and AST support for two-target `Uses` cue declarations (`on cue Uses(Player, ItemA, ItemB):`). (D-002, D-009, D-013; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/root.zig` and `zig build test`)
+- [x] P11-02 VM and cue dispatcher support for 3-argument cues `(actor, primary_item, secondary_item)` with commutative matching. (D-004, D-009, D-013; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/root.zig` and `zig test src/vm.zig`)
+- [x] P11-03 Peripheral UI interaction in `src/display/renderer.zig`: selecting an active inventory item and clicking a second inventory item in the tray, with visual highlight, in-hand cursor, and banner feedback. (D-008, D-009, D-013; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/display.zig`, `zig build test`, and `zig build run -- --spitting-contest --headless`)
 
 ## Phase 12: Multi-Scene Transitions & Stage Director
 
