@@ -199,13 +199,21 @@ pub const DisplayBridge = struct {
         const prev_max_history = self.back_buffer.max_history_tick;
         self.back_buffer.tick = world.current_tick;
         self.back_buffer.fact_count = world.fact_count();
+        const active_scene_id = vm.current_scene;
 
-        // 1. Capture entities and positions
+        // 1. Capture entities and positions (scoped to active scene if set)
         var e_count: usize = 0;
         var it = spatial.agents.iterator();
         while (it.next()) |entry| {
             if (e_count >= self.back_buffer.entities.len) break;
             const agent = entry.value_ptr;
+
+            if (active_scene_id) |cur_sc| {
+                if (spatial.graph.get_waypoint(agent.current_wp)) |wp| {
+                    if (wp.room != cur_sc) continue;
+                }
+            }
+
             var re = RenderEntity{
                 .entity = agent.entity,
                 .name = undefined,
@@ -225,10 +233,14 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.entity_count = e_count;
 
-        // 2. Capture spatial waypoints
+        // 2. Capture spatial waypoints (scoped to active scene if set)
         var wp_count: usize = 0;
         for (spatial.graph.waypoints.items) |wp| {
             if (wp_count >= self.back_buffer.waypoints.len) break;
+            if (active_scene_id) |cur_sc| {
+                if (wp.room != cur_sc) continue;
+            }
+
             var rw = RenderWaypoint{
                 .id = wp.id,
                 .room = wp.room,
@@ -245,10 +257,18 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.waypoint_count = wp_count;
 
-        // 3. Capture spatial edges
+        // 3. Capture spatial edges (scoped to active scene if set)
         var edge_count: usize = 0;
         for (spatial.graph.edges.items) |e| {
             if (edge_count >= self.back_buffer.edges.len) break;
+            if (active_scene_id) |cur_sc| {
+                const wp_a = spatial.graph.get_waypoint(e.from);
+                const wp_b = spatial.graph.get_waypoint(e.to);
+                if (wp_a == null or wp_b == null or wp_a.?.room != cur_sc or wp_b.?.room != cur_sc) {
+                    continue;
+                }
+            }
+
             self.back_buffer.edges[edge_count] = .{
                 .from = e.from,
                 .to = e.to,
@@ -257,10 +277,14 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.edge_count = edge_count;
 
-        // 4. Capture spatial hotspots (P7-01, D-009)
+        // 4. Capture spatial hotspots (scoped to active scene if set)
         var hs_count: usize = 0;
         for (spatial.hotspots.items) |hs| {
             if (hs_count >= self.back_buffer.hotspots.len) break;
+            if (active_scene_id) |cur_sc| {
+                if (hs.room != cur_sc) continue;
+            }
+
             var rh = RenderHotspot{
                 .entity = hs.entity,
                 .room = hs.room,
@@ -568,6 +592,72 @@ test "P5-01: display bridge captures double-buffered render frames" {
     try testing.expectEqual(@as(i32, 0), frame.entities[0].x);
     try testing.expectEqual(@as(usize, 1), frame.waypoint_count);
     try testing.expectEqualStrings("Hearth", frame.waypoints[0].get_name());
+}
+
+test "P12-03: DisplayBridge.capture_frame scopes waypoints, hotspots, and entities to active scene" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room_a = try world.intern_entity("RoomA");
+    const room_b = try world.intern_entity("RoomB");
+
+    const wp_a = try spatial.graph.add_waypoint(room_a, 0, 0, "WP_A");
+    const wp_b = try spatial.graph.add_waypoint(room_b, 10, 0, "WP_B");
+
+    const prop_a = try world.intern_entity("PropA");
+    const prop_b = try world.intern_entity("PropB");
+    try spatial.add_hotspot(prop_a, room_a, .{ .x = 0, .y = -5 }, 5, "PropA", "Prop in Room A");
+    try spatial.add_hotspot(prop_b, room_b, .{ .x = 10, .y = -5 }, 5, "PropB", "Prop in Room B");
+
+    const actor_a = try world.intern_entity("ActorA");
+    const actor_b = try world.intern_entity("ActorB");
+    try spatial.register_entity(actor_a, wp_a, 5);
+    try spatial.register_entity(actor_b, wp_b, 5);
+
+    var chunk = vm_mod.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    var bridge = DisplayBridge.init();
+
+    // 1. Scoped to RoomA
+    vm.current_scene = room_a;
+    bridge.capture_frame(&world, &spatial, &vm);
+    bridge.swap();
+    const frame_a = bridge.get_frame();
+    try testing.expectEqual(@as(usize, 1), frame_a.waypoint_count);
+    try testing.expectEqualStrings("WP_A", frame_a.waypoints[0].get_name());
+    try testing.expectEqual(@as(usize, 1), frame_a.hotspot_count);
+    try testing.expectEqualStrings("PropA", frame_a.hotspots[0].get_name());
+    try testing.expectEqual(@as(usize, 1), frame_a.entity_count);
+    try testing.expectEqualStrings("ActorA", frame_a.entities[0].get_name());
+
+    // 2. Scoped to RoomB
+    vm.current_scene = room_b;
+    bridge.capture_frame(&world, &spatial, &vm);
+    bridge.swap();
+    const frame_b = bridge.get_frame();
+    try testing.expectEqual(@as(usize, 1), frame_b.waypoint_count);
+    try testing.expectEqualStrings("WP_B", frame_b.waypoints[0].get_name());
+    try testing.expectEqual(@as(usize, 1), frame_b.hotspot_count);
+    try testing.expectEqualStrings("PropB", frame_b.hotspots[0].get_name());
+    try testing.expectEqual(@as(usize, 1), frame_b.entity_count);
+    try testing.expectEqualStrings("ActorB", frame_b.entities[0].get_name());
+
+    // 3. Unscoped (vm.current_scene == null, e.g. Tavern Heist overview)
+    vm.current_scene = null;
+    bridge.capture_frame(&world, &spatial, &vm);
+    bridge.swap();
+    const frame_all = bridge.get_frame();
+    try testing.expectEqual(@as(usize, 2), frame_all.waypoint_count);
+    try testing.expectEqual(@as(usize, 2), frame_all.hotspot_count);
+    try testing.expectEqual(@as(usize, 2), frame_all.entity_count);
 }
 
 test {

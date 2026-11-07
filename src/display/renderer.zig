@@ -1800,6 +1800,14 @@ pub const DisplayWindow = struct {
                 2,
                 Color.hud_subtext,
             );
+        } else if (is_hotel_scene or is_garden_scene or is_bike_rental_scene) {
+            self.draw_text(
+                "[H]: Hotel | [G]: Garden | [B]: Bike Shop | [Click]: Act | [Right-Click]: Verb | [1-8]: Steps",
+                20,
+                self.height - 28,
+                2,
+                Color{ .r = 250, .g = 204, .b = 21 },
+            );
         } else {
             self.draw_text(
                 "[Click]: Act | [Right-Click]: Verb | [F1/D]: Debug HUD | [C]: REPL | [< / >]: Scrub | [Space]: Pause",

@@ -209,6 +209,17 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try spatial.register_entity(stray_cat, cat_wp, 12);
     try spatial.register_entity(buthane, counter_wp, 13);
 
+    // Initial inventory for Gabriel (from script declarations)
+    const carries_rel = try world.intern_relation("Carries", .set);
+    const spray_bottle = try world.intern_entity("SprayBottle");
+    const masking_tape = try world.intern_entity("MaskingTape");
+    const marker = try world.intern_entity("Marker");
+    const syrup = try world.intern_entity("Syrup");
+    try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
+    try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
+    try world.remember(gabriel, carries_rel, marker.to_int(), 0);
+    try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
+
     // Register Hotspots
     const mosely_door = world.lookup_entity("MoselyDoor") orelse try world.intern_entity("MoselyDoor");
     const room_desk = world.lookup_entity("RoomDesk") orelse try world.intern_entity("RoomDesk");
@@ -257,7 +268,6 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step 3: Snatch Mosely's passport
     try writer.print("[Step 3: Snatch Mosely's Passport from Room 33]\n", .{});
-    const carries_rel = world.lookup_relation("Carries").?;
     const passport_ent = try world.intern_entity("MoselyPassport");
     try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
     try writer.print("   -> Gabriel acquired MoselyPassport!\n\n", .{});
@@ -447,6 +457,17 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try spatial.register_entity(stray_cat, cat_wp, 12);
     try spatial.register_entity(buthane, counter_wp, 13);
 
+    // Initial inventory for Gabriel
+    const carries_rel = try world.intern_relation("Carries", .set);
+    const spray_bottle = try world.intern_entity("SprayBottle");
+    const masking_tape = try world.intern_entity("MaskingTape");
+    const marker = try world.intern_entity("Marker");
+    const syrup = try world.intern_entity("Syrup");
+    try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
+    try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
+    try world.remember(gabriel, carries_rel, marker.to_int(), 0);
+    try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
+
     const mosely_door = world.lookup_entity("MoselyDoor") orelse try world.intern_entity("MoselyDoor");
     const room_desk = world.lookup_entity("RoomDesk") orelse try world.intern_entity("RoomDesk");
     const fence_hole = world.lookup_entity("FenceHole") orelse try world.intern_entity("FenceHole");
@@ -527,7 +548,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     window.set_cue_banner("Welcome to Rennes-le-Château! [H] Hotel, [G] Garden, [B] Bike Shop. [1-8] Solve Puzzle.", 150);
 
-    const carries_rel = world.lookup_relation("Carries").?;
     const passport_ent = try world.intern_entity("MoselyPassport");
     const passport_mod_rel = try world.intern_relation("PassportModified", .property);
     const taped_rel = try world.intern_relation("Taped", .property);
@@ -549,7 +569,98 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             .step_tick => should_step_now = true,
             .walk_player => |wp_id| {
                 _ = try spatial.walk_to(gabriel, wp_id);
-                window.set_cue_banner("Directing Gabriel to waypoint.", 60);
+                if (wp_id == corridor_wp and vm.current_scene == hotel_scene) {
+                    try vm.transition_to_scene(garden_scene);
+                    _ = try spatial.transition_actor(gabriel, garden_scene, garden_path_wp);
+                    window.set_cue_banner("Stepped outside into the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
+                } else if (wp_id == cat_wp and vm.current_scene == garden_scene) {
+                    try vm.transition_to_scene(shop_scene);
+                    _ = try spatial.transition_actor(gabriel, shop_scene, shop_ent_wp);
+                    window.set_cue_banner("Walked into Madame Buthane's Bike Rental Shop. [H] Hotel [G] Garden", 120);
+                } else if (wp_id == shop_ent_wp and vm.current_scene == shop_scene) {
+                    try vm.transition_to_scene(hotel_scene);
+                    _ = try spatial.transition_actor(gabriel, hotel_scene, r25_wp);
+                    window.set_cue_banner("Returned to the Hotel Corridor. [G] Garden [B] Shop", 120);
+                } else {
+                    window.set_cue_banner("Directing Gabriel to waypoint.", 60);
+                }
+            },
+            .combine_inventory_items => |comb| {
+                const frame = display_bridge.get_frame();
+                if (comb.primary_index < frame.inventory_count and comb.secondary_index < frame.inventory_count) {
+                    const item_a = frame.inventory[comb.primary_index].get_name();
+                    const item_b = frame.inventory[comb.secondary_index].get_name();
+
+                    if ((std.mem.eql(u8, item_a, "Marker") and std.mem.eql(u8, item_b, "MoselyPassport")) or
+                        (std.mem.eql(u8, item_a, "MoselyPassport") and std.mem.eql(u8, item_b, "Marker")))
+                    {
+                        try world.remember(gabriel, passport_mod_rel, 1, 0);
+                        window.set_cue_banner("★ Step 2: Drew a magnificent moustache on Mosely's passport photo! ★", 150);
+                    } else if ((std.mem.eql(u8, item_a, "Syrup") and std.mem.eql(u8, item_b, "CatHair")) or
+                               (std.mem.eql(u8, item_a, "CatHair") and std.mem.eql(u8, item_b, "Syrup")))
+                    {
+                        try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
+                        try world.remember(gabriel, sticky_lip_rel, 1, 0);
+                        _ = world.forget(gabriel, carries_rel, cat_hair_ent.to_int());
+                        window.set_cue_banner("★ Step 6: Applied warm breakfast syrup and crafted Cat Moustache! ★", 150);
+                    } else {
+                        var buf: [96]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "You can't combine {s} with {s}.", .{ item_a, item_b }) catch "Can't combine";
+                        window.set_cue_banner(msg, 90);
+                    }
+                }
+            },
+            .use_inventory_on_actor => |act| {
+                const frame = display_bridge.get_frame();
+                if (act.item_index < frame.inventory_count and act.actor_index < frame.entity_count) {
+                    const item_name = frame.inventory[act.item_index].get_name();
+                    const actor_name = frame.entities[act.actor_index].get_name();
+
+                    if (std.mem.eql(u8, item_name, "SprayBottle") and std.mem.eql(u8, actor_name, "StrayCat")) {
+                        if (world.has_fact(fence_hole, taped_rel, null)) {
+                            try world.remember(stray_cat, startled_rel, 1, 0);
+                            try world.remember(fence_hole, fence_hair_rel, 1, 0);
+                            _ = try spatial.walk_to(stray_cat, fence_wp);
+                            window.set_cue_banner("★ Step 4: SQUIRT! Cat bolted through fence! Strip of fur left on tape! ★", 180);
+                        } else {
+                            window.set_cue_banner("Gabriel: \"Squirting the cat now won't help; the fence hole isn't taped!\"", 120);
+                        }
+                    } else if (std.mem.eql(u8, item_name, "CatMoustache") and std.mem.eql(u8, actor_name, "Gabriel")) {
+                        if (world.has_fact(gabriel, passport_mod_rel, null)) {
+                            try world.remember(gabriel, disguised_rel, 1, 0);
+                            window.set_cue_banner("★ Step 7: Gabriel is now fully DISGUISED as detective Mosely! ★", 180);
+                        } else {
+                            window.set_cue_banner("Gabriel: \"I've got the moustache, but Mosely's passport photo still has no moustache!\"", 120);
+                        }
+                    } else {
+                        var buf: [96]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, actor_name }) catch "No effect";
+                        window.set_cue_banner(msg, 90);
+                    }
+                }
+            },
+            .use_inventory_on_hotspot => |hs_act| {
+                const frame = display_bridge.get_frame();
+                if (hs_act.item_index < frame.inventory_count and hs_act.hotspot_index < frame.hotspot_count) {
+                    const item_name = frame.inventory[hs_act.item_index].get_name();
+                    const hs_name = frame.hotspots[hs_act.hotspot_index].get_name();
+
+                    if (std.mem.eql(u8, item_name, "MaskingTape") and std.mem.indexOf(u8, hs_name, "Hole") != null) {
+                        try world.remember(fence_hole, taped_rel, 1, 0);
+                        window.set_cue_banner("★ Step 3: Stretched sticky masking tape across the fence hole! ★", 150);
+                    } else if (std.mem.indexOf(u8, hs_name, "Door") != null) {
+                        if (!world.has_fact(gabriel, carries_rel, passport_ent.to_int())) {
+                            try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
+                            window.set_cue_banner("★ Step 1: Reached into Mosely's room and snatched his passport! ★", 150);
+                        } else {
+                            window.set_cue_banner("Gabriel: \"I already have Mosely's passport.\"", 90);
+                        }
+                    } else {
+                        var buf: [96]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, hs_name }) catch "No effect";
+                        window.set_cue_banner(msg, 90);
+                    }
+                }
             },
             .examine_hotspot => |hs_idx| {
                 const frame = display_bridge.get_frame();
@@ -610,21 +721,25 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     const hname = hs.get_name();
                     if (std.mem.indexOf(u8, hname, "Door") != null) {
                         try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
-                        window.set_cue_banner("★ Snatched Mosely's passport from Room 33! ★", 120);
+                        window.set_cue_banner("★ Step 1: Snatched Mosely's passport from Room 33! ★", 150);
                     } else if (std.mem.indexOf(u8, hname, "Hole") != null) {
                         if (world.has_fact(fence_hole, fence_hair_rel, null)) {
                             try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
                             _ = world.forget(fence_hole, fence_hair_rel, null);
                             _ = world.forget(fence_hole, taped_rel, null);
-                            window.set_cue_banner("★ Peeled Cat Hair from the fence tape! ★", 120);
+                            window.set_cue_banner("★ Step 5: Peeled Cat Hair from the fence tape into inventory! ★", 150);
+                        } else if (world.has_fact(fence_hole, taped_rel, null)) {
+                            window.set_cue_banner("Masking tape is stretched across the fence hole. Need to squirt the cat!", 120);
                         } else {
                             window.set_cue_banner("Fence hole: Low escape passage through the wooden fence.", 90);
                         }
+                    } else if (std.mem.indexOf(u8, hname, "Desk") != null) {
+                        window.set_cue_banner("Room Desk: You already have the tape, marker, syrup, and spray bottle in inventory.", 120);
                     } else if (std.mem.indexOf(u8, hname, "Motorcycle") != null) {
                         if (evaluate_puzzle_victory(&world)) {
-                            window.set_cue_banner("★ Victory! Cruising into the French countryside on Mosely's bike! ★", 180);
+                            window.set_cue_banner("★ VICTORY! Cruising into the French countryside on Mosely's bike! ★", 180);
                         } else {
-                            window.set_cue_banner("Reserved for detective Franklin Mosely. Need keys from Buthane.", 90);
+                            window.set_cue_banner("Vintage motorcycle: Reserved for detective Mosely. Talk to Madame Buthane!", 120);
                         }
                     }
                 }

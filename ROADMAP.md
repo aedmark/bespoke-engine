@@ -117,3 +117,43 @@ Goal: Implement the complete *Gabriel Knight 3* Rennes-le-Château Cat Moustache
 - [x] P14-02 Visual renderer backdrop for Rennes-le-Château (hotel corridor, garden fence, bike rental desk) and custom actor tokens (Gabriel in trench coat, Mosely, Buthane, Stray Cat). (D-008, D-009, D-012, D-014, D-016; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
 - [x] P14-03 CLI option `--gk3` / `--cat-moustache` with end-to-end headless simulation verification and interactive 60 Hz playability with time-travel rewind. (D-001, D-008, D-011, D-016; completed 2026-11-06, verified via `zig build run -- --gk3 --headless` and `zig build test`)
 
+## Phase 15: Standalone Script File Execution & Compiler CLI
+
+Goal: Support executing external `.bespoke` scenario files directly from disk via CLI, with script file parsing, syntax verification, and optional bytecode binary compilation.
+
+- [ ] P15-01 CLI script runner (`bespoke run <script.bespoke>`) parsing and compiling external text files from the host filesystem in both headless and GUI modes. (D-001, D-002)
+- [ ] P15-02 Bytecode binary emission and standalone asset loader (`bespoke compile <script.bespoke> -o game.bspk`), serializing and deserializing compiled bytecode chunks with versioning and validation. (D-002)
+- [ ] P15-03 Script diagnostics and validation tooling (`bespoke check <script.bespoke>`) with file, line, and column error reporting. (D-002)
+
+## Phase 16: Peripheral Audio Subsystem & Procedural Sound Synthesizer
+
+Goal: Connect an SDL2 audio peripheral callback to the `DisplayBridge` cue stream, synthesizing procedural chiptune sound effects and background musical melodies triggered by simulation cues.
+
+- [ ] P16-01 Audio bridge buffer and peripheral audio consumer in `src/display.zig` consuming audio cue events decoupled from simulation ticks. (D-001)
+- [ ] P16-02 Procedural square-wave and noise sound synthesizer in pure Zig (zero audio asset dependencies) for action SFX (footsteps, pickups, splashes, alert stingers). (D-001)
+- [ ] P16-03 Scene background musical accompaniment with track switching triggered on scene transitions and narrative dramatic shifts. (D-001, D-014)
+
+## Phase 17: Persistent Save/Load Disk Storage & Slot Management
+
+Goal: Extend memory snapshot serialization to disk files, providing durable save/load slot management with metadata headers and in-engine UI.
+
+- [ ] P17-01 File-backed save state format (`.sav`) with versioning, CRC32 integrity checksums, and metadata headers (playtime, tick, scene, thumbnail/frame snapshot). (D-001, D-003)
+- [ ] P17-02 Slot management API supporting numbered save slots, quick-save, quick-load, and corrupted save recovery. (D-003)
+- [ ] P17-03 In-engine save/load drawer and pause menu overlay integrated into the SDL2 renderer. (D-008, D-011)
+
+## Phase 18: Systemic Emergent Simulation Sandbox ("The Living Village")
+
+Goal: Implement a multi-agent systemic emergent simulation sandbox in `src/village.zig` demonstrating dozens of autonomous NPCs driven by relational needs, social memory, property ownership, and emergent justice cascades.
+
+- [ ] P18-01 Village relational schema and autonomous NPC drive system: physiological needs (Hunger, Energy), emotional states, and social relationships (Friend, Rival, Trust) updated via continuous relational rules. (D-003, D-007, D-010)
+- [ ] P18-02 Emergence engine: systemic crime, witness detection, rumor propagation, property theft, and autonomous sheriff investigation/arrest cascades. (D-004, D-010)
+- [ ] P18-03 Village spatial topology and settlement visualization: multi-building settlement (bakery, tavern, houses, sheriff's post, farm, town square) with live social graph HUD and event chronicle. (D-005, D-008, D-011)
+
+## Phase 19: WebAssembly & HTML5 Canvas Browser Target
+
+Goal: Compile BeSpoke Engine to WebAssembly using Zig's cross-compilation toolchain, rendering to an HTML5 canvas and embedding interactive simulations directly into the 3x documentation.
+
+- [ ] P19-01 Zig build target and runtime harness for `wasm32-freestanding` or Emscripten with WebGL/Canvas rendering. (D-001)
+- [ ] P19-02 Browser event bridge mapping mouse, keyboard, and touch events to BeSpoke motor and dialogue intents. (D-008)
+- [ ] P19-03 Interactive embedded manual simulator hosting live BeSpoke vertical slices inside `docs/manual.html`. (D-001, D-011)
+
