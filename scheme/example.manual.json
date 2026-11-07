@@ -1,0 +1,77 @@
+{
+  "$schema": "./manual.schema.json",
+  "project": {
+    "name": "Orbit Notes",
+    "short_name": "Orbit",
+    "version": "0.1.0",
+    "repository": "https://example.com/orbit-notes"
+  },
+  "manual": {
+    "title": "{{project.name}} Manual",
+    "subtitle": "A small example of the 3x documentation scheme",
+    "description": "This manual documents behavior, implementation, and rationale together. Search by a concept, tag, or evidence target.",
+    "badges": ["Release {{project.version}}", "Offline-first", "Example"],
+    "footer": "{{project.name}} {{project.version}} · Built with the 3x Documentation Scheme",
+    "reviewed": {
+      "date": "2026-11-04",
+      "commit": "ff8836491687",
+      "interval_days": 3650
+    }
+  },
+  "theme": {
+    "accent": "#38bdf8",
+    "accent_secondary": "#a855f7",
+    "icon": "◎"
+  },
+  "sections": [
+    {
+      "id": "foundations",
+      "title": "Foundations",
+      "description": "Start with the product contract and the architectural boundary that supports it.",
+      "entries": [
+        {
+          "id": "local-notebooks",
+          "title": "Local notebooks",
+          "summary": "Notes remain usable without a network connection.",
+          "tags": ["user-facing", "storage"],
+          "what": "Creates, edits, and searches notebooks on the current device. Changes are available immediately and survive an application restart.",
+          "how": {
+            "lead": "The write path crosses three explicit boundaries:",
+            "points": [
+              "The editor emits an immutable note revision.",
+              "The repository validates and writes the revision in one local transaction.",
+              "A background worker later sends unsynchronized revisions to the remote API."
+            ]
+          },
+          "why": "Local-first writes keep the editing path independent from latency and availability. The trade-off is an explicit conflict policy during synchronization.",
+          "why_basis": "observed",
+          "evidence": [
+            {"label": "Notebook repository", "target": "src/notebooks/repository.ts", "kind": "source"},
+            {"label": "Offline acceptance test", "target": "tests/offline-edit.spec.ts", "kind": "test"}
+          ],
+          "related": ["sync-conflicts"]
+        },
+        {
+          "id": "sync-conflicts",
+          "title": "Synchronization conflicts",
+          "summary": "Concurrent revisions are retained until they can be reconciled.",
+          "tags": ["workflow", "reliability"],
+          "synopsis": "POST /v1/revisions",
+          "what": [
+            "Detects when two devices edit the same base revision.",
+            "Preserves both versions and asks the user to choose or merge them."
+          ],
+          "how": [
+            "The server compares each revision's parent identifier with its current head.",
+            "A mismatch creates sibling heads instead of overwriting either revision.",
+            "The client renders the siblings in the conflict resolver."
+          ],
+          "why": "Silent last-write-wins behavior can destroy work. Retaining both heads makes the inconsistency visible and recoverable, at the cost of occasional user intervention.",
+          "why_basis": "inferred",
+          "evidence": [{"label": "Conflict policy decision", "target": "docs/decisions/0004-conflict-policy.md", "kind": "decision"}],
+          "related": ["local-notebooks"]
+        }
+      ]
+    }
+  ]
+}

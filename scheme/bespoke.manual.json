@@ -1,0 +1,779 @@
+{
+  "$schema": "./manual.schema.json",
+  "project": {
+    "name": "BeSpoke Engine",
+    "short_name": "BeSpoke",
+    "version": "0.1.0-dev",
+    "repository": "https://github.com/aedmark/bespoke-engine"
+  },
+  "manual": {
+    "title": "BeSpoke Engine Architecture & Developer Guide",
+    "subtitle": "The 3x What/How/Why manual and developer guide for the Engine-as-Spine narrative simulation runtime",
+    "description": "BeSpoke is a bespoke game development language and standalone simulation engine written in pure Zig, designed from the ground up for systemic, emergent, and narrative game simulations. Every component, pipeline, and architectural decision is documented with its behavior (What), mechanism (How), and design intent (Why).",
+    "badges": [
+      "Engine-as-Spine",
+      "Developer Guide",
+      "Pure Zig 0.13.0",
+      "Zero Dependencies",
+      "Deterministic 60 Hz",
+      "3x Documented"
+    ],
+    "footer": "BeSpoke Engine {{project.version}} · Engine-as-Spine Narrative Simulation · Zero External Dependencies",
+    "reviewed": {
+      "date": "2026-11-06",
+      "commit": "498aa70",
+      "by": "BeSpoke Core Team",
+      "interval_days": 180
+    }
+  },
+  "theme": {
+    "accent": "#f59e0b",
+    "accent_secondary": "#38bdf8",
+    "icon": "⚔"
+  },
+  "sections": [
+    {
+      "id": "core-principles",
+      "title": "Core Architecture & Principles",
+      "description": "Foundational architectural decisions defining the simulation engine boundary, clock model, and memory layout.",
+      "entries": [
+        {
+          "id": "engine-as-spine",
+          "title": "Engine-as-Spine Architecture",
+          "summary": "The simulation VM is main() and owns the master clock, entities, and state, treating graphics engines strictly as peripherals.",
+          "synopsis": "pub fn main() !void { var world = World.init(...); var vm = VM.init(...); while (running) { vm.step_tick(); bridge.capture_frame(); } }",
+          "tags": ["architecture", "spine", "tenet"],
+          "what": "Inverts the traditional game engine model: rather than embedding a scripting language as a guest plugin inside Unity or Godot, BeSpoke is the host spine that owns simulation state, rules, pathfinding, and narrative logic, publishing read-only render frames to peripheral presentation layers.",
+          "how": [
+            "src/main.zig drives the master simulation loop, allocating the World arena and SpatialSystem.",
+            "The Virtual Machine steps discrete simulation ticks at a fixed frequency (e.g. 20 Hz or 60 Hz).",
+            "DisplayBridge captures double-buffered snapshot frames (RenderFrame) containing entities, waypoints, and dialogue.",
+            "Peripheral display renderers (like SDL2 or headless runners) read double-buffered frames and deliver input intents as UserAction events."
+          ],
+          "why": "Embedded scripting plugins in commercial game engines suffer from frame-rate dependent logic bugs, garbage collection spikes, non-deterministic state serialization, and tight coupling to rendering backends. Owning the spine ensures 100% deterministic, headless testability and seamless time-travel rewind.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
+            {"label": "Engine Main Entrypoint", "target": "src/main.zig", "kind": "source"},
+            {"label": "System Architecture Specification", "target": "docs/ARCHITECTURE.md", "kind": "document"}
+          ],
+          "related": ["discrete-tick-clock", "contiguous-arena-memory", "snapshot-time-travel"]
+        },
+        {
+          "id": "discrete-tick-clock",
+          "title": "Discrete Simulation Tick Clock",
+          "summary": "Simulation state advances strictly in integer ticks without floating-point delta accumulation.",
+          "synopsis": "pub fn step_tick(self: *VM) !void { self.world.current_tick += 1; ... }",
+          "tags": ["timing", "determinism", "simulation"],
+          "what": "Governs all motor movement, TTL fact expirations, fiber waits, and reactive rule edges using integer tick counters rather than floating-point delta seconds (dt).",
+          "how": [
+            "VM.step_tick() increments World.current_tick by 1 on each discrete simulation step.",
+            "Fact TTLs decay by integer ticks and are automatically pruned when current_tick exceeds expires_at_tick.",
+            "Fibers suspended via wait_ticks or wait_until wake up when the integer tick target is met.",
+            "Visual renderers interpolate fractional positions between consecutive ticks for smooth 60 Hz screen motion."
+          ],
+          "why": "Floating-point delta time introduces accumulation errors, platform-dependent rounding discrepancies, and non-deterministic divergence that destroys replayability and networking. Integer ticks make simulation states bit-for-bit identical across runs.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
+            {"label": "VM Step Implementation", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Canonical Agent Instructions", "target": "AGENTS.md", "kind": "document"}
+          ],
+          "related": ["engine-as-spine", "snapshot-time-travel", "fiber-scheduler"]
+        },
+        {
+          "id": "contiguous-arena-memory",
+          "title": "Contiguous Arena Allocation & Zero Raw Pointers",
+          "summary": "World state is stored in a contiguous byte arena with zero internal pointers, enabling instant memcpy snapshots.",
+          "synopsis": "pub const World = struct { arena: std.heap.ArenaAllocator, facts: std.MultiArrayList(Fact), ... }",
+          "tags": ["memory", "performance", "serialization"],
+          "what": "Houses all simulation entities, relations, and fact rows in contiguous array allocations, referencing entities and strings by integer handles rather than raw virtual memory addresses.",
+          "how": [
+            "World initializes an arena allocator with a fixed reserve (e.g. 1 MB).",
+            "Facts are stored in Structure-of-Arrays layout via std.MultiArrayList(Fact) with subject, relation, object, and expires_at columns.",
+            "Entities are typed 32-bit handles (EntityId) indexing interned string tables.",
+            "Serialization (save_state and restore_state) writes and reads raw memory buffers with CRC32 checksums."
+          ],
+          "why": "Raw pointers break across processes, prevent binary snapshot persistence, and cause cache misses during bulk queries. Contiguous array arenas maximize CPU cache line locality and allow instant memory rewind with zero deserialization overhead.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-003", "target": "docs/DECISIONS.md#d-003", "kind": "decision"},
+            {"label": "Architectural Decision D-006", "target": "docs/DECISIONS.md#d-006", "kind": "decision"},
+            {"label": "World Relational Storage", "target": "src/world.zig", "kind": "source"}
+          ],
+          "related": ["relational-facts", "snapshot-time-travel"]
+        },
+        {
+          "id": "zero-external-dependencies",
+          "title": "Zero External Dependencies Policy",
+          "summary": "The core simulation runtime, compiler, and VM require zero external C or package dependencies beyond pure Zig.",
+          "synopsis": "build.zig: exe = b.addExecutable(.{ .name = \"bespoke\", .root_source_file = b.path(\"src/main.zig\") });",
+          "tags": ["dependencies", "toolchain", "portability"],
+          "what": "Guarantees that the compiler, relational database, bytecode VM, pathfinding, and REPL build and run out-of-the-box on any Linux, macOS, or Windows target with only the Zig 0.13+ compiler.",
+          "how": [
+            "The compiler front-end uses custom recursive-descent lexing and Pratt parsing written from scratch.",
+            "Display rendering optionally links SDL2 as a peripheral consumer, but falls back seamlessly to headless terminal mode if unavailable.",
+            "Documentation tools rely exclusively on the Python 3 standard library."
+          ],
+          "why": "Heavy third-party package dependencies create fragile build pipelines, security supply chain risks, and platform incompatibilities. Zero-dependency design keeps BeSpoke lean, auditable, and easily embeddable.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Canonical Agent Instructions", "target": "AGENTS.md", "kind": "spec"},
+            {"label": "Foundational Design Vision", "target": "whitepaper.md", "kind": "spec"},
+            {"label": "Build System Configuration", "target": "build.zig", "kind": "source"}
+          ],
+          "related": ["engine-as-spine", "test-verification-hierarchy"]
+        }
+      ]
+    },
+    {
+      "id": "relational-spine",
+      "title": "Relational World Database & State",
+      "description": "The flat 4-tuple relational knowledge graph that drives systemic entity behaviors and world state.",
+      "entries": [
+        {
+          "id": "relational-facts",
+          "title": "Flat 4-Tuple Relational Facts",
+          "summary": "World state is composed of relational rows: (subject, relation, object, expires_at_tick).",
+          "synopsis": "pub const Fact = struct { subject: EntityId, relation: RelationId, object: i32, expires_at: u64 };",
+          "tags": ["facts", "relational", "state"],
+          "what": "Replaces traditional object-oriented properties and component hierarchies with flat relational fact tuples representing systemic knowledge, inventory possession, spatial co-location, and emotional states.",
+          "how": [
+            "Facts are asserted via World.remember(subject, relation, object, ttl_ticks).",
+            "Facts are retracted via World.forget(subject, relation, object).",
+            "TTL decay: when ttl_ticks > 0, expires_at is set to current_tick + ttl_ticks.",
+            "Pruning: World.prune_expired() scans the facts list at the start of each tick, recording expired rows into a recently_expired ring buffer for expiration hooks."
+          ],
+          "why": "OOP class hierarchies create rigid coupling where adding a new emergent interaction requires modifying multiple classes. Relational facts decouple subjects from attributes, enabling dynamic pattern queries without schema migrations.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-006", "target": "docs/DECISIONS.md#d-006", "kind": "decision"},
+            {"label": "Architectural Decision D-007", "target": "docs/DECISIONS.md#d-007", "kind": "decision"},
+            {"label": "World Fact Implementation", "target": "src/world.zig", "kind": "source"}
+          ],
+          "related": ["functional-property-overwrite", "relational-joins-and-pattern-matching", "ttl-expiration-triggers"]
+        },
+        {
+          "id": "functional-property-overwrite",
+          "title": "Functional Single-Value Property Overwrite",
+          "summary": "Relations marked as functional auto-overwrite previous values on assertion.",
+          "synopsis": "const carries = try world.intern_relation(\"Carries\", .set); try world.remember(actor, carries, item, 0);",
+          "tags": ["relations", "functional", "properties"],
+          "what": "Distinguishes between multi-valued relations (e.g. FriendsWith, KnowsSecret) and single-valued functional properties (e.g. Carries, CurrentRoom, Health), automatically retracting old values when a new value is remembered.",
+          "how": [
+            "Relations are registered with RelationKind (.set for functional single-value, .bag for multi-value).",
+            "When World.remember is called on a .set relation, World scans for any existing fact matching (subject, relation, _) and overwrites its object and expiry in place.",
+            "Ensures an entity cannot simultaneously occupy multiple rooms or hold mutually exclusive single states."
+          ],
+          "why": "Without functional auto-overwrite, script authors would be forced to manually write pair-wise forget statements before every state change, introducing subtle desynchronization bugs when forgetting is overlooked.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-007", "target": "docs/DECISIONS.md#d-007", "kind": "decision"},
+            {"label": "World Property Overwrite Tests", "target": "src/world.zig", "kind": "source"}
+          ],
+          "related": ["relational-facts", "stageplay-taxonomy"]
+        },
+        {
+          "id": "relational-joins-and-pattern-matching",
+          "title": "Multi-Clause Relational Joins & Unification",
+          "summary": "Evaluates conjunctive fact patterns across active simulation state with backtracking variable unification.",
+          "synopsis": "where CharmedBy(victim, _) and Carries(victim, loot)",
+          "tags": ["query", "pattern-matcher", "unification"],
+          "what": "Queries active relational facts using multi-clause patterns joined by 'and', binding wildcard variables (e.g. victim, loot) and returning matching entity tuples.",
+          "how": [
+            "World.find_first_match, has_multi_match, and find_all_matches accept arrays of PatternClause.",
+            "Terms can be concrete entities, wildcards, or named variables (PatternTerm.variable).",
+            "VariableBindings maintains a scoped mapping of bound entity identifiers.",
+            "A backtracking search resolves multi-variable joins across facts in the contiguous MultiArrayList."
+          ],
+          "why": "Systemic games require querying complex social and physical arrangements (e.g. 'Is an alert guard standing in the same room as a distracted thief carrying gold?'). First-class unification eliminates hardcoded conditional checks.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-010", "target": "docs/DECISIONS.md#d-010", "kind": "decision"},
+            {"label": "Pattern Matcher Implementation", "target": "src/world.zig", "kind": "source"}
+          ],
+          "related": ["continuous-when-rules", "relational-facts"]
+        },
+        {
+          "id": "snapshot-time-travel",
+          "title": "CRC32 Snapshots & Time-Travel Rewind",
+          "summary": "Instantaneous serialization and deserialization of complete simulation state with CRC32 integrity checks.",
+          "synopsis": "try world.save_state(writer); ... try world.restore_state(reader);",
+          "tags": ["time-travel", "snapshots", "rewind"],
+          "what": "Captures the entire relational world state into an in-memory byte buffer on each tick, allowing players and developers to scrub backward or forward across history instantaneously.",
+          "how": [
+            "World.save_state serializes tick count, interned entity names, relations, and fact columns, appending a CRC32 checksum.",
+            "World.restore_state verifies the CRC32 checksum, clears the current arena, and restores memory in-place.",
+            "DisplayBridge captures a fresh render frame immediately after restore to synchronize peripheral visualization.",
+            "When simulation advances after scrubbing into the past, divergent future snapshots are automatically pruned."
+          ],
+          "why": "Debugging systemic simulation bugs requires reproducing non-deterministic edge cases. Snapshot rewind lets developers scrub directly to the tick where a state transition occurred, inspect facts, and test alternative actions.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
+            {"label": "Architectural Decision D-003", "target": "docs/DECISIONS.md#d-003", "kind": "decision"},
+            {"label": "State Serialization", "target": "src/world.zig", "kind": "source"},
+            {"label": "Interactive Scrubber Consumer", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["interactive-timeline-scrubber", "contiguous-arena-memory"]
+        }
+      ]
+    },
+    {
+      "id": "compiler-and-vm",
+      "title": "Compiler Pipeline & Bytecode Virtual Machine",
+      "description": "Source-to-bytecode compilation, stack VM execution, cooperative fibers, and cue dispatching.",
+      "entries": [
+        {
+          "id": "bytecode-vm-and-chunk",
+          "title": "Bytecode Instruction Set & Stack Machine",
+          "summary": "Compact stack-based virtual machine executing variable-length bytecode chunks.",
+          "synopsis": "pub const Opcode = enum(u8) { push_const, remember, forget, wait_ticks, call_routine, emit_cue, halt, ... };",
+          "tags": ["vm", "bytecode", "opcodes"],
+          "what": "Executes compiled BeSpoke programs via a compact bytecode interpreter supporting constants, relational mutations, math, routine calls, cues, and control flow.",
+          "how": [
+            "BytecodeChunk stores an array of byte opcodes and a pool of 32-bit constants.",
+            "VM evaluates instructions using an operand stack per fiber.",
+            "Relational opcodes (op_remember, op_forget, op_query) operate directly on the World database.",
+            "Execution is bounded per tick by max_steps_per_fiber to prevent runaway loops from freezing the engine."
+          ],
+          "why": "Direct AST evaluation has poor cache locality and high tree-walking overhead. A flat bytecode chunk executes in a tight loop and allows serialization of fiber instruction pointers.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-004", "target": "docs/DECISIONS.md#d-004", "kind": "decision"},
+            {"label": "Bytecode Instruction Definitions", "target": "src/bytecode.zig", "kind": "source"},
+            {"label": "VM Interpretation Loop", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["fiber-scheduler", "compiler-pipeline"]
+        },
+        {
+          "id": "fiber-scheduler",
+          "title": "Cooperative Fiber Scheduler & Temporal Suspension",
+          "summary": "Fiber-based routine execution suspended across ticks via wait_ticks and wait_until.",
+          "synopsis": "pub const Fiber = struct { id: FiberId, entity: EntityId, ip: usize, wait_ticks: u32, ... };",
+          "tags": ["fibers", "scheduler", "concurrency"],
+          "what": "Executes actor routines concurrently within a single simulation thread using lightweight fibers that yield voluntarily when waiting for time or events.",
+          "how": [
+            "VM maintains an active list of Fiber descriptors, each with its own instruction pointer, call stack, and operand stack.",
+            "Instructions like wait_ticks set fiber.wait_ticks, suspending the fiber until the specified tick delay elapses.",
+            "wait_until evaluates a relational condition pattern each tick and resumes when satisfied.",
+            "On each simulation tick, VM steps all active, non-waiting fibers up to their yield points."
+          ],
+          "why": "Operating system threads introduce non-deterministic race conditions, locks, and heavy memory overhead. Cooperative fibers are 100% deterministic, pause with zero CPU cost, and can be serialized cleanly.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-004", "target": "docs/DECISIONS.md#d-004", "kind": "decision"},
+            {"label": "Fiber Scheduler Implementation", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["bytecode-vm-and-chunk", "discrete-tick-clock"]
+        },
+        {
+          "id": "compiler-pipeline",
+          "title": "Recursive-Descent Lexer, Parser & Codegen",
+          "summary": "Compiles high-level narrative DSL script text directly into bytecode chunks and reactive rule tables.",
+          "synopsis": "pub fn compile_source(allocator: Allocator, world: *World, spatial: ?*SpatialSystem, source: []const u8) !CompiledProgram",
+          "tags": ["compiler", "lexer", "parser", "codegen"],
+          "what": "Transforms plain-text BeSpoke game scripts into executable bytecode, registering entities, relations, stage marks, hotspots, routines, cue handlers, and reactive when rules.",
+          "how": [
+            "src/compiler/lexer.zig scans source into tokens, handling Python-style indentation (indent/dedent), keywords, and comments.",
+            "src/compiler/parser.zig builds an Abstract Syntax Tree (ProgramAst) containing routines, cues, stageplay declarations, and rules.",
+            "src/compiler/codegen.zig lowers the AST into BytecodeChunk instructions, populates entry-point lookup tables, and builds CompiledWhenRule arrays."
+          ],
+          "why": "Writing narrative simulations in raw Zig or assembly is tedious for game designers. The BeSpoke DSL provides clean theatrical syntax while compiling to zero-overhead bytecode.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-002", "target": "docs/DECISIONS.md#d-002", "kind": "decision"},
+            {"label": "Lexer Implementation", "target": "src/compiler/lexer.zig", "kind": "source"},
+            {"label": "Parser Implementation", "target": "src/compiler/parser.zig", "kind": "source"},
+            {"label": "Code Generator Implementation", "target": "src/compiler/codegen.zig", "kind": "source"}
+          ],
+          "related": ["stageplay-taxonomy", "bytecode-vm-and-chunk"]
+        },
+        {
+          "id": "cue-dispatch-and-interruption",
+          "title": "Cue Event Dispatch & Priority Interruption",
+          "summary": "Discrete event cues trigger routine fibers with priority-tiered preemption stacks.",
+          "synopsis": "vm.fire_cue(compiled, \"Uses\", actor, target_a, target_b);",
+          "tags": ["cues", "events", "interrupts"],
+          "what": "Delivers external player interactions and systemic world events to registered cue handlers, preempting lower-priority routines and cleanly resuming them upon completion.",
+          "how": [
+            "Cues are emitted via VM.fire_cue, which looks up matching entry points in CompiledProgram.cue_handler_entries.",
+            "When an interrupt occurs (e.g. thief alert), the entity's active fiber is pushed onto an interrupt stack.",
+            "The higher-priority handler executes to completion.",
+            "Opcode resume_routine pops the interrupted fiber state, restoring its instruction pointer and continuing its original routine."
+          ],
+          "why": "Standard event callbacks discard context, forcing actors to restart tasks from scratch after an interruption. Priority stacks let NPCs react urgently to emergencies and then smoothly resume their previous actions.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-004", "target": "docs/DECISIONS.md#d-004", "kind": "decision"},
+            {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
+            {"label": "VM Cue Dispatcher", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["commutative-item-combining", "priority-rule-cascades"]
+        },
+        {
+          "id": "commutative-item-combining",
+          "title": "Two-Operand Inventory Combining & Commutative Cues",
+          "summary": "Supports 3-argument in-hand item combinations with automatic commutative parameter matching.",
+          "synopsis": "on cue Uses(Player, ItemA, ItemB): ... // Matches ItemA on ItemB and ItemB on ItemA",
+          "tags": ["inventory", "combining", "cues", "crafting"],
+          "what": "Enables classic adventure game item combining in hand (e.g. using MapleSyrup with CatHairTape) where applying item A to B is functionally identical to applying B to A.",
+          "how": [
+            "Codegen registers composite signature keys: Uses:Actor:ItemA:ItemB and the commutative permutation Uses:Actor:ItemB:ItemA.",
+            "CompiledProgram.find_cue_handler checks ternary commutative signatures, falling back to binary and unary forms.",
+            "VM.fire_cue resolves entities, matches the handler PC, records an EmittedCue for display peripherals, and spawns the executing routine.",
+            "DisplayWindow tracks selected_inventory_item, highlighting the tray item and emitting combine_inventory_items on a second item click."
+          ],
+          "why": "Requiring narrative designers to author two identical script handlers for every combination is error-prone and redundant. Built-in commutativity guarantees symmetric interaction.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-013", "target": "docs/DECISIONS.md#d-013", "kind": "decision"},
+            {"label": "Codegen Signature Resolution", "target": "src/compiler/codegen.zig", "kind": "source"},
+            {"label": "VM Cue Trigger", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Renderer Combining UX", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["in-hand-inventory-crafting", "cue-dispatch-and-interruption"]
+        }
+      ]
+    },
+    {
+      "id": "spatial-topology",
+      "title": "Spatial System & Navigation",
+      "description": "2D topological waypoint graphs, discrete room graphs, A* pathfinding, and screen layout algorithms.",
+      "entries": [
+        {
+          "id": "waypoint-room-graph",
+          "title": "Waypoint Node Graphs & Topological Pathfinding",
+          "summary": "Spatial environments are modeled as discrete 2D waypoint graphs with A* shortest-path routing.",
+          "synopsis": "pub const WaypointGraph = struct { waypoints: std.ArrayList(Waypoint), edges: std.ArrayList(Edge), ... };",
+          "tags": ["spatial", "waypoints", "pathfinding", "a-star"],
+          "what": "Defines rooms and navigable ground locations as integer-coordinate waypoint nodes connected by bidirectional edges, calculating walking paths via discrete A* search.",
+          "how": [
+            "SpatialGraph stores waypoints with room IDs, integer coordinates (x, y), and names.",
+            "Edges represent unobstructed walking paths between waypoints.",
+            "SpatialGraph.find_path computes the shortest sequence of waypoints using Manhattan/Euclidean integer heuristics.",
+            "Actors traverse edges step-by-step at discrete velocities."
+          ],
+          "why": "Continuous 3D physics sandboxes require complex collision meshes and floating-point math that destroy determinism. Topological waypoint graphs fit narrative graphic adventures perfectly and compute in sub-microsecond time.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-005", "target": "docs/DECISIONS.md#d-005", "kind": "decision"},
+            {"label": "Spatial Graph Implementation", "target": "src/spatial.zig", "kind": "source"}
+          ],
+          "related": ["asynchronous-motor-intents", "scene-hotspots-and-props"]
+        },
+        {
+          "id": "asynchronous-motor-intents",
+          "title": "Asynchronous Motor Intents & Walking",
+          "summary": "Actor movement is non-blocking and driven by motor intents updated on simulation ticks.",
+          "synopsis": "spatial.walk_to(actor, target_waypoint_id);",
+          "tags": ["movement", "motor-intent", "agents"],
+          "what": "Initiates autonomous, asynchronous movement for an agent across the waypoint graph without stalling other fibers or game simulation logic.",
+          "how": [
+            "SpatialSystem.walk_to assigns a target destination and generates a path queue for the agent.",
+            "SpatialSystem.update advances agent coordinates toward their next waypoint each tick.",
+            "When the final waypoint is reached, agent.is_moving is set to false and arrival events fire."
+          ],
+          "why": "Blocking sleep calls inside entity scripts lock the main thread. Asynchronous motor intents allow actors to navigate while continuously listening for sensory events and dialogue interruptions.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-005", "target": "docs/DECISIONS.md#d-005", "kind": "decision"},
+            {"label": "Motor Movement Logic", "target": "src/spatial.zig", "kind": "source"}
+          ],
+          "related": ["waypoint-room-graph", "visual-standoff-layout"]
+        },
+        {
+          "id": "scene-hotspots-and-props",
+          "title": "Interactive Hotspots & Scene Props",
+          "summary": "Static interactive objects in the environment with spatial hitboxes, examination text, and verb hooks.",
+          "synopsis": "spatial.register_hotspot(room, x, y, radius, \"Flags\", \"A pair of starting flags.\");",
+          "tags": ["hotspots", "props", "interaction"],
+          "what": "Registers interactive scene scenery and props (e.g. Fireplace, Wine Cask, Flags) with radial click hitboxes, examine descriptions, and verb cue triggers.",
+          "how": [
+            "SpatialSystem.register_hotspot interns the hotspot entity and stores its room, coordinates, and radius.",
+            "DisplayWindow hit-tests mouse coordinates against active hotspots via hit_test_hotspot.",
+            "Clicking a hotspot emits interact_hotspot with the active verb (.look_at, .use_with, .talk_to, .pick_up)."
+          ],
+          "why": "Treating scenery as first-class entities allows them to participate in relational facts (e.g. Tampered(Flags, 1)) and reactive when rules alongside living actors.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
+            {"label": "Hotspot Registration", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "Renderer Hotspot Hit Testing", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["waypoint-room-graph", "classic-adventure-verbs"]
+        },
+        {
+          "id": "visual-standoff-layout",
+          "title": "Actor Standoff Separation & Non-Overlapping Labels",
+          "summary": "Automated 60px horizontal separation and vertically staggered elevations prevent multi-actor text collision.",
+          "synopsis": "pub fn get_entity_screen_layout(idx: usize, entities: []const RenderEntity, w: i32, h: i32) EntityScreenLayout",
+          "tags": ["layout", "standoff", "rendering", "labels"],
+          "what": "Solves the visual crowding problem when multiple actors occupy the exact same waypoint or stage mark by applying horizontal standoff spacing and alternating vertical label heights.",
+          "how": [
+            "get_entity_screen_layout groups entities within 32 pixels into a spatial cluster.",
+            "Two co-located actors stand 60px apart (offsets -30px and +30px from the center).",
+            "Actor names stagger vertically: Rank 0 sits at -16px, Rank 1 sits higher at -32px.",
+            "Actor status tags stagger vertically: Rank 0 sits at +4px, Rank 1 sits lower at +18px.",
+            "Stage mark prompts shift +34px downward when actors occupy the mark, clearing all actor tags."
+          ],
+          "why": "In theater and adventure scenes (e.g. Guybrush and Organiser at the Starting Line), actors frequently gather at the same mark. Drawing labels at fixed coordinates produces illegible text overlap. Staggered elevation gives every string a dedicated slot.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-008", "target": "docs/DECISIONS.md#d-008", "kind": "decision"},
+            {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
+            {"label": "Layout Stagger Implementation", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["asynchronous-motor-intents", "stageplay-taxonomy"]
+        }
+      ]
+    },
+    {
+      "id": "reactive-engine",
+      "title": "Continuous Reactive Simulation Engine",
+      "description": "Autonomous pattern-matching rule cascades, edge-triggered transitions, and fact expiration hooks in the VM.",
+      "entries": [
+        {
+          "id": "continuous-when-rules",
+          "title": "Continuous When Rule Pattern Matching",
+          "summary": "Rules evaluated continuously against active world facts, automatically firing interrupts without polling.",
+          "synopsis": "when currently Wind is blowing: loop: animate wind-blowing",
+          "tags": ["reactive", "rules", "pattern-matching"],
+          "what": "Provides declarative rule evaluation inside the engine spine: whenever world state matches the rule's relational pattern, the VM triggers associated behavior routines automatically.",
+          "how": [
+            "Codegen compiles when clauses into CompiledWhenRule records with pattern clauses, priority, and entry PC.",
+            "VM.evaluate_reactive_rules checks rules on tick boundaries or following fact mutations.",
+            "Pattern matches are verified against World using multi-clause relational unification."
+          ],
+          "why": "Polling inside entity scripts creates bloated boilerplate, missed frame events, and CPU thrashing. Built-in reactive evaluation guarantees rules fire immediately when systemic conditions arise.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-010", "target": "docs/DECISIONS.md#d-010", "kind": "decision"},
+            {"label": "VM Rule Evaluation", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["edge-triggered-rules", "priority-rule-cascades"]
+        },
+        {
+          "id": "edge-triggered-rules",
+          "title": "Edge-Triggered State Transitions (Rising & Falling)",
+          "summary": "Fires rule handlers on state boundary transitions (false -> true and true -> false).",
+          "synopsis": "when Wind stops being blowing: stop animate wind-blowing",
+          "tags": ["edge-triggered", "rising-edge", "falling-edge"],
+          "what": "Distinguishes between continuous state and transitional edges, firing rising-edge handlers on positive transition and falling-edge handlers on negative transition without repeated triggers.",
+          "how": [
+            "ReactiveRule tracks was_active from the preceding tick.",
+            "Rising edge fires when was_active is false and the pattern match becomes true.",
+            "Falling edge (when X stops being Y) fires when was_active was true and the condition becomes false.",
+            "Re-arming occurs automatically once the condition clears."
+          ],
+          "why": "Continuous level-triggered rules would re-execute every tick while a condition remains true, spawning runaway fibers. Edge-triggering ensures handlers fire exactly once per state transition.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-010", "target": "docs/DECISIONS.md#d-010", "kind": "decision"},
+            {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
+            {"label": "Reactive Rule Edge Logic", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["continuous-when-rules", "ttl-expiration-triggers"]
+        },
+        {
+          "id": "ttl-expiration-triggers",
+          "title": "TTL Fact Expiration Hooks (when forgets)",
+          "summary": "Fires reactive routines when temporary timed facts expire naturally from the world database.",
+          "synopsis": "when Organiser forgets Distracted: walk Organiser to Starting Line",
+          "tags": ["ttl", "expiration", "hooks", "lifecycle"],
+          "what": "Allows scripts to react to the natural decay of temporary facts (e.g. distraction timers, charmed status, temporary alerts) without requiring manual bookkeeping or timers.",
+          "how": [
+            "When World.prune_expired removes a fact whose TTL has elapsed, it copies the row into a recently_expired buffer.",
+            "VM evaluates on_expire reactive rules against recently_expired during the tick step.",
+            "Matches trigger interrupt routines (e.g. Organiser walks back to the starting line after crowd distraction ends)."
+          ],
+          "why": "Manual timer countdown routines in scripts are error-prone and hard to synchronize with world state. Integrating expiration directly into the database engine ensures perfect temporal lifecycle hooks.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
+            {"label": "World Expiry Ring Buffer", "target": "src/world.zig", "kind": "source"},
+            {"label": "VM Expiration Rule Triggers", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["relational-facts", "edge-triggered-rules"]
+        },
+        {
+          "id": "priority-rule-cascades",
+          "title": "Priority Rule Cascades & Preemption",
+          "summary": "Rules with higher priority preempt lower-priority routines and restore them upon completion.",
+          "synopsis": "active_priority: u8, interrupt_entity_priority: [16]u8",
+          "tags": ["priority", "preemption", "interrupts"],
+          "what": "Enforces behavioral priority hierarchies among reactive rules (e.g. theft alarms supersede charming melodies, which supersede idle wandering).",
+          "how": [
+            "Each CompiledWhenRule carries a priority value (default 0, higher numbers indicate greater urgency).",
+            "VM checks if rule.priority > vm.active_priority before interrupting an entity.",
+            "The active fiber is pushed onto an interrupt stack.",
+            "When the high-priority routine completes, the VM pops the previous routine and continues execution."
+          ],
+          "why": "Without priority stacks, any incidental event could permanently overwrite a critical reaction (such as a guard failing to raise an alarm because an idle bard started playing a song).",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-010", "target": "docs/DECISIONS.md#d-010", "kind": "decision"},
+            {"label": "Priority Preemption Stacks", "target": "src/vm.zig", "kind": "source"}
+          ],
+          "related": ["continuous-when-rules", "cue-dispatch-and-interruption"]
+        }
+      ]
+    },
+    {
+      "id": "narrative-dsl",
+      "title": "Narrative DSL & Adventure UI",
+      "description": "High-level theater declarations, natural language state transitions, verb interfaces, and dialogue trees.",
+      "entries": [
+        {
+          "id": "stageplay-taxonomy",
+          "title": "Declarative Stageplay Syntax & Taxonomy",
+          "summary": "Theater-like script headers declaring scenes, cast, props, marks, and natural state assertions.",
+          "synopsis": "scene: Booty Island; cast: Guybrush, Organiser; props: Flags; marks: Starting Line",
+          "tags": ["dsl", "stageplay", "syntax"],
+          "what": "Allows authors to declare game environments using natural stageplay vocabulary (scene, cast, props, marks) and transition states using readable sentences (now Flags are tampered with).",
+          "how": [
+            "Parser registers cast members as actor agents, props as hotspots, and marks as spatial waypoints automatically.",
+            "State declarations ('now X is Y' and 'now X is not Y') are lowered directly into World.remember and World.forget operations.",
+            "Natural state queries ('if Flags are Tampered With:') compile to relational database queries."
+          ],
+          "why": "Requiring narrative designers to write low-level registration functions and numeric IDs causes cognitive friction and high bug rates. Natural stageplay syntax reads like a screenplay while compiling to fast bytecode.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
+            {"label": "Parser Stageplay Support", "target": "src/compiler/parser.zig", "kind": "source"},
+            {"label": "Booty Island Spitting Contest Script", "target": "src/spitting_contest.zig", "kind": "source"}
+          ],
+          "related": ["compiler-pipeline", "relational-facts"]
+        },
+        {
+          "id": "classic-adventure-verbs",
+          "title": "Classic 5-Verb Interaction Bar",
+          "summary": "Five classic adventure verbs: WALK, LOOK, TALK, TAKE, USE with active button highlight and right-click cycling.",
+          "synopsis": "pub const AdventureVerb = enum(u8) { walk = 0, look_at = 1, talk_to = 2, pick_up = 3, use_with = 4 };",
+          "tags": ["verbs", "ui", "interaction"],
+          "what": "Implements the foundational SCUMM-inspired adventure interface: players choose a verb via the bottom HUD bar or right-click cycling, then click objects, actors, or waypoints in the scene.",
+          "how": [
+            "DisplayWindow renders verb buttons in the bottom HUD bar, highlighting the active verb in amber gold.",
+            "Right-click cycles active_verb through the enumeration.",
+            "Left-click evaluates hit testing: waypoints trigger walk_player, actors trigger interact_actor, and hotspots trigger interact_hotspot."
+          ],
+          "why": "Direct point-and-click single-verb interfaces lack expressiveness. The 5-verb system empowers players to inspect, converse, take, and use objects systemically.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
+            {"label": "Renderer Verb Bar", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["scene-hotspots-and-props", "in-hand-inventory-crafting"]
+        },
+        {
+          "id": "branching-dialogue-balloons",
+          "title": "Branching Dialogue Trees & Speech Balloons",
+          "summary": "Temporal speech balloons with actor name tags, dialogue lines, and interactive branching choices.",
+          "synopsis": "say Actor: \"Text\"; window.show_dialogue(speaker, pos, \"Name\", \"Text\", &choices);",
+          "tags": ["dialogue", "speech", "balloons", "choices"],
+          "what": "Renders stylized parchment speech balloons anchored above talking actors with automatic text wrapping, speech tails, and clickable numbered dialogue choices.",
+          "how": [
+            "SpeechBalloon stores speaker coordinates, name, line text, and up to 3 branching choices.",
+            "Fibers calling 'say' suspend execution until the player clicks a choice or dismisses the balloon.",
+            "DisplayWindow hit_test_balloon_choice detects mouse clicks on choice buttons and emits dialogue_choice events."
+          ],
+          "why": "Terminal dialogue dumps break graphical immersion. In-world balloons associate speech directly with speaker positions and integrate player choices smoothly into the simulation clock.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
+            {"label": "Speech Balloon Rendering", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["classic-adventure-verbs", "compiler-pipeline"]
+        },
+        {
+          "id": "in-hand-inventory-crafting",
+          "title": "In-Hand Tray Selection & Crafting UX",
+          "summary": "Two-step inventory click flow with golden highlight, in-hand status prompts, and combining feedback.",
+          "synopsis": "selected_inventory_item: ?usize = null; UserAction.combine_inventory_items",
+          "tags": ["inventory", "in-hand", "crafting", "ux"],
+          "what": "Provides an intuitive point-and-click inventory crafting experience: clicking an item selects it into hand, displaying a golden glow, while subsequent clicks apply it to scene targets or combine it with another inventory item.",
+          "how": [
+            "Clicking an inventory item sets selected_inventory_item and switches verb to USE, displaying '[IN HAND: Item]' and banner prompts.",
+            "The selected item renders with an amber background (rgb 85, 65, 25) and a glowing golden double border (rgb 250, 204, 21).",
+            "Clicking a different item emits combine_inventory_items.",
+            "Clicking an actor emits use_inventory_on_actor; clicking a hotspot emits use_inventory_on_hotspot.",
+            "Right-click cancels in-hand mode with an 'Action cancelled' banner."
+          ],
+          "why": "Classic multi-step puzzles (like the GK3 Cat Moustache) require crafting composite items before using them in the world. Visual in-hand indicators make the player's intent crystal clear.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-013", "target": "docs/DECISIONS.md#d-013", "kind": "decision"},
+            {"label": "Renderer Inventory Tray", "target": "src/display/renderer.zig", "kind": "source"},
+            {"label": "Spitting Contest Scenario Integration", "target": "src/spitting_contest.zig", "kind": "source"}
+          ],
+          "related": ["commutative-item-combining", "classic-adventure-verbs"]
+        }
+      ]
+    },
+    {
+      "id": "developer-diagnostics",
+      "title": "Developer Tooling & Diagnostics",
+      "description": "Interactive developer inspection HUD, time-travel timeline scrubber, live REPL console, and CLI runners.",
+      "entries": [
+        {
+          "id": "developer-dashboard",
+          "title": "In-Engine Relational Fact & Fiber HUD",
+          "summary": "Live developer dashboard overlay displaying active facts, TTL counters, fibers, call stacks, and spatial coordinates.",
+          "synopsis": "Toggle via [F1] or [D] key in running interactive window",
+          "tags": ["hud", "debugger", "inspector", "dashboard"],
+          "what": "Provides an instantaneous, zero-latency HUD overlay drawn directly in the running game window to inspect the live simulation spine.",
+          "how": [
+            "DisplayWindow.render_frame inspects RenderFrame debug fields when show_debug_overlay is true.",
+            "Lists all active relational facts with remaining TTL ticks.",
+            "Displays active fiber IDs, program counters, priority levels, and call stacks.",
+            "Displays agent spatial coordinates, waypoints, and transit statuses."
+          ],
+          "why": "Attaching external debuggers (gdb/lldb) halts execution and cannot display high-level domain concepts like relational facts, TTLs, or fibers. An in-engine HUD gives instant visibility at 60 Hz.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-011", "target": "docs/DECISIONS.md#d-011", "kind": "decision"},
+            {"label": "Debug Overlay Rendering", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["interactive-timeline-scrubber", "live-repl-console"]
+        },
+        {
+          "id": "interactive-timeline-scrubber",
+          "title": "Interactive Timeline Scrubber & Replay",
+          "summary": "Graphical timeline scrubber bar allowing point-and-click time-travel scrubbing across simulation history.",
+          "synopsis": "Click timeline bar or use [<] / [>] keys to scrub ticks live",
+          "tags": ["timeline", "scrubber", "time-travel", "replay"],
+          "what": "Enables developers and players to pause time, scrub backward across recorded historical ticks, inspect the world at any previous tick, and resume from the past.",
+          "how": [
+            "The top HUD bar renders a full-width timeline scrubber indicating current tick and max recorded tick.",
+            "Left-clicking anywhere on the bar computes target tick from horizontal mouse position and emits scrub_to_tick.",
+            "Keyboard left/right arrow keys step single ticks backward and forward.",
+            "World.restore_state unpacks the snapshot into memory, and DisplayBridge refreshes the frame.",
+            "If the simulation steps forward after scrubbing backward, divergent future history is cleanly truncated."
+          ],
+          "why": "Diagnosing why an NPC took an action 50 ticks ago normally requires restarting the game and adding print statements. The timeline scrubber turns time into a navigable spatial axis.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-011", "target": "docs/DECISIONS.md#d-011", "kind": "decision"},
+            {"label": "Timeline Scrubber Implementation", "target": "src/display/renderer.zig", "kind": "source"},
+            {"label": "Main Loop Scrubber Handler", "target": "src/main.zig", "kind": "source"}
+          ],
+          "related": ["snapshot-time-travel", "developer-dashboard"]
+        },
+        {
+          "id": "live-repl-console",
+          "title": "Live Interactive REPL Console Drawer",
+          "summary": "In-engine slide-out console drawer executing live simulation commands without pausing or recompiling.",
+          "synopsis": "Toggle via [Tab], [C], or [`]; commands: remember, forget, cue, walk, facts, step, help",
+          "tags": ["repl", "console", "cli", "interactive"],
+          "what": "Provides an interactive command drawer inside the running simulation to query facts, inject new relations, emit cues, or move actors on the fly.",
+          "how": [
+            "src/repl.zig implements a pure Zig command interpreter (Repl) with zero GUI dependencies.",
+            "DisplayWindow captures keyboard text input via SDL_TEXTINPUT when show_console is active.",
+            "Commands modify World, SpatialSystem, and VM directly and log output to the console history buffer."
+          ],
+          "why": "Testing whether a puzzle reacts to a specific fact requires either playing through prerequisites or recompiling. The live REPL allows instant hypothesis testing in a live simulation.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-011", "target": "docs/DECISIONS.md#d-011", "kind": "decision"},
+            {"label": "REPL Command Engine", "target": "src/repl.zig", "kind": "source"},
+            {"label": "Console Drawer Rendering", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["developer-dashboard", "relational-facts"]
+        },
+        {
+          "id": "headless-and-interactive-cli",
+          "title": "Dual Interactive & Headless CLI Modes",
+          "summary": "Command-line flags supporting headless deterministic simulation runs and interactive graphics mode.",
+          "synopsis": "zig build run -- [--headless] [--spitting-contest] [--help]",
+          "tags": ["cli", "headless", "runner"],
+          "what": "Provides flexible command-line execution modes for CI pipelines, automated integration testing, and interactive human gameplay.",
+          "how": [
+            "--headless runs the simulation without creating an SDL2 window, printing tick snapshots to standard output.",
+            "--spitting-contest launches the Monkey Island 2 Booty Island Spitting Contest puzzle scenario.",
+            "Running without flags launches the interactive graphical Tavern Heist simulation at 60 Hz."
+          ],
+          "why": "Continuous integration servers and developer workstations without display servers must be able to run and verify entire multi-scene simulation scenarios with zero GUI dependencies.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
+            {"label": "Main CLI Argument Parsing", "target": "src/main.zig", "kind": "source"},
+            {"label": "Testing Strategy & Recipes", "target": "docs/TESTING.md", "kind": "document"}
+          ],
+          "related": ["zero-external-dependencies", "test-verification-hierarchy"]
+        }
+      ]
+    },
+    {
+      "id": "engineering-workflow",
+      "title": "Developer Guide & Engineering Standards",
+      "description": "Contribution standards, verification hierarchies, architectural decision records, and documentation tooling.",
+      "entries": [
+        {
+          "id": "test-verification-hierarchy",
+          "title": "Test Verification Hierarchy",
+          "summary": "Multi-tiered automated test suite verifying compiler, VM, spatial system, renderer, and scenarios.",
+          "synopsis": "zig test -lc -lSDL2 src/root.zig && zig build test && python3 tools/check_docs.py",
+          "tags": ["testing", "verification", "ci"],
+          "what": "Enforces code correctness across all engine modules via fast, unit-level Zig test blocks, build-system tests, headless simulations, and documentation consistency checks.",
+          "how": [
+            "zig test -lc -lSDL2 src/root.zig runs 38 core compiler, VM, world, and spatial tests.",
+            "zig test -lc -lSDL2 src/display.zig runs 22 display bridge, font, and renderer tests.",
+            "python3 -m unittest discover -s tests -v runs 29 documentation manual tests.",
+            "python3 tools/check_docs.py validates cross-references, decision numbers, and session logs.",
+            "python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . verifies manual integrity."
+          ],
+          "why": "Rigorous multi-tiered testing ensures that language grammar extensions, VM opcodes, and layout changes never regress core simulation determinism.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Testing Strategy Document", "target": "docs/TESTING.md", "kind": "spec"},
+            {"label": "Documentation Checker", "target": "tools/check_docs.py", "kind": "source"},
+            {"label": "Manual Validator", "target": "tools/manual.py", "kind": "source"}
+          ],
+          "related": ["zero-external-dependencies", "decision-record-protocol", "3x-documentation-contract"]
+        },
+        {
+          "id": "decision-record-protocol",
+          "title": "Architectural Decision Records (D-NNN)",
+          "summary": "Append-only architectural decision log in docs/DECISIONS.md recording rationale and alternatives.",
+          "synopsis": "## D-NNN Title (YYYY-MM-DD, status: accepted)\nContext: ...\nDecision: ...\nAlternatives: ...\nConsequences: ...",
+          "tags": ["decisions", "adr", "architecture"],
+          "what": "Maintains an immutable record of technical and design choices, documenting the context, trade-offs, evaluated alternatives, and consequences for every significant architectural evolution.",
+          "how": [
+            "Decisions are assigned monotonically increasing IDs (D-001 through D-013).",
+            "Each decision details Context, Decision, Alternatives Considered, and Consequences.",
+            "Open architectural questions are logged in the same document with permanent Q-NNN IDs until answered."
+          ],
+          "why": "Without written decision records, future maintainers and AI agents revisit already-rejected trade-offs or accidentally undo foundational constraints (such as zero-dependency or tick determinism).",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decisions Record", "target": "docs/DECISIONS.md", "kind": "decision"},
+            {"label": "Canonical Agent Instructions", "target": "AGENTS.md", "kind": "spec"}
+          ],
+          "related": ["test-verification-hierarchy", "3x-documentation-contract"]
+        },
+        {
+          "id": "3x-documentation-contract",
+          "title": "The 3x What/How/Why Documentation Contract",
+          "summary": "Every documented component answers What it does, How it works, and Why, backed by explicit evidence.",
+          "synopsis": "python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html",
+          "tags": ["documentation", "3x", "manual", "contract"],
+          "what": "Governs all technical documentation using the 3x documentation scheme: every subject answers What, How, and Why, and cites verifiable code and decision evidence.",
+          "how": [
+            "Source is defined in JSON validated against scheme/manual.schema.json.",
+            "tools/manual.py builds a portable, zero-dependency HTML manual with interactive search and navigation.",
+            "why_basis tracks provenance: recorded, observed, inferred, or external.",
+            "tools/manual.py check --check-evidence verifies that every cited file, decision, and test exists in the repository."
+          ],
+          "why": "Traditional freeform documentation frequently omits rationale, goes stale, or drifts from code reality. The 3x contract guarantees actionable clarity for both human developers and autonomous AI agents.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Manual Schema Specification", "target": "scheme/manual.schema.json", "kind": "spec"},
+            {"label": "Manual Tooling Implementation", "target": "tools/manual.py", "kind": "source"},
+            {"label": "Manual Test Suite", "target": "tests/test_manual.py", "kind": "test"}
+          ],
+          "related": ["decision-record-protocol", "test-verification-hierarchy"]
+        }
+      ]
+    }
+  ]
+}

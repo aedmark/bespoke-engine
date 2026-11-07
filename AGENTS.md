@@ -75,8 +75,11 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `docs/SECURITY.md` | Assets, trust boundaries, secret handling, and reporting |
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |
+| `docs/manual.html` | Standalone interactive 3x manual and developer guide |
 | `docs/archive/` | Historical material no longer current |
+| `scheme/` | 3x manual schemas and source definitions |
 | `tools/check_docs.py` | Documentation consistency checks |
+| `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
 
 ## Engineering conventions
 

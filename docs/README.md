@@ -16,6 +16,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`SECURITY.md`](SECURITY.md) | Users and developers | Sensitive assets, trust boundaries, reporting, secure defaults | Full operational incident history |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Setup, change, review, and submission workflow | Agent-only instructions |
 | [`CHANGELOG.md`](CHANGELOG.md) | Users | Released and unreleased user-visible changes | Commit-by-commit history |
+| [`manual.html`](manual.html) | Developers and agents | Standalone 3x interactive manual & developer guide (What, How, Why) | Raw Markdown sources |
 
 ## Update Triggers
 

@@ -1,4 +1,6 @@
 .zig-cache/
 zig-out/
 .idea/
+__pycache__/
+*.pyc
 

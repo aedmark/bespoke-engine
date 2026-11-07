@@ -1,0 +1,269 @@
+{
+  "$schema": "./manual.schema.json",
+  "project": {
+    "name": "3x Documentation Scheme",
+    "short_name": "3x Docs",
+    "version": "1.0.0",
+    "repository": ""
+  },
+  "manual": {
+    "title": "The 3x Documentation Scheme",
+    "subtitle": "A project-neutral system for explaining what, how, and why",
+    "description": "Use one structured source to create a searchable project manual for people and agents. See the [CLI and format reference](commands.html) for exact commands and fields.",
+    "badges": ["Schema-driven", "Agent-readable", "Zero dependencies", "Standalone HTML"],
+    "footer": "3x Documentation Scheme {{project.version}} · Adapt the model; keep the reasoning visible.",
+    "reviewed": {
+      "date": "2026-11-04",
+      "commit": "ff8836491687",
+      "interval_days": 180
+    }
+  },
+  "theme": {
+    "accent": "#38bdf8",
+    "accent_secondary": "#a855f7",
+    "icon": "△"
+  },
+  "sections": [
+    {
+      "id": "core-model",
+      "title": "The Core Model",
+      "description": "The scheme documents observable behavior, implementation, and design intent as one reviewable unit.",
+      "entries": [
+        {
+          "id": "three-question-contract",
+          "title": "The three-question contract",
+          "summary": "Every subject answers What, How, and Why in that order, and records the basis for its Why.",
+          "tags": ["foundation", "reader contract"],
+          "what": "Provides a repeatable shape for documenting a component, command, workflow, policy, or architectural decision, plus an explicit provenance field for the third answer.",
+          "how": [
+            "What defines behavior, inputs, outputs, guarantees, and visible failure modes.",
+            "How traces implementation, data flow, dependencies, and operational boundaries.",
+            "Why records constraints, trade-offs, intent, and meaningful alternatives.",
+            "why_basis records whether that rationale is recorded, observed, inferred, or external."
+          ],
+          "why": "Readers usually need all three perspectives but at different moments. Keeping them adjacent prevents reference material from drifting away from implementation detail or design rationale, and the basis makes the confidence of the third answer visible.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Content contract", "target": "scheme/manual.schema.json"},
+            {"label": "Example source", "target": "scheme/example.manual.json"}
+          ],
+          "related": ["manual-structure", "claim-quality", "review-status"]
+        },
+        {
+          "id": "manual-structure",
+          "title": "Manual structure",
+          "summary": "Project metadata, presentation settings, review metadata, sections, and entries remain separate but composable.",
+          "tags": ["information architecture", "schema"],
+          "what": "Organizes a manual into reader-oriented sections containing stable, linkable entries. Each entry can include a summary, synopsis, tags, evidence, and related-entry links in addition to its required triad and why_basis. Manual metadata can record the last review.",
+          "how": {
+            "lead": "The JSON hierarchy is deliberately shallow:",
+            "points": [
+              "Project metadata supplies reusable identity and version values.",
+              "Manual metadata describes the document, its badges, and its review record.",
+              "Sections create navigation groups and entries carry the actual explanations and provenance.",
+              "Theme values alter presentation without changing content."
+            ]
+          },
+          "why": "A predictable hierarchy is easy for humans to review, agents to generate, schemas to validate, and renderers to transform without parsing hand-authored HTML. Separate review metadata keeps freshness visible without mixing it into every entry.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scripts/manual.py"],
+          "related": ["three-question-contract", "dynamic-adaptation", "review-status"]
+        }
+      ]
+    },
+    {
+      "id": "authoring",
+      "title": "Authoring a Manual",
+      "description": "Good 3x documentation begins with project discovery and treats uncertainty explicitly.",
+      "entries": [
+        {
+          "id": "scope-and-inventory",
+          "title": "Scope and inventory",
+          "summary": "Choose subjects by reader need, not merely by source-tree shape.",
+          "tags": ["planning", "audience"],
+          "what": "Identifies which capabilities, boundaries, workflows, policies, and decisions deserve entries and which audience the manual serves.",
+          "how": [
+            "Name the primary audience and the decisions they need to make.",
+            "Inventory user-visible capabilities and operational workflows.",
+            "Map architecture boundaries and consequential design decisions.",
+            "Group subjects into a learning path, then assign stable kebab-case IDs."
+          ],
+          "why": "Mirroring folders produces implementation indexes rather than useful manuals. Reader-oriented scope keeps the document navigable and avoids exhaustive but low-value function commentary.",
+          "why_basis": "recorded",
+          "evidence": ["README.md"],
+          "related": ["claim-quality", "maintenance-lifecycle"]
+        },
+        {
+          "id": "claim-quality",
+          "title": "Facts, inference, and rationale",
+          "summary": "Implementation claims require evidence; every rationale records its basis.",
+          "tags": ["accuracy", "provenance"],
+          "what": "Separates observed project facts from interpretation and records the basis for each rationale so readers can judge confidence and trace important claims.",
+          "how": [
+            "Write What from behavior that can be demonstrated or tested.",
+            "Write How from inspected source, configuration, runtime behavior, and operational records.",
+            "Write Why from decision records or maintainer statements when available.",
+            "Set why_basis to recorded, observed, inferred, or external. Use inferred only when the rationale comes from the author's reasoning, and name the evidence supporting it."
+          ],
+          "why": "Plausible explanations are easy to invent and hard to detect later. A required basis turns provenance from an optional writing habit into a reviewable field and prevents a polished manual from becoming an authority for facts the project never established.",
+          "why_basis": "recorded",
+          "evidence": ["README.md", "scheme/manual.schema.json"],
+          "related": ["evidence-and-links", "validation", "review-status"]
+        },
+        {
+          "id": "evidence-and-links",
+          "title": "Evidence and relationships",
+          "summary": "Entries expose supporting artifacts, their kind, and conceptual neighbors.",
+          "tags": ["traceability", "navigation"],
+          "what": "Attaches files, tests, decision records, commands, specifications, documents, or URLs to claims and records what kind of support each target provides. Related entries use stable IDs that the validator checks and the renderer turns into local links.",
+          "how": [
+            "Evidence accepts a path string or a labeled target object.",
+            "Set kind to source, test, decision, spec, url, command, or document when the distinction matters.",
+            "Use --check-evidence to verify local targets and --check-urls to probe HTTP targets.",
+            "Related entries use stable IDs and render as local links."
+          ],
+          "why": "Traceability shortens verification and maintenance. Kind labels let reviewers distinguish a demonstration from a decision record, and explicit relationships add useful navigation without forcing the section hierarchy to represent every conceptual connection.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scripts/manual.py"],
+          "related": ["claim-quality", "validation", "review-status", "writing-lint"]
+        },
+        {
+          "id": "writing-lint",
+          "title": "Optional writing lint",
+          "summary": "A separate command checks prose against an opt-in writing contract.",
+          "tags": ["style", "validation", "optional"],
+          "synopsis": "python3 scripts/manual.py lint SOURCE",
+          "what": "Checks manual prose for em dashes, invisible or bidirectional characters, validating openers, seesaw definitions, and blended emotional plateaus. It is not part of `check` or `build`.",
+          "how": [
+            "Run `lint` against a source after `check` passes.",
+            "The command validates structure first, then scans prose fields only.",
+            "Findings exit nonzero; literal fields such as `synopsis`, `tags`, evidence targets, and IDs are skipped."
+          ],
+          "why": "Structure can be enforced for every project, but prose conventions are a project choice. A separate command keeps the scheme neutral while giving teams a shared contract when they want one.",
+          "why_basis": "recorded",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["claim-quality", "validation", "maintenance-lifecycle"]
+        }
+      ]
+    },
+    {
+      "id": "adaptation",
+      "title": "Dynamic Adaptation",
+      "description": "The same content contract supports local writing, automated releases, CI checks, and agent-assisted maintenance.",
+      "entries": [
+        {
+          "id": "dynamic-adaptation",
+          "title": "Metadata and runtime overrides",
+          "summary": "Change shared values once or inject release-specific values during a build.",
+          "tags": ["automation", "configuration"],
+          "synopsis": "python3 scripts/manual.py build SOURCE --set project.version=2.0.0 --output index.html",
+          "what": "Resolves metadata placeholders throughout the document and permits scalar values to be overridden from the command line.",
+          "how": [
+            "Place a double-braced path such as `project.name` or `project.version` in textual fields.",
+            "The builder resolves placeholders against the source document before validation.",
+            "Each `--set PATH=VALUE` assignment updates an existing scalar before resolution."
+          ],
+          "why": "Versions, names, URLs, and theme values recur throughout documentation. Central values and build-time injection prevent repetitive edits and make release automation deterministic.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["manual-structure", "generation"]
+        },
+        {
+          "id": "validation",
+          "title": "Validation and visible gaps",
+          "summary": "Incomplete triads and provenance fields fail; weaker traceability remains visible as a warning.",
+          "synopsis": "python3 scripts/manual.py check SOURCE [--check-evidence] [--check-urls] [--json]",
+          "tags": ["quality gate", "CI", "review"],
+          "what": "Checks required structure, stable IDs, dimension content, why_basis, recognized placeholder text, reviewed metadata, evidence shape, evidence kind, and related-entry targets. Optional flags verify local evidence paths and HTTP targets.",
+          "how": [
+            "Structural defects and recognized unfinished-writing markers produce a nonzero exit.",
+            "Missing evidence, unknown related IDs, missing review metadata, and stale reviews produce warnings that require judgment without blocking exploratory drafts.",
+            "Add --check-evidence --root . to verify local targets and --check-urls to probe HTTP targets; both are opt-in because they inspect the environment.",
+            "Use review --strict when CI should fail on review items, and --json when another tool consumes the diagnostics."
+          ],
+          "why": "A manual should never silently present empty reasoning or an unexamined review date as complete. Separating errors from warnings preserves a firm minimum contract without pretending every quality concern can be decided mechanically.",
+          "why_basis": "recorded",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py", "scheme/manual.schema.json"],
+          "related": ["claim-quality", "generation", "review-status", "maintenance-lifecycle"]
+        },
+        {
+          "id": "generation",
+          "title": "Portable generation",
+          "summary": "One validated source becomes one searchable, responsive HTML file, and a check mode detects drift.",
+          "synopsis": "python3 scripts/manual.py build SOURCE --output manual.html [--check]",
+          "tags": ["HTML", "search", "print", "CI"],
+          "what": "Produces a standalone manual with navigation, full-text filtering, stable anchors, responsive triad cards, provenance badges, evidence kind labels, review metadata, and print styles. build --check verifies an existing artifact without rewriting it.",
+          "how": [
+            "The standard-library generator escapes content, applies a deliberately small inline notation, embeds CSS and JavaScript, and writes a dependency-free HTML document.",
+            "Use build --check in CI to compare a fresh render with the committed output and fail when it is missing or out of date.",
+            "Use build --output to choose the destination; the default is manual.html."
+          ],
+          "why": "A single artifact is easy to preview locally, attach to a release, publish on any static host, archive, or inspect in restricted environments. A drift check keeps the committed artifact honest without making every local build rewrite it.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["dynamic-adaptation", "maintenance-lifecycle", "review-status"]
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "title": "Keeping It Alive",
+      "description": "The scheme is most useful when documentation evolves with the project rather than following it later.",
+      "entries": [
+        {
+          "id": "maintenance-lifecycle",
+          "title": "Maintenance lifecycle",
+          "summary": "Review documentation in the same change that alters behavior, and renew the review record on an explicit interval.",
+          "tags": ["workflow", "governance", "review"],
+          "what": "Treats manual source as maintained project material with validation, review reporting, and continuous integration.",
+          "how": [
+            "Run check and review --strict in CI for every proposed change.",
+            "Set manual.reviewed to the date and commit of the last substantive review. interval_days defaults to 180 days.",
+            "Use watch while restructuring or writing several entries.",
+            "Update What when contracts change, How when implementation boundaries move, and Why when constraints or decisions change.",
+            "Preserve entry IDs during title edits and review the built artifact before release."
+          ],
+          "why": "Documentation drift is primarily a workflow problem. A review record shows when a person last examined the material, while co-located review and a minimum contract make stale reasoning easier to catch when relevant context is still available.",
+          "why_basis": "recorded",
+          "evidence": ["README.md", "scripts/manual.py", ".github/workflows/verify.yml"],
+          "related": ["scope-and-inventory", "agent-workflow", "review-status"]
+        },
+        {
+          "id": "review-status",
+          "title": "Review status and freshness",
+          "summary": "A manual records when it was last reviewed and reports entries that still need attention.",
+          "synopsis": "python3 scripts/manual.py review SOURCE [--check-evidence] [--strict]",
+          "tags": ["review", "freshness", "provenance"],
+          "what": "Reads manual.reviewed and reports unreviewed, stale, inferred, missing-evidence, and weak-evidence items without rewriting the source.",
+          "how": [
+            "Set manual.reviewed.date and manual.reviewed.commit when a human completes a substantive review.",
+            "Set manual.reviewed.interval_days to the project's review cadence; the default is 180 days.",
+            "Run review to list items for human attention, and review --strict when CI should fail on any item.",
+            "Pair review with --check-evidence and --check-urls when the review should also verify targets."
+          ],
+          "why": "A review date is only useful if readers can see it and maintainers are prompted to renew it. A separate report preserves human judgment while making neglect visible to automation.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scripts/manual.py", "tests/test_manual.py"],
+          "related": ["validation", "writing-lint", "maintenance-lifecycle"]
+        },
+        {
+          "id": "agent-workflow",
+          "title": "Agent adaptation workflow",
+          "summary": "Agents use the same schema, provenance expectations, review report, and validation gate as human authors.",
+          "tags": ["agents", "handoff"],
+          "what": "Gives coding and documentation agents an explicit protocol for discovering, drafting, checking, reviewing, and handing off a project manual.",
+          "how": [
+            "Read the schema and the project sources in scope.",
+            "Inventory behavior and architecture before drafting entries.",
+            "Set why_basis and cite implementation-specific claims.",
+            "Preserve stable IDs, run check, review, and build --check, then report warnings and review items that require human judgment."
+          ],
+          "why": "Structured outputs reduce ambiguity between tools and sessions. Using the human workflow also keeps agent-produced documentation reviewable instead of creating a separate, opaque automation path.",
+          "why_basis": "recorded",
+          "evidence": ["README.md", "scheme/manual.schema.json", "tests/test_manual.py", ".github/workflows/verify.yml"],
+          "related": ["claim-quality", "maintenance-lifecycle", "review-status"]
+        }
+      ]
+    }
+  ]
+}

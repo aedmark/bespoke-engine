@@ -170,6 +170,24 @@ def main():
             warnings.append(f"docs/HANDOFF.md: Current state is {current.count(chr(10))} lines (limit "
                             f"{CURRENT_STATE_LINES}); move history to the session log")
 
+    # 3x Documentation Scheme validation (scheme/bespoke.manual.json)
+    manual_path = ROOT / "scheme" / "bespoke.manual.json"
+    if manual_path.is_file():
+        try:
+            import json
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("manual", ROOT / "tools" / "manual.py")
+            manual = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(manual)
+            data = json.loads(manual_path.read_text(encoding="utf-8"))
+            m_errors, m_warnings = manual.validate(data, check_evidence=True, root=ROOT)
+            for err in m_errors:
+                errors.append(f"scheme/bespoke.manual.json: {err}")
+            for warn in m_warnings:
+                warnings.append(f"scheme/bespoke.manual.json: {warn}")
+        except Exception as e:
+            errors.append(f"scheme/bespoke.manual.json: failed to validate manual: {e}")
+
     for line in errors:
         print(f"ERROR {line}")
     for line in warnings:

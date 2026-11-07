@@ -1,0 +1,286 @@
+{
+  "$schema": "./manual.schema.json",
+  "project": {
+    "name": "3x Documentation Scheme",
+    "short_name": "3x Reference",
+    "version": "1.0.0",
+    "repository": ""
+  },
+  "manual": {
+    "title": "3x CLI and Format Reference",
+    "subtitle": "Commands, fields, content shapes, and automation behavior",
+    "description": "The exact interface for authoring and generating 3x manuals. Return to the [scheme guide](index.html) for the underlying method.",
+    "badges": ["Python 3.9+", "JSON Schema", "No packages required"],
+    "footer": "3x Documentation Scheme {{project.version}} · CLI and source-format reference",
+    "reviewed": {
+      "date": "2026-11-04",
+      "commit": "ff8836491687",
+      "interval_days": 180
+    }
+  },
+  "theme": {
+    "accent": "#a855f7",
+    "accent_secondary": "#38bdf8",
+    "icon": "⌘"
+  },
+  "sections": [
+    {
+      "id": "commands",
+      "title": "CLI Commands",
+      "description": "Run every command from the repository root with Python 3.9 or newer.",
+      "entries": [
+        {
+          "id": "command-init",
+          "title": "init",
+          "summary": "Create a new manual source with the required structure and visible writing prompts.",
+          "synopsis": "python3 scripts/manual.py init OUTPUT [--name NAME] [--force]",
+          "tags": ["scaffold", "write"],
+          "what": "Writes an editable JSON source containing project metadata, theme defaults, one section, and one entry. Its triad contains unfinished-writing prompts and therefore does not pass validation until adapted.",
+          "how": [
+            "`OUTPUT` selects the new JSON file.",
+            "`--name` sets the project name and derives a starter entry ID.",
+            "`--force` permits intentional replacement of an existing target."
+          ],
+          "why": "A complete structural example is faster and less error-prone than starting from an empty file. Deliberately failing prompts prevent the scaffold from being mistaken for finished documentation.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-check", "entry-fields"]
+        },
+        {
+          "id": "command-check",
+          "title": "check",
+          "summary": "Validate a source and optionally inspect its evidence targets.",
+          "synopsis": "python3 scripts/manual.py check SOURCE [--check-evidence] [--root PATH] [--check-urls] [--url-timeout N] [--json] [--set PATH=VALUE ...]",
+          "tags": ["validate", "CI", "evidence"],
+          "what": "Reports structural errors and quality warnings, optionally verifies local evidence paths and HTTP targets, prints coverage counts, and exits nonzero when errors exist.",
+          "how": "The command loads JSON, applies overrides, resolves placeholders, validates the complete model, and writes diagnostics to standard error. --check-evidence resolves local targets under --root, --check-urls performs bounded HTTP checks, and --json writes one machine-readable object to standard output.",
+          "why": "A read-only validation command fits editor hooks, pre-commit checks, and CI without creating generated-file churn. Evidence checks stay opt-in because they inspect the local environment and the network.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["validation-rules", "overrides", "command-review"]
+        },
+        {
+          "id": "command-build",
+          "title": "build",
+          "summary": "Validate and render a standalone HTML manual, or check it for drift.",
+          "synopsis": "python3 scripts/manual.py build SOURCE [--output FILE] [--check] [--set PATH=VALUE ...]",
+          "tags": ["render", "HTML", "CI"],
+          "what": "Creates the requested HTML file only when the prepared source has no validation errors. With --check, compares a fresh render with OUTPUT and never writes.",
+          "how": "After validation, the renderer escapes source text, applies safe inline formatting, embeds presentation and search behavior, creates parent directories as needed, and writes one UTF-8 file. --check fails when OUTPUT is missing or differs from the fresh render.",
+          "why": "Validation-before-write prevents a failed build from presenting a newly generated incomplete artifact as current documentation. A drift check makes the committed artifact verifiable in CI without rewriting it.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-watch", "inline-notation", "generated-output"]
+        },
+        {
+          "id": "command-watch",
+          "title": "watch",
+          "summary": "Rebuild whenever the source file changes.",
+          "synopsis": "python3 scripts/manual.py watch SOURCE [--output FILE] [--set PATH=VALUE ...]",
+          "tags": ["preview", "development"],
+          "what": "Monitors the source modification time, performs an initial build, and repeats the build after each saved change until interrupted.",
+          "how": "A small polling loop checks the file twice per second. If the source temporarily disappears during an editor's atomic save, the command waits for it to return.",
+          "why": "Fast feedback makes structural writing and visual review feel like one task while retaining a zero-dependency implementation.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py"],
+          "related": ["command-build", "generated-output"]
+        },
+        {
+          "id": "command-lint",
+          "title": "lint",
+          "summary": "Check prose against the optional writing rules without changing the artifact.",
+          "synopsis": "python3 scripts/manual.py lint SOURCE [--json] [--set PATH=VALUE ...]",
+          "tags": ["validate", "style", "optional"],
+          "what": "Validates the source, then scans prose fields for em dashes, invisible or bidirectional characters, validating openers, seesaw definitions, and blended emotional plateaus. Each finding carries a stable rule ID from L001 to L005. Exits nonzero when it finds an issue.",
+          "how": "The command prepares and validates the source, walks manual titles, descriptions, badges, section descriptions, entry titles and summaries, dimension text, and evidence labels, and reports each finding with its rule ID and field location. Literal commands in synopsis, IDs, tags, and evidence targets are not scanned. --json writes a machine-readable object to standard output.",
+          "why": "The writing contract is useful but not universal. Stable rule IDs let teams discuss and gate specific rules without turning the linter into an editor.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-check", "lint-rules", "validation-rules", "command-review"]
+        },
+        {
+          "id": "command-review",
+          "title": "review",
+          "summary": "Report entries that need human review without rewriting the source.",
+          "synopsis": "python3 scripts/manual.py review SOURCE [--check-evidence] [--root PATH] [--check-urls] [--url-timeout N] [--json] [--strict] [--set PATH=VALUE ...]",
+          "tags": ["review", "provenance", "CI"],
+          "what": "Validates the source, then reports unreviewed, stale-review, inferred-rationale, missing-evidence, and weak-evidence items. It does not edit the manual.",
+          "how": [
+            "Run review after check to list items for human attention.",
+            "Use --strict to exit nonzero when any item exists, which makes the report usable as a CI gate.",
+            "Use --json to emit the items and validation diagnostics for another tool; add --check-evidence or --check-urls to include target checks."
+          ],
+          "why": "Some quality concerns need a person to decide whether the missing context is acceptable. A separate report keeps that judgment explicit while making neglect visible to automation.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-check", "review-rules", "entry-fields"]
+        }
+      ]
+    },
+    {
+      "id": "source-format",
+      "title": "Source Format",
+      "description": "The JSON Schema is authoritative; these entries explain how its pieces are intended to be used.",
+      "entries": [
+        {
+          "id": "root-fields",
+          "title": "Root and metadata fields",
+          "summary": "A manual combines project identity, document identity, review metadata, optional theme values, and sections.",
+          "tags": ["JSON", "metadata"],
+          "what": "Defines the top-level project, manual, theme, and sections values. An optional $schema field lets compatible editors locate the contract.",
+          "how": [
+            "project requires name and version and may contain other scalar placeholder values.",
+            "manual requires title and may add subtitle, description, badges, footer, and reviewed.",
+            "reviewed requires date and commit and may add by and interval_days.",
+            "theme may set six-digit accent and accent_secondary colors plus a short icon.",
+            "sections is a nonempty ordered array."
+          ],
+          "why": "Separating project identity from document metadata supports multiple manuals for one project and keeps release values reusable. A review record ties the document to a specific commit and date.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scheme/example.manual.json"],
+          "related": ["section-fields", "overrides", "review-rules"]
+        },
+        {
+          "id": "section-fields",
+          "title": "Section fields",
+          "summary": "Sections create ordered navigation groups around reader-oriented concepts.",
+          "tags": ["navigation", "grouping"],
+          "what": "Each section requires a stable `id`, a `title`, and at least one `entry`. It may include a short `description`.",
+          "how": "IDs use lowercase kebab-case and share one namespace with entry IDs. Array order controls both sidebar and document order.",
+          "why": "Stable identifiers make links durable while explicit order lets authors teach a subject progressively rather than accepting an alphabetical or filesystem-derived sequence.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scripts/manual.py"],
+          "related": ["entry-fields", "validation-rules"]
+        },
+        {
+          "id": "entry-fields",
+          "title": "Entry fields",
+          "summary": "Entries hold one documented subject, its complete 3x explanation, and the basis for its rationale.",
+          "tags": ["triad", "content"],
+          "what": "Requires id, title, what, how, why, and why_basis. Optional fields are summary, synopsis, tags, evidence, and related.",
+          "how": [
+            "Use summary for the one-sentence orientation shown before the triad.",
+            "Use synopsis for a literal command, API, signature, or compact contract.",
+            "Set why_basis to recorded, observed, inferred, or external.",
+            "Use tags for filtering vocabulary and evidence for supporting targets.",
+            "Use related to list stable entry IDs in reading order."
+          ],
+          "why": "The required core guarantees a useful minimum and makes provenance reviewable. Optional context supports discovery and verification without making every subject pretend to be a command or source-code component.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scheme/example.manual.json"],
+          "related": ["dimension-shapes", "evidence-shapes", "command-review"]
+        },
+        {
+          "id": "dimension-shapes",
+          "title": "What, How, and Why shapes",
+          "summary": "A dimension can be prose, ordered points, or a lead paragraph followed by points.",
+          "tags": ["content shape", "triad"],
+          "what": "Accepts a nonempty string, a nonempty array of strings, or an object containing `lead`, `points`, or both.",
+          "how": "Strings render as paragraphs. Arrays render as ordered lists. Objects render `lead` as a paragraph and `points` as an ordered list.",
+          "why": "A small set of semantic shapes covers most technical explanations while remaining predictable for validation, transformation, and agent generation.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scripts/manual.py"],
+          "related": ["entry-fields", "inline-notation"]
+        },
+        {
+          "id": "evidence-shapes",
+          "title": "Evidence and related fields",
+          "summary": "Evidence records provenance and kind; related IDs create lateral navigation.",
+          "tags": ["provenance", "links"],
+          "what": "Evidence accepts either a target string or an object with label, target, and optional kind. Kinds are source, test, decision, spec, url, command, and document. Related accepts an array of entry IDs.",
+          "how": "Local evidence targets render as code-like paths and HTTP targets render as links. --check-evidence verifies local targets under --root; --check-urls probes HTTP targets. Related IDs resolve to entry titles and local anchors; unknown IDs produce warnings.",
+          "why": "Keeping provenance structured enables renderers and audits while allowing concise input for the common file-path case. Kind labels let reviewers distinguish a test from a decision record and let checks treat commands and URLs differently.",
+          "why_basis": "recorded",
+          "evidence": ["scheme/manual.schema.json", "scripts/manual.py"],
+          "related": ["entry-fields", "validation-rules", "command-review"]
+        }
+      ]
+    },
+    {
+      "id": "processing",
+      "title": "Processing Rules",
+      "description": "Preparation is deterministic: overrides, placeholders, validation, then rendering.",
+      "entries": [
+        {
+          "id": "overrides",
+          "title": "Overrides and placeholders",
+          "summary": "Scalar configuration can flow from source metadata or the build command.",
+          "tags": ["variables", "release automation"],
+          "synopsis": "--set project.version=2.1.0 --set 'theme.accent=#ff6b35'",
+          "what": "Overrides existing dotted paths and resolves double-braced dotted-path placeholders in all strings.",
+          "how": "Values that parse as JSON scalars retain their types; other values remain strings. Paths must already exist, placeholders must resolve to scalars, and unknown paths stop processing.",
+          "why": "Existing-path enforcement catches spelling mistakes and prevents command-line options from silently inventing configuration the schema does not describe.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["root-fields", "validation-rules"]
+        },
+        {
+          "id": "validation-rules",
+          "title": "Errors and warnings",
+          "summary": "Errors reject the document; warnings flag concerns that still need contextual judgment.",
+          "tags": ["diagnostics", "quality"],
+          "what": "Treats invalid JSON, missing required values including why_basis, unknown fields, malformed IDs, duplicate IDs, invalid content shapes, empty dimensions, invalid why_basis or evidence kind, invalid reviewed metadata, and recognized writing placeholders as errors. Missing evidence, unknown related IDs, missing review metadata, stale reviews, and recorded rationales that describe themselves as inferred are warnings.",
+          "how": "Diagnostics include a JSON-like location so authors and agents can identify the affected section, entry, or field. The process exits with status one when errors exist. review --strict turns review items into a CI failure; --check-evidence and --check-urls add opt-in target warnings.",
+          "why": "A deterministic validity boundary makes automation dependable, while warnings keep nonmechanical quality issues visible without blocking early discovery work. Review items remain a separate report because a stale link or an unconfirmed rationale may be an acceptable, documented choice.",
+          "why_basis": "recorded",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-check", "evidence-shapes", "command-review", "command-lint"]
+        },
+        {
+          "id": "lint-rules",
+          "title": "Optional writing rules",
+          "summary": "The lint command checks a small, explicit prose contract with stable rule IDs.",
+          "tags": ["style", "prose", "optional"],
+          "what": "Flags L001 em dash, L002 invisible or bidirectional control character, L003 validating opener, L004 seesaw definition, and L005 blended emotional plateau in prose fields.",
+          "how": "Each rule is a deterministic regular expression with a stable ID and field location. The command reports the matched text and exits one. It does not rewrite content. --json emits findings with the same IDs.",
+          "why": "A short list of observable patterns is reviewable and teachable. Stable IDs let teams discuss and gate specific rules without treating the linter as an editor.",
+          "why_basis": "recorded",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-lint", "validation-rules", "entry-fields", "command-review"]
+        },
+        {
+          "id": "review-rules",
+          "title": "Review report rules",
+          "summary": "Review items identify provenance and freshness concerns that need a person.",
+          "tags": ["review", "provenance", "freshness"],
+          "what": "Reports unreviewed manuals, stale reviews, inferred rationale, missing evidence, and weak evidence. Weak-evidence checks run only when at least one evidence item has a kind.",
+          "how": [
+            "unreviewed: manual.reviewed is missing or not an object.",
+            "stale-review: the review date is older than interval_days, which defaults to 180.",
+            "inferred-rationale: an entry has why_basis: inferred.",
+            "missing-evidence: an entry has no evidence.",
+            "weak-evidence: at least one evidence item has a kind, but the evidence kinds do not include the support expected for the basis. recorded expects decision or spec; observed expects source, test, document, or spec; external expects url or spec."
+          ],
+          "why": "Some quality concerns need a person to decide whether the missing context is acceptable. A named report keeps that judgment repeatable and lets CI fail on it when a project decides that every item must be resolved.",
+          "why_basis": "recorded",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["command-review", "validation-rules", "entry-fields"]
+        },
+        {
+          "id": "inline-notation",
+          "title": "Safe inline notation",
+          "summary": "A deliberately small formatting vocabulary improves readability without accepting raw HTML.",
+          "tags": ["security", "formatting"],
+          "what": "Supports backticks for code, double asterisks for strong text, single asterisks for emphasis, and Markdown-style links to HTTP, email, relative, or local-anchor targets.",
+          "how": "The renderer escapes source text first, recognizes only the supported patterns, validates link schemes or relative paths, and leaves unsupported markup visible as text.",
+          "why": "Restricting markup keeps generated manuals portable and reduces injection risk while preserving the inline conventions technical authors use most often.",
+          "why_basis": "recorded",
+          "evidence": ["scripts/manual.py", "tests/test_manual.py"],
+          "related": ["dimension-shapes", "generated-output"]
+        },
+        {
+          "id": "generated-output",
+          "title": "Generated output contract",
+          "summary": "HTML is a disposable artifact; JSON remains the source of truth.",
+          "tags": ["artifact", "browser"],
+          "what": "Emits semantic headings, stable anchors, sidebar navigation, client-side search, responsive layouts, provenance badges, evidence kind labels, review metadata, related links, and print rules in one file.",
+          "how": "CSS and a small search script are embedded. Content remains usable without a server or network connection, and narrow screens stack triad columns into a single reading flow. A reviewed manual shows its date and commit in the sidebar header.",
+          "why": "Treating HTML as generated prevents hand edits from diverging from machine-readable content and makes alternate renderers possible later.",
+          "why_basis": "observed",
+          "evidence": ["scripts/manual.py", "index.html", "commands.html"],
+          "related": ["command-build", "inline-notation", "review-rules"]
+        }
+      ]
+    }
+  ]
+}
