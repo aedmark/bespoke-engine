@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-06, session 6, on `main`: completed Phase 10 (The Booty Island Spitting Contest Scenario & Extended Narrative DSL: Stageplay Syntax, Falling-Edge & Expiration Triggers, Vertical Slice Scenario)._
+_Last updated: 2026-11-06, session 6, on `main`: completed Phase 10; expanded roadmap with Phases 11-14 (Item-on-Item Crafting, Multi-Scene Transitions, Dynamic Dialogue Pruning, GK3 Scenario) and recorded D-013._
 
 **Where things stand, in one paragraph:**
-All 10 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, and declarative stageplay structures. Phase 10 expands the compiler and VM to natively support stageplay scene taxonomies (`scene:`, `cast:`, `props:`, `marks:`), natural state assertions and expressions (`now X is [not] Y`, `X is [not] Y in the scene`), falling-edge rule triggers (`when X stops being Y:`), and fact TTL expiration hooks (`when Entity forgets Relation:`). The full multi-step *Monkey Island 2* Booty Island Spitting Contest puzzle scenario is implemented in `src/spitting_contest.zig` and runnable via `--spitting-contest`.
+All 10 initial phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, and declarative stageplay structures. The roadmap has been expanded with Phases 11 through 14 to enable full execution of multi-step, multi-scene adventure game puzzles, specifically targeting the infamous *Gabriel Knight 3* Cat Moustache puzzle slice. Decision D-013 is accepted, establishing two-operand inventory combining and in-hand crafting semantics.
 
 **Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
 

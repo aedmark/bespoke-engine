@@ -85,3 +85,35 @@ Goal: Expand BeSpoke with high-level stageplay declarations, falling-edge and ex
 - [x] P10-02 Falling-edge and TTL expiration hooks: VM reactive rule engine support for falling edges (`when <Condition> stops being <State>:`) and fact expiration triggers (`when <Entity> forgets <Relation>:`). (D-004, D-010, D-012; completed 2026-11-06, verified via `zig test src/world.zig`, `zig test src/vm.zig`, and `zig test -lc -lSDL2 src/root.zig`)
 - [x] P10-03 The Booty Island Spitting Contest vertical slice: complete multi-step puzzle scenario featuring Guybrush, crowd egging routine, wind cycling, horn distraction, flag moving, thick spit drink, and wind-timed spit resolution. (D-001, D-008, D-009, D-012; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/root.zig`, `zig build test`, and `zig build run -- --spitting-contest`)
 
+## Phase 11: Item-on-Item Inventory Combining & In-Hand Crafting
+
+Goal: Expand the BeSpoke language, compiler, VM, and display renderer with first-class two-operand inventory interactions (`on cue Uses(actor, item_a, item_b)`), allowing items to be combined or applied in-hand before acting on the world.
+
+- [ ] P11-01 Compiler grammar and AST support for two-target `Uses` cue declarations (`on cue Uses(Player, ItemA, ItemB):`). (D-002, D-009, D-013)
+- [ ] P11-02 VM and cue dispatcher support for 3-argument cues `(actor, primary_item, secondary_item)` with commutative matching. (D-004, D-009, D-013)
+- [ ] P11-03 Peripheral UI interaction in `src/display/renderer.zig`: selecting an active inventory item and clicking a second inventory item in the tray, with visual highlight, in-hand cursor, and banner feedback. (D-008, D-009, D-013)
+
+## Phase 12: Multi-Scene Transitions & Stage Director
+
+Goal: Support multiple narrative scenes in a single simulation (`transition to scene: <TargetScene>`), swapping active spatial graph waypoints and visual backdrops while preserving global relational world facts across scene boundaries.
+
+- [ ] P12-01 Language grammar and bytecode instruction for scene transitions (`transition to scene: Name`), pausing current scene routines and activating target scene routines. (D-001, D-002, D-004)
+- [ ] P12-02 Spatial graph partitioning by scene/room, allowing actors and stage marks to transition between distinct topological environments. (D-001, D-005)
+- [ ] P12-03 Display renderer support for dynamic scene backdrops and visual themes switched on scene change events. (D-001, D-008)
+
+## Phase 13: Relational Dialogue Trees & Dynamic Choice Pruning
+
+Goal: Support branching dialogue trees where choices dynamically appear, disappear, or alter based on active relational world facts (`choice "..." if Condition:`).
+
+- [ ] P13-01 Grammar and AST support for conditionally guarded dialogue choices (`choice "..." if HasFact(...)` or `choice "..." if not HasFact(...)`). (D-002, D-004, D-009)
+- [ ] P13-02 VM runtime evaluation of dialogue choice guards at balloon spawn time, pruning unsatisfied branches. (D-003, D-004, D-009)
+- [ ] P13-03 Display renderer dynamic balloon sizing, scrolling, and keyboard hotkey selection (`1-9`) for variable-length choice sets. (D-008, D-009)
+
+## Phase 14: The Gabriel Knight 3 Cat Moustache Scenario
+
+Goal: Implement the complete *Gabriel Knight 3* Rennes-le-Château Cat Moustache vertical slice in `src/gk3_moustache.zig`, runnable via `--gk3`.
+
+- [ ] P14-01 Full GK3 puzzle script implementation in BeSpoke DSL: Mosely room break-in, fence hole taping, cat water squirting, syrup lip adhesive, cat moustache crafting, and Buthane rental shop validation. (D-001, D-012, D-013)
+- [ ] P14-02 Visual renderer backdrop for Rennes-le-Château (hotel corridor, garden fence, bike rental desk) and custom actor tokens (Gabriel in trench coat, Mosely, Buthane, Stray Cat). (D-008, D-009, D-012)
+- [ ] P14-03 CLI option `--gk3` / `--cat-moustache` with end-to-end headless simulation verification and interactive 60 Hz playability with time-travel rewind. (D-001, D-008, D-011)
+
