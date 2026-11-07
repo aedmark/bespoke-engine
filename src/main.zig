@@ -277,7 +277,7 @@ pub fn main() !void {
                                 try stdout.print("\n[Look] {s}: {s}\n", .{ tname, desc });
                             },
                             .talk_to => {
-                                const pt = bespoke.display.renderer.world_to_screen(target_entity.x, target_entity.y, window.width, window.height);
+                                const pt = bespoke.display.renderer.get_entity_screen_pos(act.actor_index, frame.entities[0..frame.entity_count], window.width, window.height);
                                 if (std.mem.eql(u8, tname, "Guard")) {
                                     const choices = [_][]const u8{
                                         "1. Meow innocently (Purr)",

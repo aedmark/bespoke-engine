@@ -159,6 +159,46 @@ pub fn hit_test_waypoint(
     return null;
 }
 
+/// Computes screen position for an entity, applying visual standoff separation
+/// when multiple actors occupy the same waypoint or proximity cluster (D-008, D-012).
+pub fn get_entity_screen_pos(
+    idx: usize,
+    entities: []const RenderEntity,
+    screen_w: i32,
+    screen_h: i32,
+) Point {
+    const base = world_to_screen(entities[idx].x, entities[idx].y, screen_w, screen_h);
+
+    var cluster_rank: usize = 0;
+    var cluster_total: usize = 0;
+
+    for (entities, 0..) |other, j| {
+        const other_base = world_to_screen(other.x, other.y, screen_w, screen_h);
+        const dx = base.x - other_base.x;
+        const dy = base.y - other_base.y;
+        if (dx * dx + dy * dy < 32 * 32) {
+            if (j < idx) cluster_rank += 1;
+            cluster_total += 1;
+        }
+    }
+
+    if (cluster_total <= 1) return base;
+
+    // Distribute entities in the cluster so they stand side-by-side cleanly without clipping
+    if (cluster_total == 2) {
+        if (cluster_rank == 0) {
+            return .{ .x = base.x - 22, .y = base.y + 6 };
+        } else {
+            return .{ .x = base.x + 24, .y = base.y - 12 };
+        }
+    } else {
+        // 3 or more: fan out
+        const offset: i32 = @as(i32, @intCast(cluster_rank)) * 32 - @as(i32, @intCast(cluster_total - 1)) * 16;
+        const y_offset: i32 = if (cluster_rank % 2 == 1) -14 else 6;
+        return .{ .x = base.x + offset, .y = base.y + y_offset };
+    }
+}
+
 /// Hit-tests screen coordinates against visible actors (P7-02).
 pub fn hit_test_actor(
     screen_x: i32,
@@ -167,8 +207,8 @@ pub fn hit_test_actor(
     screen_w: i32,
     screen_h: i32,
 ) ?usize {
-    for (entities, 0..) |e, idx| {
-        const pt = world_to_screen(e.x, e.y, screen_w, screen_h);
+    for (entities, 0..) |_, idx| {
+        const pt = get_entity_screen_pos(idx, entities, screen_w, screen_h);
         const dx: i64 = screen_x - pt.x;
         const dy: i64 = screen_y - pt.y;
         const dist_sq = dx * dx + dy * dy;
@@ -912,23 +952,25 @@ pub const DisplayWindow = struct {
         }
 
         // 4. Render Corridors / Edges between Waypoints
-        for (frame.edges[0..frame.edge_count]) |e| {
-            var wp_a: ?RenderWaypoint = null;
-            var wp_b: ?RenderWaypoint = null;
-            for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-                if (wp.id == e.from) wp_a = wp;
-                if (wp.id == e.to) wp_b = wp;
-            }
-            if (wp_a != null and wp_b != null) {
-                const p1 = world_to_screen(wp_a.?.x, wp_a.?.y, self.width, self.height);
-                const p2 = world_to_screen(wp_b.?.x, wp_b.?.y, self.width, self.height);
+        if (!is_spitting_scene) {
+            for (frame.edges[0..frame.edge_count]) |e| {
+                var wp_a: ?RenderWaypoint = null;
+                var wp_b: ?RenderWaypoint = null;
+                for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+                    if (wp.id == e.from) wp_a = wp;
+                    if (wp.id == e.to) wp_b = wp;
+                }
+                if (wp_a != null and wp_b != null) {
+                    const p1 = world_to_screen(wp_a.?.x, wp_a.?.y, self.width, self.height);
+                    const p2 = world_to_screen(wp_b.?.x, wp_b.?.y, self.width, self.height);
 
-                // Thick path line
-                self.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color.path_edge);
-                self.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, Color.path_corridor);
-                self.draw_line(p1.x, p1.y, p2.x, p2.y, Color.path_corridor);
-                self.draw_line(p1.x, p1.y + 1, p2.x, p2.y + 1, Color.path_corridor);
-                self.draw_line(p1.x, p1.y + 2, p2.x, p2.y + 2, Color.path_edge);
+                    // Thick path line
+                    self.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color.path_edge);
+                    self.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, Color.path_corridor);
+                    self.draw_line(p1.x, p1.y, p2.x, p2.y, Color.path_corridor);
+                    self.draw_line(p1.x, p1.y + 1, p2.x, p2.y + 1, Color.path_corridor);
+                    self.draw_line(p1.x, p1.y + 2, p2.x, p2.y + 2, Color.path_edge);
+                }
             }
         }
 
@@ -946,22 +988,39 @@ pub const DisplayWindow = struct {
                 self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS + 6, Color.wp_target);
             }
 
-            // Waypoint anchor body
-            const body_color = if (is_hovered) Color.wp_hover else Color.wp_normal;
-            self.fill_circle(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, body_color);
-            self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.white);
-            self.fill_circle(pt.x, pt.y, 4, Color.white);
+            if (!is_spitting_scene) {
+                // Waypoint anchor body
+                const body_color = if (is_hovered) Color.wp_hover else Color.wp_normal;
+                self.fill_circle(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, body_color);
+                self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.white);
+                self.fill_circle(pt.x, pt.y, 4, Color.white);
 
-            // Waypoint text label
-            const name = wp.get_name();
-            const text_w = font.text_width(name, 2);
-            self.draw_text(name, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.hud_text);
+                // Waypoint text label
+                const name = wp.get_name();
+                const text_w = font.text_width(name, 2);
+                self.draw_text(name, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.hud_text);
+            } else {
+                // In Spitting Contest: Stage marks
+                if (is_hovered or is_targeted) {
+                    self.fill_circle(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.wp_hover);
+                    self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.white);
+                    const name = wp.get_name();
+                    var buf: [64]u8 = undefined;
+                    const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
+                    const text_w = font.text_width(prompt, 2);
+                    self.draw_text(prompt, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.wp_hover);
+                } else {
+                    // Subtle ground mark anchor
+                    self.draw_circle_outline(pt.x, pt.y, 5, Color{ .r = 255, .g = 255, .b = 255, .a = 100 });
+                    self.fill_circle(pt.x, pt.y, 2, Color.white);
+                }
+            }
         }
 
         // 5. Render Actors
-        for (frame.entities[0..frame.entity_count]) |e| {
+        for (frame.entities[0..frame.entity_count], 0..) |e, idx| {
             const name = e.get_name();
-            const pt = world_to_screen(e.x, e.y, self.width, self.height);
+            const pt = get_entity_screen_pos(idx, frame.entities[0..frame.entity_count], self.width, self.height);
 
             if (std.mem.eql(u8, name, "Cat")) {
                 // Cat (Player): Orange token with cat ears
@@ -1022,14 +1081,14 @@ pub const DisplayWindow = struct {
                 self.fill_circle(pt.x, pt.y - 8, 8, Color.guybrush_hair);
 
                 // Label
-                self.draw_text("Guybrush", pt.x - 24, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.guybrush_hair);
+                const nw = font.text_width("Guybrush", 2);
+                self.draw_text("Guybrush", pt.x - @divTrunc(nw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.guybrush_hair);
 
                 // Spit Status
-                if (frame.spit_is_thick) {
-                    self.draw_text("[Thick Spit Ready!]", pt.x - 50, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.spit_color);
-                } else {
-                    self.draw_text("[Spit: Thin]", pt.x - 32, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.hud_subtext);
-                }
+                const spit_str = if (frame.spit_is_thick) "[Thick Spit Ready!]" else "[Spit: Thin]";
+                const spit_col = if (frame.spit_is_thick) Color.spit_color else Color.hud_subtext;
+                const sw = font.text_width(spit_str, 2);
+                self.draw_text(spit_str, pt.x - @divTrunc(sw, 2), pt.y + ACTOR_SCREEN_RADIUS + 4, 2, spit_col);
             } else if (std.mem.eql(u8, name, "Organiser")) {
                 // Organiser: Velvet red coat, fancy hat
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.organiser_coat);
@@ -1040,14 +1099,14 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 8, 4, 6, Color.guybrush_hair);
 
                 // Label
-                self.draw_text("Organiser", pt.x - 28, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.organiser_coat);
+                const nw = font.text_width("Organiser", 2);
+                self.draw_text("Organiser", pt.x - @divTrunc(nw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.organiser_coat);
 
                 // Distracted / watching status
-                if (frame.organiser_distracted) {
-                    self.draw_text("[DISTRACTED!]", pt.x - 38, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
-                } else {
-                    self.draw_text("[Watching]", pt.x - 26, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.status_running);
-                }
+                const org_str = if (frame.organiser_distracted) "[DISTRACTED!]" else "[Watching]";
+                const org_col = if (frame.organiser_distracted) Color.cue_alert else Color.status_running;
+                const sw = font.text_width(org_str, 2);
+                self.draw_text(org_str, pt.x - @divTrunc(sw, 2), pt.y + ACTOR_SCREEN_RADIUS + 4, 2, org_col);
             } else if (std.mem.eql(u8, name, "Onlookers")) {
                 // Onlookers: Crowd of spectator circles
                 self.fill_circle(pt.x - 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.onlookers_color);
@@ -1056,9 +1115,11 @@ pub const DisplayWindow = struct {
                 self.draw_circle_outline(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 2, Color.white);
 
                 // Label
-                self.draw_text("Onlookers", pt.x - 28, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.onlookers_color);
+                const nw = font.text_width("Onlookers", 2);
+                self.draw_text("Onlookers", pt.x - @divTrunc(nw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.onlookers_color);
                 if (frame.organiser_distracted) {
-                    self.draw_text("[Looking Offstage]", pt.x - 50, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
+                    const sw = font.text_width("[Looking Offstage]", 2);
+                    self.draw_text("[Looking Offstage]", pt.x - @divTrunc(sw, 2), pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
                 }
             } else {
                 // Generic actor token
@@ -1386,4 +1447,39 @@ test "renderer coordinate conversion and hit testing" {
 
     const btn_miss = hit_test_verb_button(10, 10, 540);
     try testing.expectEqual(@as(?AdventureVerb, null), btn_miss);
+
+    // Test entity visual standoff for multiple actors at the same position
+    const entities = [_]RenderEntity{
+        .{
+            .entity = EntityId.from_int(10),
+            .x = 0,
+            .y = 0,
+            .current_wp = 1,
+            .is_moving = false,
+            .name = undefined,
+            .name_len = 0,
+        },
+        .{
+            .entity = EntityId.from_int(11),
+            .x = 0,
+            .y = 0,
+            .current_wp = 1,
+            .is_moving = false,
+            .name = undefined,
+            .name_len = 0,
+        },
+    };
+    const e0_pos = get_entity_screen_pos(0, &entities, 960, 540);
+    const e1_pos = get_entity_screen_pos(1, &entities, 960, 540);
+    // Entity 0 shifted left by 22, entity 1 shifted right by 24
+    try testing.expect(e0_pos.x < e1_pos.x);
+    try testing.expectEqual(@as(i32, 200 - 22), e0_pos.x);
+    try testing.expectEqual(@as(i32, 200 + 24), e1_pos.x);
+
+    // Hit test actor coordinates
+    const act0_hit = hit_test_actor(e0_pos.x, e0_pos.y, &entities, 960, 540);
+    try testing.expectEqual(@as(?usize, 0), act0_hit);
+
+    const act1_hit = hit_test_actor(e1_pos.x, e1_pos.y, &entities, 960, 540);
+    try testing.expectEqual(@as(?usize, 1), act1_hit);
 }

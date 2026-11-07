@@ -174,8 +174,6 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const offstage_wp = spatial.graph.find_waypoint("Looking Offstage") orelse 2;
     const onlookers_wp = spatial.graph.find_waypoint("Onlookers") orelse
         try spatial.graph.add_waypoint(room_ent, -8, 3, "Onlookers");
-    const judging_wp = spatial.graph.find_waypoint("Judging Post") orelse
-        try spatial.graph.add_waypoint(room_ent, 2, -4, "Judging Post");
 
     if (spatial.graph.get_waypoint(starting_line_wp)) |_| {
         spatial.graph.waypoints.items[starting_line_wp - 1].pos = .{ .x = 0, .y = 0 };
@@ -185,7 +183,6 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     }
 
     try spatial.graph.connect(onlookers_wp, starting_line_wp, null);
-    try spatial.graph.connect(starting_line_wp, judging_wp, null);
     try spatial.graph.connect(starting_line_wp, offstage_wp, null);
 
     // Position Flags hotspot in the field at x=22
@@ -197,7 +194,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     }
 
     try spatial.register_entity(guybrush, starting_line_wp, 10);
-    try spatial.register_entity(organiser, judging_wp, 12);
+    try spatial.register_entity(organiser, starting_line_wp, 12);
     try spatial.register_entity(onlookers, onlookers_wp, 15);
 
     // Initial items for Guybrush
@@ -361,8 +358,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     const offstage_wp = spatial.graph.find_waypoint("Looking Offstage") orelse 2;
     const onlookers_wp = spatial.graph.find_waypoint("Onlookers") orelse
         try spatial.graph.add_waypoint(room_ent, -8, 3, "Onlookers");
-    const judging_wp = spatial.graph.find_waypoint("Judging Post") orelse
-        try spatial.graph.add_waypoint(room_ent, 2, -4, "Judging Post");
 
     if (spatial.graph.get_waypoint(starting_line_wp)) |_| {
         spatial.graph.waypoints.items[starting_line_wp - 1].pos = .{ .x = 0, .y = 0 };
@@ -372,7 +367,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     }
 
     try spatial.graph.connect(onlookers_wp, starting_line_wp, null);
-    try spatial.graph.connect(starting_line_wp, judging_wp, null);
     try spatial.graph.connect(starting_line_wp, offstage_wp, null);
 
     // Position Flags hotspot in the field at x=22
@@ -384,7 +378,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     }
 
     try spatial.register_entity(guybrush, starting_line_wp, 10);
-    try spatial.register_entity(organiser, judging_wp, 12);
+    try spatial.register_entity(organiser, starting_line_wp, 12);
     try spatial.register_entity(onlookers, onlookers_wp, 15);
 
     // Initial items for Guybrush
@@ -485,7 +479,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (act.actor_index < frame.entity_count) {
                     const target_entity = frame.entities[act.actor_index];
                     const tname = target_entity.get_name();
-                    const pt = bespoke.display.renderer.world_to_screen(target_entity.x, target_entity.y, window.width, window.height);
+                    const pt = bespoke.display.renderer.get_entity_screen_pos(act.actor_index, frame.entities[0..frame.entity_count], window.width, window.height);
 
                     if (std.mem.eql(u8, tname, "Organiser")) {
                         window.show_dialogue(
