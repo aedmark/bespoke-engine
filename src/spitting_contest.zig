@@ -413,7 +413,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
         history_snapshots.deinit();
     }
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 960, 540);
+    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 1280, 720);
     defer window.deinit();
 
     if (window.is_headless) {
@@ -422,7 +422,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
         return;
     }
 
-    try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (960x540) <<<\n", .{});
+    try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
     try stdout.print("Booty Island Contest Controls:\n", .{});
     try stdout.print("   - [S]:                   SPIT! (Evaluate spit attempt against active facts)\n", .{});
     try stdout.print("   - [H]:                   SOUND SHIP'S HORN (Distract crowd for 100 ticks)\n", .{});

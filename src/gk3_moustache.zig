@@ -174,34 +174,34 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const r25_wp = spatial.graph.find_waypoint_in_room(hotel_scene, "Room25") orelse 1;
     const r33_wp = spatial.graph.find_waypoint_in_room(hotel_scene, "Room33") orelse 2;
     const corridor_wp = spatial.graph.find_waypoint_in_room(hotel_scene, "CorridorExit") orelse
-        try spatial.graph.add_waypoint(hotel_scene, 24, 0, "CorridorExit");
+        try spatial.graph.add_waypoint(hotel_scene, 32, 0, "CorridorExit");
 
     const garden_path_wp = spatial.graph.find_waypoint_in_room(garden_scene, "GardenPath") orelse
         try spatial.graph.add_waypoint(garden_scene, 0, 0, "GardenPath");
     const fence_wp = spatial.graph.find_waypoint_in_room(garden_scene, "FenceMark") orelse
         try spatial.graph.add_waypoint(garden_scene, 18, 0, "FenceMark");
     const cat_wp = spatial.graph.find_waypoint_in_room(garden_scene, "CatLounge") orelse
-        try spatial.graph.add_waypoint(garden_scene, 32, 0, "CatLounge");
+        try spatial.graph.add_waypoint(garden_scene, 34, 0, "CatLounge");
 
     const shop_ent_wp = spatial.graph.find_waypoint_in_room(shop_scene, "ShopEntrance") orelse
         try spatial.graph.add_waypoint(shop_scene, 0, 0, "ShopEntrance");
     const counter_wp = spatial.graph.find_waypoint_in_room(shop_scene, "CounterMark") orelse
         try spatial.graph.add_waypoint(shop_scene, 16, 0, "CounterMark");
     const bike_wp = spatial.graph.find_waypoint_in_room(shop_scene, "BikeMark") orelse
-        try spatial.graph.add_waypoint(shop_scene, 30, 0, "BikeMark");
+        try spatial.graph.add_waypoint(shop_scene, 32, 0, "BikeMark");
 
-    // Position waypoints
+    // Position waypoints (calibrated for 1280x720 standardized layout)
     if (spatial.graph.get_waypoint(r25_wp)) |_| spatial.graph.waypoints.items[r25_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(r33_wp)) |_| spatial.graph.waypoints.items[r33_wp - 1].pos = .{ .x = 12, .y = 0 };
-    if (spatial.graph.get_waypoint(corridor_wp)) |_| spatial.graph.waypoints.items[corridor_wp - 1].pos = .{ .x = 24, .y = 0 };
+    if (spatial.graph.get_waypoint(r33_wp)) |_| spatial.graph.waypoints.items[r33_wp - 1].pos = .{ .x = 16, .y = 0 };
+    if (spatial.graph.get_waypoint(corridor_wp)) |_| spatial.graph.waypoints.items[corridor_wp - 1].pos = .{ .x = 32, .y = 0 };
 
     if (spatial.graph.get_waypoint(garden_path_wp)) |_| spatial.graph.waypoints.items[garden_path_wp - 1].pos = .{ .x = 0, .y = 0 };
     if (spatial.graph.get_waypoint(fence_wp)) |_| spatial.graph.waypoints.items[fence_wp - 1].pos = .{ .x = 18, .y = 0 };
-    if (spatial.graph.get_waypoint(cat_wp)) |_| spatial.graph.waypoints.items[cat_wp - 1].pos = .{ .x = 32, .y = 0 };
+    if (spatial.graph.get_waypoint(cat_wp)) |_| spatial.graph.waypoints.items[cat_wp - 1].pos = .{ .x = 34, .y = 0 };
 
     if (spatial.graph.get_waypoint(shop_ent_wp)) |_| spatial.graph.waypoints.items[shop_ent_wp - 1].pos = .{ .x = 0, .y = 0 };
     if (spatial.graph.get_waypoint(counter_wp)) |_| spatial.graph.waypoints.items[counter_wp - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(bike_wp)) |_| spatial.graph.waypoints.items[bike_wp - 1].pos = .{ .x = 30, .y = 0 };
+    if (spatial.graph.get_waypoint(bike_wp)) |_| spatial.graph.waypoints.items[bike_wp - 1].pos = .{ .x = 32, .y = 0 };
 
     try spatial.graph.connect(r25_wp, r33_wp, null);
     try spatial.graph.connect(r33_wp, corridor_wp, null);
@@ -231,12 +231,12 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const rental_counter = world.lookup_entity("RentalCounter") orelse try world.intern_entity("RentalCounter");
     const motorcycle = world.lookup_entity("Motorcycle") orelse try world.intern_entity("Motorcycle");
 
-    try spatial.add_hotspot(mosely_door, hotel_scene, .{ .x = 12, .y = -6 }, 8, "Mosely's Door", "Room 33. Mosely's jacket is hanging on the coat rack inside.");
+    try spatial.add_hotspot(mosely_door, hotel_scene, .{ .x = 16, .y = -6 }, 8, "Mosely's Door", "Room 33. Mosely's jacket is hanging on the coat rack inside.");
     try spatial.add_hotspot(room_desk, hotel_scene, .{ .x = 0, .y = -6 }, 8, "Room Desk", "A wooden desk holding breakfast syrup, tape, and a marker.");
     try spatial.add_hotspot(fence_hole, garden_scene, .{ .x = 18, .y = -4 }, 8, "Fence Hole", "A low hole cut into the base of the wooden garden fence.");
-    try spatial.add_hotspot(garden_shrub, garden_scene, .{ .x = 32, .y = -4 }, 8, "Garden Shrub", "A sun-dappled lavender bush where the stray cat likes to nap.");
+    try spatial.add_hotspot(garden_shrub, garden_scene, .{ .x = 34, .y = -4 }, 8, "Garden Shrub", "A sun-dappled lavender bush where the stray cat likes to nap.");
     try spatial.add_hotspot(rental_counter, shop_scene, .{ .x = 16, .y = -6 }, 8, "Rental Desk", "Madame Buthane's counter, piled with French road maps and bike keys.");
-    try spatial.add_hotspot(motorcycle, shop_scene, .{ .x = 30, .y = -6 }, 10, "Motorcycle", "A sleek vintage motorcycle, reserved for detective Mosely.");
+    try spatial.add_hotspot(motorcycle, shop_scene, .{ .x = 32, .y = -6 }, 10, "Motorcycle", "A sleek vintage motorcycle, reserved for detective Mosely.");
 
     // VM
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
@@ -438,34 +438,34 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const r25_wp = spatial.graph.find_waypoint_in_room(hotel_scene, "Room25") orelse 1;
     const r33_wp = spatial.graph.find_waypoint_in_room(hotel_scene, "Room33") orelse 2;
     const corridor_wp = spatial.graph.find_waypoint_in_room(hotel_scene, "CorridorExit") orelse
-        try spatial.graph.add_waypoint(hotel_scene, 24, 0, "CorridorExit");
+        try spatial.graph.add_waypoint(hotel_scene, 32, 0, "CorridorExit");
 
     const garden_path_wp = spatial.graph.find_waypoint_in_room(garden_scene, "GardenPath") orelse
         try spatial.graph.add_waypoint(garden_scene, 0, 0, "GardenPath");
     const fence_wp = spatial.graph.find_waypoint_in_room(garden_scene, "FenceMark") orelse
         try spatial.graph.add_waypoint(garden_scene, 18, 0, "FenceMark");
     const cat_wp = spatial.graph.find_waypoint_in_room(garden_scene, "CatLounge") orelse
-        try spatial.graph.add_waypoint(garden_scene, 32, 0, "CatLounge");
+        try spatial.graph.add_waypoint(garden_scene, 34, 0, "CatLounge");
 
     const shop_ent_wp = spatial.graph.find_waypoint_in_room(shop_scene, "ShopEntrance") orelse
         try spatial.graph.add_waypoint(shop_scene, 0, 0, "ShopEntrance");
     const counter_wp = spatial.graph.find_waypoint_in_room(shop_scene, "CounterMark") orelse
         try spatial.graph.add_waypoint(shop_scene, 16, 0, "CounterMark");
     const bike_wp = spatial.graph.find_waypoint_in_room(shop_scene, "BikeMark") orelse
-        try spatial.graph.add_waypoint(shop_scene, 30, 0, "BikeMark");
+        try spatial.graph.add_waypoint(shop_scene, 32, 0, "BikeMark");
 
-    // Position waypoints
+    // Position waypoints (calibrated for 1280x720 standardized layout)
     if (spatial.graph.get_waypoint(r25_wp)) |_| spatial.graph.waypoints.items[r25_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(r33_wp)) |_| spatial.graph.waypoints.items[r33_wp - 1].pos = .{ .x = 12, .y = 0 };
-    if (spatial.graph.get_waypoint(corridor_wp)) |_| spatial.graph.waypoints.items[corridor_wp - 1].pos = .{ .x = 24, .y = 0 };
+    if (spatial.graph.get_waypoint(r33_wp)) |_| spatial.graph.waypoints.items[r33_wp - 1].pos = .{ .x = 16, .y = 0 };
+    if (spatial.graph.get_waypoint(corridor_wp)) |_| spatial.graph.waypoints.items[corridor_wp - 1].pos = .{ .x = 32, .y = 0 };
 
     if (spatial.graph.get_waypoint(garden_path_wp)) |_| spatial.graph.waypoints.items[garden_path_wp - 1].pos = .{ .x = 0, .y = 0 };
     if (spatial.graph.get_waypoint(fence_wp)) |_| spatial.graph.waypoints.items[fence_wp - 1].pos = .{ .x = 18, .y = 0 };
-    if (spatial.graph.get_waypoint(cat_wp)) |_| spatial.graph.waypoints.items[cat_wp - 1].pos = .{ .x = 32, .y = 0 };
+    if (spatial.graph.get_waypoint(cat_wp)) |_| spatial.graph.waypoints.items[cat_wp - 1].pos = .{ .x = 34, .y = 0 };
 
     if (spatial.graph.get_waypoint(shop_ent_wp)) |_| spatial.graph.waypoints.items[shop_ent_wp - 1].pos = .{ .x = 0, .y = 0 };
     if (spatial.graph.get_waypoint(counter_wp)) |_| spatial.graph.waypoints.items[counter_wp - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(bike_wp)) |_| spatial.graph.waypoints.items[bike_wp - 1].pos = .{ .x = 30, .y = 0 };
+    if (spatial.graph.get_waypoint(bike_wp)) |_| spatial.graph.waypoints.items[bike_wp - 1].pos = .{ .x = 32, .y = 0 };
 
     try spatial.graph.connect(r25_wp, r33_wp, null);
     try spatial.graph.connect(r33_wp, corridor_wp, null);
@@ -493,12 +493,12 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const rental_counter = world.lookup_entity("RentalCounter") orelse try world.intern_entity("RentalCounter");
     const motorcycle = world.lookup_entity("Motorcycle") orelse try world.intern_entity("Motorcycle");
 
-    try spatial.add_hotspot(mosely_door, hotel_scene, .{ .x = 12, .y = -6 }, 8, "Mosely's Door", "Room 33. Mosely's jacket is hanging on the coat rack inside.");
+    try spatial.add_hotspot(mosely_door, hotel_scene, .{ .x = 16, .y = -6 }, 8, "Mosely's Door", "Room 33. Mosely's jacket is hanging on the coat rack inside.");
     try spatial.add_hotspot(room_desk, hotel_scene, .{ .x = 0, .y = -6 }, 8, "Room Desk", "A wooden desk holding breakfast syrup, tape, and a marker.");
     try spatial.add_hotspot(fence_hole, garden_scene, .{ .x = 18, .y = -4 }, 8, "Fence Hole", "A low hole cut into the base of the wooden garden fence.");
-    try spatial.add_hotspot(garden_shrub, garden_scene, .{ .x = 32, .y = -4 }, 8, "Garden Shrub", "A sun-dappled lavender bush where the stray cat likes to nap.");
+    try spatial.add_hotspot(garden_shrub, garden_scene, .{ .x = 34, .y = -4 }, 8, "Garden Shrub", "A sun-dappled lavender bush where the stray cat likes to nap.");
     try spatial.add_hotspot(rental_counter, shop_scene, .{ .x = 16, .y = -6 }, 8, "Rental Desk", "Madame Buthane's counter, piled with French road maps and bike keys.");
-    try spatial.add_hotspot(motorcycle, shop_scene, .{ .x = 30, .y = -6 }, 10, "Motorcycle", "A sleek vintage motorcycle, reserved for detective Mosely.");
+    try spatial.add_hotspot(motorcycle, shop_scene, .{ .x = 32, .y = -6 }, 10, "Motorcycle", "A sleek vintage motorcycle, reserved for detective Mosely.");
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -522,7 +522,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         history_snapshots.deinit();
     }
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Gabriel Knight 3: The Cat Moustache", 960, 540);
+    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Gabriel Knight 3: The Cat Moustache", 1280, 720);
     defer window.deinit();
 
     if (window.is_headless) {
@@ -531,7 +531,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         return;
     }
 
-    try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (960x540) <<<\n", .{});
+    try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
     try stdout.print("Gabriel Knight 3 Scenario Controls:\n", .{});
     try stdout.print("   - [H]:                   Go to Hotel Corridor\n", .{});
     try stdout.print("   - [G]:                   Go to Hotel Courtyard Garden\n", .{});
@@ -592,14 +592,18 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     try vm.transition_to_scene(garden_scene);
                     _ = try spatial.transition_actor(gabriel, garden_scene, garden_path_wp);
                     window.set_cue_banner("Stepped outside into the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
-                } else if (wp_id == cat_wp and vm.current_scene == garden_scene) {
-                    try vm.transition_to_scene(shop_scene);
-                    _ = try spatial.transition_actor(gabriel, shop_scene, shop_ent_wp);
-                    window.set_cue_banner("Walked into Madame Buthane's Bike Rental Shop. [H] Hotel [G] Garden", 120);
+                } else if (wp_id == garden_path_wp and vm.current_scene == garden_scene) {
+                    if (spatial.get_current_waypoint(gabriel) == garden_path_wp) {
+                        try vm.transition_to_scene(hotel_scene);
+                        _ = try spatial.transition_actor(gabriel, hotel_scene, corridor_wp);
+                        window.set_cue_banner("Returned inside to the Hotel Corridor. [G] Garden [B] Shop", 120);
+                    }
                 } else if (wp_id == shop_ent_wp and vm.current_scene == shop_scene) {
-                    try vm.transition_to_scene(hotel_scene);
-                    _ = try spatial.transition_actor(gabriel, hotel_scene, r25_wp);
-                    window.set_cue_banner("Returned to the Hotel Corridor. [G] Garden [B] Shop", 120);
+                    if (spatial.get_current_waypoint(gabriel) == shop_ent_wp) {
+                        try vm.transition_to_scene(garden_scene);
+                        _ = try spatial.transition_actor(gabriel, garden_scene, fence_wp);
+                        window.set_cue_banner("Returned to the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
+                    }
                 } else {
                     window.set_cue_banner("Directing Gabriel to waypoint.", 60);
                 }
@@ -712,6 +716,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         } else {
                             window.set_cue_banner("Fence Hole: A low gap cut into the wooden courtyard fence.", 120);
                         }
+                    } else if (std.mem.indexOf(u8, hname, "Motorcycle") != null) {
+                        window.set_cue_banner("Vintage Motorcycle: Sleek red bike reserved for detective Mosely.", 120);
+                    } else if (std.mem.indexOf(u8, hname, "Counter") != null or std.mem.indexOf(u8, hname, "Rental") != null) {
+                        window.set_cue_banner("Rental Counter: Madame Buthane's counter, piled with maps and keys.", 120);
                     } else {
                         var buf: [128]u8 = undefined;
                         const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Hotspot";
@@ -726,39 +734,59 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     const tname = target_entity.get_name();
                     const pt = bespoke.display.renderer.get_entity_screen_pos(act.actor_index, frame.entities[0..frame.entity_count], window.width, window.height);
 
-                    if (std.mem.eql(u8, tname, "Buthane")) {
-                        const is_dg = evaluate_disguise(&world);
-                        if (is_dg) {
-                            window.show_dialogue(
-                                target_entity.entity,
-                                pt,
-                                "Madame Buthane",
-                                "\"Bonjour, monsieur! How can I help you today?\"",
-                                &[_][]const u8{
-                                    "I am detective Franklin Mosely. I've come for my bike.",
-                                    "Do you know whose cat that is outside?",
-                                    "Au revoir, madame.",
-                                },
-                            );
+                    if (act.verb == .look_at) {
+                        if (std.mem.eql(u8, tname, "Buthane")) {
+                            window.set_cue_banner("Madame Buthane: Proprietor of the motorcycle rental shop.", 120);
+                        } else if (std.mem.eql(u8, tname, "Mosely")) {
+                            window.set_cue_banner("Mosely: Detective Franklin Mosely, pacing the corridor without a moustache.", 120);
+                        } else if (std.mem.eql(u8, tname, "StrayCat")) {
+                            window.set_cue_banner("Stray Cat: A sleek black cat basking peacefully in the warm sun.", 120);
                         } else {
-                            window.show_dialogue(
-                                target_entity.entity,
-                                pt,
-                                "Madame Buthane",
-                                "\"Bonjour, monsieur! How can I help you today?\"",
-                                &[_][]const u8{
-                                    "I'd like to rent a motorcycle.",
-                                    "Do you know whose cat that is outside?",
-                                    "Au revoir, madame.",
-                                },
-                            );
+                            window.set_cue_banner("Gabriel Knight: Scribe, shadow hunter, man about town.", 120);
                         }
-                    } else if (std.mem.eql(u8, tname, "Mosely")) {
-                        window.set_cue_banner("Mosely: \"Hey Gabriel! Taking in the French sights?\"", 90);
-                    } else if (std.mem.eql(u8, tname, "StrayCat")) {
-                        window.set_cue_banner("Stray Cat: \"Meow! (A sleek black coat, basking in the sun.)\"", 90);
+                    } else if (act.verb == .talk_to or act.verb == .use_with) {
+                        if (std.mem.eql(u8, tname, "Buthane")) {
+                            const is_dg = evaluate_disguise(&world);
+                            if (is_dg) {
+                                window.show_dialogue(
+                                    target_entity.entity,
+                                    pt,
+                                    "Madame Buthane",
+                                    "\"Bonjour, monsieur! How can I help you today?\"",
+                                    &[_][]const u8{
+                                        "I am detective Franklin Mosely. I've come for my bike.",
+                                        "Do you know whose cat that is outside?",
+                                        "Au revoir, madame.",
+                                    },
+                                );
+                            } else {
+                                window.show_dialogue(
+                                    target_entity.entity,
+                                    pt,
+                                    "Madame Buthane",
+                                    "\"Bonjour, monsieur! How can I help you today?\"",
+                                    &[_][]const u8{
+                                        "I'd like to rent a motorcycle.",
+                                        "Do you know whose cat that is outside?",
+                                        "Au revoir, madame.",
+                                    },
+                                );
+                            }
+                        } else if (std.mem.eql(u8, tname, "Mosely")) {
+                            window.set_cue_banner("Mosely: \"Hey Gabriel! Taking in the French sights?\"", 90);
+                        } else if (std.mem.eql(u8, tname, "StrayCat")) {
+                            window.set_cue_banner("Stray Cat: \"Meow! (The cat blinks lazily at you.)\"", 90);
+                        } else {
+                            window.set_cue_banner("Gabriel Knight: Talking to myself won't solve the case.", 90);
+                        }
+                    } else if (act.verb == .pick_up) {
+                        if (std.mem.eql(u8, tname, "StrayCat")) {
+                            window.set_cue_banner("The stray cat would scratch your eyes out if you tried to pick it up!", 120);
+                        } else {
+                            window.set_cue_banner("You can't pick up other people!", 90);
+                        }
                     } else {
-                        window.set_cue_banner("Gabriel Knight: Scribe, shadow hunter, man about town.", 90);
+                        window.set_cue_banner("Directing Gabriel.", 60);
                     }
                 }
             },
@@ -767,46 +795,103 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (hs_act.hotspot_index < frame.hotspot_count) {
                     const hs = frame.hotspots[hs_act.hotspot_index];
                     const hname = hs.get_name();
-                    if (std.mem.indexOf(u8, hname, "Door") != null) {
-                        if (!world.has_fact(gabriel, carries_rel, passport_ent.to_int())) {
-                            try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
-                            window.set_cue_banner("★ Snuck into Room 33 and snatched Mosely's passport! ★", 150);
+
+                    if (hs_act.verb == .look_at) {
+                        // Look verb: Show examine description without looting
+                        if (std.mem.indexOf(u8, hname, "Desk") != null) {
+                            if (!world.has_fact(gabriel, carries_rel, marker.to_int())) {
+                                window.set_cue_banner("Room Desk: A wooden desk with a black marker, masking tape, and breakfast syrup.", 150);
+                            } else {
+                                window.set_cue_banner("Room Desk: Cleared out. Nothing else useful on the desk.", 120);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Shrub") != null) {
+                            if (!world.has_fact(gabriel, carries_rel, spray_bottle.to_int())) {
+                                window.set_cue_banner("Garden Shrub: A garden spray bottle sits on the potting bench here.", 150);
+                            } else {
+                                window.set_cue_banner("Garden Shrub: Fragrant lavender. The stray cat is napping nearby.", 120);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Door") != null) {
+                            if (!world.has_fact(gabriel, carries_rel, passport_ent.to_int())) {
+                                window.set_cue_banner("Room 33: Mosely's room. His passport is sticking out of his coat pocket!", 150);
+                            } else {
+                                window.set_cue_banner("Room 33: Mosely's room. You've already taken his passport.", 120);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Hole") != null) {
+                            if (world.has_fact(fence_hole, fence_hair_rel, null)) {
+                                window.set_cue_banner("Fence Hole: Thick black cat fur is stuck firmly to the masking tape!", 150);
+                            } else if (world.has_fact(fence_hole, taped_rel, null)) {
+                                window.set_cue_banner("Fence Hole: Sticky masking tape is stretched across the gap.", 120);
+                            } else {
+                                window.set_cue_banner("Fence Hole: A low gap cut into the wooden courtyard fence.", 120);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Motorcycle") != null) {
+                            window.set_cue_banner("Vintage Motorcycle: Sleek red bike reserved for detective Mosely.", 120);
+                        } else if (std.mem.indexOf(u8, hname, "Counter") != null or std.mem.indexOf(u8, hname, "Rental") != null) {
+                            window.set_cue_banner("Rental Counter: Madame Buthane's counter, piled with maps and keys.", 120);
                         } else {
-                            window.set_cue_banner("Gabriel: \"I already snatched Mosely's passport.\"", 90);
+                            var buf: [128]u8 = undefined;
+                            const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Hotspot";
+                            window.set_cue_banner(text, 120);
                         }
-                    } else if (std.mem.indexOf(u8, hname, "Desk") != null) {
-                        if (!world.has_fact(gabriel, carries_rel, marker.to_int())) {
-                            try world.remember(gabriel, carries_rel, marker.to_int(), 0);
-                            try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
-                            try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
-                            window.set_cue_banner("★ Scavenged Desk: Acquired Marker, Masking Tape, and Syrup! ★", 180);
+                    } else if (hs_act.verb == .pick_up) {
+                        // Take verb: Scavenge items or collect cat hair
+                        if (std.mem.indexOf(u8, hname, "Desk") != null) {
+                            if (!world.has_fact(gabriel, carries_rel, marker.to_int())) {
+                                try world.remember(gabriel, carries_rel, marker.to_int(), 0);
+                                try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
+                                try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
+                                window.set_cue_banner("★ Scavenged Desk: Acquired Marker, Masking Tape, and Syrup! ★", 180);
+                            } else {
+                                window.set_cue_banner("Room Desk: Cleared out. You already took the marker, tape, and syrup.", 90);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Door") != null) {
+                            if (!world.has_fact(gabriel, carries_rel, passport_ent.to_int())) {
+                                try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
+                                window.set_cue_banner("★ Snuck into Room 33 and snatched Mosely's passport! ★", 150);
+                            } else {
+                                window.set_cue_banner("Gabriel: \"I already snatched Mosely's passport.\"", 90);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Shrub") != null) {
+                            if (!world.has_fact(gabriel, carries_rel, spray_bottle.to_int())) {
+                                try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
+                                window.set_cue_banner("★ Found Spray Bottle filled with water on the potting bench! ★", 180);
+                            } else {
+                                window.set_cue_banner("Garden Shrub: Fragrant lavender. The stray cat is napping nearby.", 90);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Hole") != null) {
+                            if (world.has_fact(fence_hole, fence_hair_rel, null)) {
+                                try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
+                                _ = world.forget(fence_hole, fence_hair_rel, null);
+                                _ = world.forget(fence_hole, taped_rel, null);
+                                window.set_cue_banner("★ Peeled Cat Hair from the fence tape into inventory! ★", 150);
+                            } else if (world.has_fact(fence_hole, taped_rel, null)) {
+                                window.set_cue_banner("Masking tape is stretched across the fence hole. Need to squirt the cat!", 120);
+                            } else {
+                                window.set_cue_banner("You can't take a hole in the fence!", 90);
+                            }
+                        } else if (std.mem.indexOf(u8, hname, "Motorcycle") != null) {
+                            if (evaluate_puzzle_victory(&world)) {
+                                window.set_cue_banner("★ VICTORY! Cruising into the French countryside on Mosely's bike! ★", 180);
+                            } else {
+                                window.set_cue_banner("Madame Buthane won't let you take the motorcycle without keys!", 120);
+                            }
                         } else {
-                            window.set_cue_banner("Room Desk: Cleared out. You already took the marker, tape, and syrup.", 90);
+                            window.set_cue_banner("You can't pick that up.", 90);
                         }
-                    } else if (std.mem.indexOf(u8, hname, "Shrub") != null) {
-                        if (!world.has_fact(gabriel, carries_rel, spray_bottle.to_int())) {
-                            try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
-                            window.set_cue_banner("★ Found Spray Bottle filled with water on the potting bench! ★", 180);
+                    } else if (hs_act.verb == .talk_to) {
+                        window.set_cue_banner("You can't talk to that.", 90);
+                    } else if (hs_act.verb == .use_with) {
+                        if (std.mem.indexOf(u8, hname, "Desk") != null) {
+                            window.set_cue_banner("Use TAKE to scavenge items from the desk.", 120);
+                        } else if (std.mem.indexOf(u8, hname, "Shrub") != null) {
+                            window.set_cue_banner("Use TAKE to collect the spray bottle from the potting bench.", 120);
+                        } else if (std.mem.indexOf(u8, hname, "Door") != null) {
+                            window.set_cue_banner("Use TAKE to snatch Mosely's passport from his coat.", 120);
                         } else {
-                            window.set_cue_banner("Garden Shrub: Fragrant lavender. The stray cat is napping nearby.", 90);
+                            window.set_cue_banner("Select an item from your inventory first to use on this.", 120);
                         }
-                    } else if (std.mem.indexOf(u8, hname, "Hole") != null) {
-                        if (world.has_fact(fence_hole, fence_hair_rel, null)) {
-                            try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
-                            _ = world.forget(fence_hole, fence_hair_rel, null);
-                            _ = world.forget(fence_hole, taped_rel, null);
-                            window.set_cue_banner("★ Peeled Cat Hair from the fence tape into inventory! ★", 150);
-                        } else if (world.has_fact(fence_hole, taped_rel, null)) {
-                            window.set_cue_banner("Masking tape is stretched across the fence hole. Need to squirt the cat!", 120);
-                        } else {
-                            window.set_cue_banner("Fence hole: Low escape passage through the wooden fence.", 90);
-                        }
-                    } else if (std.mem.indexOf(u8, hname, "Motorcycle") != null) {
-                        if (evaluate_puzzle_victory(&world)) {
-                            window.set_cue_banner("★ VICTORY! Cruising into the French countryside on Mosely's bike! ★", 180);
-                        } else {
-                            window.set_cue_banner("Vintage motorcycle: Reserved for detective Mosely. Talk to Madame Buthane!", 120);
-                        }
+                    } else {
+                        window.set_cue_banner("Directing Gabriel to interact.", 60);
                     }
                 }
             },

@@ -145,7 +145,7 @@ pub fn main() !void {
     }
 
     // Initialize SDL2 Peripheral Display Window (D-008, P6-01)
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 960, 540);
+    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 1280, 720);
     defer window.deinit();
 
     if (window.is_headless or is_headless_arg) {
@@ -211,7 +211,7 @@ pub fn main() !void {
         try stdout.print("   - Cat carries Cheese?        {s} (Undone!)\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
         try stdout.print("===================================================================\n", .{});
     } else {
-        try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (960x540) <<<\n", .{});
+        try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
         try stdout.print("Interactive Adventure Controls:\n", .{});
         try stdout.print("   - [Right Click]:         Cycle Verb (WALK, LOOK, TALK, TAKE, USE)\n", .{});
         try stdout.print("   - [Verb Bar Buttons]:    Click WALK, LOOK, TALK, TAKE, or USE to activate\n", .{});

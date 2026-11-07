@@ -152,19 +152,23 @@ pub const UserAction = union(enum) {
     },
 };
 
+pub const DEFAULT_WIDTH: i32 = 1280;
+pub const DEFAULT_HEIGHT: i32 = 720;
+
 pub const WAYPOINT_SCREEN_RADIUS = 16;
 pub const ACTOR_SCREEN_RADIUS = 18;
 pub const HOTSPOT_SCREEN_RADIUS = 22;
 
 /// Maps simulation discrete spatial coordinates to screen canvas coordinates.
 pub fn world_to_screen(world_x: i32, world_y: i32, screen_w: i32, screen_h: i32) Point {
-    // Hearth (x=0) -> ~200, Bar (x=20) -> ~480, Cellar (x=40) -> ~760
+    // Proportional scaling: 1280x720 gives wide breathing room while preserving 960x540 coordinates
     const center_x = @divTrunc(screen_w, 2);
     const center_y = @divTrunc(screen_h, 2) + 20;
-    const scale_x: i32 = 14;
-    const scale_y: i32 = 10;
+    const scale_x: i32 = if (screen_w >= 1200) 18 else 14;
+    const scale_y: i32 = if (screen_h >= 700) 12 else 10;
+    const span_x: i32 = if (screen_w >= 1200) 360 else 280;
     return .{
-        .x = center_x - 280 + world_x * scale_x,
+        .x = center_x - span_x + world_x * scale_x,
         .y = center_y + world_y * scale_y,
     };
 }
@@ -751,6 +755,8 @@ pub const DisplayWindow = struct {
                                             .hotspot_index = hs_idx,
                                         },
                                     };
+                                } else if (self.active_verb == .look_at) {
+                                    action = .{ .examine_hotspot = hs_idx };
                                 } else {
                                     action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
                                 }
@@ -1007,12 +1013,12 @@ pub const DisplayWindow = struct {
                        std.mem.indexOf(u8, cur_scene, "Common") != null)
             {
                 is_tavern_scene = true;
-            } else if (std.mem.indexOf(u8, cur_scene, "Hotel") != null or
-                       std.mem.indexOf(u8, cur_scene, "Corridor") != null)
-            {
-                is_hotel_scene = true;
             } else if (std.mem.indexOf(u8, cur_scene, "Garden") != null) {
                 is_garden_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Corridor") != null or
+                       std.mem.indexOf(u8, cur_scene, "Hotel") != null)
+            {
+                is_hotel_scene = true;
             } else if (std.mem.indexOf(u8, cur_scene, "Bike") != null or
                        std.mem.indexOf(u8, cur_scene, "Rental") != null or
                        std.mem.indexOf(u8, cur_scene, "Shop") != null)
@@ -1031,15 +1037,17 @@ pub const DisplayWindow = struct {
                 {
                     is_spitting_scene = true;
                     break;
-                } else if (std.mem.indexOf(u8, wp.get_name(), "Room25") != null or
-                           std.mem.indexOf(u8, wp.get_name(), "Room33") != null)
-                {
-                    is_hotel_scene = true;
-                    break;
                 } else if (std.mem.indexOf(u8, wp.get_name(), "Fence") != null or
-                           std.mem.indexOf(u8, wp.get_name(), "CatLounge") != null)
+                           std.mem.indexOf(u8, wp.get_name(), "CatLounge") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "Garden") != null)
                 {
                     is_garden_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Room25") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "Room33") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "Corridor") != null)
+                {
+                    is_hotel_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, wp.get_name(), "Counter") != null or
                            std.mem.indexOf(u8, wp.get_name(), "BikeMark") != null)
@@ -1199,26 +1207,31 @@ pub const DisplayWindow = struct {
             const hotel_x: i32 = 40;
             const hotel_y: i32 = 110;
             const hotel_w: i32 = self.width - 80;
-            const hotel_h: i32 = 320;
+            const hotel_h: i32 = self.height - 210;
 
             // Burgundy wallpaper
             self.fill_rect(hotel_x, hotel_y, hotel_w, hotel_h, Color.hotel_wallpaper);
             self.draw_rect_outline(hotel_x, hotel_y, hotel_w, hotel_h, Color{ .r = 140, .g = 40, .b = 45 });
 
             // Dark mahogany wainscoting
-            self.fill_rect(hotel_x, hotel_y + 200, hotel_w, hotel_h - 200, Color.hotel_wainscot);
-            self.draw_line(hotel_x, hotel_y + 200, hotel_x + hotel_w, hotel_y + 200, Color{ .r = 180, .g = 120, .b = 50 });
+            self.fill_rect(hotel_x, hotel_y + hotel_h - 120, hotel_w, 120, Color.hotel_wainscot);
+            self.draw_line(hotel_x, hotel_y + hotel_h - 120, hotel_x + hotel_w, hotel_y + hotel_h - 120, Color{ .r = 180, .g = 120, .b = 50 });
 
-            // Door 25 (Gabriel's room) and Door 33 (Mosely's room)
-            const d25_x = hotel_x + 80;
-            self.fill_rect(d25_x, hotel_y + 60, 70, 140, Color.hotel_door);
-            self.draw_rect_outline(d25_x, hotel_y + 60, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
-            self.draw_text("25", d25_x + 24, hotel_y + 70, 2, Color.wp_hover);
+            // Calculate door positions aligned with world coordinates (Room 25: x=0, Room 33: x=16)
+            const pt_r25 = world_to_screen(0, 0, self.width, self.height);
+            const pt_r33 = world_to_screen(16, 0, self.width, self.height);
 
-            const d33_x = hotel_x + 320;
-            self.fill_rect(d33_x, hotel_y + 60, 70, 140, Color.hotel_door);
-            self.draw_rect_outline(d33_x, hotel_y + 60, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
-            self.draw_text("33", d33_x + 24, hotel_y + 70, 2, Color.wp_hover);
+            // Door 25 (Gabriel's room)
+            const d25_x = pt_r25.x - 35;
+            self.fill_rect(d25_x, hotel_y + hotel_h - 260, 70, 140, Color.hotel_door);
+            self.draw_rect_outline(d25_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
+            self.draw_text("25", d25_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
+
+            // Door 33 (Mosely's room)
+            const d33_x = pt_r33.x - 35;
+            self.fill_rect(d33_x, hotel_y + hotel_h - 260, 70, 140, Color.hotel_door);
+            self.draw_rect_outline(d33_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
+            self.draw_text("33", d33_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
 
             // Brass sconces
             self.fill_circle(hotel_x + 40, hotel_y + 90, 6, Color.wp_hover);
@@ -1234,14 +1247,14 @@ pub const DisplayWindow = struct {
             const garden_x: i32 = 40;
             const garden_y: i32 = 110;
             const garden_w: i32 = self.width - 80;
-            const garden_h: i32 = 320;
+            const garden_h: i32 = self.height - 210;
 
             // Courtyard greenery
             self.fill_rect(garden_x, garden_y + 100, garden_w, garden_h - 100, Color.garden_grass);
             self.draw_rect_outline(garden_x, garden_y, garden_w, garden_h, Color{ .r = 40, .g = 90, .b = 40 });
 
             // Wooden picket fence across the garden
-            const fence_y = garden_y + 170;
+            const fence_y = garden_y + garden_h - 140;
             self.fill_rect(garden_x, fence_y, garden_w, 14, Color.garden_fence);
             var pi: i32 = 0;
             while (pi < garden_w - 20) : (pi += 24) {
@@ -1249,8 +1262,9 @@ pub const DisplayWindow = struct {
                 self.draw_rect_outline(garden_x + pi, fence_y - 40, 12, 54, Color{ .r = 90, .g = 55, .b = 25 });
             }
 
-            // Fence hole at bottom (around middle)
-            const hole_x = garden_x + @divTrunc(garden_w, 2) - 40;
+            // Fence hole at bottom (aligned with fence hotspot world_x = 18)
+            const pt_fence = world_to_screen(18, 0, self.width, self.height);
+            const hole_x = pt_fence.x - 25;
             self.fill_rect(hole_x, fence_y - 20, 50, 36, Color{ .r = 25, .g = 40, .b = 20 });
             self.draw_rect_outline(hole_x, fence_y - 20, 50, 36, Color{ .r = 180, .g = 120, .b = 50 });
 
@@ -1271,13 +1285,13 @@ pub const DisplayWindow = struct {
             const shop_x: i32 = 40;
             const shop_y: i32 = 110;
             const shop_w: i32 = self.width - 80;
-            const shop_h: i32 = 320;
+            const shop_h: i32 = self.height - 210;
 
             self.fill_rect(shop_x, shop_y, shop_w, shop_h, Color.rental_wall);
             self.draw_rect_outline(shop_x, shop_y, shop_w, shop_h, Color{ .r = 110, .g = 95, .b = 85 });
 
             // Stone floor
-            self.fill_rect(shop_x, shop_y + 220, shop_w, shop_h - 220, Color{ .r = 45, .g = 40, .b = 38 });
+            self.fill_rect(shop_x, shop_y + shop_h - 100, shop_w, 100, Color{ .r = 45, .g = 40, .b = 38 });
 
             // Road touring map of Languedoc on the wall
             const map_x = shop_x + 60;
@@ -1286,25 +1300,27 @@ pub const DisplayWindow = struct {
             self.draw_text("MAP OF LANGUEDOC", map_x + 8, shop_y + 65, 1, Color{ .r = 120, .g = 53, .b = 15 });
             self.draw_text("RENNES-LE-CHATEAU", map_x + 8, shop_y + 80, 1, Color{ .r = 180, .g = 83, .b = 9 });
 
-            // Pine rental counter
-            const cnt_x = shop_x + 240;
-            self.fill_rect(cnt_x, shop_y + 140, 220, 80, Color.rental_counter);
-            self.draw_rect_outline(cnt_x, shop_y + 140, 220, 80, Color{ .r = 217, .g = 119, .b = 6 });
-            self.draw_text("RENTAL COUNTER", cnt_x + 20, shop_y + 155, 2, Color{ .r = 60, .g = 35, .b = 15 });
+            // Pine rental counter (aligned with CounterMark world_x = 16)
+            const pt_counter = world_to_screen(16, 0, self.width, self.height);
+            const cnt_x = pt_counter.x - 110;
+            self.fill_rect(cnt_x, shop_y + shop_h - 180, 220, 80, Color.rental_counter);
+            self.draw_rect_outline(cnt_x, shop_y + shop_h - 180, 220, 80, Color{ .r = 217, .g = 119, .b = 6 });
+            self.draw_text("RENTAL COUNTER", cnt_x + 20, shop_y + shop_h - 165, 2, Color{ .r = 60, .g = 35, .b = 15 });
 
-            // Red Motorcycle display
-            const mc_x = shop_x + shop_w - 200;
-            self.fill_circle(mc_x + 25, shop_y + 210, 20, Color.black);
-            self.fill_circle(mc_x + 105, shop_y + 210, 20, Color.black);
-            self.draw_circle_outline(mc_x + 25, shop_y + 210, 20, Color{ .r = 200, .g = 200, .b = 200 });
-            self.draw_circle_outline(mc_x + 105, shop_y + 210, 20, Color{ .r = 200, .g = 200, .b = 200 });
-            self.fill_rect(mc_x + 25, shop_y + 180, 80, 25, Color.motorcycle_red);
-            self.draw_line(mc_x + 35, shop_y + 165, mc_x + 60, shop_y + 180, Color.white);
+            // Red Motorcycle display (aligned with BikeMark world_x = 32)
+            const pt_bike = world_to_screen(32, 0, self.width, self.height);
+            const mc_x = pt_bike.x - 65;
+            self.fill_circle(mc_x + 25, shop_y + shop_h - 110, 20, Color.black);
+            self.fill_circle(mc_x + 105, shop_y + shop_h - 110, 20, Color.black);
+            self.draw_circle_outline(mc_x + 25, shop_y + shop_h - 110, 20, Color{ .r = 200, .g = 200, .b = 200 });
+            self.draw_circle_outline(mc_x + 105, shop_y + shop_h - 110, 20, Color{ .r = 200, .g = 200, .b = 200 });
+            self.fill_rect(mc_x + 25, shop_y + shop_h - 140, 80, 25, Color.motorcycle_red);
+            self.draw_line(mc_x + 35, shop_y + shop_h - 155, mc_x + 60, shop_y + shop_h - 140, Color.white);
 
             if (frame.bike_rented) {
-                self.draw_text("[RENTED TO MOSELY!]", mc_x + 10, shop_y + 150, 2, Color.status_running);
+                self.draw_text("[RENTED TO MOSELY!]", mc_x + 10, shop_y + shop_h - 170, 2, Color.status_running);
             } else {
-                self.draw_text("[RESERVED: MOSELY]", mc_x + 10, shop_y + 150, 2, Color.cue_alert);
+                self.draw_text("[RESERVED: MOSELY]", mc_x + 10, shop_y + shop_h - 170, 2, Color.cue_alert);
             }
 
             // Title
@@ -1377,36 +1393,44 @@ pub const DisplayWindow = struct {
                 if (frame.fence_taped) {
                     self.fill_rect(pt.x - 14, pt.y + 4, 28, 6, Color{ .r = 254, .g = 243, .b = 199 });
                 }
-                self.draw_text("Fence Hole", pt.x - 20, pt.y + 20, 2, Color.hud_text);
             } else if (std.mem.indexOf(u8, name, "Door") != null) {
                 // Mosely's Door (P14-02, D-016)
                 self.fill_rect(pt.x - 16, pt.y - 24, 32, 48, Color.hotel_door);
                 self.draw_rect_outline(pt.x - 16, pt.y - 24, 32, 48, Color{ .r = 180, .g = 120, .b = 50 });
-                self.draw_text("Door 33", pt.x - 16, pt.y + 28, 2, Color.hud_text);
             } else if (std.mem.indexOf(u8, name, "Desk") != null) {
                 // Hotel Room Desk (P14-02, D-016)
                 self.fill_rect(pt.x - 22, pt.y - 12, 44, 24, Color.hotel_wainscot);
                 self.draw_rect_outline(pt.x - 22, pt.y - 12, 44, 24, Color{ .r = 140, .g = 80, .b = 40 });
-                self.draw_text("Desk", pt.x - 12, pt.y + 16, 2, Color.hud_text);
+            } else if (std.mem.indexOf(u8, name, "Shrub") != null or std.mem.indexOf(u8, name, "Bench") != null) {
+                // Garden Lavender Shrub & Potting Bench (P14-02, D-016)
+                self.fill_circle(pt.x - 8, pt.y - 4, 14, Color{ .r = 34, .g = 197, .b = 94 });
+                self.fill_circle(pt.x + 8, pt.y - 6, 12, Color{ .r = 74, .g = 222, .b = 128 });
+                self.fill_circle(pt.x, pt.y - 12, 10, Color{ .r = 168, .g = 85, .b = 247 }); // Lavender blossom
+                self.fill_rect(pt.x - 18, pt.y + 6, 36, 10, Color{ .r = 120, .g = 80, .b = 50 }); // Potting bench
             } else if (std.mem.indexOf(u8, name, "Motorcycle") != null) {
                 // Motorcycle prop (P14-02, D-016)
                 self.fill_rect(pt.x - 20, pt.y - 12, 40, 24, Color.motorcycle_red);
                 self.fill_circle(pt.x - 14, pt.y + 12, 8, Color.black);
                 self.fill_circle(pt.x + 14, pt.y + 12, 8, Color.black);
-                self.draw_text("Motorcycle", pt.x - 24, pt.y + 24, 2, Color.hud_text);
             } else {
                 // Default prop
                 self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
                 self.draw_rect_outline(pt.x - 16, pt.y - 16, 32, 32, Color.tavern_border);
             }
 
-            // Hover highlight ring and look prompt
+            // Hover highlight ring and action prompt
             if (is_hovered) {
                 self.draw_circle_outline(pt.x, pt.y, HOTSPOT_SCREEN_RADIUS + 4, Color.wp_hover);
-                var look_buf: [64]u8 = undefined;
-                const look_prompt = std.fmt.bufPrint(&look_buf, "[Look at {s}]", .{name}) catch "[Look]";
-                const tw = font.text_width(look_prompt, 2);
-                self.draw_text(look_prompt, pt.x - @divTrunc(tw, 2), pt.y - HOTSPOT_SCREEN_RADIUS - 18, 2, Color.wp_hover);
+                var prompt_buf: [64]u8 = undefined;
+                const prompt = switch (self.active_verb) {
+                    .look_at => std.fmt.bufPrint(&prompt_buf, "[Look at {s}]", .{name}) catch "[Look]",
+                    .pick_up => std.fmt.bufPrint(&prompt_buf, "[Take {s}]", .{name}) catch "[Take]",
+                    .use_with => std.fmt.bufPrint(&prompt_buf, "[Use {s}]", .{name}) catch "[Use]",
+                    .talk_to => std.fmt.bufPrint(&prompt_buf, "[Talk to {s}]", .{name}) catch "[Talk]",
+                    .walk => std.fmt.bufPrint(&prompt_buf, "[Walk to {s}]", .{name}) catch "[Walk]",
+                };
+                const tw = font.text_width(prompt, 2);
+                self.draw_text(prompt, pt.x - @divTrunc(tw, 2), pt.y - HOTSPOT_SCREEN_RADIUS - 18, 2, Color.wp_hover);
             }
         }
 
@@ -1454,10 +1478,30 @@ pub const DisplayWindow = struct {
                 self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.white);
                 self.fill_circle(pt.x, pt.y, 4, Color.white);
 
-                // Waypoint text label
+                // Check if actors are stationed at this waypoint coordinate
+                var has_actors = false;
+                for (frame.entities[0..frame.entity_count]) |ent| {
+                    if (ent.x == wp.x and ent.y == wp.y) {
+                        has_actors = true;
+                        break;
+                    }
+                }
+
+                // Waypoint text label: only draw if NO actor is stationed here, or when hovered
                 const name = wp.get_name();
-                const text_w = font.text_width(name, 2);
-                self.draw_text(name, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.hud_text);
+                if (is_hovered or is_targeted) {
+                    var buf: [64]u8 = undefined;
+                    const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
+                    const text_w = font.text_width(prompt, 2);
+                    const prompt_y = if (has_actors)
+                        pt.y + WAYPOINT_SCREEN_RADIUS + 34
+                    else
+                        pt.y + WAYPOINT_SCREEN_RADIUS + 8;
+                    self.draw_text(prompt, pt.x - @divTrunc(text_w, 2), prompt_y, 2, Color.wp_hover);
+                } else if (!has_actors) {
+                    const text_w = font.text_width(name, 2);
+                    self.draw_text(name, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.hud_text);
+                }
             } else {
                 // In Spitting Contest: Stage marks
                 if (is_hovered or is_targeted) {
@@ -1726,8 +1770,65 @@ pub const DisplayWindow = struct {
         const tb_text = std.fmt.bufPrint(&tb_text_buf, "TIMELINE [Tick {d:02}/{d:02}] (Click or [< / >] to Scrub | Space: Pause)", .{ frame.tick, frame.max_history_tick }) catch "TIMELINE";
         self.draw_text(tb_text, tb_x + 8, tb_y + 4, 1, Color.hud_text);
 
-        // 7. Adventure Verb Bar & Inventory Tray (P7-02, P7-03, D-009)
         const bar_y = self.height - 80;
+
+        // 7a. Adventure Action Sentence Line (LucasArts / Sierra Standard)
+        var action_sentence_buf: [128]u8 = undefined;
+        var action_sentence: ?[]const u8 = null;
+
+        if (self.selected_inventory_item) |sel_idx| {
+            if (sel_idx < frame.inventory_count) {
+                const sel_name = frame.inventory[sel_idx].get_name();
+                if (self.hovered_actor) |act_idx| {
+                    if (act_idx < frame.entity_count) {
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, frame.entities[act_idx].get_name() }) catch null;
+                    }
+                } else if (self.hovered_hotspot) |hs_idx| {
+                    if (hs_idx < frame.hotspot_count) {
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, frame.hotspots[hs_idx].get_name() }) catch null;
+                    }
+                } else if (self.hovered_wp) |wp_id| {
+                    for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+                        if (wp.id == wp_id) {
+                            action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, wp.get_name() }) catch null;
+                            break;
+                        }
+                    }
+                } else {
+                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "[IN HAND: {s}] (Click target/item to use | Right-Click to cancel)", .{sel_name}) catch null;
+                }
+            }
+        } else {
+            const verb_word = switch (self.active_verb) {
+                .walk => "Walk to",
+                .look_at => "Look at",
+                .talk_to => "Talk to",
+                .pick_up => "Take",
+                .use_with => "Use",
+            };
+            if (self.hovered_actor) |act_idx| {
+                if (act_idx < frame.entity_count) {
+                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, frame.entities[act_idx].get_name() }) catch null;
+                }
+            } else if (self.hovered_hotspot) |hs_idx| {
+                if (hs_idx < frame.hotspot_count) {
+                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, frame.hotspots[hs_idx].get_name() }) catch null;
+                }
+            } else if (self.hovered_wp) |wp_id| {
+                for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+                    if (wp.id == wp_id) {
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Walk to {s}", .{wp.get_name()}) catch null;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (action_sentence) |sentence| {
+            self.draw_text(sentence, 24, bar_y - 24, 2, Color{ .r = 250, .g = 204, .b = 21 });
+        }
+
+        // 7b. Adventure Verb Bar & Inventory Tray (P7-02, P7-03, D-009)
         self.fill_rect(0, bar_y - 6, self.width, 42, Color{ .r = 15, .g = 23, .b = 42, .a = 240 });
         self.draw_line(0, bar_y - 6, self.width, bar_y - 6, Color.tavern_border);
 
@@ -1776,16 +1877,6 @@ pub const DisplayWindow = struct {
                 self.fill_circle(item_x + 10, bar_y + 13, 5, border_col);
                 self.draw_text(iname, item_x + 18, bar_y + 6, 2, text_col);
                 item_x += iw + 8;
-            }
-        }
-
-        // In-Hand Item Cursor / Status (P11-03, D-013)
-        if (self.selected_inventory_item) |sel_idx| {
-            if (sel_idx < frame.inventory_count) {
-                const sel_name = frame.inventory[sel_idx].get_name();
-                var in_hand_buf: [96]u8 = undefined;
-                const in_hand_text = std.fmt.bufPrint(&in_hand_buf, "[IN HAND: {s}] (Click target/item to use | Right-Click to cancel)", .{sel_name}) catch "[IN HAND]";
-                self.draw_text(in_hand_text, 20, bar_y - 18, 1, Color{ .r = 250, .g = 204, .b = 21 });
             }
         }
 

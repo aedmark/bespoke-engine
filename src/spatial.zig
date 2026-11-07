@@ -327,6 +327,7 @@ pub const SpatialSystem = struct {
     }
 
     /// Registers a static scene hotspot / inspectable prop (P7-01, D-009).
+    /// If a hotspot for this entity already exists, updates it in-place to prevent duplication.
     pub fn add_hotspot(
         self: *SpatialSystem,
         entity: EntityId,
@@ -336,6 +337,18 @@ pub const SpatialSystem = struct {
         name: []const u8,
         examine_text: []const u8,
     ) !void {
+        for (self.hotspots.items) |*h| {
+            if (h.entity == entity) {
+                self.allocator.free(h.name);
+                self.allocator.free(h.examine_text);
+                h.room = room;
+                h.pos = pos;
+                h.radius = radius;
+                h.name = try self.allocator.dupe(u8, name);
+                h.examine_text = try self.allocator.dupe(u8, examine_text);
+                return;
+            }
+        }
         const owned_name = try self.allocator.dupe(u8, name);
         const owned_examine = try self.allocator.dupe(u8, examine_text);
         try self.hotspots.append(.{
