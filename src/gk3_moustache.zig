@@ -591,20 +591,30 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (wp_id == corridor_wp and vm.current_scene == hotel_scene) {
                     try vm.transition_to_scene(garden_scene);
                     _ = try spatial.transition_actor(gabriel, garden_scene, garden_path_wp);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
                     window.set_cue_banner("Stepped outside into the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
                 } else if (wp_id == garden_path_wp and vm.current_scene == garden_scene) {
-                    if (spatial.get_current_waypoint(gabriel) == garden_path_wp) {
-                        try vm.transition_to_scene(hotel_scene);
-                        _ = try spatial.transition_actor(gabriel, hotel_scene, corridor_wp);
-                        window.set_cue_banner("Returned inside to the Hotel Corridor. [G] Garden [B] Shop", 120);
-                    }
+                    try vm.transition_to_scene(hotel_scene);
+                    _ = try spatial.transition_actor(gabriel, hotel_scene, corridor_wp);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
+                    window.set_cue_banner("Returned inside to the Hotel Corridor. [G] Garden [B] Shop", 120);
+                } else if (wp_id == cat_wp and vm.current_scene == garden_scene and spatial.get_current_waypoint(gabriel) == cat_wp) {
+                    try vm.transition_to_scene(shop_scene);
+                    _ = try spatial.transition_actor(gabriel, shop_scene, shop_ent_wp);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
+                    window.set_cue_banner("Walked into Madame Buthane's Bike Rental Shop. [H] Hotel [G] Garden", 120);
                 } else if (wp_id == shop_ent_wp and vm.current_scene == shop_scene) {
-                    if (spatial.get_current_waypoint(gabriel) == shop_ent_wp) {
-                        try vm.transition_to_scene(garden_scene);
-                        _ = try spatial.transition_actor(gabriel, garden_scene, fence_wp);
-                        window.set_cue_banner("Returned to the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
-                    }
+                    try vm.transition_to_scene(garden_scene);
+                    _ = try spatial.transition_actor(gabriel, garden_scene, cat_wp);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
+                    window.set_cue_banner("Stepped back into the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
                 } else {
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
                     window.set_cue_banner("Directing Gabriel to waypoint.", 60);
                 }
             },
@@ -942,26 +952,36 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             else => {},
         }
 
+        // Immediately update frame buffer on interactive player action
+        if (action != .none and action != .toggle_pause and action != .step_tick and action != .quit) {
+            display_bridge.capture_frame(&world, &spatial, &vm);
+            display_bridge.swap();
+        }
+
         // Check helper hotkeys
         const keys = bespoke.display.renderer.c.SDL_GetKeyboardState(null);
         if (keys != null) {
+            var hotkey_handled = false;
             // [H] Hotel Corridor
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_H] != 0) {
                 try vm.transition_to_scene(hotel_scene);
                 _ = try spatial.transition_actor(gabriel, hotel_scene, r25_wp);
                 window.set_cue_banner("Switched Scene: Hotel Corridor", 60);
+                hotkey_handled = true;
             }
             // [G] Courtyard Garden
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_G] != 0) {
                 try vm.transition_to_scene(garden_scene);
                 _ = try spatial.transition_actor(gabriel, garden_scene, garden_path_wp);
                 window.set_cue_banner("Switched Scene: Hotel Courtyard Garden", 60);
+                hotkey_handled = true;
             }
             // [B] Bike Rental Shop
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_B] != 0) {
                 try vm.transition_to_scene(shop_scene);
                 _ = try spatial.transition_actor(gabriel, shop_scene, shop_ent_wp);
                 window.set_cue_banner("Switched Scene: Bike Rental Shop", 60);
+                hotkey_handled = true;
             }
             // [0] Quick Scavenge Supplies (Dev Shortcut)
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_0] != 0) {
@@ -970,11 +990,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
                 try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
                 window.set_cue_banner("Dev Quick-Fill: Scavenged Marker, Tape, Syrup, and Spray Bottle!", 90);
+                hotkey_handled = true;
             }
             // [1] Snatch Passport
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_1] != 0) {
                 try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
                 window.set_cue_banner("Step 1: Acquired Mosely's Passport from Room 33!", 90);
+                hotkey_handled = true;
             }
             // [2] Draw Moustache on Passport
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_2] != 0) {
@@ -982,12 +1004,14 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
                 try world.remember(gabriel, passport_mod_rel, 1, 0);
                 window.set_cue_banner("Step 2: Drew moustache on Mosely's passport photo!", 90);
+                hotkey_handled = true;
             }
             // [3] Tape Fence Hole
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_3] != 0) {
                 try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
                 try world.remember(fence_hole, taped_rel, 1, 0);
                 window.set_cue_banner("Step 3: Stretched masking tape across fence hole!", 90);
+                hotkey_handled = true;
             }
             // [4] Squirt Stray Cat
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_4] != 0) {
@@ -995,6 +1019,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 try world.remember(stray_cat, startled_rel, 1, 0);
                 try world.remember(fence_hole, fence_hair_rel, 1, 0);
                 window.set_cue_banner("Step 4: Squirting cat! Fur left stuck to fence tape!", 90);
+                hotkey_handled = true;
             }
             // [5] Collect Cat Hair
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_5] != 0) {
@@ -1002,6 +1027,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 _ = world.forget(fence_hole, fence_hair_rel, null);
                 _ = world.forget(fence_hole, taped_rel, null);
                 window.set_cue_banner("Step 5: Peeled Cat Hair from tape into inventory!", 90);
+                hotkey_handled = true;
             }
             // [6] Craft Cat Moustache with Syrup
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_6] != 0) {
@@ -1009,6 +1035,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
                 try world.remember(gabriel, sticky_lip_rel, 1, 0);
                 window.set_cue_banner("Step 6: Applied syrup adhesive and crafted Cat Moustache!", 90);
+                hotkey_handled = true;
             }
             // [7] Don Disguise
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_7] != 0) {
@@ -1017,6 +1044,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
                 try world.remember(gabriel, disguised_rel, 1, 0);
                 window.set_cue_banner("Step 7: Gabriel is now fully DISGUISED as Mosely!", 90);
+                hotkey_handled = true;
             }
             // [8] Talk to Buthane
             if (keys[bespoke.display.renderer.c.SDL_SCANCODE_8] != 0) {
@@ -1026,6 +1054,12 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 } else {
                     window.set_cue_banner("Step 8: Buthane rejected Gabriel! (Need complete disguise!)", 90);
                 }
+                hotkey_handled = true;
+            }
+
+            if (hotkey_handled) {
+                display_bridge.capture_frame(&world, &spatial, &vm);
+                display_bridge.swap();
             }
         }
 
@@ -1082,4 +1116,39 @@ test "P14-03: Gabriel Knight 3 headless simulation executes and rewinds cleanly"
 
     try run_headless(testing.allocator, list.writer());
     try testing.expect(list.items.len > 0);
+}
+
+test "P14-02: verify scene transition capture to hotel garden" {
+    const testing = std.testing;
+
+    var world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, GK3_MOUSTACHE_SCRIPT);
+    defer compiled.deinit();
+
+    const hotel_scene = world.lookup_entity("Hotel Corridor").?;
+    const garden_scene = world.lookup_entity("Hotel Garden").?;
+
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.transition_to_scene(hotel_scene);
+
+    var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.capture_frame(&world, &spatial, &vm);
+    display_bridge.swap();
+
+    const f1 = display_bridge.get_frame();
+    try testing.expectEqualStrings("Hotel Corridor", f1.get_current_scene());
+
+    try vm.transition_to_scene(garden_scene);
+    display_bridge.capture_frame(&world, &spatial, &vm);
+    display_bridge.swap();
+
+    const f2 = display_bridge.get_frame();
+    try testing.expectEqualStrings("Hotel Garden", f2.get_current_scene());
 }

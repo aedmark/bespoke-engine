@@ -154,6 +154,7 @@ pub const RenderFrame = struct {
     wind_blowing: bool = false,
     organiser_distracted: bool = false,
     fence_taped: bool = false,
+    fence_has_hair: bool = false,
     cat_startled: bool = false,
     cat_hair_collected: bool = false,
     gabriel_disguised: bool = false,
@@ -360,6 +361,10 @@ pub const DisplayBridge = struct {
         self.back_buffer.fence_taped = false;
         if (world.lookup_relation("taped") orelse world.lookup_relation("Taped")) |rel| {
             self.back_buffer.fence_taped = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.fence_has_hair = false;
+        if (world.lookup_relation("FenceHasHair")) |rel| {
+            self.back_buffer.fence_has_hair = world.has_fact(null, rel, null);
         }
         self.back_buffer.cat_startled = false;
         if (world.lookup_relation("startled") orelse world.lookup_relation("Startled")) |rel| {

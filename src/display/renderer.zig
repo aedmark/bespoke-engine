@@ -1013,10 +1013,12 @@ pub const DisplayWindow = struct {
                        std.mem.indexOf(u8, cur_scene, "Common") != null)
             {
                 is_tavern_scene = true;
-            } else if (std.mem.indexOf(u8, cur_scene, "Garden") != null) {
+            } else if (std.mem.indexOf(u8, cur_scene, "Garden") != null or
+                       std.mem.indexOf(u8, cur_scene, "Courtyard") != null)
+            {
                 is_garden_scene = true;
             } else if (std.mem.indexOf(u8, cur_scene, "Corridor") != null or
-                       std.mem.indexOf(u8, cur_scene, "Hotel") != null)
+                       std.mem.eql(u8, cur_scene, "Hotel Corridor"))
             {
                 is_hotel_scene = true;
             } else if (std.mem.indexOf(u8, cur_scene, "Bike") != null or
@@ -1024,6 +1026,8 @@ pub const DisplayWindow = struct {
                        std.mem.indexOf(u8, cur_scene, "Shop") != null)
             {
                 is_bike_rental_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Hotel") != null) {
+                is_hotel_scene = true;
             }
         }
 
@@ -1050,7 +1054,8 @@ pub const DisplayWindow = struct {
                     is_hotel_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, wp.get_name(), "Counter") != null or
-                           std.mem.indexOf(u8, wp.get_name(), "BikeMark") != null)
+                           std.mem.indexOf(u8, wp.get_name(), "BikeMark") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "ShopEntrance") != null)
                 {
                     is_bike_rental_scene = true;
                     break;
@@ -1065,14 +1070,14 @@ pub const DisplayWindow = struct {
                     {
                         is_spitting_scene = true;
                         break;
-                    } else if (std.mem.eql(u8, ename, "Gabriel") or std.mem.eql(u8, ename, "Mosely")) {
-                        is_hotel_scene = true;
-                        break;
                     } else if (std.mem.eql(u8, ename, "StrayCat")) {
                         is_garden_scene = true;
                         break;
                     } else if (std.mem.eql(u8, ename, "Buthane")) {
                         is_bike_rental_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Gabriel") or std.mem.eql(u8, ename, "Mosely")) {
+                        is_hotel_scene = true;
                         break;
                     }
                 }
@@ -1082,11 +1087,20 @@ pub const DisplayWindow = struct {
                     if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
                         is_spitting_scene = true;
                         break;
-                    } else if (std.mem.indexOf(u8, hs.get_name(), "Fence") != null) {
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Fence") != null or
+                               std.mem.indexOf(u8, hs.get_name(), "Shrub") != null)
+                    {
                         is_garden_scene = true;
                         break;
-                    } else if (std.mem.indexOf(u8, hs.get_name(), "Motorcycle") != null) {
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Motorcycle") != null or
+                               std.mem.indexOf(u8, hs.get_name(), "Rental") != null)
+                    {
                         is_bike_rental_scene = true;
+                        break;
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Door") != null or
+                               std.mem.indexOf(u8, hs.get_name(), "Desk") != null)
+                    {
+                        is_hotel_scene = true;
                         break;
                     }
                 }
@@ -1233,6 +1247,18 @@ pub const DisplayWindow = struct {
             self.draw_rect_outline(d33_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
             self.draw_text("33", d33_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
 
+            // Corridor Exit / Garden Archway (aligned with CorridorExit mark world_x = 32)
+            const pt_exit = world_to_screen(32, 0, self.width, self.height);
+            const ex_x = pt_exit.x - 35;
+            self.fill_rect(ex_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 45, .g = 25, .b = 15 });
+            self.draw_rect_outline(ex_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
+            self.fill_circle(ex_x + 35, hotel_y + hotel_h - 260, 35, Color{ .r = 45, .g = 25, .b = 15 });
+            self.draw_circle_outline(ex_x + 35, hotel_y + hotel_h - 260, 35, Color{ .r = 180, .g = 120, .b = 50 });
+            // Sunlit daylight pouring in from courtyard garden
+            self.fill_rect(ex_x + 8, hotel_y + hotel_h - 250, 54, 120, Color{ .r = 160, .g = 210, .b = 245, .a = 180 });
+            self.draw_text("GARDEN", ex_x + 10, hotel_y + hotel_h - 280, 1, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("EXIT", ex_x + 18, hotel_y + hotel_h - 268, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
             // Brass sconces
             self.fill_circle(hotel_x + 40, hotel_y + 90, 6, Color.wp_hover);
             self.fill_circle(hotel_x + hotel_w - 40, hotel_y + 90, 6, Color.wp_hover);
@@ -1242,6 +1268,7 @@ pub const DisplayWindow = struct {
             self.draw_text("(FRENCH DAMASK WALLS * ROOM 25 & ROOM 33)", hotel_x + 16, hotel_y + 36, 1, Color.hud_subtext);
         } else if (is_garden_scene) {
             // Hotel Courtyard Garden (P14-02, D-016)
+            // 1. Sky & Sun
             self.fill_rect(0, 0, self.width, self.height, Color.garden_sky);
 
             const garden_x: i32 = 40;
@@ -1249,35 +1276,237 @@ pub const DisplayWindow = struct {
             const garden_w: i32 = self.width - 80;
             const garden_h: i32 = self.height - 210;
 
-            // Courtyard greenery
-            self.fill_rect(garden_x, garden_y + 100, garden_w, garden_h - 100, Color.garden_grass);
+            // Sky gradient bands & clouds
+            self.fill_rect(garden_x, garden_y, garden_w, 40, Color{ .r = 110, .g = 175, .b = 230 });
+            self.fill_rect(garden_x, garden_y + 40, garden_w, 40, Color{ .r = 135, .g = 195, .b = 240 });
+            self.fill_rect(garden_x, garden_y + 80, garden_w, 40, Color{ .r = 165, .g = 210, .b = 245 });
+
+            // Warm afternoon sun (top right)
+            const sun_cx = garden_x + garden_w - 180;
+            const sun_cy = garden_y + 45;
+            self.fill_circle(sun_cx, sun_cy, 24, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_circle_outline(sun_cx, sun_cy, 28, Color{ .r = 253, .g = 224, .b = 71 });
+            self.draw_circle_outline(sun_cx, sun_cy, 34, Color{ .r = 250, .g = 204, .b = 21, .a = 140 });
+
+            // White fluffy clouds
+            self.fill_circle(garden_x + 460, garden_y + 35, 18, Color{ .r = 255, .g = 255, .b = 255, .a = 210 });
+            self.fill_circle(garden_x + 485, garden_y + 30, 24, Color{ .r = 255, .g = 255, .b = 255, .a = 230 });
+            self.fill_circle(garden_x + 510, garden_y + 35, 18, Color{ .r = 255, .g = 255, .b = 255, .a = 210 });
+
+            self.fill_circle(garden_x + 780, garden_y + 50, 14, Color{ .r = 255, .g = 255, .b = 255, .a = 180 });
+            self.fill_circle(garden_x + 800, garden_y + 45, 20, Color{ .r = 255, .g = 255, .b = 255, .a = 200 });
+            self.fill_circle(garden_x + 820, garden_y + 50, 14, Color{ .r = 255, .g = 255, .b = 255, .a = 180 });
+
+            // Distant Pyrenean / Languedoc rolling foothills
+            self.fill_circle(garden_x + 600, garden_y + 140, 180, Color{ .r = 115, .g = 150, .b = 130 });
+            self.fill_circle(garden_x + 850, garden_y + 150, 200, Color{ .r = 100, .g = 140, .b = 120 });
+            self.fill_circle(garden_x + 1100, garden_y + 160, 220, Color{ .r = 90, .g = 130, .b = 110 });
+
+            // Courtyard grass lawn (Right of terrace, from x=320 to garden_w)
+            self.fill_rect(garden_x + 320, garden_y + 130, garden_w - 320, garden_h - 130, Color.garden_grass);
             self.draw_rect_outline(garden_x, garden_y, garden_w, garden_h, Color{ .r = 40, .g = 90, .b = 40 });
 
-            // Wooden picket fence across the garden
-            const fence_y = garden_y + garden_h - 140;
-            self.fill_rect(garden_x, fence_y, garden_w, 14, Color.garden_fence);
-            var pi: i32 = 0;
-            while (pi < garden_w - 20) : (pi += 24) {
-                self.fill_rect(garden_x + pi, fence_y - 40, 12, 54, Color.garden_fence);
-                self.draw_rect_outline(garden_x + pi, fence_y - 40, 12, 54, Color{ .r = 90, .g = 55, .b = 25 });
+            // Trimmed boxwood hedge along rear fence
+            self.fill_rect(garden_x + 320, garden_y + 118, garden_w - 320, 26, Color{ .r = 30, .g = 85, .b = 35 });
+            var hi: i32 = garden_x + 320;
+            while (hi < garden_x + garden_w - 20) : (hi += 32) {
+                self.fill_circle(hi + 16, garden_y + 122, 14, Color{ .r = 38, .g = 100, .b = 42 });
             }
 
-            // Fence hole at bottom (aligned with fence hotspot world_x = 18)
+            // 2. Hotel des Couronnes Exterior Wing (Left side: garden_x to garden_x + 320)
+            const wing_w: i32 = 320;
+            self.fill_rect(garden_x, garden_y, wing_w, garden_h, Color{ .r = 215, .g = 195, .b = 160 }); // French limestone
+            self.draw_rect_outline(garden_x, garden_y, wing_w, garden_h, Color{ .r = 150, .g = 130, .b = 100 });
+
+            // Limestone masonry block seams
+            var my: i32 = garden_y + 30;
+            var row_even = true;
+            while (my < garden_y + garden_h) : (my += 28) {
+                self.draw_line(garden_x, my, garden_x + wing_w, my, Color{ .r = 185, .g = 165, .b = 130 });
+                const offset: i32 = if (row_even) 0 else 30;
+                var mx: i32 = garden_x + offset;
+                while (mx < garden_x + wing_w) : (mx += 60) {
+                    self.draw_line(mx, my, mx, my + 28, Color{ .r = 185, .g = 165, .b = 130 });
+                }
+                row_even = !row_even;
+            }
+
+            // Ivy vines creeping up hotel wall
+            self.fill_circle(garden_x + 30, garden_y + 90, 20, Color{ .r = 35, .g = 100, .b = 40 });
+            self.fill_circle(garden_x + 45, garden_y + 130, 24, Color{ .r = 45, .g = 120, .b = 50 });
+            self.fill_circle(garden_x + 25, garden_y + 180, 22, Color{ .r = 35, .g = 95, .b = 38 });
+            self.fill_circle(garden_x + 40, garden_y + 230, 26, Color{ .r = 50, .g = 130, .b = 55 });
+            self.fill_circle(garden_x + 300, garden_y + 110, 18, Color{ .r = 35, .g = 100, .b = 40 });
+            self.fill_circle(garden_x + 310, garden_y + 160, 22, Color{ .r = 45, .g = 120, .b = 50 });
+
+            // Upper-floor French window with dark green shutters
+            const win_x = garden_x + 110;
+            const win_y = garden_y + 40;
+            self.fill_rect(win_x, win_y, 80, 100, Color{ .r = 25, .g = 35, .b = 50 }); // Window glass
+            self.draw_rect_outline(win_x, win_y, 80, 100, Color{ .r = 140, .g = 120, .b = 90 });
+            // Window panes
+            self.draw_line(win_x + 40, win_y, win_x + 40, win_y + 100, Color.white);
+            self.draw_line(win_x, win_y + 50, win_x + 80, win_y + 50, Color.white);
+            // Left & right wooden shutters (olive green)
+            self.fill_rect(win_x - 30, win_y, 28, 100, Color{ .r = 45, .g = 80, .b = 55 });
+            self.draw_rect_outline(win_x - 30, win_y, 28, 100, Color{ .r = 30, .g = 55, .b = 38 });
+            self.fill_rect(win_x + 82, win_y, 28, 100, Color{ .r = 45, .g = 80, .b = 55 });
+            self.draw_rect_outline(win_x + 82, win_y, 28, 100, Color{ .r = 30, .g = 55, .b = 38 });
+            // Window sill with red geranium flower box
+            self.fill_rect(win_x - 10, win_y + 98, 100, 14, Color{ .r = 160, .g = 75, .b = 45 });
+            self.fill_circle(win_x + 10, win_y + 94, 6, Color{ .r = 239, .g = 68, .b = 68 });
+            self.fill_circle(win_x + 35, win_y + 94, 6, Color{ .r = 244, .g = 63, .b = 94 });
+            self.fill_circle(win_x + 60, win_y + 94, 6, Color{ .r = 239, .g = 68, .b = 68 });
+
+            // Ground floor arched entrance door (aligned with GardenPath world_x = 0)
+            const pt_path = world_to_screen(0, 0, self.width, self.height);
+            const door_x = pt_path.x - 45;
+            const door_y = garden_y + garden_h - 220;
+            self.fill_rect(door_x, door_y, 90, 140, Color{ .r = 45, .g = 25, .b = 15 }); // Dark carved oak
+            self.draw_rect_outline(door_x, door_y, 90, 140, Color{ .r = 180, .g = 130, .b = 70 });
+            // Arch top
+            self.fill_circle(door_x + 45, door_y, 45, Color{ .r = 45, .g = 25, .b = 15 });
+            self.draw_circle_outline(door_x + 45, door_y, 45, Color{ .r = 180, .g = 130, .b = 70 });
+            // Glass window panels with warm hallway interior light
+            self.fill_rect(door_x + 10, door_y + 10, 30, 50, Color{ .r = 254, .g = 240, .b = 138, .a = 200 });
+            self.fill_rect(door_x + 50, door_y + 10, 30, 50, Color{ .r = 254, .g = 240, .b = 138, .a = 200 });
+            self.draw_rect_outline(door_x + 10, door_y + 10, 30, 50, Color{ .r = 180, .g = 130, .b = 70 });
+            self.draw_rect_outline(door_x + 50, door_y + 10, 30, 50, Color{ .r = 180, .g = 130, .b = 70 });
+            // Brass handle
+            self.fill_circle(door_x + 78, door_y + 75, 4, Color{ .r = 250, .g = 204, .b = 21 });
+            // Hotel Doorway Header
+            self.fill_rect(door_x - 10, door_y - 24, 110, 18, Color{ .r = 30, .g = 20, .b = 15 });
+            self.draw_rect_outline(door_x - 10, door_y - 24, 110, 18, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_text("HOTEL EXIT", door_x - 2, door_y - 20, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // 3. Terracotta Patio Terrace (near hotel, left foreground)
+            const terrace_w: i32 = 320;
+            self.fill_rect(garden_x, garden_y + garden_h - 100, terrace_w, 100, Color{ .r = 185, .g = 95, .b = 65 }); // Terracotta
+            // Grout tiles
+            var ty: i32 = garden_y + garden_h - 100;
+            while (ty < garden_y + garden_h) : (ty += 25) {
+                self.draw_line(garden_x, ty, garden_x + terrace_w, ty, Color{ .r = 145, .g = 70, .b = 45 });
+            }
+            var tx: i32 = garden_x;
+            while (tx < garden_x + terrace_w) : (tx += 30) {
+                self.draw_line(tx, garden_y + garden_h - 100, tx, garden_y + garden_h, Color{ .r = 145, .g = 70, .b = 45 });
+            }
+
+            // 4. Centerpiece: Stone Tiered Birdbath / Fountain (between terrace and fence)
+            const fountain_x = garden_x + 400;
+            const fountain_y = garden_y + garden_h - 80;
+            // Stone base & pillar
+            self.fill_rect(fountain_x - 14, fountain_y + 10, 28, 36, Color{ .r = 160, .g = 150, .b = 140 });
+            self.draw_rect_outline(fountain_x - 14, fountain_y + 10, 28, 36, Color{ .r = 110, .g = 100, .b = 95 });
+            // Lower bowl
+            self.fill_circle(fountain_x, fountain_y + 10, 32, Color{ .r = 175, .g = 165, .b = 155 });
+            self.draw_circle_outline(fountain_x, fountain_y + 10, 32, Color{ .r = 120, .g = 110, .b = 105 });
+            self.fill_circle(fountain_x, fountain_y + 10, 26, Color{ .r = 56, .g = 189, .b = 248, .a = 210 }); // Water
+            // Upper pillar & small bowl
+            self.fill_rect(fountain_x - 7, fountain_y - 18, 14, 26, Color{ .r = 160, .g = 150, .b = 140 });
+            self.fill_circle(fountain_x, fountain_y - 18, 16, Color{ .r = 175, .g = 165, .b = 155 });
+            self.fill_circle(fountain_x, fountain_y - 18, 12, Color{ .r = 56, .g = 189, .b = 248, .a = 210 });
+
+            // 5. Wooden Picket Fence (x = 360 to garden_w)
+            const fence_start_x = garden_x + 340;
+            const fence_w = garden_w - 340;
+            const fence_y = garden_y + garden_h - 180;
+            // Fence horizontal support rails
+            self.fill_rect(fence_start_x, fence_y - 8, fence_w, 10, Color{ .r = 135, .g = 85, .b = 40 });
+            self.fill_rect(fence_start_x, fence_y + 34, fence_w, 10, Color{ .r = 135, .g = 85, .b = 40 });
+
+            // Vertical pickets
+            var p_i: i32 = fence_start_x;
+            while (p_i < garden_x + garden_w - 60) : (p_i += 22) {
+                // Skip pickets where the hole is located (around pt_fence.x = 604)
+                if (p_i >= 580 and p_i <= 630) {
+                    p_i += 22;
+                    continue;
+                }
+
+                // Pointed tip
+                self.draw_line(p_i + 5, fence_y - 32, p_i, fence_y - 22, Color{ .r = 100, .g = 60, .b = 28 });
+                self.draw_line(p_i + 5, fence_y - 32, p_i + 10, fence_y - 22, Color{ .r = 100, .g = 60, .b = 28 });
+                self.fill_rect(p_i, fence_y - 22, 11, 74, Color.garden_fence);
+                self.draw_rect_outline(p_i, fence_y - 22, 11, 74, Color{ .r = 100, .g = 60, .b = 28 });
+            }
+
+            // 6. Fence Hole (Hotspot at world_x = 18, screen x ≈ 604)
             const pt_fence = world_to_screen(18, 0, self.width, self.height);
-            const hole_x = pt_fence.x - 25;
-            self.fill_rect(hole_x, fence_y - 20, 50, 36, Color{ .r = 25, .g = 40, .b = 20 });
-            self.draw_rect_outline(hole_x, fence_y - 20, 50, 36, Color{ .r = 180, .g = 120, .b = 50 });
+            const hole_x = pt_fence.x - 30;
+            const hole_y = fence_y + 8;
+            const hole_w: i32 = 60;
+            const hole_h: i32 = 46;
+
+            // Broken jagged pickets above hole
+            self.fill_rect(hole_x + 4, fence_y - 22, 11, 28, Color.garden_fence);
+            self.fill_rect(hole_x + 24, fence_y - 22, 11, 22, Color.garden_fence);
+            self.fill_rect(hole_x + 44, fence_y - 22, 11, 26, Color.garden_fence);
+
+            // The escape opening through to priest's property
+            self.fill_rect(hole_x, hole_y, hole_w, hole_h, Color{ .r = 20, .g = 30, .b = 18 });
+            self.draw_rect_outline(hole_x, hole_y, hole_w, hole_h, Color{ .r = 120, .g = 70, .b = 30 });
+            self.draw_text("FENCE GAP", hole_x + 4, hole_y - 12, 1, Color{ .r = 250, .g = 204, .b = 21 });
 
             // Masking tape indicator if taped
             if (frame.fence_taped) {
-                self.fill_rect(hole_x - 4, fence_y + 2, 58, 8, Color{ .r = 254, .g = 243, .b = 199 });
-                self.draw_rect_outline(hole_x - 4, fence_y + 2, 58, 8, Color{ .r = 217, .g = 119, .b = 6 });
-                self.draw_text("[MASKING TAPE ATTACHED]", hole_x - 30, fence_y - 36, 1, Color.wp_hover);
+                // Wide tape band stretched taut across hole
+                self.fill_rect(hole_x - 8, hole_y + 16, hole_w + 16, 12, Color{ .r = 254, .g = 243, .b = 199 });
+                self.draw_rect_outline(hole_x - 8, hole_y + 16, hole_w + 16, 12, Color{ .r = 217, .g = 119, .b = 6 });
+
+                if (frame.fence_has_hair) {
+                    // Thick tuft of black cat hair stuck to the tape!
+                    self.fill_rect(hole_x + 14, hole_y + 13, 32, 18, Color.black);
+                    self.draw_rect_outline(hole_x + 14, hole_y + 13, 32, 18, Color{ .r = 250, .g = 204, .b = 21 });
+                    self.draw_text("★ BLACK CAT FUR STUCK TO TAPE ★", hole_x - 45, hole_y - 28, 1, Color{ .r = 250, .g = 204, .b = 21 });
+                } else {
+                    self.draw_text("[STICKY MASKING TAPE READY]", hole_x - 30, hole_y - 28, 1, Color.wp_hover);
+                }
             }
 
-            // Title
+            // 7. Lavender Shrub & Stray Cat Lounge (world_x = 34, screen x ≈ 892)
+            const pt_cat = world_to_screen(34, 0, self.width, self.height);
+            const shrub_x = pt_cat.x;
+            const shrub_y = pt_cat.y - 48;
+
+            // Wooden Potting Bench with garden supplies
+            self.fill_rect(shrub_x - 70, shrub_y + 20, 60, 24, Color{ .r = 115, .g = 75, .b = 40 });
+            self.draw_rect_outline(shrub_x - 70, shrub_y + 20, 60, 24, Color{ .r = 75, .g = 45, .b = 22 });
+            self.fill_rect(shrub_x - 68, shrub_y + 44, 8, 30, Color{ .r = 85, .g = 50, .b = 25 });
+            self.fill_rect(shrub_x - 22, shrub_y + 44, 8, 30, Color{ .r = 85, .g = 50, .b = 25 });
+            // Terracotta pot on bench
+            self.fill_rect(shrub_x - 62, shrub_y + 8, 16, 12, Color{ .r = 190, .g = 90, .b = 55 });
+            // Garden spray bottle sitting on bench
+            self.fill_rect(shrub_x - 40, shrub_y + 4, 12, 16, Color{ .r = 56, .g = 189, .b = 248 });
+            self.fill_rect(shrub_x - 38, shrub_y - 2, 8, 6, Color.white);
+
+            // Fragrant blooming lavender bush clusters
+            self.fill_circle(shrub_x + 10, shrub_y - 5, 26, Color{ .r = 40, .g = 135, .b = 60 });
+            self.fill_circle(shrub_x + 35, shrub_y + 5, 24, Color{ .r = 30, .g = 115, .b = 48 });
+            self.fill_circle(shrub_x - 5, shrub_y + 10, 22, Color{ .r = 50, .g = 150, .b = 70 });
+            // Purple lavender flower specks
+            self.fill_circle(shrub_x + 10, shrub_y - 18, 10, Color{ .r = 168, .g = 85, .b = 247 });
+            self.fill_circle(shrub_x + 28, shrub_y - 8, 12, Color{ .r = 192, .g = 132, .b = 252 });
+            self.fill_circle(shrub_x - 2, shrub_y - 4, 11, Color{ .r = 168, .g = 85, .b = 247 });
+            self.fill_circle(shrub_x + 20, shrub_y + 12, 10, Color{ .r = 147, .g = 51, .b = 234 });
+
+            // 8. Far Right: Stone Arch / Village Gate (leading toward Bike Shop)
+            const gate_x = garden_x + garden_w - 75;
+            const gate_y = garden_y + garden_h - 220;
+            self.fill_rect(gate_x, gate_y, 65, 140, Color{ .r = 140, .g = 130, .b = 115 });
+            self.draw_rect_outline(gate_x, gate_y, 65, 140, Color{ .r = 95, .g = 85, .b = 75 });
+            self.fill_circle(gate_x + 32, gate_y, 32, Color{ .r = 140, .g = 130, .b = 115 });
+            // Iron gate bars
+            self.fill_rect(gate_x + 10, gate_y, 45, 130, Color{ .r = 18, .g = 22, .b = 30 });
+            self.draw_line(gate_x + 20, gate_y, gate_x + 20, gate_y + 130, Color{ .r = 80, .g = 90, .b = 100 });
+            self.draw_line(gate_x + 32, gate_y, gate_x + 32, gate_y + 130, Color{ .r = 80, .g = 90, .b = 100 });
+            self.draw_line(gate_x + 44, gate_y, gate_x + 44, gate_y + 130, Color{ .r = 80, .g = 90, .b = 100 });
+            self.draw_text("VILLAGE", gate_x + 6, gate_y - 18, 1, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_text("-> SHOP", gate_x + 6, gate_y - 6, 1, Color{ .r = 250, .g = 204, .b = 21 });
+
+            // 9. Scene Title & Header
             self.draw_text("HOTEL COURTYARD - GARDEN FENCE", garden_x + 16, garden_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
-            self.draw_text("(SUNNY VILLAGE COURTYARD * FENCE HOLE ESCAPE ROUTE)", garden_x + 16, garden_y + 36, 1, Color.hud_subtext);
+            self.draw_text("(SUNNY PROVENCAL COURTYARD * WOODEN PICKET FENCE * ESCAPE GAP)", garden_x + 16, garden_y + 36, 1, Color.hud_subtext);
         } else if (is_bike_rental_scene) {
             // Madame Buthane's Bike Rental Shop (P14-02, D-016)
             self.fill_rect(0, 0, self.width, self.height, Color{ .r = 25, .g = 20, .b = 20 });
@@ -1447,12 +1676,21 @@ pub const DisplayWindow = struct {
                     const p1 = world_to_screen(wp_a.?.x, wp_a.?.y, self.width, self.height);
                     const p2 = world_to_screen(wp_b.?.x, wp_b.?.y, self.width, self.height);
 
-                    // Thick path line
-                    self.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color.path_edge);
-                    self.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, Color.path_corridor);
-                    self.draw_line(p1.x, p1.y, p2.x, p2.y, Color.path_corridor);
-                    self.draw_line(p1.x, p1.y + 1, p2.x, p2.y + 1, Color.path_corridor);
-                    self.draw_line(p1.x, p1.y + 2, p2.x, p2.y + 2, Color.path_edge);
+                    if (is_garden_scene) {
+                        // In Garden: Stone flagstone garden path
+                        self.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color{ .r = 135, .g = 120, .b = 100 });
+                        self.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, Color{ .r = 195, .g = 180, .b = 155 });
+                        self.draw_line(p1.x, p1.y, p2.x, p2.y, Color{ .r = 195, .g = 180, .b = 155 });
+                        self.draw_line(p1.x, p1.y + 1, p2.x, p2.y + 1, Color{ .r = 195, .g = 180, .b = 155 });
+                        self.draw_line(p1.x, p1.y + 2, p2.x, p2.y + 2, Color{ .r = 135, .g = 120, .b = 100 });
+                    } else {
+                        // Indoor carpet corridor
+                        self.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color.path_edge);
+                        self.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, Color.path_corridor);
+                        self.draw_line(p1.x, p1.y, p2.x, p2.y, Color.path_corridor);
+                        self.draw_line(p1.x, p1.y + 1, p2.x, p2.y + 1, Color.path_corridor);
+                        self.draw_line(p1.x, p1.y + 2, p2.x, p2.y + 2, Color.path_edge);
+                    }
                 }
             }
         }
@@ -2394,4 +2632,32 @@ test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes 
     try testing.expectEqual(long_msg.len, win.cue_banner_len);
     try testing.expectEqualStrings(long_msg, win.cue_banner_text[0..win.cue_banner_len]);
     try testing.expectEqual(@as(u32, 120), win.cue_banner_ticks);
+}
+
+test "P14-02: render_frame renders Hotel Garden with unique courtyard backdrop and fur tape indicators" {
+    const testing = std.testing;
+
+    var frame = std.mem.zeroes(RenderFrame);
+    const garden_name = "Hotel Garden";
+    @memcpy(frame.current_scene[0..garden_name.len], garden_name);
+    frame.current_scene_len = garden_name.len;
+
+    const cat_name = "StrayCat";
+    @memcpy(frame.entities[0].name[0..cat_name.len], cat_name);
+    frame.entities[0].name_len = cat_name.len;
+    frame.entities[0].entity = EntityId.from_int(10);
+    frame.entities[0].x = 34;
+    frame.entities[0].y = 0;
+    frame.entity_count = 1;
+
+    frame.fence_taped = true;
+    frame.fence_has_hair = true;
+    frame.cat_startled = true;
+
+    var win = try DisplayWindow.init("Garden Test", 1280, 720);
+    defer win.deinit();
+
+    win.render_frame(&frame, false);
+    try testing.expect(frame.fence_taped);
+    try testing.expect(frame.fence_has_hair);
 }
