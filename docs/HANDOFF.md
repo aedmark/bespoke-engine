@@ -29,7 +29,7 @@ All 10 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 | `zig test src/repl.zig` | **16/16 passed** |
 | `zig test src/compiler/lexer.zig` | **3/3 passed** |
 | `zig test src/compiler/parser.zig` | **6/6 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **19/19 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **20/20 passed** |
 | `zig test -lc -lSDL2 src/root.zig` | **35/35 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |

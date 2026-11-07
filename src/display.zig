@@ -148,6 +148,11 @@ pub const RenderFrame = struct {
     fact_count: usize,
     cheese_holder: EntityId,
     charmed_target: EntityId,
+    // Scenario status flags (P10-03)
+    spit_is_thick: bool = false,
+    flags_tampered: bool = false,
+    wind_blowing: bool = false,
+    organiser_distracted: bool = false,
     debug_facts: [32]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
@@ -298,11 +303,30 @@ pub const DisplayBridge = struct {
             }
         }
 
+        // 5b. Capture Spitting Contest facts (P10-03, D-012)
+        self.back_buffer.spit_is_thick = false;
+        if (world.lookup_relation("thick")) |rel| {
+            self.back_buffer.spit_is_thick = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.flags_tampered = false;
+        if (world.lookup_relation("tampered")) |rel| {
+            self.back_buffer.flags_tampered = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.wind_blowing = false;
+        if (world.lookup_relation("blowing")) |rel| {
+            self.back_buffer.wind_blowing = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.organiser_distracted = false;
+        if (world.lookup_relation("Distracted")) |rel| {
+            self.back_buffer.organiser_distracted = world.has_fact(null, rel, null);
+        }
+
         // 6. Capture player inventory (P7-03, D-007)
         var inv_count: usize = 0;
-        if (world.lookup_entity("Cat")) |cat_id| {
+        const player_id = world.lookup_entity("Guybrush") orelse world.lookup_entity("Cat");
+        if (player_id) |pid| {
             if (world.lookup_relation("InInventory")) |inv_rel| {
-                var it_inv = world.query(cat_id, inv_rel, null);
+                var it_inv = world.query(pid, inv_rel, null);
                 while (it_inv.next()) |f| {
                     if (inv_count >= self.back_buffer.inventory.len) break;
                     var item = RenderInventoryItem{
@@ -320,7 +344,7 @@ pub const DisplayBridge = struct {
                 }
             }
             if (world.lookup_relation("Carries")) |carries_rel| {
-                var it_carr = world.query(cat_id, carries_rel, null);
+                var it_carr = world.query(pid, carries_rel, null);
                 while (it_carr.next()) |f| {
                     if (inv_count >= self.back_buffer.inventory.len) break;
                     var item = RenderInventoryItem{

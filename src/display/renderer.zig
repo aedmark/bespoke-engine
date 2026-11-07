@@ -38,6 +38,20 @@ pub const Color = struct {
     pub const bard_color = Color{ .r = 147, .g = 51, .b = 234 }; // Purple
     pub const cheese_color = Color{ .r = 250, .g = 204, .b = 21 }; // Gold
 
+    // Booty Island Spitting Contest Colors (P10-03, D-012)
+    pub const guybrush_coat = Color{ .r = 30, .g = 64, .b = 175 }; // Pirate Blue
+    pub const guybrush_hair = Color{ .r = 250, .g = 204, .b = 21 }; // Blonde
+    pub const organiser_coat = Color{ .r = 185, .g = 28, .b = 28 }; // Velvet Red
+    pub const onlookers_color = Color{ .r = 120, .g = 80, .b = 140 }; // Purple Crowd
+    pub const flag_color = Color{ .r = 239, .g = 68, .b = 68 }; // Red flag
+    pub const flag_tampered = Color{ .r = 245, .g = 158, .b = 11 }; // Gold flag
+    pub const wind_color = Color{ .r = 56, .g = 189, .b = 248 }; // Sky Blue
+    pub const spit_color = Color{ .r = 34, .g = 197, .b = 94 }; // Lime Spit
+    pub const grass_green = Color{ .r = 30, .g = 68, .b = 38 };
+    pub const sand_color = Color{ .r = 180, .g = 160, .b = 110 };
+    pub const ocean_blue = Color{ .r = 14, .g = 70, .b = 110 };
+    pub const sky_dusk = Color{ .r = 16, .g = 24, .b = 48 };
+
     pub const hud_bg = Color{ .r = 15, .g = 23, .b = 42, .a = 230 };
     pub const hud_text = Color{ .r = 248, .g = 250, .b = 252 };
     pub const hud_subtext = Color{ .r = 148, .g = 163, .b = 184 };
@@ -100,6 +114,10 @@ pub const UserAction = union(enum) {
     }, // Live interactive REPL console command (P9-03, D-011)
     toggle_debug,
     toggle_console,
+    spit_contest_spit,
+    sound_horn,
+    drink_green_drink,
+    tamper_flags,
 };
 
 pub const WAYPOINT_SCREEN_RADIUS = 16;
@@ -575,6 +593,10 @@ pub const DisplayWindow = struct {
                     }
 
                     switch (sym) {
+                        c.SDLK_s => action = .spit_contest_spit,
+                        c.SDLK_h => action = .sound_horn,
+                        c.SDLK_g => action = .drink_green_drink,
+                        c.SDLK_f => action = .tamper_flags,
                         c.SDLK_SPACE => action = .toggle_pause,
                         c.SDLK_n => action = .step_tick,
                         c.SDLK_r => action = .rewind,
@@ -702,25 +724,92 @@ pub const DisplayWindow = struct {
     pub fn render_frame(self: *DisplayWindow, frame: *const RenderFrame, is_paused: bool) void {
         if (self.is_headless or self.renderer == null) return;
 
-        // 1. Clear background
-        self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
+        // Detect if rendering Booty Island Spitting Contest or Tavern Heist
+        var is_spitting_scene = false;
+        for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+            if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
+                std.mem.indexOf(u8, wp.get_name(), "Offstage") != null)
+            {
+                is_spitting_scene = true;
+                break;
+            }
+        }
 
-        // 2. Render Rooms (Tavern Hall & Wine Cellar)
-        const tavern_rect_x = 100;
-        const tavern_rect_y = 120;
-        const tavern_rect_w = 480;
-        const tavern_rect_h = 320;
-        self.fill_rect(tavern_rect_x, tavern_rect_y, tavern_rect_w, tavern_rect_h, Color.tavern_room);
-        self.draw_rect_outline(tavern_rect_x, tavern_rect_y, tavern_rect_w, tavern_rect_h, Color.tavern_border);
-        self.draw_text("TAVERN - COMMON ROOM", tavern_rect_x + 16, tavern_rect_y + 16, 2, Color.hud_subtext);
+        if (is_spitting_scene) {
+            // Sky
+            self.fill_rect(0, 0, self.width, self.height, Color.sky_dusk);
 
-        const cellar_rect_x = 600;
-        const cellar_rect_y = 120;
-        const cellar_rect_w = 260;
-        const cellar_rect_h = 320;
-        self.fill_rect(cellar_rect_x, cellar_rect_y, cellar_rect_w, cellar_rect_h, Color.cellar_room);
-        self.draw_rect_outline(cellar_rect_x, cellar_rect_y, cellar_rect_w, cellar_rect_h, Color.cellar_border);
-        self.draw_text("WINE CELLAR", cellar_rect_x + 16, cellar_rect_y + 16, 2, Color.hud_subtext);
+            // Grassy Contest Field & Ocean
+            const field_x: i32 = 40;
+            const field_y: i32 = 110;
+            const field_w: i32 = self.width - 80;
+            const field_h: i32 = 320;
+
+            // Green grass field
+            self.fill_rect(field_x, field_y, field_w - 180, field_h, Color.grass_green);
+            self.draw_rect_outline(field_x, field_y, field_w - 180, field_h, Color{ .r = 45, .g = 95, .b = 55 });
+
+            // Caribbean Ocean / Looking Offstage
+            const ocean_x = field_x + field_w - 180;
+            self.fill_rect(ocean_x, field_y, 180, field_h, Color.ocean_blue);
+            self.draw_rect_outline(ocean_x, field_y, 180, field_h, Color{ .r = 56, .g = 189, .b = 248 });
+            // Sandy shoreline edge
+            self.fill_rect(ocean_x - 12, field_y, 12, field_h, Color.sand_color);
+
+            // Ocean label
+            self.draw_text("CARIBBEAN SEA", ocean_x + 16, field_y + 16, 2, Color{ .r = 56, .g = 189, .b = 248 });
+            self.draw_text("(LOOKING OFFSTAGE)", ocean_x + 16, field_y + 36, 1, Color.white);
+
+            // Field Title Header
+            self.draw_text("BOOTY ISLAND - SPITTING COMPETITION", field_x + 16, field_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+
+            // Ground distance track lines
+            // Starting Line at x=340
+            self.draw_line(340, field_y + 60, 340, field_y + field_h - 20, Color.white);
+            self.draw_text("START LINE", 305, field_y + field_h - 16, 1, Color.white);
+
+            // 3rd Place Line at x=460
+            self.draw_line(460, field_y + 70, 460, field_y + field_h - 30, Color.hud_subtext);
+            self.draw_text("3RD PLACE", 435, field_y + field_h - 26, 1, Color.hud_subtext);
+
+            // 2nd Place Line at x=580
+            self.draw_line(580, field_y + 70, 580, field_y + field_h - 30, Color{ .r = 245, .g = 158, .b = 11 });
+            self.draw_text("2ND PLACE", 555, field_y + field_h - 26, 1, Color{ .r = 245, .g = 158, .b = 11 });
+
+            // 1st Place Champion Line at x=680
+            self.draw_line(680, field_y + 60, 680, field_y + field_h - 20, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_text("CHAMPION LINE (1ST PLACE)", 605, field_y + field_h - 16, 1, Color{ .r = 250, .g = 204, .b = 21 });
+
+            // Wind Indicator
+            if (frame.wind_blowing) {
+                self.draw_text(">>> WIND GUST: STRONG TAILWIND (BLOWING EAST TOWARD TARGET!) >>>", field_x + 16, field_y + 44, 2, Color.wind_color);
+                self.draw_line(260, field_y + 140, 680, field_y + 140, Color.wind_color);
+                self.draw_line(280, field_y + 190, 710, field_y + 190, Color.wind_color);
+                self.draw_line(250, field_y + 240, 690, field_y + 240, Color.wind_color);
+            } else {
+                self.draw_text("WIND: CALM (Wait for tailwind gust)", field_x + 16, field_y + 44, 2, Color.hud_subtext);
+            }
+        } else {
+            // 1. Clear background
+            self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
+
+            // 2. Render Rooms (Tavern Hall & Wine Cellar)
+            const tavern_rect_x = 100;
+            const tavern_rect_y = 120;
+            const tavern_rect_w = 480;
+            const tavern_rect_h = 320;
+            self.fill_rect(tavern_rect_x, tavern_rect_y, tavern_rect_w, tavern_rect_h, Color.tavern_room);
+            self.draw_rect_outline(tavern_rect_x, tavern_rect_y, tavern_rect_w, tavern_rect_h, Color.tavern_border);
+            self.draw_text("TAVERN - COMMON ROOM", tavern_rect_x + 16, tavern_rect_y + 16, 2, Color.hud_subtext);
+
+            const cellar_rect_x = 600;
+            const cellar_rect_y = 120;
+            const cellar_rect_w = 260;
+            const cellar_rect_h = 320;
+            self.fill_rect(cellar_rect_x, cellar_rect_y, cellar_rect_w, cellar_rect_h, Color.cellar_room);
+            self.draw_rect_outline(cellar_rect_x, cellar_rect_y, cellar_rect_w, cellar_rect_h, Color.cellar_border);
+            self.draw_text("WINE CELLAR", cellar_rect_x + 16, cellar_rect_y + 16, 2, Color.hud_subtext);
+        }
 
         // 3. Render Scene Hotspots / Props (P7-01, D-009)
         for (frame.hotspots[0..frame.hotspot_count], 0..) |hs, idx| {
@@ -746,6 +835,20 @@ pub const DisplayWindow = struct {
                 self.draw_rect_outline(pt.x - 18, pt.y - 22, 36, 44, Color{ .r = 120, .g = 53, .b = 15 });
                 self.draw_line(pt.x - 18, pt.y - 10, pt.x + 18, pt.y - 10, Color{ .r = 140, .g = 140, .b = 150 });
                 self.draw_line(pt.x - 18, pt.y + 10, pt.x + 18, pt.y + 10, Color{ .r = 140, .g = 140, .b = 150 });
+            } else if (std.mem.indexOf(u8, name, "Flag") != null) {
+                // Spitting Competition Distance Flags (P10-03, D-012)
+                const flag_x = if (frame.flags_tampered) pt.x - 70 else pt.x;
+                self.fill_rect(flag_x - 2, pt.y - 32, 4, 40, Color{ .r = 217, .g = 119, .b = 6 });
+                const fcol = if (frame.flags_tampered) Color.flag_tampered else Color.flag_color;
+                self.fill_rect(flag_x + 2, pt.y - 32, 28, 18, fcol);
+                self.draw_line(flag_x + 2, pt.y - 14, flag_x + 30, pt.y - 32, Color.white);
+
+                if (frame.flags_tampered) {
+                    self.draw_rect_outline(pt.x - 1, pt.y - 30, 2, 38, Color.hud_subtext);
+                    self.draw_text("[MOVED!]", flag_x - 20, pt.y + 14, 2, Color.flag_tampered);
+                } else {
+                    self.draw_text("Flags", flag_x - 14, pt.y + 14, 2, Color.hud_text);
+                }
             } else {
                 // Default prop
                 self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
@@ -864,6 +967,59 @@ pub const DisplayWindow = struct {
 
                 // Label
                 self.draw_text("Bard", pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.bard_color);
+            } else if (std.mem.eql(u8, name, "Guybrush")) {
+                // Guybrush (Player): Blonde hair, pirate blue coat
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.guybrush_coat);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Blonde hair
+                self.fill_circle(pt.x, pt.y - 8, 8, Color.guybrush_hair);
+
+                // Label
+                self.draw_text("Guybrush", pt.x - 24, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.guybrush_hair);
+
+                // Spit Status
+                if (frame.spit_is_thick) {
+                    self.draw_text("[Thick Spit Ready!]", pt.x - 50, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.spit_color);
+                } else {
+                    self.draw_text("[Spit: Thin]", pt.x - 32, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.hud_subtext);
+                }
+            } else if (std.mem.eql(u8, name, "Organiser")) {
+                // Organiser: Velvet red coat, fancy hat
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.organiser_coat);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Cocked hat / feather
+                self.fill_rect(pt.x - 8, pt.y - ACTOR_SCREEN_RADIUS - 4, 16, 5, Color.black);
+                self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 8, 4, 6, Color.guybrush_hair);
+
+                // Label
+                self.draw_text("Organiser", pt.x - 28, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.organiser_coat);
+
+                // Distracted / watching status
+                if (frame.organiser_distracted) {
+                    self.draw_text("[DISTRACTED!]", pt.x - 38, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
+                } else {
+                    self.draw_text("[Watching]", pt.x - 26, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.status_running);
+                }
+            } else if (std.mem.eql(u8, name, "Onlookers")) {
+                // Onlookers: Crowd of spectator circles
+                self.fill_circle(pt.x - 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.onlookers_color);
+                self.fill_circle(pt.x + 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.onlookers_color);
+                self.fill_circle(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 2, Color{ .r = 140, .g = 100, .b = 160 });
+                self.draw_circle_outline(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 2, Color.white);
+
+                // Label
+                self.draw_text("Onlookers", pt.x - 28, pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.onlookers_color);
+                if (frame.organiser_distracted) {
+                    self.draw_text("[Looking Offstage]", pt.x - 50, pt.y + ACTOR_SCREEN_RADIUS + 4, 2, Color.cue_alert);
+                }
+            } else {
+                // Generic actor token
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 70, .g = 80, .b = 95 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                const tw = font.text_width(name, 2);
+                self.draw_text(name, pt.x - @divTrunc(tw, 2), pt.y - ACTOR_SCREEN_RADIUS - 16, 2, Color.hud_text);
             }
         }
 
@@ -955,13 +1111,23 @@ pub const DisplayWindow = struct {
         // 8. Bottom Controls HUD Bar
         self.fill_rect(0, self.height - 44, self.width, 44, Color.hud_bg);
         self.draw_line(0, self.height - 44, self.width, self.height - 44, Color.tavern_border);
-        self.draw_text(
-            "[Click]: Act | [Right-Click]: Verb | [F1/D]: Debug HUD | [C]: REPL | [< / >]: Scrub | [Space]: Pause",
-            20,
-            self.height - 28,
-            2,
-            Color.hud_subtext,
-        );
+        if (is_spitting_scene) {
+            self.draw_text(
+                "[S]: Spit! | [H]: Horn | [G]: GreenDrink | [F]: Move Flags | [Space]: Pause | [< / >]: Scrub",
+                20,
+                self.height - 28,
+                2,
+                Color.hud_subtext,
+            );
+        } else {
+            self.draw_text(
+                "[Click]: Act | [Right-Click]: Verb | [F1/D]: Debug HUD | [C]: REPL | [< / >]: Scrub | [Space]: Pause",
+                20,
+                self.height - 28,
+                2,
+                Color.hud_subtext,
+            );
+        }
 
         // 8. Ephemeral Cue Banner
         if (self.cue_banner_ticks > 0 and self.cue_banner_len > 0) {

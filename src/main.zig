@@ -29,7 +29,11 @@ pub fn main() !void {
     }
 
     if (is_spitting_contest) {
-        try bespoke.spitting_contest.run_headless(allocator, stdout);
+        if (is_headless_arg) {
+            try bespoke.spitting_contest.run_headless(allocator, stdout);
+        } else {
+            try bespoke.spitting_contest.run_gui(allocator, stdout);
+        }
         return;
     }
 
@@ -449,6 +453,7 @@ pub fn main() !void {
                     const status_str = if (window.show_console) "OPENED" else "CLOSED";
                     try stdout.print("[Console] Live REPL Console Drawer {s}\n", .{status_str});
                 },
+                .spit_contest_spit, .sound_horn, .drink_green_drink, .tamper_flags => {},
                 .none => {},
             }
 

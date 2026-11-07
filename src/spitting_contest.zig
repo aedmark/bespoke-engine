@@ -303,6 +303,267 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("===================================================================\n", .{});
 }
 
+/// Launches the full graphical 2D adventure display window for the Spitting Contest (P10-03, D-001, D-008, D-012).
+pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
+    try stdout.print("\n===================================================================\n", .{});
+    try stdout.print("   BeSpoke Engine: The Booty Island Spitting Contest (Graphical 2D)\n", .{});
+    try stdout.print("  (Natural Stageplay DSL * Relational Spine * Falling Edge & TTL)  \n", .{});
+    try stdout.print("===================================================================\n\n", .{});
+
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+
+    try stdout.print("[Compiler] Lowering Booty Island stageplay script to bytecode...\n", .{});
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, SPITTING_CONTEST_SCRIPT);
+    defer compiled.deinit();
+
+    const guybrush = world.lookup_entity("Guybrush").?;
+    const organiser = world.lookup_entity("Organiser").?;
+    const onlookers = world.lookup_entity("Onlookers").?;
+    const flags = world.lookup_entity("Flags").?;
+
+    const starting_line_wp = spatial.graph.find_waypoint("Starting Line") orelse 1;
+    const offstage_wp = spatial.graph.find_waypoint("Looking Offstage") orelse 2;
+
+    try spatial.register_entity(guybrush, starting_line_wp, 10);
+    try spatial.register_entity(organiser, starting_line_wp, 20);
+    try spatial.register_entity(onlookers, starting_line_wp, 30);
+
+    const thick_rel = try world.intern_relation("thick", .set);
+    const tampered_rel = try world.intern_relation("tampered", .set);
+    const distracted_rel = try world.intern_relation("Distracted", .set);
+    const scene_ent = try world.intern_entity("Scene");
+
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+
+    var display_bridge = bespoke.DisplayBridge.init();
+    var repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
+
+    if (compiled.routine_entries.get("EggingCrowd")) |entry| {
+        _ = try vm.spawn_routine(organiser, entry);
+    }
+    if (compiled.routine_entries.get("WindBlowing")) |entry| {
+        _ = try vm.spawn_routine(scene_ent, entry);
+    }
+
+    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
+    defer {
+        for (history_snapshots.items) |*buf| buf.deinit();
+        history_snapshots.deinit();
+    }
+
+    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 960, 540);
+    defer window.deinit();
+
+    if (window.is_headless) {
+        try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
+        try run_headless(allocator, stdout);
+        return;
+    }
+
+    try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (960x540) <<<\n", .{});
+    try stdout.print("Booty Island Contest Controls:\n", .{});
+    try stdout.print("   - [S]:                   SPIT! (Evaluate spit attempt against active facts)\n", .{});
+    try stdout.print("   - [H]:                   SOUND SHIP'S HORN (Distract crowd for 100 ticks)\n", .{});
+    try stdout.print("   - [G]:                   DRINK GREEN DRINK (Thicken spit)\n", .{});
+    try stdout.print("   - [F]:                   TAMPER WITH FLAGS (Move record line closer)\n", .{});
+    try stdout.print("   - [Left Click Actor]:    Interact with Guybrush, Organiser, or Onlookers\n", .{});
+    try stdout.print("   - [Left Click Prop]:     Examine or Move Flags\n", .{});
+    try stdout.print("   - [Timeline Scrubber]:   Click or drag timeline bar (or [< / >] arrows)\n", .{});
+    try stdout.print("   - [F1 / D]:              Toggle Debug Relational Fact & Fiber Overlay\n", .{});
+    try stdout.print("   - [Tab / ` / C]:         Toggle Live REPL Console Drawer\n", .{});
+    try stdout.print("   - [Space]:               Pause / Resume Simulation Clock\n", .{});
+    try stdout.print("   - [N]:                   Single-step Simulation Tick\n", .{});
+    try stdout.print("   - [R]:                   Instant Time-Travel Rewind\n", .{});
+    try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
+
+    // Capture initial tick 0
+    display_bridge.capture_frame(&world, &spatial, &vm);
+    display_bridge.set_max_history_tick(0);
+    display_bridge.swap();
+
+    var snap0 = std.ArrayList(u8).init(allocator);
+    try world.save_state(snap0.writer());
+    try history_snapshots.append(snap0);
+
+    var is_paused = false;
+    var last_tick_time = std.time.milliTimestamp();
+    const tick_interval_ms: i64 = 200; // 5 ticks/sec for clear pacing
+
+    window.set_cue_banner("Welcome to Booty Island! Press [S] to Spit, [H] for Horn, [G] for Drink, [F] for Flags.", 150);
+
+    while (true) {
+        const action = window.poll_events(display_bridge.get_frame());
+        var should_step_now = false;
+
+        switch (action) {
+            .quit => break,
+            .toggle_pause => is_paused = !is_paused,
+            .step_tick => should_step_now = true,
+            .walk_player => |wp_id| {
+                _ = try spatial.walk_to(guybrush, wp_id);
+                window.set_cue_banner("Directing Guybrush to waypoint.", 60);
+            },
+            .examine_hotspot => |hs_idx| {
+                const frame = display_bridge.get_frame();
+                if (hs_idx < frame.hotspot_count) {
+                    const hs = frame.hotspots[hs_idx];
+                    var buf: [128]u8 = undefined;
+                    const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Flags";
+                    window.set_cue_banner(text, 120);
+                }
+            },
+            .interact_actor => |act| {
+                const frame = display_bridge.get_frame();
+                if (act.actor_index < frame.entity_count) {
+                    const target_entity = frame.entities[act.actor_index];
+                    const tname = target_entity.get_name();
+                    const pt = bespoke.display.renderer.world_to_screen(target_entity.x, target_entity.y, window.width, window.height);
+
+                    if (std.mem.eql(u8, tname, "Organiser")) {
+                        window.show_dialogue(
+                            target_entity.entity,
+                            pt,
+                            "Organiser",
+                            "\"Step right up, lad! You think you have what it takes?\"",
+                            &[_][]const u8{
+                                "1. \"I'm ready to spit!\"",
+                                "2. \"What are the rules again?\"",
+                                "3. \"Never mind.\"",
+                            },
+                        );
+                    } else if (std.mem.eql(u8, tname, "Guybrush")) {
+                        window.set_cue_banner("Guybrush: \"I am Guybrush Threepwood, mighty spitter!\"", 90);
+                    } else {
+                        window.set_cue_banner("Onlookers: \"Hooray! Make way for the next spitter!\"", 90);
+                    }
+                }
+            },
+            .interact_hotspot => |hs_act| {
+                _ = hs_act;
+                const is_distracted = world.has_fact(organiser, distracted_rel, null);
+                if (is_distracted) {
+                    try world.remember(flags, tampered_rel, 1, 0);
+                    window.set_cue_banner("★ You secretly moved the flags closer while the crowd wasn't looking! ★", 120);
+                } else {
+                    window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
+                }
+            },
+            .dialogue_choice => |choice_idx| {
+                if (choice_idx == 0) {
+                    const res = evaluate_spit_contest(&world);
+                    switch (res) {
+                        .dribble_third => window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120),
+                        .thick_flags_untouched_third => window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120),
+                        .thick_flags_moved_no_wind_second => window.set_cue_banner("Guybrush: \"Ptooie!\" Flies past moved flags! Second Place! (Need wind!)", 120),
+                        .winner_first => window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180),
+                    }
+                } else if (choice_idx == 1) {
+                    window.set_cue_banner("Organiser: \"Spit past the flags to win! Thick spit and a strong wind will do it!\"", 120);
+                } else {
+                    window.set_cue_banner("Guybrush steps back.", 60);
+                }
+            },
+            .dismiss_dialogue => window.dismiss_dialogue(),
+            .spit_contest_spit => {
+                const res = evaluate_spit_contest(&world);
+                switch (res) {
+                    .dribble_third => window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120),
+                    .thick_flags_untouched_third => window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120),
+                    .thick_flags_moved_no_wind_second => window.set_cue_banner("Guybrush: \"Ptooie!\" Past moved flags! Second Place! (Need a gust of wind!)", 120),
+                    .winner_first => window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180),
+                }
+            },
+            .sound_horn => {
+                try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
+                _ = try spatial.walk_to(organiser, offstage_wp);
+                _ = try spatial.walk_to(onlookers, offstage_wp);
+                window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
+            },
+            .drink_green_drink => {
+                try world.remember(guybrush, thick_rel, 1, 0);
+                window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
+            },
+            .tamper_flags => {
+                const is_distracted = world.has_fact(organiser, distracted_rel, null);
+                if (is_distracted) {
+                    try world.remember(flags, tampered_rel, 1, 0);
+                    window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
+                } else {
+                    window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
+                }
+            },
+            .rewind => {
+                if (history_snapshots.items.len > 0) {
+                    is_paused = true;
+                    var stream = std.io.fixedBufferStream(history_snapshots.items[0].items);
+                    try world.restore_state(stream.reader());
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                    display_bridge.swap();
+                    window.set_cue_banner("<<< REWOUND TO INITIAL STATE (TICK 0) <<<", 90);
+                }
+            },
+            .scrub_to_tick => |target_tick| {
+                if (history_snapshots.items.len > 0) {
+                    const clamped = @min(target_tick, history_snapshots.items.len - 1);
+                    is_paused = true;
+                    var stream = std.io.fixedBufferStream(history_snapshots.items[clamped].items);
+                    try world.restore_state(stream.reader());
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                    display_bridge.swap();
+                    var banner_buf: [96]u8 = undefined;
+                    const text = std.fmt.bufPrint(&banner_buf, "<<< TIME-TRAVEL: SCRUBBED TO TICK {d} (PAUSED) <<<", .{world.current_tick}) catch "Scrubbed";
+                    window.set_cue_banner(text, 90);
+                }
+            },
+            .repl_command => |cmd| {
+                const line = cmd.buf[0..cmd.len];
+                const res = repl_instance.execute(line);
+                window.add_console_history(res.get_text());
+                if (res.output_len > 0) {
+                    window.set_cue_banner(res.get_text(), 120);
+                }
+                display_bridge.capture_frame(&world, &spatial, &vm);
+                display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                display_bridge.swap();
+            },
+            .toggle_debug => {},
+            .toggle_console => {},
+            .none => {},
+        }
+
+        const now = std.time.milliTimestamp();
+        if (should_step_now or (!is_paused and now - last_tick_time >= tick_interval_ms)) {
+            last_tick_time = now;
+
+            if (world.current_tick + 1 < history_snapshots.items.len) {
+                for (history_snapshots.items[world.current_tick + 1 ..]) |*s| s.deinit();
+                history_snapshots.shrinkRetainingCapacity(world.current_tick + 1);
+            }
+
+            try vm.step_tick();
+
+            var snap = std.ArrayList(u8).init(allocator);
+            try world.save_state(snap.writer());
+            try history_snapshots.append(snap);
+
+            display_bridge.capture_frame(&world, &spatial, &vm);
+            display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+            display_bridge.swap();
+        }
+
+        window.render_frame(display_bridge.get_frame(), is_paused);
+    }
+}
+
 test "P10-03: compile and verify Spitting Contest script AST and bytecode" {
     const testing = std.testing;
     var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
