@@ -441,7 +441,7 @@ pub const DisplayWindow = struct {
     active_balloon: ?SpeechBalloon = null,
     hovered_choice: ?u8 = null,
     is_headless: bool = false,
-    cue_banner_text: [64]u8 = undefined,
+    cue_banner_text: [256]u8 = undefined,
     cue_banner_len: usize = 0,
     cue_banner_ticks: u32 = 0,
     // Phase 11 Inventory In-Hand Selection & Combining (P11-03, D-013)
@@ -1912,12 +1912,16 @@ pub const DisplayWindow = struct {
         // 8. Ephemeral Cue Banner
         if (self.cue_banner_ticks > 0 and self.cue_banner_len > 0) {
             const banner = self.cue_banner_text[0..self.cue_banner_len];
-            const bw = font.text_width(banner, 2) + 32;
-            const bx = @divTrunc(self.width - bw, 2);
-            const by = 60;
-            self.fill_rect(bx, by, bw, 36, Color.hud_bg);
-            self.draw_rect_outline(bx, by, bw, 36, Color.cue_alert);
-            self.draw_text(banner, bx + 16, by + 10, 2, Color.cue_alert);
+            const scale: i32 = if (font.text_width(banner, 2) + 40 > self.width) 1 else 2;
+            const text_w = font.text_width(banner, scale);
+            const bw = @min(text_w + 32, self.width - 20);
+            const bx = @max(10, @divTrunc(self.width - bw, 2));
+            const by: i32 = 60;
+            const bh: i32 = if (scale == 2) 36 else 28;
+            const text_y = by + @divTrunc(bh - font.FONT_HEIGHT * scale, 2);
+            self.fill_rect(bx, by, bw, bh, Color.hud_bg);
+            self.draw_rect_outline(bx, by, bw, bh, Color.cue_alert);
+            self.draw_text(banner, bx + 16, text_y, scale, Color.cue_alert);
             self.cue_banner_ticks -= 1;
         }
 
@@ -2376,4 +2380,18 @@ test "P14-02: display renderer dynamically recognizes Gabriel Knight 3 scene the
     defer win.deinit();
 
     win.render_frame(&frame, false);
+}
+
+test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes without truncation" {
+    const testing = std.testing;
+
+    var win = try DisplayWindow.init("Banner Test", 1280, 720);
+    defer win.deinit();
+
+    const long_msg = "Room Desk: A wooden desk with a black marker, masking tape, and breakfast syrup.";
+    win.set_cue_banner(long_msg, 120);
+
+    try testing.expectEqual(long_msg.len, win.cue_banner_len);
+    try testing.expectEqualStrings(long_msg, win.cue_banner_text[0..win.cue_banner_len]);
+    try testing.expectEqual(@as(u32, 120), win.cue_banner_ticks);
 }

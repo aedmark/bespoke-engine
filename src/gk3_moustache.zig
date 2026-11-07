@@ -721,7 +721,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     } else if (std.mem.indexOf(u8, hname, "Counter") != null or std.mem.indexOf(u8, hname, "Rental") != null) {
                         window.set_cue_banner("Rental Counter: Madame Buthane's counter, piled with maps and keys.", 120);
                     } else {
-                        var buf: [128]u8 = undefined;
+                        var buf: [256]u8 = undefined;
                         const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Hotspot";
                         window.set_cue_banner(text, 120);
                     }
@@ -829,7 +829,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         } else if (std.mem.indexOf(u8, hname, "Counter") != null or std.mem.indexOf(u8, hname, "Rental") != null) {
                             window.set_cue_banner("Rental Counter: Madame Buthane's counter, piled with maps and keys.", 120);
                         } else {
-                            var buf: [128]u8 = undefined;
+                            var buf: [256]u8 = undefined;
                             const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Hotspot";
                             window.set_cue_banner(text, 120);
                         }
