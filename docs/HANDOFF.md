@@ -12,10 +12,10 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-06, session 8, on `main`: completed Phase 12 (Multi-Scene Transitions & Stage Director, P12-01..P12-03, D-014) and expanded 3x Developer Guide (docs/manual.html)._
+_Last updated: 2026-11-06, session 9, on `main`: completed Phase 13 (Relational Dialogue Trees & Dynamic Choice Pruning, P13-01..P13-03, D-015) and updated 3x Developer Guide (docs/manual.html)._
 
 **Where things stand, in one paragraph:**
-All 12 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, and multi-scene stage directing. First-class scene transitions (`transition to scene: TargetScene`, `Opcode.transition_scene`) pause departed scene ambient fibers, wake target scene routines, partition spatial waypoints and interactables, and dynamically switch graphical rendering backdrops (Spitting Competition seaside, Wine Cellar subterranean vault, and Tavern common room) while continuously preserving all global relational facts (player inventory, item states, cross-scene puzzle progression) in the relational World arena.
+All 13 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, and dynamic dialogue choice pruning. Conditionally guarded dialogue choices (`choice "..." if Condition:`, `kw_choice`, `DialogueChoice`, `Stmt.choice_block`) are dynamically evaluated by the VM against the contiguous relational `World` fact store at balloon spawn time (`VM.prune_dialogue_choices`, `VM.has_fact_pattern`), culling unsatisfied branches before display. The 2D display renderer (`src/display/renderer.zig`) supports variable-length choice sets (up to 9 choices) with dynamic height calculation, bounds clamping, scroll offset tracking via mouse wheel and arrow keys, numbered hotkey tags (`[1]..[9]`), and dual input handling via mouse click or keyboard hotkeys (`1-9` / keypad `1-9`).
 
 **Verified** (2026-11-06, on `main`, Linux x86_64, Zig 0.13.0)
 
@@ -29,12 +29,12 @@ All 12 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 | `zig test src/world.zig` | **5/5 passed** |
 | `zig test src/bytecode.zig` | **6/6 passed** |
 | `zig test src/spatial.zig` | **9/9 passed** |
-| `zig test src/vm.zig` | **19/19 passed** |
-| `zig test src/repl.zig` | **20/20 passed** |
-| `zig test src/compiler/lexer.zig` | **4/4 passed** |
-| `zig test src/compiler/parser.zig` | **9/9 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **25/25 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **45/45 passed** |
+| `zig test src/vm.zig` | **31/31 passed** |
+| `zig test src/repl.zig` | **32/32 passed** |
+| `zig test src/compiler/lexer.zig` | **5/5 passed** |
+| `zig test src/compiler/parser.zig` | **11/11 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **38/38 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **49/49 passed** |
 | `zig build test` | **passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 | `zig build run -- --spitting-contest --headless` | **Booty Island Spitting Contest full scenario with rewind passed** |
@@ -43,7 +43,7 @@ All 12 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **World Relational Database:** Contiguous arena, `MultiArrayList(Fact)`, TTL decay, query iterators (`World.query`), multi-clause pattern matcher (`find_first_match`, `has_multi_match`, `find_all_matches`), and CRC32-checked snapshots (P1-01 through P1-04, P7-03, P8-01, D-010).
 - **Bytecode VM & Scheduler:** Compact opcodes, cooperative fibers, `wait_ticks`, `wait_until`, priority interrupt stacks (`active_priority`, `interrupt_entity_priority`), and continuous reactive rule evaluation (`evaluate_reactive_rules`, `load_compiled_rules`) (P2-01 through P2-04, P8-02, P8-03, D-004, D-010).
 - **Spatial Topology & Hotspots:** 2D integer waypoints, rooms, A* graph pathfinding, asynchronous motor intents (`walk_to`), and static scene hotspots (`Fireplace`, `BarCounter`, `WineCask`) with examine text and spatial hitboxes (P3-01, P3-02, P7-01, D-005, D-009).
-- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`), with grammar for verbs, dialogue (`say`), multi-clause `when` rules (`when Pattern1 and Pattern2:`), automatic `CompiledWhenRule` generation, and scene transitions (`transition to scene: TargetScene`) (P4-01 through P4-03, P7-02, P7-04, P8-01, P8-02, P12-01, D-002, D-009, D-010, D-014).
+- **Compiler Front-End:** Lexer, AST parser, and bytecode code generator (`compile_source`), with grammar for verbs, dialogue (`say`), multi-clause `when` rules (`when Pattern1 and Pattern2:`), automatic `CompiledWhenRule` generation, scene transitions (`transition to scene: TargetScene`), and conditionally guarded dialogue choice blocks (`choice "..." if Condition:`) (P4-01 through P4-03, P7-02, P7-04, P8-01, P8-02, P12-01, P13-01, D-002, D-009, D-010, D-014, D-015).
 - **Display Bridge & Time-Travel:** Double-buffered render frames (`DisplayBridge`), text/terminal visualizer, and instant snapshot rewind (P5-01, P5-02, D-001).
 - **SDL2 Peripheral 2D Display & Controls:** Hardware-accelerated 2D renderer, built-in 5x7 bitmap font, room/waypoint scene graph, animated actor tokens, point-and-click mouse navigation for Cat, and live time-travel rewind hotkey (P6-01 through P6-04, D-008).
 - **Adventure Game Primitives:** 5-verb UI bar (`WALK`, `LOOK`, `TALK`, `TAKE`, `USE`) with active button highlights and right-click cycling, actor and prop interaction, relational inventory tray rendering, and branching dialogue parchment balloons with interactive choice buttons (P7-01 through P7-04, D-009).
@@ -52,6 +52,7 @@ All 12 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **Interactive Timeline Scrubber:** Full graphical scrubber bar with interactive click-to-scrub and `[<]` / `[>]` arrow stepping across serialized snapshots with instantaneous visual replay and divergent timeline truncation (P9-02, D-001, D-003, D-011).
 - **Live Interactive REPL Console:** Pure Zig simulation command dispatcher (`src/repl.zig`) and in-engine drawer overlay (`[Tab]`/`[C]`/`[~]`) executing `remember`, `forget`, `cue`, `walk`, `step`, and `facts` commands live during simulation (P9-03, D-011).
 - **Multi-Scene Transitions & Stage Director:** First-class syntax and bytecode instruction `transition to scene: <TargetScene>` (`Opcode.transition_scene`), VM scene tracking, fiber routine pausing and resuming, topological spatial graph partitioning by scene/room, and dynamic visual theme/backdrop switching (Spitting Competition, Wine Cellar, Tavern Common Room) with continuous global relational fact preservation (P12-01 through P12-03, D-014).
+- **Relational Dialogue Trees & Dynamic Pruning:** First-class DSL syntax `choice "..." if Condition:` lowered into choice blocks, VM fact-pattern and expression evaluation (`eval_expr`, `has_fact_pattern`, `prune_dialogue_choices`), dynamic balloon scaling up to 9 choices with bounds clamping, mouse wheel and arrow scrolling, numbered tags `[1]..[9]`, and dual mouse/keyboard hotkey selection (P13-01 through P13-03, D-015).
 
 **Not verified**
 - Peripheral audio sound effects / music playback; visual cues, floating banners, and speech balloons are fully verified.
@@ -64,6 +65,11 @@ All 12 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 ---
 
 ## Session log
+
+### Session 9 (2026-11-06)
+- **Goal:** Implement Phase 13: Relational Dialogue Trees & Dynamic Choice Pruning (P13-01 through P13-03, D-015), establish VM runtime fact-guard choice evaluation, dynamic renderer balloon scaling, scrolling, and keyboard hotkeys.
+- **Work:** Recorded architectural decision `D-015` (Relational Dialogue Choice Trees and Dynamic Fact-Based Pruning). Added `kw_choice` keyword token to lexer (`src/compiler/lexer.zig`). Extended parser (`src/compiler/parser.zig`) with `DialogueChoice` AST structure, `Stmt.choice_block`, and grammar parsing consecutive `choice "text" [if Condition]: <body>` statements. Updated compiler code generator (`src/compiler/codegen.zig`) with fallback branch compilation for `.choice_block` and flexible unary/binary fact pattern query compilation in `compile_expr`. Extended VM (`src/vm.zig`) with `PrunedChoice`, `VM.has_fact_pattern` resolving relational patterns against `World`, `VM.eval_expr` evaluating fact presence, negated facts, and dice rolls, and `VM.prune_dialogue_choices` filtering candidate choices against world facts before balloon spawn time. Fixed `eval_condition` in `src/vm.zig` to correctly unpack wildcard masks for `query_has` opcodes. Extended `SpeechBalloon` in `src/display/renderer.zig` to support up to 9 choices with dynamic height scaling (`bh = 48 + visible_count * 26 + scroll_h`), vertical bounds clamping (`by >= 76`), scroll offset tracking (`scroll_offset`, `visible_choice_count`, `max_scroll_offset`), and mouse wheel / arrow key scrolling. Enhanced input handling in `src/display/renderer.zig` to support direct choice hotkeys (`1-9` / keypad `1-9`) and rendered choices with hotkey tags `[{d}] {s}`. Updated entry `branching-dialogue-balloons` in `scheme/bespoke.manual.json` and compiled standalone manual `docs/manual.html`.
+- **Outcome:** All 49 tests passing on `src/root.zig`, 38/38 on `src/display.zig`, 31/31 on `src/vm.zig`, 11/11 on `src/compiler/parser.zig`, 5/5 on `src/compiler/lexer.zig`, 32/32 on `src/repl.zig`, `zig build test` passing, both `--headless` Tavern Heist and `--spitting-contest` Booty Island scenarios executing cleanly. `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` passed with 0 warnings. `python3 tools/manual.py review scheme/bespoke.manual.json --strict` passed with 0 items. `python3 tools/check_docs.py` reported 0 errors and 0 warnings. Phase 13 roadmap items (`P13-01` through `P13-03`) complete.
 
 ### Session 8 (2026-11-06)
 - **Goal:** Implement Phase 12: Multi-Scene Transitions & Stage Director (P12-01 through P12-03, D-014), establish topological spatial graph partitioning, dynamic visual backdrop themes, and document the architectural pattern in the 3x Developer Guide.

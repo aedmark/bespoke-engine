@@ -56,7 +56,14 @@ pub const Stmt = union(enum) {
     transition_scene: struct {
         target_scene: []const u8,
     },
+    choice_block: []const DialogueChoice,
     resume_stmt: void,
+};
+
+pub const DialogueChoice = struct {
+    text: []const u8,
+    guard: ?Expr = null,
+    body: []const Stmt,
 };
 
 pub const Routine = struct {
@@ -252,6 +259,28 @@ pub const Parser = struct {
                     if (self.current.tag == .colon) try self.advance();
                     const target_scene = try self.parse_name();
                     try ast.initial_stmts.append(.{ .transition_scene = .{ .target_scene = target_scene } });
+                },
+                .kw_choice => {
+                    var choices = std.ArrayList(DialogueChoice).init(self.allocator);
+                    while (self.current.tag == .kw_choice) {
+                        try self.advance(); // consume 'choice'
+                        const text = (try self.expect(.string_literal)).slice;
+                        var guard: ?Expr = null;
+                        if (self.current.tag == .kw_if) {
+                            try self.advance();
+                            guard = try self.parse_expr();
+                        }
+                        _ = try self.expect(.colon);
+                        _ = try self.expect(.indent);
+                        const body = try self.parse_stmt_list();
+                        _ = try self.expect(.dedent);
+                        try choices.append(.{
+                            .text = text,
+                            .guard = guard,
+                            .body = body,
+                        });
+                    }
+                    try ast.initial_stmts.append(.{ .choice_block = try choices.toOwnedSlice() });
                 },
                 .kw_routine => {
                     try self.advance();
@@ -552,6 +581,28 @@ pub const Parser = struct {
                     if (self.current.tag == .colon) try self.advance();
                     const target_scene = try self.parse_name();
                     try list.append(.{ .transition_scene = .{ .target_scene = target_scene } });
+                },
+                .kw_choice => {
+                    var choices = std.ArrayList(DialogueChoice).init(self.allocator);
+                    while (self.current.tag == .kw_choice) {
+                        try self.advance(); // consume 'choice'
+                        const text = (try self.expect(.string_literal)).slice;
+                        var guard: ?Expr = null;
+                        if (self.current.tag == .kw_if) {
+                            try self.advance();
+                            guard = try self.parse_expr();
+                        }
+                        _ = try self.expect(.colon);
+                        _ = try self.expect(.indent);
+                        const body = try self.parse_stmt_list();
+                        _ = try self.expect(.dedent);
+                        try choices.append(.{
+                            .text = text,
+                            .guard = guard,
+                            .body = body,
+                        });
+                    }
+                    try list.append(.{ .choice_block = try choices.toOwnedSlice() });
                 },
                 .kw_walk => {
                     try self.advance();
@@ -1061,4 +1112,72 @@ test "P12-02: parser groups multiple scenes with scoped cast, props, and marks" 
     try testing.expectEqual(@as(usize, 2), s2.marks.items.len);
     try testing.expectEqualStrings("CaskMark", s2.marks.items[0]);
     try testing.expectEqualStrings("SecretDoor", s2.marks.items[1]);
+}
+
+test "P13-01: parser parses conditionally guarded dialogue choice blocks" {
+    const testing = std.testing;
+    const script =
+        \\routine TalkToButhane(Gabriel):
+        \\  choice "I'd like to rent a motorcycle." if Carries(Gabriel, License):
+        \\    say Buthane: "Here are the keys."
+        \\  choice "Do you know whose cat that is?" if not KnowsAboutCat(Gabriel):
+        \\    say Buthane: "It belongs to the rector."
+        \\    remember KnowsAboutCat(Gabriel, true)
+        \\  choice "Just browsing, thanks.":
+        \\    say Buthane: "Bonne journée!"
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, script);
+    defer lexer.deinit();
+
+    var parser = try Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
+    const r = ast.routines.items[0];
+    try testing.expectEqualStrings("TalkToButhane", r.name);
+    try testing.expectEqual(@as(usize, 1), r.body.len);
+
+    switch (r.body[0]) {
+        .choice_block => |choices| {
+            try testing.expectEqual(@as(usize, 3), choices.len);
+
+            // Choice 0: Carries(Gabriel, License) guard
+            try testing.expectEqualStrings("I'd like to rent a motorcycle.", choices[0].text);
+            try testing.expect(choices[0].guard != null);
+            switch (choices[0].guard.?) {
+                .has_fact => |pat| {
+                    try testing.expectEqualStrings("Carries", pat.relation);
+                    try testing.expectEqual(@as(usize, 2), pat.args.len);
+                    try testing.expectEqualStrings("Gabriel", pat.args[0]);
+                    try testing.expectEqualStrings("License", pat.args[1]);
+                },
+                else => try testing.expect(false),
+            }
+            try testing.expectEqual(@as(usize, 1), choices[0].body.len);
+
+            // Choice 1: not KnowsAboutCat(Gabriel) guard
+            try testing.expectEqualStrings("Do you know whose cat that is?", choices[1].text);
+            try testing.expect(choices[1].guard != null);
+            switch (choices[1].guard.?) {
+                .not_fact => |pat| {
+                    try testing.expectEqualStrings("KnowsAboutCat", pat.relation);
+                    try testing.expectEqual(@as(usize, 1), pat.args.len);
+                    try testing.expectEqualStrings("Gabriel", pat.args[0]);
+                },
+                else => try testing.expect(false),
+            }
+            try testing.expectEqual(@as(usize, 2), choices[1].body.len);
+
+            // Choice 2: unconditional
+            try testing.expectEqualStrings("Just browsing, thanks.", choices[2].text);
+            try testing.expect(choices[2].guard == null);
+            try testing.expectEqual(@as(usize, 1), choices[2].body.len);
+        },
+        else => try testing.expect(false),
+    }
 }

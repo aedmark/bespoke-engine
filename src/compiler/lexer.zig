@@ -51,6 +51,7 @@ pub const TokenTag = enum {
     kw_in,
     kw_the,
     kw_transition,
+    kw_choice,
 
     // Identifiers & Literals
     identifier,
@@ -415,6 +416,7 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "the", .kw_the },
         .{ "towards", .kw_toward },
         .{ "transition", .kw_transition },
+        .{ "choice", .kw_choice },
     });
 
     return map.get(ident) orelse .identifier;
@@ -574,6 +576,38 @@ test "P12-01: lexer tokenizes scene transition keywords" {
     const garden_tok = try lexer.next();
     try testing.expectEqual(TokenTag.identifier, garden_tok.tag);
     try testing.expectEqualStrings("Garden", garden_tok.slice);
+    try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
+}
+
+test "P13-01: lexer tokenizes dialogue choice keywords" {
+    const testing = std.testing;
+    const script =
+        \\choice "Rent motorcycle" if Carries(Gabriel, License):
+        \\choice "Leave shop":
+    ;
+
+    var lexer = Lexer.init(testing.allocator, script);
+    defer lexer.deinit();
+
+    try testing.expectEqual(TokenTag.kw_choice, (try lexer.next()).tag);
+    const s1 = try lexer.next();
+    try testing.expectEqual(TokenTag.string_literal, s1.tag);
+    try testing.expectEqualStrings("Rent motorcycle", s1.slice);
+    try testing.expectEqual(TokenTag.kw_if, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Carries
+    try testing.expectEqual(TokenTag.lparen, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Gabriel
+    try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // License
+    try testing.expectEqual(TokenTag.rparen, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+
+    try testing.expectEqual(TokenTag.kw_choice, (try lexer.next()).tag);
+    const s2 = try lexer.next();
+    try testing.expectEqual(TokenTag.string_literal, s2.tag);
+    try testing.expectEqualStrings("Leave shop", s2.slice);
+    try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
 }
 

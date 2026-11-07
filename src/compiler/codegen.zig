@@ -465,6 +465,39 @@ pub const Codegen = struct {
                 const scene_ent = try self.resolve_entity(ts.target_scene);
                 try self.chunk.emit_transition_scene(scene_ent);
             },
+            .choice_block => |choices| {
+                var jump_end_pcs = std.ArrayList(usize).init(self.allocator);
+                defer jump_end_pcs.deinit();
+
+                for (choices) |choice| {
+                    var jump_skip_pc: ?usize = null;
+                    if (choice.guard) |guard| {
+                        try self.compile_expr(guard);
+                        jump_skip_pc = try self.chunk.emit_op(.jump_if_false);
+                        try self.chunk.emit_i16(0); // placeholder
+                    }
+
+                    for (choice.body) |s| {
+                        try self.compile_stmt(s);
+                    }
+
+                    const j_end = try self.chunk.emit_op(.jump);
+                    try self.chunk.emit_i16(0);
+                    try jump_end_pcs.append(j_end);
+
+                    if (jump_skip_pc) |skip_pc| {
+                        const dest_pc = self.chunk.count();
+                        const offset: i16 = @intCast(dest_pc - (skip_pc + 3));
+                        std.mem.writeInt(i16, self.chunk.code.items[skip_pc + 1 ..][0..2], offset, .little);
+                    }
+                }
+
+                const end_pc = self.chunk.count();
+                for (jump_end_pcs.items) |j_end| {
+                    const offset: i16 = @intCast(end_pc - (j_end + 3));
+                    std.mem.writeInt(i16, self.chunk.code.items[j_end + 1 ..][0..2], offset, .little);
+                }
+            },
             .resume_stmt => {
                 _ = try self.chunk.emit_op(.resume_routine);
             },
@@ -481,24 +514,30 @@ pub const Codegen = struct {
             .has_fact => |pat| {
                 const subj = try self.resolve_entity(pat.args[0]);
                 const rel = try self.resolve_relation(pat.relation);
-                const obj = try self.resolve_entity_or_value(pat.args[1]);
-
+                var mask: u8 = 0x03; // bit 0 (subj) | bit 1 (rel)
                 try self.chunk.emit_push_entity(subj);
                 try self.chunk.emit_push_relation(rel);
-                try self.chunk.emit_push_const(obj);
+                if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
+                    const obj = try self.resolve_entity_or_value(pat.args[1]);
+                    try self.chunk.emit_push_const(obj);
+                    mask |= 0x04; // bit 2 (obj)
+                }
                 _ = try self.chunk.emit_op(.query_has);
-                try self.chunk.emit_u8(0x07); // all 3 args provided
+                try self.chunk.emit_u8(mask);
             },
             .not_fact => |pat| {
                 const subj = try self.resolve_entity(pat.args[0]);
                 const rel = try self.resolve_relation(pat.relation);
-                const obj = try self.resolve_entity_or_value(pat.args[1]);
-
+                var mask: u8 = 0x03;
                 try self.chunk.emit_push_entity(subj);
                 try self.chunk.emit_push_relation(rel);
-                try self.chunk.emit_push_const(obj);
+                if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
+                    const obj = try self.resolve_entity_or_value(pat.args[1]);
+                    try self.chunk.emit_push_const(obj);
+                    mask |= 0x04;
+                }
                 _ = try self.chunk.emit_op(.query_has);
-                try self.chunk.emit_u8(0x07);
+                try self.chunk.emit_u8(mask);
                 _ = try self.chunk.emit_op(.not);
             },
         }

@@ -326,7 +326,7 @@ pub fn hit_test_inventory_item(screen_x: i32, screen_y: i32, screen_h: i32, inve
     return null;
 }
 
-/// Active speech balloon or branching dialogue tree (P7-04, D-009).
+/// Active speech balloon or branching dialogue tree (P7-04, P13-03, D-009, D-015).
 pub const SpeechBalloon = struct {
     speaker: EntityId,
     speaker_pos: Point,
@@ -335,9 +335,10 @@ pub const SpeechBalloon = struct {
     text: [160]u8,
     text_len: u8,
     ticks_remaining: u32,
-    choices: [3][64]u8,
-    choice_lens: [3]u8,
+    choices: [9][80]u8,
+    choice_lens: [9]u8,
     choice_count: u8,
+    scroll_offset: u8 = 0,
 
     pub fn get_speaker_name(self: *const SpeechBalloon) []const u8 {
         return self.speaker_name[0..self.speaker_name_len];
@@ -351,37 +352,54 @@ pub const SpeechBalloon = struct {
         if (idx >= self.choice_count) return "";
         return self.choices[idx][0..self.choice_lens[idx]];
     }
+
+    pub fn visible_choice_count(self: *const SpeechBalloon) u8 {
+        if (self.choice_count <= 6) return self.choice_count;
+        return 6;
+    }
+
+    pub fn max_scroll_offset(self: *const SpeechBalloon) u8 {
+        if (self.choice_count <= 6) return 0;
+        return self.choice_count - 6;
+    }
 };
 
-/// Computes screen bounding rectangle for speech balloon (P7-04).
+/// Computes screen bounding rectangle for speech balloon (P7-04, P13-03, D-015).
 pub fn get_balloon_rect(balloon: *const SpeechBalloon, screen_w: i32) c.SDL_Rect {
     const text_w = font.text_width(balloon.get_text(), 2);
     const title_w = font.text_width(balloon.get_speaker_name(), 2) + 40;
     var max_w = @max(text_w, title_w);
     var i: usize = 0;
     while (i < balloon.choice_count) : (i += 1) {
-        max_w = @max(max_w, font.text_width(balloon.get_choice(i), 2) + 32);
+        max_w = @max(max_w, font.text_width(balloon.get_choice(i), 2) + 54);
     }
-    const bw = @min(screen_w - 40, @max(260, max_w + 32));
-    const bh: i32 = 48 + @as(i32, @intCast(balloon.choice_count)) * 26;
+    const bw = @min(screen_w - 40, @max(280, max_w + 32));
+    const visible_count = balloon.visible_choice_count();
+    const has_scroll = balloon.choice_count > 6;
+    const scroll_h: i32 = if (has_scroll) 18 else 0;
+    const bh: i32 = 48 + @as(i32, @intCast(visible_count)) * 26 + scroll_h;
 
     const bx = @max(20, @min(screen_w - bw - 20, balloon.speaker_pos.x - @divTrunc(bw, 2)));
-    const by = @max(60, balloon.speaker_pos.y - bh - 24);
+    const by = @max(76, balloon.speaker_pos.y - bh - 24);
 
     return c.SDL_Rect{ .x = bx, .y = by, .w = bw, .h = bh };
 }
 
-/// Hit-tests mouse coordinates against dialogue choice options (P7-04).
+/// Hit-tests mouse coordinates against dialogue choice options (P7-04, P13-03, D-015).
 pub fn hit_test_balloon_choice(mouse_x: i32, mouse_y: i32, balloon: *const SpeechBalloon, rect: c.SDL_Rect) ?u8 {
     if (balloon.choice_count == 0) return null;
     const choices_start_y = rect.y + 42;
-    var i: usize = 0;
-    while (i < balloon.choice_count) : (i += 1) {
-        const cy = choices_start_y + @as(i32, @intCast(i)) * 26;
+    const visible_count = balloon.visible_choice_count();
+    var vi: usize = 0;
+    while (vi < visible_count) : (vi += 1) {
+        const actual_idx: u8 = balloon.scroll_offset + @as(u8, @intCast(vi));
+        if (actual_idx >= balloon.choice_count) break;
+
+        const cy = choices_start_y + @as(i32, @intCast(vi)) * 26;
         if (mouse_x >= rect.x + 12 and mouse_x <= rect.x + rect.w - 12 and
             mouse_y >= cy and mouse_y <= cy + 22)
         {
-            return @intCast(i);
+            return actual_idx;
         }
     }
     return null;
@@ -486,7 +504,7 @@ pub const DisplayWindow = struct {
         self.cue_banner_ticks = duration_ticks;
     }
 
-    /// Displays an active speech balloon or branching dialogue choice tree (P7-04, D-009).
+    /// Displays an active speech balloon or branching dialogue choice tree (P7-04, P13-03, D-009, D-015).
     pub fn show_dialogue(
         self: *DisplayWindow,
         speaker: EntityId,
@@ -504,8 +522,9 @@ pub const DisplayWindow = struct {
             .text_len = 0,
             .ticks_remaining = 360,
             .choices = undefined,
-            .choice_lens = [_]u8{ 0, 0, 0 },
+            .choice_lens = [_]u8{0} ** 9,
             .choice_count = 0,
+            .scroll_offset = 0,
         };
 
         const nlen = @min(speaker_name.len, sb.speaker_name.len);
@@ -517,7 +536,7 @@ pub const DisplayWindow = struct {
         sb.text_len = @intCast(tlen);
 
         for (choices, 0..) |c_text, i| {
-            if (i >= 3) break;
+            if (i >= 9) break;
             const clen = @min(c_text.len, sb.choices[i].len);
             @memcpy(sb.choices[i][0..clen], c_text[0..clen]);
             sb.choice_lens[i] = @intCast(clen);
@@ -749,6 +768,17 @@ pub const DisplayWindow = struct {
                         }
                     }
                 },
+                c.SDL_MOUSEWHEEL => {
+                    if (self.active_balloon) |*b| {
+                        if (b.choice_count > 6) {
+                            if (event.wheel.y > 0) {
+                                if (b.scroll_offset > 0) b.scroll_offset -= 1;
+                            } else if (event.wheel.y < 0) {
+                                if (b.scroll_offset < b.max_scroll_offset()) b.scroll_offset += 1;
+                            }
+                        }
+                    }
+                },
                 c.SDL_KEYDOWN => {
                     const sym = event.key.keysym.sym;
                     if (self.show_console) {
@@ -769,6 +799,42 @@ pub const DisplayWindow = struct {
                             return .toggle_console;
                         }
                         return .none;
+                    }
+
+                    // Handle active dialogue balloon hotkeys and controls (P13-03, D-015)
+                    if (self.active_balloon) |*b| {
+                        if (b.choice_count > 0) {
+                            var hotkey_idx: ?u8 = null;
+                            if (sym >= c.SDLK_1 and sym <= c.SDLK_9) {
+                                hotkey_idx = @intCast(sym - c.SDLK_1);
+                            } else if (sym >= c.SDLK_KP_1 and sym <= c.SDLK_KP_9) {
+                                hotkey_idx = @intCast(sym - c.SDLK_KP_1);
+                            }
+
+                            if (hotkey_idx) |k_idx| {
+                                if (k_idx < b.choice_count) {
+                                    self.dismiss_dialogue();
+                                    return UserAction{ .dialogue_choice = k_idx };
+                                }
+                            }
+
+                            if (sym == c.SDLK_UP) {
+                                if (b.scroll_offset > 0) {
+                                    b.scroll_offset -= 1;
+                                    return .none;
+                                }
+                            } else if (sym == c.SDLK_DOWN) {
+                                if (b.scroll_offset < b.max_scroll_offset()) {
+                                    b.scroll_offset += 1;
+                                    return .none;
+                                }
+                            }
+                        }
+
+                        if (sym == c.SDLK_ESCAPE or sym == c.SDLK_SPACE) {
+                            self.dismiss_dialogue();
+                            return .dismiss_dialogue;
+                        }
                     }
 
                     switch (sym) {
@@ -1489,23 +1555,42 @@ pub const DisplayWindow = struct {
             const title_offset = font.text_width(title_text, 2) + 12;
             self.draw_text(b.get_text(), brect.x + 14 + title_offset, brect.y + 10, 2, Color{ .r = 28, .g = 25, .b = 23 });
 
-            // Branching dialogue choices
+            // Branching dialogue choices (P13-03, D-015)
             const choices_start_y = brect.y + 42;
-            var ci: usize = 0;
-            while (ci < b.choice_count) : (ci += 1) {
-                const cy = choices_start_y + @as(i32, @intCast(ci)) * 26;
-                const is_hovered = (self.hovered_choice != null and self.hovered_choice.? == ci);
-                const c_text = b.get_choice(ci);
+            const visible_count = b.visible_choice_count();
+            var c_vi: usize = 0;
+            while (c_vi < visible_count) : (c_vi += 1) {
+                const actual_idx: usize = b.scroll_offset + c_vi;
+                if (actual_idx >= b.choice_count) break;
+
+                const cy = choices_start_y + @as(i32, @intCast(c_vi)) * 26;
+                const is_hovered = (self.hovered_choice != null and self.hovered_choice.? == actual_idx);
+                const c_text = b.get_choice(actual_idx);
+
+                var c_buf: [128]u8 = undefined;
+                const numbered_text = std.fmt.bufPrint(&c_buf, "[{d}] {s}", .{ actual_idx + 1, c_text }) catch c_text;
 
                 if (is_hovered) {
                     self.fill_rect(brect.x + 12, cy, brect.w - 24, 22, Color.wp_hover);
                     self.draw_rect_outline(brect.x + 12, cy, brect.w - 24, 22, Color.white);
-                    self.draw_text(c_text, brect.x + 20, cy + 4, 2, Color.black);
+                    self.draw_text(numbered_text, brect.x + 20, cy + 4, 2, Color.black);
                 } else {
                     self.fill_rect(brect.x + 12, cy, brect.w - 24, 22, Color{ .r = 253, .g = 230, .b = 138 });
                     self.draw_rect_outline(brect.x + 12, cy, brect.w - 24, 22, Color{ .r = 217, .g = 119, .b = 6 });
-                    self.draw_text(c_text, brect.x + 20, cy + 4, 2, Color{ .r = 120, .g = 53, .b = 15 });
+                    self.draw_text(numbered_text, brect.x + 20, cy + 4, 2, Color{ .r = 120, .g = 53, .b = 15 });
                 }
+            }
+
+            // Scroll indicator if choices exceed visible count (P13-03, D-015)
+            if (b.choice_count > 6) {
+                const scroll_y = choices_start_y + @as(i32, @intCast(visible_count)) * 26 + 2;
+                var sbuf: [64]u8 = undefined;
+                const scroll_str = std.fmt.bufPrint(&sbuf, "(Scroll: {d}-{d} of {d} | Wheel/Arrows)", .{
+                    b.scroll_offset + 1,
+                    @min(b.choice_count, b.scroll_offset + visible_count),
+                    b.choice_count,
+                }) catch "";
+                self.draw_text(scroll_str, brect.x + 16, scroll_y, 1, Color{ .r = 180, .g = 83, .b = 9 });
             }
         }
 
@@ -1778,4 +1863,74 @@ test "P12-03: display renderer dynamically recognizes scene themes from RenderFr
     defer win.deinit();
 
     win.render_frame(&frame, false);
+}
+
+test "P13-03: display renderer dynamic balloon sizing, scrolling, and choice selection" {
+    const testing = std.testing;
+
+    var win = try DisplayWindow.init("Dialogue Test", 960, 600);
+    defer win.deinit();
+
+    const choices = [_][]const u8{
+        "Ask about the cat",
+        "Rent motorcycle",
+        "Inquire about the templar church",
+        "Ask about Rennes-le-Château",
+        "Buy bottled spring water",
+        "Examine tourist postcards",
+        "Ask about the rector",
+        "Say goodbye and leave",
+    };
+
+    // Show dialogue with 8 choices
+    win.show_dialogue(
+        EntityId.from_int(1),
+        Point{ .x = 400, .y = 350 },
+        "Madame Buthane",
+        "Bonjour! Can I help you with something?",
+        &choices,
+    );
+
+    try testing.expect(win.active_balloon != null);
+    const balloon = &win.active_balloon.?;
+
+    // 1. Verify capacity and sizing
+    try testing.expectEqual(@as(u8, 8), balloon.choice_count);
+    try testing.expectEqual(@as(u8, 6), balloon.visible_choice_count());
+    try testing.expectEqual(@as(u8, 2), balloon.max_scroll_offset());
+    try testing.expectEqual(@as(u8, 0), balloon.scroll_offset);
+
+    const brect = get_balloon_rect(balloon, 960);
+    // Height: 48 + 6 * 26 + 18 (scroll bar) = 222
+    try testing.expectEqual(@as(i32, 222), brect.h);
+    try testing.expect(brect.y >= 76);
+
+    // 2. Hit-testing at scroll_offset == 0
+    // Slot 0 (first visible choice) -> choice 0 ("Ask about the cat")
+    const hit_slot0 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 10, balloon, brect);
+    try testing.expectEqual(@as(?u8, 0), hit_slot0);
+
+    // Slot 1 (second visible choice) -> choice 1 ("Rent motorcycle")
+    const hit_slot1 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 26 + 10, balloon, brect);
+    try testing.expectEqual(@as(?u8, 1), hit_slot1);
+
+    // 3. Scroll offset == 2
+    win.active_balloon.?.scroll_offset = 2;
+    const balloon_scrolled = &win.active_balloon.?;
+
+    // Slot 0 now corresponds to choice 2 ("Inquire about the templar church")
+    const hit_scrolled0 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 10, balloon_scrolled, brect);
+    try testing.expectEqual(@as(?u8, 2), hit_scrolled0);
+
+    // Slot 5 corresponds to choice 7 ("Say goodbye and leave")
+    const hit_scrolled5 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 5 * 26 + 10, balloon_scrolled, brect);
+    try testing.expectEqual(@as(?u8, 7), hit_scrolled5);
+
+    // Miss outside balloon bounds
+    const hit_miss = hit_test_balloon_choice(10, 10, balloon_scrolled, brect);
+    try testing.expectEqual(@as(?u8, null), hit_miss);
+
+    // 4. Dismiss dialogue
+    win.dismiss_dialogue();
+    try testing.expect(win.active_balloon == null);
 }

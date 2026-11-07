@@ -105,9 +105,9 @@ Goal: Support multiple narrative scenes in a single simulation (`transition to s
 
 Goal: Support branching dialogue trees where choices dynamically appear, disappear, or alter based on active relational world facts (`choice "..." if Condition:`).
 
-- [ ] P13-01 Grammar and AST support for conditionally guarded dialogue choices (`choice "..." if HasFact(...)` or `choice "..." if not HasFact(...)`). (D-002, D-004, D-009)
-- [ ] P13-02 VM runtime evaluation of dialogue choice guards at balloon spawn time, pruning unsatisfied branches. (D-003, D-004, D-009)
-- [ ] P13-03 Display renderer dynamic balloon sizing, scrolling, and keyboard hotkey selection (`1-9`) for variable-length choice sets. (D-008, D-009)
+- [x] P13-01 Grammar and AST support for conditionally guarded dialogue choices (`choice "..." if HasFact(...)` or `choice "..." if not HasFact(...)`). (D-002, D-004, D-009, D-015; completed 2026-11-06, verified via `zig test src/compiler/lexer.zig` and `zig test src/compiler/parser.zig`)
+- [x] P13-02 VM runtime evaluation of dialogue choice guards at balloon spawn time, pruning unsatisfied branches. (D-003, D-004, D-009, D-015; completed 2026-11-06, verified via `zig test src/vm.zig` and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P13-03 Display renderer dynamic balloon sizing, scrolling, and keyboard hotkey selection (`1-9`) for variable-length choice sets. (D-008, D-009, D-015; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
 
 ## Phase 14: The Gabriel Knight 3 Cat Moustache Scenario
 

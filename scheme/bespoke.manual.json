@@ -590,23 +590,27 @@
         },
         {
           "id": "branching-dialogue-balloons",
-          "title": "Branching Dialogue Trees & Speech Balloons",
-          "summary": "Temporal speech balloons with actor name tags, dialogue lines, and interactive branching choices.",
-          "synopsis": "say Actor: \"Text\"; window.show_dialogue(speaker, pos, \"Name\", \"Text\", &choices);",
-          "tags": ["dialogue", "speech", "balloons", "choices"],
-          "what": "Renders stylized parchment speech balloons anchored above talking actors with automatic text wrapping, speech tails, and clickable numbered dialogue choices.",
+          "title": "Branching Dialogue Trees & Dynamic Choice Pruning",
+          "summary": "Temporal speech balloons with actor name tags, dialogue lines, and relational fact-guarded branching choices.",
+          "synopsis": "choice \"Rent motorcycle\" if Carries(Gabriel, License): say Buthane: \"Keys.\"",
+          "tags": ["dialogue", "speech", "balloons", "choices", "pruning"],
+          "what": "Renders stylized parchment speech balloons anchored above talking actors with automatic text wrapping, speech tails, dynamic height scaling, scrolling, and keyboard hotkey selection (1-9).",
           "how": [
-            "SpeechBalloon stores speaker coordinates, name, line text, and up to 3 branching choices.",
-            "Fibers calling 'say' suspend execution until the player clicks a choice or dismisses the balloon.",
-            "DisplayWindow hit_test_balloon_choice detects mouse clicks on choice buttons and emits dialogue_choice events."
+            "SpeechBalloon stores speaker coordinates, name, line text, and up to 9 branching choices with dynamic height scaling and scroll offset.",
+            "Fibers executing choice blocks evaluate relational guards against the World store at spawn time, pruning unsatisfied branches before display.",
+            "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks, mouse wheel scrolling, and number keys 1-9 to trigger selections.",
+            "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions."
           ],
-          "why": "Terminal dialogue dumps break graphical immersion. In-world balloons associate speech directly with speaker positions and integrate player choices smoothly into the simulation clock.",
+          "why": "Hardcoding dialogue choices in host language ladders causes script fragmentation and breaks hot-reloading and time-travel rewinds. Fact-guarded choice trees declared in DSL prune systemically based on active inventory and knowledge facts.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
-            {"label": "Speech Balloon Rendering", "target": "src/display/renderer.zig", "kind": "source"}
+            {"label": "Architectural Decision D-015", "target": "docs/DECISIONS.md#d-015", "kind": "decision"},
+            {"label": "Dialogue Choice Parser Grammar", "target": "src/compiler/parser.zig", "kind": "source"},
+            {"label": "VM Choice Pruning Logic", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Speech Balloon Rendering & Hotkeys", "target": "src/display/renderer.zig", "kind": "source"}
           ],
-          "related": ["classic-adventure-verbs", "compiler-pipeline"]
+          "related": ["classic-adventure-verbs", "compiler-pipeline", "relational-facts"]
         },
         {
           "id": "in-hand-inventory-crafting",

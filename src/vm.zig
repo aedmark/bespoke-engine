@@ -2,6 +2,7 @@ const std = @import("std");
 const world_mod = @import("world.zig");
 const bytecode_mod = @import("bytecode.zig");
 const spatial_mod = @import("spatial.zig");
+const parser_mod = @import("compiler/parser.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -61,6 +62,13 @@ pub const ReactiveRule = struct {
     handler_pc: usize,
     edge: ReactiveEdge = .rising,
     is_active: bool = false,
+};
+
+/// A dialogue choice pruned and validated by relational fact guards at balloon spawn time (P13-02, D-015).
+pub const PrunedChoice = struct {
+    original_index: usize,
+    text: []const u8,
+    body: []const parser_mod.Stmt,
 };
 
 pub const Fiber = struct {
@@ -394,6 +402,89 @@ pub const VM = struct {
         try self.emitted_cues.append(emitted);
     }
 
+    /// Evaluates whether a fact pattern matches current facts in the world store (P13-02, D-015).
+    pub fn has_fact_pattern(self: *const VM, pat: parser_mod.FactPattern) bool {
+        const rel_opt = self.world.lookup_relation(pat.relation);
+        if (rel_opt == null) return false;
+        const rel = rel_opt.?;
+
+        var subj: ?EntityId = null;
+        var obj: ?u32 = null;
+
+        if (pat.args.len > 0) {
+            const arg0 = pat.args[0];
+            if (!std.mem.eql(u8, arg0, "_")) {
+                subj = self.world.lookup_entity(arg0);
+                if (subj == null) return false;
+            }
+        }
+
+        if (pat.args.len > 1) {
+            const arg1 = pat.args[1];
+            if (!std.mem.eql(u8, arg1, "_")) {
+                if (std.mem.eql(u8, arg1, "true")) {
+                    obj = 1;
+                } else if (std.mem.eql(u8, arg1, "false")) {
+                    obj = 0;
+                } else if (std.fmt.parseInt(u32, arg1, 10)) |num| {
+                    obj = num;
+                } else |_| {
+                    const ent = self.world.lookup_entity(arg1);
+                    if (ent) |e| {
+                        obj = e.to_int();
+                    } else {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return self.world.has_fact(subj, rel, obj);
+    }
+
+    /// Evaluates an AST condition expression against world state and PRNG (P13-02, D-015).
+    pub fn eval_expr(self: *VM, expr: parser_mod.Expr) bool {
+        switch (expr) {
+            .has_fact => |pat| return self.has_fact_pattern(pat),
+            .not_fact => |pat| return !self.has_fact_pattern(pat),
+            .roll_gte => |roll| {
+                var sum: u32 = 0;
+                var i: u8 = 0;
+                while (i < roll.count) : (i += 1) {
+                    sum += (self.prng.random().int(u32) % roll.sides) + 1;
+                }
+                return sum >= roll.threshold;
+            },
+        }
+    }
+
+    /// Evaluates candidate dialogue choice guards against world state and prunes unsatisfied choices (P13-02, D-015).
+    /// Populates out_pruned with active choices and returns the count of active choices.
+    pub fn prune_dialogue_choices(
+        self: *VM,
+        candidates: []const parser_mod.DialogueChoice,
+        out_pruned: []PrunedChoice,
+    ) usize {
+        var count: usize = 0;
+        for (candidates, 0..) |choice, idx| {
+            var satisfied = true;
+            if (choice.guard) |guard| {
+                satisfied = self.eval_expr(guard);
+            }
+            if (satisfied) {
+                if (count < out_pruned.len) {
+                    out_pruned[count] = .{
+                        .original_index = idx,
+                        .text = choice.text,
+                        .body = choice.body,
+                    };
+                    count += 1;
+                }
+            }
+        }
+        return count;
+    }
+
     /// Advances the master simulation clock by 1 tick and dispatches all active fibers.
     pub fn step_tick(self: *VM) !void {
         // 1. Advance relational world and prune expired facts (P1-02)
@@ -474,21 +565,24 @@ pub const VM = struct {
                     temp_sp += 1;
                 },
                 .query_has => {
-                    // Pop obj, rel, subj
-                    const obj = temp_stack[temp_sp - 1];
-                    temp_sp -= 1;
-                    const rel_raw = temp_stack[temp_sp - 1];
-                    temp_sp -= 1;
-                    const subj_raw = temp_stack[temp_sp - 1];
-                    temp_sp -= 1;
+                    const mask = code[pc];
+                    pc += 1;
+                    const obj: ?u32 = if ((mask & 0x04) != 0) blk: {
+                        temp_sp -= 1;
+                        break :blk temp_stack[temp_sp];
+                    } else null;
+                    const rel_raw: ?u16 = if ((mask & 0x02) != 0) blk: {
+                        temp_sp -= 1;
+                        break :blk @intCast(temp_stack[temp_sp]);
+                    } else null;
+                    const subj_raw: ?u32 = if ((mask & 0x01) != 0) blk: {
+                        temp_sp -= 1;
+                        break :blk temp_stack[temp_sp];
+                    } else null;
 
-                    const subj = EntityId.from_int(subj_raw);
-                    const rel = RelationKind.from_int(@intCast(rel_raw));
-                    const has = self.world.has_fact(
-                        if (subj_raw != 0) subj else null,
-                        if (rel_raw != 0) rel else null,
-                        if (obj != 0) obj else null,
-                    );
+                    const subj = if (subj_raw) |s| EntityId.from_int(s) else null;
+                    const rel = if (rel_raw) |r| RelationKind.from_int(r) else null;
+                    const has = self.world.has_fact(subj, rel, obj);
                     temp_stack[temp_sp] = if (has) 1 else 0;
                     temp_sp += 1;
                 },
@@ -1385,4 +1479,89 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
         }
     }
     try testing.expect(found_transition_cue);
+}
+
+test "P13-02: VM dynamically evaluates and prunes dialogue choices based on relational facts" {
+    const testing = std.testing;
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    const gabriel = try world.intern_entity("Gabriel");
+    const license = try world.intern_entity("License");
+    const cat = try world.intern_entity("Cat");
+    _ = try world.intern_entity("Buthane");
+
+    _ = try world.intern_relation("Carries", .set);
+    _ = try world.intern_relation("KnowsAboutCat", .property);
+
+    const empty_body: []const parser_mod.Stmt = &[_]parser_mod.Stmt{};
+
+    const args_carries_license = [_][]const u8{ "Gabriel", "License" };
+    const args_knows_cat = [_][]const u8{"Gabriel"};
+    const args_carries_cat = [_][]const u8{ "Gabriel", "Cat" };
+
+    const candidates = [_]parser_mod.DialogueChoice{
+        .{
+            .text = "Rent motorcycle",
+            .guard = .{ .has_fact = .{ .relation = "Carries", .args = &args_carries_license } },
+            .body = empty_body,
+        },
+        .{
+            .text = "Ask about the cat",
+            .guard = .{ .not_fact = .{ .relation = "KnowsAboutCat", .args = &args_knows_cat } },
+            .body = empty_body,
+        },
+        .{
+            .text = "Offer the cat to Buthane",
+            .guard = .{ .has_fact = .{ .relation = "Carries", .args = &args_carries_cat } },
+            .body = empty_body,
+        },
+        .{
+            .text = "Leave shop",
+            .guard = null,
+            .body = empty_body,
+        },
+    };
+
+    var pruned: [8]PrunedChoice = undefined;
+
+    // --- State 1: Gabriel has no license, does NOT know about cat, has no cat ---
+    var count = vm.prune_dialogue_choices(&candidates, &pruned);
+    try testing.expectEqual(@as(usize, 2), count);
+    try testing.expectEqual(@as(usize, 1), pruned[0].original_index);
+    try testing.expectEqualStrings("Ask about the cat", pruned[0].text);
+    try testing.expectEqual(@as(usize, 3), pruned[1].original_index);
+    try testing.expectEqualStrings("Leave shop", pruned[1].text);
+
+    // --- State 2: Gabriel gets license and learns about cat ---
+    const carries_rel = world.lookup_relation("Carries").?;
+    const knows_rel = world.lookup_relation("KnowsAboutCat").?;
+    try world.remember(gabriel, carries_rel, license.to_int(), 0);
+    try world.remember(gabriel, knows_rel, 1, 0);
+
+    count = vm.prune_dialogue_choices(&candidates, &pruned);
+    try testing.expectEqual(@as(usize, 2), count);
+    try testing.expectEqual(@as(usize, 0), pruned[0].original_index);
+    try testing.expectEqualStrings("Rent motorcycle", pruned[0].text);
+    try testing.expectEqual(@as(usize, 3), pruned[1].original_index);
+    try testing.expectEqualStrings("Leave shop", pruned[1].text);
+
+    // --- State 3: Gabriel also acquires cat ---
+    try world.remember(gabriel, carries_rel, cat.to_int(), 0);
+
+    count = vm.prune_dialogue_choices(&candidates, &pruned);
+    try testing.expectEqual(@as(usize, 3), count);
+    try testing.expectEqual(@as(usize, 0), pruned[0].original_index);
+    try testing.expectEqualStrings("Rent motorcycle", pruned[0].text);
+    try testing.expectEqual(@as(usize, 2), pruned[1].original_index);
+    try testing.expectEqualStrings("Offer the cat to Buthane", pruned[1].text);
+    try testing.expectEqual(@as(usize, 3), pruned[2].original_index);
+    try testing.expectEqualStrings("Leave shop", pruned[2].text);
 }
