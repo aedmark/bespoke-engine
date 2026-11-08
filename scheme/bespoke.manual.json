@@ -798,6 +798,29 @@
             {"label": "SDL2 Audio Renderer Integration", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "zero-external-dependencies", "stageplay-taxonomy"]
+        },
+        {
+          "id": "persistent-save-load-and-slot-management",
+          "title": "Persistent Save/Load Storage & Slot Manager",
+          "summary": "File-backed .sav format with CRC32 integrity, 16x12 RGB332 thumbnails, .bak recovery, and in-engine Save/Load drawer.",
+          "synopsis": "var sm = try SaveManager.init(allocator, \"saves\"); _ = try sm.save_slot(1, &world, &spatial, &vm, \"Tavern\"); _ = try sm.load_slot(1, &world, &spatial, &vm);",
+          "tags": ["save", "load", "persistence", "slots", "crc32", "thumbnail"],
+          "what": "Provides durable cross-session save/load persistence on disk (.sav), managing 8 numbered save slots plus a dedicated Quick-Save slot with metadata headers, miniature visual frame thumbnails, automatic backup recovery, and an interactive SDL2 Save/Load drawer.",
+          "how": [
+            "write_save_state and read_save_state serialize and restore World relational arenas, SpatialSystem motor agent paths, and VM fiber/interrupt stacks inside a BSAV binary envelope protected by a 32-bit CRC32 checksum.",
+            "SaveMetadata embeds playtime, simulation tick, Unix timestamp, fact count, active scene name, actor coordinates, and a 16x12 RGB332 miniature graphical scene thumbnail.",
+            "SaveManager preserves any existing valid save as .sav.bak before overwriting; if a primary .sav file fails checksum or header validation on load, it automatically recovers from .sav.bak and repairs the primary file.",
+            "DisplayWindow integrates an in-engine Pause & Save/Load Drawer overlay ([P], [F2], [F3]) and 1-key Quick-Save/Quick-Load ([F5], [F9]), rendering each slot's miniature RGB332 thumbnail and metadata."
+          ],
+          "why": "While in-memory arena snapshots enable instant timeline scrubbing during a single session, players and developers also need durable disk saves that preserve mid-walk spatial paths and fiber call stacks while defending against disk truncation or file corruption.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-020", "target": "docs/DECISIONS.md#d-020", "kind": "decision"},
+            {"label": "Persistent Save & Slot Manager", "target": "src/save.zig", "kind": "source"},
+            {"label": "In-Engine Save/Load Drawer UI", "target": "src/display/renderer.zig", "kind": "source"},
+            {"label": "World Snapshot Serialization", "target": "src/world.zig", "kind": "source"}
+          ],
+          "related": ["engine-as-spine", "headless-and-interactive-cli", "test-verification-hierarchy"]
         }
       ]
     },

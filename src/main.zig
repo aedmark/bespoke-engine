@@ -325,6 +325,8 @@ pub fn main() !void {
         try stdout.print("   - [Left Click Waypoint]: Direct Cat (Player) to walk\n", .{});
         try stdout.print("   - [Timeline Scrubber]:   Click or drag timeline bar (or [< / >] arrows) to scrub history\n", .{});
         try stdout.print("   - [F1 / D]:              Toggle Debug Inspector (Active Facts, Fibers, Stacks, Spatial)\n", .{});
+        try stdout.print("   - [P / F2 / F3]:         Toggle Pause & Save/Load Slot Manager Drawer\n", .{});
+        try stdout.print("   - [F5 / F9]:             Quick-Save / Quick-Load State\n", .{});
         try stdout.print("   - [Tab / ` / C]:         Toggle Live REPL Console Drawer ('help', 'remember', 'walk')\n", .{});
         try stdout.print("   - [Space]:               Pause / Resume Simulation\n", .{});
         try stdout.print("   - [N]:                   Single-step Simulation Tick\n", .{});
@@ -352,6 +354,7 @@ pub fn main() !void {
             const action = window.poll_events(display_bridge.get_frame());
             var should_step_now = false;
 
+            _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
             switch (action) {
                 .quit => break,
                 .toggle_pause => {
@@ -615,8 +618,7 @@ pub fn main() !void {
                         }
                     }
                 },
-                .spit_contest_spit, .sound_horn, .drink_green_drink, .tamper_flags => {},
-                .none => {},
+                else => {},
             }
 
             // 2. Advance simulation clock if unpaused or single-stepped

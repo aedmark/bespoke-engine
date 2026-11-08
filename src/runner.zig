@@ -275,6 +275,7 @@ pub fn run_file(
             const action = window.poll_events(display_bridge.get_frame());
             var should_step_now = false;
 
+            _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
             switch (action) {
                 .quit => break,
                 .toggle_pause => {

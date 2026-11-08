@@ -140,9 +140,9 @@ Goal: Connect an SDL2 audio peripheral callback to the `DisplayBridge` cue strea
 
 Goal: Extend memory snapshot serialization to disk files, providing durable save/load slot management with metadata headers and in-engine UI.
 
-- [ ] P17-01 File-backed save state format (`.sav`) with versioning, CRC32 integrity checksums, and metadata headers (playtime, tick, scene, thumbnail/frame snapshot). (D-001, D-003)
-- [ ] P17-02 Slot management API supporting numbered save slots, quick-save, quick-load, and corrupted save recovery. (D-003)
-- [ ] P17-03 In-engine save/load drawer and pause menu overlay integrated into the SDL2 renderer. (D-008, D-011)
+- [x] P17-01 File-backed save state format (`.sav`) with versioning, CRC32 integrity checksums, and metadata headers (playtime, tick, scene, thumbnail/frame snapshot). (D-001, D-003, D-020; completed 2026-11-07, verified via `zig test src/save.zig` and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P17-02 Slot management API supporting numbered save slots, quick-save, quick-load, and corrupted save recovery. (D-003, D-020; completed 2026-11-07, verified via `zig test src/save.zig`)
+- [x] P17-03 In-engine save/load drawer and pause menu overlay integrated into the SDL2 renderer. (D-008, D-011, D-020; completed 2026-11-07, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
 
 ## Phase 18: Systemic Emergent Simulation Sandbox ("The Living Village")
 

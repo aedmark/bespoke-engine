@@ -13,6 +13,7 @@ pub const sword_fighting = @import("sword_fighting.zig");
 pub const package = @import("package.zig");
 pub const runner = @import("runner.zig");
 pub const audio = @import("audio.zig");
+pub const save = @import("save.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -53,6 +54,11 @@ pub const AudioBridge = audio.AudioBridge;
 pub const SoundEffectKind = audio.SoundEffectKind;
 pub const MusicTrackKind = audio.MusicTrackKind;
 pub const ChiptuneSynth = audio.ChiptuneSynth;
+pub const SaveManager = save.SaveManager;
+pub const SaveMetadata = save.SaveMetadata;
+pub const SaveSlotInfo = save.SaveSlotInfo;
+pub const write_save_state = save.write_save_state;
+pub const read_save_state = save.read_save_state;
 
 test "root test imports all modules" {
     _ = @import("world.zig");
@@ -68,4 +74,5 @@ test "root test imports all modules" {
     _ = @import("package.zig");
     _ = @import("runner.zig");
     _ = @import("audio.zig");
+    _ = @import("save.zig");
 }

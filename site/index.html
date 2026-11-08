@@ -8,10 +8,6 @@
   <meta name="description" content="A standalone simulation engine and domain-specific language written in pure Zig. Engine-as-Spine architecture, flat relational facts, cooperative fibers, and instant time-travel rewinds.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2232%22%20height=%2232%22><rect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f172a%22/><text x=%2216%22 y=%2222%22 font-family=%22monospace%22 font-weight=%22bold%22 font-size=%2220%22 fill=%22%23fbbf24%22 text-anchor=%22middle%22>B</text></svg>">
 <style>
-    /* ==========================================================================
-       BeSpoke Engine - EGA Hardware / SCI0 Simulation Workspace
-       Consistent with Andrew Edmark Portfolio, The Manifold & The Hypervisor
-       ========================================================================== */
     :root {
       /* 16-Color EGA Hardware Constants */
       --ega-black: #000000;
@@ -1134,9 +1130,9 @@
   <main class="container">
     <section class="hero">
       <div class="hero-byline">
-        <span>Designed &amp; coded by <strong>Andrew Edmark</strong></span>
+        <span>Designed &amp; by <strong>Andrew Edmark &amp; Peter Spcier</strong></span>
         <span class="sep">·</span>
-        <span>Pure Zig Simulation Engine &amp; DSL</span>
+        <span>Game Mechanic Simulation Engine/span>
       </div>
 
       <h1 class="hero-title">The Simulation Runtime IS the Spine.</h1>
@@ -1162,7 +1158,7 @@
     <section id="playground" class="playground-section">
       <div class="playground-header">
         <div class="playground-title-group">
-          <h2>[EXE] Live Simulation Viewport</h2>
+          <h2>Live Simulation Viewport</h2>
           <p>Real-time discrete simulation executing deterministic bytecode state transitions.</p>
         </div>
 
@@ -1335,12 +1331,6 @@
               A Bard plays an enchanting melody on his lute, charming the guard. A sneaky Cat seizes the 
               opportunity to swipe the cheese right under the guard's charmed nose!
             </p>
-            <div class="scenario-invariants">
-              <span class="invariant-pill">Priority Rule Preemption</span>
-              <span class="invariant-pill">TTL Decay</span>
-              <span class="invariant-pill">Dice Rolls</span>
-              <span class="invariant-pill">A* Graph Navigation</span>
-            </div>
           </div>
           <pre class="scenario-code"><code><span class="code-kw">entity</span> Guard, Bard, Cat, Cheese
 <span class="code-kw">relation</span> Carries(holder, item)
@@ -1373,12 +1363,6 @@
               tampers with the distance flags, downs a thick green drink, and waits for a gust of wind 
               to blow toward the target!
             </p>
-            <div class="scenario-invariants">
-              <span class="invariant-pill">Falling-Edge Triggers</span>
-              <span class="invariant-pill">TTL Expiration Hooks</span>
-              <span class="invariant-pill">Stageplay Headers</span>
-              <span class="invariant-pill">Interactive Scrubber</span>
-            </div>
           </div>
           <pre class="scenario-code"><code><span class="code-kw">scene</span>: Booty Island Spitting Field
 <span class="code-kw">cast</span>: Guybrush, Organiser, Onlookers
@@ -1407,12 +1391,6 @@
               motorcycle from Madame Buthane. He scavenges tape, marker, and syrup from his desk, snatches Mosely's passport, 
               tapes a garden fence hole, squirts the cat to harvest fur, crafts a cat-hair moustache with syrup, and fools Buthane!
             </p>
-            <div class="scenario-invariants">
-              <span class="invariant-pill">Multi-Scene Partitioning</span>
-              <span class="invariant-pill">Item Combining Crafting</span>
-              <span class="invariant-pill">Fact-Guarded Dialogue Trees</span>
-              <span class="invariant-pill">Multi-Stage Scavenging</span>
-            </div>
           </div>
           <pre class="scenario-code"><code><span class="code-kw">scene</span>: Hotel Corridor
 <span class="code-kw">cast</span>: Gabriel, Mosely | <span class="code-kw">props</span>: MoselyDoor, RoomDesk
@@ -1442,7 +1420,7 @@
     <section id="dialogue" class="compare-box">
       <div class="section-title-wrap">
         <div class="section-eyebrow">Conversational Epistemology</div>
-        <h2 class="section-title">Beyond Flag Spaghetti: Relational Dialogue Trees</h2>
+        <h2 class="section-title">No More Flag Spaghetti:<br> Relational Dialogue Trees</h2>
         <p class="section-desc">
           Dialogue in adventure games has always had sharp edges. The Infocom parser model ("ask X about Y") is brittle, 
           while classic dialogue trees in SCUMM and AGS drown in hundreds of ad-hoc boolean flags. 
@@ -1462,11 +1440,6 @@
               deep trees of mutable boolean flags. In BeSpoke, dialogue choices are direct queries over relational facts: 
               <code>where KnowsReply(player, reply) and Counters(reply, active_insult)</code>.
             </p>
-            <div class="scenario-invariants">
-              <span class="invariant-pill">No Flag Fluff</span>
-              <span class="invariant-pill">Set-Theoretic Choice Pruning</span>
-              <span class="invariant-pill">Sub-Microsecond SoA Scan</span>
-            </div>
           </div>
           <pre class="scenario-code"><code><span class="code-kw">relation</span> HeardInsult(fighter, insult)
 <span class="code-kw">relation</span> MasteredReply(fighter, reply)
@@ -1498,11 +1471,6 @@
               when asked the same question repeatedly. BeSpoke tracks conversational frequency using relational facts 
               with TTL decay, allowing NPCs to shift from welcoming, to terse, to furiously slamming the door.
             </p>
-            <div class="scenario-invariants">
-              <span class="invariant-pill">Repetition Counters</span>
-              <span class="invariant-pill">TTL Mood Decay</span>
-              <span class="invariant-pill">Natural Gatekeeping</span>
-            </div>
           </div>
           <pre class="scenario-code"><code><span class="code-kw">relation</span> Inquired(speaker, topic, count)
 <span class="code-kw">relation</span> AnnoyedWith(npc, speaker) <span class="code-kw">for</span> ticks
@@ -1583,44 +1551,14 @@
          Artisanal Neocities Footer
          ======================================================================== -->
     <footer class="neocities-footer">
-      <!-- 88x31 Neocities Badges -->
-      <div class="retro-badge-row">
-        <div class="retro-badge zig"><span>MADE WITH</span><span>ZIG 0.13</span></div>
-        <div class="retro-badge pure"><span>ENGINE AS</span><span>SPINE</span></div>
-        <div class="retro-badge scumm"><span>HOMAGE TO</span><span>SCUMM / SCI</span></div>
-        <div class="retro-badge retro"><span>DETERMINISTIC</span><span>60 HZ TICK</span></div>
-      </div>
 
       <p class="footer-quote">
         "A simulation game is a living clock of emergent rules. The craft is building a runtime clean enough that the gears never grind."
       </p>
 
-      <div class="footer-columns">
-        <div class="footer-col">
-          <div class="footer-col-title">Project &amp; Source</div>
-          <ul class="footer-col-links">
-            <li><a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub Repository ↗</a></li>
-            <li><a href="../docs/manual.html">Interactive 3x Developer Manual</a></li>
-            <li><a href="https://github.com/aedmark/bespoke-engine/blob/main/script_spec.md" target="_blank" rel="noopener">Vertical Slice Script Spec ↗</a></li>
-            <li><a href="https://github.com/aedmark/bespoke-engine/blob/main/whitepaper.md" target="_blank" rel="noopener">Original Design Whitepaper ↗</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-col">
-          <div class="footer-col-title">Portfolio &amp; Lineage</div>
-          <ul class="footer-col-links">
-            <li><a href="../../portfolio/index.html">Andrew Edmark Portfolio</a></li>
-            <li><a href="../../the-manifold/index.html">The Manifold Framework</a></li>
-            <li><a href="../../level0engine/index.html">Level 0 Engine (Liminal Determinism)</a></li>
-            <li><a href="../../Noctis-IV-OM/index.html">Noctis IV OM (Sierra SCI Reverse-Engineering)</a></li>
-          </ul>
-        </div>
-      </div>
-
       <p class="footer-meta">
-        Designed &amp; coded by <strong>Andrew Edmark</strong>.<br>
-        Crafted with pure Zig, zero external dependencies, and documented with The Manifold repository memory framework.<br>
-        Authored with care for the retro, narrative, and systemic simulation web.
+        Designed &amp; by <strong>Andrew Edmark &amp; Peter Spicer</strong>.<br>
+        Authored with care for the retro narrative storyteller in all of us.
       </p>
     </footer>
   </main>

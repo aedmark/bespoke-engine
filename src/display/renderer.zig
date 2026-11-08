@@ -1,11 +1,27 @@
 const std = @import("std");
 const display_mod = @import("../display.zig");
 const audio_mod = @import("../audio.zig");
+const save_mod = @import("../save.zig");
 const font = @import("font.zig");
 
 pub const SoundEffectKind = audio_mod.SoundEffectKind;
 pub const MusicTrackKind = audio_mod.MusicTrackKind;
 pub const AudioBridge = audio_mod.AudioBridge;
+pub const SaveManager = save_mod.SaveManager;
+pub const SaveMetadata = save_mod.SaveMetadata;
+pub const SaveSlotInfo = save_mod.SaveSlotInfo;
+
+pub const SaveMenuMode = enum(u8) {
+    save = 0,
+    load = 1,
+};
+
+pub const SaveDrawerTab = enum(u8) {
+    save_mode = 0,
+    load_mode = 1,
+    resume_game = 2,
+    quit_game = 3,
+};
 
 const RenderFrame = display_mod.RenderFrame;
 const RenderWaypoint = display_mod.RenderWaypoint;
@@ -163,6 +179,12 @@ pub const UserAction = union(enum) {
         item_index: usize,
         hotspot_index: usize,
     },
+    // P17-03: In-engine Save/Load drawer & quick-save/load actions (D-008, D-011, D-020)
+    toggle_save_drawer,
+    save_slot: u8,
+    load_slot: u8,
+    quick_save,
+    quick_load,
 };
 
 pub const DEFAULT_WIDTH: i32 = 1280;
@@ -440,6 +462,68 @@ pub fn hit_test_balloon_choice(mouse_x: i32, mouse_y: i32, balloon: *const Speec
     return null;
 }
 
+/// Computes screen bounding rectangle for the Pause & Save/Load Drawer modal (P17-03, D-020).
+pub fn get_save_drawer_rect(screen_w: i32, screen_h: i32) c.SDL_Rect {
+    const w = @min(760, screen_w - 40);
+    const h = @min(500, screen_h - 60);
+    return c.SDL_Rect{
+        .x = @divTrunc(screen_w - w, 2),
+        .y = @divTrunc(screen_h - h, 2),
+        .w = w,
+        .h = h,
+    };
+}
+
+/// Computes screen bounding rectangle for a specific save slot card (0..8) inside the drawer (P17-03, D-020).
+pub fn get_save_slot_rect(slot_id: u8, drawer_rect: c.SDL_Rect) c.SDL_Rect {
+    if (slot_id == 0) {
+        return c.SDL_Rect{
+            .x = drawer_rect.x + 20,
+            .y = drawer_rect.y + 82,
+            .w = drawer_rect.w - 40,
+            .h = 62,
+        };
+    }
+    const idx = slot_id - 1;
+    const col: i32 = @intCast(idx % 2);
+    const row: i32 = @intCast(idx / 2);
+    const card_w = @divTrunc(drawer_rect.w - 52, 2);
+    const card_h: i32 = 72;
+    return c.SDL_Rect{
+        .x = drawer_rect.x + 20 + col * (card_w + 12),
+        .y = drawer_rect.y + 154 + row * (card_h + 8),
+        .w = card_w,
+        .h = card_h,
+    };
+}
+
+/// Hit-tests mouse coordinates against all 9 save slot cards (Slot 0 Quick-Save and Slots 1..8) (P17-03).
+pub fn hit_test_save_slot(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_Rect) ?u8 {
+    var slot_id: u8 = 0;
+    while (slot_id <= save_mod.MAX_SLOTS) : (slot_id += 1) {
+        const srect = get_save_slot_rect(slot_id, drawer_rect);
+        if (mouse_x >= srect.x and mouse_x <= srect.x + srect.w and
+            mouse_y >= srect.y and mouse_y <= srect.y + srect.h)
+        {
+            return slot_id;
+        }
+    }
+    return null;
+}
+
+/// Hit-tests mouse coordinates against the top tab buttons inside the Save/Load drawer (P17-03).
+pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_Rect) ?SaveDrawerTab {
+    const tab_y = drawer_rect.y + 42;
+    const tab_h: i32 = 28;
+    if (mouse_y < tab_y or mouse_y > tab_y + tab_h) return null;
+
+    if (mouse_x >= drawer_rect.x + 20 and mouse_x <= drawer_rect.x + 170) return .save_mode;
+    if (mouse_x >= drawer_rect.x + 180 and mouse_x <= drawer_rect.x + 330) return .load_mode;
+    if (mouse_x >= drawer_rect.x + drawer_rect.w - 270 and mouse_x <= drawer_rect.x + drawer_rect.w - 140) return .resume_game;
+    if (mouse_x >= drawer_rect.x + drawer_rect.w - 130 and mouse_x <= drawer_rect.x + drawer_rect.w - 20) return .quit_game;
+    return null;
+}
+
 /// The SDL2 peripheral window consumer (D-001, D-008, P6-01 through P6-04).
 pub const DisplayWindow = struct {
     window: ?*c.SDL_Window,
@@ -469,10 +553,20 @@ pub const DisplayWindow = struct {
     console_history: [5][128]u8 = undefined,
     console_history_lens: [5]usize = [_]usize{0} ** 5,
     console_history_count: usize = 0,
+    // Phase 17 In-Engine Save/Load Drawer & Pause Menu Overlay (P17-03, D-020)
+    show_save_drawer: bool = false,
+    save_menu_mode: SaveMenuMode = .save,
+    hovered_save_slot: ?u8 = null,
+    selected_save_slot: u8 = 1,
+    owned_save_manager: *save_mod.SaveManager,
+    save_manager: *save_mod.SaveManager,
 
     pub fn init(title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
         const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
         bridge.* = audio_mod.AudioBridge.init();
+
+        const sm = try std.heap.c_allocator.create(save_mod.SaveManager);
+        sm.* = try save_mod.SaveManager.init(std.heap.c_allocator, "saves");
 
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
             if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
@@ -485,6 +579,8 @@ pub const DisplayWindow = struct {
                     .is_headless = true,
                     .audio_bridge = bridge,
                     .audio_device_opened = false,
+                    .owned_save_manager = sm,
+                    .save_manager = sm,
                 };
             }
         }
@@ -506,6 +602,8 @@ pub const DisplayWindow = struct {
                 .is_headless = true,
                 .audio_bridge = bridge,
                 .audio_device_opened = false,
+                .owned_save_manager = sm,
+                .save_manager = sm,
             };
         };
 
@@ -524,6 +622,8 @@ pub const DisplayWindow = struct {
                 .is_headless = true,
                 .audio_bridge = bridge,
                 .audio_device_opened = false,
+                .owned_save_manager = sm,
+                .save_manager = sm,
             };
         };
 
@@ -551,6 +651,8 @@ pub const DisplayWindow = struct {
             .is_headless = false,
             .audio_bridge = bridge,
             .audio_device_opened = audio_opened,
+            .owned_save_manager = sm,
+            .save_manager = sm,
         };
     }
 
@@ -560,11 +662,111 @@ pub const DisplayWindow = struct {
             self.audio_device_opened = false;
         }
         std.heap.c_allocator.destroy(self.audio_bridge);
+        self.owned_save_manager.deinit();
+        std.heap.c_allocator.destroy(self.owned_save_manager);
 
         if (!self.is_headless) {
             if (self.renderer) |r| c.SDL_DestroyRenderer(r);
             if (self.window) |w| c.SDL_DestroyWindow(w);
             c.SDL_Quit();
+        }
+    }
+
+    /// Attaches an external SaveManager instance to this window (P17-03, D-020).
+    pub fn attach_save_manager(self: *DisplayWindow, sm: *save_mod.SaveManager) void {
+        self.save_manager = sm;
+    }
+
+    /// Executes persistent save/load user actions against the active SaveManager (P17-02, P17-03, D-020).
+    pub fn handle_save_action(
+        self: *DisplayWindow,
+        action: UserAction,
+        world: *save_mod.World,
+        spatial: *save_mod.SpatialSystem,
+        vm: *save_mod.VM,
+        display_bridge: *display_mod.DisplayBridge,
+        is_paused: *bool,
+    ) bool {
+        switch (action) {
+            .toggle_save_drawer => {
+                if (self.show_save_drawer) {
+                    is_paused.* = true;
+                }
+                return true;
+            },
+            .quick_save => {
+                if (self.save_manager.quick_save(world, spatial, vm)) |meta| {
+                    var buf: [128]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "★ Quick-Saved state ({s}, Tick {d}) ★", .{ meta.get_scene_name(), meta.current_tick }) catch "Quick-Saved!";
+                    self.set_cue_banner(msg, 120);
+                    self.play_sfx(.combine);
+                    self.show_save_drawer = false;
+                } else |_| {
+                    self.set_cue_banner("Failed to Quick-Save state.", 90);
+                    self.play_sfx(.click);
+                }
+                return true;
+            },
+            .quick_load => {
+                if (self.save_manager.quick_load(world, spatial, vm)) |res| {
+                    is_paused.* = true;
+                    display_bridge.capture_frame(world, spatial, vm);
+                    display_bridge.swap();
+                    var buf: [128]u8 = undefined;
+                    const msg = if (res.recovered_from_backup)
+                        std.fmt.bufPrint(&buf, "⚠ Primary corrupted! Recovered Quick-Save (.bak) at Tick {d}!", .{res.metadata.current_tick}) catch "Recovered Quick-Save!"
+                    else
+                        std.fmt.bufPrint(&buf, "<<< Quick-Loaded ({s}, Tick {d}) [PAUSED] <<<", .{ res.metadata.get_scene_name(), res.metadata.current_tick }) catch "Quick-Loaded!";
+                    self.set_cue_banner(msg, 120);
+                    self.play_sfx(.alert);
+                    self.show_save_drawer = false;
+                } else |_| {
+                    self.set_cue_banner("No valid Quick-Save found to load.", 90);
+                    self.play_sfx(.click);
+                }
+                return true;
+            },
+            .save_slot => |slot_id| {
+                const desc = if (slot_id == 0) "Quick Save" else "Manual Slot Save";
+                if (self.save_manager.save_slot(slot_id, world, spatial, vm, desc)) |meta| {
+                    var buf: [128]u8 = undefined;
+                    const msg = if (slot_id == 0)
+                        std.fmt.bufPrint(&buf, "★ Saved Quick-Save Slot ({s}, Tick {d}) ★", .{ meta.get_scene_name(), meta.current_tick }) catch "Saved!"
+                    else
+                        std.fmt.bufPrint(&buf, "★ Saved Slot #{d} ({s}, Tick {d}) ★", .{ slot_id, meta.get_scene_name(), meta.current_tick }) catch "Saved Slot!";
+                    self.set_cue_banner(msg, 120);
+                    self.play_sfx(.combine);
+                    self.show_save_drawer = false;
+                } else |_| {
+                    self.set_cue_banner("Failed to save slot.", 90);
+                    self.play_sfx(.click);
+                }
+                return true;
+            },
+            .load_slot => |slot_id| {
+                if (self.save_manager.load_slot(slot_id, world, spatial, vm)) |res| {
+                    is_paused.* = true;
+                    display_bridge.capture_frame(world, spatial, vm);
+                    display_bridge.swap();
+                    var buf: [128]u8 = undefined;
+                    const msg = if (res.recovered_from_backup)
+                        std.fmt.bufPrint(&buf, "⚠ Slot #{d} corrupted! Recovered from .bak at Tick {d}!", .{ slot_id, res.metadata.current_tick }) catch "Recovered from backup!"
+                    else if (slot_id == 0)
+                        std.fmt.bufPrint(&buf, "<<< Loaded Quick-Save ({s}, Tick {d}) [PAUSED] <<<", .{ res.metadata.get_scene_name(), res.metadata.current_tick }) catch "Loaded!"
+                    else
+                        std.fmt.bufPrint(&buf, "<<< Loaded Slot #{d} ({s}, Tick {d}) [PAUSED] <<<", .{ slot_id, res.metadata.get_scene_name(), res.metadata.current_tick }) catch "Loaded Slot!";
+                    self.set_cue_banner(msg, 120);
+                    self.play_sfx(.alert);
+                    self.show_save_drawer = false;
+                } else |_| {
+                    var buf: [96]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "Slot #{d} is empty or unrecoverable.", .{slot_id}) catch "Empty slot.";
+                    self.set_cue_banner(msg, 90);
+                    self.play_sfx(.click);
+                }
+                return true;
+            },
+            else => return false,
         }
     }
 
@@ -670,6 +872,17 @@ pub const DisplayWindow = struct {
             switch (event.type) {
                 c.SDL_QUIT => return .quit,
                 c.SDL_MOUSEMOTION => {
+                    if (self.show_save_drawer) {
+                        const drect = get_save_drawer_rect(self.width, self.height);
+                        self.hovered_save_slot = hit_test_save_slot(event.motion.x, event.motion.y, drect);
+                        if (self.hovered_save_slot) |hsl| {
+                            self.selected_save_slot = hsl;
+                        }
+                        continue;
+                    } else {
+                        self.hovered_save_slot = null;
+                    }
+
                     if (self.active_balloon) |*b| {
                         const brect = get_balloon_rect(b, self.width);
                         self.hovered_choice = hit_test_balloon_choice(event.motion.x, event.motion.y, b, brect);
@@ -700,6 +913,49 @@ pub const DisplayWindow = struct {
                     );
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
+                    if (self.show_save_drawer) {
+                        if (event.button.button == c.SDL_BUTTON_LEFT) {
+                            const drect = get_save_drawer_rect(self.width, self.height);
+                            if (hit_test_save_drawer_tab(event.button.x, event.button.y, drect)) |tab| {
+                                self.play_sfx(.click);
+                                switch (tab) {
+                                    .save_mode => {
+                                        self.save_menu_mode = .save;
+                                        return .none;
+                                    },
+                                    .load_mode => {
+                                        self.save_menu_mode = .load;
+                                        return .none;
+                                    },
+                                    .resume_game => {
+                                        self.show_save_drawer = false;
+                                        return .toggle_save_drawer;
+                                    },
+                                    .quit_game => return .quit,
+                                }
+                            }
+                            if (hit_test_save_slot(event.button.x, event.button.y, drect)) |slot_id| {
+                                self.selected_save_slot = slot_id;
+                                return if (self.save_menu_mode == .save)
+                                    .{ .save_slot = slot_id }
+                                else
+                                    .{ .load_slot = slot_id };
+                            }
+                            if (event.button.x < drect.x or event.button.x > drect.x + drect.w or
+                                event.button.y < drect.y or event.button.y > drect.y + drect.h)
+                            {
+                                self.show_save_drawer = false;
+                                self.play_sfx(.click);
+                                return .toggle_save_drawer;
+                            }
+                        } else if (event.button.button == c.SDL_BUTTON_RIGHT) {
+                            self.show_save_drawer = false;
+                            self.play_sfx(.click);
+                            return .toggle_save_drawer;
+                        }
+                        return .none;
+                    }
+
                     if (self.active_balloon) |*b| {
                         const brect = get_balloon_rect(b, self.width);
                         if (hit_test_balloon_choice(event.button.x, event.button.y, b, brect)) |ch_idx| {
@@ -913,6 +1169,46 @@ pub const DisplayWindow = struct {
                         return .none;
                     }
 
+                    if (self.show_save_drawer) {
+                        if (sym == c.SDLK_ESCAPE or sym == c.SDLK_p) {
+                            self.show_save_drawer = false;
+                            self.play_sfx(.click);
+                            return .toggle_save_drawer;
+                        } else if (sym == c.SDLK_TAB or sym == c.SDLK_LEFT or sym == c.SDLK_RIGHT) {
+                            self.save_menu_mode = if (self.save_menu_mode == .save) .load else .save;
+                            self.play_sfx(.click);
+                            return .none;
+                        } else if (sym == c.SDLK_UP) {
+                            if (self.selected_save_slot > 0) {
+                                self.selected_save_slot -= 1;
+                                self.play_sfx(.click);
+                            }
+                            return .none;
+                        } else if (sym == c.SDLK_DOWN) {
+                            if (self.selected_save_slot < save_mod.MAX_SLOTS) {
+                                self.selected_save_slot += 1;
+                                self.play_sfx(.click);
+                            }
+                            return .none;
+                        } else if (sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER or sym == c.SDLK_SPACE) {
+                            return if (self.save_menu_mode == .save)
+                                .{ .save_slot = self.selected_save_slot }
+                            else
+                                .{ .load_slot = self.selected_save_slot };
+                        } else if (sym >= c.SDLK_0 and sym <= c.SDLK_8) {
+                            const sl: u8 = @intCast(sym - c.SDLK_0);
+                            self.selected_save_slot = sl;
+                            return if (self.save_menu_mode == .save) .{ .save_slot = sl } else .{ .load_slot = sl };
+                        } else if (sym == c.SDLK_F5) {
+                            return .quick_save;
+                        } else if (sym == c.SDLK_F9) {
+                            return .quick_load;
+                        } else if (sym == c.SDLK_q) {
+                            return .quit;
+                        }
+                        return .none;
+                    }
+
                     // Handle active dialogue balloon hotkeys and controls (P13-03, D-015)
                     if (self.active_balloon) |*b| {
                         if (b.choice_count > 0) {
@@ -987,6 +1283,34 @@ pub const DisplayWindow = struct {
                         c.SDLK_F1, c.SDLK_d => {
                             self.show_debug_overlay = !self.show_debug_overlay;
                             return .toggle_debug;
+                        },
+                        c.SDLK_F2 => {
+                            self.show_save_drawer = true;
+                            self.save_menu_mode = .save;
+                            self.save_manager.refresh_slots();
+                            self.play_sfx(.click);
+                            return .toggle_save_drawer;
+                        },
+                        c.SDLK_F3 => {
+                            self.show_save_drawer = true;
+                            self.save_menu_mode = .load;
+                            self.save_manager.refresh_slots();
+                            self.play_sfx(.click);
+                            return .toggle_save_drawer;
+                        },
+                        c.SDLK_p => {
+                            self.show_save_drawer = !self.show_save_drawer;
+                            if (self.show_save_drawer) {
+                                self.save_manager.refresh_slots();
+                            }
+                            self.play_sfx(.click);
+                            return .toggle_save_drawer;
+                        },
+                        c.SDLK_F5 => {
+                            return .quick_save;
+                        },
+                        c.SDLK_F9 => {
+                            return .quick_load;
                         },
                         c.SDLK_BACKQUOTE, c.SDLK_TAB, c.SDLK_c => {
                             self.show_console = !self.show_console;
@@ -2419,7 +2743,7 @@ pub const DisplayWindow = struct {
             );
         } else {
             self.draw_text(
-                "[Click]: Act | [Right-Click]: Verb | [F1/D]: Debug HUD | [C]: REPL | [< / >]: Scrub | [Space]: Pause",
+                "[Click]: Act | [Right-Click]: Verb | [P/F2/F3]: Save/Load | [F5/F9]: QuickSave | [F1]: Debug | [C]: REPL",
                 20,
                 self.height - 28,
                 2,
@@ -2593,7 +2917,152 @@ pub const DisplayWindow = struct {
             self.draw_text(prompt_text, con_x + 18, con_y + con_h - 26, 2, Color.white);
         }
 
-        // 12. Present Frame
+        // 12. In-Engine Pause & Save/Load Drawer Overlay (P17-03, D-020)
+        if (self.show_save_drawer) {
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 5, .g = 8, .b = 18, .a = 195 });
+
+            const drect = get_save_drawer_rect(self.width, self.height);
+            self.fill_rect(drect.x, drect.y, drect.w, drect.h, Color{ .r = 12, .g = 19, .b = 34, .a = 250 });
+            self.draw_rect_outline(drect.x, drect.y, drect.w, drect.h, Color.wp_hover);
+            self.draw_rect_outline(drect.x + 2, drect.y + 2, drect.w - 4, drect.h - 4, Color{ .r = 71, .g = 85, .b = 105 });
+
+            // Header Banner
+            self.fill_rect(drect.x + 4, drect.y + 4, drect.w - 8, 30, Color{ .r = 22, .g = 32, .b = 54 });
+            self.draw_text(
+                "=== PAUSE & PERSISTENT SAVE / LOAD MANAGER (P / Esc: Resume | Tab: Mode | 0-8: Slot | F5/F9: Quick) ===",
+                drect.x + 16,
+                drect.y + 14,
+                1,
+                Color.wp_hover,
+            );
+
+            // Top Tab Bar: [ SAVE MODE ] [ LOAD MODE ] [ RESUME ] [ QUIT ]
+            const tab_y = drect.y + 42;
+            const is_save_mode = (self.save_menu_mode == .save);
+
+            // Save Mode Tab
+            self.fill_rect(drect.x + 20, tab_y, 150, 28, if (is_save_mode) Color.wp_hover else Color{ .r = 30, .g = 41, .b = 59 });
+            self.draw_rect_outline(drect.x + 20, tab_y, 150, 28, if (is_save_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_text("SAVE GAME [F2]", drect.x + 32, tab_y + 8, 2, if (is_save_mode) Color.black else Color.hud_text);
+
+            // Load Mode Tab
+            self.fill_rect(drect.x + 180, tab_y, 150, 28, if (!is_save_mode) Color.wp_target else Color{ .r = 30, .g = 41, .b = 59 });
+            self.draw_rect_outline(drect.x + 180, tab_y, 150, 28, if (!is_save_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_text("LOAD GAME [F3]", drect.x + 192, tab_y + 8, 2, if (!is_save_mode) Color.black else Color.hud_text);
+
+            // Resume Button
+            self.fill_rect(drect.x + drect.w - 270, tab_y, 130, 28, Color{ .r = 22, .g = 101, .b = 52 });
+            self.draw_rect_outline(drect.x + drect.w - 270, tab_y, 130, 28, Color.status_running);
+            self.draw_text("RESUME [Esc]", drect.x + drect.w - 256, tab_y + 8, 2, Color.white);
+
+            // Quit Button
+            self.fill_rect(drect.x + drect.w - 130, tab_y, 110, 28, Color{ .r = 127, .g = 29, .b = 29 });
+            self.draw_rect_outline(drect.x + drect.w - 130, tab_y, 110, 28, Color.cue_alert);
+            self.draw_text("QUIT [Q]", drect.x + drect.w - 108, tab_y + 8, 2, Color.white);
+
+            // Render Slot Cards (0 = Quick-Save, 1..8 = Numbered Slots)
+            var slot_id: u8 = 0;
+            while (slot_id <= save_mod.MAX_SLOTS) : (slot_id += 1) {
+                const srect = get_save_slot_rect(slot_id, drect);
+                const sinfo = self.save_manager.get_slot_info(slot_id) orelse SaveSlotInfo{ .slot_id = slot_id };
+                const is_sel = (self.selected_save_slot == slot_id) or (self.hovered_save_slot != null and self.hovered_save_slot.? == slot_id);
+
+                const card_bg = if (is_sel)
+                    Color{ .r = 35, .g = 48, .b = 74 }
+                else if (sinfo.occupied)
+                    Color{ .r = 20, .g = 29, .b = 48 }
+                else
+                    Color{ .r = 15, .g = 21, .b = 34 };
+
+                const card_border = if (is_sel)
+                    (if (is_save_mode) Color.wp_hover else Color.wp_target)
+                else if (sinfo.corrupted)
+                    Color.cue_alert
+                else if (sinfo.occupied)
+                    Color{ .r = 100, .g = 116, .b = 139 }
+                else
+                    Color{ .r = 51, .g = 65, .b = 85 };
+
+                self.fill_rect(srect.x, srect.y, srect.w, srect.h, card_bg);
+                self.draw_rect_outline(srect.x, srect.y, srect.w, srect.h, card_border);
+
+                // Miniature 16x12 RGB332 Frame Thumbnail (scaled 3x = 48x36)
+                const tx = srect.x + 10;
+                const ty = srect.y + @divTrunc(srect.h - 36, 2);
+                if (sinfo.occupied) {
+                    var py: usize = 0;
+                    while (py < save_mod.THUMB_HEIGHT) : (py += 1) {
+                        var px: usize = 0;
+                        while (px < save_mod.THUMB_WIDTH) : (px += 1) {
+                            const rgb = save_mod.unpack_rgb332(sinfo.metadata.thumbnail[py * save_mod.THUMB_WIDTH + px]);
+                            self.fill_rect(
+                                tx + @as(i32, @intCast(px)) * 3,
+                                ty + @as(i32, @intCast(py)) * 3,
+                                3,
+                                3,
+                                Color{ .r = rgb.r, .g = rgb.g, .b = rgb.b },
+                            );
+                        }
+                    }
+                    self.draw_rect_outline(tx, ty, 48, 36, Color.white);
+                } else {
+                    self.fill_rect(tx, ty, 48, 36, Color{ .r = 10, .g = 14, .b = 24 });
+                    self.draw_rect_outline(tx, ty, 48, 36, Color{ .r = 51, .g = 65, .b = 85 });
+                    self.draw_text("EMPTY", tx + 9, ty + 14, 1, Color.hud_subtext);
+                }
+
+                // Slot Title & Metadata Text
+                const text_x = tx + 58;
+                var title_buf: [96]u8 = undefined;
+                const status_tag = if (sinfo.corrupted and sinfo.has_backup)
+                    "[CORRUPTED - .BAK READY]"
+                else if (sinfo.corrupted)
+                    "[CORRUPTED]"
+                else if (sinfo.occupied)
+                    "[SAVED]"
+                else
+                    "[EMPTY]";
+
+                const slot_title = if (slot_id == 0)
+                    std.fmt.bufPrint(&title_buf, "SLOT 0: QUICK-SAVE [F5/F9/0] {s}", .{status_tag}) catch "QUICK-SAVE"
+                else
+                    std.fmt.bufPrint(&title_buf, "SLOT #{d} [{d}] {s}", .{ slot_id, slot_id, status_tag }) catch "SLOT";
+
+                const title_col = if (sinfo.corrupted)
+                    Color.cue_alert
+                else if (is_sel)
+                    Color.wp_hover
+                else if (sinfo.occupied)
+                    Color.white
+                else
+                    Color.hud_subtext;
+
+                self.draw_text(slot_title, text_x, srect.y + 10, 2, title_col);
+
+                if (sinfo.occupied) {
+                    var line1_buf: [96]u8 = undefined;
+                    const line1 = std.fmt.bufPrint(&line1_buf, "Scene: {s} | Tick: {d} | Facts: {d}", .{
+                        sinfo.metadata.get_scene_name(),
+                        sinfo.metadata.current_tick,
+                        sinfo.metadata.fact_count,
+                    }) catch "";
+                    self.draw_text(line1, text_x, srect.y + 32, 1, Color.hud_text);
+
+                    var line2_buf: [96]u8 = undefined;
+                    const line2 = std.fmt.bufPrint(&line2_buf, "Playtime: {d}s | Actors: {d} | {s}", .{
+                        sinfo.metadata.playtime_secs,
+                        sinfo.metadata.actor_count,
+                        sinfo.metadata.get_description(),
+                    }) catch "";
+                    self.draw_text(line2, text_x, srect.y + 46, 1, Color.hud_subtext);
+                } else {
+                    const hint = if (is_save_mode) "Click or press number key to save state here" else "No saved state in this slot";
+                    self.draw_text(hint, text_x, srect.y + 34, 1, Color.hud_subtext);
+                }
+            }
+        }
+
+        // 13. Present Frame
         if (self.renderer) |r| {
             c.SDL_RenderPresent(r);
         }
@@ -2941,3 +3410,76 @@ test "P14-02: render_frame renders Hotel Garden with unique courtyard backdrop a
     try testing.expect(frame.fence_taped);
     try testing.expect(frame.fence_has_hair);
 }
+
+test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save_action" {
+    const testing = std.testing;
+    const bytecode_mod = @import("../bytecode.zig");
+
+    const drect = get_save_drawer_rect(1280, 720);
+    try testing.expectEqual(@as(i32, 760), drect.w);
+    try testing.expectEqual(@as(i32, 500), drect.h);
+
+    // Hit test tabs
+    try testing.expectEqual(@as(?SaveDrawerTab, .save_mode), hit_test_save_drawer_tab(drect.x + 50, drect.y + 50, drect));
+    try testing.expectEqual(@as(?SaveDrawerTab, .load_mode), hit_test_save_drawer_tab(drect.x + 200, drect.y + 50, drect));
+    try testing.expectEqual(@as(?SaveDrawerTab, .resume_game), hit_test_save_drawer_tab(drect.x + drect.w - 200, drect.y + 50, drect));
+    try testing.expectEqual(@as(?SaveDrawerTab, .quit_game), hit_test_save_drawer_tab(drect.x + drect.w - 60, drect.y + 50, drect));
+
+    // Hit test Slot 0 (Quick-Save) and Slots 1..8
+    const s0 = get_save_slot_rect(0, drect);
+    try testing.expectEqual(@as(?u8, 0), hit_test_save_slot(s0.x + 10, s0.y + 10, drect));
+
+    var sl: u8 = 1;
+    while (sl <= 8) : (sl += 1) {
+        const sr = get_save_slot_rect(sl, drect);
+        try testing.expectEqual(@as(?u8, sl), hit_test_save_slot(sr.x + 10, sr.y + 10, drect));
+    }
+
+    // Test handle_save_action with temporary directory
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const base_path = try tmp_dir.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(base_path);
+
+    var sm = try save_mod.SaveManager.init(testing.allocator, base_path);
+    defer sm.deinit();
+
+    var win = try DisplayWindow.init("Save Drawer Test", 1280, 720);
+    defer win.deinit();
+    win.attach_save_manager(&sm);
+    win.show_save_drawer = true;
+
+    var world = try save_mod.World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = save_mod.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var chunk = bytecode_mod.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    _ = try chunk.emit_op(.halt);
+    var vm = save_mod.VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    var bridge = display_mod.DisplayBridge.init();
+
+    _ = world.step_tick();
+    _ = world.step_tick();
+    var is_paused = false;
+
+    // Render with save drawer open
+    var frame = std.mem.zeroes(RenderFrame);
+    win.render_frame(&frame, is_paused);
+
+    // Save to Slot 2 via handle_save_action
+    try testing.expect(win.handle_save_action(.{ .save_slot = 2 }, &world, &spatial, &vm, &bridge, &is_paused));
+    try testing.expect(!win.show_save_drawer);
+    try testing.expect(sm.get_slot_info(2).?.occupied);
+
+    // Advance tick to 4, then Load Slot 2 via handle_save_action
+    _ = world.step_tick();
+    _ = world.step_tick();
+    try testing.expectEqual(@as(u64, 4), world.current_tick);
+
+    try testing.expect(win.handle_save_action(.{ .load_slot = 2 }, &world, &spatial, &vm, &bridge, &is_paused));
+    try testing.expectEqual(@as(u64, 2), world.current_tick);
+    try testing.expect(is_paused);
+}
+
