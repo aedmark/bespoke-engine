@@ -135,6 +135,41 @@ pub const RenderDebugFiber = struct {
     }
 };
 
+/// Physiological drive and status snapshot for a villager in "The Living Village" (P18-01, P18-03, D-021).
+pub const RenderVillagerDrive = struct {
+    entity: EntityId = .none,
+    name: [16]u8 = [_]u8{0} ** 16,
+    name_len: u8 = 0,
+    hunger: u8 = 0,
+    energy: u8 = 0,
+    gold: u16 = 0,
+    activity: u8 = 0,
+    knows_rumor: bool = false,
+    is_witness: bool = false,
+    is_arrested: bool = false,
+
+    pub fn get_name(self: *const RenderVillagerDrive) []const u8 {
+        return self.name[0..self.name_len];
+    }
+};
+
+/// A directed social or emergence edge for the live Social Graph HUD (P18-02, P18-03, D-021).
+pub const RenderSocialEdge = struct {
+    from_name: [16]u8 = [_]u8{0} ** 16,
+    from_len: u8 = 0,
+    to_name: [16]u8 = [_]u8{0} ** 16,
+    to_len: u8 = 0,
+    /// 0 = Friend, 1 = Grudge/Rival, 2 = KnowsRumor, 3 = WarrantFor, 4 = Arrested
+    kind: u8 = 0,
+
+    pub fn get_from(self: *const RenderSocialEdge) []const u8 {
+        return self.from_name[0..self.from_len];
+    }
+    pub fn get_to(self: *const RenderSocialEdge) []const u8 {
+        return self.to_name[0..self.to_len];
+    }
+};
+
 /// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
 pub const RenderFrame = struct {
     tick: u64,
@@ -164,6 +199,14 @@ pub const RenderFrame = struct {
     cat_hair_collected: bool = false,
     gabriel_disguised: bool = false,
     bike_rented: bool = false,
+    // Living Village drives & social graph state (P18-01..P18-03, D-021)
+    villager_drives: [8]RenderVillagerDrive = [_]RenderVillagerDrive{.{}} ** 8,
+    villager_drive_count: usize = 0,
+    social_edges: [16]RenderSocialEdge = [_]RenderSocialEdge{.{}} ** 16,
+    social_edge_count: usize = 0,
+    village_crime_active: bool = false,
+    village_warrant_active: bool = false,
+    village_arrest_made: bool = false,
     debug_facts: [32]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
@@ -395,6 +438,87 @@ pub const DisplayBridge = struct {
         self.back_buffer.bike_rented = false;
         if (world.lookup_relation("HasBikeKeys") orelse world.lookup_relation("BikeRented")) |rel| {
             self.back_buffer.bike_rented = world.has_fact(null, rel, null);
+        }
+
+        // 5c. Capture Living Village drives & social graph relations (P18-01..P18-03, D-021)
+        self.back_buffer.villager_drive_count = 0;
+        self.back_buffer.social_edge_count = 0;
+        self.back_buffer.village_crime_active = false;
+        self.back_buffer.village_warrant_active = false;
+        self.back_buffer.village_arrest_made = false;
+
+        if (world.lookup_relation("Hunger")) |hunger_rel| {
+            const energy_rel = world.lookup_relation("Energy");
+            const gold_rel = world.lookup_relation("Gold");
+            const act_rel = world.lookup_relation("Activity");
+            const rumor_rel = world.lookup_relation("KnowsRumor");
+            const wit_rel = world.lookup_relation("Witnessed");
+            const arr_rel = world.lookup_relation("Arrested");
+            const stolen_rel = world.lookup_relation("StolenFrom");
+            const warrant_rel = world.lookup_relation("WarrantFor");
+
+            if (stolen_rel) |sr| self.back_buffer.village_crime_active = world.has_fact(null, sr, null);
+            if (warrant_rel) |wr| self.back_buffer.village_warrant_active = world.has_fact(null, wr, null);
+            if (arr_rel) |ar| self.back_buffer.village_arrest_made = world.has_fact(null, ar, null);
+
+            var vd_count: usize = 0;
+            for (self.back_buffer.entities[0..self.back_buffer.entity_count]) |re| {
+                if (vd_count >= self.back_buffer.villager_drives.len) break;
+                if (world.get_property(re.entity, hunger_rel)) |h_val| {
+                    var vd = RenderVillagerDrive{
+                        .entity = re.entity,
+                        .hunger = @intCast(@min(100, h_val)),
+                        .energy = if (energy_rel) |er| @intCast(@min(100, world.get_property(re.entity, er) orelse 0)) else 0,
+                        .gold = if (gold_rel) |gr| @intCast(@min(999, world.get_property(re.entity, gr) orelse 0)) else 0,
+                        .activity = if (act_rel) |ar| @intCast(@min(20, world.get_property(re.entity, ar) orelse 0)) else 0,
+                        .knows_rumor = if (rumor_rel) |rr| world.has_fact(re.entity, rr, null) else false,
+                        .is_witness = if (wit_rel) |wr| world.has_fact(re.entity, wr, null) else false,
+                        .is_arrested = if (arr_rel) |ar| world.has_fact(re.entity, ar, null) else false,
+                    };
+                    const n = re.get_name();
+                    const nlen = @min(n.len, vd.name.len);
+                    @memcpy(vd.name[0..nlen], n[0..nlen]);
+                    vd.name_len = @intCast(nlen);
+                    self.back_buffer.villager_drives[vd_count] = vd;
+                    vd_count += 1;
+                }
+            }
+            self.back_buffer.villager_drive_count = vd_count;
+
+            // Capture key social and emergence edges for the Social Graph HUD
+            const edge_rels = [_]struct { name: []const u8, kind: u8 }{
+                .{ .name = "Arrested", .kind = 4 },
+                .{ .name = "WarrantFor", .kind = 3 },
+                .{ .name = "KnowsRumor", .kind = 2 },
+                .{ .name = "Grudge", .kind = 1 },
+                .{ .name = "Friend", .kind = 0 },
+            };
+            var se_count: usize = 0;
+            for (edge_rels) |er_info| {
+                if (world.lookup_relation(er_info.name)) |rel_id| {
+                    var q_it = world.query(null, rel_id, null);
+                    while (q_it.next()) |f| {
+                        if (se_count >= self.back_buffer.social_edges.len) break;
+                        const s_name = world.get_entity_name(f.subject) orelse continue;
+                        const o_name = world.get_entity_name(EntityId.from_int(f.object_or_value)) orelse continue;
+                        // Avoid duplicate undirected Friend lines
+                        if (er_info.kind == 0 and f.subject.to_int() > f.object_or_value) continue;
+
+                        var se = RenderSocialEdge{ .kind = er_info.kind };
+                        const slen = @min(s_name.len, se.from_name.len);
+                        @memcpy(se.from_name[0..slen], s_name[0..slen]);
+                        se.from_len = @intCast(slen);
+
+                        const olen = @min(o_name.len, se.to_name.len);
+                        @memcpy(se.to_name[0..olen], o_name[0..olen]);
+                        se.to_len = @intCast(olen);
+
+                        self.back_buffer.social_edges[se_count] = se;
+                        se_count += 1;
+                    }
+                }
+            }
+            self.back_buffer.social_edge_count = se_count;
         }
 
         // 6. Capture player inventory (P7-03, D-007)

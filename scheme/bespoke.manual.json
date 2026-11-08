@@ -821,6 +821,30 @@
             {"label": "World Snapshot Serialization", "target": "src/world.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "headless-and-interactive-cli", "test-verification-hierarchy"]
+        },
+        {
+          "id": "living-village-emergent-sandbox",
+          "title": "The Living Village Emergent Sandbox",
+          "summary": "Multi-agent systemic simulation driven by physiological needs, witness detection, rumor propagation, and justice cascades.",
+          "synopsis": "zig build run -- --village [--headless] | var sim = try VillageSimulation.init(&world, &spatial); try sim.step_simulation(&world, &spatial, &vm);",
+          "tags": ["emergence", "village", "drives", "rumors", "justice", "sandbox"],
+          "what": "A multi-agent systemic simulation sandbox where 6 autonomous villagers operate across a 6-building settlement driven by relational physiological needs, social ties, crime witnessing, rumor propagation, and autonomous law enforcement.",
+          "how": [
+            "Villager needs (Hunger, Energy, Gold, Activity) are stored as functional .property relations in World and metabolized every discrete simulation tick.",
+            "Hungry villagers with gold purchase meals at the Bakery or Tavern, strengthening Friend relations; exhausted villagers walk to Cottages to sleep.",
+            "When Hunger crosses 80 with 0 Gold, desperation triggers property theft (StolenFrom(Drifter, Baker)), detected by co-located witnesses who record Witnessed, KnowsRumor, and TTL Grudge facts.",
+            "Co-located villagers propagate KnowsRumor(listener, thief) along Friend and Gossip social edges until the rumor reaches the Sheriff.",
+            "Upon learning the rumor, the Sheriff issues WarrantFor(Sheriff, thief) via a priority fiber interrupt, intercepts the suspect, records Arrested(thief, Sheriff), recovers stolen goods, and escorts the offender to SheriffsPost."
+          ],
+          "why": "Demonstrates that BeSpoke Engine's flat relational fact store, property auto-overwrite, and priority interrupt spine support unscripted systemic emergence alongside classic adventure puzzles, with full time-travel scrubbing and disk save compatibility.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-021", "target": "docs/DECISIONS.md#d-021", "kind": "decision"},
+            {"label": "Living Village Simulation Engine", "target": "src/village.zig", "kind": "source"},
+            {"label": "Settlement & Social Graph Renderer", "target": "src/display/renderer.zig", "kind": "source"},
+            {"label": "Display Frame Drive & Edge Capture", "target": "src/display.zig", "kind": "source"}
+          ],
+          "related": ["engine-as-spine", "headless-and-interactive-cli", "persistent-save-load-and-slot-management"]
         }
       ]
     },

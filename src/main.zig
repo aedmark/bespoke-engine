@@ -13,6 +13,7 @@ pub fn main() !void {
     var is_spitting_contest = false;
     var is_gk3 = false;
     var is_sword_fighting = false;
+    var is_village = false;
     var ticks_arg: usize = 20;
 
     var subcommand: ?enum { run, compile, check, help } = null;
@@ -56,6 +57,8 @@ pub fn main() !void {
             is_gk3 = true;
         } else if (std.mem.eql(u8, arg, "--sword-fighting") or std.mem.eql(u8, arg, "--insults") or std.mem.eql(u8, arg, "--sword")) {
             is_sword_fighting = true;
+        } else if (std.mem.eql(u8, arg, "--village") or std.mem.eql(u8, arg, "--living-village")) {
+            is_village = true;
         } else if (std.mem.eql(u8, arg, "--scenario")) {
             if (args_it.next()) |scen| {
                 if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
@@ -64,6 +67,8 @@ pub fn main() !void {
                     is_gk3 = true;
                 } else if (std.mem.eql(u8, scen, "sword-fighting") or std.mem.eql(u8, scen, "insults") or std.mem.eql(u8, scen, "sword")) {
                     is_sword_fighting = true;
+                } else if (std.mem.eql(u8, scen, "village") or std.mem.eql(u8, scen, "living-village")) {
+                    is_village = true;
                 }
             }
         } else if (target_file == null and !std.mem.startsWith(u8, arg, "-")) {
@@ -88,6 +93,7 @@ pub fn main() !void {
                     \\  bespoke --spitting-contest       (Monkey Island 2 Spitting Contest)
                     \\  bespoke --gk3                    (Gabriel Knight 3 Cat Moustache)
                     \\  bespoke --sword-fighting         (Monkey Island 1 Insult Sword Fighting)
+                    \\  bespoke --village                (The Living Village Emergent Sandbox)
                     \\
                 , .{});
                 return;
@@ -123,6 +129,15 @@ pub fn main() !void {
                 }
             },
         }
+    }
+
+    if (is_village) {
+        if (is_headless_arg) {
+            try bespoke.village.run_headless(allocator, stdout);
+        } else {
+            try bespoke.village.run_interactive(allocator, stdout);
+        }
+        return;
     }
 
     if (is_sword_fighting) {

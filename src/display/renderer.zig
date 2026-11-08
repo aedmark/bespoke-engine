@@ -1444,9 +1444,14 @@ pub const DisplayWindow = struct {
         var is_high_road_scene = false;
         var is_sanctuary_scene = false;
         var is_scumm_bar_scene = false;
+        var is_village_scene = false;
 
         if (cur_scene.len > 0) {
-            if (std.mem.indexOf(u8, cur_scene, "High Road") != null or
+            if (std.mem.indexOf(u8, cur_scene, "Village") != null or
+                std.mem.indexOf(u8, cur_scene, "Living") != null)
+            {
+                is_village_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "High Road") != null or
                 std.mem.indexOf(u8, cur_scene, "Road") != null)
             {
                 is_high_road_scene = true;
@@ -1489,10 +1494,16 @@ pub const DisplayWindow = struct {
         // Fallback detection if current_scene wasn't explicitly set
         if (!is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
             !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
-            !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene)
+            !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene and !is_village_scene)
         {
             for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-                if (std.mem.indexOf(u8, wp.get_name(), "Road") != null) {
+                if (std.mem.indexOf(u8, wp.get_name(), "TownSquare") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "SheriffsPost") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "Bakery") != null)
+                {
+                    is_village_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Road") != null) {
                     is_high_road_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, wp.get_name(), "Sanctuary") != null) {
@@ -2107,6 +2118,174 @@ pub const DisplayWindow = struct {
             // Header
             self.draw_text("THE SCUMM BAR - MELEE ISLAND", b_x + 16, b_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
             self.draw_text("(BARKEEP AT THE TAPS * CONVERSATIONAL REPETITION FATIGUE)", b_x + 16, b_y + 36, 1, Color.hud_subtext);
+        } else if (is_village_scene) {
+            // The Living Village: Multi-Building Settlement & Social Graph HUD (P18-03, D-021)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 16, .g = 28, .b = 20 });
+
+            const v_x: i32 = 228;
+            const v_y: i32 = 82;
+            const v_w: i32 = self.width - 490;
+            const v_h: i32 = self.height - 178;
+
+            // Verdant village green commons
+            self.fill_rect(v_x, v_y, v_w, v_h, Color{ .r = 26, .g = 52, .b = 32 });
+            self.draw_rect_outline(v_x, v_y, v_w, v_h, Color{ .r = 65, .g = 110, .b = 70 });
+
+            // Header Banner inside village commons
+            self.draw_text("THE LIVING VILLAGE - EMERGENT SIMULATION SANDBOX", v_x + 14, v_y + 10, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(AUTONOMOUS DRIVES * PROPERTY THEFT * WITNESS RUMORS * JUSTICE CASCADE)", v_x + 14, v_y + 30, 1, Color.hud_subtext);
+
+            // 1. Bakery (Upper-left landmark at world (2, -10))
+            const pt_bakery = world_to_screen(2, -10, self.width, self.height);
+            self.fill_rect(pt_bakery.x - 62, pt_bakery.y - 44, 124, 72, Color{ .r = 120, .g = 55, .b = 35 });
+            self.draw_rect_outline(pt_bakery.x - 62, pt_bakery.y - 44, 124, 72, Color{ .r = 245, .g = 158, .b = 11 });
+            self.draw_text("VILLAGE BAKERY", pt_bakery.x - 46, pt_bakery.y - 38, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // 2. Farm & Granary (Lower-left landmark at world (2, 6))
+            const pt_farm = world_to_screen(2, 6, self.width, self.height);
+            self.fill_rect(pt_farm.x - 62, pt_farm.y - 36, 124, 72, Color{ .r = 95, .g = 75, .b = 30 });
+            self.draw_rect_outline(pt_farm.x - 62, pt_farm.y - 36, 124, 72, Color{ .r = 234, .g = 179, .b = 8 });
+            // Golden wheat rows
+            self.draw_line(pt_farm.x - 50, pt_farm.y - 12, pt_farm.x + 50, pt_farm.y - 12, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_line(pt_farm.x - 50, pt_farm.y - 4, pt_farm.x + 50, pt_farm.y - 4, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_text("WHEAT FARM", pt_farm.x - 34, pt_farm.y - 30, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // 3. Town Square & Fountain (Center landmark at world (15, -2))
+            const pt_sq = world_to_screen(15, -2, self.width, self.height);
+            self.fill_circle(pt_sq.x, pt_sq.y, 56, Color{ .r = 75, .g = 85, .b = 99 });
+            self.draw_circle_outline(pt_sq.x, pt_sq.y, 56, Color{ .r = 156, .g = 163, .b = 175 });
+            self.fill_circle(pt_sq.x, pt_sq.y - 18, 18, Color{ .r = 56, .g = 189, .b = 248, .a = 210 });
+            self.draw_circle_outline(pt_sq.x, pt_sq.y - 18, 18, Color.white);
+            self.draw_text("TOWN SQUARE", pt_sq.x - 36, pt_sq.y - 50, 1, Color.white);
+
+            // 4. Cottages (Bottom-center landmark at world (15, 9))
+            const pt_cot = world_to_screen(15, 9, self.width, self.height);
+            self.fill_rect(pt_cot.x - 64, pt_cot.y - 32, 128, 64, Color{ .r = 85, .g = 60, .b = 42 });
+            self.draw_rect_outline(pt_cot.x - 64, pt_cot.y - 32, 128, 64, Color{ .r = 180, .g = 130, .b = 80 });
+            self.draw_text("COTTAGES (SLEEP)", pt_cot.x - 50, pt_cot.y - 26, 1, Color{ .r = 253, .g = 230, .b = 138 });
+
+            // 5. Village Tavern (Upper-right landmark at world (28, -10))
+            const pt_tav = world_to_screen(28, -10, self.width, self.height);
+            self.fill_rect(pt_tav.x - 62, pt_tav.y - 44, 124, 72, Color{ .r = 78, .g = 38, .b = 26 });
+            self.draw_rect_outline(pt_tav.x - 62, pt_tav.y - 44, 124, 72, Color{ .r = 217, .g = 119, .b = 6 });
+            self.draw_text("VILLAGE TAVERN", pt_tav.x - 46, pt_tav.y - 38, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // 6. Sheriff's Post & Jail (Lower-right landmark at world (28, 6))
+            const pt_sh = world_to_screen(28, 6, self.width, self.height);
+            self.fill_rect(pt_sh.x - 62, pt_sh.y - 36, 124, 72, Color{ .r = 30, .g = 45, .b = 75 });
+            self.draw_rect_outline(pt_sh.x - 62, pt_sh.y - 36, 124, 72, Color{ .r = 96, .g = 165, .b = 250 });
+            // Iron jail cell bars on right side of Sheriff's Post
+            var bar_x: i32 = pt_sh.x + 18;
+            while (bar_x <= pt_sh.x + 52) : (bar_x += 8) {
+                self.draw_line(bar_x, pt_sh.y - 20, bar_x, pt_sh.y + 28, Color{ .r = 148, .g = 163, .b = 184 });
+            }
+            self.draw_text("SHERIFF & JAIL", pt_sh.x - 54, pt_sh.y - 30, 1, Color{ .r = 147, .g = 197, .b = 253 });
+
+            // Left HUD Panel: Autonomous Villager Physiological Drives (P18-01)
+            const lp_x: i32 = 12;
+            const lp_y: i32 = 82;
+            const lp_w: i32 = 208;
+            const lp_h: i32 = self.height - 178;
+            self.fill_rect(lp_x, lp_y, lp_w, lp_h, Color{ .r = 12, .g = 19, .b = 34, .a = 240 });
+            self.draw_rect_outline(lp_x, lp_y, lp_w, lp_h, Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_text("VILLAGER DRIVES (P18-01)", lp_x + 10, lp_y + 10, 1, Color.wp_hover);
+
+            var dy_cursor: i32 = lp_y + 28;
+            for (frame.villager_drives[0..frame.villager_drive_count]) |vd| {
+                const vname = vd.get_name();
+                const act_label = switch (vd.activity) {
+                    0 => "Work",
+                    1 => "Patrol",
+                    2 => "Eat",
+                    3 => "Sleep",
+                    4 => "Social",
+                    5 => "STEAL!",
+                    6 => "Flee!",
+                    7 => "Hunt!",
+                    8 => "JAILED",
+                    else => "Idle",
+                };
+                var line_buf: [64]u8 = undefined;
+                const hdr = std.fmt.bufPrint(&line_buf, "{s} ({d}g) [{s}]", .{ vname, vd.gold, act_label }) catch vname;
+                const hdr_col = if (vd.is_arrested)
+                    Color.cue_alert
+                else if (vd.knows_rumor)
+                    Color.wp_hover
+                else
+                    Color.white;
+                self.draw_text(hdr, lp_x + 8, dy_cursor, 1, hdr_col);
+                dy_cursor += 12;
+
+                // Hunger Bar
+                self.draw_text("Hng:", lp_x + 8, dy_cursor, 1, Color.hud_subtext);
+                self.fill_rect(lp_x + 38, dy_cursor + 1, 100, 6, Color{ .r = 30, .g = 41, .b = 59 });
+                const h_col = if (vd.hunger >= 80)
+                    Color.cue_alert
+                else if (vd.hunger >= 55)
+                    Color.status_paused
+                else
+                    Color.status_running;
+                self.fill_rect(lp_x + 38, dy_cursor + 1, @as(i32, vd.hunger), 6, h_col);
+                dy_cursor += 10;
+
+                // Energy Bar
+                self.draw_text("Eng:", lp_x + 8, dy_cursor, 1, Color.hud_subtext);
+                self.fill_rect(lp_x + 38, dy_cursor + 1, 100, 6, Color{ .r = 30, .g = 41, .b = 59 });
+                self.fill_rect(lp_x + 38, dy_cursor + 1, @as(i32, vd.energy), 6, Color.wp_target);
+                dy_cursor += 16;
+            }
+
+            // Right HUD Panel: Live Social Graph & Emergence Status (P18-02, P18-03)
+            const rp_w: i32 = 242;
+            const rp_x: i32 = self.width - rp_w - 12;
+            const rp_y: i32 = 82;
+            const rp_h: i32 = self.height - 178;
+            self.fill_rect(rp_x, rp_y, rp_w, rp_h, Color{ .r = 12, .g = 19, .b = 34, .a = 240 });
+            self.draw_rect_outline(rp_x, rp_y, rp_w, rp_h, Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_text("EMERGENCE & SOCIAL GRAPH", rp_x + 10, rp_y + 10, 1, Color.wp_hover);
+
+            var ry_cursor: i32 = rp_y + 28;
+            const crime_str = if (frame.village_crime_active) "1. Theft:   COMMITTED!" else "1. Theft:   None";
+            self.draw_text(crime_str, rp_x + 10, ry_cursor, 1, if (frame.village_crime_active) Color.cue_alert else Color.hud_subtext);
+            ry_cursor += 14;
+
+            const war_str = if (frame.village_warrant_active) "2. Warrant: ACTIVE HUNT!" else "2. Warrant: None";
+            self.draw_text(war_str, rp_x + 10, ry_cursor, 1, if (frame.village_warrant_active) Color.status_paused else Color.hud_subtext);
+            ry_cursor += 14;
+
+            const arr_str = if (frame.village_arrest_made) "3. Justice: ARRESTED & JAILED!" else "3. Justice: Peace / Pending";
+            self.draw_text(arr_str, rp_x + 10, ry_cursor, 1, if (frame.village_arrest_made) Color.status_running else Color.hud_subtext);
+            ry_cursor += 18;
+
+            self.draw_line(rp_x + 8, ry_cursor, rp_x + rp_w - 8, ry_cursor, Color{ .r = 51, .g = 65, .b = 85 });
+            ry_cursor += 8;
+            self.draw_text("RELATIONAL EDGES (WORLD):", rp_x + 10, ry_cursor, 1, Color.hud_subtext);
+            ry_cursor += 14;
+
+            var edge_i: usize = 0;
+            while (edge_i < frame.social_edge_count and ry_cursor < rp_y + rp_h - 16) : (edge_i += 1) {
+                const se = &frame.social_edges[edge_i];
+                const rel_tag = switch (se.kind) {
+                    0 => "Friend",
+                    1 => "Grudge",
+                    2 => "Rumor",
+                    3 => "Warrant",
+                    4 => "Arrested",
+                    else => "Edge",
+                };
+                const ecol = switch (se.kind) {
+                    0 => Color{ .r = 74, .g = 222, .b = 128 },
+                    1 => Color{ .r = 251, .g = 146, .b = 60 },
+                    2 => Color{ .r = 250, .g = 204, .b = 21 },
+                    3 => Color.cue_alert,
+                    4 => Color.wp_target,
+                    else => Color.white,
+                };
+                var ebuf: [64]u8 = undefined;
+                const estr = std.fmt.bufPrint(&ebuf, "* {s}({s}, {s})", .{ rel_tag, se.get_from(), se.get_to() }) catch "";
+                self.draw_text(estr, rp_x + 10, ry_cursor, 1, ecol);
+                ry_cursor += 13;
+            }
         } else {
             // 1. Clear background
             self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
@@ -2562,6 +2741,65 @@ pub const DisplayWindow = struct {
                 self.draw_text("Citizen", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 167, .g = 243, .b = 208 });
                 const sw = font.text_width("[Melee Citizen]", 2);
                 self.draw_text("[Melee Citizen]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+            } else if (std.mem.eql(u8, name, "Sheriff")) {
+                // Sheriff: Navy lawman coat & gold star badge (P18-03, D-021)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 30, .g = 58, .b = 138 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                self.fill_rect(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 4, 20, 5, Color{ .r = 120, .g = 75, .b = 35 });
+                self.fill_circle(pt.x + 5, pt.y + 2, 4, Color{ .r = 250, .g = 204, .b = 21 });
+                const nw = font.text_width("Sheriff", 2);
+                self.draw_text("Sheriff", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 147, .g = 197, .b = 253 });
+                const st = if (frame.village_warrant_active) "[Warrant Hunt!]" else "[Lawman]";
+                const sw = font.text_width(st, 1);
+                self.draw_text(st, pt.x - @divTrunc(sw, 2), layout.status_y, 1, if (frame.village_warrant_active) Color.cue_alert else Color.hud_subtext);
+            } else if (std.mem.eql(u8, name, "Baker")) {
+                // Baker: White tunic & chef toque hat (P18-03, D-021)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 217, .g = 119, .b = 6 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                self.fill_rect(pt.x - 7, pt.y - ACTOR_SCREEN_RADIUS - 8, 14, 9, Color.white);
+                const nw = font.text_width("Baker", 2);
+                self.draw_text("Baker", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            } else if (std.mem.eql(u8, name, "Farmer")) {
+                // Farmer: Earthy green tunic & golden straw hat (P18-03, D-021)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 22, .g = 101, .b = 52 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                self.fill_rect(pt.x - 11, pt.y - ACTOR_SCREEN_RADIUS - 4, 22, 5, Color{ .r = 250, .g = 204, .b = 21 });
+                const nw = font.text_width("Farmer", 2);
+                self.draw_text("Farmer", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 134, .g = 239, .b = 172 });
+            } else if (std.mem.eql(u8, name, "Innkeeper")) {
+                // Innkeeper: Warm burgundy coat & apron (P18-03, D-021)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 153, .g = 27, .b = 27 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                self.fill_rect(pt.x - 6, pt.y - 2, 12, 10, Color.white);
+                const nw = font.text_width("Innkeeper", 2);
+                self.draw_text("Innkeeper", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 252, .g = 165, .b = 165 });
+            } else if (std.mem.eql(u8, name, "Gossip")) {
+                // Gossip: Royal purple cloak & plume (P18-03, D-021)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.bard_color);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 7, 4, 8, Color{ .r = 250, .g = 204, .b = 21 });
+                const nw = font.text_width("Gossip", 2);
+                self.draw_text("Gossip", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 216, .g = 180, .b = 254 });
+            } else if (std.mem.eql(u8, name, "Drifter")) {
+                // Drifter: Weathered cloak, shows crime/arrest state (P18-03, D-021)
+                const d_col = if (frame.village_arrest_made)
+                    Color{ .r = 100, .g = 116, .b = 139 }
+                else if (frame.village_crime_active)
+                    Color.cue_alert
+                else
+                    Color{ .r = 101, .g = 163, .b = 13 };
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, d_col);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                const nw = font.text_width("Drifter", 2);
+                self.draw_text("Drifter", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.white);
+                const st = if (frame.village_arrest_made)
+                    "[ARRESTED]"
+                else if (frame.village_crime_active)
+                    "[THIEF / WANTED]"
+                else
+                    "[Hungry]";
+                const sw = font.text_width(st, 1);
+                self.draw_text(st, pt.x - @divTrunc(sw, 2), layout.status_y, 1, d_col);
             } else {
                 // Generic actor token
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 70, .g = 80, .b = 95 });
@@ -2736,6 +2974,14 @@ pub const DisplayWindow = struct {
         } else if (is_hotel_scene or is_garden_scene or is_bike_rental_scene) {
             self.draw_text(
                 "[H]: Hotel | [G]: Garden | [B]: Bike Shop | [Click]: Act | [Right-Click]: Verb | [0-8]: Steps",
+                20,
+                self.height - 28,
+                2,
+                Color{ .r = 250, .g = 204, .b = 21 },
+            );
+        } else if (is_village_scene) {
+            self.draw_text(
+                "[S]: Theft Catalyst | [F]: Feast (+10g) | [G]: Tip Sheriff | [Space/N]: Pause/Step | [< / >]: Scrub | [P]: Save",
                 20,
                 self.height - 28,
                 2,

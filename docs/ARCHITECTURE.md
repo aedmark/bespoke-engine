@@ -17,6 +17,7 @@ The BeSpoke Engine inverts traditional game engine architecture into an **Engine
 | Display Bridge | `src/display.zig` | `DisplayBridge.poll()` | External multimedia frontend (Raylib/Sokol); read-only |
 | Audio Subsystem & Synth | `src/audio.zig` | `AudioBridge.init()` | Display bridge & SDL2 audio callback; procedural chiptune SFX and scene music (D-019) |
 | Persistent Save Storage | `src/save.zig` | `SaveManager.init()` | World, Spatial, & VM stores; CRC32-checksummed `.sav` slots, thumbnails, and `.bak` recovery (D-020) |
+| Emergent Village Sandbox | `src/village.zig` | `VillageSimulation.init()` | World, Spatial, & VM stores; autonomous physiological drives, witness detection, rumor propagation, and Sheriff arrest cascades (D-021) |
 
 ## Memory Layout & Core Structs (Zig)
 

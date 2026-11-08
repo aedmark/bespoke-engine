@@ -148,9 +148,9 @@ Goal: Extend memory snapshot serialization to disk files, providing durable save
 
 Goal: Implement a multi-agent systemic emergent simulation sandbox in `src/village.zig` demonstrating dozens of autonomous NPCs driven by relational needs, social memory, property ownership, and emergent justice cascades.
 
-- [ ] P18-01 Village relational schema and autonomous NPC drive system: physiological needs (Hunger, Energy), emotional states, and social relationships (Friend, Rival, Trust) updated via continuous relational rules. (D-003, D-007, D-010)
-- [ ] P18-02 Emergence engine: systemic crime, witness detection, rumor propagation, property theft, and autonomous sheriff investigation/arrest cascades. (D-004, D-010)
-- [ ] P18-03 Village spatial topology and settlement visualization: multi-building settlement (bakery, tavern, houses, sheriff's post, farm, town square) with live social graph HUD and event chronicle. (D-005, D-008, D-011)
+- [x] P18-01 Village relational schema and autonomous NPC drive system: physiological needs (Hunger, Energy), emotional states, and social relationships (Friend, Rival, Trust) updated via continuous relational rules. (D-003, D-007, D-010, D-021; completed 2026-11-08, verified via `zig test -lc -lSDL2 src/village.zig` and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P18-02 Emergence engine: systemic crime, witness detection, rumor propagation, property theft, and autonomous sheriff investigation/arrest cascades. (D-004, D-010, D-021; completed 2026-11-08, verified via `zig test -lc -lSDL2 src/village.zig` and `zig build run -- --village --headless`)
+- [x] P18-03 Village spatial topology and settlement visualization: multi-building settlement (bakery, tavern, houses, sheriff's post, farm, town square) with live social graph HUD and event chronicle. (D-005, D-008, D-011, D-021; completed 2026-11-08, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
 
 ## Phase 19: WebAssembly & HTML5 Canvas Browser Target
 
