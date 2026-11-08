@@ -10,6 +10,7 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | 3x Manual Validation & Tests | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . && python3 -m unittest discover -s tests -v` | 3x What/How/Why schema conformance, evidence link validity, and manual generator unit tests | Graphical browser layout | < 1s, Python 3 stdlib |
 | World Store Unit Tests | `zig test src/world.zig` | Fact insertion, TTL expiration pruning, queries, `memcpy` snapshots | VM execution or parser | < 2s, Zig compiler |
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
+| WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm` | `WasmCanvas` RGBA8888 framebuffer rendering, browser mouse/keyboard/touch event routing, and `wasm32-freestanding` binary compilation | Live DOM rendering | < 3s, Zig compiler |
 | Full Engine Test Suite | `zig build test` | End-to-end integration across compiler, VM, and spatial graph | Peripheral display output (Raylib/Sokol) | < 5s, Zig compiler |
 
 **The fast set** (before every commit):

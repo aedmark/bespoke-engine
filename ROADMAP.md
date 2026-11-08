@@ -156,7 +156,7 @@ Goal: Implement a multi-agent systemic emergent simulation sandbox in `src/villa
 
 Goal: Compile BeSpoke Engine to WebAssembly using Zig's cross-compilation toolchain, rendering to an HTML5 canvas and embedding interactive simulations directly into the 3x documentation.
 
-- [ ] P19-01 Zig build target and runtime harness for `wasm32-freestanding` or Emscripten with WebGL/Canvas rendering. (D-001)
-- [ ] P19-02 Browser event bridge mapping mouse, keyboard, and touch events to BeSpoke motor and dialogue intents. (D-008)
-- [ ] P19-03 Interactive embedded manual simulator hosting live BeSpoke vertical slices inside `docs/manual.html`. (D-001, D-011)
+- [x] P19-01 Zig build target and runtime harness for `wasm32-freestanding` or Emscripten with WebGL/Canvas rendering. (D-001, D-022; completed 2026-11-08, verified via `zig test src/wasm.zig` and `zig build wasm`)
+- [x] P19-02 Browser event bridge mapping mouse, keyboard, and touch events to BeSpoke motor and dialogue intents. (D-008, D-022; completed 2026-11-08, verified via `zig test src/wasm.zig`)
+- [x] P19-03 Interactive embedded manual simulator hosting live BeSpoke vertical slices inside `docs/manual.html`. (D-001, D-011, D-022; completed 2026-11-08, verified via `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check` and `python3 -m unittest discover -s tests -v`)
 

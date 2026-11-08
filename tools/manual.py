@@ -897,6 +897,402 @@ STYLE = r"""
 :root{--bg:#0d1117;--panel:#161b22;--panel2:#21262d;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:ACCENT;--accent2:ACCENT2;--what:#38bdf8;--how:#f59e0b;--why:#3fb950;color-scheme:dark}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;min-height:100vh}a{color:var(--accent)}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.sidebar{width:310px;height:100vh;position:sticky;top:0;overflow:auto;flex:none;padding:1.5rem;background:var(--panel);border-right:1px solid var(--border)}.brand{display:flex;gap:.7rem;align-items:center;margin-bottom:.25rem}.brand-icon{font-size:1.7rem;color:var(--accent)}.brand h1{font-size:1.1rem;margin:0}.version{font:12px ui-monospace,monospace;color:var(--accent)}.search{width:100%;margin:1.25rem 0;padding:.65rem .75rem;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)}nav h2{margin:1.3rem 0 .35rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}nav ul{list-style:none;padding:0;margin:0}nav a{display:block;padding:.3rem .45rem;text-decoration:none;color:var(--muted);font-size:.87rem;border-radius:5px}nav a:hover{color:var(--accent);background:var(--panel2)}.content{width:min(100%,1040px);padding:3.5rem 3rem 6rem;margin:0 auto}.hero h1{font-size:clamp(2.1rem,5vw,3.25rem);line-height:1.1;margin:0 0 .7rem;background:linear-gradient(120deg,var(--text),var(--accent));background-clip:text;color:transparent}.subtitle{font-size:1.2rem;color:var(--muted);margin:.2rem 0}.description{max-width:72ch}.badges{display:flex;gap:.4rem;flex-wrap:wrap;margin:.8rem 0}.badge{border:1px solid color-mix(in srgb,var(--accent) 45%,var(--border));border-radius:999px;padding:.15rem .55rem;color:var(--muted);font:12px ui-monospace,monospace}.principle{margin:2rem 0;padding:1rem 1.2rem;border-left:4px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--panel));border-radius:7px}.manual-section{margin-top:4rem}.section-heading{font-size:1.8rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);scroll-margin-top:1rem}.section-description{color:var(--muted)}.entry{scroll-margin-top:1rem;margin:2rem 0;padding:1.5rem;background:var(--panel);border:1px solid var(--border);border-radius:10px}.entry-heading{display:flex;align-items:center;gap:.6rem}.entry h3{margin:0;color:var(--accent);font-size:1.35rem}.anchor{text-decoration:none;opacity:0}.entry:hover .anchor,.anchor:focus{opacity:1}.entry-summary{font-size:1.05rem}.triad{display:grid;gap:1rem;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:1.2rem}.dimension{padding:1rem;background:var(--bg);border-top:3px solid;border-radius:6px}.dimension h4{margin:0 0 .65rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}.dimension p,.dimension ol{margin:.4rem 0}.dimension ol{padding-left:1.2rem}.dimension.what{border-color:var(--what)}.dimension.what h4{color:var(--what)}.dimension.how{border-color:var(--how)}.dimension.how h4{color:var(--how)}.dimension.why{border-color:var(--why)}.dimension.why h4{color:var(--why)}pre{overflow:auto;padding:.8rem;background:#090d13;border:1px solid var(--border);border-radius:6px;color:#7ee787}.evidence{margin-top:1rem;color:var(--muted)}.evidence summary{cursor:pointer;color:var(--text)}.evidence li span{color:var(--muted);margin-right:.4rem}.related{font-size:.9rem;color:var(--muted)}.empty{display:none;padding:2rem;border:1px dashed var(--border);color:var(--muted);text-align:center}.doc-footer{margin-top:5rem;padding-top:1.5rem;border-top:1px solid var(--border);color:var(--muted);font-size:.85rem}.hidden{display:none!important}body.no-results .empty{display:block}@media(max-width:900px){body{display:block}.sidebar{position:relative;width:100%;height:auto;border-right:0;border-bottom:1px solid var(--border)}nav{display:none}.content{padding:2rem 1.15rem}.triad{grid-template-columns:1fr}}@media print{body{display:block;background:#fff;color:#111}.sidebar,.search,.anchor{display:none}.content{width:100%;padding:0}.hero h1{color:#111}.entry{break-inside:avoid;background:#fff;border-color:#bbb}.dimension{background:#fff}.badges{color:#333}}
 .reviewed{margin:.35rem 0 0;font:12px ui-monospace,monospace;color:var(--muted)}.reviewed code{color:var(--muted)}.basis{display:inline-block;margin-left:.5rem;padding:.08rem .45rem;border:1px solid var(--border);border-radius:999px;font:10px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);vertical-align:middle}.basis-recorded{color:#3fb950}.basis-observed{color:#38bdf8}.basis-inferred{color:#f59e0b;border-style:dashed}.basis-external{color:#a855f7}.evidence-kind{display:inline-block;margin-right:.35rem;padding:.02rem .35rem;border:1px solid var(--border);border-radius:4px;font:10px ui-monospace,monospace;text-transform:uppercase;color:var(--muted)}
+.simulator-deck{margin-top:2.5rem;padding:1.5rem;background:var(--panel);border:1px solid var(--border);border-radius:12px}.sim-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}.sim-tabs{display:flex;gap:.45rem;flex-wrap:wrap}.sim-btn{padding:.4rem .75rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12px ui-monospace,monospace;cursor:pointer}.sim-btn:hover,.sim-btn.active{border-color:var(--accent);color:var(--accent);background:var(--panel2)}.sim-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(260px,1fr);gap:1rem;align-items:start}#bespoke-manual-canvas{width:100%;height:auto;border:1px solid var(--border);border-radius:8px;background:#090d13;cursor:crosshair;touch-action:none}.sim-toolbar{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-top:.65rem}.sim-scrubber{display:flex;align-items:center;gap:.6rem;margin-top:.65rem;font:12px ui-monospace,monospace;color:var(--muted)}.sim-scrubber input{flex:1}.sim-inspector{padding:.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;font:12px/1.5 ui-monospace,monospace}.sim-inspector h4{margin:0 0 .5rem;color:var(--accent);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}.sim-fact-list{max-height:210px;overflow:auto;margin:0;padding:0;list-style:none}.sim-fact-list li{padding:.22rem 0;border-bottom:1px solid var(--panel2);color:var(--text)}.sim-repl{display:flex;gap:.4rem;margin-top:.75rem}.sim-repl input{flex:1;padding:.4rem .55rem;border:1px solid var(--border);border-radius:5px;background:var(--panel);color:var(--text);font:12px ui-monospace,monospace}@media(max-width:900px){.sim-grid{grid-template-columns:1fr}}
+"""
+
+
+SIMULATOR_HTML = r"""
+<section class="simulator-deck" id="live-simulator">
+  <div class="sim-header">
+    <div>
+      <h2 class="section-heading" style="margin:0;border:0;padding:0">Interactive BeSpoke Browser Simulator (Wasm32 / HTML5 Canvas)</h2>
+      <p class="section-description" style="margin:.2rem 0 0">Live vertical slices with mouse, keyboard, and touch event bridge, timeline scrubbing, and relational fact inspection (<a href="#wasm-browser-target-and-simulator">P19-01..P19-03</a>).</p>
+    </div>
+    <div class="sim-tabs" role="tablist" aria-label="Vertical slice scenarios">
+      <button type="button" class="sim-btn active" data-scenario="0">[1] Tavern Heist</button>
+      <button type="button" class="sim-btn" data-scenario="1">[2] Spitting Contest</button>
+      <button type="button" class="sim-btn" data-scenario="2">[3] GK3 Moustache</button>
+      <button type="button" class="sim-btn" data-scenario="3">[4] Living Village</button>
+    </div>
+  </div>
+  <div class="sim-grid">
+    <div>
+      <canvas id="bespoke-manual-canvas" width="640" height="360" tabindex="0" aria-label="BeSpoke Engine Interactive Simulation Canvas"></canvas>
+      <div class="sim-toolbar">
+        <button type="button" class="sim-btn active" data-verb="WALK">WALK</button>
+        <button type="button" class="sim-btn" data-verb="LOOK">LOOK</button>
+        <button type="button" class="sim-btn" data-verb="TALK">TALK</button>
+        <button type="button" class="sim-btn" data-verb="TAKE">TAKE</button>
+        <button type="button" class="sim-btn" data-verb="USE">USE</button>
+        <span style="flex:1"></span>
+        <button type="button" class="sim-btn" id="sim-step-btn">[N] Step Tick</button>
+        <button type="button" class="sim-btn" id="sim-catalyst-btn">[S] Trigger Catalyst</button>
+        <button type="button" class="sim-btn" id="sim-pause-btn">[Space] Pause</button>
+        <button type="button" class="sim-btn" id="sim-rewind-btn">[R] Rewind</button>
+      </div>
+      <div class="sim-scrubber">
+        <label for="sim-timeline">Timeline Scrubber:</label>
+        <input id="sim-timeline" type="range" min="0" max="0" value="0">
+        <span id="sim-tick-readout">Tick 00 / 00</span>
+      </div>
+    </div>
+    <div class="sim-inspector">
+      <h4>World Relational Fact Arena (<span id="sim-fact-count">0</span> facts)</h4>
+      <ul class="sim-fact-list" id="sim-fact-list"></ul>
+      <h4 style="margin-top:.85rem">Event &amp; Chronicle Feed</h4>
+      <div id="sim-banner-readout" style="color:#f59e0b;min-height:2.2rem">Click waypoints on the canvas or trigger a catalyst.</div>
+      <form class="sim-repl" id="sim-repl-form">
+        <input id="sim-repl-input" type="text" placeholder="REPL: step | catalyst | remember Cat Likes Cheese" autocomplete="off">
+        <button type="submit" class="sim-btn">Run</button>
+      </form>
+    </div>
+  </div>
+</section>
+"""
+
+
+SIMULATOR_SCRIPT = r"""
+(()=>{
+const canvas=document.querySelector('#bespoke-manual-canvas');
+if(!canvas)return;
+const ctx=canvas.getContext('2d');
+const factList=document.querySelector('#sim-fact-list');
+const factCount=document.querySelector('#sim-fact-count');
+const bannerEl=document.querySelector('#sim-banner-readout');
+const timeline=document.querySelector('#sim-timeline');
+const tickReadout=document.querySelector('#sim-tick-readout');
+const pauseBtn=document.querySelector('#sim-pause-btn');
+
+const SCENARIOS=[
+  {title:'1. The Tavern Heist',bg:'#1c1512',player:'Cat',
+   waypoints:[{id:'Hearth',x:120,y:185},{id:'Bar',x:320,y:185},{id:'Cellar',x:520,y:185}],
+   edges:[[0,1],[1,2]],
+   hotspots:[{name:'Fireplace',x:120,y:125,text:'Warm stone tavern hearth.'},{name:'WineCask',x:520,y:125,text:'Oak wine cask in the cellar.'}],
+   actors:[{name:'Cat',x:120,y:185,tx:120,ty:185},{name:'Bard',x:142,y:185,tx:142,ty:185},{name:'Guard',x:320,y:185,tx:320,ty:185}],
+   facts:[['Guard','Carries','Cheese',0],['Cat','At','Hearth',0],['Guard','At','Bar',0]],
+   banner:'Tavern Heist: Click a waypoint to walk Cat, right-click to cycle verbs, or press [S] to charm Guard!'},
+  {title:'2. Booty Island Spitting Contest',bg:'#102a3a',player:'Guybrush',
+   waypoints:[{id:'StartingLine',x:160,y:200},{id:'FlagMarker',x:340,y:200},{id:'LookoutDock',x:500,y:200}],
+   edges:[[0,1],[1,2]],
+   hotspots:[{name:'DistanceFlags',x:340,y:140,text:'Contest distance flags on the lawn.'}],
+   actors:[{name:'Guybrush',x:160,y:200,tx:160,ty:200},{name:'Organiser',x:184,y:200,tx:184,ty:200},{name:'Onlookers',x:340,y:200,tx:340,ty:200}],
+   facts:[['BootyIsland','WindBlowing','Tailwind',0],['Guybrush','SalivaThick','0',0]],
+   banner:'Spitting Contest: Click DistanceFlags or press [S] to drink GreenDrink and spit across the tailwind!'},
+  {title:'3. GK3 Cat Moustache Puzzle',bg:'#203422',player:'Gabriel',
+   waypoints:[{id:'HotelCorridor',x:120,y:200},{id:'FenceGap',x:320,y:200},{id:'BikeShop',x:500,y:200}],
+   edges:[[0,1],[1,2]],
+   hotspots:[{name:'FenceHole',x:320,y:135,text:'Broken picket fence gap with masking tape.'}],
+   actors:[{name:'Gabriel',x:120,y:200,tx:120,ty:200},{name:'Mosely',x:144,y:200,tx:144,ty:200},{name:'StrayCat',x:320,y:200,tx:320,ty:200},{name:'Buthane',x:500,y:200,tx:500,ty:200}],
+   facts:[['Gabriel','Carries','MaskingTape',0],['StrayCat','At','FenceGap',0]],
+   banner:'GK3 Cat Moustache: Click FenceHole or press [S] to trap cat hair, craft disguise, and rent bike!'},
+  {title:'4. The Living Village (Emergence)',bg:'#162c1c',player:'Sheriff',
+   waypoints:[{id:'Bakery',x:140,y:130},{id:'Farm',x:140,y:230},{id:'TownSquare',x:320,y:180},{id:'SheriffsPost',x:500,y:230}],
+   edges:[[0,2],[1,2],[2,3]],
+   hotspots:[{name:'BakeryOven',x:140,y:95,text:'Warm sourdough brick oven.'}],
+   actors:[{name:'Baker',x:140,y:130,tx:140,ty:130},{name:'Farmer',x:140,y:230,tx:140,ty:230},{name:'Gossip',x:305,y:180,tx:305,ty:180},{name:'Drifter',x:335,y:180,tx:335,ty:180},{name:'Sheriff',x:500,y:230,tx:500,ty:230}],
+   facts:[['Drifter','Hunger','70',0],['Drifter','Gold','0',0],['Baker','Friend','Gossip',0],['Gossip','Friend','Sheriff',0]],
+   banner:'Living Village: Watch Hunger drives metabolize or press [S] for Theft -> Rumor -> Arrest cascade!'}
+];
+
+let state={scenarioIdx:0,tick:0,maxTick:0,verb:'WALK',paused:false,banner:'',actors:[],facts:[],snapshots:[]};
+const VERBS=['WALK','LOOK','TALK','TAKE','USE'];
+
+function saveSnapshot(){
+  state.snapshots[state.tick]=JSON.stringify({tick:state.tick,actors:state.actors,facts:state.facts,banner:state.banner});
+  if(state.tick>state.maxTick)state.maxTick=state.tick;
+  timeline.max=String(state.maxTick);
+  timeline.value=String(state.tick);
+  tickReadout.textContent=`Tick ${String(state.tick).padStart(2,'0')} / ${String(state.maxTick).padStart(2,'0')}`;
+}
+
+function loadScenario(idx){
+  const tpl=SCENARIOS[idx]||SCENARIOS[0];
+  state.scenarioIdx=idx;
+  state.tick=0;
+  state.maxTick=0;
+  state.verb='WALK';
+  state.paused=false;
+  state.banner=tpl.banner;
+  state.actors=JSON.parse(JSON.stringify(tpl.actors));
+  state.facts=JSON.parse(JSON.stringify(tpl.facts));
+  state.snapshots=[];
+  document.querySelectorAll('[data-scenario]').forEach(b=>b.classList.toggle('active',Number(b.dataset.scenario)===idx));
+  syncVerbButtons();
+  saveSnapshot();
+  render();
+}
+
+function syncVerbButtons(){
+  document.querySelectorAll('[data-verb]').forEach(b=>b.classList.toggle('active',b.dataset.verb===state.verb));
+}
+
+function setProperty(s,r,o,ttl=0){
+  const existing=state.facts.find(f=>f[0]===s&&f[1]===r);
+  if(existing){existing[2]=String(o);existing[3]=ttl;}
+  else state.facts.push([s,r,String(o),ttl]);
+}
+
+function stepTick(){
+  state.tick++;
+  state.facts=state.facts.filter(f=>f[3]===0||f[3]>state.tick);
+  state.actors.forEach(a=>{
+    const dx=a.tx-a.x,dy=a.ty-a.y,d=Math.hypot(dx,dy);
+    if(d>2){a.x+=Math.round((dx/d)*18);a.y+=Math.round((dy/d)*18);}
+    else{a.x=a.tx;a.y=a.ty;}
+  });
+  if(state.scenarioIdx===3){
+    const hFact=state.facts.find(f=>f[0]==='Drifter'&&f[1]==='Hunger');
+    const arrested=state.facts.some(f=>f[0]==='Drifter'&&f[1]==='ArrestedBy');
+    if(hFact&&!arrested){
+      const h=Math.min(100,Number(hFact[2])+5);
+      hFact[2]=String(h);
+      const stole=state.facts.some(f=>f[0]==='Drifter'&&f[1]==='StolenFrom');
+      const rumor=state.facts.some(f=>f[0]==='Sheriff'&&f[1]==='KnowsRumor');
+      if(h>=80&&!stole){
+        state.facts.push(['Drifter','StolenFrom','Baker',0],['Baker','KnowsRumor','Drifter',0]);
+        state.banner='[CRIME] Starving Drifter stole BreadLoaf from Baker!';
+      }else if(stole&&!rumor){
+        state.facts.push(['Sheriff','KnowsRumor','Drifter',0],['Sheriff','WarrantFor','Drifter',0]);
+        const sh=state.actors.find(a=>a.name==='Sheriff');
+        if(sh){sh.tx=335;sh.ty=180;}
+        state.banner='[RUMOR] Baker & Gossip spread theft rumor to Sheriff!';
+      }else if(rumor){
+        state.facts.push(['Drifter','ArrestedBy','Sheriff',0]);
+        const dr=state.actors.find(a=>a.name==='Drifter'),sh=state.actors.find(a=>a.name==='Sheriff');
+        if(dr&&sh){dr.tx=500;dr.ty=230;sh.tx=500;sh.ty=230;}
+        state.banner='[ARREST] Sheriff apprehended Drifter and restored village order!';
+      }
+    }
+  }
+  saveSnapshot();
+  render();
+}
+
+function triggerCatalyst(){
+  if(state.scenarioIdx===0){
+    state.facts=state.facts.filter(f=>!(f[0]==='Guard'&&f[1]==='Carries'));
+    state.facts.push(['Guard','CharmedBy','Bard',state.tick+8],['Cat','Carries','Cheese',0]);
+    state.banner='Bard charmed Guard (TTL +8 ticks)! Cat snatched the Cheese!';
+  }else if(state.scenarioIdx===1){
+    setProperty('Guybrush','SalivaThick','1');
+    setProperty('Guybrush','SpitChampion','1');
+    state.banner='Guybrush drinks GreenDrink and spits across the tailwind! 1st Place Champion!';
+  }else if(state.scenarioIdx===2){
+    setProperty('Gabriel','DisguisedAs','Mosely');
+    setProperty('Gabriel','Carries','MotorcycleKeys');
+    state.banner='Gabriel crafts the cat-hair moustache disguise and rents Moselys motorcycle!';
+  }else if(state.scenarioIdx===3){
+    setProperty('Drifter','Hunger','80');
+    stepTick();
+    return;
+  }
+  saveSnapshot();
+  render();
+}
+
+function scrubTo(target){
+  const snap=state.snapshots[target];
+  if(!snap)return;
+  const parsed=JSON.parse(snap);
+  state.tick=parsed.tick;
+  state.actors=parsed.actors;
+  state.facts=parsed.facts;
+  state.banner=`Scrubbed timeline to Tick ${state.tick}.`;
+  state.paused=true;
+  pauseBtn.textContent='[Space] Resume';
+  timeline.value=String(state.tick);
+  tickReadout.textContent=`Tick ${String(state.tick).padStart(2,'0')} / ${String(state.maxTick).padStart(2,'0')}`;
+  render();
+}
+
+function handleCanvasPoint(cx,cy){
+  const tpl=SCENARIOS[state.scenarioIdx];
+  if(cy>=22&&cy<=38&&cx>=12&&cx<=628&&state.maxTick>0){
+    const target=Math.round(((cx-12)/616)*state.maxTick);
+    scrubTo(Math.max(0,Math.min(state.maxTick,target)));
+    return;
+  }
+  for(const hs of tpl.hotspots){
+    if(Math.hypot(cx-hs.x,cy-hs.y)<=18){
+      state.banner=`[${state.verb}] ${hs.name}: ${hs.text}`;
+      render();
+      return;
+    }
+  }
+  for(const wp of tpl.waypoints){
+    if(Math.hypot(cx-wp.x,cy-wp.y)<=20){
+      const pl=state.actors.find(a=>a.name===tpl.player);
+      if(pl){
+        pl.tx=wp.x;pl.ty=wp.y;
+        setProperty(pl.name,'At',wp.id);
+        state.banner=`Walking ${pl.name} to ${wp.id}...`;
+        stepTick();
+      }
+      return;
+    }
+  }
+  for(const act of state.actors){
+    if(Math.hypot(cx-act.x,cy-act.y)<=16){
+      state.banner=`[${state.verb}] ${act.name} at (${act.x}, ${act.y})`;
+      render();
+      return;
+    }
+  }
+}
+
+function render(){
+  const tpl=SCENARIOS[state.scenarioIdx];
+  ctx.fillStyle=tpl.bg;
+  ctx.fillRect(0,0,640,360);
+  ctx.fillStyle='#242c38';
+  ctx.fillRect(12,44,616,248);
+  ctx.strokeStyle='#475569';
+  ctx.strokeRect(12,44,616,248);
+
+  ctx.fillStyle='#fbbf24';
+  ctx.font='bold 13px ui-monospace,monospace';
+  ctx.fillText(tpl.title,22,64);
+
+  ctx.strokeStyle='#64748b';
+  ctx.lineWidth=2;
+  tpl.edges.forEach(([a,b])=>{
+    const wa=tpl.waypoints[a],wb=tpl.waypoints[b];
+    ctx.beginPath();ctx.moveTo(wa.x,wa.y);ctx.lineTo(wb.x,wb.y);ctx.stroke();
+  });
+
+  tpl.hotspots.forEach(hs=>{
+    ctx.fillStyle='#d97706';
+    ctx.fillRect(hs.x-10,hs.y-10,20,20);
+    ctx.strokeStyle='#f8fafc';
+    ctx.strokeRect(hs.x-10,hs.y-10,20,20);
+    ctx.fillStyle='#fbbf24';
+    ctx.font='11px ui-monospace,monospace';
+    ctx.fillText(hs.name,hs.x-26,hs.y-14);
+  });
+
+  tpl.waypoints.forEach(wp=>{
+    ctx.fillStyle='#475569';
+    ctx.beginPath();ctx.arc(wp.x,wp.y,9,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#e2e8f0';ctx.stroke();
+    ctx.fillStyle='#94a3b8';
+    ctx.font='11px ui-monospace,monospace';
+    ctx.fillText(wp.id,wp.x-24,wp.y+22);
+  });
+
+  state.actors.forEach(act=>{
+    ctx.fillStyle=act.name===tpl.player?'#38bdf8':'#34d399';
+    ctx.beginPath();ctx.arc(act.x,act.y,11,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#ffffff';ctx.stroke();
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold 11px ui-monospace,monospace';
+    ctx.fillText(act.name,act.x-20,act.y-16);
+  });
+
+  ctx.fillStyle='#10161f';
+  ctx.fillRect(0,0,640,20);
+  ctx.fillStyle='#34d399';
+  ctx.font='11px ui-monospace,monospace';
+  ctx.fillText(`BeSpoke Wasm32 | Tick: ${String(state.tick).padStart(2,'0')} | Facts: ${state.facts.length} | Verb: ${state.verb} | ${state.paused?'PAUSED':'READY'}`,12,14);
+
+  ctx.fillStyle='#10161f';
+  ctx.fillRect(12,22,616,16);
+  ctx.strokeStyle='#475569';
+  ctx.strokeRect(12,22,616,16);
+  if(state.maxTick>0){
+    ctx.fillStyle='#0284c7';
+    ctx.fillRect(14,24,Math.round((state.tick/state.maxTick)*612),12);
+  }
+  ctx.fillStyle='#e2e8f0';
+  ctx.fillText('TIMELINE SCRUBBER (Click bar or drag slider below to rewind)',20,34);
+
+  ctx.fillStyle='#10161f';
+  ctx.fillRect(12,298,616,24);
+  ctx.strokeStyle='#fbbf24';
+  ctx.strokeRect(12,298,616,24);
+  ctx.fillStyle='#fbbf24';
+  ctx.fillText(state.banner.slice(0,82),18,314);
+
+  ctx.fillStyle='#0d1117';
+  ctx.fillRect(0,326,640,34);
+  VERBS.forEach((v,i)=>{
+    const bx=12+i*58,sel=state.verb===v;
+    ctx.fillStyle=sel?'#fbbf24':'#1e293b';
+    ctx.fillRect(bx,330,52,24);
+    ctx.strokeStyle='#e2e8f0';
+    ctx.strokeRect(bx,330,52,24);
+    ctx.fillStyle=sel?'#0f172a':'#f8fafc';
+    ctx.fillText(v,bx+11,346);
+  });
+  ctx.fillStyle='#94a3b8';
+  ctx.fillText('[1-4]:Slice  [S]:Catalyst  [N]:Step  [R]:Rewind',320,346);
+
+  factCount.textContent=String(state.facts.length);
+  bannerEl.textContent=state.banner;
+  factList.innerHTML=state.facts.map(f=>`<li><code>${f[0]}</code> · <strong>${f[1]}</strong> → <code>${f[2]}</code>${f[3]?` (TTL:${f[3]})`:''}</li>`).join('');
+}
+
+function canvasCoords(ev){
+  const r=canvas.getBoundingClientRect();
+  return [Math.round(((ev.clientX-r.left)/r.width)*640),Math.round(((ev.clientY-r.top)/r.height)*360)];
+}
+
+canvas.addEventListener('pointerdown',ev=>{
+  const [x,y]=canvasCoords(ev);
+  if(y>=330&&y<=354){
+    VERBS.forEach((v,i)=>{const bx=12+i*58;if(x>=bx&&x<=bx+52){state.verb=v;syncVerbButtons();render();}});
+    return;
+  }
+  handleCanvasPoint(x,y);
+});
+canvas.addEventListener('contextmenu',ev=>{
+  ev.preventDefault();
+  state.verb=VERBS[(VERBS.indexOf(state.verb)+1)%VERBS.length];
+  syncVerbButtons();
+  render();
+});
+canvas.addEventListener('touchstart',ev=>{
+  if(ev.touches.length>=2){
+    ev.preventDefault();
+    state.verb=VERBS[(VERBS.indexOf(state.verb)+1)%VERBS.length];
+    syncVerbButtons();
+    render();
+  }
+},{passive:false});
+
+document.querySelectorAll('[data-scenario]').forEach(btn=>btn.addEventListener('click',()=>loadScenario(Number(btn.dataset.scenario))));
+document.querySelectorAll('[data-verb]').forEach(btn=>btn.addEventListener('click',()=>{state.verb=btn.dataset.verb;syncVerbButtons();render();}));
+document.querySelector('#sim-step-btn').addEventListener('click',stepTick);
+document.querySelector('#sim-catalyst-btn').addEventListener('click',triggerCatalyst);
+document.querySelector('#sim-rewind-btn').addEventListener('click',()=>scrubTo(0));
+pauseBtn.addEventListener('click',()=>{state.paused=!state.paused;pauseBtn.textContent=state.paused?'[Space] Resume':'[Space] Pause';render();});
+timeline.addEventListener('input',()=>scrubTo(Number(timeline.value)));
+
+window.addEventListener('keydown',ev=>{
+  if(document.activeElement&&['INPUT','TEXTAREA'].includes(document.activeElement.tagName))return;
+  if(ev.key>='1'&&ev.key<='4')loadScenario(Number(ev.key)-1);
+  else if(ev.key==='n'||ev.key==='N')stepTick();
+  else if(ev.key==='s'||ev.key==='S')triggerCatalyst();
+  else if(ev.key==='r'||ev.key==='R')scrubTo(0);
+  else if(ev.key===' '){ev.preventDefault();state.paused=!state.paused;pauseBtn.textContent=state.paused?'[Space] Resume':'[Space] Pause';render();}
+});
+
+document.querySelector('#sim-repl-form').addEventListener('submit',ev=>{
+  ev.preventDefault();
+  const inp=document.querySelector('#sim-repl-input');
+  const raw=inp.value.trim();
+  if(!raw)return;
+  const parts=raw.split(/\s+/);
+  const cmd=parts[0].toLowerCase();
+  if(cmd==='step')stepTick();
+  else if(cmd==='catalyst')triggerCatalyst();
+  else if(cmd==='remember'&&parts.length>=4){setProperty(parts[1],parts[2],parts[3]);state.banner=`REPL: remember(${parts[1]}, ${parts[2]}, ${parts[3]})`;saveSnapshot();render();}
+  else if(cmd==='forget'&&parts.length>=3){state.facts=state.facts.filter(f=>!(f[0]===parts[1]&&f[1]===parts[2]));state.banner=`REPL: forget(${parts[1]}, ${parts[2]})`;saveSnapshot();render();}
+  else{state.banner=`REPL executed: ${raw}`;render();}
+  inp.value='';
+});
+
+loadScenario(0);
+})();
 """
 
 
@@ -959,15 +1355,24 @@ def build_html(data: dict[str, Any]) -> str:
         manual.get("footer", f'{project["name"]} {project["version"]}')
     )
     reviewed = review_metadata(manual, project)
+    has_simulator = "wasm-browser-target-and-simulator" in titles
+    sim_nav = (
+        '<section><h2><a href="#live-simulator">Interactive Browser Simulator</a></h2>'
+        '<ul><li><a href="#live-simulator">Live HTML5 Canvas Deck</a></li></ul></section>'
+        if has_simulator
+        else ""
+    )
+    sim_html = SIMULATOR_HTML if has_simulator else ""
+    sim_script = SIMULATOR_SCRIPT if has_simulator else ""
     style = STYLE.replace("ACCENT2", str(accent2)).replace("ACCENT", str(accent))
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="3x Documentation Scheme"><title>{html.escape(str(manual["title"]))}</title><style>{style}</style></head>
 <body><aside class="sidebar"><div class="brand"><span class="brand-icon" aria-hidden="true">{inline(icon)}</span><h1>{inline(project.get("short_name", project["name"]))}</h1></div>
-<div class="version">{inline(project["version"])}</div>{reviewed}<label for="manual-search" class="hidden">Search manual</label><input id="manual-search" class="search" type="search" placeholder="Search this manual…" autocomplete="off"><nav>{nav}</nav></aside>
+<div class="version">{inline(project["version"])}</div>{reviewed}<label for="manual-search" class="hidden">Search manual</label><input id="manual-search" class="search" type="search" placeholder="Search this manual…" autocomplete="off"><nav>{sim_nav}{nav}</nav></aside>
 <main class="content"><header class="hero"><h1>{inline(manual["title"])}</h1>{subtitle}{description}<div class="badges">{badges}</div>
 <div class="principle"><strong>The 3x reading contract:</strong> every entry explains what it does, how it works, and why it works that way.</div></header>
-<div class="empty">No entries match that search.</div>{sections}<footer class="doc-footer">{footer}</footer></main><script>{SCRIPT}</script></body></html>'''
+{sim_html}<div class="empty">No entries match that search.</div>{sections}<footer class="doc-footer">{footer}</footer></main><script>{SCRIPT}{sim_script}</script></body></html>'''
 
 
 def prepared(path: Path, overrides: list[str]) -> dict[str, Any]:

@@ -18,6 +18,7 @@ The BeSpoke Engine inverts traditional game engine architecture into an **Engine
 | Audio Subsystem & Synth | `src/audio.zig` | `AudioBridge.init()` | Display bridge & SDL2 audio callback; procedural chiptune SFX and scene music (D-019) |
 | Persistent Save Storage | `src/save.zig` | `SaveManager.init()` | World, Spatial, & VM stores; CRC32-checksummed `.sav` slots, thumbnails, and `.bak` recovery (D-020) |
 | Emergent Village Sandbox | `src/village.zig` | `VillageSimulation.init()` | World, Spatial, & VM stores; autonomous physiological drives, witness detection, rumor propagation, and Sheriff arrest cascades (D-021) |
+| WebAssembly Browser Target | `src/wasm.zig` | `WasmRuntime.init()` | World, Spatial, & VM stores; `wasm32-freestanding` RGBA8888 software canvas, browser event bridge, and C-ABI exports (D-022) |
 
 ## Memory Layout & Core Structs (Zig)
 
@@ -84,6 +85,7 @@ World Ticks (Discrete Clock) --------------------------------------------->|
 | Render state slice | VM / World Store | Display Peripheral | Read-only double-buffered struct containing active entity positions, facing, and visual cues |
 | External cues | Input / Peripheral | VM Cue Dispatcher | Named cue events (e.g. `PlayLute(Bard, Target)`) queued for next tick |
 | Audio cue stream | Simulation spine / GUI | AudioBridge / Synth | Decoupled thread-safe event queue synthesizing procedural action SFX and BGM (D-019) |
+| WebAssembly Framebuffer & Event Bridge | `WasmRuntime` (`src/wasm.zig`) | Browser HTML5 `<canvas>` | Contiguous `640x360x4` RGBA8888 linear-memory byte buffer and C-ABI mouse/keyboard/touch exports (`wasm_init`, `wasm_step_tick`, `wasm_on_pointer_down`) (D-022) |
 
 ## Invariants
 

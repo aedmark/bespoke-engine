@@ -94,4 +94,22 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    // Phase 19 (P19-01): Zero-dependency WebAssembly (wasm32-freestanding) target
+    const wasm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .freestanding,
+    });
+    const wasm_exe = b.addExecutable(.{
+        .name = "bespoke",
+        .root_source_file = b.path("src/wasm.zig"),
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    wasm_exe.entry = .disabled;
+    wasm_exe.rdynamic = true;
+
+    const install_wasm = b.addInstallArtifact(wasm_exe, .{});
+    const wasm_step = b.step("wasm", "Build freestanding WebAssembly (wasm32-freestanding) runtime module");
+    wasm_step.dependOn(&install_wasm.step);
 }
