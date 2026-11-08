@@ -12,6 +12,7 @@ pub fn main() !void {
     var is_headless_arg = false;
     var is_spitting_contest = false;
     var is_gk3 = false;
+    var is_sword_fighting = false;
     var args_it = try std.process.argsWithAllocator(allocator);
     defer args_it.deinit();
     _ = args_it.next(); // Skip binary name
@@ -22,15 +23,28 @@ pub fn main() !void {
             is_spitting_contest = true;
         } else if (std.mem.eql(u8, arg, "--gk3") or std.mem.eql(u8, arg, "--cat-moustache")) {
             is_gk3 = true;
+        } else if (std.mem.eql(u8, arg, "--sword-fighting") or std.mem.eql(u8, arg, "--insults") or std.mem.eql(u8, arg, "--sword")) {
+            is_sword_fighting = true;
         } else if (std.mem.eql(u8, arg, "--scenario")) {
             if (args_it.next()) |scen| {
                 if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
                     is_spitting_contest = true;
                 } else if (std.mem.eql(u8, scen, "gk3") or std.mem.eql(u8, scen, "cat-moustache")) {
                     is_gk3 = true;
+                } else if (std.mem.eql(u8, scen, "sword-fighting") or std.mem.eql(u8, scen, "insults") or std.mem.eql(u8, scen, "sword")) {
+                    is_sword_fighting = true;
                 }
             }
         }
+    }
+
+    if (is_sword_fighting) {
+        if (is_headless_arg) {
+            try bespoke.sword_fighting.run_headless(allocator, stdout);
+        } else {
+            try bespoke.sword_fighting.run_interactive(allocator, stdout);
+        }
+        return;
     }
 
     if (is_gk3) {

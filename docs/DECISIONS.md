@@ -155,6 +155,18 @@ Format:
 - Implementing a simpler single-room toy puzzle: rejected because the Cat Moustache puzzle exercises every major subsystem built in Phases 1 through 13 (multi-scene transitions, item-on-item combining, falling-edge triggers, spatial waypoints, relational inventory, and dynamic dialogue choice pruning).
 **Consequences:** Demonstrates BeSpoke's readiness for production-grade narrative adventure games, validating that complex systemic puzzles with multi-step crafting, spatial movement, and dynamic dialogue trees run deterministically with zero garbage collection and instant time-travel reversibility.
 
+## D-017 Relational Epistemology, Insult Sword Fighting Combinatorial Queries, and Repetition Fatigue Mood Decay (2026-11-07, status: accepted)
+**Context:** Dialogue trees in classic adventure games often drown in ad-hoc boolean flag spaghetti (e.g., tracking 16 heard insults and 16 mastered counters across roaming pirates and the Sword Master Carla in *The Secret of Monkey Island*). Furthermore, conventional engines (Inform, TADS, AGS) model conversations as static vending machines: NPCs repeat identical monologues indefinitely without acknowledging player pestering.
+**Decision:** Implement relational epistemological dialogue modeling in BeSpoke DSL (`P13-04`), runtime combinatorial queries (`P13-05`), and CLI playability (`P13-06`):
+1. **Combinatorial Dialogue Memory:** Model conversational knowledge as relational facts (`HeardInsult(fighter, insult)`, `MasteredReply(fighter, reply)`, `Counters(reply, insult)`, `SwordMasterVariant(carla_insult, standard_insult)`). Dialogue choices are generated and pruned dynamically via relational queries over the world fact arena rather than hardcoded flag trees.
+2. **Sword Master Target Invariant:** Enforce target-specific validity rules natively in the query layer. When confronting standard pirates, Sword Master insults are pruned or rejected ("if you try to use a Sword Master insult on a regular pirate it won't fly"), while challenging Carla maps her unique elevated retorts to standard counters via `SwordMasterVariant`.
+3. **Conversational Repetition Fatigue and Mood Decay:** Track conversational frequency with `Inquired(speaker, topic, count)`. Escalating repetitions transition NPC mood from `.welcoming` to `.annoyed` (`AnnoyedWith(npc, speaker)` for 100 ticks) to `.furious` (`FuriousWith(npc, speaker)` for 250 ticks). When furious, the NPC slams the door and dialogue choices are blocked. As simulation ticks advance via `step_tick()`, the temporary mood facts expire automatically from the contiguous SoA arena, cooling the NPC down.
+4. **Tangled World State Interconnection:** Expose player traits and achievements (`DuelsWon`, `Swagger`, `PathChosen`) to dialogue choices, enabling branching paths inspired by *Disco Elysium* and *Indiana Jones and the Fate of Atlantis*.
+**Alternatives:**
+- 32 mutable boolean flags per character: rejected because combinatorial flag checking creates exponential branching logic that is impossible to maintain and inspect cleanly.
+- Static cooldown timers in host script variables: rejected because host-language variables cannot participate in BeSpoke's zero-copy `memcpy` snapshots and instant time-travel rewinds (D-001, D-003).
+**Consequences:** Authors can author complex conversational duels and living, reactive NPCs using concise relational rules without flag fluff; conversational state deterministically rewinds alongside physical simulation.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

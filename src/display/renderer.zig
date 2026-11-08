@@ -1001,9 +1001,24 @@ pub const DisplayWindow = struct {
         var is_hotel_scene = false;
         var is_garden_scene = false;
         var is_bike_rental_scene = false;
+        var is_high_road_scene = false;
+        var is_sanctuary_scene = false;
+        var is_scumm_bar_scene = false;
 
         if (cur_scene.len > 0) {
-            if (std.mem.indexOf(u8, cur_scene, "Spit") != null or
+            if (std.mem.indexOf(u8, cur_scene, "High Road") != null or
+                std.mem.indexOf(u8, cur_scene, "Road") != null)
+            {
+                is_high_road_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Sanctuary") != null or
+                       std.mem.indexOf(u8, cur_scene, "Sword Master") != null)
+            {
+                is_sanctuary_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Scumm") != null or
+                       std.mem.indexOf(u8, cur_scene, "Scumm Bar") != null)
+            {
+                is_scumm_bar_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Spit") != null or
                 std.mem.indexOf(u8, cur_scene, "Booty") != null)
             {
                 is_spitting_scene = true;
@@ -1033,10 +1048,20 @@ pub const DisplayWindow = struct {
 
         // Fallback detection if current_scene wasn't explicitly set
         if (!is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
-            !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene)
+            !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
+            !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene)
         {
             for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-                if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
+                if (std.mem.indexOf(u8, wp.get_name(), "Road") != null) {
+                    is_high_road_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Sanctuary") != null) {
+                    is_sanctuary_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "BarEntrance") != null) {
+                    is_scumm_bar_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
                     std.mem.indexOf(u8, wp.get_name(), "Offstage") != null)
                 {
                     is_spitting_scene = true;
@@ -1061,12 +1086,22 @@ pub const DisplayWindow = struct {
                     break;
                 }
             }
-            if (!is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene) {
+            if (!is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
+                !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene)
+            {
                 for (frame.entities[0..frame.entity_count]) |e| {
                     const ename = e.get_name();
-                    if (std.mem.eql(u8, ename, "Guybrush") or
-                        std.mem.eql(u8, ename, "Organiser") or
-                        std.mem.eql(u8, ename, "Onlookers"))
+                    if (std.mem.eql(u8, ename, "PirateBob") or std.mem.eql(u8, ename, "PiratePegleg")) {
+                        is_high_road_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Carla")) {
+                        is_sanctuary_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Barkeep") or std.mem.eql(u8, ename, "Citizen")) {
+                        is_scumm_bar_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Organiser") or
+                               std.mem.eql(u8, ename, "Onlookers"))
                     {
                         is_spitting_scene = true;
                         break;
@@ -1555,6 +1590,83 @@ pub const DisplayWindow = struct {
             // Title
             self.draw_text("RENNES-LE-CHATEAU - BIKE RENTAL SHOP", shop_x + 16, shop_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
             self.draw_text("(VINTAGE MOTORCYCLE * MADAME BUTHANE AT THE DESK)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
+        } else if (is_high_road_scene) {
+            // Melee Island High Road (P15-02)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 10, .g = 15, .b = 30 }); // Deep night sky
+
+            const road_x: i32 = 40;
+            const road_y: i32 = 110;
+            const road_w: i32 = self.width - 80;
+            const road_h: i32 = self.height - 210;
+
+            // Pine tree silhouettes and mountain ridges
+            self.fill_rect(road_x, road_y + 40, road_w, road_h - 40, Color{ .r = 15, .g = 22, .b = 38 });
+            // Yellow crescent moon
+            self.fill_circle(road_x + road_w - 120, road_y + 60, 24, Color{ .r = 254, .g = 240, .b = 138 });
+            self.fill_circle(road_x + road_w - 112, road_y + 54, 20, Color{ .r = 10, .g = 15, .b = 30 });
+
+            // Dark cobblestone pirate road
+            self.fill_rect(road_x, road_y + road_h - 130, road_w, 130, Color{ .r = 30, .g = 35, .b = 45 });
+            self.draw_rect_outline(road_x, road_y + road_h - 130, road_w, 130, Color{ .r = 60, .g = 70, .b = 85 });
+
+            // Roadside iron lantern
+            self.fill_rect(road_x + 80, road_y + road_h - 190, 6, 60, Color.black);
+            self.fill_circle(road_x + 83, road_y + road_h - 195, 10, Color{ .r = 245, .g = 158, .b = 11, .a = 220 });
+
+            // Header
+            self.draw_text("MELEE ISLAND - THE HIGH ROAD", road_x + 16, road_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(ROAMING PIRATES * INSULT DUELS * COMBINATORIAL MEMORY)", road_x + 16, road_y + 36, 1, Color.hud_subtext);
+        } else if (is_sanctuary_scene) {
+            // Carla's Sword Master Sanctuary
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 12, .g = 25, .b = 18 });
+
+            const s_x: i32 = 40;
+            const s_y: i32 = 110;
+            const s_w: i32 = self.width - 80;
+            const s_h: i32 = self.height - 210;
+
+            self.fill_rect(s_x, s_y, s_w, s_h, Color{ .r = 20, .g = 45, .b = 30 });
+            self.draw_rect_outline(s_x, s_y, s_w, s_h, Color{ .r = 34, .g = 80, .b = 50 });
+
+            // Training circle
+            const center_x = s_x + @divTrunc(s_w, 2);
+            self.draw_circle_outline(center_x, s_y + s_h - 80, 70, Color{ .r = 250, .g = 204, .b = 21 });
+
+            // Bamboo fence & gate
+            self.fill_rect(s_x + 60, s_y + s_h - 160, 140, 15, Color{ .r = 160, .g = 120, .b = 60 });
+
+            // Target dummy
+            self.fill_circle(s_x + s_w - 140, s_y + s_h - 120, 16, Color{ .r = 217, .g = 119, .b = 6 });
+            self.fill_rect(s_x + s_w - 144, s_y + s_h - 104, 8, 30, Color{ .r = 120, .g = 70, .b = 30 });
+
+            // Header
+            self.draw_text("CARLA'S SWORD MASTER SANCTUARY", s_x + 16, s_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(MASTER VARIANTS * ELEVATED RETORTS * TARGET VALIDATION)", s_x + 16, s_y + 36, 1, Color.hud_subtext);
+        } else if (is_scumm_bar_scene) {
+            // The Scumm Bar
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 30, .g = 18, .b = 12 });
+
+            const b_x: i32 = 40;
+            const b_y: i32 = 110;
+            const b_w: i32 = self.width - 80;
+            const b_h: i32 = self.height - 210;
+
+            self.fill_rect(b_x, b_y, b_w, b_h, Color{ .r = 55, .g = 32, .b = 20 });
+            self.draw_rect_outline(b_x, b_y, b_w, b_h, Color{ .r = 120, .g = 75, .b = 40 });
+
+            // Oak bar counter
+            self.fill_rect(b_x + 80, b_y + b_h - 140, 260, 60, Color{ .r = 90, .g = 50, .b = 28 });
+            self.draw_rect_outline(b_x + 80, b_y + b_h - 140, 260, 60, Color{ .r = 160, .g = 95, .b = 45 });
+            self.draw_text("GROG BAR", b_x + 100, b_y + b_h - 125, 2, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // Grog Barrel with skull
+            self.fill_circle(b_x + b_w - 160, b_y + b_h - 100, 30, Color{ .r = 40, .g = 25, .b = 18 });
+            self.draw_circle_outline(b_x + b_w - 160, b_y + b_h - 100, 30, Color{ .r = 180, .g = 120, .b = 50 });
+            self.draw_text("GROG", b_x + b_w - 180, b_y + b_h - 106, 2, Color{ .r = 239, .g = 68, .b = 68 });
+
+            // Header
+            self.draw_text("THE SCUMM BAR - MELEE ISLAND", b_x + 16, b_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("(BARKEEP AT THE TAPS * CONVERSATIONAL REPETITION FATIGUE)", b_x + 16, b_y + 36, 1, Color.hud_subtext);
         } else {
             // 1. Clear background
             self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
@@ -1958,6 +2070,58 @@ pub const DisplayWindow = struct {
                     const sw = font.text_width("[Napping]", 2);
                     self.draw_text("[Napping]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
                 }
+            } else if (std.mem.eql(u8, name, "PirateBob") or std.mem.eql(u8, name, "PiratePegleg")) {
+                // Pirate Bob / Pegleg: Crimson vest, tricorn hat, eye patch
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 185, .g = 28, .b = 28 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Tricorn hat
+                self.fill_rect(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 4, 20, 6, Color.black);
+                // Eye patch
+                self.fill_rect(pt.x + 1, pt.y - 4, 6, 6, Color.black);
+                self.draw_line(pt.x - 6, pt.y - 7, pt.x + 8, pt.y - 1, Color.black);
+
+                // Label
+                const nw = font.text_width(name, 2);
+                self.draw_text(name, pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 252, .g = 165, .b = 165 });
+                const sw = font.text_width("[Swashbuckler]", 2);
+                self.draw_text("[Swashbuckler]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+            } else if (std.mem.eql(u8, name, "Carla")) {
+                // Carla: Sword Master of Melee Island. Crimson sash, fencing stance
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 225, .g = 29, .b = 72 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 250, .g = 204, .b = 21 });
+
+                // Crimson headband
+                self.fill_rect(pt.x - 8, pt.y - 10, 16, 5, Color{ .r = 244, .g = 63, .b = 94 });
+
+                // Label
+                const nw = font.text_width("Carla", 2);
+                self.draw_text("Carla", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 254, .g = 205, .b = 211 });
+                const sw = font.text_width("[Sword Master]", 2);
+                self.draw_text("[Sword Master]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color{ .r = 250, .g = 204, .b = 21 });
+            } else if (std.mem.eql(u8, name, "Barkeep")) {
+                // Barkeep: Brown vest, white apron
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 120, .g = 70, .b = 40 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Apron
+                self.fill_rect(pt.x - 6, pt.y - 2, 12, 10, Color.white);
+
+                // Label
+                const nw = font.text_width("Barkeep", 2);
+                self.draw_text("Barkeep", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 253, .g = 230, .b = 138 });
+                const sw = font.text_width("[Scumm Bar]", 2);
+                self.draw_text("[Scumm Bar]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+            } else if (std.mem.eql(u8, name, "Citizen")) {
+                // Citizen of Melee: Green coat
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 16, .g = 120, .b = 70 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Label
+                const nw = font.text_width("Citizen", 2);
+                self.draw_text("Citizen", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 167, .g = 243, .b = 208 });
+                const sw = font.text_width("[Melee Citizen]", 2);
+                self.draw_text("[Melee Citizen]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
             } else {
                 // Generic actor token
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 70, .g = 80, .b = 95 });

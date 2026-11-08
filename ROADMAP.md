@@ -108,6 +108,9 @@ Goal: Support branching dialogue trees where choices dynamically appear, disappe
 - [x] P13-01 Grammar and AST support for conditionally guarded dialogue choices (`choice "..." if HasFact(...)` or `choice "..." if not HasFact(...)`). (D-002, D-004, D-009, D-015; completed 2026-11-06, verified via `zig test src/compiler/lexer.zig` and `zig test src/compiler/parser.zig`)
 - [x] P13-02 VM runtime evaluation of dialogue choice guards at balloon spawn time, pruning unsatisfied branches. (D-003, D-004, D-009, D-015; completed 2026-11-06, verified via `zig test src/vm.zig` and `zig test -lc -lSDL2 src/root.zig`)
 - [x] P13-03 Display renderer dynamic balloon sizing, scrolling, and keyboard hotkey selection (`1-9`) for variable-length choice sets. (D-008, D-009, D-015; completed 2026-11-06, verified via `zig test -lc -lSDL2 src/display.zig` and `zig build test`)
+- [x] P13-04 Grammar, AST, and VM support for relational where-pattern conjunctions in dialogue choices (`choice "..." where Pattern1 and Pattern2:`). (D-002, D-004, D-015, D-017; completed 2026-11-07, verified via `zig test src/compiler/parser.zig`, `zig test -lc -lSDL2 src/vm.zig`, and `zig build test`)
+- [x] P13-05 The Monkey Island Insult Sword Fighting and Organic NPC Repetition scenario in `src/sword_fighting.zig` with 16 canonical insults, 16 counters, Carla master variants, target validation, and TTL mood decay. (D-001, D-003, D-015, D-017; completed 2026-11-07, verified via `zig test -lc -lSDL2 src/sword_fighting.zig` and `zig build run -- --sword-fighting --headless`)
+- [x] P13-06 CLI option `--sword-fighting` / `--insults` with 7-step deterministic headless simulation verification and 60 Hz interactive playability. (D-001, D-008, D-015, D-017; completed 2026-11-07, verified via `zig build run -- --sword-fighting --headless` and `zig build test`)
 
 ## Phase 14: The Gabriel Knight 3 Cat Moustache Scenario
 

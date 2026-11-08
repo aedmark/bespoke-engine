@@ -4,95 +4,125 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BeSpoke Engine - A Bespoke Narrative & Systemic Simulation Engine</title>
+  <meta name="author" content="Andrew Edmark">
   <meta name="description" content="A standalone simulation engine and domain-specific language written in pure Zig. Engine-as-Spine architecture, flat relational facts, cooperative fibers, and instant time-travel rewinds.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2232%22%20height=%2232%22><rect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230f172a%22/><text x=%2216%22 y=%2222%22 font-family=%22monospace%22 font-weight=%22bold%22 font-size=%2220%22 fill=%22%23fbbf24%22 text-anchor=%22middle%22>B</text></svg>">
-  <style>
+<style>
     /* ==========================================================================
-       BeSpoke Engine - Artisanal Retro-Chic Theme (Neocities Edition)
+       BeSpoke Engine - EGA Hardware / SCI0 Simulation Workspace
+       Consistent with Andrew Edmark Portfolio, The Manifold & The Hypervisor
        ========================================================================== */
     :root {
-      --bg-dark: #0a0d14;
-      --bg-card: #111827;
-      --bg-card-hover: #162032;
-      --bg-terminal: #070a10;
-      --border-color: #1f293d;
-      --border-highlight: #334155;
-      --accent-gold: #fbbf24;
-      --accent-gold-dark: #d97706;
-      --accent-amber: #f59e0b;
-      --accent-green: #34d399;
-      --accent-green-dark: #059669;
-      --accent-cyan: #38bdf8;
-      --accent-rose: #fb7185;
-      --accent-purple: #c084fc;
-      --text-main: #f3f4f6;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --font-mono: ui-monospace, SFMono-Regular, "Liberation Mono", Menlo, Consolas, Monaco, "Courier New", monospace;
-      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      /* 16-Color EGA Hardware Constants */
+      --ega-black: #000000;
+      --ega-blue: #0000aa;
+      --ega-green: #00aa00;
+      --ega-cyan: #00aaaa;
+      --ega-red: #aa0000;
+      --ega-magenta: #aa00aa;
+      --ega-brown: #aa5500;
+      --ega-lgray: #aaaaaa;
+      --ega-dgray: #555555;
+      --ega-bblue: #5555ff;
+      --ega-bgreen: #55ff55;
+      --ega-bcyan: #55ffff;
+      --ega-bred: #ff5555;
+      --ega-bmagenta: #ff55ff;
+      --ega-yellow: #ffff55;
+      --ega-white: #ffffff;
+
+      /* Dark Sector Semantic Mapping */
+      --bg: #000000;
+      --bg-dither: #000055;
+      --surface: #000000;
+      --menubar-bg: #aaaaaa;
+      --menubar-text: #000000;
+      --line: #55ffff;
+      --line-subtle: #555555;
+      --text: #aaaaaa;
+      --text-bright: #ffffff;
+      --muted: #aaaaaa;
+      --accent: #ff5555;
+      --accent-deep: #aa0000;
+      --highlight: #ffff55;
+      --ok: #55ff55;
+      --shadow: #000000;
+
+      /* Typography */
+      --mono: "IBM Plex Mono", "JetBrains Mono", "Courier New", Courier, ui-monospace, monospace;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color-scheme: dark;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      border-radius: 0 !important; /* Strict sharp pixel geometry across all elements */
     }
 
     body {
-      background-color: var(--bg-dark);
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      line-height: 1.6;
+      background-color: var(--bg);
+      background-image: repeating-conic-gradient(var(--bg) 0% 25%, var(--bg-dither) 0% 50%);
+      background-size: 4px 4px;
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 0.95rem;
+      line-height: 1.65;
       padding-bottom: 60px;
       overflow-x: hidden;
-      background-image: 
-        radial-gradient(rgba(30, 41, 59, 0.4) 1px, transparent 1px),
-        radial-gradient(rgba(15, 23, 42, 0.6) 1px, transparent 1px);
-      background-size: 32px 32px;
-      background-position: 0 0, 16px 16px;
     }
 
-    /* Scanline effect toggleable */
+    /* Subtle CRT Scanline overlay */
     body.scanlines::before {
       content: " ";
       display: block;
       position: fixed;
       top: 0; left: 0; bottom: 0; right: 0;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+      background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
       background-size: 100% 4px;
       z-index: 9999;
       pointer-events: none;
-      opacity: 0.6;
+    }
+
+    ::selection {
+      background: var(--highlight);
+      color: var(--ega-black);
     }
 
     a {
-      color: var(--accent-cyan);
-      text-decoration: none;
-      transition: color 0.15s ease;
-    }
-    a:hover {
-      color: var(--accent-gold);
+      color: var(--highlight);
       text-decoration: underline;
     }
-
-    /* ==========================================================================
-       Layout & Navigation
-       ========================================================================== */
-    .container {
-      width: 100%;
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 0 24px;
+    a:hover {
+      background: var(--accent-deep);
+      color: var(--ega-white);
+      text-decoration: none;
     }
 
+    :focus-visible {
+      outline: 2px dashed var(--highlight);
+      outline-offset: 3px;
+    }
+
+    /* Layout */
+    .container {
+      width: 100%;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    /* Pull-down Top Menubar (SCI0 Desktop Style) */
     header.nav-header {
-      background: rgba(10, 13, 20, 0.85);
-      backdrop-filter: blur(8px);
-      border-bottom: 1px solid var(--border-color);
       position: sticky;
       top: 0;
       z-index: 1000;
-      padding: 12px 0;
+      background: var(--menubar-bg);
+      color: var(--menubar-text);
+      border-bottom: 4px solid var(--ega-black);
+      padding: 3px 0;
     }
 
     .nav-inner {
@@ -100,86 +130,94 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
+      flex-wrap: wrap;
     }
 
     .brand {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 12px;
-      font-family: var(--font-mono);
-      font-weight: bold;
-      font-size: 1.15rem;
-      letter-spacing: -0.5px;
-      color: var(--accent-gold);
+      gap: 8px;
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      color: var(--menubar-text);
+      text-decoration: none;
+      padding: 3px 6px;
+    }
+    .brand:hover {
+      background: #000000;
+      color: var(--highlight);
+      text-decoration: none;
     }
 
     .brand-badge {
-      background: #1e1b4b;
-      color: #a5b4fc;
-      border: 1px solid #4338ca;
-      font-size: 0.7rem;
+      background: #000000;
+      color: var(--line);
+      border: 1px solid #555555;
+      font-size: 0.72rem;
       padding: 2px 6px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 20px;
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      text-transform: uppercase;
     }
 
     .nav-links a {
-      color: var(--text-muted);
+      color: var(--menubar-text);
+      text-decoration: none;
+      font-weight: 700;
+      padding: 3px 8px;
     }
     .nav-links a:hover {
-      color: var(--text-main);
+      background: #000000;
+      color: var(--highlight);
       text-decoration: none;
     }
 
     .nav-toggles {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .btn-toggle {
-      background: #1e293b;
-      border: 1px solid #334155;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
+      background: #000000;
+      color: var(--line);
+      border: 2px solid #555555;
+      font-family: var(--mono);
       font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 4px;
+      font-weight: 700;
+      padding: 3px 8px;
       cursor: pointer;
-      transition: all 0.15s ease;
     }
     .btn-toggle:hover, .btn-toggle.active {
-      background: #334155;
-      color: var(--accent-gold);
-      border-color: var(--accent-gold-dark);
+      background: var(--accent-deep);
+      color: var(--highlight);
+      border-color: var(--highlight);
     }
 
-    /* ==========================================================================
-       Hero Section
-       ========================================================================== */
+    /* Hero Section */
     .hero {
-      padding: 56px 0 40px;
+      padding: 48px 0 36px;
       text-align: center;
       position: relative;
     }
 
     .hero-ascii {
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 11px;
       line-height: 1.15;
-      color: var(--accent-gold);
+      color: var(--highlight);
       white-space: pre;
-      margin: 0 auto 24px;
-      text-shadow: 0 0 16px rgba(251, 191, 36, 0.35);
+      margin: 0 auto 20px;
+      text-shadow: 2px 2px 0 #000000;
       display: inline-block;
       text-align: left;
     }
@@ -188,56 +226,76 @@
       .hero-ascii { display: none; }
     }
 
+    .hero-byline {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--line);
+      margin-bottom: 20px;
+      padding: 5px 14px;
+      background: #000000;
+      border: 2px solid var(--line-subtle);
+      box-shadow: 3px 3px 0 #000000;
+      text-transform: uppercase;
+    }
+    .hero-byline strong {
+      color: var(--highlight);
+    }
+    .hero-byline .sep {
+      color: var(--line-subtle);
+    }
+
     .hero-title {
-      font-family: var(--font-mono);
-      font-size: clamp(2rem, 5vw, 3.25rem);
+      font-family: var(--mono);
+      font-size: clamp(1.8rem, 4vw, 2.75rem);
       font-weight: 800;
-      letter-spacing: -1px;
+      letter-spacing: -0.5px;
       margin-bottom: 16px;
-      background: linear-gradient(135deg, #ffffff 40%, var(--accent-gold) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: var(--text-bright);
+      text-transform: uppercase;
     }
 
     .hero-tagline {
-      font-size: 1.25rem;
-      color: var(--text-muted);
-      max-width: 760px;
+      font-size: 1.15rem;
+      color: var(--text);
+      max-width: 780px;
       margin: 0 auto 28px;
       font-weight: 400;
+      line-height: 1.6;
     }
-
     .hero-tagline strong {
-      color: var(--accent-gold);
+      color: var(--highlight);
     }
 
     .hero-pill-bar {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
-      gap: 10px;
-      margin-bottom: 36px;
+      gap: 8px;
+      margin-bottom: 32px;
     }
 
     .hero-pill {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      padding: 6px 14px;
-      background: rgba(30, 41, 59, 0.7);
-      border: 1px solid var(--border-highlight);
-      border-radius: 9999px;
-      color: var(--accent-cyan);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      background: #000000;
+      border: 1px solid var(--line);
+      box-shadow: 2px 2px 0 #000000;
+      color: var(--line);
       display: flex;
       align-items: center;
       gap: 6px;
+      text-transform: uppercase;
     }
 
     .hero-pill .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--accent-green);
-      box-shadow: 0 0 8px var(--accent-green);
+      width: 6px;
+      height: 6px;
+      background: var(--ok);
     }
 
     .hero-buttons {
@@ -248,60 +306,61 @@
       margin-bottom: 48px;
     }
 
-    .btn-primary {
-      background: linear-gradient(180deg, #f59e0b, #d97706);
-      color: #0b0f19;
-      font-family: var(--font-mono);
-      font-weight: bold;
-      font-size: 0.95rem;
-      padding: 12px 24px;
-      border-radius: 6px;
-      border: 1px solid #fbbf24;
-      cursor: pointer;
-      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
-      transition: all 0.15s ease;
+    /* Point-and-Click Verb Buttons (Portfolio SCI0 Style) */
+    .btn-primary, .btn-secondary {
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      font-family: var(--mono);
+      font-size: 0.88rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      text-decoration: none;
+      padding: 0.65rem 1.25rem;
+      box-shadow: 4px 4px 0 #000000;
+      cursor: pointer;
+    }
+    .btn-primary {
+      border-top: 2px solid #ffffff;
+      border-left: 2px solid #ffffff;
+      border-right: 2px solid #555555;
+      border-bottom: 2px solid #555555;
+      color: #000000;
+      background: var(--highlight);
     }
     .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
-      color: #000;
+      background: #ffffff;
+      color: #000000;
       text-decoration: none;
+    }
+    .btn-primary:active, .btn-secondary:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #000000;
     }
 
     .btn-secondary {
-      background: #1e293b;
-      color: var(--text-main);
-      font-family: var(--font-mono);
-      font-size: 0.95rem;
-      padding: 12px 24px;
-      border-radius: 6px;
-      border: 1px solid #475569;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
+      border-top: 2px solid #ffffff;
+      border-left: 2px solid #ffffff;
+      border-right: 2px solid #555555;
+      border-bottom: 2px solid #555555;
+      color: #000000;
+      background: #aaaaaa;
     }
     .btn-secondary:hover {
-      background: #334155;
-      border-color: #94a3b8;
+      background: var(--line);
+      color: #000000;
       text-decoration: none;
-      color: #fff;
     }
 
     /* ==========================================================================
-       Interactive Simulator Section (Neocities Main Event)
+       Interactive Simulator Section (Workstation Viewport)
        ========================================================================== */
     .playground-section {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 24px;
+      background: #000000;
+      border: 3px solid var(--line);
+      box-shadow: 8px 8px 0 #000000;
+      padding: 20px;
       margin-bottom: 60px;
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
       position: relative;
     }
 
@@ -311,75 +370,74 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       padding-bottom: 16px;
-      border-bottom: 1px solid var(--border-color);
+      border-bottom: 2px solid var(--line-subtle);
     }
 
     .playground-title-group h2 {
-      font-family: var(--font-mono);
-      font-size: 1.35rem;
-      color: var(--accent-gold);
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      font-family: var(--mono);
+      font-size: 1.2rem;
+      color: var(--highlight);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     .playground-title-group p {
       font-size: 0.85rem;
-      color: var(--text-muted);
+      color: var(--text);
       margin-top: 4px;
     }
 
     .scenario-tabs {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
     }
 
     .tab-btn {
-      background: #1e293b;
-      color: var(--text-muted);
-      border: 1px solid #334155;
-      font-family: var(--font-mono);
-      font-size: 0.82rem;
-      padding: 8px 14px;
-      border-radius: 6px;
+      background: #000000;
+      color: var(--text);
+      border: 2px solid var(--line-subtle);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 6px 12px;
       cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      text-transform: uppercase;
+      transition: all 0.1s ease;
     }
     .tab-btn:hover {
-      background: #334155;
-      color: var(--text-main);
+      background: var(--ega-blue);
+      color: #ffffff;
+      border-color: var(--line);
     }
     .tab-btn.active {
-      background: rgba(251, 191, 36, 0.15);
-      color: var(--accent-gold);
-      border-color: var(--accent-gold);
-      box-shadow: 0 0 12px rgba(251, 191, 36, 0.2);
+      background: var(--highlight);
+      color: #000000;
+      border-color: var(--highlight);
+      box-shadow: 2px 2px 0 #000000;
     }
 
-    /* Screen Frame & Canvas */
+    /* Viewport Frame */
     .viewport-box {
-      background: #000;
-      border: 2px solid #334155;
-      border-radius: 8px;
+      background: #000000;
+      border: 2px solid var(--line);
       overflow: hidden;
       position: relative;
     }
 
     .viewport-topbar {
-      background: #0f172a;
-      border-bottom: 1px solid #1e293b;
-      padding: 8px 14px;
+      background: var(--ega-blue);
+      color: var(--text-bright);
+      border-bottom: 2px solid var(--line);
+      padding: 6px 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 0.78rem;
+      text-transform: uppercase;
     }
 
     .viewport-leds {
@@ -392,37 +450,39 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      color: var(--text-muted);
+      color: var(--text-bright);
+      font-weight: 700;
     }
 
     .led-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
+      width: 7px;
+      height: 7px;
+      display: inline-block;
     }
-    .led-dot.green { background: #10b981; box-shadow: 0 0 8px #10b981; }
-    .led-dot.amber { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
-    .led-dot.blue { background: #38bdf8; box-shadow: 0 0 8px #38bdf8; }
+    .led-dot.green { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+    .led-dot.amber { background: var(--highlight); box-shadow: 0 0 6px var(--highlight); }
+    .led-dot.blue { background: var(--line); box-shadow: 0 0 6px var(--line); }
 
     #sim-canvas {
       display: block;
       width: 100%;
       height: auto;
       aspect-ratio: 16 / 9;
-      background: #0d1117;
+      background: #000000;
       cursor: crosshair;
     }
 
     /* Timeline Scrubber */
     .scrubber-panel {
-      background: #0b0f19;
-      border-top: 1px solid #1e293b;
-      padding: 10px 14px;
+      background: #000000;
+      border-top: 2px solid var(--line);
+      padding: 8px 12px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-family: var(--font-mono);
+      gap: 10px;
+      font-family: var(--mono);
       font-size: 0.8rem;
+      flex-wrap: wrap;
     }
 
     .timeline-slider-wrap {
@@ -430,25 +490,26 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      min-width: 180px;
     }
 
     input[type=range].timeline-range {
       width: 100%;
-      height: 6px;
-      background: #1e293b;
-      border-radius: 3px;
+      height: 8px;
+      background: var(--bg-dither);
+      border: 1px solid var(--line-subtle);
       outline: none;
       -webkit-appearance: none;
       cursor: pointer;
     }
     input[type=range].timeline-range::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
-      background: var(--accent-gold);
-      border-radius: 50%;
+      width: 14px;
+      height: 18px;
+      background: var(--highlight);
+      border: 1px solid #000000;
       cursor: pointer;
-      box-shadow: 0 0 8px rgba(251, 191, 36, 0.7);
+      box-shadow: 1px 1px 0 #000000;
     }
 
     /* Interactive Simulation Controls */
@@ -456,7 +517,7 @@
       display: grid;
       grid-template-columns: 1fr;
       gap: 16px;
-      margin-top: 20px;
+      margin-top: 16px;
     }
 
     @media (min-width: 900px) {
@@ -466,19 +527,22 @@
     }
 
     .interactive-card {
-      background: var(--bg-terminal);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 16px;
+      background: #000000;
+      border: 2px solid var(--line-subtle);
+      box-shadow: 4px 4px 0 #000000;
+      padding: 14px;
     }
 
     .interactive-card-title {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      color: var(--accent-cyan);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--line);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--line-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -487,46 +551,50 @@
     .button-bank {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
     }
 
     .sim-btn {
-      background: #1e293b;
-      color: #e2e8f0;
-      border: 1px solid #334155;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      padding: 8px 12px;
-      border-radius: 4px;
+      background: #aaaaaa;
+      color: #000000;
+      border-top: 2px solid #ffffff;
+      border-left: 2px solid #ffffff;
+      border-right: 2px solid #555555;
+      border-bottom: 2px solid #555555;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 6px 10px;
       cursor: pointer;
-      transition: all 0.1s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      box-shadow: 2px 2px 0 #000000;
     }
     .sim-btn:hover {
-      background: #334155;
-      border-color: #64748b;
-      color: #fff;
+      background: var(--highlight);
+      color: #000000;
+    }
+    .sim-btn:active {
+      transform: translate(1px, 1px);
+      box-shadow: 1px 1px 0 #000000;
     }
     .sim-btn.action-primary {
-      background: #78350f;
-      border-color: var(--accent-gold);
-      color: var(--accent-gold);
+      background: var(--ega-blue);
+      color: #ffffff;
+      border-color: var(--line);
     }
     .sim-btn.action-primary:hover {
-      background: #92400e;
-      color: #fff;
+      background: var(--accent-deep);
+      color: var(--highlight);
     }
 
     /* Fact Table & Log */
     .fact-list {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       max-height: 180px;
       overflow-y: auto;
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 0.78rem;
     }
 
@@ -534,79 +602,81 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 6px 10px;
-      background: rgba(30, 41, 59, 0.4);
-      border: 1px solid #1e293b;
-      border-radius: 4px;
+      padding: 5px 8px;
+      background: var(--bg-dither);
+      border: 1px solid var(--line-subtle);
     }
 
     .fact-tag {
-      color: var(--accent-green);
+      color: var(--ok);
+      font-weight: 700;
     }
 
     .ttl-pill {
       font-size: 0.7rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(245, 158, 11, 0.15);
-      color: var(--accent-amber);
-      border: 1px solid rgba(245, 158, 11, 0.3);
+      font-weight: 700;
+      padding: 2px 5px;
+      background: #000000;
+      color: var(--highlight);
+      border: 1px solid var(--highlight);
     }
 
     .terminal-log {
       height: 120px;
       overflow-y: auto;
-      background: #04070d;
-      border: 1px solid #1e293b;
-      border-radius: 4px;
-      padding: 8px 12px;
-      font-family: var(--font-mono);
+      background: #000000;
+      border: 1px solid var(--line-subtle);
+      padding: 8px 10px;
+      font-family: var(--mono);
       font-size: 0.78rem;
-      color: #cbd5e1;
+      color: var(--text-bright);
+      line-height: 1.5;
     }
 
     .terminal-log .log-entry {
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }
-    .terminal-log .log-cue { color: var(--accent-gold); }
-    .terminal-log .log-rule { color: var(--accent-purple); }
-    .terminal-log .log-info { color: var(--accent-cyan); }
+    .terminal-log .log-cue { color: var(--highlight); font-weight: 700; }
+    .terminal-log .log-rule { color: var(--accent); }
+    .terminal-log .log-info { color: var(--line); }
 
-    /* ==========================================================================
-       Feature Pillars ("The Triad of Power")
-       ========================================================================== */
+    /* Core Tenets */
     .section-title-wrap {
       text-align: center;
-      margin-bottom: 40px;
+      margin-bottom: 36px;
     }
 
     .section-eyebrow {
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 0.8rem;
-      color: var(--accent-gold);
+      font-weight: 700;
+      color: var(--line);
       text-transform: uppercase;
-      letter-spacing: 1.5px;
+      letter-spacing: 0.1em;
       margin-bottom: 8px;
     }
 
     .section-title {
-      font-family: var(--font-mono);
-      font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+      font-family: var(--mono);
+      font-size: clamp(1.5rem, 3.2vw, 2.2rem);
       font-weight: 800;
+      color: var(--text-bright);
+      text-transform: uppercase;
       letter-spacing: -0.5px;
     }
 
     .section-desc {
-      color: var(--text-muted);
-      max-width: 680px;
-      margin: 12px auto 0;
-      font-size: 1.05rem;
+      color: var(--text);
+      max-width: 720px;
+      margin: 10px auto 0;
+      font-size: 1rem;
+      line-height: 1.6;
     }
 
     .grid-3 {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 24px;
+      gap: 20px;
       margin-bottom: 60px;
     }
 
@@ -617,67 +687,66 @@
     }
 
     .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 24px;
-      transition: all 0.2s ease;
+      background: #000000;
+      border: 2px solid var(--line-subtle);
+      box-shadow: 4px 4px 0 #000000;
+      padding: 22px;
       position: relative;
-      overflow: hidden;
+      transition: border-color 0.12s ease;
     }
-
     .card:hover {
-      transform: translateY(-3px);
-      border-color: var(--border-highlight);
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+      border-color: var(--line);
+      box-shadow: 4px 4px 0 var(--line-subtle);
     }
 
-    .card-icon {
-      font-size: 1.8rem;
-      margin-bottom: 16px;
-      display: inline-block;
+    .card-label {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--line);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
     }
 
     .card-title {
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 1.15rem;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-bright);
+      text-transform: uppercase;
       margin-bottom: 10px;
     }
 
     .card-body {
-      color: var(--text-muted);
+      color: var(--text);
       font-size: 0.92rem;
       line-height: 1.6;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     .code-chip {
-      background: #090d16;
-      border: 1px solid #1e293b;
-      border-radius: 6px;
-      padding: 10px 12px;
-      font-family: var(--font-mono);
+      background: var(--bg-dither);
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      font-family: var(--mono);
       font-size: 0.78rem;
-      color: var(--accent-cyan);
+      color: var(--highlight);
       overflow-x: auto;
     }
 
-    /* ==========================================================================
-       Scenario Showcase Cards
-       ========================================================================== */
+    /* Scenario Showcase */
     .scenario-grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 28px;
+      gap: 24px;
       margin-bottom: 60px;
     }
 
     .scenario-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
+      background: #000000;
+      border: 2px solid var(--line-subtle);
+      box-shadow: 6px 6px 0 #000000;
       overflow: hidden;
       display: grid;
       grid-template-columns: 1fr;
@@ -690,87 +759,149 @@
     }
 
     .scenario-info {
-      padding: 28px;
+      padding: 24px;
       display: flex;
       flex-direction: column;
       justify-content: center;
     }
 
     .scenario-tag {
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 0.75rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--accent-amber);
+      letter-spacing: 0.08em;
+      color: var(--line);
       margin-bottom: 8px;
     }
 
     .scenario-heading {
-      font-family: var(--font-mono);
-      font-size: 1.35rem;
+      font-family: var(--mono);
+      font-size: 1.3rem;
       font-weight: 800;
-      color: #fff;
-      margin-bottom: 12px;
+      color: var(--highlight);
+      text-transform: uppercase;
+      margin-bottom: 10px;
     }
 
     .scenario-text {
-      color: var(--text-muted);
+      color: var(--text);
       font-size: 0.92rem;
       line-height: 1.6;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
 
     .scenario-invariants {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
       margin-top: auto;
     }
 
     .invariant-pill {
-      font-family: var(--font-mono);
+      font-family: var(--mono);
       font-size: 0.72rem;
-      padding: 4px 10px;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 4px;
-      color: var(--text-main);
+      font-weight: 700;
+      padding: 3px 8px;
+      background: var(--bg-dither);
+      border: 1px solid var(--line-subtle);
+      color: var(--line);
+      text-transform: uppercase;
     }
 
     .scenario-code {
-      background: #080c14;
-      border-top: 1px solid var(--border-color);
-      padding: 24px;
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
+      background: #000000;
+      border-top: 2px solid var(--line-subtle);
+      padding: 22px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
       overflow-x: auto;
       line-height: 1.65;
       display: flex;
       flex-direction: column;
       justify-content: center;
+      color: var(--text-bright);
     }
 
     @media (min-width: 900px) {
       .scenario-code {
         border-top: none;
-        border-left: 1px solid var(--border-color);
+        border-left: 2px solid var(--line-subtle);
       }
     }
 
-    .code-kw { color: #f43f5e; font-weight: bold; }
-    .code-ident { color: #38bdf8; }
-    .code-str { color: #a3e635; }
-    .code-num { color: #fbbf24; }
-    .code-comment { color: #64748b; font-style: italic; }
+    .code-kw { color: var(--accent); font-weight: bold; }
+    .code-ident { color: var(--line); }
+    .code-str { color: var(--ok); }
+    .code-num { color: var(--highlight); }
+    .code-comment { color: #888888; font-style: italic; }
 
-    /* ==========================================================================
-       Architecture / Comparison Section
-       ========================================================================== */
+    /* Dialogue Commentary Panel */
+    .dialogue-quote-panel {
+      background: var(--bg-dither);
+      border: 2px solid var(--line);
+      box-shadow: 4px 4px 0 #000000;
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+
+    .quote-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line-subtle);
+      flex-wrap: wrap;
+    }
+
+    .quote-tag {
+      background: var(--highlight);
+      color: #000000;
+      font-weight: 700;
+      padding: 2px 6px;
+    }
+
+    .quote-authors {
+      color: var(--line);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .dialogue-quote-text {
+      margin: 0;
+      color: var(--text-bright);
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+
+    .dialogue-quote-text p {
+      margin-bottom: 12px;
+    }
+
+    .dialogue-quote-text p:last-child {
+      margin-bottom: 0;
+    }
+
+    .dialogue-quote-text strong {
+      color: var(--highlight);
+      font-family: var(--mono);
+    }
+
+    .dialogue-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+
+    /* Architecture Section */
     .compare-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 32px 24px;
+      background: #000000;
+      border: 3px solid var(--line);
+      box-shadow: 8px 8px 0 #000000;
+      padding: 28px 20px;
       margin-bottom: 60px;
     }
 
@@ -779,42 +910,46 @@
       border-collapse: collapse;
       font-size: 0.9rem;
       margin-top: 20px;
+      border: 2px solid var(--line);
     }
 
     .compare-table th, .compare-table td {
-      padding: 14px 16px;
+      padding: 12px 14px;
       text-align: left;
-      border-bottom: 1px solid var(--border-color);
+      border: 1px solid var(--line-subtle);
     }
 
     .compare-table th {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      color: var(--accent-gold);
-      background: #0f172a;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--highlight);
+      background: var(--ega-blue);
+      border: 1px solid var(--line);
+    }
+
+    .compare-table tr:hover td {
+      background: var(--bg-dither);
     }
 
     .compare-table td:first-child {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      color: #fff;
+      font-family: var(--mono);
+      font-weight: 700;
+      color: var(--text-bright);
     }
 
-    .badge-no {
-      color: #f87171;
-      font-weight: bold;
-    }
     .badge-yes {
-      color: #4ade80;
-      font-weight: bold;
+      color: var(--ok);
+      font-family: var(--mono);
+      font-weight: 700;
     }
 
-    /* ==========================================================================
-       Neocities Artisanal Footer
-       ========================================================================== */
+    /* Footer */
     footer.neocities-footer {
-      border-top: 1px solid var(--border-color);
-      padding-top: 48px;
+      border-top: 3px solid var(--line);
+      padding-top: 40px;
       text-align: center;
     }
 
@@ -822,26 +957,25 @@
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
-      gap: 12px;
-      margin-bottom: 28px;
+      gap: 10px;
+      margin-bottom: 24px;
     }
 
-    /* 88x31 retro button styling */
     .retro-badge {
       display: inline-block;
       width: 88px;
       height: 31px;
       border: 1px solid #475569;
-      background: #1e293b;
-      font-family: var(--font-mono);
+      background: #000000;
+      font-family: var(--mono);
       font-size: 8px;
       font-weight: 800;
       text-align: center;
       line-height: 14px;
       text-transform: uppercase;
-      color: #fff;
+      color: #ffffff;
       padding: 1px 2px;
-      box-shadow: 2px 2px 0 #000;
+      box-shadow: 2px 2px 0 #000000;
       cursor: pointer;
       user-select: none;
     }
@@ -849,23 +983,81 @@
       display: block;
       padding: 1px 0;
     }
-    .retro-badge.zig { background: #f59e0b; color: #000; border-color: #d97706; }
-    .retro-badge.pure { background: #10b981; color: #000; border-color: #059669; }
-    .retro-badge.scumm { background: #3b82f6; color: #fff; border-color: #1d4ed8; }
-    .retro-badge.retro { background: #8b5cf6; color: #fff; border-color: #6d28d9; }
+    .retro-badge.zig { background: var(--highlight); color: #000000; border-color: #d97706; }
+    .retro-badge.pure { background: var(--ok); color: #000000; border-color: #059669; }
+    .retro-badge.scumm { background: var(--ega-blue); color: #ffffff; border-color: var(--line); }
+    .retro-badge.retro { background: var(--ega-magenta); color: #ffffff; border-color: var(--ega-bmagenta); }
 
     .footer-quote {
       font-style: italic;
-      color: var(--text-muted);
-      max-width: 600px;
+      color: var(--text);
+      max-width: 680px;
       margin: 0 auto 20px;
       font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .footer-columns {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      max-width: 760px;
+      margin: 24px auto 28px;
+      text-align: left;
+    }
+
+    @media (min-width: 640px) {
+      .footer-columns {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .footer-col {
+      background: #000000;
+      border: 2px solid var(--line-subtle);
+      box-shadow: 4px 4px 0 #000000;
+      padding: 16px 18px;
+    }
+
+    .footer-col-title {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--highlight);
+      margin-bottom: 10px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--line-subtle);
+    }
+
+    .footer-col-links {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+    }
+
+    .footer-col-links a {
+      color: var(--line);
+      text-decoration: none;
+    }
+    .footer-col-links a:hover {
+      background: var(--accent-deep);
+      color: #ffffff;
+      text-decoration: none;
     }
 
     .footer-meta {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--line-subtle);
+      line-height: 1.6;
+    }
+    .footer-meta strong {
+      color: var(--text-bright);
     }
   </style>
 </head>
@@ -877,7 +1069,7 @@
   <header class="nav-header">
     <div class="container nav-inner">
       <div class="brand">
-        <span>⚡ BESPOKE ENGINE</span>
+        <span>[■] BESPOKE ENGINE</span>
         <span class="brand-badge">v0.1.0-dev</span>
       </div>
 
@@ -885,7 +1077,9 @@
         <a href="#playground">Playground</a>
         <a href="#tenets">Tenets</a>
         <a href="#scenarios">Scenarios</a>
+        <a href="#dialogue">Dialogue</a>
         <a href="#architecture">Architecture</a>
+        <a href="../docs/manual.html">3x Manual</a>
         <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub</a>
       </nav>
 
@@ -910,28 +1104,34 @@
                        |_|                                     |___/             
       </pre>
 
+      <div class="hero-byline">
+        <span>Designed &amp; coded by <strong>Andrew Edmark</strong></span>
+        <span class="sep">·</span>
+        <span>Pure Zig Simulation Engine &amp; DSL</span>
+      </div>
+
       <h1 class="hero-title">The Simulation Runtime IS the Spine.</h1>
       <p class="hero-tagline">
-        A bespoke simulation engine & DSL written in pure Zig. 
-        Where games are <strong>flat relational facts</strong>, <strong>cooperative fibers</strong>, 
-        and <strong>instant time-travel rewinds</strong>.
+        A bespoke simulation engine &amp; DSL written in pure Zig. 
+        Where game worlds are <strong>flat relational facts</strong>, behaviors are <strong>cooperative fibers</strong>, 
+        and time travel is an <strong>instant snapshot rewind</strong>.
       </p>
 
       <div class="hero-pill-bar">
         <div class="hero-pill"><span class="dot"></span> Pure Zig 0.13</div>
-        <div class="hero-pill"><span class="dot"></span> Zero C++ Bloat</div>
+        <div class="hero-pill"><span class="dot"></span> Zero External Dependencies</div>
         <div class="hero-pill"><span class="dot"></span> 4-Tuple Relational Facts</div>
         <div class="hero-pill"><span class="dot"></span> Built-in TTL Decay</div>
-        <div class="hero-pill"><span class="dot"></span> Instant Snapshot Rewind</div>
-        <div class="hero-pill"><span class="dot"></span> 60 Hz Discrete Clock</div>
+        <div class="hero-pill"><span class="dot"></span> Single-memcpy Rewind</div>
+        <div class="hero-pill"><span class="dot"></span> 60 Hz Discrete Tick Clock</div>
       </div>
 
       <div class="hero-buttons">
         <a href="#playground" class="btn-primary">
-          <span>▶</span> Test Live In-Browser Playground
+          <span>[►]</span> Launch Interactive Playground
         </a>
         <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener" class="btn-secondary">
-          <span>★</span> Star on GitHub
+          <span>[★]</span> Star on GitHub ↗
         </a>
       </div>
     </section>
@@ -942,19 +1142,19 @@
     <section id="playground" class="playground-section">
       <div class="playground-header">
         <div class="playground-title-group">
-          <h2><span>🎮</span> Live Interactive Simulation Viewport</h2>
+          <h2>[EXE] Live Simulation Viewport</h2>
           <p>Real-time discrete simulation executing deterministic bytecode state transitions.</p>
         </div>
 
         <div class="scenario-tabs">
           <button class="tab-btn active" data-scenario="tavern">
-            <span>🍺</span> 1. Tavern Heist
+            [1] Tavern Heist
           </button>
           <button class="tab-btn" data-scenario="spitting">
-            <span>🌴</span> 2. Booty Island Spit
+            [2] Booty Island Spit
           </button>
           <button class="tab-btn" data-scenario="gk3">
-            <span>🐱</span> 3. GK3 Cat Moustache
+            [3] GK3 Cat Moustache
           </button>
         </div>
       </div>
@@ -977,15 +1177,15 @@
 
         <!-- Timeline Scrubber Bar -->
         <div class="scrubber-panel">
-          <button class="sim-btn" id="btn-play-pause"><span>⏸</span> Pause</button>
-          <button class="sim-btn" id="btn-step"><span>⏭</span> Step (N)</button>
-          <button class="sim-btn" id="btn-rewind"><span>⏮</span> Rewind (&lt;)</button>
+          <button class="sim-btn" id="btn-play-pause"><span>[||]</span> Pause</button>
+          <button class="sim-btn" id="btn-step"><span>[►|]</span> Step (N)</button>
+          <button class="sim-btn" id="btn-rewind"><span>[|◄]</span> Rewind (&lt;)</button>
           <div class="timeline-slider-wrap">
             <span style="color:var(--text-muted); font-size:0.75rem;">TIMELINE</span>
             <input type="range" class="timeline-range" id="timeline-slider" min="0" max="0" value="0">
             <span id="timeline-label" style="min-width:60px; color:var(--accent-gold); font-size:0.75rem;">0/0</span>
           </div>
-          <button class="sim-btn" id="btn-reset"><span>↺</span> Reset</button>
+          <button class="sim-btn" id="btn-reset"><span>[↺]</span> Reset</button>
         </div>
       </div>
 
@@ -1034,38 +1234,39 @@
     <section id="tenets" style="margin-bottom:60px;">
       <div class="section-title-wrap">
         <div class="section-eyebrow">The Architectural Pillars</div>
-        <h2 class="section-title">Why BeSpoke Flips the Paradigm</h2>
+        <h2 class="section-title">Simulation as First Principle</h2>
         <p class="section-desc">
-          Modern game development drowns in pointer spaghetti, OOP inheritance, and frame-rate delta accumulation. 
-          BeSpoke reclaims the craft of simulation.
+          Drawing spiritual inspiration from the deterministic clockwork of Chris Sawyer's <em>RollerCoaster Tycoon</em>, 
+          the actor/cue architecture of Sierra's <em>SCI</em> and LucasArts' <em>SCUMM</em>, and the emergent relationship graphs of <em>Dwarf Fortress</em>. 
+          BeSpoke replaces frame-delta accumulation and deep class hierarchies with pure, reproducible simulation.
         </p>
       </div>
 
       <div class="grid-3">
         <!-- Pillar 1 -->
         <div class="card">
-          <div class="card-icon">🏛️</div>
+          <div class="card-label">PILLAR 01</div>
           <h3 class="card-title">Engine-as-Spine</h3>
           <p class="card-body">
-            The VM is <code>main()</code>. It owns the master discrete tick clock, the entity IDs, 
-            spatial topologies, and relational facts. Visuals (SDL2, Raylib, Sokol, WebCanvas) are merely downstream, 
+            The VM is <code>main()</code>. It owns the master discrete tick clock, entity lifecycles, 
+            spatial topologies, and relational facts. Visuals (Raylib, Sokol, WebCanvas) are downstream, 
             stateless peripheral display bridges.
           </p>
           <div class="code-chip">
             // Core simulation is zero-dependency Zig<br>
             var world = World.init(allocator);<br>
-            var vm = VM.init(&world, &chunk);
+            var vm = VM.init(&amp;world, &amp;chunk);
           </div>
         </div>
 
         <!-- Pillar 2 -->
         <div class="card">
-          <div class="card-icon">🗄️</div>
+          <div class="card-label">PILLAR 02</div>
           <h3 class="card-title">Flat Relational State</h3>
           <p class="card-body">
             No class hierarchies. No pointers inside serialized state. Truth consists of contiguous 4-tuples: 
-            <code>(Subject, Relation, Object, TTL)</code>. Built-in TTL decay allows charms, distractions, 
-            and buffs to expire naturally without cleanup spaghetti.
+            <code>(Subject, Relation, Object, TTL)</code> in arena memory. First-class TTL decay allows charms, distractions, 
+            and alerts to expire naturally without manual cleanup loops.
           </p>
           <div class="code-chip">
             remember Carries(Guard, Cheese)<br>
@@ -1075,11 +1276,11 @@
 
         <!-- Pillar 3 -->
         <div class="card">
-          <div class="card-icon">⏳</div>
-          <h3 class="card-title">Fibers & Time Travel</h3>
+          <div class="card-label">PILLAR 03</div>
+          <h3 class="card-title">Fibers &amp; Time Travel</h3>
           <p class="card-body">
             Write game logic like a play script using cooperative fibers with built-in <code>wait</code> and <code>wait until</code>. 
-            Because state is a flat contiguous array, snapshots are a single <code>memcpy</code>. Rewind time instantly!
+            Because state is a contiguous flat array in arena memory, save states and time-travel rewinds are a single-call <code>memcpy</code>.
           </p>
           <div class="code-chip">
             walk Guard to Cellar<br>
@@ -1095,11 +1296,11 @@
          ======================================================================== -->
     <section id="scenarios" style="margin-bottom:60px;">
       <div class="section-title-wrap">
-        <div class="section-eyebrow">Real World Testbeds</div>
-        <h2 class="section-title">The Three Verified Scenarios</h2>
+        <div class="section-eyebrow">Verified Simulation Testbeds</div>
+        <h2 class="section-title">Three Classic Adventure Vertical Slices</h2>
         <p class="section-desc">
-          Every engine claims to be elegant in theory. BeSpoke proves its invariants across three classic, 
-          systemically distinct adventure game vertical slices.
+          BeSpoke proves its execution model across three distinct adventure game vertical slices: 
+          systemic stealth emergence, environmental falling-edge triggers, and multi-scene inventory crafting.
         </p>
       </div>
 
@@ -1216,52 +1417,143 @@
     </section>
 
     <!-- ========================================================================
+         Relational Dialogue Section ("Thick & Tangled" Conversation Trees)
+         ======================================================================== -->
+    <section id="dialogue" class="compare-box">
+      <div class="section-title-wrap">
+        <div class="section-eyebrow">Conversational Epistemology</div>
+        <h2 class="section-title">Beyond Flag Spaghetti: Relational Dialogue Trees</h2>
+        <p class="section-desc">
+          Dialogue in adventure games has always had sharp edges. The Infocom parser model ("ask X about Y") is brittle, 
+          while classic dialogue trees in SCUMM and AGS drown in hundreds of ad-hoc boolean flags. 
+          BeSpoke replaces flag thickets with pattern-matched relational queries over the world fact store.
+        </p>
+      </div>
+
+      <!-- Dialogue Grid: Problem vs Solution -->
+      <div class="dialogue-grid">
+        <!-- Specimen 1: Insult Sword Fighting -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Pattern 01 · Insult Sword Fighting</span>
+            <h3 class="scenario-heading">Combinatorial Memory Queries</h3>
+            <p class="scenario-text">
+              In SCUMM, tracking 16 heard insults and 16 learned counters across pirates and the Sword Master required 
+              deep trees of mutable boolean flags. In BeSpoke, dialogue choices are direct queries over relational facts: 
+              <code>where KnowsReply(player, reply) and Counters(reply, active_insult)</code>.
+            </p>
+            <div class="scenario-invariants">
+              <span class="invariant-pill">No Flag Fluff</span>
+              <span class="invariant-pill">Set-Theoretic Choice Pruning</span>
+              <span class="invariant-pill">Sub-Microsecond SoA Scan</span>
+            </div>
+          </div>
+          <pre class="scenario-code"><code><span class="code-kw">relation</span> HeardInsult(fighter, insult)
+<span class="code-kw">relation</span> MasteredReply(fighter, reply)
+<span class="code-kw">relation</span> Counters(reply, insult)
+<span class="code-kw">relation</span> SwordMasterVariant(master_insult, standard_insult)
+
+<span class="code-kw">on cue</span> DuelInsult(pirate, target, insult):
+  <span class="code-kw">remember</span> HeardInsult(target, insult)
+  <span class="code-kw">say</span> pirate: insult
+
+  <span class="code-comment">// Dynamic choices query the relational fact arena</span>
+  <span class="code-kw">choice</span> reply <span class="code-kw">where</span> MasteredReply(target, reply) <span class="code-kw">and</span> Counters(reply, insult):
+    <span class="code-kw">say</span> target: reply
+    <span class="code-kw">strike</span> target <span class="code-kw">against</span> pirate
+    <span class="code-kw">remember</span> Advantage(target)
+
+  <span class="code-kw">choice</span> fallback <span class="code-kw">if not</span> MasteredReply(target, _):
+    <span class="code-kw">say</span> target: <span class="code-str">"I am shaking, I am shaking!"</span>
+    <span class="code-kw">yield</span> advantage <span class="code-kw">to</span> pirate</code></pre>
+        </div>
+
+        <!-- Specimen 2: Conversational Fatigue & Shifting Moods -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Pattern 02 · Repetition &amp; Fatigue</span>
+            <h3 class="scenario-heading">Organic NPC Irritation</h3>
+            <p class="scenario-text">
+              Traditional adventure games treat dialogue as a timeless vending machine. Real people lose patience 
+              when asked the same question repeatedly. BeSpoke tracks conversational frequency using relational facts 
+              with TTL decay, allowing NPCs to shift from welcoming, to terse, to furiously slamming the door.
+            </p>
+            <div class="scenario-invariants">
+              <span class="invariant-pill">Repetition Counters</span>
+              <span class="invariant-pill">TTL Mood Decay</span>
+              <span class="invariant-pill">Natural Gatekeeping</span>
+            </div>
+          </div>
+          <pre class="scenario-code"><code><span class="code-kw">relation</span> Inquired(speaker, topic, count)
+<span class="code-kw">relation</span> AnnoyedWith(npc, speaker) <span class="code-kw">for</span> ticks
+
+<span class="code-kw">on cue</span> TalksTo(Guybrush, Barkeep):
+  <span class="code-kw">choice</span> <span class="code-str">"Tell me about the Governor."</span> <span class="code-kw">if not</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, _):
+    <span class="code-kw">say</span> Barkeep: <span class="code-str">"Governor Marley? Sharp as a cutlass and twice as quick."</span>
+    <span class="code-kw">remember</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, 1)
+
+  <span class="code-kw">choice</span> <span class="code-str">"Tell me more about Governor Marley."</span> <span class="code-kw">if</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, 1):
+    <span class="code-kw">say</span> Barkeep: <span class="code-str">"Look, I already told you. Her mansion is on the hill."</span>
+    <span class="code-kw">remember</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, 2)
+    <span class="code-kw">remember</span> AnnoyedWith(Barkeep, Guybrush) <span class="code-kw">for</span> <span class="code-num">300 ticks</span>
+
+  <span class="code-kw">choice</span> <span class="code-str">"About Governor Marley..."</span> <span class="code-kw">if</span> AnnoyedWith(Barkeep, Guybrush):
+    <span class="code-kw">say</span> Barkeep: <span class="code-str">"Are ye deaf, pirate? Buy a grog or get out of my tavern!"</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
          Architecture Comparison Table
          ======================================================================== -->
     <section id="architecture" class="compare-box">
       <div class="section-title-wrap">
         <div class="section-eyebrow">Engine Architecture</div>
-        <h2 class="section-title">BeSpoke vs The Industry Standard</h2>
+        <h2 class="section-title">Comparing Engine Philosophies</h2>
+        <p class="section-desc">
+          General-purpose 3D engines are optimized for rendering complex visual scenes with scripting attached. 
+          BeSpoke is built inside-out: a deterministic simulation spine where visuals are downstream peripherals.
+        </p>
       </div>
 
       <table class="compare-table">
         <thead>
           <tr>
-            <th>Architecture Characteristic</th>
-            <th>Traditional Engines (Unity, Unreal)</th>
-            <th>BeSpoke Engine</th>
+            <th>Dimension</th>
+            <th>Visual-First Scene Graph Engine</th>
+            <th>Simulation-First Relational Spine (BeSpoke)</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>Who owns <code>main()</code>?</td>
-            <td>Massive 3D graphics & physics engine</td>
-            <td><span class="badge-yes">Simulation VM Spine (Pure Zig)</span></td>
+            <td>Graphics pipeline &amp; frame-rate render loop</td>
+            <td><span class="badge-yes">Deterministic 60 Hz Simulation VM Spine (Pure Zig)</span></td>
           </tr>
           <tr>
             <td>World State Representation</td>
-            <td>Dangling pointers, class hierarchies, C# garbage collector</td>
-            <td><span class="badge-yes">Flat Relational Tuples in Arena</span></td>
+            <td>Transform hierarchies, heap pointers &amp; GC objects</td>
+            <td><span class="badge-yes">Flat Relational Tuples in Contiguous Arena</span></td>
           </tr>
           <tr>
-            <td>Time-Travel & Save States</td>
-            <td>Expensive custom serializers, deep tree cloning</td>
-            <td><span class="badge-yes">1-Line <code>memcpy</code> Snapshot Rewind</span></td>
+            <td>Time-Travel &amp; Save States</td>
+            <td>Custom serializers &amp; object-graph reconstruction</td>
+            <td><span class="badge-yes">Single-Call <code>memcpy</code> Snapshot Rewind</span></td>
           </tr>
           <tr>
             <td>Temporal Logic (Waiting, Routines)</td>
-            <td>Delta-time accumulation, coroutine allocations, state booleans</td>
-            <td><span class="badge-yes">Built-in <code>wait</code>, <code>wait until</code>, <code>loop</code></span></td>
+            <td>Delta-time accumulation, per-frame callbacks, state booleans</td>
+            <td><span class="badge-yes">Cooperative Fibers with Native <code>wait</code> &amp; Discrete Ticks</span></td>
           </tr>
           <tr>
-            <td>State Decay (Buffs, Alerts)</td>
-            <td>Manual timestamp polling and cleanup callbacks</td>
-            <td><span class="badge-yes">First-Class Relational TTL Decay</span></td>
+            <td>Ephemeral State (Buffs, Alerts)</td>
+            <td>Explicit timer handles &amp; manual polling loops</td>
+            <td><span class="badge-yes">First-Class Relational TTL Decrement</span></td>
           </tr>
           <tr>
-            <td>Compile Time & Footprint</td>
-            <td>Gigabytes of SDKs, slow C++ compilation</td>
-            <td><span class="badge-yes">Sub-millisecond Zig Compiler, Zero Dependencies</span></td>
+            <td>Toolchain &amp; Footprint</td>
+            <td>Multi-gigabyte SDKs &amp; heavy runtime scaffolding</td>
+            <td><span class="badge-yes">Sub-Millisecond Zig Compiler, Zero Dependencies</span></td>
           </tr>
         </tbody>
       </table>
@@ -1276,18 +1568,39 @@
         <div class="retro-badge zig"><span>MADE WITH</span><span>ZIG 0.13</span></div>
         <div class="retro-badge pure"><span>ENGINE AS</span><span>SPINE</span></div>
         <div class="retro-badge scumm"><span>HOMAGE TO</span><span>SCUMM / SCI</span></div>
-        <div class="retro-badge retro"><span>ZERO BLOAT</span><span>NO LLVM</span></div>
+        <div class="retro-badge retro"><span>DETERMINISTIC</span><span>60 HZ TICK</span></div>
       </div>
 
       <p class="footer-quote">
-        "Games were never meant to be giant movie studios pretending to be interactive.<br>
-        They are living clocks of emergent rules, waiting for a player to turn the gears."
+        "A simulation game is a living clock of emergent rules. The craft is building a runtime clean enough that the gears never grind."
       </p>
 
+      <div class="footer-columns">
+        <div class="footer-col">
+          <div class="footer-col-title">Project &amp; Source</div>
+          <ul class="footer-col-links">
+            <li><a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub Repository ↗</a></li>
+            <li><a href="../docs/manual.html">Interactive 3x Developer Manual</a></li>
+            <li><a href="https://github.com/aedmark/bespoke-engine/blob/main/script_spec.md" target="_blank" rel="noopener">Vertical Slice Script Spec ↗</a></li>
+            <li><a href="https://github.com/aedmark/bespoke-engine/blob/main/whitepaper.md" target="_blank" rel="noopener">Original Design Whitepaper ↗</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <div class="footer-col-title">Portfolio &amp; Lineage</div>
+          <ul class="footer-col-links">
+            <li><a href="../../portfolio/index.html">Andrew Edmark Portfolio</a></li>
+            <li><a href="../../the-manifold/index.html">The Manifold Framework</a></li>
+            <li><a href="../../level0engine/index.html">Level 0 Engine (Liminal Determinism)</a></li>
+            <li><a href="../../Noctis-IV-OM/index.html">Noctis IV OM (Sierra SCI Reverse-Engineering)</a></li>
+          </ul>
+        </div>
+      </div>
+
       <p class="footer-meta">
-        Authored with care for the retro, narrative, and simulation web.<br>
-        Open source on <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub</a> · 
-        Standalone 3x Manual available in <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/manual.html" target="_blank">docs/manual.html</a>
+        Designed &amp; coded by <strong>Andrew Edmark</strong>.<br>
+        Crafted with pure Zig, zero external dependencies, and documented with The Manifold repository memory framework.<br>
+        Authored with care for the retro, narrative, and systemic simulation web.
       </p>
     </footer>
   </main>
@@ -1404,13 +1717,13 @@
           }),
           actions: [
             {
-              label: "🎶 Play Lute (Bard)",
+              label: "[VERB] Play Lute (Bard)",
               handler: () => {
                 const roll = Math.floor(Math.random() * 6 + 1) + Math.floor(Math.random() * 6 + 1);
                 if (roll >= 7) {
                   setFact("Guard", "CharmedBy", "Bard", 120);
                   log("CUE PlayLute", `Bard plays enchanting melody! Roll ${roll}>=7. Guard is CHARMED for 120 ticks!`, "cue");
-                  showSpeech("Bard", "♪♫ Enchanting ballad! ♫♪", 640, 310);
+                  showSpeech("Bard", "~* Enchanting ballad! *~", 640, 310);
                   playBeep(784, 'triangle', 0.2, 0.2);
                 } else {
                   log("CUE PlayLute", `Bard plucks a dissonant chord (Roll ${roll}). Guard ignores it.`, "info");
@@ -1420,7 +1733,7 @@
               }
             },
             {
-              label: "🐾 Steal Cheese (Cat)",
+              label: "[VERB] Steal Cheese (Cat)",
               handler: () => {
                 const isCharmed = hasFact("Guard", "CharmedBy", "Bard");
                 const guardHasCheese = hasFact("Guard", "Carries", "Cheese");
@@ -1440,7 +1753,7 @@
               }
             },
             {
-              label: "🚶 Patrol Guard to Hearth/Cellar",
+              label: "[VERB] Patrol Guard",
               handler: () => {
                 const guard = getActor("Guard");
                 if (guard.targetX === 200) {
@@ -1480,7 +1793,7 @@
           }),
           actions: [
             {
-              label: "🍺 Drink Green Drink",
+              label: "[VERB] Drink Green Drink",
               handler: () => {
                 setFact("Guybrush", "SpitIs", "Thick", null);
                 log("INVENTORY USE", "Guybrush downs the thick green drink! 'Glug glug glug...'", "cue");
@@ -1489,7 +1802,7 @@
               }
             },
             {
-              label: "📯 Blow Ship's Horn",
+              label: "[VERB] Blow Ship's Horn",
               handler: () => {
                 setFact("Organiser", "Distracted", "ShipArrival", 80);
                 const org = getActor("Organiser");
@@ -1501,7 +1814,7 @@
               }
             },
             {
-              label: "🚩 Tamper Distance Flags",
+              label: "[VERB] Move Distance Flags",
               handler: () => {
                 if (hasFact("Organiser", "Distracted", "ShipArrival")) {
                   state.flagsX = 480;
@@ -1517,7 +1830,7 @@
               }
             },
             {
-              label: "💨 Toggle Wind Gust",
+              label: "[VERB] Toggle Wind Gust",
               handler: () => {
                 state.windBlowing = !state.windBlowing;
                 if (state.windBlowing) {
@@ -1530,7 +1843,7 @@
               }
             },
             {
-              label: "💦 SPIT!",
+              label: "[VERB] SPIT!",
               actionPrimary: true,
               handler: () => {
                 const thick = hasFact("Guybrush", "SpitIs", "Thick");
@@ -1581,7 +1894,7 @@
           }),
           actions: [
             {
-              label: "📦 Scavenge Hotel Desk",
+              label: "[VERB] Scavenge Room Desk",
               handler: () => {
                 setFact("Gabriel", "Carries", "Marker", null);
                 setFact("Gabriel", "Carries", "MaskingTape", null);
@@ -1592,7 +1905,7 @@
               }
             },
             {
-              label: "🚪 Snatch Mosely's Passport",
+              label: "[VERB] Snatch Passport",
               handler: () => {
                 setFact("Gabriel", "Carries", "MoselyPassport", null);
                 log("SNATCH", "Gabriel snuck into Room 33 and snatched Mosely's passport from his coat!", "cue");
@@ -1601,7 +1914,7 @@
               }
             },
             {
-              label: "🖊️ Draw Moustache on Passport",
+              label: "[VERB] Draw Moustache",
               handler: () => {
                 if (hasFact("Gabriel", "Carries", "Marker") && hasFact("Gabriel", "Carries", "MoselyPassport")) {
                   setFact("Gabriel", "PassportModified", "true", null);
@@ -1614,7 +1927,7 @@
               }
             },
             {
-              label: "🩹 Tape Fence Gap",
+              label: "[VERB] Tape Fence Gap",
               handler: () => {
                 if (hasFact("Gabriel", "Carries", "MaskingTape")) {
                   state.fenceTaped = true;
@@ -1628,7 +1941,7 @@
               }
             },
             {
-              label: "💦 Squirt Cat with Bottle",
+              label: "[VERB] Squirt Cat",
               handler: () => {
                 if (state.fenceTaped) {
                   state.fenceHair = true;
@@ -1644,7 +1957,7 @@
               }
             },
             {
-              label: "🐈 Peel Fur & Craft Moustache",
+              label: "[VERB] Craft Cat Moustache",
               handler: () => {
                 if (state.fenceHair && hasFact("Gabriel", "Carries", "Syrup")) {
                   setFact("Gabriel", "Carries", "CatMoustache", null);
@@ -1659,7 +1972,7 @@
               }
             },
             {
-              label: "🥸 Don Disguise & Rent Bike",
+              label: "[VERB] Rent Motorcycle",
               actionPrimary: true,
               handler: () => {
                 const hasMoustache = hasFact("Gabriel", "Carries", "CatMoustache");
@@ -2183,7 +2496,7 @@
 
       btnPlayPause.addEventListener('click', () => {
         isPaused = !isPaused;
-        btnPlayPause.innerHTML = isPaused ? '<span>▶</span> Resume' : '<span>⏸</span> Pause';
+        btnPlayPause.innerHTML = isPaused ? '<span>▶</span> Resume' : '<span>[||]</span> Pause';
         simLed.className = 'led-dot ' + (isPaused ? 'amber' : 'green');
         simStateText.textContent = isPaused ? 'SIMULATION PAUSED' : 'SIMULATION RUNNING';
         playBeep(isPaused ? 400 : 600, 'sine', 0.05);

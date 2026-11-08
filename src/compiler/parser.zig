@@ -63,6 +63,7 @@ pub const Stmt = union(enum) {
 pub const DialogueChoice = struct {
     text: []const u8,
     guard: ?Expr = null,
+    where_patterns: []const FactPattern = &[_]FactPattern{},
     body: []const Stmt,
 };
 
@@ -264,11 +265,25 @@ pub const Parser = struct {
                     var choices = std.ArrayList(DialogueChoice).init(self.allocator);
                     while (self.current.tag == .kw_choice) {
                         try self.advance(); // consume 'choice'
-                        const text = (try self.expect(.string_literal)).slice;
+                        const text = if (self.current.tag == .string_literal)
+                            (try self.expect(.string_literal)).slice
+                        else
+                            try self.parse_name();
                         var guard: ?Expr = null;
                         if (self.current.tag == .kw_if) {
                             try self.advance();
                             guard = try self.parse_expr();
+                        }
+                        var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                        if (self.current.tag == .kw_where) {
+                            try self.advance();
+                            while (true) {
+                                const pat = try self.parse_fact_pattern();
+                                try where_patterns.append(pat);
+                                if (self.current.tag == .kw_and) {
+                                    try self.advance();
+                                } else break;
+                            }
                         }
                         _ = try self.expect(.colon);
                         _ = try self.expect(.indent);
@@ -277,6 +292,7 @@ pub const Parser = struct {
                         try choices.append(.{
                             .text = text,
                             .guard = guard,
+                            .where_patterns = try where_patterns.toOwnedSlice(),
                             .body = body,
                         });
                     }
@@ -586,11 +602,25 @@ pub const Parser = struct {
                     var choices = std.ArrayList(DialogueChoice).init(self.allocator);
                     while (self.current.tag == .kw_choice) {
                         try self.advance(); // consume 'choice'
-                        const text = (try self.expect(.string_literal)).slice;
+                        const text = if (self.current.tag == .string_literal)
+                            (try self.expect(.string_literal)).slice
+                        else
+                            try self.parse_name();
                         var guard: ?Expr = null;
                         if (self.current.tag == .kw_if) {
                             try self.advance();
                             guard = try self.parse_expr();
+                        }
+                        var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                        if (self.current.tag == .kw_where) {
+                            try self.advance();
+                            while (true) {
+                                const pat = try self.parse_fact_pattern();
+                                try where_patterns.append(pat);
+                                if (self.current.tag == .kw_and) {
+                                    try self.advance();
+                                } else break;
+                            }
                         }
                         _ = try self.expect(.colon);
                         _ = try self.expect(.indent);
@@ -599,6 +629,7 @@ pub const Parser = struct {
                         try choices.append(.{
                             .text = text,
                             .guard = guard,
+                            .where_patterns = try where_patterns.toOwnedSlice(),
                             .body = body,
                         });
                     }
@@ -1177,6 +1208,42 @@ test "P13-01: parser parses conditionally guarded dialogue choice blocks" {
             try testing.expectEqualStrings("Just browsing, thanks.", choices[2].text);
             try testing.expect(choices[2].guard == null);
             try testing.expectEqual(@as(usize, 1), choices[2].body.len);
+        },
+        else => try testing.expect(false),
+    }
+}
+
+test "P13-01: parser parses relational where-clause guarded dialogue choices" {
+    const testing = std.testing;
+    const script =
+        \\routine InsultDuel(Guybrush):
+        \\  choice "How appropriate. You fight like a cow!" where MasteredReply(Guybrush, ReplyCow) and Counters(ReplyCow, InsultFarmer):
+        \\    say Guybrush: "How appropriate. You fight like a cow!"
+        \\  choice "I am shaking, I am shaking!":
+        \\    say Guybrush: "I am shaking, I am shaking!"
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, script);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    var ast = try parser.parse_program();
+    defer ast.deinit();
+
+    try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
+    const r = ast.routines.items[0];
+    switch (r.body[0]) {
+        .choice_block => |choices| {
+            try testing.expectEqual(@as(usize, 2), choices.len);
+            try testing.expectEqualStrings("How appropriate. You fight like a cow!", choices[0].text);
+            try testing.expectEqual(@as(usize, 2), choices[0].where_patterns.len);
+            try testing.expectEqualStrings("MasteredReply", choices[0].where_patterns[0].relation);
+            try testing.expectEqualStrings("Counters", choices[0].where_patterns[1].relation);
+            try testing.expectEqualStrings("I am shaking, I am shaking!", choices[1].text);
+            try testing.expectEqual(@as(usize, 0), choices[1].where_patterns.len);
         },
         else => try testing.expect(false),
     }
