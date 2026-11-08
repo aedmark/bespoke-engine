@@ -28,14 +28,17 @@ pub const CompiledWhenRule = struct {
 pub const CompiledProgram = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
+    routine_entities: std.StringHashMap([]const u8),
     when_rule_entries: std.ArrayList(usize),
     cue_handler_entries: std.StringHashMap(usize),
     allocated_cue_keys: std.ArrayList([]const u8),
     reactive_rules: std.ArrayList(CompiledWhenRule),
+    initial_entry: ?usize = null,
 
     pub fn deinit(self: *CompiledProgram) void {
         self.chunk.deinit();
         self.routine_entries.deinit();
+        self.routine_entities.deinit();
         self.when_rule_entries.deinit();
         self.cue_handler_entries.deinit();
         for (self.allocated_cue_keys.items) |k| {
@@ -95,6 +98,7 @@ pub const Codegen = struct {
     spatial: ?*SpatialSystem,
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
+    routine_entities: std.StringHashMap([]const u8),
     when_rule_entries: std.ArrayList(usize),
     cue_handler_entries: std.StringHashMap(usize),
     allocated_cue_keys: std.ArrayList([]const u8),
@@ -107,6 +111,7 @@ pub const Codegen = struct {
             .spatial = spatial,
             .chunk = BytecodeChunk.init(allocator),
             .routine_entries = std.StringHashMap(usize).init(allocator),
+            .routine_entities = std.StringHashMap([]const u8).init(allocator),
             .when_rule_entries = std.ArrayList(usize).init(allocator),
             .cue_handler_entries = std.StringHashMap(usize).init(allocator),
             .allocated_cue_keys = std.ArrayList([]const u8).init(allocator),
@@ -207,14 +212,20 @@ pub const Codegen = struct {
         }
 
         // 3. Compile initial declarative statements
-        for (ast.initial_stmts.items) |stmt| {
-            try mut_self.compile_stmt(stmt);
+        var initial_entry: ?usize = null;
+        if (ast.initial_stmts.items.len > 0) {
+            initial_entry = mut_self.chunk.count();
+            for (ast.initial_stmts.items) |stmt| {
+                try mut_self.compile_stmt(stmt);
+            }
+            _ = try mut_self.chunk.emit_op(.halt);
         }
 
         // 4. Compile routines
         for (ast.routines.items) |routine| {
             const entry_pc = mut_self.chunk.count();
             try mut_self.routine_entries.put(routine.name, entry_pc);
+            try mut_self.routine_entities.put(routine.name, routine.entity);
 
             for (routine.body) |stmt| {
                 try mut_self.compile_stmt(stmt);
@@ -327,10 +338,12 @@ pub const Codegen = struct {
         return CompiledProgram{
             .chunk = mut_self.chunk,
             .routine_entries = mut_self.routine_entries,
+            .routine_entities = mut_self.routine_entities,
             .when_rule_entries = mut_self.when_rule_entries,
             .cue_handler_entries = mut_self.cue_handler_entries,
             .allocated_cue_keys = mut_self.allocated_cue_keys,
             .reactive_rules = mut_self.reactive_rules,
+            .initial_entry = initial_entry,
         };
     }
 

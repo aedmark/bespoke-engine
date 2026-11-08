@@ -168,19 +168,43 @@ pub const AST = struct {
     }
 };
 
+pub const Diagnostic = struct {
+    line: u32,
+    column: u32,
+    message: []const u8,
+};
+
 pub const Parser = struct {
     lexer: *Lexer,
     current: Token,
     allocator: std.mem.Allocator,
+    diagnostic: ?Diagnostic = null,
+    diag_buf: [256]u8 = undefined,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
             .lexer = lexer,
             .current = undefined,
             .allocator = allocator,
+            .diagnostic = null,
+            .diag_buf = undefined,
         };
         try p.advance();
         return p;
+    }
+
+    pub fn set_error(self: *Parser, comptime fmt: []const u8, args: anytype) error{UnexpectedToken} {
+        const msg = std.fmt.bufPrint(&self.diag_buf, fmt, args) catch "syntax error";
+        self.diagnostic = .{
+            .line = self.current.line,
+            .column = self.current.col,
+            .message = msg,
+        };
+        return error.UnexpectedToken;
+    }
+
+    pub fn get_diagnostic(self: *const Parser) ?Diagnostic {
+        return self.diagnostic;
     }
 
     fn advance(self: *Parser) !void {
@@ -193,13 +217,11 @@ pub const Parser = struct {
 
     fn expect(self: *Parser, tag: TokenTag) !Token {
         if (self.current.tag != tag) {
-            std.debug.print("\n[PARSER ERROR] Expected {s}, found {s} ('{s}') at line {d}\n", .{
+            return self.set_error("expected {s}, found {s} ('{s}')", .{
                 @tagName(tag),
                 @tagName(self.current.tag),
                 self.current.slice,
-                self.current.line,
             });
-            return error.UnexpectedToken;
         }
         const tok = self.current;
         try self.advance();
@@ -1247,4 +1269,28 @@ test "P13-01: parser parses relational where-clause guarded dialogue choices" {
         },
         else => try testing.expect(false),
     }
+}
+
+test "P15-03: parser captures accurate line and column diagnostics on syntax errors" {
+    const testing = std.testing;
+    const invalid_script =
+        \\routine Patrol Guard):
+        \\  walk Guard to Cellar
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, invalid_script);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    const result = parser.parse_program();
+    try testing.expectError(error.UnexpectedToken, result);
+
+    const diag = parser.get_diagnostic();
+    try testing.expect(diag != null);
+    try testing.expectEqual(@as(u32, 1), diag.?.line);
+    try testing.expectEqual(@as(u32, 16), diag.?.column);
+    try testing.expect(std.mem.indexOf(u8, diag.?.message, "expected lparen") != null);
 }

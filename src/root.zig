@@ -10,6 +10,8 @@ pub const repl = @import("repl.zig");
 pub const spitting_contest = @import("spitting_contest.zig");
 pub const gk3_moustache = @import("gk3_moustache.zig");
 pub const sword_fighting = @import("sword_fighting.zig");
+pub const package = @import("package.zig");
+pub const runner = @import("runner.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -31,7 +33,17 @@ pub const Point2D = spatial.Point2D;
 pub const Waypoint = spatial.Waypoint;
 pub const WaypointId = spatial.WaypointId;
 pub const compile_source = compiler.compile_source;
+pub const check_source = compiler.check_source;
+pub const Diagnostic = compiler.Diagnostic;
+pub const CheckResult = compiler.CheckResult;
 pub const CompiledProgram = compiler.CompiledProgram;
+pub const save_package = package.save_package;
+pub const load_package = package.load_package;
+pub const save_package_file = package.save_package_file;
+pub const load_package_file = package.load_package_file;
+pub const run_file = runner.run_file;
+pub const compile_file = runner.compile_file;
+pub const check_file = runner.check_file;
 pub const DisplayBridge = display.DisplayBridge;
 pub const RenderFrame = display.RenderFrame;
 pub const Repl = repl.Repl;
@@ -48,4 +60,6 @@ test "root test imports all modules" {
     _ = @import("spitting_contest.zig");
     _ = @import("gk3_moustache.zig");
     _ = @import("sword_fighting.zig");
+    _ = @import("package.zig");
+    _ = @import("runner.zig");
 }

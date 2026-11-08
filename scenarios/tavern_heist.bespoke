@@ -1,0 +1,29 @@
+# BeSpoke Narrative Scenario: The Tavern Heist
+# Engine-as-Spine * Flat Relational Facts * Cooperative Fibers * Reactive When Rules
+
+scene Tavern:
+  cast: Guard, Bard, Cat
+  props: Fireplace, BarCounter, WineCask
+  marks: Hearth, Bar, Cellar
+
+relation Carries(holder, item)
+relation CharmedBy(listener, musician)
+
+entity Cheese
+
+remember Carries(Guard, Cheese)
+
+routine Patrol(Guard):
+  walk Guard to Cellar
+  wait 5 ticks
+  walk Guard to Hearth
+
+when CharmedBy(Guard, Bard):
+  interrupt Guard with:
+    face Guard toward Bard
+    wait 4 ticks
+
+when Carries(Cat, Cheese):
+  interrupt Guard with:
+    face Guard toward Cat
+    wait 2 ticks

@@ -124,9 +124,9 @@ Goal: Implement the complete *Gabriel Knight 3* Rennes-le-Château Cat Moustache
 
 Goal: Support executing external `.bespoke` scenario files directly from disk via CLI, with script file parsing, syntax verification, and optional bytecode binary compilation.
 
-- [ ] P15-01 CLI script runner (`bespoke run <script.bespoke>`) parsing and compiling external text files from the host filesystem in both headless and GUI modes. (D-001, D-002)
-- [ ] P15-02 Bytecode binary emission and standalone asset loader (`bespoke compile <script.bespoke> -o game.bspk`), serializing and deserializing compiled bytecode chunks with versioning and validation. (D-002)
-- [ ] P15-03 Script diagnostics and validation tooling (`bespoke check <script.bespoke>`) with file, line, and column error reporting. (D-002)
+- [x] P15-01 CLI script runner (`bespoke run <script.bespoke>`) parsing and compiling external text files from the host filesystem in both headless and GUI modes. (D-001, D-002, D-018; completed 2026-11-07, verified via `zig test -lc -lSDL2 src/runner.zig`, `./zig-out/bin/bespoke run scenarios/tavern_heist.bespoke --headless`, and `./zig-out/bin/bespoke run scenarios/tavern_heist.bspk --headless`)
+- [x] P15-02 Bytecode binary emission and standalone asset loader (`bespoke compile <script.bespoke> -o game.bspk`), serializing and deserializing compiled bytecode chunks with versioning and validation. (D-002, D-018; completed 2026-11-07, verified via `zig test src/package.zig` and `./zig-out/bin/bespoke compile scenarios/tavern_heist.bespoke -o scenarios/tavern_heist.bspk`)
+- [x] P15-03 Script diagnostics and validation tooling (`bespoke check <script.bespoke>`) with file, line, and column error reporting. (D-002, D-018; completed 2026-11-07, verified via `zig test src/compiler.zig`, `zig test src/compiler/parser.zig`, and `./zig-out/bin/bespoke check scenarios/tavern_heist.bespoke`)
 
 ## Phase 16: Peripheral Audio Subsystem & Procedural Sound Synthesizer
 

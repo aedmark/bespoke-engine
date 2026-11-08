@@ -167,6 +167,23 @@ Format:
 - Static cooldown timers in host script variables: rejected because host-language variables cannot participate in BeSpoke's zero-copy `memcpy` snapshots and instant time-travel rewinds (D-001, D-003).
 **Consequences:** Authors can author complex conversational duels and living, reactive NPCs using concise relational rules without flag fluff; conversational state deterministically rewinds alongside physical simulation.
 
+## D-018 Standalone Script File Execution, Bytecode Package Serialization (.bspk), and Diagnostic Tooling (2026-11-07, status: accepted)
+**Context:** BeSpoke previously executed scenarios compiled from in-memory Zig string constants (`TAVERN_SCRIPT`, `GK3_MOUSTACHE_SCRIPT`, etc.). Narrative designers need to author external `.bespoke` text files on disk, validate them with compiler line/column diagnostics, compile them into standalone binary asset packages (`.bspk`), and run them in both headless and 60 Hz GUI modes without recompiling the Zig engine spine.
+**Decision:** Implement external script execution, binary serialization, and diagnostic tooling across Phases 15-01 through 15-03:
+1. **CLI Subcommand Structure (P15-01):** Establish first-class subcommands in `src/main.zig` and `src/runner.zig`:
+   - `bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N]`: loads and executes source or bytecode in headless or interactive GUI mode.
+   - `bespoke compile <script.bespoke> -o <game.bspk>`: compiles source text into an optimized binary package.
+   - `bespoke check <script.bespoke>`: validates syntax and semantics without execution.
+2. **Bytecode Binary Asset Specification (.bspk, P15-02):** Implement `src/package.zig` defining a self-contained binary container:
+   - Header: 4-byte magic (`BSPB` - BeSpoke Binary), schema version (`u32 = 1`), payload size, and CRC32 checksum over the payload.
+   - Payload: Interned entity & relation dictionary tables, spatial waypoints & hotspots, raw bytecode chunk, and entry tables (routines with actor metadata, cue handlers, when rules, and reactive simulation rules).
+3. **Untrusted Boundary Validation (P15-02, SECURITY.md):** The asset loader validates magic header, version, CRC32 checksum, element counts, and slice bounds before allocating structures, ensuring malformed or maliciously crafted packages cannot cause buffer overflows or host crashes.
+4. **Diagnostic Error Reporting (P15-03):** Enhance `src/compiler/parser.zig` and `src/compiler.zig` with a structured `Diagnostic` type (`line: u32, column: u32, message: []const u8`). The parser emits standard Unix compiler error diagnostics (`<file>:<line>:<col>: error: <message>`) and exits with non-zero code on failure.
+**Alternatives:**
+- Embedding an external scripting runtime (Lua/Wren): rejected because BeSpoke's Engine-as-Spine architecture requires zero external dependencies, deterministic memory layout, and full integration with continuous `when` rules.
+- JSON-based bytecode serialization: rejected for a CRC32-checksummed binary format matching BeSpoke's snapshot serialization architecture (D-001, D-003).
+**Consequences:** Complete decoupling of narrative authoring from the Zig toolchain. Game creators can write `.bespoke` files on disk, validate them in CI via `bespoke check`, compile them to `.bspk`, and distribute them to end users running the standalone `bespoke` engine binary.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

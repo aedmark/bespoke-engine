@@ -751,6 +751,29 @@
             {"label": "Testing Strategy & Recipes", "target": "docs/TESTING.md", "kind": "document"}
           ],
           "related": ["zero-external-dependencies", "test-verification-hierarchy"]
+        },
+        {
+          "id": "standalone-script-runner-and-package-compiler",
+          "title": "Standalone Script Runner & Bytecode Packager",
+          "summary": "CLI subcommands to check, compile, and execute external .bespoke scripts and binary .bspk packages.",
+          "synopsis": "bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N] | bespoke compile <script> -o <pkg.bspk> | bespoke check <script>",
+          "tags": ["cli", "compiler", "package", "runner", "diagnostics"],
+          "what": "Enables narrative designers to author external scenario files on disk, validate syntax with line and column diagnostics, compile them into standalone CRC32-checksummed binary packages (.bspk), and execute them directly without recompiling engine source.",
+          "how": [
+            "bespoke check validates syntax and semantics, reporting file, line, and column error diagnostics on syntax mistakes.",
+            "bespoke compile lowers narrative DSL text directly to standalone binary asset packages (.bspk) with magic header BSPB and CRC32 payload verification.",
+            "bespoke run executes either text scripts or compiled packages in headless simulation mode or full 60 Hz SDL2 graphical mode.",
+            "The asset loader validates header magic, version, payload checksum, and element bounds before allocation, protecting host boundaries from corrupt packages."
+          ],
+          "why": "Narrative authors require a decoupled toolchain where content can be written, validated in CI, packaged, and distributed without touching the engine's core Zig code.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-018", "target": "docs/DECISIONS.md#d-018", "kind": "decision"},
+            {"label": "Standalone Script Runner", "target": "src/runner.zig", "kind": "source"},
+            {"label": "Bytecode Package Serialization", "target": "src/package.zig", "kind": "source"},
+            {"label": "Compiler Diagnostics", "target": "src/compiler.zig", "kind": "source"}
+          ],
+          "related": ["headless-and-interactive-cli", "compiler-pipeline", "bytecode-vm-and-chunk"]
         }
       ]
     },

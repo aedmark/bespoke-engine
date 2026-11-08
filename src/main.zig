@@ -13,12 +13,43 @@ pub fn main() !void {
     var is_spitting_contest = false;
     var is_gk3 = false;
     var is_sword_fighting = false;
+    var ticks_arg: usize = 20;
+
+    var subcommand: ?enum { run, compile, check, help } = null;
+    var target_file: ?[]const u8 = null;
+    var output_file: ?[]const u8 = null;
+
     var args_it = try std.process.argsWithAllocator(allocator);
     defer args_it.deinit();
     _ = args_it.next(); // Skip binary name
     while (args_it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--headless")) {
+        if (std.mem.eql(u8, arg, "run")) {
+            subcommand = .run;
+            if (args_it.next()) |file| {
+                target_file = file;
+            }
+        } else if (std.mem.eql(u8, arg, "compile")) {
+            subcommand = .compile;
+            if (args_it.next()) |file| {
+                target_file = file;
+            }
+        } else if (std.mem.eql(u8, arg, "check")) {
+            subcommand = .check;
+            if (args_it.next()) |file| {
+                target_file = file;
+            }
+        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
+            if (args_it.next()) |out| {
+                output_file = out;
+            }
+        } else if (std.mem.eql(u8, arg, "--ticks")) {
+            if (args_it.next()) |t_str| {
+                ticks_arg = std.fmt.parseInt(usize, t_str, 10) catch 20;
+            }
+        } else if (std.mem.eql(u8, arg, "--headless")) {
             is_headless_arg = true;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "help")) {
+            subcommand = .help;
         } else if (std.mem.eql(u8, arg, "--spitting-contest") or std.mem.eql(u8, arg, "--spit")) {
             is_spitting_contest = true;
         } else if (std.mem.eql(u8, arg, "--gk3") or std.mem.eql(u8, arg, "--cat-moustache")) {
@@ -35,6 +66,62 @@ pub fn main() !void {
                     is_sword_fighting = true;
                 }
             }
+        } else if (target_file == null and !std.mem.startsWith(u8, arg, "-")) {
+            subcommand = .run;
+            target_file = arg;
+        }
+    }
+
+    if (subcommand) |cmd| {
+        switch (cmd) {
+            .help => {
+                try stdout.print(
+                    \\BeSpoke Engine - Standalone Simulation Spine & Narrative Game DSL
+                    \\
+                    \\Usage:
+                    \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N]
+                    \\  bespoke compile <script.bespoke> -o <game.bspk>
+                    \\  bespoke check <script.bespoke>
+                    \\
+                    \\Built-in Vertical Slices:
+                    \\  bespoke --headless               (The Tavern Heist demo)
+                    \\  bespoke --spitting-contest       (Monkey Island 2 Spitting Contest)
+                    \\  bespoke --gk3                    (Gabriel Knight 3 Cat Moustache)
+                    \\  bespoke --sword-fighting         (Monkey Island 1 Insult Sword Fighting)
+                    \\
+                , .{});
+                return;
+            },
+            .check => {
+                if (target_file) |fpath| {
+                    const ok = try bespoke.runner.check_file(allocator, fpath, stdout);
+                    if (!ok) std.process.exit(1);
+                    return;
+                } else {
+                    try stdout.print("error: 'bespoke check' requires a script file path\n", .{});
+                    std.process.exit(1);
+                }
+            },
+            .compile => {
+                if (target_file) |in_path| {
+                    const out_path = output_file orelse "game.bspk";
+                    try bespoke.runner.compile_file(allocator, in_path, out_path, stdout);
+                    return;
+                } else {
+                    try stdout.print("error: 'bespoke compile' requires an input script file path\n", .{});
+                    std.process.exit(1);
+                }
+            },
+            .run => {
+                if (target_file) |fpath| {
+                    try bespoke.runner.run_file(allocator, fpath, .{
+                        .ticks = ticks_arg,
+                        .is_headless = is_headless_arg,
+                        .verbose = true,
+                    }, stdout);
+                    return;
+                }
+            },
         }
     }
 

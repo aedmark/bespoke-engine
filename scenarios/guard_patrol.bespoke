@@ -1,0 +1,16 @@
+# BeSpoke Narrative Scenario: Castle Courtyard Patrol
+# Autonomous Ambient Routines * Spatial Waypoints
+
+scene Courtyard:
+  cast: Guard, Merchant
+  props: Fountain, FruitStall
+  marks: Gate, FountainMark, StallMark
+
+routine Patrol(Guard):
+  loop:
+    walk Guard to FountainMark
+    wait 4 ticks
+    walk Guard to StallMark
+    wait 4 ticks
+    walk Guard to Gate
+    wait 4 ticks

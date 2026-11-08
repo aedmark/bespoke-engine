@@ -12,31 +12,36 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-07, session 15, on `main`: Monkey Island 1 Insult Sword Fighting combinatorial query scenario and organic repetition fatigue with TTL mood decay (src/sword_fighting.zig)._
+_Last updated: 2026-11-07, session 16, on `main`: Phase 15 Standalone Script File Execution & Compiler CLI (bespoke run, compile, check, and .bspk asset packaging)._
 
 **Where things stand, in one paragraph:**
-All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, multi-step item crafting, and relational epistemological dialogues. The engine natively executes the complete *Gabriel Knight 3* Cat Moustache scenario across 3 partitioned scenes and the *Monkey Island 1* Insult Sword Fighting scenario with 16 canonical insults, 16 counters, Carla Sword Master variants, target validation, and organic repetition fatigue with TTL mood decay.
+All 15 phases of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, multi-step item crafting, relational epistemological dialogues, and external script file execution. The engine provides a complete CLI toolchain (`bespoke run`, `bespoke compile`, `bespoke check`) supporting external `.bespoke` scenario files from disk, line/column compiler error diagnostics, standalone CRC32-checksummed binary asset packaging (`.bspk`), and execution in both headless and 60 Hz interactive GUI modes.
 
 **Verified** (2026-11-07, on `main`, Linux x86_64, Zig 0.13.0)
 
 | Suite | Result |
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings (includes 3x manual check)** |
-| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 34 entries, 0 warnings)** |
+| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 35 entries, 0 warnings)** |
 | `python3 tools/manual.py review scheme/bespoke.manual.json --strict` | **passed (0 items for human attention)** |
 | `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check` | **passed (build check passed)** |
 | `python3 -m unittest discover -s tests -v` | **29/29 passed** |
 | `zig test src/world.zig` | **5/5 passed** |
 | `zig test src/bytecode.zig` | **6/6 passed** |
 | `zig test src/spatial.zig` | **9/9 passed** |
-| `zig test src/vm.zig` | **33/33 passed** |
-| `zig test src/repl.zig` | **32/32 passed** |
-| `zig test src/compiler/lexer.zig` | **5/5 passed** |
-| `zig test src/compiler/parser.zig` | **12/12 passed** |
-| `zig test -lc -lSDL2 src/display.zig` | **44/44 passed** |
-| `zig test -lc -lSDL2 src/sword_fighting.zig` | **62/62 passed** |
-| `zig test -lc -lSDL2 src/root.zig` | **55/55 passed** |
+| `zig test src/vm.zig` | **34/34 passed** |
+| `zig test src/repl.zig` | **35/35 passed** |
+| `zig test src/compiler.zig` | **42/42 passed** |
+| `zig test src/package.zig` | **47/47 passed** |
+| `zig test -lc -lSDL2 src/runner.zig` | **71/71 passed** |
+| `zig test -lc -lSDL2 src/display.zig` | **45/45 passed** |
+| `zig test -lc -lSDL2 src/sword_fighting.zig` | **71/71 passed** |
+| `zig test -lc -lSDL2 src/root.zig` | **71/71 passed** |
 | `zig build test` | **passed** |
+| `bespoke check scenarios/tavern_heist.bespoke` | **syntax and semantics valid passed** |
+| `bespoke compile scenarios/tavern_heist.bespoke -o scenarios/tavern_heist.bspk` | **binary package compiled and validated** |
+| `bespoke run scenarios/tavern_heist.bespoke --headless` | **standalone script execution passed** |
+| `bespoke run scenarios/tavern_heist.bspk --headless` | **standalone binary package execution passed** |
 | `zig build run -- --headless` | **Tavern Heist full simulation with live rewind passed** |
 | `zig build run -- --spitting-contest --headless` | **Booty Island Spitting Contest full scenario with rewind passed** |
 | `zig build run -- --gk3 --headless` | **Gabriel Knight 3 Cat Moustache 15-step scenario with rewind passed** |
@@ -57,6 +62,7 @@ All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **Multi-Scene Transitions & Stage Director:** First-class syntax and bytecode instruction `transition to scene: <TargetScene>` (`Opcode.transition_scene`), VM scene tracking, fiber routine pausing and resuming, topological spatial graph partitioning by scene/room, and dynamic visual theme/backdrop switching (Spitting Competition, Wine Cellar, Tavern Common Room) with continuous global relational fact preservation (P12-01 through P12-03, D-014).
 - **Relational Dialogue Trees & Dynamic Pruning:** First-class DSL syntax `choice "..." if Condition:` lowered into choice blocks, VM fact-pattern and expression evaluation (`eval_expr`, `has_fact_pattern`, `prune_dialogue_choices`), dynamic balloon scaling up to 9 choices with bounds clamping, mouse wheel and arrow scrolling, numbered tags `[1]..[9]`, and dual mouse/keyboard hotkey selection (P13-01 through P13-03, D-015).
 - **Relational Epistemology & Combinatorial Dialogue:** Multi-clause `where` patterns on dialogue choices (`P13-04`), dynamic insult parry queries, Carla master variant translation, target invariants, repetition frequency counters (`Inquired`), and organic TTL mood decay (`AnnoyedWith`, `FuriousWith`) (`P13-05`, `P13-06`, `D-017`).
+- **Standalone Script Runner & Compiler CLI:** CLI subcommands `bespoke run`, `compile`, and `check`, external `.bespoke` scenario parsing from disk, line/column syntax error diagnostics (`Diagnostic`, `CheckResult`), standalone `.bspk` binary package format with `BSPB` magic and CRC32 payload verification, and dual headless/interactive execution (`P15-01` through `P15-03`, `D-018`).
 
 **Not verified**
 - Peripheral audio sound effects / music playback; visual cues, floating banners, and speech balloons are fully verified.
@@ -69,6 +75,11 @@ All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 ---
 
 ## Session log
+
+### Session 16 (2026-11-07)
+- **Goal:** Implement Phase 15: Standalone Script File Execution & Compiler CLI (`P15-01` through `P15-03`, `D-018`).
+- **Work:** Recorded architectural decision `D-018` (Standalone Script File Execution, Bytecode Package Serialization (.bspk), and Diagnostic Tooling). Added structured `Diagnostic` type (`line`, `column`, `message`) to `src/compiler/parser.zig` and implemented `check_source` in `src/compiler.zig` producing standard Unix compiler diagnostics (`file:line:col: error: message`). Enhanced `CompiledProgram` and `Codegen` (`src/compiler/codegen.zig`) to track routine actor names (`routine_entities`) and top-level initial statement entry points (`initial_entry`). Implemented standalone binary asset specification (`.bspk`) in `src/package.zig` with 4-byte magic (`BSPB`), version (`1`), CRC32 payload checksum verification, entity/relation tables, spatial waypoints/hotspots, and raw bytecode chunks, with full bounds and corruption rejection. Implemented standalone CLI runner and tooling in `src/runner.zig` and `src/main.zig` supporting `bespoke run <script.bespoke | game.bspk>`, `bespoke compile <script.bespoke> -o <game.bspk>`, and `bespoke check <script.bespoke>` across headless and 60 Hz interactive GUI modes. Created standalone scenario specimens (`scenarios/tavern_heist.bespoke`, `scenarios/guard_patrol.bespoke`). Added entry `standalone-script-runner-and-package-compiler` to `scheme/bespoke.manual.json` and compiled `docs/manual.html`.
+- **Outcome:** All 71 tests passing on `src/root.zig`, 71/71 on `src/runner.zig`, 47/47 on `src/package.zig`, 42/42 on `src/compiler.zig`, 34/34 on `src/vm.zig`, 35/35 on `src/repl.zig`, `zig build test` passing. External script check, compile, and run end-to-end verified across both `.bespoke` text scripts and `.bspk` binary assets. `python3 tools/check_docs.py` reported 0 errors and 0 warnings. Phase 15 roadmap items (`P15-01` through `P15-03`) complete.
 
 ### Session 15 (2026-11-07)
 - **Goal:** Implement Monkey Island 1 Insult Sword Fighting and Organic NPC Repetition scenario in engine, with combinatorial fact queries and repetition fatigue mood decay (P13-04 through P13-06, D-017).
@@ -115,9 +126,4 @@ All 14 phases of the BeSpoke Engine roadmap are complete, verified, and operatio
 - **Work:** Extended compiler code generator (`src/compiler/codegen.zig`) to lower ternary `Uses` cue signatures (`Uses:Actor:ItemA:ItemB`) alongside commutative inverted signatures (`Uses:Actor:ItemB:ItemA`) and multi-level resolution (`find_cue_handler`). Enhanced VM (`src/vm.zig`) with 3-argument cue execution in `fire_cue(compiled, "Uses", actor, target_a, target_b)`. Extended peripheral display renderer (`src/display/renderer.zig`) with `UserAction` variants for `combine_inventory_items`, `use_inventory_on_actor`, and `use_inventory_on_hotspot`. Implemented two-step inventory click flow with `selected_inventory_item` state: first click selects item into hand with glowing golden double outline, amber tray fill, and top-of-verb-bar in-hand cursor indicator; second click on another inventory item combines them; clicking an actor or hotspot applies the held item; and right-clicking cancels in-hand state. Resolved multi-actor and waypoint label collisions via `EntityScreenLayout` and `get_entity_screen_layout`: expanded actor horizontal separation to 60px and staggered vertical elevations for names (16px / 32px) and statuses (4px / 18px), while shifting hovered stage mark prompts below actor statuses (34px) when actors occupy the mark. Wired inventory combining and in-hand usage handlers into `src/main.zig` and `src/spitting_contest.zig`. Introduced the 3x Documentation Scheme template (`tools/manual.py`, `scheme/manual.schema.json`, `tests/test_manual.py`), adapting it as a developer guide with clickable relative evidence links and root resolution. Authored `scheme/bespoke.manual.json` spanning 8 sections and 32 What/How/Why entries covering the entire simulation spine, compiler, reactive rules, spatial topology, and dev workflows. Compiled standalone zero-dependency manual `docs/manual.html`. Integrated 3x manual validation into `tools/check_docs.py`.
 - **Outcome:** All 38 tests passing on `src/root.zig`, 22/22 on `src/display.zig`, 17/17 on `src/vm.zig`, 29/29 on `tests/test_manual.py`, `zig build test` passing, both `--headless` Tavern Heist and `--spitting-contest` Booty Island scenarios executing cleanly. `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` passed with 0 warnings. `python3 tools/manual.py review scheme/bespoke.manual.json --strict` passed with 0 items. Documentation verified with 0 errors and 0 warnings. Phase 11 roadmap items (`P11-01` through `P11-03`) complete. 3x Documentation Scheme & Developer Guide operational.
 
-### Session 6 (2026-11-06)
-- **Goal:** Implement Phase 10: The Booty Island Spitting Contest Scenario & Extended Narrative DSL (P10-01 through P10-03, D-012), calibrate visual layout, and fix actor positioning.
-- **Work:** Recorded architectural decision `D-012` (High-Level Stageplay Taxonomy, Falling-Edge Triggers, and TTL Expiration Hooks). Extended lexer (`src/compiler/lexer.zig`) with stageplay keywords (`scene`, `cast`, `props`, `marks`, `now`, `is`, `are`, `stops`, `forgets`, `being`, `animate`, `stop`, `during`, `state`, `resume`, `done`, `currently`, `in`, `the`, `says`), square brackets (`[` / `]`), tilde comments (`~`), and hyphenated animation clip identifiers (`wind-blowing`). Enhanced parser (`src/compiler/parser.zig`) to parse stageplay taxonomy headers, automatic waypoint and hotspot registration for marks and props, natural state assertions (`now X is [not] Y`, `X is [not] Y in the scene`), falling-edge when rules (`when X stops being Y:`), and expiration rules (`when Entity forgets Relation:`). Extended code generator (`src/compiler/codegen.zig`) to lower `.animate` cues and `.resume_stmt` operations. Enhanced `World` (`src/world.zig`) with a `recently_expired: [16]Fact` ring buffer populated during `prune_expired()`. Extended VM reactive rule engine (`src/vm.zig`) with `ReactiveEdge` (`.rising`, `.falling`, `.on_expire`) to evaluate expiration triggers against `recently_expired` and falling edges on `true -> false` transitions. Implemented the complete Booty Island Spitting Contest vertical slice in `src/spitting_contest.zig` with full CLI support in `src/main.zig` (`--spitting-contest`, `--spit`, `--scenario spitting-contest`), featuring crowd egging routine, wind cycling, ship horn distraction, flag tampering, thick spit green drink, wind-timed spit resolution, TTL expiration resumption, and time-travel rewind verification. Fixed waypoint/hotspot string lifetime safety in `src/spatial.zig` via owned duplication to eliminate compiler arena pointer corruption. Calibrated field distance track lines and spread actors across distinct coordinates. Resolved multi-actor visual stacking via automated cluster standoff separation (`get_entity_screen_pos`), dynamically offsetting co-located actors (e.g. Guybrush and Organiser at the Starting Line) and centering all actor names and statuses. Suppressed indoor corridor lines in open outdoor scenes, removed phantom `Judging Post` waypoint, and replaced solid waypoint circles with subtle stage marks that only display tooltips when hovered to eliminate label collisions. Populated Guybrush's initial inventory (`Horn`, `GreenDrink`) and added direct inventory tray mouse-click hit testing.
-- **Outcome:** All 35 tests passing on `src/root.zig`, `zig build test` passing, both `--headless` Tavern Heist and `--spitting-contest` Booty Island scenarios executing cleanly. Documentation verified with 0 errors and 0 warnings. Phase 10 roadmap items (`P10-01` through `P10-03`) complete.
-
-Older sessions: Sessions 1 to 5 in [archive/SESSION_LOG_2026_11.md](archive/SESSION_LOG_2026_11.md).
+Older sessions: Sessions 1 to 6 in [archive/SESSION_LOG_2026_11.md](archive/SESSION_LOG_2026_11.md).

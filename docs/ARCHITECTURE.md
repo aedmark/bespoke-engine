@@ -75,6 +75,7 @@ World Ticks (Discrete Clock) --------------------------------------------->|
 | Interface | Producer | Consumer | Contract / compatibility |
 | --- | --- | --- | --- |
 | Bytecode binary | Compiler | Virtual Machine | Compact opcode stream with opcode table and constant pool |
+| Bytecode package (.bspk) | Asset Compiler (`src/package.zig`) | Runner / Asset Loader | Standalone CRC32-checksummed binary container (`BSPB`) with symbol tables, waypoints, and bytecode |
 | State snapshot | World Store | Disk / Memory Buffer | Flat contiguous memory arena; restorable via `memcpy` |
 | Render state slice | VM / World Store | Display Peripheral | Read-only double-buffered struct containing active entity positions, facing, and visual cues |
 | External cues | Input / Peripheral | VM Cue Dispatcher | Named cue events (e.g. `PlayLute(Bard, Target)`) queued for next tick |
@@ -94,5 +95,6 @@ Rules that hold everywhere across the engine and runtime:
 | Boundary | Comes in as | Checked by | Rule |
 | --- | --- | --- | --- |
 | DSL Source Script | UTF-8 text file | Compiler lexer & parser | Reject malformed grammar, undefined relations, or invalid entity declarations |
+| Bytecode Package File (.bspk) | Binary container on disk | Package loader (`src/package.zig`) | Check magic bytes (`BSPB`), version (`1`), payload CRC32 checksum, element counts, and slice bounds before loading into World/VM |
 | External Input / Cues | Hardware event / input packet | Display bridge & cue validator | Validate cue arguments against known entity IDs before dispatching to VM queue |
 | State Snapshot Save File | Binary blob on disk | Snapshot loader | Check header magic bytes, version number, and arena checksum before `memcpy` |

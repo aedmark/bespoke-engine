@@ -3,4 +3,5 @@ zig-out/
 .idea/
 __pycache__/
 *.pyc
+*.bspk
 
