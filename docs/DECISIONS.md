@@ -184,6 +184,30 @@ Format:
 - JSON-based bytecode serialization: rejected for a CRC32-checksummed binary format matching BeSpoke's snapshot serialization architecture (D-001, D-003).
 **Consequences:** Complete decoupling of narrative authoring from the Zig toolchain. Game creators can write `.bespoke` files on disk, validate them in CI via `bespoke check`, compile them to `.bspk`, and distribute them to end users running the standalone `bespoke` engine binary.
 
+## D-019 Peripheral Audio Subsystem, Procedural Chiptune Synthesizer, and Decoupled Audio Cue Bridge (2026-11-07, status: accepted)
+**Context:** Narrative adventure games require rich auditory feedback—action sound effects (footsteps, pickups, combining items, ship horn blasts, splashes, sword clashes, alert stingers, NPC dialogue chirps, UI clicks) and dynamic scene-specific musical accompaniment. However, BeSpoke's Engine-as-Spine architecture (D-001) mandates that the core simulation runs deterministically on discrete ticks, with zero hardware dependencies, zero external WAV/MP3 asset files, and zero runtime audio thread blocking.
+**Decision:** Implement a peripheral procedural chiptune audio subsystem in pure Zig (`src/audio.zig`) with a thread-safe `AudioBridge` consumer in `src/display.zig` and SDL2 callback:
+1. **Decoupled Audio Cue Bridge (P16-01, D-001):** The simulation spine emits discrete audio cues into an atomic/mutex-guarded ring buffer inside `AudioBridge`. The peripheral audio thread (SDL2 audio callback at 44.1 kHz) drains events asynchronously without stalling simulation ticks or modifying simulation state. In headless mode or environments lacking audio drivers, the audio device safely bypasses hardware playback while preserving deterministic cue recording and offline PCM buffer rendering for test suites.
+2. **Procedural Chiptune Synthesizer (P16-02):** Pure Zig integer DSP engine with zero audio asset files (no WAV/MP3/OGG dependencies). Borrowing phase accumulation and waveform generation techniques from `/home/gordonk/PycharmProjects/whimsy-machine/`:
+   - 32-bit phase accumulators (`phase += phase_inc`) with precomputed 44.1 kHz MIDI phase increment lookup table.
+   - Pure integer waveforms: variable-duty pulse (12.5%, 25%, 50%, 75%), linear triangle, sawtooth, and 32-bit LCG pseudo-random noise generator.
+   - Attack/Decay envelope generators, pitch sweeps (falling sweeps for kicks/splashes, rising sweeps for pickups), and polyphonic voice pooling.
+   - Procedural action SFX: `footstep`, `pickup`, `combine`, `horn`, `splash`, `sword_clash`, `alert`, `dialogue_blip`, `click`, `whistle`.
+3. **Dynamic Scene Musical Accompaniment (P16-03, D-014):** 4-channel procedural step sequencer (Bass, Lead, Harmony/Chords, Percussion) synthesizing looping thematic melodies tailored to narrative locations:
+   - The Tavern Heist (`.tavern`): lively G-Dorian pipe/lute jig.
+   - The Wine Cellar (`.cellar`): moody subterranean bassline with ambient triangle echoes.
+   - Booty Island Spitting Contest (`.spitting_contest`): jaunty Caribbean pirate march with bouncy pulse bass and snappy snare crack.
+   - Mêlée Island High Road (`.high_road`): adventurous seafaring shanty progression.
+   - Carla's Sanctuary (`.sanctuary`): dramatic dueling cadence with rapid arpeggios.
+   - The Scumm Bar (`.scumm_bar`): rowdy pirate tavern waltz in 3/4 time.
+   - French Hotel Courtyard Garden (`.courtyard`): peaceful provincial waltz.
+   - French Bike Rental Shop (`.bike_shop`): breezy café accordion/lead rhythm.
+   Track switching occurs automatically upon scene transitions (`RenderFrame.get_current_scene()`) or narrative cue triggers.
+**Alternatives:**
+- Loading external WAV/OGG audio files from disk: rejected because BeSpoke aims for zero external asset dependencies, instant load times, and self-contained executable distribution.
+- Embedding a third-party audio engine (SoLoud, FMOD, miniaudio): rejected to maintain zero C/C++ dependencies in core synthesis logic and ensure deterministic integer sample synthesis across all platforms.
+**Consequences:** Complete auditory immersion with zero audio asset files, zero audio thread contention on simulation ticks, seamless graceful headless fallback for CI, and reproducible verification via offline PCM buffer rendering.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

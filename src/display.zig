@@ -14,6 +14,11 @@ pub const font = @import("display/font.zig");
 pub const renderer = @import("display/renderer.zig");
 pub const DisplayWindow = renderer.DisplayWindow;
 pub const UserAction = renderer.UserAction;
+pub const audio = @import("audio.zig");
+pub const AudioBridge = audio.AudioBridge;
+pub const SoundEffectKind = audio.SoundEffectKind;
+pub const MusicTrackKind = audio.MusicTrackKind;
+pub const ChiptuneSynth = audio.ChiptuneSynth;
 
 /// A lightweight, read-only representation of an entity for display peripherals (D-001, P5-01).
 pub const RenderEntity = struct {
@@ -176,12 +181,19 @@ pub const RenderFrame = struct {
 pub const DisplayBridge = struct {
     front_buffer: RenderFrame,
     back_buffer: RenderFrame,
+    audio_bridge: ?*audio.AudioBridge = null,
 
     pub fn init() DisplayBridge {
         return DisplayBridge{
             .front_buffer = std.mem.zeroes(RenderFrame),
             .back_buffer = std.mem.zeroes(RenderFrame),
+            .audio_bridge = null,
         };
+    }
+
+    /// Attaches an optional peripheral audio bridge to consume cues (P16-01, D-001).
+    pub fn attach_audio_bridge(self: *DisplayBridge, ab: *audio.AudioBridge) void {
+        self.audio_bridge = ab;
     }
 
     /// Sets the maximum simulation tick reached in recorded history for the timeline scrubber (P9-02, D-011).
@@ -524,6 +536,11 @@ pub const DisplayBridge = struct {
         }
 
         self.back_buffer.max_history_tick = prev_max_history;
+
+        // 9. Forward scene and cues to attached audio bridge (P16-01, P16-03, D-019)
+        if (self.audio_bridge) |ab| {
+            ab.process_scene_and_cues(self.back_buffer.get_current_scene());
+        }
     }
 
     /// Swaps front and back buffers so display consumer reads the latest completed tick (D-001).
@@ -663,6 +680,16 @@ test "P12-03: DisplayBridge.capture_frame scopes waypoints, hotspots, and entiti
     try testing.expectEqual(@as(usize, 2), frame_all.waypoint_count);
     try testing.expectEqual(@as(usize, 2), frame_all.hotspot_count);
     try testing.expectEqual(@as(usize, 2), frame_all.entity_count);
+}
+
+test "P16-01: DisplayBridge attaches AudioBridge and forwards scene context" {
+    const testing = std.testing;
+    var db = DisplayBridge.init();
+    var ab = audio.AudioBridge.init();
+    db.attach_audio_bridge(&ab);
+
+    try testing.expect(db.audio_bridge != null);
+    try testing.expectEqual(@as(*audio.AudioBridge, &ab), db.audio_bridge.?);
 }
 
 test {

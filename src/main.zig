@@ -249,6 +249,10 @@ pub fn main() !void {
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 1280, 720);
     defer window.deinit();
 
+    vm.current_scene = tavern;
+    display_bridge.attach_audio_bridge(window.audio_bridge);
+    window.set_bgm(.tavern);
+
     if (window.is_headless or is_headless_arg) {
         try stdout.print("\n>>> STARTING SIMULATION CLOCK (Headless Mode) <<<\n", .{});
 
@@ -417,6 +421,7 @@ pub fn main() !void {
                                     _ = world.forget(target_entity.entity, carries, cheese.to_int());
                                     try world.remember(cat, carries, cheese.to_int(), 0);
                                     window.set_cue_banner("★ You snatched the Cheese from the Guard! ★", 120);
+                                    window.play_sfx(.pickup);
                                     try stdout.print("\n★ [HEIST] Player snatched Cheese from {s}! ★\n", .{tname});
                                 } else {
                                     const text = std.fmt.bufPrint(&buf, "You cannot pick up {s}!", .{tname}) catch "Error";
@@ -488,6 +493,7 @@ pub fn main() !void {
                                 // Choice 0: Play a soothing melody!
                                 try world.remember(guard, charmed, bard.to_int(), 40);
                                 window.set_cue_banner("♪ Bard plays an enchanting tune! Guard is Charmed! ♪", 120);
+                                window.play_sfx(.alert);
                                 try stdout.print("\n[Dialogue Choice] Bard plays lute! Guard is charmed!\n", .{});
                             } else if (choice_idx == 1) {
                                 window.set_cue_banner("Bard: \"Rumor has it the cellar cask is full of elven wine!\"", 120);

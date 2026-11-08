@@ -132,9 +132,9 @@ Goal: Support executing external `.bespoke` scenario files directly from disk vi
 
 Goal: Connect an SDL2 audio peripheral callback to the `DisplayBridge` cue stream, synthesizing procedural chiptune sound effects and background musical melodies triggered by simulation cues.
 
-- [ ] P16-01 Audio bridge buffer and peripheral audio consumer in `src/display.zig` consuming audio cue events decoupled from simulation ticks. (D-001)
-- [ ] P16-02 Procedural square-wave and noise sound synthesizer in pure Zig (zero audio asset dependencies) for action SFX (footsteps, pickups, splashes, alert stingers). (D-001)
-- [ ] P16-03 Scene background musical accompaniment with track switching triggered on scene transitions and narrative dramatic shifts. (D-001, D-014)
+- [x] P16-01 Audio bridge buffer and peripheral audio consumer in `src/display.zig` consuming audio cue events decoupled from simulation ticks. (D-001, D-019; completed 2026-11-07, verified via `zig test -lc -lSDL2 src/display.zig` and `zig test src/audio.zig`)
+- [x] P16-02 Procedural square-wave and noise sound synthesizer in pure Zig (zero audio asset dependencies) for action SFX (footsteps, pickups, splashes, alert stingers). (D-001, D-019; completed 2026-11-07, verified via `zig test src/audio.zig` and `zig test -lc -lSDL2 src/root.zig`)
+- [x] P16-03 Scene background musical accompaniment with track switching triggered on scene transitions and narrative dramatic shifts. (D-001, D-014, D-019; completed 2026-11-07, verified via `zig test src/audio.zig` and `zig test -lc -lSDL2 src/display.zig`)
 
 ## Phase 17: Persistent Save/Load Disk Storage & Slot Management
 

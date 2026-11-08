@@ -246,6 +246,8 @@ pub fn run_file(
         var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Standalone Scenario Runner", 1280, 720);
         defer window.deinit();
 
+        display_bridge.attach_audio_bridge(window.audio_bridge);
+
         try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
         try stdout.print("   - [Left Click Waypoint]: Direct actor to walk\n", .{});
         try stdout.print("   - [Left Click Prop]:     Examine scene hotspot\n", .{});

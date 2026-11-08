@@ -1,6 +1,11 @@
 const std = @import("std");
 const display_mod = @import("../display.zig");
+const audio_mod = @import("../audio.zig");
 const font = @import("font.zig");
+
+pub const SoundEffectKind = audio_mod.SoundEffectKind;
+pub const MusicTrackKind = audio_mod.MusicTrackKind;
+pub const AudioBridge = audio_mod.AudioBridge;
 
 const RenderFrame = display_mod.RenderFrame;
 const RenderWaypoint = display_mod.RenderWaypoint;
@@ -13,6 +18,14 @@ const EntityId = display_mod.EntityId;
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
 });
+
+fn sdl_audio_callback(userdata: ?*anyopaque, stream: [*c]u8, len: c_int) callconv(.C) void {
+    const bridge: *audio_mod.AudioBridge = @ptrCast(@alignCast(userdata orelse return));
+    if (len <= 0) return;
+    const sample_count = @divExact(@as(usize, @intCast(len)), @sizeOf(i16));
+    const samples = @as([*]i16, @ptrCast(@alignCast(stream)))[0..sample_count];
+    bridge.render_samples(samples);
+}
 
 pub const Color = struct {
     r: u8,
@@ -441,6 +454,8 @@ pub const DisplayWindow = struct {
     active_balloon: ?SpeechBalloon = null,
     hovered_choice: ?u8 = null,
     is_headless: bool = false,
+    audio_bridge: *audio_mod.AudioBridge,
+    audio_device_opened: bool = false,
     cue_banner_text: [256]u8 = undefined,
     cue_banner_len: usize = 0,
     cue_banner_ticks: u32 = 0,
@@ -456,15 +471,22 @@ pub const DisplayWindow = struct {
     console_history_count: usize = 0,
 
     pub fn init(title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
-        if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
-            // Graceful fallback to headless if no display server is available
-            return DisplayWindow{
-                .window = null,
-                .renderer = null,
-                .width = width,
-                .height = height,
-                .is_headless = true,
-            };
+        const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
+        bridge.* = audio_mod.AudioBridge.init();
+
+        if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
+            if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
+                // Graceful fallback to headless if no display server is available
+                return DisplayWindow{
+                    .window = null,
+                    .renderer = null,
+                    .width = width,
+                    .height = height,
+                    .is_headless = true,
+                    .audio_bridge = bridge,
+                    .audio_device_opened = false,
+                };
+            }
         }
 
         const window = c.SDL_CreateWindow(
@@ -482,6 +504,8 @@ pub const DisplayWindow = struct {
                 .width = width,
                 .height = height,
                 .is_headless = true,
+                .audio_bridge = bridge,
+                .audio_device_opened = false,
             };
         };
 
@@ -498,8 +522,26 @@ pub const DisplayWindow = struct {
                 .width = width,
                 .height = height,
                 .is_headless = true,
+                .audio_bridge = bridge,
+                .audio_device_opened = false,
             };
         };
+
+        var audio_opened = false;
+        var desired = std.mem.zeroes(c.SDL_AudioSpec);
+        desired.freq = 44100;
+        desired.format = c.AUDIO_S16LSB;
+        desired.channels = 2;
+        desired.samples = 1024;
+        desired.callback = sdl_audio_callback;
+        desired.userdata = bridge;
+
+        var obtained: c.SDL_AudioSpec = undefined;
+        if (c.SDL_OpenAudio(&desired, &obtained) == 0) {
+            audio_opened = true;
+            bridge.audio_enabled = true;
+            c.SDL_PauseAudio(0);
+        }
 
         return DisplayWindow{
             .window = window,
@@ -507,15 +549,38 @@ pub const DisplayWindow = struct {
             .width = width,
             .height = height,
             .is_headless = false,
+            .audio_bridge = bridge,
+            .audio_device_opened = audio_opened,
         };
     }
 
     pub fn deinit(self: *DisplayWindow) void {
+        if (self.audio_device_opened) {
+            c.SDL_CloseAudio();
+            self.audio_device_opened = false;
+        }
+        std.heap.c_allocator.destroy(self.audio_bridge);
+
         if (!self.is_headless) {
             if (self.renderer) |r| c.SDL_DestroyRenderer(r);
             if (self.window) |w| c.SDL_DestroyWindow(w);
             c.SDL_Quit();
         }
+    }
+
+    /// Plays a procedural action sound effect asynchronously (P16-02, D-019).
+    pub fn play_sfx(self: *DisplayWindow, kind: audio_mod.SoundEffectKind) void {
+        self.audio_bridge.enqueue_sfx(kind);
+    }
+
+    /// Sets the active background musical accompaniment track (P16-03, D-019).
+    pub fn set_bgm(self: *DisplayWindow, track: audio_mod.MusicTrackKind) void {
+        self.audio_bridge.set_track(track);
+    }
+
+    /// Stops background musical accompaniment.
+    pub fn stop_bgm(self: *DisplayWindow) void {
+        self.audio_bridge.stop_bgm();
     }
 
     /// Sets an ephemeral on-screen cue announcement banner.
@@ -638,9 +703,11 @@ pub const DisplayWindow = struct {
                     if (self.active_balloon) |*b| {
                         const brect = get_balloon_rect(b, self.width);
                         if (hit_test_balloon_choice(event.button.x, event.button.y, b, brect)) |ch_idx| {
+                            self.play_sfx(.dialogue_blip);
                             return .{ .dialogue_choice = ch_idx };
                         } else {
                             self.dismiss_dialogue();
+                            self.play_sfx(.click);
                             return .dismiss_dialogue;
                         }
                     }
@@ -650,10 +717,12 @@ pub const DisplayWindow = struct {
                         if (self.selected_inventory_item != null) {
                             self.selected_inventory_item = null;
                             self.set_cue_banner("Action cancelled.", 60);
+                            self.play_sfx(.click);
                             return .none;
                         }
                         // Otherwise cycles the active adventure verb (P7-02, D-009)
                         self.active_verb = self.active_verb.next();
+                        self.play_sfx(.click);
                     } else if (event.button.button == c.SDL_BUTTON_LEFT) {
                         // 1. Check Timeline Scrubber (P9-02, D-011)
                         const tb_x: i32 = 20;
@@ -666,6 +735,7 @@ pub const DisplayWindow = struct {
                                 const ratio: f32 = rel_x / @as(f32, @floatFromInt(tb_w));
                                 const max_t: f32 = @as(f32, @floatFromInt(frame.max_history_tick));
                                 const target_tick: u64 = @min(frame.max_history_tick, @as(u64, @intFromFloat(ratio * max_t)));
+                                self.play_sfx(.click);
                                 return .{ .scrub_to_tick = target_tick };
                             }
                         }
@@ -678,6 +748,7 @@ pub const DisplayWindow = struct {
                                 self.set_cue_banner("Action cancelled.", 60);
                             }
                             self.active_verb = verb;
+                            self.play_sfx(.click);
                             return .none;
                         }
 
@@ -689,6 +760,7 @@ pub const DisplayWindow = struct {
                                     // Clicking same selected item deselects it
                                     self.selected_inventory_item = null;
                                     self.set_cue_banner("Item unselected.", 60);
+                                    self.play_sfx(.click);
                                     return .none;
                                 } else {
                                     // Combining two distinct inventory items
@@ -698,6 +770,7 @@ pub const DisplayWindow = struct {
                                     const s_name = if (idx < frame.inventory_count) frame.inventory[idx].get_name() else "item";
                                     const banner = std.fmt.bufPrint(&buf, "Using {s} on {s}...", .{ p_name, s_name }) catch "Combining items...";
                                     self.set_cue_banner(banner, 90);
+                                    self.play_sfx(.combine);
                                     return .{
                                         .combine_inventory_items = .{
                                             .primary_index = primary_idx,
@@ -713,6 +786,7 @@ pub const DisplayWindow = struct {
                                 const iname = if (idx < frame.inventory_count) frame.inventory[idx].get_name() else "item";
                                 const banner = std.fmt.bufPrint(&buf, "Use {s} with...", .{iname}) catch "Use item with...";
                                 self.set_cue_banner(banner, 180);
+                                self.play_sfx(.click);
                                 return .none;
                             }
                         }
@@ -728,6 +802,7 @@ pub const DisplayWindow = struct {
                         if (clicked_actor) |actor_idx| {
                             if (self.selected_inventory_item) |item_idx| {
                                 self.selected_inventory_item = null;
+                                self.play_sfx(.combine);
                                 return .{
                                     .use_inventory_on_actor = .{
                                         .item_index = item_idx,
@@ -735,6 +810,11 @@ pub const DisplayWindow = struct {
                                     },
                                 };
                             } else {
+                                switch (self.active_verb) {
+                                    .talk_to => self.play_sfx(.dialogue_blip),
+                                    .pick_up => self.play_sfx(.pickup),
+                                    else => self.play_sfx(.click),
+                                }
                                 action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
                             }
                         } else {
@@ -749,6 +829,7 @@ pub const DisplayWindow = struct {
                             if (clicked_hs) |hs_idx| {
                                 if (self.selected_inventory_item) |item_idx| {
                                     self.selected_inventory_item = null;
+                                    self.play_sfx(.combine);
                                     return .{
                                         .use_inventory_on_hotspot = .{
                                             .item_index = item_idx,
@@ -756,8 +837,14 @@ pub const DisplayWindow = struct {
                                         },
                                     };
                                 } else if (self.active_verb == .look_at) {
+                                    self.play_sfx(.click);
                                     action = .{ .examine_hotspot = hs_idx };
                                 } else {
+                                    switch (self.active_verb) {
+                                        .talk_to => self.play_sfx(.dialogue_blip),
+                                        .pick_up => self.play_sfx(.pickup),
+                                        else => self.play_sfx(.click),
+                                    }
                                     action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
                                 }
                             } else {
@@ -776,6 +863,7 @@ pub const DisplayWindow = struct {
                                     }
                                     if (self.active_verb == .walk) {
                                         self.target_wp = wp_id;
+                                        self.play_sfx(.footstep);
                                         action = .{ .walk_player = wp_id };
                                     }
                                 }
@@ -838,6 +926,7 @@ pub const DisplayWindow = struct {
                             if (hotkey_idx) |k_idx| {
                                 if (k_idx < b.choice_count) {
                                     self.dismiss_dialogue();
+                                    self.play_sfx(.dialogue_blip);
                                     return UserAction{ .dialogue_choice = k_idx };
                                 }
                             }
@@ -845,11 +934,13 @@ pub const DisplayWindow = struct {
                             if (sym == c.SDLK_UP) {
                                 if (b.scroll_offset > 0) {
                                     b.scroll_offset -= 1;
+                                    self.play_sfx(.click);
                                     return .none;
                                 }
                             } else if (sym == c.SDLK_DOWN) {
                                 if (b.scroll_offset < b.max_scroll_offset()) {
                                     b.scroll_offset += 1;
+                                    self.play_sfx(.click);
                                     return .none;
                                 }
                             }
@@ -857,20 +948,42 @@ pub const DisplayWindow = struct {
 
                         if (sym == c.SDLK_ESCAPE or sym == c.SDLK_SPACE) {
                             self.dismiss_dialogue();
+                            self.play_sfx(.click);
                             return .dismiss_dialogue;
                         }
                     }
 
                     switch (sym) {
-                        c.SDLK_s => action = .spit_contest_spit,
-                        c.SDLK_h => action = .sound_horn,
-                        c.SDLK_g => action = .drink_green_drink,
-                        c.SDLK_f => action = .tamper_flags,
+                        c.SDLK_s => {
+                            self.play_sfx(.whistle);
+                            action = .spit_contest_spit;
+                        },
+                        c.SDLK_h => {
+                            self.play_sfx(.horn);
+                            action = .sound_horn;
+                        },
+                        c.SDLK_g => {
+                            self.play_sfx(.pickup);
+                            action = .drink_green_drink;
+                        },
+                        c.SDLK_f => {
+                            self.play_sfx(.combine);
+                            action = .tamper_flags;
+                        },
                         c.SDLK_SPACE => action = .toggle_pause,
                         c.SDLK_n => action = .step_tick,
-                        c.SDLK_r => action = .rewind,
-                        c.SDLK_LEFT => action = .{ .scrub_to_tick = if (frame.tick > 0) frame.tick - 1 else 0 },
-                        c.SDLK_RIGHT => action = .{ .scrub_to_tick = @min(frame.tick + 1, frame.max_history_tick) },
+                        c.SDLK_r => {
+                            self.play_sfx(.alert);
+                            action = .rewind;
+                        },
+                        c.SDLK_LEFT => {
+                            self.play_sfx(.click);
+                            action = .{ .scrub_to_tick = if (frame.tick > 0) frame.tick - 1 else 0 };
+                        },
+                        c.SDLK_RIGHT => {
+                            self.play_sfx(.click);
+                            action = .{ .scrub_to_tick = @min(frame.tick + 1, frame.max_history_tick) };
+                        },
                         c.SDLK_F1, c.SDLK_d => {
                             self.show_debug_overlay = !self.show_debug_overlay;
                             return .toggle_debug;
@@ -992,6 +1105,9 @@ pub const DisplayWindow = struct {
 
     pub fn render_frame(self: *DisplayWindow, frame: *const RenderFrame, is_paused: bool) void {
         if (self.is_headless or self.renderer == null) return;
+
+        // Trigger procedural music and cue audio reactions (P16-01, P16-03, D-019)
+        self.audio_bridge.process_scene_and_cues(frame.get_current_scene());
 
         // Detect active scene theme (P12-03, P14-02, D-014, D-016)
         const cur_scene = frame.get_current_scene();

@@ -81,7 +81,7 @@
       position: fixed;
       top: 0; left: 0; bottom: 0; right: 0;
       background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
-      background-size: 100% 4px;
+      background-size: 100% 2px;
       z-index: 9999;
       pointer-events: none;
     }
@@ -125,12 +125,16 @@
       padding: 3px 0;
     }
 
+    header.nav-header .container {
+      max-width: 1400px;
+      padding: 0 16px;
+    }
+
     .nav-inner {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 16px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
 
     .brand {
@@ -139,11 +143,13 @@
       gap: 8px;
       font-family: var(--mono);
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       text-transform: uppercase;
       color: var(--menubar-text);
       text-decoration: none;
       padding: 3px 6px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .brand:hover {
       background: #000000;
@@ -163,17 +169,18 @@
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
       font-family: var(--mono);
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       text-transform: uppercase;
+      white-space: nowrap;
     }
 
     .nav-links a {
       color: var(--menubar-text);
       text-decoration: none;
       font-weight: 700;
-      padding: 3px 8px;
+      padding: 3px 6px;
     }
     .nav-links a:hover {
       background: #000000;
@@ -185,6 +192,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      margin-left: auto;
+      flex-shrink: 0;
     }
 
     .btn-toggle {
@@ -196,11 +205,41 @@
       font-weight: 700;
       padding: 3px 8px;
       cursor: pointer;
+      text-align: center;
+      white-space: nowrap;
+    }
+    #toggle-crt {
+      min-width: 5.6rem;
+    }
+    #toggle-sound {
+      min-width: 7.4rem;
     }
     .btn-toggle:hover, .btn-toggle.active {
       background: var(--accent-deep);
       color: var(--highlight);
       border-color: var(--highlight);
+    }
+
+    @media (max-width: 1024px) {
+      .nav-inner {
+        flex-wrap: wrap;
+        gap: 6px 12px;
+      }
+      .brand {
+        order: 1;
+      }
+      .nav-toggles {
+        order: 2;
+        margin-left: auto;
+      }
+      .nav-links {
+        order: 3;
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        gap: 4px;
+        -webkit-overflow-scrolling: touch;
+      }
     }
 
     /* Hero Section */
@@ -1069,8 +1108,7 @@
   <header class="nav-header">
     <div class="container nav-inner">
       <div class="brand">
-        <span>[■] BESPOKE ENGINE</span>
-        <span class="brand-badge">v0.1.0-dev</span>
+        <span>BESPOKE ENGINE</span>
       </div>
 
       <nav class="nav-links">
@@ -1095,15 +1133,6 @@
        ======================================================================== -->
   <main class="container">
     <section class="hero">
-      <pre class="hero-ascii">
- ____             ____             _              _____             _            
-|  _ \           / ___| _ __   ___| | _____      | ____|_ __   __ _(_)_ __   ___ 
-| |_) |  _____   \___ \| '_ \ / _ \ |/ / _ \_____|  _| | '_ \ / _` | | '_ \ / _ \
-|  _ <  |_____|   ___) | |_) |  __/   <  __/_____| |___| | | | (_| | | | | |  __/
-|_| \_\          |____/| .__/ \___|_|\_\___|     |_____|_| |_|\__, |_|_| |_|\___|
-                       |_|                                     |___/             
-      </pre>
-
       <div class="hero-byline">
         <span>Designed &amp; coded by <strong>Andrew Edmark</strong></span>
         <span class="sep">·</span>
@@ -1116,15 +1145,6 @@
         Where game worlds are <strong>flat relational facts</strong>, behaviors are <strong>cooperative fibers</strong>, 
         and time travel is an <strong>instant snapshot rewind</strong>.
       </p>
-
-      <div class="hero-pill-bar">
-        <div class="hero-pill"><span class="dot"></span> Pure Zig 0.13</div>
-        <div class="hero-pill"><span class="dot"></span> Zero External Dependencies</div>
-        <div class="hero-pill"><span class="dot"></span> 4-Tuple Relational Facts</div>
-        <div class="hero-pill"><span class="dot"></span> Built-in TTL Decay</div>
-        <div class="hero-pill"><span class="dot"></span> Single-memcpy Rewind</div>
-        <div class="hero-pill"><span class="dot"></span> 60 Hz Discrete Tick Clock</div>
-      </div>
 
       <div class="hero-buttons">
         <a href="#playground" class="btn-primary">

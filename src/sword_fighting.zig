@@ -765,6 +765,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("   - [F1 / Tab]:             Toggle Debug Fact Overlay & REPL\n", .{});
 
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.attach_audio_bridge(window.audio_bridge);
     display_bridge.capture_frame(&world, &spatial, &vm);
     display_bridge.swap();
 

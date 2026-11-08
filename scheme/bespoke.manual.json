@@ -774,6 +774,30 @@
             {"label": "Compiler Diagnostics", "target": "src/compiler.zig", "kind": "source"}
           ],
           "related": ["headless-and-interactive-cli", "compiler-pipeline", "bytecode-vm-and-chunk"]
+        },
+        {
+          "id": "peripheral-audio-and-procedural-synthesizer",
+          "title": "Peripheral Audio & Procedural Synthesizer",
+          "summary": "Decoupled audio bridge, procedural chiptune action SFX, and multi-track scene BGM without audio asset files.",
+          "synopsis": "var bridge = AudioBridge.init(); bridge.enqueue_sfx(.footstep); bridge.set_track(.tavern); bridge.render_samples(&pcm_buffer);",
+          "tags": ["audio", "synth", "chiptune", "dsp", "peripheral"],
+          "what": "A decoupled audio peripheral subsystem synthesizing real-time chiptune action sound effects and 4-channel background musical accompaniments in pure Zig, consuming simulation cues asynchronously with zero WAV/MP3 asset files.",
+          "how": [
+            "AudioBridge consumes discrete audio cues from simulation ticks via an atomic/mutex-guarded ring buffer without blocking the simulation clock.",
+            "Procedural ChiptuneSynth generates variable-duty pulse waves, linear triangles, sawteeth, and LCG noise using 32-bit integer phase accumulators and a precomputed 44.1 kHz MIDI table borrowed from Whimsy Machine.",
+            "SfxVoice pool synthesizes 10 action sound effects (footsteps, pickups, combining items, horn blasts, splashes, sword clashes, alert stingers, dialogue chirps, clicks, whistles) with attack/decay envelopes and pitch sweeps.",
+            "A 4-channel step sequencer synthesizes looping 32-step musical accompaniment across 8 narrative scene themes (.tavern, .cellar, .spitting_contest, .high_road, .sanctuary, .scumm_bar, .courtyard, .bike_shop) with automatic crossfades.",
+            "DisplayWindow initializes an SDL2 audio callback feeding 16-bit stereo PCM samples, falling back gracefully to silent offline rendering in headless mode."
+          ],
+          "why": "Narrative immersion requires rich auditory feedback, but BeSpoke's Engine-as-Spine tenet forbids external asset dependencies, blocking audio threads, or non-deterministic simulation execution. Pure procedural integer synthesis guarantees zero asset bloat, instant loading, and 100% headless testability.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-019", "target": "docs/DECISIONS.md#d-019", "kind": "decision"},
+            {"label": "Procedural Audio Synthesizer", "target": "src/audio.zig", "kind": "source"},
+            {"label": "Display Bridge Audio Consumer", "target": "src/display.zig", "kind": "source"},
+            {"label": "SDL2 Audio Renderer Integration", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["engine-as-spine", "zero-external-dependencies", "stageplay-taxonomy"]
         }
       ]
     },

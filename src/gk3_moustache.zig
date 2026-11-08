@@ -553,6 +553,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("   - [R]:                   Instant Time-Travel Rewind\n", .{});
     try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
 
+    display_bridge.attach_audio_bridge(window.audio_bridge);
     display_bridge.capture_frame(&world, &spatial, &vm);
     display_bridge.set_max_history_tick(0);
     display_bridge.swap();

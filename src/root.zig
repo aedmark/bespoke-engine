@@ -12,6 +12,7 @@ pub const gk3_moustache = @import("gk3_moustache.zig");
 pub const sword_fighting = @import("sword_fighting.zig");
 pub const package = @import("package.zig");
 pub const runner = @import("runner.zig");
+pub const audio = @import("audio.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -48,6 +49,10 @@ pub const DisplayBridge = display.DisplayBridge;
 pub const RenderFrame = display.RenderFrame;
 pub const Repl = repl.Repl;
 pub const ReplResult = repl.ReplResult;
+pub const AudioBridge = audio.AudioBridge;
+pub const SoundEffectKind = audio.SoundEffectKind;
+pub const MusicTrackKind = audio.MusicTrackKind;
+pub const ChiptuneSynth = audio.ChiptuneSynth;
 
 test "root test imports all modules" {
     _ = @import("world.zig");
@@ -62,4 +67,5 @@ test "root test imports all modules" {
     _ = @import("sword_fighting.zig");
     _ = @import("package.zig");
     _ = @import("runner.zig");
+    _ = @import("audio.zig");
 }

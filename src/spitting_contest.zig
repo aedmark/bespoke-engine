@@ -416,6 +416,10 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 1280, 720);
     defer window.deinit();
 
+    vm.current_scene = room_ent;
+    display_bridge.attach_audio_bridge(window.audio_bridge);
+    window.set_bgm(.spitting_contest);
+
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
         try run_headless(allocator, stdout);
@@ -506,6 +510,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (is_distracted) {
                     try world.remember(flags, tampered_rel, 1, 0);
                     window.set_cue_banner("★ You secretly moved the flags closer while the crowd wasn't looking! ★", 120);
+                    window.play_sfx(.combine);
                 } else {
                     window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
                 }
@@ -514,10 +519,22 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (choice_idx == 0) {
                     const res = evaluate_spit_contest(&world);
                     switch (res) {
-                        .dribble_third => window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120),
-                        .thick_flags_untouched_third => window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120),
-                        .thick_flags_moved_no_wind_second => window.set_cue_banner("Guybrush: \"Ptooie!\" Flies past moved flags! Second Place! (Need wind!)", 120),
-                        .winner_first => window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180),
+                        .dribble_third => {
+                            window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120);
+                            window.play_sfx(.splash);
+                        },
+                        .thick_flags_untouched_third => {
+                            window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120);
+                            window.play_sfx(.whistle);
+                        },
+                        .thick_flags_moved_no_wind_second => {
+                            window.set_cue_banner("Guybrush: \"Ptooie!\" Flies past moved flags! Second Place! (Need wind!)", 120);
+                            window.play_sfx(.whistle);
+                        },
+                        .winner_first => {
+                            window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180);
+                            window.play_sfx(.alert);
+                        },
                     }
                 } else if (choice_idx == 1) {
                     window.set_cue_banner("Organiser: \"Spit past the flags to win! Thick spit and a strong wind will do it!\"", 120);
@@ -529,10 +546,22 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
             .spit_contest_spit => {
                 const res = evaluate_spit_contest(&world);
                 switch (res) {
-                    .dribble_third => window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120),
-                    .thick_flags_untouched_third => window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120),
-                    .thick_flags_moved_no_wind_second => window.set_cue_banner("Guybrush: \"Ptooie!\" Past moved flags! Second Place! (Need a gust of wind!)", 120),
-                    .winner_first => window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180),
+                    .dribble_third => {
+                        window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120);
+                        window.play_sfx(.splash);
+                    },
+                    .thick_flags_untouched_third => {
+                        window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120);
+                        window.play_sfx(.whistle);
+                    },
+                    .thick_flags_moved_no_wind_second => {
+                        window.set_cue_banner("Guybrush: \"Ptooie!\" Past moved flags! Second Place! (Need a gust of wind!)", 120);
+                        window.play_sfx(.whistle);
+                    },
+                    .winner_first => {
+                        window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180);
+                        window.play_sfx(.alert);
+                    },
                 }
             },
             .sound_horn => {
@@ -540,16 +569,19 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 _ = try spatial.walk_to(organiser, offstage_wp);
                 _ = try spatial.walk_to(onlookers, offstage_wp);
                 window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
+                window.play_sfx(.horn);
             },
             .drink_green_drink => {
                 try world.remember(guybrush, thick_rel, 1, 0);
                 window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
+                window.play_sfx(.pickup);
             },
             .tamper_flags => {
                 const is_distracted = world.has_fact(organiser, distracted_rel, null);
                 if (is_distracted) {
                     try world.remember(flags, tampered_rel, 1, 0);
                     window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
+                    window.play_sfx(.combine);
                 } else {
                     window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
                 }

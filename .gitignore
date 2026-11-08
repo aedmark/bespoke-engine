@@ -4,4 +4,8 @@ zig-out/
 __pycache__/
 *.pyc
 *.bspk
+*.swp
+.*.swp
+*.kate-swp
+.*.kate-swp
 
