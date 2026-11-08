@@ -14,14 +14,15 @@
       "Engine-as-Spine",
       "Developer Guide",
       "Pure Zig 0.13.0",
+      "Wasm32 Browser Target",
       "Zero Dependencies",
       "Deterministic 60 Hz",
       "3x Documented"
     ],
     "footer": "BeSpoke Engine {{project.version}} · Engine-as-Spine Narrative Simulation · Zero External Dependencies",
     "reviewed": {
-      "date": "2026-11-06",
-      "commit": "498aa70",
+      "date": "2026-11-08",
+      "commit": "3fb57b6",
       "by": "BeSpoke Core Team",
       "interval_days": 180
     }
@@ -884,8 +885,9 @@
           "tags": ["testing", "verification", "ci"],
           "what": "Enforces code correctness across all engine modules via fast, unit-level Zig test blocks, build-system tests, headless simulations, and documentation consistency checks.",
           "how": [
-            "zig test -lc -lSDL2 src/root.zig runs 38 core compiler, VM, world, and spatial tests.",
-            "zig test -lc -lSDL2 src/display.zig runs 22 display bridge, font, and renderer tests.",
+            "zig test -lc -lSDL2 src/root.zig runs 95 core compiler, VM, world, spatial, audio, save, village, and wasm tests.",
+            "zig test -lc -lSDL2 src/display.zig runs 61 display bridge, font, and renderer tests.",
+            "zig test src/wasm.zig && zig build wasm verifies the freestanding WebAssembly runtime and browser event bridge.",
             "python3 -m unittest discover -s tests -v runs 29 documentation manual tests.",
             "python3 tools/check_docs.py validates cross-references, decision numbers, and session logs.",
             "python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . verifies manual integrity."
@@ -907,7 +909,7 @@
           "tags": ["decisions", "adr", "architecture"],
           "what": "Maintains an immutable record of technical and design choices, documenting the context, trade-offs, evaluated alternatives, and consequences for every significant architectural evolution.",
           "how": [
-            "Decisions are assigned monotonically increasing IDs (D-001 through D-013).",
+            "Decisions are assigned monotonically increasing IDs (D-001 through D-022).",
             "Each decision details Context, Decision, Alternatives Considered, and Consequences.",
             "Open architectural questions are logged in the same document with permanent Q-NNN IDs until answered."
           ],

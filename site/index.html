@@ -1130,9 +1130,9 @@
   <main class="container">
     <section class="hero">
       <div class="hero-byline">
-        <span>Designed &amp; by <strong>Andrew Edmark &amp; Peter Spcier</strong></span>
+        <span>Designed by <strong>Andrew Edmark &amp; Peter Spicer</strong></span>
         <span class="sep">·</span>
-        <span>Game Mechanic Simulation Engine/span>
+        <span>Game Mechanic Simulation Engine</span>
       </div>
 
       <h1 class="hero-title">The Simulation Runtime IS the Spine.</h1>
@@ -1171,6 +1171,9 @@
           </button>
           <button class="tab-btn" data-scenario="gk3">
             [3] GK3 Cat Moustache
+          </button>
+          <button class="tab-btn" data-scenario="village">
+            [4] The Living Village
           </button>
         </div>
       </div>
@@ -1313,10 +1316,10 @@
     <section id="scenarios" style="margin-bottom:60px;">
       <div class="section-title-wrap">
         <div class="section-eyebrow">Verified Simulation Testbeds</div>
-        <h2 class="section-title">Three Classic Adventure Vertical Slices</h2>
+        <h2 class="section-title">Classic Adventure &amp; Systemic Vertical Slices</h2>
         <p class="section-desc">
-          BeSpoke proves its execution model across three distinct adventure game vertical slices: 
-          systemic stealth emergence, environmental falling-edge triggers, and multi-scene inventory crafting.
+          BeSpoke proves its execution model across classic graphic adventure puzzles and unscripted multi-agent emergence: 
+          systemic stealth, environmental falling-edge triggers, multi-scene inventory crafting, and autonomous settlement simulations.
         </p>
       </div>
 
@@ -1410,6 +1413,35 @@
     <span class="code-kw">say</span> Buthane: <span class="code-str">"Désolé, reserved for detective Mosely!"</span>
   <span class="code-kw">choice</span> <span class="code-str">"I am Mosely. Here for my bike."</span> <span class="code-kw">if</span> Disguised(Gabriel):
     <span class="code-kw">say</span> Buthane: <span class="code-str">"Magnificent moustache, monsieur! Here are the keys!"</span></code></pre>
+        </div>
+
+        <!-- Scenario 4: The Living Village -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Vertical Slice 04 · Systemic Settlement Sandbox</span>
+            <h3 class="scenario-heading">The Living Village</h3>
+            <p class="scenario-text">
+              Six autonomous villagers (<code>Sheriff</code>, <code>Baker</code>, <code>Farmer</code>, <code>Innkeeper</code>, <code>Gossip</code>, <code>Drifter</code>) 
+              live across a 6-building settlement driven by continuous physiological needs (<code>Hunger</code>, <code>Energy</code>, <code>Gold</code>). 
+              When starvation strikes a penniless villager, property theft, witness detection, social-graph rumor propagation, 
+              and a priority Sheriff warrant-and-arrest cascade unfold without a single scripted cutscene.
+            </p>
+          </div>
+          <pre class="scenario-code"><code><span class="code-kw">property</span> Hunger(villager, level)
+<span class="code-kw">property</span> Gold(villager, coins)
+<span class="code-kw">relation</span> StolenFrom(thief, victim)
+<span class="code-kw">relation</span> KnowsRumor(listener, suspect)
+<span class="code-kw">relation</span> WarrantFor(lawman, suspect)
+
+<span class="code-kw">when</span> StolenFrom(thief, victim) <span class="code-kw">and</span> Witnessed(witness, thief):
+  <span class="code-kw">remember</span> KnowsRumor(witness, thief)
+  <span class="code-kw">remember</span> Grudge(victim, thief) <span class="code-kw">for</span> <span class="code-num">40 ticks</span>
+
+<span class="code-kw">when</span> KnowsRumor(Sheriff, suspect):
+  <span class="code-kw">interrupt</span> Sheriff <span class="code-kw">with</span>:
+    <span class="code-kw">remember</span> WarrantFor(Sheriff, suspect)
+    <span class="code-kw">walk</span> Sheriff <span class="code-kw">to</span> TownSquare
+    <span class="code-kw">remember</span> Arrested(suspect, Sheriff)</code></pre>
         </div>
       </div>
     </section>
@@ -1956,6 +1988,108 @@
               }
             }
           ]
+        },
+
+        village: {
+          name: "The Living Village",
+          sceneTitle: "LIVING VILLAGE - 6-BUILDING EMERGENT SETTLEMENT",
+          init: () => ({
+            facts: [
+              { subj: "Drifter", rel: "Hunger", obj: "65", ttl: null },
+              { subj: "Drifter", rel: "Gold", obj: "0", ttl: null },
+              { subj: "Farmer", rel: "Gold", obj: "20", ttl: null },
+              { subj: "Baker", rel: "Friend", obj: "Gossip", ttl: null },
+              { subj: "Gossip", rel: "Friend", obj: "Sheriff", ttl: null }
+            ],
+            actors: [
+              { name: "Sheriff", x: 1000, y: 450, targetX: 1000, targetY: 450, color: "#1d4ed8", status: "Patrolling" },
+              { name: "Baker", x: 240, y: 230, targetX: 240, targetY: 230, color: "#d97706", status: "Baking" },
+              { name: "Farmer", x: 240, y: 450, targetX: 240, targetY: 450, color: "#15803d", status: "Harvesting" },
+              { name: "Gossip", x: 600, y: 340, targetX: 600, targetY: 340, color: "#9333ea", status: "Socializing" },
+              { name: "Drifter", x: 680, y: 340, targetX: 680, targetY: 340, color: "#b91c1c", status: "Hungry (65)" }
+            ],
+            waypoints: [
+              { name: "Bakery", x: 240, y: 230 },
+              { name: "Farm", x: 240, y: 450 },
+              { name: "TownSquare", x: 640, y: 340 },
+              { name: "SheriffsPost", x: 1000, y: 450 }
+            ]
+          }),
+          actions: [
+            {
+              label: "[DRIVE] Honest Trade (Farmer)",
+              handler: () => {
+                const farmer = getActor("Farmer");
+                farmer.targetX = 240;
+                farmer.targetY = 230;
+                farmer.status = "Buying Bread";
+                setFact("Farmer", "Friend", "Baker", null);
+                log("HONEST TRADE", "Hungry Farmer walks to Bakery, pays 5 Gold for BreadLoaf, and strengthens Friend(Farmer, Baker)!", "cue");
+                showSpeech("Baker", "Fresh sourdough loaf, friend!", 240, 210);
+                playBeep(523, 'triangle', 0.12);
+              }
+            },
+            {
+              label: "[DRIVE] Trigger Starvation (Drifter)",
+              handler: () => {
+                const drifter = getActor("Drifter");
+                drifter.targetX = 260;
+                drifter.targetY = 230;
+                drifter.status = "THIEF (Fleeing)";
+                setFact("Drifter", "Hunger", "85", null);
+                setFact("Drifter", "StolenFrom", "Baker", null);
+                setFact("Baker", "Witnessed", "Drifter", null);
+                setFact("Baker", "KnowsRumor", "Drifter", null);
+                setFact("Baker", "Grudge", "Drifter", 60);
+                log("CRIME DETECTED", "Drifter Hunger reached 85 with 0 Gold! Stole BreadLoaf from Bakery! Baker witnessed the theft!", "rule");
+                showSpeech("Baker", "THIEF! My fresh loaf!", 240, 210);
+                playBeep(220, 'sawtooth', 0.25, 0.2);
+              }
+            },
+            {
+              label: "[SOCIAL] Propagate Rumor",
+              handler: () => {
+                if (hasFact("Baker", "KnowsRumor", "Drifter")) {
+                  setFact("Gossip", "KnowsRumor", "Drifter", null);
+                  setFact("Sheriff", "KnowsRumor", "Drifter", null);
+                  setFact("Sheriff", "WarrantFor", "Drifter", null);
+                  const sheriff = getActor("Sheriff");
+                  sheriff.targetX = 640;
+                  sheriff.targetY = 340;
+                  sheriff.status = "PURSUING DRIFTER";
+                  log("RUMOR CASCADE", "Baker told Gossip -> Gossip told Sheriff! Sheriff issued WarrantFor(Sheriff, Drifter)!", "cue");
+                  showSpeech("Gossip", "Sheriff! Drifter robbed the Bakery!", 600, 310);
+                  playBeep(660, 'sine', 0.15);
+                } else {
+                  log("RUMOR", "No crime rumor is circulating yet. Trigger starvation theft first!", "info");
+                }
+              }
+            },
+            {
+              label: "[JUSTICE] Sheriff Arrest Cascade",
+              actionPrimary: true,
+              handler: () => {
+                if (hasFact("Sheriff", "WarrantFor", "Drifter") || hasFact("Drifter", "StolenFrom", "Baker")) {
+                  removeFact("Sheriff", "WarrantFor", "Drifter");
+                  removeFact("Drifter", "StolenFrom", "Baker");
+                  setFact("Drifter", "ArrestedBy", "Sheriff", null);
+                  const sheriff = getActor("Sheriff");
+                  const drifter = getActor("Drifter");
+                  sheriff.targetX = 1000;
+                  sheriff.targetY = 450;
+                  sheriff.status = "Restored Order";
+                  drifter.targetX = 1030;
+                  drifter.targetY = 450;
+                  drifter.status = "ARRESTED (Jail)";
+                  log("JUSTICE SERVED", "★ Sheriff intercepted Drifter, recovered the stolen BreadLoaf, and escorted Drifter to SheriffsPost! ★", "cue");
+                  showSpeech("Sheriff", "You're under arrest, Drifter!", 1000, 410);
+                  playFanfare();
+                } else {
+                  log("JUSTICE", "Village is peaceful — no active warrant to enforce.", "info");
+                }
+              }
+            }
+          ]
         }
       };
 
@@ -2094,6 +2228,13 @@
             org.targetX = 240;
             if (org.x === 240) org.status = "Watching";
           }
+        } else if (currentScenario === 'village') {
+          state.actors.forEach(a => {
+            if (a.x < a.targetX) a.x = Math.min(a.targetX, a.x + 12);
+            if (a.x > a.targetX) a.x = Math.max(a.targetX, a.x - 12);
+            if (a.y < a.targetY) a.y = Math.min(a.targetY, a.y + 10);
+            if (a.y > a.targetY) a.y = Math.max(a.targetY, a.y - 10);
+          });
         }
 
         // 3. Speech bubble tick decay
@@ -2141,6 +2282,8 @@
           drawSpittingScene();
         } else if (currentScenario === 'gk3') {
           drawGk3Scene();
+        } else if (currentScenario === 'village') {
+          drawVillageScene();
         }
 
         // Draw Speech Bubble
@@ -2379,6 +2522,50 @@
         ctx.stroke();
 
         // Actors
+        state.actors.forEach(act => {
+          drawActor(act);
+        });
+      }
+
+      function drawVillageScene() {
+        ctx.fillStyle = "#162c1c";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Cobblestone roads
+        ctx.strokeStyle = "#64748b";
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(240, 230);
+        ctx.lineTo(640, 340);
+        ctx.moveTo(240, 450);
+        ctx.lineTo(640, 340);
+        ctx.lineTo(1000, 450);
+        ctx.stroke();
+
+        // Buildings
+        const buildings = [
+          { label: "BAKERY", x: 160, y: 140, w: 160, h: 75, fill: "#7c2d12" },
+          { label: "WHEAT FARM", x: 160, y: 475, w: 160, h: 75, fill: "#365314" },
+          { label: "TOWN SQUARE WELL", x: 560, y: 250, w: 160, h: 65, fill: "#1e293b" },
+          { label: "SHERIFF'S POST & JAIL", x: 910, y: 475, w: 180, h: 75, fill: "#1e3a8a" }
+        ];
+        buildings.forEach(b => {
+          ctx.fillStyle = b.fill;
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+          ctx.strokeStyle = "#f8fafc";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(b.x, b.y, b.w, b.h);
+          ctx.fillStyle = "#fde047";
+          ctx.font = "bold 12px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(b.label, b.x + b.w / 2, b.y + 24);
+        });
+
+        drawWaypoint(240, 230, "Bakery");
+        drawWaypoint(240, 450, "Farm");
+        drawWaypoint(640, 340, "TownSquare");
+        drawWaypoint(1000, 450, "SheriffsPost");
+
         state.actors.forEach(act => {
           drawActor(act);
         });
