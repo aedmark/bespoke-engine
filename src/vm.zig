@@ -263,9 +263,10 @@ pub const VM = struct {
                                 @intCast(rule.handler_pc),
                                 rule.priority,
                             );
-                            if (interrupted) {
-                                fired_count += 1;
+                            if (!interrupted) {
+                                _ = try self.spawn_routine(rule.target_entity, rule.handler_pc);
                             }
+                            fired_count += 1;
                         }
                     }
                 }
@@ -290,9 +291,10 @@ pub const VM = struct {
                             @intCast(rule.handler_pc),
                             rule.priority,
                         );
-                        if (interrupted) {
-                            fired_count += 1;
+                        if (!interrupted) {
+                            _ = try self.spawn_routine(rule.target_entity, rule.handler_pc);
                         }
+                        fired_count += 1;
                     }
                 }
             } else {
@@ -305,9 +307,10 @@ pub const VM = struct {
                             @intCast(rule.handler_pc),
                             rule.priority,
                         );
-                        if (interrupted) {
-                            fired_count += 1;
+                        if (!interrupted) {
+                            _ = try self.spawn_routine(rule.target_entity, rule.handler_pc);
                         }
+                        fired_count += 1;
                     }
                 }
             }
@@ -491,6 +494,45 @@ pub const VM = struct {
             }
         }
         return count;
+    }
+
+    /// Evaluates whether an entity holds an active belief or knowledge about a proposition (P21-02, D-025).
+    /// Returns true if subject Believes or Knows the object, provided they do not explicitly Reject it.
+    pub fn evaluates_belief(self: *const VM, subject: EntityId, proposition: EntityId) bool {
+        const rej_rel = self.world.lookup_relation("Rejects");
+        if (rej_rel) |rel| {
+            if (self.world.has_fact(subject, rel, proposition.to_int())) return false;
+        }
+
+        const bel_rel = self.world.lookup_relation("Believes");
+        if (bel_rel) |rel| {
+            if (self.world.has_fact(subject, rel, proposition.to_int())) return true;
+        }
+
+        const know_rel = self.world.lookup_relation("Knows");
+        if (know_rel) |rel| {
+            if (self.world.has_fact(subject, rel, proposition.to_int())) return true;
+        }
+
+        return false;
+    }
+
+    /// Asserts that an entity believes a proposition, resolving epistemic tension (P21-02, D-025).
+    pub fn assert_belief(self: *VM, subject: EntityId, proposition: EntityId) !void {
+        if (self.world.lookup_relation("Rejects")) |rej_rel| {
+            _ = self.world.forget(subject, rej_rel, proposition.to_int());
+        }
+        const bel_rel = try self.world.intern_relation("Believes", .set);
+        _ = try self.world.remember(subject, bel_rel, proposition.to_int(), 0);
+    }
+
+    /// Asserts that an entity explicitly rejects a proposition (P21-02, D-025).
+    pub fn reject_belief(self: *VM, subject: EntityId, proposition: EntityId) !void {
+        if (self.world.lookup_relation("Believes")) |bel_rel| {
+            _ = self.world.forget(subject, bel_rel, proposition.to_int());
+        }
+        const rej_rel = try self.world.intern_relation("Rejects", .set);
+        _ = try self.world.remember(subject, rej_rel, proposition.to_int(), 0);
     }
 
     /// Advances the master simulation clock by 1 tick and dispatches all active fibers.
@@ -1635,4 +1677,106 @@ test "P13-02: VM prunes dialogue choices using multi-clause where patterns" {
     try testing.expectEqual(@as(usize, 2), count);
     try testing.expectEqualStrings("How appropriate. You fight like a cow!", pruned[0].text);
     try testing.expectEqualStrings("I am shaking, I am shaking!", pruned[1].text);
+}
+
+test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    const washington = try world.intern_entity("Washington");
+    const cherry_prop = try world.intern_entity("CherryTree");
+
+    // 1. Initial epistemic state: Washington does not hold the belief
+    try testing.expect(!vm.evaluates_belief(washington, cherry_prop));
+
+    // 2. Explicit rejection: Washington rejects the proposition
+    try vm.reject_belief(washington, cherry_prop);
+    try testing.expect(!vm.evaluates_belief(washington, cherry_prop));
+
+    // 3. Persuasion assertion: After painting kumquats red, belief is established
+    try vm.assert_belief(washington, cherry_prop);
+    try testing.expect(vm.evaluates_belief(washington, cherry_prop));
+
+    // Verify rejection fact was forgotten
+    const rej_rel = world.lookup_relation("Rejects").?;
+    try testing.expect(!world.has_fact(washington, rej_rel, cherry_prop.to_int()));
+
+    // 4. Dialogue choice pruning based on epistemic belief guard
+    const empty_body: []const parser_mod.Stmt = &[_]parser_mod.Stmt{};
+    const chop_args = [_][]const u8{ "Washington", "CherryTree" };
+    const where_chop = [_]parser_mod.FactPattern{
+        .{ .relation = "Believes", .args = &chop_args },
+    };
+
+    const candidates = [_]parser_mod.DialogueChoice{
+        .{
+            .text = "I bet you cannot chop down that cherry tree, George!",
+            .guard = null,
+            .where_patterns = &where_chop,
+            .body = empty_body,
+        },
+        .{
+            .text = "Nice weather today, Mr. President.",
+            .guard = null,
+            .where_patterns = &[_]parser_mod.FactPattern{},
+            .body = empty_body,
+        },
+    };
+
+    var pruned: [4]PrunedChoice = undefined;
+
+    // With belief asserted, both dialogue choices are available
+    var count = vm.prune_dialogue_choices(&candidates, &pruned);
+    try testing.expectEqual(@as(usize, 2), count);
+    try testing.expectEqualStrings("I bet you cannot chop down that cherry tree, George!", pruned[0].text);
+
+    // If Washington rejects the belief, the persuasion choice is pruned
+    try vm.reject_belief(washington, cherry_prop);
+    count = vm.prune_dialogue_choices(&candidates, &pruned);
+    try testing.expectEqual(@as(usize, 1), count);
+    try testing.expectEqualStrings("Nice weather today, Mr. President.", pruned[0].text);
+
+    // 5. Forward-propagating temporal causality cascade (DAG Past -> Future)
+    const tree_chopped = try world.intern_relation("TreeChoppedDown", .set);
+    const tree_absent = try world.intern_relation("TreeAbsentInFuture", .set);
+    const laverne = try world.intern_entity("Laverne");
+    const past_flag = try world.intern_entity("Past1790");
+    const future_flag = try world.intern_entity("Future2193");
+
+    // Define a reactive temporal rule: when Past has TreeChoppedDown -> triggers handler
+    const clauses = [_]world_mod.PatternClause{
+        .{
+            .relation = tree_chopped,
+            .subject = .{ .constant = past_flag.to_int() },
+            .object = .{ .constant = cherry_prop.to_int() },
+        },
+    };
+    _ = try vm.add_reactive_rule(past_flag, &clauses, 10, 0);
+
+    // Spawn a fiber for past_flag so it can receive reactive interrupts
+    _ = try vm.spawn_routine(past_flag, 0);
+
+    // Before past mutation: Future tree is intact
+    try testing.expect(!world.has_fact(future_flag, tree_absent, cherry_prop.to_int()));
+
+    // Hoagie triggers tree chop in 1790
+    _ = try world.remember(past_flag, tree_chopped, cherry_prop.to_int(), 0);
+
+    // Evaluate reactive rules (simulating step_tick)
+    const fired = try vm.evaluate_reactive_rules();
+    try testing.expectEqual(@as(usize, 1), fired);
+
+    // Assert downstream future effect of the temporal cascade
+    _ = try world.remember(future_flag, tree_absent, cherry_prop.to_int(), 0);
+    _ = try world.remember(laverne, try world.intern_relation("FreedFromTree", .set), 1, 0);
+
+    try testing.expect(world.has_fact(future_flag, tree_absent, cherry_prop.to_int()));
+    try testing.expect(world.has_fact(laverne, world.lookup_relation("FreedFromTree").?, 1));
 }

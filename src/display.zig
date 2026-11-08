@@ -11,6 +11,8 @@ pub const VM = vm_mod.VM;
 pub const EmittedCue = vm_mod.EmittedCue;
 
 pub const font = @import("display/font.zig");
+pub const text_layout = @import("display/text_layout.zig");
+pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const renderer = @import("display/renderer.zig");
 pub const DisplayWindow = renderer.DisplayWindow;
 pub const UserAction = renderer.UserAction;
@@ -90,6 +92,19 @@ pub const RenderInventoryItem = struct {
     name_len: u8,
 
     pub fn get_name(self: *const RenderInventoryItem) []const u8 {
+        return self.name[0..self.name_len];
+    }
+};
+
+/// A party member in a multi-protagonist scenario (P21-01, D-025).
+pub const MAX_PARTY_MEMBERS = 4;
+pub const RenderPartyMember = struct {
+    entity: EntityId,
+    name: [32]u8 = undefined,
+    name_len: u8 = 0,
+    is_active: bool = false,
+
+    pub fn get_name(self: *const RenderPartyMember) []const u8 {
         return self.name[0..self.name_len];
     }
 };
@@ -199,6 +214,20 @@ pub const RenderFrame = struct {
     cat_hair_collected: bool = false,
     gabriel_disguised: bool = false,
     bike_rented: bool = false,
+    // Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
+    goat_is_tangled: bool = false,
+    goat_is_charging: bool = false,
+    goat_is_retreating: bool = false,
+    george_knocked_down: bool = false,
+    plough_moved: bool = false,
+    // Day of the Tentacle status flags (P21-03, D-025)
+    dott_tree_chopped: bool = false,
+    dott_wine_aged: bool = false,
+    dott_battery_charged: bool = false,
+    dott_flag_sewn: bool = false,
+    dott_laverne_freed: bool = false,
+    dott_laverne_disguised: bool = false,
+    dott_puzzle_solved: bool = false,
     // Living Village drives & social graph state (P18-01..P18-03, D-021)
     villager_drives: [8]RenderVillagerDrive = [_]RenderVillagerDrive{.{}} ** 8,
     villager_drive_count: usize = 0,
@@ -207,6 +236,10 @@ pub const RenderFrame = struct {
     village_crime_active: bool = false,
     village_warrant_active: bool = false,
     village_arrest_made: bool = false,
+    // Multi-character party coordination state (P21-01, D-025)
+    party: [MAX_PARTY_MEMBERS]RenderPartyMember = [_]RenderPartyMember{.{ .entity = EntityId.from_int(0) }} ** MAX_PARTY_MEMBERS,
+    party_count: usize = 0,
+    active_party_index: usize = 0,
     debug_facts: [32]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
@@ -225,13 +258,36 @@ pub const DisplayBridge = struct {
     front_buffer: RenderFrame,
     back_buffer: RenderFrame,
     audio_bridge: ?*audio.AudioBridge = null,
+    active_player_character: ?EntityId = null,
+    party: [MAX_PARTY_MEMBERS]EntityId = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
+    party_count: usize = 0,
 
     pub fn init() DisplayBridge {
         return DisplayBridge{
             .front_buffer = std.mem.zeroes(RenderFrame),
             .back_buffer = std.mem.zeroes(RenderFrame),
             .audio_bridge = null,
+            .active_player_character = null,
+            .party = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
+            .party_count = 0,
         };
+    }
+
+    /// Registers party members for multi-protagonist party management (P21-01, D-025).
+    pub fn set_party(self: *DisplayBridge, members: []const EntityId) void {
+        const count = @min(members.len, self.party.len);
+        for (0..count) |i| {
+            self.party[i] = members[i];
+        }
+        self.party_count = count;
+        if (count > 0 and self.active_player_character == null) {
+            self.active_player_character = members[0];
+        }
+    }
+
+    /// Sets the active player-controlled protagonist in the party (P21-01, D-025).
+    pub fn set_active_character(self: *DisplayBridge, id: EntityId) void {
+        self.active_player_character = id;
     }
 
     /// Attaches an optional peripheral audio bridge to consume cues (P16-01, D-001).
@@ -521,9 +577,89 @@ pub const DisplayBridge = struct {
             self.back_buffer.social_edge_count = se_count;
         }
 
-        // 6. Capture player inventory (P7-03, D-007)
+        // 5d. Capture Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
+        self.back_buffer.goat_is_tangled = false;
+        if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
+            self.back_buffer.goat_is_tangled = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.goat_is_retreating = false;
+        if (world.lookup_relation("GoatRetreating") orelse world.lookup_relation("retreating")) |rel| {
+            self.back_buffer.goat_is_retreating = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.george_knocked_down = false;
+        if (world.lookup_relation("KnockedDown") orelse world.lookup_relation("knocked_down")) |rel| {
+            self.back_buffer.george_knocked_down = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.plough_moved = false;
+        if (world.lookup_relation("PloughMoved") orelse world.lookup_relation("plough_moved")) |rel| {
+            self.back_buffer.plough_moved = world.has_fact(null, rel, null);
+        }
+
+        // 5e. Capture party coordination state (P21-01, D-025)
+        var p_count: usize = 0;
+        var active_p_idx: usize = 0;
+        for (self.party[0..self.party_count], 0..) |pid, idx| {
+            if (p_count >= self.back_buffer.party.len) break;
+            var member = RenderPartyMember{
+                .entity = pid,
+                .name = undefined,
+                .name_len = 0,
+                .is_active = (self.active_player_character != null and self.active_player_character.? == pid) or (self.active_player_character == null and idx == 0),
+            };
+            if (member.is_active) {
+                active_p_idx = idx;
+            }
+            if (world.get_entity_name(pid)) |n| {
+                const len = @min(n.len, member.name.len);
+                @memcpy(member.name[0..len], n[0..len]);
+                member.name_len = @intCast(len);
+            }
+            self.back_buffer.party[p_count] = member;
+            p_count += 1;
+        }
+        self.back_buffer.party_count = p_count;
+        self.back_buffer.active_party_index = active_p_idx;
+
+        // 5f. Capture Day of the Tentacle puzzle status flags (P21-03, D-025)
+        self.back_buffer.dott_tree_chopped = false;
+        if (world.lookup_relation("TreeChoppedDown")) |rel| {
+            self.back_buffer.dott_tree_chopped = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.dott_wine_aged = false;
+        if (world.lookup_relation("WineAgedIntoVinegar")) |rel| {
+            self.back_buffer.dott_wine_aged = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.dott_battery_charged = false;
+        if (world.lookup_relation("ToiletPowered")) |rel| {
+            self.back_buffer.dott_battery_charged = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.dott_flag_sewn = false;
+        if (world.lookup_relation("TentacleFlagSewn")) |rel| {
+            self.back_buffer.dott_flag_sewn = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.dott_laverne_freed = false;
+        if (world.lookup_relation("FreedFromTree")) |rel| {
+            self.back_buffer.dott_laverne_freed = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.dott_laverne_disguised = false;
+        if (world.lookup_relation("TentacleDisguiseActive")) |rel| {
+            self.back_buffer.dott_laverne_disguised = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.dott_puzzle_solved = false;
+        if (world.lookup_relation("DottSolved")) |rel| {
+            self.back_buffer.dott_puzzle_solved = world.has_fact(null, rel, null);
+        }
+
+        // 6. Capture player inventory (P7-03, D-007, D-025)
         var inv_count: usize = 0;
-        const player_id = world.lookup_entity("Gabriel") orelse world.lookup_entity("Guybrush") orelse world.lookup_entity("Cat");
+        const player_id = self.active_player_character orelse
+            world.lookup_entity("Hoagie") orelse
+            world.lookup_entity("Bernard") orelse
+            world.lookup_entity("Laverne") orelse
+            world.lookup_entity("George") orelse
+            world.lookup_entity("Gabriel") orelse
+            world.lookup_entity("Guybrush") orelse
+            world.lookup_entity("Cat");
         if (player_id) |pid| {
             if (world.lookup_relation("InInventory")) |inv_rel| {
                 var it_inv = world.query(pid, inv_rel, null);
@@ -814,6 +950,74 @@ test "P16-01: DisplayBridge attaches AudioBridge and forwards scene context" {
 
     try testing.expect(db.audio_bridge != null);
     try testing.expectEqual(@as(*audio.AudioBridge, &ab), db.audio_bridge.?);
+}
+
+test "P21-01: DisplayBridge captures multi-character party state and active inventory" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = try world.intern_entity("ColonialWorkshop");
+    const wp = try spatial.graph.add_waypoint(room, 0, 0, "WP1");
+
+    const hoagie = try world.intern_entity("Hoagie");
+    const bernard = try world.intern_entity("Bernard");
+    const laverne = try world.intern_entity("Laverne");
+    const battery = try world.intern_entity("SuperBattery");
+    const flyer = try world.intern_entity("TentacleFlyer");
+
+    try spatial.register_entity(hoagie, wp, 4);
+    try spatial.register_entity(bernard, wp, 4);
+    try spatial.register_entity(laverne, wp, 4);
+
+    const carries = try world.intern_relation("Carries", .set);
+    _ = try world.remember(hoagie, carries, battery.to_int(), 0);
+    _ = try world.remember(bernard, carries, flyer.to_int(), 0);
+
+    var chunk = vm_mod.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    var bridge = DisplayBridge.init();
+    const party_members = [_]EntityId{ hoagie, bernard, laverne };
+    bridge.set_party(&party_members);
+    bridge.set_active_character(hoagie);
+
+    bridge.capture_frame(&world, &spatial, &vm);
+    bridge.swap();
+
+    const frame1 = bridge.get_frame();
+    try testing.expectEqual(@as(usize, 3), frame1.party_count);
+    try testing.expectEqual(@as(usize, 0), frame1.active_party_index);
+    try testing.expectEqualStrings("Hoagie", frame1.party[0].get_name());
+    try testing.expect(frame1.party[0].is_active);
+    try testing.expectEqualStrings("Bernard", frame1.party[1].get_name());
+    try testing.expect(!frame1.party[1].is_active);
+    try testing.expectEqualStrings("Laverne", frame1.party[2].get_name());
+    try testing.expect(!frame1.party[2].is_active);
+
+    // Hoagie has SuperBattery in inventory
+    try testing.expectEqual(@as(usize, 1), frame1.inventory_count);
+    try testing.expectEqualStrings("SuperBattery", frame1.inventory[0].get_name());
+
+    // Switch active protagonist to Bernard
+    bridge.set_active_character(bernard);
+    bridge.capture_frame(&world, &spatial, &vm);
+    bridge.swap();
+
+    const frame2 = bridge.get_frame();
+    try testing.expectEqual(@as(usize, 1), frame2.active_party_index);
+    try testing.expect(!frame2.party[0].is_active);
+    try testing.expect(frame2.party[1].is_active);
+
+    // Bernard has TentacleFlyer in inventory
+    try testing.expectEqual(@as(usize, 1), frame2.inventory_count);
+    try testing.expectEqualStrings("TentacleFlyer", frame2.inventory[0].get_name());
 }
 
 test {

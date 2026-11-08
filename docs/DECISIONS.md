@@ -5,13 +5,19 @@ Newest at the bottom. To reverse a decision, add a new entry that supersedes it;
 its status changes ("superseded by D-MMM"). An "Update, same session" note at the end of an entry is fine while it is
 still on the working branch.
 
+Record pre-existing choices too, the first time a session has to understand them ("status: accepted, recorded
+YYYY-MM-DD"): the reason something is the way it is gets lost faster than the code. Every constraint in the codebase is
+an answer to an earlier question or failure mode; recording that originating question here stops a future session from
+removing a fence whose purpose it forgot.
+
 Format:
 
 ```
 ## D-NNN Title  (YYYY-MM-DD, status: proposed | accepted | rejected | superseded by D-MMM)
-**Context:** why this came up.
-**Decision:** what we chose.
-**Alternatives:** what else was considered, and why not.
+**Context:** the originating question, failure mode, or measurement this choice answers (and the roadmap item or bug).
+**Decision:** what we chose (numbered points if there are several).
+**Alternatives:** what else was considered, and why not (one line each). Optional, but it is what stops the
+re-litigation.
 **Consequences:** what it costs or constrains; what was left out and why.
 **Review trigger:** an event that should cause reconsideration. Optional.
 ```
@@ -244,6 +250,87 @@ Format:
 - Requiring Emscripten SDK (`emcc`) and external SDL2-wasm ports: rejected because Zig's built-in `wasm32-freestanding` target compiles pure Zig code out-of-the-box with zero external toolchains, and rendering directly to a linear-memory RGBA8888 framebuffer (`ImageData`) keeps the binary compact and deterministic.
 - Hosting the simulator only on an external server: rejected because `docs/manual.html` is designed as a 100% portable, self-contained single-file developer guide that works offline from `file://` URLs.
 **Consequences:** Complete browser portability via `zig build wasm` with zero external SDK dependencies, unified mouse/keyboard/touch input translation tested in pure Zig, and a live playable simulator embedded directly inside `docs/manual.html`.
+
+## D-023 The Broken Sword Lochmarne Goat Puzzle Scenario, Dynamic Threat-Radius Tethering, and Subterranean Scene Transition (2026-11-08, status: accepted)
+**Context:** The Lochmarne Castle Goat Puzzle from *Broken Sword: The Shadow of the Templars* (1996) subverts traditional static point-and-click adventure pacing: an aggressive tethered Billy Goat guards the entrance to an archaeological excavation, knocking the player down whenever they approach the pit. The solution requires seizing a fleeting recovery window while the goat retreats to its stake to drag a heavy farm plough into the rope path, tangling the goat and clearing the ladder to the subterranean Templar crypt.
+**Decision:** Implement the Broken Sword Goat Puzzle vertical slice in `src/goat_puzzle.zig`, `src/display/renderer.zig`, and `src/audio.zig`:
+1. **DSL Stageplay & Reactive Threat-Radius Modeling (`P20-01`, `D-001`, `D-004`, `D-010`, `D-012`):** Represent Lochmarne Castle Courtyard and Subterranean Templar Dig Crypt with `cast: George, BillyGoat`, `props: CellarEntrance, FarmPlough, TetherStake, CarvedMural`, and spatial waypoints (`CourtyardEntrance`, `PloughMark`, `TetherCenter`, `DigOpening`, `FallMark`, `CryptLadder`, `AltarMark`). Model the goat's autonomous reactive loop: entering the cellar threat zone triggers a high-priority charge interrupt (`D-004`), knocking George back to `FallMark` and initiating a 30-tick retreat window (`GoatRetreating(BillyGoat, true) for 30 ticks`).
+2. **Dynamic Tether Constraint & Plough Dragging (`P20-01`, `D-003`, `D-007`):** Interacting with `FarmPlough` during the active retreat window hauls the plough into the rope line, asserting `TangledWith(BillyGoat, FarmPlough)` and `now BillyGoat is tangled`. The goat's tether constraint shifts from the center stake to the plough, locking its movement radius away from the dig entrance.
+3. **Subterranean Scene Transition (`P20-01`, `D-014`):** Once tangled, descending `CellarEntrance` executes `transition to scene: Templar Crypt`, preserving global facts while switching spatial waypoints and visual backdrops to the ancient underground vault.
+4. **Visual Backdrops, Actor Tokens, and Procedural Audio (`P20-02`, `P20-03`, `D-008`, `D-019`):** Render authentic Irish castle ruins (stone towers, mossy turf, cellar pit with ladder, wooden stake, dynamic rope line that wraps around the plough when tangled) and dark subterranean crypt (carved Templar cross, torchlight sconces, altar), custom actor tokens (George in trench/leather jacket, Billy Goat with curved horns, beard, and tangled stars), procedural Celtic whistle melody in 6/8 jig time (`.lochmarne`), and action SFX (`goat_bleat`, `headbutt_thud`).
+**Alternatives:**
+- Hard-coded timer outside VM: rejected because BeSpoke's core principle is that timing and reactive states emerge deterministically from discrete ticks, relational fact TTLs, and fiber interrupts, ensuring 100% determinism and seamless time-travel rewind.
+- Single courtyard scene: rejected because testing multi-scene transitions (`transition to scene`) validates the complete narrative payoff of descending into the Templar crypt.
+**Consequences:** Demonstrates reactive threat-radius mechanics, finite temporal recovery windows, dynamic physical constraint shifting, and multi-scene descent within pure BeSpoke DSL.
+
+## D-024 Centralized Text Layout Resolver, Floating Label Collision Avoidance, and Visual Hierarchy Standardization (2026-11-08, status: accepted)
+**Context:** When multiple actors, waypoints, and interactive hotspots occupy close spatial proximity (such as George Stobbart, FallMark, and the Billy Goat in the Lochmarne Castle courtyard), naive static label offsets produce illegible overlapping text (e.g. `[StandiFallMarkarding Dig Entrance]`). Hardcoding scene-specific pixel nudges is fragile and violates the systemic design of the engine.
+**Decision:** Implement a centralized, deterministic 2D label layout engine (`TextLayoutResolver`) in `src/display/text_layout.zig` and integrate it into `src/display/renderer.zig`:
+1. **Deterministic Multi-Tier Collision Resolver (`P20-02`, `D-008`, `D-024`):** Centralize all floating in-world text labels into `TextLayoutResolver` (`MAX_LABELS = 64`, `MAX_OBSTACLES = 32`, zero heap allocations). Register actor and waypoint tokens as physical obstacles.
+2. **Priority-Based Placement Order:** Sort candidate labels by descending priority (`hover_tooltip = 10`, `actor_alert = 9`, `actor_name = 8`, `actor_status = 7`, `waypoint_target = 6`, `waypoint_idle = 2`, `backdrop_prop = 1`). Higher priority labels claim their preferred bounding boxes first.
+3. **Visual Hierarchy & Scale Standardization:** Standardize actor status tags and idle waypoints to font scale 1 (crisp 5x7 bitmap font, 6px width per char), cutting width by 50% compared to scale 2 while preserving scale 2 (12px per char) for primary actor names and active hover tooltips.
+4. **Collision Avoidance Strategies:** When collision occurs, actor statuses stagger downward across vertical tiers (Tiers 1-3) or flip above; actor names stagger upward or nudge horizontally; idle waypoints yield by testing alternative placement or suppressing their idle text (while ground circles remain visible and hover prompts retain highest priority).
+5. **Elimination of Redundant Backdrop Text:** Remove hardcoded static text banners on interactive props (such as `FARM PLOUGH` and `PEAGRAM'S DIG`) that collide with interactive waypoint and hotspot prompts.
+**Alternatives:**
+- Ad-hoc pixel offsetting per scenario: rejected because it introduces fragile coupling between scene layout and renderer code and breaks whenever entities move dynamically.
+- Hiding all actor statuses when clustered: rejected because persistent status feedback (e.g. `[Guarding Dig Entrance]`, `[Standing]`, `[KNOCKED DOWN!]`) provides vital emergent narrative clues.
+**Consequences:** Complete elimination of floating text collisions across all point-and-click and systemic simulation scenes, standardized crisp visual hierarchy (scale 2 names, scale 1 statuses), and 100% deterministic, zero-allocation rendering verified in pure Zig.
+
+## D-025 Multi-Character Party Coordination, Generalized Item Transfer, and Temporal Epistemic Dialogue (2026-11-08, status: accepted)
+**Context:** Multi-character adventure scenarios (such as *Day of the Tentacle*, *Maniac Mansion*, or ensemble party simulations) require players to control multiple distinct protagonists, switch active perspective across geographically or temporally partitioned scenes, exchange inventory items across characters without physical contact, and engage in dialogue where NPCs evaluate player propositions against their active world knowledge and beliefs.
+**Decision:** Implement generalized party coordination, atomic inventory transfer, and epistemic belief evaluation in `src/spatial.zig`, `src/vm.zig`, `src/display.zig`, and `src/display/renderer.zig`:
+1. **Generalized Party Inventory Transfer (`P21-01`, `D-001`, `D-003`, `D-009`):** Track registered party members (`party: []const EntityId`) and the currently active player protagonist (`active_player_character: EntityId`). Implement `transfer_item(item, from, to)` as an atomic relational fact swap: `world.forget(from, Carries, item)` followed by `world.remember(to, Carries, item, 0)`, emitting the `ItemTransferred(from, to, item)` simulation cue. Support configurable transfer policies: `.remote` (instantaneous transmission regardless of scene, such as Chron-o-Johns or telecom) and `.colocated` (requiring co-location in the same spatial room).
+2. **Party Perspective Switching & Portrait HUD (`P21-01`, `D-008`, `D-014`):** Provide in-engine perspective switching (`switch_actor(target)`) via hotkeys (`[1]`, `[2]`, `[3]`) and interactive HUD portrait tokens. Switching active perspective synchronously swaps the active camera viewport, room scene graph, and visible inventory tray. Using an in-hand item on another party member's portrait initiates `transfer_item`.
+3. **Epistemological Dialogue Belief Evaluation (`P21-02`, `D-015`, `D-017`):** Extend the relational dialogue engine (`D-015`, `D-017`) so NPCs dynamically evaluate candidate dialogue options against their active beliefs, knowledge facts (`Believes`, `Knows`, `Rejects`), and historical precedents before rendering choice blocks. Persuading historical figures (e.g. Betsy Ross or George Washington) requires asserting prerequisite evidence facts in the world.
+4. **Forward-Propagating Temporal Causality (`P21-02`, `D-010`, `D-014`):** Enforce strict Directed Acyclic Graph (DAG) temporal propagation (Past -> Present -> Future). Actions executed in earlier eras project downstream into future topologies and prop states via reactive rule cascades (`when Past has X: mutate Present and Future`), preventing paradoxical retrocausal cycles. Model container duration catalysts (such as wine aging into vinegar inside sealed time capsules across centuries).
+5. **The Day of the Tentacle Trio Scenario (`P21-03`, `D-008`, `D-011`, `D-019`):** Implement the three-era *Day of the Tentacle* milestone (*The Chrono-Mansion Trio*) in `src/dott_puzzle.zig` with 1790 Colonial Workshop (Hoagie), 1993 Motel Lobby (Bernard), and 2193 Dystopian Guard Post (Laverne), verifying the complete parallel puzzle diamond, item transfers, epistemic dialogue, and time-travel rewind.
+**Alternatives:**
+- Hardcoding a scenario-specific "Chron-o-John" flush action in the engine core: rejected because inventory exchange between party members is a fundamental game simulation mechanic that belongs in the general runtime, with narrative framing (time toilets, carrier pigeons, teleporters) provided by DSL scripts.
+- Bidirectional temporal simulation: rejected because retrocausal loops introduce unsolvable constraint cycles; forward-only DAG propagation is 100% deterministic and preserves instantaneous time-travel snapshot rewinds.
+**Consequences:** Enables multi-protagonist party simulations, seamless cross-character inventory logistics, belief-aware dialogue branches, and deterministic multi-era temporal causality verified in pure Zig.
+
+## D-026 Portal-Anchored Transfers, Scene-Local Spatial Topology, Relational Constraint Logic, and Temporal Feedback Asymmetry (2026-11-08, status: accepted)
+**Context:** Multi-era time-travel simulations (such as *Day of the Tentacle*) and parallel split-party adventures raise four fundamental design tensions:
+1. **Geometric Topology vs. Relational State:** Naive implementations attempt to unify eras onto an overlaid Euclidean coordinate space $(x, y)$, assuming the mansion or location has a 1:1 spatial bijection across centuries. In reality, physical room layouts diverge completely over 400 years (open colonial lawn vs. commercial motel vs. dystopian security checkpoint).
+2. **Diegetic Backtracking vs. Abstract UI Transparency:** Requiring characters to physically walk all the way back to their temporal portal (Chron-o-John) for every item swap destroys puzzle momentum and game pacing, while pure telepathic transfer ignores physical portal constraints (such as Laverne being trapped in a tree, or an unpowered portal).
+3. **Imperative Scripting vs. Relational Constraint Solving (Prolog/Datalog):** As relational fact systems scale across multiple eras and actors, writing manual imperative state pipelines becomes unmanageable; the engine acts as a declarative constraint solver evaluating Horn clause conditions, invariants, and reactive rules.
+4. **Temporal Telegraphing Asymmetry:** Players need to understand how past interventions affect downstream eras, but broadcasting cutscenes for every temporal interaction causes narrative fatigue.
+**Decision:** Formalize and implement the following architecture across `src/spatial.zig`, `src/world.zig`, `src/vm.zig`, and `docs/ARCHITECTURE.md`:
+1. **Topology is Scene-Local; Causality is Relational:** Never enforce coordinate overlays or geometric congruence across different eras or parallel dimensions. Each scene maintains its own discrete waypoint graph and visual perspective. The unified `World` relational fact arena serves as the singular cross-epoch truth (D-001, D-003, D-025).
+2. **`TransferPolicy.portal_anchored`:** Implement an anti-backtracking transfer policy in `src/spatial.zig` that permits transparent inventory swaps from anywhere *provided* both actors possess accessible, operational portal entities in their active scene scopes (`SpatialSystem.register_portal`, `can_transfer_item_with_world`). When an actor is physically proximate to the portal waypoint, the engine promotes the transfer to a concrete scene prop interaction (`ToiletFlush`, item in bowl).
+3. **Constraint Logic over Imperative Plumbing:** Frame simulation rules declaratively: facts represent assertions, queries evaluate Horn clause conjunctions, and reactive `when` rules enforce invariants without imperative state plumbing.
+4. **Asymmetric Downstream Feedback (Structural Mutation vs. Incubation):** Downstream physical mutations (e.g., felling a tree, altering a national flag pattern, modifying a statue's posture) telegraph their consequence to the player via reactive interrupt cutscenes (`interrupt Laverne with: ...`). Passive temporal incubations (e.g., running a sweater in a dryer for 200 years, aging wine in a time capsule) do not trigger interrupts; their transformed state is discovered organically upon future player inspection or retrieval.
+**Alternatives:**
+- Forcing a unified 3D/2D coordinate grid across all eras: rejected because historical architectural drift makes geometric congruence non-existent and arbitrarily limits level design.
+- Mandatory physical transit to portal for every transfer: rejected because repetitive backtracking degrades puzzle pacing.
+- Playing cutscenes for every temporal item transfer: rejected because predictable container incubations are more satisfying when discovered through natural inspection.
+**Consequences:** Enables flexible, era-specific spatial level designs with transparent inventory logistics, grounded in diegetic portal constraints and clear narrative telegraphing rules.
+
+## Held tensions
+
+A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has
+an unknown answer; a held tension has two known answers and a price. Hold it only while the price of holding is
+lower than the price of choosing badly.
+
+Each tension names an owner, a review trigger, and the cost of holding both. A tension with no owner or no trigger is
+deleted at consolidation. A tension that survives review becomes a decision, with the losing claim recorded as an
+alternative.
+
+Format:
+
+```
+### T-NNN Title  (YYYY-MM-DD, status: held | resolved by D-MMM)
+**Owner:** ...
+**Claim A:** ...
+**Claim B:** ...
+**Why both hold:** ...
+**Cost of holding both:** ...
+**Review trigger:** ...
+```
+
+*(None held currently. When two true claims cannot yet be reconciled, record them here as `T-NNN` with owner, claims, cost, and review trigger rather than forcing a premature compromise.)*
+
+---
 
 ## Open questions
 

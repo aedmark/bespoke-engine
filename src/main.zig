@@ -14,6 +14,8 @@ pub fn main() !void {
     var is_gk3 = false;
     var is_sword_fighting = false;
     var is_village = false;
+    var is_goat = false;
+    var is_dott = false;
     var ticks_arg: usize = 20;
 
     var subcommand: ?enum { run, compile, check, help } = null;
@@ -59,6 +61,10 @@ pub fn main() !void {
             is_sword_fighting = true;
         } else if (std.mem.eql(u8, arg, "--village") or std.mem.eql(u8, arg, "--living-village")) {
             is_village = true;
+        } else if (std.mem.eql(u8, arg, "--goat") or std.mem.eql(u8, arg, "--goat-puzzle") or std.mem.eql(u8, arg, "--broken-sword")) {
+            is_goat = true;
+        } else if (std.mem.eql(u8, arg, "--dott") or std.mem.eql(u8, arg, "--tentacle") or std.mem.eql(u8, arg, "--chrono-mansion")) {
+            is_dott = true;
         } else if (std.mem.eql(u8, arg, "--scenario")) {
             if (args_it.next()) |scen| {
                 if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
@@ -69,6 +75,10 @@ pub fn main() !void {
                     is_sword_fighting = true;
                 } else if (std.mem.eql(u8, scen, "village") or std.mem.eql(u8, scen, "living-village")) {
                     is_village = true;
+                } else if (std.mem.eql(u8, scen, "goat") or std.mem.eql(u8, scen, "goat-puzzle") or std.mem.eql(u8, scen, "broken-sword")) {
+                    is_goat = true;
+                } else if (std.mem.eql(u8, scen, "dott") or std.mem.eql(u8, scen, "tentacle") or std.mem.eql(u8, scen, "chrono-mansion")) {
+                    is_dott = true;
                 }
             }
         } else if (target_file == null and !std.mem.startsWith(u8, arg, "-")) {
@@ -94,6 +104,8 @@ pub fn main() !void {
                     \\  bespoke --gk3                    (Gabriel Knight 3 Cat Moustache)
                     \\  bespoke --sword-fighting         (Monkey Island 1 Insult Sword Fighting)
                     \\  bespoke --village                (The Living Village Emergent Sandbox)
+                    \\  bespoke --goat                   (Broken Sword Lochmarne Goat Puzzle)
+                    \\  bespoke --dott                   (Day of the Tentacle Trio Milestone)
                     \\
                 , .{});
                 return;
@@ -129,6 +141,24 @@ pub fn main() !void {
                 }
             },
         }
+    }
+
+    if (is_dott) {
+        if (is_headless_arg) {
+            try bespoke.dott_puzzle.run_headless(allocator, stdout);
+        } else {
+            try bespoke.dott_puzzle.run_interactive(allocator);
+        }
+        return;
+    }
+
+    if (is_goat) {
+        if (is_headless_arg) {
+            try bespoke.goat_puzzle.run_headless(allocator, stdout);
+        } else {
+            try bespoke.goat_puzzle.run_interactive(allocator, stdout);
+        }
+        return;
     }
 
     if (is_village) {
@@ -455,7 +485,13 @@ pub fn main() !void {
                                     window.set_cue_banner("You have nothing to use!", 90);
                                 }
                             },
-                            .walk => {},
+                            .walk => {
+                                const layout = bespoke.display.renderer.get_entity_screen_layout(act.actor_index, frame.entities[0..frame.entity_count], window.width, window.height);
+                                if (bespoke.display.renderer.find_nearest_waypoint(layout.pos.x, layout.pos.y, frame.waypoints[0..frame.waypoint_count], window.width, window.height)) |wp_id| {
+                                    _ = try spatial.walk_to(cat, wp_id);
+                                    window.set_cue_banner("Approaching actor...", 60);
+                                }
+                            },
                         }
                     }
                 },
@@ -499,7 +535,13 @@ pub fn main() !void {
                                     window.set_cue_banner(text, 90);
                                 }
                             },
-                            .walk => {},
+                            .walk => {
+                                const pt = bespoke.display.renderer.world_to_screen(hs.x, hs.y, window.width, window.height);
+                                if (bespoke.display.renderer.find_nearest_waypoint(pt.x, pt.y, frame.waypoints[0..frame.waypoint_count], window.width, window.height)) |wp_id| {
+                                    _ = try spatial.walk_to(cat, wp_id);
+                                    window.set_cue_banner("Walking to prop...", 60);
+                                }
+                            },
                         }
                     }
                 },

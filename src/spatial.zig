@@ -298,10 +298,17 @@ pub const Hotspot = struct {
 
 /// Manages spatial world navigation, motor intents, and hotspots (P3-01, P3-02, P7-01).
 pub const SpatialSystem = struct {
+    pub const Portal = struct {
+        entity: EntityId,
+        room: EntityId,
+        waypoint: u16,
+    };
+
     allocator: std.mem.Allocator,
     graph: SpatialGraph,
     agents: std.AutoHashMap(EntityId, MotorAgent),
     hotspots: std.ArrayList(Hotspot),
+    portals: std.ArrayList(Portal),
 
     pub fn init(allocator: std.mem.Allocator) SpatialSystem {
         return SpatialSystem{
@@ -309,6 +316,7 @@ pub const SpatialSystem = struct {
             .graph = SpatialGraph.init(allocator),
             .agents = std.AutoHashMap(EntityId, MotorAgent).init(allocator),
             .hotspots = std.ArrayList(Hotspot).init(allocator),
+            .portals = std.ArrayList(Portal).init(allocator),
         };
     }
 
@@ -324,6 +332,31 @@ pub const SpatialSystem = struct {
             self.allocator.free(h.examine_text);
         }
         self.hotspots.deinit();
+        self.portals.deinit();
+    }
+
+    /// Registers a transit portal (e.g. Chron-o-John or teleport pad) located at a waypoint (D-026).
+    pub fn register_portal(self: *SpatialSystem, entity: EntityId, room: EntityId, waypoint: u16) !void {
+        for (self.portals.items) |*p| {
+            if (p.entity == entity) {
+                p.room = room;
+                p.waypoint = waypoint;
+                return;
+            }
+        }
+        try self.portals.append(.{
+            .entity = entity,
+            .room = room,
+            .waypoint = waypoint,
+        });
+    }
+
+    /// Finds a registered portal located within a room (D-026).
+    pub fn get_portal_in_room(self: *const SpatialSystem, room: EntityId) ?Portal {
+        for (self.portals.items) |p| {
+            if (p.room == room) return p;
+        }
+        return null;
     }
 
     /// Registers a static scene hotspot / inspectable prop (P7-01, D-009).
@@ -445,6 +478,70 @@ pub const SpatialSystem = struct {
         var it = self.agents.valueIterator();
         while (it.next()) |agent| {
             agent.step_tick(&self.graph);
+        }
+    }
+
+    /// Policy governing party inventory transfers across entities (P21-01, D-025, D-026).
+    pub const TransferPolicy = enum {
+        remote,
+        colocated,
+        portal_anchored,
+    };
+
+    /// Evaluates whether two entities can transfer inventory under the given policy (P21-01, D-025, D-026).
+    /// Remote transfers always succeed; colocated transfers require both entities to occupy the same room.
+    pub fn can_transfer_item(
+        self: *const SpatialSystem,
+        from: EntityId,
+        to: EntityId,
+        policy: TransferPolicy,
+    ) bool {
+        return self.can_transfer_item_with_world(null, from, to, policy);
+    }
+
+    /// Evaluates inventory transfer eligibility with optional relational fact constraints (D-025, D-026).
+    /// Under .portal_anchored, remote transfer succeeds transparently if both actors are co-located or
+    /// both rooms possess registered transit portals and neither actor nor portal is blocked/trapped.
+    pub fn can_transfer_item_with_world(
+        self: *const SpatialSystem,
+        world_opt: ?*const world_mod.World,
+        from: EntityId,
+        to: EntityId,
+        policy: TransferPolicy,
+    ) bool {
+        switch (policy) {
+            .remote => return true,
+            .colocated => {
+                const agent_from = self.agents.get(from) orelse return false;
+                const agent_to = self.agents.get(to) orelse return false;
+                const wp_from = self.graph.get_waypoint(agent_from.current_wp) orelse return false;
+                const wp_to = self.graph.get_waypoint(agent_to.current_wp) orelse return false;
+                return wp_from.room == wp_to.room;
+            },
+            .portal_anchored => {
+                const agent_from = self.agents.get(from) orelse return false;
+                const agent_to = self.agents.get(to) orelse return false;
+                const wp_from = self.graph.get_waypoint(agent_from.current_wp) orelse return false;
+                const wp_to = self.graph.get_waypoint(agent_to.current_wp) orelse return false;
+
+                if (wp_from.room == wp_to.room) return true;
+
+                const portal_from = self.get_portal_in_room(wp_from.room) orelse return false;
+                const portal_to = self.get_portal_in_room(wp_to.room) orelse return false;
+
+                if (world_opt) |world| {
+                    if (world.lookup_relation("Trapped")) |trapped_rel| {
+                        if (world.has_fact(from, trapped_rel, null)) return false;
+                        if (world.has_fact(to, trapped_rel, null)) return false;
+                    }
+                    if (world.lookup_relation("PortalBlocked")) |blocked_rel| {
+                        if (world.has_fact(portal_from.entity, blocked_rel, null)) return false;
+                        if (world.has_fact(portal_to.entity, blocked_rel, null)) return false;
+                    }
+                }
+
+                return true;
+            },
         }
     }
 
@@ -637,4 +734,102 @@ test "P12-02: spatial graph room partitioning and actor transition between scene
     try testing.expectEqual(@as(i32, 100), spatial.get_position(guybrush).?.x);
     try testing.expectEqual(@as(i32, 50), spatial.get_position(guybrush).?.y);
     try testing.expect(spatial.has_arrived(guybrush));
+}
+
+test "P21-01: can_transfer_item respects remote and colocated policies" {
+    const testing = std.testing;
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room_past = EntityId.from_int(10);
+    const room_present = EntityId.from_int(20);
+
+    const wp_hoagie = try spatial.graph.add_waypoint(room_past, 0, 0, "ColonialDesk");
+    const wp_bernard = try spatial.graph.add_waypoint(room_present, 100, 0, "MotelDesk");
+    const wp_clerk = try spatial.graph.add_waypoint(room_present, 110, 0, "MotelLobby");
+
+    const hoagie = EntityId.from_int(1);
+    const bernard = EntityId.from_int(2);
+    const clerk = EntityId.from_int(3);
+
+    try spatial.register_entity(hoagie, wp_hoagie, 2);
+    try spatial.register_entity(bernard, wp_bernard, 2);
+    try spatial.register_entity(clerk, wp_clerk, 2);
+
+    // Remote policy: can transfer across different rooms/eras (e.g. Chron-o-John)
+    try testing.expect(spatial.can_transfer_item(hoagie, bernard, .remote));
+    try testing.expect(spatial.can_transfer_item(bernard, hoagie, .remote));
+
+    // Colocated policy: hoagie and bernard are in different rooms -> fails
+    try testing.expect(!spatial.can_transfer_item(hoagie, bernard, .colocated));
+
+    // Colocated policy: bernard and clerk are both in room_present -> succeeds
+    try testing.expect(spatial.can_transfer_item(bernard, clerk, .colocated));
+}
+
+test "D-026: can_transfer_item respects portal_anchored policy and relational constraints" {
+    const testing = std.testing;
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const room_1790 = EntityId.from_int(10);
+    const room_1993 = EntityId.from_int(20);
+    const room_2193 = EntityId.from_int(30);
+    const room_void = EntityId.from_int(40);
+
+    const wp_hoagie = try spatial.graph.add_waypoint(room_1790, 0, 0, "ColonialWp");
+    const wp_toilet_1790 = try spatial.graph.add_waypoint(room_1790, 10, 0, "Toilet1790");
+    const wp_bernard = try spatial.graph.add_waypoint(room_1993, 100, 0, "MotelDesk");
+    const wp_toilet_1993 = try spatial.graph.add_waypoint(room_1993, 110, 0, "Toilet1993");
+    const wp_laverne = try spatial.graph.add_waypoint(room_2193, 200, 0, "GuardPost");
+    const wp_toilet_2193 = try spatial.graph.add_waypoint(room_2193, 210, 0, "Toilet2193");
+    const wp_drifter = try spatial.graph.add_waypoint(room_void, 300, 0, "VoidSpot");
+
+    const hoagie = EntityId.from_int(1);
+    const bernard = EntityId.from_int(2);
+    const laverne = EntityId.from_int(3);
+    const drifter = EntityId.from_int(4);
+
+    try spatial.register_entity(hoagie, wp_hoagie, 2);
+    try spatial.register_entity(bernard, wp_bernard, 2);
+    try spatial.register_entity(laverne, wp_laverne, 2);
+    try spatial.register_entity(drifter, wp_drifter, 2);
+
+    const portal_1790 = EntityId.from_int(101);
+    const portal_1993 = EntityId.from_int(102);
+    const portal_2193 = EntityId.from_int(103);
+
+    try spatial.register_portal(portal_1790, room_1790, wp_toilet_1790);
+    try spatial.register_portal(portal_1993, room_1993, wp_toilet_1993);
+    try spatial.register_portal(portal_2193, room_2193, wp_toilet_2193);
+
+    // 1. Both Hoagie and Bernard have portals in their respective rooms -> succeeds
+    try testing.expect(spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
+    try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, hoagie, .portal_anchored));
+
+    // 2. Drifter is in room_void without a portal -> transfer fails under portal_anchored
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, drifter, .portal_anchored));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, drifter, bernard, .portal_anchored));
+
+    // 3. Relational constraint: Laverne is trapped in tree -> transfer fails
+    const trapped_rel = try world.intern_relation("Trapped", .set);
+    _ = try world.remember(laverne, trapped_rel, 1, 0);
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, laverne, bernard, .portal_anchored));
+
+    // 4. Laverne freed from tree -> transfer succeeds
+    _ = world.forget(laverne, trapped_rel, 1);
+    try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+
+    // 5. Relational constraint: 1790 portal blocked/unpowered -> transfer fails
+    const blocked_rel = try world.intern_relation("PortalBlocked", .set);
+    _ = try world.remember(portal_1790, blocked_rel, 1, 0);
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
+
+    // Unblock 1790 portal -> succeeds again
+    _ = world.forget(portal_1790, blocked_rel, 1);
+    try testing.expect(spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
 }

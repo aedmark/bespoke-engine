@@ -47,12 +47,14 @@ pub const RgbaColor = struct {
     pub const slate = RgbaColor{ .r = 148, .g = 163, .b = 184 };
 };
 
-/// Built-in vertical slice scenarios playable in the WebAssembly / HTML5 Canvas runtime (P19-01, P19-03).
+/// Built-in vertical slice scenarios playable in the WebAssembly / HTML5 Canvas runtime (P19-01, P19-03, P21-03).
 pub const WasmScenario = enum(u8) {
     tavern_heist = 0,
     spitting_contest = 1,
     gk3_moustache = 2,
     living_village = 3,
+    goat_puzzle = 4,
+    dott_puzzle = 5,
 
     pub fn title(self: WasmScenario) []const u8 {
         return switch (self) {
@@ -60,6 +62,8 @@ pub const WasmScenario = enum(u8) {
             .spitting_contest => "BOOTY ISLAND SPITTING CONTEST",
             .gk3_moustache => "GK3: CAT MOUSTACHE PUZZLE",
             .living_village => "THE LIVING VILLAGE (EMERGENCE)",
+            .goat_puzzle => "BROKEN SWORD: LOCHMARNE GOAT",
+            .dott_puzzle => "DAY OF THE TENTACLE TRIO",
         };
     }
 
@@ -69,6 +73,8 @@ pub const WasmScenario = enum(u8) {
             1 => .spitting_contest,
             2 => .gk3_moustache,
             3 => .living_village,
+            4 => .goat_puzzle,
+            5 => .dott_puzzle,
             else => .tavern_heist,
         };
     }
@@ -491,6 +497,60 @@ pub const WasmRuntime = struct {
                 self.player_entity = sheriff;
                 self.set_banner("Living Village: Watch autonomous drives or press [S] for Theft Catalyst!");
             },
+            .goat_puzzle => {
+                const room = try self.world.intern_entity("Lochmarne Courtyard");
+                const george = try self.world.intern_entity("George");
+                const goat = try self.world.intern_entity("BillyGoat");
+                const stake = try self.world.intern_entity("TetherStake");
+
+                const tether_rel = try self.world.intern_relation("TetheredTo", .set);
+
+                const ent_wp = try self.spatial.graph.add_waypoint(room, 4, 2, "Entrance");
+                const plough_wp = try self.spatial.graph.add_waypoint(room, 16, 8, "Plough");
+                const tether_wp = try self.spatial.graph.add_waypoint(room, 24, 2, "Tether");
+                const dig_wp = try self.spatial.graph.add_waypoint(room, 38, 2, "CellarDig");
+                try self.spatial.graph.connect(ent_wp, plough_wp, null);
+                try self.spatial.graph.connect(plough_wp, tether_wp, null);
+                try self.spatial.graph.connect(tether_wp, dig_wp, null);
+
+                const cellar_ent = try self.world.intern_entity("CellarEntrance");
+                const plough_ent = try self.world.intern_entity("FarmPlough");
+                try self.spatial.add_hotspot(cellar_ent, room, .{ .x = 38, .y = -6 }, 6, "CellarEntrance", "Peagram's Templar excavation dig.");
+                try self.spatial.add_hotspot(plough_ent, room, .{ .x = 16, .y = 6 }, 6, "FarmPlough", "Old heavy iron farm plough.");
+
+                try self.spatial.register_entity(george, ent_wp, 10);
+                try self.spatial.register_entity(goat, tether_wp, 8);
+                try self.world.remember(goat, tether_rel, stake.to_int(), 0);
+
+                self.player_entity = george;
+                self.set_banner("Lochmarne Goat: [1] Approach Dig [2] Drag Plough [3] Descend to Crypt!");
+            },
+            .dott_puzzle => {
+                const room = try self.world.intern_entity("Motel Lobby");
+                const bernard = try self.world.intern_entity("Bernard");
+                const hoagie = try self.world.intern_entity("Hoagie");
+                const laverne = try self.world.intern_entity("Laverne");
+
+                const desk_wp = try self.spatial.graph.add_waypoint(room, 6, 2, "LobbyDesk");
+                const toilet_wp = try self.spatial.graph.add_waypoint(room, 20, 2, "ToiletMark1993");
+                const guard_wp = try self.spatial.graph.add_waypoint(room, 36, 2, "GuardPost");
+                try self.spatial.graph.connect(desk_wp, toilet_wp, null);
+                try self.spatial.graph.connect(toilet_wp, guard_wp, null);
+
+                const wine_ent = try self.world.intern_entity("VintageWine");
+                const flyer_ent = try self.world.intern_entity("TentacleFlyer");
+                const carries_rel = try self.world.intern_relation("Carries", .set);
+
+                try self.spatial.register_entity(bernard, desk_wp, 8);
+                try self.spatial.register_entity(hoagie, toilet_wp, 8);
+                try self.spatial.register_entity(laverne, guard_wp, 8);
+
+                _ = try self.world.remember(bernard, carries_rel, wine_ent.to_int(), 0);
+                _ = try self.world.remember(bernard, carries_rel, flyer_ent.to_int(), 0);
+
+                self.player_entity = bernard;
+                self.set_banner("DOTT Trio: [S] Flush Wine & Flyer to Hoagie, Craft Battery, Sew Flag!");
+            },
         }
 
         self.record_snapshot();
@@ -612,6 +672,31 @@ pub const WasmRuntime = struct {
                 _ = self.world.forget(drifter, stolen_rel, null);
                 try self.world.remember(drifter, hunger_rel, 85, 0);
                 try self.step_tick();
+            },
+            .goat_puzzle => {
+                const goat = try self.world.intern_entity("BillyGoat");
+                const plough = try self.world.intern_entity("FarmPlough");
+                const tangled_rel = try self.world.intern_relation("TangledWith", .property);
+                const moved_rel = try self.world.intern_relation("PloughMoved", .property);
+                try self.world.remember(goat, tangled_rel, plough.to_int(), 0);
+                try self.world.remember(plough, moved_rel, 1, 0);
+                self.set_banner("Hauled plough into rope line! Billy Goat is tangled and secured!");
+            },
+            .dott_puzzle => {
+                const hoagie = try self.world.intern_entity("Hoagie");
+                const laverne = try self.world.intern_entity("Laverne");
+                const bat_rel = try self.world.intern_relation("ToiletPowered", .property);
+                const flag_rel = try self.world.intern_relation("TentacleFlagSewn", .property);
+                const chop_rel = try self.world.intern_relation("TreeChoppedDown", .property);
+                const free_rel = try self.world.intern_relation("FreedFromTree", .property);
+                const disg_rel = try self.world.intern_relation("TentacleDisguiseActive", .property);
+
+                try self.world.remember(hoagie, bat_rel, 1, 0);
+                try self.world.remember(hoagie, flag_rel, 1, 0);
+                try self.world.remember(hoagie, chop_rel, 1, 0);
+                try self.world.remember(laverne, free_rel, 1, 0);
+                try self.world.remember(laverne, disg_rel, 1, 0);
+                self.set_banner("DOTT Trio Solved! Super Battery crafted, Tentacle Flag sewn, Laverne freed!");
             },
         }
         self.record_snapshot();
@@ -749,7 +834,7 @@ pub const WasmRuntime = struct {
                         try self.trigger_catalyst();
                         return .catalyst_triggered;
                     },
-                    '1', '2', '3', '4' => {
+                    '1', '2', '3', '4', '5', '6' => {
                         const idx: u8 = ev.key_code - '1';
                         try self.load_scenario(WasmScenario.from_int(idx));
                         return .scenario_switched;
@@ -769,6 +854,8 @@ pub const WasmRuntime = struct {
             .spitting_contest => RgbaColor{ .r = 16, .g = 42, .b = 58 },
             .gk3_moustache => RgbaColor{ .r = 32, .g = 52, .b = 34 },
             .living_village => RgbaColor{ .r = 22, .g = 44, .b = 28 },
+            .goat_puzzle => RgbaColor{ .r = 38, .g = 48, .b = 40 },
+            .dott_puzzle => RgbaColor{ .r = 42, .g = 24, .b = 48 },
         };
         self.canvas.clear(bg_col);
 
@@ -1028,7 +1115,24 @@ test "P19-01: WasmRuntime initializes all 4 vertical slices, steps ticks, and re
     try rt.load_scenario(.living_village);
     try testing.expectEqual(WasmScenario.living_village, rt.scenario);
 
-    // Step Living Village through emergent theft, rumor, and arrest
+    try rt.load_scenario(.goat_puzzle);
+    try testing.expectEqual(WasmScenario.goat_puzzle, rt.scenario);
+    try rt.trigger_catalyst();
+    rt.render_frame();
+    const goat = rt.world.lookup_entity("BillyGoat").?;
+    const tangled_rel = rt.world.lookup_relation("TangledWith").?;
+    try testing.expect(rt.world.has_fact(goat, tangled_rel, null));
+
+    try rt.load_scenario(.dott_puzzle);
+    try testing.expectEqual(WasmScenario.dott_puzzle, rt.scenario);
+    try rt.trigger_catalyst();
+    rt.render_frame();
+    const hoagie = rt.world.lookup_entity("Hoagie").?;
+    const bat_rel = rt.world.lookup_relation("ToiletPowered").?;
+    try testing.expect(rt.world.has_fact(hoagie, bat_rel, null));
+
+    // Reload and step Living Village through emergent theft, rumor, and arrest
+    try rt.load_scenario(.living_village);
     var i: usize = 0;
     while (i < 10) : (i += 1) {
         try rt.step_tick();

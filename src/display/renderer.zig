@@ -3,6 +3,17 @@ const display_mod = @import("../display.zig");
 const audio_mod = @import("../audio.zig");
 const save_mod = @import("../save.zig");
 const font = @import("font.zig");
+const text_layout = @import("text_layout.zig");
+
+pub const TextLayoutResolver = text_layout.TextLayoutResolver;
+pub const TextLabel = text_layout.TextLabel;
+pub const LabelPlacement = text_layout.LabelPlacement;
+pub const LabelCategory = text_layout.LabelCategory;
+pub const LabelPriority = text_layout.LabelPriority;
+
+fn to_layout(col: Color) text_layout.Color {
+    return .{ .r = col.r, .g = col.g, .b = col.b, .a = col.a };
+}
 
 pub const SoundEffectKind = audio_mod.SoundEffectKind;
 pub const MusicTrackKind = audio_mod.MusicTrackKind;
@@ -100,6 +111,34 @@ pub const Color = struct {
     pub const rental_counter = Color{ .r = 160, .g = 100, .b = 45 }; // Pine shop counter
     pub const motorcycle_red = Color{ .r = 220, .g = 38, .b = 38 }; // Shiny red motorcycle
 
+    // Broken Sword Lochmarne Goat Scenario Colors (P20-02, D-023)
+    pub const george_jacket = Color{ .r = 115, .g = 65, .b = 35 }; // Brown leather jacket
+    pub const george_hair = Color{ .r = 238, .g = 205, .b = 95 }; // Blonde hair parted in middle
+    pub const george_jeans = Color{ .r = 50, .g = 80, .b = 135 }; // Blue jeans
+    pub const goat_body = Color{ .r = 235, .g = 232, .b = 220 }; // Off-white Irish goat fleece
+    pub const goat_horns = Color{ .r = 55, .g = 48, .b = 40 }; // Dark ridged horns
+    pub const goat_collar = Color{ .r = 180, .g = 40, .b = 40 }; // Red collar
+    pub const lochmarne_sky = Color{ .r = 120, .g = 145, .b = 170 }; // Overcast Irish sky
+    pub const lochmarne_grass = Color{ .r = 45, .g = 115, .b = 52 }; // Rich emerald Irish turf
+    pub const lochmarne_ruins = Color{ .r = 95, .g = 90, .b = 85 }; // Weathered castle stone
+    pub const crypt_wall = Color{ .r = 35, .g = 32, .b = 30 }; // Ancient subterranean crypt stone
+    pub const templar_red = Color{ .r = 195, .g = 30, .b = 30 }; // Vivid Templar cross red
+    pub const rope_color = Color{ .r = 205, .g = 175, .b = 125 }; // Hemp tether rope
+
+    // Day of the Tentacle Colors (P21-03, D-025)
+    pub const tentacle_purple = Color{ .r = 138, .g = 43, .b = 226 };
+    pub const tentacle_sucker = Color{ .r = 250, .g = 204, .b = 21 };
+    pub const hoagie_cap = Color{ .r = 220, .g = 38, .b = 38 };
+    pub const bernard_shirt = Color{ .r = 59, .g = 130, .b = 246 };
+    pub const laverne_hair = Color{ .r = 253, .g = 224, .b = 71 };
+    pub const laverne_dress = Color{ .r = 6, .g = 182, .b = 212 };
+    pub const washington_coat = Color{ .r = 30, .g = 58, .b = 138 };
+    pub const betsy_dress = Color{ .r = 159, .g = 18, .b = 57 };
+    pub const colonial_wood = Color{ .r = 92, .g = 64, .b = 51 };
+    pub const colonial_hearth = Color{ .r = 160, .g = 82, .b = 45 };
+    pub const motel_teal = Color{ .r = 13, .g = 148, .b = 136 };
+    pub const dystopia_metal = Color{ .r = 30, .g = 35, .b = 45 };
+
     pub const hud_bg = Color{ .r = 15, .g = 23, .b = 42, .a = 230 };
     pub const hud_text = Color{ .r = 248, .g = 250, .b = 252 };
     pub const hud_subtext = Color{ .r = 148, .g = 163, .b = 184 };
@@ -185,6 +224,16 @@ pub const UserAction = union(enum) {
     load_slot: u8,
     quick_save,
     quick_load,
+    // P21-01: Multi-character party coordination & item transfer (D-025)
+    switch_party_member: usize,
+    transfer_inventory_item: struct {
+        item_index: usize,
+        target_party_index: usize,
+    },
+    interact_inventory: struct {
+        verb: AdventureVerb,
+        item_index: usize,
+    },
 };
 
 pub const DEFAULT_WIDTH: i32 = 1280;
@@ -221,12 +270,37 @@ pub fn hit_test_waypoint(
         const dx: i64 = screen_x - pt.x;
         const dy: i64 = screen_y - pt.y;
         const dist_sq = dx * dx + dy * dy;
-        const hit_radius: i64 = WAYPOINT_SCREEN_RADIUS + 8;
+        const hit_radius: i64 = WAYPOINT_SCREEN_RADIUS + 14;
         if (dist_sq <= hit_radius * hit_radius) {
             return wp.id;
         }
     }
     return null;
+}
+
+/// Finds the nearest waypoint in the active scene to a given screen coordinate.
+pub fn find_nearest_waypoint(
+    screen_x: i32,
+    screen_y: i32,
+    waypoints: []const RenderWaypoint,
+    screen_w: i32,
+    screen_h: i32,
+) ?WaypointId {
+    if (waypoints.len == 0) return null;
+    var nearest_id: ?WaypointId = null;
+    var min_dist_sq: i64 = std.math.maxInt(i64);
+
+    for (waypoints) |wp| {
+        const pt = world_to_screen(wp.x, wp.y, screen_w, screen_h);
+        const dx: i64 = screen_x - pt.x;
+        const dy: i64 = screen_y - pt.y;
+        const dist_sq = dx * dx + dy * dy;
+        if (dist_sq < min_dist_sq) {
+            min_dist_sq = dist_sq;
+            nearest_id = wp.id;
+        }
+    }
+    return nearest_id;
 }
 
 pub const EntityScreenLayout = struct {
@@ -383,6 +457,36 @@ pub fn hit_test_inventory_item(screen_x: i32, screen_y: i32, screen_h: i32, inve
     return null;
 }
 
+pub const Rect = struct {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+};
+
+/// Computes screen bounding box for a party member portrait button (P21-01, D-025).
+pub fn get_party_portrait_rect(idx: usize, party_count: usize, screen_w: i32) Rect {
+    const slot_w: i32 = 88;
+    const slot_h: i32 = 30;
+    const total_w: i32 = @as(i32, @intCast(party_count)) * (slot_w + 8);
+    const start_x: i32 = screen_w - 20 - total_w;
+    const rx: i32 = start_x + @as(i32, @intCast(idx)) * (slot_w + 8);
+    const ry: i32 = 8;
+    return .{ .x = rx, .y = ry, .w = slot_w, .h = slot_h };
+}
+
+/// Hit-tests mouse coordinates against registered party member portraits (P21-01, D-025).
+pub fn hit_test_party_portrait(mouse_x: i32, mouse_y: i32, party_count: usize, screen_w: i32) ?usize {
+    if (party_count <= 1) return null;
+    for (0..party_count) |i| {
+        const r = get_party_portrait_rect(i, party_count, screen_w);
+        if (mouse_x >= r.x and mouse_x <= r.x + r.w and mouse_y >= r.y and mouse_y <= r.y + r.h) {
+            return i;
+        }
+    }
+    return null;
+}
+
 /// Active speech balloon or branching dialogue tree (P7-04, P13-03, D-009, D-015).
 pub const SpeechBalloon = struct {
     speaker: EntityId,
@@ -534,6 +638,7 @@ pub const DisplayWindow = struct {
     hovered_wp: ?WaypointId = null,
     hovered_hotspot: ?usize = null,
     hovered_actor: ?usize = null,
+    hovered_party_member: ?usize = null,
     target_wp: ?WaypointId = null,
     active_balloon: ?SpeechBalloon = null,
     hovered_choice: ?u8 = null,
@@ -911,6 +1016,12 @@ pub const DisplayWindow = struct {
                         self.width,
                         self.height,
                     );
+                    self.hovered_party_member = hit_test_party_portrait(
+                        event.motion.x,
+                        event.motion.y,
+                        frame.party_count,
+                        self.width,
+                    );
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     if (self.show_save_drawer) {
@@ -1008,9 +1119,45 @@ pub const DisplayWindow = struct {
                             return .none;
                         }
 
+                        // 2b. Check Party Member Portraits (P21-01, D-025)
+                        const clicked_party_idx = hit_test_party_portrait(event.button.x, event.button.y, frame.party_count, self.width);
+                        if (clicked_party_idx) |p_idx| {
+                            if (self.selected_inventory_item) |sel_idx| {
+                                if (p_idx != frame.active_party_index) {
+                                    self.selected_inventory_item = null;
+                                    self.play_sfx(.combine);
+                                    var buf: [64]u8 = undefined;
+                                    const iname = if (sel_idx < frame.inventory_count) frame.inventory[sel_idx].get_name() else "item";
+                                    const pname = if (p_idx < frame.party_count) frame.party[p_idx].get_name() else "member";
+                                    const banner = std.fmt.bufPrint(&buf, "Giving {s} to {s}...", .{ iname, pname }) catch "Transferring item...";
+                                    self.set_cue_banner(banner, 90);
+                                    return UserAction{
+                                        .transfer_inventory_item = .{
+                                            .item_index = sel_idx,
+                                            .target_party_index = p_idx,
+                                        },
+                                    };
+                                }
+                            } else {
+                                self.play_sfx(.click);
+                                return UserAction{
+                                    .switch_party_member = p_idx,
+                                };
+                            }
+                        }
+
                         // 3. Check Inventory items (P11-03, D-013)
                         const clicked_item_idx = hit_test_inventory_item(event.button.x, event.button.y, self.height, frame.inventory[0..frame.inventory_count]);
                         if (clicked_item_idx) |idx| {
+                            if (self.active_verb == .look_at) {
+                                self.play_sfx(.click);
+                                return UserAction{
+                                    .interact_inventory = .{
+                                        .verb = .look_at,
+                                        .item_index = idx,
+                                    },
+                                };
+                            }
                             if (self.selected_inventory_item) |primary_idx| {
                                 if (primary_idx == idx) {
                                     // Clicking same selected item deselects it
@@ -1047,34 +1194,27 @@ pub const DisplayWindow = struct {
                             }
                         }
 
-                        // 4. Check Actors
-                        const clicked_actor = hit_test_actor(
-                            event.button.x,
-                            event.button.y,
-                            frame.entities[0..frame.entity_count],
-                            self.width,
-                            self.height,
-                        );
-                        if (clicked_actor) |actor_idx| {
-                            if (self.selected_inventory_item) |item_idx| {
+                        if (self.active_verb == .walk) {
+                            if (self.selected_inventory_item != null) {
                                 self.selected_inventory_item = null;
-                                self.play_sfx(.combine);
-                                return .{
-                                    .use_inventory_on_actor = .{
-                                        .item_index = item_idx,
-                                        .actor_index = actor_idx,
-                                    },
-                                };
-                            } else {
-                                switch (self.active_verb) {
-                                    .talk_to => self.play_sfx(.dialogue_blip),
-                                    .pick_up => self.play_sfx(.pickup),
-                                    else => self.play_sfx(.click),
-                                }
-                                action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
+                                self.set_cue_banner("Action cancelled.", 60);
                             }
-                        } else {
-                            // 5. Check Hotspots / Props
+
+                            // 4a. Check direct Waypoint hit (P3-02, P7-02)
+                            const clicked_wp = hit_test_waypoint(
+                                event.button.x,
+                                event.button.y,
+                                frame.waypoints[0..frame.waypoint_count],
+                                self.width,
+                                self.height,
+                            );
+                            if (clicked_wp) |wp_id| {
+                                self.target_wp = wp_id;
+                                self.play_sfx(.footstep);
+                                return UserAction{ .walk_player = wp_id };
+                            }
+
+                            // 4b. Check Hotspot clicked with WALK -> walk to nearest waypoint to that prop
                             const clicked_hs = hit_test_hotspot(
                                 event.button.x,
                                 event.button.y,
@@ -1083,41 +1223,122 @@ pub const DisplayWindow = struct {
                                 self.height,
                             );
                             if (clicked_hs) |hs_idx| {
+                                const hs = frame.hotspots[hs_idx];
+                                const hs_pt = world_to_screen(hs.x, hs.y, self.width, self.height);
+                                if (find_nearest_waypoint(hs_pt.x, hs_pt.y, frame.waypoints[0..frame.waypoint_count], self.width, self.height)) |wp_id| {
+                                    self.target_wp = wp_id;
+                                    self.play_sfx(.footstep);
+                                    var buf: [64]u8 = undefined;
+                                    const banner = std.fmt.bufPrint(&buf, "Walking to {s}...", .{hs.get_name()}) catch "Walking...";
+                                    self.set_cue_banner(banner, 60);
+                                    return UserAction{ .walk_player = wp_id };
+                                }
+                            }
+
+                            // 4c. Check Actor clicked with WALK -> walk to nearest waypoint to that actor
+                            const clicked_actor = hit_test_actor(
+                                event.button.x,
+                                event.button.y,
+                                frame.entities[0..frame.entity_count],
+                                self.width,
+                                self.height,
+                            );
+                            if (clicked_actor) |actor_idx| {
+                                const act_ent = frame.entities[actor_idx];
+                                const layout = get_entity_screen_layout(actor_idx, frame.entities[0..frame.entity_count], self.width, self.height);
+                                if (find_nearest_waypoint(layout.pos.x, layout.pos.y, frame.waypoints[0..frame.waypoint_count], self.width, self.height)) |wp_id| {
+                                    self.target_wp = wp_id;
+                                    self.play_sfx(.footstep);
+                                    var buf: [64]u8 = undefined;
+                                    const banner = std.fmt.bufPrint(&buf, "Approaching {s}...", .{act_ent.get_name()}) catch "Walking...";
+                                    self.set_cue_banner(banner, 60);
+                                    return UserAction{ .walk_player = wp_id };
+                                }
+                            }
+
+                            // 4d. Open stage/ground click with WALK -> walk to nearest waypoint
+                            if (event.button.y >= 72 and event.button.y < self.height - 76) {
+                                if (find_nearest_waypoint(event.button.x, event.button.y, frame.waypoints[0..frame.waypoint_count], self.width, self.height)) |wp_id| {
+                                    self.target_wp = wp_id;
+                                    self.play_sfx(.footstep);
+                                    self.set_cue_banner("Walking...", 45);
+                                    return UserAction{ .walk_player = wp_id };
+                                }
+                            }
+                        } else {
+                            // Active verb is NOT WALK: Check Actors, Hotspots, or direct Waypoint navigation
+                            // 4. Check Actors
+                            const clicked_actor = hit_test_actor(
+                                event.button.x,
+                                event.button.y,
+                                frame.entities[0..frame.entity_count],
+                                self.width,
+                                self.height,
+                            );
+                            if (clicked_actor) |actor_idx| {
                                 if (self.selected_inventory_item) |item_idx| {
                                     self.selected_inventory_item = null;
                                     self.play_sfx(.combine);
                                     return .{
-                                        .use_inventory_on_hotspot = .{
+                                        .use_inventory_on_actor = .{
                                             .item_index = item_idx,
-                                            .hotspot_index = hs_idx,
+                                            .actor_index = actor_idx,
                                         },
                                     };
-                                } else if (self.active_verb == .look_at) {
-                                    self.play_sfx(.click);
-                                    action = .{ .examine_hotspot = hs_idx };
                                 } else {
                                     switch (self.active_verb) {
                                         .talk_to => self.play_sfx(.dialogue_blip),
                                         .pick_up => self.play_sfx(.pickup),
                                         else => self.play_sfx(.click),
                                     }
-                                    action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
+                                    action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
                                 }
                             } else {
-                                // 6. Check Waypoints
-                                const clicked_wp = hit_test_waypoint(
+                                // 5. Check Hotspots / Props
+                                const clicked_hs = hit_test_hotspot(
                                     event.button.x,
                                     event.button.y,
-                                    frame.waypoints[0..frame.waypoint_count],
+                                    frame.hotspots[0..frame.hotspot_count],
                                     self.width,
                                     self.height,
                                 );
-                                if (clicked_wp) |wp_id| {
-                                    if (self.selected_inventory_item != null) {
+                                if (clicked_hs) |hs_idx| {
+                                    if (self.selected_inventory_item) |item_idx| {
                                         self.selected_inventory_item = null;
-                                        self.set_cue_banner("Action cancelled.", 60);
+                                        self.play_sfx(.combine);
+                                        return .{
+                                            .use_inventory_on_hotspot = .{
+                                                .item_index = item_idx,
+                                                .hotspot_index = hs_idx,
+                                            },
+                                        };
+                                    } else if (self.active_verb == .look_at) {
+                                        self.play_sfx(.click);
+                                        action = .{ .examine_hotspot = hs_idx };
+                                    } else {
+                                        switch (self.active_verb) {
+                                            .talk_to => self.play_sfx(.dialogue_blip),
+                                            .pick_up => self.play_sfx(.pickup),
+                                            else => self.play_sfx(.click),
+                                        }
+                                        action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
                                     }
-                                    if (self.active_verb == .walk) {
+                                } else {
+                                    // 6. Direct click on Waypoint with non-walk verb:
+                                    // Clicking a waypoint anchor indicates navigation intent -> switch to WALK and move!
+                                    const clicked_wp = hit_test_waypoint(
+                                        event.button.x,
+                                        event.button.y,
+                                        frame.waypoints[0..frame.waypoint_count],
+                                        self.width,
+                                        self.height,
+                                    );
+                                    if (clicked_wp) |wp_id| {
+                                        if (self.selected_inventory_item != null) {
+                                            self.selected_inventory_item = null;
+                                            self.set_cue_banner("Action cancelled.", 60);
+                                        }
+                                        self.active_verb = .walk;
                                         self.target_wp = wp_id;
                                         self.play_sfx(.footstep);
                                         action = .{ .walk_player = wp_id };
@@ -1246,6 +1467,23 @@ pub const DisplayWindow = struct {
                             self.dismiss_dialogue();
                             self.play_sfx(.click);
                             return .dismiss_dialogue;
+                        }
+                    }
+
+                    if (self.active_balloon == null and frame.party_count > 1) {
+                        var switch_idx: ?usize = null;
+                        if (sym == c.SDLK_1 or sym == c.SDLK_KP_1) {
+                            if (frame.party_count >= 1) switch_idx = 0;
+                        } else if (sym == c.SDLK_2 or sym == c.SDLK_KP_2) {
+                            if (frame.party_count >= 2) switch_idx = 1;
+                        } else if (sym == c.SDLK_3 or sym == c.SDLK_KP_3) {
+                            if (frame.party_count >= 3) switch_idx = 2;
+                        } else if (sym == c.SDLK_4 or sym == c.SDLK_KP_4) {
+                            if (frame.party_count >= 4) switch_idx = 3;
+                        }
+                        if (switch_idx) |s_idx| {
+                            self.play_sfx(.click);
+                            return UserAction{ .switch_party_member = s_idx };
                         }
                     }
 
@@ -1433,8 +1671,13 @@ pub const DisplayWindow = struct {
         // Trigger procedural music and cue audio reactions (P16-01, P16-03, D-019)
         self.audio_bridge.process_scene_and_cues(frame.get_current_scene());
 
-        // Detect active scene theme (P12-03, P14-02, D-014, D-016)
+        // Detect active scene theme (P12-03, P14-02, P20-02, P21-03, D-014, D-016, D-023, D-025)
         const cur_scene = frame.get_current_scene();
+        var is_dott_past_scene = false;
+        var is_dott_present_scene = false;
+        var is_dott_future_scene = false;
+        var is_goat_courtyard_scene = false;
+        var is_templar_crypt_scene = false;
         var is_spitting_scene = false;
         var is_wine_cellar_scene = false;
         var is_tavern_scene = false;
@@ -1447,7 +1690,30 @@ pub const DisplayWindow = struct {
         var is_village_scene = false;
 
         if (cur_scene.len > 0) {
-            if (std.mem.indexOf(u8, cur_scene, "Village") != null or
+            if (std.mem.indexOf(u8, cur_scene, "Colonial") != null or
+                std.mem.indexOf(u8, cur_scene, "Workshop") != null or
+                std.mem.indexOf(u8, cur_scene, "1790") != null)
+            {
+                is_dott_past_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Motel") != null or
+                std.mem.indexOf(u8, cur_scene, "Lobby") != null or
+                std.mem.indexOf(u8, cur_scene, "1993") != null)
+            {
+                is_dott_present_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Dystopian") != null or
+                std.mem.indexOf(u8, cur_scene, "Guard Post") != null or
+                std.mem.indexOf(u8, cur_scene, "2193") != null)
+            {
+                is_dott_future_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Lochmarne") != null or
+                (std.mem.indexOf(u8, cur_scene, "Courtyard") != null and std.mem.indexOf(u8, cur_scene, "Castle") != null))
+            {
+                is_goat_courtyard_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Crypt") != null or
+                       std.mem.indexOf(u8, cur_scene, "Templar") != null)
+            {
+                is_templar_crypt_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Village") != null or
                 std.mem.indexOf(u8, cur_scene, "Living") != null)
             {
                 is_village_scene = true;
@@ -1492,12 +1758,42 @@ pub const DisplayWindow = struct {
         }
 
         // Fallback detection if current_scene wasn't explicitly set
-        if (!is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
+        if (!is_dott_past_scene and !is_dott_present_scene and !is_dott_future_scene and
+            !is_goat_courtyard_scene and !is_templar_crypt_scene and
+            !is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
             !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
             !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene and !is_village_scene)
         {
             for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-                if (std.mem.indexOf(u8, wp.get_name(), "TownSquare") != null or
+                if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark1790") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "KumquatLawn") != null)
+                {
+                    is_dott_past_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark1993") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "LobbyDesk") != null)
+                {
+                    is_dott_present_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark2193") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "GuardPost") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "TreeBranch2193") != null)
+                {
+                    is_dott_future_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "TetherCenter") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "DigOpening") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "CourtyardEntrance") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "PloughMark") != null)
+                {
+                    is_goat_courtyard_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "CryptLadder") != null or
+                           std.mem.indexOf(u8, wp.get_name(), "AltarMark") != null)
+                {
+                    is_templar_crypt_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "TownSquare") != null or
                     std.mem.indexOf(u8, wp.get_name(), "SheriffsPost") != null or
                     std.mem.indexOf(u8, wp.get_name(), "Bakery") != null)
                 {
@@ -1537,12 +1833,28 @@ pub const DisplayWindow = struct {
                     break;
                 }
             }
-            if (!is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
+            if (!is_dott_past_scene and !is_dott_present_scene and !is_dott_future_scene and
+                !is_goat_courtyard_scene and !is_templar_crypt_scene and
+                !is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
                 !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene)
             {
                 for (frame.entities[0..frame.entity_count]) |e| {
                     const ename = e.get_name();
-                    if (std.mem.eql(u8, ename, "PirateBob") or std.mem.eql(u8, ename, "PiratePegleg")) {
+                    if (std.mem.eql(u8, ename, "Hoagie") or std.mem.eql(u8, ename, "BetsyRoss") or std.mem.eql(u8, ename, "Washington")) {
+                        is_dott_past_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Bernard") or std.mem.eql(u8, ename, "DrFred")) {
+                        is_dott_present_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Laverne") or std.mem.eql(u8, ename, "PurpleTentacle")) {
+                        is_dott_future_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "BillyGoat") or
+                        (std.mem.eql(u8, ename, "George") and !is_hotel_scene))
+                    {
+                        is_goat_courtyard_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "PirateBob") or std.mem.eql(u8, ename, "PiratePegleg")) {
                         is_high_road_scene = true;
                         break;
                     } else if (std.mem.eql(u8, ename, "Carla")) {
@@ -1568,9 +1880,22 @@ pub const DisplayWindow = struct {
                     }
                 }
             }
-            if (!is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene) {
+            if (!is_goat_courtyard_scene and !is_templar_crypt_scene and
+                !is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene)
+            {
                 for (frame.hotspots[0..frame.hotspot_count]) |hs| {
-                    if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
+                    if (std.mem.indexOf(u8, hs.get_name(), "Plough") != null or
+                        std.mem.indexOf(u8, hs.get_name(), "Tether") != null)
+                    {
+                        is_goat_courtyard_scene = true;
+                        break;
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Mural") != null or
+                               std.mem.indexOf(u8, hs.get_name(), "Crypt") != null or
+                               std.mem.indexOf(u8, hs.get_name(), "Altar") != null)
+                    {
+                        is_templar_crypt_scene = true;
+                        break;
+                    } else if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
                         is_spitting_scene = true;
                         break;
                     } else if (std.mem.indexOf(u8, hs.get_name(), "Fence") != null or
@@ -2286,6 +2611,348 @@ pub const DisplayWindow = struct {
                 self.draw_text(estr, rp_x + 10, ry_cursor, 1, ecol);
                 ry_cursor += 13;
             }
+        } else if (is_goat_courtyard_scene) {
+            // Lochmarne Castle Courtyard (P20-02, D-023)
+            // 1. Sky & Atmosphere
+            self.fill_rect(0, 0, self.width, self.height, Color.lochmarne_sky);
+
+            const yard_x: i32 = 40;
+            const yard_y: i32 = 110;
+            const yard_w: i32 = self.width - 80;
+            const yard_h: i32 = self.height - 210;
+
+            // Rolling Irish emerald hills in background
+            self.fill_circle(yard_x + 300, yard_y + 160, 220, Color{ .r = 40, .g = 95, .b = 45 });
+            self.fill_circle(yard_x + 650, yard_y + 170, 240, Color{ .r = 35, .g = 85, .b = 40 });
+            self.fill_circle(yard_x + 980, yard_y + 150, 200, Color{ .r = 42, .g = 100, .b = 48 });
+
+            // Weathered castle stone walls & ivy (Left tower and rear battlements)
+            const wall_top = yard_y + 60;
+            self.fill_rect(yard_x, wall_top, yard_w, 70, Color.lochmarne_ruins);
+            self.draw_rect_outline(yard_x, wall_top, yard_w, 70, Color{ .r = 65, .g = 60, .b = 55 });
+
+            // Castle tower ruins on the left
+            const tower_w: i32 = 180;
+            self.fill_rect(yard_x, yard_y, tower_w, yard_h, Color.lochmarne_ruins);
+            self.draw_rect_outline(yard_x, yard_y, tower_w, yard_h, Color{ .r = 60, .g = 55, .b = 50 });
+
+            // Tower battlements (crenellations)
+            var cr_x: i32 = yard_x;
+            while (cr_x < yard_x + tower_w - 20) : (cr_x += 36) {
+                self.fill_rect(cr_x, yard_y - 18, 20, 18, Color.lochmarne_ruins);
+                self.draw_rect_outline(cr_x, yard_y - 18, 20, 18, Color{ .r = 60, .g = 55, .b = 50 });
+            }
+
+            // Arched arrow-slit window in tower
+            self.fill_rect(yard_x + 75, yard_y + 70, 26, 60, Color{ .r = 25, .g = 22, .b = 20 });
+            self.fill_circle(yard_x + 88, yard_y + 70, 13, Color{ .r = 25, .g = 22, .b = 20 });
+
+            // Ivy vines crawling up the ruins
+            self.fill_circle(yard_x + 20, yard_y + 120, 18, Color{ .r = 30, .g = 75, .b = 35 });
+            self.fill_circle(yard_x + 35, yard_y + 160, 22, Color{ .r = 38, .g = 90, .b = 42 });
+            self.fill_circle(yard_x + 25, yard_y + 210, 20, Color{ .r = 32, .g = 80, .b = 36 });
+            self.fill_circle(yard_x + 160, yard_y + 100, 16, Color{ .r = 35, .g = 85, .b = 40 });
+            self.fill_circle(yard_x + 170, yard_y + 140, 20, Color{ .r = 40, .g = 95, .b = 45 });
+
+            // Courtyard emerald grass lawn
+            self.fill_rect(yard_x + tower_w, yard_y + 120, yard_w - tower_w, yard_h - 120, Color.lochmarne_grass);
+            self.draw_rect_outline(yard_x, yard_y, yard_w, yard_h, Color{ .r = 40, .g = 55, .b = 40 });
+
+            // Cellar Pit / Peagram's Excavation Entrance (aligned with DigOpening)
+            const pt_dig = world_to_screen(28, 0, self.width, self.height);
+            const pit_x = pt_dig.x - 45;
+            const pit_y = yard_y + yard_h - 150;
+            self.fill_rect(pit_x, pit_y, 90, 60, Color{ .r = 20, .g = 18, .b = 16 });
+            self.draw_rect_outline(pit_x, pit_y, 90, 60, Color{ .r = 100, .g = 65, .b = 30 });
+            // Wooden ladder rungs descending into pit
+            self.fill_rect(pit_x + 30, pit_y - 12, 6, 72, Color{ .r = 140, .g = 90, .b = 45 });
+            self.fill_rect(pit_x + 54, pit_y - 12, 6, 72, Color{ .r = 140, .g = 90, .b = 45 });
+            var rung_y: i32 = pit_y - 6;
+            while (rung_y < pit_y + 54) : (rung_y += 12) {
+                self.fill_rect(pit_x + 30, rung_y, 30, 4, Color{ .r = 170, .g = 115, .b = 60 });
+            }
+
+            // Tether Stake (at TetherCenter)
+            const pt_tether = world_to_screen(16, 0, self.width, self.height);
+            self.fill_rect(pt_tether.x - 5, pt_tether.y - 18, 10, 36, Color{ .r = 110, .g = 70, .b = 35 });
+            self.draw_rect_outline(pt_tether.x - 5, pt_tether.y - 18, 10, 36, Color{ .r = 75, .g = 45, .b = 20 });
+            self.draw_circle_outline(pt_tether.x, pt_tether.y - 14, 6, Color{ .r = 180, .g = 180, .b = 190 }); // Iron ring
+
+            // Farm Plough (at PloughMark)
+            const pt_plough = world_to_screen(10, 8, self.width, self.height);
+            const plough_draw_x = if (frame.plough_moved) pt_plough.x + 30 else pt_plough.x;
+            // Heavy iron beam & share
+            self.fill_rect(plough_draw_x - 30, pt_plough.y - 8, 60, 16, Color{ .r = 65, .g = 55, .b = 50 });
+            self.draw_rect_outline(plough_draw_x - 30, pt_plough.y - 8, 60, 16, Color{ .r = 95, .g = 85, .b = 80 });
+            // Iron blade point
+            self.fill_rect(plough_draw_x + 20, pt_plough.y + 4, 16, 14, Color{ .r = 45, .g = 40, .b = 38 });
+            // Wooden handles
+            self.draw_line(plough_draw_x - 24, pt_plough.y - 8, plough_draw_x - 45, pt_plough.y - 32, Color{ .r = 130, .g = 85, .b = 45 });
+            self.draw_line(plough_draw_x - 18, pt_plough.y - 8, plough_draw_x - 39, pt_plough.y - 32, Color{ .r = 130, .g = 85, .b = 45 });
+
+            // Dynamic Rope Drawing between Stake, Plough, and BillyGoat
+            var goat_pt: ?Point = null;
+            for (frame.entities[0..frame.entity_count]) |e| {
+                if (std.mem.eql(u8, e.get_name(), "BillyGoat")) {
+                    goat_pt = world_to_screen(e.x, e.y, self.width, self.height);
+                    break;
+                }
+            }
+            if (goat_pt) |gpt| {
+                if (frame.goat_is_tangled) {
+                    // Rope loops around the farm plough then connects to goat
+                    self.draw_line(pt_tether.x, pt_tether.y - 14, plough_draw_x, pt_plough.y, Color.rope_color);
+                    self.draw_circle_outline(plough_draw_x, pt_plough.y, 14, Color.rope_color);
+                    self.draw_circle_outline(plough_draw_x, pt_plough.y, 18, Color.rope_color);
+                    self.draw_line(plough_draw_x, pt_plough.y, gpt.x, gpt.y, Color.rope_color);
+                    self.draw_text("[ROPE TANGLED ON PLOUGH!]", plough_draw_x - 60, pt_plough.y - 48, 1, Color.status_running);
+                } else {
+                    // Direct rope from stake to goat
+                    self.draw_line(pt_tether.x, pt_tether.y - 14, gpt.x, gpt.y, Color.rope_color);
+                }
+            }
+
+            // Title
+            self.draw_text("LOCHMARNE CASTLE COURTYARD - IRELAND", yard_x + 16, yard_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(PEAGRAM'S EXCAVATION PIT * TETHERED BILLY GOAT * IRON PLOUGH)", yard_x + 16, yard_y + 36, 1, Color.hud_subtext);
+        } else if (is_templar_crypt_scene) {
+            // Subterranean Templar Dig Crypt (P20-02, D-023)
+            self.fill_rect(0, 0, self.width, self.height, Color.crypt_wall);
+
+            const crypt_x: i32 = 40;
+            const crypt_y: i32 = 110;
+            const crypt_w: i32 = self.width - 80;
+            const crypt_h: i32 = self.height - 210;
+
+            self.fill_rect(crypt_x, crypt_y, crypt_w, crypt_h, Color{ .r = 28, .g = 25, .b = 24 });
+            self.draw_rect_outline(crypt_x, crypt_y, crypt_w, crypt_h, Color{ .r = 68, .g = 64, .b = 60 });
+
+            // Flagstone crypt floor
+            self.fill_rect(crypt_x, crypt_y + crypt_h - 110, crypt_w, 110, Color{ .r = 44, .g = 40, .b = 38 });
+            var fx: i32 = crypt_x;
+            while (fx < crypt_x + crypt_w) : (fx += 80) {
+                self.draw_line(fx, crypt_y + crypt_h - 110, fx, crypt_y + crypt_h, Color{ .r = 30, .g = 28, .b = 26 });
+            }
+
+            // Gothic vaulted ceiling arches
+            var ax: i32 = crypt_x + 160;
+            while (ax < crypt_x + crypt_w - 100) : (ax += 240) {
+                self.fill_rect(ax - 10, crypt_y + 40, 20, crypt_h - 150, Color{ .r = 50, .g = 46, .b = 44 });
+                self.draw_circle_outline(ax, crypt_y + 70, 70, Color{ .r = 75, .g = 70, .b = 66 });
+            }
+
+            // Flaming torch sconces on walls casting amber glow
+            const torch_l_x = crypt_x + 100;
+            const torch_r_x = crypt_x + crypt_w - 140;
+            const torch_y = crypt_y + 90;
+            // Left torch
+            self.fill_circle(torch_l_x, torch_y, 22, Color{ .r = 245, .g = 158, .b = 11, .a = 70 });
+            self.fill_circle(torch_l_x, torch_y, 12, Color{ .r = 251, .g = 191, .b = 36 });
+            self.fill_circle(torch_l_x, torch_y - 4, 7, Color{ .r = 239, .g = 68, .b = 68 });
+            self.fill_rect(torch_l_x - 3, torch_y + 6, 6, 24, Color.black);
+            // Right torch
+            self.fill_circle(torch_r_x, torch_y, 22, Color{ .r = 245, .g = 158, .b = 11, .a = 70 });
+            self.fill_circle(torch_r_x, torch_y, 12, Color{ .r = 251, .g = 191, .b = 36 });
+            self.fill_circle(torch_r_x, torch_y - 4, 7, Color{ .r = 239, .g = 68, .b = 68 });
+            self.fill_rect(torch_r_x - 3, torch_y + 6, 6, 24, Color.black);
+
+            // Carved Templar Mural on rear stone wall (depicting Knight & Cross)
+            const mural_x = crypt_x + crypt_w - 320;
+            const mural_y = crypt_y + 50;
+            self.fill_rect(mural_x, mural_y, 180, 140, Color{ .r = 55, .g = 50, .b = 48 });
+            self.draw_rect_outline(mural_x, mural_y, 180, 140, Color{ .r = 120, .g = 115, .b = 110 });
+            // Templar Cross pattée (Crimson)
+            const cx_m = mural_x + 90;
+            const cy_m = mural_y + 60;
+            self.fill_rect(cx_m - 8, cy_m - 28, 16, 56, Color.templar_red);
+            self.fill_rect(cx_m - 28, cy_m - 8, 56, 16, Color.templar_red);
+            self.fill_circle(cx_m, cy_m, 14, Color.templar_red);
+            self.draw_text("TEMPLAR MURAL", mural_x + 20, mural_y + 115, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // Stone Altar in crypt center (at AltarMark world_x = 20)
+            const pt_altar = world_to_screen(20, 0, self.width, self.height);
+            const altar_x = pt_altar.x - 70;
+            const altar_y = crypt_y + crypt_h - 180;
+            self.fill_rect(altar_x, altar_y, 140, 70, Color{ .r = 90, .g = 85, .b = 82 });
+            self.draw_rect_outline(altar_x, altar_y, 140, 70, Color{ .r = 140, .g = 135, .b = 130 });
+            self.fill_rect(altar_x - 10, altar_y - 10, 160, 14, Color{ .r = 110, .g = 105, .b = 102 });
+            self.draw_rect_outline(altar_x - 10, altar_y - 10, 160, 14, Color{ .r = 160, .g = 155, .b = 150 });
+            // Holy chalice relief on altar
+            self.fill_circle(pt_altar.x, altar_y + 24, 8, Color{ .r = 251, .g = 191, .b = 36 });
+            self.fill_rect(pt_altar.x - 2, altar_y + 28, 4, 14, Color{ .r = 251, .g = 191, .b = 36 });
+            self.draw_text("TEMPLAR ALTAR", altar_x + 16, altar_y + 48, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // Excavation ladder on the left (at CryptLadder world_x = 4)
+            const pt_ladder = world_to_screen(4, 0, self.width, self.height);
+            const lad_x = pt_ladder.x - 20;
+            self.fill_rect(lad_x, crypt_y, 8, crypt_h - 50, Color{ .r = 130, .g = 80, .b = 40 });
+            self.fill_rect(lad_x + 32, crypt_y, 8, crypt_h - 50, Color{ .r = 130, .g = 80, .b = 40 });
+            var ly: i32 = crypt_y + 10;
+            while (ly < crypt_y + crypt_h - 50) : (ly += 16) {
+                self.fill_rect(lad_x, ly, 40, 4, Color{ .r = 160, .g = 105, .b = 55 });
+            }
+            self.draw_text("LADDER UP", lad_x - 10, crypt_y + crypt_h - 40, 1, Color.wp_hover);
+
+            // Title
+            self.draw_text("SUBTERRANEAN TEMPLAR DIG CRYPT", crypt_x + 16, crypt_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(MEDIEVAL KNIGHTS TEMPLAR MURAL * CHALICE ALTAR * EXCAVATION LADDER)", crypt_x + 16, crypt_y + 36, 1, Color.hud_subtext);
+        } else if (is_dott_past_scene) {
+            // 1790 Colonial Workshop (P21-03, D-025)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 45, .g = 30, .b = 20 });
+
+            const shop_x: i32 = 40;
+            const shop_y: i32 = 110;
+            const shop_w: i32 = self.width - 80;
+            const shop_h: i32 = self.height - 210;
+
+            // Wood panel workshop room
+            self.fill_rect(shop_x, shop_y, shop_w, shop_h, Color.colonial_wood);
+            self.draw_rect_outline(shop_x, shop_y, shop_w, shop_h, Color{ .r = 139, .g = 90, .b = 43 });
+
+            // Hardwood floorboards
+            self.fill_rect(shop_x, shop_y + shop_h - 100, shop_w, 100, Color{ .r = 74, .g = 48, .b = 32 });
+            var plank_x: i32 = shop_x;
+            while (plank_x < shop_x + shop_w) : (plank_x += 70) {
+                self.draw_line(plank_x, shop_y + shop_h - 100, plank_x, shop_y + shop_h, Color{ .r = 50, .g = 32, .b = 20 });
+            }
+
+            // Brick fireplace hearth on left
+            self.fill_rect(shop_x + 30, shop_y + 40, 140, shop_h - 140, Color.colonial_hearth);
+            self.draw_rect_outline(shop_x + 30, shop_y + 40, 140, shop_h - 140, Color{ .r = 100, .g = 40, .b = 20 });
+            self.fill_rect(shop_x + 50, shop_y + shop_h - 180, 100, 80, Color.black);
+            // Glowing fire embers
+            self.fill_circle(shop_x + 100, shop_y + shop_h - 130, 20, Color{ .r = 245, .g = 158, .b = 11 });
+            self.fill_circle(shop_x + 100, shop_y + shop_h - 135, 12, Color{ .r = 239, .g = 68, .b = 68 });
+            self.fill_circle(shop_x + 100, shop_y + shop_h - 140, 6, Color{ .r = 250, .g = 204, .b = 21 });
+
+            // Colonial window looking out to Kumquat/Cherry tree lawn
+            const win_x = shop_x + shop_w - 280;
+            const win_y = shop_y + 30;
+            self.fill_rect(win_x, win_y, 220, 150, Color{ .r = 125, .g = 185, .b = 240 }); // Sky
+            self.fill_rect(win_x, win_y + 90, 220, 60, Color{ .r = 34, .g = 120, .b = 40 }); // Green lawn
+            self.draw_rect_outline(win_x, win_y, 220, 150, Color.white);
+            self.draw_line(win_x + 110, win_y, win_x + 110, win_y + 150, Color.white);
+            self.draw_line(win_x, win_y + 75, win_x + 220, win_y + 75, Color.white);
+
+            // Tree seen through window
+            if (frame.dott_tree_chopped) {
+                self.fill_rect(win_x + 100, win_y + 115, 20, 25, Color{ .r = 120, .g = 75, .b = 35 });
+                self.fill_circle(win_x + 110, win_y + 115, 10, Color{ .r = 160, .g = 105, .b = 55 });
+                self.draw_text("[TREE CHOPPED!]", win_x + 30, win_y + 20, 1, Color{ .r = 250, .g = 204, .b = 21 });
+            } else {
+                self.fill_rect(win_x + 105, win_y + 70, 10, 50, Color{ .r = 100, .g = 60, .b = 25 });
+                self.fill_circle(win_x + 110, win_y + 55, 30, Color{ .r = 22, .g = 101, .b = 52 });
+                self.fill_circle(win_x + 95, win_y + 45, 4, Color{ .r = 220, .g = 38, .b = 38 });
+                self.fill_circle(win_x + 120, win_y + 50, 4, Color{ .r = 220, .g = 38, .b = 38 });
+                self.fill_circle(win_x + 105, win_y + 65, 4, Color{ .r = 220, .g = 38, .b = 38 });
+            }
+
+            // Chrono-Toilet 1790 (Wooden outhouse booth)
+            const pt_toilet = world_to_screen(0, 0, self.width, self.height);
+            const t_x = pt_toilet.x - 30;
+            const t_y = shop_y + shop_h - 180;
+            self.fill_rect(t_x, t_y, 60, 90, Color{ .r = 105, .g = 65, .b = 35 });
+            self.draw_rect_outline(t_x, t_y, 60, 90, Color{ .r = 150, .g = 100, .b = 50 });
+            self.fill_circle(t_x + 30, t_y + 25, 8, Color{ .r = 250, .g = 204, .b = 21 });
+            self.fill_circle(t_x + 34, t_y + 25, 6, Color{ .r = 105, .g = 65, .b = 35 });
+            if (frame.dott_battery_charged) {
+                self.draw_text("[POWERED]", t_x - 4, t_y - 16, 1, Color.status_running);
+            }
+
+            // Title
+            self.draw_text("COLONIAL WORKSHOP - 1790", shop_x + 16, shop_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(HOAGIE * GEORGE WASHINGTON * BETSY ROSS * TIME CAPSULE)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
+        } else if (is_dott_present_scene) {
+            // 1993 Motel Lobby (P21-03, D-025)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 20, .g = 30, .b = 40 });
+
+            const motel_x: i32 = 40;
+            const motel_y: i32 = 110;
+            const motel_w: i32 = self.width - 80;
+            const motel_h: i32 = self.height - 210;
+
+            // 90s motel wallpaper & carpet
+            self.fill_rect(motel_x, motel_y, motel_w, motel_h, Color.motel_teal);
+            self.draw_rect_outline(motel_x, motel_y, motel_w, motel_h, Color{ .r = 45, .g = 212, .b = 191 });
+
+            // Geometric 90s wallpaper stripes
+            var stripe_x: i32 = motel_x;
+            while (stripe_x < motel_x + motel_w) : (stripe_x += 60) {
+                self.draw_line(stripe_x, motel_y, stripe_x + 30, motel_y + motel_h - 100, Color{ .r = 15, .g = 118, .b = 110 });
+            }
+
+            // Motel carpet floor (magenta & blue pattern)
+            self.fill_rect(motel_x, motel_y + motel_h - 100, motel_w, 100, Color{ .r = 112, .g = 26, .b = 117 });
+            var carpet_x: i32 = motel_x;
+            while (carpet_x < motel_x + motel_w) : (carpet_x += 40) {
+                self.fill_rect(carpet_x, motel_y + motel_h - 60, 20, 20, Color{ .r = 134, .g = 25, .b = 143 });
+            }
+
+            // Reception Desk with counter bell
+            const desk_x = motel_x + 80;
+            const desk_y = motel_y + motel_h - 160;
+            self.fill_rect(desk_x, desk_y, 160, 70, Color{ .r = 120, .g = 53, .b = 15 });
+            self.draw_rect_outline(desk_x, desk_y, 160, 70, Color{ .r = 180, .g = 83, .b = 9 });
+            self.fill_circle(desk_x + 40, desk_y - 6, 6, Color{ .r = 250, .g = 204, .b = 21 }); // Brass bell
+            self.draw_text("REGISTRATION", desk_x + 20, desk_y + 25, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // Flyer rack
+            self.fill_rect(desk_x + 180, desk_y - 20, 40, 90, Color{ .r = 75, .g = 85, .b = 99 });
+            self.fill_rect(desk_x + 185, desk_y - 10, 30, 20, Color.tentacle_purple);
+            self.draw_text("FLYERS", desk_x + 182, desk_y + 35, 1, Color.white);
+
+            // Chrono-Toilet 1993 (Public stall)
+            const pt_toilet = world_to_screen(0, 0, self.width, self.height);
+            const ct_x = pt_toilet.x - 30;
+            const ct_y = motel_y + motel_h - 180;
+            self.fill_rect(ct_x, ct_y, 60, 90, Color{ .r = 226, .g = 232, .b = 240 });
+            self.draw_rect_outline(ct_x, ct_y, 60, 90, Color{ .r = 148, .g = 163, .b = 184 });
+            self.fill_rect(ct_x + 20, ct_y + 10, 20, 30, Color{ .r = 203, .g = 213, .b = 225 });
+
+            // Title
+            self.draw_text("EDISON MOTEL LOBBY - 1993", motel_x + 16, motel_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(BERNARD * DR. FRED * CHRONO-TOILET * TIME CAPSULE)", motel_x + 16, motel_y + 36, 1, Color.hud_subtext);
+        } else if (is_dott_future_scene) {
+            // 2193 Dystopian Guard Post (P21-03, D-025)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 15, .g = 10, .b = 25 });
+
+            const post_x: i32 = 40;
+            const post_y: i32 = 110;
+            const post_w: i32 = self.width - 80;
+            const post_h: i32 = self.height - 210;
+
+            // Dystopian metal bunker walls
+            self.fill_rect(post_x, post_y, post_w, post_h, Color.dystopia_metal);
+            self.draw_rect_outline(post_x, post_y, post_w, post_h, Color{ .r = 88, .g = 28, .b = 135 });
+
+            // Glowing neon purple conduit lines
+            self.draw_line(post_x, post_y + 60, post_x + post_w, post_y + 60, Color.tentacle_purple);
+            self.draw_line(post_x, post_y + post_h - 110, post_x + post_w, post_y + post_h - 110, Color.tentacle_purple);
+
+            // Giant Tentacle Banner hanging from ceiling
+            const banner_x = post_x + post_w - 240;
+            self.fill_rect(banner_x, post_y, 140, post_h - 100, Color.tentacle_purple);
+            self.draw_rect_outline(banner_x, post_y, 140, post_h - 100, Color{ .r = 216, .g = 180, .b = 254 });
+            self.fill_circle(banner_x + 70, post_y + 50, 16, Color.tentacle_sucker);
+            self.fill_circle(banner_x + 70, post_y + 100, 14, Color.tentacle_sucker);
+            self.fill_circle(banner_x + 70, post_y + 150, 12, Color.tentacle_sucker);
+            self.draw_text("PURPLE EMPIRE", banner_x + 16, post_y + post_h - 130, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // Security Laser Barrier
+            self.draw_line(post_x + 180, post_y + 40, post_x + 180, post_y + post_h - 40, Color{ .r = 244, .g = 63, .b = 94 });
+
+            // Roof gutter & flagpole
+            self.fill_rect(post_x + 20, post_y + 10, 120, 12, Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_line(post_x + 80, post_y + 10, post_x + 80, post_y - 30, Color.white);
+            if (frame.dott_flag_sewn) {
+                self.fill_rect(post_x + 80, post_y - 30, 40, 24, Color.tentacle_purple);
+                self.fill_circle(post_x + 100, post_y - 18, 5, Color.tentacle_sucker);
+                self.draw_text("[TENTACLE FLAG FLYING]", post_x + 30, post_y - 45, 1, Color.tentacle_sucker);
+            }
+
+            // Title
+            self.draw_text("DYSTOPIAN TENTACLE GUARD POST - 2193", post_x + 16, post_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(LAVERNE * PURPLE TENTACLE GUARD * SECURITY CHECKPOINT)", post_x + 16, post_y + 36, 1, Color.hud_subtext);
         } else {
             // 1. Clear background
             self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
@@ -2307,6 +2974,9 @@ pub const DisplayWindow = struct {
             self.draw_rect_outline(cellar_rect_x, cellar_rect_y, cellar_rect_w, cellar_rect_h, Color.cellar_border);
             self.draw_text("WINE CELLAR", cellar_rect_x + 16, cellar_rect_y + 16, 2, Color.hud_subtext);
         }
+
+        // 2b. Centralized Text Layout Resolver (D-024)
+        var layout_resolver = TextLayoutResolver.init(self.width, self.height);
 
         // 3. Render Scene Hotspots / Props (P7-01, D-009)
         for (frame.hotspots[0..frame.hotspot_count], 0..) |hs, idx| {
@@ -2372,6 +3042,34 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 20, pt.y - 12, 40, 24, Color.motorcycle_red);
                 self.fill_circle(pt.x - 14, pt.y + 12, 8, Color.black);
                 self.fill_circle(pt.x + 14, pt.y + 12, 8, Color.black);
+            } else if (std.mem.indexOf(u8, name, "Plough") != null) {
+                // Broken Sword Farm Plough (P20-02, D-023)
+                const px = if (frame.plough_moved) pt.x + 25 else pt.x;
+                self.fill_rect(px - 18, pt.y - 8, 36, 14, Color{ .r = 65, .g = 55, .b = 50 });
+                self.draw_rect_outline(px - 18, pt.y - 8, 36, 14, Color{ .r = 110, .g = 100, .b = 95 });
+                self.draw_line(px - 14, pt.y - 8, px - 28, pt.y - 24, Color{ .r = 130, .g = 85, .b = 45 });
+                self.draw_line(px - 10, pt.y - 8, px - 24, pt.y - 24, Color{ .r = 130, .g = 85, .b = 45 });
+            } else if (std.mem.indexOf(u8, name, "Tether") != null or std.mem.indexOf(u8, name, "Stake") != null) {
+                // Tether Stake (P20-02, D-023)
+                self.fill_rect(pt.x - 4, pt.y - 14, 8, 28, Color{ .r = 110, .g = 70, .b = 35 });
+                self.draw_circle_outline(pt.x, pt.y - 10, 5, Color{ .r = 180, .g = 180, .b = 190 });
+            } else if (std.mem.indexOf(u8, name, "Cellar") != null or std.mem.indexOf(u8, name, "Opening") != null) {
+                // Cellar Pit opening (P20-02, D-023)
+                self.fill_rect(pt.x - 22, pt.y - 14, 44, 28, Color{ .r = 20, .g = 18, .b = 16 });
+                self.draw_rect_outline(pt.x - 22, pt.y - 14, 44, 28, Color{ .r = 100, .g = 65, .b = 30 });
+                self.fill_rect(pt.x - 8, pt.y - 16, 4, 30, Color{ .r = 140, .g = 90, .b = 45 });
+                self.fill_rect(pt.x + 4, pt.y - 16, 4, 30, Color{ .r = 140, .g = 90, .b = 45 });
+            } else if (std.mem.indexOf(u8, name, "Mural") != null) {
+                // Carved Mural (P20-02, D-023)
+                self.fill_rect(pt.x - 24, pt.y - 20, 48, 40, Color{ .r = 60, .g = 55, .b = 52 });
+                self.draw_rect_outline(pt.x - 24, pt.y - 20, 48, 40, Color{ .r = 120, .g = 115, .b = 110 });
+                self.fill_rect(pt.x - 3, pt.y - 12, 6, 24, Color.templar_red);
+                self.fill_rect(pt.x - 12, pt.y - 3, 24, 6, Color.templar_red);
+            } else if (std.mem.indexOf(u8, name, "Altar") != null) {
+                // Crypt Altar (P20-02, D-023)
+                self.fill_rect(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 85, .g = 80, .b = 78 });
+                self.draw_rect_outline(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 140, .g = 135, .b = 130 });
+                self.fill_circle(pt.x, pt.y, 5, Color{ .r = 251, .g = 191, .b = 36 });
             } else {
                 // Default prop
                 self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
@@ -2389,8 +3087,17 @@ pub const DisplayWindow = struct {
                     .talk_to => std.fmt.bufPrint(&prompt_buf, "[Talk to {s}]", .{name}) catch "[Talk]",
                     .walk => std.fmt.bufPrint(&prompt_buf, "[Walk to {s}]", .{name}) catch "[Walk]",
                 };
-                const tw = font.text_width(prompt, 2);
-                self.draw_text(prompt, pt.x - @divTrunc(tw, 2), pt.y - HOTSPOT_SCREEN_RADIUS - 18, 2, Color.wp_hover);
+                layout_resolver.submit(TextLabel.init(
+                    prompt,
+                    pt.x,
+                    pt.y,
+                    .above,
+                    HOTSPOT_SCREEN_RADIUS + 4,
+                    2,
+                    to_layout(Color.wp_hover),
+                    .hotspot_hover,
+                    .hover_tooltip,
+                ));
             }
         }
 
@@ -2432,6 +3139,14 @@ pub const DisplayWindow = struct {
             const is_hovered = (self.hovered_wp == wp.id);
             const is_targeted = (self.target_wp == wp.id);
 
+            // Register waypoint physical footprint as obstacle
+            layout_resolver.add_obstacle(
+                pt.x - WAYPOINT_SCREEN_RADIUS,
+                pt.y - WAYPOINT_SCREEN_RADIUS,
+                WAYPOINT_SCREEN_RADIUS * 2,
+                WAYPOINT_SCREEN_RADIUS * 2,
+            );
+
             // Halo glow for hovered/target node
             if (is_hovered) {
                 self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS + 4, Color.wp_hover);
@@ -2447,29 +3162,34 @@ pub const DisplayWindow = struct {
                 self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.white);
                 self.fill_circle(pt.x, pt.y, 4, Color.white);
 
-                // Check if actors are stationed at this waypoint coordinate
-                var has_actors = false;
-                for (frame.entities[0..frame.entity_count]) |ent| {
-                    if (ent.x == wp.x and ent.y == wp.y) {
-                        has_actors = true;
-                        break;
-                    }
-                }
-
-                // Waypoint text label: only draw if NO actor is stationed here, or when hovered
+                // Waypoint text label
                 const name = wp.get_name();
                 if (is_hovered or is_targeted) {
                     var buf: [64]u8 = undefined;
                     const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
-                    const text_w = font.text_width(prompt, 2);
-                    const prompt_y = if (has_actors)
-                        pt.y + WAYPOINT_SCREEN_RADIUS + 34
-                    else
-                        pt.y + WAYPOINT_SCREEN_RADIUS + 8;
-                    self.draw_text(prompt, pt.x - @divTrunc(text_w, 2), prompt_y, 2, Color.wp_hover);
-                } else if (!has_actors) {
-                    const text_w = font.text_width(name, 2);
-                    self.draw_text(name, pt.x - @divTrunc(text_w, 2), pt.y + WAYPOINT_SCREEN_RADIUS + 8, 2, Color.hud_text);
+                    layout_resolver.submit(TextLabel.init(
+                        prompt,
+                        pt.x,
+                        pt.y,
+                        .below,
+                        WAYPOINT_SCREEN_RADIUS + 6,
+                        2,
+                        to_layout(Color.wp_hover),
+                        .waypoint_hover,
+                        .hover_tooltip,
+                    ));
+                } else {
+                    layout_resolver.submit(TextLabel.init(
+                        name,
+                        pt.x,
+                        pt.y,
+                        .below,
+                        WAYPOINT_SCREEN_RADIUS + 6,
+                        1,
+                        to_layout(Color.hud_text),
+                        .waypoint_idle,
+                        .waypoint_idle,
+                    ));
                 }
             } else {
                 // In Spitting Contest: Stage marks
@@ -2479,21 +3199,17 @@ pub const DisplayWindow = struct {
                     const name = wp.get_name();
                     var buf: [64]u8 = undefined;
                     const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
-                    const text_w = font.text_width(prompt, 2);
-
-                    // Check if actors are stationed at this waypoint coordinate
-                    var has_actors = false;
-                    for (frame.entities[0..frame.entity_count]) |ent| {
-                        if (ent.x == wp.x and ent.y == wp.y) {
-                            has_actors = true;
-                            break;
-                        }
-                    }
-                    const prompt_y = if (has_actors)
-                        pt.y + WAYPOINT_SCREEN_RADIUS + 34
-                    else
-                        pt.y + WAYPOINT_SCREEN_RADIUS + 8;
-                    self.draw_text(prompt, pt.x - @divTrunc(text_w, 2), prompt_y, 2, Color.wp_hover);
+                    layout_resolver.submit(TextLabel.init(
+                        prompt,
+                        pt.x,
+                        pt.y,
+                        .below,
+                        WAYPOINT_SCREEN_RADIUS + 6,
+                        2,
+                        to_layout(Color.wp_hover),
+                        .waypoint_hover,
+                        .hover_tooltip,
+                    ));
                 } else {
                     // Subtle ground mark anchor
                     self.draw_circle_outline(pt.x, pt.y, 5, Color{ .r = 255, .g = 255, .b = 255, .a = 100 });
@@ -2507,6 +3223,7 @@ pub const DisplayWindow = struct {
             const name = e.get_name();
             const layout = get_entity_screen_layout(idx, frame.entities[0..frame.entity_count], self.width, self.height);
             const pt = layout.pos;
+            layout_resolver.add_obstacle(pt.x - ACTOR_SCREEN_RADIUS, pt.y - ACTOR_SCREEN_RADIUS, ACTOR_SCREEN_RADIUS * 2, ACTOR_SCREEN_RADIUS * 2);
 
             if (std.mem.eql(u8, name, "Cat")) {
                 // Cat (Player): Orange token with cat ears
@@ -2518,13 +3235,23 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x + 6, pt.y - ACTOR_SCREEN_RADIUS - 4, 6, 6, Color.cat_color);
 
                 // Label
-                self.draw_text("Cat (Player)", pt.x - 36, layout.label_y, 2, Color.cat_color);
+                layout_resolver.submit(TextLabel.init(
+                    "Cat (Player)",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.cat_color),
+                    .actor_name,
+                    .actor_name,
+                ));
 
                 // Carried Cheese
                 if (frame.cheese_holder == e.entity) {
                     self.fill_circle(pt.x + 14, pt.y - 10, 8, Color.cheese_color);
                     self.draw_circle_outline(pt.x + 14, pt.y - 10, 8, Color.white);
-                    self.draw_text("Cheese", pt.x + 24, pt.y - 14, 2, Color.cheese_color);
+                    self.draw_text("Cheese", pt.x + 24, pt.y - 14, 1, Color.cheese_color);
                 }
             } else if (std.mem.eql(u8, name, "Guard")) {
                 // Guard: Steel Blue token
@@ -2535,18 +3262,38 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 8, pt.y - 4, 16, 6, Color.white);
 
                 // Label
-                self.draw_text("Guard", pt.x - 16, layout.label_y, 2, Color.guard_color);
+                layout_resolver.submit(TextLabel.init(
+                    "Guard",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.guard_color),
+                    .actor_name,
+                    .actor_name,
+                ));
 
                 // Carried Cheese
                 if (frame.cheese_holder == e.entity) {
                     self.fill_circle(pt.x + 14, pt.y - 10, 8, Color.cheese_color);
                     self.draw_circle_outline(pt.x + 14, pt.y - 10, 8, Color.white);
-                    self.draw_text("Cheese", pt.x + 24, pt.y - 14, 2, Color.cheese_color);
+                    self.draw_text("Cheese", pt.x + 24, pt.y - 14, 1, Color.cheese_color);
                 }
 
                 // Charmed status
                 if (frame.charmed_target == e.entity) {
-                    self.draw_text("[Charmed!]", pt.x - 28, layout.status_y, 2, Color.cue_alert);
+                    layout_resolver.submit(TextLabel.init(
+                        "[Charmed!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.cue_alert),
+                        .actor_status,
+                        .actor_alert,
+                    ));
                 }
             } else if (std.mem.eql(u8, name, "Bard")) {
                 // Bard: Purple token
@@ -2557,7 +3304,17 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 6, 4, 8, Color.white);
 
                 // Label
-                self.draw_text("Bard", pt.x - 12, layout.label_y, 2, Color.bard_color);
+                layout_resolver.submit(TextLabel.init(
+                    "Bard",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.bard_color),
+                    .actor_name,
+                    .actor_name,
+                ));
             } else if (std.mem.eql(u8, name, "Guybrush")) {
                 // Guybrush (Player): Blonde hair, pirate blue coat
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.guybrush_coat);
@@ -2567,14 +3324,33 @@ pub const DisplayWindow = struct {
                 self.fill_circle(pt.x, pt.y - 8, 8, Color.guybrush_hair);
 
                 // Label
-                const nw = font.text_width("Guybrush", 2);
-                self.draw_text("Guybrush", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.guybrush_hair);
+                layout_resolver.submit(TextLabel.init(
+                    "Guybrush",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.guybrush_hair),
+                    .actor_name,
+                    .actor_name,
+                ));
 
                 // Spit Status
                 const spit_str = if (frame.spit_is_thick) "[Thick Spit Ready!]" else "[Spit: Thin]";
                 const spit_col = if (frame.spit_is_thick) Color.spit_color else Color.hud_subtext;
-                const sw = font.text_width(spit_str, 2);
-                self.draw_text(spit_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, spit_col);
+                const spit_prio: LabelPriority = if (frame.spit_is_thick) .actor_alert else .actor_status;
+                layout_resolver.submit(TextLabel.init(
+                    spit_str,
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(spit_col),
+                    .actor_status,
+                    spit_prio,
+                ));
             } else if (std.mem.eql(u8, name, "Organiser")) {
                 // Organiser: Velvet red coat, fancy hat
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.organiser_coat);
@@ -2585,14 +3361,33 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 8, 4, 6, Color.guybrush_hair);
 
                 // Label
-                const nw = font.text_width("Organiser", 2);
-                self.draw_text("Organiser", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.organiser_coat);
+                layout_resolver.submit(TextLabel.init(
+                    "Organiser",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.organiser_coat),
+                    .actor_name,
+                    .actor_name,
+                ));
 
                 // Distracted / watching status
                 const org_str = if (frame.organiser_distracted) "[DISTRACTED!]" else "[Watching]";
                 const org_col = if (frame.organiser_distracted) Color.cue_alert else Color.status_running;
-                const sw = font.text_width(org_str, 2);
-                self.draw_text(org_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, org_col);
+                const org_prio: LabelPriority = if (frame.organiser_distracted) .actor_alert else .actor_status;
+                layout_resolver.submit(TextLabel.init(
+                    org_str,
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(org_col),
+                    .actor_status,
+                    org_prio,
+                ));
             } else if (std.mem.eql(u8, name, "Onlookers")) {
                 // Onlookers: Crowd of spectator circles
                 self.fill_circle(pt.x - 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.onlookers_color);
@@ -2601,12 +3396,267 @@ pub const DisplayWindow = struct {
                 self.draw_circle_outline(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 2, Color.white);
 
                 // Label
-                const nw = font.text_width("Onlookers", 2);
-                self.draw_text("Onlookers", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.onlookers_color);
+                layout_resolver.submit(TextLabel.init(
+                    "Onlookers",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.onlookers_color),
+                    .actor_name,
+                    .actor_name,
+                ));
                 if (frame.organiser_distracted) {
-                    const sw = font.text_width("[Looking Offstage]", 2);
-                    self.draw_text("[Looking Offstage]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.cue_alert);
+                    layout_resolver.submit(TextLabel.init(
+                        "[Looking Offstage]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.cue_alert),
+                        .actor_status,
+                        .actor_alert,
+                    ));
                 }
+            } else if (std.mem.eql(u8, name, "George")) {
+                // George Stobbart: Leather jacket, middle-parted blonde hair, blue jeans (P20-02, D-023)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.george_jacket);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Blonde hair parted in the middle
+                self.fill_circle(pt.x - 4, pt.y - 8, 6, Color.george_hair);
+                self.fill_circle(pt.x + 4, pt.y - 8, 6, Color.george_hair);
+                // Blue shirt collar
+                self.fill_rect(pt.x - 5, pt.y + 4, 10, 4, Color{ .r = 70, .g = 130, .b = 200 });
+
+                // Dizzy stars if knocked down
+                if (frame.george_knocked_down) {
+                    self.fill_circle(pt.x - 12, pt.y - 16, 3, Color{ .r = 250, .g = 204, .b = 21 });
+                    self.fill_circle(pt.x, pt.y - 20, 4, Color{ .r = 254, .g = 240, .b = 138 });
+                    self.fill_circle(pt.x + 12, pt.y - 16, 3, Color{ .r = 250, .g = 204, .b = 21 });
+                }
+
+                // Label
+                layout_resolver.submit(TextLabel.init(
+                    "George",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.george_hair),
+                    .actor_name,
+                    .actor_name,
+                ));
+
+                // Status
+                if (frame.george_knocked_down) {
+                    layout_resolver.submit(TextLabel.init(
+                        "[KNOCKED DOWN!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.cue_alert),
+                        .actor_status,
+                        .actor_alert,
+                    ));
+                } else {
+                    layout_resolver.submit(TextLabel.init(
+                        "[Standing]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.hud_subtext),
+                        .actor_status,
+                        .actor_status,
+                    ));
+                }
+            } else if (std.mem.eql(u8, name, "BillyGoat")) {
+                // Billy Goat: Off-white fleece, curved dark horns, goatee beard (P20-02, D-023)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.goat_body);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+
+                // Dark horns
+                self.draw_line(pt.x - 6, pt.y - 8, pt.x - 12, pt.y - 18, Color.goat_horns);
+                self.draw_line(pt.x - 12, pt.y - 18, pt.x - 16, pt.y - 14, Color.goat_horns);
+                self.draw_line(pt.x + 6, pt.y - 8, pt.x + 12, pt.y - 18, Color.goat_horns);
+                self.draw_line(pt.x + 12, pt.y - 18, pt.x + 16, pt.y - 14, Color.goat_horns);
+
+                // Red collar & ring
+                self.fill_rect(pt.x - 8, pt.y - 2, 16, 4, Color.goat_collar);
+                self.fill_circle(pt.x, pt.y + 2, 3, Color{ .r = 180, .g = 180, .b = 190 });
+
+                // Chin goatee beard
+                self.fill_rect(pt.x - 2, pt.y + ACTOR_SCREEN_RADIUS - 2, 4, 6, Color{ .r = 210, .g = 205, .b = 195 });
+
+                // Tangled coils if tangled
+                if (frame.goat_is_tangled) {
+                    self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 3, Color.rope_color);
+                    self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 6, Color.rope_color);
+                    self.fill_circle(pt.x - 10, pt.y - 18, 3, Color{ .r = 250, .g = 204, .b = 21 });
+                    self.fill_circle(pt.x + 10, pt.y - 18, 3, Color{ .r = 250, .g = 204, .b = 21 });
+                }
+
+                // Label
+                layout_resolver.submit(TextLabel.init(
+                    "Billy Goat",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.hud_text),
+                    .actor_name,
+                    .actor_name,
+                ));
+
+                // Status
+                if (frame.goat_is_tangled) {
+                    layout_resolver.submit(TextLabel.init(
+                        "[TANGLED IN ROPE!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.status_running),
+                        .actor_status,
+                        .actor_alert,
+                    ));
+                } else if (frame.goat_is_retreating) {
+                    layout_resolver.submit(TextLabel.init(
+                        "[RETREATING TO STAKE!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.status_paused),
+                        .actor_status,
+                        .actor_alert,
+                    ));
+                } else if (frame.goat_is_charging) {
+                    layout_resolver.submit(TextLabel.init(
+                        "[CHARGING! RAMMING GEORGE!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.cue_alert),
+                        .actor_status,
+                        .actor_alert,
+                    ));
+                } else {
+                    layout_resolver.submit(TextLabel.init(
+                        "[Guarding Dig Entrance]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.cue_alert),
+                        .actor_status,
+                        .actor_status,
+                    ));
+                }
+            } else if (std.mem.eql(u8, name, "Hoagie")) {
+                // Hoagie: Heavy build, black vest, red backwards cap, long hair (P21-03, D-025)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color{ .r = 40, .g = 40, .b = 45 });
+                self.fill_circle(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 4, Color{ .r = 240, .g = 180, .b = 140 });
+                // Red backwards baseball cap
+                self.fill_rect(pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 4, 24, 8, Color.hoagie_cap);
+                self.fill_rect(pt.x + 8, pt.y - ACTOR_SCREEN_RADIUS, 8, 4, Color.hoagie_cap);
+                // Long brown hair
+                self.fill_rect(pt.x - 14, pt.y - 2, 4, 16, Color{ .r = 80, .g = 50, .b = 25 });
+                self.fill_rect(pt.x + 10, pt.y - 2, 4, 16, Color{ .r = 80, .g = 50, .b = 25 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.white);
+
+                layout_resolver.submit(TextLabel.init("Hoagie", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+            } else if (std.mem.eql(u8, name, "Bernard")) {
+                // Bernard: White collared shirt, black tie, glasses (P21-03, D-025)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // Blue suspenders & black tie
+                self.fill_rect(pt.x - 2, pt.y - 4, 4, 16, Color.black);
+                self.fill_rect(pt.x - 8, pt.y + 2, 2, 14, Color.bernard_shirt);
+                self.fill_rect(pt.x + 6, pt.y + 2, 2, 14, Color.bernard_shirt);
+                // Thick black horn-rimmed glasses
+                self.draw_rect_outline(pt.x - 10, pt.y - 10, 8, 7, Color.black);
+                self.draw_rect_outline(pt.x + 2, pt.y - 10, 8, 7, Color.black);
+                self.draw_line(pt.x - 2, pt.y - 7, pt.x + 2, pt.y - 7, Color.black);
+
+                layout_resolver.submit(TextLabel.init("Bernard", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 2, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+            } else if (std.mem.eql(u8, name, "Laverne")) {
+                // Laverne: Spiky blonde hair, cyan dress, wide eyes (P21-03, D-025)
+                const dress_col = if (frame.dott_laverne_disguised) Color.tentacle_purple else Color.laverne_dress;
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, dress_col);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // Spiky blonde hair
+                self.fill_circle(pt.x, pt.y - 14, 10, Color.laverne_hair);
+                self.fill_rect(pt.x - 14, pt.y - 18, 6, 8, Color.laverne_hair);
+                self.fill_rect(pt.x + 8, pt.y - 18, 6, 8, Color.laverne_hair);
+                // Wide expressive eyes
+                self.fill_circle(pt.x - 4, pt.y - 4, 4, Color.white);
+                self.fill_circle(pt.x + 4, pt.y - 4, 4, Color.white);
+                self.fill_circle(pt.x - 4, pt.y - 4, 2, Color.black);
+                self.fill_circle(pt.x + 4, pt.y - 4, 2, Color.black);
+
+                layout_resolver.submit(TextLabel.init("Laverne", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+                if (frame.dott_laverne_disguised) {
+                    layout_resolver.submit(TextLabel.init("[DISGUISED AS TENTACLE]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color.tentacle_purple), .actor_status, .actor_status));
+                }
+            } else if (std.mem.eql(u8, name, "Washington") or std.mem.eql(u8, name, "GeorgeWashington")) {
+                // George Washington: Powdered wig, continental blue coat, axe (P21-03, D-025)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.washington_coat);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // Powdered white wig with side rolls
+                self.fill_circle(pt.x, pt.y - 12, 11, Color{ .r = 240, .g = 240, .b = 245 });
+                self.fill_circle(pt.x - 12, pt.y - 8, 6, Color{ .r = 230, .g = 230, .b = 235 });
+                self.fill_circle(pt.x + 12, pt.y - 8, 6, Color{ .r = 230, .g = 230, .b = 235 });
+                // Gold epaulettes
+                self.fill_rect(pt.x - 14, pt.y - 2, 6, 4, Color{ .r = 250, .g = 204, .b = 21 });
+                self.fill_rect(pt.x + 8, pt.y - 2, 6, 4, Color{ .r = 250, .g = 204, .b = 21 });
+                // Hatchet / Axe in hand
+                self.draw_line(pt.x + 12, pt.y + 4, pt.x + 20, pt.y - 10, Color{ .r = 130, .g = 85, .b = 45 });
+                self.fill_rect(pt.x + 16, pt.y - 14, 8, 6, Color{ .r = 180, .g = 185, .b = 195 });
+
+                layout_resolver.submit(TextLabel.init("G. Washington", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+            } else if (std.mem.eql(u8, name, "BetsyRoss") or std.mem.eql(u8, name, "Betsy")) {
+                // Betsy Ross: White bonnet, maroon gown, apron (P21-03, D-025)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.betsy_dress);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // White ruffled mob cap / bonnet
+                self.fill_circle(pt.x, pt.y - 12, 10, Color.white);
+                self.draw_circle_outline(pt.x, pt.y - 12, 10, Color{ .r = 210, .g = 215, .b = 225 });
+                // White apron
+                self.fill_rect(pt.x - 7, pt.y + 2, 14, 12, Color.white);
+                // Tailor shears
+                self.draw_line(pt.x + 10, pt.y + 6, pt.x + 18, pt.y + 2, Color{ .r = 200, .g = 205, .b = 215 });
+                self.draw_line(pt.x + 10, pt.y + 2, pt.x + 18, pt.y + 6, Color{ .r = 200, .g = 205, .b = 215 });
+
+                layout_resolver.submit(TextLabel.init("Betsy Ross", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+            } else if (std.mem.eql(u8, name, "PurpleTentacle") or std.mem.eql(u8, name, "TentacleGuard")) {
+                // Purple Tentacle: Conical purple stalk, suction cups, angry brows (P21-03, D-025)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.tentacle_purple);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.white);
+                // Suction cups
+                self.fill_circle(pt.x, pt.y + 8, 4, Color.tentacle_sucker);
+                self.fill_circle(pt.x - 6, pt.y + 2, 3, Color.tentacle_sucker);
+                self.fill_circle(pt.x + 6, pt.y + 2, 3, Color.tentacle_sucker);
+                // Angry red eyes & slant brows
+                self.fill_circle(pt.x - 5, pt.y - 4, 3, Color{ .r = 239, .g = 68, .b = 68 });
+                self.fill_circle(pt.x + 5, pt.y - 4, 3, Color{ .r = 239, .g = 68, .b = 68 });
+                self.draw_line(pt.x - 9, pt.y - 9, pt.x - 2, pt.y - 7, Color.black);
+                self.draw_line(pt.x + 9, pt.y - 9, pt.x + 2, pt.y - 7, Color.black);
+
+                layout_resolver.submit(TextLabel.init("Purple Tentacle", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
             } else if (std.mem.eql(u8, name, "Gabriel")) {
                 // Gabriel Knight: Leather trench coat, signature blonde hair, dark shades (P14-02, D-016)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.gabriel_coat);
@@ -2625,18 +3675,43 @@ pub const DisplayWindow = struct {
                 }
 
                 // Label
-                const nw = font.text_width("Gabriel", 2);
-                self.draw_text("Gabriel", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.gabriel_hair);
+                layout_resolver.submit(TextLabel.init(
+                    "Gabriel",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.gabriel_hair),
+                    .actor_name,
+                    .actor_name,
+                ));
 
                 // Status
                 if (frame.gabriel_disguised) {
-                    const d_str = "[DISGUISED AS MOSELY!]";
-                    const sw = font.text_width(d_str, 2);
-                    self.draw_text(d_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.status_running);
+                    layout_resolver.submit(TextLabel.init(
+                        "[DISGUISED AS MOSELY!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.status_running),
+                        .actor_status,
+                        .actor_alert,
+                    ));
                 } else {
-                    const u_str = "[Undisguised]";
-                    const sw = font.text_width(u_str, 2);
-                    self.draw_text(u_str, pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                    layout_resolver.submit(TextLabel.init(
+                        "[Undisguised]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.hud_subtext),
+                        .actor_status,
+                        .actor_status,
+                    ));
                 }
             } else if (std.mem.eql(u8, name, "Mosely")) {
                 // Detective Franklin Mosely: Navy suit, genuine moustache (P14-02, D-016)
@@ -2648,10 +3723,28 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 6, pt.y + 2, 12, 4, Color.black);
 
                 // Label
-                const nw = font.text_width("Mosely", 2);
-                self.draw_text("Mosely", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 147, .g = 197, .b = 253 });
-                const sw = font.text_width("[Detective]", 2);
-                self.draw_text("[Detective]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                layout_resolver.submit(TextLabel.init(
+                    "Mosely",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 147, .g = 197, .b = 253 }),
+                    .actor_name,
+                    .actor_name,
+                ));
+                layout_resolver.submit(TextLabel.init(
+                    "[Detective]",
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(Color.hud_subtext),
+                    .actor_status,
+                    .actor_status,
+                ));
             } else if (std.mem.eql(u8, name, "Buthane")) {
                 // Madame Buthane: Crimson vest, auburn hair (P14-02, D-016)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.buthane_vest);
@@ -2661,10 +3754,28 @@ pub const DisplayWindow = struct {
                 self.fill_circle(pt.x, pt.y - 8, 8, Color.buthane_hair);
 
                 // Label
-                const nw = font.text_width("Madame Buthane", 2);
-                self.draw_text("Madame Buthane", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 252, .g = 165, .b = 165 });
-                const sw = font.text_width("[Rental Desk]", 2);
-                self.draw_text("[Rental Desk]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                layout_resolver.submit(TextLabel.init(
+                    "Madame Buthane",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 252, .g = 165, .b = 165 }),
+                    .actor_name,
+                    .actor_name,
+                ));
+                layout_resolver.submit(TextLabel.init(
+                    "[Rental Desk]",
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(Color.hud_subtext),
+                    .actor_status,
+                    .actor_status,
+                ));
             } else if (std.mem.eql(u8, name, "StrayCat")) {
                 // Stray Cat: Black cat token with green eyes & ears (P14-02, D-016)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.stray_cat_color);
@@ -2679,15 +3790,42 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x + 2, pt.y - 3, 3, 3, Color.cat_eye_color);
 
                 // Label
-                const nw = font.text_width("Stray Cat", 2);
-                self.draw_text("Stray Cat", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.hud_text);
+                layout_resolver.submit(TextLabel.init(
+                    "Stray Cat",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.hud_text),
+                    .actor_name,
+                    .actor_name,
+                ));
 
                 if (frame.cat_startled) {
-                    const sw = font.text_width("[STARTLED!]", 2);
-                    self.draw_text("[STARTLED!]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.cue_alert);
+                    layout_resolver.submit(TextLabel.init(
+                        "[STARTLED!]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.cue_alert),
+                        .actor_status,
+                        .actor_alert,
+                    ));
                 } else {
-                    const sw = font.text_width("[Napping]", 2);
-                    self.draw_text("[Napping]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                    layout_resolver.submit(TextLabel.init(
+                        "[Napping]",
+                        pt.x,
+                        pt.y,
+                        .below,
+                        ACTOR_SCREEN_RADIUS + 4,
+                        1,
+                        to_layout(Color.hud_subtext),
+                        .actor_status,
+                        .actor_status,
+                    ));
                 }
             } else if (std.mem.eql(u8, name, "PirateBob") or std.mem.eql(u8, name, "PiratePegleg")) {
                 // Pirate Bob / Pegleg: Crimson vest, tricorn hat, eye patch
@@ -2701,10 +3839,28 @@ pub const DisplayWindow = struct {
                 self.draw_line(pt.x - 6, pt.y - 7, pt.x + 8, pt.y - 1, Color.black);
 
                 // Label
-                const nw = font.text_width(name, 2);
-                self.draw_text(name, pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 252, .g = 165, .b = 165 });
-                const sw = font.text_width("[Swashbuckler]", 2);
-                self.draw_text("[Swashbuckler]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                layout_resolver.submit(TextLabel.init(
+                    name,
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 252, .g = 165, .b = 165 }),
+                    .actor_name,
+                    .actor_name,
+                ));
+                layout_resolver.submit(TextLabel.init(
+                    "[Swashbuckler]",
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(Color.hud_subtext),
+                    .actor_status,
+                    .actor_status,
+                ));
             } else if (std.mem.eql(u8, name, "Carla")) {
                 // Carla: Sword Master of Melee Island. Crimson sash, fencing stance
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 225, .g = 29, .b = 72 });
@@ -2714,10 +3870,28 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 8, pt.y - 10, 16, 5, Color{ .r = 244, .g = 63, .b = 94 });
 
                 // Label
-                const nw = font.text_width("Carla", 2);
-                self.draw_text("Carla", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 254, .g = 205, .b = 211 });
-                const sw = font.text_width("[Sword Master]", 2);
-                self.draw_text("[Sword Master]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color{ .r = 250, .g = 204, .b = 21 });
+                layout_resolver.submit(TextLabel.init(
+                    "Carla",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 254, .g = 205, .b = 211 }),
+                    .actor_name,
+                    .actor_name,
+                ));
+                layout_resolver.submit(TextLabel.init(
+                    "[Sword Master]",
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(Color{ .r = 250, .g = 204, .b = 21 }),
+                    .actor_status,
+                    .actor_status,
+                ));
             } else if (std.mem.eql(u8, name, "Barkeep")) {
                 // Barkeep: Brown vest, white apron
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 120, .g = 70, .b = 40 });
@@ -2727,59 +3901,156 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 6, pt.y - 2, 12, 10, Color.white);
 
                 // Label
-                const nw = font.text_width("Barkeep", 2);
-                self.draw_text("Barkeep", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 253, .g = 230, .b = 138 });
-                const sw = font.text_width("[Scumm Bar]", 2);
-                self.draw_text("[Scumm Bar]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                layout_resolver.submit(TextLabel.init(
+                    "Barkeep",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 253, .g = 230, .b = 138 }),
+                    .actor_name,
+                    .actor_name,
+                ));
+                layout_resolver.submit(TextLabel.init(
+                    "[Scumm Bar]",
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(Color.hud_subtext),
+                    .actor_status,
+                    .actor_status,
+                ));
             } else if (std.mem.eql(u8, name, "Citizen")) {
                 // Citizen of Melee: Green coat
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 16, .g = 120, .b = 70 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
                 // Label
-                const nw = font.text_width("Citizen", 2);
-                self.draw_text("Citizen", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 167, .g = 243, .b = 208 });
-                const sw = font.text_width("[Melee Citizen]", 2);
-                self.draw_text("[Melee Citizen]", pt.x - @divTrunc(sw, 2), layout.status_y, 2, Color.hud_subtext);
+                layout_resolver.submit(TextLabel.init(
+                    "Citizen",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 167, .g = 243, .b = 208 }),
+                    .actor_name,
+                    .actor_name,
+                ));
+                layout_resolver.submit(TextLabel.init(
+                    "[Melee Citizen]",
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(Color.hud_subtext),
+                    .actor_status,
+                    .actor_status,
+                ));
             } else if (std.mem.eql(u8, name, "Sheriff")) {
                 // Sheriff: Navy lawman coat & gold star badge (P18-03, D-021)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 30, .g = 58, .b = 138 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
                 self.fill_rect(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 4, 20, 5, Color{ .r = 120, .g = 75, .b = 35 });
                 self.fill_circle(pt.x + 5, pt.y + 2, 4, Color{ .r = 250, .g = 204, .b = 21 });
-                const nw = font.text_width("Sheriff", 2);
-                self.draw_text("Sheriff", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 147, .g = 197, .b = 253 });
+
+                layout_resolver.submit(TextLabel.init(
+                    "Sheriff",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 147, .g = 197, .b = 253 }),
+                    .actor_name,
+                    .actor_name,
+                ));
                 const st = if (frame.village_warrant_active) "[Warrant Hunt!]" else "[Lawman]";
-                const sw = font.text_width(st, 1);
-                self.draw_text(st, pt.x - @divTrunc(sw, 2), layout.status_y, 1, if (frame.village_warrant_active) Color.cue_alert else Color.hud_subtext);
+                const st_col = if (frame.village_warrant_active) Color.cue_alert else Color.hud_subtext;
+                const st_prio: LabelPriority = if (frame.village_warrant_active) .actor_alert else .actor_status;
+                layout_resolver.submit(TextLabel.init(
+                    st,
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(st_col),
+                    .actor_status,
+                    st_prio,
+                ));
             } else if (std.mem.eql(u8, name, "Baker")) {
                 // Baker: White tunic & chef toque hat (P18-03, D-021)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 217, .g = 119, .b = 6 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
                 self.fill_rect(pt.x - 7, pt.y - ACTOR_SCREEN_RADIUS - 8, 14, 9, Color.white);
-                const nw = font.text_width("Baker", 2);
-                self.draw_text("Baker", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 254, .g = 240, .b = 138 });
+
+                layout_resolver.submit(TextLabel.init(
+                    "Baker",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 254, .g = 240, .b = 138 }),
+                    .actor_name,
+                    .actor_name,
+                ));
             } else if (std.mem.eql(u8, name, "Farmer")) {
                 // Farmer: Earthy green tunic & golden straw hat (P18-03, D-021)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 22, .g = 101, .b = 52 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
                 self.fill_rect(pt.x - 11, pt.y - ACTOR_SCREEN_RADIUS - 4, 22, 5, Color{ .r = 250, .g = 204, .b = 21 });
-                const nw = font.text_width("Farmer", 2);
-                self.draw_text("Farmer", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 134, .g = 239, .b = 172 });
+
+                layout_resolver.submit(TextLabel.init(
+                    "Farmer",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 134, .g = 239, .b = 172 }),
+                    .actor_name,
+                    .actor_name,
+                ));
             } else if (std.mem.eql(u8, name, "Innkeeper")) {
                 // Innkeeper: Warm burgundy coat & apron (P18-03, D-021)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 153, .g = 27, .b = 27 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
                 self.fill_rect(pt.x - 6, pt.y - 2, 12, 10, Color.white);
-                const nw = font.text_width("Innkeeper", 2);
-                self.draw_text("Innkeeper", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 252, .g = 165, .b = 165 });
+
+                layout_resolver.submit(TextLabel.init(
+                    "Innkeeper",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 252, .g = 165, .b = 165 }),
+                    .actor_name,
+                    .actor_name,
+                ));
             } else if (std.mem.eql(u8, name, "Gossip")) {
                 // Gossip: Royal purple cloak & plume (P18-03, D-021)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.bard_color);
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
                 self.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 7, 4, 8, Color{ .r = 250, .g = 204, .b = 21 });
-                const nw = font.text_width("Gossip", 2);
-                self.draw_text("Gossip", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color{ .r = 216, .g = 180, .b = 254 });
+
+                layout_resolver.submit(TextLabel.init(
+                    "Gossip",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color{ .r = 216, .g = 180, .b = 254 }),
+                    .actor_name,
+                    .actor_name,
+                ));
             } else if (std.mem.eql(u8, name, "Drifter")) {
                 // Drifter: Weathered cloak, shows crime/arrest state (P18-03, D-021)
                 const d_col = if (frame.village_arrest_made)
@@ -2790,22 +4061,66 @@ pub const DisplayWindow = struct {
                     Color{ .r = 101, .g = 163, .b = 13 };
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, d_col);
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-                const nw = font.text_width("Drifter", 2);
-                self.draw_text("Drifter", pt.x - @divTrunc(nw, 2), layout.label_y, 2, Color.white);
+
+                layout_resolver.submit(TextLabel.init(
+                    "Drifter",
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.white),
+                    .actor_name,
+                    .actor_name,
+                ));
                 const st = if (frame.village_arrest_made)
                     "[ARRESTED]"
                 else if (frame.village_crime_active)
                     "[THIEF / WANTED]"
                 else
                     "[Hungry]";
-                const sw = font.text_width(st, 1);
-                self.draw_text(st, pt.x - @divTrunc(sw, 2), layout.status_y, 1, d_col);
+                const st_prio: LabelPriority = if (frame.village_arrest_made or frame.village_crime_active) .actor_alert else .actor_status;
+                layout_resolver.submit(TextLabel.init(
+                    st,
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 4,
+                    1,
+                    to_layout(d_col),
+                    .actor_status,
+                    st_prio,
+                ));
             } else {
                 // Generic actor token
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 70, .g = 80, .b = 95 });
                 self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-                const tw = font.text_width(name, 2);
-                self.draw_text(name, pt.x - @divTrunc(tw, 2), layout.label_y, 2, Color.hud_text);
+
+                layout_resolver.submit(TextLabel.init(
+                    name,
+                    pt.x,
+                    pt.y,
+                    .above,
+                    ACTOR_SCREEN_RADIUS + 2,
+                    2,
+                    to_layout(Color.hud_text),
+                    .actor_name,
+                    .actor_name,
+                ));
+            }
+        }
+
+        // 5b. Resolve and Render all Floating In-World Labels (D-024)
+        layout_resolver.resolve();
+        for (layout_resolver.get_labels()) |lbl| {
+            if (lbl.visible) {
+                self.draw_text(
+                    lbl.get_text(),
+                    lbl.placed_x,
+                    lbl.placed_y,
+                    lbl.scale,
+                    Color{ .r = lbl.color.r, .g = lbl.color.g, .b = lbl.color.b, .a = lbl.color.a },
+                );
             }
         }
 
@@ -2822,6 +4137,44 @@ pub const DisplayWindow = struct {
         ) catch "BeSpoke Engine";
         const status_col = if (is_paused) Color.status_paused else Color.status_running;
         self.draw_text(top_text, 20, 16, 2, status_col);
+
+        // 6a. Multi-Character Party Member Portraits (P21-01, D-025)
+        if (frame.party_count > 1) {
+            for (frame.party[0..frame.party_count], 0..) |member, p_idx| {
+                const prect = get_party_portrait_rect(p_idx, frame.party_count, self.width);
+                const is_active = (p_idx == frame.active_party_index);
+                const is_hovered = (self.hovered_party_member != null and self.hovered_party_member.? == p_idx);
+
+                const bg_col = if (is_active)
+                    Color{ .r = 30, .g = 58, .b = 138, .a = 240 }
+                else if (is_hovered)
+                    Color{ .r = 51, .g = 65, .b = 85, .a = 240 }
+                else
+                    Color{ .r = 20, .g = 30, .b = 45, .a = 220 };
+
+                const border_col = if (is_active)
+                    Color{ .r = 250, .g = 204, .b = 21 }
+                else if (is_hovered)
+                    Color.white
+                else
+                    Color{ .r = 71, .g = 85, .b = 105 };
+
+                self.fill_rect(prect.x, prect.y, prect.w, prect.h, bg_col);
+                self.draw_rect_outline(prect.x, prect.y, prect.w, prect.h, border_col);
+                if (is_active) {
+                    self.draw_rect_outline(prect.x + 1, prect.y + 1, prect.w - 2, prect.h - 2, Color{ .r = 253, .g = 224, .b = 71 });
+                }
+
+                // Member icon token
+                self.fill_circle(prect.x + 12, prect.y + 15, 6, border_col);
+
+                // Portrait tag: "[1] Hoagie"
+                var pbuf: [32]u8 = undefined;
+                const ptext = std.fmt.bufPrint(&pbuf, "[{d}] {s}", .{ p_idx + 1, member.get_name() }) catch member.get_name();
+                const text_col = if (is_active) Color{ .r = 254, .g = 240, .b = 138 } else Color.hud_text;
+                self.draw_text(ptext, prect.x + 22, prect.y + 8, 1, text_col);
+            }
+        }
 
         // 6b. Interactive Time-Travel Timeline Scrubber Bar (P9-02, D-011)
         const tb_x: i32 = 20;
@@ -2859,7 +4212,16 @@ pub const DisplayWindow = struct {
         if (self.selected_inventory_item) |sel_idx| {
             if (sel_idx < frame.inventory_count) {
                 const sel_name = frame.inventory[sel_idx].get_name();
-                if (self.hovered_actor) |act_idx| {
+                if (self.hovered_party_member) |p_idx| {
+                    if (p_idx < frame.party_count) {
+                        const target_name = frame.party[p_idx].get_name();
+                        if (p_idx == frame.active_party_index) {
+                            action_sentence = std.fmt.bufPrint(&action_sentence_buf, "[IN HAND: {s}] (Current character)", .{sel_name}) catch null;
+                        } else {
+                            action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Give {s} to {s}", .{ sel_name, target_name }) catch null;
+                        }
+                    }
+                } else if (self.hovered_actor) |act_idx| {
                     if (act_idx < frame.entity_count) {
                         action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, frame.entities[act_idx].get_name() }) catch null;
                     }
@@ -2886,7 +4248,16 @@ pub const DisplayWindow = struct {
                 .pick_up => "Take",
                 .use_with => "Use",
             };
-            if (self.hovered_actor) |act_idx| {
+            if (self.hovered_party_member) |p_idx| {
+                if (p_idx < frame.party_count) {
+                    const target_name = frame.party[p_idx].get_name();
+                    if (p_idx == frame.active_party_index) {
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} (Active Character)", .{target_name}) catch null;
+                    } else {
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Switch to {s}", .{target_name}) catch null;
+                    }
+                }
+            } else if (self.hovered_actor) |act_idx| {
                 if (act_idx < frame.entity_count) {
                     action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, frame.entities[act_idx].get_name() }) catch null;
                 }
@@ -2970,6 +4341,22 @@ pub const DisplayWindow = struct {
                 self.height - 28,
                 2,
                 Color.hud_subtext,
+            );
+        } else if (is_dott_past_scene or is_dott_present_scene or is_dott_future_scene) {
+            self.draw_text(
+                "[1]: Hoagie (1790) | [2]: Bernard (1993) | [3]: Laverne (2193) | Drag Item to Portrait to Flush",
+                20,
+                self.height - 28,
+                2,
+                Color{ .r = 250, .g = 204, .b = 21 },
+            );
+        } else if (is_goat_courtyard_scene or is_templar_crypt_scene) {
+            self.draw_text(
+                "[C]: Courtyard | [T]: Crypt | [1]: Approach Dig | [2]: Drag Plough | [3]: Descend | [4]: Mural",
+                20,
+                self.height - 28,
+                2,
+                Color{ .r = 250, .g = 204, .b = 21 },
             );
         } else if (is_hotel_scene or is_garden_scene or is_bike_rental_scene) {
             self.draw_text(
@@ -3727,5 +5114,170 @@ test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save
     try testing.expect(win.handle_save_action(.{ .load_slot = 2 }, &world, &spatial, &vm, &bridge, &is_paused));
     try testing.expectEqual(@as(u64, 2), world.current_tick);
     try testing.expect(is_paused);
+}
+
+test "P20-02: display renderer dynamically recognizes Broken Sword Goat Puzzle scene themes and actors" {
+    const testing = std.testing;
+
+    var frame = std.mem.zeroes(RenderFrame);
+
+    // 1. Lochmarne Castle Courtyard scene
+    const courtyard_scene = "Lochmarne Castle Courtyard";
+    @memcpy(frame.current_scene[0..courtyard_scene.len], courtyard_scene);
+    frame.current_scene_len = courtyard_scene.len;
+    try testing.expectEqualStrings("Lochmarne Castle Courtyard", frame.get_current_scene());
+
+    // 2. Add Broken Sword actors to frame
+    frame.entity_count = 2;
+    const george_name = "George";
+    @memcpy(frame.entities[0].name[0..george_name.len], george_name);
+    frame.entities[0].name_len = george_name.len;
+    frame.entities[0].entity = EntityId.from_int(10);
+    frame.entities[0].x = 4;
+    frame.entities[0].y = 0;
+
+    const goat_name = "BillyGoat";
+    @memcpy(frame.entities[1].name[0..goat_name.len], goat_name);
+    frame.entities[1].name_len = goat_name.len;
+    frame.entities[1].entity = EntityId.from_int(11);
+    frame.entities[1].x = 16;
+    frame.entities[1].y = 0;
+
+    // 3. Add Courtyard hotspots
+    frame.hotspot_count = 3;
+    const pit_name = "CellarEntrance";
+    @memcpy(frame.hotspots[0].name[0..pit_name.len], pit_name);
+    frame.hotspots[0].name_len = pit_name.len;
+    frame.hotspots[0].x = 28;
+    frame.hotspots[0].y = -4;
+
+    const plough_name = "FarmPlough";
+    @memcpy(frame.hotspots[1].name[0..plough_name.len], plough_name);
+    frame.hotspots[1].name_len = plough_name.len;
+    frame.hotspots[1].x = 10;
+    frame.hotspots[1].y = 8;
+
+    const tether_name = "TetherStake";
+    @memcpy(frame.hotspots[2].name[0..tether_name.len], tether_name);
+    frame.hotspots[2].name_len = tether_name.len;
+    frame.hotspots[2].x = 16;
+    frame.hotspots[2].y = -4;
+
+    // 4. Set goat scenario flags
+    frame.plough_moved = true;
+    frame.goat_is_tangled = true;
+    frame.george_knocked_down = true;
+
+    var win = try DisplayWindow.init("Goat Puzzle Test", 1280, 720);
+    defer win.deinit();
+
+    // Verify rendering Lochmarne Courtyard succeeds
+    win.render_frame(&frame, false);
+    try testing.expect(frame.goat_is_tangled);
+    try testing.expect(frame.plough_moved);
+
+    // 5. Switch to Templar Crypt scene and re-render
+    const crypt_scene = "Templar Crypt";
+    @memcpy(frame.current_scene[0..crypt_scene.len], crypt_scene);
+    frame.current_scene_len = crypt_scene.len;
+    try testing.expectEqualStrings("Templar Crypt", frame.get_current_scene());
+
+    win.render_frame(&frame, false);
+}
+
+test "P21-01: party portrait layout and hit-testing" {
+    const testing = std.testing;
+    const screen_w: i32 = 1280;
+    const party_count: usize = 3;
+
+    // Single party member has no interactive portrait HUD
+    try testing.expectEqual(@as(?usize, null), hit_test_party_portrait(1000, 15, 1, screen_w));
+
+    // 3 party members: rects calculated from right margin
+    const r0 = get_party_portrait_rect(0, party_count, screen_w);
+    const r1 = get_party_portrait_rect(1, party_count, screen_w);
+    const r2 = get_party_portrait_rect(2, party_count, screen_w);
+
+    try testing.expect(r0.x < r1.x);
+    try testing.expect(r1.x < r2.x);
+    try testing.expectEqual(r0.y, r1.y);
+    try testing.expectEqual(r0.w, r1.w);
+    try testing.expectEqual(r0.h, r1.h);
+
+    // Hit testing inside bounds
+    try testing.expectEqual(@as(?usize, 0), hit_test_party_portrait(r0.x + 10, r0.y + 10, party_count, screen_w));
+    try testing.expectEqual(@as(?usize, 1), hit_test_party_portrait(r1.x + 10, r1.y + 10, party_count, screen_w));
+    try testing.expectEqual(@as(?usize, 2), hit_test_party_portrait(r2.x + 10, r2.y + 10, party_count, screen_w));
+
+    // Hit testing outside bounds
+    try testing.expectEqual(@as(?usize, null), hit_test_party_portrait(r0.x - 5, r0.y, party_count, screen_w));
+    try testing.expectEqual(@as(?usize, null), hit_test_party_portrait(r0.x, r0.y + 50, party_count, screen_w));
+}
+
+test "P21-03: display renderer dynamically recognizes Day of the Tentacle scene themes and party actors" {
+    const testing = std.testing;
+
+    var frame = std.mem.zeroes(RenderFrame);
+
+    // 1. Colonial Workshop 1790
+    const past_scene = "Colonial Workshop";
+    @memcpy(frame.current_scene[0..past_scene.len], past_scene);
+    frame.current_scene_len = past_scene.len;
+    try testing.expectEqualStrings("Colonial Workshop", frame.get_current_scene());
+
+    frame.entity_count = 3;
+    const hname = "Hoagie";
+    @memcpy(frame.entities[0].name[0..hname.len], hname);
+    frame.entities[0].name_len = hname.len;
+    frame.entities[0].entity = EntityId.from_int(10);
+
+    const wname = "Washington";
+    @memcpy(frame.entities[1].name[0..wname.len], wname);
+    frame.entities[1].name_len = wname.len;
+    frame.entities[1].entity = EntityId.from_int(11);
+
+    const bname = "BetsyRoss";
+    @memcpy(frame.entities[2].name[0..bname.len], bname);
+    frame.entities[2].name_len = bname.len;
+    frame.entities[2].entity = EntityId.from_int(12);
+
+    frame.party_count = 3;
+    @memcpy(frame.party[0].name[0..hname.len], hname);
+    frame.party[0].name_len = hname.len;
+    frame.party[0].entity = EntityId.from_int(10);
+    frame.party[0].is_active = true;
+
+    frame.dott_battery_charged = true;
+    frame.dott_tree_chopped = true;
+    frame.dott_flag_sewn = true;
+
+    var win = try DisplayWindow.init("DOTT Renderer Test", 1280, 720);
+    defer win.deinit();
+
+    win.render_frame(&frame, false);
+
+    // 2. Motel Lobby 1993
+    const pres_scene = "Motel Lobby";
+    @memcpy(frame.current_scene[0..pres_scene.len], pres_scene);
+    frame.current_scene_len = pres_scene.len;
+    const ber_name = "Bernard";
+    @memcpy(frame.entities[0].name[0..ber_name.len], ber_name);
+    frame.entities[0].name_len = ber_name.len;
+
+    win.render_frame(&frame, false);
+
+    // 3. Dystopian Guard Post 2193
+    const fut_scene = "Dystopian Guard Post";
+    @memcpy(frame.current_scene[0..fut_scene.len], fut_scene);
+    frame.current_scene_len = fut_scene.len;
+    const lav_name = "Laverne";
+    @memcpy(frame.entities[0].name[0..lav_name.len], lav_name);
+    frame.entities[0].name_len = lav_name.len;
+    const tent_name = "PurpleTentacle";
+    @memcpy(frame.entities[1].name[0..tent_name.len], tent_name);
+    frame.entities[1].name_len = tent_name.len;
+
+    frame.dott_laverne_disguised = true;
+    win.render_frame(&frame, false);
 }
 

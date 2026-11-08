@@ -407,23 +407,25 @@
         {
           "id": "visual-standoff-layout",
           "title": "Actor Standoff Separation & Non-Overlapping Labels",
-          "summary": "Automated 60px horizontal separation and vertically staggered elevations prevent multi-actor text collision.",
-          "synopsis": "pub fn get_entity_screen_layout(idx: usize, entities: []const RenderEntity, w: i32, h: i32) EntityScreenLayout",
-          "tags": ["layout", "standoff", "rendering", "labels"],
-          "what": "Solves the visual crowding problem when multiple actors occupy the exact same waypoint or stage mark by applying horizontal standoff spacing and alternating vertical label heights.",
+          "summary": "Automated 60px horizontal separation, priority-based 2D text layout solver, and standardized scale hierarchy prevent label collision.",
+          "synopsis": "pub const TextLayoutResolver = text_layout.TextLayoutResolver;\npub fn get_entity_screen_layout(idx: usize, entities: []const RenderEntity, w: i32, h: i32) EntityScreenLayout",
+          "tags": ["layout", "standoff", "rendering", "labels", "collision-avoidance"],
+          "what": "Solves the visual crowding problem when multiple actors occupy the exact same waypoint or proximate stage marks by combining actor horizontal standoff spacing with a centralized 2D collision-avoidance label layout engine.",
           "how": [
-            "get_entity_screen_layout groups entities within 32 pixels into a spatial cluster.",
-            "Two co-located actors stand 60px apart (offsets -30px and +30px from the center).",
-            "Actor names stagger vertically: Rank 0 sits at -16px, Rank 1 sits higher at -32px.",
-            "Actor status tags stagger vertically: Rank 0 sits at +4px, Rank 1 sits lower at +18px.",
-            "Stage mark prompts shift +34px downward when actors occupy the mark, clearing all actor tags."
+            "get_entity_screen_layout groups entities within 32 pixels into a spatial cluster and spreads them horizontally by ±30px.",
+            "TextLayoutResolver collects all floating in-world labels (actor names, status badges, waypoint names, hotspot prompts) and registers actor and waypoint tokens as physical obstacles.",
+            "Labels are sorted and placed in descending priority order (hover tooltips = 10, actor alerts = 9, actor names = 8, actor statuses = 7, waypoints = 6/2, props = 1).",
+            "Actor names use font scale 2 above tokens; actor status badges use font scale 1 below tokens, cutting width by 50% to establish a clean visual hierarchy.",
+            "Contested labels automatically stagger downward across vertical tiers (Tiers 1-3) or flip above, while idle waypoint names yield to preserve legibility without hiding the physical ground mark."
           ],
-          "why": "In theater and adventure scenes (e.g. Guybrush and Organiser at the Starting Line), actors frequently gather at the same mark. Drawing labels at fixed coordinates produces illegible text overlap. Staggered elevation gives every string a dedicated slot.",
+          "why": "In theater and adventure scenes (e.g. Guybrush and Organiser at the Starting Line, or George and Billy Goat at Lochmarne), actors frequently gather at proximate marks. Drawing labels at fixed coordinates produces illegible text overlap. Centralized collision resolution guarantees every string a legible, collision-free slot.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-008", "target": "docs/DECISIONS.md#d-008", "kind": "decision"},
             {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
-            {"label": "Layout Stagger Implementation", "target": "src/display/renderer.zig", "kind": "source"}
+            {"label": "Architectural Decision D-024", "target": "docs/DECISIONS.md#d-024", "kind": "decision"},
+            {"label": "Text Layout Resolver Implementation", "target": "src/display/text_layout.zig", "kind": "source"},
+            {"label": "Display Window Integration", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["asynchronous-motor-intents", "stageplay-taxonomy"]
         },
@@ -657,6 +659,54 @@
             {"label": "GK3 Scene Renderer & Actor Tokens", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["stageplay-taxonomy", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
+        },
+        {
+          "id": "broken-sword-goat-puzzle-scenario",
+          "title": "The Broken Sword Lochmarne Goat Scenario",
+          "summary": "Authentic 1996 threat-radius reactive interrupt, 30-tick retreat recovery window, plough obstacle dragging, and subterranean crypt multi-scene transition.",
+          "synopsis": "zig build run -- --goat [--headless]",
+          "tags": ["goat", "broken-sword", "threat-radius", "timing-window", "multi-scene"],
+          "what": "Implements the famous 1996 Lochmarne Castle courtyard puzzle, modeling goat proximity charging, knockback interrupts, dynamic 30-tick retreat recovery windows, plough dragging to trap the tether rope, and subterranean Templar excavation crypt transitions.",
+          "how": [
+            "Approaching Peagram's cellar pit triggers the goat's proximity charge cue, knocking George back and asserting a 30-tick GoatRetreating fact.",
+            "Interacting with the heavy farm plough during the retreat window hauls it into the rope line, tangling the goat and clearing the pit.",
+            "Descending the excavation ladder transitions simulation state from the Lochmarne Castle ruins courtyard into the subterranean Templar crypt.",
+            "Renders authentic Irish courtyard ruins with dynamic rope lines, Celtic whistle audio, and Templar altar reliefs."
+          ],
+          "why": "Demonstrates that BeSpoke's relational fact engine and fiber scheduler solve notoriously frustrating timing puzzles deterministically with discrete ticks, eliminating real-time frame rate dependencies while preserving authentic narrative pacing.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-023", "target": "docs/DECISIONS.md#d-023", "kind": "decision"},
+            {"label": "Broken Sword Goat Scenario Script", "target": "src/goat_puzzle.zig", "kind": "source"},
+            {"label": "Lochmarne Courtyard & Crypt Renderer", "target": "src/display/renderer.zig", "kind": "source"},
+            {"label": "Celtic Whistle Audio Synthesis", "target": "src/audio.zig", "kind": "source"}
+          ],
+          "related": ["cue-dispatch-and-interruption", "ttl-expiration-triggers", "multi-scene-transitions-spatial-partitioning", "peripheral-audio-and-procedural-synthesizer"]
+        },
+        {
+          "id": "day-of-the-tentacle-scenario",
+          "title": "Day of the Tentacle Multi-Character Temporal Scenario",
+          "summary": "Multi-character party switching, generalized inventory transfers across actors, epistemic dialogue belief pruning, and DAG temporal causality cascades across 400 years.",
+          "synopsis": "zig build run -- --dott [--headless]",
+          "tags": ["dott", "multi-party", "item-transfer", "epistemic-dialogue", "temporal-causality", "time-travel"],
+          "what": "Implements the three-era Day of the Tentacle puzzle milestone across 1790 Colonial, 1993 Motel, and 2193 Future scenes with three coordinated protagonists (Hoagie, Bernard, Laverne).",
+          "how": [
+            "Tracks party coordination via party array and active_character, rendering top HUD character portrait buttons for instant protagonist switching.",
+            "Executes generalized inventory item transfer (World.transfer_item) via atomic relational swaps, enforcing matter conservation without pointer manipulation.",
+            "Evaluates NPC dialogue options through epistemic belief facts (Believes, Knows, Rejects), pruning Persuade choices dynamically until supporting evidence is established.",
+            "Enforces strict past-to-future DAG causality cascades where past physical modifications (painting trees, sealing wine in time capsules, altering flag designs) instantaneously project forward across present and future eras."
+          ],
+          "why": "Demonstrates that BeSpoke's relational fact engine, fiber scheduler, and discrete tick clock natively support non-linear multi-protagonist agency and historical causality without paradoxical state duplication or ad-hoc temporal flags.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-025", "target": "docs/DECISIONS.md#d-025", "kind": "decision"},
+            {"label": "World Item Transfer", "target": "src/world.zig", "kind": "source"},
+            {"label": "Epistemic Dialogue Belief Resolver", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Spatial Transfer Policy", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "Day of the Tentacle Puzzle Scenario", "target": "src/dott_puzzle.zig", "kind": "source"},
+            {"label": "Display Party Portraits & Backdrops", "target": "src/display/renderer.zig", "kind": "source"}
+          ],
+          "related": ["snapshot-time-travel", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
         }
       ]
     },

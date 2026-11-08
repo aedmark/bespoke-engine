@@ -91,6 +91,11 @@ pub const SoundEffectKind = enum(u8) {
     dialogue_blip,
     click,
     whistle,
+    goat_bleat,
+    thud,
+    toilet_flush,
+    snip_shears,
+    wood_chop,
 };
 
 /// Procedural background musical accompaniment tracks for narrative scenes (P16-03, D-019).
@@ -104,6 +109,8 @@ pub const MusicTrackKind = enum(u8) {
     scumm_bar,
     courtyard,
     bike_shop,
+    lochmarne,
+    tentacle,
 };
 
 /// Decoupled audio event queued by simulation or GUI and consumed by audio thread.
@@ -333,6 +340,48 @@ pub fn get_track_pattern(track: MusicTrackKind) BgmPattern {
                 1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
             };
         },
+
+        // Lochmarne Castle & Templar Crypt: Lively Celtic whistle jig in 6/8 time (P20-03, D-023)
+        .lochmarne => {
+            p.bpm = 126;
+            p.bass_notes = [BGM_STEPS]u8{
+                43, 0, 50, 43, 0, 50, 41, 0, 48, 43, 0, 50, 43, 0, 50, 41,
+                43, 0, 50, 43, 0, 50, 45, 0, 52, 43, 0, 50, 43, 0, 0,  0,
+            };
+            p.lead_notes = [BGM_STEPS]u8{
+                71, 74, 76, 79, 76, 74, 76, 74, 71, 69, 71, 74, 71, 0, 0,  0,
+                71, 74, 76, 79, 81, 79, 76, 74, 76, 74, 71, 69, 71, 0, 0,  0,
+            };
+            p.chord_notes = [BGM_STEPS]u8{
+                0, 55, 59, 0, 55, 59, 0, 53, 57, 0, 55, 59, 0, 55, 59, 0,
+                0, 55, 59, 0, 55, 59, 0, 57, 60, 0, 55, 59, 0, 55, 59, 0,
+            };
+            p.drum_pattern = [BGM_STEPS]u8{
+                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 3, 3,
+                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 1, 2,
+            };
+        },
+
+        // Day of the Tentacle Trio: Quirky cartoon march with bouncy bass and syncopated lead (P21-03, D-025)
+        .tentacle => {
+            p.bpm = 132;
+            p.bass_notes = [BGM_STEPS]u8{
+                36, 0, 48, 0, 39, 0, 51, 0, 41, 0, 53, 0, 43, 0, 55, 0,
+                36, 0, 48, 0, 39, 0, 51, 0, 44, 0, 56, 0, 43, 0, 41, 0,
+            };
+            p.lead_notes = [BGM_STEPS]u8{
+                60, 63, 67, 72, 70, 67, 63, 60, 65, 68, 72, 75, 72, 0, 0, 0,
+                60, 63, 67, 72, 75, 74, 72, 70, 72, 70, 67, 63, 60, 0, 0, 0,
+            };
+            p.chord_notes = [BGM_STEPS]u8{
+                0, 48, 51, 0, 48, 51, 0, 51, 55, 0, 53, 56, 0, 55, 58, 0,
+                0, 48, 51, 0, 48, 51, 0, 56, 60, 0, 55, 58, 0, 53, 56, 0,
+            };
+            p.drum_pattern = [BGM_STEPS]u8{
+                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 1, 2, 2,
+                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 2, 3, 1,
+            };
+        },
     }
 
     return p;
@@ -526,6 +575,49 @@ pub const ChiptuneSynth = struct {
                 v.env_level = 22000;
                 v.env_decay = 2;
                 v.samples_left = 11000;
+            },
+            .goat_bleat => {
+                // Dual saw-wave bleating voice with rapid vibrato modulation (P20-03, D-023)
+                v.phase_inc1 = midi_to_phase_inc(60); // C4
+                v.phase_inc2 = midi_to_phase_inc(63); // Eb4
+                v.duty = 0x60000000;
+                v.pitch_sweep = 150;
+                v.env_level = 30000;
+                v.env_decay = 3;
+                v.samples_left = 9000; // ~200 ms
+                v.step_samples_left = 1200;
+            },
+            .thud => {
+                // Heavy percussive headbutt impact with rapid pitch drop (P20-03, D-023)
+                v.phase_inc1 = midi_to_phase_inc(40); // E2
+                v.pitch_sweep = -1800;
+                v.env_level = 32000;
+                v.env_decay = 20;
+                v.samples_left = 1600; // ~36 ms
+            },
+            .toilet_flush => {
+                // Downward swirling resonant flush with noise and pitch glide (P21-03, D-025)
+                v.phase_inc1 = midi_to_phase_inc(64);
+                v.pitch_sweep = -120;
+                v.env_level = 28000;
+                v.env_decay = 2;
+                v.samples_left = 18000; // ~400 ms
+            },
+            .snip_shears => {
+                // Sharp metallic snip sound for Betsy Ross cutting cloth (P21-03, D-025)
+                v.phase_inc1 = midi_to_phase_inc(84);
+                v.pitch_sweep = -1200;
+                v.env_level = 26000;
+                v.env_decay = 18;
+                v.samples_left = 2200; // ~50 ms
+            },
+            .wood_chop => {
+                // Heavy wooden axe thud on timber for George Washington (P21-03, D-025)
+                v.phase_inc1 = midi_to_phase_inc(36);
+                v.pitch_sweep = -2200;
+                v.env_level = 32000;
+                v.env_decay = 24;
+                v.samples_left = 2000; // ~45 ms
             },
         }
     }
@@ -754,6 +846,38 @@ pub const ChiptuneSynth = struct {
                     .whistle => {
                         voice_out = eval_triangle(v.phase1);
                     },
+                    .goat_bleat => {
+                        if (v.step_samples_left == 0) {
+                            v.step ^= 1;
+                            v.step_samples_left = 1200;
+                            v.phase_inc1 = if (v.step == 0) midi_to_phase_inc(60) else midi_to_phase_inc(63);
+                        } else {
+                            v.step_samples_left -= 1;
+                        }
+                        const saw = eval_sawtooth(v.phase1);
+                        const pulse = eval_pulse(v.phase2, v.duty);
+                        voice_out = (@as(i32, saw) + @as(i32, pulse)) >> 1;
+                    },
+                    .thud => {
+                        const noise = eval_noise(&self.rng_state);
+                        const tri = eval_triangle(v.phase1);
+                        voice_out = (@as(i32, noise) + @as(i32, tri) * 3) >> 2;
+                    },
+                    .toilet_flush => {
+                        const noise = eval_noise(&self.rng_state);
+                        const saw = eval_sawtooth(v.phase1);
+                        voice_out = (@as(i32, noise) + @as(i32, saw)) >> 1;
+                    },
+                    .snip_shears => {
+                        const pulse = eval_pulse(v.phase1, 0x40000000);
+                        const noise = eval_noise(&self.rng_state);
+                        voice_out = (@as(i32, pulse) + @as(i32, noise)) >> 1;
+                    },
+                    .wood_chop => {
+                        const noise = eval_noise(&self.rng_state);
+                        const tri = eval_triangle(v.phase1);
+                        voice_out = (@as(i32, noise) * 2 + @as(i32, tri) * 2) >> 2;
+                    },
                 }
 
                 // Envelope and volume scaling
@@ -890,6 +1014,20 @@ pub const AudioBridge = struct {
             std.mem.indexOf(u8, scene_name, "Rental") != null)
         {
             return .bike_shop;
+        } else if (std.mem.indexOf(u8, scene_name, "Lochmarne") != null or
+            std.mem.indexOf(u8, scene_name, "Goat") != null or
+            std.mem.indexOf(u8, scene_name, "Crypt") != null or
+            std.mem.indexOf(u8, scene_name, "Templar") != null)
+        {
+            return .lochmarne;
+        } else if (std.mem.indexOf(u8, scene_name, "Colonial") != null or
+            std.mem.indexOf(u8, scene_name, "Motel") != null or
+            std.mem.indexOf(u8, scene_name, "Dystopia") != null or
+            std.mem.indexOf(u8, scene_name, "Tentacle") != null or
+            std.mem.indexOf(u8, scene_name, "Dott") != null or
+            std.mem.indexOf(u8, scene_name, "Chrono") != null)
+        {
+            return .tentacle;
         }
 
         return .tavern;

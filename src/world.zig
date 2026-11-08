@@ -319,6 +319,33 @@ pub const World = struct {
         return removed;
     }
 
+    /// Generalized item ownership transfer between two entities (P21-01, D-025).
+    /// Executes an atomic relational swap: forgets ownership from sender and remembers for recipient.
+    /// Supports InInventory and Carries relations, preserving zero-overhead matter conservation.
+    pub fn transfer_item(
+        self: *World,
+        item: EntityId,
+        from: EntityId,
+        to: EntityId,
+    ) !bool {
+        var transferred = false;
+        if (self.lookup_relation("InInventory")) |inv_rel| {
+            if (self.has_fact(from, inv_rel, item.to_int())) {
+                _ = self.forget(from, inv_rel, item.to_int());
+                _ = try self.remember(to, inv_rel, item.to_int(), 0);
+                transferred = true;
+            }
+        }
+        if (self.lookup_relation("Carries")) |carr_rel| {
+            if (self.has_fact(from, carr_rel, item.to_int())) {
+                _ = self.forget(from, carr_rel, item.to_int());
+                _ = try self.remember(to, carr_rel, item.to_int(), 0);
+                transferred = true;
+            }
+        }
+        return transferred;
+    }
+
     /// Advances the simulation clock by 1 tick and prunes expired facts (P1-02).
     /// Returns the number of pruned facts.
     pub fn step_tick(self: *World) usize {
@@ -955,4 +982,32 @@ test "P8-01: multi-clause relational pattern matcher and variable join queries" 
         },
     };
     try testing.expect(!world.has_multi_match(&clauses_cellar));
+}
+
+test "P21-01: transfer_item atomic relational swap and conservation of matter" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const hoagie = try world.intern_entity("Hoagie");
+    const bernard = try world.intern_entity("Bernard");
+    const wine = try world.intern_entity("VintageWine");
+    const carries = try world.intern_relation("Carries", .set);
+
+    // Initially, Bernard possesses the wine
+    _ = try world.remember(bernard, carries, wine.to_int(), 0);
+    try testing.expect(world.has_fact(bernard, carries, wine.to_int()));
+    try testing.expect(!world.has_fact(hoagie, carries, wine.to_int()));
+
+    // Transfer wine from Bernard to Hoagie
+    const ok = try world.transfer_item(wine, bernard, hoagie);
+    try testing.expect(ok);
+
+    // Bernard no longer carries wine; Hoagie now carries wine
+    try testing.expect(!world.has_fact(bernard, carries, wine.to_int()));
+    try testing.expect(world.has_fact(hoagie, carries, wine.to_int()));
+
+    // Attempting to transfer wine from Bernard again fails because Bernard does not possess it
+    const ok2 = try world.transfer_item(wine, bernard, hoagie);
+    try testing.expect(!ok2);
 }

@@ -160,3 +160,92 @@ Goal: Compile BeSpoke Engine to WebAssembly using Zig's cross-compilation toolch
 - [x] P19-02 Browser event bridge mapping mouse, keyboard, and touch events to BeSpoke motor and dialogue intents. (D-008, D-022; completed 2026-11-08, verified via `zig test src/wasm.zig`)
 - [x] P19-03 Interactive embedded manual simulator hosting live BeSpoke vertical slices inside `docs/manual.html`. (D-001, D-011, D-022; completed 2026-11-08, verified via `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check` and `python3 -m unittest discover -s tests -v`)
 
+## Phase 20: The Broken Sword Lochmarne Goat Puzzle Scenario
+
+Goal: Implement the complete *Broken Sword: The Shadow of the Templars* Lochmarne Goat vertical slice in `src/goat_puzzle.zig`, authentic 1996 reactive charge/retreat timing windows, custom visual backdrops (Castle Courtyard and Subterranean Templar Dig), procedural Celtic whistle and goat bleat audio, and dual headless/interactive CLI modes with time-travel rewind.
+
+- [x] P20-01 Full Broken Sword goat puzzle script implementation in BeSpoke DSL (`src/goat_puzzle.zig`): Irish castle courtyard scene, cellar entrance pit, tethered Billy Goat, farm plough, reactive threat-radius charge interrupt, knockback, 30-tick retreat action window, plough dragging, rope tangling, and cellar descent transition to the Templar crypt. (D-001, D-004, D-010, D-012, D-014, D-023; completed 2026-11-08, verified via `zig test -lc -lSDL2 src/goat_puzzle.zig`)
+- [x] P20-02 Visual backdrops for Lochmarne Castle Courtyard and Subterranean Templar Dig Crypt, with custom actor tokens (George Stobbart in jacket and Billy Goat with horns/beard) in `src/display/renderer.zig`. (D-008, D-009, D-012, D-014, D-023; completed 2026-11-08, verified via `zig test -lc -lSDL2 src/display.zig`)
+- [x] P20-03 CLI options `--goat`, `--broken-sword` in `src/main.zig`, procedural Celtic whistle melody and goat bleat/thud SFX in `src/audio.zig`, end-to-end headless simulation verification with rewind, and 3x documentation manual update. (D-001, D-008, D-011, D-019, D-023; completed 2026-11-08, verified via `zig build run -- --goat --headless`, `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check`, and `python3 tools/check_docs.py`)
+
+## Phase 21: Multi-Character Party Coordination, Generalized Item Transfer, and Temporal Epistemic Dialogue ("Day of the Tentacle Trio")
+
+Goal: Support multi-protagonist party management with active player switching, generalized party inventory transfer across actors (`transfer_item`), epistemological dialogue belief evaluation, forward-propagating temporal causality cascades, and the complete three-era Day of the Tentacle puzzle scenario (*The Chrono-Mansion Trio*).
+
+- [x] P21-01 Multi-character party coordination, active protagonist switching (`party: []EntityId`, `active_character`, `switch_actor`), and generalized inventory item transfer (`transfer_item`, `give <Item> to <Actor>`) with remote/colocated policies and party portrait HUD. (D-001, D-008, D-009, D-025; completed 2026-11-08, verified via `zig test src/world.zig`, `zig test src/spatial.zig`, and `zig test -lc -lSDL2 src/display.zig`)
+- [x] P21-02 Epistemological dialogue belief evaluation (`D-015`, `D-017` extension) where NPCs evaluate choices against active entity beliefs/knowledge facts, combined with forward-propagating temporal causality cascades (strict DAG past-to-future projection) and container duration catalysts. (D-003, D-010, D-014, D-015, D-017, D-025; completed 2026-11-08, verified via `zig test src/vm.zig`)
+- [x] P21-03 The Day of the Tentacle three-era milestone scenario implementation (`src/dott_puzzle.zig`, `--dott` / `--tentacle`): 1790 (Colonial), 1993 (Motel), 2193 (Future Dystopia), complete parallel puzzle DAG (Wine/Capsule/Vinegar, Super Battery, Kumquat/Cherry Tree, Tentacle Flag disguise), visual backdrops, actor tokens, procedural audio, and headless/interactive verification with time-travel rewind. (D-001, D-008, D-011, D-019, D-025; completed 2026-11-08, verified via `zig test -lc -lSDL2 src/dott_puzzle.zig`, `zig build run -- --dott --headless`, and `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check`)
+
+## Phase 22: The Loom Musical Weaver System & Pitch-Based Spellcraft
+
+Goal: Implement musical draft spellcasting inspired by *Loom* (1990), where the protagonist weaves 4-note musical drafts on a distaff, learning tunes from environmental observations, playing drafts in reverse for complementary effects, and triggering procedural synthesizer audio.
+
+- [ ] P22-01 Language grammar and bytecode primitives for musical drafts (`draft <Name>(<n1>, <n2>, <n3>, <n4>)` and `weave <Draft> on <Target>`), with reversible draft inversion semantics.
+- [ ] P22-02 Procedural synthesizer integration in `src/audio.zig`, rendering discrete pitches (C, D, E, F, G, A, B) directly to audio output upon player note input, and distaff staff HUD in `src/display/renderer.zig`.
+- [ ] P22-03 The Loom Sanctuary vertical slice scenario (`src/loom_puzzle.zig`, `--loom`): Sanctuary of the Guild of Weavers, spinning wheel, flask of dye, owl flock, draft discovery (`Opening`, `Dyeing`, `Twisting`), retro-draft inversion, and dual headless/interactive verification.
+
+## Phase 23: The Caustic Grog Sprint & Container Degradation Cascades
+
+Goal: Model dynamic physical container degradation cascades inspired by *The Secret of Monkey Island* (1990), where caustic grog eats through pewter mugs across tick-based TTL expiration cascades, requiring rapid item-to-item transfers while navigating spatial waypoints.
+
+- [ ] P23-01 Container durability and caustic corrosion mechanics in `World`, modeling progressive container states (`PewterMug`, `CorrodedMug`, `MeltingMug`, `PuddleOfSlag`) via cascading relational timers.
+- [ ] P23-02 Rapid in-hand pouring interactions (`Uses(Player, MeltingMug, FreshMug)`), resetting degradation timers while preserving liquid volume, with spill penalties on waypoint transit delays.
+- [ ] P23-03 The Melee Island Prison Break vertical slice scenario (`src/grog_puzzle.zig`, `--grog`): SCUMM Bar kitchen barrel to Otis's cell lock, multi-mug sprint, audio sizzle SFX, and dual headless/interactive verification with time-travel rewind.
+
+## Phase 24: Multi-Path Divergence & Structural Route Pruning
+
+Goal: Implement structural multi-path narrative divergence inspired by *Indiana Jones and the Fate of Atlantis* (1992), where choosing an operational approach (Wits, Fists, Team) prunes incompatible puzzle DAG branches, alters spatial topology, and adjusts dialogue dynamics.
+
+- [ ] P24-01 DSL stageplay path declarations (`path Wits:`, `path Fists:`, `path Team:`) and VM route-pruning engine, asserting path-locked facts and muting alternative branch routines.
+- [ ] P24-02 Dynamic spatial topology and puzzle mutation: adjusting waypoint locks, obstacle rules, and NPC dialogue repertoires dynamically based on active path selection.
+- [ ] P24-03 The Fate of Atlantis Algiers vertical slice scenario (`src/atlantis_puzzle.zig`, `--atlantis`): Omar's bazaar, three distinct solutions to acquire the lost dialogue manuscript, path selector UI, and dual headless/interactive verification.
+
+## Phase 25: Discrete Tilemaps, Environmental Hazards, and Cellular Automata
+
+Goal: Complement the waypoint navigation graph with an optional discrete 2D grid subsystem (`Q-001`), supporting systemic environmental propagation such as fire spreading across dry terrain, liquid flooding, and line-of-sight stealth detection.
+
+- [ ] P25-01 Discrete 2D grid data structure and spatial overlay in `SpatialSystem`, mapping grid coordinates to room topologies with configurable cell attributes (flammable, liquid, blocking).
+- [ ] P25-02 Tick-based cellular automata rules evaluated in engine spine: fire spreading, smoke dissipation, water flow, and reactive interrupts on actors traversing hazardous cells.
+- [ ] P25-03 The Castle Fire Escape systemic scenario (`src/grid_puzzle.zig`, `--grid`): flammable tapestry, torch ignition, fire propagation, bucket dousing, and dual headless/interactive verification.
+
+## Phase 26: Hybrid Text Parser & Natural Language Input
+
+Goal: Provide a classic text-command interface (in the style of Infocom and Sierra SCI) that tokenizes natural language commands (`> examine desk`, `> pour grog into mug`, `> ask washington about cherry tree`) and maps them directly to BeSpoke VM cues alongside mouse verbs.
+
+- [ ] P26-01 Command lexer and vocabulary tokenizer supporting verbs, prepositions (`with`, `on`, `to`, `about`), articles, and entity alias resolution against active scene scope.
+- [ ] P26-02 Text parser dispatcher mapping recognized sentence structures to BeSpoke cues (`LooksAt`, `Uses`, `TalksTo`, `WalksTo`), with descriptive disambiguation queries when targets are ambiguous.
+- [ ] P26-03 In-engine text parser console bar in `DisplayWindow`, with command history (`Up`/`Down` arrows), inline autocompletion, and dual headless/interactive test verification.
+
+## Phase 27: In-Engine Dialogue & State DAG Visualizer
+
+Goal: Build an interactive visual debugging overlay rendering live relational state graphs, NPC belief networks, cooperative fiber execution stacks, and dialogue choice availability DAGs.
+
+- [ ] P27-01 Real-time relational fact and belief network graph renderer in `DisplayWindow`, drawing nodes (entities) and directed edges (relations, beliefs) with color-coded TTL states.
+- [ ] P27-02 Dialogue branch and causality DAG inspector, highlighting active dialogue choices, pruned branches with failed guards, and forward-projecting temporal cascades.
+- [ ] P27-03 Interactive graph navigation, filtering by entity or relation kind, and integration into the existing `[P]` Pause / Save drawer and WebAssembly manual viewer.
+
+## Phase 28: Music Macro Language (MML) Scripting & In-DSL Chiptune Composition
+
+Goal: Enable game authors to compose procedural background melodies, arpeggios, and action sound effects directly within `.bespoke` scripts using standard Music Macro Language (MML) notation.
+
+- [ ] P28-01 MML text parser in compiler front-end converting MML score strings (tempo, octave, note lengths, volume envelopes) into procedural synthesizer bytecode chunks.
+- [ ] P28-02 Multi-channel MML track execution in `src/audio.zig`, supporting 4 simultaneous tracks (Lead, Bass, Chords, Percussion) with cross-channel synchronization and loop points.
+- [ ] P28-03 DSL syntax integration (`score <TrackName>: "t120 o4 l8 cdef e2"`) with dynamic track triggering on scene transitions and narrative dramatic shifts.
+
+## Phase 29: Standalone Game Project Boilerplate & Authoring Starter Kit
+
+Goal: Package an independent project boilerplate, scaffolding CLI (`bespoke init <project_name>`), and authoring starter kit for developers building standalone narrative games with BeSpoke.
+
+- [ ] P29-01 CLI scaffolding generator (`bespoke init <name>`), producing a clean project directory with `build.zig`, sample scenario scripts, custom actor configs, and test harness.
+- [ ] P29-02 Comprehensive authoring guide and API documentation in `docs/` and `scheme/bespoke.manual.json`, walking through creating custom scenes, dialogues, and reactive puzzles.
+- [ ] P29-03 Reference starter game template with verified unit test suites, asset bundling, and reproducible build pipelines across Linux, Windows, macOS, and WebAssembly.
+
+## Phase 30: Interactive Web Showcase & Neocities Release
+
+Goal: Polish the public-facing showcase website in `site/index.html` with the complete freestanding WebAssembly runtime, hosting all scenarios in an interactive retro terminal shell.
+
+- [ ] P30-01 Enhanced retro web terminal and scenario launcher in `site/index.html`, letting visitors launch and play any BeSpoke vertical slice in browser canvas with audio.
+- [ ] P30-02 Neocities deployment pipeline and static export tooling (`tools/deploy_site.py`), optimizing WASM asset size, metadata headers, and offline caching.
+- [ ] P30-03 Interactive scenario gallery, architecture diagram embeds, and live script source viewer accompanying each playable slice.
+
+

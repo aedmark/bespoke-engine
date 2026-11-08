@@ -85,7 +85,7 @@ BeSpoke adopts [The Manifold](docs/README.md) repository memory framework and th
 | [`AGENTS.md`](AGENTS.md) | Canonical instructions and standing conventions for coding agents |
 | [`ROADMAP.md`](ROADMAP.md) | Stable-ID engineering phases and implementation tasks (`P1-01` .. `P19-03`) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Component map, data flows, invariants, and trust boundaries |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Append-only architectural decisions (`D-001` .. `D-022`) and resolved questions (`Q-001` .. `Q-003`) |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Append-only architectural decisions (`D-001` .. `D-022`), held tensions, and resolved questions (`Q-001` .. `Q-003`) |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Current project state, verification tally, and session log |
 | [`docs/TESTING.md`](docs/TESTING.md) | Verification suites, commands, and proof boundaries |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Security model, bytecode/package/save bounds verification, and reporting |

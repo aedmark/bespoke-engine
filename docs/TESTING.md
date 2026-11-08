@@ -25,6 +25,45 @@ python3 tools/check_docs.py
 zig build test
 ```
 
+Expected results live in [HANDOFF.md](HANDOFF.md)'s "Verified" table, with the date and commit they were measured on. A count written anywhere else goes stale without anyone noticing: point to HANDOFF instead.
+
+## Adding a Check
+
+- Where new checks go: unit tests belong in `test` blocks at the bottom of the relevant Zig source file (`src/world.zig`, `src/vm.zig`, `src/save.zig`, `src/wasm.zig`, etc.); documentation checks belong in `tools/check_docs.py` and `tests/test_manual.py`.
+- Assert on what happened (a fact in the arena, an entity coordinate reached, a return code or event emitted), not on words in a message: a message can mention the right word for the wrong reason.
+- Before trusting a new check, make it fail: undo the fix (only the fix) and run it. A check that passes either way proves nothing.
+
+## Runs That Vary
+
+The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discrete integer counts, and PRNG rolls (e.g. `roll 2d6`) use deterministic seedable sequences. However, when testing emergent multi-agent simulations or asynchronous peripheral integrations:
+
+- **Read the failure before blaming the code:** Say in the handoff whether a miss was engine logic, peripheral timing, or environment configuration.
+- **To test how code handles rare edge cases:** Inject the condition directly (asserting the relational fact or error state into `World`) rather than waiting for low-probability rolls to trigger it.
+- **Measure one case in isolation:** Run the specific scenario or unit test (`zig test src/world.zig`) before running the full battery.
+
+## Change-to-Check Matrix
+
+| Changed area | Minimum checks | Additional evidence |
+| --- | --- | --- |
+| Documentation only | `python3 tools/check_docs.py` | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` |
+| Relational Store (`src/world.zig`) | `zig test src/world.zig` | `zig build test` (mutation check on TTL decay or snapshot) |
+| VM, Bytecode, Compiler (`src/vm.zig`, `src/compiler/`) | `zig test src/vm.zig`, `zig test src/compiler.zig` | `zig build test`, `bespoke check scenarios/tavern_heist.bespoke` |
+| Spatial Graph (`src/spatial.zig`) | `zig test src/spatial.zig` | Waypoint pathfinding verification in headless scenarios |
+| Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification |
+| Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
+| Emergent Village (`src/village.zig`) | `zig test -lc -lSDL2 src/village.zig` | `zig build run -- --village --headless` cascade run |
+| WebAssembly Target (`src/wasm.zig`) | `zig test src/wasm.zig && zig build wasm` | Manual canvas simulator deck in `docs/manual.html` |
+| Peripheral SDL2 Display (`src/display/`) | `zig test -lc -lSDL2 src/display.zig` | Interactive GUI run verifying 60 Hz rendering and controls |
+
+## Manual Checks (Before a Release)
+
+What only a person can check, and how. Record who checked what, where, and when in HANDOFF:
+
+- Open each interactive vertical slice in desktop GUI mode (`zig build run`, `--spitting-contest`, `--gk3`, `--sword-fighting`, `--village`). Verify window scaling, 5-verb mouse cycling, and audio output.
+- Scrub backward and forward across the interactive timeline scrubber (`[<]`, `[>]`, click scrubber) and verify instant visual replay and divergent timeline truncation.
+- Toggle Pause & Save/Load drawer (`[P]`, `[F2]`, `[F3]`), save a slot, verify the 16x12 RGB332 graphical thumbnail, and load back.
+- Open `docs/manual.html` directly in a browser via `file://`; run the embedded interactive Wasm simulator deck (`#live-simulator`).
+
 ## Before Any Run
 
 1. Ensure Python 3.9+ is available for documentation checks.
@@ -35,3 +74,4 @@ zig build test
 
 - **Timer sensitivity:** Ticks are discrete integer simulation increments, not wall-clock floats. Tests must increment ticks explicitly rather than calling sleep.
 - **Snapshot validation:** Always test `restore_state` on a separate buffer to prove memory independence from the original arena.
+- **Mutation check discipline:** A mutation check must break the fix, not the test. Reverting a whole file can fail a test for an unrelated reason. Remove just the fix.

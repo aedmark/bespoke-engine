@@ -15,6 +15,8 @@ pub const runner = @import("runner.zig");
 pub const audio = @import("audio.zig");
 pub const save = @import("save.zig");
 pub const village = @import("village.zig");
+pub const goat_puzzle = @import("goat_puzzle.zig");
+pub const dott_puzzle = @import("dott_puzzle.zig");
 pub const wasm = @import("wasm.zig");
 
 pub const World = world.World;
@@ -78,5 +80,7 @@ test "root test imports all modules" {
     _ = @import("audio.zig");
     _ = @import("save.zig");
     _ = @import("village.zig");
+    _ = @import("goat_puzzle.zig");
+    _ = @import("dott_puzzle.zig");
     _ = @import("wasm.zig");
 }

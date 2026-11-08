@@ -913,6 +913,8 @@ SIMULATOR_HTML = r"""
       <button type="button" class="sim-btn" data-scenario="1">[2] Spitting Contest</button>
       <button type="button" class="sim-btn" data-scenario="2">[3] GK3 Moustache</button>
       <button type="button" class="sim-btn" data-scenario="3">[4] Living Village</button>
+      <button type="button" class="sim-btn" data-scenario="4">[5] Broken Sword Goat</button>
+      <button type="button" class="sim-btn" data-scenario="5">[6] DOTT Trio</button>
     </div>
   </div>
   <div class="sim-grid">
@@ -991,7 +993,21 @@ const SCENARIOS=[
    hotspots:[{name:'BakeryOven',x:140,y:95,text:'Warm sourdough brick oven.'}],
    actors:[{name:'Baker',x:140,y:130,tx:140,ty:130},{name:'Farmer',x:140,y:230,tx:140,ty:230},{name:'Gossip',x:305,y:180,tx:305,ty:180},{name:'Drifter',x:335,y:180,tx:335,ty:180},{name:'Sheriff',x:500,y:230,tx:500,ty:230}],
    facts:[['Drifter','Hunger','70',0],['Drifter','Gold','0',0],['Baker','Friend','Gossip',0],['Gossip','Friend','Sheriff',0]],
-   banner:'Living Village: Watch Hunger drives metabolize or press [S] for Theft -> Rumor -> Arrest cascade!'}
+   banner:'Living Village: Watch Hunger drives metabolize or press [S] for Theft -> Rumor -> Arrest cascade!'},
+  {title:'5. Broken Sword Goat Puzzle',bg:'#263028',player:'George',
+   waypoints:[{id:'CourtyardEntrance',x:120,y:200},{id:'PloughMark',x:260,y:250},{id:'TetherCenter',x:380,y:200},{id:'DigOpening',x:520,y:200}],
+   edges:[[0,1],[1,2],[2,3]],
+   hotspots:[{name:'FarmPlough',x:260,y:215,text:'Old iron farm plough.'},{name:'CellarEntrance',x:520,y:140,text:'Peagram excavation pit.'}],
+   actors:[{name:'George',x:120,y:200,tx:120,ty:200},{name:'BillyGoat',x:380,y:200,tx:380,ty:200}],
+   facts:[['BillyGoat','TetheredTo','TetherStake',0],['FarmPlough','PloughMoved','0',0]],
+   banner:'Broken Sword Goat: Threat-radius retreat window! Click CellarEntrance or press [S] to drag plough and tangle goat!'},
+  {title:'6. Day of the Tentacle Trio',bg:'#2a1830',player:'Bernard',
+   waypoints:[{id:'LobbyDesk',x:120,y:200},{id:'ChronoToilet',x:320,y:200},{id:'GuardPost',x:520,y:200}],
+   edges:[[0,1],[1,2]],
+   hotspots:[{name:'TimeCapsule',x:320,y:140,text:'Sealed time capsule aging wine into vinegar.'},{name:'TentacleFlag',x:520,y:140,text:'Betsy Ross national tentacle flag.'}],
+   actors:[{name:'Bernard',x:120,y:200,tx:120,ty:200},{name:'Hoagie',x:320,y:200,tx:320,ty:200},{name:'Laverne',x:520,y:200,tx:520,ty:200}],
+   facts:[['Bernard','Carries','VintageWine',0],['Hoagie','Carries','BatteryCasing',0],['Laverne','At','TreeBranch',0]],
+   banner:'DOTT Trio: Multi-character party! Press [S] to flush wine, age vinegar, sew flag, and free Laverne!'}
 ];
 
 let state={scenarioIdx:0,tick:0,maxTick:0,verb:'WALK',paused:false,banner:'',actors:[],facts:[],snapshots:[]};
@@ -1085,6 +1101,16 @@ function triggerCatalyst(){
     setProperty('Drifter','Hunger','80');
     stepTick();
     return;
+  }else if(state.scenarioIdx===4){
+    setProperty('BillyGoat','TangledWith','FarmPlough');
+    setProperty('FarmPlough','PloughMoved','1');
+    state.banner='Hauled heavy iron plough into rope line! Billy Goat tangled and secured!';
+  }else if(state.scenarioIdx===5){
+    setProperty('Bernard','Carries','Nothing');
+    setProperty('Laverne','Carries','Vinegar');
+    setProperty('BetsyRoss','Sews','TentacleFlag');
+    setProperty('Laverne','DisguisedAs','Tentacle');
+    state.banner='Chrono-toilet flush! Wine aged 400 years to vinegar, flag sewn into tentacle costume, Laverne disguised!';
   }
   saveSnapshot();
   render();
