@@ -29,6 +29,7 @@ DOCS = [
     "AGENTS.md", "CLAUDE.md", "README.md", "ROADMAP.md",
     "docs/README.md", "docs/ROADMAP.md", "docs/HANDOFF.md", "docs/ARCHITECTURE.md", "docs/DECISIONS.md",
     "docs/TESTING.md", "docs/SECURITY.md", "docs/CHANGELOG.md", "docs/CONTRIBUTING.md",
+    "docs/SEPARATION.md",
 ]
 # Keep in step with AGENTS.md (end of session, step 3) and HANDOFF's header.
 LOG_LIMIT = 10

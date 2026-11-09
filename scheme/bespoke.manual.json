@@ -16,7 +16,7 @@
       "Pure Zig 0.13.0",
       "Wasm32 Browser Target",
       "Zero Dependencies",
-      "Deterministic 60 Hz",
+      "Deterministic Discrete Ticks",
       "3x Documented"
     ],
     "footer": "BeSpoke Engine {{project.version}} · Engine-as-Spine Narrative Simulation · Zero External Dependencies",
@@ -178,7 +178,7 @@
           "id": "relational-joins-and-pattern-matching",
           "title": "Multi-Clause Relational Joins & Unification",
           "summary": "Evaluates conjunctive fact patterns across active simulation state with backtracking variable unification.",
-          "synopsis": "where CharmedBy(victim, _) and Carries(victim, loot)",
+          "synopsis": "when CharmedBy(listener, musician) and Carries(listener, loot):",
           "tags": ["query", "pattern-matcher", "unification"],
           "what": "Queries active relational facts using multi-clause patterns joined by 'and', binding wildcard variables (e.g. victim, loot) and returning matching entity tuples.",
           "how": [
@@ -604,7 +604,7 @@
             "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks, mouse wheel scrolling, and number keys 1-9 to trigger selections.",
             "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions."
           ],
-          "why": "Hardcoding dialogue choices in host language ladders causes script fragmentation and breaks hot-reloading and time-travel rewinds. Fact-guarded choice trees declared in DSL prune systemically based on active inventory and knowledge facts.",
+          "why": "Hardcoding dialogue choices in host language ladders causes script fragmentation and breaks time-travel rewinds. Fact-guarded choice trees declared in DSL prune systemically based on active inventory and knowledge facts.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
@@ -929,11 +929,11 @@
         },
         {
           "id": "living-village-emergent-sandbox",
-          "title": "The Living Village Emergent Sandbox",
-          "summary": "Multi-agent systemic simulation driven by physiological needs, witness detection, rumor propagation, and justice cascades.",
+          "title": "Emergent Society Simulation (The Living Village)",
+          "summary": "Core emergent society mechanic: needs-driven agents, witness detection, rumor propagation, and justice cascades, demonstrated by The Living Village proof.",
           "synopsis": "zig build run-proof -- --village [--headless] | var sim = try VillageSimulation.init(&world, &spatial); try sim.step_simulation(&world, &spatial, &vm);",
           "tags": ["emergence", "village", "drives", "rumors", "justice", "sandbox"],
-          "what": "A multi-agent systemic simulation sandbox where 6 autonomous villagers operate across a 6-building settlement driven by relational physiological needs, social ties, crime witnessing, rumor propagation, and autonomous law enforcement.",
+          "what": "An engine mechanic for unscripted social simulation. The Living Village proof themes it as 6 autonomous villagers across a 6-building settlement driven by relational physiological needs, social ties, crime witnessing, rumor propagation, and autonomous law enforcement. The simulation currently lives with that proof and hardcodes its settlement; P32-05 moves a data-driven, themeable version into the engine.",
           "how": [
             "Villager needs (Hunger, Energy, Gold, Activity) are stored as functional .property relations in World and metabolized every discrete simulation tick.",
             "Hungry villagers with gold purchase meals at the Bakery or Tavern, strengthening Friend relations; exhausted villagers walk to Cottages to sleep.",
@@ -962,7 +962,7 @@
             "WasmCanvas renders rooms, topological waypoint edges, interactive hotspots, actor tokens, bitmap font strings, a timeline scrubber bar, and the 5-verb bar into a contiguous 640x360x4 RGBA8888 byte buffer in linear memory.",
             "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 64-slot ring buffer of binary World snapshots inside a 2 MiB FixedBufferAllocator, exposing C-ABI exports (wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick).",
             "dispatch_event normalizes browser pointer_down, pointer_move, right_click, key_down, and touch events into BeSpoke walk_to motor intents, verb selection, hotspot inspection, catalyst triggers, and timeline scrubbing.",
-            "docs/manual.html embeds an interactive HTML5 Canvas Simulator Deck that hosts all 4 vertical slices (Tavern Heist, Spitting Contest, GK3 Cat Moustache, and The Living Village) with live fact inspection, REPL commands, and timeline scrubbing."
+            "docs/manual.html embeds an interactive HTML5 Canvas Simulator Deck that hosts six proofs (Tavern Heist, Spitting Contest, GK3 Cat Moustache, The Living Village, Broken Sword Goat, and Day of the Tentacle Trio) with live fact inspection, REPL commands, and timeline scrubbing."
           ],
           "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required) and lets readers test emergent vertical slices directly inside the standalone 3x developer manual.",
           "why_basis": "recorded",
@@ -1013,7 +1013,7 @@
           "tags": ["decisions", "adr", "architecture"],
           "what": "Maintains an immutable record of technical and design choices, documenting the context, trade-offs, evaluated alternatives, and consequences for every significant architectural evolution.",
           "how": [
-            "Decisions are assigned monotonically increasing IDs (D-001 through D-022).",
+            "Decisions are assigned monotonically increasing IDs (D-001 through D-031).",
             "Each decision details Context, Decision, Alternatives Considered, and Consequences.",
             "Open architectural questions are logged in the same document with permanent Q-NNN IDs until answered."
           ],

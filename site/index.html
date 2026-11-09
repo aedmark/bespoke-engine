@@ -1159,7 +1159,7 @@
       <div class="playground-header">
         <div class="playground-title-group">
           <h2>Live Simulation Viewport</h2>
-          <p>Real-time discrete simulation executing deterministic bytecode state transitions.</p>
+          <p>A JavaScript model of four proofs that mirrors the engine's ticks, facts, and rewind. The real engine runs in the manual's WebAssembly simulator (<code>docs/manual.html</code>) and in <code>bespoke-proofs</code>.</p>
         </div>
 
         <div class="scenario-tabs">
@@ -1268,8 +1268,8 @@
           <h3 class="card-title">Engine-as-Spine</h3>
           <p class="card-body">
             The VM is <code>main()</code>. It owns the master discrete tick clock, entity lifecycles, 
-            spatial topologies, and relational facts. Visuals (Raylib, Sokol, WebCanvas) are downstream, 
-            stateless peripheral display bridges.
+            spatial topologies, and relational facts. Visuals (an SDL2 desktop window or a WebAssembly canvas) are downstream, 
+            read-only peripheral display bridges.
           </p>
           <div class="code-chip">
             // Core simulation is zero-dependency Zig<br>
@@ -1315,11 +1315,12 @@
          ======================================================================== -->
     <section id="scenarios" style="margin-bottom:60px;">
       <div class="section-title-wrap">
-        <div class="section-eyebrow">Verified Simulation Testbeds</div>
-        <h2 class="section-title">Classic Adventure &amp; Systemic Vertical Slices</h2>
+        <div class="section-eyebrow">Proofs of Concept</div>
+        <h2 class="section-title">Classic Adventure &amp; Systemic Proofs</h2>
         <p class="section-desc">
-          BeSpoke proves its execution model across classic graphic adventure puzzles and unscripted multi-agent emergence: 
-          systemic stealth, environmental falling-edge triggers, multi-scene inventory crafting, and autonomous settlement simulations.
+          Nine proofs of concept drive the engine end to end, each with scripted headless assertions and a rewind check. 
+          They live in <code>proofs/</code>, depend on the engine through its public module, and build as a separate 
+          <code>bespoke-proofs</code> binary; the engine itself never imports a proof.
         </p>
       </div>
 
@@ -1327,7 +1328,7 @@
         <!-- Scenario 1: Tavern Heist -->
         <div class="scenario-card">
           <div class="scenario-info">
-            <span class="scenario-tag">Vertical Slice 01 · Systemic Emergence</span>
+            <span class="scenario-tag">Proof 01 · Systemic Emergence</span>
             <h3 class="scenario-heading">The Tavern Heist</h3>
             <p class="scenario-text">
               A classic systemic stealth scenario. A patrolling Guard holds delicious Cheese. 
@@ -1335,30 +1336,34 @@
               opportunity to swipe the cheese right under the guard's charmed nose!
             </p>
           </div>
-          <pre class="scenario-code"><code><span class="code-kw">entity</span> Guard, Bard, Cat, Cheese
+          <pre class="scenario-code"><code><span class="code-kw">scene</span> Tavern:
+  <span class="code-kw">cast</span>: Guard, Bard, Cat
+  <span class="code-kw">marks</span>: Hearth, Bar, Cellar
+
 <span class="code-kw">relation</span> Carries(holder, item)
 <span class="code-kw">relation</span> CharmedBy(listener, musician)
+<span class="code-kw">remember</span> Carries(Guard, Cheese)
 
 <span class="code-kw">routine</span> Patrol(Guard):
-  <span class="code-kw">loop</span>:
-    <span class="code-kw">walk</span> Guard <span class="code-kw">to</span> Cellar
-    <span class="code-kw">wait</span> <span class="code-num">120 ticks</span>
-    <span class="code-kw">walk</span> Guard <span class="code-kw">to</span> Hearth
-    <span class="code-kw">wait</span> <span class="code-num">120 ticks</span>
+  <span class="code-kw">walk</span> Guard <span class="code-kw">to</span> Cellar
+  <span class="code-kw">wait</span> <span class="code-num">5 ticks</span>
+  <span class="code-kw">walk</span> Guard <span class="code-kw">to</span> Hearth
 
-<span class="code-kw">on cue</span> PlayLute(Bard, target):
-  <span class="code-kw">if</span> roll <span class="code-num">2d6</span> >= <span class="code-num">8</span>:
-    <span class="code-kw">remember</span> CharmedBy(target, Bard) <span class="code-kw">for</span> <span class="code-num">180 ticks</span>
+<span class="code-kw">when</span> CharmedBy(Guard, Bard):
+  <span class="code-kw">interrupt</span> Guard <span class="code-kw">with</span>:
+    <span class="code-kw">face</span> Guard <span class="code-kw">toward</span> Bard
+    <span class="code-kw">wait</span> <span class="code-num">4 ticks</span>
 
-<span class="code-kw">on cue</span> Steal(Cat, victim) <span class="code-kw">where</span> CharmedBy(victim, _) <span class="code-kw">and</span> Carries(victim, loot):
-  <span class="code-kw">forget</span> Carries(victim, loot)
-  <span class="code-kw">remember</span> Carries(Cat, loot)</code></pre>
+<span class="code-kw">when</span> Carries(Cat, Cheese):
+  <span class="code-kw">interrupt</span> Guard <span class="code-kw">with</span>:
+    <span class="code-kw">face</span> Guard <span class="code-kw">toward</span> Cat
+    <span class="code-kw">wait</span> <span class="code-num">2 ticks</span></code></pre>
         </div>
 
         <!-- Scenario 2: Spitting Contest -->
         <div class="scenario-card">
           <div class="scenario-info">
-            <span class="scenario-tag">Vertical Slice 02 · Environmental Hooks</span>
+            <span class="scenario-tag">Proof 02 · Environmental Hooks</span>
             <h3 class="scenario-heading">Booty Island Spitting Contest</h3>
             <p class="scenario-text">
               An homage to <em>Monkey Island 2</em>. Guybrush must win the championship spit. 
@@ -1387,7 +1392,7 @@
         <!-- Scenario 3: Cat Moustache -->
         <div class="scenario-card">
           <div class="scenario-info">
-            <span class="scenario-tag">Vertical Slice 03 · Multi-Scene & Crafting</span>
+            <span class="scenario-tag">Proof 03 · Multi-Scene & Crafting</span>
             <h3 class="scenario-heading">Gabriel Knight 3: The Cat Moustache</h3>
             <p class="scenario-text">
               Jane Jensen's infamous 1999 puzzle recreated with systemic dignity. Gabriel must rent Mosely's 
@@ -1418,30 +1423,55 @@
         <!-- Scenario 4: The Living Village -->
         <div class="scenario-card">
           <div class="scenario-info">
-            <span class="scenario-tag">Vertical Slice 04 · Systemic Settlement Sandbox</span>
+            <span class="scenario-tag">Proof 04 · Core Mechanic: Emergent Society</span>
             <h3 class="scenario-heading">The Living Village</h3>
             <p class="scenario-text">
               Six autonomous villagers (<code>Sheriff</code>, <code>Baker</code>, <code>Farmer</code>, <code>Innkeeper</code>, <code>Gossip</code>, <code>Drifter</code>) 
               live across a 6-building settlement driven by continuous physiological needs (<code>Hunger</code>, <code>Energy</code>, <code>Gold</code>). 
               When starvation strikes a penniless villager, property theft, witness detection, social-graph rumor propagation, 
-              and a priority Sheriff warrant-and-arrest cascade unfold without a single scripted cutscene.
+              and a priority Sheriff warrant-and-arrest cascade unfold without a single scripted cutscene. 
+              Emergent society simulation is an engine mechanic; this village is one theme for it, and the engine 
+              version is being generalized to any roster, needs, and setting.
             </p>
           </div>
-          <pre class="scenario-code"><code><span class="code-kw">property</span> Hunger(villager, level)
-<span class="code-kw">property</span> Gold(villager, coins)
-<span class="code-kw">relation</span> StolenFrom(thief, victim)
-<span class="code-kw">relation</span> KnowsRumor(listener, suspect)
-<span class="code-kw">relation</span> WarrantFor(lawman, suspect)
+          <pre class="scenario-code"><code><span class="code-comment">// Abridged from proofs/village.zig. Drives, theft, and</span>
+<span class="code-comment">// witnesses run in Zig; the script reads their facts.</span>
+<span class="code-kw">on cue</span> TalksTo(Sheriff, Baker):
+  <span class="code-kw">choice</span> <span class="code-str">"The stolen bread?"</span> <span class="code-kw">if</span> Witnessed(Baker, Drifter):
+    <span class="code-kw">say</span> Baker: <span class="code-str">"The Drifter took it!"</span>
+    <span class="code-kw">remember</span> KnowsRumor(Sheriff, Drifter)
+  <span class="code-kw">choice</span> <span class="code-str">"Carry on, citizen."</span>:
+    <span class="code-kw">say</span> Baker: <span class="code-str">"Stay vigilant, Sheriff."</span>
 
-<span class="code-kw">when</span> StolenFrom(thief, victim) <span class="code-kw">and</span> Witnessed(witness, thief):
-  <span class="code-kw">remember</span> KnowsRumor(witness, thief)
-  <span class="code-kw">remember</span> Grudge(victim, thief) <span class="code-kw">for</span> <span class="code-num">40 ticks</span>
+<span class="code-kw">on cue</span> TalksTo(Sheriff, Gossip):
+  <span class="code-kw">choice</span> <span class="code-str">"Any rumors?"</span> <span class="code-kw">if</span> KnowsRumor(Gossip, Drifter):
+    <span class="code-kw">remember</span> KnowsRumor(Sheriff, Drifter)</code></pre>
+        </div>
 
-<span class="code-kw">when</span> KnowsRumor(Sheriff, suspect):
-  <span class="code-kw">interrupt</span> Sheriff <span class="code-kw">with</span>:
-    <span class="code-kw">remember</span> WarrantFor(Sheriff, suspect)
-    <span class="code-kw">walk</span> Sheriff <span class="code-kw">to</span> TownSquare
-    <span class="code-kw">remember</span> Arrested(suspect, Sheriff)</code></pre>
+        <!-- Proofs 05-09 -->
+        <div class="scenario-card">
+          <div class="scenario-info">
+            <span class="scenario-tag">Proofs 05 to 09 · Desktop</span>
+            <h3 class="scenario-heading">Five More Proofs</h3>
+            <p class="scenario-text">
+              <strong>Insult Sword Fighting</strong>: relational dialogue learning and mood decay.
+              <strong>Broken Sword: The Lochmarne Goat</strong>: threat-radius interrupts and a timed retreat window.
+              <strong>Day of the Tentacle Trio</strong>: party switching, conserved item transfer, cross-era causality.
+              <strong>The Middlesex Anomaly</strong>: copy-on-write tangent worlds and countdown budgets.
+              <strong>The Bell Tower</strong>: four-note musical drafts woven on a distaff, played backwards for their opposites.
+            </p>
+          </div>
+          <pre class="scenario-code"><code><span class="code-comment">// Build and run any proof</span>
+zig build run-proof -- --sword-fighting
+zig build run-proof -- --goat
+zig build run-proof -- --dott
+zig build run-proof -- --darko
+zig build run-proof -- --loom --headless
+
+<span class="code-comment">// The Bell Tower: drafts in the DSL</span>
+<span class="code-kw">draft</span> Kindle(C, D, E, C) <span class="code-kw">reverse</span> Douse
+<span class="code-kw">on cue</span> Weave(Wren, Kindle, Brazier):
+  Brazier <span class="code-kw">is</span> lit</code></pre>
         </div>
       </div>
     </section>
@@ -1548,7 +1578,7 @@
           <tr>
             <td>Who owns <code>main()</code>?</td>
             <td>Graphics pipeline &amp; frame-rate render loop</td>
-            <td><span class="badge-yes">Deterministic 60 Hz Simulation VM Spine (Pure Zig)</span></td>
+            <td><span class="badge-yes">Deterministic Discrete-Tick VM Spine (Pure Zig; display at 60 Hz)</span></td>
           </tr>
           <tr>
             <td>World State Representation</td>
@@ -1573,7 +1603,7 @@
           <tr>
             <td>Toolchain &amp; Footprint</td>
             <td>Multi-gigabyte SDKs &amp; heavy runtime scaffolding</td>
-            <td><span class="badge-yes">Sub-Millisecond Zig Compiler, Zero Dependencies</span></td>
+            <td><span class="badge-yes">Single Zig Toolchain; Zero-Dependency Core (SDL2 Only for the Desktop Window)</span></td>
           </tr>
         </tbody>
       </table>
@@ -1589,7 +1619,7 @@
       </p>
 
       <p class="footer-meta">
-        Designed &amp; by <strong>Andrew Edmark &amp; Peter Spicer</strong>.<br>
+        Designed by <strong>Andrew Edmark &amp; Peter Spicer</strong>.<br>
         Authored with care for the retro narrative storyteller in all of us.
       </p>
     </footer>

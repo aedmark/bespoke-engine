@@ -378,6 +378,18 @@ re-litigation.
 - Leaving proof content in the engine permanently: rejected; it would keep the engine's core files coupled to demo names.
 **Consequences:** Engine and proofs can evolve and be reviewed separately, and new proofs cannot leak into the engine by import. Until P32-02 to P32-04 land, engine files still name proof content (recorded under Claims vs. code in ARCHITECTURE). Commands of the form `bespoke --dott` become `bespoke-proofs --dott`.
 
+## D-032 Emergent Society Simulation Is an Engine Mechanic; The Living Village Is Its Proof (2026-11-08, status: accepted)
+**Context:** D-031 moved `village.zig` to `proofs/` with the other vertical slices. The maintainer clarified that the Living Village's emergent society simulation is a core mechanic, meant to be scalable and customizable/themeable, not only a demonstration. The current `VillageSimulation` hardcodes six named villagers, their need thresholds, and the settlement map, so it cannot serve other games as written.
+**Decision:**
+1. **Split:** A data-driven emergent society module moves into `src/` (P32-05): any roster size, configurable needs and thresholds, locations, and theme hooks supplied by the host or script. It names no villager, building, or setting.
+2. **Proof:** `proofs/village.zig` keeps The Living Village content (Sheriff, Baker, Bakery, and the rest) and becomes a client of the engine module, verifying it end to end.
+3. **Until P32-05 lands:** the simulation stays in `proofs/village.zig`. Front-facing docs present emergent society simulation as an engine feature being generalized, with The Living Village as its proof.
+This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
+**Alternatives:**
+- Move `village.zig` back to `src/` unchanged: rejected by the maintainer; it would put demo names back into the engine that D-031 is removing.
+- Leave the mechanic in `proofs/` permanently: rejected; other games could not reuse it.
+**Consequences:** The engine gains a reusable social simulation layer, and the village proof gains the same role as the other proofs. Generalizing the drives, witness, rumor, and justice systems is new design work with its own review.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

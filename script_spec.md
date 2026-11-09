@@ -28,6 +28,8 @@ on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):
   remember Carries(Cat, loot)
 ```
 
+> **Implementation note (2026-11-08):** `where` guards on `on cue` handlers are parsed but not yet evaluated by the VM, and cue parameters such as `victim` and `loot` match literal entity names rather than binding variables. `when` rule patterns and dialogue-choice `where` guards are evaluated. See Claims vs. code in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The runnable form of this slice is [`scenarios/tavern_heist.bespoke`](scenarios/tavern_heist.bespoke).
+
 ## Key Grammar Notes
 1. **`remember` / `forget`:** Declarative database mutations. `remember ... for N ticks` automatically attaches an expiration tick to the relation row, handling temporary buffs and debuffs natively.
 2. **`interrupt ... with`:** Pauses an active routine (like `Patrol`), executes the interruption behavior, and automatically restores the instruction pointer once the condition resolves.

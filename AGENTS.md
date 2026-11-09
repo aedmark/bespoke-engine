@@ -99,6 +99,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |
 | `docs/manual.html` | Standalone interactive 3x manual and developer guide |
+| `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
 | `docs/archive/` | Historical material no longer current |
 | `scheme/` | 3x manual schemas and source definitions |
 | `src/` | The engine: spine, VM, compiler, spatial, audio, display, persistence, wasm runtime; exported as the `bespoke` module |
