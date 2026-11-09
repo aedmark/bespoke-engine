@@ -931,21 +931,23 @@
           "id": "living-village-emergent-sandbox",
           "title": "Emergent Society Simulation (The Living Village)",
           "summary": "Core emergent society mechanic: needs-driven agents, witness detection, rumor propagation, and justice cascades, demonstrated by The Living Village proof.",
-          "synopsis": "zig build run-proof -- --village [--headless] | var sim = try VillageSimulation.init(&world, &spatial); try sim.step_simulation(&world, &spatial, &vm);",
+          "synopsis": "zig build run-proof -- --village [--headless] | var soc = try bespoke.society.Society.init(&world, config); _ = try bespoke.host.tick(&vm, &compiled); try soc.step(&world, &spatial, &vm);",
           "tags": ["emergence", "village", "drives", "rumors", "justice", "sandbox"],
-          "what": "An engine mechanic for unscripted social simulation. The Living Village proof themes it as 6 autonomous villagers across a 6-building settlement driven by relational physiological needs, social ties, crime witnessing, rumor propagation, and autonomous law enforcement. The simulation currently lives with that proof and hardcodes its settlement; P32-05 moves a data-driven, themeable version into the engine.",
+          "what": "An engine mechanic for unscripted social simulation (src/society.zig). A host supplies a config: a list of needs, a roster with data roles (merchant, broadcaster, enforcer) and routines, and the places the systems use. The Living Village proof is one configuration: 6 villagers across a 6-building settlement.",
           "how": [
-            "Villager needs (Hunger, Energy, Gold, Activity) are stored as functional .property relations in World and metabolized every discrete simulation tick.",
-            "Hungry villagers with gold purchase meals at the Bakery or Tavern, strengthening Friend relations; exhausted villagers walk to Cottages to sleep.",
-            "When Hunger crosses 80 with 0 Gold, desperation triggers property theft (StolenFrom(Drifter, Baker)), detected by co-located witnesses who record Witnessed, KnowsRumor, and TTL Grudge facts.",
-            "Co-located villagers propagate KnowsRumor(listener, thief) along Friend and Gossip social edges until the rumor reaches the Sheriff.",
-            "Upon learning the rumor, the Sheriff issues WarrantFor(Sheriff, thief) via a priority fiber interrupt, intercepts the suspect, records Arrested(thief, Sheriff), recovers stolen goods, and escorts the offender to SheriffsPost."
+            "Each need is a property relation with a direction, a per-tick rate, and a seek threshold, met by staying at a place (rest) or by trading with a merchant; past a critical value, a member who cannot pay steals the merchant's goods.",
+            "Each tick a member takes the first applicable branch: held, staying, decay, enforcer on duty, start a stay, desperation theft, flight, trade, broadcast, routine.",
+            "Aware members near a crime scene while the culprit is there record Witnessed, KnowsRumor, and expiring Grudge facts.",
+            "Rumors spread one hop per tick between co-located members who are friends, or when the speaker is a witness or broadcaster, or the listener is the enforcer.",
+            "The enforcer issues a warrant with a priority fiber interrupt, pursues, arrests on contact, recovers stolen goods, and escorts the culprit to the holding place. All of this is World facts, so rewind and saves cover it."
           ],
-          "why": "Demonstrates that BeSpoke Engine's flat relational fact store, property auto-overwrite, and priority interrupt spine support unscripted systemic emergence alongside classic adventure puzzles, with full time-travel scrubbing and disk save compatibility.",
+          "why": "Shows that the flat relational fact store, property auto-overwrite, and priority interrupt spine support unscripted systemic emergence for any cast and setting, with full time-travel scrubbing and disk save compatibility.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-021", "target": "docs/DECISIONS.md#d-021", "kind": "decision"},
-            {"label": "Living Village Simulation Engine", "target": "proofs/village.zig", "kind": "source"},
+            {"label": "Architectural Decision D-034", "target": "docs/DECISIONS.md#d-034", "kind": "decision"},
+            {"label": "Emergent Society Module", "target": "src/society.zig", "kind": "source"},
+            {"label": "The Living Village Proof", "target": "proofs/village.zig", "kind": "source"},
             {"label": "Settlement & Social Graph Renderer", "target": "src/display/renderer.zig", "kind": "source"},
             {"label": "Display Frame Drive & Edge Capture", "target": "src/display.zig", "kind": "source"}
           ],

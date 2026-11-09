@@ -82,7 +82,7 @@ Trap and duplication candidates found in the first survey:
 
 | Finding | Where | Proposed class |
 | --- | --- | --- |
-| `VillageSimulation`: needs, witnesses, rumors, justice | `proofs/village.zig` | Engine mechanic (P32-05) |
+| `VillageSimulation`: needs, witnesses, rumors, justice | `proofs/village.zig` | Engine mechanic (done: `src/society.zig`, P32-05) |
 | `DialogueDuelSystem`: challenge/response knowledge base, learning, mood and inquiry fatigue | `proofs/sword_fighting.zig` | Engine mechanic candidate |
 | `get_latest_say_message_since`, `execute_look_at`, `SayLog`, `act`, `tick` | dott, darko, loom | Host kit (also fixes the stale cue-index bug in HANDOFF) |
 | History, scrub, rewind, and save-action handling in each interactive loop | tavern, spitting, gk3, goat, village, loom | Host kit (interactive scaffold with proof hooks) |
@@ -188,11 +188,11 @@ These recur in most proofs and are handled once, not per proof.
 | `sync_reach` copies a property fact into `DistaffInput.reach`; any draft game needs it | `proofs/loom_puzzle.zig` | Engine mechanic (small: a `DistaffInput` helper) | P32-16 |
 | Script, layout (`configure`), `approach_wp`, `follow_scene` | `proofs/loom_puzzle.zig` | Proof content | (stays) |
 
-### Living Village (folded into P32-05)
+### Living Village (P32-05, done 2026-11-09)
 
 | Finding | Where | Class | Follow-up |
 | --- | --- | --- | --- |
-| `VillageSimulation` | `proofs/village.zig` | Engine mechanic (D-032) | P32-05 |
+| `VillageSimulation` | `proofs/village.zig` | Engine mechanic (D-032) | Done: `src/society.zig` (P32-05, D-034); the proof keeps names, map, roster tuning, and catalysts |
 | 56 hits: village map theme, social-graph HUD panel, villager tokens; drive bars and social edges in `RenderFrame` | renderer, display | Theme hook (the HUD panel can become a generic emergent-society view) | P32-02, P32-03, P32-05 |
 | Village deck and its own simulation step in wasm | `src/wasm.zig` `step_tick` | Proof content | P32-04 |
 
@@ -200,5 +200,5 @@ These recur in most proofs and are handled once, not per proof.
 
 1. **Safety net:** separation lint (P32-06) and characterization goldens (P32-07).
 2. **Audits:** one per proof (P32-08 to P32-15), completed 2026-11-09; findings above.
-3. **Extractions and fixes:** host kit (P32-16), emergent society (P32-05), dialogue duel (P32-17), arrival cues (P32-18), proof hygiene (P32-19); P32-20 and P32-21 wait on maintainer decisions.
+3. **Extractions and fixes:** host kit (P32-16, done), emergent society (P32-05, done), dialogue duel (P32-17), arrival cues (P32-18), proof hygiene (P32-19); P32-20 and P32-21 wait on maintainer decisions.
 4. **Presentation and core purge:** theme hooks (P32-02), core logic (P32-03), wasm split (P32-04). These remove most leak hits and benefit from the host kit and goldens being in place.

@@ -15,6 +15,7 @@ pub const wasm = @import("wasm.zig");
 pub const hypervisor = @import("hypervisor.zig");
 pub const draft = @import("draft.zig");
 pub const host = @import("host.zig");
+pub const society = @import("society.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -82,6 +83,7 @@ test "root test imports all modules" {
     _ = @import("vm.zig");
     _ = @import("draft.zig");
     _ = @import("host.zig");
+    _ = @import("society.zig");
     _ = @import("spatial.zig");
     _ = @import("compiler.zig");
     _ = @import("display.zig");

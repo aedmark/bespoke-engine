@@ -68,7 +68,7 @@ The language also covers dialogue choice trees, multi-scene staging, item combin
 | Language | Hand-written lexer, parser, and code generator; `bespoke check` diagnostics with line and column |
 | Spatial | Waypoint graphs, A* pathfinding, scene partitioning, hotspots, portals |
 | Narrative | Dialogue choices pruned by facts, NPC beliefs, item combining and transfer, musical drafts on a distaff |
-| Emergent society | Autonomous needs-driven agents, witnesses, rumor spread, and justice cascades over the fact store; being generalized into a scalable, themeable engine module (P32-05) |
+| Emergent society | Autonomous needs-driven agents, witnesses, rumor spread, and justice cascades over the fact store, configured per game: any roster, needs, roles, and places (`src/society.zig`) |
 | Time | Rewind and timeline scrubbing; copy-on-write tangent worlds (`TemporalHypervisor`) |
 | Peripherals | SDL2 window with verb bar and HUD, procedural chiptune audio, CRC32-checked `.sav` slots, `wasm32-freestanding` target |
 
@@ -124,7 +124,7 @@ zig build test-proofs                     # every proof's tests
 ## Known Limitations
 
 - `where` guards on `on cue` handlers are parsed but not yet evaluated (dialogue-choice `where` guards and `when` rule patterns are). Use `if` checks inside cue handlers.
-- The emergent society simulation currently lives with its proof in `proofs/village.zig` and hardcodes that settlement; P32-05 moves a data-driven version into the engine.
+- Societies are configured from Zig host code; declaring one in a script is planned (P32-22). One enforcer per society.
 - Some engine files still name proof content (renderer themes, music tracks, status flags). Removing it is planned as P32-02 to P32-04 in the [roadmap](ROADMAP.md).
 - The browser simulator embedded in the manual hosts six proofs; Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
 

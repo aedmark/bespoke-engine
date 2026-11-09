@@ -102,7 +102,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
 | `docs/archive/` | Historical material no longer current |
 | `scheme/` | 3x manual schemas and source definitions |
-| `src/` | The engine: spine, VM, compiler, spatial, audio, display, persistence, wasm runtime; exported as the `bespoke` module |
+| `src/` | The engine: spine, VM, compiler, spatial, emergent society, audio, display, persistence, wasm runtime, host kit; exported as the `bespoke` module |
 | `proofs/` | Proofs of concept (vertical slices) built as `bespoke-proofs`; consume the engine only through the `bespoke` module (D-031) |
 | `scenarios/` | Sample `.bespoke` DSL scripts run by the stock engine CLI (`bespoke run`) |
 | `site/index.html` | Standalone public showcase website for external audiences and Neocities |

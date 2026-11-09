@@ -402,6 +402,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A callback-driven `Session.run(hooks)` that owns the loop: rejected for now; proofs have very different action handling, and a host-owned loop with shared pieces is easier to read and migrate.
 **Consequences:** The DOTT and Middlesex Anomaly goldens changed in four lines: scripted dialogue the old readers dropped now appears (reviewed). DOTT, Middlesex Anomaly, and Insult Sword Fighting gain shared save actions; DOTT and Sword Fighting gain scrub and rewind; Sword Fighting now ticks at the D-028 interval instead of every frame. Interactive behaviour was verified only by offscreen launches, not by hand.
 
+## D-034 Emergent Society Module: Host Config, Data Needs, Data Roles (2026-11-09, status: accepted)
+**Context:** D-032 makes emergent society simulation an engine mechanic. P32-05 extracts it from `proofs/village.zig`, where six named villagers, their needs, their schedules, and the settlement were hardcoded. The maintainer chose (2026-11-09): host-supplied Zig configuration, an arbitrary need list, roles as data, and a byte-identical village golden.
+**Decision:**
+1. **Module:** `src/society.zig` provides `Society`, built from a `Config`: needs, a roster of members, an optional enforcer, holding and gathering waypoints, a flight route, radii, grudge durations, a currency unit, and themeable relation names. The config is copied into fixed capacities (32 members, 8 needs, 8 routine stops), so the society owns no heap memory.
+2. **Needs are data:** each need is a property relation with a direction (`worse = .high` or `.low`), a per-tick rate, a resting rate, and a seek threshold, met either by a `Stay` (go to a place and recover until a value) or a `Trade` (buy relief from a merchant, or steal it past a critical value without the price). Internally every need is compared as pressure (0 is satisfied, `max` is worst).
+3. **Roles are data:** a member may be a merchant (post and goods), a broadcaster (shares with anyone and seeks the enforcer with news), or the single enforcer (config index). Routines cycle through stops every `period` ticks, with optional work that earns currency and restocks goods.
+4. **Fixed priority:** each tick a member takes the first applicable branch: held, staying, decay, enforcer on duty, start a stay, desperation theft, flight, trade, broadcast, routine. Then witnesses, rumors (one hop per tick), and justice run for everyone.
+5. **State in facts only:** all society state is World facts, including the new `Tending` property (which stay need a member is meeting), so world snapshots, rewind, and saves cover it. The chronicle is presentation and is not part of the snapshot.
+6. **Host order:** the host ticks the VM (`host.tick`), then calls `Society.step`.
+**Alternatives:**
+- Script declarations (`society:` blocks in the DSL): deferred to P32-22; it touches the parser, compiler, and package format.
+- Fixed Hunger, Energy, and Gold drives with tunable thresholds: rejected by the maintainer; other games need other needs.
+- Host callbacks for roles and routines: rejected by the maintainer; role behaviour would stay in proof code.
+**Consequences:** The village proof is a client of the module and its golden is byte-identical. Behaviour outside the golden changed in reviewed ways: grudge expiry is now relative (the old code passed an absolute tick as a TTL, doubling it); members return to their idle activity after a meal (the Gossip and Drifter now show Socializing, not Working); an arrest without stolen goods no longer claims to recover bread; the unused `Mood` relation is gone. One enforcer per society. `RenderFrame` villager drives in `src/display.zig` still read `Hunger`, `Energy`, and `Gold` by name (P32-03), and the wasm village deck still runs its own copy (P32-04). D-032 rule 3 (the interim state) no longer applies.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has
