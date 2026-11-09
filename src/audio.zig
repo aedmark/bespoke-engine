@@ -96,7 +96,16 @@ pub const SoundEffectKind = enum(u8) {
     toilet_flush,
     snip_shears,
     wood_chop,
+    // Musical draft spellcraft (P22-02, D-029)
+    distaff_note,
+    weave_success,
+    weave_fizzle,
 };
+
+/// MIDI pitches for the seven distaff notes, indexed by `draft.Note` value (C4 to B4).
+/// Audio takes the raw degree (0 to 6) so the synthesizer stays free of simulation imports.
+pub const DISTAFF_MIDI = [7]u8{ 60, 62, 64, 65, 67, 69, 71 };
+pub const DISTAFF_NOTE_COUNT: u8 = DISTAFF_MIDI.len;
 
 /// Procedural background musical accompaniment tracks for narrative scenes (P16-03, D-019).
 pub const MusicTrackKind = enum(u8) {
@@ -116,6 +125,8 @@ pub const MusicTrackKind = enum(u8) {
 /// Decoupled audio event queued by simulation or GUI and consumed by audio thread.
 pub const AudioEvent = union(enum) {
     play_sfx: SoundEffectKind,
+    /// A distaff note by diatonic degree (0 = C .. 6 = B). Out-of-range degrees are dropped.
+    play_note: u8,
     set_bgm: MusicTrackKind,
     stop_bgm: void,
     set_master_volume: u8,
@@ -465,8 +476,22 @@ pub const ChiptuneSynth = struct {
         }
     }
 
+    /// Plays one distaff note (P22-02). Degrees outside 0..6 come from an untrusted caller
+    /// (host input or a wasm export) and are ignored rather than clamped to a wrong pitch.
+    pub fn trigger_note(self: *ChiptuneSynth, degree: u8) void {
+        if (degree >= DISTAFF_NOTE_COUNT) return;
+        const v = self.trigger_sfx_voice(.distaff_note);
+        const midi = DISTAFF_MIDI[degree];
+        v.phase_inc1 = midi_to_phase_inc(midi);
+        v.phase_inc2 = midi_to_phase_inc(midi + 12);
+    }
+
     /// Triggers an action sound effect in an available voice slot (P16-02).
     pub fn trigger_sfx(self: *ChiptuneSynth, kind: SoundEffectKind) void {
+        _ = self.trigger_sfx_voice(kind);
+    }
+
+    fn trigger_sfx_voice(self: *ChiptuneSynth, kind: SoundEffectKind) *SfxVoice {
         // Find inactive voice, or steal the voice with lowest envelope level
         var slot: usize = 0;
         var lowest_env: i32 = 32768;
@@ -619,7 +644,35 @@ pub const ChiptuneSynth = struct {
                 v.env_decay = 24;
                 v.samples_left = 2000; // ~45 ms
             },
+            .distaff_note => {
+                // Sustained plucked-string tone; trigger_note sets the pitch (P22-02, D-029)
+                v.phase_inc1 = midi_to_phase_inc(DISTAFF_MIDI[0]);
+                v.phase_inc2 = midi_to_phase_inc(DISTAFF_MIDI[0] + 12);
+                v.duty = 0x40000000;
+                v.env_level = 26000;
+                v.env_decay = 2;
+                v.samples_left = 13000; // ~300 ms
+            },
+            .weave_success => {
+                // Rising open fifth shimmer (C5 + G5) as a draft takes hold (P22-02, D-029)
+                v.phase_inc1 = midi_to_phase_inc(72);
+                v.phase_inc2 = midi_to_phase_inc(79);
+                v.pitch_sweep = 40;
+                v.env_level = 28000;
+                v.env_decay = 2;
+                v.samples_left = 14000; // ~320 ms
+            },
+            .weave_fizzle => {
+                // Falling detuned buzz as an unmatched draft unravels (P22-02, D-029)
+                v.phase_inc1 = midi_to_phase_inc(55);
+                v.phase_inc2 = midi_to_phase_inc(56);
+                v.pitch_sweep = -900;
+                v.env_level = 24000;
+                v.env_decay = 4;
+                v.samples_left = 6000; // ~135 ms
+            },
         }
+        return v;
     }
 
     /// Renders stereo 16-bit PCM samples into output buffer (interleaved L, R, L, R...).
@@ -878,6 +931,23 @@ pub const ChiptuneSynth = struct {
                         const tri = eval_triangle(v.phase1);
                         voice_out = (@as(i32, noise) * 2 + @as(i32, tri) * 2) >> 2;
                     },
+                    .distaff_note => {
+                        // Triangle body with a quiet octave pulse overtone
+                        const tri = eval_triangle(v.phase1);
+                        const over = eval_pulse(v.phase2, v.duty);
+                        voice_out = (@as(i32, tri) * 3 + @as(i32, over)) >> 2;
+                    },
+                    .weave_success => {
+                        const tri1 = eval_triangle(v.phase1);
+                        const tri2 = eval_triangle(v.phase2);
+                        voice_out = (@as(i32, tri1) + @as(i32, tri2)) >> 1;
+                    },
+                    .weave_fizzle => {
+                        const saw1 = eval_sawtooth(v.phase1);
+                        const saw2 = eval_sawtooth(v.phase2);
+                        const noise = eval_noise(&self.rng_state);
+                        voice_out = (@as(i32, saw1) + @as(i32, saw2) + @as(i32, noise)) >> 2;
+                    },
                 }
 
                 // Envelope and volume scaling
@@ -948,6 +1018,18 @@ pub const AudioBridge = struct {
             return;
         }
         self.event_queue[self.queue_head] = AudioEvent{ .play_sfx = kind };
+        self.queue_head = next;
+    }
+
+    /// Enqueues a distaff note by degree (0 = C .. 6 = B) for the audio thread (P22-02, D-019).
+    /// Shares the ring buffer and drop-when-full policy with SFX: input never blocks a tick.
+    pub fn enqueue_note(self: *AudioBridge, degree: u8) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const next = (self.queue_head + 1) % MAX_AUDIO_EVENTS;
+        if (next == self.queue_tail) return;
+        self.event_queue[self.queue_head] = AudioEvent{ .play_note = degree };
         self.queue_head = next;
     }
 
@@ -1072,6 +1154,7 @@ pub const AudioBridge = struct {
         for (pending_events[0..pending_count]) |ev| {
             switch (ev) {
                 .play_sfx => |kind| self.synth.trigger_sfx(kind),
+                .play_note => |degree| self.synth.trigger_note(degree),
                 .set_bgm => |track| self.synth.set_track(track),
                 .stop_bgm => self.synth.set_track(.none),
                 .set_master_volume => |v| self.master_volume = v,
@@ -1309,4 +1392,52 @@ test "P16-03: Music track crossfade transitions between tracks smoothly" {
 
     // Now current_track should have transitioned to cellar
     try testing.expectEqual(MusicTrackKind.cellar, synth.current_track);
+}
+
+test "P22-02: distaff notes render at distinct pitches through the bridge" {
+    // Count zero crossings over a fixed window: higher pitch, more crossings.
+    var crossings: [DISTAFF_NOTE_COUNT]usize = undefined;
+    for (0..DISTAFF_NOTE_COUNT) |deg| {
+        var bridge = AudioBridge.init();
+        bridge.enqueue_note(@intCast(deg));
+        var buf: [4096]i16 = undefined;
+        bridge.render_samples(&buf);
+        try testing.expect(bridge.synth.sfx_voices[0].active);
+        try testing.expectEqual(SoundEffectKind.distaff_note, bridge.synth.sfx_voices[0].kind);
+
+        var count: usize = 0;
+        var prev: i16 = buf[0];
+        var peak: i32 = 0;
+        var i: usize = 2;
+        while (i < buf.len) : (i += 2) {
+            if ((prev < 0) != (buf[i] < 0)) count += 1;
+            prev = buf[i];
+            peak = @max(peak, @as(i32, @intCast(@abs(buf[i]))));
+        }
+        try testing.expect(peak > 1000);
+        crossings[deg] = count;
+    }
+    for (1..DISTAFF_NOTE_COUNT) |deg| {
+        try testing.expect(crossings[deg] >= crossings[deg - 1]);
+    }
+    try testing.expect(crossings[DISTAFF_NOTE_COUNT - 1] > crossings[0]);
+}
+
+test "P22-02: out-of-range note degrees are dropped and weave stingers synthesize" {
+    var bridge = AudioBridge.init();
+    bridge.enqueue_note(7);
+    bridge.enqueue_note(255);
+    var buf: [1024]i16 = undefined;
+    bridge.render_samples(&buf);
+    for (bridge.synth.sfx_voices) |v| try testing.expect(!v.active);
+
+    for ([_]SoundEffectKind{ .weave_success, .weave_fizzle }) |kind| {
+        var b = AudioBridge.init();
+        b.enqueue_sfx(kind);
+        var out: [2048]i16 = undefined;
+        b.render_samples(&out);
+        var peak: i32 = 0;
+        for (out) |smp| peak = @max(peak, @as(i32, @intCast(@abs(smp))));
+        try testing.expect(peak > 500);
+    }
 }

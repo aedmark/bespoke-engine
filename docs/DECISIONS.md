@@ -351,6 +351,19 @@ re-litigation.
 - Implicit inverses for every draft: rejected because an undeclared inverse has no name for handlers to key on; reversing an undeclared draft fizzles unless it matches another draft, which rule 3 forbids.
 **Consequences:** Musical drafts reuse the verb/cue path and the existing handler table. Hosts that drive `step_tick` directly must call `dispatch_pending_weaves`, or in-script weaves never fire and saves are refused. Cue handler `where` guards are not evaluated (see Claims vs. code in ARCHITECTURE), so weave affordances are expressed with `if` checks in handler bodies or with separate handler keys.
 
+## D-030 Distaff Input as Host-Side Peripheral State, Mode-Gated Note Keys, and Degree-Only Audio (2026-11-08, status: accepted)
+**Context:** P22-02 adds note input, note audio, and a staff HUD for the drafts of D-029. A half-played phrase, the set of playable notes, and the result of the last phrase all need a home. Only seven letter keys suit note input, and three of them already have global meanings (`c` console, `d` debug, `f`/`g` scenario actions).
+**Decision:**
+1. **Phrase state lives in the host:** `draft.DistaffInput` holds the phrase in progress, `reach` (playable notes counted from C), and the last `WeaveOutcome`. The runner owns it; `DisplayBridge.attach_distaff` copies it by value into `RenderFrame.distaff` each capture. It never enters the world arena, so snapshots and rewinds never capture a half-played phrase. The host sets `reach` from script facts.
+2. **Mode-gated keys:** While `frame.distaff.enabled` and no dialogue balloon is open, the letters C D E F G A B play notes and Backspace clears the phrase. They shadow `c`, `d`, `f`, and `g` only in that mode; F1 (debug) and the backquote (console) stay available, and the footer advertises them. Notes beyond `reach` click and do nothing.
+3. **Degree-only audio:** `AudioEvent.play_note` carries the raw degree (0 to 6), mapped to C4..B4 by `audio.DISTAFF_MIDI`. The synthesizer imports nothing from the simulation. Out-of-range degrees are dropped. `weave_success` and `weave_fizzle` are ordinary SFX the host triggers from the weave result.
+4. **Immediate note feedback:** The window enqueues each note's audio on input, before the host processes the action, so the sound does not wait for a tick (D-001, D-019).
+**Alternatives:**
+- Phrase as world facts (`Played(Caster, Note)` with TTL): rejected because rewind would replay half-typed input and every keystroke would grow the fact table.
+- Number keys 1 to 7: rejected because 1 to 4 already switch party members and select dialogue choices.
+- Passing `draft.Note` to audio: rejected to keep `src/audio.zig` free of simulation imports.
+**Consequences:** P22-03's runner owns a `DistaffInput`, attaches it, handles `.play_note` and `.clear_distaff`, calls `VM.weave_notes` on a full phrase, and sets `outcome` and the matching stinger. The wasm target and the manual simulator have no distaff yet.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

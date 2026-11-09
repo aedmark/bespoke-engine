@@ -62,6 +62,7 @@ What only a person can check, and how. Record who checked what, where, and when 
 - Open each interactive vertical slice in desktop GUI mode (`zig build run`, `--spitting-contest`, `--gk3`, `--sword-fighting`, `--village`). Verify window scaling, 5-verb mouse cycling, and audio output.
 - Scrub backward and forward across the interactive timeline scrubber (`[<]`, `[>]`, click scrubber) and verify instant visual replay and divergent timeline truncation.
 - Toggle Pause & Save/Load drawer (`[P]`, `[F2]`, `[F3]`), save a slot, verify the 16x12 RGB332 graphical thumbnail, and load back.
+- **HUD layout without a display:** render a frame offscreen and inspect the image. Write a small harness that calls `DisplayWindow.init`, fills a `RenderFrame`, calls `render_frame`, then `SDL_RenderReadPixels` and `SDL_SaveBMP`, and run it with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy zig run -I/usr/include/SDL2 -lc -lSDL2 --dep bespoke -Mroot=<harness>.zig -I/usr/include/SDL2 -Mbespoke=src/root.zig`. This checks layout only, not audio or input.
 - Open `docs/manual.html` directly in a browser via `file://`; run the embedded interactive Wasm simulator deck (`#live-simulator`).
 
 ## Before Any Run

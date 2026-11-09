@@ -246,6 +246,9 @@ pub const UserAction = union(enum) {
         verb: AdventureVerb,
         item_index: usize,
     },
+    // P22-02: Distaff note input for musical drafts (D-029). Degree 0 = C .. 6 = B.
+    play_note: u8,
+    clear_distaff,
 };
 
 pub const DEFAULT_WIDTH: i32 = 1280;
@@ -474,7 +477,79 @@ pub const Rect = struct {
     y: i32,
     w: i32,
     h: i32,
+
+    pub fn contains(self: Rect, px: i32, py: i32) bool {
+        return px >= self.x and px < self.x + self.w and py >= self.y and py < self.y + self.h;
+    }
 };
+
+// --- Distaff Staff HUD Geometry (P22-02, D-029) ---
+// The panel sits above the verb bar on the right, clear of the verb buttons and the
+// inventory tray row (both at screen_h - 78), so enabling the distaff never hides them.
+
+pub const DISTAFF_NOTE_NAMES = [7][]const u8{ "C", "D", "E", "F", "G", "A", "B" };
+const DISTAFF_PANEL_W: i32 = 336;
+const DISTAFF_PANEL_H: i32 = 124;
+const DISTAFF_BUTTON_W: i32 = 40;
+const DISTAFF_BUTTON_H: i32 = 22;
+const DISTAFF_BUTTON_STEP: i32 = 46;
+/// Vertical gap between staff positions (one diatonic step) in pixels.
+const DISTAFF_STEP_PX: i32 = 4;
+
+pub fn get_distaff_panel_rect(screen_w: i32, screen_h: i32) Rect {
+    return .{
+        .x = screen_w - DISTAFF_PANEL_W - 14,
+        .y = screen_h - 78 - 12 - DISTAFF_PANEL_H,
+        .w = DISTAFF_PANEL_W,
+        .h = DISTAFF_PANEL_H,
+    };
+}
+
+pub fn get_distaff_note_button_rect(degree: u8, panel: Rect) Rect {
+    return .{
+        .x = panel.x + 10 + @as(i32, degree) * DISTAFF_BUTTON_STEP,
+        .y = panel.y + panel.h - DISTAFF_BUTTON_H - 8,
+        .w = DISTAFF_BUTTON_W,
+        .h = DISTAFF_BUTTON_H,
+    };
+}
+
+/// Y of the staff's bottom line (E4) inside the panel. Treble staff: lines are E G B D F.
+fn distaff_staff_bottom(panel: Rect) i32 {
+    return panel.y + 58;
+}
+
+/// Y of a notehead for a degree: E4 sits on the bottom line, C4 on a ledger line below.
+pub fn get_distaff_note_y(degree: u8, panel: Rect) i32 {
+    return distaff_staff_bottom(panel) - (@as(i32, degree) - 2) * DISTAFF_STEP_PX;
+}
+
+/// Returns the note degree under the cursor, or null. Notes beyond `reach` are not hit.
+pub fn hit_test_distaff_note(mouse_x: i32, mouse_y: i32, screen_w: i32, screen_h: i32, reach: u8) ?u8 {
+    const panel = get_distaff_panel_rect(screen_w, screen_h);
+    if (!panel.contains(mouse_x, mouse_y)) return null;
+    var d: u8 = 0;
+    while (d < @min(reach, 7)) : (d += 1) {
+        if (get_distaff_note_button_rect(d, panel).contains(mouse_x, mouse_y)) return d;
+    }
+    return null;
+}
+
+/// Maps the letter keys C D E F G A B to note degrees while the distaff is active.
+/// These letters shadow the global d (debug) and c (console) shortcuts only in that mode;
+/// F1 and the backquote remain available for both.
+pub fn distaff_key_to_degree(sym: c.SDL_Keycode) ?u8 {
+    return switch (sym) {
+        c.SDLK_c => 0,
+        c.SDLK_d => 1,
+        c.SDLK_e => 2,
+        c.SDLK_f => 3,
+        c.SDLK_g => 4,
+        c.SDLK_a => 5,
+        c.SDLK_b => 6,
+        else => null,
+    };
+}
 
 /// Computes screen bounding box for a party member portrait button (P21-01, D-025).
 pub fn get_party_portrait_rect(idx: usize, party_count: usize, screen_w: i32) Rect {
@@ -1133,6 +1208,18 @@ pub const DisplayWindow = struct {
                         }
                     }
 
+                    // Distaff note buttons take clicks before the world below them (P22-02, D-029)
+                    if (frame.distaff.enabled and event.button.button == c.SDL_BUTTON_LEFT) {
+                        const dpanel = get_distaff_panel_rect(self.width, self.height);
+                        if (dpanel.contains(event.button.x, event.button.y)) {
+                            if (hit_test_distaff_note(event.button.x, event.button.y, self.width, self.height, frame.distaff.reach)) |deg| {
+                                self.audio_bridge.enqueue_note(deg);
+                                return .{ .play_note = deg };
+                            }
+                            return .none;
+                        }
+                    }
+
                     if (event.button.button == c.SDL_BUTTON_RIGHT) {
                         // Right-click cancels in-hand item selection if active (P11-03, D-013)
                         if (self.selected_inventory_item != null) {
@@ -1530,6 +1617,22 @@ pub const DisplayWindow = struct {
                         }
                     }
 
+                    // Distaff note input (P22-02, D-029): letters play notes while enabled.
+                    if (self.active_balloon == null and frame.distaff.enabled) {
+                        if (distaff_key_to_degree(sym)) |deg| {
+                            if (deg < frame.distaff.reach) {
+                                self.audio_bridge.enqueue_note(deg);
+                                return .{ .play_note = deg };
+                            }
+                            self.play_sfx(.click);
+                            return .none;
+                        }
+                        if (sym == c.SDLK_BACKSPACE) {
+                            self.play_sfx(.click);
+                            return .clear_distaff;
+                        }
+                    }
+
                     if (self.active_balloon == null and frame.party_count > 1) {
                         var switch_idx: ?usize = null;
                         if (sym == c.SDLK_1 or sym == c.SDLK_KP_1) {
@@ -1635,6 +1738,70 @@ pub const DisplayWindow = struct {
         }
 
         return action;
+    }
+
+    /// Draws the distaff: a treble staff with the phrase in progress as noteheads, the outcome
+    /// of the last phrase, and one button per note (dimmed beyond reach) (P22-02, D-029).
+    fn render_distaff(self: *DisplayWindow, d: *const display_mod.RenderDistaff) void {
+        const panel = get_distaff_panel_rect(self.width, self.height);
+        const gold = Color{ .r = 250, .g = 204, .b = 21 };
+        const ink = Color{ .r = 203, .g = 213, .b = 225 };
+        const dim = Color{ .r = 71, .g = 85, .b = 105 };
+
+        self.fill_rect(panel.x, panel.y, panel.w, panel.h, Color.hud_bg);
+        self.draw_rect_outline(panel.x, panel.y, panel.w, panel.h, gold);
+        self.draw_text("DISTAFF", panel.x + 10, panel.y + 6, 1, gold);
+
+        const outcome_text: []const u8 = switch (d.outcome) {
+            .none => "[BKSP]: clear",
+            .woven => "The draft takes hold.",
+            .fizzled => "The draft unravels.",
+        };
+        const outcome_col = switch (d.outcome) {
+            .none => Color.hud_subtext,
+            .woven => gold,
+            .fizzled => Color.cue_alert,
+        };
+        self.draw_text(outcome_text, panel.x + panel.w - 10 - font.text_width(outcome_text, 1), panel.y + 6, 1, outcome_col);
+
+        // Five staff lines: E4 G4 B4 D5 F5, two diatonic steps apart.
+        const staff_left = panel.x + 10;
+        const staff_right = panel.x + panel.w - 10;
+        const bottom = distaff_staff_bottom(panel);
+        var line: i32 = 0;
+        while (line < 5) : (line += 1) {
+            const ly = bottom - line * 2 * DISTAFF_STEP_PX;
+            self.draw_line(staff_left, ly, staff_right, ly, dim);
+        }
+
+        // Phrase slots: noteheads at their pitch, empty slots as faint markers.
+        const slot_x0 = panel.x + 70;
+        const slot_step: i32 = 62;
+        for (0..4) |slot| {
+            const sx = slot_x0 + @as(i32, @intCast(slot)) * slot_step;
+            if (slot < d.played_len) {
+                const deg = d.played[slot];
+                const ny = get_distaff_note_y(deg, panel);
+                // C4 needs its own ledger line below the staff
+                if (deg == 0) self.draw_line(sx - 9, ny, sx + 9, ny, ink);
+                self.fill_circle(sx, ny, 5, gold);
+                self.draw_text(DISTAFF_NOTE_NAMES[deg], sx + 9, ny - 4, 1, gold);
+            } else {
+                self.draw_circle_outline(sx, bottom + 2 * DISTAFF_STEP_PX + 4, 3, dim);
+            }
+        }
+
+        // Note buttons
+        for (0..7) |i| {
+            const deg: u8 = @intCast(i);
+            const r = get_distaff_note_button_rect(deg, panel);
+            const reachable = deg < d.reach;
+            self.fill_rect(r.x, r.y, r.w, r.h, if (reachable) Color{ .r = 30, .g = 41, .b = 59 } else Color.hud_bg);
+            self.draw_rect_outline(r.x, r.y, r.w, r.h, if (reachable) ink else dim);
+            const label = DISTAFF_NOTE_NAMES[i];
+            const lx = r.x + @divTrunc(r.w - font.text_width(label, 2), 2);
+            self.draw_text(label, lx, r.y + 4, 2, if (reachable) Color.hud_text else dim);
+        }
     }
 
     // --- Drawing Primitives ---
@@ -4774,10 +4941,24 @@ pub const DisplayWindow = struct {
             }
         }
 
+        // 7c. Distaff Staff HUD (P22-02, D-029)
+        if (frame.distaff.enabled) {
+            self.render_distaff(&frame.distaff);
+        }
+
         // 8. Bottom Controls HUD Bar
         self.fill_rect(0, self.height - 44, self.width, 44, Color.hud_bg);
         self.draw_line(0, self.height - 44, self.width, self.height - 44, Color.tavern_border);
-        if (is_spitting_scene) {
+        if (frame.distaff.enabled) {
+            // Letter keys play notes in this mode, so advertise the shortcuts that still work
+            self.draw_text(
+                "[C D E F G A B]: Notes | [Bksp]: Clear | [F1]: Debug | [`]: REPL | [Space]: Pause",
+                20,
+                self.height - 28,
+                2,
+                Color{ .r = 250, .g = 204, .b = 21 },
+            );
+        } else if (is_spitting_scene) {
             self.draw_text(
                 "[S]: Spit! | [H]: Horn | [G]: GreenDrink | [-]/[+]: Speed | [Space]: Pause | [< / >]: Scrub",
                 20,
@@ -5746,3 +5927,40 @@ test "P21-03: display renderer dynamically recognizes Day of the Tentacle scene 
     win.render_frame(&frame, false);
 }
 
+
+test "P22-02: distaff panel geometry, note hit-testing, and reach limits" {
+    const testing = std.testing;
+    const w = DEFAULT_WIDTH;
+    const h = DEFAULT_HEIGHT;
+    const panel = get_distaff_panel_rect(w, h);
+
+    // Panel stays on screen and above the verb/inventory row.
+    try testing.expect(panel.x >= 0 and panel.x + panel.w <= w);
+    try testing.expect(panel.y + panel.h <= h - 78);
+
+    // Buttons stay inside the panel and do not overlap.
+    var d: u8 = 0;
+    while (d < 7) : (d += 1) {
+        const r = get_distaff_note_button_rect(d, panel);
+        try testing.expect(r.x >= panel.x and r.x + r.w <= panel.x + panel.w);
+        if (d > 0) try testing.expect(r.x >= get_distaff_note_button_rect(d - 1, panel).x + DISTAFF_BUTTON_W);
+        const cx = r.x + @divTrunc(r.w, 2);
+        const cy = r.y + @divTrunc(r.h, 2);
+        try testing.expectEqual(@as(?u8, d), hit_test_distaff_note(cx, cy, w, h, 7));
+    }
+
+    // Beyond reach, a note button does not respond.
+    const b_rect = get_distaff_note_button_rect(6, panel);
+    try testing.expectEqual(@as(?u8, null), hit_test_distaff_note(b_rect.x + 2, b_rect.y + 2, w, h, 3));
+    try testing.expectEqual(@as(?u8, null), hit_test_distaff_note(5, 5, w, h, 7));
+
+    // Pitch maps upward; E4 sits on the bottom staff line, and noteheads stay in the panel.
+    try testing.expectEqual(distaff_staff_bottom(panel), get_distaff_note_y(2, panel));
+    try testing.expect(get_distaff_note_y(6, panel) < get_distaff_note_y(0, panel));
+    try testing.expect(get_distaff_note_y(0, panel) + 5 < get_distaff_note_button_rect(0, panel).y);
+    try testing.expect(get_distaff_note_y(6, panel) - 5 > panel.y + 14);
+
+    try testing.expectEqual(@as(?u8, 0), distaff_key_to_degree(c.SDLK_c));
+    try testing.expectEqual(@as(?u8, 5), distaff_key_to_degree(c.SDLK_a));
+    try testing.expectEqual(@as(?u8, null), distaff_key_to_degree(c.SDLK_h));
+}

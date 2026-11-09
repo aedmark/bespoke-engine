@@ -12,7 +12,7 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-08, session 28, on `feature/loom-drafts`: P22-01 (musical draft grammar, `weave` opcode, host re-dispatch, package format v2) complete and verified (D-029). Next: P22-02 (note synthesis and staff HUD)._
+_Last updated: 2026-11-08, session 28, on `feature/loom-drafts`: P22-01 (draft grammar, `weave` opcode, host re-dispatch) and P22-02 (note audio, `DistaffInput`, staff HUD) complete and verified (D-029, D-030). Next: P22-03 (original bell-tower vertical slice)._
 
 **Session owner:** Claude Code (Opus 5.5), on `feature/loom-drafts`, since 2026-11-08 (session 28). Took over from the Antigravity agent with maintainer approval; Phase 22 in progress.
 
@@ -26,7 +26,7 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings (includes 3x manual check)** |
 | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 42 entries, 0 warnings)** |
 | `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html --check` | **passed (build check passed)** |
-| `zig build test` | **130/130 passed (2026-11-08, session 28, `feature/loom-drafts`)** |
+| `zig build test` | **135/135 passed (2026-11-08, session 28, `feature/loom-drafts`)** |
 | `zig test -I/usr/include/SDL2 -lc -lSDL2 src/package.zig --test-filter P22-01` | **9 P22-01 tests passed** |
 | `zig build wasm` | **passed (`zig-out/bin/bespoke.wasm` built for `wasm32-freestanding`)** |
 | `zig test -lc -lSDL2 src/dott_puzzle.zig` | **121/121 passed** |
@@ -48,12 +48,13 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 - **Party Coordination & Matter Conservation:** Multi-character party switching (`switch_actor`), party portrait HUD, and generalized atomic item transfer (`World.transfer_item`, `SpatialSystem.can_transfer_item_with_world`, `SpatialSystem.can_access_portal`) preserving conservation of matter and diegetic sender/recipient portal reachability (P21, D-025, D-026).
 - **Cinematic Temporal Hypervisors & Vector Conduits:** `TemporalHypervisor` copy-on-write `fork_tangent` and `collapse_tangent` arenas, countdown tick budgets, black hole singularity collapse fail-state, backward-chaining teleological Horn clause solver, hyper-temporal fibers (the "Manipulated Dead"), pre-cognitive vector conduits (`VectorConduit`), bitemporal transceivers, Novikov loop validation, and "The Middlesex Anomaly" vertical slice (`src/darko_puzzle.zig`, `--darko`) with time-travel rewind (P31, D-027).
 - **Musical Drafts (P22-01, D-029):** `draft Name(n1..n4) [reverse Inverse]` and `weave Draft on Target` compile to a draft table and the `weave` opcode; `VM.weave_notes` resolves played notes (forward or declared reverse) to `Weave(caster, draft, target)` handlers; in-script weaves queue in `VM.pending_weaves` until `dispatch_pending_weaves`; unmatched weaves record `WeaveFizzled`.
+- **Distaff (P22-02, D-030):** `DistaffInput` phrase buffer with reach limit, `AudioEvent.play_note` (C4..B4) and weave stingers, `RenderFrame.distaff` staff HUD with clickable notes; letter keys C to B play notes while enabled.
 - **Floating Text Layout Solver:** Deterministic 2D collision resolution engine (`TextLayoutResolver`, D-024) ensuring zero text label overlap across actors, waypoints, and props.
 - **Audio, Persistence & WebAssembly:** Procedural chiptune synth, 4-channel BGM sequencer, CRC32 `.sav` storage with `.bak` recovery, freestanding WebAssembly canvas, and embedded manual simulator (P16, P17, P19, D-019, D-020, D-022).
 - **Narrative Vertical Slices:** 7 complete scenarios (Tavern Heist, Spitting Contest, GK3 Moustache, Insult Sword Fighting, Living Village, Broken Sword Goat, Day of the Tentacle Trio, Donnie Darko Middlesex Anomaly) runnable headless and interactive with time-travel rewind.
 
 **Not verified**
-- `P22-02` and `P22-03` are not started. `WeaveFizzled` and `Weave` cues are recorded but no peripheral consumes them yet.
+- `P22-03` is not started, so no runner attaches a `DistaffInput` yet. The HUD was checked in an offscreen SDL render only; note audio was verified by sample analysis, not by ear on a desktop.
 
 **Gotchas for the next session**
 - When restoring snapshots via `restore_state` or `SaveManager.load_slot`, the world memory buffer is rewound in place; external display layers should call `DisplayBridge.capture_frame()` immediately following a restore to synchronize visualization.
@@ -62,7 +63,7 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 - Unidirectional DAG temporal causality in DOTT scenarios cascades forward from past to future; rewinding snapshots restores all three eras synchronously without paradox loops.
 - Procedural audio runs asynchronously via the SDL2 audio callback; communication with the simulation spine must remain strictly decoupled through `AudioBridge` ring buffer queueing (D-001, D-019).
 - Phase 22 drafts: hosts that call `vm.step_tick()` themselves must call `vm.dispatch_pending_weaves(&compiled)` right after, or in-script weaves never fire and `write_save_state` returns `error.PendingWeavesNotDispatched`. Only `src/runner.zig` does this today; P22-03's runner must too. Weave affordances go in handler `if` checks, because cue `where` guards are not evaluated (ARCHITECTURE, Claims vs. code).
-- P22-02 plan: add a note event to `AudioEvent` routed through the `AudioBridge` ring buffer (D-019), map `draft.Note` to pitches via `MIDI_PHASE_INC`, sound `WeaveFizzled`, and draw the staff HUD in `src/display/renderer.zig`.
+- P22-03 runner checklist (D-030): own a `DistaffInput`, `attach_distaff` it, handle `.play_note` (call `press`, then `VM.weave_notes` on a full phrase, set `outcome`, play `weave_success` or `weave_fizzle`) and `.clear_distaff`, set `reach` from script facts, and pick the weave target (e.g. the hovered or last examined hotspot). Avoid "Sanctuary" in the scene name, or add a theme check before it: `get_track_for_scene` and the renderer map it to the sword-fighting sanctuary theme.
 - Headless scenario runs wait on stdin after printing SUCCESS; run them with `</dev/null` in scripts or they hang until killed.
 - `--test-filter` on `src/root.zig` runs 0 tests (the filter drops the named import test). Filter through `src/package.zig`, which imports the compiler, draft, and save modules.
 
@@ -72,8 +73,8 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 
 ### Session 28 (2026-11-08)
 - **Goal:** Take over session ownership, commit pending Phase 31 work, and implement P22-01 (musical draft grammar and bytecode).
-- **Work:** Committed and pushed Phase 31 and session 27 work as `cb88d8b` on `main`; branched `feature/loom-drafts`. Recorded `D-029`. Added `src/draft.zig` (`Note`, `CompiledDraft`, `PendingWeave`), `kw_draft`/`kw_weave` lexer keywords, `DraftDecl` and `Stmt.weave` with located diagnostics for malformed or ambiguous drafts, `CompiledProgram.drafts` and `find_weave_handler`, opcode `weave` (0x51), `VM.weave_notes`, `weave_draft`, and `dispatch_pending_weaves`, runner dispatch after each tick, save refusal while weaves are pending, and `.bspk` version 2 with v1 compatibility. Recorded cue `where` guards as unevaluated under Claims vs. code. P22-03 scenario setting made original by maintainer decision.
-- **Outcome:** `zig build test` 130/130, 9 P22-01 tests, `zig build wasm`, all headless scenarios exit 0, `bespoke check`/`compile`/`run` on a draft script (source and `.bspk`) stores the woven fact.
+- **Work:** Committed and pushed Phase 31 and session 27 work as `cb88d8b` on `main`; branched `feature/loom-drafts`. Recorded `D-029`. Added `src/draft.zig` (`Note`, `CompiledDraft`, `PendingWeave`), `kw_draft`/`kw_weave` lexer keywords, `DraftDecl` and `Stmt.weave` with located diagnostics for malformed or ambiguous drafts, `CompiledProgram.drafts` and `find_weave_handler`, opcode `weave` (0x51), `VM.weave_notes`, `weave_draft`, and `dispatch_pending_weaves`, runner dispatch after each tick, save refusal while weaves are pending, and `.bspk` version 2 with v1 compatibility. Recorded cue `where` guards as unevaluated under Claims vs. code. P22-03 scenario setting made original by maintainer decision. Pushed the branch. P22-02: recorded `D-030`; added `distaff_note`, `weave_success`, `weave_fizzle` SFX, `DISTAFF_MIDI`, `AudioEvent.play_note`, `AudioBridge.enqueue_note`; `DistaffInput` and `WeaveOutcome` in `src/draft.zig`; `RenderDistaff`, `DisplayBridge.attach_distaff`; renderer panel geometry, hit-testing, mode-gated note keys, Backspace clear, staff drawing, and footer hint.
+- **Outcome:** `zig build test` 130/130, 9 P22-01 tests, `zig build wasm`, all headless scenarios exit 0, `bespoke check`/`compile`/`run` on a draft script (source and `.bspk`) stores the woven fact. After P22-02: 135/135, offscreen HUD render inspected, all headless scenarios exit 0.
 
 ### Session 27 (2026-11-08)
 - **Goal:** Comprehensive bug sweep across all vertical slice scenarios for waypoint/hotspot coordinate misalignments, accidental scene teleportation branches, missing interactive verb handlers, and visual backdrop alignments.

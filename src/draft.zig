@@ -96,6 +96,57 @@ pub const WEAVE_CUE = "Weave";
 /// Peripheral cue recorded when a weave resolves to no handler or no draft (P22-02 audio hook).
 pub const WEAVE_FIZZLED_CUE = "WeaveFizzled";
 
+/// What the last completed phrase did, for HUD feedback (P22-02).
+pub const WeaveOutcome = enum(u8) {
+    none = 0,
+    woven = 1,
+    fizzled = 2,
+};
+
+/// Player-side phrase buffer for the distaff (P22-02, D-029). This is peripheral input state,
+/// like a half-typed console line: it lives in the host runner, not the world arena, so a
+/// snapshot or rewind never captures a half-played phrase.
+///
+/// `reach` is how many notes of the scale the caster can currently play, counted from C.
+/// It models a distaff that gains notes as the story advances; the host sets it from script
+/// facts. Notes outside reach are refused so a phrase can only contain playable notes.
+pub const DistaffInput = struct {
+    played: Notes = undefined,
+    len: u8 = 0,
+    reach: u8 = 7,
+    outcome: WeaveOutcome = .none,
+
+    pub fn can_play(self: *const DistaffInput, note: Note) bool {
+        return @intFromEnum(note) < self.reach;
+    }
+
+    /// Adds a note. Returns the full phrase when the fourth note lands and resets the buffer,
+    /// so the host weaves exactly once per phrase. Returns null while the phrase is incomplete
+    /// or the note is out of reach.
+    pub fn press(self: *DistaffInput, note: Note) ?Notes {
+        if (!self.can_play(note)) return null;
+        if (self.len == 0) self.outcome = .none;
+        self.played[self.len] = note;
+        self.len += 1;
+        if (self.len < DRAFT_LEN) return null;
+        self.len = 0;
+        return self.played;
+    }
+
+    pub fn clear(self: *DistaffInput) void {
+        self.len = 0;
+    }
+
+    pub fn set_reach(self: *DistaffInput, reach: u8) void {
+        self.reach = @min(reach, 7);
+    }
+
+    /// Notes of the phrase in progress.
+    pub fn current(self: *const DistaffInput) []const Note {
+        return self.played[0..self.len];
+    }
+};
+
 test "P22-01: note names, reversal, and palindromes" {
     const testing = std.testing;
     try testing.expectEqual(Note.G, Note.from_name("G").?);
@@ -121,4 +172,32 @@ test "P22-01: lookup by notes resolves forward and declared reverse entries" {
     try testing.expectEqual(douse, find_by_notes(&table, .{ .E, .G, .E, .C }).?.entity);
     try testing.expect(find_by_notes(&table, .{ .C, .C, .C, .C }) == null);
     try testing.expectEqual(kindle, find_by_entity(&table, douse).?.inverse.?);
+}
+
+test "P22-02: distaff input completes a phrase on the fourth note and honours reach" {
+    const testing = std.testing;
+    var input = DistaffInput{};
+    try testing.expect(input.press(.C) == null);
+    try testing.expect(input.press(.E) == null);
+    try testing.expect(input.press(.G) == null);
+    try testing.expectEqual(@as(usize, 3), input.current().len);
+    const phrase = input.press(.E).?;
+    try testing.expect(notes_eql(phrase, .{ .C, .E, .G, .E }));
+    try testing.expectEqual(@as(usize, 0), input.current().len);
+
+    // An outcome persists until the next phrase starts.
+    input.outcome = .fizzled;
+    try testing.expect(input.press(.D) == null);
+    try testing.expectEqual(WeaveOutcome.none, input.outcome);
+    input.clear();
+    try testing.expectEqual(@as(usize, 0), input.current().len);
+
+    // Reach 3 allows C, D, E only; refused notes do not enter the phrase.
+    input.set_reach(3);
+    try testing.expect(input.can_play(.E));
+    try testing.expect(!input.can_play(.F));
+    try testing.expect(input.press(.F) == null);
+    try testing.expectEqual(@as(usize, 0), input.current().len);
+    input.set_reach(200);
+    try testing.expectEqual(@as(u8, 7), input.reach);
 }

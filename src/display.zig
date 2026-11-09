@@ -9,6 +9,9 @@ pub const SpatialSystem = spatial_mod.SpatialSystem;
 pub const WaypointId = spatial_mod.WaypointId;
 pub const VM = vm_mod.VM;
 pub const EmittedCue = vm_mod.EmittedCue;
+const draft_mod = @import("draft.zig");
+pub const DistaffInput = draft_mod.DistaffInput;
+pub const WeaveOutcome = draft_mod.WeaveOutcome;
 
 pub const font = @import("display/font.zig");
 pub const text_layout = @import("display/text_layout.zig");
@@ -198,6 +201,20 @@ pub const RenderVectorConduit = struct {
     alpha: u8 = 160,
 };
 
+/// Distaff staff HUD snapshot (P22-02, D-029). Copied by value from the host's `DistaffInput`
+/// so the renderer never reads input state the host is mutating. Zeroed frames are disabled.
+pub const RenderDistaff = struct {
+    enabled: bool = false,
+    played: [draft_mod.DRAFT_LEN]u8 = [_]u8{0} ** draft_mod.DRAFT_LEN,
+    played_len: u8 = 0,
+    reach: u8 = 0,
+    outcome: WeaveOutcome = .none,
+
+    pub fn get_played(self: *const RenderDistaff) []const u8 {
+        return self.played[0..self.played_len];
+    }
+};
+
 /// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
 pub const RenderFrame = struct {
     tick: u64,
@@ -265,6 +282,8 @@ pub const RenderFrame = struct {
     party: [MAX_PARTY_MEMBERS]RenderPartyMember = [_]RenderPartyMember{.{ .entity = EntityId.from_int(0) }} ** MAX_PARTY_MEMBERS,
     party_count: usize = 0,
     active_party_index: usize = 0,
+    // Distaff staff HUD for musical drafts (P22-02, D-029)
+    distaff: RenderDistaff = .{},
     debug_facts: [32]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
@@ -282,11 +301,24 @@ pub const RenderFrame = struct {
     }
 };
 
+fn capture_distaff(maybe_input: ?*const DistaffInput) RenderDistaff {
+    const input = maybe_input orelse return .{};
+    var out = RenderDistaff{
+        .enabled = true,
+        .played_len = input.len,
+        .reach = input.reach,
+        .outcome = input.outcome,
+    };
+    for (input.current(), 0..) |n, i| out.played[i] = @intFromEnum(n);
+    return out;
+}
+
 /// Double-buffered display bridge separating simulation spine from peripheral consumers (D-001, P5-01).
 pub const DisplayBridge = struct {
     front_buffer: RenderFrame,
     back_buffer: RenderFrame,
     audio_bridge: ?*audio.AudioBridge = null,
+    distaff: ?*const DistaffInput = null,
     active_player_character: ?EntityId = null,
     active_party_index: ?usize = null,
     party: [MAX_PARTY_MEMBERS]EntityId = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
@@ -336,6 +368,11 @@ pub const DisplayBridge = struct {
     /// Attaches an optional peripheral audio bridge to consume cues (P16-01, D-001).
     pub fn attach_audio_bridge(self: *DisplayBridge, ab: *audio.AudioBridge) void {
         self.audio_bridge = ab;
+    }
+
+    /// Attaches the host's distaff phrase buffer so frames carry the staff HUD (P22-02, D-029).
+    pub fn attach_distaff(self: *DisplayBridge, input: *const DistaffInput) void {
+        self.distaff = input;
     }
 
     /// Sets the maximum simulation tick reached in recorded history for the timeline scrubber (P9-02, D-011).
@@ -915,6 +952,9 @@ pub const DisplayBridge = struct {
 
         self.back_buffer.max_history_tick = prev_max_history;
 
+        // 8b. Capture distaff staff HUD (P22-02, D-029)
+        self.back_buffer.distaff = capture_distaff(self.distaff);
+
         // 9. Forward scene and cues to attached audio bridge (P16-01, P16-03, D-019)
         if (self.audio_bridge) |ab| {
             ab.process_scene_and_cues(self.back_buffer.get_current_scene());
@@ -1141,4 +1181,38 @@ test "P21-01: DisplayBridge captures multi-character party state and active inve
 test {
     _ = renderer;
     _ = font;
+}
+
+test "P22-02: DisplayBridge copies the attached distaff phrase into frames" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const bytecode_mod = @import("bytecode.zig");
+    var chunk = bytecode_mod.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    var db = DisplayBridge.init();
+    db.capture_frame(&world, &spatial, &vm);
+    db.swap();
+    try testing.expect(!db.get_frame().distaff.enabled);
+
+    var input = DistaffInput{};
+    input.set_reach(4);
+    _ = input.press(.C);
+    _ = input.press(.F);
+    db.attach_distaff(&input);
+    db.capture_frame(&world, &spatial, &vm);
+    db.swap();
+    const d = db.get_frame().distaff;
+    try testing.expect(d.enabled);
+    try testing.expectEqual(@as(u8, 4), d.reach);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0, 3 }, d.get_played());
+
+    // Later input changes do not leak into an already captured frame.
+    _ = input.press(.D);
+    try testing.expectEqual(@as(usize, 2), db.get_frame().distaff.get_played().len);
 }
