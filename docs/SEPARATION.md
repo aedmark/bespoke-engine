@@ -91,9 +91,114 @@ Trap and duplication candidates found in the first survey:
 | `evaluate_*` outcome checks | every proof | Proof assertion (stays) |
 | Hypervisor vocabulary (`Artifact of Metal`, vortex, the Manipulated Dead) | `src/hypervisor.zig`, `src/vm.zig` comments | Leak in naming; audit whether the API is generic under other names |
 
+## Audit findings (2026-11-09)
+
+Audits P32-08 to P32-15, run against `main` at `29f89ae` with `python3 tools/check_separation.py --report`, a scan for name-free leaks (`RenderFrame` fields, relations read by `DisplayBridge.capture_frame`, `UserAction` variants, SFX and music kinds, renderer theme flags), and a read of every non-runner function in each proof. "Hits" are lint hits; follow-ups name the roadmap item that removes the finding.
+
+### Cross-cutting findings
+
+These recur in most proofs and are handled once, not per proof.
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| Scene themes chosen by scene-name substring (20 `is_*_scene` flags), backdrops, prop art keyed by hotspot name, actor tokens keyed by entity name | `src/display/renderer.zig` `render_frame` | Theme hook | P32-02 |
+| Scenario music tracks and scene-name track mapping; scenario SFX (`goat_bleat`, `toilet_flush`, `snip_shears`, `wood_chop`, `horn`) | `src/audio.zig` | Theme hook | P32-02 |
+| Scenario `UserAction` variants (`spit_contest_spit`, `sound_horn`, `drink_green_drink`, `tamper_flags`, `darko_follow_conduit`) bound to global letter keys, and raw `SDL_GetKeyboardState` hotkeys in proof loops | `src/display/renderer.zig` `poll_events`; gk3 and goat loops | Theme hook (proof-registered actions and keys) | P32-02 |
+| 41 proof-specific `RenderFrame` status fields, filled by `capture_frame` from 46 relation names, several probed under two or three spellings | `src/display.zig` | Theme hook (host-supplied status channel) | P32-03 |
+| Thumbnail palettes and actor colours chosen by scene and entity name | `src/save.zig` `generate_thumbnail`, `build_metadata` | Theme hook | P32-03 |
+| Browser decks that rebuild six proofs' worlds inside the engine | `src/wasm.zig` `load_scenario`, `trigger_catalyst`, `step_tick` | Proof content | P32-04 |
+| Speech readers that take a cue index captured before `step_tick` (stale after the per-tick clear), look-at helpers, and cue-fire-and-tick | dott, darko, loom | Host kit | P32-16 |
+| History, scrub, rewind, and save-action handling copied into each interactive loop | tavern, spitting, gk3, goat, village, loom | Host kit | P32-16 |
+| Outcome checks that probe several spellings of one relation (`tampered` / `Tampered` / `TamperedWith`) | spitting, gk3, goat | Proof hygiene: assert the exact facts the script writes | P32-19 |
+| Engine features that no proof exercises: `collapse_tangent`, `VectorConduit` / `compute_vector_conduit`, `BitemporalTransceiver`, `CausalDecayTracker`, `DreamFact`, `reject_belief` | `src/hypervisor.zig`, `src/spatial.zig`, `src/vm.zig` | Unproven engine claim | P32-20 |
+
+### Tavern Heist (P32-08)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 16 hits: the engine's default backdrop *is* the tavern ("TAVERN - COMMON ROOM", wine cellar), Guard/Bard/Cat tokens, tavern palette | renderer `else` branch, save | Theme hook; the engine needs a neutral default scene | P32-02 |
+| `cheese_holder` and `charmed_target` fields read from `Carries` and `CharmedBy` | `src/display.zig` `RenderFrame` | Theme hook | P32-03 |
+| Tavern deck rebuilt in wasm | `src/wasm.zig` | Proof content | P32-04 |
+| No traps: the proof's behaviour lives in its script | `proofs/tavern_heist.zig` | (none) | (none) |
+
+### Spitting Contest (P32-09)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 29 hits: contest field theme, flag prop art and "[MOVED!]" label, Guybrush and Organiser tokens | renderer | Theme hook | P32-02 |
+| Four keys and actions (spit, horn, green drink, tamper flags) owned by the engine | renderer `UserAction`, `poll_events` | Theme hook | P32-02 |
+| `spit_is_thick`, `flags_tampered`, `wind_blowing`, `organiser_distracted` fields | `src/display.zig` | Theme hook | P32-03 |
+| `evaluate_spit_contest` decides the placement (thick spit, moved flags, wind) in Zig, not in the script | `proofs/spitting_contest.zig` | Proof content in host code; the rule belongs in the DSL | P32-19 |
+
+### GK3 Cat Moustache (P32-10)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 51 hits: hotel, garden, and bike-shop themes; Gabriel, Mosely, Buthane, and StrayCat tokens; courtyard and bike-shop music | renderer, audio | Theme hook | P32-02 |
+| Six fields (`fence_taped`, `cat_startled`, `gabriel_disguised`, `bike_rented`, and others); thumbnail palette | display, save | Theme hook | P32-03 |
+| Twelve raw scancode hotkeys in the interactive loop | `proofs/gk3_moustache.zig` | Theme hook (proof-registered keys) | P32-02 |
+| `evaluate_disguise` accepts either of two fact shapes | `proofs/gk3_moustache.zig` | Proof hygiene | P32-19 |
+
+### Insult Sword Fighting (P32-11)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 41 hits: High Road, Sword Master Sanctuary, and Scumm Bar themes and music; pirate, Carla, and barkeep tokens | renderer, audio, save | Theme hook | P32-02 |
+| `DialogueDuelSystem`: challenge/response pairs, learned replies, tiered opponents, advantage and duel wins, inquiry fatigue with mood decay, all as relational facts | `proofs/sword_fighting.zig` | **Engine mechanic** (dialogue duel) | P32-17 |
+| The duel builds its own candidate lists in Zig instead of using the engine's fact-guarded choices (`prune_dialogue_choices`) | `proofs/sword_fighting.zig` | Engine mechanic design input: the duel should sit on the dialogue engine | P32-17 |
+| The 16 insult, counter, and master-variant lines | `MONKEY_ISLAND_INSULTS` | Proof content | (stays) |
+
+### Lochmarne Goat (P32-12)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 33 hits: courtyard and crypt themes, plough and rope art, George and BillyGoat tokens, Celtic music, `goat_bleat` and `thud` SFX | renderer, audio | Theme hook | P32-02 |
+| Five fields (`goat_is_tangled`, `goat_is_charging`, `goat_is_retreating`, `george_knocked_down`, `plough_moved`) | `src/display.zig` | Theme hook | P32-03 |
+| The interactive loop fires cues when George *arrives* at the dig or the plough; the DSL has no arrival trigger, so the rule cannot live in the script | `proofs/goat_puzzle.zig` | **Engine mechanic gap** (arrival cues) | P32-18 |
+| Six scancode hotkeys for scene jumps and steps | `proofs/goat_puzzle.zig` | Theme hook | P32-02 |
+
+### Day of the Tentacle Trio (P32-13)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| `SpatialSystem.can_access_portal` branches on the entity name `"Laverne"` and the relation `TentacleDisguiseActive`; four comments describe the proof | `src/spatial.zig` | **Logic leak in core**: the guard rule must come from facts the script declares | P32-03 |
+| 56 hits: three era themes, Chron-o-John and flag art, cast tokens, tentacle march, three SFX | renderer, audio | Theme hook | P32-02 |
+| Seven fields (`dott_tree_chopped` to `dott_puzzle_solved`) | `src/display.zig` | Theme hook | P32-03 |
+| `get_dott_look_description` fallback text in Zig | `proofs/dott_puzzle.zig` | Proof content; belongs in `LooksAt` handlers | P32-19 |
+| Item transfer, portals, and beliefs are generic engine APIs; only this proof uses them | `src/world.zig`, `src/spatial.zig`, `src/vm.zig` | Engine mechanic (correctly placed) | (none) |
+
+### Middlesex Anomaly (P32-14)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 27 hits: bedroom, school, and vortex themes; countdown banner; singularity modal; cast tokens | renderer | Theme hook | P32-02 |
+| `darko_follow_conduit` action on the global `v` key | renderer | Theme hook | P32-02 |
+| Five `darko_*` fields, `singularity_collapsed`, `tangent_active`, and the countdown; `vector_conduits` is generic | `src/display.zig` | Theme hook (countdown and conduits can be generic HUD channels) | P32-03 |
+| Hypervisor API and docs use the film's vocabulary (Tangent Universe, Artifact of Metal, the Manipulated Dead, vortex) for what is a branch-world mechanic | `src/hypervisor.zig`, `src/vm.zig`, `src/spatial.zig` | Leak in naming; renaming a public API needs a maintainer decision | P32-21 |
+| Five hypervisor and spatial features unused by this or any proof | see cross-cutting | Unproven engine claim | P32-20 |
+| `get_darko_look_description` fallback text in Zig | `proofs/darko_puzzle.zig` | Proof content | P32-19 |
+
+### Bell Tower (P32-15)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| 14 hits: base and belfry backdrops, `bell_tower` track, comments | renderer, audio | Theme hook | P32-02 |
+| Five `bell_*` fields | `src/display.zig` | Theme hook | P32-03 |
+| `SayLog`, `act`, `tick`, `run_initial_statements`, `place`, `has_state` | `proofs/loom_puzzle.zig` | Host kit | P32-16 |
+| `sync_reach` copies a property fact into `DistaffInput.reach`; any draft game needs it | `proofs/loom_puzzle.zig` | Engine mechanic (small: a `DistaffInput` helper) | P32-16 |
+| Script, layout (`configure`), `approach_wp`, `follow_scene` | `proofs/loom_puzzle.zig` | Proof content | (stays) |
+
+### Living Village (folded into P32-05)
+
+| Finding | Where | Class | Follow-up |
+| --- | --- | --- | --- |
+| `VillageSimulation` | `proofs/village.zig` | Engine mechanic (D-032) | P32-05 |
+| 56 hits: village map theme, social-graph HUD panel, villager tokens; drive bars and social edges in `RenderFrame` | renderer, display | Theme hook (the HUD panel can become a generic emergent-society view) | P32-02, P32-03, P32-05 |
+| Village deck and its own simulation step in wasm | `src/wasm.zig` `step_tick` | Proof content | P32-04 |
+
 ## Order of work
 
 1. **Safety net:** separation lint (P32-06) and characterization goldens (P32-07).
-2. **Audits:** one per proof (P32-08 to P32-15). Fast, no code changes, and they finalize the extraction list.
-3. **Extractions:** host kit, emergent society (P32-05), dialogue duel, and whatever the audits add.
+2. **Audits:** one per proof (P32-08 to P32-15), completed 2026-11-09; findings above.
+3. **Extractions and fixes:** host kit (P32-16), emergent society (P32-05), dialogue duel (P32-17), arrival cues (P32-18), proof hygiene (P32-19); P32-20 and P32-21 wait on maintainer decisions.
 4. **Presentation and core purge:** theme hooks (P32-02), core logic (P32-03), wasm split (P32-04). These remove most leak hits and benefit from the host kit and goldens being in place.
