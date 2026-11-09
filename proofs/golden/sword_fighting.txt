@@ -1,0 +1,81 @@
+===================================================================
+   BeSpoke Engine: Monkey Island 1 Insult Sword Fighting Scenario   
+ (Combinatorial Queries * Target Invariants * Repetition Fatigue) 
+===================================================================
+
+[Compiler] Lowering Mêlée Island stageplay script to bytecode...
+[Step 1: Epistemological Zero Baseline]
+   -> Guybrush enters Mêlée Island with 0 known insults and 0 mastered replies.
+   -> Pirate Bob approaches on the High Road and draws cutlass!
+   -> Bob throws Insult 1: "You fight like a dairy farmer!"
+   -> Active Choices Available to Guybrush (1):
+      [1] "I am shaking, I am shaking!"
+   -> Guybrush stammers: "I am shaking, I am shaking!"
+   -> Bob strikes! Taunts: "How appropriate. You fight like a cow!"
+   -> Relational Learning Triggered:
+      - Remembered HeardInsult(Guybrush, 1): "You fight like a dairy farmer!"
+      - Remembered MasteredReply(Guybrush, 1): "How appropriate. You fight like a cow!"
+
+[Step 2: Offensive Initiative with Learned Insults]
+   -> Guybrush confronts Pirate Pegleg!
+   -> Available Offensive Insults for Guybrush (1):
+      [1] "You fight like a dairy farmer!"
+   -> Guybrush throws Insult 1: "You fight like a dairy farmer!"
+   -> Pegleg fails to counter and retorts with Insult 5: "People fall at my feet when they see me coming!"
+   -> Guybrush commits Insult 5 and Reply 5 to memory!
+
+[Step 3: Relational Query Pruning & Duel Victory]
+   -> Pirate Bob challenges Guybrush again!
+   -> Bob throws Insult 1: "You fight like a dairy farmer!"
+   -> Guybrush's Mastered Dialogue Options (2):
+      [1] "How appropriate. You fight like a cow!" (Counters Insult? YES!)
+      [2] "Even BEFORE they smell your breath?" (Counters Insult? no)
+   -> Guybrush parries with Choice 1: "How appropriate. You fight like a cow!"
+   -> Clang! Bob's cutlass flies from his hand! Guybrush wins the duel!
+   -> Facts asserted: Advantage(Guybrush, 3), DuelsWon(Guybrush, 1), Swagger(Guybrush, 2)
+
+[Step 4: Carla the Sword Master & Target Invariant Verification]
+   -> Guybrush crosses the rope bridge to Carla's Sword Master Sanctuary.
+   -> Carla sneers: "My wisest enemies run away at the first sight of me!"
+   -> Relational Query maps Carla variant (105) to Standard Insult 5:
+      [1] "How appropriate. You fight like a cow!" (Counters Carla? no)
+      [2] "Even BEFORE they smell your breath?" (Counters Carla? YES!)
+   -> Guybrush parries Carla: "Even BEFORE they smell your breath?"
+   -> Carla is stunned: "A sharp tongue as well as a sharp blade!"
+
+   [Pete/Arantor Invariant Check]
+   -> Guybrush tries to use Sword Master insult against regular Pirate Bob:
+   -> Engine Pruning Verified: Sword Master insult filtered from regular pirate targets!
+   -> (As Pete noted: "if you try to use a Sword Master insult on a regular pirate it won't fly")
+
+[Step 5: Organic Conversational Repetition Fatigue with the Barkeep]
+   -> [Inquiry 1] Guybrush: "Tell me about Governor Marley."
+      Barkeep Mood: welcoming
+      Barkeep: "Governor Marley? Sharp as a cutlass and twice as quick."
+   -> [Inquiry 2] Guybrush: "Tell me more about Governor Marley."
+      Barkeep Mood: annoyed (AnnoyedWith asserted for 100 ticks)
+      Barkeep: "Look, I already told you. Her mansion is on the hill."
+   -> [Inquiry 3] Guybrush: "About Governor Marley..."
+      Barkeep Mood: furious (FuriousWith asserted for 250 ticks)
+      Barkeep: "Are ye deaf, pirate? Buy a grog or get out of my tavern!"
+   -> [Inquiry 4 while Furious] Barkeep slams mug on counter and turns his back!
+
+[Step 6: Temporal Mood Decay via Master Simulation Ticks]
+   -> Simulating 260 ticks on BeSpoke spine...
+   -> Current Tick: 260
+   -> Barkeep Mood after 260 ticks: welcoming
+   -> AnnoyedWith and FuriousWith TTL expired cleanly from SoA arena!
+   -> Barkeep: "Welcome back, lad! Thirsty for grog?"
+
+[Step 7: Tangled World State Dialogue & Time-Travel Rewind]
+   -> PathChosen(Guybrush, Wits) active.
+   -> Talking to Citizen of Mêlée...
+   -> Unlocked Tangled Option: "I've mastered the blade through pure wit and outmatched Carla herself!"
+   -> Citizen: "By the Governor, you truly are a mighty pirate! Here is the Mêlée treasure map!"
+
+   [Deterministic Time-Travel Rewind Verification]
+   -> Restored Snapshot 0 (Tick 0).
+   -> Guybrush HeardInsults Count: 0 (Clean)
+   -> Guybrush MasteredReplies Count: 0 (Clean)
+
+>>> ALL MONKEY ISLAND INSULT SWORD FIGHTING & REPETITION TESTS PASSED! <<<

@@ -1,0 +1,56 @@
+===================================================================
+     BeSpoke Engine: The Middlesex Anomaly (Donnie Darko)          
+  (Roberta Sparrow Model * Vector Conduits * Causal Loop Closure)  
+===================================================================
+
+[Compiler] Compiling Middlesex Anomaly three-scene script...
+[Step 0] Primary Universe baseline: Donnie in Bedroom at tick 0.
+         No duplicate Jet Engine exists in Primary Universe; mass conserved.
+         Donnie inspects desk -> Donnie: "My desk. Roberta Sparrow's book 'The Philosophy of Time Travel' rests on the blotter."
+
+[Step 1] Midnight Anomaly: fork_tangent(280 ticks) creates Tangent Universe.
+         Tangent Universe active! Budget: 280 ticks (28 days).
+         Living Receiver: Donnie | Artifact of Metal: Jet Engine | Vortex Waypoint: 8
+         [D-027 Teleology] Backward-chaining Horn clause solver verified:
+           WaterPipeRuptured -> SchoolFlooded -> LoopClosed (JUSTIFIED)
+
+[Step 2] Frank (Manipulated Dead) whispers countdown alert via hyper-temporal fiber:
+         Frank whispers: Frank: "Follow the vector conduits before the black hole singularity collapses."
+         Formatted countdown remaining: 00:04:39:00
+
+[Step 3] Donnie perceives Fourth-Dimensional Pre-Cognitive Vector Conduit:
+         Conduit calculated: 6 points from BedMark to WaterPipeMark.
+         Donnie follows fluid vector worm -> arrives at Middlesex High School.
+         Donnie transitions to Middlesex High School.
+
+[Step 4] Epistemic Belief & Teleological Act: Donnie ruptures water main pipe:
+         Donnie inspects Axe -> Donnie: "A red fire emergency axe mounted in a glass cabinet. Frank whispers that the water main must be ruptured."
+         Donnie inspects WaterPipe -> Donnie: "The high school main waterline pipe. One swing of the axe will flood the entire building."
+         *CHOP!* Water main severed! Relational facts asserted:
+           WaterPipeRuptured(Donnie, WaterPipeProp)
+           SchoolFlooded(Donnie, 1)
+
+[Step 5] Donnie delivers 'Cellar Door' envelope to Roberta Sparrow atop Ridge:
+         Donnie looks at Roberta Sparrow -> Donnie: "Roberta Sparrow, 'Grandma Death'. Former science teacher turned recluse, watching her empty mailbox."
+         Letter delivered into mailbox! Relational fact asserted:
+           LetterDelivered(Donnie, RobertaSparrow)
+
+[Step 6] Guiding the Artifact of Metal (Jet Engine) to the Tangent Vortex:
+         Jet Engine guided to Vortex waypoint 8!
+         Relational fact LoopClosed(Donnie, 1) asserted.
+
+[Step 7] Causal Loop Closure Verification & Reality Restoration:
+         hypervisor.check_loop_closure() -> TRUE! All Roberta Sparrow invariants satisfied.
+         hypervisor.step_tick() -> .loop_resolved!
+         Tangent Universe collapsed cleanly; mass conservation restored.
+         Artifact of Metal committed into Primary Universe U_0 at T_0!
+         Dream residue facts transferred into Donnie's subconscious memory.
+         [D-027 Invariant] evaluate_darko_solved(&primary_world) -> TRUE!
+
+         [D-027 Invariant] Novikov self-consistency check verified: Consistent causal loop.
+
+[Step 8] Deterministic Time-Travel Rewind Verification:
+         Rewind scrubber active; verified back to tick 0 without state corruption.
+===================================================================
+     VICTORY ACHIEVED: Tangent Universe Loop Resolved Safely!       
+===================================================================

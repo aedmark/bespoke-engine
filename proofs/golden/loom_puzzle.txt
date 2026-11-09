@@ -1,0 +1,54 @@
+===================================================================
+          BeSpoke Engine: The Bell Tower (Musical Drafts)          
+    (Observation * Reversed Drafts * Distaff Reach * Re-Dispatch)  
+===================================================================
+
+[Compiler] Compiling Bell Tower script with drafts Kindle, Bind, Toll...
+
+[Step 1] Observation: Wren watches the lantern.
+  -> Wren: "The lantern flame gutters and flares: C, D, E, C. It sounds like kindling catching."
+  -> Distaff reach: 4 notes (C to F)
+
+[Step 2] The stairwell is dark.
+  -> Wren: "It is too dark to climb."
+
+[Step 3] A misplayed phrase fizzles (C, C, D, D).
+  -> The draft unravels. (fizzled)
+
+[Step 4] Weave Kindle (C, D, E, C) on the brazier.
+  -> Wren: "The coals catch. Firelight climbs the stairwell."
+
+[Step 5] Reversed: Douse (C, E, D, C) puts it out; Kindle relights it.
+  -> Wren: "The flames shrink to nothing. The stairwell goes dark."
+  -> Wren: "The coals catch. Firelight climbs the stairwell."
+
+[Step 6] Observation: the ivy teaches Bind (F, E, D, F).
+  -> Wren: "The ivy creaks as it coils around the gate: F, E, D, F. A binding sound."
+
+[Step 7] Climb to the belfry by firelight.
+  -> Wren: "I climb toward the bells by firelight."
+
+[Step 8] Toll is out of reach: the B note is refused at reach 4.
+  -> That note is beyond the distaff's reach.
+
+[Step 9] Bind on the chain only tightens it.
+  -> Wren: "The links pull tighter around the clapper. That was the wrong way round."
+
+[Step 10] Inversion: Bind played backwards is Loose (F, D, E, F).
+  -> Wren: "The links slacken and slide away. Something glints where the chain lay."
+
+[Step 11] Take the tuning fork: the distaff reaches all seven notes.
+  -> Wren: "The fork hums G, A, B, G as I lift it. My distaff reaches the high notes now."
+  -> Distaff reach: 7 notes
+
+[Step 12] Weave Toll (G, A, B, G) on the great bell.
+  -> Wren: "The great bell swings and tolls across the valley."  "The bell's tone kindles the beacon. Its light reaches every village below."
+  -> In-script weaves re-dispatched by the host: 1 (`weave Kindle on Beacon`)
+
+[Step 13] Time-travel rewind to tick 0.
+  -> Bell ringing: false, brazier lit: false, reach: 4 (expected false, false, 4)
+
+===================================================================
+  VERIFICATION COMPLETE: The Bell Tower rings. 100% deterministic.  
+===================================================================
+

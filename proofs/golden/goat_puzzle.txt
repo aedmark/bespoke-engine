@@ -1,0 +1,29 @@
+===================================================================
+      BeSpoke Engine: Broken Sword Lochmarne Goat Puzzle Scenario   
+  (Authentic 1996 Threat-Radius Timing * Plough Dragging * Crypt)  
+===================================================================
+
+[Compiler] Compiling Lochmarne Goat narrative script to bytecode...
+
+[Step 1] Initial Inspection: George arrives at Lochmarne Castle Courtyard.
+  -> Fact count: 1, George at CourtyardEntrance, Goat at TetherCenter
+
+[Step 2] Threat Radius Exploration: George approaches CellarEntrance.
+  -> Goat reactive charge triggered! George knocked down to FallMark.
+  -> Goat retreating window active: true (30 ticks remaining)
+
+[Step 3] Seizing the Window: George hauls FarmPlough while goat retreats!
+  -> Plough hauled into rope path! Goat tangled status: true
+
+[Step 4] Accessing the Dig: George descends into CellarEntrance.
+  -> Multi-scene transition to Templar Crypt successful: true
+
+[Step 5] Archaeological Discovery: George examines the CarvedMural.
+
+[Step 6] Time-Travel Rewind Verification: Restoring pristine Courtyard state.
+  -> Restored tick 0 snapshot. Goat tangled status: false (Expected: false)
+
+===================================================================
+  VERIFICATION COMPLETE: Broken Sword Goat Puzzle 100% Deterministic! 
+===================================================================
+

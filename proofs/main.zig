@@ -142,6 +142,12 @@ test "proofs: every proof module compiles and its tests run" {
     std.testing.refAllDecls(@This());
 }
 
+test {
+    // Characterization goldens (P32-07). Referenced only from a test block, so the
+    // bespoke-proofs executable never needs the test-only `golden_options` module.
+    _ = @import("golden_test.zig");
+}
+
 test "proofs: legacy flag spellings resolve to the same proofs" {
     try std.testing.expectEqual(Proof.dott, lookup("tentacle").?);
     try std.testing.expectEqual(Proof.loom, lookup("bell-tower").?);

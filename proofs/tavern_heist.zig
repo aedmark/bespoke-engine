@@ -97,15 +97,21 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
         history_snapshots.deinit();
     }
 
-    // Initialize SDL2 Peripheral Display Window (D-008, P6-01)
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 1280, 720);
-    defer window.deinit();
+    // Initialize SDL2 Peripheral Display Window (D-008, P6-01). Headless runs never open one,
+    // so the characterization test (P32-07) can run this proof without a display.
+    var window_storage: ?bespoke.display.DisplayWindow = if (is_headless_arg)
+        null
+    else
+        try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 1280, 720);
+    defer if (window_storage) |*w| w.deinit();
 
     vm.current_scene = tavern;
-    display_bridge.attach_audio_bridge(window.audio_bridge);
-    window.set_bgm(.tavern);
+    if (window_storage) |*w| {
+        display_bridge.attach_audio_bridge(w.audio_bridge);
+        w.set_bgm(.tavern);
+    }
 
-    if (window.is_headless or is_headless_arg) {
+    if (window_storage == null or window_storage.?.is_headless) {
         try stdout.print("\n>>> STARTING SIMULATION CLOCK (Headless Mode) <<<\n", .{});
 
         // Capture initial tick 0
@@ -168,6 +174,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
         try stdout.print("   - Cat carries Cheese?        {s} (Undone!)\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
         try stdout.print("===================================================================\n", .{});
     } else {
+        const window = &window_storage.?;
         try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
         try stdout.print("Interactive Adventure Controls:\n", .{});
         try stdout.print("   - [Right Click]:         Cycle Verb (WALK, LOOK, TALK, TAKE, USE)\n", .{});

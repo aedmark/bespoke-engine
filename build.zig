@@ -128,6 +128,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
+
+    // Characterization goldens (P32-07): proofs/golden_test.zig compares each proof's headless
+    // transcript with proofs/golden/<proof>.txt. `-Dupdate-goldens` rewrites them deliberately.
+    const golden_opts = b.addOptions();
+    golden_opts.addOption(bool, "update_goldens", b.option(bool, "update-goldens", "Rewrite proofs/golden/*.txt from current proof output (P32-07)") orelse false);
+    golden_opts.addOption([]const u8, "golden_dir", b.pathFromRoot("proofs/golden"));
+    proofs_unit_tests.root_module.addOptions("golden_options", golden_opts);
     proofs_unit_tests.linkLibC();
     proofs_unit_tests.linkSystemLibrary("SDL2");
     const run_proofs_unit_tests = b.addRunArtifact(proofs_unit_tests);

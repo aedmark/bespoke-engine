@@ -1,0 +1,37 @@
+===================================================================
+  BeSpoke Engine - Phase 18: "The Living Village" Sandbox
+  (Autonomous Drives, Rumor Propagation & Justice Cascades)
+===================================================================
+
+[Phase 1: Settlement Topology & Initial Villager Drives (Tick 0)]
+   -> Settlement Landmarks: Bakery, Farm, TownSquare, Cottages, Tavern, SheriffsPost
+   -> Sheriff    | Hunger: 20/100 | Energy: 90/100 | Gold: 25g | Activity: Patrolling
+   -> Baker      | Hunger: 25/100 | Energy: 85/100 | Gold: 30g | Activity: Working
+   -> Farmer     | Hunger: 45/100 | Energy: 80/100 | Gold: 15g | Activity: Working
+   -> Innkeeper  | Hunger: 30/100 | Energy: 85/100 | Gold: 25g | Activity: Working
+   -> Gossip     | Hunger: 35/100 | Energy: 90/100 | Gold: 12g | Activity: Socializing
+   -> Drifter    | Hunger: 64/100 | Energy: 75/100 | Gold:  0g | Activity: Socializing
+
+   [Tick  6 | TRADE  ] Farmer bought a warm meal from Baker for 5g.
+   [Tick  6 | CRIME  ] Drifter (Hunger>=80, Gold=0) stole BreadLoaf from Baker!
+   [Tick  6 | WITNESS] Baker witnessed Drifter stealing BreadLoaf and formed a Grudge!
+   [Tick  6 | WITNESS] Farmer witnessed Drifter stealing BreadLoaf and formed a Grudge!
+   [Tick  6 | WITNESS] Gossip witnessed Drifter stealing BreadLoaf and formed a Grudge!
+   [Tick 10 | TRADE  ] Gossip bought a warm meal from Baker for 5g.
+   [Tick 11 | RUMOR  ] Baker spread rumor of Drifter's theft to Sheriff!
+   [Tick 11 | JUSTICE] Sheriff heard rumor and issued WarrantFor(Sheriff, Drifter)!
+   [Tick 12 | ARREST ] Sheriff arrested Drifter, recovered BreadLoaf, and jailed offender!
+
+[Phase 2: Emergent Cascade Verification (Tick 12)]
+   -> 1. Autonomous Desperation Theft (StolenFrom):  VERIFIED
+   -> 2. Co-Located Witness Detection (Witnessed):   VERIFIED
+   -> 3. Social Graph Rumor Propagation (KnowsRumor):VERIFIED
+   -> 4. Sheriff Priority Warrant (WarrantFor):      VERIFIED
+   -> 5. Suspect Apprehended & Jailed (Arrested):    VERIFIED
+
+[Phase 3: Deterministic Time-Travel Rewind to Pre-Crime State]
+   -> Restored Tick 0 snapshot.
+   -> StolenFrom(Drifter, Baker) active? false (Clean)
+   -> Arrested(Drifter, Sheriff) active? false (Clean)
+
+>>> ALL LIVING VILLAGE EMERGENT SIMULATION CHECKS PASSED! <<<

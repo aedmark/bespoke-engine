@@ -1,0 +1,2 @@
+# Mismatch output from proofs/golden_test.zig; never committed.
+*.actual.txt

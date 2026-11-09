@@ -1,0 +1,68 @@
+===================================================================
+    BeSpoke Engine: Day of the Tentacle Trio Milestone Scenario    
+ (Multi-Character Party * Remote Item Swaps * Temporal Epistemology)
+===================================================================
+
+[Compiler] Compiling Day of the Tentacle three-era script...
+[Step 0] Initial state: Bernard in 1993, Hoagie in 1790, Laverne in 2193.
+         Bernard carries: VintageWine, TentacleFlyer
+         Hoagie carries:  RedPaintBucket, BatteryCasing
+         Laverne trapped in 2193 tree branches.
+         [D-026 Invariant] Portal Gating Verified: Laverne trapped in tree -> Chron-o-John transfer rejected!
+         [D-026 Invariant] Portal Anchoring Verified: Bernard to Hoagie operational across eras.
+
+[Step 0b] Three-Era Environmental Inspection (LooksAt cues):
+         [1993] Bernard looks at VintageWineBottle -> Bernard: "A dusty 1993 vintage bottle of red wine sitting on the motel desk."
+         [1993] Bernard looks at TentacleFlyerProp -> Bernard: "A campaign flyer showing Purple Tentacle's triangular silhouette. 'Vote Purple for Global Domination!'"
+         [1993] Bernard looks at ChronoToilet1993 -> Bernard: "The Chron-o-John! Dr. Fred's temporal displacement unit disguised as standard plumbing."
+         [1993] Bernard looks at TimeCapsule1993 -> Bernard: "The motel lobby time capsule, sealed tight to preserve artifacts for centuries."
+         [1993] Bernard looks at DrFred -> Bernard: "Dr. Fred Edison, pacing nervously while muttering about world domination and temporal coordinates."
+         [1993] Bernard inspects VintageWine -> Bernard: "A dusty 1993 vintage bottle of red wine sitting on the motel desk."
+         [1993] Bernard inspects TentacleFlyer -> Bernard: "A campaign flyer showing Purple Tentacle's triangular silhouette. 'Vote Purple for Global Domination!'"
+         [1790] Hoagie looks at KumquatTree -> Hoagie: "A small, bushy kumquat tree. George Washington is glaring at it impatiently."
+         [1790] Hoagie looks at ChronoToilet1790 -> Hoagie: "My Chron-o-John in 1790. Needs electrical power before it can flush anything back to the future."
+         [1790] Hoagie looks at TimeCapsule1790 -> Hoagie: "A bronze time capsule embedded in the colonial hearth. Anything placed inside will survive to 1993."
+         [1790] Hoagie looks at Washington -> Hoagie: "George Washington, father of our country. He is practically itching to chop down a cherry tree."
+         [1790] Hoagie looks at BetsyRoss -> Hoagie: "Betsy Ross, embroidering away at the national flag. She seems open to design suggestions."
+         [1790] Hoagie inspects RedPaintBucket -> Hoagie: "A bucket of bright red colonial oil paint. Perfect for turning citrus trees into cherry trees."
+         [1790] Hoagie inspects BatteryCasing -> Hoagie: "An empty glass battery casing with copper and zinc electrodes. Just needs an acidic electrolyte!"
+         [2193] Laverne looks at PurpleTentacle -> Laverne: "A seven-foot mutant purple tentacle patrolling the security checkpoint. No humans allowed without a tentacle disguise."
+         [2193] Laverne looks at FutureTree -> Laverne: "A bizarre 200-year-old kumquat tree reaching all the way to the roof. I am currently tangled in its branches!"
+         [2193] Laverne looks at TentacleFlagProp -> Laverne: "Betsy Ross's 1790 flag design, perfectly altered to double as an authentic tentacle disguise!"
+         [2193] Laverne looks at PowerSocketProp -> Laverne: "A high-voltage power terminal on the roof, hooked into the Chron-o-John temporal conduit."
+         [2193] Laverne looks at ChronoToilet2193 -> Laverne: "The future Chron-o-John! Once hooked up to power, it will reconnect the party across time."
+
+[Step 1] Bernard flushes Vintage Wine to Hoagie...
+         Matter conserved: Bernard loses wine, Hoagie receives wine.
+[Step 2] Hoagie deposits wine into 1790 Time Capsule and seals the chamber...
+         Forward Temporal Cascade: 200 years pass; wine transforms into 200-year-old vinegar.
+         [D-026 Invariant] Passive Incubation: No cutscene emitted; 200-year transformation discovered organically upon retrieval.
+[Step 3] Bernard in 1993 opens Time Capsule and retrieves 200-year-old vinegar...
+[Step 4] Bernard flushes 200-year-old vinegar to Hoagie in 1790...
+[Step 5] Hoagie combines vinegar with battery casing to craft Super Battery!
+         Hoagie inspects SuperBattery -> Hoagie: "The Super Battery! 200-year-aged vinegar reacting with zinc and copper to produce mega-voltage!"
+         Hoagie plugs Super Battery into Chrono-Toilet 1790 -> POWER ONLINE!
+[Step 6] Bernard flushes Tentacle Flyer to Hoagie...
+[Step 7] Epistemic Persuasion: Hoagie presents Tentacle Flyer to Betsy Ross...
+         Betsy Ross adopts belief and stitches the national Tentacle Flag!
+         [Cutscene Telegraph] Laverne: "Look up at the guard post roof! Betsy's flag is flying as the official planetary standard!"
+[Step 8] Epistemic Belief & Hatchet: Hoagie paints kumquats red and talks to Washington...
+         Washington: 'I cannot tell a lie!' *CHOP!* Tree felled in 1790!
+         [Cutscene Telegraph] Laverne: "Whoa! The tree vanished beneath my feet! *THUD!* I'm on the ground!"
+[Step 9] Forward Temporal Cascade: Tree ceased to exist centuries ago in 2193...
+         Laverne drops safely from absent tree to ground level!
+         [D-026 Invariant] Portal Access Gating: Laverne on ground but guarded -> Chron-o-John transfer rejected!
+[Step 9b] Security Permission: Laverne: 'I need to use the bathroom!' -> Guard permits yard access...
+         [D-026 Invariant] Portal Access Gating: Laverne doing business in yard -> Chron-o-John transfer online!
+[Step 10] Laverne climbs to roof, dons Tentacle Flag disguise, reaches power socket...
+         Laverne inspects TentacleFlag -> Laverne: "Betsy Ross's 1790 flag design, perfectly altered to double as an authentic tentacle disguise!"
+         [D-026 Invariant] Portal Access Gating: Laverne wearing tentacle disguise -> permanent Chron-o-John access granted!
+
+>>> VICTORY ACHIEVED! Day of the Tentacle Trio Puzzle completely solved! <<<
+    - Hoagie: Toilet powered by 200-year-aged vinegar Super Battery.
+    - Betsy Ross: Epistemically convinced to sew Tentacle Flag.
+    - Washington: Epistemically convinced to chop down Kumquat/Cherry tree.
+    - Laverne: Freed in 2193 via temporal causality, disguised in Tentacle Flag.
+
+[Time-Travel] Verifying deterministic rewind back to tick 0...
+SUCCESS: 100% deterministic time-travel and multi-character coordination verified.

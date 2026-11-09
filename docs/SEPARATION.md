@@ -54,13 +54,13 @@ Extraction is test-first and behaviour-preserving.
 | --- | --- | --- |
 | Module boundary | `src/` cannot import `proofs/` (compiler: "import of file outside module path") | In place (P32-01) |
 | Separation lint | Names declared by each proof (cast, props, marks, scenes, drafts, and `lookup_entity` literals) must not appear in non-test `src/` code beyond a committed baseline; the baseline may only shrink | In place (P32-06): `python3 tools/check_separation.py`, also run by `tools/check_docs.py` |
-| Characterization | Each proof's headless run produces a normalized transcript and final-state digest that matches a committed golden file | Planned (P32-07) |
+| Characterization | Each proof's headless transcript matches a committed golden file byte for byte | In place (P32-07): `zig build test-proofs`; final-state digest deferred to P32-16 |
 | Second-theme tests | Each extracted mechanic runs under a second, unrelated configuration | Per extraction |
 | Review checklist | No proof names in new engine code; new engine code named by function; proof keeps only content and assertions | Every change |
 
 **Separation lint (P32-06).** `tools/check_separation.py`, stdlib Python like the other tools. It parses names from each proof's embedded script (scene, cast, props, marks, entity, and draft declarations) and `lookup_entity("...")` literals, skips names under four characters and a two-entry generic list (`Player`, `Scene`, each with a recorded reason), blanks out top-level `test` blocks with brace matching that ignores strings and comments, and counts whole-word matches in `src/**/*.zig`, comments included. Counts per file and proof are compared with `tools/separation_baseline.json`: more is an error, fewer is a warning to lower the baseline. `--report` lists every hit as `file:line`; `--update-baseline` only lowers counts unless `--accept-increase` is given. A name declared by two proofs (`Guybrush`) counts once for each. Tests: `tests/test_check_separation.py`.
 
-**Characterization design (P32-07).** Each `run_headless` already writes its steps to a writer. A `zig build test-proofs` test runs each proof into a buffer, strips run-varying lines (paths, timings), and also hashes the final fact table, then compares both with `proofs/golden/<proof>.txt`. Updating a golden file is an explicit, reviewed change.
+**Characterization (P32-07).** `proofs/golden_test.zig` runs each proof's headless path into a buffer and compares it byte for byte with `proofs/golden/<proof>.txt`. No normalization is needed: the runs are deterministic (two consecutive runs of every proof were identical, 2026-11-09). On a mismatch the test prints the first differing line and writes `proofs/golden/<proof>.actual.txt` (gitignored). Regenerate with `zig build test-proofs -Dupdate-goldens` and review the diff; that is an explicit, reviewed change. The planned final fact-table digest is deferred: each `run_headless` owns its world internally, so exposing it belongs with the host kit (P32-16). The transcripts already print each step's checked state.
 
 ## Baseline inventory (2026-11-09)
 

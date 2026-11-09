@@ -1,0 +1,67 @@
+===================================================================
+      BeSpoke Engine: The Gabriel Knight 3 Cat Moustache Scenario   
+  (Multi-Scene DSL * Crafting * Dynamic Fact-Guarded Dialogue)     
+===================================================================
+
+[Compiler] Lowering Gabriel Knight 3 narrative script to bytecode...
+[Step 1: Inspect Initial State]
+   -> Current Scene: Hotel Corridor
+   -> Gabriel Inventory Empty? YES (Empty)
+   -> Gabriel Disguised? NO
+   -> Has Motorcycle Keys? NO
+
+[Step 2: Simulate Ambient Routines]
+   -> Advanced to Tick 5: Mosely is pacing between Room 33 and the corridor.
+
+[Step 3: Search Room Desk for Supplies]
+   -> Gabriel scavenged Marker, MaskingTape, and Syrup from RoomDesk!
+
+[Step 4: Snatch Mosely's Passport from Room 33]
+   -> Gabriel acquired MoselyPassport!
+
+[Step 5: Draw Moustache on Mosely's Passport with Marker]
+   -> Mosely's passport photo now features a drawn moustache!
+
+[Step 6: Transition Scene to Hotel Garden]
+   -> Gabriel stepped into the courtyard garden.
+
+[Step 7: Scavenge Garden Shrub for Spray Bottle]
+   -> Gabriel acquired SprayBottle from GardenShrub potting bench!
+
+[Step 8: Stretch Masking Tape Across Fence Hole]
+   -> FenceHole is now taped!
+
+[Step 9: Squirt Stray Cat with Water Bottle]
+   -> Cat bolted through fence! A thick strip of cat fur clings to the tape!
+
+[Step 10: Peel Cat Hair from the Fence Tape]
+   -> Gabriel acquired CatHair!
+
+[Step 11: Craft Cat-Hair Moustache with Syrup]
+   -> Gabriel applied syrup adhesive and crafted CatMoustache!
+
+[Step 12: Don the Disguise]
+   -> Gabriel is now DISGUISED as Franklin Mosely!
+   -> Evaluate Disguise: VALID DISGUISE
+
+[Step 13: Transition to Bike Rental Shop]
+   -> Gabriel entered Madame Buthane's motorcycle rental desk.
+
+[Step 14: Dialogue Choice Pruning with Madame Buthane]
+   -> Active Dialogue Choices Presented by Buthane (3 available):
+      [1] "I am detective Franklin Mosely. I've come for my motorcycle."
+      [2] "Do you know whose cat is prowling outside?"
+      [3] "Au revoir, madame."
+   -> Gabriel selects Choice 1!
+   -> Buthane: "Ah, Monsieur Mosely! That is a magnificent moustache. Here are the keys!"
+   -> Has Motorcycle Keys? YES! PUZZLE SOLVED!
+
+[Step 15: Time-Travel Rewind Demo]
+   -> Rewinding simulation state back to Step 2 (hotel corridor, undisguised, empty inventory)...
+   -> Rewound Gabriel Disguised? NO (Restored to false!)
+   -> Rewound Has Motorcycle Keys? NO (Restored to false!)
+   -> Rewound Gabriel Has Marker? NO (Restored to empty!)
+
+===================================================================
+   Gabriel Knight 3 Cat Moustache Vertical Slice Succeeded!       
+===================================================================

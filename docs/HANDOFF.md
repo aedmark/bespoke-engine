@@ -12,9 +12,9 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-09, session 28, on `feature/separation-lint`: P32-06 complete (separation lint `tools/check_separation.py`, baseline 339 hits, run by `check_docs.py`). Next: P32-07 (characterization goldens), then the per-proof audits P32-08 to P32-15._
+_Last updated: 2026-11-09, session 28, on `feature/proof-goldens`: P32-06 merged (separation lint); P32-07 complete (nine proof goldens in `proofs/golden/`, checked by `zig build test-proofs`). Next: the per-proof audits P32-08 to P32-15._
 
-**Session owner:** Claude Code (Opus 5.5), on `feature/separation-lint`, since 2026-11-08 (session 28). Took over from the Antigravity agent with maintainer approval.
+**Session owner:** Claude Code (Opus 5.5), on `feature/proof-goldens`, since 2026-11-08 (session 28). Took over from the Antigravity agent with maintainer approval.
 
 **Where things stand, in one paragraph:**
 All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, multi-step item crafting, relational epistemological dialogues, external script file execution (`bespoke run`, `compile`, `check`), a decoupled procedural chiptune audio synthesizer (`src/audio.zig`), persistent disk save/load storage (`src/save.zig`), "The Living Village" systemic emergent simulation sandbox (`proofs/village.zig`, `--village`), the Broken Sword Lochmarne Goat puzzle (`proofs/goat_puzzle.zig`, `--goat`), the Day of the Tentacle multi-character three-era scenario (`proofs/dott_puzzle.zig`, `--dott`), and the Donnie Darko "Middlesex Anomaly" Tangent Universe scenario (`proofs/darko_puzzle.zig`, `--darko`). Phase 19 adds a zero-dependency `wasm32-freestanding` WebAssembly target and RGBA8888 software framebuffer (`src/wasm.zig`, `zig build wasm` -> `zig-out/bin/bespoke.wasm`), a browser mouse/keyboard/touch event bridge, and an interactive HTML5 `<canvas>` simulator deck embedded directly inside `docs/manual.html` hosting all vertical slices. Phase 31 adds the `TemporalHypervisor` managing ephemeral copy-on-write Tangent Universe arenas, discrete tick countdown budgets (`collapse_budget_ticks`), catastrophic black hole singularities upon budget expiration without closure, backward-chaining teleological Horn clause solvers, hyper-temporal fibers (the "Manipulated Dead"), pre-cognitive Fourth-Dimensional vector conduits (`VectorConduit`), concurrent bitemporal transceivers, and Novikov self-fulfilling loop validation. The next session begins immediately with Phase 22: The Loom Musical Weaver System & Pitch-Based Spellcraft (`P22-01` through `P22-03`).
@@ -26,7 +26,7 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings (includes 3x manual check)** |
 | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 43 entries, 0 warnings)** |
 | `zig build test-engine` | **115/115 passed** |
-| `zig build test-proofs` | **25/25 passed** |
+| `zig build test-proofs` | **28/28 passed, including all nine golden transcripts (2026-11-09)** |
 | `zig build wasm` | **passed** |
 | `bespoke-proofs --<proof> --headless` for tavern, spitting-contest, gk3, sword-fighting, village, goat, dott, darko, loom | **all exit 0** |
 | `bespoke run scenarios/tavern_heist.bespoke --headless` | **passed with rewind** |
