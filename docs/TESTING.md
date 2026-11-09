@@ -55,6 +55,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification |
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
 | Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |
+| Dialogue Duel (`src/duel.zig`) | `zig build test-engine` | `zig build test-proofs` (sword-fighting golden) |
 | WebAssembly Target (`src/wasm.zig`) | `zig test src/wasm.zig && zig build wasm` | Manual canvas simulator deck in `docs/manual.html` |
 | Peripheral SDL2 Display (`src/display/`) | `zig test -lc -lSDL2 src/display.zig` | Interactive GUI run verifying 60 Hz rendering and controls |
 

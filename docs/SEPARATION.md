@@ -83,7 +83,7 @@ Trap and duplication candidates found in the first survey:
 | Finding | Where | Proposed class |
 | --- | --- | --- |
 | `VillageSimulation`: needs, witnesses, rumors, justice | `proofs/village.zig` | Engine mechanic (done: `src/society.zig`, P32-05) |
-| `DialogueDuelSystem`: challenge/response knowledge base, learning, mood and inquiry fatigue | `proofs/sword_fighting.zig` | Engine mechanic candidate |
+| `DialogueDuelSystem`: challenge/response knowledge base, learning, mood and inquiry fatigue | `proofs/sword_fighting.zig` | Engine mechanic (done: `src/duel.zig`, P32-17) |
 | `get_latest_say_message_since`, `execute_look_at`, `SayLog`, `act`, `tick` | dott, darko, loom | Host kit (also fixes the stale cue-index bug in HANDOFF) |
 | History, scrub, rewind, and save-action handling in each interactive loop | tavern, spitting, gk3, goat, village, loom | Host kit (interactive scaffold with proof hooks) |
 | `run_initial_statements`, `place`, `has_state` | loom (and inline variants elsewhere) | Host kit |
@@ -144,8 +144,8 @@ These recur in most proofs and are handled once, not per proof.
 | Finding | Where | Class | Follow-up |
 | --- | --- | --- | --- |
 | 41 hits: High Road, Sword Master Sanctuary, and Scumm Bar themes and music; pirate, Carla, and barkeep tokens | renderer, audio, save | Theme hook | P32-02 |
-| `DialogueDuelSystem`: challenge/response pairs, learned replies, tiered opponents, advantage and duel wins, inquiry fatigue with mood decay, all as relational facts | `proofs/sword_fighting.zig` | **Engine mechanic** (dialogue duel) | P32-17 |
-| The duel builds its own candidate lists in Zig instead of using the engine's fact-guarded choices (`prune_dialogue_choices`) | `proofs/sword_fighting.zig` | Engine mechanic design input: the duel should sit on the dialogue engine | P32-17 |
+| `DialogueDuelSystem`: challenge/response pairs, learned replies, tiered opponents, advantage and duel wins, inquiry fatigue with mood decay, all as relational facts | `proofs/sword_fighting.zig` | **Engine mechanic** (dialogue duel) | Done: `src/duel.zig` (P32-17, D-035); the proof keeps the insult table, relation names, and stage tuning |
+| The duel builds its own candidate lists in Zig instead of using the engine's fact-guarded choices (`prune_dialogue_choices`) | `proofs/sword_fighting.zig` | Engine mechanic design input: the duel should sit on the dialogue engine | Done (P32-17): candidates are `DialogueChoice` values filtered by `prune_dialogue_choices` |
 | The 16 insult, counter, and master-variant lines | `MONKEY_ISLAND_INSULTS` | Proof content | (stays) |
 
 ### Lochmarne Goat (P32-12)
@@ -200,5 +200,5 @@ These recur in most proofs and are handled once, not per proof.
 
 1. **Safety net:** separation lint (P32-06) and characterization goldens (P32-07).
 2. **Audits:** one per proof (P32-08 to P32-15), completed 2026-11-09; findings above.
-3. **Extractions and fixes:** host kit (P32-16, done), emergent society (P32-05, done), dialogue duel (P32-17), arrival cues (P32-18), proof hygiene (P32-19); P32-20 and P32-21 wait on maintainer decisions.
+3. **Extractions and fixes:** host kit (P32-16, done), emergent society (P32-05, done), dialogue duel (P32-17, done), arrival cues (P32-18), proof hygiene (P32-19); P32-20 and P32-21 wait on maintainer decisions.
 4. **Presentation and core purge:** theme hooks (P32-02), core logic (P32-03), wasm split (P32-04). These remove most leak hits and benefit from the host kit and goldens being in place.

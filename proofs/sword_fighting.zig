@@ -153,269 +153,45 @@ pub const MONKEY_ISLAND_INSULTS = [_]InsultPair{
 
 pub const FALLBACK_REPLY = "I am shaking, I am shaking!";
 
-pub const NpcMood = enum {
-    welcoming,
-    annoyed,
-    furious,
-};
+const duel_mod = bespoke.duel;
 
-pub const DialogueCandidate = struct {
-    text: []const u8,
-    id: u32,
-    is_valid_counter: bool = false,
-};
-
-/// The Relational Sword Duel and Conversational System
-pub const DialogueDuelSystem = struct {
-    world: *bespoke.World,
-
-    // Relation kinds
-    heard_insult_rel: bespoke.RelationKind,
-    mastered_reply_rel: bespoke.RelationKind,
-    counters_rel: bespoke.RelationKind,
-    sword_master_variant_rel: bespoke.RelationKind,
-    is_sword_master_rel: bespoke.RelationKind,
-    advantage_rel: bespoke.RelationKind,
-    duels_won_rel: bespoke.RelationKind,
-    swagger_rel: bespoke.RelationKind,
-    inquired_rel: bespoke.RelationKind,
-    annoyed_with_rel: bespoke.RelationKind,
-    furious_with_rel: bespoke.RelationKind,
-    path_chosen_rel: bespoke.RelationKind,
-
-    pub fn init(world: *bespoke.World) !DialogueDuelSystem {
-        const heard = try world.intern_relation("HeardInsult", .set);
-        const mastered = try world.intern_relation("MasteredReply", .set);
-        const counters = try world.intern_relation("Counters", .set);
-        const sm_variant = try world.intern_relation("SwordMasterVariant", .set);
-        const is_sm = try world.intern_relation("IsSwordMaster", .property);
-        const adv = try world.intern_relation("Advantage", .property);
-        const duels = try world.intern_relation("DuelsWon", .property);
-        const swg = try world.intern_relation("Swagger", .property);
-        const inq = try world.intern_relation("Inquired", .property);
-        const ann = try world.intern_relation("AnnoyedWith", .set);
-        const fur = try world.intern_relation("FuriousWith", .set);
-        const path = try world.intern_relation("PathChosen", .property);
-
-        var sys = DialogueDuelSystem{
-            .world = world,
-            .heard_insult_rel = heard,
-            .mastered_reply_rel = mastered,
-            .counters_rel = counters,
-            .sword_master_variant_rel = sm_variant,
-            .is_sword_master_rel = is_sm,
-            .advantage_rel = adv,
-            .duels_won_rel = duels,
-            .swagger_rel = swg,
-            .inquired_rel = inq,
-            .annoyed_with_rel = ann,
-            .furious_with_rel = fur,
-            .path_chosen_rel = path,
+/// The insult table as engine duel pairs: each pair's variant is the Sword Master's phrasing.
+const DUEL_PAIRS = blk: {
+    var pairs: [MONKEY_ISLAND_INSULTS.len]duel_mod.Pair = undefined;
+    for (MONKEY_ISLAND_INSULTS, 0..) |pair, i| {
+        pairs[i] = .{
+            .name = std.fmt.comptimePrint("Insult{d}", .{pair.id}),
+            .challenge = pair.standard_insult,
+            .reply = pair.counter_reply,
+            .variants = &[_][]const u8{pair.carla_insult},
         };
-
-        try sys.populate_canonical_knowledge_base();
-        return sys;
     }
+    break :blk pairs;
+};
 
-    /// Populates ground truth knowledge base into the relational fact arena
-    pub fn populate_canonical_knowledge_base(self: *DialogueDuelSystem) !void {
-        for (MONKEY_ISLAND_INSULTS) |pair| {
-            // Counters(reply_id, standard_insult_id)
-            const reply_ent = bespoke.EntityId.from_int(pair.id);
-            try self.world.remember(reply_ent, self.counters_rel, pair.id, 0);
+/// Tier 1 is the Sword Master. `win_at` is unset: this proof scripts its own duel victory.
+pub const DUEL_CONFIG = duel_mod.Config{
+    .pairs = &DUEL_PAIRS,
+    .fallback = FALLBACK_REPLY,
+    .relations = .{
+        .heard = "HeardInsult",
+        .variant_of = "SwordMasterVariant",
+        .tier = "IsSwordMaster",
+    },
+};
 
-            // Carla variants: SwordMasterVariant(100 + pair.id, pair.id)
-            const carla_ent = bespoke.EntityId.from_int(100 + pair.id);
-            try self.world.remember(carla_ent, self.sword_master_variant_rel, pair.id, 0);
-        }
-    }
+const SWORD_MASTER_TIER: u32 = 1;
 
-    /// Resolves an insult ID (which may be a Carla Sword Master variant) to its standard counterpart
-    pub fn resolve_standard_insult(self: *const DialogueDuelSystem, insult_id: u32) u32 {
-        if (insult_id > 100) {
-            const carla_ent = bespoke.EntityId.from_int(insult_id);
-            var it = self.world.query(carla_ent, self.sword_master_variant_rel, null);
-            if (it.next()) |fact| {
-                return fact.object_or_value;
-            }
-        }
-        return insult_id;
-    }
+const FATIGUE_STAGES = [_]duel_mod.Stage{
+    .{ .relation = "AnnoyedWith", .at = 2, .ttl = 100, .label = "annoyed" },
+    .{ .relation = "FuriousWith", .at = 3, .ttl = 250, .label = "furious" },
+};
+const ANNOYED: usize = 0;
+const FURIOUS: usize = 1;
 
-    /// Checks if a reply counters a given insult
-    pub fn does_reply_counter(self: *const DialogueDuelSystem, reply_id: u32, insult_id: u32) bool {
-        const std_insult = self.resolve_standard_insult(insult_id);
-        const reply_ent = bespoke.EntityId.from_int(reply_id);
-        return self.world.has_fact(reply_ent, self.counters_rel, std_insult);
-    }
-
-    /// Queries which insults a fighter is epistemologically aware of and can speak.
-    /// Crucial Pete/Arantor rule: if target is a regular pirate, Sword Master insults will not fly!
-    pub fn query_available_insults(
-        self: *const DialogueDuelSystem,
-        fighter: bespoke.EntityId,
-        target: bespoke.EntityId,
-        out_candidates: []DialogueCandidate,
-    ) usize {
-        const target_is_master = self.world.has_fact(target, self.is_sword_master_rel, 1);
-        var count: usize = 0;
-
-        var it = self.world.query(fighter, self.heard_insult_rel, null);
-        while (it.next()) |fact| {
-            const insult_id = fact.object_or_value;
-            const is_master_variant = insult_id > 100;
-
-            // Pete invariant: using a Sword Master insult on a regular pirate will not fly!
-            if (is_master_variant and !target_is_master) {
-                continue;
-            }
-
-            if (count < out_candidates.len) {
-                var text: []const u8 = "Unknown insult";
-                for (MONKEY_ISLAND_INSULTS) |pair| {
-                    if (is_master_variant and (100 + pair.id == insult_id)) {
-                        text = pair.carla_insult;
-                        break;
-                    } else if (pair.id == insult_id) {
-                        text = pair.standard_insult;
-                        break;
-                    }
-                }
-                out_candidates[count] = .{
-                    .text = text,
-                    .id = insult_id,
-                    .is_valid_counter = false,
-                };
-                count += 1;
-            }
-        }
-
-        return count;
-    }
-
-    /// Queries which replies Guybrush has mastered in response to an opponent's insult.
-    /// If no replies have been mastered, presents the iconic fallback line.
-    pub fn query_available_replies(
-        self: *const DialogueDuelSystem,
-        fighter: bespoke.EntityId,
-        active_insult_id: u32,
-        out_candidates: []DialogueCandidate,
-    ) usize {
-        const std_insult = self.resolve_standard_insult(active_insult_id);
-        var count: usize = 0;
-
-        var it = self.world.query(fighter, self.mastered_reply_rel, null);
-        while (it.next()) |fact| {
-            const reply_id = fact.object_or_value;
-            const is_counter = self.world.has_fact(bespoke.EntityId.from_int(reply_id), self.counters_rel, std_insult);
-
-            if (count < out_candidates.len) {
-                var text: []const u8 = "Unknown reply";
-                for (MONKEY_ISLAND_INSULTS) |pair| {
-                    if (pair.id == reply_id) {
-                        text = pair.counter_reply;
-                        break;
-                    }
-                }
-                out_candidates[count] = .{
-                    .text = text,
-                    .id = reply_id,
-                    .is_valid_counter = is_counter,
-                };
-                count += 1;
-            }
-        }
-
-        // If no mastered replies exist, offer the shaking fallback
-        if (count == 0 and out_candidates.len > 0) {
-            out_candidates[0] = .{
-                .text = FALLBACK_REPLY,
-                .id = 0,
-                .is_valid_counter = false,
-            };
-            return 1;
-        }
-
-        return count;
-    }
-
-    /// Resolves an insult duel round between attacker and defender.
-    /// Teaches heard insults and mastered counters through relational unification.
-    pub fn resolve_round(
-        self: *DialogueDuelSystem,
-        attacker: bespoke.EntityId,
-        defender: bespoke.EntityId,
-        insult_id: u32,
-        reply_id: u32,
-    ) !bool {
-        // Defender hears the insult if not already known
-        try self.world.remember(defender, self.heard_insult_rel, insult_id, 0);
-
-        const is_parry = if (reply_id == 0) false else self.does_reply_counter(reply_id, insult_id);
-
-        const std_insult = self.resolve_standard_insult(insult_id);
-        const cur_adv_def = self.world.get_property(defender, self.advantage_rel) orelse 0;
-        const cur_adv_atk = self.world.get_property(attacker, self.advantage_rel) orelse 0;
-
-        if (is_parry) {
-            // Defender successfully parried
-            try self.world.remember(defender, self.advantage_rel, cur_adv_def + 1, 0);
-            if (cur_adv_atk > 0) {
-                try self.world.remember(attacker, self.advantage_rel, cur_adv_atk - 1, 0);
-            }
-            return true;
-        } else {
-            // Attacker struck defender.
-            // Attacker taunts with counter reply, so defender learns it!
-            try self.world.remember(defender, self.mastered_reply_rel, std_insult, 0);
-            try self.world.remember(attacker, self.advantage_rel, cur_adv_atk + 1, 0);
-            if (cur_adv_def > 0) {
-                try self.world.remember(defender, self.advantage_rel, cur_adv_def - 1, 0);
-            }
-            return false;
-        }
-    }
-
-    /// Checks the conversational irritation state of an NPC toward a speaker
-    pub fn get_npc_mood(
-        self: *const DialogueDuelSystem,
-        npc: bespoke.EntityId,
-        speaker: bespoke.EntityId,
-    ) NpcMood {
-        if (self.world.has_fact(npc, self.furious_with_rel, speaker.to_int())) {
-            return .furious;
-        }
-        if (self.world.has_fact(npc, self.annoyed_with_rel, speaker.to_int())) {
-            return .annoyed;
-        }
-        return .welcoming;
-    }
-
-    /// Records an inquiry and updates conversational repetition fatigue with TTL mood decay
-    pub fn record_inquiry(
-        self: *DialogueDuelSystem,
-        speaker: bespoke.EntityId,
-        npc: bespoke.EntityId,
-        topic_id: u32,
-        annoyance_ttl: u32,
-        fury_ttl: u32,
-    ) !NpcMood {
-        _ = topic_id;
-        const cur_count = self.world.get_property(speaker, self.inquired_rel) orelse 0;
-        const new_count = cur_count + 1;
-        _ = self.world.forget(speaker, self.inquired_rel, null);
-        try self.world.remember(speaker, self.inquired_rel, new_count, 0);
-
-        if (new_count == 1) {
-            return .welcoming;
-        } else if (new_count == 2) {
-            try self.world.remember(npc, self.annoyed_with_rel, speaker.to_int(), annoyance_ttl);
-            return .annoyed;
-        } else {
-            try self.world.remember(npc, self.furious_with_rel, speaker.to_int(), fury_ttl);
-            return .furious;
-        }
-    }
+pub const FATIGUE_CONFIG = duel_mod.FatigueConfig{
+    .stages = &FATIGUE_STAGES,
+    .calm_label = "welcoming",
 };
 
 /// Executes deterministic headless simulation of Monkey Island Insult Sword Fighting and Organic NPC Repetition
@@ -435,7 +211,10 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
     defer compiled.deinit();
 
-    var duel_sys = try DialogueDuelSystem.init(&world);
+    var duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
+    var fatigue = try duel_mod.InquiryFatigue.init(&world, FATIGUE_CONFIG);
+    const swagger_rel = try world.intern_relation("Swagger", .property);
+    const path_chosen_rel = try world.intern_relation("PathChosen", .property);
 
     // Intern key actors
     const guybrush = try world.intern_entity("Guybrush");
@@ -447,7 +226,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     _ = citizen;
 
     // Carla is the legendary Sword Master
-    try world.remember(carla, duel_sys.is_sword_master_rel, 1, 0);
+    try duel.set_tier(carla, SWORD_MASTER_TIER);
 
     var timeline = bespoke.host.Timeline.init(allocator);
     defer timeline.deinit();
@@ -465,8 +244,13 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("[Step 1: Epistemological Zero Baseline]\n", .{});
     try writer.print("   -> Guybrush enters Mêlée Island with 0 known insults and 0 mastered replies.\n", .{});
 
-    var candidate_replies: [8]DialogueCandidate = undefined;
-    var reply_count = duel_sys.query_available_replies(guybrush, 1, &candidate_replies);
+    const insult_1 = duel.challenge(0, 0);
+    const reply_1 = duel.reply(0);
+    const insult_5 = duel.challenge(4, 0);
+    const reply_5 = duel.reply(4);
+
+    var candidate_replies: [8]duel_mod.Candidate = undefined;
+    var reply_count = duel.replies(&vm, guybrush, insult_1, &candidate_replies);
 
     try writer.print("   -> Pirate Bob approaches on the High Road and draws cutlass!\n", .{});
     try writer.print("   -> Bob throws Insult 1: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
@@ -479,23 +263,23 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Guybrush uses fallback reply
     try writer.print("   -> Guybrush stammers: \"{s}\"\n", .{FALLBACK_REPLY});
-    const parried_step1 = try duel_sys.resolve_round(pirate_bob, guybrush, 1, 0);
-    try std.testing.expect(!parried_step1);
+    const round_step1 = try duel.resolve_round(pirate_bob, guybrush, insult_1, candidate_replies[0].entity);
+    try std.testing.expect(!round_step1.parried);
 
     try writer.print("   -> Bob strikes! Taunts: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].counter_reply});
     try writer.print("   -> Relational Learning Triggered:\n", .{});
     try writer.print("      - Remembered HeardInsult(Guybrush, 1): \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
     try writer.print("      - Remembered MasteredReply(Guybrush, 1): \"{s}\"\n\n", .{MONKEY_ISLAND_INSULTS[0].counter_reply});
 
-    try std.testing.expect(world.has_fact(guybrush, duel_sys.heard_insult_rel, 1));
-    try std.testing.expect(world.has_fact(guybrush, duel_sys.mastered_reply_rel, 1));
+    try std.testing.expect(world.has_fact(guybrush, duel.heard_rel, insult_1.to_int()));
+    try std.testing.expect(world.has_fact(guybrush, duel.mastered_rel, reply_1.to_int()));
 
     // -------------------------------------------------------------------------
     // Step 2: Initiative & Throwing Heard Insults
     // -------------------------------------------------------------------------
     try writer.print("[Step 2: Offensive Initiative with Learned Insults]\n", .{});
-    var candidate_insults: [8]DialogueCandidate = undefined;
-    const insult_count = duel_sys.query_available_insults(guybrush, pirate_pegleg, &candidate_insults);
+    var candidate_insults: [8]duel_mod.Candidate = undefined;
+    const insult_count = duel.challenges(&vm, guybrush, pirate_pegleg, &candidate_insults);
 
     try writer.print("   -> Guybrush confronts Pirate Pegleg!\n", .{});
     try writer.print("   -> Available Offensive Insults for Guybrush ({d}):\n", .{insult_count});
@@ -509,8 +293,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Pegleg fails to counter and retorts with Insult 5: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[4].standard_insult});
 
     // Defender hears Insult 5 and learns Reply 5 through combat
-    try world.remember(guybrush, duel_sys.heard_insult_rel, 5, 0);
-    try world.remember(guybrush, duel_sys.mastered_reply_rel, 5, 0);
+    try duel.hear(guybrush, insult_5);
+    try duel.master(guybrush, reply_5);
     try writer.print("   -> Guybrush commits Insult 5 and Reply 5 to memory!\n\n", .{});
 
     // -------------------------------------------------------------------------
@@ -520,29 +304,29 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Pirate Bob challenges Guybrush again!\n", .{});
     try writer.print("   -> Bob throws Insult 1: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
 
-    reply_count = duel_sys.query_available_replies(guybrush, 1, &candidate_replies);
+    reply_count = duel.replies(&vm, guybrush, insult_1, &candidate_replies);
     try writer.print("   -> Guybrush's Mastered Dialogue Options ({d}):\n", .{reply_count});
     var correct_choice_idx: ?usize = null;
     for (candidate_replies[0..reply_count], 0..) |cand, i| {
         try writer.print("      [{d}] \"{s}\" (Counters Insult? {s})\n", .{
             i + 1,
             cand.text,
-            if (cand.is_valid_counter) "YES!" else "no",
+            if (cand.counters) "YES!" else "no",
         });
-        if (cand.is_valid_counter) correct_choice_idx = i;
+        if (cand.counters) correct_choice_idx = i;
     }
     try std.testing.expect(reply_count >= 2);
     try std.testing.expect(correct_choice_idx != null);
 
     const chosen = candidate_replies[correct_choice_idx.?];
     try writer.print("   -> Guybrush parries with Choice {d}: \"{s}\"\n", .{ correct_choice_idx.? + 1, chosen.text });
-    const parried_step3 = try duel_sys.resolve_round(pirate_bob, guybrush, 1, chosen.id);
-    try std.testing.expect(parried_step3);
+    const round_step3 = try duel.resolve_round(pirate_bob, guybrush, insult_1, chosen.entity);
+    try std.testing.expect(round_step3.parried);
 
     // Score advantage to 3 to win duel
-    try world.remember(guybrush, duel_sys.advantage_rel, 3, 0);
-    try world.remember(guybrush, duel_sys.duels_won_rel, 1, 0);
-    try world.remember(guybrush, duel_sys.swagger_rel, 2, 0);
+    try world.remember(guybrush, duel.advantage_rel, 3, 0);
+    try world.remember(guybrush, duel.wins_rel, 1, 0);
+    try world.remember(guybrush, swagger_rel, 2, 0);
 
     try writer.print("   -> Clang! Bob's cutlass flies from his hand! Guybrush wins the duel!\n", .{});
     try writer.print("   -> Facts asserted: Advantage(Guybrush, 3), DuelsWon(Guybrush, 1), Swagger(Guybrush, 2)\n\n", .{});
@@ -553,40 +337,41 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("[Step 4: Carla the Sword Master & Target Invariant Verification]\n", .{});
     try writer.print("   -> Guybrush crosses the rope bridge to Carla's Sword Master Sanctuary.\n", .{});
 
-    // Carla throws elevated master insult 105 (Variant of Insult 5)
-    const carla_insult_id: u32 = 105;
+    // Carla throws the Sword Master variant of Insult 5
+    const carla_insult = duel.challenge(4, SWORD_MASTER_TIER);
     const carla_insult_text = MONKEY_ISLAND_INSULTS[4].carla_insult;
     try writer.print("   -> Carla sneers: \"{s}\"\n", .{carla_insult_text});
 
-    reply_count = duel_sys.query_available_replies(guybrush, carla_insult_id, &candidate_replies);
+    reply_count = duel.replies(&vm, guybrush, carla_insult, &candidate_replies);
     try writer.print("   -> Relational Query maps Carla variant (105) to Standard Insult 5:\n", .{});
     for (candidate_replies[0..reply_count], 0..) |cand, i| {
         try writer.print("      [{d}] \"{s}\" (Counters Carla? {s})\n", .{
             i + 1,
             cand.text,
-            if (cand.is_valid_counter) "YES!" else "no",
+            if (cand.counters) "YES!" else "no",
         });
     }
-    try std.testing.expect(duel_sys.does_reply_counter(5, carla_insult_id));
+    try std.testing.expect(duel.counters(reply_5, carla_insult));
 
     // Guybrush parries Carla's elevated master insult
-    const parried_carla = try duel_sys.resolve_round(carla, guybrush, carla_insult_id, 5);
-    try std.testing.expect(parried_carla);
+    const round_carla = try duel.resolve_round(carla, guybrush, carla_insult, reply_5);
+    try std.testing.expect(round_carla.parried);
     try writer.print("   -> Guybrush parries Carla: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[4].counter_reply});
     try writer.print("   -> Carla is stunned: \"A sharp tongue as well as a sharp blade!\"\n", .{});
 
-    // Test Pete Invariant: Guybrush hears Carla's insult 105.
+    // Test Pete Invariant: Guybrush has heard Carla's variant (the round above taught it).
     // If Guybrush tries to use Carla's Sword Master insult on regular pirate Bob, it will not fly!
-    try world.remember(guybrush, duel_sys.heard_insult_rel, carla_insult_id, 0);
+    try std.testing.expect(world.has_fact(guybrush, duel.heard_rel, carla_insult.to_int()));
 
-    var bob_insults: [8]DialogueCandidate = undefined;
-    const bob_insult_count = duel_sys.query_available_insults(guybrush, pirate_bob, &bob_insults);
+    var bob_insults: [8]duel_mod.Candidate = undefined;
+    const bob_insult_count = duel.challenges(&vm, guybrush, pirate_bob, &bob_insults);
+    try std.testing.expectEqual(@as(usize, 2), bob_insult_count);
 
     try writer.print("\n   [Pete/Arantor Invariant Check]\n", .{});
     try writer.print("   -> Guybrush tries to use Sword Master insult against regular Pirate Bob:\n", .{});
     var saw_carla_insult = false;
     for (bob_insults[0..bob_insult_count]) |cand| {
-        if (cand.id == carla_insult_id) saw_carla_insult = true;
+        if (cand.entity == carla_insult) saw_carla_insult = true;
     }
     try std.testing.expect(!saw_carla_insult);
     try writer.print("   -> Engine Pruning Verified: Sword Master insult filtered from regular pirate targets!\n", .{});
@@ -596,36 +381,34 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 5: Organic Conversational Repetition Fatigue
     // -------------------------------------------------------------------------
     try writer.print("[Step 5: Organic Conversational Repetition Fatigue with the Barkeep]\n", .{});
-    const topic_marley: u32 = 77;
-
     // Inquiry 1: Welcoming
-    const mood1 = try duel_sys.record_inquiry(guybrush, barkeep, topic_marley, 100, 250);
+    const mood1 = try fatigue.record(guybrush, barkeep);
     try writer.print("   -> [Inquiry 1] Guybrush: \"Tell me about Governor Marley.\"\n", .{});
-    try writer.print("      Barkeep Mood: {s}\n", .{@tagName(mood1)});
+    try writer.print("      Barkeep Mood: {s}\n", .{fatigue.label(mood1)});
     try writer.print("      Barkeep: \"Governor Marley? Sharp as a cutlass and twice as quick.\"\n", .{});
-    try std.testing.expectEqual(NpcMood.welcoming, mood1);
-    try std.testing.expect(!world.has_fact(barkeep, duel_sys.annoyed_with_rel, null));
+    try std.testing.expectEqual(@as(?usize, null), mood1);
+    try std.testing.expect(!world.has_fact(barkeep, fatigue.stage_rels[ANNOYED], null));
 
     // Inquiry 2: Terse / Annoyed (TTL 100 ticks)
-    const mood2 = try duel_sys.record_inquiry(guybrush, barkeep, topic_marley, 100, 250);
+    const mood2 = try fatigue.record(guybrush, barkeep);
     try writer.print("   -> [Inquiry 2] Guybrush: \"Tell me more about Governor Marley.\"\n", .{});
-    try writer.print("      Barkeep Mood: {s} (AnnoyedWith asserted for 100 ticks)\n", .{@tagName(mood2)});
+    try writer.print("      Barkeep Mood: {s} (AnnoyedWith asserted for 100 ticks)\n", .{fatigue.label(mood2)});
     try writer.print("      Barkeep: \"Look, I already told you. Her mansion is on the hill.\"\n", .{});
-    try std.testing.expectEqual(NpcMood.annoyed, mood2);
-    try std.testing.expect(world.has_fact(barkeep, duel_sys.annoyed_with_rel, guybrush.to_int()));
+    try std.testing.expectEqual(@as(?usize, ANNOYED), mood2);
+    try std.testing.expect(world.has_fact(barkeep, fatigue.stage_rels[ANNOYED], guybrush.to_int()));
 
     // Inquiry 3: Furious / Slamming door (TTL 250 ticks)
-    const mood3 = try duel_sys.record_inquiry(guybrush, barkeep, topic_marley, 100, 250);
+    const mood3 = try fatigue.record(guybrush, barkeep);
     try writer.print("   -> [Inquiry 3] Guybrush: \"About Governor Marley...\"\n", .{});
-    try writer.print("      Barkeep Mood: {s} (FuriousWith asserted for 250 ticks)\n", .{@tagName(mood3)});
+    try writer.print("      Barkeep Mood: {s} (FuriousWith asserted for 250 ticks)\n", .{fatigue.label(mood3)});
     try writer.print("      Barkeep: \"Are ye deaf, pirate? Buy a grog or get out of my tavern!\"\n", .{});
-    try std.testing.expectEqual(NpcMood.furious, mood3);
-    try std.testing.expect(world.has_fact(barkeep, duel_sys.furious_with_rel, guybrush.to_int()));
+    try std.testing.expectEqual(@as(?usize, FURIOUS), mood3);
+    try std.testing.expect(world.has_fact(barkeep, fatigue.stage_rels[FURIOUS], guybrush.to_int()));
 
     // Inquiry 4 while furious: NPC refuses to talk
-    const mood4 = duel_sys.get_npc_mood(barkeep, guybrush);
+    const mood4 = fatigue.mood(barkeep, guybrush);
     try writer.print("   -> [Inquiry 4 while Furious] Barkeep slams mug on counter and turns his back!\n", .{});
-    try std.testing.expectEqual(NpcMood.furious, mood4);
+    try std.testing.expectEqual(@as(?usize, FURIOUS), mood4);
 
     // Save snapshot before temporal cool-off
     try timeline.record(&world);
@@ -637,15 +420,15 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Simulating 260 ticks on BeSpoke spine...\n", .{});
     var tick_i: usize = 0;
     while (tick_i < 260) : (tick_i += 1) {
-        try vm.step_tick();
+        _ = try bespoke.host.tick(&vm, &compiled);
     }
 
     try writer.print("   -> Current Tick: {d}\n", .{world.current_tick});
-    const mood_after_wait = duel_sys.get_npc_mood(barkeep, guybrush);
-    try writer.print("   -> Barkeep Mood after 260 ticks: {s}\n", .{@tagName(mood_after_wait)});
-    try std.testing.expectEqual(NpcMood.welcoming, mood_after_wait);
-    try std.testing.expect(!world.has_fact(barkeep, duel_sys.furious_with_rel, guybrush.to_int()));
-    try std.testing.expect(!world.has_fact(barkeep, duel_sys.annoyed_with_rel, guybrush.to_int()));
+    const mood_after_wait = fatigue.mood(barkeep, guybrush);
+    try writer.print("   -> Barkeep Mood after 260 ticks: {s}\n", .{fatigue.label(mood_after_wait)});
+    try std.testing.expectEqual(@as(?usize, null), mood_after_wait);
+    try std.testing.expect(!world.has_fact(barkeep, fatigue.stage_rels[FURIOUS], guybrush.to_int()));
+    try std.testing.expect(!world.has_fact(barkeep, fatigue.stage_rels[ANNOYED], guybrush.to_int()));
     try writer.print("   -> AnnoyedWith and FuriousWith TTL expired cleanly from SoA arena!\n", .{});
     try writer.print("   -> Barkeep: \"Welcome back, lad! Thirsty for grog?\"\n\n", .{});
 
@@ -655,12 +438,12 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("[Step 7: Tangled World State Dialogue & Time-Travel Rewind]\n", .{});
 
     // Indiana Jones FOA 3 paths: 1 = Wits, 2 = Fists, 3 = Teamwork
-    try world.remember(guybrush, duel_sys.path_chosen_rel, 1, 0); // Wits path
+    try world.remember(guybrush, path_chosen_rel, 1, 0); // Wits path
     try writer.print("   -> PathChosen(Guybrush, Wits) active.\n", .{});
     try writer.print("   -> Talking to Citizen of Mêlée...\n", .{});
 
-    const is_wits = (world.get_property(guybrush, duel_sys.path_chosen_rel) orelse 0) == 1;
-    const swagger_lvl = world.get_property(guybrush, duel_sys.swagger_rel) orelse 0;
+    const is_wits = (world.get_property(guybrush, path_chosen_rel) orelse 0) == 1;
+    const swagger_lvl = world.get_property(guybrush, swagger_rel) orelse 0;
 
     if (is_wits and swagger_lvl >= 2) {
         try writer.print("   -> Unlocked Tangled Option: \"I've mastered the blade through pure wit and outmatched Carla herself!\"\n", .{});
@@ -677,13 +460,13 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     try writer.print("   -> Restored Snapshot 0 (Tick {d}).\n", .{world.current_tick});
     try writer.print("   -> Guybrush HeardInsults Count: {s}\n", .{
-        if (!world.has_fact(guybrush, duel_sys.heard_insult_rel, null)) "0 (Clean)" else "Leaked!",
+        if (!world.has_fact(guybrush, duel.heard_rel, null)) "0 (Clean)" else "Leaked!",
     });
     try writer.print("   -> Guybrush MasteredReplies Count: {s}\n", .{
-        if (!world.has_fact(guybrush, duel_sys.mastered_reply_rel, null)) "0 (Clean)" else "Leaked!",
+        if (!world.has_fact(guybrush, duel.mastered_rel, null)) "0 (Clean)" else "Leaked!",
     });
-    try std.testing.expect(!world.has_fact(guybrush, duel_sys.heard_insult_rel, null));
-    try std.testing.expect(!world.has_fact(guybrush, duel_sys.mastered_reply_rel, null));
+    try std.testing.expect(!world.has_fact(guybrush, duel.heard_rel, null));
+    try std.testing.expect(!world.has_fact(guybrush, duel.mastered_rel, null));
 
     try writer.print("\n>>> ALL MONKEY ISLAND INSULT SWORD FIGHTING & REPETITION TESTS PASSED! <<<\n", .{});
 }
@@ -699,7 +482,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
     defer compiled.deinit();
 
-    const duel_sys = try DialogueDuelSystem.init(&world);
+    var duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
 
     const road_scene = try world.intern_entity("High Road");
     const sanctuary_scene = try world.intern_entity("Sword Master Sanctuary");
@@ -710,7 +493,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const carla = try world.intern_entity("Carla");
     const barkeep = try world.intern_entity("Barkeep");
 
-    try world.remember(carla, duel_sys.is_sword_master_rel, 1, 0);
+    try duel.set_tier(carla, SWORD_MASTER_TIER);
 
     const road_l = try spatial.graph.add_waypoint(road_scene, 0, 0, "RoadLeft");
     const road_c = try spatial.graph.add_waypoint(road_scene, 20, 0, "RoadCenter");
@@ -785,14 +568,14 @@ test "P15-01: canonical Monkey Island insults and counters are correctly mapped"
     var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    const duel_sys = try DialogueDuelSystem.init(&world);
+    const duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
 
-    // Verify all 16 counters match their standard insult
-    for (MONKEY_ISLAND_INSULTS) |pair| {
-        try testing.expect(duel_sys.does_reply_counter(pair.id, pair.id));
-        // Verify Carla variant resolves to standard insult
-        try testing.expectEqual(@as(u32, pair.id), duel_sys.resolve_standard_insult(100 + pair.id));
-        try testing.expect(duel_sys.does_reply_counter(pair.id, 100 + pair.id));
+    // All 16 counters match their standard insult and its Sword Master variant
+    for (MONKEY_ISLAND_INSULTS, 0..) |_, i| {
+        const variant = duel.challenge(i, SWORD_MASTER_TIER);
+        try testing.expect(duel.counters(duel.reply(i), duel.challenge(i, 0)));
+        try testing.expectEqual(duel.challenge(i, 0), duel.base_of(variant));
+        try testing.expect(duel.counters(duel.reply(i), variant));
     }
 }
 
@@ -800,26 +583,30 @@ test "P15-02: Pete/Arantor Sword Master target invariant prevents master insults
     const testing = std.testing;
     var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
+    var chunk = bespoke.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = bespoke.VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
 
-    const duel_sys = try DialogueDuelSystem.init(&world);
+    var duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
     const guybrush = try world.intern_entity("Guybrush");
     const pirate_bob = try world.intern_entity("PirateBob");
     const carla = try world.intern_entity("Carla");
-    try world.remember(carla, duel_sys.is_sword_master_rel, 1, 0);
+    try duel.set_tier(carla, SWORD_MASTER_TIER);
 
-    // Guybrush learns Carla's insult 104 and standard insult 4
-    try world.remember(guybrush, duel_sys.heard_insult_rel, 4, 0);
-    try world.remember(guybrush, duel_sys.heard_insult_rel, 104, 0);
+    // Guybrush learns standard insult 4 and Carla's variant of it
+    try duel.hear(guybrush, duel.challenge(3, 0));
+    try duel.hear(guybrush, duel.challenge(3, SWORD_MASTER_TIER));
 
     // Querying against regular pirate Bob: only standard insult 4 is permitted
-    var bob_candidates: [4]DialogueCandidate = undefined;
-    const bob_count = duel_sys.query_available_insults(guybrush, pirate_bob, &bob_candidates);
+    var bob_candidates: [4]duel_mod.Candidate = undefined;
+    const bob_count = duel.challenges(&vm, guybrush, pirate_bob, &bob_candidates);
     try testing.expectEqual(@as(usize, 1), bob_count);
-    try testing.expectEqual(@as(u32, 4), bob_candidates[0].id);
+    try testing.expectEqual(duel.challenge(3, 0), bob_candidates[0].entity);
 
     // Querying against Sword Master Carla: both are permitted
-    var carla_candidates: [4]DialogueCandidate = undefined;
-    const carla_count = duel_sys.query_available_insults(guybrush, carla, &carla_candidates);
+    var carla_candidates: [4]duel_mod.Candidate = undefined;
+    const carla_count = duel.challenges(&vm, guybrush, carla, &carla_candidates);
     try testing.expectEqual(@as(usize, 2), carla_count);
 }
 
@@ -828,32 +615,28 @@ test "P15-03: conversational repetition fatigue asserts decaying mood facts" {
     var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    var duel_sys = try DialogueDuelSystem.init(&world);
+    var fatigue = try duel_mod.InquiryFatigue.init(&world, FATIGUE_CONFIG);
     const guybrush = try world.intern_entity("Guybrush");
     const barkeep = try world.intern_entity("Barkeep");
-    const topic_grog: u32 = 42;
 
-    // Inquiry 1: Welcoming
-    const m1 = try duel_sys.record_inquiry(guybrush, barkeep, topic_grog, 10, 20);
-    try testing.expectEqual(NpcMood.welcoming, m1);
-    try testing.expectEqual(NpcMood.welcoming, duel_sys.get_npc_mood(barkeep, guybrush));
+    try testing.expectEqual(@as(?usize, null), try fatigue.record(guybrush, barkeep));
+    try testing.expectEqual(@as(?usize, null), fatigue.mood(barkeep, guybrush));
 
-    // Inquiry 2: Annoyed (TTL 10 ticks)
-    const m2 = try duel_sys.record_inquiry(guybrush, barkeep, topic_grog, 10, 20);
-    try testing.expectEqual(NpcMood.annoyed, m2);
-    try testing.expectEqual(NpcMood.annoyed, duel_sys.get_npc_mood(barkeep, guybrush));
+    // Inquiry 2: Annoyed (100 ticks)
+    try testing.expectEqual(@as(?usize, ANNOYED), try fatigue.record(guybrush, barkeep));
+    try testing.expectEqual(@as(?usize, ANNOYED), fatigue.mood(barkeep, guybrush));
 
-    // Inquiry 3: Furious (TTL 20 ticks)
-    const m3 = try duel_sys.record_inquiry(guybrush, barkeep, topic_grog, 10, 20);
-    try testing.expectEqual(NpcMood.furious, m3);
-    try testing.expectEqual(NpcMood.furious, duel_sys.get_npc_mood(barkeep, guybrush));
+    // Inquiry 3: Furious (250 ticks)
+    try testing.expectEqual(@as(?usize, FURIOUS), try fatigue.record(guybrush, barkeep));
+    try testing.expectEqual(@as(?usize, FURIOUS), fatigue.mood(barkeep, guybrush));
 
-    // Step world 25 ticks: Annoyed and Furious expire
-    _ = world.step_tick();
-    world.current_tick += 25;
-    _ = world.step_tick();
-
-    try testing.expectEqual(NpcMood.welcoming, duel_sys.get_npc_mood(barkeep, guybrush));
+    // Annoyance expires first, fury later
+    var tick: usize = 0;
+    while (tick < 100) : (tick += 1) _ = world.step_tick();
+    try testing.expect(!world.has_fact(barkeep, fatigue.stage_rels[ANNOYED], guybrush.to_int()));
+    try testing.expectEqual(@as(?usize, FURIOUS), fatigue.mood(barkeep, guybrush));
+    while (tick < 250) : (tick += 1) _ = world.step_tick();
+    try testing.expectEqual(@as(?usize, null), fatigue.mood(barkeep, guybrush));
 }
 
 test "P15-04: headless simulation of Monkey Island Insult Sword Fighting passes cleanly" {
