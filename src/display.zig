@@ -209,9 +209,15 @@ pub const RenderDistaff = struct {
     played_len: u8 = 0,
     reach: u8 = 0,
     outcome: WeaveOutcome = .none,
+    target_name: [24]u8 = [_]u8{0} ** 24,
+    target_len: u8 = 0,
 
     pub fn get_played(self: *const RenderDistaff) []const u8 {
         return self.played[0..self.played_len];
+    }
+
+    pub fn get_target(self: *const RenderDistaff) []const u8 {
+        return self.target_name[0..self.target_len];
     }
 };
 
@@ -268,6 +274,12 @@ pub const RenderFrame = struct {
     darko_vortex_reached: bool = false,
     darko_artifact_returned: bool = false,
     darko_puzzle_solved: bool = false,
+    // The Bell Tower musical draft scenario (P22-03, D-029)
+    bell_brazier_lit: bool = false,
+    bell_chain_loosed: bool = false,
+    bell_fork_taken: bool = false,
+    bell_ringing: bool = false,
+    bell_beacon_lit: bool = false,
     vector_conduits: [4]RenderVectorConduit = [_]RenderVectorConduit{.{}} ** 4,
     vector_conduit_count: usize = 0,
     // Living Village drives & social graph state (P18-01..P18-03, D-021)
@@ -301,7 +313,13 @@ pub const RenderFrame = struct {
     }
 };
 
-fn capture_distaff(maybe_input: ?*const DistaffInput) RenderDistaff {
+fn entity_in_state(world: *const World, entity_name: []const u8, state: []const u8) bool {
+    const ent = world.lookup_entity(entity_name) orelse return false;
+    const rel = world.lookup_relation(state) orelse return false;
+    return world.has_fact(ent, rel, null);
+}
+
+fn capture_distaff(world: *const World, maybe_input: ?*const DistaffInput) RenderDistaff {
     const input = maybe_input orelse return .{};
     var out = RenderDistaff{
         .enabled = true,
@@ -310,6 +328,13 @@ fn capture_distaff(maybe_input: ?*const DistaffInput) RenderDistaff {
         .outcome = input.outcome,
     };
     for (input.current(), 0..) |n, i| out.played[i] = @intFromEnum(n);
+    if (input.target != .none) {
+        if (world.get_entity_name(input.target)) |name| {
+            const len = @min(name.len, out.target_name.len);
+            @memcpy(out.target_name[0..len], name[0..len]);
+            out.target_len = @intCast(len);
+        }
+    }
     return out;
 }
 
@@ -685,6 +710,19 @@ pub const DisplayBridge = struct {
             self.back_buffer.social_edge_count = se_count;
         }
 
+        // 5c-bell. Capture Bell Tower scenario state (P22-03). Looked up by entity, not just by
+        // relation, because `lit` is a generic state other scripts may also use.
+        self.back_buffer.bell_brazier_lit = entity_in_state(world, "Brazier", "lit");
+        self.back_buffer.bell_chain_loosed = entity_in_state(world, "IronChain", "loosed");
+        self.back_buffer.bell_ringing = entity_in_state(world, "GreatBell", "ringing");
+        self.back_buffer.bell_beacon_lit = entity_in_state(world, "Beacon", "lit");
+        self.back_buffer.bell_fork_taken = false;
+        if (world.lookup_relation("Carries")) |carries| {
+            if (world.lookup_entity("TuningFork")) |fork| {
+                self.back_buffer.bell_fork_taken = world.has_fact(null, carries, fork.to_int());
+            }
+        }
+
         // 5d. Capture Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
         self.back_buffer.goat_is_tangled = false;
         if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
@@ -953,7 +991,7 @@ pub const DisplayBridge = struct {
         self.back_buffer.max_history_tick = prev_max_history;
 
         // 8b. Capture distaff staff HUD (P22-02, D-029)
-        self.back_buffer.distaff = capture_distaff(self.distaff);
+        self.back_buffer.distaff = capture_distaff(world, self.distaff);
 
         // 9. Forward scene and cues to attached audio bridge (P16-01, P16-03, D-019)
         if (self.audio_bridge) |ab| {

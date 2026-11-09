@@ -115,6 +115,8 @@ pub const DistaffInput = struct {
     len: u8 = 0,
     reach: u8 = 7,
     outcome: WeaveOutcome = .none,
+    /// What a completed phrase will be woven on; `.none` until the player picks something.
+    target: EntityId = .none,
 
     pub fn can_play(self: *const DistaffInput, note: Note) bool {
         return @intFromEnum(note) < self.reach;

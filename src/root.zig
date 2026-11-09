@@ -21,6 +21,7 @@ pub const darko_puzzle = @import("darko_puzzle.zig");
 pub const wasm = @import("wasm.zig");
 pub const hypervisor = @import("hypervisor.zig");
 pub const draft = @import("draft.zig");
+pub const loom_puzzle = @import("loom_puzzle.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -104,4 +105,5 @@ test "root test imports all modules" {
     _ = @import("darko_puzzle.zig");
     _ = @import("wasm.zig");
     _ = @import("hypervisor.zig");
+    _ = @import("loom_puzzle.zig");
 }

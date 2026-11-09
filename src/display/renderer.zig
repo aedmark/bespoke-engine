@@ -1740,6 +1740,173 @@ pub const DisplayWindow = struct {
         return action;
     }
 
+    /// Bell Tower backdrops (P22-03). Props are drawn at their hotspot world positions from
+    /// `loom_puzzle.configure`, and each reflects its relational state through frame flags.
+    fn render_bell_tower(self: *DisplayWindow, frame: *const RenderFrame, belfry: bool) void {
+        const stone = Color{ .r = 52, .g = 50, .b = 60 };
+        const stone_dark = Color{ .r = 34, .g = 33, .b = 42 };
+        const mortar = Color{ .r = 70, .g = 68, .b = 78 };
+        const iron = Color{ .r = 88, .g = 92, .b = 100 };
+        const ember = Color{ .r = 249, .g = 115, .b = 22 };
+        const flame = Color{ .r = 253, .g = 224, .b = 71 };
+        const bronze = Color{ .r = 180, .g = 130, .b = 60 };
+        const rx: i32 = 40;
+        const ry: i32 = 110;
+        const rw: i32 = self.width - 80;
+        const rh: i32 = self.height - 220;
+
+        self.fill_rect(0, 0, self.width, self.height, Color{ .r = 14, .g = 14, .b = 22 });
+        self.fill_rect(rx, ry, rw, rh, stone);
+
+        if (belfry) {
+            // Night sky through three open arches
+            var a: i32 = 0;
+            while (a < 3) : (a += 1) {
+                const ax = rx + 120 + a * 340;
+                // Arch top stays inside the room rectangle (circle top = ry + 10)
+                self.fill_rect(ax, ry + 110, 200, 120, Color{ .r = 22, .g = 30, .b = 64 });
+                self.fill_circle(ax + 100, ry + 110, 100, Color{ .r = 22, .g = 30, .b = 64 });
+                self.fill_circle(ax + 40 + a * 50, ry + 90, 2, Color.white);
+                self.fill_circle(ax + 150 - a * 30, ry + 140, 1, Color.white);
+            }
+        }
+
+        // Stone courses
+        var y: i32 = ry + 30;
+        while (y < ry + rh) : (y += 34) {
+            self.draw_line(rx, y, rx + rw, y, mortar);
+        }
+        const floor = world_to_screen(0, 8, self.width, self.height);
+        self.fill_rect(rx, floor.y, rw, ry + rh - floor.y, stone_dark);
+        self.draw_line(rx, floor.y, rx + rw, floor.y, mortar);
+        self.draw_rect_outline(rx, ry, rw, rh, mortar);
+
+        if (!belfry) {
+            // Doorway arch
+            const door = world_to_screen(1, 0, self.width, self.height);
+            self.fill_rect(door.x - 30, door.y - 70, 60, floor.y - door.y + 70, Color{ .r = 20, .g = 24, .b = 40 });
+            self.fill_circle(door.x, door.y - 70, 30, Color{ .r = 20, .g = 24, .b = 40 });
+
+            // Lantern: always lit, its flame the first teacher
+            const lan = world_to_screen(4, -6, self.width, self.height);
+            self.draw_line(lan.x, lan.y - 30, lan.x, lan.y - 12, iron);
+            self.fill_rect(lan.x - 9, lan.y - 12, 18, 24, iron);
+            self.fill_rect(lan.x - 6, lan.y - 9, 12, 18, Color{ .r = 120, .g = 70, .b = 20 });
+            self.fill_circle(lan.x, lan.y + 1, 4, flame);
+
+            // Brazier: cold coals or a fire whose glow climbs the wall
+            const br = world_to_screen(13, -1, self.width, self.height);
+            if (frame.bell_brazier_lit) {
+                self.fill_circle(br.x, br.y - 20, 60, Color{ .r = 120, .g = 60, .b = 20, .a = 70 });
+            }
+            self.fill_rect(br.x - 30, br.y, 60, 12, iron);
+            self.draw_line(br.x - 20, br.y + 12, br.x - 26, floor.y, iron);
+            self.draw_line(br.x + 20, br.y + 12, br.x + 26, floor.y, iron);
+            if (frame.bell_brazier_lit) {
+                self.fill_circle(br.x - 12, br.y - 8, 10, ember);
+                self.fill_circle(br.x + 10, br.y - 10, 12, ember);
+                self.fill_circle(br.x, br.y - 20, 9, flame);
+            } else {
+                self.fill_circle(br.x - 10, br.y - 2, 6, Color{ .r = 60, .g = 55, .b = 55 });
+                self.fill_circle(br.x + 8, br.y - 3, 7, Color{ .r = 50, .g = 48, .b = 48 });
+            }
+
+            // Iron gate wound with ivy
+            const gate = world_to_screen(24, -8, self.width, self.height);
+            var bar: i32 = -36;
+            while (bar <= 36) : (bar += 12) {
+                self.draw_line(gate.x + bar, gate.y - 40, gate.x + bar, floor.y, iron);
+            }
+            self.draw_line(gate.x - 40, gate.y - 40, gate.x + 40, gate.y - 40, iron);
+            const leaf = Color{ .r = 52, .g = 130, .b = 60 };
+            var v: i32 = 0;
+            while (v < 8) : (v += 1) {
+                const vy = gate.y - 36 + v * 18;
+                const vx = gate.x + (if (@mod(v, 2) == 0) @as(i32, -20) else 20);
+                self.draw_line(gate.x, vy, vx, vy + 9, leaf);
+                self.fill_circle(vx, vy + 9, 4, leaf);
+            }
+
+            // Stairwell: black until the brazier lights it
+            const st = world_to_screen(36, -6, self.width, self.height);
+            self.fill_rect(st.x - 40, st.y - 50, 80, floor.y - st.y + 50, Color{ .r = 8, .g = 8, .b = 12 });
+            if (frame.bell_brazier_lit) {
+                var step: i32 = 0;
+                while (step < 6) : (step += 1) {
+                    const sy = floor.y - 12 - step * 16;
+                    self.fill_rect(st.x - 34 + step * 4, sy, 60 - step * 6, 6, Color{ .r = 110, .g = 80, .b = 50 });
+                }
+            }
+
+            self.draw_text("BELL TOWER - BASE", rx + 16, ry + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(LANTERN * BRAZIER * IVY GATE * STAIRWELL)", rx + 16, ry + 36, 1, Color.hud_subtext);
+        } else {
+            // Great bell on its beam; motion arcs while it rings
+            const bell = world_to_screen(21, -10, self.width, self.height);
+            self.fill_rect(bell.x - 90, bell.y - 60, 180, 10, Color{ .r = 90, .g = 60, .b = 35 });
+            const sway: i32 = if (frame.bell_ringing) 12 else 0;
+            const bx = bell.x + sway;
+            self.draw_line(bell.x, bell.y - 50, bx, bell.y - 34, iron);
+            var row: i32 = 0;
+            while (row < 50) : (row += 2) {
+                const half = 18 + @divTrunc(row * 22, 50);
+                self.draw_line(bx - half, bell.y - 34 + row, bx + half, bell.y - 34 + row, bronze);
+            }
+            self.fill_rect(bx - 44, bell.y + 16, 88, 6, Color{ .r = 150, .g = 105, .b = 45 });
+            self.fill_circle(bx, bell.y + 26, 6, Color{ .r = 120, .g = 85, .b = 40 });
+            if (frame.bell_ringing) {
+                var arc: i32 = 0;
+                while (arc < 3) : (arc += 1) {
+                    self.draw_circle_outline(bx, bell.y, 70 + arc * 18, Color{ .r = 253, .g = 224, .b = 71, .a = 120 });
+                }
+            }
+
+            // Chain wound around the clapper, or lying slack on the boards
+            const ch = world_to_screen(16, -2, self.width, self.height);
+            if (!frame.bell_chain_loosed) {
+                var link: i32 = 0;
+                while (link < 7) : (link += 1) {
+                    const lx = bx - 40 + link * 14;
+                    self.draw_circle_outline(lx, bell.y + 26 + @mod(link, 2) * 6, 6, iron);
+                }
+                self.draw_line(bx + 44, bell.y + 30, ch.x + 40, floor.y, iron);
+            } else {
+                var link: i32 = 0;
+                while (link < 8) : (link += 1) {
+                    self.draw_circle_outline(ch.x - 50 + link * 12, floor.y - 6, 5, iron);
+                }
+            }
+
+            // Tuning fork: hidden under the chain, glinting once freed, gone when taken
+            if (frame.bell_chain_loosed and !frame.bell_fork_taken) {
+                const fk = world_to_screen(10, 3, self.width, self.height);
+                self.draw_line(fk.x, fk.y + 8, fk.x, fk.y - 4, bronze);
+                self.draw_line(fk.x - 4, fk.y - 4, fk.x - 4, fk.y - 16, bronze);
+                self.draw_line(fk.x + 4, fk.y - 4, fk.x + 4, fk.y - 16, bronze);
+                self.draw_line(fk.x - 4, fk.y - 4, fk.x + 4, fk.y - 4, bronze);
+                self.fill_circle(fk.x + 7, fk.y - 18, 2, Color.white);
+            }
+
+            // Beacon basket on the parapet
+            const bc = world_to_screen(36, -8, self.width, self.height);
+            if (frame.bell_beacon_lit) {
+                self.fill_circle(bc.x, bc.y - 16, 70, Color{ .r = 120, .g = 60, .b = 20, .a = 70 });
+            }
+            self.draw_line(bc.x, bc.y + 14, bc.x, floor.y, iron);
+            self.fill_rect(bc.x - 24, bc.y, 48, 14, iron);
+            self.draw_line(bc.x - 24, bc.y, bc.x - 30, bc.y - 10, iron);
+            self.draw_line(bc.x + 24, bc.y, bc.x + 30, bc.y - 10, iron);
+            if (frame.bell_beacon_lit) {
+                self.fill_circle(bc.x - 8, bc.y - 6, 10, ember);
+                self.fill_circle(bc.x + 8, bc.y - 8, 11, ember);
+                self.fill_circle(bc.x, bc.y - 22, 9, flame);
+            }
+
+            self.draw_text("BELL TOWER - BELFRY", rx + 16, ry + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(GREAT BELL * IRON CHAIN * BEACON)", rx + 16, ry + 36, 1, Color.hud_subtext);
+        }
+    }
+
     /// Draws the distaff: a treble staff with the phrase in progress as noteheads, the outcome
     /// of the last phrase, and one button per note (dimmed beyond reach) (P22-02, D-029).
     fn render_distaff(self: *DisplayWindow, d: *const display_mod.RenderDistaff) void {
@@ -1751,6 +1918,12 @@ pub const DisplayWindow = struct {
         self.fill_rect(panel.x, panel.y, panel.w, panel.h, Color.hud_bg);
         self.draw_rect_outline(panel.x, panel.y, panel.w, panel.h, gold);
         self.draw_text("DISTAFF", panel.x + 10, panel.y + 6, 1, gold);
+        var target_buf: [40]u8 = undefined;
+        const target_text = if (d.target_len > 0)
+            std.fmt.bufPrint(&target_buf, "on: {s}", .{d.get_target()}) catch ""
+        else
+            "on: (click a target)";
+        self.draw_text(target_text, panel.x + 64, panel.y + 6, 1, if (d.target_len > 0) ink else Color.hud_subtext);
 
         const outcome_text: []const u8 = switch (d.outcome) {
             .none => "[BKSP]: clear",
@@ -1930,9 +2103,18 @@ pub const DisplayWindow = struct {
         var is_darko_bedroom_scene = false;
         var is_darko_school_scene = false;
         var is_darko_vortex_scene = false;
+        var is_bell_base_scene = false;
+        var is_bell_belfry_scene = false;
 
         if (cur_scene.len > 0) {
-            if (std.mem.indexOf(u8, cur_scene, "Colonial") != null or
+            // Checked first: "Bell Tower" scenes must not fall through to substring themes below.
+            if (std.mem.indexOf(u8, cur_scene, "Bell Tower") != null) {
+                if (std.mem.indexOf(u8, cur_scene, "Belfry") != null) {
+                    is_bell_belfry_scene = true;
+                } else {
+                    is_bell_base_scene = true;
+                }
+            } else if (std.mem.indexOf(u8, cur_scene, "Colonial") != null or
                 std.mem.indexOf(u8, cur_scene, "Workshop") != null or
                 std.mem.indexOf(u8, cur_scene, "1790") != null)
             {
@@ -2015,7 +2197,8 @@ pub const DisplayWindow = struct {
         }
 
         // Fallback detection if current_scene wasn't explicitly set
-        if (!is_dott_past_scene and !is_dott_present_scene and !is_dott_future_scene and
+        if (!is_bell_base_scene and !is_bell_belfry_scene and
+            !is_dott_past_scene and !is_dott_present_scene and !is_dott_future_scene and
             !is_goat_courtyard_scene and !is_templar_crypt_scene and
             !is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
             !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
@@ -2201,7 +2384,9 @@ pub const DisplayWindow = struct {
             }
         }
 
-        if (is_spitting_scene) {
+        if (is_bell_base_scene or is_bell_belfry_scene) {
+            self.render_bell_tower(frame, is_bell_belfry_scene);
+        } else if (is_spitting_scene) {
             // Sky
             self.fill_rect(0, 0, self.width, self.height, Color.sky_dusk);
 
@@ -3538,8 +3723,8 @@ pub const DisplayWindow = struct {
                 // Red flag
                 self.draw_line(pt.x + 12, pt.y - 18, pt.x + 12, pt.y - 28, Color{ .r = 220, .g = 38, .b = 38 });
                 self.fill_rect(pt.x + 12, pt.y - 28, 6, 4, Color{ .r = 220, .g = 38, .b = 38 });
-            } else {
-                // Default prop
+            } else if (!is_bell_base_scene and !is_bell_belfry_scene) {
+                // Default prop (Bell Tower draws its props in its backdrop, D-030)
                 self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
                 self.draw_rect_outline(pt.x - 16, pt.y - 16, 32, 32, Color.tavern_border);
             }

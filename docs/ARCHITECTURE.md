@@ -20,6 +20,7 @@ The BeSpoke Engine inverts traditional game engine architecture into an **Engine
 | Emergent Village Sandbox | `src/village.zig` | `VillageSimulation.init()` | World, Spatial, & VM stores; autonomous physiological drives, witness detection, rumor propagation, and Sheriff arrest cascades (D-021) |
 | WebAssembly Browser Target | `src/wasm.zig` | `WasmRuntime.init()` | World, Spatial, & VM stores; `wasm32-freestanding` RGBA8888 software canvas, browser event bridge, and C-ABI exports (D-022) |
 | Musical Drafts | `src/draft.zig` | `VM.weave_notes()` / `VM.dispatch_pending_weaves()` / `DistaffInput.press()` | Compiler (draft table), VM (`weave` opcode, `Weave` cue handlers), package loader, display bridge (`RenderFrame.distaff` staff HUD), audio (`AudioEvent.play_note`); pitch-based spellcraft (D-029, D-030) |
+| The Bell Tower | `src/loom_puzzle.zig` | `run_headless()` / `run_interactive()` | World, Spatial, VM, and display bridge; musical draft slice with distaff reach, reversed-draft puzzle, and host re-dispatch (D-029, D-030) |
 | Day of the Tentacle Trio | `src/dott_puzzle.zig` | `run_headless()` / `run_interactive()` | World, Spatial, & VM stores; 3-era parallel puzzle DAG, multi-party item transfer, epistemic dialogue, and time-travel rewind (D-025) |
 
 ## Memory Layout & Core Structs (Zig)

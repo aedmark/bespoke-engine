@@ -67,6 +67,10 @@ zig build run -- --spitting-contest              # 2. Booty Island Spitting Cont
 zig build run -- --gk3                           # 3. Gabriel Knight 3 Cat Moustache
 zig build run -- --sword-fighting                # 4. Monkey Island Insult Sword Fighting
 zig build run -- --village                       # 5. The Living Village (Emergent Sandbox)
+zig build run -- --goat                          # 6. Broken Sword Lochmarne Goat
+zig build run -- --dott                          # 7. Day of the Tentacle Trio
+zig build run -- --darko                         # 8. The Middlesex Anomaly
+zig build run -- --loom                          # 9. The Bell Tower (musical drafts on the distaff)
 
 # Standalone script & binary package CLI toolchain
 zig build run -- check scenarios/tavern_heist.bespoke

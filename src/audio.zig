@@ -120,6 +120,7 @@ pub const MusicTrackKind = enum(u8) {
     bike_shop,
     lochmarne,
     tentacle,
+    bell_tower,
 };
 
 /// Decoupled audio event queued by simulation or GUI and consumed by audio thread.
@@ -391,6 +392,27 @@ pub fn get_track_pattern(track: MusicTrackKind) BgmPattern {
             p.drum_pattern = [BGM_STEPS]u8{
                 1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 1, 2, 2,
                 1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 2, 3, 1,
+            };
+        },
+
+        // The Bell Tower: slow modal hymn; the lead quotes the Kindle and Toll drafts (P22-03)
+        .bell_tower => {
+            p.bpm = 72;
+            p.bass_notes = [BGM_STEPS]u8{
+                38, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0,
+                41, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 38, 0, 0, 0,
+            };
+            p.lead_notes = [BGM_STEPS]u8{
+                72, 0, 74, 0, 76, 0, 72, 0, 0,  0, 0, 0, 69, 0, 0,  0,
+                67, 0, 69, 0, 71, 0, 67, 0, 0,  0, 0, 0, 62, 0, 0,  0,
+            };
+            p.chord_notes = [BGM_STEPS]u8{
+                50, 0, 0, 0, 57, 0, 0, 0, 48, 0, 0, 0, 55, 0, 0, 0,
+                53, 0, 0, 0, 57, 0, 0, 0, 55, 0, 0, 0, 50, 0, 0, 0,
+            };
+            p.drum_pattern = [BGM_STEPS]u8{
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
             };
         },
     }
@@ -1066,6 +1088,9 @@ pub const AudioBridge = struct {
     pub fn get_track_for_scene(scene_name: []const u8) MusicTrackKind {
         if (scene_name.len == 0) return .none;
 
+        // Checked first: later substrings ("Sanctuary", "Courtyard") belong to other slices.
+        if (std.mem.indexOf(u8, scene_name, "Bell Tower") != null) return .bell_tower;
+
         if (std.mem.indexOf(u8, scene_name, "Spitting") != null or
             std.mem.indexOf(u8, scene_name, "Booty") != null or
             std.mem.indexOf(u8, scene_name, "Spit") != null)
@@ -1357,6 +1382,7 @@ test "P16-03: All scene background music tracks synthesize cleanly without clipp
         .scumm_bar,
         .courtyard,
         .bike_shop,
+        .bell_tower,
     };
 
     var buf: [1024]i16 = undefined;
@@ -1440,4 +1466,10 @@ test "P22-02: out-of-range note degrees are dropped and weave stingers synthesiz
         for (out) |smp| peak = @max(peak, @as(i32, @intCast(@abs(smp))));
         try testing.expect(peak > 500);
     }
+}
+
+test "P22-03: Bell Tower scenes map to the bell tower track ahead of other substrings" {
+    try testing.expectEqual(MusicTrackKind.bell_tower, AudioBridge.get_track_for_scene("Bell Tower Base"));
+    try testing.expectEqual(MusicTrackKind.bell_tower, AudioBridge.get_track_for_scene("Bell Tower Belfry"));
+    try testing.expectEqual(MusicTrackKind.sanctuary, AudioBridge.get_track_for_scene("Sword Master Sanctuary"));
 }

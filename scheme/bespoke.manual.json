@@ -732,6 +732,35 @@
             {"label": "Display Vector Conduit & Singularity Renderer", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["snapshot-time-travel", "asynchronous-motor-intents", "day-of-the-tentacle-scenario", "multi-scene-transitions-spatial-partitioning"]
+        },
+        {
+          "id": "musical-drafts-and-the-bell-tower",
+          "title": "Musical Drafts and The Bell Tower Scenario",
+          "summary": "Four-note pitch drafts declared in the DSL, played on a distaff, reversed for complementary effects, and dispatched through Weave cues.",
+          "synopsis": "draft Kindle(C, D, E, C) reverse Douse  |  weave Kindle on Beacon  |  zig build run -- --loom [--headless]",
+          "tags": ["drafts", "distaff", "audio", "reversal", "cues", "bell-tower"],
+          "what": "Adds pitch-based spellcraft: `draft` declarations name four-note sequences over C to B, `weave` statements and player note input cast them on targets, and the original Bell Tower slice teaches drafts by observation and gates the high notes behind the distaff's reach.",
+          "how": [
+            "The parser rejects malformed drafts and any sequence that matches another draft forward or reversed, so a played phrase names at most one draft; a declared reverse becomes its own table entry.",
+            "VM.weave_notes resolves played notes and runs the exact Weave(caster, draft, target) handler, or records a WeaveFizzled cue; in-script weaves queue until the host calls dispatch_pending_weaves after each tick.",
+            "DistaffInput holds the phrase in progress and the reach limit host-side, never in the world arena; the display bridge copies it into RenderFrame.distaff for the staff HUD, and notes sound through AudioEvent.play_note.",
+            "The Bell Tower requires reversing a taught draft (Bind into Loose), extends reach with the tuning fork, and lights the beacon from inside the Toll handler through host re-dispatch."
+          ],
+          "why": "Drafts reuse the verb-as-cue path and the relational store instead of adding a parallel spell system, so effects stay scriptable, rewindable, and testable headless.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-029", "target": "docs/DECISIONS.md#d-029", "kind": "decision"},
+            {"label": "Architectural Decision D-030", "target": "docs/DECISIONS.md#d-030", "kind": "decision"},
+            {"label": "Draft Primitives & Distaff Input", "target": "src/draft.zig", "kind": "source"},
+            {"label": "Weave Dispatch", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Bell Tower Scenario", "target": "src/loom_puzzle.zig", "kind": "source"},
+            {"label": "Distaff Note Synthesis", "target": "src/audio.zig", "kind": "source"}
+          ],
+          "related": [
+            "cue-dispatch-and-interruption",
+            "snapshot-time-travel",
+            "multi-scene-transitions-spatial-partitioning"
+          ]
         }
       ]
     },

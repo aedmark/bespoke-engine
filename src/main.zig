@@ -17,6 +17,7 @@ pub fn main() !void {
     var is_goat = false;
     var is_dott = false;
     var is_darko = false;
+    var is_loom = false;
     var ticks_arg: usize = 20;
 
     var subcommand: ?enum { run, compile, check, help } = null;
@@ -68,6 +69,8 @@ pub fn main() !void {
             is_dott = true;
         } else if (std.mem.eql(u8, arg, "--darko") or std.mem.eql(u8, arg, "--donnie-darko") or std.mem.eql(u8, arg, "--middlesex")) {
             is_darko = true;
+        } else if (std.mem.eql(u8, arg, "--loom") or std.mem.eql(u8, arg, "--bell-tower") or std.mem.eql(u8, arg, "--drafts")) {
+            is_loom = true;
         } else if (std.mem.eql(u8, arg, "--scenario")) {
             if (args_it.next()) |scen| {
                 if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
@@ -84,6 +87,8 @@ pub fn main() !void {
                     is_dott = true;
                 } else if (std.mem.eql(u8, scen, "darko") or std.mem.eql(u8, scen, "donnie-darko") or std.mem.eql(u8, scen, "middlesex")) {
                     is_darko = true;
+                } else if (std.mem.eql(u8, scen, "loom") or std.mem.eql(u8, scen, "bell-tower") or std.mem.eql(u8, scen, "drafts")) {
+                    is_loom = true;
                 }
             }
         } else if (target_file == null and !std.mem.startsWith(u8, arg, "-")) {
@@ -112,6 +117,7 @@ pub fn main() !void {
                     \\  bespoke --goat                   (Broken Sword Lochmarne Goat Puzzle)
                     \\  bespoke --dott                   (Day of the Tentacle Trio Milestone)
                     \\  bespoke --darko                  (Donnie Darko Tangent Loop Milestone)
+                    \\  bespoke --loom                   (The Bell Tower: Musical Drafts)
                     \\
                 , .{});
                 return;
@@ -147,6 +153,15 @@ pub fn main() !void {
                 }
             },
         }
+    }
+
+    if (is_loom) {
+        if (is_headless_arg) {
+            try bespoke.loom_puzzle.run_headless(allocator, stdout);
+        } else {
+            try bespoke.loom_puzzle.run_interactive(allocator, stdout);
+        }
+        return;
     }
 
     if (is_darko) {
