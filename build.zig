@@ -63,8 +63,42 @@ pub fn build(b: *std.Build) void {
     // This creates a build step. It will be visible in the `zig build --help` menu,
     // and can be selected like this: `zig build run`
     // This will evaluate the `run` step rather than the default, which is "install".
-    const run_step = b.step("run", "Run the app");
+    const run_step = b.step("run", "Run the engine CLI (bespoke run/compile/check)");
     run_step.dependOn(&run_cmd.step);
+
+    // --- Proofs of concept (D-031) ---
+    // The engine is exported as the `bespoke` module. Proofs import it by name and live outside
+    // src/, so the compiler rejects any attempt by engine code to import a proof: the boundary is
+    // enforced by module paths, not by convention.
+    const bespoke_mod = b.addModule("bespoke", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    bespoke_mod.linkSystemLibrary("SDL2", .{});
+
+    const proofs_exe = b.addExecutable(.{
+        .name = "bespoke-proofs",
+        .root_source_file = b.path("proofs/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    proofs_exe.root_module.addImport("bespoke", bespoke_mod);
+    proofs_exe.linkLibC();
+    proofs_exe.linkSystemLibrary("SDL2");
+
+    const install_proofs = b.addInstallArtifact(proofs_exe, .{});
+    const proofs_step = b.step("proofs", "Build the proofs-of-concept binary (bespoke-proofs)");
+    proofs_step.dependOn(&install_proofs.step);
+
+    const run_proof_cmd = b.addRunArtifact(proofs_exe);
+    run_proof_cmd.step.dependOn(&install_proofs.step);
+    if (b.args) |args| {
+        run_proof_cmd.addArgs(args);
+    }
+    const run_proof_step = b.step("run-proof", "Run a proof of concept, e.g. `zig build run-proof -- --loom --headless`");
+    run_proof_step.dependOn(&run_proof_cmd.step);
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
@@ -88,12 +122,30 @@ pub fn build(b: *std.Build) void {
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
+    const proofs_unit_tests = b.addTest(.{
+        .root_source_file = b.path("proofs/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
+    proofs_unit_tests.linkLibC();
+    proofs_unit_tests.linkSystemLibrary("SDL2");
+    const run_proofs_unit_tests = b.addRunArtifact(proofs_unit_tests);
+
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
-    const test_step = b.step("test", "Run unit tests");
+    const test_step = b.step("test", "Run engine and proof tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_proofs_unit_tests.step);
+
+    const test_engine_step = b.step("test-engine", "Run engine tests only (src/)");
+    test_engine_step.dependOn(&run_lib_unit_tests.step);
+    test_engine_step.dependOn(&run_exe_unit_tests.step);
+
+    const test_proofs_step = b.step("test-proofs", "Run proof-of-concept tests only (proofs/)");
+    test_proofs_step.dependOn(&run_proofs_unit_tests.step);
 
     // Phase 19 (P19-01): Zero-dependency WebAssembly (wasm32-freestanding) target
     const wasm_target = b.resolveTargetQuery(.{

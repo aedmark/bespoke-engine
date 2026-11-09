@@ -364,6 +364,20 @@ re-litigation.
 - Passing `draft.Note` to audio: rejected to keep `src/audio.zig` free of simulation imports.
 **Consequences:** P22-03's runner owns a `DistaffInput`, attaches it, handles `.play_note` and `.clear_distaff`, calls `VM.weave_notes` on a full phrase, and sets `outcome` and the matching stinger. The wasm target and the manual simulator have no distaff yet.
 
+## D-031 Engine and Proofs of Concept Separated by Module Boundary, Staged Purge of Proof Content (2026-11-08, status: accepted)
+**Context:** Eight vertical slices (`dott_puzzle`, `gk3_moustache`, `spitting_contest`, `goat_puzzle`, `darko_puzzle`, `sword_fighting`, `loom_puzzle`, `village`) lived in `src/` beside the engine and were exported from the engine's root module, and The Tavern Heist was written inline in the engine CLI's `main()`. The maintainer clarified that these are proofs of concept: empirical evidence that engine features exist and work, not engine components. The coupling also runs the other way: engine files name proof entities and carry proof art, music, and flags.
+**Decision:**
+1. **Location:** All nine proofs live in `proofs/`. The Tavern Heist is extracted to `proofs/tavern_heist.zig`. `scenarios/` stays as sample `.bespoke` scripts for the stock CLI; those are game content, not host programs.
+2. **Module boundary:** `build.zig` exports `src/root.zig` as the `bespoke` module. Proofs import it by name. Because `proofs/` lies outside the module's path, the compiler rejects any import from engine code into a proof.
+3. **Binaries:** `bespoke` is engine-only (`run`, `compile`, `check`, `help`); former scenario flags print a pointer to the new binary. `bespoke-proofs` (`zig build proofs`, `zig build run-proof -- --<proof>`) keeps the old flag spellings.
+4. **Tests:** `zig build test` runs both sides; `test-engine` and `test-proofs` run each alone.
+5. **Staged purge:** Stage 1 (P32-01) moves files and splits the build. Proof content remaining inside engine files is removed in later, separately reviewable stages: presentation extension hooks for renderer and audio (P32-02), proof-specific logic and flags out of core logic and `RenderFrame` (P32-03), and the wasm deck split (P32-04).
+**Alternatives:**
+- Same binary with scenario flags, proofs linked as a second module: rejected by the maintainer so the engine binary links no scenario code.
+- Full decoupling in one change: rejected by the maintainer; the renderer alone carries over 240 proof-specific lines, and one change would be hard to review.
+- Leaving proof content in the engine permanently: rejected; it would keep the engine's core files coupled to demo names.
+**Consequences:** Engine and proofs can evolve and be reviewed separately, and new proofs cannot leak into the engine by import. Until P32-02 to P32-04 land, engine files still name proof content (recorded under Claims vs. code in ARCHITECTURE). Commands of the form `bespoke --dott` become `bespoke-proofs --dott`.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

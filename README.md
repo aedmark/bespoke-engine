@@ -61,16 +61,16 @@ Build and run the BeSpoke Engine in interactive 60 Hz SDL2 graphical mode, headl
 zig build test
 zig build wasm
 
-# Run interactive or headless vertical slices
-zig build run                                    # 1. The Tavern Heist (60 Hz GUI; add --headless for CLI)
-zig build run -- --spitting-contest              # 2. Booty Island Spitting Contest
-zig build run -- --gk3                           # 3. Gabriel Knight 3 Cat Moustache
-zig build run -- --sword-fighting                # 4. Monkey Island Insult Sword Fighting
-zig build run -- --village                       # 5. The Living Village (Emergent Sandbox)
-zig build run -- --goat                          # 6. Broken Sword Lochmarne Goat
-zig build run -- --dott                          # 7. Day of the Tentacle Trio
-zig build run -- --darko                         # 8. The Middlesex Anomaly
-zig build run -- --loom                          # 9. The Bell Tower (musical drafts on the distaff)
+# Proofs of concept (separate bespoke-proofs binary, proofs/; add `--headless` for CLI runs)
+zig build run-proof                          # 1. The Tavern Heist (default proof)
+zig build run-proof -- --spitting-contest    # 2. Booty Island Spitting Contest
+zig build run-proof -- --gk3                 # 3. Gabriel Knight 3 Cat Moustache
+zig build run-proof -- --sword-fighting      # 4. Monkey Island Insult Sword Fighting
+zig build run-proof -- --village             # 5. The Living Village (Emergent Sandbox)
+zig build run-proof -- --goat                # 6. Broken Sword Lochmarne Goat
+zig build run-proof -- --dott                # 7. Day of the Tentacle Trio
+zig build run-proof -- --darko               # 8. The Middlesex Anomaly
+zig build run-proof -- --loom                # 9. The Bell Tower (musical drafts on the distaff)
 
 # Standalone script & binary package CLI toolchain
 zig build run -- check scenarios/tavern_heist.bespoke

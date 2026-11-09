@@ -1,5 +1,5 @@
 const std = @import("std");
-const bespoke = @import("root.zig");
+const bespoke = @import("bespoke");
 
 /// BeSpoke DSL Script for Monkey Island Insult Sword Fighting and Organic NPC Repetition
 pub const SWORD_FIGHTING_SCRIPT =

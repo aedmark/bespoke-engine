@@ -567,7 +567,7 @@
           "evidence": [
             {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
             {"label": "Parser Stageplay Support", "target": "src/compiler/parser.zig", "kind": "source"},
-            {"label": "Booty Island Spitting Contest Script", "target": "src/spitting_contest.zig", "kind": "source"}
+            {"label": "Booty Island Spitting Contest Script", "target": "proofs/spitting_contest.zig", "kind": "source"}
           ],
           "related": ["compiler-pipeline", "relational-facts"]
         },
@@ -634,7 +634,7 @@
           "evidence": [
             {"label": "Architectural Decision D-013", "target": "docs/DECISIONS.md#d-013", "kind": "decision"},
             {"label": "Renderer Inventory Tray", "target": "src/display/renderer.zig", "kind": "source"},
-            {"label": "Spitting Contest Scenario Integration", "target": "src/spitting_contest.zig", "kind": "source"}
+            {"label": "Spitting Contest Scenario Integration", "target": "proofs/spitting_contest.zig", "kind": "source"}
           ],
           "related": ["commutative-item-combining", "classic-adventure-verbs"]
         },
@@ -642,7 +642,7 @@
           "id": "gabriel-knight-cat-moustache-scenario",
           "title": "The Gabriel Knight 3 Cat Moustache Scenario",
           "summary": "Multi-scene vertical slice demonstrating ambient routines, in-hand crafting, fact-guarded dialogue pruning, and disguise evaluation.",
-          "synopsis": "zig build run -- --gk3 [--headless]",
+          "synopsis": "zig build run-proof -- --gk3 [--headless]",
           "tags": ["gk3", "scenario", "crafting", "multi-scene", "dialogue"],
           "what": "Implements the classic multi-step disguise puzzle across three partitioned scenes (Hotel Corridor, Courtyard Garden, Bike Rental Desk), combining stolen passport, tape fence traps, spray bottles, syrup adhesive, and fact-guarded dialogue choice validation.",
           "how": [
@@ -655,7 +655,7 @@
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-016", "target": "docs/DECISIONS.md#d-016", "kind": "decision"},
-            {"label": "GK3 Cat Moustache Scenario Script", "target": "src/gk3_moustache.zig", "kind": "source"},
+            {"label": "GK3 Cat Moustache Scenario Script", "target": "proofs/gk3_moustache.zig", "kind": "source"},
             {"label": "GK3 Scene Renderer & Actor Tokens", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["stageplay-taxonomy", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
@@ -664,7 +664,7 @@
           "id": "broken-sword-goat-puzzle-scenario",
           "title": "The Broken Sword Lochmarne Goat Scenario",
           "summary": "Authentic 1996 threat-radius reactive interrupt, 30-tick retreat recovery window, plough obstacle dragging, and subterranean crypt multi-scene transition.",
-          "synopsis": "zig build run -- --goat [--headless]",
+          "synopsis": "zig build run-proof -- --goat [--headless]",
           "tags": ["goat", "broken-sword", "threat-radius", "timing-window", "multi-scene"],
           "what": "Implements the famous 1996 Lochmarne Castle courtyard puzzle, modeling goat proximity charging, knockback interrupts, dynamic 30-tick retreat recovery windows, plough dragging to trap the tether rope, and subterranean Templar excavation crypt transitions.",
           "how": [
@@ -677,7 +677,7 @@
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-023", "target": "docs/DECISIONS.md#d-023", "kind": "decision"},
-            {"label": "Broken Sword Goat Scenario Script", "target": "src/goat_puzzle.zig", "kind": "source"},
+            {"label": "Broken Sword Goat Scenario Script", "target": "proofs/goat_puzzle.zig", "kind": "source"},
             {"label": "Lochmarne Courtyard & Crypt Renderer", "target": "src/display/renderer.zig", "kind": "source"},
             {"label": "Celtic Whistle Audio Synthesis", "target": "src/audio.zig", "kind": "source"}
           ],
@@ -687,7 +687,7 @@
           "id": "day-of-the-tentacle-scenario",
           "title": "Day of the Tentacle Multi-Character Temporal Scenario",
           "summary": "Multi-character party switching, generalized inventory transfers across actors, epistemic dialogue belief pruning, and DAG temporal causality cascades across 400 years.",
-          "synopsis": "zig build run -- --dott [--headless]",
+          "synopsis": "zig build run-proof -- --dott [--headless]",
           "tags": ["dott", "multi-party", "item-transfer", "epistemic-dialogue", "temporal-causality", "time-travel"],
           "what": "Implements the three-era Day of the Tentacle puzzle milestone across 1790 Colonial, 1993 Motel, and 2193 Future scenes with three coordinated protagonists (Hoagie, Bernard, Laverne).",
           "how": [
@@ -703,7 +703,7 @@
             {"label": "World Item Transfer", "target": "src/world.zig", "kind": "source"},
             {"label": "Epistemic Dialogue Belief Resolver", "target": "src/vm.zig", "kind": "source"},
             {"label": "Spatial Transfer Policy", "target": "src/spatial.zig", "kind": "source"},
-            {"label": "Day of the Tentacle Puzzle Scenario", "target": "src/dott_puzzle.zig", "kind": "source"},
+            {"label": "Day of the Tentacle Puzzle Scenario", "target": "proofs/dott_puzzle.zig", "kind": "source"},
             {"label": "Display Party Portraits & Backdrops", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["snapshot-time-travel", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
@@ -712,7 +712,7 @@
           "id": "roberta-sparrow-temporal-hypervisor-and-vector-conduits",
           "title": "Roberta Sparrow Temporal Hypervisor & Pre-Cognitive Vector Conduits",
           "summary": "Ephemeral Tangent Universe copy-on-write arenas, discrete countdown tick budgets, black hole gravitational collapse, and Fourth-Dimensional vector conduits.",
-          "synopsis": "zig build run -- --darko [--headless]",
+          "synopsis": "zig build run-proof -- --darko [--headless]",
           "tags": ["darko", "hypervisor", "tangent-universe", "vector-conduits", "teleological-solver", "novikov-loop", "time-travel"],
           "what": "Implements the Roberta Sparrow Tangent Universe model (Donnie Darko) with ephemeral copy-on-write world state branching, Fourth-Dimensional pre-cognitive vector conduits, hyper-temporal fibers for out-of-time actors, and backward-chaining teleological Horn clause solvers.",
           "how": [
@@ -728,7 +728,7 @@
             {"label": "Architectural Decision D-027", "target": "docs/DECISIONS.md#d-027", "kind": "decision"},
             {"label": "Temporal Hypervisor & Tangent Collapse", "target": "src/hypervisor.zig", "kind": "source"},
             {"label": "Spatial Vector Conduits & Novikov Consistency", "target": "src/spatial.zig", "kind": "source"},
-            {"label": "The Middlesex Anomaly Puzzle Scenario", "target": "src/darko_puzzle.zig", "kind": "source"},
+            {"label": "The Middlesex Anomaly Puzzle Scenario", "target": "proofs/darko_puzzle.zig", "kind": "source"},
             {"label": "Display Vector Conduit & Singularity Renderer", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["snapshot-time-travel", "asynchronous-motor-intents", "day-of-the-tentacle-scenario", "multi-scene-transitions-spatial-partitioning"]
@@ -737,7 +737,7 @@
           "id": "musical-drafts-and-the-bell-tower",
           "title": "Musical Drafts and The Bell Tower Scenario",
           "summary": "Four-note pitch drafts declared in the DSL, played on a distaff, reversed for complementary effects, and dispatched through Weave cues.",
-          "synopsis": "draft Kindle(C, D, E, C) reverse Douse  |  weave Kindle on Beacon  |  zig build run -- --loom [--headless]",
+          "synopsis": "draft Kindle(C, D, E, C) reverse Douse  |  weave Kindle on Beacon  |  zig build run-proof -- --loom [--headless]",
           "tags": ["drafts", "distaff", "audio", "reversal", "cues", "bell-tower"],
           "what": "Adds pitch-based spellcraft: `draft` declarations name four-note sequences over C to B, `weave` statements and player note input cast them on targets, and the original Bell Tower slice teaches drafts by observation and gates the high notes behind the distaff's reach.",
           "how": [
@@ -753,7 +753,7 @@
             {"label": "Architectural Decision D-030", "target": "docs/DECISIONS.md#d-030", "kind": "decision"},
             {"label": "Draft Primitives & Distaff Input", "target": "src/draft.zig", "kind": "source"},
             {"label": "Weave Dispatch", "target": "src/vm.zig", "kind": "source"},
-            {"label": "Bell Tower Scenario", "target": "src/loom_puzzle.zig", "kind": "source"},
+            {"label": "Bell Tower Scenario", "target": "proofs/loom_puzzle.zig", "kind": "source"},
             {"label": "Distaff Note Synthesis", "target": "src/audio.zig", "kind": "source"}
           ],
           "related": [
@@ -852,7 +852,7 @@
           "evidence": [
             {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
             {"label": "Main CLI Argument Parsing", "target": "src/main.zig", "kind": "source"},
-            {"label": "GK3 Cat Moustache Scenario Script", "target": "src/gk3_moustache.zig", "kind": "source"},
+            {"label": "GK3 Cat Moustache Scenario Script", "target": "proofs/gk3_moustache.zig", "kind": "source"},
             {"label": "Testing Strategy & Recipes", "target": "docs/TESTING.md", "kind": "document"}
           ],
           "related": ["zero-external-dependencies", "test-verification-hierarchy"]
@@ -931,7 +931,7 @@
           "id": "living-village-emergent-sandbox",
           "title": "The Living Village Emergent Sandbox",
           "summary": "Multi-agent systemic simulation driven by physiological needs, witness detection, rumor propagation, and justice cascades.",
-          "synopsis": "zig build run -- --village [--headless] | var sim = try VillageSimulation.init(&world, &spatial); try sim.step_simulation(&world, &spatial, &vm);",
+          "synopsis": "zig build run-proof -- --village [--headless] | var sim = try VillageSimulation.init(&world, &spatial); try sim.step_simulation(&world, &spatial, &vm);",
           "tags": ["emergence", "village", "drives", "rumors", "justice", "sandbox"],
           "what": "A multi-agent systemic simulation sandbox where 6 autonomous villagers operate across a 6-building settlement driven by relational physiological needs, social ties, crime witnessing, rumor propagation, and autonomous law enforcement.",
           "how": [
@@ -945,7 +945,7 @@
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-021", "target": "docs/DECISIONS.md#d-021", "kind": "decision"},
-            {"label": "Living Village Simulation Engine", "target": "src/village.zig", "kind": "source"},
+            {"label": "Living Village Simulation Engine", "target": "proofs/village.zig", "kind": "source"},
             {"label": "Settlement & Social Graph Renderer", "target": "src/display/renderer.zig", "kind": "source"},
             {"label": "Display Frame Drive & Edge Capture", "target": "src/display.zig", "kind": "source"}
           ],

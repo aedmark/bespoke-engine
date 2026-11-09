@@ -101,6 +101,9 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `docs/manual.html` | Standalone interactive 3x manual and developer guide |
 | `docs/archive/` | Historical material no longer current |
 | `scheme/` | 3x manual schemas and source definitions |
+| `src/` | The engine: spine, VM, compiler, spatial, audio, display, persistence, wasm runtime; exported as the `bespoke` module |
+| `proofs/` | Proofs of concept (vertical slices) built as `bespoke-proofs`; consume the engine only through the `bespoke` module (D-031) |
+| `scenarios/` | Sample `.bespoke` DSL scripts run by the stock engine CLI (`bespoke run`) |
 | `site/index.html` | Standalone public showcase website for external audiences and Neocities |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
@@ -122,4 +125,6 @@ Never force-push, rewrite shared history, or delete production data without expl
 
 - Documentation check: `python3 tools/check_docs.py`.
 - Unit tests: `zig test src/world.zig`.
-- Full build and test: `zig build test`.
+- Full build and test: `zig build test` (engine and proofs); `zig build test-engine` and `zig build test-proofs` run each side alone.
+- Proofs of concept: `zig build run-proof -- --<proof> [--headless]` (see `bespoke-proofs --help`).
+- Boundary rule: engine code in `src/` never names a proof, a proof's entities, or its art. Proof-specific behaviour belongs in `proofs/` (D-031).

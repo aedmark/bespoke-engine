@@ -1,5 +1,5 @@
 const std = @import("std");
-const bespoke = @import("root.zig");
+const bespoke = @import("bespoke");
 
 pub const SPITTING_CONTEST_SCRIPT =
     \\scene: Spitting Competition

@@ -11,6 +11,8 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | World Store Unit Tests | `zig test src/world.zig` | Fact insertion, TTL expiration pruning, queries, `memcpy` snapshots | VM execution or parser | < 2s, Zig compiler |
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
 | WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm` | `WasmCanvas` RGBA8888 framebuffer rendering, browser mouse/keyboard/touch event routing, and `wasm32-freestanding` binary compilation | Live DOM rendering | < 3s, Zig compiler |
+| Engine Tests | `zig build test-engine` | Every test reachable from `src/root.zig` and `src/main.zig` | Proof scenarios | < 5s, Zig compiler, SDL2 headers |
+| Proof-of-Concept Tests | `zig build test-proofs` | Every proof's scripted run and rewind (`proofs/main.zig` imports each proof) | Engine internals not exercised by a proof | < 5s, Zig compiler, SDL2 headers |
 | Full Engine Test Suite | `zig build test` | End-to-end integration across compiler, VM, and spatial graph | Peripheral display output (Raylib/Sokol) | < 5s, Zig compiler |
 
 **The fast set** (before every commit):
@@ -51,7 +53,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Spatial Graph (`src/spatial.zig`) | `zig test src/spatial.zig` | Waypoint pathfinding verification in headless scenarios |
 | Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification |
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
-| Emergent Village (`src/village.zig`) | `zig test -lc -lSDL2 src/village.zig` | `zig build run -- --village --headless` cascade run |
+| Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |
 | WebAssembly Target (`src/wasm.zig`) | `zig test src/wasm.zig && zig build wasm` | Manual canvas simulator deck in `docs/manual.html` |
 | Peripheral SDL2 Display (`src/display/`) | `zig test -lc -lSDL2 src/display.zig` | Interactive GUI run verifying 60 Hz rendering and controls |
 
@@ -76,5 +78,6 @@ What only a person can check, and how. Record who checked what, where, and when 
 - **Timer sensitivity:** Ticks are discrete integer simulation increments, not wall-clock floats. Tests must increment ticks explicitly rather than calling sleep.
 - **Snapshot validation:** Always test `restore_state` on a separate buffer to prove memory independence from the original arena.
 - **Test filters and the root module:** `zig test src/root.zig --test-filter X` runs 0 tests, because the filter also drops the named test that imports every module. Filter through a file that imports what you need, e.g. `zig test -I/usr/include/SDL2 -lc -lSDL2 src/package.zig --test-filter P22-01`. Files under `src/compiler/` cannot be run alone (they import `../`).
+- **Proof files cannot be tested alone:** files in `proofs/` import the engine as `@import("bespoke")`, a module only the build graph provides, so `zig test proofs/x.zig` fails. Use `zig build test-proofs`.
 - **Headless runs read stdin:** scenario binaries wait for input after printing SUCCESS. Run them with `</dev/null` in scripts and loops.
 - **Mutation check discipline:** A mutation check must break the fix, not the test. Reverting a whole file can fail a test for an unrelated reason. Remove just the fix.

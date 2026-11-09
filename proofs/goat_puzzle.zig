@@ -1,5 +1,5 @@
 const std = @import("std");
-const bespoke = @import("root.zig");
+const bespoke = @import("bespoke");
 
 pub const GOAT_PUZZLE_SCRIPT =
     \\scene: Lochmarne Castle Courtyard

@@ -7,7 +7,7 @@
 //! reaches all seven once Wren holds the tuning fork, which gates `Toll`. Tolling the bell weaves
 //! `Kindle` on the beacon from inside the handler, which exercises host re-dispatch (D-029).
 const std = @import("std");
-const bespoke = @import("root.zig");
+const bespoke = @import("bespoke");
 const draft = bespoke.draft;
 const Note = draft.Note;
 const Notes = draft.Notes;

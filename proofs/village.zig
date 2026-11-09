@@ -6,7 +6,7 @@
 //! and an autonomous Sheriff investigation and arrest cascade.
 
 const std = @import("std");
-const bespoke = @import("root.zig");
+const bespoke = @import("bespoke");
 
 /// BeSpoke DSL Script for "The Living Village" settlement (P18-01, P18-02, P18-03, D-021).
 pub const VILLAGE_SCRIPT =
