@@ -4,6 +4,7 @@ const spatial_mod = @import("spatial.zig");
 const bytecode_mod = @import("bytecode.zig");
 const codegen_mod = @import("compiler/codegen.zig");
 const parser_mod = @import("compiler/parser.zig");
+const draft_mod = @import("draft.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -19,7 +20,10 @@ const WhenEdge = parser_mod.WhenEdge;
 
 /// 4-byte magic for compiled BeSpoke binary asset packages (P15-02, D-018).
 pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
-pub const PACKAGE_VERSION: u32 = 1;
+/// Version 2 appends the draft note table to the payload tail (P22-01, D-029). Version 1
+/// packages predate drafts and still load, with an empty draft table.
+pub const PACKAGE_VERSION: u32 = 2;
+const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
     magic: [4]u8 = PACKAGE_MAGIC,
@@ -180,6 +184,15 @@ pub fn save_package(
         }
     }
 
+    // 9. Draft note table (version 2+)
+    try pw.writeInt(u32, @intCast(compiled.drafts.items.len), .little);
+    for (compiled.drafts.items) |d| {
+        try pw.writeInt(u32, d.entity.to_int(), .little);
+        for (d.notes) |n| try pw.writeByte(@intFromEnum(n));
+        try pw.writeByte(if (d.inverse != null) 1 else 0);
+        try pw.writeInt(u32, if (d.inverse) |inv| inv.to_int() else 0, .little);
+    }
+
     // Compute CRC32 checksum over the payload
     const crc = std.hash.Crc32.hash(payload.items);
 
@@ -223,7 +236,7 @@ pub fn load_package(
         return error.InvalidPackageMagic;
     }
 
-    if (header.version != PACKAGE_VERSION) {
+    if (header.version < MIN_PACKAGE_VERSION or header.version > PACKAGE_VERSION) {
         return error.UnsupportedPackageVersion;
     }
 
@@ -418,7 +431,35 @@ pub fn load_package(
         });
     }
 
+    // 9. Draft note table (version 2+). Untrusted input: note bytes and entity ids are checked
+    // against the note range and the entity table loaded above before entering the program.
+    var drafts = std.ArrayList(draft_mod.CompiledDraft).init(allocator);
+    errdefer drafts.deinit();
+    if (header.version >= 2) {
+        const draft_count = try pr.readInt(u32, .little);
+        const entity_limit = world.entity_names.items.len;
+        var di: u32 = 0;
+        while (di < draft_count) : (di += 1) {
+            const ent_raw = try pr.readInt(u32, .little);
+            var notes: draft_mod.Notes = undefined;
+            for (&notes) |*n| {
+                n.* = draft_mod.Note.from_int(try pr.readByte()) orelse return error.InvalidDraftNote;
+            }
+            const has_inverse = try pr.readByte();
+            const inv_raw = try pr.readInt(u32, .little);
+            if (ent_raw == 0 or ent_raw > entity_limit) return error.InvalidDraftEntity;
+            if (has_inverse > 1) return error.InvalidDraftEntity;
+            if (has_inverse == 1 and (inv_raw == 0 or inv_raw > entity_limit)) return error.InvalidDraftEntity;
+            try drafts.append(.{
+                .entity = EntityId.from_int(ent_raw),
+                .notes = notes,
+                .inverse = if (has_inverse == 1) EntityId.from_int(inv_raw) else null,
+            });
+        }
+    }
+
     return CompiledProgram{
+        .drafts = drafts,
         .chunk = chunk,
         .routine_entries = routine_entries,
         .routine_entities = routine_entities,
@@ -508,7 +549,7 @@ test "P15-02: package serializes and deserializes CompiledProgram with CRC32 int
     const header_slice = buffer.items[0..@sizeOf(PackageHeader)];
     const header: *const PackageHeader = @ptrCast(@alignCast(header_slice.ptr));
     try testing.expectEqualStrings("BSPB", &header.magic);
-    try testing.expectEqual(@as(u32, 1), header.version);
+    try testing.expectEqual(PACKAGE_VERSION, header.version);
     try testing.expect(header.crc32 != 0);
 
     // Deserialize into fresh World and SpatialSystem
@@ -647,4 +688,83 @@ test "P15-02: package file save and load roundtrip" {
     try testing.expect(world2.lookup_entity("Cheese") != null);
     try testing.expect(compiled2.routine_entries.contains("Prowl"));
     try testing.expectEqualStrings("Cat", compiled2.routine_entities.get("Prowl").?);
+}
+
+/// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
+fn reseal_for_test(buf: []u8, version: u32) void {
+    const header: *PackageHeader = @ptrCast(@alignCast(buf[0..@sizeOf(PackageHeader)].ptr));
+    const payload = buf[@sizeOf(PackageHeader)..];
+    header.version = version;
+    header.payload_size = @intCast(payload.len);
+    header.crc32 = std.hash.Crc32.hash(payload);
+}
+
+test "P22-01: package round-trips the draft table including declared reverses" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\entity Player
+        \\draft Kindle(C, E, G, E) reverse Douse
+        \\draft Mend(D, A, A, D)
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+
+    try testing.expectEqual(@as(usize, 3), compiled2.drafts.items.len);
+    const douse = compiled2.find_draft_by_notes(.{ .E, .G, .E, .C }).?;
+    try testing.expectEqualStrings("Douse", world2.get_entity_name(douse.entity).?);
+    try testing.expectEqualStrings("Kindle", world2.get_entity_name(douse.inverse.?).?);
+    try testing.expect(compiled2.find_draft_by_notes(.{ .D, .A, .A, .D }).?.inverse == null);
+}
+
+test "P22-01: package loader rejects out-of-range draft notes and loads version 1 packages" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script = "entity Player\ndraft Mend(D, A, A, D)\n";
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, script);
+    defer compiled.deinit();
+
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
+
+    // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
+    const tail_len = 4 + 4 + 4 + 1 + 4;
+    const first_note = buffer.items.len - tail_len + 8;
+    {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        bad[first_note] = 7; // one past B
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world2 = try World.init(testing.allocator, 1024 * 1024);
+        defer world2.deinit();
+        var stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidDraftNote, load_package(testing.allocator, stream.reader(), &world2, null));
+    }
+    {
+        // A version 1 package is the same payload without the draft tail.
+        const v1 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - tail_len]);
+        defer testing.allocator.free(v1);
+        reseal_for_test(v1, 1);
+        var world2 = try World.init(testing.allocator, 1024 * 1024);
+        defer world2.deinit();
+        var stream = std.io.fixedBufferStream(v1);
+        var loaded = try load_package(testing.allocator, stream.reader(), &world2, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.drafts.items.len);
+    }
 }

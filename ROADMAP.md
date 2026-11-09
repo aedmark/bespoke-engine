@@ -180,9 +180,9 @@ Goal: Support multi-protagonist party management with active player switching, g
 
 Goal: Implement musical draft spellcasting inspired by *Loom* (1990), where the protagonist weaves 4-note musical drafts on a distaff, learning tunes from environmental observations, playing drafts in reverse for complementary effects, and triggering procedural synthesizer audio.
 
-- [ ] P22-01 Language grammar and bytecode primitives for musical drafts (`draft <Name>(<n1>, <n2>, <n3>, <n4>)` and `weave <Draft> on <Target>`), with reversible draft inversion semantics.
+- [x] P22-01 Language grammar and bytecode primitives for musical drafts (`draft <Name>(<n1>, <n2>, <n3>, <n4>) [reverse <Inverse>]` and `weave <Draft> on <Target>`), with reversible draft inversion semantics. (D-009, D-029; completed 2026-11-08, verified via `zig build test`, `zig test -I/usr/include/SDL2 -lc -lSDL2 src/package.zig --test-filter P22-01` (9 tests), and `bespoke check` / `compile` / `run` on a draft script)
 - [ ] P22-02 Procedural synthesizer integration in `src/audio.zig`, rendering discrete pitches (C, D, E, F, G, A, B) directly to audio output upon player note input, and distaff staff HUD in `src/display/renderer.zig`.
-- [ ] P22-03 The Loom Sanctuary vertical slice scenario (`src/loom_puzzle.zig`, `--loom`): Sanctuary of the Guild of Weavers, spinning wheel, flask of dye, owl flock, draft discovery (`Opening`, `Dyeing`, `Twisting`), retro-draft inversion, and dual headless/interactive verification.
+- [ ] P22-03 Original bell-tower sanctuary vertical slice scenario (`src/loom_puzzle.zig`, `--loom`): drafts learned by observing the environment (e.g. `Kindle`/`Douse`, `Bind`/`Loose`), reversed-draft inversion puzzles, and dual headless/interactive verification. The setting is original by maintainer decision (2026-11-08); the mechanics carry the phase.
 
 ## Phase 23: The Caustic Grog Sprint & Container Degradation Cascades
 

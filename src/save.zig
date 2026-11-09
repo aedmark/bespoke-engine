@@ -430,6 +430,10 @@ pub fn write_save_state(
 
     // 4. VM execution state (current_scene, fibers, interrupt stacks, reactive rule edge flags)
     if (vm) |v| {
+        // Queued weaves are not part of the save format. They exist only between `step_tick`
+        // and the host's `dispatch_pending_weaves`; saving inside that window would drop them,
+        // so refuse rather than lose a player action (D-029).
+        if (v.pending_weaves.items.len > 0) return error.PendingWeavesNotDispatched;
         try pw.writeByte(1);
         const cur_scene_raw: u32 = if (v.current_scene) |sc| sc.to_int() else 0;
         try pw.writeInt(u32, cur_scene_raw, .little);
@@ -618,6 +622,7 @@ pub fn read_save_state(
             v.current_scene = if (cur_scene_raw == 0) null else EntityId.from_int(cur_scene_raw);
             v.next_fiber_id = next_fib_id;
             v.emitted_cues.clearRetainingCapacity();
+            v.pending_weaves.clearRetainingCapacity();
 
             for (v.fibers.items) |*f| {
                 f.deinit();

@@ -335,6 +335,22 @@ re-litigation.
 - Continuous delta-time (`dt`) accumulation in simulation logic: rejected because deterministic discrete integer ticks are a core architectural invariant of BeSpoke; variable time steps break replayability and snapshot serialization.
 **Consequences:** Establishes deliberate, human-readable simulation pacing across all scenarios, eliminates hurried TTL window expiration, and gives players granular runtime control over simulation speed.
 
+## D-029 Musical Drafts as Program Data, Reverse Entries, and Host Re-Dispatch of In-Script Weaves (2026-11-08, status: accepted)
+**Context:** Phase 22 adds pitch-based spellcraft: a caster plays four diatonic notes, the sequence names a draft, and the draft acts on a target. Playing a draft backwards yields its complementary effect. Two forces shape the design. First, the VM executes bytecode without holding the `CompiledProgram`, so a `weave` statement cannot jump to a cue handler mid-tick. Second, save/restore must stay a pure arena copy (D-003), so draft data cannot grow pointer-bearing structures inside the world.
+**Decision:**
+1. **Grammar:** `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` at top level; `weave <Draft> on <Target>` inside routine, cue, and rule bodies, with the executing fiber's owner as caster. Notes are `C D E F G A B` (`draft.Note`, values 0 to 6). Top-level `weave` is a compile error because it has no caster.
+2. **Drafts are program data:** `CompiledProgram.drafts` holds `CompiledDraft{entity, notes, inverse}`. A declared reverse becomes its own entry with reversed notes, so note lookup needs no direction flag. Learning a draft is an ordinary fact the script asserts. Any caster may play any draft; gating is the script's job.
+3. **Unambiguous sequences:** The parser rejects wrong note counts, unknown notes, a palindrome with a declared reverse, a draft named as its own reverse, duplicate names, and any draft whose notes match another draft forward or reversed. A played sequence therefore names at most one draft.
+4. **Dispatch through the `Weave` cue (D-009):** `VM.weave_notes` and `VM.weave_draft` run the handler keyed `Weave:caster:draft:target`, then `Weave:caster:draft`. Matching is exact and ordered: no operand swap and no bare-name fallback, because either would run a different draft's effect where the weave should fail. A non-draft entity, or no matching handler, records a `WeaveFizzled` peripheral cue (draft id 0 for unrecognized notes).
+5. **Host re-dispatch for in-script weaves:** Opcode `weave` (0x51) appends to `VM.pending_weaves`. The host calls `VM.dispatch_pending_weaves(&compiled)` after every `step_tick`; handlers run on the following tick. A chain of weaves advances one link per tick. `src/runner.zig` performs this call.
+6. **Save safety:** `save.write_save_state` returns `error.PendingWeavesNotDispatched` while the queue is non-empty, and VM restore clears the queue. The `.sav` format is unchanged.
+7. **Package format version 2:** `.bspk` appends the draft table to the payload tail. Version 1 packages still load with an empty table. Loaded note bytes and entity ids are range-checked.
+**Alternatives:**
+- Transient fact `WovenOn(target, draft)` with one-tick TTL consumed by `when` rules: rejected by the maintainer in favour of cue dispatch; it keeps weaves in the relational store but blocks re-weaving the same draft on the same target until the fact clears.
+- Giving the VM a pointer to the compiled handler table for immediate dispatch: rejected for P22-01 because it widens the VM/program boundary; revisit if more opcodes need handler access.
+- Implicit inverses for every draft: rejected because an undeclared inverse has no name for handlers to key on; reversing an undeclared draft fizzles unless it matches another draft, which rule 3 forbids.
+**Consequences:** Musical drafts reuse the verb/cue path and the existing handler table. Hosts that drive `step_tick` directly must call `dispatch_pending_weaves`, or in-script weaves never fire and saves are refused. Cue handler `where` guards are not evaluated (see Claims vs. code in ARCHITECTURE), so weave affordances are expressed with `if` checks in handler bodies or with separate handler keys.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

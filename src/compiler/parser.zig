@@ -3,6 +3,9 @@ const lexer_mod = @import("lexer.zig");
 pub const Lexer = lexer_mod.Lexer;
 pub const Token = lexer_mod.Token;
 pub const TokenTag = lexer_mod.TokenTag;
+const draft_mod = @import("../draft.zig");
+pub const Note = draft_mod.Note;
+pub const Notes = draft_mod.Notes;
 
 pub const FactPattern = struct {
     relation: []const u8,
@@ -58,6 +61,25 @@ pub const Stmt = union(enum) {
     },
     choice_block: []const DialogueChoice,
     resume_stmt: void,
+    /// `weave <Draft> on <Target>`: caster is the executing fiber's owner (P22-01, D-029).
+    weave: struct {
+        draft: []const u8,
+        target: []const u8,
+    },
+};
+
+/// `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` (P22-01, D-029).
+pub const DraftDecl = struct {
+    name: []const u8,
+    notes: Notes,
+    reverse_name: ?[]const u8 = null,
+};
+
+/// Source position of a `weave` statement, kept so undeclared drafts report where they were used.
+const WeaveRef = struct {
+    draft: []const u8,
+    line: u32,
+    column: u32,
 };
 
 pub const DialogueChoice = struct {
@@ -131,6 +153,7 @@ pub const AST = struct {
     cast: std.ArrayList([]const u8),
     props: std.ArrayList([]const u8),
     marks: std.ArrayList([]const u8),
+    drafts: std.ArrayList(DraftDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -146,6 +169,7 @@ pub const AST = struct {
             .cast = std.ArrayList([]const u8).init(allocator),
             .props = std.ArrayList([]const u8).init(allocator),
             .marks = std.ArrayList([]const u8).init(allocator),
+            .drafts = std.ArrayList(DraftDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -165,6 +189,7 @@ pub const AST = struct {
         self.cast.deinit();
         self.props.deinit();
         self.marks.deinit();
+        self.drafts.deinit();
     }
 };
 
@@ -180,6 +205,7 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
     diagnostic: ?Diagnostic = null,
     diag_buf: [256]u8 = undefined,
+    weave_refs: std.ArrayList(WeaveRef),
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -188,6 +214,7 @@ pub const Parser = struct {
             .allocator = allocator,
             .diagnostic = null,
             .diag_buf = undefined,
+            .weave_refs = std.ArrayList(WeaveRef).init(allocator),
         };
         try p.advance();
         return p;
@@ -319,6 +346,15 @@ pub const Parser = struct {
                         });
                     }
                     try ast.initial_stmts.append(.{ .choice_block = try choices.toOwnedSlice() });
+                },
+                .kw_draft => {
+                    const decl = try self.parse_draft_decl(ast.drafts.items);
+                    try ast.drafts.append(decl);
+                    try ast.entities.append(decl.name);
+                    if (decl.reverse_name) |rn| try ast.entities.append(rn);
+                },
+                .kw_weave => {
+                    return self.set_error("'weave' must appear inside a routine, cue, or rule body; it needs a caster", .{});
                 },
                 .kw_routine => {
                     try self.advance();
@@ -590,7 +626,80 @@ pub const Parser = struct {
             }
         }
 
+        // Every woven draft must be declared somewhere in the program (P22-01, D-029).
+        for (self.weave_refs.items) |ref| {
+            if (!draft_declared(ast.drafts.items, ref.draft)) {
+                const msg = std.fmt.bufPrint(&self.diag_buf, "weave of undeclared draft '{s}'", .{ref.draft}) catch "weave of undeclared draft";
+                self.diagnostic = .{ .line = ref.line, .column = ref.column, .message = msg };
+                return error.UnexpectedToken;
+            }
+        }
+
         return ast;
+    }
+
+    /// Parses `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` and rejects any sequence that
+    /// would make note lookup ambiguous: a played sequence must name exactly one draft, read in
+    /// either direction, so `VM.weave_notes` never needs a tie-break (D-029).
+    fn parse_draft_decl(self: *Parser, prior: []const DraftDecl) !DraftDecl {
+        try self.advance(); // consume 'draft'
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.lparen);
+        var notes: Notes = undefined;
+        var count: usize = 0;
+        while (self.current.tag != .rparen and self.current.tag != .eof) {
+            if (count == notes.len) {
+                return self.set_error("draft '{s}' has more than {d} notes", .{ name, notes.len });
+            }
+            const tok = try self.expect(.identifier);
+            notes[count] = Note.from_name(tok.slice) orelse {
+                return self.set_error("unknown note '{s}' in draft '{s}'; expected one of C D E F G A B", .{ tok.slice, name });
+            };
+            count += 1;
+            if (self.current.tag == .comma) try self.advance();
+        }
+        if (count != notes.len) {
+            return self.set_error("draft '{s}' has {d} notes; drafts have exactly {d}", .{ name, count, notes.len });
+        }
+        _ = try self.expect(.rparen);
+
+        var reverse_name: ?[]const u8 = null;
+        if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "reverse")) {
+            try self.advance();
+            reverse_name = (try self.expect(.identifier)).slice;
+        }
+
+        if (reverse_name) |rn| {
+            if (std.mem.eql(u8, rn, name)) {
+                return self.set_error("draft '{s}' cannot be its own reverse", .{name});
+            }
+            if (draft_mod.is_palindrome(notes)) {
+                return self.set_error("draft '{s}' is a palindrome; its reverse '{s}' would play the same notes", .{ name, rn });
+            }
+        }
+
+        for (prior) |p| {
+            const new_names = [_]?[]const u8{ name, reverse_name };
+            for (new_names) |maybe_new| {
+                const nn = maybe_new orelse continue;
+                if (std.mem.eql(u8, nn, p.name) or (p.reverse_name != null and std.mem.eql(u8, nn, p.reverse_name.?))) {
+                    return self.set_error("draft name '{s}' is already declared", .{nn});
+                }
+            }
+            if (draft_mod.notes_eql(notes, p.notes) or draft_mod.notes_eql(notes, draft_mod.reversed(p.notes))) {
+                return self.set_error("draft '{s}' plays the same notes as draft '{s}' (forward or reversed)", .{ name, p.name });
+            }
+        }
+
+        return .{ .name = name, .notes = notes, .reverse_name = reverse_name };
+    }
+
+    fn draft_declared(drafts: []const DraftDecl, name: []const u8) bool {
+        for (drafts) |d| {
+            if (std.mem.eql(u8, d.name, name)) return true;
+            if (d.reverse_name) |rn| if (std.mem.eql(u8, rn, name)) return true;
+        }
+        return false;
     }
 
     fn parse_stmt_list(self: *Parser) ![]const Stmt {
@@ -765,6 +874,15 @@ pub const Parser = struct {
                 .kw_done => {
                     try self.advance();
                     try list.append(.{ .resume_stmt = {} });
+                },
+                .kw_weave => {
+                    try self.advance(); // consume 'weave'
+                    const draft_tok = self.current;
+                    const draft_name = try self.parse_name();
+                    _ = try self.expect(.kw_on);
+                    const target = try self.parse_name();
+                    try self.weave_refs.append(.{ .draft = draft_name, .line = draft_tok.line, .column = draft_tok.col });
+                    try list.append(.{ .weave = .{ .draft = draft_name, .target = target } });
                 },
                 .identifier => {
                     const subj = try self.parse_name();
@@ -1293,4 +1411,84 @@ test "P15-03: parser captures accurate line and column diagnostics on syntax err
     try testing.expectEqual(@as(u32, 1), diag.?.line);
     try testing.expectEqual(@as(u32, 16), diag.?.column);
     try testing.expect(std.mem.indexOf(u8, diag.?.message, "expected lparen") != null);
+}
+
+fn expect_draft_error(source: []const u8, needle: []const u8, line: u32) !void {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    try testing.expectError(error.UnexpectedToken, parser.parse_program());
+    const diag = parser.get_diagnostic().?;
+    if (std.mem.indexOf(u8, diag.message, needle) == null) {
+        std.debug.print("diagnostic was: {s}\n", .{diag.message});
+        return error.TestUnexpectedResult;
+    }
+    try testing.expectEqual(line, diag.line);
+}
+
+test "P22-01: parser parses draft declarations with reverse and weave statements" {
+    const testing = std.testing;
+    const source =
+        \\entity Player, Brazier
+        \\draft Kindle(C, E, G, E) reverse Douse
+        \\draft Mend(D, A, A, D)
+        \\routine Ritual(Player):
+        \\  weave Kindle on Brazier
+        \\  weave Douse on Brazier
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    try testing.expectEqual(@as(usize, 2), ast.drafts.items.len);
+    const kindle = ast.drafts.items[0];
+    try testing.expectEqualStrings("Kindle", kindle.name);
+    try testing.expectEqualStrings("Douse", kindle.reverse_name.?);
+    try testing.expect(std.mem.eql(Note, &kindle.notes, &[_]Note{ .C, .E, .G, .E }));
+    try testing.expect(ast.drafts.items[1].reverse_name == null);
+
+    const body = ast.routines.items[0].body;
+    try testing.expectEqual(@as(usize, 2), body.len);
+    try testing.expectEqualStrings("Kindle", body[0].weave.draft);
+    try testing.expectEqualStrings("Brazier", body[0].weave.target);
+    try testing.expectEqualStrings("Douse", body[1].weave.draft);
+}
+
+test "P22-01: parser rejects malformed and ambiguous drafts with located diagnostics" {
+    try expect_draft_error("draft Kindle(C, E, H, E)", "unknown note 'H'", 1);
+    try expect_draft_error("draft Kindle(C, E, G)", "has 3 notes", 1);
+    try expect_draft_error("draft Kindle(C, E, G, E, C)", "more than 4 notes", 1);
+    try expect_draft_error("draft Mend(D, A, A, D) reverse Rend", "palindrome", 1);
+    try expect_draft_error("draft Kindle(C, E, G, E) reverse Kindle", "its own reverse", 1);
+    try expect_draft_error(
+        \\draft Kindle(C, E, G, E)
+        \\draft Ember(E, G, E, C)
+    , "same notes as draft 'Kindle'", 2);
+    try expect_draft_error(
+        \\draft Kindle(C, E, G, E) reverse Douse
+        \\draft Douse(F, F, G, A)
+    , "already declared", 2);
+}
+
+test "P22-01: parser rejects weaving undeclared drafts and top-level weaves" {
+    try expect_draft_error(
+        \\entity Player, Brazier
+        \\routine Ritual(Player):
+        \\  wait 1 ticks
+        \\  weave Kindle on Brazier
+    , "undeclared draft 'Kindle'", 4);
+    try expect_draft_error(
+        \\draft Kindle(C, E, G, E)
+        \\weave Kindle on Brazier
+    , "inside a routine", 2);
 }

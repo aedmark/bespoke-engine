@@ -3,6 +3,8 @@ const world_mod = @import("world.zig");
 const bytecode_mod = @import("bytecode.zig");
 const spatial_mod = @import("spatial.zig");
 const parser_mod = @import("compiler/parser.zig");
+const draft_mod = @import("draft.zig");
+pub const PendingWeave = draft_mod.PendingWeave;
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -147,6 +149,10 @@ pub const VM = struct {
     reactive_rules: std.ArrayList(ReactiveRule),
     current_scene: ?EntityId = null,
     prng: std.rand.DefaultPrng,
+    /// Weaves queued by the `weave` opcode, awaiting `dispatch_pending_weaves` (D-029).
+    /// Transient between `step_tick` and the host's dispatch call; `save.zig` refuses to
+    /// snapshot while non-empty so a weave can never be silently dropped by save/restore.
+    pending_weaves: std.ArrayList(PendingWeave),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, chunk: *const BytecodeChunk) VM {
         return VM{
@@ -160,6 +166,7 @@ pub const VM = struct {
             .reactive_rules = std.ArrayList(ReactiveRule).init(allocator),
             .current_scene = null,
             .prng = std.rand.DefaultPrng.init(42),
+            .pending_weaves = std.ArrayList(PendingWeave).init(allocator),
         };
     }
 
@@ -169,6 +176,7 @@ pub const VM = struct {
         }
         self.fibers.deinit();
         self.emitted_cues.deinit();
+        self.pending_weaves.deinit();
         for (self.reactive_rules.items) |r| {
             self.allocator.free(r.clauses);
         }
@@ -398,6 +406,74 @@ pub const VM = struct {
 
         // Spawn a routine fiber executing the handler
         return try self.spawn_routine(actor, handler_pc);
+    }
+
+    /// Weaves a named draft on a target (P22-01, D-029). Runs the `Weave(caster, draft, target)`
+    /// handler, or records a `WeaveFizzled` cue when the entity is not a draft or no handler
+    /// accepts it. Returns the handler fiber, or null on fizzle.
+    pub fn weave_draft(
+        self: *VM,
+        compiled: anytype,
+        caster: EntityId,
+        draft: EntityId,
+        target: EntityId,
+    ) !?FiberId {
+        const handler_pc = if (compiled.find_draft(draft) == null)
+            null
+        else
+            compiled.find_weave_handler(
+                self.world.get_entity_name(caster) orelse "",
+                self.world.get_entity_name(draft) orelse "",
+                self.world.get_entity_name(target) orelse "",
+            );
+
+        const cue_name = if (handler_pc != null) draft_mod.WEAVE_CUE else draft_mod.WEAVE_FIZZLED_CUE;
+        var emitted = EmittedCue{
+            .cue_id = @intCast((try self.world.intern_entity(cue_name)).to_int() & 0xFFFF),
+            .args = [_]u32{0} ** 4,
+            .arg_count = 3,
+        };
+        emitted.args[0] = caster.to_int();
+        emitted.args[1] = draft.to_int();
+        emitted.args[2] = target.to_int();
+        try self.emitted_cues.append(emitted);
+
+        const pc = handler_pc orelse return null;
+        return try self.spawn_routine(caster, pc);
+    }
+
+    /// Resolves four played notes to a draft and weaves it (P22-01, D-029). Reversed playback
+    /// needs no special case: a declared `reverse` is its own table entry. An unrecognized
+    /// sequence fizzles with draft id 0 so peripherals can still sound the failure.
+    pub fn weave_notes(
+        self: *VM,
+        compiled: anytype,
+        caster: EntityId,
+        notes: draft_mod.Notes,
+        target: EntityId,
+    ) !?FiberId {
+        if (compiled.find_draft_by_notes(notes)) |d| {
+            return self.weave_draft(compiled, caster, d.entity, target);
+        }
+        try self.emitted_cues.append(.{
+            .cue_id = @intCast((try self.world.intern_entity(draft_mod.WEAVE_FIZZLED_CUE)).to_int() & 0xFFFF),
+            .args = .{ caster.to_int(), 0, target.to_int(), 0 },
+            .arg_count = 3,
+        });
+        return null;
+    }
+
+    /// Host re-dispatch for in-script weaves (D-029). Call once after every `step_tick`, before
+    /// snapshotting. Handlers spawned here run on the next tick. Weaves queued by those handlers
+    /// wait for the next dispatch, so a weave chain advances one link per tick and cannot loop
+    /// unboundedly inside one call. Returns the number of weaves dispatched.
+    pub fn dispatch_pending_weaves(self: *VM, compiled: anytype) !usize {
+        const queued = try self.pending_weaves.toOwnedSlice();
+        defer self.allocator.free(queued);
+        for (queued) |w| {
+            _ = try self.weave_draft(compiled, w.caster, w.draft, w.target);
+        }
+        return queued.len;
     }
 
     /// Transitions simulation to target scene entity, pausing old scene fibers and waking/resuming target scene fibers (P12-01, D-014).
@@ -954,6 +1030,17 @@ pub const VM = struct {
                         cue.args[idx] = try f.pop();
                     }
                     try self.emitted_cues.append(cue);
+                },
+
+                // --- Musical Drafts (P22-01, D-029) ---
+                .weave => {
+                    const target_raw = try f.pop();
+                    const draft_raw = try f.pop();
+                    try self.pending_weaves.append(.{
+                        .caster = f.owner,
+                        .draft = EntityId.from_int(draft_raw),
+                        .target = EntityId.from_int(target_raw),
+                    });
                 },
 
                 else => return error.InvalidOpcode,

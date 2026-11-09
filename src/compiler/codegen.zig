@@ -15,6 +15,8 @@ pub const EntityId = world_mod.EntityId;
 pub const RelationKind = world_mod.RelationKind;
 pub const SpatialSystem = spatial_mod.SpatialSystem;
 pub const WhenEdge = parser_mod.WhenEdge;
+const draft_mod = @import("../draft.zig");
+pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
 pub const CompiledWhenRule = struct {
@@ -34,8 +36,11 @@ pub const CompiledProgram = struct {
     allocated_cue_keys: std.ArrayList([]const u8),
     reactive_rules: std.ArrayList(CompiledWhenRule),
     initial_entry: ?usize = null,
+    /// Draft note table (P22-01, D-029). Program data, not world state: never saved in `.sav`.
+    drafts: std.ArrayList(CompiledDraft),
 
     pub fn deinit(self: *CompiledProgram) void {
+        self.drafts.deinit();
         self.chunk.deinit();
         self.routine_entries.deinit();
         self.routine_entities.deinit();
@@ -49,6 +54,35 @@ pub const CompiledProgram = struct {
             self.chunk.allocator.free(r.clauses);
         }
         self.reactive_rules.deinit();
+    }
+
+    /// Finds the handler for `Weave(caster, draft, target)` (P22-01, D-029). Matching is exact and
+    /// ordered: unlike `find_cue_handler` it neither swaps operands (draft and target are not
+    /// commutative) nor falls back to the bare cue name, because a fallback would run some other
+    /// draft's effect where the weave should fizzle. A two-parameter `Weave(caster, draft)`
+    /// handler serves as a target-agnostic effect.
+    pub fn find_weave_handler(
+        self: *const CompiledProgram,
+        caster: []const u8,
+        draft: []const u8,
+        target: []const u8,
+    ) ?usize {
+        var buf: [256]u8 = undefined;
+        if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ draft_mod.WEAVE_CUE, caster, draft, target })) |sig| {
+            if (self.cue_handler_entries.get(sig)) |pc| return pc;
+        } else |_| {}
+        if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}", .{ draft_mod.WEAVE_CUE, caster, draft })) |sig| {
+            if (self.cue_handler_entries.get(sig)) |pc| return pc;
+        } else |_| {}
+        return null;
+    }
+
+    pub fn find_draft_by_notes(self: *const CompiledProgram, notes: draft_mod.Notes) ?CompiledDraft {
+        return draft_mod.find_by_notes(self.drafts.items, notes);
+    }
+
+    pub fn find_draft(self: *const CompiledProgram, entity: EntityId) ?CompiledDraft {
+        return draft_mod.find_by_entity(self.drafts.items, entity);
     }
 
     /// Finds entry PC for a cue handler matching cue name and arguments (P11-01, P11-02, D-013).
@@ -211,6 +245,18 @@ pub const Codegen = struct {
             );
         }
 
+        // 2b. Build the draft note table; a declared reverse becomes its own entry (D-029)
+        var drafts = std.ArrayList(CompiledDraft).init(mut_self.allocator);
+        errdefer drafts.deinit();
+        for (ast.drafts.items) |d| {
+            const ent = try mut_self.world.intern_entity(d.name);
+            const inv: ?EntityId = if (d.reverse_name) |rn| try mut_self.world.intern_entity(rn) else null;
+            try drafts.append(.{ .entity = ent, .notes = d.notes, .inverse = inv });
+            if (inv) |ie| {
+                try drafts.append(.{ .entity = ie, .notes = draft_mod.reversed(d.notes), .inverse = ent });
+            }
+        }
+
         // 3. Compile initial declarative statements
         var initial_entry: ?usize = null;
         if (ast.initial_stmts.items.len > 0) {
@@ -344,6 +390,7 @@ pub const Codegen = struct {
             .allocated_cue_keys = mut_self.allocated_cue_keys,
             .reactive_rules = mut_self.reactive_rules,
             .initial_entry = initial_entry,
+            .drafts = drafts,
         };
     }
 
@@ -513,6 +560,11 @@ pub const Codegen = struct {
             },
             .resume_stmt => {
                 _ = try self.chunk.emit_op(.resume_routine);
+            },
+            .weave => |wv| {
+                const draft_ent = try self.resolve_entity(wv.draft);
+                const target_ent = try self.resolve_entity(wv.target);
+                try self.chunk.emit_weave(draft_ent, target_ent);
             },
         }
     }
@@ -844,4 +896,110 @@ test "P12-01: codegen compiles multi-scene transitions and registers scoped mark
     try testing.expectEqual(@as(u8, @intFromEnum(Opcode.transition_scene)), op_byte);
     const target_scene_val = std.mem.readInt(u32, compiled.chunk.code.items[pc + 1 ..][0..4], .little);
     try testing.expectEqual(cellar_id.to_int(), target_scene_val);
+}
+
+test "P22-01: weaving by notes, reversed notes, in-script weaves, and fizzles end to end" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const source =
+        \\entity Player, Brazier, Stone
+        \\relation Lit(thing, by)
+        \\draft Kindle(C, E, G, E) reverse Douse
+        \\draft Mend(D, A, A, D)
+        \\
+        \\on cue Weave(Player, Kindle, Brazier):
+        \\  remember Lit(Brazier, Player)
+        \\
+        \\on cue Weave(Player, Douse, Brazier):
+        \\  forget Lit(Brazier, _)
+        \\
+        \\routine Ritual(Player):
+        \\  wait 1 ticks
+        \\  weave Kindle on Brazier
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+    var codegen = Codegen.init(alloc, &world, null);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    // Kindle, Douse (declared reverse), Mend (palindrome, no reverse)
+    try testing.expectEqual(@as(usize, 3), compiled.drafts.items.len);
+
+    var vm = vm_mod.VM.init(alloc, &world, &compiled.chunk);
+    defer vm.deinit();
+
+    const player = world.lookup_entity("Player").?;
+    const brazier = world.lookup_entity("Brazier").?;
+    const stone = world.lookup_entity("Stone").?;
+    const kindle = world.lookup_entity("Kindle").?;
+    const lit = world.lookup_relation("Lit").?;
+
+    // Forward notes resolve to Kindle and run its handler.
+    try testing.expect((try vm.weave_notes(&compiled, player, .{ .C, .E, .G, .E }, brazier)) != null);
+    try vm.step_tick();
+    try testing.expect(world.has_fact(brazier, lit, player.to_int()));
+
+    // Reversed notes resolve to Douse: the complementary effect.
+    try testing.expect((try vm.weave_notes(&compiled, player, .{ .E, .G, .E, .C }, brazier)) != null);
+    try vm.step_tick();
+    try testing.expect(!world.has_fact(brazier, lit, null));
+
+    // Unknown notes, a draft with no handler, and a handler-less target all fizzle.
+    vm.emitted_cues.clearRetainingCapacity();
+    try testing.expect((try vm.weave_notes(&compiled, player, .{ .C, .C, .C, .C }, brazier)) == null);
+    try testing.expect((try vm.weave_notes(&compiled, player, .{ .D, .A, .A, .D }, brazier)) == null);
+    try testing.expect((try vm.weave_draft(&compiled, player, kindle, stone)) == null);
+    // A non-draft entity never reaches a handler, even if one were keyed on its name.
+    try testing.expect((try vm.weave_draft(&compiled, player, brazier, brazier)) == null);
+    const fizzle_id: u16 = @intCast(world.lookup_entity(draft_mod.WEAVE_FIZZLED_CUE).?.to_int() & 0xFFFF);
+    try testing.expectEqual(@as(usize, 4), vm.emitted_cues.items.len);
+    for (vm.emitted_cues.items) |c| try testing.expectEqual(fizzle_id, c.cue_id);
+    try testing.expect(!world.has_fact(stone, lit, null));
+
+    // In-script weave queues for host re-dispatch instead of running mid-tick.
+    _ = try vm.spawn_routine(player, compiled.routine_entries.get("Ritual").?);
+    try vm.step_tick(); // wait 1 tick
+    try vm.step_tick(); // executes weave opcode
+    try testing.expectEqual(@as(usize, 1), vm.pending_weaves.items.len);
+    try testing.expectEqual(kindle, vm.pending_weaves.items[0].draft);
+    try testing.expectEqual(player, vm.pending_weaves.items[0].caster);
+    try testing.expect(!world.has_fact(brazier, lit, null));
+
+    try testing.expectEqual(@as(usize, 1), try vm.dispatch_pending_weaves(&compiled));
+    try testing.expectEqual(@as(usize, 0), vm.pending_weaves.items.len);
+    try vm.step_tick(); // handler fiber runs
+    try testing.expect(world.has_fact(brazier, lit, player.to_int()));
+}
+
+test "P22-01: saving with undispatched weaves is refused" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const save_mod = @import("../save.zig");
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = vm_mod.VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    const p = try world.intern_entity("Player");
+    try vm.pending_weaves.append(.{ .caster = p, .draft = p, .target = p });
+
+    var buf = std.ArrayList(u8).init(testing.allocator);
+    defer buf.deinit();
+    try testing.expectError(
+        error.PendingWeavesNotDispatched,
+        save_mod.write_save_state(testing.allocator, buf.writer(), &world, null, &vm, .{}),
+    );
 }

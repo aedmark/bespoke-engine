@@ -72,6 +72,11 @@ pub const Opcode = enum(u8) {
     /// Emits a cue/command event to the peripheral bridge buffer.
     /// Operand: cue_id: u16, arg_count: u8. Pops arg_count values from stack.
     emit_cue = 0x50,
+
+    // --- Musical Drafts (P22-01, D-029) ---
+    /// Queues a weave for host re-dispatch; the caster is the executing fiber's owner.
+    /// Pops: target: u32, draft: u32 (EntityIds). No operand.
+    weave = 0x51,
 };
 
 /// A compiled container of bytecode instructions and constant data.
@@ -157,6 +162,12 @@ pub const BytecodeChunk = struct {
         _ = try self.emit_op(.roll_dice);
         try self.emit_u8(count_val);
         try self.emit_u8(sides);
+    }
+
+    pub fn emit_weave(self: *BytecodeChunk, draft: EntityId, target: EntityId) !void {
+        try self.emit_push_entity(draft);
+        try self.emit_push_entity(target);
+        _ = try self.emit_op(.weave);
     }
 
     pub fn emit_transition_scene(self: *BytecodeChunk, scene_id: EntityId) !void {

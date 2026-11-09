@@ -74,4 +74,6 @@ What only a person can check, and how. Record who checked what, where, and when 
 
 - **Timer sensitivity:** Ticks are discrete integer simulation increments, not wall-clock floats. Tests must increment ticks explicitly rather than calling sleep.
 - **Snapshot validation:** Always test `restore_state` on a separate buffer to prove memory independence from the original arena.
+- **Test filters and the root module:** `zig test src/root.zig --test-filter X` runs 0 tests, because the filter also drops the named test that imports every module. Filter through a file that imports what you need, e.g. `zig test -I/usr/include/SDL2 -lc -lSDL2 src/package.zig --test-filter P22-01`. Files under `src/compiler/` cannot be run alone (they import `../`).
+- **Headless runs read stdin:** scenario binaries wait for input after printing SUCCESS. Run them with `</dev/null` in scripts and loops.
 - **Mutation check discipline:** A mutation check must break the fix, not the test. Reverting a whole file can fail a test for an unrelated reason. Remove just the fix.
