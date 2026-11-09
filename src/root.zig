@@ -17,7 +17,9 @@ pub const save = @import("save.zig");
 pub const village = @import("village.zig");
 pub const goat_puzzle = @import("goat_puzzle.zig");
 pub const dott_puzzle = @import("dott_puzzle.zig");
+pub const darko_puzzle = @import("darko_puzzle.zig");
 pub const wasm = @import("wasm.zig");
+pub const hypervisor = @import("hypervisor.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -33,11 +35,20 @@ pub const VM = vm.VM;
 pub const Fiber = vm.Fiber;
 pub const FiberId = vm.FiberId;
 pub const FiberState = vm.FiberState;
+pub const DEFAULT_TICK_INTERVAL_MS = vm.DEFAULT_TICK_INTERVAL_MS;
+pub const MIN_TICK_INTERVAL_MS = vm.MIN_TICK_INTERVAL_MS;
+pub const MAX_TICK_INTERVAL_MS = vm.MAX_TICK_INTERVAL_MS;
+pub const step_tick_interval_slower = vm.step_tick_interval_slower;
+pub const step_tick_interval_faster = vm.step_tick_interval_faster;
 pub const SpatialGraph = spatial.SpatialGraph;
 pub const SpatialSystem = spatial.SpatialSystem;
 pub const Point2D = spatial.Point2D;
 pub const Waypoint = spatial.Waypoint;
 pub const WaypointId = spatial.WaypointId;
+pub const VectorConduit = spatial.VectorConduit;
+pub const BitemporalTransceiver = spatial.BitemporalTransceiver;
+pub const CausalDecayTracker = spatial.CausalDecayTracker;
+pub const validate_novikov_consistency = spatial.validate_novikov_consistency;
 pub const compile_source = compiler.compile_source;
 pub const check_source = compiler.check_source;
 pub const Diagnostic = compiler.Diagnostic;
@@ -63,6 +74,12 @@ pub const SaveMetadata = save.SaveMetadata;
 pub const SaveSlotInfo = save.SaveSlotInfo;
 pub const write_save_state = save.write_save_state;
 pub const read_save_state = save.read_save_state;
+pub const TemporalHypervisor = hypervisor.TemporalHypervisor;
+pub const UniverseBranchKind = hypervisor.UniverseBranchKind;
+pub const TangentCollapseState = hypervisor.TangentCollapseState;
+pub const DreamFact = hypervisor.DreamFact;
+pub const HypervisorStepResult = hypervisor.HypervisorStepResult;
+pub const format_countdown = hypervisor.format_countdown;
 
 test "root test imports all modules" {
     _ = @import("world.zig");
@@ -82,5 +99,7 @@ test "root test imports all modules" {
     _ = @import("village.zig");
     _ = @import("goat_puzzle.zig");
     _ = @import("dott_puzzle.zig");
+    _ = @import("darko_puzzle.zig");
     _ = @import("wasm.zig");
+    _ = @import("hypervisor.zig");
 }

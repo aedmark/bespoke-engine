@@ -1007,7 +1007,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var is_running = true;
     var is_paused = false;
-    var frame_counter: usize = 0;
+    var last_tick_time = std.time.milliTimestamp();
     var last_logged_chronicle: usize = 0;
 
     while (is_running) {
@@ -1106,26 +1106,24 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             else => {},
         }
 
-        if (!is_paused) {
-            frame_counter += 1;
-            if (frame_counter >= 20) { // ~3 simulation ticks per second at 60 Hz render
-                frame_counter = 0;
-                try sim.step_simulation(&world, &spatial, &vm);
+        const now = std.time.milliTimestamp();
+        if (!is_paused and (now - last_tick_time >= window.current_tick_interval_ms)) {
+            last_tick_time = now;
+            try sim.step_simulation(&world, &spatial, &vm);
 
-                if (sim.chronicle_count > last_logged_chronicle) {
-                    const latest = &sim.chronicle[sim.chronicle_count - 1];
-                    window.set_cue_banner(latest.get_message(), 120);
-                    last_logged_chronicle = sim.chronicle_count;
-                }
-
-                var snap = std.ArrayList(u8).init(allocator);
-                try world.save_state(snap.writer());
-                try history_snapshots.append(snap);
-                display_bridge.set_max_history_tick(world.current_tick);
-
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.swap();
+            if (sim.chronicle_count > last_logged_chronicle) {
+                const latest = &sim.chronicle[sim.chronicle_count - 1];
+                window.set_cue_banner(latest.get_message(), 120);
+                last_logged_chronicle = sim.chronicle_count;
             }
+
+            var snap = std.ArrayList(u8).init(allocator);
+            try world.save_state(snap.writer());
+            try history_snapshots.append(snap);
+            display_bridge.set_max_history_tick(world.current_tick);
+
+            display_bridge.capture_frame(&world, &spatial, &vm);
+            display_bridge.swap();
         }
 
         window.render_frame(display_bridge.get_frame(), is_paused);

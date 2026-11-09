@@ -248,4 +248,13 @@ Goal: Polish the public-facing showcase website in `site/index.html` with the co
 - [ ] P30-02 Neocities deployment pipeline and static export tooling (`tools/deploy_site.py`), optimizing WASM asset size, metadata headers, and offline caching.
 - [ ] P30-03 Interactive scenario gallery, architecture diagram embeds, and live script source viewer accompanying each playable slice.
 
+## Phase 31: Cinematic Temporal Hypervisors, The Roberta Sparrow Model, and Pre-Cognitive Vector Conduits
+
+Goal: Implement advanced cinematic temporal mechanics inspired by *Donnie Darko* ("The Philosophy of Time Travel"), *Frequency*, *The Butterfly Effect*, *12 Monkeys*, and *Back to the Future*. Features an ephemeral Tangent Universe hypervisor with collapse tick countdowns and black hole singularities, pre-cognitive Fourth-Dimensional vector worms extruding ahead-of-time deterministic A* paths in the spatial renderer, concurrent bitemporal transceivers for real-time past-to-present materialization, Novikov causal loop consistency checks, and a full vertical slice scenario ("The Middlesex Anomaly", `src/darko_puzzle.zig`, `--darko`).
+
+- [x] P31-01 Tangent Universe hypervisor and teleological constraint solver: copy-on-write `World.fork_tangent` and `World.collapse_tangent` arenas, simulation tick countdown budget (`collapse_tick`), terminal gravitational singularity fail-state, backward-chaining teleological Horn clauses ("Ensured Trap"), and hyper-temporal fibers emitting interrupts from future timelines (the "Manipulated Dead").
+- [x] P31-02 Pre-cognitive vector conduits and concurrent bitemporal transceivers: `VectorConduit` ahead-of-time deterministic A* path projection and fluid rendering in `DisplayBridge`/renderer, concurrent dual-era bitemporal synchronization (*Frequency* real-time desk carving), Novikov self-fulfilling loop validation (*12 Monkeys*), and asynchronous causal ripple decay with existence probability dithering (*Back to the Future*).
+- [x] P31-03 The Middlesex Anomaly vertical slice scenario (`src/darko_puzzle.zig`, `--darko`): Donnie (Living Receiver), Frank (Manipulated Dead), Gretchen, and Roberta Sparrow across three scenes (Suburban Bedroom, High School, Tangent Vortex Ridge), Artifact of Metal routing, vector worm pursuit, and dual headless/interactive verification with time-travel rewind.
+
+
 

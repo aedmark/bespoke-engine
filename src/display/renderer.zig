@@ -2,6 +2,7 @@ const std = @import("std");
 const display_mod = @import("../display.zig");
 const audio_mod = @import("../audio.zig");
 const save_mod = @import("../save.zig");
+const vm_mod = @import("../vm.zig");
 const font = @import("font.zig");
 const text_layout = @import("text_layout.zig");
 
@@ -139,6 +140,13 @@ pub const Color = struct {
     pub const motel_teal = Color{ .r = 13, .g = 148, .b = 136 };
     pub const dystopia_metal = Color{ .r = 30, .g = 35, .b = 45 };
 
+    // Donnie Darko / Roberta Sparrow Cinematic Colors (P31-01..P31-03, D-027)
+    pub const tangent_glow = Color{ .r = 56, .g = 189, .b = 248, .a = 180 }; // Translucent water-like fluid blue
+    pub const tangent_core = Color{ .r = 224, .g = 242, .b = 254, .a = 230 }; // Bright white-blue conduit core
+    pub const frank_silver = Color{ .r = 148, .g = 163, .b = 184 }; // Monstrous silver rabbit
+    pub const vortex_purple = Color{ .r = 147, .g = 51, .b = 234 }; // Tangent vortex swirling purple
+    pub const countdown_warn = Color{ .r = 239, .g = 68, .b = 68 }; // Emergency red countdown
+
     pub const hud_bg = Color{ .r = 15, .g = 23, .b = 42, .a = 230 };
     pub const hud_text = Color{ .r = 248, .g = 250, .b = 252 };
     pub const hud_subtext = Color{ .r = 148, .g = 163, .b = 184 };
@@ -193,6 +201,8 @@ pub const UserAction = union(enum) {
     dismiss_dialogue,
     toggle_pause,
     step_tick,
+    speed_slower,
+    speed_faster,
     rewind,
     scrub_to_tick: u64, // Interactive time-travel timeline scrubber (P9-02, D-011)
     repl_command: struct {
@@ -205,6 +215,8 @@ pub const UserAction = union(enum) {
     sound_horn,
     drink_green_drink,
     tamper_flags,
+    // P31-02: Pre-cognitive Fourth-Dimensional vector conduit guidance (D-027)
+    darko_follow_conduit,
     // P11-03: Two-operand inventory combining & in-hand actions (D-008, D-009, D-013)
     combine_inventory_items: struct {
         primary_index: usize,
@@ -665,6 +677,8 @@ pub const DisplayWindow = struct {
     selected_save_slot: u8 = 1,
     owned_save_manager: *save_mod.SaveManager,
     save_manager: *save_mod.SaveManager,
+    // Phase 26/D-028 Master Simulation Clock Pacing & Speed Scaling
+    current_tick_interval_ms: i64 = vm_mod.DEFAULT_TICK_INTERVAL_MS,
 
     pub fn init(title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
         const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
@@ -686,6 +700,7 @@ pub const DisplayWindow = struct {
                     .audio_device_opened = false,
                     .owned_save_manager = sm,
                     .save_manager = sm,
+                    .current_tick_interval_ms = vm_mod.DEFAULT_TICK_INTERVAL_MS,
                 };
             }
         }
@@ -732,6 +747,8 @@ pub const DisplayWindow = struct {
             };
         };
 
+        _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_BLEND);
+
         var audio_opened = false;
         var desired = std.mem.zeroes(c.SDL_AudioSpec);
         desired.freq = 44100;
@@ -758,6 +775,7 @@ pub const DisplayWindow = struct {
             .audio_device_opened = audio_opened,
             .owned_save_manager = sm,
             .save_manager = sm,
+            .current_tick_interval_ms = vm_mod.DEFAULT_TICK_INTERVAL_MS,
         };
     }
 
@@ -896,6 +914,42 @@ pub const DisplayWindow = struct {
         @memcpy(self.cue_banner_text[0..len], text[0..len]);
         self.cue_banner_len = len;
         self.cue_banner_ticks = duration_ticks;
+    }
+
+    /// Decreases simulation clock speed (increases milliseconds per tick) (D-028).
+    pub fn speed_slower(self: *DisplayWindow) void {
+        self.current_tick_interval_ms = vm_mod.step_tick_interval_slower(self.current_tick_interval_ms);
+        self.play_sfx(.click);
+        var sbuf: [64]u8 = undefined;
+        const msg = if (self.current_tick_interval_ms >= 1000)
+            std.fmt.bufPrint(&sbuf, "Speed: {d:.2}s / tick ({d:.1} Hz)", .{
+                @as(f32, @floatFromInt(self.current_tick_interval_ms)) / 1000.0,
+                1000.0 / @as(f32, @floatFromInt(self.current_tick_interval_ms)),
+            }) catch "Speed slowed"
+        else
+            std.fmt.bufPrint(&sbuf, "Speed: {d}ms / tick ({d:.1} Hz)", .{
+                self.current_tick_interval_ms,
+                1000.0 / @as(f32, @floatFromInt(self.current_tick_interval_ms)),
+            }) catch "Speed slowed";
+        self.set_cue_banner(msg, 60);
+    }
+
+    /// Increases simulation clock speed (decreases milliseconds per tick) (D-028).
+    pub fn speed_faster(self: *DisplayWindow) void {
+        self.current_tick_interval_ms = vm_mod.step_tick_interval_faster(self.current_tick_interval_ms);
+        self.play_sfx(.click);
+        var sbuf: [64]u8 = undefined;
+        const msg = if (self.current_tick_interval_ms >= 1000)
+            std.fmt.bufPrint(&sbuf, "Speed: {d:.2}s / tick ({d:.1} Hz)", .{
+                @as(f32, @floatFromInt(self.current_tick_interval_ms)) / 1000.0,
+                1000.0 / @as(f32, @floatFromInt(self.current_tick_interval_ms)),
+            }) catch "Speed increased"
+        else
+            std.fmt.bufPrint(&sbuf, "Speed: {d}ms / tick ({d:.1} Hz)", .{
+                self.current_tick_interval_ms,
+                1000.0 / @as(f32, @floatFromInt(self.current_tick_interval_ms)),
+            }) catch "Speed increased";
+        self.set_cue_banner(msg, 60);
     }
 
     /// Displays an active speech balloon or branching dialogue choice tree (P7-04, P13-03, D-009, D-015).
@@ -1123,7 +1177,7 @@ pub const DisplayWindow = struct {
                         const clicked_party_idx = hit_test_party_portrait(event.button.x, event.button.y, frame.party_count, self.width);
                         if (clicked_party_idx) |p_idx| {
                             if (self.selected_inventory_item) |sel_idx| {
-                                if (p_idx != frame.active_party_index) {
+                                if (p_idx != frame.active_party_index and self.active_verb == .use_with) {
                                     self.selected_inventory_item = null;
                                     self.play_sfx(.combine);
                                     var buf: [64]u8 = undefined;
@@ -1136,6 +1190,12 @@ pub const DisplayWindow = struct {
                                             .item_index = sel_idx,
                                             .target_party_index = p_idx,
                                         },
+                                    };
+                                } else {
+                                    self.selected_inventory_item = null;
+                                    self.play_sfx(.click);
+                                    return UserAction{
+                                        .switch_party_member = p_idx,
                                     };
                                 }
                             } else {
@@ -1504,8 +1564,20 @@ pub const DisplayWindow = struct {
                             self.play_sfx(.combine);
                             action = .tamper_flags;
                         },
+                        c.SDLK_v => {
+                            self.play_sfx(.pickup);
+                            action = .darko_follow_conduit;
+                        },
                         c.SDLK_SPACE => action = .toggle_pause,
                         c.SDLK_n => action = .step_tick,
+                        c.SDLK_MINUS, c.SDLK_KP_MINUS => {
+                            self.speed_slower();
+                            action = .speed_slower;
+                        },
+                        c.SDLK_EQUALS, c.SDLK_PLUS, c.SDLK_KP_PLUS => {
+                            self.speed_faster();
+                            action = .speed_faster;
+                        },
                         c.SDLK_r => {
                             self.play_sfx(.alert);
                             action = .rewind;
@@ -1688,6 +1760,9 @@ pub const DisplayWindow = struct {
         var is_sanctuary_scene = false;
         var is_scumm_bar_scene = false;
         var is_village_scene = false;
+        var is_darko_bedroom_scene = false;
+        var is_darko_school_scene = false;
+        var is_darko_vortex_scene = false;
 
         if (cur_scene.len > 0) {
             if (std.mem.indexOf(u8, cur_scene, "Colonial") != null or
@@ -1705,6 +1780,21 @@ pub const DisplayWindow = struct {
                 std.mem.indexOf(u8, cur_scene, "2193") != null)
             {
                 is_dott_future_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Bedroom") != null or
+                       std.mem.indexOf(u8, cur_scene, "Darko") != null or
+                       std.mem.indexOf(u8, cur_scene, "Donnie") != null)
+            {
+                is_darko_bedroom_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "School") != null or
+                       std.mem.indexOf(u8, cur_scene, "High School") != null or
+                       std.mem.indexOf(u8, cur_scene, "Middlesex High") != null)
+            {
+                is_darko_school_scene = true;
+            } else if (std.mem.indexOf(u8, cur_scene, "Vortex") != null or
+                       std.mem.indexOf(u8, cur_scene, "Ridge") != null or
+                       std.mem.indexOf(u8, cur_scene, "Tangent") != null)
+            {
+                is_darko_vortex_scene = true;
             } else if (std.mem.indexOf(u8, cur_scene, "Lochmarne") != null or
                 (std.mem.indexOf(u8, cur_scene, "Courtyard") != null and std.mem.indexOf(u8, cur_scene, "Castle") != null))
             {
@@ -1762,7 +1852,8 @@ pub const DisplayWindow = struct {
             !is_goat_courtyard_scene and !is_templar_crypt_scene and
             !is_spitting_scene and !is_wine_cellar_scene and !is_tavern_scene and
             !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
-            !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene and !is_village_scene)
+            !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene and !is_village_scene and
+            !is_darko_bedroom_scene and !is_darko_school_scene and !is_darko_vortex_scene)
         {
             for (frame.waypoints[0..frame.waypoint_count]) |wp| {
                 if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark1790") != null or
@@ -1780,6 +1871,21 @@ pub const DisplayWindow = struct {
                     std.mem.indexOf(u8, wp.get_name(), "TreeBranch2193") != null)
                 {
                     is_dott_future_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "BedMark") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "Bedroom") != null)
+                {
+                    is_darko_bedroom_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "LockersMark") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "Hallway") != null)
+                {
+                    is_darko_school_scene = true;
+                    break;
+                } else if (std.mem.indexOf(u8, wp.get_name(), "RidgeMark") != null or
+                    std.mem.indexOf(u8, wp.get_name(), "VortexMark") != null)
+                {
+                    is_darko_vortex_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, wp.get_name(), "TetherCenter") != null or
                     std.mem.indexOf(u8, wp.get_name(), "DigOpening") != null or
@@ -1836,11 +1942,21 @@ pub const DisplayWindow = struct {
             if (!is_dott_past_scene and !is_dott_present_scene and !is_dott_future_scene and
                 !is_goat_courtyard_scene and !is_templar_crypt_scene and
                 !is_spitting_scene and !is_hotel_scene and !is_garden_scene and !is_bike_rental_scene and
-                !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene)
+                !is_high_road_scene and !is_sanctuary_scene and !is_scumm_bar_scene and
+                !is_darko_bedroom_scene and !is_darko_school_scene and !is_darko_vortex_scene)
             {
                 for (frame.entities[0..frame.entity_count]) |e| {
                     const ename = e.get_name();
-                    if (std.mem.eql(u8, ename, "Hoagie") or std.mem.eql(u8, ename, "BetsyRoss") or std.mem.eql(u8, ename, "Washington")) {
+                    if (std.mem.eql(u8, ename, "Donnie") or std.mem.eql(u8, ename, "Frank")) {
+                        is_darko_bedroom_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Gretchen")) {
+                        is_darko_school_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "RobertaSparrow")) {
+                        is_darko_vortex_scene = true;
+                        break;
+                    } else if (std.mem.eql(u8, ename, "Hoagie") or std.mem.eql(u8, ename, "BetsyRoss") or std.mem.eql(u8, ename, "Washington")) {
                         is_dott_past_scene = true;
                         break;
                     } else if (std.mem.eql(u8, ename, "Bernard") or std.mem.eql(u8, ename, "DrFred")) {
@@ -2848,7 +2964,7 @@ pub const DisplayWindow = struct {
             }
 
             // Chrono-Toilet 1790 (Wooden outhouse booth)
-            const pt_toilet = world_to_screen(0, 0, self.width, self.height);
+            const pt_toilet = world_to_screen(80, 0, self.width, self.height);
             const t_x = pt_toilet.x - 30;
             const t_y = shop_y + shop_h - 180;
             self.fill_rect(t_x, t_y, 60, 90, Color{ .r = 105, .g = 65, .b = 35 });
@@ -2902,7 +3018,7 @@ pub const DisplayWindow = struct {
             self.draw_text("FLYERS", desk_x + 182, desk_y + 35, 1, Color.white);
 
             // Chrono-Toilet 1993 (Public stall)
-            const pt_toilet = world_to_screen(0, 0, self.width, self.height);
+            const pt_toilet = world_to_screen(60, 0, self.width, self.height);
             const ct_x = pt_toilet.x - 30;
             const ct_y = motel_y + motel_h - 180;
             self.fill_rect(ct_x, ct_y, 60, 90, Color{ .r = 226, .g = 232, .b = 240 });
@@ -2950,9 +3066,151 @@ pub const DisplayWindow = struct {
                 self.draw_text("[TENTACLE FLAG FLYING]", post_x + 30, post_y - 45, 1, Color.tentacle_sucker);
             }
 
+            // Chrono-Toilet 2193 (Futuristic teleport booth)
+            const pt_toilet_fut = world_to_screen(60, 0, self.width, self.height);
+            const ft_x = pt_toilet_fut.x - 30;
+            const ft_y = post_y + post_h - 180;
+            self.fill_rect(ft_x, ft_y, 60, 90, Color{ .r = 40, .g = 35, .b = 60 });
+            self.draw_rect_outline(ft_x, ft_y, 60, 90, Color.tentacle_purple);
+            self.fill_rect(ft_x + 15, ft_y + 15, 30, 40, Color{ .r = 168, .g = 85, .b = 247 });
+            self.draw_text("CHRONO-2193", ft_x - 6, ft_y - 16, 1, Color{ .r = 216, .g = 180, .b = 254 });
+
             // Title
             self.draw_text("DYSTOPIAN TENTACLE GUARD POST - 2193", post_x + 16, post_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
             self.draw_text("(LAVERNE * PURPLE TENTACLE GUARD * SECURITY CHECKPOINT)", post_x + 16, post_y + 36, 1, Color.hud_subtext);
+        } else if (is_darko_bedroom_scene) {
+            // Suburban Bedroom - October 1988 (P31-01, D-027)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 15, .g = 18, .b = 28 });
+
+            const bedr_x: i32 = 40;
+            const bedr_y: i32 = 110;
+            const bedr_w: i32 = self.width - 80;
+            const bedr_h: i32 = self.height - 210;
+
+            // Room walls
+            self.fill_rect(bedr_x, bedr_y, bedr_w, bedr_h, Color{ .r = 25, .g = 30, .b = 45 });
+            self.draw_rect_outline(bedr_x, bedr_y, bedr_w, bedr_h, Color{ .r = 50, .g = 60, .b = 85 });
+
+            // Hardwood floor
+            self.fill_rect(bedr_x, bedr_y + bedr_h - 110, bedr_w, 110, Color{ .r = 45, .g = 35, .b = 30 });
+            var plank_x: i32 = bedr_x;
+            while (plank_x < bedr_x + bedr_w) : (plank_x += 60) {
+                self.draw_line(plank_x, bedr_y + bedr_h - 110, plank_x, bedr_y + bedr_h, Color{ .r = 30, .g = 22, .b = 18 });
+            }
+
+            // Window with moonlight
+            const win_x = bedr_x + bedr_w - 260;
+            const win_y = bedr_y + 30;
+            self.fill_rect(win_x, win_y, 200, 140, Color{ .r = 20, .g = 30, .b = 55 });
+            self.draw_rect_outline(win_x, win_y, 200, 140, Color{ .r = 140, .g = 160, .b = 200 });
+            self.draw_line(win_x + 100, win_y, win_x + 100, win_y + 140, Color{ .r = 140, .g = 160, .b = 200 });
+            self.draw_line(win_x, win_y + 70, win_x + 200, win_y + 70, Color{ .r = 140, .g = 160, .b = 200 });
+            // Full moon
+            self.fill_circle(win_x + 140, win_y + 40, 18, Color{ .r = 230, .g = 240, .b = 255 });
+
+            // Bed with tangled sheets
+            self.fill_rect(bedr_x + 30, bedr_y + bedr_h - 170, 150, 80, Color{ .r = 60, .g = 50, .b = 45 });
+            self.fill_rect(bedr_x + 35, bedr_y + bedr_h - 160, 140, 60, Color{ .r = 40, .g = 70, .b = 110 });
+            self.fill_rect(bedr_x + 40, bedr_y + bedr_h - 180, 50, 25, Color{ .r = 220, .g = 225, .b = 235 });
+
+            // Smashed ceiling hole from falling Jet Engine if anomaly active
+            if (frame.tangent_active) {
+                self.fill_circle(bedr_x + @divTrunc(bedr_w, 2), bedr_y + 10, 50, Color{ .r = 10, .g = 12, .b = 20 });
+                self.draw_circle_outline(bedr_x + @divTrunc(bedr_w, 2), bedr_y + 10, 52, Color.tangent_glow);
+                self.draw_line(bedr_x + @divTrunc(bedr_w, 2) - 40, bedr_y + 10, bedr_x + @divTrunc(bedr_w, 2) + 40, bedr_y + 35, Color{ .r = 90, .g = 60, .b = 30 });
+            }
+
+            // Title
+            self.draw_text("MIDDLESEX SUBURBAN BEDROOM - OCTOBER 1988", bedr_x + 16, bedr_y + 16, 2, Color{ .r = 224, .g = 242, .b = 254 });
+            self.draw_text("(DONNIE * FRANK THE DEMONIC RABBIT * BEDROOM DESK * JET ENGINE IMPACT)", bedr_x + 16, bedr_y + 36, 1, Color.tangent_glow);
+        } else if (is_darko_school_scene) {
+            // Middlesex High School (P31-01, D-027)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 20, .g = 24, .b = 28 });
+
+            const sch_x: i32 = 40;
+            const sch_y: i32 = 110;
+            const sch_w: i32 = self.width - 80;
+            const sch_h: i32 = self.height - 210;
+
+            // Hallway walls
+            self.fill_rect(sch_x, sch_y, sch_w, sch_h, Color{ .r = 40, .g = 45, .b = 55 });
+            self.draw_rect_outline(sch_x, sch_y, sch_w, sch_h, Color{ .r = 70, .g = 80, .b = 95 });
+
+            // Checkered linoleum hallway floor
+            self.fill_rect(sch_x, sch_y + sch_h - 110, sch_w, 110, Color{ .r = 50, .g = 55, .b = 65 });
+            var tile_x: i32 = sch_x;
+            var tile_col_idx: usize = 0;
+            while (tile_x < sch_x + sch_w) : (tile_x += 40) {
+                const is_dark_tile = (tile_col_idx % 2 == 0);
+                const tile_color = if (is_dark_tile) Color{ .r = 35, .g = 40, .b = 48 } else Color{ .r = 65, .g = 70, .b = 80 };
+                self.fill_rect(tile_x, sch_y + sch_h - 110, 40, 110, tile_color);
+                tile_col_idx += 1;
+            }
+
+            // Green metal lockers along back wall
+            var locker_x: i32 = sch_x + 30;
+            while (locker_x < sch_x + sch_w - 60) : (locker_x += 35) {
+                self.fill_rect(locker_x, sch_y + 40, 30, sch_h - 160, Color{ .r = 30, .g = 65, .b = 50 });
+                self.draw_rect_outline(locker_x, sch_y + 40, 30, sch_h - 160, Color{ .r = 20, .g = 45, .b = 35 });
+                // Vents and handle
+                self.draw_line(locker_x + 5, sch_y + 55, locker_x + 25, sch_y + 55, Color{ .r = 20, .g = 45, .b = 35 });
+                self.draw_line(locker_x + 5, sch_y + 60, locker_x + 25, sch_y + 60, Color{ .r = 20, .g = 45, .b = 35 });
+                self.fill_circle(locker_x + 22, sch_y + 110, 2, Color{ .r = 180, .g = 190, .b = 200 });
+            }
+
+            // School Banner
+            const ban_w: i32 = 320;
+            const ban_x = sch_x + @divTrunc(sch_w - ban_w, 2);
+            self.fill_rect(ban_x, sch_y + 10, ban_w, 26, Color{ .r = 15, .g = 75, .b = 40 });
+            self.draw_rect_outline(ban_x, sch_y + 10, ban_w, 26, Color{ .r = 250, .g = 204, .b = 21 });
+            self.draw_text("MIDDLESEX HIGH - HOME OF THE CAROUSEL BRONCOS", ban_x + 12, sch_y + 16, 1, Color{ .r = 254, .g = 240, .b = 138 });
+
+            // Water flooding if pipe broken
+            if (frame.darko_water_flooded) {
+                self.fill_rect(sch_x, sch_y + sch_h - 40, sch_w, 40, Color{ .r = 56, .g = 189, .b = 248, .a = 150 });
+                self.draw_line(sch_x, sch_y + sch_h - 40, sch_x + sch_w, sch_y + sch_h - 40, Color{ .r = 224, .g = 242, .b = 254 });
+                self.draw_text("[WATER MAIN BURST - HIGH SCHOOL FLOODED!]", sch_x + 30, sch_y + sch_h - 28, 1, Color.white);
+            }
+
+            // Title
+            self.draw_text("MIDDLESEX HIGH SCHOOL - MAIN CORRIDOR", sch_x + 16, sch_y + 16, 2, Color{ .r = 224, .g = 242, .b = 254 });
+            self.draw_text("(DONNIE * GRETCHEN * LOCKERS * WATER MAIN PIPE * BRONCO STATUE)", sch_x + 16, sch_y + 36, 1, Color.tangent_glow);
+        } else if (is_darko_vortex_scene) {
+            // Tangent Vortex Overlook Ridge (P31-01, D-027)
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 10, .g = 6, .b = 20 });
+
+            const vr_x: i32 = 40;
+            const vr_y: i32 = 110;
+            const vr_w: i32 = self.width - 80;
+            const vr_h: i32 = self.height - 210;
+
+            // Night mountain landscape
+            self.fill_rect(vr_x, vr_y, vr_w, vr_h, Color{ .r = 18, .g = 12, .b = 35 });
+            self.draw_rect_outline(vr_x, vr_y, vr_w, vr_h, Color.vortex_purple);
+
+            // Grassy ridge hill
+            self.fill_rect(vr_x, vr_y + vr_h - 90, vr_w, 90, Color{ .r = 25, .g = 40, .b = 30 });
+
+            // Swirling Tangent Vortex in night sky
+            const vortex_cx = vr_x + @divTrunc(vr_w, 2);
+            const vortex_cy = vr_y + 80;
+            self.fill_circle(vortex_cx, vortex_cy, 65, Color{ .r = 50, .g = 15, .b = 85 });
+            self.fill_circle(vortex_cx, vortex_cy, 45, Color{ .r = 88, .g = 28, .b = 135 });
+            self.fill_circle(vortex_cx, vortex_cy, 25, Color.vortex_purple);
+            self.fill_circle(vortex_cx, vortex_cy, 12, Color{ .r = 224, .g = 242, .b = 254 });
+            self.draw_circle_outline(vortex_cx, vortex_cy, 75, Color.tangent_glow);
+            self.draw_circle_outline(vortex_cx, vortex_cy, 95, Color{ .r = 168, .g = 85, .b = 247 });
+
+            // Telephone poles on ridge
+            self.draw_line(vr_x + 80, vr_y + vr_h - 140, vr_x + 80, vr_y + vr_h - 40, Color{ .r = 45, .g = 35, .b = 30 });
+            self.draw_line(vr_x + 65, vr_y + vr_h - 130, vr_x + 95, vr_y + vr_h - 130, Color{ .r = 45, .g = 35, .b = 30 });
+            self.draw_line(vr_x + vr_w - 100, vr_y + vr_h - 140, vr_x + vr_w - 100, vr_y + vr_h - 40, Color{ .r = 45, .g = 35, .b = 30 });
+            self.draw_line(vr_x + vr_w - 115, vr_y + vr_h - 130, vr_x + vr_w - 85, vr_y + vr_h - 130, Color{ .r = 45, .g = 35, .b = 30 });
+            self.draw_line(vr_x + 80, vr_y + vr_h - 130, vr_x + vr_w - 100, vr_y + vr_h - 130, Color{ .r = 60, .g = 50, .b = 45 });
+
+            // Title
+            self.draw_text("TANGENT VORTEX OVERLOOK RIDGE - MIDNIGHT", vr_x + 16, vr_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+            self.draw_text("(ROBERTA SPARROW * MAILBOX 'CELLAR DOOR' * ATMOSPHERIC TIME PORTAL)", vr_x + 16, vr_y + 36, 1, Color.tangent_glow);
         } else {
             // 1. Clear background
             self.fill_rect(0, 0, self.width, self.height, Color.tavern_bg);
@@ -3070,6 +3328,49 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 85, .g = 80, .b = 78 });
                 self.draw_rect_outline(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 140, .g = 135, .b = 130 });
                 self.fill_circle(pt.x, pt.y, 5, Color{ .r = 251, .g = 191, .b = 36 });
+            } else if (std.mem.indexOf(u8, name, "JetEngine") != null or std.mem.indexOf(u8, name, "Engine") != null) {
+                // Artifact of Metal: Jet Engine Cowling (P31-01, P31-03, D-027)
+                self.fill_circle(pt.x, pt.y, 22, Color{ .r = 100, .g = 110, .b = 125 });
+                self.fill_circle(pt.x, pt.y, 16, Color{ .r = 40, .g = 45, .b = 55 });
+                self.fill_circle(pt.x, pt.y, 6, Color{ .r = 160, .g = 170, .b = 185 });
+                self.draw_circle_outline(pt.x, pt.y, 22, Color{ .r = 180, .g = 190, .b = 210 });
+                // Turbine blades
+                self.draw_line(pt.x - 14, pt.y - 14, pt.x + 14, pt.y + 14, Color{ .r = 140, .g = 150, .b = 165 });
+                self.draw_line(pt.x + 14, pt.y - 14, pt.x - 14, pt.y + 14, Color{ .r = 140, .g = 150, .b = 165 });
+                self.draw_line(pt.x, pt.y - 16, pt.x, pt.y + 16, Color{ .r = 140, .g = 150, .b = 165 });
+                self.draw_line(pt.x - 16, pt.y, pt.x + 16, pt.y, Color{ .r = 140, .g = 150, .b = 165 });
+                if (frame.tangent_active) {
+                    self.draw_circle_outline(pt.x, pt.y, 26, Color.tangent_glow);
+                }
+            } else if (std.mem.indexOf(u8, name, "WaterPipe") != null or std.mem.indexOf(u8, name, "Pipe") != null) {
+                // High School Water Pipe (P31-03, D-027)
+                self.fill_rect(pt.x - 6, pt.y - 20, 12, 40, Color{ .r = 110, .g = 120, .b = 135 });
+                self.draw_rect_outline(pt.x - 6, pt.y - 20, 12, 40, Color{ .r = 160, .g = 170, .b = 185 });
+                self.fill_rect(pt.x - 10, pt.y - 8, 20, 16, Color{ .r = 90, .g = 100, .b = 115 });
+                if (frame.darko_water_flooded) {
+                    self.fill_circle(pt.x, pt.y - 14, 8, Color.tangent_glow);
+                    self.draw_line(pt.x, pt.y - 14, pt.x - 18, pt.y + 16, Color.tangent_core);
+                    self.draw_line(pt.x, pt.y - 14, pt.x + 18, pt.y + 16, Color.tangent_core);
+                }
+            } else if (std.mem.indexOf(u8, name, "Axe") != null) {
+                // Fire Axe (P31-03, D-027)
+                self.draw_line(pt.x - 12, pt.y + 16, pt.x + 12, pt.y - 16, Color{ .r = 140, .g = 95, .b = 50 });
+                self.fill_rect(pt.x + 4, pt.y - 20, 12, 10, Color{ .r = 220, .g = 38, .b = 38 });
+                self.draw_rect_outline(pt.x + 4, pt.y - 20, 12, 10, Color.white);
+            } else if (std.mem.indexOf(u8, name, "Vortex") != null or std.mem.indexOf(u8, name, "Anomaly") != null) {
+                // Time Vortex threshold (P31-01, P31-03, D-027)
+                self.fill_circle(pt.x, pt.y, 22, Color.vortex_purple);
+                self.fill_circle(pt.x, pt.y, 14, Color.tangent_glow);
+                self.fill_circle(pt.x, pt.y, 6, Color.tangent_core);
+                self.draw_circle_outline(pt.x, pt.y, 24, Color.tangent_core);
+            } else if (std.mem.indexOf(u8, name, "Mailbox") != null or std.mem.indexOf(u8, name, "Envelope") != null) {
+                // Roberta Sparrow's Mailbox (P31-03, D-027)
+                self.fill_rect(pt.x - 4, pt.y - 6, 8, 26, Color{ .r = 75, .g = 85, .b = 95 });
+                self.fill_rect(pt.x - 14, pt.y - 22, 28, 16, Color{ .r = 160, .g = 170, .b = 180 });
+                self.draw_rect_outline(pt.x - 14, pt.y - 22, 28, 16, Color.white);
+                // Red flag
+                self.draw_line(pt.x + 12, pt.y - 18, pt.x + 12, pt.y - 28, Color{ .r = 220, .g = 38, .b = 38 });
+                self.fill_rect(pt.x + 12, pt.y - 28, 6, 4, Color{ .r = 220, .g = 38, .b = 38 });
             } else {
                 // Default prop
                 self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
@@ -3216,6 +3517,46 @@ pub const DisplayWindow = struct {
                     self.fill_circle(pt.x, pt.y, 2, Color.white);
                 }
             }
+        }
+
+        // 4b. Render Fourth-Dimensional Pre-Cognitive Vector Conduits (P31-02, D-027)
+        for (frame.vector_conduits[0..frame.vector_conduit_count]) |rc| {
+            if (rc.point_count < 2) continue;
+            const c_r = rc.color_r;
+            const c_g = rc.color_g;
+            const c_b = rc.color_b;
+            const outer_col = Color{ .r = c_r, .g = c_g, .b = c_b, .a = 75 };
+            const mid_col = Color{ .r = c_r, .g = c_g, .b = c_b, .a = 160 };
+            const core_col = Color{ .r = 240, .g = 250, .b = 255, .a = 230 };
+
+            var i: usize = 0;
+            while (i < rc.point_count - 1) : (i += 1) {
+                const p1 = world_to_screen(rc.points_x[i], rc.points_y[i], self.width, self.height);
+                const p2 = world_to_screen(rc.points_x[i + 1], rc.points_y[i + 1], self.width, self.height);
+
+                // Outer translucent fluid sheath (chest spear water worm effect)
+                self.draw_line(p1.x, p1.y - 3, p2.x, p2.y - 3, outer_col);
+                self.draw_line(p1.x, p1.y + 3, p2.x, p2.y + 3, outer_col);
+                self.draw_line(p1.x - 3, p1.y, p2.x - 3, p2.y, outer_col);
+                self.draw_line(p1.x + 3, p1.y, p2.x + 3, p2.y, outer_col);
+
+                // Mid tubular body
+                self.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, mid_col);
+                self.draw_line(p1.x, p1.y + 1, p2.x, p2.y + 1, mid_col);
+                self.draw_line(p1.x - 1, p1.y, p2.x - 1, p2.y, mid_col);
+                self.draw_line(p1.x + 1, p1.y, p2.x + 1, p2.y, mid_col);
+
+                // Central high-intensity energy spine
+                self.draw_line(p1.x, p1.y, p2.x, p2.y, core_col);
+
+                // Fluid meniscus nodes along conduit
+                self.fill_circle(p1.x, p1.y, 4, mid_col);
+                self.fill_circle(p1.x, p1.y, 2, core_col);
+            }
+
+            const p_end = world_to_screen(rc.points_x[rc.point_count - 1], rc.points_y[rc.point_count - 1], self.width, self.height);
+            self.draw_circle_outline(p_end.x, p_end.y, 8, mid_col);
+            self.draw_circle_outline(p_end.x, p_end.y, 12, outer_col);
         }
 
         // 5. Render Actors
@@ -3657,6 +3998,67 @@ pub const DisplayWindow = struct {
                 self.draw_line(pt.x + 9, pt.y - 9, pt.x + 2, pt.y - 7, Color.black);
 
                 layout_resolver.submit(TextLabel.init("Purple Tentacle", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+            } else if (std.mem.eql(u8, name, "Donnie")) {
+                // Donnie Darko: Dark disheveled hair, dark grey jacket, chest vector worm anchor node (P31-01, P31-03, D-027)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 55, .g = 60, .b = 75 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // Disheveled dark hair
+                self.fill_circle(pt.x, pt.y - 10, 10, Color{ .r = 30, .g = 25, .b = 20 });
+                self.fill_rect(pt.x - 12, pt.y - 14, 6, 8, Color{ .r = 30, .g = 25, .b = 20 });
+                self.fill_rect(pt.x + 6, pt.y - 14, 6, 8, Color{ .r = 30, .g = 25, .b = 20 });
+                // Chest vector worm anchor node
+                self.fill_circle(pt.x, pt.y + 2, 4, Color.tangent_core);
+                self.draw_circle_outline(pt.x, pt.y + 2, 6, Color.tangent_glow);
+
+                layout_resolver.submit(TextLabel.init("Donnie", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+                if (frame.tangent_active) {
+                    layout_resolver.submit(TextLabel.init("[LIVING RECEIVER]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color.tangent_glow), .actor_status, .actor_status));
+                }
+            } else if (std.mem.eql(u8, name, "Frank")) {
+                // Frank: Demonic silver rabbit suit, sinister skull mask, tall ears (P31-01, P31-03, D-027)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.frank_silver);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.white);
+                // Tall pointed metallic rabbit ears
+                self.fill_rect(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Color.frank_silver);
+                self.fill_rect(pt.x + 4, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Color.frank_silver);
+                self.draw_rect_outline(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Color.white);
+                self.draw_rect_outline(pt.x + 4, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Color.white);
+                // Sinister dark hollow eyes
+                self.fill_circle(pt.x - 5, pt.y - 4, 4, Color.black);
+                self.fill_circle(pt.x + 5, pt.y - 4, 4, Color.black);
+                // Silver skull grin
+                self.draw_line(pt.x - 8, pt.y + 8, pt.x + 8, pt.y + 8, Color.black);
+                self.draw_line(pt.x - 6, pt.y + 6, pt.x - 6, pt.y + 10, Color.black);
+                self.draw_line(pt.x - 2, pt.y + 6, pt.x - 2, pt.y + 10, Color.black);
+                self.draw_line(pt.x + 2, pt.y + 6, pt.x + 2, pt.y + 10, Color.black);
+                self.draw_line(pt.x + 6, pt.y + 6, pt.x + 6, pt.y + 10, Color.black);
+
+                layout_resolver.submit(TextLabel.init("Frank", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+                layout_resolver.submit(TextLabel.init("[MANIPULATED DEAD]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color{ .r = 239, .g = 68, .b = 68 }), .actor_status, .actor_status));
+            } else if (std.mem.eql(u8, name, "Gretchen")) {
+                // Gretchen Ross: Red knit sweater, brunette hair (P31-03, D-027)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 185, .g = 28, .b = 28 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // Long brown hair
+                self.fill_circle(pt.x, pt.y - 10, 9, Color{ .r = 80, .g = 50, .b = 30 });
+                self.fill_rect(pt.x - 12, pt.y - 6, 4, 14, Color{ .r = 80, .g = 50, .b = 30 });
+                self.fill_rect(pt.x + 8, pt.y - 6, 4, 14, Color{ .r = 80, .g = 50, .b = 30 });
+
+                layout_resolver.submit(TextLabel.init("Gretchen", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+            } else if (std.mem.eql(u8, name, "RobertaSparrow") or std.mem.eql(u8, name, "Roberta")) {
+                // Roberta Sparrow (Grandma Death): Floral dress, frazzled hair, letter (P31-01, P31-03, D-027)
+                self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 120, .g = 100, .b = 135 });
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+                // Frazzled white curls
+                self.fill_circle(pt.x, pt.y - 12, 10, Color{ .r = 235, .g = 235, .b = 240 });
+                self.fill_circle(pt.x - 10, pt.y - 8, 5, Color{ .r = 225, .g = 225, .b = 230 });
+                self.fill_circle(pt.x + 10, pt.y - 8, 5, Color{ .r = 225, .g = 225, .b = 230 });
+                // Envelope in hand
+                self.fill_rect(pt.x + 8, pt.y + 4, 10, 7, Color.white);
+                self.draw_rect_outline(pt.x + 8, pt.y + 4, 10, 7, Color{ .r = 100, .g = 100, .b = 100 });
+
+                layout_resolver.submit(TextLabel.init("Roberta Sparrow", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+                layout_resolver.submit(TextLabel.init("['Grandma Death']", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color.hud_subtext), .actor_status, .actor_status));
             } else if (std.mem.eql(u8, name, "Gabriel")) {
                 // Gabriel Knight: Leather trench coat, signature blonde hair, dark shades (P14-02, D-016)
                 self.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.gabriel_coat);
@@ -4129,14 +4531,55 @@ pub const DisplayWindow = struct {
         self.draw_line(0, 48, self.width, 48, Color.tavern_border);
 
         var top_buf: [128]u8 = undefined;
-        const status_str = if (is_paused) "PAUSED" else "RUNNING";
-        const top_text = std.fmt.bufPrint(
-            &top_buf,
-            "BeSpoke Engine | Tick: {d:03} | Facts: {d} | State: {s}",
-            .{ frame.tick, frame.fact_count, status_str },
-        ) catch "BeSpoke Engine";
+        const top_text = if (is_paused)
+            std.fmt.bufPrint(
+                &top_buf,
+                "BeSpoke Engine | Tick: {d:03} | Facts: {d} | [PAUSED] (Space to run, N to step)",
+                .{ frame.tick, frame.fact_count },
+            ) catch "BeSpoke Engine"
+        else if (self.current_tick_interval_ms >= 1000)
+            std.fmt.bufPrint(
+                &top_buf,
+                "BeSpoke Engine | Tick: {d:03} | Facts: {d} | [RUNNING {d:.1}s] ([-]/[+] speed)",
+                .{
+                    frame.tick,
+                    frame.fact_count,
+                    @as(f32, @floatFromInt(self.current_tick_interval_ms)) / 1000.0,
+                },
+            ) catch "BeSpoke Engine"
+        else
+            std.fmt.bufPrint(
+                &top_buf,
+                "BeSpoke Engine | Tick: {d:03} | Facts: {d} | [RUNNING {d}ms] ([-]/[+] speed)",
+                .{
+                    frame.tick,
+                    frame.fact_count,
+                    self.current_tick_interval_ms,
+                },
+            ) catch "BeSpoke Engine";
         const status_col = if (is_paused) Color.status_paused else Color.status_running;
         self.draw_text(top_text, 20, 16, 2, status_col);
+
+        // 6-tangent. Donnie Darko Tangent Collapse Countdown HUD (P31-01, P31-02, D-027)
+        if (frame.tangent_active) {
+            const count_str = frame.get_tangent_countdown();
+            const bw: i32 = 360;
+            const bh: i32 = 34;
+            const party_right_w: i32 = if (frame.party_count > 1)
+                @as(i32, @intCast(frame.party_count)) * (88 + 8) + 10
+            else
+                0;
+            const bx = self.width - bw - 20 - party_right_w;
+            const by: i32 = 7;
+
+            self.fill_rect(bx, by, bw, bh, Color{ .r = 25, .g = 15, .b = 40, .a = 235 });
+            self.draw_rect_outline(bx, by, bw, bh, Color.countdown_warn);
+            self.draw_rect_outline(bx + 1, by + 1, bw - 2, bh - 2, Color.vortex_purple);
+
+            var t_buf: [64]u8 = undefined;
+            const t_text = std.fmt.bufPrint(&t_buf, "TANGENT COLLAPSE: {s}", .{count_str}) catch "TANGENT COLLAPSE";
+            self.draw_text(t_text, bx + 12, by + 9, 2, Color{ .r = 254, .g = 202, .b = 202 });
+        }
 
         // 6a. Multi-Character Party Member Portraits (P21-01, D-025)
         if (frame.party_count > 1) {
@@ -4336,7 +4779,7 @@ pub const DisplayWindow = struct {
         self.draw_line(0, self.height - 44, self.width, self.height - 44, Color.tavern_border);
         if (is_spitting_scene) {
             self.draw_text(
-                "[S]: Spit! | [H]: Horn | [G]: GreenDrink | [F]: Move Flags | [Space]: Pause | [< / >]: Scrub",
+                "[S]: Spit! | [H]: Horn | [G]: GreenDrink | [-]/[+]: Speed | [Space]: Pause | [< / >]: Scrub",
                 20,
                 self.height - 28,
                 2,
@@ -4344,7 +4787,7 @@ pub const DisplayWindow = struct {
             );
         } else if (is_dott_past_scene or is_dott_present_scene or is_dott_future_scene) {
             self.draw_text(
-                "[1]: Hoagie (1790) | [2]: Bernard (1993) | [3]: Laverne (2193) | Drag Item to Portrait to Flush",
+                "[1]: Hoagie | [2]: Bernard | [3]: Laverne | [-]/[+]: Speed | [Space]: Pause | Flush Item to Portrait",
                 20,
                 self.height - 28,
                 2,
@@ -4352,7 +4795,7 @@ pub const DisplayWindow = struct {
             );
         } else if (is_goat_courtyard_scene or is_templar_crypt_scene) {
             self.draw_text(
-                "[C]: Courtyard | [T]: Crypt | [1]: Approach Dig | [2]: Drag Plough | [3]: Descend | [4]: Mural",
+                "[C]: Courtyard | [T]: Crypt | [1]: Dig | [2]: Plough | [-]/[+]: Speed | [Space]: Pause",
                 20,
                 self.height - 28,
                 2,
@@ -4360,7 +4803,7 @@ pub const DisplayWindow = struct {
             );
         } else if (is_hotel_scene or is_garden_scene or is_bike_rental_scene) {
             self.draw_text(
-                "[H]: Hotel | [G]: Garden | [B]: Bike Shop | [Click]: Act | [Right-Click]: Verb | [0-8]: Steps",
+                "[H]: Hotel | [G]: Garden | [B]: Bike Shop | [-]/[+]: Speed | [Space]: Pause | [0-8]: Steps",
                 20,
                 self.height - 28,
                 2,
@@ -4368,15 +4811,23 @@ pub const DisplayWindow = struct {
             );
         } else if (is_village_scene) {
             self.draw_text(
-                "[S]: Theft Catalyst | [F]: Feast (+10g) | [G]: Tip Sheriff | [Space/N]: Pause/Step | [< / >]: Scrub | [P]: Save",
+                "[S]: Theft | [F]: Feast | [G]: Tip | [-]/[+]: Speed | [Space/N]: Pause/Step | [< / >]: Scrub",
                 20,
                 self.height - 28,
                 2,
                 Color{ .r = 250, .g = 204, .b = 21 },
             );
+        } else if (is_darko_bedroom_scene or is_darko_school_scene or is_darko_vortex_scene or frame.tangent_active) {
+            self.draw_text(
+                "[1]: Bedroom | [2]: High School | [3]: Ridge | [V]: Conduit | [-]/[+]: Speed | [Space]: Pause",
+                20,
+                self.height - 28,
+                2,
+                Color{ .r = 168, .g = 85, .b = 247 },
+            );
         } else {
             self.draw_text(
-                "[Click]: Act | [Right-Click]: Verb | [P/F2/F3]: Save/Load | [F5/F9]: QuickSave | [F1]: Debug | [C]: REPL",
+                "[Click]: Act | [Right-Click]: Verb | [-]/[+]: Speed | [Space]: Pause | [P]: Save | [C]: REPL",
                 20,
                 self.height - 28,
                 2,
@@ -4693,6 +5144,20 @@ pub const DisplayWindow = struct {
                     self.draw_text(hint, text_x, srect.y + 34, 1, Color.hud_subtext);
                 }
             }
+        }
+
+        // 12b. Black Hole Singularity Catastrophic Fail-State Modal (P31-01, D-027)
+        if (frame.singularity_collapsed) {
+            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 0, .g = 0, .b = 0, .a = 230 });
+            const mw: i32 = 640;
+            const mh: i32 = 120;
+            const mx = @divTrunc(self.width - mw, 2);
+            const my = @divTrunc(self.height - mh, 2);
+            self.fill_rect(mx, my, mw, mh, Color{ .r = 15, .g = 8, .b = 20, .a = 250 });
+            self.draw_rect_outline(mx, my, mw, mh, Color.countdown_warn);
+            self.draw_rect_outline(mx + 2, my + 2, mw - 4, mh - 4, Color.vortex_purple);
+            self.draw_text("BLACK HOLE SINGULARITY COLLAPSE", mx + 36, my + 24, 2, Color.countdown_warn);
+            self.draw_text("The Tangent Universe collapsed without loop closure. Rewind [R] required.", mx + 24, my + 66, 1, Color{ .r = 224, .g = 242, .b = 254 });
         }
 
         // 13. Present Frame

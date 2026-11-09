@@ -46,6 +46,27 @@ pub const DOTT_PUZZLE_SCRIPT =
     \\on cue LooksAt(Bernard, Vinegar200Years):
     \\  say Bernard: "Pungent, highly acidic vinegar, cured over two whole centuries in the time capsule!"
     \\
+    \\on cue LooksAt(Bernard, LobbyDesk):
+    \\  say Bernard: "The motel registration desk. A classic bell, guestbook, and decades of neglect."
+    \\
+    \\on cue LooksAt(Bernard, MotelEntrance):
+    \\  say Bernard: "Double doors leading outside to the motel driveway. Better stay focused on saving the world."
+    \\
+    \\on cue LooksAt(Bernard, CapsuleNiche1993):
+    \\  say Bernard: "The display niche where the bicentennial time capsule is embedded in the wall."
+    \\
+    \\on cue LooksAt(Bernard, ToiletMark1993):
+    \\  say Bernard: "Restroom tiles around the 1993 Chron-o-John."
+    \\
+    \\on cue LooksAt(Bernard, Bernard):
+    \\  say Bernard: "Still me, still wearing my lucky bowtie."
+    \\
+    \\on cue LooksAt(Bernard, Hoagie):
+    \\  say Bernard: "Hoagie is back in 1790 assisting our founding fathers."
+    \\
+    \\on cue LooksAt(Bernard, Laverne):
+    \\  say Bernard: "Laverne is stuck 200 years in the future under tentacle rule."
+    \\
     \\on cue LooksAt(Hoagie, KumquatTree):
     \\  say Hoagie: "A small, bushy kumquat tree. George Washington is glaring at it impatiently."
     \\
@@ -79,6 +100,30 @@ pub const DOTT_PUZZLE_SCRIPT =
     \\on cue LooksAt(Hoagie, TentacleFlyer):
     \\  say Hoagie: "Future campaign literature from Purple Tentacle. Betsy Ross could use this as a flag pattern."
     \\
+    \\on cue LooksAt(Hoagie, WorkshopDoor):
+    \\  say Hoagie: "Heavy wooden door leading out to the colonial grounds and kumquat orchard."
+    \\
+    \\on cue LooksAt(Hoagie, Fireplace1790):
+    \\  say Hoagie: "A brick hearth crackling with firewood. Great for aging vintage wine into vinegar."
+    \\
+    \\on cue LooksAt(Hoagie, KumquatLawn):
+    \\  say Hoagie: "The green colonial lawn where George Washington is testing his axe."
+    \\
+    \\on cue LooksAt(Hoagie, CapsuleNiche1790):
+    \\  say Hoagie: "A recessed stone niche housing the colonial time capsule."
+    \\
+    \\on cue LooksAt(Hoagie, ToiletMark1790):
+    \\  say Hoagie: "The dirt patch where my Chron-o-John crash-landed in 1790."
+    \\
+    \\on cue LooksAt(Hoagie, Hoagie):
+    \\  say Hoagie: "Just a roadie trying to get back to the gig."
+    \\
+    \\on cue LooksAt(Hoagie, Bernard):
+    \\  say Hoagie: "Bernard is holding down the motel fort in 1993."
+    \\
+    \\on cue LooksAt(Hoagie, Laverne):
+    \\  say Hoagie: "Laverne is waiting in the future. Hope she didn't get eaten by tentacles."
+    \\
     \\on cue TalksTo(Hoagie, Washington):
     \\  choice "Care to chop down that cherry tree for historical destiny, Mr. Washington?" where Believes(Washington, CherryTree):
     \\    say Washington: "A cherry tree?! I cannot tell a lie! My axe hungers for colonial timber!"
@@ -95,6 +140,13 @@ pub const DOTT_PUZZLE_SCRIPT =
     \\    remember TentacleFlagSewn(BetsyRoss, 1)
     \\  choice "How goes the sewing, Betsy?":
     \\    say BetsyRoss: "I am working on the national banner, but the committee cannot agree on the pattern."
+    \\
+    \\on cue TalksTo(Laverne, PurpleTentacle):
+    \\  choice "I need to use the bathroom!":
+    \\    say PurpleTentacle: "Human biological maintenance permitted. Do your business in the yard!"
+    \\    remember DoingBusiness(Laverne, 1)
+    \\  choice "Nice tentacles you have there.":
+    \\    say PurpleTentacle: "Silence, mammalian prisoner! No loitering at the checkpoint!"
     \\
     \\on cue LooksAt(Laverne, PurpleTentacle):
     \\  say Laverne: "A seven-foot mutant purple tentacle patrolling the security checkpoint. No humans allowed without a tentacle disguise."
@@ -113,6 +165,27 @@ pub const DOTT_PUZZLE_SCRIPT =
     \\
     \\on cue LooksAt(Laverne, TentacleFlag):
     \\  say Laverne: "Betsy Ross's 1790 flag design, perfectly altered to double as an authentic tentacle disguise!"
+    \\
+    \\on cue LooksAt(Laverne, GuardPost):
+    \\  say Laverne: "The tentacle security barrier. No humans permitted without a tentacle disguise."
+    \\
+    \\on cue LooksAt(Laverne, RoofGutter):
+    \\  say Laverne: "Copper drainage gutter leading down from the guard post roof."
+    \\
+    \\on cue LooksAt(Laverne, TreeBranch2193):
+    \\  say Laverne: "A thick, gnarly branch of the mutated kumquat tree high in the air."
+    \\
+    \\on cue LooksAt(Laverne, ToiletMark2193):
+    \\  say Laverne: "The rooftop patio where the future Chron-o-John sits."
+    \\
+    \\on cue LooksAt(Laverne, Laverne):
+    \\  say Laverne: "Med school didn't prepare me for mutant tentacles."
+    \\
+    \\on cue LooksAt(Laverne, Bernard):
+    \\  say Laverne: "Bernard is in 1993 running around Dr. Fred's motel."
+    \\
+    \\on cue LooksAt(Laverne, Hoagie):
+    \\  say Laverne: "Hoagie is chilling in colonial times with the founding fathers."
     \\
     \\when TreeChoppedDown(Washington, KumquatTree):
     \\  interrupt Laverne with:
@@ -138,9 +211,13 @@ pub fn evaluate_dott_solved(world: *const bespoke.World) bool {
         world.has_fact(null, disg_rel, null);
 }
 
-/// Extracts the latest dialogue/speech message from emitted cues on the VM.
-pub fn get_latest_say_message(world: *const bespoke.World, vm: *const bespoke.VM, buf: []u8) ?[]const u8 {
-    for (vm.emitted_cues.items) |c| {
+/// Extracts the latest dialogue/speech message from emitted cues on the VM since a given index.
+pub fn get_latest_say_message_since(world: *const bespoke.World, vm: *const bespoke.VM, min_index: usize, buf: []u8) ?[]const u8 {
+    if (vm.emitted_cues.items.len <= min_index) return null;
+    var idx = vm.emitted_cues.items.len;
+    while (idx > min_index) {
+        idx -= 1;
+        const c = vm.emitted_cues.items[idx];
         if (c.cue_id == 2 and c.arg_count >= 2) {
             const speaker_ent = bespoke.EntityId.from_int(c.args[0]);
             const text_ent = bespoke.EntityId.from_int(c.args[1]);
@@ -150,6 +227,11 @@ pub fn get_latest_say_message(world: *const bespoke.World, vm: *const bespoke.VM
         }
     }
     return null;
+}
+
+/// Extracts the latest dialogue/speech message from emitted cues on the VM.
+pub fn get_latest_say_message(world: *const bespoke.World, vm: *const bespoke.VM, buf: []u8) ?[]const u8 {
+    return get_latest_say_message_since(world, vm, 0, buf);
 }
 
 /// Fallback description generator for props, actors, and items across all three DOTT eras.
@@ -163,6 +245,14 @@ pub fn get_dott_look_description(actor_name: []const u8, target_name: []const u8
         return "Bernard: \"The Chron-o-John! Dr. Fred's temporal displacement unit disguised as standard plumbing.\"";
     } else if (std.mem.eql(u8, target_name, "TimeCapsule1993")) {
         return "Bernard: \"The motel lobby time capsule, sealed tight to preserve artifacts for centuries.\"";
+    } else if (std.mem.eql(u8, target_name, "LobbyDesk")) {
+        return "Bernard: \"The motel registration desk. A classic bell, guestbook, and decades of neglect.\"";
+    } else if (std.mem.eql(u8, target_name, "MotelEntrance")) {
+        return "Bernard: \"Double doors leading outside to the motel driveway. Better stay focused on saving the world.\"";
+    } else if (std.mem.eql(u8, target_name, "CapsuleNiche1993")) {
+        return "Bernard: \"The display niche where the bicentennial time capsule is embedded in the wall.\"";
+    } else if (std.mem.eql(u8, target_name, "ToiletMark1993")) {
+        return "Bernard: \"Restroom tiles around the 1993 Chron-o-John.\"";
     } else if (std.mem.eql(u8, target_name, "DrFred")) {
         return "Bernard: \"Dr. Fred Edison, pacing nervously while muttering about world domination and temporal coordinates.\"";
     } else if (std.mem.eql(u8, target_name, "KumquatTree")) {
@@ -171,6 +261,16 @@ pub fn get_dott_look_description(actor_name: []const u8, target_name: []const u8
         return "Hoagie: \"My Chron-o-John in 1790. Needs electrical power before it can flush anything back to the future.\"";
     } else if (std.mem.eql(u8, target_name, "TimeCapsule1790")) {
         return "Hoagie: \"A bronze time capsule embedded in the colonial hearth. Anything placed inside will survive to 1993.\"";
+    } else if (std.mem.eql(u8, target_name, "WorkshopDoor")) {
+        return "Hoagie: \"Heavy wooden door leading out to the colonial grounds and kumquat orchard.\"";
+    } else if (std.mem.eql(u8, target_name, "Fireplace1790")) {
+        return "Hoagie: \"A brick hearth crackling with firewood. Great for aging vintage wine into vinegar.\"";
+    } else if (std.mem.eql(u8, target_name, "KumquatLawn")) {
+        return "Hoagie: \"The green colonial lawn where George Washington is testing his axe.\"";
+    } else if (std.mem.eql(u8, target_name, "CapsuleNiche1790")) {
+        return "Hoagie: \"A recessed stone niche housing the colonial time capsule.\"";
+    } else if (std.mem.eql(u8, target_name, "ToiletMark1790")) {
+        return "Hoagie: \"The dirt patch where my Chron-o-John crash-landed in 1790.\"";
     } else if (std.mem.eql(u8, target_name, "RedPaintBucket")) {
         return "Hoagie: \"A bucket of bright red colonial oil paint. Perfect for turning citrus trees into cherry trees.\"";
     } else if (std.mem.eql(u8, target_name, "BatteryCasing")) {
@@ -193,6 +293,20 @@ pub fn get_dott_look_description(actor_name: []const u8, target_name: []const u8
         return "Laverne: \"A high-voltage power terminal on the roof, hooked into the Chron-o-John temporal conduit.\"";
     } else if (std.mem.eql(u8, target_name, "ChronoToilet2193")) {
         return "Laverne: \"The future Chron-o-John! Once hooked up to power, it will reconnect the party across time.\"";
+    } else if (std.mem.eql(u8, target_name, "GuardPost")) {
+        return "Laverne: \"The tentacle security barrier. No humans permitted without a tentacle disguise.\"";
+    } else if (std.mem.eql(u8, target_name, "RoofGutter")) {
+        return "Laverne: \"Copper drainage gutter leading down from the guard post roof.\"";
+    } else if (std.mem.eql(u8, target_name, "TreeBranch2193")) {
+        return "Laverne: \"A thick, gnarly branch of the mutated kumquat tree high in the air.\"";
+    } else if (std.mem.eql(u8, target_name, "ToiletMark2193")) {
+        return "Laverne: \"The rooftop patio where the future Chron-o-John sits.\"";
+    } else if (std.mem.eql(u8, target_name, "Bernard")) {
+        return "Bernard: \"Still me, still wearing my lucky bowtie and oversized glasses.\"";
+    } else if (std.mem.eql(u8, target_name, "Hoagie")) {
+        return "Hoagie: \"Heavy metal roadie with an unflappable attitude and a knack for American history.\"";
+    } else if (std.mem.eql(u8, target_name, "Laverne")) {
+        return "Laverne: \"Eccentric medical student with a unique perspective on human anatomy and mutant tentacles.\"";
     } else {
         return "Nothing unusual to see here.";
     }
@@ -207,9 +321,10 @@ pub fn execute_look_at(
     target: bespoke.EntityId,
     buf: []u8,
 ) ![]const u8 {
+    const start_cue_count = vm.emitted_cues.items.len;
     _ = try vm.fire_cue(compiled, "LooksAt", speaker, target, null);
     try vm.step_tick();
-    if (get_latest_say_message(world, vm, buf)) |msg| {
+    if (get_latest_say_message_since(world, vm, start_cue_count, buf)) |msg| {
         return msg;
     }
     const speaker_name = world.get_entity_name(speaker) orelse "Hero";
@@ -295,6 +410,32 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const trapped_rel = try world.intern_relation("Trapped", .set);
     _ = try world.remember(laverne, trapped_rel, 1, 0);
 
+    // Explicit hotspot locations aligned with scene waypoints across all 3 eras
+    const wine_prop = world.lookup_entity("VintageWineBottle").?;
+    const flyer_prop = world.lookup_entity("TentacleFlyerProp").?;
+    const flag_prop = world.lookup_entity("TentacleFlagProp").?;
+    const socket_prop = world.lookup_entity("PowerSocketProp").?;
+    const future_tree = world.lookup_entity("FutureTree").?;
+    const tree_prop = world.lookup_entity("KumquatTree").?;
+    const capsule_1790_ent = world.lookup_entity("TimeCapsule1790").?;
+    const capsule_1993_ent = world.lookup_entity("TimeCapsule1993").?;
+    const paint_prop = world.lookup_entity("RedPaintBucket").?;
+
+    try spatial.add_hotspot(toilet_1790_ent, past_scene, .{ .x = 80, .y = -6 }, 10, "ChronoToilet1790", "The 1790 Chron-o-John. Needs electrical power before it can flush anything across time.");
+    try spatial.add_hotspot(capsule_1790_ent, past_scene, .{ .x = 60, .y = -6 }, 8, "TimeCapsule1790", "A bronze time capsule embedded in the colonial hearth. Anything placed inside will survive to 1993.");
+    try spatial.add_hotspot(tree_prop, past_scene, .{ .x = 40, .y = -6 }, 10, "KumquatTree", "A small, bushy kumquat tree. George Washington is glaring at it impatiently.");
+    try spatial.add_hotspot(paint_prop, past_scene, .{ .x = 20, .y = -6 }, 8, "RedPaintBucket", "A bucket of bright red colonial oil paint. Perfect for turning citrus trees into cherry trees.");
+
+    try spatial.add_hotspot(toilet_1993_ent, present_scene, .{ .x = 60, .y = -6 }, 10, "ChronoToilet1993", "The Chron-o-John! Dr. Fred's temporal displacement unit disguised as standard plumbing.");
+    try spatial.add_hotspot(capsule_1993_ent, present_scene, .{ .x = 40, .y = -6 }, 8, "TimeCapsule1993", "The motel lobby time capsule, sealed tight to preserve artifacts for centuries.");
+    try spatial.add_hotspot(wine_prop, present_scene, .{ .x = 0, .y = -6 }, 8, "VintageWineBottle", "A dusty 1993 vintage bottle of red wine sitting on the motel desk.");
+    try spatial.add_hotspot(flyer_prop, present_scene, .{ .x = 5, .y = -6 }, 8, "TentacleFlyerProp", "A campaign flyer showing Purple Tentacle's triangular silhouette.");
+
+    try spatial.add_hotspot(toilet_2193_ent, future_scene, .{ .x = 60, .y = -6 }, 10, "ChronoToilet2193", "The future Chron-o-John! Once hooked up to power, it will reconnect the party across time.");
+    try spatial.add_hotspot(future_tree, future_scene, .{ .x = 40, .y = -6 }, 10, "FutureTree", "A bizarre 200-year-old kumquat tree reaching all the way to the roof. Laverne is currently tangled in its branches!");
+    try spatial.add_hotspot(flag_prop, future_scene, .{ .x = 20, .y = -6 }, 8, "TentacleFlagProp", "The official planetary banner hoisted high on the guard roof: Purple Tentacle's suction-cup standard.");
+    try spatial.add_hotspot(socket_prop, future_scene, .{ .x = 25, .y = -6 }, 8, "PowerSocketProp", "A high-voltage power terminal on the roof, hooked into the Chron-o-John temporal conduit.");
+
     // 5. Intern Items and Initial Inventory
     const carries_rel = try world.intern_relation("Carries", .set);
     const wine = try world.intern_entity("VintageWine");
@@ -306,7 +447,6 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const flag = try world.intern_entity("TentacleFlag");
     const cherry_prop = try world.intern_entity("CherryTree");
     const flag_design = try world.intern_entity("TentacleFlagDesign");
-    const tree_prop = world.lookup_entity("KumquatTree").?;
 
     // Bernard in 1993 carries Vintage Wine and Tentacle Flyer
     _ = try world.remember(bernard, carries_rel, wine.to_int(), 0);
@@ -336,10 +476,6 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var look_buf: [256]u8 = undefined;
 
     // 1993 Motel Lobby (Bernard)
-    const wine_prop = world.lookup_entity("VintageWineBottle").?;
-    const flyer_prop = world.lookup_entity("TentacleFlyerProp").?;
-    const toilet_1993_prop = world.lookup_entity("ChronoToilet1993").?;
-    const capsule_1993_prop = world.lookup_entity("TimeCapsule1993").?;
     const drfred = world.lookup_entity("DrFred").?;
 
     const msg_wine_prop = try execute_look_at(&world, &vm, &compiled, bernard, wine_prop, &look_buf);
@@ -348,10 +484,10 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const msg_flyer_prop = try execute_look_at(&world, &vm, &compiled, bernard, flyer_prop, &look_buf);
     try writer.print("         [1993] Bernard looks at TentacleFlyerProp -> {s}\n", .{msg_flyer_prop});
 
-    const msg_toilet_1993 = try execute_look_at(&world, &vm, &compiled, bernard, toilet_1993_prop, &look_buf);
+    const msg_toilet_1993 = try execute_look_at(&world, &vm, &compiled, bernard, toilet_1993_ent, &look_buf);
     try writer.print("         [1993] Bernard looks at ChronoToilet1993 -> {s}\n", .{msg_toilet_1993});
 
-    const msg_capsule_1993 = try execute_look_at(&world, &vm, &compiled, bernard, capsule_1993_prop, &look_buf);
+    const msg_capsule_1993 = try execute_look_at(&world, &vm, &compiled, bernard, capsule_1993_ent, &look_buf);
     try writer.print("         [1993] Bernard looks at TimeCapsule1993 -> {s}\n", .{msg_capsule_1993});
 
     const msg_drfred = try execute_look_at(&world, &vm, &compiled, bernard, drfred, &look_buf);
@@ -365,16 +501,14 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // 1790 Colonial Workshop (Hoagie)
     try vm.transition_to_scene(past_scene);
-    const toilet_1790_prop = world.lookup_entity("ChronoToilet1790").?;
-    const capsule_1790_prop = world.lookup_entity("TimeCapsule1790").?;
 
     const msg_tree = try execute_look_at(&world, &vm, &compiled, hoagie, tree_prop, &look_buf);
     try writer.print("         [1790] Hoagie looks at KumquatTree -> {s}\n", .{msg_tree});
 
-    const msg_toilet_1790 = try execute_look_at(&world, &vm, &compiled, hoagie, toilet_1790_prop, &look_buf);
+    const msg_toilet_1790 = try execute_look_at(&world, &vm, &compiled, hoagie, toilet_1790_ent, &look_buf);
     try writer.print("         [1790] Hoagie looks at ChronoToilet1790 -> {s}\n", .{msg_toilet_1790});
 
-    const msg_capsule_1790 = try execute_look_at(&world, &vm, &compiled, hoagie, capsule_1790_prop, &look_buf);
+    const msg_capsule_1790 = try execute_look_at(&world, &vm, &compiled, hoagie, capsule_1790_ent, &look_buf);
     try writer.print("         [1790] Hoagie looks at TimeCapsule1790 -> {s}\n", .{msg_capsule_1790});
 
     const msg_wash = try execute_look_at(&world, &vm, &compiled, hoagie, washington, &look_buf);
@@ -391,15 +525,11 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // 2193 Dystopian Guard Post (Laverne)
     try vm.transition_to_scene(future_scene);
-    const future_tree_prop = world.lookup_entity("FutureTree").?;
-    const flag_prop = world.lookup_entity("TentacleFlagProp").?;
-    const socket_prop = world.lookup_entity("PowerSocketProp").?;
-    const toilet_2193_prop = world.lookup_entity("ChronoToilet2193").?;
 
     const msg_tentacle = try execute_look_at(&world, &vm, &compiled, laverne, tentacle, &look_buf);
     try writer.print("         [2193] Laverne looks at PurpleTentacle -> {s}\n", .{msg_tentacle});
 
-    const msg_fut_tree = try execute_look_at(&world, &vm, &compiled, laverne, future_tree_prop, &look_buf);
+    const msg_fut_tree = try execute_look_at(&world, &vm, &compiled, laverne, future_tree, &look_buf);
     try writer.print("         [2193] Laverne looks at FutureTree -> {s}\n", .{msg_fut_tree});
 
     const msg_flag_prop = try execute_look_at(&world, &vm, &compiled, laverne, flag_prop, &look_buf);
@@ -408,7 +538,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const msg_socket = try execute_look_at(&world, &vm, &compiled, laverne, socket_prop, &look_buf);
     try writer.print("         [2193] Laverne looks at PowerSocketProp -> {s}\n", .{msg_socket});
 
-    const msg_toilet_2193 = try execute_look_at(&world, &vm, &compiled, laverne, toilet_2193_prop, &look_buf);
+    const msg_toilet_2193 = try execute_look_at(&world, &vm, &compiled, laverne, toilet_2193_ent, &look_buf);
     try writer.print("         [2193] Laverne looks at ChronoToilet2193 -> {s}\n\n", .{msg_toilet_2193});
 
     // Restore present scene (Motel Lobby) for Step 1
@@ -509,8 +639,20 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     _ = world.forget(laverne, trapped_rel, 1);
     _ = try spatial.transition_actor(laverne, future_scene, fut_guard_wp);
     try writer.print("         Laverne drops safely from absent tree to ground level!\n", .{});
+
+    // Invariant verification (D-026): Tree removed, but Laverne is at GuardPost without costume or yard escort -> transfer fails
+    std.debug.assert(!spatial.can_access_portal(&world, laverne));
+    std.debug.assert(!spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+    try writer.print("         [D-026 Invariant] Portal Access Gating: Laverne on ground but guarded -> Chron-o-John transfer rejected!\n", .{});
+
+    // STEP 9b: Security Permission: Laverne requests bathroom escort / 'doing her business' in yard
+    try writer.print("[Step 9b] Security Permission: Laverne: 'I need to use the bathroom!' -> Guard permits yard access...\n", .{});
+    const doing_biz_rel = try world.intern_relation("DoingBusiness", .set);
+    _ = try world.remember(laverne, doing_biz_rel, 1, 0);
+    _ = try spatial.transition_actor(laverne, future_scene, fut_toilet_wp);
+    std.debug.assert(spatial.can_access_portal(&world, laverne));
     std.debug.assert(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
-    try writer.print("         [D-026 Invariant] Portal Gating Verified: Laverne freed -> Chron-o-John transfer online!\n", .{});
+    try writer.print("         [D-026 Invariant] Portal Access Gating: Laverne doing business in yard -> Chron-o-John transfer online!\n", .{});
 
     // STEP 10: Laverne retrieves Tentacle Flag disguise and bypasses guard
     try writer.print("[Step 10] Laverne climbs to roof, dons Tentacle Flag disguise, reaches power socket...\n", .{});
@@ -519,6 +661,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("         Laverne inspects TentacleFlag -> {s}\n", .{msg_flag});
     const disg_rel = try world.intern_relation("TentacleDisguiseActive", .set);
     _ = try world.remember(laverne, disg_rel, 1, 0);
+    std.debug.assert(spatial.can_access_portal(&world, laverne));
+    std.debug.assert(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+    try writer.print("         [D-026 Invariant] Portal Access Gating: Laverne wearing tentacle disguise -> permanent Chron-o-John access granted!\n", .{});
 
     // STEP 11: Verify Complete Victory
     std.debug.assert(evaluate_dott_solved(&world));
@@ -608,6 +753,42 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     const flyer = try world.intern_entity("TentacleFlyer");
     const paint = try world.intern_entity("RedPaintBucket");
     const casing = try world.intern_entity("BatteryCasing");
+    const vinegar = try world.intern_entity("Vinegar200Years");
+    const battery = try world.intern_entity("SuperBattery");
+    const flag = try world.intern_entity("TentacleFlag");
+    const tree_prop = world.lookup_entity("KumquatTree").?;
+    const capsule_1790 = world.lookup_entity("TimeCapsule1790").?;
+    const capsule_1993 = world.lookup_entity("TimeCapsule1993").?;
+    const wine_prop = world.lookup_entity("VintageWineBottle").?;
+    const flyer_prop = world.lookup_entity("TentacleFlyerProp").?;
+    const flag_prop = world.lookup_entity("TentacleFlagProp").?;
+    const socket_prop = world.lookup_entity("PowerSocketProp").?;
+    const future_tree = world.lookup_entity("FutureTree").?;
+
+    // Explicit hotspot locations aligned with scene waypoints across all 3 eras
+    try spatial.add_hotspot(toilet_1790_ent, past_scene, .{ .x = 80, .y = -6 }, 10, "ChronoToilet1790", "The 1790 Chron-o-John. Needs electrical power before it can flush anything across time.");
+    try spatial.add_hotspot(capsule_1790, past_scene, .{ .x = 60, .y = -6 }, 8, "TimeCapsule1790", "A bronze time capsule embedded in the colonial hearth. Anything placed inside will survive to 1993.");
+    try spatial.add_hotspot(tree_prop, past_scene, .{ .x = 40, .y = -6 }, 10, "KumquatTree", "A small, bushy kumquat tree. George Washington is glaring at it impatiently.");
+    try spatial.add_hotspot(paint, past_scene, .{ .x = 20, .y = -6 }, 8, "RedPaintBucket", "A bucket of bright red colonial oil paint. Perfect for turning citrus trees into cherry trees.");
+
+    try spatial.add_hotspot(toilet_1993_ent, present_scene, .{ .x = 60, .y = -6 }, 10, "ChronoToilet1993", "The Chron-o-John! Dr. Fred's temporal displacement unit disguised as standard plumbing.");
+    try spatial.add_hotspot(capsule_1993, present_scene, .{ .x = 40, .y = -6 }, 8, "TimeCapsule1993", "The motel lobby time capsule, sealed tight to preserve artifacts for centuries.");
+    try spatial.add_hotspot(wine_prop, present_scene, .{ .x = 0, .y = -6 }, 8, "VintageWineBottle", "A dusty 1993 vintage bottle of red wine sitting on the motel desk.");
+    try spatial.add_hotspot(flyer_prop, present_scene, .{ .x = 5, .y = -6 }, 8, "TentacleFlyerProp", "A campaign flyer showing Purple Tentacle's triangular silhouette.");
+
+    try spatial.add_hotspot(toilet_2193_ent, future_scene, .{ .x = 60, .y = -6 }, 10, "ChronoToilet2193", "The future Chron-o-John! Once hooked up to power, it will reconnect the party across time.");
+    try spatial.add_hotspot(future_tree, future_scene, .{ .x = 40, .y = -6 }, 10, "FutureTree", "A bizarre 200-year-old kumquat tree reaching all the way to the roof. Laverne is currently tangled in its branches!");
+    try spatial.add_hotspot(flag_prop, future_scene, .{ .x = 20, .y = -6 }, 8, "TentacleFlagProp", "The official planetary banner hoisted high on the guard roof: Purple Tentacle's suction-cup standard.");
+    try spatial.add_hotspot(socket_prop, future_scene, .{ .x = 25, .y = -6 }, 8, "PowerSocketProp", "A high-voltage power terminal on the roof, hooked into the Chron-o-John temporal conduit.");
+
+    const cherry_belief_rel = try world.intern_relation("Believes", .set);
+    const toilet_powered_rel = try world.intern_relation("ToiletPowered", .set);
+    const flag_design_rel = try world.intern_relation("TentacleFlagDesign", .set);
+    const flag_sewn_rel = try world.intern_relation("TentacleFlagSewn", .set);
+    const chop_rel = try world.intern_relation("TreeChoppedDown", .set);
+    const free_rel = try world.intern_relation("FreedFromTree", .set);
+    const doing_biz_rel = try world.intern_relation("DoingBusiness", .set);
+    const disg_rel = try world.intern_relation("TentacleDisguiseActive", .set);
 
     _ = try world.remember(bernard, carries_rel, wine.to_int(), 0);
     _ = try world.remember(bernard, carries_rel, flyer.to_int(), 0);
@@ -629,10 +810,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     const party = [_]bespoke.EntityId{ hoagie, bernard, laverne };
     display_bridge.set_party(&party);
     display_bridge.set_active_character(bernard);
+    display_bridge.set_active_party_index(1);
 
     var is_paused = false;
     var last_tick_time = std.time.milliTimestamp();
-    const tick_interval_ms: i64 = 200;
     win.set_cue_banner("Day of the Tentacle Trio loaded! Press [1] Hoagie, [2] Bernard, [3] Laverne to switch characters.", 180);
 
     while (true) {
@@ -644,6 +825,8 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
         const action = win.poll_events(frame);
         var should_step_now = false;
+        var action_taken = false;
+
         switch (action) {
             .quit => break,
             .toggle_pause => is_paused = !is_paused,
@@ -651,14 +834,14 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             .walk_player => |wp_id| {
                 const active_char = display_bridge.active_player_character orelse bernard;
                 _ = try spatial.walk_to(active_char, wp_id);
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.swap();
+                action_taken = true;
                 win.set_cue_banner("Directing character to waypoint.", 60);
             },
             .switch_party_member => |p_idx| {
                 if (p_idx < party.len) {
                     const char_id = party[p_idx];
                     display_bridge.set_active_character(char_id);
+                    display_bridge.set_active_party_index(p_idx);
                     if (char_id == hoagie) {
                         try vm.transition_to_scene(past_scene);
                         win.set_cue_banner("Switched to Hoagie (1790 Colonial Workshop)", 120);
@@ -669,6 +852,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         try vm.transition_to_scene(future_scene);
                         win.set_cue_banner("Switched to Laverne (2193 Dystopian Guard Post)", 120);
                     }
+                    action_taken = true;
                 }
             },
             .examine_hotspot => |hs_idx| {
@@ -679,6 +863,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const speech = try execute_look_at(&world, &vm, &compiled, active_char, hs.entity, &look_buf);
                     win.set_cue_banner(speech, 180);
                     std.debug.print("\n[DOTT Look] {s}\n", .{speech});
+                    action_taken = true;
                 }
             },
             .interact_hotspot => |hs_act| {
@@ -696,10 +881,41 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                             _ = try spatial.walk_to(active_char, wp_id);
                             win.set_cue_banner("Approaching prop...", 60);
                         }
+                    } else if (hs_act.verb == .pick_up or hs_act.verb == .use_with) {
+                        const aged_rel = try world.intern_relation("WineAgedIntoVinegar", .set);
+                        if (hs.entity == capsule_1993 or hs.entity == capsule_1790) {
+                            if (world.has_fact(wine, aged_rel, 1)) {
+                                if (!world.has_fact(null, carries_rel, vinegar.to_int())) {
+                                    _ = try world.remember(active_char, carries_rel, vinegar.to_int(), 0);
+                                    win.play_sfx(.pickup);
+                                    win.set_cue_banner("Bernard opens the 1993 time capsule and retrieves the 200-year-aged vinegar!", 180);
+                                } else {
+                                    win.set_cue_banner("The time capsule is now empty.", 120);
+                                }
+                            } else {
+                                win.set_cue_banner("The time capsule is empty. Nothing has been sealed in it yet.", 120);
+                            }
+                        } else if (hs.entity == flag_prop) {
+                            if (world.has_fact(betsy, flag_sewn_rel, 1)) {
+                                if (!world.has_fact(null, carries_rel, flag.to_int())) {
+                                    _ = try world.remember(active_char, carries_rel, flag.to_int(), 0);
+                                    win.play_sfx(.pickup);
+                                    win.set_cue_banner("Laverne takes down the Tentacle Flag disguise from the roof flagpole!", 180);
+                                } else {
+                                    win.set_cue_banner("The flagpole is empty.", 90);
+                                }
+                            } else {
+                                win.set_cue_banner("The tentacle flag has not been sewn yet.", 120);
+                            }
+                        } else {
+                            _ = try vm.fire_cue(&compiled, "Uses", active_char, hs.entity, null);
+                            try vm.step_tick();
+                        }
                     } else {
                         _ = try vm.fire_cue(&compiled, "Uses", active_char, hs.entity, null);
                         try vm.step_tick();
                     }
+                    action_taken = true;
                 }
             },
             .interact_actor => |act| {
@@ -707,10 +923,11 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const target_entity = frame.entities[act.actor_index];
                     const active_char = display_bridge.active_player_character orelse bernard;
                     if (act.verb == .talk_to) {
+                        const pre_cues = vm.emitted_cues.items.len;
                         _ = try vm.fire_cue(&compiled, "TalksTo", active_char, target_entity.entity, null);
                         try vm.step_tick();
                         var say_buf: [256]u8 = undefined;
-                        if (get_latest_say_message(&world, &vm, &say_buf)) |speech| {
+                        if (get_latest_say_message_since(&world, &vm, pre_cues, &say_buf)) |speech| {
                             win.set_cue_banner(speech, 180);
                             std.debug.print("\n[DOTT Talk] {s}\n", .{speech});
                         }
@@ -726,6 +943,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                             win.set_cue_banner("Approaching character...", 60);
                         }
                     }
+                    action_taken = true;
                 }
             },
             .interact_inventory => |inv_act| {
@@ -738,7 +956,86 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         win.set_cue_banner(speech, 180);
                         std.debug.print("\n[DOTT Look] {s}\n", .{speech});
                     }
+                    action_taken = true;
                 }
+            },
+            .use_inventory_on_hotspot => |u_hs| {
+                if (u_hs.item_index < frame.inventory_count and u_hs.hotspot_index < frame.hotspot_count) {
+                    const item_ent = frame.inventory[u_hs.item_index].entity;
+                    const hs_ent = frame.hotspots[u_hs.hotspot_index].entity;
+                    const active_char = display_bridge.active_player_character orelse bernard;
+
+                    if (item_ent == paint and hs_ent == tree_prop) {
+                        _ = try world.remember(washington, cherry_belief_rel, 1, 0);
+                        win.play_sfx(.combine);
+                        win.set_cue_banner("Hoagie coats the kumquats in bright red paint! George Washington now believes it is a cherry tree!", 180);
+                    } else if (item_ent == wine and (hs_ent == capsule_1790 or hs_ent == capsule_1993)) {
+                        _ = try world.transfer_item(wine, active_char, hs_ent);
+                        const aged_rel = try world.intern_relation("WineAgedIntoVinegar", .set);
+                        _ = try world.remember(wine, aged_rel, 1, 0);
+                        win.play_sfx(.pickup);
+                        win.set_cue_banner("Vintage Wine sealed into the time capsule for two centuries of aging.", 180);
+                    } else if (item_ent == battery and hs_ent == toilet_1790_ent) {
+                        _ = try world.remember(hoagie, toilet_powered_rel, 1, 0);
+                        win.play_sfx(.combine);
+                        win.set_cue_banner("Super Battery plugged in! The 1790 Chron-o-John hums with temporal power!", 180);
+                    } else {
+                        _ = try vm.fire_cue(&compiled, "Uses", active_char, hs_ent, null);
+                        try vm.step_tick();
+                    }
+                    action_taken = true;
+                }
+            },
+            .use_inventory_on_actor => |u_act| {
+                if (u_act.item_index < frame.inventory_count and u_act.actor_index < frame.entity_count) {
+                    const item_ent = frame.inventory[u_act.item_index].entity;
+                    const act_ent = frame.entities[u_act.actor_index].entity;
+
+                    if (item_ent == flyer and act_ent == betsy) {
+                        _ = try world.remember(betsy, flag_design_rel, 1, 0);
+                        _ = try world.remember(betsy, flag_sewn_rel, 1, 0);
+                        _ = try world.remember(laverne, carries_rel, flag.to_int(), 0);
+                        win.play_sfx(.combine);
+                        win.set_cue_banner("Betsy Ross: 'A tentacle flag? Avant-garde! I shall sew it at once!' Flag complete!", 180);
+                    } else if (item_ent == flag and (act_ent == laverne or act_ent == tentacle)) {
+                        _ = try world.remember(laverne, disg_rel, 1, 0);
+                        win.play_sfx(.pickup);
+                        win.set_cue_banner("Laverne dons the Tentacle Flag disguise! Security checkpoint access granted!", 180);
+                    }
+                    action_taken = true;
+                }
+            },
+            .combine_inventory_items => |comb| {
+                if (comb.primary_index < frame.inventory_count and comb.secondary_index < frame.inventory_count) {
+                    const item1 = frame.inventory[comb.primary_index].entity;
+                    const item2 = frame.inventory[comb.secondary_index].entity;
+                    const active_char = display_bridge.active_player_character orelse hoagie;
+
+                    if ((item1 == vinegar and item2 == casing) or (item1 == casing and item2 == vinegar)) {
+                        _ = world.forget(active_char, carries_rel, vinegar.to_int());
+                        _ = world.forget(active_char, carries_rel, casing.to_int());
+                        _ = try world.remember(active_char, carries_rel, battery.to_int(), 0);
+                        win.play_sfx(.combine);
+                        win.set_cue_banner("Hoagie combines 200-year vinegar with battery casing! Super Battery created!", 180);
+                    }
+                    action_taken = true;
+                }
+            },
+            .dialogue_choice => |choice_idx| {
+                const active_char = display_bridge.active_player_character orelse bernard;
+                if (active_char == hoagie and choice_idx == 0) {
+                    if (world.has_fact(washington, cherry_belief_rel, 1)) {
+                        _ = try world.remember(washington, chop_rel, tree_prop.to_int(), 0);
+                        _ = try world.remember(laverne, free_rel, 1, 0);
+                        _ = world.forget(laverne, trapped_rel, 1);
+                        win.play_sfx(.combine);
+                        win.set_cue_banner("Washington: 'A cherry tree?! Down it goes!' *THWACK!* Laverne freed from tree!", 180);
+                    }
+                } else if (active_char == laverne and choice_idx == 0) {
+                    _ = try world.remember(laverne, doing_biz_rel, 1, 0);
+                    win.set_cue_banner("Purple Tentacle: 'Human biological maintenance permitted. Do your business in the yard!'", 180);
+                }
+                action_taken = true;
             },
             .transfer_inventory_item => |trans| {
                 if (trans.target_party_index < party.len and trans.item_index < frame.inventory_count) {
@@ -754,18 +1051,28 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         _ = try world.transfer_item(item_ent, from_id, to_id);
                         win.play_sfx(.toilet_flush);
                     }
+                    action_taken = true;
                 }
             },
             else => {},
         }
 
+        if (action_taken) {
+            if (evaluate_dott_solved(&world)) {
+                win.set_cue_banner("VICTORY ACHIEVED! Day of the Tentacle Trio temporal puzzle solved!", 300);
+            }
+            display_bridge.capture_frame(&world, &spatial, &vm);
+            display_bridge.swap();
+        }
+
         // Stepping simulation clock
         const current_time = std.time.milliTimestamp();
-        if ((!is_paused and (current_time - last_tick_time >= tick_interval_ms)) or should_step_now) {
+        if ((!is_paused and (current_time - last_tick_time >= win.current_tick_interval_ms)) or should_step_now) {
             last_tick_time = current_time;
+            const pre_tick_cues = vm.emitted_cues.items.len;
             try vm.step_tick();
             var cutscene_buf: [256]u8 = undefined;
-            if (get_latest_say_message(&world, &vm, &cutscene_buf)) |cutscene_msg| {
+            if (get_latest_say_message_since(&world, &vm, pre_tick_cues, &cutscene_buf)) |cutscene_msg| {
                 win.set_cue_banner(cutscene_msg, 180);
                 std.debug.print("\n[Cutscene Telegraph] {s}\n", .{cutscene_msg});
             }
@@ -791,7 +1098,9 @@ test "P21-03: Day of the Tentacle full puzzle DAG compilation, cross-era transfe
     try testing.expect(std.mem.indexOf(u8, buf.items, "[D-026 Invariant] Passive Incubation: No cutscene emitted; 200-year transformation discovered organically upon retrieval.") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "[Cutscene Telegraph] Laverne: \"Look up at the guard post roof! Betsy's flag is flying as the official planetary standard!\"") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "[Cutscene Telegraph] Laverne: \"Whoa! The tree vanished beneath my feet! *THUD!* I'm on the ground!\"") != null);
-    try testing.expect(std.mem.indexOf(u8, buf.items, "[D-026 Invariant] Portal Gating Verified: Laverne freed -> Chron-o-John transfer online!") != null);
+    try testing.expect(std.mem.indexOf(u8, buf.items, "[D-026 Invariant] Portal Access Gating: Laverne on ground but guarded -> Chron-o-John transfer rejected!") != null);
+    try testing.expect(std.mem.indexOf(u8, buf.items, "[D-026 Invariant] Portal Access Gating: Laverne doing business in yard -> Chron-o-John transfer online!") != null);
+    try testing.expect(std.mem.indexOf(u8, buf.items, "[D-026 Invariant] Portal Access Gating: Laverne wearing tentacle disguise -> permanent Chron-o-John access granted!") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Bernard looks at VintageWineBottle -> Bernard: \"A dusty 1993 vintage bottle of red wine sitting on the motel desk.\"") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Hoagie looks at KumquatTree -> Hoagie: \"A small, bushy kumquat tree. George Washington is glaring at it impatiently.\"") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Laverne looks at PurpleTentacle -> Laverne: \"A seven-foot mutant purple tentacle patrolling the security checkpoint. No humans allowed without a tentacle disguise.\"") != null);

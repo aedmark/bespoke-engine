@@ -267,7 +267,6 @@ pub fn run_file(
 
         var is_paused = false;
         var last_tick_time = std.time.milliTimestamp();
-        const tick_interval_ms: i64 = 250;
 
         window.set_cue_banner("BeSpoke Engine: Scenario Loaded. Left-click waypoints to navigate.", 90);
 
@@ -347,7 +346,7 @@ pub fn run_file(
             }
 
             const now = std.time.milliTimestamp();
-            if (!is_paused and (now - last_tick_time >= tick_interval_ms)) {
+            if (!is_paused and (now - last_tick_time >= window.current_tick_interval_ms)) {
                 should_step_now = true;
                 last_tick_time = now;
             }

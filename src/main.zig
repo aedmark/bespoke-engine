@@ -16,6 +16,7 @@ pub fn main() !void {
     var is_village = false;
     var is_goat = false;
     var is_dott = false;
+    var is_darko = false;
     var ticks_arg: usize = 20;
 
     var subcommand: ?enum { run, compile, check, help } = null;
@@ -65,6 +66,8 @@ pub fn main() !void {
             is_goat = true;
         } else if (std.mem.eql(u8, arg, "--dott") or std.mem.eql(u8, arg, "--tentacle") or std.mem.eql(u8, arg, "--chrono-mansion")) {
             is_dott = true;
+        } else if (std.mem.eql(u8, arg, "--darko") or std.mem.eql(u8, arg, "--donnie-darko") or std.mem.eql(u8, arg, "--middlesex")) {
+            is_darko = true;
         } else if (std.mem.eql(u8, arg, "--scenario")) {
             if (args_it.next()) |scen| {
                 if (std.mem.eql(u8, scen, "spitting-contest") or std.mem.eql(u8, scen, "spit")) {
@@ -79,6 +82,8 @@ pub fn main() !void {
                     is_goat = true;
                 } else if (std.mem.eql(u8, scen, "dott") or std.mem.eql(u8, scen, "tentacle") or std.mem.eql(u8, scen, "chrono-mansion")) {
                     is_dott = true;
+                } else if (std.mem.eql(u8, scen, "darko") or std.mem.eql(u8, scen, "donnie-darko") or std.mem.eql(u8, scen, "middlesex")) {
+                    is_darko = true;
                 }
             }
         } else if (target_file == null and !std.mem.startsWith(u8, arg, "-")) {
@@ -106,6 +111,7 @@ pub fn main() !void {
                     \\  bespoke --village                (The Living Village Emergent Sandbox)
                     \\  bespoke --goat                   (Broken Sword Lochmarne Goat Puzzle)
                     \\  bespoke --dott                   (Day of the Tentacle Trio Milestone)
+                    \\  bespoke --darko                  (Donnie Darko Tangent Loop Milestone)
                     \\
                 , .{});
                 return;
@@ -141,6 +147,15 @@ pub fn main() !void {
                 }
             },
         }
+    }
+
+    if (is_darko) {
+        if (is_headless_arg) {
+            try bespoke.darko_puzzle.run_headless(allocator, stdout);
+        } else {
+            try bespoke.darko_puzzle.run_interactive(allocator);
+        }
+        return;
     }
 
     if (is_dott) {
@@ -389,7 +404,6 @@ pub fn main() !void {
 
         var is_paused = false;
         var last_tick_time = std.time.milliTimestamp();
-        const tick_interval_ms: i64 = 250; // 4 ticks/sec for clear visual perception
 
         window.set_cue_banner("Welcome to BeSpoke Engine! Left-click nodes to move Cat.", 90);
 
@@ -645,6 +659,22 @@ pub fn main() !void {
                         try stdout.print("\n[Combine] {s} + {s} -> no combination\n", .{ p_name, s_name });
                     }
                 },
+                .interact_inventory => |inv_act| {
+                    const frame = display_bridge.get_frame();
+                    if (inv_act.item_index < frame.inventory_count) {
+                        const item_name = frame.inventory[inv_act.item_index].get_name();
+                        if (inv_act.verb == .look_at) {
+                            if (std.mem.eql(u8, item_name, "Cheese")) {
+                                window.set_cue_banner("A golden wheel of sharp cheddar, liberated from the Guard.", 120);
+                                try stdout.print("\n[Look Inventory] A golden wheel of sharp cheddar.\n", .{});
+                            } else {
+                                var buf: [128]u8 = undefined;
+                                const text = std.fmt.bufPrint(&buf, "{s}: \"An item in your inventory.\"", .{item_name}) catch "Item";
+                                window.set_cue_banner(text, 120);
+                            }
+                        }
+                    }
+                },
                 .use_inventory_on_actor => |act| {
                     const frame = display_bridge.get_frame();
                     if (act.item_index < frame.inventory_count and act.actor_index < frame.entity_count) {
@@ -680,7 +710,7 @@ pub fn main() !void {
 
             // 2. Advance simulation clock if unpaused or single-stepped
             const now = std.time.milliTimestamp();
-            if (should_step_now or (!is_paused and now - last_tick_time >= tick_interval_ms)) {
+            if (should_step_now or (!is_paused and now - last_tick_time >= window.current_tick_interval_ms)) {
                 last_tick_time = now;
 
                 // If simulation clock was scrubbed into the past and is advancing,

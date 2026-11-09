@@ -14,6 +14,24 @@ pub const SpatialSystem = spatial_mod.SpatialSystem;
 pub const MAX_STACK: usize = 256;
 pub const MAX_INSTRUCTIONS_PER_TICK: usize = 10000;
 
+/// Master simulation clock constants for interactive runners (D-028).
+/// Set to 1000ms (1.0 Hz) for deliberate, human-readable narrative pacing.
+pub const DEFAULT_TICK_INTERVAL_MS: i64 = 1000;
+pub const MIN_TICK_INTERVAL_MS: i64 = 100; // 10 Hz maximum fast-forward
+pub const MAX_TICK_INTERVAL_MS: i64 = 3000; // 0.33 Hz maximum slow-motion
+
+/// Decreases simulation speed (increases interval between ticks) (D-028).
+pub fn step_tick_interval_slower(interval: i64) i64 {
+    if (interval < 500) return @min(MAX_TICK_INTERVAL_MS, interval + 100);
+    return @min(MAX_TICK_INTERVAL_MS, interval + 250);
+}
+
+/// Increases simulation speed (decreases interval between ticks) (D-028).
+pub fn step_tick_interval_faster(interval: i64) i64 {
+    if (interval <= 500) return @max(MIN_TICK_INTERVAL_MS, interval - 100);
+    return @max(MIN_TICK_INTERVAL_MS, interval - 250);
+}
+
 pub const FiberId = u32;
 
 pub const FiberStateTag = enum {
@@ -79,6 +97,7 @@ pub const Fiber = struct {
     sp: usize,
     state: FiberState,
     active_priority: u16 = 0,
+    is_hyper_temporal: bool = false,
     interrupt_stack: std.ArrayList(InterruptFrame),
 
     pub fn init(allocator: std.mem.Allocator, id: FiberId, owner: EntityId, entry_pc: usize) Fiber {
@@ -90,6 +109,7 @@ pub const Fiber = struct {
             .sp = 0,
             .state = .{ .ready = {} },
             .active_priority = 0,
+            .is_hyper_temporal = false,
             .interrupt_stack = std.ArrayList(InterruptFrame).init(allocator),
         };
     }
@@ -160,6 +180,18 @@ pub const VM = struct {
         const id = self.next_fiber_id;
         self.next_fiber_id += 1;
         const fiber = Fiber.init(self.allocator, id, owner, entry_pc);
+        try self.fibers.append(fiber);
+        return id;
+    }
+
+    /// Spawns a hyper-temporal routine fiber owned by a future or meta-temporal entity (e.g. Frank the Rabbit) (P31-01, D-027).
+    /// Hyper-temporal fibers execute with priority 255 to deliver guidance across timeline boundaries.
+    pub fn spawn_hyper_temporal_routine(self: *VM, owner: EntityId, entry_pc: usize) !FiberId {
+        const id = self.next_fiber_id;
+        self.next_fiber_id += 1;
+        var fiber = Fiber.init(self.allocator, id, owner, entry_pc);
+        fiber.is_hyper_temporal = true;
+        fiber.active_priority = 255;
         try self.fibers.append(fiber);
         return id;
     }
@@ -1779,4 +1811,50 @@ test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {
 
     try testing.expect(world.has_fact(future_flag, tree_absent, cherry_prop.to_int()));
     try testing.expect(world.has_fact(laverne, world.lookup_relation("FreedFromTree").?, 1));
+}
+
+test "P31-01: hyper-temporal fiber execution and priority preemption" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    // Bytecode: emit cue 2 (say) with 2 args (Frank, countdown_text), then halt
+    const frank = try world.intern_entity("Frank");
+    const donnie = try world.intern_entity("Donnie");
+    const msg = try world.intern_entity("28:06:42:12");
+
+    try chunk.emit_push_entity(frank);
+    try chunk.emit_push_entity(msg);
+    _ = try chunk.emit_op(.emit_cue);
+    try chunk.emit_u16(2); // say cue
+    try chunk.emit_u8(2); // 2 args
+    _ = try chunk.emit_op(.halt);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    // Spawn a standard fiber for Donnie
+    const fid_donnie = try vm.spawn_routine(donnie, 0);
+    try testing.expectEqual(@as(FiberId, 1), fid_donnie);
+    try testing.expect(!vm.fibers.items[0].is_hyper_temporal);
+    try testing.expectEqual(@as(u16, 0), vm.fibers.items[0].active_priority);
+
+    // Spawn a hyper-temporal fiber for Frank (The Manipulated Dead)
+    const fid_frank = try vm.spawn_hyper_temporal_routine(frank, 0);
+    try testing.expectEqual(@as(FiberId, 2), fid_frank);
+    try testing.expect(vm.fibers.items[1].is_hyper_temporal);
+    try testing.expectEqual(@as(u16, 255), vm.fibers.items[1].active_priority);
+
+    // Step VM tick to execute hyper-temporal fiber
+    try vm.step_tick();
+
+    // Verify Frank emitted the temporal countdown cue
+    try testing.expect(vm.emitted_cues.items.len > 0);
+    const cue = vm.emitted_cues.items[0];
+    try testing.expectEqual(@as(u16, 2), cue.cue_id);
+    try testing.expectEqual(frank.to_int(), cue.args[0]);
+    try testing.expectEqual(msg.to_int(), cue.args[1]);
 }

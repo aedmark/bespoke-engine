@@ -362,7 +362,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var is_paused = false;
     var last_tick_time = std.time.milliTimestamp();
-    const tick_interval_ms: i64 = 200;
 
     window.set_cue_banner("Lochmarne Castle: Navigate past the fierce Billy Goat to reach Peagram's dig! [C/T] [1-4]", 180);
 
@@ -381,7 +380,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (world.has_fact(george, world.lookup_relation("KnockedDown").?, null)) {
                     window.set_cue_banner("George is knocked flat on his back! Recovering...", 60);
                 } else {
+                    const from_wp = spatial.get_current_waypoint(george);
                     _ = try spatial.walk_to(george, wp_id);
+                    if (vm.current_scene == crypt_scene and wp_id == crypt_ladder_wp and from_wp != null and from_wp.? != crypt_ladder_wp) {
+                        try vm.transition_to_scene(courtyard_scene);
+                        _ = try spatial.transition_actor(george, courtyard_scene, dig_wp);
+                        window.set_cue_banner("Climbed ladder back up into the castle ruins courtyard! [T] Crypt", 120);
+                    }
                     display_bridge.capture_frame(&world, &spatial, &vm);
                     display_bridge.swap();
                     window.set_cue_banner("Directing George to waypoint.", 60);
@@ -449,6 +454,17 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                             _ = try vm.fire_cue(&compiled, "LooksAt", george, crypt_altar, null);
                             window.set_cue_banner("Crypt Altar: Medieval stone altar adorned with ancient inscriptions.", 150);
                         }
+                    }
+                }
+            },
+            .interact_inventory => |inv_act| {
+                const frame = display_bridge.get_frame();
+                if (inv_act.item_index < frame.inventory_count) {
+                    const item_name = frame.inventory[inv_act.item_index].get_name();
+                    if (inv_act.verb == .look_at) {
+                        var buf: [128]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "{s}: \"An item in George's pockets.\"", .{item_name}) catch "Item";
+                        window.set_cue_banner(msg, 120);
                     }
                 }
             },
@@ -541,7 +557,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
         // Stepping simulation clock
         const current_time = std.time.milliTimestamp();
-        if ((!is_paused and (current_time - last_tick_time >= tick_interval_ms)) or should_step_now) {
+        if ((!is_paused and (current_time - last_tick_time >= window.current_tick_interval_ms)) or should_step_now) {
             last_tick_time = current_time;
             try vm.step_tick();
 
@@ -563,12 +579,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                             _ = try vm.fire_cue(&compiled, "Uses", george, farm_plough, null);
                             window.set_cue_banner("★ VICTORY! Hauled plough into the rope! Goat is tangled and secured! ★", 180);
                         }
-                    }
-                } else if (vm.current_scene == crypt_scene) {
-                    if (cur_wp == crypt_ladder_wp) {
-                        try vm.transition_to_scene(courtyard_scene);
-                        _ = try spatial.transition_actor(george, courtyard_scene, dig_wp);
-                        window.set_cue_banner("Climbed ladder back up into the castle ruins courtyard! [T] Crypt", 120);
                     }
                 }
             }

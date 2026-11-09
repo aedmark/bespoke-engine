@@ -185,6 +185,19 @@ pub const RenderSocialEdge = struct {
     }
 };
 
+/// Pre-cognitive Fourth-Dimensional vector conduit render slice (P31-02, D-027).
+pub const RenderVectorConduit = struct {
+    entity: EntityId = EntityId.from_int(0),
+    points_x: [16]i32 = [_]i32{0} ** 16,
+    points_y: [16]i32 = [_]i32{0} ** 16,
+    point_count: usize = 0,
+    terminal_wp: WaypointId = 0,
+    color_r: u8 = 100,
+    color_g: u8 = 200,
+    color_b: u8 = 255,
+    alpha: u8 = 160,
+};
+
 /// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
 pub const RenderFrame = struct {
     tick: u64,
@@ -228,6 +241,18 @@ pub const RenderFrame = struct {
     dott_laverne_freed: bool = false,
     dott_laverne_disguised: bool = false,
     dott_puzzle_solved: bool = false,
+    // Donnie Darko / Roberta Sparrow cinematic time state (P31-01..P31-03, D-027)
+    tangent_active: bool = false,
+    tangent_countdown: [16]u8 = [_]u8{0} ** 16,
+    tangent_countdown_len: u8 = 0,
+    singularity_collapsed: bool = false,
+    darko_water_flooded: bool = false,
+    darko_letter_delivered: bool = false,
+    darko_vortex_reached: bool = false,
+    darko_artifact_returned: bool = false,
+    darko_puzzle_solved: bool = false,
+    vector_conduits: [4]RenderVectorConduit = [_]RenderVectorConduit{.{}} ** 4,
+    vector_conduit_count: usize = 0,
     // Living Village drives & social graph state (P18-01..P18-03, D-021)
     villager_drives: [8]RenderVillagerDrive = [_]RenderVillagerDrive{.{}} ** 8,
     villager_drive_count: usize = 0,
@@ -251,6 +276,10 @@ pub const RenderFrame = struct {
     pub fn get_current_scene(self: *const RenderFrame) []const u8 {
         return self.current_scene[0..self.current_scene_len];
     }
+
+    pub fn get_tangent_countdown(self: *const RenderFrame) []const u8 {
+        return self.tangent_countdown[0..self.tangent_countdown_len];
+    }
 };
 
 /// Double-buffered display bridge separating simulation spine from peripheral consumers (D-001, P5-01).
@@ -259,6 +288,7 @@ pub const DisplayBridge = struct {
     back_buffer: RenderFrame,
     audio_bridge: ?*audio.AudioBridge = null,
     active_player_character: ?EntityId = null,
+    active_party_index: ?usize = null,
     party: [MAX_PARTY_MEMBERS]EntityId = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
     party_count: usize = 0,
 
@@ -268,6 +298,7 @@ pub const DisplayBridge = struct {
             .back_buffer = std.mem.zeroes(RenderFrame),
             .audio_bridge = null,
             .active_player_character = null,
+            .active_party_index = null,
             .party = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
             .party_count = 0,
         };
@@ -282,12 +313,24 @@ pub const DisplayBridge = struct {
         self.party_count = count;
         if (count > 0 and self.active_player_character == null) {
             self.active_player_character = members[0];
+            self.active_party_index = 0;
         }
+    }
+
+    /// Explicitly sets the active party member index (P21-01, D-025).
+    pub fn set_active_party_index(self: *DisplayBridge, idx: usize) void {
+        self.active_party_index = idx;
     }
 
     /// Sets the active player-controlled protagonist in the party (P21-01, D-025).
     pub fn set_active_character(self: *DisplayBridge, id: EntityId) void {
         self.active_player_character = id;
+        for (self.party[0..self.party_count], 0..) |pid, idx| {
+            if (pid == id) {
+                self.active_party_index = idx;
+                break;
+            }
+        }
     }
 
     /// Attaches an optional peripheral audio bridge to consume cues (P16-01, D-001).
@@ -299,6 +342,34 @@ pub const DisplayBridge = struct {
     pub fn set_max_history_tick(self: *DisplayBridge, max_tick: u64) void {
         self.back_buffer.max_history_tick = max_tick;
         self.front_buffer.max_history_tick = max_tick;
+    }
+
+    /// Sets the active Tangent Universe collapse countdown string in the display frame (P31-01, D-027).
+    pub fn set_tangent_countdown(self: *DisplayBridge, countdown_str: []const u8) void {
+        const copy_len = @min(countdown_str.len, self.back_buffer.tangent_countdown.len);
+        @memcpy(self.back_buffer.tangent_countdown[0..copy_len], countdown_str[0..copy_len]);
+        self.back_buffer.tangent_countdown_len = @intCast(copy_len);
+        self.back_buffer.tangent_active = true;
+    }
+
+    /// Sets or clears the singularity collapse fail-state in the display frame (P31-01, D-027).
+    pub fn set_singularity_collapsed(self: *DisplayBridge, collapsed: bool) void {
+        self.back_buffer.singularity_collapsed = collapsed;
+        self.front_buffer.singularity_collapsed = collapsed;
+    }
+
+    /// Explicitly registers a pre-cognitive vector conduit into the back buffer (P31-02, D-027).
+    pub fn add_vector_conduit(self: *DisplayBridge, conduit: spatial_mod.VectorConduit) void {
+        if (self.back_buffer.vector_conduit_count >= self.back_buffer.vector_conduits.len) return;
+        var rc = &self.back_buffer.vector_conduits[self.back_buffer.vector_conduit_count];
+        rc.entity = conduit.entity;
+        rc.terminal_wp = conduit.terminal_waypoint;
+        rc.point_count = @min(conduit.point_count, 16);
+        for (0..rc.point_count) |i| {
+            rc.points_x[i] = conduit.points[i].x;
+            rc.points_y[i] = conduit.points[i].y;
+        }
+        self.back_buffer.vector_conduit_count += 1;
     }
 
     /// Captures a read-only snapshot of simulation state into the back buffer (D-001, P6-02).
@@ -600,13 +671,17 @@ pub const DisplayBridge = struct {
         var active_p_idx: usize = 0;
         for (self.party[0..self.party_count], 0..) |pid, idx| {
             if (p_count >= self.back_buffer.party.len) break;
+            const is_act = if (self.active_party_index) |api|
+                (idx == api)
+            else
+                ((self.active_player_character != null and self.active_player_character.? == pid) or (self.active_player_character == null and idx == 0));
             var member = RenderPartyMember{
                 .entity = pid,
                 .name = undefined,
                 .name_len = 0,
-                .is_active = (self.active_player_character != null and self.active_player_character.? == pid) or (self.active_player_character == null and idx == 0),
+                .is_active = is_act,
             };
-            if (member.is_active) {
+            if (is_act) {
                 active_p_idx = idx;
             }
             if (world.get_entity_name(pid)) |n| {
@@ -650,6 +725,48 @@ pub const DisplayBridge = struct {
             self.back_buffer.dott_puzzle_solved = world.has_fact(null, rel, null);
         }
 
+        // 5g. Capture Donnie Darko / Roberta Sparrow status flags (P31-01..P31-03, D-027)
+        self.back_buffer.darko_water_flooded = false;
+        if (world.lookup_relation("SchoolFlooded")) |rel| {
+            self.back_buffer.darko_water_flooded = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.darko_letter_delivered = false;
+        if (world.lookup_relation("LetterDelivered")) |rel| {
+            self.back_buffer.darko_letter_delivered = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.darko_vortex_reached = false;
+        if (world.lookup_relation("VortexReady")) |rel| {
+            self.back_buffer.darko_vortex_reached = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.darko_artifact_returned = false;
+        if (world.lookup_relation("ArtifactMaterialized")) |rel| {
+            self.back_buffer.darko_artifact_returned = world.has_fact(null, rel, null);
+        }
+        self.back_buffer.darko_puzzle_solved = false;
+        if (world.lookup_relation("DarkoSolved")) |rel| {
+            self.back_buffer.darko_puzzle_solved = world.has_fact(null, rel, null);
+        }
+
+        // Capture active pre-cognitive vector conduits from moving or designated actors (P31-02, D-027)
+        self.back_buffer.vector_conduit_count = 0;
+        if (spatial.agents.count() > 0) {
+            var it_agents = spatial.agents.iterator();
+            while (it_agents.next()) |entry| {
+                if (self.back_buffer.vector_conduit_count >= self.back_buffer.vector_conduits.len) break;
+                if (spatial.get_agent_vector_conduit(entry.key_ptr.*)) |conduit| {
+                    var rc = &self.back_buffer.vector_conduits[self.back_buffer.vector_conduit_count];
+                    rc.entity = conduit.entity;
+                    rc.terminal_wp = conduit.terminal_waypoint;
+                    rc.point_count = @min(conduit.point_count, 16);
+                    for (0..rc.point_count) |ci| {
+                        rc.points_x[ci] = conduit.points[ci].x;
+                        rc.points_y[ci] = conduit.points[ci].y;
+                    }
+                    self.back_buffer.vector_conduit_count += 1;
+                }
+            }
+        }
+
         // 6. Capture player inventory (P7-03, D-007, D-025)
         var inv_count: usize = 0;
         const player_id = self.active_player_character orelse
@@ -659,6 +776,7 @@ pub const DisplayBridge = struct {
             world.lookup_entity("George") orelse
             world.lookup_entity("Gabriel") orelse
             world.lookup_entity("Guybrush") orelse
+            world.lookup_entity("Donnie") orelse
             world.lookup_entity("Cat");
         if (player_id) |pid| {
             if (world.lookup_relation("InInventory")) |inv_rel| {

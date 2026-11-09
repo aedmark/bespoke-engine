@@ -453,7 +453,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var is_paused = false;
     var last_tick_time = std.time.milliTimestamp();
-    const tick_interval_ms: i64 = 200; // 5 ticks/sec for clear pacing
 
     window.set_cue_banner("Welcome to Booty Island! Press [S] to Spit, [H] for Horn, [G] for Drink, [F] for Flags.", 150);
 
@@ -506,14 +505,58 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 }
             },
             .interact_hotspot => |hs_act| {
-                _ = hs_act;
-                const is_distracted = world.has_fact(organiser, distracted_rel, null);
-                if (is_distracted) {
-                    try world.remember(flags, tampered_rel, 1, 0);
-                    window.set_cue_banner("★ You secretly moved the flags closer while the crowd wasn't looking! ★", 120);
-                    window.play_sfx(.combine);
-                } else {
-                    window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
+                const frame = display_bridge.get_frame();
+                if (hs_act.hotspot_index < frame.hotspot_count) {
+                    const hs = frame.hotspots[hs_act.hotspot_index];
+                    if (hs_act.verb == .look_at) {
+                        var buf: [128]u8 = undefined;
+                        const text = std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Flags";
+                        window.set_cue_banner(text, 120);
+                    } else if (hs_act.verb == .walk) {
+                        const pt = bespoke.display.renderer.world_to_screen(hs.x, hs.y, window.width, window.height);
+                        if (bespoke.display.renderer.find_nearest_waypoint(pt.x, pt.y, frame.waypoints[0..frame.waypoint_count], window.width, window.height)) |wp_id| {
+                            _ = try spatial.walk_to(guybrush, wp_id);
+                            window.set_cue_banner("Approaching flags...", 60);
+                        }
+                    } else {
+                        const is_distracted = world.has_fact(organiser, distracted_rel, null);
+                        if (is_distracted) {
+                            try world.remember(flags, tampered_rel, 1, 0);
+                            window.set_cue_banner("★ You secretly moved the flags closer while the crowd wasn't looking! ★", 120);
+                            window.play_sfx(.combine);
+                        } else {
+                            window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
+                        }
+                    }
+                }
+            },
+            .interact_inventory => |inv_act| {
+                const frame = display_bridge.get_frame();
+                if (inv_act.item_index < frame.inventory_count) {
+                    const item_name = frame.inventory[inv_act.item_index].get_name();
+                    if (inv_act.verb == .look_at) {
+                        if (std.mem.indexOf(u8, item_name, "Horn") != null) {
+                            window.set_cue_banner("Ship's Foghorn: A brass horn capable of producing a deafening blast.", 120);
+                        } else if (std.mem.indexOf(u8, item_name, "Drink") != null) {
+                            window.set_cue_banner("Green Drink: A thick, sugary syrup from the scumm bar. Thickens saliva.", 120);
+                        } else {
+                            var buf: [128]u8 = undefined;
+                            const text = std.fmt.bufPrint(&buf, "{s}: \"An item in Guybrush's inventory.\"", .{item_name}) catch "Item";
+                            window.set_cue_banner(text, 120);
+                        }
+                    } else if (inv_act.verb == .use_with) {
+                        if (std.mem.indexOf(u8, item_name, "Horn") != null) {
+                            try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
+                            _ = try spatial.walk_to(organiser, offstage_wp);
+                            _ = try spatial.walk_to(onlookers, offstage_wp);
+                            window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
+                            window.play_sfx(.horn);
+                        } else if (std.mem.indexOf(u8, item_name, "Drink") != null) {
+                            try world.remember(guybrush, thick_rel, 1, 0);
+                            window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
+                            window.play_sfx(.pickup);
+                        }
+                    }
                 }
             },
             .dialogue_choice => |choice_idx| {
@@ -683,7 +726,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         const now = std.time.milliTimestamp();
-        if (should_step_now or (!is_paused and now - last_tick_time >= tick_interval_ms)) {
+        if (should_step_now or (!is_paused and now - last_tick_time >= window.current_tick_interval_ms)) {
             last_tick_time = now;
 
             if (world.current_tick + 1 < history_snapshots.items.len) {

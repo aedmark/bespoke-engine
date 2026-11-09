@@ -564,7 +564,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var is_paused = false;
     var last_tick_time = std.time.milliTimestamp();
-    const tick_interval_ms: i64 = 200;
 
     window.set_cue_banner("Rennes-le-Château: Scavenge Room Desk & Garden Shrub for items! [H/G/B] Scenes [0-8] Steps", 180);
 
@@ -602,15 +601,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     display_bridge.capture_frame(&world, &spatial, &vm);
                     display_bridge.swap();
                     window.set_cue_banner("Returned inside to the Hotel Corridor. [G] Garden [B] Shop", 120);
-                } else if (wp_id == cat_wp and vm.current_scene == garden_scene and spatial.get_current_waypoint(gabriel) == cat_wp) {
-                    try vm.transition_to_scene(shop_scene);
-                    _ = try spatial.transition_actor(gabriel, shop_scene, shop_ent_wp);
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                    window.set_cue_banner("Walked into Madame Buthane's Bike Rental Shop. [H] Hotel [G] Garden", 120);
                 } else if (wp_id == shop_ent_wp and vm.current_scene == shop_scene) {
                     try vm.transition_to_scene(garden_scene);
-                    _ = try spatial.transition_actor(gabriel, garden_scene, cat_wp);
+                    _ = try spatial.transition_actor(gabriel, garden_scene, fence_wp);
                     display_bridge.capture_frame(&world, &spatial, &vm);
                     display_bridge.swap();
                     window.set_cue_banner("Stepped back into the Hotel Courtyard Garden. [H] Hotel [B] Shop", 120);
@@ -1066,7 +1059,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         const now = std.time.milliTimestamp();
-        if (!is_paused and (now - last_tick_time >= tick_interval_ms)) {
+        if (!is_paused and (now - last_tick_time >= window.current_tick_interval_ms)) {
             should_step_now = true;
             last_tick_time = now;
         }

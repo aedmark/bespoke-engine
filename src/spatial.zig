@@ -1,6 +1,7 @@
 const std = @import("std");
 const world_mod = @import("world.zig");
 const EntityId = world_mod.EntityId;
+const RelationKind = world_mod.RelationKind;
 const World = world_mod.World;
 
 pub const WaypointId = u16;
@@ -499,9 +500,73 @@ pub const SpatialSystem = struct {
         return self.can_transfer_item_with_world(null, from, to, policy);
     }
 
+    /// Evaluates whether an actor can physically reach and access their room's transit portal (D-026).
+    /// Both sender and recipient must satisfy this invariant under .portal_anchored transfers.
+    /// In Day of the Tentacle:
+    /// - Bernard (1993 Motel) and Hoagie (1790 Workshop) have unhindered physical access to their Chron-o-Johns.
+    /// - Laverne (2193 Dystopian Guard Post) can only reach the Chron-o-John once the kumquat tree is removed
+    ///   (not Trapped) AND (she is 'doing her business' in the yard OR she is wearing the tentacle costume).
+    pub fn can_access_portal(
+        self: *const SpatialSystem,
+        world_opt: ?*const world_mod.World,
+        actor: EntityId,
+    ) bool {
+        const agent = self.agents.get(actor) orelse return false;
+        const wp = self.graph.get_waypoint(agent.current_wp) orelse return false;
+        const portal = self.get_portal_in_room(wp.room) orelse return false;
+
+        if (world_opt) |world| {
+            // 1. The portal itself must not be blocked or unpowered (D-026)
+            if (world.lookup_relation("PortalBlocked")) |blocked_rel| {
+                if (world.has_fact(portal.entity, blocked_rel, null)) return false;
+            }
+
+            // 2. Physical obstacle/entanglement check: actor cannot reach portal while trapped (e.g. in tree branches)
+            if (world.lookup_relation("Trapped")) |trapped_rel| {
+                if (world.has_fact(actor, trapped_rel, null)) return false;
+            }
+
+            // 3. Security / detention guard invariant:
+            // Laverne (or any guarded/detained actor) can only reach the Chron-o-John if:
+            //   - she is 'doing her business' in the yard (DoingBusiness / InYard / collocated at portal waypoint), OR
+            //   - she has the costume (TentacleDisguiseActive).
+            const is_guarded = if (world.lookup_relation("Guarded")) |gr|
+                world.has_fact(actor, gr, null)
+            else if (world.lookup_relation("Detained")) |dr|
+                world.has_fact(actor, dr, null)
+            else
+                false;
+
+            const is_laverne = if (world.get_entity_name(actor)) |name|
+                std.mem.eql(u8, name, "Laverne")
+            else
+                false;
+
+            if (is_guarded or is_laverne) {
+                const has_costume = if (world.lookup_relation("TentacleDisguiseActive")) |dr|
+                    world.has_fact(actor, dr, null)
+                else
+                    false;
+
+                const doing_business = if (world.lookup_relation("DoingBusiness")) |br|
+                    world.has_fact(actor, br, null)
+                else if (world.lookup_relation("InYard")) |yr|
+                    world.has_fact(actor, yr, null)
+                else
+                    agent.current_wp == portal.waypoint;
+
+                if (!has_costume and !doing_business) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     /// Evaluates inventory transfer eligibility with optional relational fact constraints (D-025, D-026).
     /// Under .portal_anchored, remote transfer succeeds transparently if both actors are co-located or
-    /// both rooms possess registered transit portals and neither actor nor portal is blocked/trapped.
+    /// both sender and recipient can physically access their respective room transit portals.
     pub fn can_transfer_item_with_world(
         self: *const SpatialSystem,
         world_opt: ?*const world_mod.World,
@@ -526,21 +591,8 @@ pub const SpatialSystem = struct {
 
                 if (wp_from.room == wp_to.room) return true;
 
-                const portal_from = self.get_portal_in_room(wp_from.room) orelse return false;
-                const portal_to = self.get_portal_in_room(wp_to.room) orelse return false;
-
-                if (world_opt) |world| {
-                    if (world.lookup_relation("Trapped")) |trapped_rel| {
-                        if (world.has_fact(from, trapped_rel, null)) return false;
-                        if (world.has_fact(to, trapped_rel, null)) return false;
-                    }
-                    if (world.lookup_relation("PortalBlocked")) |blocked_rel| {
-                        if (world.has_fact(portal_from.entity, blocked_rel, null)) return false;
-                        if (world.has_fact(portal_to.entity, blocked_rel, null)) return false;
-                    }
-                }
-
-                return true;
+                // Both sender and recipient must be able to physically access their respective Chron-o-John portals (D-026)
+                return self.can_access_portal(world_opt, from) and self.can_access_portal(world_opt, to);
             },
         }
     }
@@ -575,6 +627,171 @@ pub const SpatialSystem = struct {
             return agent.current_wp;
         }
         return null;
+    }
+
+    /// Computes a pre-cognitive vector conduit showing an actor's ahead-of-time path to destination (P31-02, D-027).
+    pub fn compute_vector_conduit(
+        self: *const SpatialSystem,
+        entity: EntityId,
+        destination_wp: WaypointId,
+    ) !?VectorConduit {
+        const agent = self.agents.get(entity) orelse return null;
+        const dest = self.graph.get_waypoint(destination_wp) orelse return null;
+
+        const path = try self.graph.find_path(agent.current_wp, destination_wp, self.allocator);
+        if (path) |p| {
+            defer self.allocator.free(p);
+            var conduit = VectorConduit{
+                .entity = entity,
+                .points = undefined,
+                .point_count = 0,
+                .origin = agent.pos,
+                .destination = dest.pos,
+                .terminal_waypoint = destination_wp,
+                .active = true,
+            };
+
+            conduit.points[0] = agent.pos;
+            conduit.point_count = 1;
+
+            for (p) |w_id| {
+                if (conduit.point_count >= MAX_CONDUIT_POINTS) break;
+                if (self.graph.get_waypoint(w_id)) |wp| {
+                    conduit.points[conduit.point_count] = wp.pos;
+                    conduit.point_count += 1;
+                }
+            }
+            return conduit;
+        }
+        return null;
+    }
+
+    /// Returns the active vector conduit for an actor currently executing motor transit (P31-02, D-027).
+    pub fn get_agent_vector_conduit(self: *const SpatialSystem, entity: EntityId) ?VectorConduit {
+        const agent = self.agents.get(entity) orelse return null;
+        if (!agent.is_moving or agent.path == null) return null;
+
+        const p = agent.path.?;
+        if (p.len == 0 or agent.path_index >= p.len) return null;
+
+        const terminal_id = p[p.len - 1];
+        const dest_wp = self.graph.get_waypoint(terminal_id) orelse return null;
+
+        var conduit = VectorConduit{
+            .entity = entity,
+            .points = undefined,
+            .point_count = 0,
+            .origin = agent.pos,
+            .destination = dest_wp.pos,
+            .terminal_waypoint = terminal_id,
+            .active = true,
+        };
+
+        conduit.points[0] = agent.pos;
+        conduit.point_count = 1;
+
+        var i: usize = agent.path_index;
+        while (i < p.len) : (i += 1) {
+            if (conduit.point_count >= MAX_CONDUIT_POINTS) break;
+            if (self.graph.get_waypoint(p[i])) |wp| {
+                conduit.points[conduit.point_count] = wp.pos;
+                conduit.point_count += 1;
+            }
+        }
+        return conduit;
+    }
+
+    /// Orders an actor to follow another entity's pre-cognitive vector conduit to its destination (P31-02, D-027).
+    pub fn follow_conduit(self: *SpatialSystem, follower: EntityId, conduit: VectorConduit) !bool {
+        return self.walk_to(follower, conduit.terminal_waypoint);
+    }
+};
+
+pub const MAX_CONDUIT_POINTS = 16;
+
+/// Pre-cognitive Fourth-Dimensional vector conduit extruding from an actor's position (P31-02, D-027).
+/// Displays ahead-of-time deterministic A* pathing in the Roberta Sparrow / Donnie Darko model.
+pub const VectorConduit = struct {
+    entity: EntityId,
+    points: [MAX_CONDUIT_POINTS]Point2D,
+    point_count: usize,
+    origin: Point2D,
+    destination: Point2D,
+    terminal_waypoint: WaypointId,
+    active: bool = true,
+};
+
+/// Synchronized prop pair across distinct epochs for live bitemporal materialization (P31-02, D-027).
+pub const SynchronizedPropPair = struct {
+    past_prop: EntityId,
+    future_prop: EntityId,
+    mutation_relation: RelationKind,
+};
+
+/// Concurrent Bitemporal Transceiver synchronizing physical mutations across eras in real time (Frequency model) (P31-02, D-027).
+pub const BitemporalTransceiver = struct {
+    past_scene: EntityId,
+    future_scene: EntityId,
+    pairs: std.ArrayList(SynchronizedPropPair),
+
+    pub fn init(allocator: std.mem.Allocator, past_scene: EntityId, future_scene: EntityId) BitemporalTransceiver {
+        return BitemporalTransceiver{
+            .past_scene = past_scene,
+            .future_scene = future_scene,
+            .pairs = std.ArrayList(SynchronizedPropPair).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *BitemporalTransceiver) void {
+        self.pairs.deinit();
+    }
+
+    pub fn register_pair(self: *BitemporalTransceiver, past_prop: EntityId, future_prop: EntityId, mutation: RelationKind) !void {
+        try self.pairs.append(.{
+            .past_prop = past_prop,
+            .future_prop = future_prop,
+            .mutation_relation = mutation,
+        });
+    }
+
+    /// Propagates a physical alteration from a past prop directly to its future counterpart in real time.
+    pub fn sync_past_mutation(self: *const BitemporalTransceiver, world: *world_mod.World, past_prop: EntityId, val: u32) !bool {
+        for (self.pairs.items) |p| {
+            if (p.past_prop == past_prop) {
+                _ = try world.remember(p.future_prop, p.mutation_relation, val, 0);
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
+/// Novikov self-consistency validator rejecting paradox-inducing temporal contradictions (12 Monkeys model) (P31-02, D-027).
+pub fn validate_novikov_consistency(
+    world: *const world_mod.World,
+    actor: EntityId,
+    candidate_action: RelationKind,
+    paradox_relation: RelationKind,
+) bool {
+    if (world.has_fact(actor, paradox_relation, null)) return false;
+    _ = candidate_action;
+    return true;
+}
+
+/// Asynchronous causal ripple and existence probability decay tracker (Back to the Future model) (P31-02, D-027).
+pub const CausalDecayTracker = struct {
+    /// Computes normalized existence probability [1.0 .. 0.0] based on elapsed ticks since timeline fracture.
+    pub fn get_existence_probability(current_tick: u64, fracture_tick: u64, fade_duration_ticks: u64) f32 {
+        if (current_tick <= fracture_tick) return 1.0;
+        const elapsed = current_tick - fracture_tick;
+        if (elapsed >= fade_duration_ticks) return 0.0;
+        const remaining: f32 = @floatFromInt(fade_duration_ticks - elapsed);
+        const total: f32 = @floatFromInt(fade_duration_ticks);
+        return remaining / total;
+    }
+
+    pub fn is_erased(current_tick: u64, fracture_tick: u64, fade_duration_ticks: u64) bool {
+        return get_existence_probability(current_tick, fracture_tick, fade_duration_ticks) <= 0.0;
     }
 };
 
@@ -788,10 +1005,10 @@ test "D-026: can_transfer_item respects portal_anchored policy and relational co
     const wp_toilet_2193 = try spatial.graph.add_waypoint(room_2193, 210, 0, "Toilet2193");
     const wp_drifter = try spatial.graph.add_waypoint(room_void, 300, 0, "VoidSpot");
 
-    const hoagie = EntityId.from_int(1);
-    const bernard = EntityId.from_int(2);
-    const laverne = EntityId.from_int(3);
-    const drifter = EntityId.from_int(4);
+    const hoagie = try world.intern_entity("Hoagie");
+    const bernard = try world.intern_entity("Bernard");
+    const laverne = try world.intern_entity("Laverne");
+    const drifter = try world.intern_entity("Drifter");
 
     try spatial.register_entity(hoagie, wp_hoagie, 2);
     try spatial.register_entity(bernard, wp_bernard, 2);
@@ -817,11 +1034,27 @@ test "D-026: can_transfer_item respects portal_anchored policy and relational co
     // 3. Relational constraint: Laverne is trapped in tree -> transfer fails
     const trapped_rel = try world.intern_relation("Trapped", .set);
     _ = try world.remember(laverne, trapped_rel, 1, 0);
+    try testing.expect(!spatial.can_access_portal(&world, laverne));
     try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
     try testing.expect(!spatial.can_transfer_item_with_world(&world, laverne, bernard, .portal_anchored));
 
-    // 4. Laverne freed from tree -> transfer succeeds
+    // 4. Laverne freed from tree, but at GuardPost and guarded without costume or doing business -> transfer fails (D-026)
     _ = world.forget(laverne, trapped_rel, 1);
+    try testing.expect(!spatial.can_access_portal(&world, laverne));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+
+    // 4b. Laverne is 'doing her business' in the yard -> can access Chron-o-John!
+    const doing_biz_rel = try world.intern_relation("DoingBusiness", .set);
+    _ = try world.remember(laverne, doing_biz_rel, 1, 0);
+    try testing.expect(spatial.can_access_portal(&world, laverne));
+    try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+    _ = world.forget(laverne, doing_biz_rel, 1);
+    try testing.expect(!spatial.can_access_portal(&world, laverne));
+
+    // 4c. Laverne has the costume (TentacleDisguiseActive) -> can access Chron-o-John!
+    const disguise_rel = try world.intern_relation("TentacleDisguiseActive", .set);
+    _ = try world.remember(laverne, disguise_rel, 1, 0);
+    try testing.expect(spatial.can_access_portal(&world, laverne));
     try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
 
     // 5. Relational constraint: 1790 portal blocked/unpowered -> transfer fails
@@ -832,4 +1065,92 @@ test "D-026: can_transfer_item respects portal_anchored policy and relational co
     // Unblock 1790 portal -> succeeds again
     _ = world.forget(portal_1790, blocked_rel, 1);
     try testing.expect(spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
+}
+
+test "P31-02: pre-cognitive vector conduits project ahead-of-time deterministic paths" {
+    const testing = std.testing;
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = EntityId.from_int(1);
+    const wp_bedroom = try spatial.graph.add_waypoint(room, 50, 50, "Bedroom");
+    const wp_hallway = try spatial.graph.add_waypoint(room, 100, 50, "Hallway");
+    const wp_street = try spatial.graph.add_waypoint(room, 150, 100, "Street");
+    const wp_golf = try spatial.graph.add_waypoint(room, 200, 150, "GolfCourse");
+
+    try spatial.graph.connect(wp_bedroom, wp_hallway, null);
+    try spatial.graph.connect(wp_hallway, wp_street, null);
+    try spatial.graph.connect(wp_street, wp_golf, null);
+
+    const donnie = EntityId.from_int(10);
+    const gretchen = EntityId.from_int(11);
+    try spatial.register_entity(donnie, wp_bedroom, 4);
+    try spatial.register_entity(gretchen, wp_bedroom, 4);
+
+    // 1. Compute pre-cognitive vector conduit from Bedroom to Golf Course
+    const conduit = (try spatial.compute_vector_conduit(donnie, wp_golf)).?;
+    try testing.expectEqual(donnie, conduit.entity);
+    try testing.expectEqual(wp_golf, conduit.terminal_waypoint);
+    try testing.expect(conduit.point_count >= 4);
+
+    // 2. Donnie starts walking -> active agent vector conduit is exposed
+    _ = try spatial.walk_to(donnie, wp_golf);
+    const active_conduit = spatial.get_agent_vector_conduit(donnie).?;
+    try testing.expectEqual(wp_golf, active_conduit.terminal_waypoint);
+
+    // 3. Gretchen follows Donnie's vector conduit
+    const followed = try spatial.follow_conduit(gretchen, conduit);
+    try testing.expect(followed);
+    const gretchen_agent = spatial.agents.get(gretchen).?;
+    try testing.expect(gretchen_agent.is_moving);
+}
+
+test "P31-02: bitemporal transceiver synchronizes physical prop mutations in real time" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const scene_1969 = try world.intern_entity("Workshop1969");
+    const scene_1999 = try world.intern_entity("LivingRoom1999");
+    const desk_1969 = try world.intern_entity("Desk1969");
+    const desk_1999 = try world.intern_entity("Desk1999");
+    const scorched = try world.intern_relation("ScorchedInscription", .set);
+
+    var transceiver = BitemporalTransceiver.init(testing.allocator, scene_1969, scene_1999);
+    defer transceiver.deinit();
+
+    try transceiver.register_pair(desk_1969, desk_1999, scorched);
+
+    // Father in 1969 carves message into wooden desk -> instantly materializes in 1999!
+    const ok = try transceiver.sync_past_mutation(&world, desk_1969, 1);
+    try testing.expect(ok);
+    try testing.expect(world.has_fact(desk_1999, scorched, 1));
+}
+
+test "P31-02: Novikov self-consistency validator and causal ripple existence probability decay" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    const traveler = try world.intern_entity("Cole");
+    const shoot_scientist = try world.intern_relation("ShootScientist", .set);
+    const self_refuting = try world.intern_relation("TimeMachineDestroyed", .set);
+
+    // Novikov check: action is consistent as long as self-refuting paradox fact is not asserted
+    try testing.expect(validate_novikov_consistency(&world, traveler, shoot_scientist, self_refuting));
+
+    // Assert paradox fact -> Novikov validation rejects
+    _ = try world.remember(traveler, self_refuting, 1, 0);
+    try testing.expect(!validate_novikov_consistency(&world, traveler, shoot_scientist, self_refuting));
+
+    // Back to the Future existence decay: 100 ticks fade duration
+    const prob_0 = CausalDecayTracker.get_existence_probability(100, 100, 100);
+    try testing.expectEqual(@as(f32, 1.0), prob_0);
+
+    const prob_50 = CausalDecayTracker.get_existence_probability(150, 100, 100);
+    try testing.expectApproxEqAbs(@as(f32, 0.5), prob_50, 0.01);
+
+    const prob_100 = CausalDecayTracker.get_existence_probability(200, 100, 100);
+    try testing.expectEqual(@as(f32, 0.0), prob_100);
+    try testing.expect(CausalDecayTracker.is_erased(200, 100, 100));
 }

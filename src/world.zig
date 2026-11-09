@@ -723,6 +723,22 @@ pub const World = struct {
             try self.relation_map.put(alloc, name_buf, kind);
         }
     }
+
+    /// Creates a complete independent deep copy of this World arena (D-003, D-027).
+    /// Used by TemporalHypervisor to fork the Tangent Universe from the Primary Universe.
+    pub fn clone(self: *const World, backing_allocator: std.mem.Allocator) !World {
+        var cloned = try World.init(backing_allocator, self.arena_buffer.len);
+        errdefer cloned.deinit();
+
+        var stream_buf = std.ArrayList(u8).init(backing_allocator);
+        defer stream_buf.deinit();
+
+        try self.save_state(stream_buf.writer());
+        var read_stream = std.io.fixedBufferStream(stream_buf.items);
+        try cloned.restore_state(read_stream.reader());
+
+        return cloned;
+    }
 };
 
 // --- Unit Tests (P1-01, P1-02, P1-03, P1-04) ---
@@ -1010,4 +1026,33 @@ test "P21-01: transfer_item atomic relational swap and conservation of matter" {
     // Attempting to transfer wine from Bernard again fails because Bernard does not possess it
     const ok2 = try world.transfer_item(wine, bernard, hoagie);
     try testing.expect(!ok2);
+}
+
+test "P31-01: World.clone creates independent deep copy for Tangent Universe forking" {
+    const testing = std.testing;
+    var primary = try World.init(testing.allocator, 1024 * 1024);
+    defer primary.deinit();
+
+    const donnie = try primary.intern_entity("Donnie");
+    const bedroom = try primary.intern_entity("Bedroom");
+    const in_room = try primary.intern_relation("InRoom", .property);
+    _ = try primary.remember(donnie, in_room, bedroom.to_int(), 0);
+
+    var tangent = try primary.clone(testing.allocator);
+    defer tangent.deinit();
+
+    // Verify tangent inherited facts and entity names
+    try testing.expectEqual(primary.current_tick, tangent.current_tick);
+    try testing.expect(tangent.has_fact(donnie, in_room, bedroom.to_int()));
+    try testing.expectEqualStrings("Donnie", tangent.get_entity_name(donnie).?);
+
+    // Mutating tangent does not mutate primary
+    const golf_course = try tangent.intern_entity("GolfCourse");
+    _ = try tangent.remember(donnie, in_room, golf_course.to_int(), 0);
+    _ = tangent.step_tick();
+
+    try testing.expect(tangent.has_fact(donnie, in_room, golf_course.to_int()));
+    try testing.expectEqual(@as(u64, 1), tangent.current_tick);
+    try testing.expect(primary.has_fact(donnie, in_room, bedroom.to_int()));
+    try testing.expectEqual(@as(u64, 0), primary.current_tick);
 }
