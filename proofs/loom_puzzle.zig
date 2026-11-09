@@ -12,6 +12,7 @@ const draft = bespoke.draft;
 const Note = draft.Note;
 const Notes = draft.Notes;
 const EntityId = bespoke.EntityId;
+const host = bespoke.host;
 
 pub const BELL_TOWER_SCRIPT =
     \\scene: Bell Tower Base
@@ -172,10 +173,6 @@ pub const Ids = struct {
     beacon_wp: u16,
 };
 
-fn place(spatial: *bespoke.SpatialSystem, wp_id: u16, x: i32, y: i32) void {
-    if (spatial.graph.get_waypoint(wp_id)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = x, .y = y };
-}
-
 /// Lays out both scenes after compilation: waypoint positions, corridors, hotspots, and Wren.
 /// Shared by the headless and interactive runs so both exercise one topology.
 pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
@@ -204,14 +201,14 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .beacon_wp = spatial.graph.find_waypoint_in_room(belfry, "BeaconMark").?,
     };
 
-    place(spatial, ids.doorway_wp, 2, 6);
-    place(spatial, ids.brazier_wp, 13, 6);
-    place(spatial, ids.ivy_wp, 24, 6);
-    place(spatial, ids.stair_foot_wp, 36, 4);
-    place(spatial, ids.stair_top_wp, 2, 6);
-    place(spatial, ids.chain_wp, 14, 6);
-    place(spatial, ids.bell_wp, 21, 4);
-    place(spatial, ids.beacon_wp, 36, 4);
+    host.place_waypoint(spatial, ids.doorway_wp, 2, 6);
+    host.place_waypoint(spatial, ids.brazier_wp, 13, 6);
+    host.place_waypoint(spatial, ids.ivy_wp, 24, 6);
+    host.place_waypoint(spatial, ids.stair_foot_wp, 36, 4);
+    host.place_waypoint(spatial, ids.stair_top_wp, 2, 6);
+    host.place_waypoint(spatial, ids.chain_wp, 14, 6);
+    host.place_waypoint(spatial, ids.bell_wp, 21, 4);
+    host.place_waypoint(spatial, ids.beacon_wp, 36, 4);
 
     spatial.graph.edges.clearRetainingCapacity();
     try spatial.graph.connect(ids.doorway_wp, ids.brazier_wp, null);
@@ -234,21 +231,9 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     return ids;
 }
 
-/// Runs the script's top-level statements (the starting distaff reach) to completion.
-fn run_initial_statements(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram) !void {
-    const init_pc = compiled.initial_entry orelse return;
-    const root_ent = try world.intern_entity("SimulationRoot");
-    const fid = try vm.spawn_routine(root_ent, init_pc);
-    var guard: usize = 0;
-    while (vm.fibers.items[fid - 1].state != .halted and guard < 16) : (guard += 1) {
-        try vm.step_tick();
-    }
-}
-
 /// Copies the script's `DistaffReach(Wren, n)` fact into the host-side phrase buffer (D-030).
 pub fn sync_reach(world: *const bespoke.World, ids: Ids, input: *draft.DistaffInput) void {
-    const reach = world.get_property(ids.wren, ids.reach_rel) orelse 4;
-    input.set_reach(@intCast(@min(reach, 7)));
+    input.set_reach_from(world, ids.wren, "DistaffReach", 4);
 }
 
 pub fn knows(world: *const bespoke.World, ids: Ids, draft_name: []const u8) bool {
@@ -257,66 +242,8 @@ pub fn knows(world: *const bespoke.World, ids: Ids, draft_name: []const u8) bool
     return world.has_fact(ids.wren, rel, d.to_int());
 }
 
-pub fn has_state(world: *const bespoke.World, subject: EntityId, state: []const u8) bool {
-    const rel = world.lookup_relation(state) orelse return false;
-    return world.has_fact(subject, rel, null);
-}
-
 pub fn is_solved(world: *const bespoke.World, ids: Ids) bool {
-    return has_state(world, ids.bell, "ringing") and has_state(world, ids.beacon, "lit");
-}
-
-/// Collects the `say` lines (cue id 2, D-009) a tick produced into one banner-sized string.
-/// `VM.step_tick` clears `emitted_cues` at the start of every tick, so speech must be read
-/// after each tick; an index taken before the tick is meaningless afterwards.
-const SayLog = struct {
-    stream: std.io.FixedBufferStream([]u8),
-    count: usize = 0,
-
-    fn init(buf: []u8) SayLog {
-        return .{ .stream = std.io.fixedBufferStream(buf) };
-    }
-
-    fn collect(self: *SayLog, world: *const bespoke.World, vm: *const bespoke.VM) void {
-        for (vm.emitted_cues.items) |cue| {
-            if (cue.cue_id != 2 or cue.arg_count < 2) continue;
-            const speaker = world.get_entity_name(EntityId.from_int(cue.args[0])) orelse "Someone";
-            const text = world.get_entity_name(EntityId.from_int(cue.args[1])) orelse "";
-            const w = self.stream.writer();
-            if (self.count > 0) w.writeAll("  ") catch return;
-            if (self.count == 0) w.print("{s}: ", .{speaker}) catch return;
-            w.print("\"{s}\"", .{text}) catch return;
-            self.count += 1;
-        }
-    }
-
-    fn message(self: *SayLog) ?[]const u8 {
-        return if (self.count > 0) self.stream.getWritten() else null;
-    }
-};
-
-/// One host tick: step the VM, then re-dispatch in-script weaves, as D-029 requires.
-/// Returns how many in-script weaves were re-dispatched.
-pub fn tick(vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram) !usize {
-    try vm.step_tick();
-    return try vm.dispatch_pending_weaves(compiled);
-}
-
-/// Fires a verb cue and runs it to completion. Returns the spoken reply, if any.
-pub fn act(
-    world: *bespoke.World,
-    vm: *bespoke.VM,
-    compiled: *const bespoke.CompiledProgram,
-    verb: []const u8,
-    actor: EntityId,
-    target: EntityId,
-    buf: []u8,
-) !?[]const u8 {
-    var log = SayLog.init(buf);
-    _ = try vm.fire_cue(compiled, verb, actor, target, null);
-    _ = try tick(vm, compiled);
-    log.collect(world, vm);
-    return log.message();
+    return host.has_state(world, ids.bell, "ringing") and host.has_state(world, ids.beacon, "lit");
 }
 
 pub const PhraseResult = struct {
@@ -362,12 +289,12 @@ pub fn weave_phrase(
     target: EntityId,
     buf: []u8,
 ) !PhraseResult {
-    var log = SayLog.init(buf);
+    var log = host.SpeechLog.init(buf);
     const fiber = try vm.weave_notes(compiled, ids.wren, phrase, target);
     input.outcome = if (fiber != null) .woven else .fizzled;
-    var redispatched = try tick(vm, compiled); // handler runs; in-script weaves dispatch after it
+    var redispatched = try host.tick(vm, compiled); // handler runs; in-script weaves dispatch after it
     log.collect(world, vm);
-    redispatched += try tick(vm, compiled); // re-dispatched handlers run
+    redispatched += try host.tick(vm, compiled); // re-dispatched handlers run
     log.collect(world, vm);
     sync_reach(world, ids, input);
     const msg = log.message() orelse
@@ -401,7 +328,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.transition_to_scene(ids.base);
-    try run_initial_statements(&world, &vm, &compiled);
+    try host.run_initial_statements(&world, &vm, &compiled);
 
     var input = draft.DistaffInput{};
     sync_reach(&world, ids, &input);
@@ -412,13 +339,13 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try world.save_state(snapshot_0.writer());
 
     try writer.print("\n[Step 1] Observation: Wren watches the lantern.\n", .{});
-    if (try act(&world, &vm, &compiled, "LooksAt", ids.wren, ids.lantern, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "LooksAt", ids.wren, ids.lantern, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(knows(&world, ids, "Kindle"), error.KindleNotLearned);
     try writer.print("  -> Distaff reach: {d} notes (C to F)\n", .{input.reach});
     try expect_true(input.reach == 4, error.WrongStartingReach);
 
     try writer.print("\n[Step 2] The stairwell is dark.\n", .{});
-    if (try act(&world, &vm, &compiled, "Uses", ids.wren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "Uses", ids.wren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(vm.current_scene.? == ids.base, error.ClimbedInTheDark);
 
     try writer.print("\n[Step 3] A misplayed phrase fizzles (C, C, D, D).\n", .{});
@@ -429,43 +356,43 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n[Step 4] Weave Kindle (C, D, E, C) on the brazier.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .D, .E, .C }, ids.brazier, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
+    try expect_true(host.has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
 
     try writer.print("\n[Step 5] Reversed: Douse (C, E, D, C) puts it out; Kindle relights it.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .E, .D, .C }, ids.brazier, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(!has_state(&world, ids.brazier, "lit"), error.DouseFailed);
+    try expect_true(!host.has_state(&world, ids.brazier, "lit"), error.DouseFailed);
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .D, .E, .C }, ids.brazier, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
+    try expect_true(host.has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
 
     try writer.print("\n[Step 6] Observation: the ivy teaches Bind (F, E, D, F).\n", .{});
-    if (try act(&world, &vm, &compiled, "LooksAt", ids.wren, ids.ivy, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "LooksAt", ids.wren, ids.ivy, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(knows(&world, ids, "Bind"), error.BindNotLearned);
 
     try writer.print("\n[Step 7] Climb to the belfry by firelight.\n", .{});
-    if (try act(&world, &vm, &compiled, "Uses", ids.wren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "Uses", ids.wren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(vm.current_scene.? == ids.belfry, error.ClimbFailed);
     _ = try spatial.transition_actor(ids.wren, ids.belfry, ids.stair_top_wp);
 
     try writer.print("\n[Step 8] Toll is out of reach: the B note is refused at reach 4.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .G, .A, .B, .G }, ids.bell, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(r.outcome == .fizzled and !has_state(&world, ids.bell, "ringing"), error.ReachNotEnforced);
+    try expect_true(r.outcome == .fizzled and !host.has_state(&world, ids.bell, "ringing"), error.ReachNotEnforced);
 
     try writer.print("\n[Step 9] Bind on the chain only tightens it.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .F, .E, .D, .F }, ids.chain, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(!has_state(&world, ids.chain, "loosed"), error.BindLoosedChain);
+    try expect_true(!host.has_state(&world, ids.chain, "loosed"), error.BindLoosedChain);
 
     try writer.print("\n[Step 10] Inversion: Bind played backwards is Loose (F, D, E, F).\n", .{});
     try expect_true(!knows(&world, ids, "Loose"), error.LooseWasTaught);
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .F, .D, .E, .F }, ids.chain, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(has_state(&world, ids.chain, "loosed"), error.ChainNotLoosed);
+    try expect_true(host.has_state(&world, ids.chain, "loosed"), error.ChainNotLoosed);
 
     try writer.print("\n[Step 11] Take the tuning fork: the distaff reaches all seven notes.\n", .{});
-    if (try act(&world, &vm, &compiled, "PicksUp", ids.wren, ids.fork, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "PicksUp", ids.wren, ids.fork, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     sync_reach(&world, ids, &input);
     try writer.print("  -> Distaff reach: {d} notes\n", .{input.reach});
     try expect_true(input.reach == 7 and knows(&world, ids, "Toll"), error.ForkDidNotExtendReach);
@@ -484,11 +411,11 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     _ = try spatial.transition_actor(ids.wren, ids.base, ids.doorway_wp);
     sync_reach(&world, ids, &input);
     try writer.print("  -> Bell ringing: {any}, brazier lit: {any}, reach: {d} (expected false, false, 4)\n", .{
-        has_state(&world, ids.bell, "ringing"),
-        has_state(&world, ids.brazier, "lit"),
+        host.has_state(&world, ids.bell, "ringing"),
+        host.has_state(&world, ids.brazier, "lit"),
         input.reach,
     });
-    try expect_true(!is_solved(&world, ids) and !has_state(&world, ids.brazier, "lit") and input.reach == 4, error.RewindFailed);
+    try expect_true(!is_solved(&world, ids) and !host.has_state(&world, ids.brazier, "lit") and input.reach == 4, error.RewindFailed);
 
     try writer.print("\n===================================================================\n", .{});
     try writer.print("  VERIFICATION COMPLETE: The Bell Tower rings. 100% deterministic.  \n", .{});
@@ -532,7 +459,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.transition_to_scene(ids.base);
-    try run_initial_statements(&world, &vm, &compiled);
+    try host.run_initial_statements(&world, &vm, &compiled);
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Bell Tower", 1280, 720);
     defer window.deinit();
@@ -560,36 +487,26 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     display_bridge.attach_audio_bridge(window.audio_bridge);
     display_bridge.attach_distaff(&input);
     display_bridge.set_active_character(ids.wren); // inventory tray shows Wren's Carries facts
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.set_max_history_tick(0);
-    display_bridge.swap();
+    var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    defer session.deinit();
 
-    var history = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history.items) |*h| h.deinit();
-        history.deinit();
-    }
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history.append(snap0);
-
-    var is_paused = false;
-    var last_tick_time = std.time.milliTimestamp();
     var announced_solved = false;
     var buf: [256]u8 = undefined;
 
     window.set_cue_banner("The bell has been silent for years. Watch the tower, then weave on the distaff.", 200);
 
     while (true) {
-        const action = window.poll_events(display_bridge.get_frame());
-        var should_step_now = false;
+        const action = window.poll_events(session.frame());
+        if (action == .quit) break;
         const scene_before = vm.current_scene;
 
-        _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
-        switch (action) {
-            .quit => break,
-            .toggle_pause => is_paused = !is_paused,
-            .step_tick => should_step_now = true,
+        if (try session.handle_common(action)) {
+            // Time travel restores the world; the half-played phrase and reach follow it.
+            if (action == .scrub_to_tick or action == .rewind) {
+                input.clear();
+                sync_reach(&world, ids, &input);
+            }
+        } else switch (action) {
             .walk_player => |wp_id| {
                 _ = try spatial.walk_to(ids.wren, wp_id);
                 if (vm.current_scene == ids.belfry and wp_id == ids.stair_top_wp) {
@@ -598,7 +515,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 }
             },
             .examine_hotspot, .interact_hotspot => {
-                const frame = display_bridge.get_frame();
+                const frame = session.frame();
                 const idx: usize, const verb: bespoke.display.renderer.AdventureVerb = switch (action) {
                     .examine_hotspot => |i| .{ i, .look_at },
                     .interact_hotspot => |h| .{ h.hotspot_index, h.verb },
@@ -615,7 +532,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         else => null,
                     };
                     if (cue_name) |cn| {
-                        if (try act(&world, &vm, &compiled, cn, ids.wren, target, &buf)) |msg| {
+                        if (try host.act(&world, &vm, &compiled, cn, ids.wren, target, &buf)) |msg| {
                             window.set_cue_banner(msg, 200);
                         } else {
                             window.set_cue_banner("Nothing happens.", 60);
@@ -630,50 +547,22 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 window.set_cue_banner("Wren: \"Apprentice bell-keeper. The distaff was my teacher's.\"", 120);
             },
             .play_note => |deg| {
-                const note = Note.from_int(deg) orelse continue;
-                if (input.press(note)) |phrase| {
-                    if (input.target == .none) {
-                        input.outcome = .fizzled;
-                        window.play_sfx(.weave_fizzle);
-                        window.set_cue_banner("Choose something to weave on first: click it.", 120);
-                    } else {
-                        const r = try weave_phrase(&world, &vm, &compiled, ids, &input, phrase, input.target, &buf);
-                        window.play_sfx(if (r.outcome == .woven) .weave_success else .weave_fizzle);
-                        window.set_cue_banner(r.message orelse "The threads hold.", 200);
-                        var snap = std.ArrayList(u8).init(allocator);
-                        try world.save_state(snap.writer());
-                        try history.append(snap);
-                        display_bridge.set_max_history_tick(world.current_tick);
+                if (Note.from_int(deg)) |note| {
+                    if (input.press(note)) |phrase| {
+                        if (input.target == .none) {
+                            input.outcome = .fizzled;
+                            window.play_sfx(.weave_fizzle);
+                            window.set_cue_banner("Choose something to weave on first: click it.", 120);
+                        } else {
+                            const r = try weave_phrase(&world, &vm, &compiled, ids, &input, phrase, input.target, &buf);
+                            window.play_sfx(if (r.outcome == .woven) .weave_success else .weave_fizzle);
+                            window.set_cue_banner(r.message orelse "The threads hold.", 200);
+                            try session.record_now();
+                        }
                     }
                 }
             },
             .clear_distaff => input.clear(),
-            .scrub_to_tick => |target_tick| {
-                if (target_tick < history.items.len) {
-                    var stream = std.io.fixedBufferStream(history.items[target_tick].items);
-                    world.restore_state(stream.reader()) catch {};
-                    while (history.items.len > target_tick + 1) {
-                        var popped = history.pop();
-                        popped.deinit();
-                    }
-                    input.clear();
-                    sync_reach(&world, ids, &input);
-                    display_bridge.set_max_history_tick(target_tick);
-                    window.set_cue_banner("Time-travel rewound.", 90);
-                }
-            },
-            .rewind => {
-                if (history.items.len > 1) {
-                    var last = history.pop();
-                    last.deinit();
-                    var stream = std.io.fixedBufferStream(history.items[history.items.len - 1].items);
-                    world.restore_state(stream.reader()) catch {};
-                    input.clear();
-                    sync_reach(&world, ids, &input);
-                    display_bridge.set_max_history_tick(history.items.len - 1);
-                    window.set_cue_banner("Stepped back one snapshot.", 60);
-                }
-            },
             else => {},
         }
 
@@ -684,27 +573,16 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             window.set_cue_banner("The bell tolls and the beacon burns. The valley wakes.", 300);
         }
 
-        if (action != .none and action != .toggle_pause and action != .step_tick and action != .quit) {
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
-        }
+        if (action != .none and action != .toggle_pause and action != .step_tick) session.refresh();
 
-        const now_ms = std.time.milliTimestamp();
-        if ((!is_paused and now_ms - last_tick_time >= window.current_tick_interval_ms) or should_step_now) {
-            last_tick_time = now_ms;
-            _ = try tick(&vm, &compiled);
+        if (session.tick_due()) {
+            _ = try session.advance();
             try follow_scene(&vm, &spatial, ids, scene_before);
             sync_reach(&world, ids, &input);
-
-            var snap = std.ArrayList(u8).init(allocator);
-            try world.save_state(snap.writer());
-            try history.append(snap);
-            display_bridge.set_max_history_tick(world.current_tick);
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
+            session.refresh();
         }
 
-        window.render_frame(display_bridge.get_frame(), is_paused);
+        session.render();
         bespoke.display.renderer.c.SDL_Delay(16);
     }
 }
@@ -726,7 +604,7 @@ test "P22-03: drafts weave only where the script allows" {
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.transition_to_scene(ids.base);
-    try run_initial_statements(&world, &vm, &compiled);
+    try host.run_initial_statements(&world, &vm, &compiled);
 
     var input = draft.DistaffInput{};
     sync_reach(&world, ids, &input);
@@ -735,17 +613,17 @@ test "P22-03: drafts weave only where the script allows" {
     // Kindle on a target with no Weave handler fizzles and changes nothing.
     var r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .D, .E, .C }, ids.ivy, &buf);
     try std.testing.expectEqual(draft.WeaveOutcome.fizzled, r.outcome);
-    try std.testing.expect(!has_state(&world, ids.ivy, "lit"));
+    try std.testing.expect(!host.has_state(&world, ids.ivy, "lit"));
 
     // Toll would ring the bell, but the chain still holds it even with full reach.
     input.set_reach(7);
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .G, .A, .B, .G }, ids.bell, &buf);
     try std.testing.expectEqual(draft.WeaveOutcome.woven, r.outcome);
-    try std.testing.expect(!has_state(&world, ids.bell, "ringing"));
-    try std.testing.expect(!has_state(&world, ids.beacon, "lit"));
+    try std.testing.expect(!host.has_state(&world, ids.bell, "ringing"));
+    try std.testing.expect(!host.has_state(&world, ids.beacon, "lit"));
 
     // The fork cannot be taken while the chain lies on it.
-    _ = try act(&world, &vm, &compiled, "PicksUp", ids.wren, ids.fork, &buf);
+    _ = try host.act(&world, &vm, &compiled, "PicksUp", ids.wren, ids.fork, &buf);
     sync_reach(&world, ids, &input);
     try std.testing.expectEqual(@as(u8, 4), input.reach);
 }

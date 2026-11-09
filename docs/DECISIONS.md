@@ -390,6 +390,18 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Leave the mechanic in `proofs/` permanently: rejected; other games could not reuse it.
 **Consequences:** The engine gains a reusable social simulation layer, and the village proof gains the same role as the other proofs. Generalizing the drives, witness, rumor, and justice systems is new design work with its own review.
 
+## D-033 Host Kit Module and One Time-Travel Model for Interactive Hosts (2026-11-09, status: accepted)
+**Context:** Every proof carried its own copy of the plumbing around the VM: speech readers, look-at helpers, tick and dispatch, top-level statement runners, and an interactive loop with pause, step, scrub, rewind, and save handling. The copies drifted. Three speech readers took a cue index before `step_tick`, which clears `emitted_cues`, so later lines silently fell back to Zig-coded text or kept only the last speaker's line. Scrub semantics differed: some proofs kept the future while scrubbing, others truncated it immediately. One loop stepped the VM every display frame, contrary to D-028.
+**Decision:**
+1. **`src/host.zig`** provides `tick` (step plus weave re-dispatch), `SpeechLog` and `speech_this_tick` (speech read after the tick, every line attributed to its speaker, optionally filtered to one speaker), `act`, `run_initial_statements`, `has_state`, `place_waypoint`, `Timeline`, and `Session`. `DistaffInput.set_reach_from` covers the reach-from-fact pattern.
+2. **One time-travel model:** scrubbing restores a snapshot and pauses without discarding the future; advancing from a past point discards the future first (a divergent timeline). This is the model TESTING's manual checks already describe. `[R]` steps back one snapshot by default.
+3. **Proof overrides:** a proof may claim an action before `Session.handle_common` sees it. The Tavern Heist keeps `[R]` jumping to tick 2, Spitting Contest and Village to tick 0 (`Session.jump_to`). The Middlesex Anomaly disables scrub and rewind, because the hypervisor's tangent world and countdown live outside the world snapshot.
+4. **Recording order:** a proof with post-tick rules ticks through `host.tick`, runs its rules, then calls `Session.record_now`, so snapshots include those effects.
+**Alternatives:**
+- Keep each proof's loop and fix the speech bug in place: rejected; the duplication is what let the bug and the drift spread.
+- A callback-driven `Session.run(hooks)` that owns the loop: rejected for now; proofs have very different action handling, and a host-owned loop with shared pieces is easier to read and migrate.
+**Consequences:** The DOTT and Middlesex Anomaly goldens changed in four lines: scripted dialogue the old readers dropped now appears (reviewed). DOTT, Middlesex Anomaly, and Insult Sword Fighting gain shared save actions; DOTT and Sword Fighting gain scrub and rewind; Sword Fighting now ticks at the D-028 interval instead of every frame. Interactive behaviour was verified only by offscreen launches, not by hand.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

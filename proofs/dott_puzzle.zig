@@ -211,29 +211,6 @@ pub fn evaluate_dott_solved(world: *const bespoke.World) bool {
         world.has_fact(null, disg_rel, null);
 }
 
-/// Extracts the latest dialogue/speech message from emitted cues on the VM since a given index.
-pub fn get_latest_say_message_since(world: *const bespoke.World, vm: *const bespoke.VM, min_index: usize, buf: []u8) ?[]const u8 {
-    if (vm.emitted_cues.items.len <= min_index) return null;
-    var idx = vm.emitted_cues.items.len;
-    while (idx > min_index) {
-        idx -= 1;
-        const c = vm.emitted_cues.items[idx];
-        if (c.cue_id == 2 and c.arg_count >= 2) {
-            const speaker_ent = bespoke.EntityId.from_int(c.args[0]);
-            const text_ent = bespoke.EntityId.from_int(c.args[1]);
-            const speaker_name = world.get_entity_name(speaker_ent) orelse "Someone";
-            const text_str = world.get_entity_name(text_ent) orelse "";
-            return std.fmt.bufPrint(buf, "{s}: \"{s}\"", .{ speaker_name, text_str }) catch text_str;
-        }
-    }
-    return null;
-}
-
-/// Extracts the latest dialogue/speech message from emitted cues on the VM.
-pub fn get_latest_say_message(world: *const bespoke.World, vm: *const bespoke.VM, buf: []u8) ?[]const u8 {
-    return get_latest_say_message_since(world, vm, 0, buf);
-}
-
 /// Fallback description generator for props, actors, and items across all three DOTT eras.
 pub fn get_dott_look_description(actor_name: []const u8, target_name: []const u8) []const u8 {
     _ = actor_name;
@@ -321,12 +298,9 @@ pub fn execute_look_at(
     target: bespoke.EntityId,
     buf: []u8,
 ) ![]const u8 {
-    const start_cue_count = vm.emitted_cues.items.len;
-    _ = try vm.fire_cue(compiled, "LooksAt", speaker, target, null);
-    try vm.step_tick();
-    if (get_latest_say_message_since(world, vm, start_cue_count, buf)) |msg| {
-        return msg;
-    }
+    // Speech comes from the script's LooksAt handler via the host kit (P32-16); the fallback
+    // text below is proof content until P32-19 moves it into the script.
+    if (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) |msg| return msg;
     const speaker_name = world.get_entity_name(speaker) orelse "Hero";
     const target_name = world.get_entity_name(target) orelse "Object";
     return get_dott_look_description(speaker_name, target_name);
@@ -612,7 +586,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step VM tick to fire reactive rule 'when TentacleFlagSewn(BetsyRoss, 1) -> interrupt Laverne'
     try vm.step_tick();
-    if (get_latest_say_message(&world, &vm, &look_buf)) |cutscene_msg| {
+    if (bespoke.host.speech_this_tick(&world, &vm, &look_buf)) |cutscene_msg| {
         try writer.print("         [Cutscene Telegraph] {s}\n", .{cutscene_msg});
     }
 
@@ -628,7 +602,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step VM tick to fire reactive rule 'when TreeChoppedDown(Washington, KumquatTree) -> interrupt Laverne'
     try vm.step_tick();
-    if (get_latest_say_message(&world, &vm, &look_buf)) |cutscene_msg| {
+    if (bespoke.host.speech_this_tick(&world, &vm, &look_buf)) |cutscene_msg| {
         try writer.print("         [Cutscene Telegraph] {s}\n", .{cutscene_msg});
     }
 
@@ -812,25 +786,21 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     display_bridge.set_active_character(bernard);
     display_bridge.set_active_party_index(1);
 
-    var is_paused = false;
-    var last_tick_time = std.time.milliTimestamp();
+    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &win);
+    defer session.deinit();
     win.set_cue_banner("Day of the Tentacle Trio loaded! Press [1] Hoagie, [2] Bernard, [3] Laverne to switch characters.", 180);
 
     while (true) {
-        display_bridge.capture_frame(&world, &spatial, &vm);
-        display_bridge.swap();
-
-        const frame = display_bridge.get_frame();
-        win.render_frame(frame, is_paused);
+        session.refresh();
+        const frame = session.frame();
+        session.render();
 
         const action = win.poll_events(frame);
-        var should_step_now = false;
         var action_taken = false;
 
-        switch (action) {
+        // Pause, step, scrub, rewind, and save actions are shared (host kit, P32-16, D-033).
+        if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
-            .toggle_pause => is_paused = !is_paused,
-            .step_tick => should_step_now = true,
             .walk_player => |wp_id| {
                 const active_char = display_bridge.active_player_character orelse bernard;
                 _ = try spatial.walk_to(active_char, wp_id);
@@ -923,11 +893,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const target_entity = frame.entities[act.actor_index];
                     const active_char = display_bridge.active_player_character orelse bernard;
                     if (act.verb == .talk_to) {
-                        const pre_cues = vm.emitted_cues.items.len;
                         _ = try vm.fire_cue(&compiled, "TalksTo", active_char, target_entity.entity, null);
                         try vm.step_tick();
                         var say_buf: [256]u8 = undefined;
-                        if (get_latest_say_message_since(&world, &vm, pre_cues, &say_buf)) |speech| {
+                        if (bespoke.host.speech_this_tick(&world, &vm, &say_buf)) |speech| {
                             win.set_cue_banner(speech, 180);
                             std.debug.print("\n[DOTT Talk] {s}\n", .{speech});
                         }
@@ -1066,18 +1035,13 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
         }
 
         // Stepping simulation clock
-        const current_time = std.time.milliTimestamp();
-        if ((!is_paused and (current_time - last_tick_time >= win.current_tick_interval_ms)) or should_step_now) {
-            last_tick_time = current_time;
-            const pre_tick_cues = vm.emitted_cues.items.len;
-            try vm.step_tick();
+        if (session.tick_due()) {
+            _ = try session.advance();
             var cutscene_buf: [256]u8 = undefined;
-            if (get_latest_say_message_since(&world, &vm, pre_tick_cues, &cutscene_buf)) |cutscene_msg| {
+            if (bespoke.host.speech_this_tick(&world, &vm, &cutscene_buf)) |cutscene_msg| {
                 win.set_cue_banner(cutscene_msg, 180);
                 std.debug.print("\n[Cutscene Telegraph] {s}\n", .{cutscene_msg});
             }
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
         }
 
         bespoke.display.renderer.c.SDL_Delay(16);

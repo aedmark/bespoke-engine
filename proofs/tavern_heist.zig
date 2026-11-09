@@ -91,11 +91,9 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
     _ = try vm.spawn_routine(guard, patrol_pc);
 
     // Array to record historical snapshot buffers for time-travel rewind (P5-02)
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*buf| buf.deinit();
-        history_snapshots.deinit();
-    }
+    // Headless rewind demo timeline; the interactive loop keeps its own in host.Session.
+    var timeline = bespoke.host.Timeline.init(allocator);
+    defer timeline.deinit();
 
     // Initialize SDL2 Peripheral Display Window (D-008, P6-01). Headless runs never open one,
     // so the characterization test (P32-07) can run this proof without a display.
@@ -120,9 +118,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
         try display_bridge.render_terminal(stdout);
 
         // Save snapshot 0
-        var snap0 = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap0.writer());
-        try history_snapshots.append(snap0);
+        try timeline.record(&world);
 
         // Run forward simulation for 18 ticks
         while (world.current_tick < 18) {
@@ -141,9 +137,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
 
             try vm.step_tick();
 
-            var snap = std.ArrayList(u8).init(allocator);
-            try world.save_state(snap.writer());
-            try history_snapshots.append(snap);
+            try timeline.record(&world);
 
             display_bridge.capture_frame(&world, &spatial, &vm);
             display_bridge.swap();
@@ -159,10 +153,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
         // 5. Time-Travel Rewind Demo
         try stdout.print(">>> DEMONSTRATING TIME-TRAVEL REWIND: REWINDING TO TICK 2 (BEFORE HEIST) <<<\n", .{});
         const target_rewind_tick: usize = 2;
-        const target_snapshot = history_snapshots.items[target_rewind_tick];
-
-        var stream = std.io.fixedBufferStream(target_snapshot.items);
-        try world.restore_state(stream.reader());
+        _ = try timeline.restore(&world, target_rewind_tick);
 
         display_bridge.capture_frame(&world, &spatial, &vm);
         display_bridge.swap();
@@ -193,34 +184,25 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
         try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
 
         // Initial snapshot at tick 0
-        display_bridge.capture_frame(&world, &spatial, &vm);
-        display_bridge.set_max_history_tick(0);
-        display_bridge.swap();
-
-        var snap0 = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap0.writer());
-        try history_snapshots.append(snap0);
-
-        var is_paused = false;
-        var last_tick_time = std.time.milliTimestamp();
+        // Snapshot 0 and the first frame (host kit, P32-16, D-033)
+        var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, window);
+        defer session.deinit();
 
         window.set_cue_banner("Welcome to BeSpoke Engine! Left-click nodes to move Cat.", 90);
 
         // Interactive 60 Hz Display Loop (D-001, P6-01)
         while (true) {
             // 1. Poll peripheral inputs
-            const action = window.poll_events(display_bridge.get_frame());
-            var should_step_now = false;
+            const action = window.poll_events(session.frame());
 
-            _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
-            switch (action) {
+            if (action == .rewind) {
+                // This proof's [R] jumps to tick 2, just before the heist.
+                if ((try session.jump_to(2)) != null) {
+                    window.set_cue_banner("<<< TIME-TRAVEL: REWOUND TO TICK 2 (BEFORE HEIST) <<<", 90);
+                    try stdout.print("[Time-Travel] Rewound simulation to Tick {d}\n", .{world.current_tick});
+                }
+            } else if (try session.handle_common(action)) {} else switch (action) {
                 .quit => break,
-                .toggle_pause => {
-                    is_paused = !is_paused;
-                },
-                .step_tick => {
-                    should_step_now = true;
-                },
                 .walk_player => |wp_id| {
                     _ = try spatial.walk_to(cat, wp_id);
                     var banner_buf: [64]u8 = undefined;
@@ -391,37 +373,6 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
                 .dismiss_dialogue => {
                     window.dismiss_dialogue();
                 },
-                .rewind => {
-                    if (history_snapshots.items.len > 2) {
-                        is_paused = true;
-                        const target_snapshot = history_snapshots.items[2];
-                        var stream = std.io.fixedBufferStream(target_snapshot.items);
-                        try world.restore_state(stream.reader());
-                        // Sync display frame
-                        display_bridge.capture_frame(&world, &spatial, &vm);
-                        display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                        display_bridge.swap();
-                        window.set_cue_banner("<<< REWOUND TO PRE-HEIST TICK 2 (PAUSED) <<<", 90);
-                        try stdout.print("[Time-Travel] Rewound simulation to Tick 2!\n", .{});
-                    }
-                },
-                .scrub_to_tick => |target_tick| {
-                    if (history_snapshots.items.len > 0) {
-                        const clamped = @min(target_tick, history_snapshots.items.len - 1);
-                        is_paused = true;
-                        const target_snapshot = history_snapshots.items[clamped];
-                        var stream = std.io.fixedBufferStream(target_snapshot.items);
-                        try world.restore_state(stream.reader());
-                        display_bridge.capture_frame(&world, &spatial, &vm);
-                        display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                        display_bridge.swap();
-
-                        var banner_buf: [96]u8 = undefined;
-                        const text = std.fmt.bufPrint(&banner_buf, "<<< TIME-TRAVEL: SCRUBBED TO TICK {d} (PAUSED) <<<", .{world.current_tick}) catch "Scrubbed";
-                        window.set_cue_banner(text, 90);
-                        try stdout.print("[Time-Travel] Scrubbed simulation to Tick {d} (of {d})\n", .{ world.current_tick, history_snapshots.items.len - 1 });
-                    }
-                },
                 .repl_command => |cmd| {
                     const line = cmd.buf[0..cmd.len];
                     const res = repl_instance.execute(line);
@@ -430,14 +381,8 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
                         window.set_cue_banner(res.get_text(), 120);
                         try stdout.print("[REPL] > {s}\n       {s}\n", .{ line, res.get_text() });
                     }
-                    if (world.current_tick >= history_snapshots.items.len) {
-                        var snap = std.ArrayList(u8).init(allocator);
-                        try world.save_state(snap.writer());
-                        try history_snapshots.append(snap);
-                    }
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                    display_bridge.swap();
+                    // A REPL command that moved the clock past the timeline gets recorded.
+                    if (world.current_tick >= session.timeline.len()) try session.record_now() else session.refresh();
                 },
                 .toggle_debug => {
                     const status_str = if (window.show_debug_overlay) "ENABLED" else "DISABLED";
@@ -508,19 +453,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
             }
 
             // 2. Advance simulation clock if unpaused or single-stepped
-            const now = std.time.milliTimestamp();
-            if (should_step_now or (!is_paused and now - last_tick_time >= window.current_tick_interval_ms)) {
-                last_tick_time = now;
-
-                // If simulation clock was scrubbed into the past and is advancing,
-                // discard invalidated future snapshots to record a divergent timeline.
-                if (world.current_tick + 1 < history_snapshots.items.len) {
-                    for (history_snapshots.items[world.current_tick + 1 ..]) |*s| {
-                        s.deinit();
-                    }
-                    history_snapshots.shrinkRetainingCapacity(world.current_tick + 1);
-                }
-
+            if (session.tick_due()) {
                 // Scripted narrative cues for the vertical slice
                 if (world.current_tick == 1) {
                     try world.remember(guard, charmed, bard.to_int(), 4);
@@ -537,21 +470,12 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
                     }
                 }
 
-                try vm.step_tick();
-
-                // Save snapshot for potential rewind
-                var snap = std.ArrayList(u8).init(allocator);
-                try world.save_state(snap.writer());
-                try history_snapshots.append(snap);
-
-                // Synchronize display bridge
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                display_bridge.swap();
+                // Discards any scrubbed-away future, ticks, records, and publishes the frame.
+                _ = try session.advance();
             }
 
             // 3. Render 2D Frame at Display Refresh Rate (P6-02, P6-04)
-            window.render_frame(display_bridge.get_frame(), is_paused);
+            session.render();
 
             // Cap display loop ~60 FPS
             std.time.sleep(16 * std.time.ns_per_ms);

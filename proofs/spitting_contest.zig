@@ -213,18 +213,13 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
         _ = try vm.spawn_routine(organiser, entry);
     }
 
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*buf| buf.deinit();
-        history_snapshots.deinit();
-    }
+    var timeline = bespoke.host.Timeline.init(allocator);
+    defer timeline.deinit();
 
     try writer.print("\n>>> STARTING BOOTY ISLAND SPITTING CONTEST SIMULATION <<<\n", .{});
 
     // Initial state snapshot 0
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history_snapshots.append(snap0);
+    try timeline.record(&world);
 
     // Step 1: Baseline attempt (No prep)
     try writer.print("\n[Step 1: Baseline Attempt] Guybrush steps up to Starting Line and spits...\n", .{});
@@ -233,9 +228,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     for (0..4) |_| {
         try vm.step_tick();
-        var snap = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap.writer());
-        try history_snapshots.append(snap);
+        try timeline.record(&world);
     }
 
     // Step 2: Guybrush drinks GreenDrink
@@ -267,9 +260,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     for (0..3) |_| {
         try vm.step_tick();
-        var snap = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap.writer());
-        try history_snapshots.append(snap);
+        try timeline.record(&world);
     }
 
     // Step 5: Move flags while distracted!
@@ -289,9 +280,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     try vm.step_tick();
     {
-        var snap = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap.writer());
-        try history_snapshots.append(snap);
+        try timeline.record(&world);
     }
 
     try writer.print("   -> Wind is blowing! Thick Spit + Tampered Flags + Tailwind = GUYBRUSH SPITS!\n", .{});
@@ -303,9 +292,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n[Step 7: Testing TTL Expiration & Falling-Edge Triggers]\n", .{});
     while (world.has_fact(organiser, distracted_rel, null)) {
         try vm.step_tick();
-        var snap = std.ArrayList(u8).init(allocator);
-        try world.save_state(snap.writer());
-        try history_snapshots.append(snap);
+        try timeline.record(&world);
     }
     try writer.print("   -> Distraction TTL expired at Tick {d}!\n", .{world.current_tick});
     try writer.print("   -> 'when Organiser forgets Distracted' fired: Organiser returned to Starting Line.\n", .{});
@@ -317,9 +304,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 8: Time-Travel Rewind
     try writer.print("\n[Step 8: Time-Travel Rewind Demo]\n", .{});
     try writer.print("   -> Rewinding simulation to Tick {d} (before Horn distraction)...\n", .{pre_horn_tick});
-    const pre_horn_snap = history_snapshots.items[pre_horn_tick];
-    var stream = std.io.fixedBufferStream(pre_horn_snap.items);
-    try world.restore_state(stream.reader());
+    _ = try timeline.restore(&world, pre_horn_tick);
 
     try writer.print("   -> Rewound Tick: {d}\n", .{world.current_tick});
     try writer.print("   -> Organiser Distracted? {s} (Restored to false!)\n", .{if (world.has_fact(organiser, distracted_rel, null)) "YES" else "NO"});
@@ -407,12 +392,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
         _ = try vm.spawn_routine(room_ent, entry);
     }
 
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*buf| buf.deinit();
-        history_snapshots.deinit();
-    }
-
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 1280, 720);
     defer window.deinit();
 
@@ -442,29 +421,20 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("   - [R]:                   Instant Time-Travel Rewind\n", .{});
     try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
 
-    // Capture initial tick 0
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.set_max_history_tick(0);
-    display_bridge.swap();
-
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history_snapshots.append(snap0);
-
-    var is_paused = false;
-    var last_tick_time = std.time.milliTimestamp();
+    // Snapshot 0 and the first frame (host kit, P32-16, D-033)
+    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    defer session.deinit();
 
     window.set_cue_banner("Welcome to Booty Island! Press [S] to Spit, [H] for Horn, [G] for Drink, [F] for Flags.", 150);
 
     while (true) {
-        const action = window.poll_events(display_bridge.get_frame());
-        var should_step_now = false;
+        const action = window.poll_events(session.frame());
 
-        _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
-        switch (action) {
+        if (action == .rewind) {
+            // This proof's [R] returns to the opening state rather than one step back.
+            if ((try session.jump_to(0)) != null) window.set_cue_banner("<<< REWOUND TO INITIAL STATE (TICK 0) <<<", 90);
+        } else if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
-            .toggle_pause => is_paused = !is_paused,
-            .step_tick => should_step_now = true,
             .walk_player => |wp_id| {
                 _ = try spatial.walk_to(guybrush, wp_id);
                 window.set_cue_banner("Directing Guybrush to waypoint.", 60);
@@ -630,31 +600,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
                 }
             },
-            .rewind => {
-                if (history_snapshots.items.len > 0) {
-                    is_paused = true;
-                    var stream = std.io.fixedBufferStream(history_snapshots.items[0].items);
-                    try world.restore_state(stream.reader());
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                    display_bridge.swap();
-                    window.set_cue_banner("<<< REWOUND TO INITIAL STATE (TICK 0) <<<", 90);
-                }
-            },
-            .scrub_to_tick => |target_tick| {
-                if (history_snapshots.items.len > 0) {
-                    const clamped = @min(target_tick, history_snapshots.items.len - 1);
-                    is_paused = true;
-                    var stream = std.io.fixedBufferStream(history_snapshots.items[clamped].items);
-                    try world.restore_state(stream.reader());
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                    display_bridge.swap();
-                    var banner_buf: [96]u8 = undefined;
-                    const text = std.fmt.bufPrint(&banner_buf, "<<< TIME-TRAVEL: SCRUBBED TO TICK {d} (PAUSED) <<<", .{world.current_tick}) catch "Scrubbed";
-                    window.set_cue_banner(text, 90);
-                }
-            },
             .repl_command => |cmd| {
                 const line = cmd.buf[0..cmd.len];
                 const res = repl_instance.execute(line);
@@ -662,9 +607,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (res.output_len > 0) {
                     window.set_cue_banner(res.get_text(), 120);
                 }
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-                display_bridge.swap();
+                session.refresh();
             },
             .toggle_debug => {},
             .toggle_console => {},
@@ -725,27 +668,11 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
             else => {},
         }
 
-        const now = std.time.milliTimestamp();
-        if (should_step_now or (!is_paused and now - last_tick_time >= window.current_tick_interval_ms)) {
-            last_tick_time = now;
-
-            if (world.current_tick + 1 < history_snapshots.items.len) {
-                for (history_snapshots.items[world.current_tick + 1 ..]) |*s| s.deinit();
-                history_snapshots.shrinkRetainingCapacity(world.current_tick + 1);
-            }
-
-            try vm.step_tick();
-
-            var snap = std.ArrayList(u8).init(allocator);
-            try world.save_state(snap.writer());
-            try history_snapshots.append(snap);
-
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
-            display_bridge.swap();
+        if (session.tick_due()) {
+            _ = try session.advance();
         }
 
-        window.render_frame(display_bridge.get_frame(), is_paused);
+        session.render();
     }
 }
 

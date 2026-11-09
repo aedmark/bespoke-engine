@@ -320,11 +320,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try vm.transition_to_scene(courtyard_scene);
 
     var display_bridge = bespoke.display.DisplayBridge.init();
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*buf| buf.deinit();
-        history_snapshots.deinit();
-    }
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Broken Sword: The Lochmarne Goat", 1280, 720);
     defer window.deinit();
@@ -352,30 +347,19 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
 
     display_bridge.attach_audio_bridge(window.audio_bridge);
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.set_max_history_tick(0);
-    display_bridge.swap();
-
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history_snapshots.append(snap0);
-
-    var is_paused = false;
-    var last_tick_time = std.time.milliTimestamp();
+    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    defer session.deinit();
 
     window.set_cue_banner("Lochmarne Castle: Navigate past the fierce Billy Goat to reach Peagram's dig! [C/T] [1-4]", 180);
 
     const retreating_rel = world.lookup_relation("GoatRetreating").?;
 
     while (true) {
-        const action = window.poll_events(display_bridge.get_frame());
-        var should_step_now = false;
+        const action = window.poll_events(session.frame());
 
-        _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
-        switch (action) {
+        // Pause, step, scrub, rewind, and save actions are shared (host kit, P32-16, D-033).
+        if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
-            .toggle_pause => is_paused = !is_paused,
-            .step_tick => should_step_now = true,
             .walk_player => |wp_id| {
                 if (world.has_fact(george, world.lookup_relation("KnockedDown").?, null)) {
                     window.set_cue_banner("George is knocked flat on his back! Recovering...", 60);
@@ -468,36 +452,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     }
                 }
             },
-            .scrub_to_tick => |target_tick| {
-                if (target_tick < history_snapshots.items.len) {
-                    var stream = std.io.fixedBufferStream(history_snapshots.items[target_tick].items);
-                    world.restore_state(stream.reader()) catch {};
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-
-                    while (history_snapshots.items.len > target_tick + 1) {
-                        var popped = history_snapshots.pop();
-                        popped.deinit();
-                    }
-                    display_bridge.set_max_history_tick(target_tick);
-                    var buf: [64]u8 = undefined;
-                    const banner = std.fmt.bufPrint(&buf, "Time-Travel Rewound to Tick {d}", .{target_tick}) catch "Rewound";
-                    window.set_cue_banner(banner, 90);
-                }
-            },
-            .rewind => {
-                if (history_snapshots.items.len > 1) {
-                    var last_snap = history_snapshots.pop();
-                    last_snap.deinit();
-                    const target_tick = history_snapshots.items.len - 1;
-                    var stream = std.io.fixedBufferStream(history_snapshots.items[target_tick].items);
-                    world.restore_state(stream.reader()) catch {};
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                    display_bridge.set_max_history_tick(target_tick);
-                    window.set_cue_banner("Stepped back 1 snapshot in time.", 60);
-                }
-            },
             else => {},
         }
 
@@ -556,10 +510,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         // Stepping simulation clock
-        const current_time = std.time.milliTimestamp();
-        if ((!is_paused and (current_time - last_tick_time >= window.current_tick_interval_ms)) or should_step_now) {
-            last_tick_time = current_time;
-            try vm.step_tick();
+        if (session.tick_due()) {
+            _ = try bespoke.host.tick(&vm, &compiled);
 
             // Check George arrival events at key marks
             if (spatial.get_current_waypoint(george)) |cur_wp| {
@@ -583,16 +535,11 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 }
             }
 
-            var snap = std.ArrayList(u8).init(allocator);
-            try world.save_state(snap.writer());
-            try history_snapshots.append(snap);
-
-            display_bridge.set_max_history_tick(world.current_tick);
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
+            // Record after the arrival rules above, so the snapshot includes their effects.
+            try session.record_now();
         }
 
-        window.render_frame(display_bridge.get_frame(), is_paused);
+        session.render();
         bespoke.display.renderer.c.SDL_Delay(16);
     }
 }

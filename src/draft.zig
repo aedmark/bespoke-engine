@@ -143,6 +143,14 @@ pub const DistaffInput = struct {
         self.reach = @min(reach, 7);
     }
 
+    /// Sets reach from a numeric property fact, e.g. `DistaffReach(Player, 4)` (P32-16). Scripts
+    /// grow the distaff by remembering a larger value; `fallback` applies when no fact exists.
+    pub fn set_reach_from(self: *DistaffInput, world: *const world_mod.World, subject: EntityId, relation_name: []const u8, fallback: u8) void {
+        const rel = world.lookup_relation(relation_name) orelse return self.set_reach(fallback);
+        const value = world.get_property(subject, rel) orelse return self.set_reach(fallback);
+        self.set_reach(@intCast(@min(value, 7)));
+    }
+
     /// Notes of the phrase in progress.
     pub fn current(self: *const DistaffInput) []const Note {
         return self.played[0..self.len];
@@ -201,5 +209,22 @@ test "P22-02: distaff input completes a phrase on the fourth note and honours re
     try testing.expect(input.press(.F) == null);
     try testing.expectEqual(@as(usize, 0), input.current().len);
     input.set_reach(200);
+    try testing.expectEqual(@as(u8, 7), input.reach);
+}
+
+test "P32-16: distaff reach follows a property fact, with a fallback" {
+    const testing = std.testing;
+    var world = try world_mod.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const hero = try world.intern_entity("Hero");
+    var input = DistaffInput{};
+    input.set_reach_from(&world, hero, "Reach", 3);
+    try testing.expectEqual(@as(u8, 3), input.reach);
+    const rel = try world.intern_relation("Reach", .property);
+    try world.remember(hero, rel, 5, 0);
+    input.set_reach_from(&world, hero, "Reach", 3);
+    try testing.expectEqual(@as(u8, 5), input.reach);
+    try world.remember(hero, rel, 99, 0);
+    input.set_reach_from(&world, hero, "Reach", 3);
     try testing.expectEqual(@as(u8, 7), input.reach);
 }

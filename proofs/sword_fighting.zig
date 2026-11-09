@@ -449,20 +449,15 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Carla is the legendary Sword Master
     try world.remember(carla, duel_sys.is_sword_master_rel, 1, 0);
 
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*buf| buf.deinit();
-        history_snapshots.deinit();
-    }
+    var timeline = bespoke.host.Timeline.init(allocator);
+    defer timeline.deinit();
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
 
     // Snapshot 0: Baseline state
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history_snapshots.append(snap0);
+    try timeline.record(&world);
 
     // -------------------------------------------------------------------------
     // Step 1: Epistemological Zero Baseline & Learning First Insult and Reply
@@ -633,9 +628,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try std.testing.expectEqual(NpcMood.furious, mood4);
 
     // Save snapshot before temporal cool-off
-    var snap_furious = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap_furious.writer());
-    try history_snapshots.append(snap_furious);
+    try timeline.record(&world);
 
     // -------------------------------------------------------------------------
     // Step 6: Temporal Mood Decay via Tick Expiration
@@ -680,8 +673,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Time-Travel Rewind to Snapshot 0 (Epistemological zero state)
     try writer.print("\n   [Deterministic Time-Travel Rewind Verification]\n", .{});
-    var rewind_stream = std.io.fixedBufferStream(history_snapshots.items[0].items);
-    try world.restore_state(rewind_stream.reader());
+    _ = try timeline.restore(&world, 0);
 
     try writer.print("   -> Restored Snapshot 0 (Tick {d}).\n", .{world.current_tick});
     try writer.print("   -> Guybrush HeardInsults Count: {s}\n", .{
@@ -766,29 +758,20 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var display_bridge = bespoke.DisplayBridge.init();
     display_bridge.attach_audio_bridge(window.audio_bridge);
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.swap();
+    // The clock now runs at the shared tick interval (D-028) instead of once per display frame.
+    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    defer session.deinit();
 
     window.set_cue_banner("Mêlée Island: Draw cutlasses and test relational dialogue!", 180);
 
     var is_running = true;
-    var is_paused = false;
     while (is_running) {
-        const action = window.poll_events(display_bridge.get_frame());
-        _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
-        switch (action) {
-            .quit => is_running = false,
-            .toggle_pause => is_paused = !is_paused,
-            else => {},
-        }
+        const action = window.poll_events(session.frame());
+        if (action == .quit) is_running = false else _ = try session.handle_common(action);
 
-        if (!is_paused) {
-            try vm.step_tick();
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
-        }
+        if (session.tick_due()) _ = try session.advance();
 
-        window.render_frame(display_bridge.get_frame(), is_paused);
+        session.render();
         std.time.sleep(16 * std.time.ns_per_ms);
     }
 }

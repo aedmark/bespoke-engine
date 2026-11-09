@@ -173,29 +173,6 @@ pub fn get_darko_look_description(actor_name: []const u8, target_name: []const u
     }
 }
 
-/// Extracts the latest dialogue/speech message from emitted cues on the VM since a given index.
-pub fn get_latest_say_message_since(world: *const bespoke.World, vm: *const bespoke.VM, min_index: usize, buf: []u8) ?[]const u8 {
-    if (vm.emitted_cues.items.len <= min_index) return null;
-    var idx = vm.emitted_cues.items.len;
-    while (idx > min_index) {
-        idx -= 1;
-        const c = vm.emitted_cues.items[idx];
-        if (c.cue_id == 2 and c.arg_count >= 2) {
-            const speaker_ent = bespoke.EntityId.from_int(c.args[0]);
-            const text_ent = bespoke.EntityId.from_int(c.args[1]);
-            const speaker_name = world.get_entity_name(speaker_ent) orelse "Someone";
-            const text_str = world.get_entity_name(text_ent) orelse "";
-            return std.fmt.bufPrint(buf, "{s}: \"{s}\"", .{ speaker_name, text_str }) catch text_str;
-        }
-    }
-    return null;
-}
-
-/// Extracts the latest dialogue/speech message from emitted cues on the VM.
-pub fn get_latest_say_message(world: *const bespoke.World, vm: *const bespoke.VM, buf: []u8) ?[]const u8 {
-    return get_latest_say_message_since(world, vm, 0, buf);
-}
-
 /// Helper to fire LooksAt cue, step the VM, and retrieve the speech message.
 pub fn execute_look_at(
     world: *bespoke.World,
@@ -205,12 +182,9 @@ pub fn execute_look_at(
     target: bespoke.EntityId,
     buf: []u8,
 ) ![]const u8 {
-    const start_cue_count = vm.emitted_cues.items.len;
-    _ = try vm.fire_cue(compiled, "LooksAt", speaker, target, null);
-    try vm.step_tick();
-    if (get_latest_say_message_since(world, vm, start_cue_count, buf)) |msg| {
-        return msg;
-    }
+    // Speech comes from the script's LooksAt handler via the host kit (P32-16); the fallback
+    // text below is proof content until P32-19 moves it into the script.
+    if (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) |msg| return msg;
     const speaker_name = world.get_entity_name(speaker) orelse "Hero";
     const target_name = world.get_entity_name(target) orelse "Object";
     return get_darko_look_description(speaker_name, target_name);
@@ -354,7 +328,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try vm.step_tick();
     _ = try hypervisor.step_tick(&spatial);
     var frank_buf: [256]u8 = undefined;
-    if (get_latest_say_message(&world, &vm, &frank_buf)) |speech| {
+    var frank_log = bespoke.host.SpeechLog.init(&frank_buf);
+    frank_log.collect_from(&world, &vm, frank);
+    if (frank_log.message()) |speech| {
         try writer.print("         Frank whispers: {s}\n", .{speech});
     } else {
         try writer.print("         Frank whispers: \"28 days, 6 hours, 42 minutes, 12 seconds.\"\n", .{});
@@ -555,23 +531,22 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     display_bridge.set_tangent_countdown("28:06:42:12");
     win.set_cue_banner("The Middlesex Anomaly loaded! Press [1] Bedroom, [2] School, [3] Ridge to switch scenes. [V] Follow Conduit.", 180);
 
-    var is_paused = false;
-    var last_tick_time = std.time.milliTimestamp();
+    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &win);
+    defer session.deinit();
 
     while (true) {
-        display_bridge.capture_frame(&world, &spatial, &vm);
-        display_bridge.swap();
-
-        var should_step_now = false;
+        session.refresh();
         var action_taken = false;
-        const frame = display_bridge.get_frame();
-        win.render_frame(frame, is_paused);
+        const frame = session.frame();
+        session.render();
 
         const action = win.poll_events(frame);
-        switch (action) {
+        if (action == .scrub_to_tick or action == .rewind) {
+            // The hypervisor's tangent world and countdown live outside the world snapshot, so a
+            // world-only rewind would desynchronize them. This proof keeps time travel disabled.
+            win.set_cue_banner("The tangent hypervisor governs time here; the timeline is fixed.", 90);
+        } else if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
-            .toggle_pause => is_paused = !is_paused,
-            .step_tick => should_step_now = true,
             .darko_follow_conduit => {
                 if (spatial.get_agent_vector_conduit(donnie)) |c| {
                     _ = try spatial.follow_conduit(donnie, c);
@@ -709,11 +684,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                             };
                             win.show_dialogue(target_ent.entity, pt, "Roberta Sparrow", "Cellar door... the most beautiful phrase. The loop must close!", &choices);
                         } else {
-                            const pre_c = vm.emitted_cues.items.len;
                             _ = try vm.fire_cue(&compiled, "TalksTo", donnie, target_ent.entity, null);
                             try vm.step_tick();
                             var say_b: [256]u8 = undefined;
-                            if (get_latest_say_message_since(&world, &vm, pre_c, &say_b)) |speech| {
+                            if (bespoke.host.speech_this_tick(&world, &vm, &say_b)) |speech| {
                                 win.set_cue_banner(speech, 180);
                             }
                         }
@@ -811,10 +785,8 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             display_bridge.swap();
         }
 
-        const current_time = std.time.milliTimestamp();
-        if ((!is_paused and (current_time - last_tick_time >= win.current_tick_interval_ms)) or should_step_now) {
-            last_tick_time = current_time;
-            try vm.step_tick();
+        if (session.tick_due()) {
+            _ = try bespoke.host.tick(&vm, &compiled);
             _ = try hypervisor.step_tick(&spatial);
 
             var count_b: [16]u8 = undefined;
@@ -829,8 +801,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                 display_bridge.set_singularity_collapsed(true);
             }
 
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
+            try session.record_now();
         }
 
         bespoke.display.renderer.c.SDL_Delay(16);

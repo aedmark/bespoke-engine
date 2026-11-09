@@ -128,6 +128,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 - Unit tests: `zig test src/world.zig`.
 - Full build and test: `zig build test` (engine and proofs); `zig build test-engine` and `zig build test-proofs` run each side alone.
 - Proofs of concept: `zig build run-proof -- --<proof> [--headless]` (see `bespoke-proofs --help`).
+- Hosts drive the engine through `src/host.zig`: tick with `host.tick` or `Session.advance` (never bare `step_tick`), and read speech after the tick with `SpeechLog`. Do not copy loop or speech plumbing into a proof (D-033).
 - Proof goldens: `zig build test-proofs` compares every proof's headless transcript with `proofs/golden/`. Regenerate only for an intended behaviour change (`-Dupdate-goldens`) and call out the golden diff in review.
 - Separation lint: `python3 tools/check_separation.py` (run by `check_docs.py`). If you remove proof content from `src/`, lower the baseline with `--update-baseline`; never pass `--accept-increase` without maintainer approval.
 - Boundary rule: engine code in `src/` never names a proof, a proof's entities, or its art. Proof-specific behaviour belongs in `proofs/` (D-031).

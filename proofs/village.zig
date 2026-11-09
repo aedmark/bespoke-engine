@@ -987,60 +987,38 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("   - [P / F2 / F3 / F5 / F9]:Persistent Save / Load Drawer & Quick-Save\n", .{});
     try stdout.print("   - [F1 / D] / [C / Tab]:   Relational World Inspector / Live REPL\n\n", .{});
 
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*snap| snap.deinit();
-        history_snapshots.deinit();
-    }
-
-    var snap0 = std.ArrayList(u8).init(allocator);
-    try world.save_state(snap0.writer());
-    try history_snapshots.append(snap0);
-
     var repl_engine = bespoke.Repl.init(&world, &spatial, &vm);
     var display_bridge = bespoke.DisplayBridge.init();
     display_bridge.attach_audio_bridge(window.audio_bridge);
-    display_bridge.capture_frame(&world, &spatial, &vm);
-    display_bridge.swap();
+    // Snapshot 0 and the first frame (host kit, P32-16, D-033)
+    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    defer session.deinit();
 
     window.set_cue_banner("The Living Village: Watch autonomous drives, rumors, and justice unfold!", 180);
 
     var is_running = true;
-    var is_paused = false;
-    var last_tick_time = std.time.milliTimestamp();
     var last_logged_chronicle: usize = 0;
 
     while (is_running) {
-        const current_frame = display_bridge.get_frame();
-        const action = window.poll_events(current_frame);
-        _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
+        const action = window.poll_events(session.frame());
 
-        switch (action) {
+        if (action == .rewind) {
+            // This proof's [R] returns to the tick 0 baseline rather than one step back.
+            if ((try session.jump_to(0)) != null) window.set_cue_banner("Rewound to Tick 0 baseline!", 120);
+        } else if (try session.handle_common(action)) {} else switch (action) {
             .quit => is_running = false,
-            .toggle_pause => is_paused = !is_paused,
-            .step_tick => {
-                if (is_paused) {
-                    try sim.step_simulation(&world, &spatial, &vm);
-                    var snap = std.ArrayList(u8).init(allocator);
-                    try world.save_state(snap.writer());
-                    try history_snapshots.append(snap);
-                    display_bridge.set_max_history_tick(world.current_tick);
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                }
-            },
             .walk_player => |wp_id| {
                 _ = try spatial.walk_to(sim.sheriff, wp_id);
             },
             .examine_hotspot => |hs_idx| {
-                if (hs_idx < current_frame.hotspot_count) {
-                    const hs = &current_frame.hotspots[hs_idx];
+                if (hs_idx < session.frame().hotspot_count) {
+                    const hs = &session.frame().hotspots[hs_idx];
                     window.set_cue_banner(hs.get_examine_text(), 150);
                 }
             },
             .interact_actor => |ia| {
-                if (ia.actor_index < current_frame.entity_count) {
-                    const target_ent = current_frame.entities[ia.actor_index];
+                if (ia.actor_index < session.frame().entity_count) {
+                    const target_ent = session.frame().entities[ia.actor_index];
                     const name = target_ent.get_name();
                     const hunger = sim.get_hunger(&world, target_ent.entity);
                     const energy = sim.get_energy(&world, target_ent.entity);
@@ -1077,25 +1055,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 display_bridge.capture_frame(&world, &spatial, &vm);
                 display_bridge.swap();
             },
-            .rewind => {
-                if (history_snapshots.items.len > 0) {
-                    var fbs = std.io.fixedBufferStream(history_snapshots.items[0].items);
-                    try world.restore_state(fbs.reader());
-                    window.set_cue_banner("Rewound to Tick 0 baseline!", 120);
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                }
-            },
-            .scrub_to_tick => |target_tick| {
-                is_paused = true;
-                for (history_snapshots.items) |snap| {
-                    var fbs = std.io.fixedBufferStream(snap.items);
-                    try world.restore_state(fbs.reader());
-                    if (world.current_tick == target_tick) break;
-                }
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.swap();
-            },
             .repl_command => |rc| {
                 const cmd_str = rc.buf[0..rc.len];
                 const res = repl_engine.execute(cmd_str);
@@ -1106,9 +1065,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             else => {},
         }
 
-        const now = std.time.milliTimestamp();
-        if (!is_paused and (now - last_tick_time >= window.current_tick_interval_ms)) {
-            last_tick_time = now;
+        // The village steps the VM and its emergent systems together, then records the tick.
+        if (session.tick_due()) {
             try sim.step_simulation(&world, &spatial, &vm);
 
             if (sim.chronicle_count > last_logged_chronicle) {
@@ -1117,16 +1075,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 last_logged_chronicle = sim.chronicle_count;
             }
 
-            var snap = std.ArrayList(u8).init(allocator);
-            try world.save_state(snap.writer());
-            try history_snapshots.append(snap);
-            display_bridge.set_max_history_tick(world.current_tick);
-
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
+            try session.record_now();
         }
 
-        window.render_frame(display_bridge.get_frame(), is_paused);
+        session.render();
         std.time.sleep(16 * std.time.ns_per_ms);
     }
 }
