@@ -11,13 +11,14 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | World Store Unit Tests | `zig test src/world.zig` | Fact insertion, TTL expiration pruning, queries, `memcpy` snapshots | VM execution or parser | < 2s, Zig compiler |
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
 | WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm` | `WasmCanvas` RGBA8888 framebuffer rendering, browser mouse/keyboard/touch event routing, and `wasm32-freestanding` binary compilation | Live DOM rendering | < 3s, Zig compiler |
+| Separation Lint | `python3 tools/check_separation.py` (also inside `check_docs.py`); `--report` for every hit | Proof names in non-test `src/` code do not exceed `tools/separation_baseline.json` | That engine code is free of proof *logic* expressed without proof names; audits cover that | < 1s, Python 3 |
 | Engine Tests | `zig build test-engine` | Every test reachable from `src/root.zig` and `src/main.zig` | Proof scenarios | < 5s, Zig compiler, SDL2 headers |
 | Proof-of-Concept Tests | `zig build test-proofs` | Every proof's scripted run and rewind (`proofs/main.zig` imports each proof) | Engine internals not exercised by a proof | < 5s, Zig compiler, SDL2 headers |
 | Full Engine Test Suite | `zig build test` | End-to-end integration across compiler, VM, and spatial graph | Peripheral display output (Raylib/Sokol) | < 5s, Zig compiler |
 
 **The fast set** (before every commit):
 ```bash
-python3 tools/check_docs.py
+python3 tools/check_docs.py          # includes the separation lint
 zig test src/world.zig
 ```
 

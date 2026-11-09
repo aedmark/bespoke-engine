@@ -211,6 +211,21 @@ def main():
         except Exception as e:
             errors.append(f"scheme/bespoke.manual.json: failed to validate manual: {e}")
 
+    # Engine / proof separation lint (tools/check_separation.py, P32-06, D-031): proof names in
+    # non-test src/ code may not exceed the committed baseline; a stale (too high) baseline warns.
+    sep_tool = ROOT / "tools" / "check_separation.py"
+    if sep_tool.is_file():
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("check_separation", sep_tool)
+            sep = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sep)
+            s_errors, s_notes = sep.check(ROOT)
+            errors.extend(f"separation: {e}" for e in s_errors)
+            warnings.extend(f"separation: {n}" for n in s_notes)
+        except Exception as e:
+            errors.append(f"tools/check_separation.py: failed to run: {e}")
+
     for line in errors:
         print(f"ERROR {line}")
     for line in warnings:

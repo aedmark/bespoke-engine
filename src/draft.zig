@@ -7,7 +7,7 @@ const EntityId = world_mod.EntityId;
 /// A draft is a fixed ordered sequence of `DRAFT_LEN` diatonic notes. Draft tables are
 /// compile-time program data owned by `CompiledProgram`, never world facts: the world arena
 /// stays a pure memory copy on save/restore (D-003), and what a caster has *learned* is an
-/// ordinary relational fact the script asserts (e.g. `Knows(Player, Kindle)`).
+/// ordinary relational fact the script asserts (e.g. `Knows(Player, SomeDraft)`).
 pub const DRAFT_LEN: usize = 4;
 
 /// The seven diatonic staff pitches. Values are stable: they are serialized in `.bspk`

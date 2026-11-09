@@ -1,7 +1,7 @@
 //! `bespoke`: the engine CLI. Runs, compiles, and checks BeSpoke scripts and packages.
 //!
-//! This binary carries no scenario content. Proofs of concept (The Tavern Heist and the other
-//! vertical slices) live in `proofs/` and build as `bespoke-proofs` (D-031).
+//! This binary carries no scenario content. Proofs of concept (vertical slices) live in
+//! `proofs/` and build as `bespoke-proofs` (D-031).
 const std = @import("std");
 const bespoke = @import("root.zig");
 

@@ -30,7 +30,7 @@ pub const RelationKind = enum(u16) {
 
 /// Semantics of a relation (D-007).
 pub const RelationType = enum(u8) {
-    /// Multiple facts allowed per subject (e.g. Carries(Guard, ItemA) and Carries(Guard, ItemB)).
+    /// Multiple facts allowed per subject (e.g. Carries(Holder, ItemA) and Carries(Holder, ItemB)).
     set = 0,
     /// Single scalar value or entity per subject; remember auto-overwrites existing value (e.g. Alertness, Gold).
     property = 1,

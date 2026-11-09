@@ -9,7 +9,7 @@ pub const Notes = draft_mod.Notes;
 
 pub const FactPattern = struct {
     relation: []const u8,
-    args: []const []const u8, // e.g. ["Guard", "Cheese"] or ["victim", "_"]
+    args: []const []const u8, // e.g. ["Holder", "Item"] or ["victim", "_"]
 };
 
 pub const Expr = union(enum) {
@@ -1035,7 +1035,7 @@ pub const Parser = struct {
                     return Expr{ .has_fact = .{ .relation = state, .args = pat_args } };
                 }
             } else if (self.current.tag == .kw_say) {
-                try self.advance(); // e.g. "Guybrush says 'Ptooie!'"
+                try self.advance(); // e.g. "Hero says 'Hello!'"
                 const txt = if (self.current.tag == .string_literal)
                     (try self.expect(.string_literal)).slice
                 else

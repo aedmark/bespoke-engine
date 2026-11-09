@@ -192,7 +192,7 @@ pub const VM = struct {
         return id;
     }
 
-    /// Spawns a hyper-temporal routine fiber owned by a future or meta-temporal entity (e.g. Frank the Rabbit) (P31-01, D-027).
+    /// Spawns a hyper-temporal routine fiber owned by a future or meta-temporal entity (e.g. a guide acting from outside the timeline) (P31-01, D-027).
     /// Hyper-temporal fibers execute with priority 255 to deliver guidance across timeline boundaries.
     pub fn spawn_hyper_temporal_routine(self: *VM, owner: EntityId, entry_pc: usize) !FiberId {
         const id = self.next_fiber_id;

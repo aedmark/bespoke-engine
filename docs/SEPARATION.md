@@ -53,18 +53,18 @@ Extraction is test-first and behaviour-preserving.
 | Check | What it enforces | Status |
 | --- | --- | --- |
 | Module boundary | `src/` cannot import `proofs/` (compiler: "import of file outside module path") | In place (P32-01) |
-| Separation lint | Names declared by each proof (cast, props, marks, scenes, drafts, and `lookup_entity` literals) must not appear in non-test `src/` code beyond a committed baseline; the baseline may only shrink | Planned (P32-06) |
+| Separation lint | Names declared by each proof (cast, props, marks, scenes, drafts, and `lookup_entity` literals) must not appear in non-test `src/` code beyond a committed baseline; the baseline may only shrink | In place (P32-06): `python3 tools/check_separation.py`, also run by `tools/check_docs.py` |
 | Characterization | Each proof's headless run produces a normalized transcript and final-state digest that matches a committed golden file | Planned (P32-07) |
 | Second-theme tests | Each extracted mechanic runs under a second, unrelated configuration | Per extraction |
 | Review checklist | No proof names in new engine code; new engine code named by function; proof keeps only content and assertions | Every change |
 
-**Separation lint design (P32-06).** `tools/check_separation.py`, stdlib Python like the other tools. It parses names from each proof's embedded script and `lookup_entity("...")` literals, ignores a short list of generic words, scans `src/**/*.zig` up to the first `test "` block, and compares hit counts per file and proof against `tools/separation_baseline.json`. More hits than baseline is an error; fewer prints a reminder to lower the baseline. It runs in the fast test set and in `tools/check_docs.py`.
+**Separation lint (P32-06).** `tools/check_separation.py`, stdlib Python like the other tools. It parses names from each proof's embedded script (scene, cast, props, marks, entity, and draft declarations) and `lookup_entity("...")` literals, skips names under four characters and a two-entry generic list (`Player`, `Scene`, each with a recorded reason), blanks out top-level `test` blocks with brace matching that ignores strings and comments, and counts whole-word matches in `src/**/*.zig`, comments included. Counts per file and proof are compared with `tools/separation_baseline.json`: more is an error, fewer is a warning to lower the baseline. `--report` lists every hit as `file:line`; `--update-baseline` only lowers counts unless `--accept-increase` is given. A name declared by two proofs (`Guybrush`) counts once for each. Tests: `tests/test_check_separation.py`.
 
 **Characterization design (P32-07).** Each `run_headless` already writes its steps to a writer. A `zig build test-proofs` test runs each proof into a buffer, strips run-varying lines (paths, timings), and also hashes the final fact table, then compares both with `proofs/golden/<proof>.txt`. Updating a golden file is an explicit, reviewed change.
 
 ## Baseline inventory (2026-11-09)
 
-Leak hits: occurrences of each proof's declared names in non-test engine code, from a one-off run of the lint design above. Comments are included.
+Leak hits: occurrences of each proof's declared names in non-test engine code, from a one-off survey before the lint existed. The committed source of truth is now `tools/separation_baseline.json` (339 hits after P32-06 removed 8 example comments from `world.zig`, `vm.zig`, `draft.zig`, and `parser.zig`, which are now at zero).
 
 | Proof | Engine hits | Engine files touched |
 | --- | ---: | --- |
