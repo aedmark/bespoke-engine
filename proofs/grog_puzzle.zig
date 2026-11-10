@@ -25,13 +25,13 @@ pub const GROG_PUZZLE_SCRIPT =
     \\
     \\degradation CausticGrogCups:
     \\  substance CausticGrog
-    \\  stage Sound 4
+    \\  stage GrogSound 4
     \\  stage Pitted 3
     \\  stage Buckling 2
-    \\  stage Failed 0
-    \\  vessel CupA 10 10 Sound
-    \\  vessel CupB 10 0 Sound
-    \\  vessel CupC 10 0 Sound
+    \\  stage GrogFailed 0
+    \\  vessel CupA 10 10 GrogSound
+    \\  vessel CupB 10 0 GrogSound
+    \\  vessel CupC 10 0 GrogSound
     \\  spill 1
     \\
     \\on cue LooksAt(Mara, GrogBarrel):
@@ -64,8 +64,8 @@ const Ids = struct {
     cup_b: bespoke.EntityId,
     cup_c: bespoke.EntityId,
     lock: bespoke.EntityId,
-    sound: bespoke.EntityId,
-    failed: bespoke.EntityId,
+    grog_sound: bespoke.EntityId,
+    grog_failed: bespoke.EntityId,
     barrel_wp: u16,
     gallery_one_wp: u16,
     gallery_two_wp: u16,
@@ -83,8 +83,8 @@ fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .cup_b = world.lookup_entity("CupB").?,
         .cup_c = world.lookup_entity("CupC").?,
         .lock = world.lookup_entity("CellLock").?,
-        .sound = world.lookup_entity("Sound").?,
-        .failed = world.lookup_entity("Failed").?,
+        .grog_sound = world.lookup_entity("GrogSound").?,
+        .grog_failed = world.lookup_entity("GrogFailed").?,
         .barrel_wp = spatial.graph.find_waypoint_in_room(scene, "BarrelMark").?,
         .gallery_one_wp = spatial.graph.find_waypoint_in_room(scene, "GalleryOne").?,
         .gallery_two_wp = spatial.graph.find_waypoint_in_room(scene, "GalleryTwo").?,
@@ -98,7 +98,7 @@ fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     try spatial.graph.connect(ids.barrel_wp, ids.gallery_one_wp, null);
     try spatial.graph.connect(ids.gallery_one_wp, ids.gallery_two_wp, null);
     try spatial.graph.connect(ids.gallery_two_wp, ids.lock_wp, null);
-    spatial.hotspots.clearRetainingCapacity();
+    spatial.clear_hotspots();
     try spatial.add_hotspot(ids.barrel, scene, .{ .x = 0, .y = -4 }, 7, "Grog Barrel", "A tarred barrel breathing sharp green fumes.");
     try spatial.add_hotspot(ids.lock, scene, .{ .x = 60, .y = -3 }, 7, "Cell Lock", "A thick iron lock between Ivo and the docks.");
     try spatial.register_entity(ids.mara, ids.barrel_wp, 10);
@@ -157,7 +157,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     try writer.writeAll("[Failure demonstration] Mara waits beside the barrel.\n");
     var guard: usize = 0;
-    while (world.get_property(ids.cup_a, system.rel.stage).? != ids.failed.to_int() and guard < 12) : (guard += 1) {
+    while (world.get_property(ids.cup_a, system.rel.stage).? != ids.grog_failed.to_int() and guard < 12) : (guard += 1) {
         _ = try host.tick(&vm, &compiled);
     }
     try expect_true(guard < 12, error.CupDidNotFail);

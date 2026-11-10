@@ -28,6 +28,7 @@ const goat_puzzle = @import("goat_puzzle.zig");
 const dott_puzzle = @import("dott_puzzle.zig");
 const darko_puzzle = @import("darko_puzzle.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
+const grog_puzzle = @import("grog_puzzle.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -43,6 +44,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "dott_puzzle", .script = dott_puzzle.DOTT_PUZZLE_SCRIPT },
     .{ .name = "darko_puzzle", .script = darko_puzzle.DARKO_PUZZLE_SCRIPT },
     .{ .name = "loom_puzzle", .script = loom_puzzle.BELL_TOWER_SCRIPT },
+    .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
 };
 
 /// A `scene:` block's name and `cast:` line, read from script text. The compiler does not
@@ -69,16 +71,16 @@ fn next_scene(lines: *std.mem.SplitIterator(u8, .scalar)) ?SceneCast {
 /// Proof status a scene's art may react to, by stable name. P32-03 moves this status out of
 /// `RenderFrame`; only `Status.apply` changes with it, never the names.
 const STATUS_VARIANTS = [_][]const u8{
-    "spit_is_thick",          "flags_tampered",       "wind_blowing",           "organiser_distracted",
-    "fence_taped",            "fence_has_hair",       "cat_startled",           "cat_hair_collected",
-    "gabriel_disguised",      "bike_rented",          "goat_is_tangled",        "goat_is_charging",
-    "goat_is_retreating",     "george_knocked_down",  "plough_moved",           "dott_tree_chopped",
-    "dott_wine_aged",         "dott_battery_charged", "dott_flag_sewn",         "dott_laverne_freed",
-    "dott_laverne_disguised", "dott_puzzle_solved",   "tangent_active",         "singularity_collapsed",
+    "spit_is_thick",          "flags_tampered",         "wind_blowing",         "organiser_distracted",
+    "fence_taped",            "fence_has_hair",         "cat_startled",         "cat_hair_collected",
+    "gabriel_disguised",      "bike_rented",            "goat_is_tangled",      "goat_is_charging",
+    "goat_is_retreating",     "george_knocked_down",    "plough_moved",         "dott_tree_chopped",
+    "dott_wine_aged",         "dott_battery_charged",   "dott_flag_sewn",       "dott_laverne_freed",
+    "dott_laverne_disguised", "dott_puzzle_solved",     "tangent_active",       "singularity_collapsed",
     "darko_water_flooded",    "darko_letter_delivered", "darko_vortex_reached", "darko_artifact_returned",
-    "darko_puzzle_solved",    "bell_brazier_lit",     "bell_chain_loosed",      "bell_fork_taken",
-    "bell_ringing",           "bell_beacon_lit",      "village_crime_active",   "village_warrant_active",
-    "village_arrest_made",    "cheese_holder",        "charmed_target",         "countdown",
+    "darko_puzzle_solved",    "bell_brazier_lit",       "bell_chain_loosed",    "bell_fork_taken",
+    "bell_ringing",           "bell_beacon_lit",        "village_crime_active", "village_warrant_active",
+    "village_arrest_made",    "cheese_holder",          "charmed_target",       "countdown",
     "villagers",
 };
 

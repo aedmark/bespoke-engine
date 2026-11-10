@@ -25,17 +25,18 @@ const SFX_FRAMES: usize = 20_000;
 
 /// Every scene name the proofs use, plus an empty and an unknown name.
 const SCENES = [_][]const u8{
-    "",                        "Nowhere In Particular",
-    "Tavern",                  "CellarRoom",
-    "Spitting Competition",    "Hotel Corridor",
-    "Hotel Garden",            "Bike Rental Shop",
-    "High Road",               "Sword Master Sanctuary",
-    "Scumm Bar",               "Living Village",
+    "",                           "Nowhere In Particular",
+    "Tavern",                     "CellarRoom",
+    "Spitting Competition",       "Hotel Corridor",
+    "Hotel Garden",               "Bike Rental Shop",
+    "High Road",                  "Sword Master Sanctuary",
+    "Scumm Bar",                  "Living Village",
     "Lochmarne Castle Courtyard", "Templar Crypt",
-    "Colonial Workshop",       "Motel Lobby",
-    "Dystopian Guard Post",    "Suburban Bedroom",
-    "Middlesex High School",   "Tangent Vortex Ridge",
-    "Bell Tower Base",         "Bell Tower Belfry",
+    "Colonial Workshop",          "Motel Lobby",
+    "Dystopian Guard Post",       "Suburban Bedroom",
+    "Middlesex High School",      "Tangent Vortex Ridge",
+    "Bell Tower Base",            "Bell Tower Belfry",
+    "Saltglass Stockade",
 };
 
 /// The operations the record needs from the sound system. P32-02d changes how a sound is
@@ -43,11 +44,11 @@ const SCENES = [_][]const u8{
 const Sounds = struct {
     /// Effect labels, in the order the golden records them.
     const sfx_names = [_][]const u8{
-        "footstep",     "pickup",       "combine",      "horn",
-        "splash",       "sword_clash",  "alert",        "dialogue_blip",
-        "click",        "whistle",      "goat_bleat",   "thud",
-        "toilet_flush", "snip_shears",  "wood_chop",    "distaff_note",
-        "weave_success", "weave_fizzle",
+        "footstep",      "pickup",       "combine",    "horn",
+        "splash",        "sword_clash",  "alert",      "dialogue_blip",
+        "click",         "whistle",      "goat_bleat", "thud",
+        "toilet_flush",  "snip_shears",  "wood_chop",  "distaff_note",
+        "weave_success", "weave_fizzle", "sizzle",
     };
 
     fn synth() audio.ChiptuneSynth {

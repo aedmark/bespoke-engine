@@ -23,6 +23,7 @@ const goat_puzzle = @import("goat_puzzle.zig");
 const dott_puzzle = @import("dott_puzzle.zig");
 const darko_puzzle = @import("darko_puzzle.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
+const grog_puzzle = @import("grog_puzzle.zig");
 
 const Writer = std.ArrayList(u8).Writer;
 
@@ -52,6 +53,7 @@ const proofs = [_]struct { name: []const u8, run: RunFn }{
     .{ .name = "dott_puzzle", .run = bind(dott_puzzle.run_headless) },
     .{ .name = "darko_puzzle", .run = bind(darko_puzzle.run_headless) },
     .{ .name = "loom_puzzle", .run = bind(loom_puzzle.run_headless) },
+    .{ .name = "grog_puzzle", .run = bind(grog_puzzle.run_headless) },
 };
 
 fn first_difference(expected: []const u8, actual: []const u8) struct { line: usize, want: []const u8, got: []const u8 } {

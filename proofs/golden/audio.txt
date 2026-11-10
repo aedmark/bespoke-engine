@@ -16,6 +16,7 @@ sfx/wood_chop: 9f17da4eda8a1fd5
 sfx/distaff_note: fc7259092b8e721a
 sfx/weave_success: 03007da60f6af222
 sfx/weave_fizzle: d3511eb9e2f7a774
+sfx/sizzle: 6d187e1f53af96e2
 note/0: fc7259092b8e721a
 note/1: 99429071a2cd6a58
 note/2: 939b90b924edfbae
@@ -57,3 +58,4 @@ scene/Middlesex High School: tavern
 scene/Tangent Vortex Ridge: tavern
 scene/Bell Tower Base: bell_tower
 scene/Bell Tower Belfry: bell_tower
+scene/Saltglass Stockade: tavern

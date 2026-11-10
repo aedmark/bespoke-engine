@@ -14,6 +14,7 @@ pub const goat_puzzle = @import("goat_puzzle.zig");
 pub const dott_puzzle = @import("dott_puzzle.zig");
 pub const darko_puzzle = @import("darko_puzzle.zig");
 pub const loom_puzzle = @import("loom_puzzle.zig");
+pub const grog_puzzle = @import("grog_puzzle.zig");
 
 const Proof = enum {
     tavern,
@@ -25,6 +26,7 @@ const Proof = enum {
     dott,
     darko,
     loom,
+    grog,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -53,6 +55,8 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "loom", .proof = .loom },
     .{ .name = "bell-tower", .proof = .loom },
     .{ .name = "drafts", .proof = .loom },
+    .{ .name = "grog", .proof = .grog },
+    .{ .name = "caustic-grog", .proof = .grog },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -78,6 +82,7 @@ const usage =
     \\  --dott               Day of the Tentacle Trio (party, item transfer, causality)
     \\  --darko              The Middlesex Anomaly (temporal hypervisor, conduits)
     \\  --loom               The Bell Tower (musical drafts, distaff)
+    \\  --grog               Caustic Grog (container degradation, pours, spill)
     \\
 ;
 
@@ -126,6 +131,7 @@ pub fn main() !void {
         .dott => if (headless) try dott_puzzle.run_headless(allocator, stdout) else try dott_puzzle.run_interactive(allocator),
         .darko => if (headless) try darko_puzzle.run_headless(allocator, stdout) else try darko_puzzle.run_interactive(allocator),
         .loom => if (headless) try loom_puzzle.run_headless(allocator, stdout) else try loom_puzzle.run_interactive(allocator, stdout),
+        .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
     }
 }
 
@@ -139,6 +145,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = dott_puzzle;
     _ = darko_puzzle;
     _ = loom_puzzle;
+    _ = grog_puzzle;
     std.testing.refAllDecls(@This());
 }
 

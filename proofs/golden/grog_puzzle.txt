@@ -1,0 +1,26 @@
+===================================================================
+       BeSpoke Engine: Caustic Grog (Container Degradation)        
+       (TTL Stages * Atomic Pours * Transit Spill * Rewind)        
+===================================================================
+
+[Failure demonstration] Mara waits beside the barrel.
+  -> Cup A: GrogFailed, volume 0, failed at waypoint 1.
+
+[Rewind] Restore the opening before corrosion began.
+  -> Cup A: GrogSound, volume 10; failure fact absent.
+
+[Save] Round-trip World, Spatial, and VM before the sprint.
+  -> Restored tick 1, Cup A volume 10, Mara at BarrelMark.
+
+[Sprint] Run for the lock, transferring before each cup fails.
+  -> Gallery One: Cup A has 8 measures (GrogSound).
+  -> Mara: "Cup A hisses. I throw the grog into Cup B without losing a drop."
+  -> Gallery Two: Cup B has 6 measures (GrogSound).
+  -> Mara: "Cup B starts to pit. Cup C gets the whole burning measure."
+  -> LockMark: Cup C delivers 5 measures (GrogSound); threshold is 4.
+  -> Ivo: "The grog bites through the lock. Salt air at last!"
+
+===================================================================
+  VERIFICATION COMPLETE: Ivo is free. Volume and history agree.    
+===================================================================
+

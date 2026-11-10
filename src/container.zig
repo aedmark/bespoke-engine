@@ -194,7 +194,7 @@ pub const ContainerSystem = struct {
             if (next == self.config.stages.len - 1) {
                 _ = world.forget(vessel, self.rel.contains, self.config.substance.to_int());
                 try world.remember(vessel, self.rel.volume, 0, 0);
-                if (spatial) |space| if (space.get_current_waypoint(vessel)) |waypoint| {
+                if (spatial) |space| if (self.location(world, space, vessel)) |waypoint| {
                     try world.remember(vessel, self.rel.failed_at, waypoint, 0);
                 };
             } else {
@@ -220,6 +220,18 @@ pub const ContainerSystem = struct {
     fn arm_exposure(self: *const ContainerSystem, world: *World, vessel: EntityId, stage: Stage) !void {
         if (stage.duration_ticks == 0) return;
         try world.remember(vessel, self.rel.exposure, stage.entity.to_int(), stage.duration_ticks);
+    }
+
+    /// Where a governed vessel is when it fails. A carried vessel has no agent record of its
+    /// own, so its terminal location is its holder's waypoint; the holder may be mid-walk, and
+    /// the waypoint it currently occupies is the honest answer.
+    fn location(self: *const ContainerSystem, world: *const World, spatial: *const SpatialSystem, vessel: EntityId) ?u16 {
+        _ = self;
+        if (spatial.get_current_waypoint(vessel)) |waypoint| return waypoint;
+        const carries = world.lookup_relation("Carries") orelse return null;
+        var carriers = world.query(null, carries, vessel.to_int());
+        while (carriers.next()) |fact| if (spatial.get_current_waypoint(fact.subject)) |waypoint| return waypoint;
+        return null;
     }
 
     fn is_moving(self: *const ContainerSystem, world: *const World, spatial: *const SpatialSystem, vessel_entity: EntityId) bool {
@@ -484,4 +496,30 @@ test "P23-02: a carried vessel spills per moving tick and stops degrading when e
     try testing.expect(!world.has_fact(vessel, system.rel.contains, substance.to_int()));
     try testing.expect(!world.has_fact(vessel, system.rel.exposure, null));
     try testing.expectEqual(sound.to_int(), world.get_property(vessel, system.rel.stage).?);
+}
+
+test "P23-02: a carried vessel fails at its holder's waypoint" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const room = try world.intern_entity("TestRoom");
+    const bench = try spatial.graph.add_waypoint(room, 10, 0, "Bench");
+    const carrier = try world.intern_entity("Carrier");
+    try spatial.register_entity(carrier, bench, 1);
+    const substance = try world.intern_entity("TestReagent");
+    const vessel = try world.intern_entity("TestVial");
+    const sound = try world.intern_entity("Sound");
+    const failed = try world.intern_entity("Failed");
+    const stages = [_]Stage{ .{ .entity = sound, .duration_ticks = 1 }, .{ .entity = failed, .duration_ticks = 0 } };
+    const vessels = [_]Vessel{.{ .entity = vessel, .capacity = 2, .initial_volume = 1 }};
+    const system = try ContainerSystem.init(&world, .{ .substance = substance, .stages = &stages, .vessels = &vessels });
+    const carries = try world.intern_relation("Carries", .set);
+    try world.remember(carrier, carries, vessel.to_int(), 0);
+
+    _ = world.step_tick();
+    try system.step(&world, &spatial);
+    try testing.expectEqual(failed.to_int(), world.get_property(vessel, system.rel.stage).?);
+    try testing.expectEqual(@as(u16, bench), world.get_property(vessel, system.rel.failed_at).?);
 }

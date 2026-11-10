@@ -123,3 +123,8 @@ loom_puzzle/Bell Tower Belfry +singularity_collapsed: e60540ebed56646e
 loom_puzzle/Bell Tower Belfry +bell_chain_loosed: 41113a3485954538
 loom_puzzle/Bell Tower Belfry +bell_ringing: 3dbf369612b55076
 loom_puzzle/Bell Tower Belfry +bell_beacon_lit: 339a8653f716fdda
+thumb/grog_puzzle/Saltglass Stockade: 913799b2e824834d
+grog_puzzle/Saltglass Stockade: 803cdc99aa61f30a
+grog_puzzle/Saltglass Stockade +tangent_active: ebc97ce0fc4a2ae3
+grog_puzzle/Saltglass Stockade +singularity_collapsed: 92fc68d973cd8350
+grog_puzzle/Saltglass Stockade +countdown: 359c6c920ac4c6b0

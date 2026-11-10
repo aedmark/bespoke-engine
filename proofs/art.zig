@@ -2947,6 +2947,7 @@ pub const Sfx = enum(u8) {
     toilet_flush,
     snip_shears,
     wood_chop,
+    sizzle,
 };
 
 pub fn track(t: Track) u8 {
@@ -2995,6 +2996,8 @@ const SFX = blk: {
     t[@intFromEnum(Sfx.snip_shears)] = .{ .note1 = 84, .duty = 0x40000000, .sweep = -1200, .env = 26000, .decay = 18, .samples = 2200, .terms = &.{ wave(.osc1, .pulse, 1), .{ .source = .noise } }, .mix = .{ .shift = 1 } };
     // Axe on timber (P21-03, D-025)
     t[@intFromEnum(Sfx.wood_chop)] = .{ .note1 = 36, .sweep = -2200, .env = 32000, .decay = 24, .samples = 2000, .terms = &.{ .{ .source = .noise, .weight = 2 }, wave(.osc1, .triangle, 2) }, .mix = .{ .shift = 2 } };
+    // Corrosive hiss: noise over a bubbling saw tone (P23-03)
+    t[@intFromEnum(Sfx.sizzle)] = .{ .note1 = 66, .sweep = 900, .env = 24000, .decay = 4, .samples = 7000, .terms = &.{ .{ .source = .noise, .weight = 3 }, wave(.osc1, .saw, 1) }, .mix = .{ .div = 4 } };
     break :blk t;
 };
 

@@ -788,6 +788,35 @@
             "snapshot-time-travel",
             "multi-scene-transitions-spatial-partitioning"
           ]
+        },
+        {
+          "id": "container-degradation-and-caustic-grog",
+          "title": "Container Degradation and The Caustic Grog Sprint",
+          "summary": "Script-declared vessels lose volume through movement spill and advance through ordered TTL damage stages to a terminal failure location, while atomic pours conserve every remaining measure.",
+          "synopsis": "degradation CausticGrogCups: stage GrogSound 4 ... vessel CupA 10 10 GrogSound  |  spill 1  |  zig build run-proof -- --grog [--headless]",
+          "tags": ["containers", "degradation", "ttl", "spill", "pours", "caustic-grog"],
+          "what": "Adds fact-backed container lifecycles: a top-level `degradation` declaration names a substance, ordered damage stages with exposure durations, vessels with capacities and starting stages, and a per-tick spill rate. The original Caustic Grog sprint carries corrosive grog from a dockside barrel to a prison lock before three cups dissolve.",
+          "how": [
+            "`ContainerSystem.init` validates the declaration, interns its fact vocabulary, and seeds each vessel's stage, volume, and exposure deadline as World facts; `host.tick` advances the lifecycle automatically.",
+            "`ContainerSystem.pour` moves the source's whole volume into one empty compatible vessel or changes nothing. Damage stays with each vessel and only the destination's exposure deadline restarts.",
+            "Moving spill follows `Carries(holder, vessel)` and the holder's motor state; a vessel that reaches its terminal stage empties and records its holder's waypoint as the failure location.",
+            "The proof demonstrates terminal failure before the sprint, a rewind to the pristine opening, a full World/Spatial/VM save round-trip, two exact pours, transit spill, and delivery of at least four measures to the lock."
+          ],
+          "why": "Container decay belongs to the same relational spine as every other mechanic: stage, volume, deadline, and failure location are facts, so snapshots, rewinds, and saves carry the whole cascade without subsystem-specific state.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-050", "target": "docs/DECISIONS.md#d-050", "kind": "decision"},
+            {"label": "Architectural Decision D-051", "target": "docs/DECISIONS.md#d-051", "kind": "decision"},
+            {"label": "Container Degradation System", "target": "src/container.zig", "kind": "source"},
+            {"label": "Caustic Grog Scenario", "target": "proofs/grog_puzzle.zig", "kind": "source"},
+            {"label": "Host Tick Lifecycle", "target": "src/host.zig", "kind": "source"}
+          ],
+          "related": [
+            "ttl-expiration-triggers",
+            "snapshot-time-travel",
+            "multi-scene-transitions-spatial-partitioning",
+            "cue-dispatch-and-interruption"
+          ]
         }
       ]
     },

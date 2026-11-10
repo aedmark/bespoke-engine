@@ -119,6 +119,7 @@ zig build test-proofs                     # every proof's tests
 | `--dott` | Day of the Tentacle Trio | Party switching, conserved item transfer, cross-era causality |
 | `--darko` | The Middlesex Anomaly | Copy-on-write tangent worlds, countdown budgets, path conduits |
 | `--loom` | The Bell Tower | Musical drafts, reversed drafts, distaff reach, in-script weaves |
+| `--grog` | Caustic Grog | Script-declared vessel degradation, atomic pours, movement spill |
 
 ---
 
