@@ -57,6 +57,7 @@ pub const TokenTag = enum {
     kw_weave,
     kw_society,
     kw_duel,
+    kw_degradation,
 
     // Identifiers & Literals
     identifier,
@@ -427,6 +428,7 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "weave", .kw_weave },
         .{ "society", .kw_society },
         .{ "duel", .kw_duel },
+        .{ "degradation", .kw_degradation },
     });
 
     return map.get(ident) orelse .identifier;

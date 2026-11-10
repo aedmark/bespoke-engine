@@ -18,6 +18,7 @@ pub const WhenEdge = parser_mod.WhenEdge;
 const draft_mod = @import("../draft.zig");
 const society_mod = @import("../society.zig");
 const duel_mod = @import("../duel.zig");
+const container_mod = @import("../container.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
@@ -43,12 +44,15 @@ pub const CompiledProgram = struct {
     /// Script-declared reusable subsystem configuration (P32-22, P32-24).
     societies: std.ArrayList(society_mod.Declaration),
     duels: std.ArrayList(duel_mod.Declaration),
+    degradations: std.ArrayList(container_mod.Declaration),
 
     pub fn deinit(self: *CompiledProgram) void {
         for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
         self.societies.deinit();
         for (self.duels.items) |*duel| duel.deinit_owned(self.chunk.allocator);
         self.duels.deinit();
+        for (self.degradations.items) |*degradation| degradation.deinit_owned(self.chunk.allocator);
+        self.degradations.deinit();
         self.drafts.deinit();
         self.chunk.deinit();
         self.routine_entries.deinit();
@@ -177,6 +181,7 @@ pub const Codegen = struct {
     reactive_rules: std.ArrayList(CompiledWhenRule),
     societies: std.ArrayList(society_mod.Declaration),
     duels: std.ArrayList(duel_mod.Declaration),
+    degradations: std.ArrayList(container_mod.Declaration),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -192,6 +197,7 @@ pub const Codegen = struct {
             .reactive_rules = std.ArrayList(CompiledWhenRule).init(allocator),
             .societies = std.ArrayList(society_mod.Declaration).init(allocator),
             .duels = std.ArrayList(duel_mod.Declaration).init(allocator),
+            .degradations = std.ArrayList(container_mod.Declaration).init(allocator),
         };
     }
 
@@ -281,6 +287,7 @@ pub const Codegen = struct {
 
         for (ast.societies.items) |decl| try mut_self.societies.append(try mut_self.compile_society(decl));
         for (ast.duels.items) |decl| try mut_self.duels.append(try mut_self.compile_duel(decl));
+        for (ast.degradations.items) |decl| try mut_self.degradations.append(try mut_self.compile_degradation(decl));
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
@@ -443,6 +450,7 @@ pub const Codegen = struct {
             .drafts = drafts,
             .societies = mut_self.societies,
             .duels = mut_self.duels,
+            .degradations = mut_self.degradations,
         };
     }
 
@@ -656,6 +664,45 @@ pub const Codegen = struct {
             },
             .tiers = tiers,
         };
+    }
+
+    fn compile_degradation(self: *Codegen, decl: parser_mod.DegradationDecl) !container_mod.Declaration {
+        const stages = try self.allocator.alloc(container_mod.Stage, decl.stages.len);
+        errdefer self.allocator.free(stages);
+        for (decl.stages, 0..) |source, i| stages[i] = .{
+            .entity = try self.world.intern_entity(source.name),
+            .duration_ticks = source.duration_ticks,
+        };
+        const vessels = try self.allocator.alloc(container_mod.Vessel, decl.vessels.len);
+        errdefer self.allocator.free(vessels);
+        for (decl.vessels, 0..) |source, i| {
+            var initial_stage: ?usize = null;
+            for (decl.stages, 0..) |stage, si| if (std.mem.eql(u8, stage.name, source.initial_stage)) {
+                initial_stage = si;
+                break;
+            };
+            vessels[i] = .{
+                .entity = try self.world.intern_entity(source.name),
+                .capacity = source.capacity,
+                .initial_volume = source.initial_volume,
+                .initial_stage = initial_stage orelse return error.UnknownDegradationStage,
+            };
+        }
+        const r = decl.relations;
+        const config = container_mod.Config{
+            .substance = try self.world.intern_entity(decl.substance),
+            .stages = stages,
+            .vessels = vessels,
+            .relations = .{
+                .contains = try self.intern_program_text(r[0]),
+                .volume = try self.intern_program_text(r[1]),
+                .stage = try self.intern_program_text(r[2]),
+                .exposure = try self.intern_program_text(r[3]),
+                .failed_at = try self.intern_program_text(r[4]),
+            },
+        };
+        try container_mod.validate(config);
+        return .{ .config = config };
     }
 
     fn compile_stmt(self: *Codegen, stmt: Stmt) !void {
@@ -1531,4 +1578,29 @@ test "P32-22/P32-24: society and duel declarations compile into executable progr
     try testing.expectEqual(@as(u32, 1), world.get_property(rival, duel.tier_rel).?);
     var fatigue = try duel_mod.InquiryFatigue.init(&world, duel_decl.fatigue);
     try testing.expectEqual(@as(?usize, null), try fatigue.record(alice, rival));
+}
+
+test "P23-01: degradation declarations compile into executable container profiles" {
+    const testing = std.testing;
+    const source =
+        \\degradation TestProfile:
+        \\  substance TestReagent
+        \\  stage Sound 3
+        \\  stage Etched 2
+        \\  stage Failed 0
+        \\  vessel TestVial 8 5 Sound
+        \\  relations HoldsReagent ReagentVolume VialState ReagentExposure VialFailedAt
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try @import("../compiler.zig").compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+
+    try testing.expectEqual(@as(usize, 1), compiled.degradations.items.len);
+    const declaration = &compiled.degradations.items[0];
+    const system = try container_mod.ContainerSystem.init(&world, declaration.config);
+    const vial = world.lookup_entity("TestVial").?;
+    try testing.expectEqual(world.lookup_entity("Sound").?.to_int(), world.get_property(vial, system.rel.stage).?);
+    try testing.expectEqual(@as(u32, 5), world.get_property(vial, system.rel.volume).?);
+    try testing.expectEqualStrings("VialState", world.get_relation_meta(system.rel.stage).?.name);
 }

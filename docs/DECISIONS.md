@@ -633,6 +633,23 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Give Darko a proof-local arena selector: rejected because every temporal host needs the same lifecycle boundary.
 **Consequences:** Darko's inventory actions, cue execution, dialogue effects, and loop-closure facts share the arena the hypervisor evaluates. Timeline scrub, rewind, and save/load replace and rebind the branch without leaving a stale VM pointer. Hosts that advance a hypervisor outside `Session.advance` call `Session.sync_active_world` before using the VM; `Session.refresh` does this automatically.
 
+## D-050 Script-Declared Fact-Backed Container Degradation (2026-11-10, status: accepted)
+**Context:** Phase 23 originally named proof-specific mug states inside `World` and placed its proof in `src/`, which conflicts with D-031. The maintainer accepted a generic engine subsystem, temporary stage overrides rather than entity replacement, complete rewind state, script authority, and an engine-owned lifecycle before implementation.
+**Decision:**
+1. `src/container.zig` defines generic degradation profiles. A vessel retains one stable entity; ordered stage entities express its current physical condition. The final stage has zero duration and represents terminal failure.
+2. Contents, volume, stage, exposure deadline, and failure waypoint are World facts. Terminal failure removes the configured substance, sets volume to zero, and records the vessel's current waypoint when available. Reconstructing `ContainerSystem` around restored facts does not reseed or repair them.
+3. A top-level `degradation Name:` declaration owns the substance, stages, vessels, initial volume and stage, capacity, and optional five-name fact vocabulary. `CompiledProgram` owns any number of declarations; proof names and themes do not enter `src/`.
+4. `host.initialize_subsystems` seeds declared profiles before the initial snapshot. `host.tick` initializes idempotently before `VM.step_tick`, then advances degradation before dispatching pending weaves. The stock runner uses the same lifecycle.
+5. Advancement scans the declaration's governed vessels for an absent current-stage exposure fact. It does not consume `World.recently_expired`, whose fixed 16-entry diagnostic ring cannot safely govern simultaneous transitions.
+6. `.bspk` format version 5 appends degradation declarations. The loader bounds counts and validates entity references, capacities, stage order, durations, initial values, and relation text. Versions 1 through 4 remain readable with an empty degradation table.
+7. P23-02 adds atomic pouring and movement spill rules. P23-03 belongs in `proofs/grog_puzzle.zig`; the native proof receives headless, interactive, golden, save, and rewind coverage before any separate browser deck.
+**Alternatives:**
+- Replace the vessel entity at every stage: rejected because inventory and spatial identity would need transfer bookkeeping and a rewind could observe discontinuous ownership.
+- Store timers or volume in a host struct: rejected because World is the ordinary snapshot boundary and the maintainer requires full rewind.
+- Drive degradation through `on_expire` or `recently_expired`: rejected because the expiration ring is bounded and reactive expiration matching does not provide a lossless multi-profile lifecycle.
+- Configure profiles only in proof Zig: rejected because distributable scripts and packages must own game-facing mechanic data.
+**Consequences:** Container degradation is reusable across themes and multiple declarations. Hosts using `host.tick` receive the lifecycle automatically. Direct callers of bare `VM.step_tick` do not advance declared subsystems and remain outside the supported host lifecycle. Package v5 is required to distribute degradation declarations.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

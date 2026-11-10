@@ -14,6 +14,7 @@ const codegen = @import("compiler/codegen.zig");
 const dialogue_mod = @import("dialogue.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 const temporal_mod = @import("temporal_snapshot.zig");
+const container_mod = @import("container.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -25,11 +26,23 @@ const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
 /// Cue id the compiler emits for `say` statements (D-009).
 pub const SAY_CUE_ID: u16 = 2;
 
-/// One host tick: step the VM, then re-dispatch weaves queued by scripts (D-029). Returns how
-/// many in-script weaves were dispatched. Hosts should tick through this, never `step_tick`
-/// alone, or in-script weaves never fire and saves are refused.
+/// Seeds script-declared subsystems into a world. Repeated calls preserve restored fact state.
+pub fn initialize_subsystems(world: *World, compiled: *const CompiledProgram) !void {
+    for (compiled.degradations.items) |declaration| {
+        _ = try container_mod.ContainerSystem.init(world, declaration.config);
+    }
+}
+
+/// One engine lifecycle tick: initialize declared subsystems, step the VM, advance subsystem
+/// rules, then re-dispatch weaves queued by scripts (D-029). Hosts should tick through this,
+/// never `step_tick` alone, or declared simulation rules and in-script weaves will not run.
 pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
+    try initialize_subsystems(vm.world, compiled);
     try vm.step_tick();
+    for (compiled.degradations.items) |declaration| {
+        const system = try container_mod.ContainerSystem.init(vm.world, declaration.config);
+        try system.step(vm.world, vm.spatial);
+    }
     return try vm.dispatch_pending_weaves(compiled);
 }
 
@@ -301,6 +314,7 @@ pub const Session = struct {
             .last_tick_ms = std.time.milliTimestamp(),
         };
         s.sync_active_world();
+        try initialize_subsystems(s.active_world(), compiled);
         try s.record_snapshot();
         s.refresh();
         return s;
@@ -527,6 +541,30 @@ test "P32-16: act fires a cue, ticks, and returns the scripted reply" {
     try testing.expectEqualStrings("Hero: \"It glows.\"", (try act(&world, &vm, &compiled, "LooksAt", hero, lamp, &buf)).?);
     // A second act still hears its reply: speech is read after the tick, not by a stale index.
     try testing.expectEqualStrings("Hero: \"It glows.\"", (try act(&world, &vm, &compiled, "LooksAt", hero, lamp, &buf)).?);
+}
+
+test "P23-01: host lifecycle initializes and advances declared degradation" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\degradation TestProfile:
+        \\  substance TestReagent
+        \\  stage Sound 1
+        \\  stage Etched 1
+        \\  stage Failed 0
+        \\  vessel TestVial 4 3 Sound
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+
+    try initialize_subsystems(&world, &compiled);
+    const vial = world.lookup_entity("TestVial").?;
+    const stage_rel = world.lookup_relation("ContainerStage").?;
+    try testing.expectEqual(world.lookup_entity("Sound").?.to_int(), world.get_property(vial, stage_rel).?);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(world.lookup_entity("Etched").?.to_int(), world.get_property(vial, stage_rel).?);
 }
 
 test "P32-16: Timeline scrubs without losing the future and discards it only on divergence" {

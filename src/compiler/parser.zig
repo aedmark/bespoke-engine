@@ -250,6 +250,27 @@ pub const DuelDecl = struct {
     fatigue_stages: []const FatigueStageDecl,
 };
 
+pub const DegradationStageDecl = struct {
+    name: []const u8,
+    duration_ticks: u64,
+};
+
+pub const DegradationVesselDecl = struct {
+    name: []const u8,
+    capacity: u32,
+    initial_volume: u32,
+    initial_stage: []const u8,
+};
+
+/// `degradation` owns the complete script authority for one container profile.
+pub const DegradationDecl = struct {
+    name: []const u8,
+    substance: []const u8,
+    stages: []const DegradationStageDecl,
+    vessels: []const DegradationVesselDecl,
+    relations: [5][]const u8 = .{ "Contains", "Volume", "ContainerStage", "ContainerExposure", "ContainerFailedAt" },
+};
+
 pub const AST = struct {
     entities: std.ArrayList([]const u8),
     relations: std.ArrayList(RelationDecl),
@@ -265,6 +286,7 @@ pub const AST = struct {
     drafts: std.ArrayList(DraftDecl),
     societies: std.ArrayList(SocietyDecl),
     duels: std.ArrayList(DuelDecl),
+    degradations: std.ArrayList(DegradationDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -283,6 +305,7 @@ pub const AST = struct {
             .drafts = std.ArrayList(DraftDecl).init(allocator),
             .societies = std.ArrayList(SocietyDecl).init(allocator),
             .duels = std.ArrayList(DuelDecl).init(allocator),
+            .degradations = std.ArrayList(DegradationDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -305,6 +328,7 @@ pub const AST = struct {
         self.drafts.deinit();
         self.societies.deinit();
         self.duels.deinit();
+        self.degradations.deinit();
     }
 };
 
@@ -482,6 +506,7 @@ pub const Parser = struct {
                 },
                 .kw_society => try ast.societies.append(try self.parse_society_decl()),
                 .kw_duel => try ast.duels.append(try self.parse_duel_decl()),
+                .kw_degradation => try ast.degradations.append(try self.parse_degradation_decl()),
                 .kw_routine => {
                     try self.advance();
                     const name = (try self.expect(.identifier)).slice;
@@ -1068,6 +1093,49 @@ pub const Parser = struct {
         _ = try self.expect(.dedent);
         if (pairs.items.len == 0 or stages.items.len == 0) return self.set_error("duel '{s}' needs at least one pair and fatigue stage", .{name});
         return .{ .name = name, .pairs = try pairs.toOwnedSlice(), .fallback = fallback, .win_at = win_at, .relations = relations, .tiers = try tiers.toOwnedSlice(), .fatigue_count_relation = count_relation, .fatigue_calm_label = calm_label, .fatigue_stages = try stages.toOwnedSlice() };
+    }
+
+    /// P23-01 declaration grammar. The ordered stage list defines progression; each vessel
+    /// explicitly names its initial stage so scripts remain authoritative over setup.
+    fn parse_degradation_decl(self: *Parser) !DegradationDecl {
+        try self.advance(); // degradation
+        const name = try self.take_atom();
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var substance: ?[]const u8 = null;
+        var stages = std.ArrayList(DegradationStageDecl).init(self.allocator);
+        var vessels = std.ArrayList(DegradationVesselDecl).init(self.allocator);
+        var relations = (DegradationDecl{ .name = "", .substance = "", .stages = &.{}, .vessels = &.{} }).relations;
+
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            try self.advance();
+            if (std.mem.eql(u8, directive, "substance")) {
+                if (substance != null) return self.set_error("degradation '{s}' declares substance twice", .{name});
+                substance = try self.take_atom();
+            } else if (std.mem.eql(u8, directive, "stage")) {
+                try stages.append(.{ .name = try self.take_atom(), .duration_ticks = try self.take_u64() });
+            } else if (std.mem.eql(u8, directive, "vessel")) {
+                try vessels.append(.{
+                    .name = try self.take_atom(),
+                    .capacity = try self.take_u32(),
+                    .initial_volume = try self.take_u32(),
+                    .initial_stage = try self.take_atom(),
+                });
+            } else if (std.mem.eql(u8, directive, "relations")) {
+                for (&relations) |*relation| relation.* = try self.take_atom();
+            } else return self.set_error("unknown degradation directive '{s}'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+        if (substance == null or stages.items.len < 2 or vessels.items.len == 0)
+            return self.set_error("degradation '{s}' needs a substance, at least two stages, and a vessel", .{name});
+        return .{
+            .name = name,
+            .substance = substance.?,
+            .stages = try stages.toOwnedSlice(),
+            .vessels = try vessels.toOwnedSlice(),
+            .relations = relations,
+        };
     }
 
     /// Parses `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` and rejects any sequence that

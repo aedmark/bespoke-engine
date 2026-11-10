@@ -188,9 +188,9 @@ Goal: Implement musical draft spellcasting inspired by *Loom* (1990), where the 
 
 Goal: Model dynamic physical container degradation cascades inspired by *The Secret of Monkey Island* (1990), where caustic grog eats through pewter mugs across tick-based TTL expiration cascades, requiring rapid item-to-item transfers while navigating spatial waypoints.
 
-- [ ] P23-01 Container durability and caustic corrosion mechanics in `World`, modeling progressive container states (`PewterMug`, `CorrodedMug`, `MeltingMug`, `PuddleOfSlag`) via cascading relational timers.
-- [ ] P23-02 Rapid in-hand pouring interactions (`Uses(Player, MeltingMug, FreshMug)`), resetting degradation timers while preserving liquid volume, with spill penalties on waypoint transit delays.
-- [ ] P23-03 The Melee Island Prison Break vertical slice scenario (`src/grog_puzzle.zig`, `--grog`): SCUMM Bar kitchen barrel to Otis's cell lock, multi-mug sprint, audio sizzle SFX, and dual headless/interactive verification with time-travel rewind.
+- [x] P23-01 Generic container degradation in `src/container.zig`: stable vessel entities progress through script-declared stage entities on fact-backed exposure timers; volume, contents, stage, deadline, and terminal failure waypoint rewind with `World`. Top-level `degradation` declarations compile into owned program data, `.bspk` version 5 persists them with versions 1 through 4 remaining readable, and `host.tick` owns initialization and advancement. (D-050; completed 2026-11-10, verified via container, compiler, package, runner, and full build tests)
+- [ ] P23-02 Atomic rapid pouring between compatible vessels, with exact liquid-volume conservation, destination exposure reset at its current damage stage, no repair of damaged vessels, empty damaged vessels no longer degrading, per-moving-tick spill loss, and a minimum delivered-volume lock threshold.
+- [ ] P23-03 Caustic Grog vertical slice (`proofs/grog_puzzle.zig`, `--grog`): a multi-vessel waypoint sprint to dissolve a lock, procedural sizzle audio, native headless and interactive runners, transcript golden, save/load, and full rewind verification. The browser deck remains separate follow-up work.
 
 ## Phase 24: Multi-Path Divergence & Structural Route Pruning
 

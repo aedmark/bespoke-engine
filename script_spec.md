@@ -84,6 +84,14 @@ duel RiddleContest:
   tier Sphinx 1
   fatigue Inquiries "calm":
     stage AnnoyedWith 2 100 "annoyed"
+
+degradation ReactiveContainers:
+  substance TestReagent
+  stage Sound 120
+  stage Etched 80
+  stage Failed 0
+  vessel TestVial 12 8 Sound
+  relations Contains Volume ContainerStage ContainerExposure ContainerFailedAt
 ```
 
-Society `need` and `member` order is significant. It establishes need and roster indexes, including society tick evaluation order. Duel pairs and tier variants preserve source order. Optional tuning directives are `radii`, `grudges`, `priority`, `currency`, and `relations`; omitted values use the engine defaults. Compilation rejects unresolved members, providers, activities, and waypoints. Package format version 4 preserves both declaration tables.
+Society `need` and `member` order is significant. It establishes need and roster indexes, including society tick evaluation order. Duel pairs and tier variants preserve source order. A degradation profile's stage order is its progression order; every nonterminal stage has a positive duration and the final stage has duration zero. Each vessel declares capacity, initial volume, and initial stage. The optional `relations` line supplies five distinct names for contents, volume, stage, exposure, and failure location. Compilation rejects invalid capacities, stages, members, providers, activities, and waypoints. Package format version 5 preserves all three declaration tables; versions 1 through 4 remain readable.

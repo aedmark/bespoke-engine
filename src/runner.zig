@@ -138,6 +138,8 @@ pub fn run_file(
     }
     defer compiled.deinit();
 
+    try bespoke.host.initialize_subsystems(&world, &compiled);
+
     // Initialize Virtual Machine
     var vm = VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -149,8 +151,7 @@ pub fn run_file(
         const root_ent = try world.intern_entity("SimulationRoot");
         const f_init = try vm.spawn_routine(root_ent, init_pc);
         while (f_init <= vm.fibers.items.len and vm.fibers.items[f_init - 1].state != .halted) {
-            try vm.step_tick();
-            _ = try vm.dispatch_pending_weaves(&compiled);
+            _ = try bespoke.host.tick(&vm, &compiled);
         }
     }
 
@@ -209,8 +210,7 @@ pub fn run_file(
 
         var tick_count: usize = 0;
         while (tick_count < config.ticks) : (tick_count += 1) {
-            try vm.step_tick();
-            _ = try vm.dispatch_pending_weaves(&compiled);
+            _ = try bespoke.host.tick(&vm, &compiled);
 
             var snap = std.ArrayList(u8).init(allocator);
             try world.save_state(snap.writer());
@@ -354,8 +354,7 @@ pub fn run_file(
             }
 
             if (should_step_now) {
-                try vm.step_tick();
-                _ = try vm.dispatch_pending_weaves(&compiled);
+                _ = try bespoke.host.tick(&vm, &compiled);
 
                 var snap = std.ArrayList(u8).init(allocator);
                 try world.save_state(snap.writer());

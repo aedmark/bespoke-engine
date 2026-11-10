@@ -7,6 +7,7 @@ const parser_mod = @import("compiler/parser.zig");
 const draft_mod = @import("draft.zig");
 const society_mod = @import("society.zig");
 const duel_mod = @import("duel.zig");
+const container_mod = @import("container.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -26,8 +27,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// packages predate drafts and still load, with an empty draft table.
 /// Version 3 adds the arrival edge (byte 3) to reactive rules (P32-18, D-036); the layout is
 /// unchanged, so versions 1 and 2 still load. Version 4 appends script-declared society and
-/// duel configuration tables (P32-22, P32-24); versions 1 through 3 load empty tables.
-pub const PACKAGE_VERSION: u32 = 4;
+/// duel configuration tables (P32-22, P32-24); versions 1 through 3 load empty tables. Version 5
+/// appends degradation profiles (P23-01); versions 1 through 4 load an empty profile table.
+pub const PACKAGE_VERSION: u32 = 5;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -199,6 +201,26 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeInt(u32, tier.opponent.to_int(), .little);
             try writer.writeInt(u32, tier.tier, .little);
         }
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.degradations.items.len), .little);
+    for (compiled.degradations.items) |decl| {
+        const config = decl.config;
+        try writer.writeInt(u32, config.substance.to_int(), .little);
+        try writer.writeByte(@intCast(config.stages.len));
+        for (config.stages) |stage| {
+            try writer.writeInt(u32, stage.entity.to_int(), .little);
+            try writer.writeInt(u64, stage.duration_ticks, .little);
+        }
+        try writer.writeByte(@intCast(config.vessels.len));
+        for (config.vessels) |vessel| {
+            try writer.writeInt(u32, vessel.entity.to_int(), .little);
+            try writer.writeInt(u32, vessel.capacity, .little);
+            try writer.writeInt(u32, vessel.initial_volume, .little);
+            try writer.writeByte(@intCast(vessel.initial_stage));
+        }
+        const r = config.relations;
+        for ([_][]const u8{ r.contains, r.volume, r.stage, r.exposure, r.failed_at }) |name| try write_text_ref(world, writer, name);
     }
 }
 
@@ -475,6 +497,44 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
     };
 }
 
+fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !container_mod.Declaration {
+    const substance = try read_entity_ref(world, reader);
+    const stage_count = try reader.readByte();
+    if (stage_count < 2 or stage_count > container_mod.MAX_STAGES) return error.InvalidContainerConfig;
+    const stages = try allocator.alloc(container_mod.Stage, stage_count);
+    errdefer allocator.free(stages);
+    for (stages, 0..) |*stage, i| {
+        stage.* = .{ .entity = try read_entity_ref(world, reader), .duration_ticks = try reader.readInt(u64, .little) };
+        if ((i == stages.len - 1) != (stage.duration_ticks == 0)) return error.InvalidContainerConfig;
+        for (stages[0..i]) |prior| if (prior.entity == stage.entity) return error.InvalidContainerConfig;
+    }
+    const vessel_count = try reader.readByte();
+    if (vessel_count == 0 or vessel_count > container_mod.MAX_VESSELS) return error.InvalidContainerConfig;
+    const vessels = try allocator.alloc(container_mod.Vessel, vessel_count);
+    errdefer allocator.free(vessels);
+    for (vessels, 0..) |*vessel, i| {
+        vessel.* = .{
+            .entity = try read_entity_ref(world, reader),
+            .capacity = try reader.readInt(u32, .little),
+            .initial_volume = try reader.readInt(u32, .little),
+            .initial_stage = try reader.readByte(),
+        };
+        if (vessel.capacity == 0 or vessel.initial_volume > vessel.capacity or vessel.initial_stage >= stages.len - 1)
+            return error.InvalidContainerConfig;
+        for (vessels[0..i]) |prior| if (prior.entity == vessel.entity) return error.InvalidContainerConfig;
+    }
+    var relations: [5][]const u8 = undefined;
+    for (&relations) |*name| name.* = try read_text_ref(world, reader);
+    const config = container_mod.Config{
+        .substance = substance,
+        .stages = stages,
+        .vessels = vessels,
+        .relations = .{ .contains = relations[0], .volume = relations[1], .stage = relations[2], .exposure = relations[3], .failed_at = relations[4] },
+    };
+    try container_mod.validate(config);
+    return .{ .config = config };
+}
+
 /// Serializes a CompiledProgram and associated spatial topology to a binary package stream (P15-02, D-018).
 pub fn save_package(
     allocator: std.mem.Allocator,
@@ -613,7 +673,7 @@ pub fn save_package(
         try pw.writeInt(u32, if (d.inverse) |inv| inv.to_int() else 0, .little);
     }
 
-    // 10. Script-declared subsystem configuration (version 4+).
+    // 10. Script-declared subsystem configuration (version 4+, degradation in version 5+).
     try write_program_declarations(world, pw, compiled);
 
     // Compute CRC32 checksum over the payload
@@ -892,6 +952,11 @@ pub fn load_package(
         for (duels.items) |*decl| decl.deinit_owned(allocator);
         duels.deinit();
     }
+    var degradations = std.ArrayList(container_mod.Declaration).init(allocator);
+    errdefer {
+        for (degradations.items) |*decl| decl.deinit_owned(allocator);
+        degradations.deinit();
+    }
     if (header.version >= 4) {
         const society_count = try pr.readInt(u32, .little);
         var si: u32 = 0;
@@ -899,6 +964,11 @@ pub fn load_package(
         const duel_count = try pr.readInt(u32, .little);
         var di: u32 = 0;
         while (di < duel_count) : (di += 1) try duels.append(try read_duel_declaration(allocator, world, pr));
+    }
+    if (header.version >= 5) {
+        const degradation_count = try pr.readInt(u32, .little);
+        var ci: u32 = 0;
+        while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr));
     }
 
     return CompiledProgram{
@@ -913,6 +983,7 @@ pub fn load_package(
         .initial_entry = if (header.initial_entry >= 0) @intCast(header.initial_entry) else null,
         .societies = societies,
         .duels = duels,
+        .degradations = degradations,
     };
 }
 
@@ -1188,8 +1259,8 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
 
     // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
-    // Version 4 follows the draft table with empty society and duel counts (two u32 values).
-    const declaration_tail_len = 8;
+    // Version 5 follows the draft table with empty society, duel, and degradation counts.
+    const declaration_tail_len = 12;
     const tail_len = 4 + 4 + 4 + 1 + 4;
     const first_note = buffer.items.len - declaration_tail_len - tail_len + 8;
     {
@@ -1203,6 +1274,18 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
         try testing.expectError(error.InvalidDraftNote, load_package(testing.allocator, stream.reader(), &world2, null));
     }
     {
+        // A real version 4 payload ends after the duel table and loads no degradation profiles.
+        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 4]);
+        defer testing.allocator.free(v4);
+        reseal_for_test(v4, 4);
+        var world2 = try World.init(testing.allocator, 1024 * 1024);
+        defer world2.deinit();
+        var stream = std.io.fixedBufferStream(v4);
+        var loaded = try load_package(testing.allocator, stream.reader(), &world2, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.degradations.items.len);
+    }
+    {
         // A version 1 package is the same payload without the draft tail.
         const v1 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - tail_len - declaration_tail_len]);
         defer testing.allocator.free(v1);
@@ -1214,6 +1297,42 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.drafts.items.len);
     }
+}
+
+test "P23-01: package version 5 round-trips degradation declarations" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\degradation TestProfile:
+        \\  substance TestReagent
+        \\  stage Sound 3
+        \\  stage Etched 2
+        \\  stage Failed 0
+        \\  vessel TestVial 8 5 Sound
+        \\  relations HoldsReagent ReagentVolume VialState ReagentExposure VialFailedAt
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.degradations.items.len);
+    const declaration = &compiled2.degradations.items[0];
+    try testing.expectEqual(@as(usize, 3), declaration.config.stages.len);
+    try testing.expectEqual(@as(u32, 8), declaration.config.vessels[0].capacity);
+    var system = try container_mod.ContainerSystem.init(&world2, declaration.config);
+    const vial = world2.lookup_entity("TestVial").?;
+    _ = world2.step_tick();
+    try system.step(&world2, null);
+    try testing.expectEqual(world2.lookup_entity("Sound").?.to_int(), world2.get_property(vial, system.rel.stage).?);
 }
 
 test "P32-18: package round-trips an arrival rule and version 2 rejects its edge" {
@@ -1268,7 +1387,7 @@ test "P32-18: package round-trips an arrival rule and version 2 rejects its edge
     }
 }
 
-test "P32-22/P32-24: package version 4 round-trips society and duel declarations" {
+test "P32-22/P32-24: package version 5 round-trips society and duel declarations" {
     const testing = std.testing;
     const compiler = @import("compiler.zig");
     const script =
