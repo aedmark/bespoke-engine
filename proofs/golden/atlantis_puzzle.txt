@@ -1,0 +1,33 @@
+===================================================================
+      BeSpoke Engine: The Fate of Atlantis - Algiers Bazaar       
+      (Three Paths * Waypoint Locks * Route Dialogue)             
+===================================================================
+
+Path Wits:
+  locks: FistsGate, TeamGate
+  route: Entrance -> WitsGate -> ManuscriptMark
+  dialogue: Follow the ledger (rival choices pruned)
+  Omar: "The ledger was always the map, Dr. Jones."
+  solve: Solved(Indy, Wits); Acquired(Indy, Manuscript)
+  rival path routines: muted
+
+Path Fists:
+  locks: WitsGate, TeamGate
+  route: Entrance -> FistsGate -> ManuscriptMark
+  dialogue: Force the stall (rival choices pruned)
+  Omar: "No! Not the invoices! Take the manuscript!"
+  solve: Solved(Indy, Fists); Acquired(Indy, Manuscript)
+  rival path routines: muted
+
+Path Team:
+  locks: WitsGate, FistsGate
+  route: Entrance -> TeamGate -> ManuscriptMark
+  dialogue: Recruit the diggers (rival choices pruned)
+  Omar: "A share for every hand. That is how a bazaar survives."
+  solve: Solved(Indy, Team); Acquired(Indy, Manuscript)
+  rival path routines: muted
+
+===================================================================
+  VERIFICATION COMPLETE: all three approaches reach the manuscript.
+===================================================================
+

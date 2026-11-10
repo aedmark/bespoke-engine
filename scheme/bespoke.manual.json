@@ -623,6 +623,30 @@
           "related": ["stageplay-taxonomy", "compiler-pipeline", "relational-facts", "spatial-topology"]
         },
         {
+          "id": "three-path-algiers-bazaar",
+          "title": "Three-Path Algiers Bazaar & Route Selector",
+          "summary": "A generated selector chooses Wits, Fists, or Team; each path locks the rival gates, prunes Omar's dialogue, and runs only its own solution.",
+          "synopsis": "path Wits: remember WaypointBlocked(FistsGate)  |  VM.select_path(compiled, \"Wits\")  |  --atlantis",
+          "tags": ["paths", "topology", "dialogue", "selector", "atlantis"],
+          "what": "The Algiers Bazaar proof stages Omar's bazaar as one spatial graph with three gates. The selected path asserts WaypointBlocked facts on the two rival gates, so the same walk plans through the chosen approach, and PathActive guards reduce Omar's dialogue to the matching clue plus a neutral exit.",
+          "how": [
+            "The script declares `path Wits`, `path Fists`, and `path Team`, each with route facts and a `Solve...` routine.",
+            "A generated dialogue opens three selector options in the native window; clicking one or pressing `1` to `3` calls `VM.select_path`.",
+            "The path initializer runs on the next tick, locks the rival gates, and records `Chosen(Indy, <Path>)`.",
+            "Scripted walks call `SpatialSystem.walk_to_with_world`, so A* plans around the locked gates and reaches `ManuscriptMark` through the open route.",
+            "`Talk` offers only the selected path's choice plus the neutral exit, and `[S]` runs only that path's solution routine."
+          ],
+          "why": "Multi-path adventures need one topology and one dialogue source that reshape themselves around an operational choice. Keeping the choice, gate locks, and obstacle facts in World facts means saves, rewinds, and snapshots carry the whole route without a host-side branch table.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-052", "target": "docs/DECISIONS.md#d-052", "kind": "decision"},
+            {"label": "Architectural Decision D-053", "target": "docs/DECISIONS.md#d-053", "kind": "decision"},
+            {"label": "Atlantis Bazaar Proof", "target": "proofs/atlantis_puzzle.zig", "kind": "source"},
+            {"label": "Waypoint Locks", "target": "src/spatial.zig", "kind": "source"}
+          ],
+          "related": ["stageplay-paths", "spatial-topology", "branching-dialogue-balloons"]
+        },
+        {
           "id": "classic-adventure-verbs",
           "title": "Classic 5-Verb Interaction Bar",
           "summary": "Five classic adventure verbs: WALK, LOOK, TALK, TAKE, USE with active button highlight and right-click cycling.",

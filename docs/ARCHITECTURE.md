@@ -36,6 +36,7 @@ The engine lives in `src/` and is exported as the `bespoke` module. Proofs of co
 | Musical Drafts | `src/draft.zig` | `VM.weave_notes()` / `VM.dispatch_pending_weaves()` / `DistaffInput.press()` | Compiler (draft table), VM (`weave` opcode, `Weave` cue handlers), package loader, display bridge (`RenderFrame.distaff` staff HUD), audio (`AudioEvent.play_note`); pitch-based spellcraft (D-029, D-030) |
 | The Bell Tower | `proofs/loom_puzzle.zig` | `run_headless()` / `run_interactive()` | World, Spatial, VM, and display bridge; musical draft slice with distaff reach, reversed-draft puzzle, and host re-dispatch (D-029, D-030) |
 | Caustic Grog | `proofs/grog_puzzle.zig` | `run_headless()` / `run_interactive()` | ContainerSystem client: three script-declared cups degrade and spill across a waypoint sprint, with atomic A-to-B-to-C pours, terminal failure, save/load, and rewind (D-050, D-051) |
+| The Fate of Atlantis: Algiers | `proofs/atlantis_puzzle.zig` | `run_headless()` / `run_interactive()` | Stageplay Paths client: three approaches lock rival bazaar gates, prune Omar's dialogue repertoire, and run only the selected solution, with a generated path selector and native headless/interactive verification (P24-03, D-052, D-053) |
 | Day of the Tentacle Trio | `proofs/dott_puzzle.zig` | `run_headless()` / `run_interactive()` | World, Spatial, & VM stores; 3-era parallel puzzle DAG, multi-party item transfer, epistemic dialogue, and time-travel rewind (D-025) |
 
 ## Memory Layout & Core Structs (Zig)
