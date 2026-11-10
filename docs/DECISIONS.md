@@ -251,6 +251,8 @@ re-litigation.
 - Hosting the simulator only on an external server: rejected because `docs/manual.html` is designed as a 100% portable, self-contained single-file developer guide that works offline from `file://` URLs.
 **Consequences:** Complete browser portability via `zig build wasm` with zero external SDK dependencies, unified mouse/keyboard/touch input translation tested in pure Zig, and a live playable simulator embedded directly inside `docs/manual.html`.
 
+**Update, 2026-11-10 (P32-29):** The manual now embeds `bespoke-proofs.wasm` and runs the six proof decks through the browser runtime. The fact-list and REPL controls are gone because the module exports a fact count, not fact rows or an injection API.
+
 ## D-023 The Broken Sword Lochmarne Goat Puzzle Scenario, Dynamic Threat-Radius Tethering, and Subterranean Scene Transition (2026-11-08, status: accepted)
 **Context:** The Lochmarne Castle Goat Puzzle from *Broken Sword: The Shadow of the Templars* (1996) subverts traditional static point-and-click adventure pacing: an aggressive tethered Billy Goat guards the entrance to an archaeological excavation, knocking the player down whenever they approach the pit. The solution requires seizing a fleeting recovery window while the goat retreats to its stake to drag a heavy farm plough into the rope path, tangling the goat and clearing the ladder to the subterranean Templar crypt.
 **Decision:** Implement the Broken Sword Goat Puzzle vertical slice in `src/goat_puzzle.zig`, `src/display/renderer.zig`, and `src/audio.zig`:
@@ -536,6 +538,8 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Loading `bespoke-proofs.wasm` in the manual now: not chosen by the maintainer; a `file://` page cannot fetch it, so it would be embedded (about 1.2 MB).
 - Building the runtime in place instead of returning it by value: a smaller stack would do, but it changes the runtime's API; a larger stack fixes the fault without that.
 **Consequences:** `proofs/golden/wasm.txt` (six decks through a ten-step event script) was unchanged by the split. The separation lint finds no proof names in `src/` (79 to 0). Engine wasm tests drive two neutral test decks; the proof decks' behaviour is covered by the golden. Node is used only by the optional smoke check, not by the build. Neither module has run in a browser page here; Node exercised their exports.
+
+**Update, 2026-11-10 (P32-29):** The manual now embeds `bespoke-proofs.wasm` as base64 and loads it without `fetch`, so it works from `file://`; the wrapper is `tools/manual_simulator.js`. `python3 tools/manual.py build` requires `zig build wasm-proofs` first and fails with a clear error when the artifact is missing. The fact list and REPL were removed because the module exports only `wasm_get_fact_count`, not fact rows or injection.
 
 ## D-043 Unary States Modelled as Predicate Presence (2026-11-10, status: accepted)
 **Context:** `true` had three conflicting meanings in the codebase (P32-28): `now X is Y` interned the entity `true` as `object_or_value`; `VM.has_fact_pattern` read string `"true"` as numeric value 1; `when` reactive triggers parsed lowercase `"true"` as an unbound pattern variable `?true`. A host asserting a state fact with value 1 was invisible to script conditions.

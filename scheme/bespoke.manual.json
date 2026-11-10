@@ -1017,7 +1017,7 @@
             "WasmCanvas renders rooms, topological waypoint edges, interactive hotspots, actor tokens, bitmap font strings, a timeline scrubber bar, and the 5-verb bar into a contiguous 640x360x4 RGBA8888 byte buffer in linear memory.",
             "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots inside a 2 MiB FixedBufferAllocator. Each Deck supplies load, after-tick, and catalyst callbacks, and wasm.export_runtime(decks) emits the C-ABI exports (wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick) for a build's decks.",
             "dispatch_event normalizes browser pointer_down, pointer_move, right_click, key_down, and touch events into BeSpoke walk_to motor intents, verb selection, hotspot inspection, catalyst triggers, and timeline scrubbing.",
-            "docs/manual.html embeds a JavaScript model of the six proof decks (Tavern Heist, Spitting Contest, GK3 Cat Moustache, The Living Village, Broken Sword Goat, and Day of the Tentacle Trio) with fact inspection, REPL commands, and timeline scrubbing. It does not load the WebAssembly module; tools/wasm_smoke.js runs the real modules in Node."
+            "docs/manual.html embeds the real bespoke-proofs.wasm as base64, so the six proof decks run offline from file://. tools/manual_simulator.js decodes the module and calls wasm_init, wasm_step_tick, wasm_render_frame, wasm_on_pointer_down, wasm_on_key_down, wasm_scrub_to_tick, wasm_get_tick, and wasm_get_fact_count; it holds no proof decks or simulation state. Rebuild with zig build wasm-proofs before python3 tools/manual.py build; tools/wasm_smoke.js runs both modules in Node."
           ],
           "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required). Decks keep game content out of the engine module (D-042).",
           "why_basis": "recorded",
@@ -1027,7 +1027,8 @@
           {"label": "Architectural Decision D-042", "target": "docs/DECISIONS.md#d-042", "kind": "decision"},
           {"label": "Proof Decks", "target": "proofs/wasm_deck.zig", "kind": "source"},
             {"label": "Zig Wasm32 Build Step", "target": "build.zig", "kind": "source"},
-            {"label": "3x Manual Generator & Simulator Deck", "target": "tools/manual.py", "kind": "source"}
+            {"label": "3x Manual Generator & Simulator Deck", "target": "tools/manual.py", "kind": "source"},
+            {"label": "Embedded Simulator Wrapper", "target": "tools/manual_simulator.js", "kind": "source"}
           ],
           "related": ["engine-as-spine", "zero-external-dependencies", "living-village-emergent-sandbox", "3x-documentation-contract"]
         }

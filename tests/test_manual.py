@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import copy
 import importlib.util
@@ -364,6 +365,18 @@ class ManualTests(unittest.TestCase):
         errors, _, items = manual.review(data, today=REVIEW_DAY)
         self.assertEqual(errors, [])
         self.assertTrue(any(item["kind"] == "weak-evidence" for item in items))
+
+    def test_simulator_embeds_wasm_and_calls_exports(self):
+        data = copy.deepcopy(self.example)
+        data["sections"][0]["entries"][0]["id"] = "wasm-browser-target-and-simulator"
+        payload = b"\0asm\x01\0\0\0"
+        rendered = manual.build_html(data, wasm_payload=payload)
+        self.assertIn(base64.b64encode(payload).decode("ascii"), rendered)
+        self.assertIn("WebAssembly.instantiate", rendered)
+        self.assertIn("wasm_init", rendered)
+        self.assertIn("wasm_get_fact_count", rendered)
+        self.assertNotIn("SCENARIOS", rendered)
+        self.assertNotIn("sim-repl-form", rendered)
 
     def test_json_output_for_review(self):
         with tempfile.TemporaryDirectory() as directory:
