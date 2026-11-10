@@ -65,6 +65,19 @@ path Wits:
 
 The host selects a path with `VM.select_path(compiled, "Wits")`. The path entity receives `PathActive(Wits)` immediately, and the block's fact statements run on the next tick. Scripts can test the active route with `if PathActive(Wits):`. Routines declared inside the block carry a generated guard: when another route is active they halt before their first body instruction. Selecting a different path returns `PathAlreadyChosen`; selecting the same path again is a no-op. Path routine names share the top-level routine namespace. Path facts are ordinary World facts, so saves and rewind restore them.
 
+Path facts can change the route's topology and NPC repertoire. `WaypointBlocked` is a normal unary relation whose subject is the mark entity with the same name as a waypoint. Scripted walks plan around blocked waypoints. Existing obstacle predicates such as `Trapped` and `PortalBlocked` keep their usual meaning, and `PathActive`-guarded choices prune dialogue. Locks apply when a walk is planned; an in-flight walk keeps its path.
+
+```bespoke
+relation WaypointBlocked(mark)
+path Wits:
+  remember WaypointBlocked(BackAlley)
+  remember Trapped(Hero)
+
+on cue Talk(Hero, Guide):
+  choice "Read the ledger" if PathActive(Wits):
+    say Guide: "Only the wits route knows this."
+```
+
 ## Mechanic Declarations
 
 Scripts may carry immutable configuration for engine mechanics alongside executable routines and cues. A host selects a declaration from the compiled program and initializes the corresponding runtime module. Runtime progress remains in World facts.

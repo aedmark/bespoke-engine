@@ -682,6 +682,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Put guards only in cue dispatch: rejected because hosts also spawn routines directly; a routine-local guard covers both paths.
 **Consequences:** P24-01 provides the route-selection and muting primitive. P24-02 can layer topology and dialogue mutation on `PathActive` facts. P24-03 supplies the player-facing selector. Switching an active path is not supported yet; a later change must decide how to retract the previous path's facts and fibers.
 
+## D-053 Fact-Backed Waypoint Locks and Route-Scoped Repertoires (2026-11-10, status: accepted)
+**Context:** P24-02 must alter spatial topology and dialogue when a path is selected. The graph is static engine data and `SpatialSystem.walk_to` had no World, so scripts could not lock a route's waypoint. Dialogue already pruned from facts, but no documented route pattern existed.
+**Decision:**
+1. `WaypointBlocked(<Mark>)` is the single waypoint-lock predicate. The waypoint is matched to its mark entity by name, the same convention as arrival marks and hotspots.
+2. `SpatialGraph.find_path_avoiding` excludes blocked waypoints during A*. A blocked goal yields no path; a blocked start may still be left. `SpatialSystem.walk_to_with_world` builds the blocked set from World facts and plans the path. `walk_to` remains a lock-free graph-only convenience for hosts; the VM's `walk_to` opcode calls the world-aware form.
+3. Locks apply when a walk is planned. An agent already in transit keeps its path; this change does not interrupt or reroute fibers mid-edge.
+4. Existing obstacle rules (`Trapped`, `PortalBlocked`, `Guarded`, `Detained`, `PassesGuard`, `DoingBusiness`, `InYard`) remain fact predicates. Path initializers may assert or clear them, and `SpatialSystem.can_access_portal` reads current World state.
+5. NPC repertoires use the existing choice guard: a top-level handler offers route-specific options with `if PathActive(<Name>):`; `VM.prune_dialogue_choices` removes the others. No dialogue state is added.
+6. Locks and path facts are ordinary World facts. No `.bspk` bump is needed; save and rewind restore the route and its topology effects together.
+**Alternatives:**
+- Store locks on `SpatialGraph`: rejected because graph mutation would need a save format and path facts would duplicate state.
+- Add a path argument to `walk_to`: rejected because path selection is already represented by active facts; the engine can read the World instead of naming routes in call sites.
+- Interrupt in-flight walks when a lock appears: deferred because it needs a route-change policy and fiber resumption semantics; P24-02 shapes the next walk intent only.
+**Consequences:** P24-03 can select a route, lock its incompatible waypoints, and prune its dialogue. Switching paths still requires retracting the previous path's facts and fibers (D-052).
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

@@ -120,6 +120,19 @@ pub const SpatialGraph = struct {
         goal: WaypointId,
         allocator: std.mem.Allocator,
     ) !?[]WaypointId {
+        return self.find_path_avoiding(start, goal, allocator, &.{});
+    }
+
+    /// Finds an optimal path while excluding locked waypoints (P24-02). The start may be blocked
+    /// so an actor standing on a newly locked mark can still leave it; a blocked goal has no path.
+    pub fn find_path_avoiding(
+        self: *const SpatialGraph,
+        start: WaypointId,
+        goal: WaypointId,
+        allocator: std.mem.Allocator,
+        blocked: []const WaypointId,
+    ) !?[]WaypointId {
+        if (std.mem.indexOfScalar(WaypointId, blocked, goal) != null) return null;
         if (start == goal) {
             const result = try allocator.alloc(WaypointId, 1);
             result[0] = start;
@@ -181,6 +194,7 @@ pub const SpatialGraph = struct {
             for (self.edges.items) |edge| {
                 if (edge.from == current) {
                     const neighbor = edge.to;
+                    if (std.mem.indexOfScalar(WaypointId, blocked, neighbor) != null) continue;
                     const tentative_g = g_score[current] + edge.cost;
                     if (tentative_g < g_score[neighbor]) {
                         came_from[neighbor] = current;
@@ -477,6 +491,22 @@ pub const SpatialSystem = struct {
 
     /// Issues an asynchronous motor intent: walk entity to destination waypoint (P3-02).
     pub fn walk_to(self: *SpatialSystem, entity: EntityId, dest: WaypointId) !bool {
+        return self.walk_to_with_world(null, entity, dest);
+    }
+
+    /// Issues a walk intent while honoring `WaypointBlocked` facts (P24-02). A waypoint is
+    /// blocked when its same-named World entity carries the fact; a path initializer can assert
+    /// it, so route selection mutates topology without rewriting the graph. Locks apply when a
+    /// walk is planned; an agent already in transit keeps its path.
+    pub fn walk_to_with_world(
+        self: *SpatialSystem,
+        world_opt: ?*const World,
+        entity: EntityId,
+        dest: WaypointId,
+    ) !bool {
+        if (world_opt) |world| {
+            if (self.waypoint_blocked(world, dest)) return false;
+        }
         const agent = self.agents.getPtr(entity) orelse return false;
         if (agent.current_wp == dest) {
             // `current_wp` is the last node reached, not necessarily the agent's current
@@ -501,12 +531,36 @@ pub const SpatialSystem = struct {
             return true;
         }
 
-        const path = try self.graph.find_path(agent.current_wp, dest, self.allocator);
+        var blocked = std.ArrayList(WaypointId).init(self.allocator);
+        defer blocked.deinit();
+        if (world_opt) |world| try self.collect_blocked_waypoints(world, &blocked);
+
+        const path = try self.graph.find_path_avoiding(agent.current_wp, dest, self.allocator, blocked.items);
         if (path) |p| {
             agent.set_path(self.allocator, p);
             return true;
         }
         return false;
+    }
+
+    /// True when the waypoint's mark entity carries a `WaypointBlocked` fact (P24-02).
+    pub fn waypoint_blocked(self: *const SpatialSystem, world: *const World, waypoint: WaypointId) bool {
+        const wp = self.graph.get_waypoint(waypoint) orelse return false;
+        const relation = world.lookup_relation("WaypointBlocked") orelse return false;
+        const mark = world.lookup_entity(wp.name) orelse return false;
+        return world.has_fact(mark, relation, null);
+    }
+
+    fn collect_blocked_waypoints(
+        self: *const SpatialSystem,
+        world: *const World,
+        out: *std.ArrayList(WaypointId),
+    ) !void {
+        const relation = world.lookup_relation("WaypointBlocked") orelse return;
+        for (self.graph.waypoints.items) |wp| {
+            const mark = world.lookup_entity(wp.name) orelse continue;
+            if (world.has_fact(mark, relation, null)) try out.append(wp.id);
+        }
     }
 
     /// The waypoint `entity` arrived at since arrivals were last cleared, or null (P32-18, D-036).
@@ -913,6 +967,43 @@ test "P3-02: motor agent stepping and walk intent arrival" {
     try testing.expectEqual(wp3, spatial.get_current_waypoint(guard).?);
     try testing.expect(!spatial.is_moving(guard));
     try testing.expect(spatial.has_arrived(guard));
+}
+
+test "P24-02: WaypointBlocked facts reroute walks without mutating the graph" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = EntityId.from_int(1);
+    const start = try spatial.graph.add_waypoint(room, 0, 0, "Start");
+    const locked = try spatial.graph.add_waypoint(room, 10, 0, "Locked");
+    const safe = try spatial.graph.add_waypoint(room, 0, 10, "Safe");
+    const goal = try spatial.graph.add_waypoint(room, 10, 10, "Goal");
+    try spatial.graph.connect(start, locked, 10);
+    try spatial.graph.connect(locked, goal, 10);
+    try spatial.graph.connect(start, safe, 10);
+    try spatial.graph.connect(safe, goal, 10);
+
+    const hero = try world.intern_entity("Hero");
+    const locked_mark = try world.intern_entity("Locked");
+    const blocked = try world.intern_relation("WaypointBlocked", .set);
+    try world.remember(locked_mark, blocked, 0, 0);
+    try spatial.register_entity(hero, start, 5);
+
+    try testing.expect(try spatial.walk_to_with_world(&world, hero, goal));
+    const agent = spatial.agents.get(hero).?;
+    try testing.expect(agent.path != null);
+    try testing.expect(std.mem.indexOfScalar(WaypointId, agent.path.?, locked) == null);
+    try testing.expect(std.mem.indexOfScalar(WaypointId, agent.path.?, safe) != null);
+
+    // The graph still contains the locked node; only routed walks avoid it.
+    try testing.expect(spatial.graph.get_waypoint(locked) != null);
+    try testing.expect(!(try spatial.walk_to_with_world(&world, hero, locked)));
+
+    _ = world.forget(locked_mark, blocked, null);
+    try testing.expect(!spatial.waypoint_blocked(&world, locked));
 }
 
 test "P32-25: walk intent toward the waypoint just left turns the agent back" {

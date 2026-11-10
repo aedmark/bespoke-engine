@@ -598,25 +598,29 @@
         {
           "id": "stageplay-paths",
           "title": "Stageplay Paths & Route Pruning",
-          "summary": "Named operational approaches own fact assertions and guarded routines; one active PathActive route mutes the others.",
-          "synopsis": "path Wits: remember ChosenWits(Hero)  |  VM.select_path(compiled, \"Wits\")",
-          "tags": ["dsl", "paths", "routes", "pruning"],
-          "what": "Adds top-level path blocks for mutually exclusive narrative approaches. A path owns its initial fact statements and routines, and only the selected route can run them.",
+          "summary": "Named operational approaches own fact assertions and guarded routines; PathActive prunes dialogue and WaypointBlocked facts lock spatial waypoints.",
+          "synopsis": "path Wits: remember WaypointBlocked(BackAlley)  |  VM.select_path(compiled, \"Wits\")",
+          "tags": ["dsl", "paths", "routes", "pruning", "topology"],
+          "what": "Adds top-level path blocks for mutually exclusive narrative approaches. A path owns its initial fact statements and routines, and only the selected route can run them. A path can also lock waypoints, assert obstacle facts that feed portal access, and prune rival dialogue repertoires.",
           "how": [
             "The parser accepts `path Name:` blocks containing `remember`, `forget`, and `now` statements plus nested routines.",
             "`VM.select_path` asserts `PathActive(Name)` in World facts and spawns the reserved `#path:<Name>` initializer, which runs on the next tick.",
             "Every path-owned routine starts with a `PathActive(Name)` guard and halts before its body when another route is active.",
-            "The existing `.bspk` routine and relation tables carry path initializers without a format bump; save and rewind restore the selected route as ordinary facts."
+            "`WaypointBlocked(Mark)` facts are read by `SpatialSystem.walk_to_with_world`, which asks A* to exclude each locked waypoint when a scripted walk is planned.",
+            "Path initializers can assert existing obstacle predicates such as `Trapped` or `PortalBlocked`; `can_access_portal` reads current World facts. `choice ... if PathActive(Name)` prunes route-specific dialogue.",
+            "The existing `.bspk` routine and relation tables carry path initializers without a format bump; save and rewind restore the selected route and its topology effects as ordinary facts."
           ],
-          "why": "Operational approaches in multi-path adventures must prune incompatible puzzle branches without host-language flags. Keeping the route in World facts preserves determinism, saves, and rewind; routine-local guards mute alternatives even when a host spawns them directly.",
+          "why": "Operational approaches in multi-path adventures must prune incompatible puzzle branches without host-language flags. Keeping the route, waypoint locks, and obstacle facts in World facts preserves determinism, saves, and rewind; routine-local guards mute alternatives even when a host spawns them directly.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-052", "target": "docs/DECISIONS.md#d-052", "kind": "decision"},
+            {"label": "Architectural Decision D-053", "target": "docs/DECISIONS.md#d-053", "kind": "decision"},
             {"label": "Path Parser and Codegen", "target": "src/compiler/codegen.zig", "kind": "source"},
             {"label": "Path Selection and Guards", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Waypoint Locks", "target": "src/spatial.zig", "kind": "source"},
             {"label": "Path Package Round-Trip", "target": "src/package.zig", "kind": "source"}
           ],
-          "related": ["stageplay-taxonomy", "compiler-pipeline", "relational-facts"]
+          "related": ["stageplay-taxonomy", "compiler-pipeline", "relational-facts", "spatial-topology"]
         },
         {
           "id": "classic-adventure-verbs",

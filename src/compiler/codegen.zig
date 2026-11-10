@@ -1724,3 +1724,69 @@ test "P24-01: selecting a path asserts its facts and mutes inactive routines" {
 
     try testing.expectError(error.PathAlreadyChosen, vm.select_path(&compiled, "Fists"));
 }
+
+test "P24-02: active path mutates obstacle facts and prunes rival dialogue choices" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const source =
+        \\entity Hero, Host, BackAlley, SafeRoute
+        \\relation WaypointBlocked(mark)
+        \\relation Trapped(actor)
+        \\path Wits:
+        \\  remember WaypointBlocked(BackAlley)
+        \\  remember Trapped(Hero)
+        \\path Fists:
+        \\  remember WaypointBlocked(SafeRoute)
+        \\on cue Talk(Hero, Host):
+        \\  choice "Study the ledger" if PathActive(Wits):
+        \\    say Host: "The ledger is open."
+        \\  choice "Break the lock" if PathActive(Fists):
+        \\    say Host: "The lock gives way."
+        \\  choice "Leave":
+        \\    say Host: "Later."
+    ;
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try @import("../compiler.zig").compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+
+    const hero = world.lookup_entity("Hero").?;
+    const host = world.lookup_entity("Host").?;
+    const back_alley = world.lookup_entity("BackAlley").?;
+    const wits = world.lookup_entity("Wits").?;
+    const blocked = world.lookup_relation("WaypointBlocked").?;
+    const trapped = world.lookup_relation("Trapped").?;
+    const path_active = world.lookup_relation("PathActive").?;
+
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const portal = try world.intern_entity("Portal");
+    const room = EntityId.from_int(1);
+    const back_alley_wp = try spatial.graph.add_waypoint(room, 0, 0, "BackAlley");
+    try spatial.register_portal(portal, room, back_alley_wp);
+    try spatial.register_entity(hero, back_alley_wp, 2);
+    try testing.expect(spatial.can_access_portal(&world, hero));
+
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try vm.set_dialogue_speaker(hero, host);
+
+    _ = try vm.select_path(&compiled, "Wits");
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(wits, path_active, null));
+    try testing.expect(world.has_fact(back_alley, blocked, null));
+    try testing.expect(world.has_fact(hero, trapped, null));
+    try testing.expect(!spatial.can_access_portal(&world, hero));
+
+    _ = try vm.fire_cue(&compiled, "Talk", hero, host, null);
+    _ = try vm.step_tick();
+
+    const open = vm.dialogue_view().?;
+    try testing.expectEqual(@as(usize, 2), open.count);
+    try testing.expectEqualStrings("Study the ledger", open.text(0));
+    try testing.expectEqualStrings("Leave", open.text(1));
+
+    _ = world.forget(hero, trapped, null);
+    try testing.expect(spatial.can_access_portal(&world, hero));
+}

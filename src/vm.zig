@@ -1092,7 +1092,7 @@ pub const VM = struct {
                     const dest = try f.pop();
                     const entity = try f.pop();
                     if (self.spatial) |sp| {
-                        _ = try sp.walk_to(EntityId.from_int(entity), @intCast(dest));
+                        _ = try sp.walk_to_with_world(self.world, EntityId.from_int(entity), @intCast(dest));
                         f.state = .{ .waiting_motor = EntityId.from_int(entity) };
                         return;
                     }
@@ -1390,6 +1390,45 @@ test "P3-02: VM fiber executes walk_to, suspends during transit, and wakes upon 
     try testing.expect(world.has_fact(guard, carries, cheese.to_int()));
     try testing.expectEqual(FiberStateTag.halted, std.meta.activeTag(vm.fibers.items[0].state));
     try testing.expectEqual(cellar, spatial.get_current_waypoint(guard).?);
+}
+
+test "P24-02: scripted walk_to honors WaypointBlocked facts" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = EntityId.from_int(1);
+    const guard = try world.intern_entity("Guard");
+    const locked_mark = try world.intern_entity("Locked");
+    const blocked = try world.intern_relation("WaypointBlocked", .set);
+
+    const start = try spatial.graph.add_waypoint(room, 0, 0, "Start");
+    const locked = try spatial.graph.add_waypoint(room, 10, 0, "Locked");
+    const safe = try spatial.graph.add_waypoint(room, 0, 10, "Safe");
+    const goal = try spatial.graph.add_waypoint(room, 10, 10, "Goal");
+    try spatial.graph.connect(start, locked, 10);
+    try spatial.graph.connect(locked, goal, 10);
+    try spatial.graph.connect(start, safe, 10);
+    try spatial.graph.connect(safe, goal, 10);
+    try spatial.register_entity(guard, start, 5);
+    try world.remember(locked_mark, blocked, 0, 0);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    try chunk.emit_walk_to(guard, goal);
+    _ = try chunk.emit_op(.halt);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    _ = try vm.spawn_routine(guard, 0);
+    _ = try vm.step_tick();
+
+    const path = spatial.agents.get(guard).?.path.?;
+    try testing.expect(std.mem.indexOfScalar(spatial_mod.WaypointId, path, locked) == null);
+    try testing.expect(std.mem.indexOfScalar(spatial_mod.WaypointId, path, safe) != null);
 }
 
 test "P8-02: reactive when rule evaluation on tick boundary with edge triggering" {
