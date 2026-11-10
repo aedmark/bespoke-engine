@@ -5,6 +5,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 ## Unreleased
 
 ### Fixed
+- `SpatialSystem.walk_to` now turns an in-flight actor back toward the waypoint it just left and raises the normal arrival edge there (`P32-25`).
+- The Spitting Contest and GK3 proof runners now send player intent through their DSL cue handlers instead of writing puzzle facts from Zig; their transcripts use the dialogue the scripts emit (`P32-26`).
 - The WebAssembly module no longer faults on its first call, `wasm_init`: it now has an 8 MB stack, where its 1.2 MB runtime overflowed the default 1 MB (`D-042`).
 
 ### Added

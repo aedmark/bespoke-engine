@@ -14,33 +14,34 @@
    -> Advanced to Tick 5: Mosely is pacing between Room 33 and the corridor.
 
 [Step 3: Search Room Desk for Supplies]
-   -> Gabriel scavenged Marker, MaskingTape, and Syrup from RoomDesk!
+   -> Gabriel: "I'll take the felt-tip marker, the masking tape, and this breakfast syrup packet from my desk."
 
 [Step 4: Snatch Mosely's Passport from Room 33]
-   -> Gabriel acquired MoselyPassport!
+   -> Gabriel: "I'll snatch Mosely's passport from his coat pocket while he's not looking."
 
 [Step 5: Draw Moustache on Mosely's Passport with Marker]
-   -> Mosely's passport photo now features a drawn moustache!
+   -> Gabriel: "Mosely doesn't even have a moustache in his passport photo! I'll draw one on with my marker."
 
 [Step 6: Transition Scene to Hotel Garden]
    -> Gabriel stepped into the courtyard garden.
 
 [Step 7: Scavenge Garden Shrub for Spray Bottle]
-   -> Gabriel acquired SprayBottle from GardenShrub potting bench!
+   -> Gabriel: "A garden spray bottle filled with water! That could be useful."
 
 [Step 8: Stretch Masking Tape Across Fence Hole]
-   -> FenceHole is now taped!
+   -> Gabriel: "I've stretched sticky masking tape across the bottom of the fence hole."
 
 [Step 9: Squirt Stray Cat with Water Bottle]
-   -> Cat bolted through fence! A thick strip of cat fur clings to the tape!
+   -> Gabriel: "The startled cat bolts through the fence hole, leaving a thick tuft of black fur stuck to the tape!"
 
 [Step 10: Peel Cat Hair from the Fence Tape]
-   -> Gabriel acquired CatHair!
+   -> Gabriel: "I'll peel the tape off. Presto: a strip of genuine black cat hair."
 
 [Step 11: Craft Cat-Hair Moustache with Syrup]
-   -> Gabriel applied syrup adhesive and crafted CatMoustache!
+   -> Gabriel: "I dab warm breakfast syrup onto my upper lip, then press the cat hair firmly in place."
 
 [Step 12: Don the Disguise]
+   -> Gabriel: "With Mosely's passport and my dashing cat-hair moustache, the resemblance is uncanny!"
    -> Gabriel is now DISGUISED as Franklin Mosely!
    -> Evaluate Disguise: VALID DISGUISE
 

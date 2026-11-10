@@ -142,6 +142,44 @@ pub fn evaluate_puzzle_victory(world: *const bespoke.World) bool {
     return world.has_fact(gabriel, rel, null);
 }
 
+/// Fires one scripted action and advances until its first line of speech or `max_ticks`.
+/// Puzzle facts remain owned by the script; the host only supplies player intent.
+fn scripted_action(
+    world: *bespoke.World,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    cue: []const u8,
+    actor: bespoke.EntityId,
+    target_a: ?bespoke.EntityId,
+    target_b: ?bespoke.EntityId,
+    max_ticks: usize,
+    speech_buf: []u8,
+) !?[]const u8 {
+    _ = try vm.fire_cue(compiled, cue, actor, target_a, target_b);
+    var ticks: usize = 0;
+    while (ticks < max_ticks) : (ticks += 1) {
+        _ = try bespoke.host.tick(vm, compiled);
+        if (bespoke.host.speech_this_tick(world, vm, speech_buf)) |speech| return speech;
+    }
+    return null;
+}
+
+/// Supplies interactive player intent to the script and advances the complete host session.
+fn session_scripted_action(
+    session: *bespoke.host.Session,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    cue: []const u8,
+    actor: bespoke.EntityId,
+    target_a: ?bespoke.EntityId,
+    target_b: ?bespoke.EntityId,
+    ticks: usize,
+) !void {
+    _ = try vm.fire_cue(compiled, cue, actor, target_a, target_b);
+    var tick: usize = 0;
+    while (tick < ticks) : (tick += 1) _ = try session.advance();
+}
+
 /// Executes headless simulation of the Gabriel Knight 3 Cat Moustache vertical slice (P14-01, P14-03, D-016).
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("===================================================================\n", .{});
@@ -274,22 +312,26 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step 3: Search Room Desk for supplies (Marker, MaskingTape, Syrup)
     try writer.print("[Step 3: Search Room Desk for Supplies]\n", .{});
-    try world.remember(gabriel, carries_rel, marker.to_int(), 0);
-    try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
-    try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
-    try writer.print("   -> Gabriel scavenged Marker, MaskingTape, and Syrup from RoomDesk!\n\n", .{});
+    var speech_buf: [512]u8 = undefined;
+    const desk_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, room_desk, null, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{desk_speech orelse "Gabriel scavenged the desk."});
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, marker.to_int()));
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, masking_tape.to_int()));
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, syrup.to_int()));
 
     // Step 4: Snatch Mosely's passport
     try writer.print("[Step 4: Snatch Mosely's Passport from Room 33]\n", .{});
     const passport_ent = try world.intern_entity("MoselyPassport");
-    try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
-    try writer.print("   -> Gabriel acquired MoselyPassport!\n\n", .{});
+    const passport_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, mosely_door, null, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{passport_speech orelse "Gabriel acquired MoselyPassport."});
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, passport_ent.to_int()));
 
     // Step 5: Draw fake moustache on Mosely's passport with marker
     try writer.print("[Step 5: Draw Moustache on Mosely's Passport with Marker]\n", .{});
     const passport_mod_rel = try world.intern_relation("PassportModified", .property);
-    try world.remember(gabriel, passport_mod_rel, 1, 0);
-    try writer.print("   -> Mosely's passport photo now features a drawn moustache!\n\n", .{});
+    const passport_mod_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, marker, passport_ent, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{passport_mod_speech orelse "Mosely's passport photo now features a drawn moustache."});
+    try std.testing.expect(world.has_fact(gabriel, passport_mod_rel, null));
 
     // Step 6: Transition to Hotel Garden
     try writer.print("[Step 6: Transition Scene to Hotel Garden]\n", .{});
@@ -299,45 +341,51 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step 7: Scavenge garden shrub for spray bottle
     try writer.print("[Step 7: Scavenge Garden Shrub for Spray Bottle]\n", .{});
-    try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
-    try writer.print("   -> Gabriel acquired SprayBottle from GardenShrub potting bench!\n\n", .{});
+    const shrub_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{shrub_speech orelse "Gabriel acquired SprayBottle."});
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, spray_bottle.to_int()));
 
     // Step 8: Tape the fence hole with MaskingTape
     try writer.print("[Step 8: Stretch Masking Tape Across Fence Hole]\n", .{});
-    const taped_rel = try world.intern_relation("Taped", .property);
-    try world.remember(fence_hole, taped_rel, 1, 0);
-    try writer.print("   -> FenceHole is now taped!\n\n", .{});
+    // State syntax stores the state value (`taped`), not the declaration label (`Taped`).
+    const taped_rel = try world.intern_relation("taped", .set);
+    const tape_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{tape_speech orelse "FenceHole is now taped."});
+    try std.testing.expect(world.has_fact(fence_hole, taped_rel, null));
 
     // Step 9: Squirt StrayCat with SprayBottle
     try writer.print("[Step 9: Squirt Stray Cat with Water Bottle]\n", .{});
-    const startled_rel = try world.intern_relation("Startled", .property);
+    const startled_rel = try world.intern_relation("startled", .set);
     const fence_hair_rel = try world.intern_relation("FenceHasHair", .property);
-    try world.remember(stray_cat, startled_rel, 1, 0);
-    _ = try spatial.walk_to(stray_cat, fence_wp);
-    try world.remember(fence_hole, fence_hair_rel, 1, 0);
-    try writer.print("   -> Cat bolted through fence! A thick strip of cat fur clings to the tape!\n\n", .{});
+    const cat_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, spray_bottle, stray_cat, 8, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{cat_speech orelse "The cat bolted through the fence."});
+    try std.testing.expect(world.has_fact(stray_cat, startled_rel, null));
+    try std.testing.expect(world.has_fact(fence_hole, fence_hair_rel, null));
 
     // Step 10: Collect CatHair from FenceHole
     try writer.print("[Step 10: Peel Cat Hair from the Fence Tape]\n", .{});
     const cat_hair_ent = try world.intern_entity("CatHair");
-    try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
-    _ = world.forget(fence_hole, fence_hair_rel, null);
-    _ = world.forget(fence_hole, taped_rel, null);
-    try writer.print("   -> Gabriel acquired CatHair!\n\n", .{});
+    const hair_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, fence_hole, null, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{hair_speech orelse "Gabriel acquired CatHair."});
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, cat_hair_ent.to_int()));
+    try std.testing.expect(!world.has_fact(fence_hole, fence_hair_rel, null));
+    try std.testing.expect(!world.has_fact(fence_hole, taped_rel, null));
 
     // Step 11: Combine CatHair with Breakfast Syrup to craft CatMoustache
     try writer.print("[Step 11: Craft Cat-Hair Moustache with Syrup]\n", .{});
     const moustache_ent = try world.intern_entity("CatMoustache");
     const sticky_lip_rel = try world.intern_relation("StickyLip", .property);
-    try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
-    try world.remember(gabriel, sticky_lip_rel, 1, 0);
-    _ = world.forget(gabriel, carries_rel, cat_hair_ent.to_int());
-    try writer.print("   -> Gabriel applied syrup adhesive and crafted CatMoustache!\n\n", .{});
+    const moustache_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, cat_hair_ent, syrup, 1, &speech_buf);
+    try writer.print("   -> {s}\n\n", .{moustache_speech orelse "Gabriel crafted CatMoustache."});
+    try std.testing.expect(world.has_fact(gabriel, carries_rel, moustache_ent.to_int()));
+    try std.testing.expect(world.has_fact(gabriel, sticky_lip_rel, null));
 
     // Step 12: Put on CatMoustache and disguise as Mosely
     try writer.print("[Step 12: Don the Disguise]\n", .{});
     const disguised_rel = try world.intern_relation("Disguised", .property);
-    try world.remember(gabriel, disguised_rel, 1, 0);
+    const disguise_speech = try scripted_action(&world, &vm, &compiled, "Uses", gabriel, moustache_ent, gabriel, 1, &speech_buf);
+    try writer.print("   -> {s}\n", .{disguise_speech orelse "Gabriel dons the disguise."});
+    try std.testing.expect(world.has_fact(gabriel, disguised_rel, null));
     try writer.print("   -> Gabriel is now DISGUISED as Franklin Mosely!\n", .{});
     try writer.print("   -> Evaluate Disguise: {s}\n\n", .{if (evaluate_disguise(&world)) "VALID DISGUISE" else "INVALID"});
 
@@ -389,9 +437,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Gabriel selects Choice 1!\n", .{});
 
     const has_keys_rel = try world.intern_relation("HasBikeKeys", .property);
-    try world.remember(gabriel, has_keys_rel, 1, 0);
-
-    try writer.print("   -> Buthane: \"Ah, Monsieur Mosely! That is a magnificent moustache. Here are the keys!\"\n", .{});
+    const rental_speech = try scripted_action(&world, &vm, &compiled, "TalksTo", gabriel, buthane, null, 1, &speech_buf);
+    try writer.print("   -> {s}\n", .{rental_speech orelse "Buthane hands Gabriel the keys."});
+    try std.testing.expect(world.has_fact(gabriel, has_keys_rel, null));
     try writer.print("   -> Has Motorcycle Keys? {s}\n", .{if (evaluate_puzzle_victory(&world)) "YES! PUZZLE SOLVED!" else "NO"});
     try std.testing.expect(evaluate_puzzle_victory(&world));
     try writer.print("\n", .{});
@@ -519,7 +567,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
     _ = repl_instance;
 
-
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Gabriel Knight 3: The Cat Moustache", 1280, 720);
     defer window.deinit();
     window.set_theme(&gk3_theme);
@@ -559,15 +606,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     window.set_cue_banner("Rennes-le-Château: Scavenge Room Desk & Garden Shrub for items! [H/G/B] Scenes [0-8] Steps", 180);
 
     const passport_ent = try world.intern_entity("MoselyPassport");
-    const passport_mod_rel = try world.intern_relation("PassportModified", .property);
-    const taped_rel = try world.intern_relation("Taped", .property);
-    const startled_rel = try world.intern_relation("Startled", .property);
+    const taped_rel = try world.intern_relation("taped", .set);
     const fence_hair_rel = try world.intern_relation("FenceHasHair", .property);
     const cat_hair_ent = try world.intern_entity("CatHair");
     const moustache_ent = try world.intern_entity("CatMoustache");
-    const sticky_lip_rel = try world.intern_relation("StickyLip", .property);
-    const disguised_rel = try world.intern_relation("Disguised", .property);
-    const has_keys_rel = try world.intern_relation("HasBikeKeys", .property);
 
     while (true) {
         const action = window.poll_events(session.frame());
@@ -610,14 +652,12 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     if ((std.mem.eql(u8, item_a, "Marker") and std.mem.eql(u8, item_b, "MoselyPassport")) or
                         (std.mem.eql(u8, item_a, "MoselyPassport") and std.mem.eql(u8, item_b, "Marker")))
                     {
-                        try world.remember(gabriel, passport_mod_rel, 1, 0);
+                        try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, marker, passport_ent, 1);
                         window.set_cue_banner("★ Step 2: Drew a magnificent moustache on Mosely's passport photo! ★", 150);
                     } else if ((std.mem.eql(u8, item_a, "Syrup") and std.mem.eql(u8, item_b, "CatHair")) or
-                               (std.mem.eql(u8, item_a, "CatHair") and std.mem.eql(u8, item_b, "Syrup")))
+                        (std.mem.eql(u8, item_a, "CatHair") and std.mem.eql(u8, item_b, "Syrup")))
                     {
-                        try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
-                        try world.remember(gabriel, sticky_lip_rel, 1, 0);
-                        _ = world.forget(gabriel, carries_rel, cat_hair_ent.to_int());
+                        try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, cat_hair_ent, syrup, 1);
                         window.set_cue_banner("★ Step 6: Applied warm breakfast syrup and crafted Cat Moustache! ★", 150);
                     } else {
                         var buf: [96]u8 = undefined;
@@ -634,16 +674,14 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
                     if (std.mem.eql(u8, item_name, "SprayBottle") and std.mem.eql(u8, actor_name, "StrayCat")) {
                         if (world.has_fact(fence_hole, taped_rel, null)) {
-                            try world.remember(stray_cat, startled_rel, 1, 0);
-                            try world.remember(fence_hole, fence_hair_rel, 1, 0);
-                            _ = try spatial.walk_to(stray_cat, fence_wp);
+                            try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, spray_bottle, stray_cat, 8);
                             window.set_cue_banner("★ Step 4: SQUIRT! Cat bolted through fence! Strip of fur left on tape! ★", 180);
                         } else {
                             window.set_cue_banner("Gabriel: \"Squirting the cat now won't help; the fence hole isn't taped!\"", 120);
                         }
                     } else if (std.mem.eql(u8, item_name, "CatMoustache") and std.mem.eql(u8, actor_name, "Gabriel")) {
-                        if (world.has_fact(gabriel, passport_mod_rel, null)) {
-                            try world.remember(gabriel, disguised_rel, 1, 0);
+                        if (world.has_fact(gabriel, world.lookup_relation("PassportModified").?, null)) {
+                            try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, moustache_ent, gabriel, 1);
                             window.set_cue_banner("★ Step 7: Gabriel is now fully DISGUISED as detective Mosely! ★", 180);
                         } else {
                             window.set_cue_banner("Gabriel: \"I've got the moustache, but Mosely's passport photo still has no moustache!\"", 120);
@@ -662,11 +700,11 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     const hs_name = frame.hotspots[hs_act.hotspot_index].get_name();
 
                     if (std.mem.eql(u8, item_name, "MaskingTape") and std.mem.indexOf(u8, hs_name, "Hole") != null) {
-                        try world.remember(fence_hole, taped_rel, 1, 0);
+                        try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1);
                         window.set_cue_banner("★ Step 3: Stretched sticky masking tape across the fence hole! ★", 150);
                     } else if (std.mem.indexOf(u8, hs_name, "Door") != null) {
                         if (!world.has_fact(gabriel, carries_rel, passport_ent.to_int())) {
-                            try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
+                            try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, mosely_door, null, 1);
                             window.set_cue_banner("★ Step 1: Reached into Mosely's room and snatched his passport! ★", 150);
                         } else {
                             window.set_cue_banner("Gabriel: \"I already have Mosely's passport.\"", 90);
@@ -830,32 +868,28 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         // Take verb: Scavenge items or collect cat hair
                         if (std.mem.indexOf(u8, hname, "Desk") != null) {
                             if (!world.has_fact(gabriel, carries_rel, marker.to_int())) {
-                                try world.remember(gabriel, carries_rel, marker.to_int(), 0);
-                                try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
-                                try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
+                                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
                                 window.set_cue_banner("★ Scavenged Desk: Acquired Marker, Masking Tape, and Syrup! ★", 180);
                             } else {
                                 window.set_cue_banner("Room Desk: Cleared out. You already took the marker, tape, and syrup.", 90);
                             }
                         } else if (std.mem.indexOf(u8, hname, "Door") != null) {
                             if (!world.has_fact(gabriel, carries_rel, passport_ent.to_int())) {
-                                try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
+                                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, mosely_door, null, 1);
                                 window.set_cue_banner("★ Snuck into Room 33 and snatched Mosely's passport! ★", 150);
                             } else {
                                 window.set_cue_banner("Gabriel: \"I already snatched Mosely's passport.\"", 90);
                             }
                         } else if (std.mem.indexOf(u8, hname, "Shrub") != null) {
                             if (!world.has_fact(gabriel, carries_rel, spray_bottle.to_int())) {
-                                try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
+                                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1);
                                 window.set_cue_banner("★ Found Spray Bottle filled with water on the potting bench! ★", 180);
                             } else {
                                 window.set_cue_banner("Garden Shrub: Fragrant lavender. The stray cat is napping nearby.", 90);
                             }
                         } else if (std.mem.indexOf(u8, hname, "Hole") != null) {
                             if (world.has_fact(fence_hole, fence_hair_rel, null)) {
-                                try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
-                                _ = world.forget(fence_hole, fence_hair_rel, null);
-                                _ = world.forget(fence_hole, taped_rel, null);
+                                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, fence_hole, null, 1);
                                 window.set_cue_banner("★ Peeled Cat Hair from the fence tape into inventory! ★", 150);
                             } else if (world.has_fact(fence_hole, taped_rel, null)) {
                                 window.set_cue_banner("Masking tape is stretched across the fence hole. Need to squirt the cat!", 120);
@@ -891,7 +925,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             .dialogue_choice => |choice_idx| {
                 const is_dg = evaluate_disguise(&world);
                 if (is_dg and choice_idx == 0) {
-                    try world.remember(gabriel, has_keys_rel, 1, 0);
+                    try session_scripted_action(&session, &vm, &compiled, "TalksTo", gabriel, buthane, null, 1);
                     window.set_cue_banner("★ VICTORY! Buthane: \"Ah, Monsieur Mosely! Here are the keys!\" ★", 180);
                 } else if (!is_dg and choice_idx == 0) {
                     window.set_cue_banner("Buthane: \"Désolé, monsieur! The last motorcycle is reserved for Mosely.\"", 120);
@@ -940,71 +974,84 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             }
             // [0] Quick Scavenge Supplies (Dev Shortcut)
             if (pressed == .scavenge) {
-                try world.remember(gabriel, carries_rel, marker.to_int(), 0);
-                try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
-                try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
-                try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1);
                 window.set_cue_banner("Dev Quick-Fill: Scavenged Marker, Tape, Syrup, and Spray Bottle!", 90);
                 hotkey_handled = true;
             }
             // [1] Snatch Passport
             if (pressed == .step_1) {
-                try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, mosely_door, null, 1);
                 window.set_cue_banner("Step 1: Acquired Mosely's Passport from Room 33!", 90);
                 hotkey_handled = true;
             }
             // [2] Draw Moustache on Passport
             if (pressed == .step_2) {
-                try world.remember(gabriel, carries_rel, marker.to_int(), 0);
-                try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
-                try world.remember(gabriel, passport_mod_rel, 1, 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, mosely_door, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, marker, passport_ent, 1);
                 window.set_cue_banner("Step 2: Drew moustache on Mosely's passport photo!", 90);
                 hotkey_handled = true;
             }
             // [3] Tape Fence Hole
             if (pressed == .step_3) {
-                try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
-                try world.remember(fence_hole, taped_rel, 1, 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1);
                 window.set_cue_banner("Step 3: Stretched masking tape across fence hole!", 90);
                 hotkey_handled = true;
             }
             // [4] Squirt Stray Cat
             if (pressed == .step_4) {
-                try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
-                try world.remember(stray_cat, startled_rel, 1, 0);
-                try world.remember(fence_hole, fence_hair_rel, 1, 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, spray_bottle, stray_cat, 8);
                 window.set_cue_banner("Step 4: Squirting cat! Fur left stuck to fence tape!", 90);
                 hotkey_handled = true;
             }
             // [5] Collect Cat Hair
             if (pressed == .step_5) {
-                try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
-                _ = world.forget(fence_hole, fence_hair_rel, null);
-                _ = world.forget(fence_hole, taped_rel, null);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, spray_bottle, stray_cat, 8);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, fence_hole, null, 1);
                 window.set_cue_banner("Step 5: Peeled Cat Hair from tape into inventory!", 90);
                 hotkey_handled = true;
             }
             // [6] Craft Cat Moustache with Syrup
             if (pressed == .step_6) {
-                try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
-                try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
-                try world.remember(gabriel, sticky_lip_rel, 1, 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                if (!world.has_fact(gabriel, carries_rel, cat_hair_ent.to_int())) {
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, spray_bottle, stray_cat, 8);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, fence_hole, null, 1);
+                }
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, cat_hair_ent, syrup, 1);
                 window.set_cue_banner("Step 6: Applied syrup adhesive and crafted Cat Moustache!", 90);
                 hotkey_handled = true;
             }
             // [7] Don Disguise
             if (pressed == .step_7) {
-                try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
-                try world.remember(gabriel, passport_mod_rel, 1, 0);
-                try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
-                try world.remember(gabriel, disguised_rel, 1, 0);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, room_desk, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, mosely_door, null, 1);
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, marker, passport_ent, 1);
+                if (!world.has_fact(gabriel, carries_rel, moustache_ent.to_int())) {
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, garden_shrub, null, 1);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, masking_tape, fence_hole, 1);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, spray_bottle, stray_cat, 8);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, fence_hole, null, 1);
+                    try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, cat_hair_ent, syrup, 1);
+                }
+                try session_scripted_action(&session, &vm, &compiled, "Uses", gabriel, moustache_ent, gabriel, 1);
                 window.set_cue_banner("Step 7: Gabriel is now fully DISGUISED as Mosely!", 90);
                 hotkey_handled = true;
             }
             // [8] Talk to Buthane
             if (pressed == .step_8) {
                 if (evaluate_disguise(&world)) {
-                    try world.remember(gabriel, has_keys_rel, 1, 0);
+                    try session_scripted_action(&session, &vm, &compiled, "TalksTo", gabriel, buthane, null, 1);
                     window.set_cue_banner("★ Step 8 VICTORY: Buthane gave motorcycle keys to \"Mosely\"! ★", 180);
                 } else {
                     window.set_cue_banner("Step 8: Buthane rejected Gabriel! (Need complete disguise!)", 90);

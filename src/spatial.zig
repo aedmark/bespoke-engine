@@ -472,11 +472,25 @@ pub const SpatialSystem = struct {
     pub fn walk_to(self: *SpatialSystem, entity: EntityId, dest: WaypointId) !bool {
         const agent = self.agents.getPtr(entity) orelse return false;
         if (agent.current_wp == dest) {
+            // `current_wp` is the last node reached, not necessarily the agent's current
+            // position. If it has already left that node, a request for it means turn back
+            // along the active edge. Build a one-node path whose first waypoint must not be
+            // skipped by `set_path`, because that helper assumes paths begin at current_wp.
+            const wp = self.graph.get_waypoint(dest) orelse return false;
+            if (agent.is_moving and (agent.pos.x != wp.pos.x or agent.pos.y != wp.pos.y)) {
+                const return_path = try self.allocator.alloc(WaypointId, 1);
+                return_path[0] = dest;
+                if (agent.path) |old_path| self.allocator.free(old_path);
+                agent.path = return_path;
+                agent.path_index = 0;
+                agent.target_wp = dest;
+                agent.is_moving = true;
+                agent.arrived = false;
+                agent.arrival_pending = false;
+                return true;
+            }
             agent.arrived = true;
-            // An agent still moving here has left `dest` and is between waypoints; its old path
-            // keeps running (a known motor gap, see ARCHITECTURE, Claims vs. code), so this is
-            // not an arrival.
-            if (!agent.is_moving) agent.arrival_pending = true;
+            agent.arrival_pending = true;
             return true;
         }
 
@@ -892,6 +906,35 @@ test "P3-02: motor agent stepping and walk intent arrival" {
     try testing.expectEqual(wp3, spatial.get_current_waypoint(guard).?);
     try testing.expect(!spatial.is_moving(guard));
     try testing.expect(spatial.has_arrived(guard));
+}
+
+test "P32-25: walk intent toward the waypoint just left turns the agent back" {
+    const testing = std.testing;
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = EntityId.from_int(1);
+    const actor = EntityId.from_int(10);
+    const left = try spatial.graph.add_waypoint(room, 0, 0, "Left");
+    const right = try spatial.graph.add_waypoint(room, 20, 0, "Right");
+    try spatial.graph.connect(left, right, null);
+    try spatial.register_entity(actor, left, 5);
+
+    try testing.expect(try spatial.walk_to(actor, right));
+    spatial.step_tick();
+    try testing.expectEqual(@as(i32, 5), spatial.get_position(actor).?.x);
+    try testing.expectEqual(left, spatial.get_current_waypoint(actor).?);
+
+    try testing.expect(try spatial.walk_to(actor, left));
+    try testing.expect(spatial.is_moving(actor));
+    try testing.expectEqual(left, spatial.agents.get(actor).?.target_wp.?);
+    try testing.expect(spatial.pending_arrival(actor) == null);
+
+    spatial.step_tick();
+    try testing.expectEqual(@as(i32, 0), spatial.get_position(actor).?.x);
+    try testing.expectEqual(left, spatial.get_current_waypoint(actor).?);
+    try testing.expect(!spatial.is_moving(actor));
+    try testing.expectEqual(left, spatial.pending_arrival(actor).?);
 }
 
 test "P7-01: spatial system registers and hit-tests scene hotspots" {

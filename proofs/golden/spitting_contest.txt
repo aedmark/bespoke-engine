@@ -18,8 +18,8 @@
    -> Organiser is watching! Narrator: "You better not, he's watching."
 
 [Step 4: Guybrush sounds Ship's Horn!] *** HOOOOOOONK! ***
-   -> Organiser: "About time that damn ship came in!"
-   -> Organiser and Onlookers walk to Looking Offstage! (Distracted TTL: 100 ticks)
+   -> Organiser: "About time that damn ship came in."
+   -> Organiser walks to Looking Offstage! (Distracted TTL: 100 ticks)
 
 [Step 5: Guybrush tampers with Flags while crowd is distracted!]
    -> Fact asserted: Flags are tampered with (moved closer to line)!
@@ -31,13 +31,13 @@
    -> Organiser: "OH, we have a winner! First Place!"
 
 [Step 7: Testing TTL Expiration & Falling-Edge Triggers]
-   -> Distraction TTL expired at Tick 106!
+   -> Distraction TTL expired at Tick 109!
    -> 'when Organiser forgets Distracted' fired: Organiser returned to Starting Line.
    -> Wind stopped blowing: 'when Wind stops being blowing' falling-edge hook fired.
 
 [Step 8: Time-Travel Rewind Demo]
-   -> Rewinding simulation to Tick 6 (before Horn distraction)...
-   -> Rewound Tick: 6
+   -> Rewinding simulation to Tick 8 (before Horn distraction)...
+   -> Rewound Tick: 8
    -> Organiser Distracted? NO (Restored to false!)
    -> Flags Tampered?       NO (Restored to false!)
    -> Rewound Contest Result: thick_flags_untouched_third (Back to 3rd place!)

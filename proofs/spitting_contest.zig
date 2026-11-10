@@ -59,11 +59,11 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\    resume previous action
     \\
     \\on cue Uses(Guybrush, Horn):
+    \\  remember Distracted[Organiser, Onlookers] for 100 ticks
     \\  interrupt Organiser with:
     \\    walk Organiser to Looking Offstage
     \\    face Onlookers toward Looking Offstage
     \\    say Organiser to Scene: "About time that damn ship came in."
-    \\    remember Distracted[Organiser, Onlookers] for 100 ticks
     \\
     \\when Organiser forgets Distracted:
     \\  interrupt Organiser with:
@@ -88,6 +88,9 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\on cue Uses(Guybrush, GreenDrink):
     \\  animate (Guybrush, Guybrush-drinking)
     \\  now Spit is thick
+    \\
+    \\on cue Gusts(Guybrush):
+    \\  now Wind is blowing
     \\
     \\on cue LeavingScene(Guybrush):
     \\  now Spit is not thick
@@ -144,11 +147,57 @@ pub fn spit(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.Com
     return placement(world) orelse error.SpitNotJudged;
 }
 
-/// Asserts `subject is <state>` the way the script's `now X is Y` does (D-043, P32-28).
-/// In Option C, unary states are stored with object_or_value = 0 (EntityId.none), and
-/// queried by subject and relation presence.
-fn set_state(world: *bespoke.World, subject: bespoke.EntityId, state: bespoke.RelationKind) !void {
-    try world.remember(subject, state, 0, 0);
+/// Fires a content action and advances enough ticks for direct handlers or one nested
+/// interrupt to run. Speech comes from the final tick, where nested interrupt bodies speak.
+fn script_action(
+    world: *bespoke.World,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    cue: []const u8,
+    actor: bespoke.EntityId,
+    target_a: ?bespoke.EntityId,
+    target_b: ?bespoke.EntityId,
+    ticks: usize,
+    speech_buf: []u8,
+) !?[]const u8 {
+    _ = try vm.fire_cue(compiled, cue, actor, target_a, target_b);
+    var remaining = ticks;
+    while (remaining > 0) : (remaining -= 1) _ = try bespoke.host.tick(vm, compiled);
+    return bespoke.host.speech_this_tick(world, vm, speech_buf);
+}
+
+fn script_action_until_speech(
+    world: *bespoke.World,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    cue: []const u8,
+    actor: bespoke.EntityId,
+    target: ?bespoke.EntityId,
+    max_ticks: usize,
+    speech_buf: []u8,
+) !?[]const u8 {
+    _ = try vm.fire_cue(compiled, cue, actor, target, null);
+    var tick_count: usize = 0;
+    while (tick_count < max_ticks) : (tick_count += 1) {
+        _ = try bespoke.host.tick(vm, compiled);
+        if (bespoke.host.speech_this_tick(world, vm, speech_buf)) |speech| return speech;
+    }
+    return null;
+}
+
+fn session_action(
+    session: *bespoke.host.Session,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    cue: []const u8,
+    actor: bespoke.EntityId,
+    target_a: ?bespoke.EntityId,
+    target_b: ?bespoke.EntityId,
+    ticks: usize,
+) !void {
+    _ = try vm.fire_cue(compiled, cue, actor, target_a, target_b);
+    var remaining = ticks;
+    while (remaining > 0) : (remaining -= 1) _ = try session.advance();
 }
 
 /// Executes headless simulation of the Booty Island Spitting Contest vertical slice (P10-03, D-012).
@@ -201,17 +250,18 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try spatial.register_entity(organiser, starting_line_wp, 12);
     try spatial.register_entity(onlookers, onlookers_wp, 15);
 
-    // Initial items for Guybrush
+    // Script-declared initial items for Guybrush.
     const carries_rel = try world.intern_relation("Carries", .set);
     const horn_ent = try world.intern_entity("Horn");
     const drink_ent = try world.intern_entity("GreenDrink");
-    try world.remember(guybrush, carries_rel, horn_ent.to_int(), 0);
-    try world.remember(guybrush, carries_rel, drink_ent.to_int(), 0);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.load_compiled_rules(&compiled);
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    try std.testing.expect(world.has_fact(guybrush, carries_rel, horn_ent.to_int()));
+    try std.testing.expect(world.has_fact(guybrush, carries_rel, drink_ent.to_int()));
 
     if (compiled.routine_entries.get("EggingCrowd")) |entry| {
         _ = try vm.spawn_routine(organiser, entry);
@@ -242,7 +292,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 2: Guybrush drinks GreenDrink
     try writer.print("\n[Step 2: Guybrush drinks GreenDrink] \"Glug glug glug...\"\n", .{});
     const thick_rel = try world.intern_relation("thick", .set);
-    try set_state(&world, spit_ent, thick_rel);
+    var speech_buf: [512]u8 = undefined;
+    _ = try script_action(&world, &vm, &compiled, "Uses", guybrush, drink_ent, null, 1, &speech_buf);
+    try std.testing.expect(world.has_fact(spit_ent, thick_rel, null));
     try writer.print("   -> Fact asserted: Spit is thick!\n", .{});
 
     const res2 = try spit(&world, &vm, &compiled);
@@ -258,14 +310,14 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     }
 
     const pre_horn_tick = world.current_tick;
+    const pre_horn_snapshot = timeline.last_index();
 
     // Step 4: Distract with Ship's Horn
     try writer.print("\n[Step 4: Guybrush sounds Ship's Horn!] *** HOOOOOOONK! ***\n", .{});
-    try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
-    _ = try spatial.walk_to(organiser, offstage_wp);
-    _ = try spatial.walk_to(onlookers, offstage_wp);
-    try writer.print("   -> Organiser: \"About time that damn ship came in!\"\n", .{});
-    try writer.print("   -> Organiser and Onlookers walk to Looking Offstage! (Distracted TTL: 100 ticks)\n", .{});
+    const horn_speech = try script_action_until_speech(&world, &vm, &compiled, "Uses", guybrush, horn_ent, 12, &speech_buf);
+    try std.testing.expect(world.has_fact(organiser, distracted_rel, onlookers.to_int()));
+    try writer.print("   -> {s}\n", .{horn_speech orelse "Organiser turns toward the ship."});
+    try writer.print("   -> Organiser walks to Looking Offstage! (Distracted TTL: 100 ticks)\n", .{});
 
     for (0..3) |_| {
         try vm.step_tick();
@@ -275,7 +327,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 5: Move flags while distracted!
     try writer.print("\n[Step 5: Guybrush tampers with Flags while crowd is distracted!]\n", .{});
     const tampered_rel = try world.intern_relation("tampered", .set);
-    try set_state(&world, flags, tampered_rel);
+    _ = try script_action(&world, &vm, &compiled, "Uses", guybrush, flags, null, 1, &speech_buf);
+    try std.testing.expect(world.has_fact(flags, tampered_rel, null));
     try writer.print("   -> Fact asserted: Flags are tampered with (moved closer to line)!\n", .{});
 
     const res3 = try spit(&world, &vm, &compiled);
@@ -285,9 +338,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 6: Wind gust arrives! (Rising edge trigger)
     try writer.print("\n[Step 6: Wind gust cycles in!] Rising edge trigger activates...\n", .{});
     const blowing_rel = try world.intern_relation("blowing", .set);
-    try set_state(&world, wind_ent, blowing_rel);
+    _ = try script_action(&world, &vm, &compiled, "Gusts", guybrush, null, null, 1, &speech_buf);
+    try std.testing.expect(world.has_fact(wind_ent, blowing_rel, null));
 
-    try vm.step_tick();
     {
         try timeline.record(&world);
     }
@@ -314,7 +367,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 8: Time-Travel Rewind
     try writer.print("\n[Step 8: Time-Travel Rewind Demo]\n", .{});
     try writer.print("   -> Rewinding simulation to Tick {d} (before Horn distraction)...\n", .{pre_horn_tick});
-    _ = try timeline.restore(&world, pre_horn_tick);
+    _ = try timeline.restore(&world, pre_horn_snapshot);
 
     try writer.print("   -> Rewound Tick: {d}\n", .{world.current_tick});
     try writer.print("   -> Organiser Distracted? {s} (Restored to false!)\n", .{if (world.has_fact(organiser, distracted_rel, null)) "YES" else "NO"});
@@ -376,22 +429,17 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     try spatial.register_entity(organiser, starting_line_wp, 12);
     try spatial.register_entity(onlookers, onlookers_wp, 15);
 
-    // Initial items for Guybrush
-    const carries_rel = try world.intern_relation("Carries", .set);
+    // Initial items are declared by the script.
     const horn_ent = try world.intern_entity("Horn");
     const drink_ent = try world.intern_entity("GreenDrink");
-    try world.remember(guybrush, carries_rel, horn_ent.to_int(), 0);
-    try world.remember(guybrush, carries_rel, drink_ent.to_int(), 0);
 
-    const thick_rel = try world.intern_relation("thick", .set);
     const tampered_rel = try world.intern_relation("tampered", .set);
-    const distracted_rel = try world.intern_relation("Distracted", .set);
-    const spit_ent = world.lookup_entity("Spit").?;
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.load_compiled_rules(&compiled);
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
 
     var display_bridge = bespoke.DisplayBridge.init();
     display_bridge.set_status_hook(art.capture_status);
@@ -504,9 +552,8 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                             window.set_cue_banner("Approaching flags...", 60);
                         }
                     } else {
-                        const is_distracted = world.has_fact(organiser, distracted_rel, null);
-                        if (is_distracted) {
-                            try set_state(&world, flags, tampered_rel);
+                        try session_action(&session, &vm, &compiled, "Uses", guybrush, flags, null, 1);
+                        if (world.has_fact(flags, tampered_rel, null)) {
                             window.set_cue_banner("★ You secretly moved the flags closer while the crowd wasn't looking! ★", 120);
                             window.play_sfx(.combine);
                         } else {
@@ -531,13 +578,11 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                         }
                     } else if (inv_act.verb == .use_with) {
                         if (std.mem.indexOf(u8, item_name, "Horn") != null) {
-                            try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
-                            _ = try spatial.walk_to(organiser, offstage_wp);
-                            _ = try spatial.walk_to(onlookers, offstage_wp);
+                            try session_action(&session, &vm, &compiled, "Uses", guybrush, horn_ent, null, 2);
                             window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
                             window.play_sound(art.sfx(.horn));
                         } else if (std.mem.indexOf(u8, item_name, "Drink") != null) {
-                            try set_state(&world, spit_ent, thick_rel);
+                            try session_action(&session, &vm, &compiled, "Uses", guybrush, drink_ent, null, 1);
                             window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
                             window.play_sfx(.pickup);
                         }
@@ -599,21 +644,18 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     }
                 },
                 .horn => {
-                    try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
-                    _ = try spatial.walk_to(organiser, offstage_wp);
-                    _ = try spatial.walk_to(onlookers, offstage_wp);
+                    try session_action(&session, &vm, &compiled, "Uses", guybrush, horn_ent, null, 2);
                     window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
                     window.play_sound(art.sfx(.horn));
                 },
                 .drink => {
-                    try set_state(&world, spit_ent, thick_rel);
+                    try session_action(&session, &vm, &compiled, "Uses", guybrush, drink_ent, null, 1);
                     window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
                     window.play_sfx(.pickup);
                 },
                 .flags => {
-                    const is_distracted = world.has_fact(organiser, distracted_rel, null);
-                    if (is_distracted) {
-                        try set_state(&world, flags, tampered_rel);
+                    try session_action(&session, &vm, &compiled, "Uses", guybrush, flags, null, 1);
+                    if (world.has_fact(flags, tampered_rel, null)) {
                         window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
                         window.play_sfx(.combine);
                     } else {
@@ -652,12 +694,10 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     const item_name = frame.inventory[act.item_index].get_name();
                     const actor_name = frame.entities[act.actor_index].get_name();
                     if (std.mem.eql(u8, item_name, "GreenDrink") and std.mem.eql(u8, actor_name, "Guybrush")) {
-                        try set_state(&world, spit_ent, thick_rel);
+                        try session_action(&session, &vm, &compiled, "Uses", guybrush, drink_ent, null, 1);
                         window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
                     } else if (std.mem.eql(u8, item_name, "Horn")) {
-                        try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
-                        _ = try spatial.walk_to(organiser, offstage_wp);
-                        _ = try spatial.walk_to(onlookers, offstage_wp);
+                        try session_action(&session, &vm, &compiled, "Uses", guybrush, horn_ent, null, 2);
                         window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
                     } else {
                         var buf: [96]u8 = undefined;
@@ -672,9 +712,8 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     const item_name = frame.inventory[hs_act.item_index].get_name();
                     const hs_name = frame.hotspots[hs_act.hotspot_index].get_name();
                     if (std.mem.indexOf(u8, hs_name, "Flag") != null) {
-                        const is_distracted = world.has_fact(organiser, distracted_rel, null);
-                        if (is_distracted) {
-                            try set_state(&world, flags, tampered_rel);
+                        try session_action(&session, &vm, &compiled, "Uses", guybrush, flags, null, 1);
+                        if (world.has_fact(flags, tampered_rel, null)) {
                             window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
                         } else {
                             window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
@@ -768,14 +807,17 @@ test "P10-03: spitting contest puzzle systemic progression and resolution" {
 
     const organiser = world.lookup_entity("Organiser").?;
     const distracted_rel = world.lookup_relation("Distracted").?;
-    try world.remember(organiser, distracted_rel, world.lookup_entity("Onlookers").?.to_int(), 100);
+    var speech_buf: [256]u8 = undefined;
+    _ = try script_action(&world, &vm, &compiled, "Uses", guybrush, try world.intern_entity("Horn"), null, 2, &speech_buf);
+    try testing.expect(world.has_fact(organiser, distracted_rel, null));
     _ = try vm.fire_cue(&compiled, "Uses", guybrush, flags, null);
     _ = try bespoke.host.tick(&vm, &compiled);
     try testing.expect(world.has_fact(flags, tampered_rel, null));
     try testing.expectEqual(SpitResult.thick_flags_moved_no_wind_second, try spit(&world, &vm, &compiled));
 
     // 4. Wind gust blows! -> Thick spit + moved flags + wind gust -> WINNER! 1st place!
-    try set_state(&world, world.lookup_entity("Wind").?, blowing_rel);
+    _ = try script_action(&world, &vm, &compiled, "Gusts", guybrush, null, null, 1, &speech_buf);
+    try testing.expect(world.has_fact(world.lookup_entity("Wind").?, blowing_rel, null));
     try testing.expectEqual(SpitResult.winner_first, try spit(&world, &vm, &compiled));
 
     // Exactly one placement is recorded at a time.

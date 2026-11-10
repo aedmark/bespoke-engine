@@ -17,9 +17,9 @@
    [Tick  6 | WITNESS] Baker witnessed Drifter stealing BreadLoaf and formed a Grudge!
    [Tick  6 | WITNESS] Farmer witnessed Drifter stealing BreadLoaf and formed a Grudge!
    [Tick  6 | WITNESS] Gossip witnessed Drifter stealing BreadLoaf and formed a Grudge!
-   [Tick 10 | TRADE  ] Gossip bought a warm meal from Baker for 5g.
    [Tick 11 | RUMOR  ] Baker spread rumor of Drifter's theft to Sheriff!
    [Tick 11 | JUSTICE] Sheriff heard rumor and issued WarrantFor(Sheriff, Drifter)!
+   [Tick 12 | TRADE  ] Gossip bought a warm meal from Baker for 5g.
    [Tick 12 | ARREST ] Sheriff arrested Drifter, recovered BreadLoaf, and jailed offender!
 
 [Phase 2: Emergent Cascade Verification (Tick 12)]
