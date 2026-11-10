@@ -607,6 +607,19 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Revert to the JavaScript-only mock simulator: rejected because an inaccurate mock contradicts the 3x documentation contract.
 **Consequences:** `docs/manual.html` is restored to a standalone ~240 KB document without binary bloat. `python3 tools/manual.py build` no longer depends on pre-building WebAssembly binaries. `tools/manual_simulator.js` is deleted. The WebAssembly target and browser bridge remain fully supported and verified via `site/index.html` and `tools/wasm_smoke.js`.
 
+## D-048 Atomic Temporal Snapshots for Hypervisor Branch State and Saves (2026-11-10, status: accepted)
+**Context:** D-033 disabled scrub and rewind in the Middlesex Anomaly because `TemporalHypervisor` keeps its branch world and countdown outside `World`'s snapshot. The save drawer still exposed save/load for that proof, so a restore could rewind the primary world while leaving the branch and countdown ahead. This was an inconsistency between the claimed timeline and the persisted state, not a limitation of the hypervisor model.
+**Decision:**
+1. Define a versioned temporal envelope in `src/temporal_snapshot.zig` carrying the branch world, branch active flag, budget and elapsed ticks, collapse state, receiver and keystone entities, convergence waypoint, teleological dependencies, and dream residue.
+2. `host.Timeline` records and restores `World` plus the optional envelope as one snapshot. `Session.initWithHypervisor` opts a host into temporal recording; `restore_with_temporal` rejects a snapshot that has no envelope.
+3. Write `.sav` version 2 with a length-delimited temporal section before the world, spatial, and VM sections. Decode and validate the envelope before mutating primary state, then apply it only after the primary restore. Version 1 saves remain readable by non-temporal loaders; a temporal loader rejects a version 1 or envelope-less save with `MissingTemporalState`.
+4. Darko uses `initWithHypervisor`, records after actions and hypervisor ticks, and no longer intercepts scrub or rewind.
+**Alternatives:**
+- Keep the fixed timeline and disable save/load in Darko: rejected because it hides state the UI already offered and leaves the phase's rewind claim false.
+- Store the branch world and countdown as ordinary `World` facts: rejected because the branch is a separate arena with its own tick and clone lifecycle; flattening it would collapse the hypervisor boundary.
+- Write a world-only version 2 and reconstruct the branch on load: rejected because countdown, dependencies, and residue cannot be reconstructed deterministically.
+**Consequences:** `.sav` version 2 is larger by one encoded branch world for temporal sessions. Existing version 1 saves still load in non-temporal tools; they cannot be loaded into a temporal session. Darko's timeline and saves now restore branch and countdown atomically. The proof's interactive action routing still targets the primary world while loop closure reads the branch, so that routing fix remains open as P31-05. D-033's fixed-timeline override is retired.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

@@ -12,12 +12,15 @@ const spatial_mod = @import("spatial.zig");
 const display_mod = @import("display.zig");
 const codegen = @import("compiler/codegen.zig");
 const dialogue_mod = @import("dialogue.zig");
+const hypervisor_mod = @import("hypervisor.zig");
+const temporal_mod = @import("temporal_snapshot.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
 const VM = vm_mod.VM;
 const SpatialSystem = spatial_mod.SpatialSystem;
 const CompiledProgram = codegen.CompiledProgram;
+const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
 
 /// Cue id the compiler emits for `say` statements (D-009).
 pub const SAY_CUE_ID: u16 = 2;
@@ -126,15 +129,25 @@ pub fn place_waypoint(spatial: *SpatialSystem, wp_id: u16, x: i32, y: i32) void 
 /// back and forth freely. The future is discarded only when the clock advances from a past
 /// point (`discard_after`), which records a divergent timeline.
 pub const Timeline = struct {
-    snapshots: std.ArrayList(std.ArrayList(u8)),
+    pub const Snapshot = struct {
+        world: std.ArrayList(u8),
+        temporal: ?std.ArrayList(u8) = null,
+
+        pub fn deinit(self: *Snapshot) void {
+            self.world.deinit();
+            if (self.temporal) |*temporal| temporal.deinit();
+        }
+    };
+
+    snapshots: std.ArrayList(Snapshot),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Timeline {
-        return .{ .snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator), .allocator = allocator };
+        return .{ .snapshots = std.ArrayList(Snapshot).init(allocator), .allocator = allocator };
     }
 
     pub fn deinit(self: *Timeline) void {
-        for (self.snapshots.items) |*s| s.deinit();
+        for (self.snapshots.items) |*snapshot| snapshot.deinit();
         self.snapshots.deinit();
     }
 
@@ -148,34 +161,80 @@ pub const Timeline = struct {
     }
 
     pub fn record(self: *Timeline, world: *const World) !void {
-        var snap = std.ArrayList(u8).init(self.allocator);
-        errdefer snap.deinit();
-        try world.save_state(snap.writer());
-        try self.snapshots.append(snap);
+        try self.record_with_temporal(world, null);
+    }
+
+    /// Records the world and, when supplied, the complete temporal hypervisor state.
+    pub fn record_with_temporal(
+        self: *Timeline,
+        world: *const World,
+        hypervisor: ?*const TemporalHypervisor,
+    ) !void {
+        var snapshot = Snapshot{ .world = std.ArrayList(u8).init(self.allocator) };
+        errdefer snapshot.deinit();
+        try world.save_state(snapshot.world.writer());
+        if (hypervisor) |live| {
+            var temporal = std.ArrayList(u8).init(self.allocator);
+            errdefer temporal.deinit();
+            try temporal_mod.TemporalSnapshot.write(live, temporal.writer());
+            snapshot.temporal = temporal;
+        }
+        try self.snapshots.append(snapshot);
     }
 
     /// Restores snapshot `index` (clamped to the newest) into `world`, keeping later snapshots.
     /// Returns the index restored, or null when the timeline is empty.
     pub fn restore(self: *const Timeline, world: *World, index: usize) !?usize {
+        return self.restore_with_temporal(world, null, index);
+    }
+
+    /// Restores the world and temporal hypervisor together. When a hypervisor is supplied, the
+    /// snapshot must contain a temporal envelope; a world-only snapshot would desynchronize it.
+    pub fn restore_with_temporal(
+        self: *const Timeline,
+        world: *World,
+        hypervisor: ?*TemporalHypervisor,
+        index: usize,
+    ) !?usize {
         if (self.snapshots.items.len == 0) return null;
         const i = @min(index, self.snapshots.items.len - 1);
-        var stream = std.io.fixedBufferStream(self.snapshots.items[i].items);
-        try world.restore_state(stream.reader());
+        const snapshot = &self.snapshots.items[i];
+        var world_stream = std.io.fixedBufferStream(snapshot.world.items);
+        try world.restore_state(world_stream.reader());
+
+        if (hypervisor) |live| {
+            const temporal_bytes = &(snapshot.temporal orelse return error.MissingTemporalSnapshot);
+            var temporal_stream = std.io.fixedBufferStream(temporal_bytes.items);
+            var temporal = try temporal_mod.TemporalSnapshot.read(self.allocator, world, temporal_stream.reader());
+            defer temporal.deinit();
+            try temporal.validate(world);
+            try temporal.apply(live);
+        }
         return i;
     }
 
     /// Drops every snapshot after `index`.
     pub fn discard_after(self: *Timeline, index: usize) void {
         if (index + 1 >= self.snapshots.items.len) return;
-        for (self.snapshots.items[index + 1 ..]) |*s| s.deinit();
+        for (self.snapshots.items[index + 1 ..]) |*snapshot| snapshot.deinit();
         self.snapshots.shrinkRetainingCapacity(index + 1);
+    }
+
+    /// Drops every recorded snapshot, leaving the timeline empty.
+    pub fn reset(self: *Timeline) void {
+        for (self.snapshots.items) |*snapshot| snapshot.deinit();
+        self.snapshots.clearRetainingCapacity();
     }
 
     /// Drops the newest snapshot and restores the one before it. Returns the index restored.
     pub fn step_back(self: *Timeline, world: *World) !?usize {
+        return self.step_back_with_temporal(world, null);
+    }
+
+    pub fn step_back_with_temporal(self: *Timeline, world: *World, hypervisor: ?*TemporalHypervisor) !?usize {
         if (self.snapshots.items.len < 2) return null;
         self.discard_after(self.snapshots.items.len - 2);
-        return try self.restore(world, self.snapshots.items.len - 1);
+        return try self.restore_with_temporal(world, hypervisor, self.snapshots.items.len - 1);
     }
 };
 
@@ -199,6 +258,7 @@ pub const Session = struct {
     compiled: *const CompiledProgram,
     bridge: *display_mod.DisplayBridge,
     window: *display_mod.DisplayWindow,
+    hypervisor: ?*TemporalHypervisor = null,
     timeline: Timeline,
     cursor: usize = 0,
     is_paused: bool = false,
@@ -215,6 +275,20 @@ pub const Session = struct {
         bridge: *display_mod.DisplayBridge,
         window: *display_mod.DisplayWindow,
     ) !Session {
+        return initWithHypervisor(allocator, world, spatial, vm, compiled, bridge, window, null);
+    }
+
+    /// Initializes a session whose timeline and save drawer must carry temporal hypervisor state.
+    pub fn initWithHypervisor(
+        allocator: std.mem.Allocator,
+        world: *World,
+        spatial: *SpatialSystem,
+        vm: *VM,
+        compiled: *const CompiledProgram,
+        bridge: *display_mod.DisplayBridge,
+        window: *display_mod.DisplayWindow,
+        hypervisor: ?*TemporalHypervisor,
+    ) !Session {
         var s = Session{
             .world = world,
             .spatial = spatial,
@@ -222,10 +296,11 @@ pub const Session = struct {
             .compiled = compiled,
             .bridge = bridge,
             .window = window,
+            .hypervisor = hypervisor,
             .timeline = Timeline.init(allocator),
             .last_tick_ms = std.time.milliTimestamp(),
         };
-        try s.timeline.record(world);
+        try s.record_snapshot();
         s.refresh();
         return s;
     }
@@ -265,8 +340,19 @@ pub const Session = struct {
     /// Handles pause, single-step, scrub, rewind, and save/load actions. Returns true when the
     /// action was consumed; the host handles everything else.
     pub fn handle_common(self: *Session, action: display_mod.UserAction) !bool {
-        if (self.window.handle_save_action(action, self.world, self.spatial, self.vm, self.bridge, &self.is_paused)) {
+        const restoring = switch (action) {
+            .quick_load, .load_slot => true,
+            else => false,
+        };
+        if (self.window.handle_save_action_with_temporal(action, self.world, self.spatial, self.vm, self.bridge, &self.is_paused, self.hypervisor)) {
             self.vm.sync_dialogue();
+            if (restoring) {
+                // A loaded save has no persisted timeline. Start a new one from the loaded state
+                // so a later rewind cannot jump into the pre-load future.
+                self.timeline.reset();
+                try self.record_snapshot();
+                self.cursor = 0;
+            }
             self.refresh();
             return true;
         }
@@ -281,7 +367,7 @@ pub const Session = struct {
                 }
             },
             .rewind => {
-                if (try self.timeline.step_back(self.world)) |i| {
+                if (try self.timeline.step_back_with_temporal(self.world, self.hypervisor)) |i| {
                     self.cursor = i;
                     self.vm.sync_dialogue();
                     self.refresh();
@@ -297,7 +383,7 @@ pub const Session = struct {
     /// Hosts with their own rewind gesture (jump to the opening, say) call this before
     /// `handle_common` sees the action. Returns the index shown.
     pub fn jump_to(self: *Session, index: usize) !?usize {
-        const i = (try self.timeline.restore(self.world, index)) orelse return null;
+        const i = (try self.timeline.restore_with_temporal(self.world, self.hypervisor, index)) orelse return null;
         self.cursor = i;
         self.vm.sync_dialogue();
         self.is_paused = true;
@@ -322,7 +408,7 @@ pub const Session = struct {
     pub fn advance(self: *Session) !usize {
         self.timeline.discard_after(self.cursor);
         const dispatched = try tick(self.vm, self.compiled);
-        try self.timeline.record(self.world);
+        try self.record_snapshot();
         self.cursor = self.timeline.last_index();
         self.refresh();
         return dispatched;
@@ -332,9 +418,17 @@ pub const Session = struct {
     /// the world between ticks (a woven phrase, a REPL command).
     pub fn record_now(self: *Session) !void {
         self.timeline.discard_after(self.cursor);
-        try self.timeline.record(self.world);
+        try self.record_snapshot();
         self.cursor = self.timeline.last_index();
         self.refresh();
+    }
+
+    fn record_snapshot(self: *Session) !void {
+        if (self.hypervisor) |hypervisor| {
+            try self.timeline.record_with_temporal(self.world, hypervisor);
+        } else {
+            try self.timeline.record(self.world);
+        }
     }
 
     pub fn render(self: *Session) void {
@@ -436,4 +530,36 @@ test "P32-16: Timeline scrubs without losing the future and discards it only on 
     try testing.expectEqual(@as(?usize, 0), try tl.step_back(&world));
     try testing.expectEqual(@as(?u32, 0), world.get_property(e, flag));
     try testing.expectEqual(@as(?usize, null), try tl.step_back(&world));
+}
+
+test "P31-04: Timeline restores the hypervisor branch and countdown with the world" {
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const donnie = try world.intern_entity("Donnie");
+    const engine = try world.intern_entity("Engine");
+    var hypervisor = TemporalHypervisor.init(testing.allocator, &world);
+    defer hypervisor.deinit();
+    _ = try hypervisor.fork_branch(10, donnie, engine);
+
+    var timeline = Timeline.init(testing.allocator);
+    defer timeline.deinit();
+    _ = try hypervisor.step_tick(null);
+    _ = try hypervisor.step_tick(null);
+    try timeline.record_with_temporal(&world, &hypervisor);
+    try testing.expectEqual(@as(u64, 2), hypervisor.ticks_elapsed);
+
+    _ = try hypervisor.step_tick(null);
+    _ = try hypervisor.step_tick(null);
+    try timeline.record_with_temporal(&world, &hypervisor);
+    try testing.expectEqual(@as(u64, 4), hypervisor.ticks_elapsed);
+
+    try testing.expectEqual(@as(?usize, 0), try timeline.restore_with_temporal(&world, &hypervisor, 0));
+    try testing.expectEqual(@as(u64, 2), hypervisor.ticks_elapsed);
+    try testing.expectEqual(@as(u64, 2), hypervisor.branch_world.?.current_tick);
+    try testing.expect(hypervisor.branch_active);
+
+    var plain = Timeline.init(testing.allocator);
+    defer plain.deinit();
+    try plain.record(&world);
+    try testing.expectError(error.MissingTemporalSnapshot, plain.restore_with_temporal(&world, &hypervisor, 0));
 }

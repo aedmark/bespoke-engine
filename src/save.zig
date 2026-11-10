@@ -2,6 +2,8 @@ const std = @import("std");
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const vm_mod = @import("vm.zig");
+const hypervisor_mod = @import("hypervisor.zig");
+const temporal_mod = @import("temporal_snapshot.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -9,6 +11,7 @@ pub const SpatialSystem = spatial_mod.SpatialSystem;
 pub const WaypointId = spatial_mod.WaypointId;
 pub const MotorAgent = spatial_mod.MotorAgent;
 pub const VM = vm_mod.VM;
+pub const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
 pub const Fiber = vm_mod.Fiber;
 pub const FiberState = vm_mod.FiberState;
 pub const FiberStateTag = vm_mod.FiberStateTag;
@@ -16,7 +19,8 @@ pub const InterruptFrame = vm_mod.InterruptFrame;
 
 /// 4-byte magic identifier for BeSpoke persistent save files (P17-01, D-020).
 pub const SAVE_MAGIC = [4]u8{ 'B', 'S', 'A', 'V' };
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 2;
+pub const MIN_SAVE_VERSION: u32 = 1;
 
 /// Number of user-addressable save slots (1..8), plus slot 0 reserved for Quick-Save (P17-02, D-020).
 pub const MAX_SLOTS: u8 = 8;
@@ -38,6 +42,8 @@ pub const SaveError = error{
     InvalidSlotId,
     EmptySlot,
     CorruptedSaveUnrecoverable,
+    MissingTemporalState,
+    InvalidTemporalState,
 };
 
 /// Packs 8-bit R, G, B channels into a compact 1-byte RGB332 pixel (P17-01).
@@ -337,7 +343,34 @@ pub fn write_save_state(
     vm: ?*const VM,
     options: SaveOptions,
 ) !SaveMetadata {
-    const meta = build_metadata(world, spatial, vm, options);
+    return write_save_state_versioned(allocator, writer, world, spatial, vm, null, 1, options);
+}
+
+/// Serializes a save that also carries the temporal hypervisor branch and countdown (P31-04, D-048).
+pub fn write_save_state_with_temporal(
+    allocator: std.mem.Allocator,
+    writer: anytype,
+    world: *const World,
+    spatial: ?*const SpatialSystem,
+    vm: ?*const VM,
+    temporal: ?*const TemporalHypervisor,
+    options: SaveOptions,
+) !SaveMetadata {
+    return write_save_state_versioned(allocator, writer, world, spatial, vm, temporal, 2, options);
+}
+
+fn write_save_state_versioned(
+    allocator: std.mem.Allocator,
+    writer: anytype,
+    world: *const World,
+    spatial: ?*const SpatialSystem,
+    vm: ?*const VM,
+    temporal: ?*const TemporalHypervisor,
+    version: u32,
+    options: SaveOptions,
+) !SaveMetadata {
+    var meta = build_metadata(world, spatial, vm, options);
+    meta.version = version;
 
     var payload = std.ArrayList(u8).init(allocator);
     defer payload.deinit();
@@ -346,10 +379,25 @@ pub fn write_save_state(
     // 1. Metadata header block
     try serialize_metadata(pw, &meta);
 
-    // 2. World relational arena snapshot
+    // 2. Temporal hypervisor state (format version 2). It precedes the world so a reader can
+    // decode and validate the branch before mutating the primary state.
+    if (version >= 2) {
+        if (temporal) |hypervisor| {
+            var temporal_bytes = std.ArrayList(u8).init(allocator);
+            defer temporal_bytes.deinit();
+            try temporal_mod.TemporalSnapshot.write(hypervisor, temporal_bytes.writer());
+            try pw.writeByte(1);
+            try pw.writeInt(u32, @intCast(temporal_bytes.items.len), .little);
+            try pw.writeAll(temporal_bytes.items);
+        } else {
+            try pw.writeByte(0);
+        }
+    }
+
+    // 3. World relational arena snapshot
     try world.save_state(pw);
 
-    // 3. Spatial motor agents
+    // 4. Spatial motor agents
     if (spatial) |sp| {
         try pw.writeByte(1);
         const agent_count: u32 = @intCast(sp.agents.count());
@@ -380,7 +428,7 @@ pub fn write_save_state(
         try pw.writeByte(0);
     }
 
-    // 4. VM execution state (current_scene, fibers, interrupt stacks, reactive rule edge flags)
+    // 5. VM execution state (current_scene, fibers, interrupt stacks, reactive rule edge flags)
     if (vm) |v| {
         // Queued weaves are not part of the save format. They exist only between `step_tick`
         // and the host's `dispatch_pending_weaves`; saving inside that window would drop them,
@@ -429,7 +477,7 @@ pub fn write_save_state(
 
     // Write outer file envelope: magic (4B) + version (4B) + crc32 (4B) + payload_len (4B) + payload
     try writer.writeAll(&SAVE_MAGIC);
-    try writer.writeInt(u32, SAVE_VERSION, .little);
+    try writer.writeInt(u32, version, .little);
     try writer.writeInt(u32, crc, .little);
     try writer.writeInt(u32, payload_len, .little);
     try writer.writeAll(payload.items);
@@ -437,15 +485,20 @@ pub fn write_save_state(
     return meta;
 }
 
+const VerifiedPayload = struct {
+    version: u32,
+    bytes: []u8,
+};
+
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
-fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) ![]u8 {
+fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !VerifiedPayload {
     var magic: [4]u8 = undefined;
     const m_read = try reader.readAll(&magic);
     if (m_read < 4) return error.EndOfStream;
     if (!std.mem.eql(u8, &magic, &SAVE_MAGIC)) return SaveError.InvalidSaveMagic;
 
     const version = try reader.readInt(u32, .little);
-    if (version != SAVE_VERSION) return SaveError.UnsupportedSaveVersion;
+    if (version < MIN_SAVE_VERSION or version > SAVE_VERSION) return SaveError.UnsupportedSaveVersion;
 
     const expected_crc = try reader.readInt(u32, .little);
     const payload_len = try reader.readInt(u32, .little);
@@ -462,15 +515,15 @@ fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) ![]u8 {
         return SaveError.ChecksumMismatch;
     }
 
-    return payload;
+    return .{ .version = version, .bytes = payload };
 }
 
 /// Inspects and verifies a save stream's integrity and returns its SaveMetadata without mutating world state (P17-01).
 pub fn inspect_save_stream(allocator: std.mem.Allocator, reader: anytype) !SaveMetadata {
-    const payload = try read_verified_payload(allocator, reader);
-    defer allocator.free(payload);
+    const verified = try read_verified_payload(allocator, reader);
+    defer allocator.free(verified.bytes);
 
-    var fbs = std.io.fixedBufferStream(payload);
+    var fbs = std.io.fixedBufferStream(verified.bytes);
     return try deserialize_metadata(fbs.reader());
 }
 
@@ -482,18 +535,70 @@ pub fn read_save_state(
     spatial: ?*SpatialSystem,
     vm: ?*VM,
 ) !SaveMetadata {
-    const payload = try read_verified_payload(allocator, reader);
-    defer allocator.free(payload);
+    return read_save_state_versioned(allocator, reader, world, spatial, vm, null, false);
+}
 
-    var fbs = std.io.fixedBufferStream(payload);
+/// Restores a temporal save, requiring the matching hypervisor envelope (P31-04, D-048).
+pub fn read_save_state_with_temporal(
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    world: *World,
+    spatial: ?*SpatialSystem,
+    vm: ?*VM,
+    temporal: *TemporalHypervisor,
+) !SaveMetadata {
+    return read_save_state_versioned(allocator, reader, world, spatial, vm, temporal, true);
+}
+
+fn read_save_state_versioned(
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    world: *World,
+    spatial: ?*SpatialSystem,
+    vm: ?*VM,
+    temporal: ?*TemporalHypervisor,
+    require_temporal: bool,
+) !SaveMetadata {
+    const verified = try read_verified_payload(allocator, reader);
+    defer allocator.free(verified.bytes);
+
+    var fbs = std.io.fixedBufferStream(verified.bytes);
     const pr = fbs.reader();
 
     // 1. Metadata
     const meta = try deserialize_metadata(pr);
+    if (meta.version != verified.version) return SaveError.InvalidTemporalState;
+
+    var pending_temporal: ?temporal_mod.TemporalSnapshot = null;
+    defer if (pending_temporal) |*snapshot| snapshot.deinit();
+
+    if (verified.version >= 2) {
+        const has_temporal = try pr.readByte();
+        switch (has_temporal) {
+            0 => if (require_temporal) return SaveError.MissingTemporalState,
+            1 => {
+                const temporal_len = try pr.readInt(u32, .little);
+                if (temporal_len == 0 or temporal_len > MAX_SAVE_PAYLOAD_SIZE) {
+                    return SaveError.SavePayloadTooLarge;
+                }
+                const temporal_bytes = try allocator.alloc(u8, temporal_len);
+                defer allocator.free(temporal_bytes);
+                try pr.readNoEof(temporal_bytes);
+                if (temporal != null or require_temporal) {
+                    var temporal_stream = std.io.fixedBufferStream(temporal_bytes);
+                    pending_temporal = try temporal_mod.TemporalSnapshot.read(allocator, world, temporal_stream.reader());
+                }
+            },
+            else => return SaveError.InvalidTemporalState,
+        }
+    } else if (require_temporal) {
+        return SaveError.MissingTemporalState;
+    }
 
     // 2. World relational state
     try world.restore_state(pr);
     world.recently_expired_count = 0;
+    if (pending_temporal) |*snapshot| try snapshot.validate(world);
 
     // 3. Spatial motor agents
     const has_spatial = try pr.readByte();
@@ -630,6 +735,10 @@ pub fn read_save_state(
                 }
             }
         }
+    }
+
+    if (pending_temporal) |*snapshot| {
+        if (temporal) |hypervisor| try snapshot.apply(hypervisor);
     }
 
     return meta;
@@ -771,6 +880,31 @@ pub const SaveManager = struct {
         vm: ?*const VM,
         description: []const u8,
     ) !SaveMetadata {
+        return self.save_slot_versioned(slot_id, world, spatial, vm, null, description);
+    }
+
+    /// Saves a slot with the temporal hypervisor envelope (P31-04, D-048).
+    pub fn save_slot_with_temporal(
+        self: *SaveManager,
+        slot_id: u8,
+        world: *const World,
+        spatial: ?*const SpatialSystem,
+        vm: ?*const VM,
+        temporal: *const TemporalHypervisor,
+        description: []const u8,
+    ) !SaveMetadata {
+        return self.save_slot_versioned(slot_id, world, spatial, vm, temporal, description);
+    }
+
+    fn save_slot_versioned(
+        self: *SaveManager,
+        slot_id: u8,
+        world: *const World,
+        spatial: ?*const SpatialSystem,
+        vm: ?*const VM,
+        temporal: ?*const TemporalHypervisor,
+        description: []const u8,
+    ) !SaveMetadata {
         if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
 
         try std.fs.cwd().makePath(self.save_dir);
@@ -788,12 +922,16 @@ pub const SaveManager = struct {
         const file = try std.fs.cwd().createFile(slot_path, .{ .truncate = true });
         defer file.close();
 
-        const meta = try write_save_state(self.allocator, file.writer(), world, spatial, vm, .{
+        const options = SaveOptions{
             .thumbnail = self.thumbnails,
             .slot_id = slot_id,
             .playtime_secs = self.current_playtime_secs(),
             .description = description,
-        });
+        };
+        const meta = if (temporal) |hypervisor|
+            try write_save_state_with_temporal(self.allocator, file.writer(), world, spatial, vm, hypervisor, options)
+        else
+            try write_save_state(self.allocator, file.writer(), world, spatial, vm, options);
 
         const has_bak = (self.inspect_file(bak_path) catch null) != null;
         self.slots[slot_id] = SaveSlotInfo{
@@ -817,6 +955,29 @@ pub const SaveManager = struct {
         spatial: ?*SpatialSystem,
         vm: ?*VM,
     ) !LoadResult {
+        return self.load_slot_versioned(slot_id, world, spatial, vm, null);
+    }
+
+    /// Loads a slot with the temporal hypervisor envelope (P31-04, D-048).
+    pub fn load_slot_with_temporal(
+        self: *SaveManager,
+        slot_id: u8,
+        world: *World,
+        spatial: ?*SpatialSystem,
+        vm: ?*VM,
+        temporal: *TemporalHypervisor,
+    ) !LoadResult {
+        return self.load_slot_versioned(slot_id, world, spatial, vm, temporal);
+    }
+
+    fn load_slot_versioned(
+        self: *SaveManager,
+        slot_id: u8,
+        world: *World,
+        spatial: ?*SpatialSystem,
+        vm: ?*VM,
+        temporal: ?*TemporalHypervisor,
+    ) !LoadResult {
         if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
 
         var path_buf: [256]u8 = undefined;
@@ -827,7 +988,11 @@ pub const SaveManager = struct {
         // 1. Attempt primary save file
         if (std.fs.cwd().openFile(slot_path, .{})) |file| {
             defer file.close();
-            if (read_save_state(self.allocator, file.reader(), world, spatial, vm)) |meta| {
+            const loaded = if (temporal) |hypervisor|
+                read_save_state_with_temporal(self.allocator, file.reader(), world, spatial, vm, hypervisor)
+            else
+                read_save_state(self.allocator, file.reader(), world, spatial, vm);
+            if (loaded) |meta| {
                 self.accumulated_playtime_secs = meta.playtime_secs;
                 self.session_start_ms = std.time.milliTimestamp();
                 self.slots[slot_id].occupied = true;
@@ -856,9 +1021,14 @@ pub const SaveManager = struct {
         };
         defer bak_file.close();
 
-        const recovered_meta = read_save_state(self.allocator, bak_file.reader(), world, spatial, vm) catch {
-            return SaveError.CorruptedSaveUnrecoverable;
-        };
+        const recovered_meta = if (temporal) |hypervisor|
+            read_save_state_with_temporal(self.allocator, bak_file.reader(), world, spatial, vm, hypervisor) catch {
+                return SaveError.CorruptedSaveUnrecoverable;
+            }
+        else
+            read_save_state(self.allocator, bak_file.reader(), world, spatial, vm) catch {
+                return SaveError.CorruptedSaveUnrecoverable;
+            };
 
         // Self-heal primary slot file from the verified backup
         std.fs.cwd().copyFile(bak_path, std.fs.cwd(), slot_path, .{}) catch {};
@@ -890,6 +1060,16 @@ pub const SaveManager = struct {
         return self.save_slot(QUICKSAVE_SLOT, world, spatial, vm, "Quick Save");
     }
 
+    pub fn quick_save_with_temporal(
+        self: *SaveManager,
+        world: *const World,
+        spatial: ?*const SpatialSystem,
+        vm: ?*const VM,
+        temporal: *const TemporalHypervisor,
+    ) !SaveMetadata {
+        return self.save_slot_with_temporal(QUICKSAVE_SLOT, world, spatial, vm, temporal, "Quick Save");
+    }
+
     /// Restores state from dedicated Quick-Save slot 0 (`quicksave.sav`, P17-02).
     pub fn quick_load(
         self: *SaveManager,
@@ -898,6 +1078,16 @@ pub const SaveManager = struct {
         vm: ?*VM,
     ) !LoadResult {
         return self.load_slot(QUICKSAVE_SLOT, world, spatial, vm);
+    }
+
+    pub fn quick_load_with_temporal(
+        self: *SaveManager,
+        world: *World,
+        spatial: ?*SpatialSystem,
+        vm: ?*VM,
+        temporal: *TemporalHypervisor,
+    ) !LoadResult {
+        return self.load_slot_with_temporal(QUICKSAVE_SLOT, world, spatial, vm, temporal);
     }
 
     /// Deletes a save slot and its backup file from disk.
@@ -1197,4 +1387,91 @@ test "P32-03d: thumbnails are neutral by default and take a painter's colours" {
     // Another scene is untouched by this painter's backdrop.
     const other = generate_thumbnail(&world, &spatial, "Moor", &painter);
     try testing.expectEqual(plain[0], other[0]);
+}
+
+test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays readable" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const donnie = try world.intern_entity("Donnie");
+    const engine = try world.intern_entity("Engine");
+    const room = try world.intern_entity("Room");
+    const in_room = try world.intern_relation("InRoom", .property);
+    _ = try world.remember(donnie, in_room, room.to_int(), 0);
+
+    var hypervisor = TemporalHypervisor.init(testing.allocator, &world);
+    defer hypervisor.deinit();
+    _ = try hypervisor.fork_branch(10, donnie, engine);
+    _ = try hypervisor.step_tick(null);
+
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    const meta = try write_save_state_with_temporal(
+        testing.allocator,
+        buffer.writer(),
+        &world,
+        null,
+        null,
+        &hypervisor,
+        .{},
+    );
+    try testing.expectEqual(@as(u32, 2), meta.version);
+
+    // Move both the primary world and the branch past the saved state.
+    _ = try world.remember(donnie, in_room, engine.to_int(), 0);
+    _ = try hypervisor.step_tick(null);
+
+    var loaded_world = try World.init(testing.allocator, 1024 * 1024);
+    defer loaded_world.deinit();
+    var loaded_hypervisor = TemporalHypervisor.init(testing.allocator, &loaded_world);
+    defer loaded_hypervisor.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    const loaded_meta = try read_save_state_with_temporal(
+        testing.allocator,
+        stream.reader(),
+        &loaded_world,
+        null,
+        null,
+        &loaded_hypervisor,
+    );
+    try testing.expectEqual(@as(u32, 2), loaded_meta.version);
+    try testing.expect(loaded_world.has_fact(donnie, in_room, room.to_int()));
+    try testing.expectEqual(@as(u64, 1), loaded_hypervisor.ticks_elapsed);
+    try testing.expect(loaded_hypervisor.branch_world.?.has_fact(donnie, in_room, room.to_int()));
+    try testing.expectEqual(@as(u64, 1), loaded_hypervisor.branch_world.?.current_tick);
+
+    // A non-temporal reader skips the envelope and still restores the primary world.
+    var plain_world = try World.init(testing.allocator, 1024 * 1024);
+    defer plain_world.deinit();
+    var plain_stream = std.io.fixedBufferStream(buffer.items);
+    const plain_meta = try read_save_state(testing.allocator, plain_stream.reader(), &plain_world, null, null);
+    try testing.expectEqual(@as(u32, 2), plain_meta.version);
+    try testing.expect(plain_world.has_fact(donnie, in_room, room.to_int()));
+
+    // Version 1 saves remain readable, but cannot satisfy a temporal restore.
+    var legacy = std.ArrayList(u8).init(testing.allocator);
+    defer legacy.deinit();
+    const legacy_meta = try write_save_state(testing.allocator, legacy.writer(), &world, null, null, .{});
+    try testing.expectEqual(@as(u32, 1), legacy_meta.version);
+    var legacy_world = try World.init(testing.allocator, 1024 * 1024);
+    defer legacy_world.deinit();
+    var legacy_stream = std.io.fixedBufferStream(legacy.items);
+    _ = try read_save_state(testing.allocator, legacy_stream.reader(), &legacy_world, null, null);
+
+    var legacy_temporal_world = try World.init(testing.allocator, 1024 * 1024);
+    defer legacy_temporal_world.deinit();
+    var legacy_temporal = TemporalHypervisor.init(testing.allocator, &legacy_temporal_world);
+    defer legacy_temporal.deinit();
+    var legacy_temporal_stream = std.io.fixedBufferStream(legacy.items);
+    try testing.expectError(
+        SaveError.MissingTemporalState,
+        read_save_state_with_temporal(
+            testing.allocator,
+            legacy_temporal_stream.reader(),
+            &legacy_temporal_world,
+            null,
+            null,
+            &legacy_temporal,
+        ),
+    );
 }

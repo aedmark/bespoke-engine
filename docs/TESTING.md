@@ -10,6 +10,7 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | 3x Manual & Site Tests | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . && python3 -m unittest discover -s tests -v` | 3x What/How/Why schema conformance, evidence link validity, and manual and showcase-site build unit tests | Graphical browser layout | < 1s, Python 3 stdlib |
 | Showcase Site Build | `python3 tools/build_site.py --check` | `site/index.html` embeds the current `bespoke-proofs.wasm` and browser wrapper in one simulator region | Browser rendering or interaction | < 1s, built wasm artifact |
 | World Store Unit Tests | `zig test src/world.zig` | Fact insertion, TTL expiration pruning, queries, `memcpy` snapshots | VM execution or parser | < 2s, Zig compiler |
+| Temporal Snapshot Unit Tests | `zig test src/temporal_snapshot.zig` | Branch world, countdown, collapse state, teleology, and dream residue round-trip; corrupt branch headers are rejected (P31-04) | Save and timeline integration | < 2s, Zig compiler |
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
 | WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm wasm-proofs && node tools/wasm_smoke.js` | `WasmCanvas` rendering, browser event routing, deck loading and rules on neutral test decks; both modules build, instantiate in Node, and run every deck | A browser page; the showcase DOM controls | < 10s, Zig compiler; Node.js 18+ for the smoke check (optional) |
 | Wasm Golden | `zig build test-proofs` (`proofs/wasm_golden_test.zig`) | Each proof deck, driven natively through a ten-step event script, shows the pixels, facts, ticks, and banners in `proofs/golden/wasm.txt` (P32-04) | The wasm32 build itself (see the smoke check) | < 1s |
@@ -56,7 +57,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Relational Store (`src/world.zig`) | `zig test src/world.zig` | `zig build test` (mutation check on TTL decay or snapshot) |
 | VM, Bytecode, Compiler (`src/vm.zig`, `src/compiler/`) | `zig test src/vm.zig`, `zig test src/compiler.zig` | `zig build test`, `bespoke check scenarios/tavern_heist.bespoke` |
 | Spatial Graph (`src/spatial.zig`) | `zig test src/spatial.zig` | Waypoint pathfinding verification in headless scenarios |
-| Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification |
+| Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification; version 1/2 compatibility and temporal envelope round-trip |
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
 | Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |
 | Dialogue Duel (`src/duel.zig`) | `zig build test-engine` | `zig build test-proofs` (sword-fighting golden) |
@@ -69,6 +70,7 @@ What only a person can check, and how. Record who checked what, where, and when 
 
 - Open each interactive vertical slice in desktop GUI mode (`zig build run`, `--spitting-contest`, `--gk3`, `--sword-fighting`, `--village`). Verify window scaling, 5-verb mouse cycling, and audio output.
 - Scrub backward and forward across the interactive timeline scrubber (`[<]`, `[>]`, click scrubber) and verify instant visual replay and divergent timeline truncation.
+- In the Middlesex Anomaly, scrub across a temporal snapshot and load a save, then verify the tangent countdown, branch facts, and primary facts agree (P31-04).
 - Toggle Pause & Save/Load drawer (`[P]`, `[F2]`, `[F3]`), save a slot, verify the 16x12 RGB332 graphical thumbnail, and load back.
 - **HUD layout without a display:** render a frame offscreen and inspect the image. `DisplayWindow.init_offscreen` with `save_frame_bmp` does this from a test (P32-02a); the older route is a small harness that calls `DisplayWindow.init`, fills a `RenderFrame`, calls `render_frame`, then `SDL_RenderReadPixels` and `SDL_SaveBMP`, and run it with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy zig run -I/usr/include/SDL2 -lc -lSDL2 --dep bespoke -Mroot=<harness>.zig -I/usr/include/SDL2 -Mbespoke=src/root.zig`. This checks layout only, not audio or input.
 - Run `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html` and verify `docs/manual.html` opens cleanly in a browser via `file://` with search and navigation.

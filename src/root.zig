@@ -13,6 +13,7 @@ pub const audio = @import("audio.zig");
 pub const save = @import("save.zig");
 pub const wasm = @import("wasm.zig");
 pub const hypervisor = @import("hypervisor.zig");
+pub const temporal_snapshot = @import("temporal_snapshot.zig");
 pub const draft = @import("draft.zig");
 pub const host = @import("host.zig");
 pub const society = @import("society.zig");
@@ -73,6 +74,9 @@ pub const SaveMetadata = save.SaveMetadata;
 pub const SaveSlotInfo = save.SaveSlotInfo;
 pub const write_save_state = save.write_save_state;
 pub const read_save_state = save.read_save_state;
+pub const write_save_state_with_temporal = save.write_save_state_with_temporal;
+pub const read_save_state_with_temporal = save.read_save_state_with_temporal;
+pub const TemporalSnapshot = temporal_snapshot.TemporalSnapshot;
 pub const TemporalHypervisor = hypervisor.TemporalHypervisor;
 pub const UniverseBranchKind = hypervisor.UniverseBranchKind;
 pub const BranchCollapseState = hypervisor.BranchCollapseState;
@@ -100,4 +104,5 @@ test "root test imports all modules" {
     _ = @import("save.zig");
     _ = @import("wasm.zig");
     _ = @import("hypervisor.zig");
+    _ = @import("temporal_snapshot.zig");
 }

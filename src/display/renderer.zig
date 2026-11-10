@@ -2,6 +2,7 @@ const std = @import("std");
 const display_mod = @import("../display.zig");
 const audio_mod = @import("../audio.zig");
 const save_mod = @import("../save.zig");
+const hypervisor_mod = @import("../hypervisor.zig");
 const vm_mod = @import("../vm.zig");
 const dialogue_mod = @import("../dialogue.zig");
 const font = @import("font.zig");
@@ -962,6 +963,21 @@ pub const DisplayWindow = struct {
         display_bridge: *display_mod.DisplayBridge,
         is_paused: *bool,
     ) bool {
+        return self.handle_save_action_with_temporal(action, world, spatial, vm, display_bridge, is_paused, null);
+    }
+
+    /// Executes save/load actions, carrying the hypervisor envelope when the session has one (P31-04, D-048).
+    /// The save drawer needs the hypervisor so a temporal save cannot be restored without its branch.
+    pub fn handle_save_action_with_temporal(
+        self: *DisplayWindow,
+        action: UserAction,
+        world: *save_mod.World,
+        spatial: *save_mod.SpatialSystem,
+        vm: *save_mod.VM,
+        display_bridge: *display_mod.DisplayBridge,
+        is_paused: *bool,
+        temporal: ?*hypervisor_mod.TemporalHypervisor,
+    ) bool {
         switch (action) {
             .toggle_save_drawer => {
                 if (self.show_save_drawer) {
@@ -970,7 +986,11 @@ pub const DisplayWindow = struct {
                 return true;
             },
             .quick_save => {
-                if (self.save_manager.quick_save(world, spatial, vm)) |meta| {
+                const saved = if (temporal) |hypervisor|
+                    self.save_manager.quick_save_with_temporal(world, spatial, vm, hypervisor)
+                else
+                    self.save_manager.quick_save(world, spatial, vm);
+                if (saved) |meta| {
                     var buf: [128]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "★ Quick-Saved state ({s}, Tick {d}) ★", .{ meta.get_scene_name(), meta.current_tick }) catch "Quick-Saved!";
                     self.set_cue_banner(msg, 120);
@@ -983,7 +1003,11 @@ pub const DisplayWindow = struct {
                 return true;
             },
             .quick_load => {
-                if (self.save_manager.quick_load(world, spatial, vm)) |res| {
+                const loaded = if (temporal) |hypervisor|
+                    self.save_manager.quick_load_with_temporal(world, spatial, vm, hypervisor)
+                else
+                    self.save_manager.quick_load(world, spatial, vm);
+                if (loaded) |res| {
                     is_paused.* = true;
                     display_bridge.capture_frame(world, spatial, vm);
                     display_bridge.swap();
@@ -1003,7 +1027,11 @@ pub const DisplayWindow = struct {
             },
             .save_slot => |slot_id| {
                 const desc = if (slot_id == 0) "Quick Save" else "Manual Slot Save";
-                if (self.save_manager.save_slot(slot_id, world, spatial, vm, desc)) |meta| {
+                const saved = if (temporal) |hypervisor|
+                    self.save_manager.save_slot_with_temporal(slot_id, world, spatial, vm, hypervisor, desc)
+                else
+                    self.save_manager.save_slot(slot_id, world, spatial, vm, desc);
+                if (saved) |meta| {
                     var buf: [128]u8 = undefined;
                     const msg = if (slot_id == 0)
                         std.fmt.bufPrint(&buf, "★ Saved Quick-Save Slot ({s}, Tick {d}) ★", .{ meta.get_scene_name(), meta.current_tick }) catch "Saved!"
@@ -1019,7 +1047,11 @@ pub const DisplayWindow = struct {
                 return true;
             },
             .load_slot => |slot_id| {
-                if (self.save_manager.load_slot(slot_id, world, spatial, vm)) |res| {
+                const loaded = if (temporal) |hypervisor|
+                    self.save_manager.load_slot_with_temporal(slot_id, world, spatial, vm, hypervisor)
+                else
+                    self.save_manager.load_slot(slot_id, world, spatial, vm);
+                if (loaded) |res| {
                     is_paused.* = true;
                     display_bridge.capture_frame(world, spatial, vm);
                     display_bridge.swap();

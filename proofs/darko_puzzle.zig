@@ -413,6 +413,18 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 }
 
 /// Runs interactive windowed session for Donnie Darko scenario (P31-03, D-027).
+fn sync_temporal_hud(display_bridge: *bespoke.DisplayBridge, hypervisor: *const bespoke.TemporalHypervisor) void {
+    var count_buf: [16]u8 = undefined;
+    const remaining_ticks = if (hypervisor.collapse_budget_ticks > hypervisor.ticks_elapsed)
+        hypervisor.collapse_budget_ticks - hypervisor.ticks_elapsed
+    else
+        0;
+    art.set_countdown(display_bridge, bespoke.format_countdown(remaining_ticks, &count_buf));
+    const collapsed = hypervisor.collapse_state == .budget_expired or
+        hypervisor.collapse_state == .collapsed_singularity;
+    art.set_collapsed(display_bridge, collapsed);
+}
+
 pub fn run_interactive(allocator: std.mem.Allocator) !void {
     var win = try bespoke.display.renderer.DisplayWindow.init("BeSpoke Engine - The Middlesex Anomaly (Donnie Darko)", 1280, 720);
     defer win.deinit();
@@ -506,10 +518,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
     _ = try hypervisor.fork_tangent(280, donnie, jet_engine);
     hypervisor.set_vortex_target(vortex_wp);
-    art.set_countdown(&display_bridge, "28:06:42:12");
+    sync_temporal_hud(&display_bridge, &hypervisor);
     win.set_cue_banner("The Middlesex Anomaly loaded! Press [1] Bedroom, [2] School, [3] Ridge to switch scenes. [V] Follow Conduit.", 180);
 
-    var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &win);
+    var session = try bespoke.host.Session.initWithHypervisor(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &win, &hypervisor);
     defer session.deinit();
 
     while (true) {
@@ -519,11 +531,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
         session.render();
 
         const action = win.poll_events(frame);
-        if (action == .scrub_to_tick or action == .rewind) {
-            // The hypervisor's tangent world and countdown live outside the world snapshot, so a
-            // world-only rewind would desynchronize them. This proof keeps time travel disabled.
-            win.set_cue_banner("The tangent hypervisor governs time here; the timeline is fixed.", 90);
-        } else if (try session.handle_common(action)) {} else switch (action) {
+        if (try session.handle_common(action)) {
+            sync_temporal_hud(&display_bridge, &hypervisor);
+            session.refresh();
+        } else switch (action) {
             .quit => break,
             .custom => |id| if (std.meta.intToEnum(DarkoKey, id)) |key| switch (key) {
                 .follow_conduit => {
@@ -761,26 +772,15 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             if (evaluate_darko_solved(&world)) {
                 win.set_cue_banner("VICTORY ACHIEVED: Tangent Universe Loop Resolved Safely!", 300);
             }
-            display_bridge.capture_frame(&world, &spatial, &vm);
-            display_bridge.swap();
+            sync_temporal_hud(&display_bridge, &hypervisor);
+            try session.record_now();
         }
 
         if (session.tick_due()) {
             _ = try bespoke.host.tick(&vm, &compiled);
             _ = try hypervisor.step_tick(&spatial);
 
-            var count_b: [16]u8 = undefined;
-            const remaining_ticks = if (hypervisor.collapse_budget_ticks > hypervisor.ticks_elapsed)
-                hypervisor.collapse_budget_ticks - hypervisor.ticks_elapsed
-            else
-                0;
-            const formatted = bespoke.format_countdown(remaining_ticks, &count_b);
-            art.set_countdown(&display_bridge, formatted);
-
-            if (hypervisor.collapse_state == .budget_expired or hypervisor.collapse_state == .collapsed_singularity) {
-                art.set_collapsed(&display_bridge, true);
-            }
-
+            sync_temporal_hud(&display_bridge, &hypervisor);
             try session.record_now();
         }
 
