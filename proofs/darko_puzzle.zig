@@ -854,10 +854,12 @@ test "P32-19: every look description comes from the script, with a per-actor def
     const engine = try execute_look_at(&world, &vm, &compiled, donnie, try world.intern_entity("JetEngine"), &buf);
     try testing.expect(std.mem.indexOf(u8, engine, "four-ton aircraft jet engine") != null);
 
-    // A target with no handler of its own gets the actor's default line. Without the default
-    // the engine would run the first `LooksAt` handler in the script (ARCHITECTURE, Claims
-    // vs. code), which is why the old Zig fallback table was never reached.
+    // A target with no handler of its own gets the actor's default line (D-037).
     const pebble = try world.intern_entity("UnscriptedPebble");
     const fallback = try execute_look_at(&world, &vm, &compiled, donnie, pebble, &buf);
     try testing.expectEqualStrings("Donnie: \"Nothing unusual to see here.\"", fallback);
+
+    // An actor the script gives no default is an error, not another actor's line.
+    const stranger = try world.intern_entity("UnscriptedStranger");
+    try testing.expectError(error.LookNotScripted, execute_look_at(&world, &vm, &compiled, stranger, pebble, &buf));
 }

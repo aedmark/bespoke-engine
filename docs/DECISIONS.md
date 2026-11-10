@@ -449,6 +449,36 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Excluding the zero-length walk: rejected; a player clicking the hotspot beside the actor would get no response.
 **Consequences:** The goat proof's `Uses(George, CellarEntrance)` and `Uses(George, FarmPlough)` handlers only walk George; the charge, the retreat window, the tangle, the descent, and the climb back out are arrival rules, and the headless run now walks and waits for them, with a byte-identical golden. In the window a knocked-down George walks back to `FallMark` instead of snapping there, because the DSL has no placement statement, and clicking the ladder while standing on it climbs out. A rule whose body walks its actor to the same mark re-fires every tick; authors must avoid it. Arrival state lives in the motor, which world snapshots do not cover, so an arrival pending at the moment of a snapshot is not restored (one tick wide). A host that drives motors without a VM never clears `arrival_pending`; `SpatialSystem.clear_arrivals` is public for that case. Found on the way and left unchanged: `walk_to` toward the waypoint an agent has just left, while it is between waypoints, neither turns back nor cancels the old path (P32-25).
 
+## D-037 Cue Dispatch Without a Bare-Name Fallback; Variable Parameters as Wildcards (2026-11-09, status: accepted)
+**Context:** Codegen registered the first handler of every cue name under the bare name as a "fallback key", and `find_cue_handler` fell back to it. A cue fired for a pair no handler named ran that first handler: `Uses(George, TetherStake)` ran `Uses(George, CellarEntrance)`, and looking at an undescribed object repeated the first description in the script. P32-19 found two proofs carrying Zig fallback tables that this made unreachable. The same key was the only route to handlers declared with variable parameters (`verb TalkTo(speaker, target):`, `on cue PlayLute(Bard, target):` in `script_spec.md`), whose signatures were stored under the literal variable names. The maintainer chose (2026-11-09) to remove fallback to other targets.
+**Decision:**
+1. **No bare-name key.** A cue that no declared signature covers has no handler; `fire_cue` returns null and nothing runs.
+2. **Variable parameters are wildcards.** A handler parameter starting with a lowercase letter, `_`, or `?` (the rule `when` triggers already use) is stored as `*` and matches any entity in that position. This keeps generic handlers reachable by declaration, not by accident.
+3. **Order, most specific first:** the exact signature (two targets also swapped, D-013), then signatures with wildcards, then the actor-only handler `on cue X(Actor):`, which is the declared default for that actor.
+4. **A handler needs an actor.** `on cue X():` is a located compile error; it could never be fired.
+**Alternatives:**
+- A parameterless handler as a catch-all for any actor: not chosen by the maintainer; `on cue X(anyone):` now says the same thing explicitly.
+- Leaving dispatch as it was and requiring defaults in every script: rejected by the maintainer.
+- Removing the fallback without wildcards: rejected during implementation; it would have made the spec's variable-parameter handlers unreachable.
+**Consequences:** No proof golden changed. Interactive proofs that fire a cue for an unscripted pair now get no response where they used to get an unrelated handler. Variable parameters are still not bound in handler bodies: a body that names `target` refers to an entity called `target` (ARCHITECTURE, Claims vs. code). `.bspk` packages compiled before this change keep their old keys; handlers with variable parameters in them are unreachable until recompiled, and their bare-name keys are ignored.
+
+## D-038 Proactive Social Agency: Dynamic Pursuit Agendas and Epistemic Contests (2026-11-09, status: accepted)
+**Context:** Classic mystery games (*The Colonel's Bequest*, *The Dagger of Amon Ra*) present wandering characters on static schedules that respond passively when interrogated. In BeSpoke, autonomous actors can possess social survival instincts: reacting to player actions or omissions by dynamically intercepting the player to persuade, dissuade, warn, or plant false alibis. The maintainer chose (2026-11-09) to architect this as a generalized, data-driven engine subsystem in `src/agency.zig` coordinating between `Society`, `SpatialSystem`, and `VM`, backed by idiomatic relational `World` facts and validated by "The Bayou Estate" vertical slice (`proofs/bayou_puzzle.zig`, `--bayou`).
+**Decision:**
+1. **Engine module (`src/agency.zig`):** `AgencySystem` is a reusable engine component holding data-driven `AgendaDef` configurations. It names no characters or narrative tokens (D-031).
+2. **State is World facts:** All agenda states (`AgendaState(NPC, Pursuing)`, `AgendaState(NPC, Succeeded)`, `AgendaOutcome`), action telemetry, and epistemic beliefs exist as flat relational tuples in `World`. Zero internal agency state bypasses snapshot save/restore.
+3. **Telemetry and omissions:** Actions write standard facts (e.g. `Investigated(Laura, CarriageHouse)`). Omission clauses evaluate negation against current facts (`where not Fact(...)`); temporal omission windows use TTL decay on prerequisite facts.
+4. **Dynamic waypoint pursuit:** Alerted NPCs continuously track the target actor across the spatial waypoint graph via A* path recalculation on target movement or periodic intervals.
+5. **Soft interrupts:** When an NPC achieves co-presence with the target, the interaction yields until the target completes their current edge and becomes idle. This launches the dialogue routine fiber without corrupting motor queues.
+6. **Contention resolution:** If multiple NPCs target the player simultaneously, candidate agendas are resolved by highest priority, with graph distance as the tie-breaker. Unselected agendas pause or queue.
+7. **Epistemic branching dialogue:** Interception encounters branch through fact-guarded dialogue trees (`VM.prune_dialogue_choices`). Rebuttals require physical evidence or witness facts; absence of evidence leaves the player vulnerable to persuasion or intimidation, writing outcome facts into `World`.
+**Alternatives:**
+- A direct extension to `src/society.zig`: rejected; `Society` focuses on schedules, roles, needs, and rumors. Separating agency into `src/agency.zig` keeps modular responsibilities clean.
+- Automatic VM verb logging into a dedicated journal: rejected; idiomatic `World` facts asserted by cue handlers keep memory layout contiguous and debuggable via the existing fact inspector and snapshot engine.
+- Hard mid-edge interrupts: rejected; freezing player movement mid-path corrupts motor agent state and camera transitions.
+- Multi-turn social duel minigame: rejected; standard epistemic dialogue choice trees with evidence pruning naturally resolve persuasion and leverage while staying integrated with the narrative DSL.
+**Consequences:** Actors actively counter player investigations in real time. The subsystem will be validated by Phase 33 ("The Bayou Estate" vertical slice).
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has
