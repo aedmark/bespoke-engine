@@ -313,7 +313,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // STEP 3: Pre-Cognitive Fourth-Dimensional Vector Conduit to High School
     try writer.print("[Step 3] Donnie perceives Fourth-Dimensional Pre-Cognitive Vector Conduit:\n", .{});
-    _ = try spatial.walk_to(donnie, pipe_wp);
+    const computed_conduit = try spatial.compute_vector_conduit(donnie, pipe_wp);
+    std.debug.assert(computed_conduit != null);
+    _ = try spatial.follow_conduit(donnie, computed_conduit.?);
     const maybe_conduit = spatial.get_agent_vector_conduit(donnie);
     std.debug.assert(maybe_conduit != null);
     const conduit = maybe_conduit.?;
@@ -384,6 +386,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("         Tangent Universe collapsed cleanly; mass conservation restored.\n", .{});
     try writer.print("         Artifact of Metal committed into Primary Universe U_0 at T_0!\n", .{});
     try writer.print("         Dream residue facts transferred into Donnie's subconscious memory.\n", .{});
+    std.debug.assert(world.has_fact(donnie, dream_rel, 1));
+    std.debug.assert(!hypervisor.branch_active);
 
     // Assert Primary Universe state
     const primary_flood_rel = try world.intern_relation("SchoolFlooded", .set);
@@ -773,7 +777,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             const formatted = bespoke.format_countdown(remaining_ticks, &count_b);
             art.set_countdown(&display_bridge, formatted);
 
-            if (hypervisor.collapse_state == .collapsed_singularity) {
+            if (hypervisor.collapse_state == .budget_expired or hypervisor.collapse_state == .collapsed_singularity) {
                 art.set_collapsed(&display_bridge, true);
             }
 
@@ -825,10 +829,10 @@ test "P31-03: Donnie Darko singularity collapse when countdown budget expires wi
         try testing.expectEqual(bespoke.HypervisorStepResult.running, res);
     }
 
-    // Step 5th tick - budget exhausted, catastrophic singularity collapse!
+    // Step 5th tick - budget exhausted, catastrophic branch expiry / singularity collapse!
     const res5 = try hypervisor.step_tick(&spatial);
-    try testing.expectEqual(bespoke.HypervisorStepResult.singularity_collapse, res5);
-    try testing.expectEqual(bespoke.TangentCollapseState.collapsed_singularity, hypervisor.collapse_state);
+    try testing.expect(res5 == .budget_expired or res5 == .singularity_collapse);
+    try testing.expect(hypervisor.collapse_state == .budget_expired or hypervisor.collapse_state == .collapsed_singularity);
 }
 
 test "P31-03: Donnie Darko Novikov self-consistency validation" {
@@ -876,4 +880,48 @@ test "P32-19: every look description comes from the script, with a per-actor def
     // An actor the script gives no default is an error, not another actor's line.
     const stranger = try world.intern_entity("UnscriptedStranger");
     try testing.expectError(error.LookNotScripted, execute_look_at(&world, &vm, &compiled, stranger, pebble, &buf));
+}
+
+test "P32-20: Darko exercises collapse_branch, VectorConduit, and DreamFact" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const donnie = try world.intern_entity("Donnie");
+    const engine_ent = try world.intern_entity("JetEngine");
+    const scene_ent = try world.intern_entity("Suburban Bedroom");
+    const wp1 = try spatial.graph.add_waypoint(scene_ent, 0, 0, "BedMark");
+    const wp2 = try spatial.graph.add_waypoint(scene_ent, 50, 0, "DeskMark");
+    try spatial.graph.connect(wp1, wp2, null);
+    try spatial.register_entity(donnie, wp1, 5);
+
+    var hypervisor = bespoke.TemporalHypervisor.init(testing.allocator, &world);
+    defer hypervisor.deinit();
+
+    // 1. Vector conduit computation and following
+    const conduit = try spatial.compute_vector_conduit(donnie, wp2);
+    try testing.expect(conduit != null);
+    try testing.expectEqual(wp2, conduit.?.terminal_waypoint);
+    _ = try spatial.follow_conduit(donnie, conduit.?);
+
+    // 2. Fork branch and add DreamFact
+    _ = try hypervisor.fork_branch(50, donnie, engine_ent);
+    const dream_rel = try world.intern_relation("DreamInsight", .set);
+    try hypervisor.add_dream_residue(.{
+        .subject = donnie,
+        .relation = dream_rel,
+        .object_or_value = 42,
+    });
+
+    // 3. Explicit collapse_branch with commit = true
+    try hypervisor.collapse_branch(true);
+    try testing.expect(!hypervisor.branch_active);
+    try testing.expect(world.has_fact(donnie, dream_rel, 42));
+
+    // 4. Explicit collapse_branch with commit = false (abort)
+    _ = try hypervisor.fork_branch(50, donnie, engine_ent);
+    try hypervisor.collapse_branch(false);
+    try testing.expect(!hypervisor.branch_active);
 }

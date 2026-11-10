@@ -524,6 +524,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // STEP 8: Hoagie paints Kumquat Tree red; convinces Washington to chop it down
     try writer.print("[Step 8] Epistemic Belief & Hatchet: Hoagie paints kumquats red and talks to Washington...\n", .{});
+    try vm.reject_belief(washington, cherry_prop);
     std.debug.assert(!vm.evaluates_belief(washington, cherry_prop));
     try vm.assert_belief(washington, cherry_prop);
     std.debug.assert(vm.evaluates_belief(washington, cherry_prop));
@@ -540,6 +541,18 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // STEP 9: Forward Temporal Cascade -> Laverne freed in 2193!
     try writer.print("[Step 9] Forward Temporal Cascade: Tree ceased to exist centuries ago in 2193...\n", .{});
+
+    // Bitemporal transceiver synchronizes physical past tree mutation with future tree in real time (P32-20)
+    var transceiver = bespoke.BitemporalTransceiver.init(allocator, past_scene, future_scene);
+    defer transceiver.deinit();
+    try transceiver.register_pair(tree_prop, future_tree, chop_rel);
+    _ = try transceiver.sync_past_mutation(&world, tree_prop, tree_prop.to_int());
+
+    // Causal decay tracker models timeline existence probability (P32-20)
+    const prob = bespoke.CausalDecayTracker.get_existence_probability(world.current_tick, 0, 1000);
+    std.debug.assert(prob > 0.0);
+    std.debug.assert(!bespoke.CausalDecayTracker.is_erased(world.current_tick, 0, 1000));
+
     const free_rel = try world.intern_relation("FreedFromTree", .set);
     _ = try world.remember(laverne, free_rel, 1, 0);
     _ = world.forget(laverne, trapped_rel, 1);
@@ -1035,4 +1048,50 @@ test "P32-19: each party member has a scripted default look description" {
     // A specific handler still wins over the default.
     const desk = try execute_look_at(&world, &vm, &compiled, world.lookup_entity("Bernard").?, world.lookup_entity("LobbyDesk").?, &buf);
     try testing.expect(std.mem.indexOf(u8, desk, "Nothing unusual") == null);
+}
+
+test "P32-20: DOTT exercises BitemporalTransceiver, CausalDecayTracker, and reject_belief" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, DOTT_PUZZLE_SCRIPT);
+    defer compiled.deinit();
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+
+    const washington = world.lookup_entity("Washington").?;
+    const kumquat = world.lookup_entity("KumquatTree").?;
+    const future_tree = world.lookup_entity("FutureTree").?;
+    const cherry_prop = try world.intern_entity("CherryTree");
+
+    // 1. reject_belief
+    try vm.reject_belief(washington, cherry_prop);
+    try testing.expect(!vm.evaluates_belief(washington, cherry_prop));
+    const rej_rel = world.lookup_relation("Rejects").?;
+    try testing.expect(world.has_fact(washington, rej_rel, cherry_prop.to_int()));
+
+    // 2. BitemporalTransceiver cross-era propagation
+    const past_scene = world.lookup_entity("Colonial Workshop").?;
+    const future_scene = world.lookup_entity("Dystopian Guard Post").?;
+    const chop_rel = try world.intern_relation("TreeChoppedDown", .set);
+
+    var transceiver = bespoke.BitemporalTransceiver.init(testing.allocator, past_scene, future_scene);
+    defer transceiver.deinit();
+    try transceiver.register_pair(kumquat, future_tree, chop_rel);
+    const synced = try transceiver.sync_past_mutation(&world, kumquat, 1);
+    try testing.expect(synced);
+    try testing.expect(world.has_fact(future_tree, chop_rel, 1));
+
+    // 3. CausalDecayTracker existence decay calculation
+    const prob_start = bespoke.CausalDecayTracker.get_existence_probability(100, 100, 200);
+    try testing.expectEqual(@as(f32, 1.0), prob_start);
+    const prob_mid = bespoke.CausalDecayTracker.get_existence_probability(200, 100, 200);
+    try testing.expectEqual(@as(f32, 0.5), prob_mid);
+    const prob_end = bespoke.CausalDecayTracker.get_existence_probability(300, 100, 200);
+    try testing.expectEqual(@as(f32, 0.0), prob_end);
+    try testing.expect(bespoke.CausalDecayTracker.is_erased(300, 100, 200));
+    try testing.expect(!bespoke.CausalDecayTracker.is_erased(200, 100, 200));
 }

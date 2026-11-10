@@ -74,6 +74,7 @@ pub const write_save_state = save.write_save_state;
 pub const read_save_state = save.read_save_state;
 pub const TemporalHypervisor = hypervisor.TemporalHypervisor;
 pub const UniverseBranchKind = hypervisor.UniverseBranchKind;
+pub const BranchCollapseState = hypervisor.BranchCollapseState;
 pub const TangentCollapseState = hypervisor.TangentCollapseState;
 pub const DreamFact = hypervisor.DreamFact;
 pub const HypervisorStepResult = hypervisor.HypervisorStepResult;

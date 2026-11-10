@@ -113,7 +113,7 @@ These recur in most proofs and are handled once, not per proof.
 | Speech readers that take a cue index captured before `step_tick` (stale after the per-tick clear), look-at helpers, and cue-fire-and-tick | dott, darko, loom | Host kit | Done (P32-16) |
 | History, scrub, rewind, and save-action handling copied into each interactive loop | tavern, spitting, gk3, goat, village, loom | Host kit | Done (P32-16) |
 | Outcome checks that probe several spellings of one relation (`tampered` / `Tampered` / `TamperedWith`) | spitting, gk3, goat | Proof hygiene: assert the exact facts the script writes | Done (P32-19): one fact per check; scripts made consistent |
-| Engine features that no proof exercises: `collapse_tangent`, `VectorConduit` / `compute_vector_conduit`, `BitemporalTransceiver`, `CausalDecayTracker`, `DreamFact`, `reject_belief` | `src/hypervisor.zig`, `src/spatial.zig`, `src/vm.zig` | Unproven engine claim | P32-20 |
+| Engine features that no proof exercises: `collapse_tangent`, `VectorConduit` / `compute_vector_conduit`, `BitemporalTransceiver`, `CausalDecayTracker`, `DreamFact`, `reject_belief` | `src/hypervisor.zig`, `src/spatial.zig`, `src/vm.zig` | Unproven engine claim | Done (P32-20, Option B): exercised across darko and dott |
 
 ### Tavern Heist (P32-08)
 
@@ -177,8 +177,8 @@ These recur in most proofs and are handled once, not per proof.
 | 27 hits: bedroom, school, and vortex themes; countdown banner; singularity modal; cast tokens | renderer | Theme hook | P32-02 |
 | `darko_follow_conduit` action on the global `v` key | renderer | Theme hook | Done (P32-02c) |
 | Five `darko_*` fields, `singularity_collapsed`, `tangent_active`, and the countdown; `vector_conduits` is generic | `src/display.zig` | Theme hook (countdown and conduits can be generic HUD channels) | Done (P32-03, D-041) |
-| Hypervisor API and docs use the film's vocabulary (Tangent Universe, Artifact of Metal, the Manipulated Dead, vortex) for what is a branch-world mechanic | `src/hypervisor.zig`, `src/vm.zig`, `src/spatial.zig` | Leak in naming; renaming a public API needs a maintainer decision | P32-21 |
-| Five hypervisor and spatial features unused by this or any proof | see cross-cutting | Unproven engine claim | P32-20 |
+| Hypervisor API and docs use the film's vocabulary (Tangent Universe, Artifact of Metal, the Manipulated Dead, vortex) for what is a branch-world mechanic | `src/hypervisor.zig`, `src/vm.zig`, `src/spatial.zig` | Leak in naming; renaming a public API needs a maintainer decision | Done (P32-21, D-044): renamed to neutral mechanic terms |
+| Five hypervisor and spatial features unused by this or any proof | see cross-cutting | Unproven engine claim | Done (P32-20) |
 | `get_darko_look_description` fallback text in Zig | `proofs/darko_puzzle.zig` | Proof content | Done (P32-19): table deleted, alias and default handlers in the script |
 
 ### Bell Tower (P32-15)
@@ -203,7 +203,7 @@ These recur in most proofs and are handled once, not per proof.
 
 1. **Safety net:** separation lint (P32-06) and characterization goldens (P32-07).
 2. **Audits:** one per proof (P32-08 to P32-15), completed 2026-11-09; findings above.
-3. **Extractions and fixes:** host kit (P32-16, done), emergent society (P32-05, done), dialogue duel (P32-17, done), arrival rules (P32-18, done), proof hygiene (P32-19, done); P32-20 and P32-21 wait on maintainer decisions.
+3. **Extractions and fixes:** host kit (P32-16, done), emergent society (P32-05, done), dialogue duel (P32-17, done), arrival rules (P32-18, done), proof hygiene (P32-19, done), unproven features (P32-20, done), neutral hypervisor vocabulary (P32-21, done), one meaning for true (P32-28, done).
 4. **Presentation and core purge:** theme hooks (P32-02, staged as P32-02a render goldens (done), P32-02b renderer hook (done, D-039: art in `proofs/art.zig`), P32-02c actions and keys (done), P32-02d audio (done, D-040)), core logic (P32-03, done, D-041), wasm split (P32-04, done, D-042). Phase 32's purge is complete: the lint baseline is 0. These remove most leak hits and benefit from the host kit and goldens being in place.
 
 ## Baseline changes

@@ -511,9 +511,8 @@ pub const Parser = struct {
                             if (self.current.tag == .kw_being) try self.advance();
                             const state_name = try self.parse_name();
                             edge = .falling;
-                            var pat_args = try self.allocator.alloc([]const u8, 2);
+                            var pat_args = try self.allocator.alloc([]const u8, 1);
                             pat_args[0] = first_name;
-                            pat_args[1] = "true";
                             try trigger_patterns.append(.{
                                 .relation = state_name,
                                 .args = pat_args,
@@ -522,9 +521,8 @@ pub const Parser = struct {
                             try self.advance();
                             const state_name = try self.parse_name();
                             edge = .rising;
-                            var pat_args = try self.allocator.alloc([]const u8, 2);
+                            var pat_args = try self.allocator.alloc([]const u8, 1);
                             pat_args[0] = first_name;
-                            pat_args[1] = "true";
                             try trigger_patterns.append(.{
                                 .relation = state_name,
                                 .args = pat_args,
@@ -984,10 +982,9 @@ pub const Parser = struct {
             if (self.current.tag == .kw_the) try self.advance();
             if (self.current.tag == .identifier or self.current.tag == .kw_scene) _ = try self.advance();
         }
+        var args = try self.allocator.alloc([]const u8, 1);
+        args[0] = target;
         if (is_neg) {
-            var args = try self.allocator.alloc([]const u8, 2);
-            args[0] = target;
-            args[1] = "true";
             return Stmt{
                 .forget = .{
                     .relation = state,
@@ -995,9 +992,6 @@ pub const Parser = struct {
                 },
             };
         } else {
-            var args = try self.allocator.alloc([]const u8, 2);
-            args[0] = target;
-            args[1] = "true";
             return Stmt{
                 .remember = .{
                     .relation = state,
@@ -1085,9 +1079,8 @@ pub const Parser = struct {
                 }
                 const state = try self.parse_name();
                 if (self.current.tag == .kw_with) try self.advance();
-                var pat_args = try self.allocator.alloc([]const u8, 2);
+                var pat_args = try self.allocator.alloc([]const u8, 1);
                 pat_args[0] = first;
-                pat_args[1] = "true";
                 if (is_neg) {
                     return Expr{ .not_fact = .{ .relation = state, .args = pat_args } };
                 } else {

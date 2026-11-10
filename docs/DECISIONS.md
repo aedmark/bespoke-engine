@@ -535,6 +535,33 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Building the runtime in place instead of returning it by value: a smaller stack would do, but it changes the runtime's API; a larger stack fixes the fault without that.
 **Consequences:** `proofs/golden/wasm.txt` (six decks through a ten-step event script) was unchanged by the split. The separation lint finds no proof names in `src/` (79 to 0). Engine wasm tests drive two neutral test decks; the proof decks' behaviour is covered by the golden. Node is used only by the optional smoke check, not by the build. Neither module has run in a browser page here; Node exercised their exports.
 
+## D-043 Unary States Modelled as Predicate Presence (2026-11-10, status: accepted)
+**Context:** `true` had three conflicting meanings in the codebase (P32-28): `now X is Y` interned the entity `true` as `object_or_value`; `VM.has_fact_pattern` read string `"true"` as numeric value 1; `when` reactive triggers parsed lowercase `"true"` as an unbound pattern variable `?true`. A host asserting a state fact with value 1 was invisible to script conditions.
+**Decision:**
+1. Unary states (`now X is Y`, `if X is Y`, `when X is Y`) represent predicate presence `Y(X)` without a synthetic second argument.
+2. In `Fact`, `object_or_value` is 0 (`EntityId.none.to_int()`) when a state fact is asserted.
+3. `if X is Y` compiles to `query_has` with mask `0x03` (`has_fact(X, Y, null)`).
+4. `now X is not Y` forgets `(X, Y, null)`, clearing the predicate.
+5. `when X is Y` and `when X stops being Y` trigger on rising and falling edges of `Y(X)` with wildcard object matching.
+6. Host code asserts a state with `world.remember(subject, state, 0, ttl)` without interning `"true"`.
+**Alternatives:**
+- Numerical booleans (`1` and `0`): rejected because reserving `"true"` and `"false"` as numeric literals across the DSL complicates pattern variables and forces arbitrary integer values onto relational predicates.
+- Reserved canonical entities (`EntityId.TRUE = 1`): rejected because unary predicates do not have objects; forcing an object entity creates an artificial dependency on entity IDs.
+**Consequences:** Eliminates the synthetic `"true"` string and entity interning hack. All nine proof goldens remain unchanged. Unit test in `src/compiler/codegen.zig` verifies state lifecycle without entity interning.
+
+## D-044 Neutral Mechanic Vocabulary for Temporal Hypervisors (2026-11-10, status: accepted)
+**Context:** `TemporalHypervisor` used film-specific terminology from Donnie Darko (Tangent Universe, Artifact of Metal, vortex, singularity collapse) for generic branch-world mechanics (P32-21, P32-14 audit).
+**Decision:**
+1. The subsystem retains `TemporalHypervisor` as its core module name.
+2. Branch classification uses `UniverseBranchKind` with `.primary` and `.branch` (aliasing `.tangent`).
+3. Branch states use `BranchCollapseState` with `.dormant`, `.active`, `.budget_expired`, and `.resolved_and_merged` (aliasing `TangentCollapseState` and `.collapsed_singularity`).
+4. Step results use `HypervisorStepResult` with `.running`, `.budget_expired`, and `.loop_resolved` (aliasing `.singularity_collapse`).
+5. Hypervisor methods use `fork_branch`, `collapse_branch`, and `set_convergence_target` (aliasing `fork_tangent`, `collapse_tangent`, and `set_vortex_target`).
+6. Entities and marks are named `keystone_entity`, `convergence_waypoint`, and `receiver_entity` (aliasing `artifact_entity`, `vortex_waypoint`, and `living_receiver`).
+**Alternatives:**
+- Full breaking purge without aliases: rejected because maintaining backwards-compatible aliases preserves existing proof callers and characterization goldens.
+**Consequences:** Hypervisor API is completely generic and decoupled from narrative film vocabulary. All nine proof goldens remain unchanged.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

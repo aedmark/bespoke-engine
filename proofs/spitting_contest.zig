@@ -144,12 +144,11 @@ pub fn spit(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.Com
     return placement(world) orelse error.SpitNotJudged;
 }
 
-/// Asserts `subject is <state>` the way the script's `now X is Y` does. The script stores the
-/// object as the interned entity `true`, and its `if X is Y` conditions compare against that
-/// (ARCHITECTURE, Claims vs. code), so a host asserting the value 1 would not be seen.
+/// Asserts `subject is <state>` the way the script's `now X is Y` does (D-043, P32-28).
+/// In Option C, unary states are stored with object_or_value = 0 (EntityId.none), and
+/// queried by subject and relation presence.
 fn set_state(world: *bespoke.World, subject: bespoke.EntityId, state: bespoke.RelationKind) !void {
-    const truth = try world.intern_entity("true");
-    try world.remember(subject, state, truth.to_int(), 0);
+    try world.remember(subject, state, 0, 0);
 }
 
 /// Executes headless simulation of the Booty Island Spitting Contest vertical slice (P10-03, D-012).

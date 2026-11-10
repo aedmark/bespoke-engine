@@ -434,7 +434,10 @@ pub const Codegen = struct {
             .remember => |rem| {
                 const subj = try self.resolve_entity(rem.args[0]);
                 const rel = try self.resolve_relation(rem.relation);
-                const obj = try self.resolve_entity_or_value(rem.args[1]);
+                const obj = if (rem.args.len > 1)
+                    try self.resolve_entity_or_value(rem.args[1])
+                else
+                    0;
 
                 try self.chunk.emit_push_entity(subj);
                 try self.chunk.emit_push_relation(rel);
@@ -1046,4 +1049,70 @@ test "P22-01: saving with undispatched weaves is refused" {
         error.PendingWeavesNotDispatched,
         save_mod.write_save_state(testing.allocator, buf.writer(), &world, null, &vm, .{}),
     );
+}
+
+test "P32-28: Option C predicate presence for states without synthetic true entity" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const source =
+        \\entity Guybrush, Flags
+        \\scene: Beach
+        \\
+        \\Tampered is a state.
+        \\
+        \\now Flags are Tampered
+        \\
+        \\routine Check(Guybrush):
+        \\  if Flags are Tampered:
+        \\    now Flags are not Tampered
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    var codegen = Codegen.init(alloc, &world, null);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    // 1. Verify entity "true" was never interned (D-043, Option C)
+    try testing.expect(world.lookup_entity("true") == null);
+
+    const flags = try world.intern_entity("Flags");
+    const tampered = try world.intern_relation("Tampered", .set);
+    const guybrush = try world.intern_entity("Guybrush");
+
+    var vm = vm_mod.VM.init(alloc, &world, &compiled.chunk);
+    defer vm.deinit();
+
+    // 2. Execute initial declarative statements (`now Flags are Tampered`)
+    if (compiled.initial_entry) |init_pc| {
+        _ = try vm.spawn_routine(guybrush, init_pc);
+        try vm.step_tick();
+    }
+
+    // Initial statement remembered with object_or_value = 0
+    try testing.expect(world.has_fact(flags, tampered, null));
+    try testing.expect(world.has_fact(flags, tampered, 0));
+
+    // 3. Execute routine Check on VM to test `if Flags are Tampered:` and `now Flags are not Tampered`
+    const entry_pc = compiled.routine_entries.get("Check").?;
+    _ = try vm.spawn_routine(guybrush, entry_pc);
+    try vm.step_tick();
+
+    // 4. Verify "now Flags are not Tampered" cleared the state
+    try testing.expect(!world.has_fact(flags, tampered, null));
+
+    // 5. Verify host asserting with object_or_value = 0 is immediately recognized
+    try world.remember(flags, tampered, 0, 0);
+    try testing.expect(world.has_fact(flags, tampered, null));
 }
