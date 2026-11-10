@@ -7,10 +7,11 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | Suite | File / Command | Proves | Does not prove | Time, needs |
 | --- | --- | --- | --- | --- |
 | Documentation Invariants | `python3 tools/check_docs.py` | Internal consistency: references, roadmap items, decisions, links, handoff limits, and 3x manual validation | Code execution correctness | < 1s, Python 3 stdlib |
-| 3x Manual Validation & Tests | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . && python3 -m unittest discover -s tests -v` | 3x What/How/Why schema conformance, evidence link validity, and manual generator unit tests | Graphical browser layout | < 1s, Python 3 stdlib |
+| 3x Manual & Site Tests | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . && python3 -m unittest discover -s tests -v` | 3x What/How/Why schema conformance, evidence link validity, and manual and showcase-site build unit tests | Graphical browser layout | < 1s, Python 3 stdlib |
+| Showcase Site Build | `python3 tools/build_site.py --check` | `site/index.html` embeds the current `bespoke-proofs.wasm` and browser wrapper in one simulator region | Browser rendering or interaction | < 1s, built wasm artifact |
 | World Store Unit Tests | `zig test src/world.zig` | Fact insertion, TTL expiration pruning, queries, `memcpy` snapshots | VM execution or parser | < 2s, Zig compiler |
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
-| WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm wasm-proofs && node tools/wasm_smoke.js` | `WasmCanvas` rendering, browser event routing, deck loading and rules on neutral test decks; both modules build, instantiate in Node, and run every deck | A browser page; the manual's DOM controls | < 10s, Zig compiler; Node.js 18+ for the smoke check (optional) |
+| WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm wasm-proofs && node tools/wasm_smoke.js` | `WasmCanvas` rendering, browser event routing, deck loading and rules on neutral test decks; both modules build, instantiate in Node, and run every deck | A browser page; the showcase DOM controls | < 10s, Zig compiler; Node.js 18+ for the smoke check (optional) |
 | Wasm Golden | `zig build test-proofs` (`proofs/wasm_golden_test.zig`) | Each proof deck, driven natively through a ten-step event script, shows the pixels, facts, ticks, and banners in `proofs/golden/wasm.txt` (P32-04) | The wasm32 build itself (see the smoke check) | < 1s |
 | Separation Lint | `python3 tools/check_separation.py` (also inside `check_docs.py`); `--report` for every hit | Proof names in non-test `src/` code do not exceed `tools/separation_baseline.json` | That engine code is free of proof *logic* expressed without proof names; audits cover that | < 1s, Python 3 |
 | Engine Tests | `zig build test-engine` | Every test reachable from `src/root.zig` and `src/main.zig` | Proof scenarios | < 5s, Zig compiler, SDL2 headers |
@@ -35,7 +36,7 @@ Expected results live in [HANDOFF.md](HANDOFF.md)'s "Verified" table, with the d
 
 ## Adding a Check
 
-- Where new checks go: unit tests belong in `test` blocks at the bottom of the relevant Zig source file (`src/world.zig`, `src/vm.zig`, `src/save.zig`, `src/wasm.zig`, etc.); documentation checks belong in `tools/check_docs.py` and `tests/test_manual.py`.
+- Where new checks go: unit tests belong in `test` blocks at the bottom of the relevant Zig source file (`src/world.zig`, `src/vm.zig`, `src/save.zig`, `src/wasm.zig`, etc.); documentation checks belong in `tools/check_docs.py`, `tests/test_manual.py`, and `tests/test_site.py`.
 - Assert on what happened (a fact in the arena, an entity coordinate reached, a return code or event emitted), not on words in a message: a message can mention the right word for the wrong reason.
 - Before trusting a new check, make it fail: undo the fix (only the fix) and run it. A check that passes either way proves nothing.
 
@@ -59,7 +60,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
 | Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |
 | Dialogue Duel (`src/duel.zig`) | `zig build test-engine` | `zig build test-proofs` (sword-fighting golden) |
-| WebAssembly Target (`src/wasm.zig`, `proofs/wasm_deck.zig`) | `zig test src/wasm.zig && zig build wasm wasm-proofs`, `zig build test-proofs` (wasm golden) | `node tools/wasm_smoke.js` |
+| WebAssembly Target (`src/wasm.zig`, `proofs/wasm_deck.zig`) | `zig test src/wasm.zig && zig build wasm wasm-proofs`, `zig build test-proofs` (wasm golden) | `node tools/wasm_smoke.js`, `python3 tools/build_site.py --check` |
 | Peripheral SDL2 Display (`src/display/`) | `zig test -lc -lSDL2 src/display.zig` | Interactive GUI run verifying 60 Hz rendering and controls |
 
 ## Manual Checks (Before a Release)
@@ -70,7 +71,8 @@ What only a person can check, and how. Record who checked what, where, and when 
 - Scrub backward and forward across the interactive timeline scrubber (`[<]`, `[>]`, click scrubber) and verify instant visual replay and divergent timeline truncation.
 - Toggle Pause & Save/Load drawer (`[P]`, `[F2]`, `[F3]`), save a slot, verify the 16x12 RGB332 graphical thumbnail, and load back.
 - **HUD layout without a display:** render a frame offscreen and inspect the image. `DisplayWindow.init_offscreen` with `save_frame_bmp` does this from a test (P32-02a); the older route is a small harness that calls `DisplayWindow.init`, fills a `RenderFrame`, calls `render_frame`, then `SDL_RenderReadPixels` and `SDL_SaveBMP`, and run it with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy zig run -I/usr/include/SDL2 -lc -lSDL2 --dep bespoke -Mroot=<harness>.zig -I/usr/include/SDL2 -Mbespoke=src/root.zig`. This checks layout only, not audio or input.
-- Run `zig build wasm-proofs` and then `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html`; open `docs/manual.html` directly in a browser via `file://` and run the embedded simulator deck (`#live-simulator`). It calls the embedded `bespoke-proofs.wasm` exports (P32-29, D-042).
+- Run `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html` and verify `docs/manual.html` opens cleanly in a browser via `file://` with search and navigation.
+- Rebuild the showcase with `python3 tools/build_site.py`, open `site/index.html`, and exercise `#playground`: switch all six decks, step, trigger a catalyst, pause and resume, scrub the recent-timeline window, and reset the deck. Check that the canvas renders and the host bridge log records the dispatches.
 
 ## Before Any Run
 

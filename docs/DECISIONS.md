@@ -541,6 +541,8 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 
 **Update, 2026-11-10 (P32-29):** The manual now embeds `bespoke-proofs.wasm` as base64 and loads it without `fetch`, so it works from `file://`; the wrapper is `tools/manual_simulator.js`. `python3 tools/manual.py build` requires `zig build wasm-proofs` first and fails with a clear error when the artifact is missing. The fact list and REPL were removed because the module exports only `wasm_get_fact_count`, not fact rows or injection.
 
+**Update, 2026-11-10 (P30-01 partial):** `site/index.html` uses the same embedded module through `tools/build_site.py` and `tools/site_simulator.js`. It remains a single self-contained page that runs from `file://`. The six decks auto-tick and use the module's pointer, key, catalyst, pause, and timeline exports. Its JavaScript model, fact rows, action bank, and deterministic event stream are gone. The site clamps the timeline to the runtime's 32-snapshot window; `Reset Deck` returns to tick 0. Audio and the remaining three decks are open.
+
 ## D-043 Unary States Modelled as Predicate Presence (2026-11-10, status: accepted)
 **Context:** `true` had three conflicting meanings in the codebase (P32-28): `now X is Y` interned the entity `true` as `object_or_value`; `VM.has_fact_pattern` read string `"true"` as numeric value 1; `when` reactive triggers parsed lowercase `"true"` as an unbound pattern variable `?true`. A host asserting a state fact with value 1 was invisible to script conditions.
 **Decision:**
@@ -596,6 +598,14 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Store the open set in the VM: rejected because `World` is the snapshot boundary, and dialogue must rewind with the facts it reads.
 - Encode the display speaker in bytecode: rejected because a `choice` block does not name its conversation partner; presentation is host intent, not script structure.
 **Consequences:** The GK3 Buthane conversation now runs through its script's choices with an unchanged headless transcript. `script_spec.md` documents the lifecycle, and `src/dialogue.zig` has fact-layer tests plus a compiler-to-VM test covering pruning, suspension, selection, generated actions, and snapshot restore. Older saves remain readable.
+
+## D-047 Removal of Embedded WebAssembly Simulator from the Technical Manual in Favor of the Standalone Showcase (2026-11-10, status: accepted)
+**Context:** P19-03 and P32-29 embedded `bespoke-proofs.wasm` into `docs/manual.html` as a base64 payload to provide an interactive canvas simulator deck. In practice, the simulator duplicated minimal wireframe scenarios without running full DSL scripts or fibers, provided minimal feedback on tick, inflated `docs/manual.html` from ~240 KB to 1.8 MB, and required `zig build wasm-proofs` before building manual documentation. The standalone showcase site (`site/index.html`) already contains the full interactive simulation viewport and browser event wrapper (`tools/site_simulator.js`, `tools/build_site.py`).
+**Decision:** Remove the embedded simulator deck, canvas styles, base64 payload, and `tools/manual_simulator.js` wrapper from `tools/manual.py` and `docs/manual.html`. Retain the standalone `wasm32-freestanding` compilation pipeline and exports (`src/wasm.zig`, `proofs/wasm_deck.zig`, `zig build wasm`, `zig build wasm-proofs`) powering `site/index.html` and headless Node checks (`tools/wasm_smoke.js`).
+**Alternatives:**
+- Keep the simulator in `docs/manual.html` and expand `proofs/wasm_deck.zig` with full scripted routines: rejected because it duplicates the showcase website, inflates documentation size, and adds build coupling to offline developer docs.
+- Revert to the JavaScript-only mock simulator: rejected because an inaccurate mock contradicts the 3x documentation contract.
+**Consequences:** `docs/manual.html` is restored to a standalone ~240 KB document without binary bloat. `python3 tools/manual.py build` no longer depends on pre-building WebAssembly binaries. `tools/manual_simulator.js` is deleted. The WebAssembly target and browser bridge remain fully supported and verified via `site/index.html` and `tools/wasm_smoke.js`.
 
 ## Held tensions
 

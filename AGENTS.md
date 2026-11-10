@@ -105,7 +105,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `src/` | The engine: spine, VM, compiler, spatial, emergent society, audio, display, persistence, wasm runtime, host kit; exported as the `bespoke` module |
 | `proofs/` | Proofs of concept (vertical slices) built as `bespoke-proofs`; consume the engine only through the `bespoke` module (D-031) |
 | `scenarios/` | Sample `.bespoke` DSL scripts run by the stock engine CLI (`bespoke run`) |
-| `site/index.html` | Standalone public showcase website for external audiences and Neocities |
+| `site/index.html` | Standalone public showcase website with the embedded proof WebAssembly playground |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
 

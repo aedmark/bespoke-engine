@@ -80,6 +80,7 @@ The language also covers dialogue choice trees, multi-scene staging, item combin
 # Engine and proof tests, and the WebAssembly builds
 zig build test
 zig build wasm wasm-proofs
+python3 tools/build_site.py
 
 # The engine CLI: run, compile, and check scripts
 zig build run -- check scenarios/tavern_heist.bespoke
@@ -126,7 +127,7 @@ zig build test-proofs                     # every proof's tests
 - `where` guards on `on cue` handlers are parsed but not yet evaluated (dialogue-choice `where` guards and `when` rule patterns are). Use `if` checks inside cue handlers.
 - Societies are configured from Zig host code; declaring one in a script is planned (P32-22). One enforcer per society.
 - Some engine files still name proof content (renderer themes, music tracks, status flags). Removing it is planned as P32-02 to P32-04 in the [roadmap](ROADMAP.md).
-- The manual embeds `bespoke-proofs.wasm`, so its six decks run the real browser runtime from `file://`. Run `zig build wasm-proofs` before rebuilding the manual. Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
+- The showcase site embeds `bespoke-proofs.wasm`, so its six decks run the real browser runtime from `file://`; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`. Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
 
 ---
 
@@ -145,8 +146,8 @@ BeSpoke adopts [The Manifold](docs/README.md) repository memory framework and th
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Security model, bytecode/package/save bounds verification, and reporting |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution workflow for human and agent contributors |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | User-visible change notes |
-| [`docs/manual.html`](docs/manual.html) | Standalone 3x What/How/Why manual with the embedded proof WebAssembly module |
-| [`site/index.html`](site/index.html) | Public showcase website with a JavaScript simulation playground |
+| [`docs/manual.html`](docs/manual.html) | Standalone interactive 3x What/How/Why manual and developer guide |
+| [`site/index.html`](site/index.html) | Public showcase website with the embedded proof WebAssembly playground |
 | [`whitepaper.md`](whitepaper.md) | Original foundational vision whitepaper |
 
 ---

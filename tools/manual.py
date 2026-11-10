@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import copy
 import html
 import json
@@ -36,9 +35,6 @@ BLENDED_RE = re.compile(r"(?i)\b(?:bittersweet|mixed feelings|it is what it is)\
 BASIS_VALUES = ("recorded", "observed", "inferred", "external")
 EVIDENCE_KINDS = ("source", "test", "decision", "spec", "url", "command", "document")
 REVIEW_INTERVAL_DAYS = 180
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-WASM_ARTIFACT = PROJECT_ROOT / "zig-out" / "bin" / "bespoke-proofs.wasm"
-SIMULATOR_JS_PATH = Path(__file__).with_name("manual_simulator.js")
 
 ALLOWED_ROOT = {"$schema", "project", "manual", "theme", "sections"}
 ALLOWED_PROJECT = {"name", "short_name", "version", "repository"}
@@ -901,54 +897,6 @@ STYLE = r"""
 :root{--bg:#0d1117;--panel:#161b22;--panel2:#21262d;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:ACCENT;--accent2:ACCENT2;--what:#38bdf8;--how:#f59e0b;--why:#3fb950;color-scheme:dark}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;min-height:100vh}a{color:var(--accent)}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.sidebar{width:310px;height:100vh;position:sticky;top:0;overflow:auto;flex:none;padding:1.5rem;background:var(--panel);border-right:1px solid var(--border)}.brand{display:flex;gap:.7rem;align-items:center;margin-bottom:.25rem}.brand-icon{font-size:1.7rem;color:var(--accent)}.brand h1{font-size:1.1rem;margin:0}.version{font:12px ui-monospace,monospace;color:var(--accent)}.search{width:100%;margin:1.25rem 0;padding:.65rem .75rem;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)}nav h2{margin:1.3rem 0 .35rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}nav ul{list-style:none;padding:0;margin:0}nav a{display:block;padding:.3rem .45rem;text-decoration:none;color:var(--muted);font-size:.87rem;border-radius:5px}nav a:hover{color:var(--accent);background:var(--panel2)}.content{width:min(100%,1040px);padding:3.5rem 3rem 6rem;margin:0 auto}.hero h1{font-size:clamp(2.1rem,5vw,3.25rem);line-height:1.1;margin:0 0 .7rem;background:linear-gradient(120deg,var(--text),var(--accent));background-clip:text;color:transparent}.subtitle{font-size:1.2rem;color:var(--muted);margin:.2rem 0}.description{max-width:72ch}.badges{display:flex;gap:.4rem;flex-wrap:wrap;margin:.8rem 0}.badge{border:1px solid color-mix(in srgb,var(--accent) 45%,var(--border));border-radius:999px;padding:.15rem .55rem;color:var(--muted);font:12px ui-monospace,monospace}.principle{margin:2rem 0;padding:1rem 1.2rem;border-left:4px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--panel));border-radius:7px}.manual-section{margin-top:4rem}.section-heading{font-size:1.8rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);scroll-margin-top:1rem}.section-description{color:var(--muted)}.entry{scroll-margin-top:1rem;margin:2rem 0;padding:1.5rem;background:var(--panel);border:1px solid var(--border);border-radius:10px}.entry-heading{display:flex;align-items:center;gap:.6rem}.entry h3{margin:0;color:var(--accent);font-size:1.35rem}.anchor{text-decoration:none;opacity:0}.entry:hover .anchor,.anchor:focus{opacity:1}.entry-summary{font-size:1.05rem}.triad{display:grid;gap:1rem;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:1.2rem}.dimension{padding:1rem;background:var(--bg);border-top:3px solid;border-radius:6px}.dimension h4{margin:0 0 .65rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}.dimension p,.dimension ol{margin:.4rem 0}.dimension ol{padding-left:1.2rem}.dimension.what{border-color:var(--what)}.dimension.what h4{color:var(--what)}.dimension.how{border-color:var(--how)}.dimension.how h4{color:var(--how)}.dimension.why{border-color:var(--why)}.dimension.why h4{color:var(--why)}pre{overflow:auto;padding:.8rem;background:#090d13;border:1px solid var(--border);border-radius:6px;color:#7ee787}.evidence{margin-top:1rem;color:var(--muted)}.evidence summary{cursor:pointer;color:var(--text)}.evidence li span{color:var(--muted);margin-right:.4rem}.related{font-size:.9rem;color:var(--muted)}.empty{display:none;padding:2rem;border:1px dashed var(--border);color:var(--muted);text-align:center}.doc-footer{margin-top:5rem;padding-top:1.5rem;border-top:1px solid var(--border);color:var(--muted);font-size:.85rem}.hidden{display:none!important}body.no-results .empty{display:block}@media(max-width:900px){body{display:block}.sidebar{position:relative;width:100%;height:auto;border-right:0;border-bottom:1px solid var(--border)}nav{display:none}.content{padding:2rem 1.15rem}.triad{grid-template-columns:1fr}}@media print{body{display:block;background:#fff;color:#111}.sidebar,.search,.anchor{display:none}.content{width:100%;padding:0}.hero h1{color:#111}.entry{break-inside:avoid;background:#fff;border-color:#bbb}.dimension{background:#fff}.badges{color:#333}}
 .reviewed{margin:.35rem 0 0;font:12px ui-monospace,monospace;color:var(--muted)}.reviewed code{color:var(--muted)}.basis{display:inline-block;margin-left:.5rem;padding:.08rem .45rem;border:1px solid var(--border);border-radius:999px;font:10px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);vertical-align:middle}.basis-recorded{color:#3fb950}.basis-observed{color:#38bdf8}.basis-inferred{color:#f59e0b;border-style:dashed}.basis-external{color:#a855f7}.evidence-kind{display:inline-block;margin-right:.35rem;padding:.02rem .35rem;border:1px solid var(--border);border-radius:4px;font:10px ui-monospace,monospace;text-transform:uppercase;color:var(--muted)}
-.simulator-deck{margin-top:2.5rem;padding:1.5rem;background:var(--panel);border:1px solid var(--border);border-radius:12px}.sim-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}.sim-tabs{display:flex;gap:.45rem;flex-wrap:wrap}.sim-btn{padding:.4rem .75rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12px ui-monospace,monospace;cursor:pointer}.sim-btn:hover,.sim-btn.active{border-color:var(--accent);color:var(--accent);background:var(--panel2)}.sim-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(260px,1fr);gap:1rem;align-items:start}#bespoke-manual-canvas{width:100%;height:auto;border:1px solid var(--border);border-radius:8px;background:#090d13;cursor:crosshair;touch-action:none}.sim-toolbar{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-top:.65rem}.sim-scrubber{display:flex;align-items:center;gap:.6rem;margin-top:.65rem;font:12px ui-monospace,monospace;color:var(--muted)}.sim-scrubber input{flex:1}.sim-inspector{padding:.85rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;font:12px/1.5 ui-monospace,monospace}.sim-inspector h4{margin:0 0 .5rem;color:var(--accent);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}.sim-inspector p{margin:.45rem 0}@media(max-width:900px){.sim-grid{grid-template-columns:1fr}}
-"""
-
-
-SIMULATOR_HTML = r"""
-<section class="simulator-deck" id="live-simulator">
-  <div class="sim-header">
-    <div>
-      <h2 class="section-heading" style="margin:0;border:0;padding:0">Interactive Proof Simulator (WebAssembly / HTML5 Canvas)</h2>
-      <p class="section-description" style="margin:.2rem 0 0">The real <code>bespoke-proofs.wasm</code>, embedded so this page runs from <code>file://</code>. Its six proof decks use the browser runtime's controls: clicks, keys, timeline scrubbing, and fact count (<a href="#wasm-browser-target-and-simulator">P19-01..P19-03, P32-29, D-042</a>).</p>
-    </div>
-    <div class="sim-tabs" role="tablist" aria-label="Vertical slice scenarios">
-      <button type="button" class="sim-btn active" data-scenario="0">[1] Tavern Heist</button>
-      <button type="button" class="sim-btn" data-scenario="1">[2] Spitting Contest</button>
-      <button type="button" class="sim-btn" data-scenario="2">[3] GK3 Moustache</button>
-      <button type="button" class="sim-btn" data-scenario="3">[4] Living Village</button>
-      <button type="button" class="sim-btn" data-scenario="4">[5] Broken Sword Goat</button>
-      <button type="button" class="sim-btn" data-scenario="5">[6] DOTT Trio</button>
-    </div>
-  </div>
-  <div class="sim-grid">
-    <div>
-      <canvas id="bespoke-manual-canvas" width="640" height="360" tabindex="0" aria-label="BeSpoke Engine Interactive Simulation Canvas"></canvas>
-      <div class="sim-toolbar">
-        <button type="button" class="sim-btn active" data-verb="WALK">WALK</button>
-        <button type="button" class="sim-btn" data-verb="LOOK">LOOK</button>
-        <button type="button" class="sim-btn" data-verb="TALK">TALK</button>
-        <button type="button" class="sim-btn" data-verb="TAKE">TAKE</button>
-        <button type="button" class="sim-btn" data-verb="USE">USE</button>
-        <span style="flex:1"></span>
-        <button type="button" class="sim-btn" id="sim-step-btn">[N] Step Tick</button>
-        <button type="button" class="sim-btn" id="sim-catalyst-btn">[S] Trigger Catalyst</button>
-        <button type="button" class="sim-btn" id="sim-pause-btn">[Space] Pause / Resume</button>
-        <button type="button" class="sim-btn" id="sim-rewind-btn">[R] Rewind</button>
-      </div>
-      <div class="sim-scrubber">
-        <label for="sim-timeline">Timeline Scrubber:</label>
-        <input id="sim-timeline" type="range" min="0" max="0" value="0">
-        <span id="sim-tick-readout">Tick 00 / 00</span>
-      </div>
-    </div>
-    <div class="sim-inspector">
-      <h4>Embedded WebAssembly Runtime</h4>
-      <p id="sim-wasm-status">Loading bespoke-proofs.wasm...</p>
-      <p>Facts in arena: <strong id="sim-fact-count">0</strong></p>
-      <p>The canvas is the module's own 640x360 RGBA8888 framebuffer. It draws the fact count, event banner, verb bar, and timeline. The controls call the module's <code>wasm_*</code> exports; the six decks live in <code>proofs/wasm_deck.zig</code>.</p>
-    </div>
-  </div></section>
 """
 
 
@@ -958,27 +906,6 @@ const entries=[...document.querySelectorAll('.entry')];
 const sections=[...document.querySelectorAll('.manual-section')];
 input.addEventListener('input',()=>{const query=input.value.trim().toLowerCase();let visible=0;entries.forEach(entry=>{const match=!query||entry.dataset.search.includes(query);entry.classList.toggle('hidden',!match);if(match)visible++});sections.forEach(section=>section.classList.toggle('hidden',![...section.querySelectorAll('.entry')].some(entry=>!entry.classList.contains('hidden'))));document.body.classList.toggle('no-results',visible===0)});
 """
-
-
-def load_wasm(path: Path = WASM_ARTIFACT) -> bytes:
-    try:
-        payload = path.read_bytes()
-    except FileNotFoundError as exc:
-        raise ManualError(
-            f"proof WebAssembly module not found at {path}; run `zig build wasm-proofs` first"
-        ) from exc
-    if not payload.startswith(b"\0asm"):
-        raise ManualError(f"{path} is not a WebAssembly module")
-    return payload
-
-
-def simulator_script(wasm_payload: bytes) -> str:
-    try:
-        template = SIMULATOR_JS_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise ManualError(f"simulator wrapper not found: {SIMULATOR_JS_PATH}") from exc
-    encoded = base64.b64encode(wasm_payload).decode("ascii")
-    return template.replace("__BESPOKE_PROOFS_WASM_BASE64__", encoded)
 
 
 def build_html(data: dict[str, Any], wasm_payload: Optional[bytes] = None) -> str:
@@ -1032,28 +959,15 @@ def build_html(data: dict[str, Any], wasm_payload: Optional[bytes] = None) -> st
         manual.get("footer", f'{project["name"]} {project["version"]}')
     )
     reviewed = review_metadata(manual, project)
-    has_simulator = "wasm-browser-target-and-simulator" in titles
-    sim_nav = (
-        '<section><h2><a href="#live-simulator">Interactive Browser Simulator</a></h2>'
-        '<ul><li><a href="#live-simulator">Live HTML5 Canvas Deck</a></li></ul></section>'
-        if has_simulator
-        else ""
-    )
-    sim_html = SIMULATOR_HTML if has_simulator else ""
-    sim_script = ""
-    if has_simulator:
-        sim_script = simulator_script(
-            wasm_payload if wasm_payload is not None else load_wasm()
-        )
     style = STYLE.replace("ACCENT2", str(accent2)).replace("ACCENT", str(accent))
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="generator" content="3x Documentation Scheme"><title>{html.escape(str(manual["title"]))}</title><style>{style}</style></head>
 <body><aside class="sidebar"><div class="brand"><span class="brand-icon" aria-hidden="true">{inline(icon)}</span><h1>{inline(project.get("short_name", project["name"]))}</h1></div>
-<div class="version">{inline(project["version"])}</div>{reviewed}<label for="manual-search" class="hidden">Search manual</label><input id="manual-search" class="search" type="search" placeholder="Search this manual…" autocomplete="off"><nav>{sim_nav}{nav}</nav></aside>
+<div class="version">{inline(project["version"])}</div>{reviewed}<label for="manual-search" class="hidden">Search manual</label><input id="manual-search" class="search" type="search" placeholder="Search this manual…" autocomplete="off"><nav>{nav}</nav></aside>
 <main class="content"><header class="hero"><h1>{inline(manual["title"])}</h1>{subtitle}{description}<div class="badges">{badges}</div>
 <div class="principle"><strong>The 3x reading contract:</strong> every entry explains what it does, how it works, and why it works that way.</div></header>
-{sim_html}<div class="empty">No entries match that search.</div>{sections}<footer class="doc-footer">{footer}</footer></main><script>{SCRIPT}{sim_script}</script></body></html>'''
+<div class="empty">No entries match that search.</div>{sections}<footer class="doc-footer">{footer}</footer></main><script>{SCRIPT}</script></body></html>'''
 
 
 def prepared(path: Path, overrides: list[str]) -> dict[str, Any]:
