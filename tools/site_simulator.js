@@ -1,6 +1,6 @@
 // Browser wrapper for the standalone showcase site (P30-01, D-042).
 // tools/build_site.py embeds this file and bespoke-proofs.wasm into site/index.html.
-// The six decks live in proofs/wasm_deck.zig; this wrapper supplies no scenes or facts.
+// The seven decks live in proofs/wasm_deck.zig; this wrapper supplies no scenes or facts.
 (() => {
   const canvas = document.querySelector('#sim-canvas');
   if (!canvas) return;
@@ -39,6 +39,7 @@
     'The Living Village',
     'Lochmarne Goat',
     'Day of the Tentacle Trio',
+    'Caustic Grog',
   ];
   const DECK_BANNERS = [
     'TAVERN HEIST',
@@ -47,6 +48,7 @@
     'THE LIVING VILLAGE',
     'LOCHMARNE GOAT',
     'DAY OF THE TENTACLE TRIO',
+    'CAUSTIC GROG',
   ];
   const DECK_COUNT = DECK_NAMES.length;
   const TICK_INTERVAL_MS = 250;
@@ -299,7 +301,7 @@
 
   window.addEventListener('keydown', (event) => {
     if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-    if (event.key >= '1' && event.key <= '6') {
+    if (event.key >= '1' && event.key <= '7') {
       event.preventDefault();
       loadDeck(Number(event.key) - 1);
     } else if (event.key === 'n' || event.key === 'N') {
@@ -348,7 +350,7 @@
       ]) {
         if (typeof exp[name] !== 'function') throw new Error(`missing export ${name}`);
       }
-      statusEl.textContent = 'bespoke-proofs.wasm ready. Six proof decks embedded.';
+      statusEl.textContent = 'bespoke-proofs.wasm ready. Seven proof decks embedded.';
       log('BOOT', 'Instantiated the embedded proof runtime.', 'cue');
       loadDeck(0);
       lastTickTime = performance.now();

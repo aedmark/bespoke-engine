@@ -74,7 +74,7 @@ What only a person can check, and how. Record who checked what, where, and when 
 - Toggle Pause & Save/Load drawer (`[P]`, `[F2]`, `[F3]`), save a slot, verify the 16x12 RGB332 graphical thumbnail, and load back.
 - **HUD layout without a display:** render a frame offscreen and inspect the image. `DisplayWindow.init_offscreen` with `save_frame_bmp` does this from a test (P32-02a); the older route is a small harness that calls `DisplayWindow.init`, fills a `RenderFrame`, calls `render_frame`, then `SDL_RenderReadPixels` and `SDL_SaveBMP`, and run it with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy zig run -I/usr/include/SDL2 -lc -lSDL2 --dep bespoke -Mroot=<harness>.zig -I/usr/include/SDL2 -Mbespoke=src/root.zig`. This checks layout only, not audio or input.
 - Run `python3 tools/manual.py build scheme/bespoke.manual.json --output docs/manual.html` and verify `docs/manual.html` opens cleanly in a browser via `file://` with search and navigation.
-- Rebuild the showcase with `python3 tools/build_site.py`, open `site/index.html`, and exercise `#playground`: switch all six decks, step, trigger a catalyst, pause and resume, scrub the recent-timeline window, and reset the deck. Check that the canvas renders and the host bridge log records the dispatches.
+- Rebuild the showcase with `python3 tools/build_site.py`, open `site/index.html`, and exercise `#playground`: switch all seven decks, step, trigger a catalyst, pause and resume, scrub the recent-timeline window, and reset the deck. Check that the canvas renders and the host bridge log records the dispatches.
 
 ## Before Any Run
 

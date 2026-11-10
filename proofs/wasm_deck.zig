@@ -14,6 +14,7 @@ pub const decks = [_]wasm.Deck{
     .{ .title = "THE LIVING VILLAGE (EMERGENCE)", .background = .{ .r = 22, .g = 44, .b = 28 }, .load = load_living_village, .catalyst = catalyst_living_village, .after_tick = village_after_tick },
     .{ .title = "BROKEN SWORD: LOCHMARNE GOAT", .background = .{ .r = 38, .g = 48, .b = 40 }, .load = load_goat_puzzle, .catalyst = catalyst_goat_puzzle },
     .{ .title = "DAY OF THE TENTACLE TRIO", .background = .{ .r = 42, .g = 24, .b = 48 }, .load = load_dott_puzzle, .catalyst = catalyst_dott_puzzle },
+    .{ .title = "CAUSTIC GROG (CONTAINER DEGRADATION)", .background = .{ .r = 20, .g = 42, .b = 40 }, .load = load_grog_puzzle, .catalyst = catalyst_grog_puzzle, .after_tick = grog_after_tick },
 };
 
 fn load_tavern_heist(rt: *WasmRuntime) anyerror!void {
@@ -256,6 +257,233 @@ fn catalyst_dott_puzzle(rt: *WasmRuntime) anyerror!void {
     try rt.world.remember(laverne, free_rel, 1, 0);
     try rt.world.remember(laverne, disg_rel, 1, 0);
     rt.set_banner("DOTT Trio Solved! Super Battery crafted, Tentacle Flag sewn, Laverne freed!");
+}
+
+/// The browser stage's stage ladder and exposure lengths. The desktop proof uses its script's
+/// 4/3/2 ticks and 10 measures; the browser's four-tick walk legs need a little more room, so
+/// this deck keeps the same rule with its own tuning.
+const GROG_STAGE_NAMES = [_][]const u8{ "GrogSound", "Pitted", "Buckling", "GrogFailed" };
+const GROG_STAGE_TICKS = [_]u64{ 6, 4, 3 };
+
+fn grog_stage_index(name: []const u8) ?usize {
+    for (GROG_STAGE_NAMES, 0..) |stage, i| {
+        if (std.mem.eql(u8, stage, name)) return i;
+    }
+    return null;
+}
+
+fn load_grog_puzzle(rt: *WasmRuntime) anyerror!void {
+    const room = try rt.world.intern_entity("Saltglass Stockade");
+    const mara = try rt.world.intern_entity("Mara");
+    const ivo = try rt.world.intern_entity("Ivo");
+    const barrel = try rt.world.intern_entity("GrogBarrel");
+    const cup_a = try rt.world.intern_entity("CupA");
+    const cup_b = try rt.world.intern_entity("CupB");
+    const cup_c = try rt.world.intern_entity("CupC");
+    const lock = try rt.world.intern_entity("CellLock");
+    const grog = try rt.world.intern_entity("CausticGrog");
+    const sound = try rt.world.intern_entity("GrogSound");
+    for (GROG_STAGE_NAMES) |stage_name| _ = try rt.world.intern_entity(stage_name);
+
+    const contains = try rt.world.intern_relation("Contains", .set);
+    const volume = try rt.world.intern_relation("Volume", .property);
+    const stage = try rt.world.intern_relation("ContainerStage", .property);
+    const exposure = try rt.world.intern_relation("ContainerExposure", .property);
+    const carries = try rt.world.intern_relation("Carries", .set);
+    const imprisoned = try rt.world.intern_relation("imprisoned", .property);
+
+    const barrel_wp = try rt.spatial.graph.add_waypoint(room, 0, 4, "BarrelMark");
+    const gallery_one_wp = try rt.spatial.graph.add_waypoint(room, 14, 4, "GalleryOne");
+    const gallery_two_wp = try rt.spatial.graph.add_waypoint(room, 28, 4, "GalleryTwo");
+    const lock_wp = try rt.spatial.graph.add_waypoint(room, 40, 4, "LockMark");
+    try rt.spatial.graph.connect(barrel_wp, gallery_one_wp, null);
+    try rt.spatial.graph.connect(gallery_one_wp, gallery_two_wp, null);
+    try rt.spatial.graph.connect(gallery_two_wp, lock_wp, null);
+
+    try rt.spatial.add_hotspot(barrel, room, .{ .x = 0, .y = -4 }, 7, "Grog Barrel", "A tarred barrel breathing sharp green fumes.");
+    try rt.spatial.add_hotspot(lock, room, .{ .x = 40, .y = -3 }, 7, "Cell Lock", "A thick iron lock between Ivo and the docks.");
+
+    try rt.spatial.register_entity(mara, barrel_wp, 10);
+    try rt.spatial.register_entity(ivo, lock_wp, 1);
+    try rt.world.remember(mara, carries, cup_a.to_int(), 0);
+    try rt.world.remember(mara, carries, cup_b.to_int(), 0);
+    try rt.world.remember(mara, carries, cup_c.to_int(), 0);
+    for ([_]bespoke.EntityId{ cup_a, cup_b, cup_c }) |cup| {
+        try rt.world.remember(cup, stage, sound.to_int(), 0);
+        try rt.world.remember(cup, volume, 0, 0);
+    }
+    try rt.world.remember(cup_a, volume, 16, 0);
+    try rt.world.remember(cup_a, contains, grog.to_int(), 0);
+    try rt.world.remember(cup_a, exposure, sound.to_int(), GROG_STAGE_TICKS[0]);
+    try rt.world.remember(ivo, imprisoned, 0, 0);
+
+    rt.player_entity = mara;
+    rt.set_banner("Caustic Grog: [S] pours A to B, then B to C; reach LockMark with four measures!");
+}
+
+/// The deck's own container lifecycle: spill while the holder moves, then advance an expired
+/// stage. The desktop proof runs the engine's ContainerSystem; this keeps the browser stage
+/// playable without compiling a script into the wasm module.
+fn grog_after_tick(rt: *WasmRuntime) anyerror!void {
+    const mara = rt.world.lookup_entity("Mara") orelse return;
+    const grog = rt.world.lookup_entity("CausticGrog") orelse return;
+    const contains = rt.world.lookup_relation("Contains") orelse return;
+    const volume = rt.world.lookup_relation("Volume") orelse return;
+    const stage_rel = rt.world.lookup_relation("ContainerStage") orelse return;
+    const exposure = rt.world.lookup_relation("ContainerExposure") orelse return;
+    const failed_rel = try rt.world.intern_relation("ContainerFailedAt", .property);
+    const moving = rt.spatial.is_moving(mara);
+
+    for ([_][]const u8{ "CupA", "CupB", "CupC" }) |cup_name| {
+        const cup = rt.world.lookup_entity(cup_name) orelse continue;
+        if (!rt.world.has_fact(cup, contains, grog.to_int())) continue;
+
+        if (moving) {
+            const before = rt.world.get_property(cup, volume) orelse continue;
+            const after = before -| 1;
+            try rt.world.remember(cup, volume, after, 0);
+            if (after == 0) {
+                _ = rt.world.forget(cup, contains, grog.to_int());
+                _ = rt.world.forget(cup, exposure, null);
+                var msg: [80]u8 = undefined;
+                rt.set_banner(std.fmt.bufPrint(&msg, "{s} runs dry in transit.", .{cup_name}) catch "A cup runs dry.");
+                continue;
+            }
+        }
+
+        const stage_value = rt.world.get_property(cup, stage_rel) orelse continue;
+        if (rt.world.has_fact(cup, exposure, stage_value)) continue;
+        const stage_name = rt.world.get_entity_name(bespoke.EntityId.from_int(stage_value)) orelse continue;
+        const current = grog_stage_index(stage_name) orelse continue;
+        if (current + 1 >= GROG_STAGE_NAMES.len) continue;
+        const next = rt.world.lookup_entity(GROG_STAGE_NAMES[current + 1]) orelse continue;
+        try rt.world.remember(cup, stage_rel, next.to_int(), 0);
+
+        var msg: [96]u8 = undefined;
+        if (current + 1 == GROG_STAGE_NAMES.len - 1) {
+            _ = rt.world.forget(cup, contains, grog.to_int());
+            try rt.world.remember(cup, volume, 0, 0);
+            if (rt.spatial.get_current_waypoint(mara)) |waypoint| {
+                try rt.world.remember(cup, failed_rel, waypoint, 0);
+            }
+            rt.set_banner(std.fmt.bufPrint(&msg, "{s} fails in Mara's hands.", .{cup_name}) catch "A cup fails.");
+        } else {
+            try rt.world.remember(cup, exposure, next.to_int(), GROG_STAGE_TICKS[current + 1]);
+            rt.set_banner(std.fmt.bufPrint(&msg, "{s} reaches {s}.", .{ cup_name, GROG_STAGE_NAMES[current + 1] }) catch "A cup degrades.");
+        }
+    }
+}
+
+fn grog_has_contents(rt: *WasmRuntime, cup: bespoke.EntityId) bool {
+    const grog = rt.world.lookup_entity("CausticGrog") orelse return false;
+    const contains = rt.world.lookup_relation("Contains") orelse return false;
+    return rt.world.has_fact(cup, contains, grog.to_int());
+}
+
+fn grog_has_volume(rt: *WasmRuntime, cup: bespoke.EntityId) bool {
+    if (!grog_has_contents(rt, cup)) return false;
+    const volume = rt.world.lookup_relation("Volume") orelse return false;
+    return (rt.world.get_property(cup, volume) orelse 0) > 0;
+}
+
+fn grog_at_lock(rt: *WasmRuntime) bool {
+    const mara = rt.world.lookup_entity("Mara") orelse return false;
+    const waypoint = rt.spatial.get_current_waypoint(mara) orelse return false;
+    const mark = rt.spatial.graph.get_waypoint(waypoint) orelse return false;
+    return std.mem.eql(u8, mark.name, "LockMark");
+}
+
+fn grog_pour(rt: *WasmRuntime, source: bespoke.EntityId, target: bespoke.EntityId, target_name: []const u8) anyerror!bool {
+    const grog = rt.world.lookup_entity("CausticGrog") orelse return false;
+    const contains = rt.world.lookup_relation("Contains") orelse return false;
+    const volume = rt.world.lookup_relation("Volume") orelse return false;
+    const stage_rel = rt.world.lookup_relation("ContainerStage") orelse return false;
+    const exposure = rt.world.lookup_relation("ContainerExposure") orelse return false;
+
+    const target_stage_value = rt.world.get_property(target, stage_rel) orelse return false;
+    const target_stage_name = rt.world.get_entity_name(bespoke.EntityId.from_int(target_stage_value)) orelse return false;
+    const target_stage = grog_stage_index(target_stage_name) orelse return false;
+    if (target_stage >= GROG_STAGE_NAMES.len - 1) {
+        rt.set_banner("That cup is already ruined.");
+        return false;
+    }
+
+    const amount = rt.world.get_property(source, volume) orelse return false;
+    try rt.world.remember(target, contains, grog.to_int(), 0);
+    try rt.world.remember(target, volume, amount, 0);
+    try rt.world.remember(source, volume, 0, 0);
+    _ = rt.world.forget(source, contains, grog.to_int());
+    _ = rt.world.forget(source, exposure, null);
+    try rt.world.remember(target, exposure, target_stage_value, GROG_STAGE_TICKS[target_stage]);
+
+    var msg: [96]u8 = undefined;
+    rt.set_banner(std.fmt.bufPrint(&msg, "Poured {d} measures into {s}; its damage stays.", .{ amount, target_name }) catch "Poured without loss.");
+    return true;
+}
+
+fn catalyst_grog_puzzle(rt: *WasmRuntime) anyerror!void {
+    const ivo = rt.world.lookup_entity("Ivo") orelse return;
+    const lock = rt.world.lookup_entity("CellLock") orelse return;
+    const cup_a = rt.world.lookup_entity("CupA") orelse return;
+    const cup_b = rt.world.lookup_entity("CupB") orelse return;
+    const cup_c = rt.world.lookup_entity("CupC") orelse return;
+    const volume = rt.world.lookup_relation("Volume") orelse return;
+    const cup_c_volume = if (grog_has_contents(rt, cup_c)) (rt.world.get_property(cup_c, volume) orelse 0) else 0;
+    const at_lock = grog_at_lock(rt);
+
+    if (cup_c_volume >= 4 and at_lock) {
+        const dissolved = try rt.world.intern_relation("dissolved", .property);
+        const imprisoned = try rt.world.intern_relation("imprisoned", .property);
+        try rt.world.remember(lock, dissolved, 0, 0);
+        _ = rt.world.forget(ivo, imprisoned, null);
+        rt.set_banner("The grog bites through the lock. Ivo is free!");
+        return;
+    }
+    if (cup_c_volume >= 4) {
+        rt.set_banner("Cup C holds four measures; Mara must stand at LockMark.");
+        return;
+    }
+
+    if (grog_has_volume(rt, cup_a) and !grog_has_contents(rt, cup_b)) {
+        _ = try grog_pour(rt, cup_a, cup_b, "Cup B");
+        return;
+    }
+    if (grog_has_volume(rt, cup_b) and !grog_has_contents(rt, cup_c)) {
+        _ = try grog_pour(rt, cup_b, cup_c, "Cup C");
+        return;
+    }
+    if (at_lock) {
+        rt.set_banner("Cup C is dry; rewind with [R] and pour sooner.");
+    } else {
+        rt.set_banner("The cups are dry; rewind with [R] and pour sooner.");
+    }
+}
+
+fn grog_walk_to_mark(rt: *WasmRuntime, entity: bespoke.EntityId, mark: []const u8) !void {
+    const room = rt.world.lookup_entity("Saltglass Stockade") orelse return error.UnknownRoom;
+    const waypoint = rt.spatial.graph.find_waypoint_in_room(room, mark) orelse return error.UnknownMark;
+    try std.testing.expect(try rt.spatial.walk_to(entity, waypoint));
+    var guard: usize = 0;
+    while (rt.spatial.is_moving(entity) and guard < 20) : (guard += 1) _ = try rt.step_tick();
+    try std.testing.expect(!rt.spatial.is_moving(entity));
+}
+
+test "P23-03: the browser grog deck pours and dissolves the lock" {
+    var rt = try wasm.WasmRuntime.init(std.testing.allocator, &decks, 6);
+    defer rt.deinit();
+    const mara = rt.world.lookup_entity("Mara").?;
+    const lock = rt.world.lookup_entity("CellLock").?;
+
+    // The intended sprint: pour at each gallery before the carried cup gives out.
+    try grog_walk_to_mark(&rt, mara, "GalleryOne");
+    try rt.trigger_catalyst();
+    try grog_walk_to_mark(&rt, mara, "GalleryTwo");
+    try rt.trigger_catalyst();
+    try grog_walk_to_mark(&rt, mara, "LockMark");
+    try rt.trigger_catalyst();
+
+    const dissolved = rt.world.lookup_relation("dissolved").?;
+    try std.testing.expect(rt.world.has_fact(lock, dissolved, 0));
 }
 
 /// The village deck's own hunger, theft, rumor, and arrest rule, run after every tick.

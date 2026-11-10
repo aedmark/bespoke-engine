@@ -800,7 +800,8 @@
             "`ContainerSystem.init` validates the declaration, interns its fact vocabulary, and seeds each vessel's stage, volume, and exposure deadline as World facts; `host.tick` advances the lifecycle automatically.",
             "`ContainerSystem.pour` moves the source's whole volume into one empty compatible vessel or changes nothing. Damage stays with each vessel and only the destination's exposure deadline restarts.",
             "Moving spill follows `Carries(holder, vessel)` and the holder's motor state; a vessel that reaches its terminal stage empties and records its holder's waypoint as the failure location.",
-            "The proof demonstrates terminal failure before the sprint, a rewind to the pristine opening, a full World/Spatial/VM save round-trip, two exact pours, transit spill, and delivery of at least four measures to the lock."
+            "The proof demonstrates terminal failure before the sprint, a rewind to the pristine opening, a full World/Spatial/VM save round-trip, two exact pours, transit spill, and delivery of at least four measures to the lock.",
+            "The showcase site's seventh browser deck stages the same three cups with a deck-owned after-tick rule, so the mechanic is playable without compiling a script into the wasm module."
           ],
           "why": "Container decay belongs to the same relational spine as every other mechanic: stage, volume, deadline, and failure location are facts, so snapshots, rewinds, and saves carry the whole cascade without subsystem-specific state.",
           "why_basis": "recorded",
@@ -1041,7 +1042,7 @@
           "summary": "Zero-dependency wasm32-freestanding RGBA8888 runtime with a browser event bridge; games supply its scenes as decks.",
           "synopsis": "zig build wasm wasm-proofs | wasm_init(deck); wasm_step_tick(); wasm_render_frame(); wasm_on_pointer_down(x, y);",
           "tags": ["wasm", "browser", "canvas", "events", "runtime", "framebuffer"],
-          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 640x360 RGBA8888 software framebuffer and a browser mouse/keyboard/touch event bridge. What is on stage comes from a deck table the host compiles in: the engine's own module has one neutral demo deck, and bespoke-proofs.wasm carries six proof decks.",
+          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 640x360 RGBA8888 software framebuffer and a browser mouse/keyboard/touch event bridge. What is on stage comes from a deck table the host compiles in: the engine's own module has one neutral demo deck, and bespoke-proofs.wasm carries seven proof decks.",
           "how": [
             "WasmCanvas renders rooms, topological waypoint edges, interactive hotspots, actor tokens, bitmap font strings, a timeline scrubber bar, and the 5-verb bar into a contiguous 640x360x4 RGBA8888 byte buffer in linear memory.",
             "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots inside a 2 MiB FixedBufferAllocator. Each Deck supplies load, after-tick, and catalyst callbacks, and wasm.export_runtime(decks) emits the C-ABI exports (wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick) for a build's decks.",

@@ -16,7 +16,7 @@ const wasm_deck = @import("wasm_deck.zig");
 
 const GOLDEN_NAME = "wasm.txt";
 const ACTUAL_NAME = "wasm.actual.txt";
-const DECK_COUNT: u8 = 6;
+const DECK_COUNT: u8 = 7;
 
 /// How a deck is loaded. P32-04 changes where decks are defined; only this adapter changes.
 const Decks = struct {

@@ -543,6 +543,8 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 
 **Update, 2026-11-10 (P30-01 partial):** `site/index.html` uses the same embedded module through `tools/build_site.py` and `tools/site_simulator.js`. It remains a single self-contained page that runs from `file://`. The six decks auto-tick and use the module's pointer, key, catalyst, pause, and timeline exports. Its JavaScript model, fact rows, action bank, and deterministic event stream are gone. The site clamps the timeline to the runtime's 32-snapshot window; `Reset Deck` returns to tick 0. Audio and the remaining three decks are open.
 
+**Update, 2026-11-10 (P23-03):** The proofs' module now carries seven decks; Caustic Grog joined the table with its own after-tick spill and stage rule. `proofs/golden/wasm.txt` records seven decks. The deck is proof content, so the engine's boundary is unchanged.
+
 ## D-043 Unary States Modelled as Predicate Presence (2026-11-10, status: accepted)
 **Context:** `true` had three conflicting meanings in the codebase (P32-28): `now X is Y` interned the entity `true` as `object_or_value`; `VM.has_fact_pattern` read string `"true"` as numeric value 1; `when` reactive triggers parsed lowercase `"true"` as an unbound pattern variable `?true`. A host asserting a state fact with value 1 was invisible to script conditions.
 **Decision:**

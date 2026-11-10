@@ -128,7 +128,7 @@ zig build test-proofs                     # every proof's tests
 - `where` guards on `on cue` handlers are parsed but not yet evaluated (dialogue-choice `where` guards and `when` rule patterns are). Use `if` checks inside cue handlers.
 - Societies are configured from Zig host code; declaring one in a script is planned (P32-22). One enforcer per society.
 - Some engine files still name proof content (renderer themes, music tracks, status flags). Removing it is planned as P32-02 to P32-04 in the [roadmap](ROADMAP.md).
-- The showcase site embeds `bespoke-proofs.wasm`, so its six decks run the real browser runtime from `file://`; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`. Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
+- The showcase site embeds `bespoke-proofs.wasm`, so its seven decks run the real browser runtime from `file://`; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`. Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
 
 ---
 

@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const bin = path.join(__dirname, '..', 'zig-out', 'bin');
-const modules = [['bespoke.wasm', 1], ['bespoke-proofs.wasm', 6]];
+const modules = [['bespoke.wasm', 1], ['bespoke-proofs.wasm', 7]];
 let failed = false;
 for (const [file, decks] of modules) {
   const exp = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(bin, file))), {}).exports;
