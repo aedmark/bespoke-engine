@@ -52,6 +52,19 @@ on cue TalksTo(Hero, Guide):
     say Guide: "Then you may pass."
 ```
 
+## Stageplay Paths
+
+A `path` block declares one operational approach. It owns the facts asserted when the route is selected and the routines that belong to it.
+
+```bespoke
+path Wits:
+  remember ChosenWits(Hero)
+  routine WitsSolution(Hero):
+    say Hero: "I have a plan."
+```
+
+The host selects a path with `VM.select_path(compiled, "Wits")`. The path entity receives `PathActive(Wits)` immediately, and the block's fact statements run on the next tick. Scripts can test the active route with `if PathActive(Wits):`. Routines declared inside the block carry a generated guard: when another route is active they halt before their first body instruction. Selecting a different path returns `PathAlreadyChosen`; selecting the same path again is a no-op. Path routine names share the top-level routine namespace. Path facts are ordinary World facts, so saves and rewind restore them.
+
 ## Mechanic Declarations
 
 Scripts may carry immutable configuration for engine mechanics alongside executable routines and cues. A host selects a declaration from the compiled program and initializes the corresponding runtime module. Runtime progress remains in World facts.

@@ -596,6 +596,29 @@
           "related": ["compiler-pipeline", "relational-facts"]
         },
         {
+          "id": "stageplay-paths",
+          "title": "Stageplay Paths & Route Pruning",
+          "summary": "Named operational approaches own fact assertions and guarded routines; one active PathActive route mutes the others.",
+          "synopsis": "path Wits: remember ChosenWits(Hero)  |  VM.select_path(compiled, \"Wits\")",
+          "tags": ["dsl", "paths", "routes", "pruning"],
+          "what": "Adds top-level path blocks for mutually exclusive narrative approaches. A path owns its initial fact statements and routines, and only the selected route can run them.",
+          "how": [
+            "The parser accepts `path Name:` blocks containing `remember`, `forget`, and `now` statements plus nested routines.",
+            "`VM.select_path` asserts `PathActive(Name)` in World facts and spawns the reserved `#path:<Name>` initializer, which runs on the next tick.",
+            "Every path-owned routine starts with a `PathActive(Name)` guard and halts before its body when another route is active.",
+            "The existing `.bspk` routine and relation tables carry path initializers without a format bump; save and rewind restore the selected route as ordinary facts."
+          ],
+          "why": "Operational approaches in multi-path adventures must prune incompatible puzzle branches without host-language flags. Keeping the route in World facts preserves determinism, saves, and rewind; routine-local guards mute alternatives even when a host spawns them directly.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-052", "target": "docs/DECISIONS.md#d-052", "kind": "decision"},
+            {"label": "Path Parser and Codegen", "target": "src/compiler/codegen.zig", "kind": "source"},
+            {"label": "Path Selection and Guards", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Path Package Round-Trip", "target": "src/package.zig", "kind": "source"}
+          ],
+          "related": ["stageplay-taxonomy", "compiler-pipeline", "relational-facts"]
+        },
+        {
           "id": "classic-adventure-verbs",
           "title": "Classic 5-Verb Interaction Bar",
           "summary": "Five classic adventure verbs: WALK, LOOK, TALK, TAKE, USE with active button highlight and right-click cycling.",

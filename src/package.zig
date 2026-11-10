@@ -1357,6 +1357,60 @@ test "P23-01/P23-02: package version 6 round-trips degradation declarations" {
     try testing.expectEqual(@as(u32, 0), compiled3.degradations.items[0].config.spill_per_moving_tick);
 }
 
+test "P24-01: package round-trips path initializers and guarded routines" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const vm_mod = @import("vm.zig");
+    const script =
+        \\entity Hero
+        \\relation ChosenWits(flag)
+        \\relation ChosenFists(flag)
+        \\relation WitsSolved(flag)
+        \\relation FistsSolved(flag)
+        \\path Wits:
+        \\  remember ChosenWits(Hero)
+        \\  routine WitsPlan(Hero):
+        \\    remember WitsSolved(Hero)
+        \\path Fists:
+        \\  remember ChosenFists(Hero)
+        \\  routine FistsPlan(Hero):
+        \\    remember FistsSolved(Hero)
+    ;
+
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+
+    try testing.expect(compiled2.find_path("Wits") != null);
+    try testing.expect(compiled2.find_path("Fists") != null);
+
+    var vm = vm_mod.VM.init(testing.allocator, &world2, &compiled2.chunk);
+    defer vm.deinit();
+    _ = try vm.select_path(&compiled2, "Wits");
+    _ = try vm.step_tick();
+
+    const hero = world2.lookup_entity("Hero").?;
+    const chosen_wits = world2.lookup_relation("ChosenWits").?;
+    try testing.expect(world2.has_fact(hero, chosen_wits, null));
+
+    _ = try vm.spawn_routine(hero, compiled2.routine_entries.get("WitsPlan").?);
+    _ = try vm.spawn_routine(hero, compiled2.routine_entries.get("FistsPlan").?);
+    _ = try vm.step_tick();
+    try testing.expect(world2.has_fact(hero, world2.lookup_relation("WitsSolved").?, null));
+    try testing.expect(!world2.has_fact(hero, world2.lookup_relation("FistsSolved").?, null));
+}
+
 test "P32-18: package round-trips an arrival rule and version 2 rejects its edge" {
     const testing = std.testing;
     const compiler = @import("compiler.zig");

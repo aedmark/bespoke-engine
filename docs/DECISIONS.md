@@ -667,6 +667,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Store a lock threshold in the engine profile: rejected because delivery goals are game rules, while the engine only needs a volume predicate.
 **Consequences:** Games can build transfer chains without duplicating or silently destroying liquid. The only modeled loss is the declared movement spill. Callers surface pour errors as interaction feedback and decide which volume threshold satisfies their goal.
 
+## D-052 Stageplay Paths as World Facts and Guarded Routines (2026-11-10, status: accepted)
+**Context:** Phase 24 needs operational approaches whose incompatible facts and routines cannot both run. The DSL had fact-guarded dialogue pruning but no declaration of a route, no active-route state, and no way to mute a routine that belonged to another approach. The roadmap specifies `path Wits:`, `path Fists:`, and `path Team:` declarations with path-locked facts and muted alternative routines.
+**Decision:**
+1. A top-level `path <Name>:` block owns fact statements (`remember`, `forget`, `now`) and nested routines. Path names are entities; `PathActive(<Name>)` is the single active-route predicate.
+2. `VM.select_path(compiled, name)` may select one path. It asserts `PathActive(Name)` immediately, then spawns the path's fact initializer, which runs on the next tick. Selecting the same path again is a no-op; selecting a different path returns `error.PathAlreadyChosen`. Switching paths is deliberately deferred.
+3. Path initializer bytecode is stored under the reserved routine key `#path:<Name>`. The `#` prefix is not a DSL identifier, so it cannot collide. No `.bspk` version bump is needed: the existing routine table carries the initializer and the relation table carries `PathActive`.
+4. Every path-owned routine starts with a `PathActive(<Name>)` guard. If the path is not active, the guard jumps to the routine's trailing halt before any body instruction. Inactive route routines are muted even when a host spawns them directly.
+5. Path routine names share the top-level routine namespace; a collision is a compile error. `CompiledProgram.find_path` resolves an initializer, and scripts query the route with `if PathActive(Wits):`.
+6. Path facts are ordinary World facts after selection. Save, rewind, and temporal restore capture them without VM state.
+**Alternatives:**
+- Keep route selection in a VM field: rejected because save and rewind would need a new serialized state channel.
+- Compile alternative paths out of the program entirely: rejected because the host chooses at runtime and a loaded package must retain every route.
+- Put guards only in cue dispatch: rejected because hosts also spawn routines directly; a routine-local guard covers both paths.
+**Consequences:** P24-01 provides the route-selection and muting primitive. P24-02 can layer topology and dialogue mutation on `PathActive` facts. P24-03 supplies the player-facing selector. Switching an active path is not supported yet; a later change must decide how to retract the previous path's facts and fibers.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

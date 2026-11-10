@@ -98,6 +98,14 @@ pub const CompiledProgram = struct {
         return draft_mod.find_by_entity(self.drafts.items, entity);
     }
 
+    /// Entry point of a path's fact initializer, or null when the script declares no such path.
+    /// Path routines use ordinary routine names; only the initializer needs the reserved key.
+    pub fn find_path(self: *const CompiledProgram, name: []const u8) ?usize {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}{s}", .{ PATH_ROUTINE_PREFIX, name }) catch return null;
+        return self.routine_entries.get(key);
+    }
+
     /// Finds entry PC for a cue handler matching cue name and arguments (P11-01, P11-02, D-013).
     /// Supports ternary item-combining with commutative matching (ItemA on ItemB == ItemB on ItemA).
     /// Finds the handler for a fired cue (D-009, D-013, D-037). Tried in order, most specific
@@ -161,6 +169,10 @@ pub const CompiledProgram = struct {
 /// Stands in a handler signature for a parameter declared as a variable (D-037).
 pub const CUE_WILDCARD = "*";
 
+/// Routine-table key for a path's fact initializer. The `#` prefix cannot appear in a DSL
+/// identifier, so it cannot collide with a routine name (P24-01).
+pub const PATH_ROUTINE_PREFIX = "#path:";
+
 /// A cue handler parameter is a variable when it starts with `?`, `_`, or a lowercase letter,
 /// the same rule `when` trigger patterns use. Entity names start with an uppercase letter.
 fn cue_param_key(param: []const u8) []const u8 {
@@ -218,6 +230,9 @@ pub const Codegen = struct {
         }
         for (ast.marks.items) |name| {
             _ = try mut_self.world.intern_entity(name);
+        }
+        for (ast.paths.items) |path| {
+            _ = try mut_self.world.intern_entity(path.name);
         }
 
         // Register stage marks and props in SpatialSystem if present
@@ -296,6 +311,9 @@ pub const Codegen = struct {
                 if (rel.is_property) .property else .set,
             );
         }
+        if (ast.paths.items.len > 0) {
+            _ = try mut_self.world.intern_relation("PathActive", .property);
+        }
 
         // 2b. Build the draft note table; a declared reverse becomes its own entry (D-029)
         var drafts = std.ArrayList(CompiledDraft).init(mut_self.allocator);
@@ -329,6 +347,40 @@ pub const Codegen = struct {
                 try mut_self.compile_stmt(stmt);
             }
             _ = try mut_self.chunk.emit_op(.halt);
+        }
+
+        // 4b. Compile path initializers and guarded path routines (P24-01). The initializer runs
+        // after PathActive is asserted; a path routine checks that fact before its first body
+        // instruction, so spawning an inactive route halts without touching the world.
+        if (ast.paths.items.len > 0) {
+            const path_active = try mut_self.world.intern_relation("PathActive", .property);
+            for (ast.paths.items) |path| {
+                const path_entity = try mut_self.world.intern_entity(path.name);
+                const init_key = try std.fmt.allocPrint(mut_self.allocator, "{s}{s}", .{ PATH_ROUTINE_PREFIX, path.name });
+                try mut_self.allocated_cue_keys.append(init_key);
+                try mut_self.routine_entries.put(init_key, mut_self.chunk.count());
+                try mut_self.routine_entities.put(init_key, path.name);
+
+                for (path.facts) |stmt| {
+                    try mut_self.compile_stmt(stmt);
+                }
+                _ = try mut_self.chunk.emit_op(.halt);
+
+                for (path.routines) |routine| {
+                    if (mut_self.routine_entries.contains(routine.name)) return error.DuplicateRoutineName;
+                    try mut_self.routine_entries.put(routine.name, mut_self.chunk.count());
+                    try mut_self.routine_entities.put(routine.name, routine.entity);
+
+                    const guard_pc = try mut_self.emit_path_guard(path_entity, path_active);
+                    for (routine.body) |stmt| {
+                        try mut_self.compile_stmt(stmt);
+                    }
+                    const halt_pc = mut_self.chunk.count();
+                    _ = try mut_self.chunk.emit_op(.halt);
+                    const offset: i16 = @intCast(halt_pc - (guard_pc + 3));
+                    std.mem.writeInt(i16, mut_self.chunk.code.items[guard_pc + 1 ..][0..2], offset, .little);
+                }
+            }
         }
 
         // 5. Compile when rules into reactive simulation rules (P8-02, D-010)
@@ -704,6 +756,18 @@ pub const Codegen = struct {
         };
         try container_mod.validate(config);
         return .{ .config = config };
+    }
+
+    /// Emits `PathActive(path)` followed by a forward jump that a path routine patches to its
+    /// trailing halt. The difficulty is the guard, not the body: inactive routes must not run.
+    fn emit_path_guard(self: *Codegen, path_entity: EntityId, path_active: RelationKind) !usize {
+        try self.chunk.emit_push_entity(path_entity);
+        try self.chunk.emit_push_relation(path_active);
+        _ = try self.chunk.emit_op(.query_has);
+        try self.chunk.emit_u8(0x03);
+        const jump_pc = try self.chunk.emit_op(.jump_if_false);
+        try self.chunk.emit_i16(0);
+        return jump_pc;
     }
 
     fn compile_stmt(self: *Codegen, stmt: Stmt) !void {
@@ -1606,4 +1670,57 @@ test "P23-01: degradation declarations compile into executable container profile
     try testing.expectEqual(world.lookup_entity("Sound").?.to_int(), world.get_property(vial, system.rel.stage).?);
     try testing.expectEqual(@as(u32, 5), world.get_property(vial, system.rel.volume).?);
     try testing.expectEqualStrings("VialState", world.get_relation_meta(system.rel.stage).?.name);
+}
+
+test "P24-01: selecting a path asserts its facts and mutes inactive routines" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const source =
+        \\entity Hero
+        \\relation ChosenWits(flag)
+        \\relation ChosenFists(flag)
+        \\relation WitsSolved(flag)
+        \\relation FistsSolved(flag)
+        \\path Wits:
+        \\  remember ChosenWits(Hero)
+        \\  routine WitsPlan(Hero):
+        \\    remember WitsSolved(Hero)
+        \\path Fists:
+        \\  remember ChosenFists(Hero)
+        \\  routine FistsPlan(Hero):
+        \\    remember FistsSolved(Hero)
+    ;
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try @import("../compiler.zig").compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.find_path("Wits") != null);
+    try testing.expect(compiled.find_path("Fists") != null);
+
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+
+    const selected = try vm.select_path(&compiled, "Wits");
+    try testing.expect(selected != null);
+    _ = try vm.step_tick(); // Run the path's fact initializer.
+
+    const hero = world.lookup_entity("Hero").?;
+    const wits = world.lookup_entity("Wits").?;
+    const path_active = world.lookup_relation("PathActive").?;
+    const chosen_wits = world.lookup_relation("ChosenWits").?;
+    try testing.expect(world.has_fact(wits, path_active, null));
+    try testing.expect(world.has_fact(hero, chosen_wits, null));
+
+    _ = try vm.spawn_routine(hero, compiled.routine_entries.get("WitsPlan").?);
+    _ = try vm.spawn_routine(hero, compiled.routine_entries.get("FistsPlan").?);
+    _ = try vm.step_tick();
+
+    const wits_solved = world.lookup_relation("WitsSolved").?;
+    const fists_solved = world.lookup_relation("FistsSolved").?;
+    try testing.expect(world.has_fact(hero, wits_solved, null));
+    try testing.expect(!world.has_fact(hero, fists_solved, null));
+
+    try testing.expectError(error.PathAlreadyChosen, vm.select_path(&compiled, "Fists"));
 }

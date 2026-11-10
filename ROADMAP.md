@@ -198,7 +198,7 @@ Phase 23 is complete (2026-11-10): all three items are implemented and verified,
 
 Goal: Implement structural multi-path narrative divergence inspired by *Indiana Jones and the Fate of Atlantis* (1992), where choosing an operational approach (Wits, Fists, Team) prunes incompatible puzzle DAG branches, alters spatial topology, and adjusts dialogue dynamics.
 
-- [ ] P24-01 DSL stageplay path declarations (`path Wits:`, `path Fists:`, `path Team:`) and VM route-pruning engine, asserting path-locked facts and muting alternative branch routines.
+- [x] P24-01 DSL stageplay path declarations (`path Wits:`, `path Fists:`, `path Team:`) and VM route-pruning engine, asserting path-locked facts and muting alternative branch routines. (D-052; completed 2026-11-10: `path` blocks own fact initializers and guarded routines; `VM.select_path` records `PathActive` in World facts, runs the initializer on the next tick, and refuses a second route; inactive path routines halt before their bodies. Verified by `zig build test-engine` (165/165), parser, VM, and `.bspk` round-trip tests; path switching is deferred.)
 - [ ] P24-02 Dynamic spatial topology and puzzle mutation: adjusting waypoint locks, obstacle rules, and NPC dialogue repertoires dynamically based on active path selection.
 - [ ] P24-03 The Fate of Atlantis Algiers vertical slice scenario (`src/atlantis_puzzle.zig`, `--atlantis`): Omar's bazaar, three distinct solutions to acquire the lost dialogue manuscript, path selector UI, and dual headless/interactive verification.
 

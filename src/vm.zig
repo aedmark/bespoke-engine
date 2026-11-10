@@ -194,6 +194,22 @@ pub const VM = struct {
         self.reactive_rules.deinit();
     }
 
+    /// Selects one stageplay path (P24-01). The path entity carries `PathActive` in World facts,
+    /// so save and rewind need no VM state. Its initializer fiber runs on the next tick. A second,
+    /// different path is refused; selecting the same path again is a no-op.
+    pub fn select_path(self: *VM, compiled: anytype, name: []const u8) !?FiberId {
+        const path_entity = self.world.lookup_entity(name) orelse return error.UnknownPath;
+        const path_active = self.world.lookup_relation("PathActive") orelse return error.UnknownPath;
+        if (self.world.has_fact(null, path_active, null)) {
+            if (self.world.has_fact(path_entity, path_active, null)) return null;
+            return error.PathAlreadyChosen;
+        }
+
+        const entry_pc = compiled.find_path(name) orelse return error.UnknownPath;
+        try self.world.remember(path_entity, path_active, 0, 0);
+        return try self.spawn_routine(path_entity, entry_pc);
+    }
+
     /// Spawns a new routine fiber owned by an entity.
     pub fn spawn_routine(self: *VM, owner: EntityId, entry_pc: usize) !FiberId {
         const id = self.next_fiber_id;

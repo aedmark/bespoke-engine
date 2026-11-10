@@ -272,6 +272,14 @@ pub const DegradationDecl = struct {
     relations: [5][]const u8 = .{ "Contains", "Volume", "ContainerStage", "ContainerExposure", "ContainerFailedAt" },
 };
 
+/// `path <Name>:` owns the facts and routines available to one operational approach
+/// (P24-01). One path is selected at runtime; the others stay muted.
+pub const PathDecl = struct {
+    name: []const u8,
+    facts: []const Stmt,
+    routines: []const Routine,
+};
+
 pub const AST = struct {
     entities: std.ArrayList([]const u8),
     relations: std.ArrayList(RelationDecl),
@@ -288,6 +296,7 @@ pub const AST = struct {
     societies: std.ArrayList(SocietyDecl),
     duels: std.ArrayList(DuelDecl),
     degradations: std.ArrayList(DegradationDecl),
+    paths: std.ArrayList(PathDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -307,6 +316,7 @@ pub const AST = struct {
             .societies = std.ArrayList(SocietyDecl).init(allocator),
             .duels = std.ArrayList(DuelDecl).init(allocator),
             .degradations = std.ArrayList(DegradationDecl).init(allocator),
+            .paths = std.ArrayList(PathDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -330,6 +340,7 @@ pub const AST = struct {
         self.societies.deinit();
         self.duels.deinit();
         self.degradations.deinit();
+        self.paths.deinit();
     }
 };
 
@@ -508,24 +519,8 @@ pub const Parser = struct {
                 .kw_society => try ast.societies.append(try self.parse_society_decl()),
                 .kw_duel => try ast.duels.append(try self.parse_duel_decl()),
                 .kw_degradation => try ast.degradations.append(try self.parse_degradation_decl()),
-                .kw_routine => {
-                    try self.advance();
-                    const name = (try self.expect(.identifier)).slice;
-                    _ = try self.expect(.lparen);
-                    const entity = (try self.expect(.identifier)).slice;
-                    _ = try self.expect(.rparen);
-                    _ = try self.expect(.colon);
-                    _ = try self.expect(.indent);
-
-                    const body = try self.parse_stmt_list();
-                    _ = try self.expect(.dedent);
-
-                    try ast.routines.append(.{
-                        .name = name,
-                        .entity = entity,
-                        .body = body,
-                    });
-                },
+                .kw_path => try ast.paths.append(try self.parse_path_decl()),
+                .kw_routine => try ast.routines.append(try self.parse_routine_decl()),
                 .kw_on => {
                     try self.advance(); // consume 'on'
                     _ = try self.expect(.kw_cue);
@@ -1205,6 +1200,63 @@ pub const Parser = struct {
             if (d.reverse_name) |rn| if (std.mem.eql(u8, rn, name)) return true;
         }
         return false;
+    }
+
+    fn parse_routine_decl(self: *Parser) !Routine {
+        try self.advance(); // consume 'routine'
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.lparen);
+        const entity = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.rparen);
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+
+        const body = try self.parse_stmt_list();
+        _ = try self.expect(.dedent);
+
+        return .{
+            .name = name,
+            .entity = entity,
+            .body = body,
+        };
+    }
+
+    /// A path block may assert facts and declare the routines that belong to that route.
+    /// Facts run when the path is selected; routines are guarded by the active path at runtime.
+    fn parse_path_decl(self: *Parser) !PathDecl {
+        try self.advance(); // consume 'path'
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+
+        var facts = std.ArrayList(Stmt).init(self.allocator);
+        var routines = std.ArrayList(Routine).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            switch (self.current.tag) {
+                .kw_remember => try facts.append(try self.parse_remember_stmt()),
+                .kw_now => try facts.append(try self.parse_now_stmt()),
+                .kw_forget => {
+                    try self.advance();
+                    const pat = try self.parse_fact_pattern();
+                    try facts.append(.{ .forget = .{
+                        .relation = pat.relation,
+                        .args = pat.args,
+                    } });
+                },
+                .kw_routine => try routines.append(try self.parse_routine_decl()),
+                else => return self.set_error("expected a fact statement or routine in path block, found {s} ('{s}')", .{
+                    @tagName(self.current.tag),
+                    self.current.slice,
+                }),
+            }
+        }
+        _ = try self.expect(.dedent);
+
+        return .{
+            .name = name,
+            .facts = try facts.toOwnedSlice(),
+            .routines = try routines.toOwnedSlice(),
+        };
     }
 
     fn parse_stmt_list(self: *Parser) ![]const Stmt {
@@ -1991,4 +2043,47 @@ test "P22-01: parser rejects weaving undeclared drafts and top-level weaves" {
         \\draft Kindle(C, E, G, E)
         \\weave Kindle on Brazier
     , "inside a routine", 2);
+}
+
+test "P24-01: parser parses path declarations with locked facts and path-owned routines" {
+    const testing = std.testing;
+    const source =
+        \\entity Hero
+        \\relation ChosenWits(flag)
+        \\relation ChosenFists(flag)
+        \\path Wits:
+        \\  remember ChosenWits(Hero)
+        \\  routine WitsPlan(Hero):
+        \\    remember ChosenWits(Hero)
+        \\path Fists:
+        \\  now Hero is ChosenFists
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+
+    try testing.expectEqual(@as(usize, 2), ast.paths.items.len);
+    try testing.expectEqualStrings("Wits", ast.paths.items[0].name);
+    try testing.expectEqual(@as(usize, 1), ast.paths.items[0].facts.len);
+    switch (ast.paths.items[0].facts[0]) {
+        .remember => |r| try testing.expectEqualStrings("ChosenWits", r.relation),
+        else => try testing.expect(false),
+    }
+    try testing.expectEqual(@as(usize, 1), ast.paths.items[0].routines.len);
+    try testing.expectEqualStrings("WitsPlan", ast.paths.items[0].routines[0].name);
+    try testing.expectEqualStrings("Hero", ast.paths.items[0].routines[0].entity);
+
+    try testing.expectEqualStrings("Fists", ast.paths.items[1].name);
+    try testing.expectEqual(@as(usize, 1), ast.paths.items[1].facts.len);
+    try testing.expectEqual(@as(usize, 0), ast.paths.items[1].routines.len);
+    switch (ast.paths.items[1].facts[0]) {
+        .remember => |r| try testing.expectEqualStrings("ChosenFists", r.relation),
+        else => try testing.expect(false),
+    }
 }
