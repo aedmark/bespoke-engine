@@ -101,6 +101,16 @@ pub const TemporalHypervisor = struct {
         self.dream_residue_facts.deinit();
     }
 
+    /// Returns the world that currently receives simulation actions. A live branch is the
+    /// authoritative arena until it resolves or expires; outside a branch the primary world is
+    /// authoritative. Hosts use this boundary instead of choosing an arena from proof state.
+    pub fn active_world(self: *TemporalHypervisor) *World {
+        if (self.branch_active) {
+            if (self.branch_world) |*branch| return branch;
+        }
+        return self.primary_world;
+    }
+
     /// Forks the Primary World into an ephemeral branch arena with a strict tick budget (P31-01, P32-21, D-027, D-044).
     pub fn fork_branch(
         self: *TemporalHypervisor,
@@ -351,6 +361,31 @@ test "P31-01: TemporalHypervisor forks Tangent Universe, counts ticks, and trigg
 
     // Primary world is unharmed and Donnie is still in Bedroom
     try testing.expect(primary.has_fact(donnie, in_room, bedroom.to_int()));
+}
+
+test "P31-05: active world follows the branch lifecycle" {
+    const testing = std.testing;
+    var primary = try World.init(testing.allocator, 1024 * 1024);
+    defer primary.deinit();
+
+    const actor = try primary.intern_entity("Actor");
+    const keystone = try primary.intern_entity("Keystone");
+    const changed = try primary.intern_relation("Changed", .set);
+
+    var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
+    defer hypervisor.deinit();
+    try testing.expect(hypervisor.active_world() == &primary);
+
+    const branch = try hypervisor.fork_branch(2, actor, keystone);
+    try testing.expect(hypervisor.active_world() == branch);
+    _ = try hypervisor.active_world().remember(actor, changed, 1, 0);
+    try testing.expect(branch.has_fact(actor, changed, 1));
+    try testing.expect(!primary.has_fact(actor, changed, 1));
+
+    _ = try hypervisor.step_tick(null);
+    _ = try hypervisor.step_tick(null);
+    try testing.expect(!hypervisor.branch_active);
+    try testing.expect(hypervisor.active_world() == &primary);
 }
 
 test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dream residue to Primary Universe" {

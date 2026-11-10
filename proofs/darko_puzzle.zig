@@ -460,6 +460,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     const let_rel = try world.intern_relation("LetterDelivered", .set);
     const art_vortex_rel = try world.intern_relation("ArtifactAtVortex", .set);
     const closed_rel = try world.intern_relation("LoopClosed", .set);
+    const dream_rel = try world.intern_relation("DreamResidueTransferred", .set);
 
     const axe_item = try world.intern_entity("Axe");
     const env_item = try world.intern_entity("Envelope");
@@ -518,6 +519,11 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
     _ = try hypervisor.fork_tangent(280, donnie, jet_engine);
     hypervisor.set_vortex_target(vortex_wp);
+    try hypervisor.add_dream_residue(.{
+        .subject = donnie,
+        .relation = dream_rel,
+        .object_or_value = 1,
+    });
     sync_temporal_hud(&display_bridge, &hypervisor);
     win.set_cue_banner("The Middlesex Anomaly loaded! Press [1] Bedroom, [2] School, [3] Ridge to switch scenes. [V] Follow Conduit.", 180);
 
@@ -597,7 +603,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                 if (hs_idx < frame.hotspot_count) {
                     const hs = frame.hotspots[hs_idx];
                     var look_b: [256]u8 = undefined;
-                    const speech = try execute_look_at(&world, &vm, &compiled, donnie, hs.entity, &look_b);
+                    const speech = try execute_look_at(session.active_world(), &vm, &compiled, donnie, hs.entity, &look_b);
                     win.set_cue_banner(speech, 180);
                     action_taken = true;
                 }
@@ -607,7 +613,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const hs = frame.hotspots[hs_act.hotspot_index];
                     if (hs_act.verb == .look_at) {
                         var look_b: [256]u8 = undefined;
-                        const speech = try execute_look_at(&world, &vm, &compiled, donnie, hs.entity, &look_b);
+                        const speech = try execute_look_at(session.active_world(), &vm, &compiled, donnie, hs.entity, &look_b);
                         win.set_cue_banner(speech, 180);
                     } else if (hs_act.verb == .walk) {
                         const pt = bespoke.display.renderer.world_to_screen(hs.x, hs.y, win.width, win.height);
@@ -616,27 +622,29 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                             win.set_cue_banner("Approaching prop...", 60);
                         }
                     } else if (hs_act.verb == .pick_up or hs_act.verb == .use_with) {
+                        const action_world = session.active_world();
                         if (hs.entity == axe_prop) {
-                            _ = try world.remember(donnie, carries_rel, axe_item.to_int(), 0);
+                            _ = try action_world.remember(donnie, carries_rel, axe_item.to_int(), 0);
                             win.play_sfx(.pickup);
                             win.set_cue_banner("Picked up fire emergency axe.", 120);
                         } else if (hs.entity == env_prop) {
-                            _ = try world.remember(donnie, carries_rel, env_item.to_int(), 0);
+                            _ = try action_world.remember(donnie, carries_rel, env_item.to_int(), 0);
                             win.play_sfx(.pickup);
                             win.set_cue_banner("Picked up 'Cellar Door' envelope.", 120);
                         } else if (hs.entity == jet_engine) {
-                            _ = try world.remember(donnie, carries_rel, jet_engine.to_int(), 0);
+                            _ = try action_world.remember(donnie, carries_rel, jet_engine.to_int(), 0);
                             win.play_sfx(.pickup);
                             win.set_cue_banner("Donnie harnesses telekinetic power to guide the Artifact of Metal (Jet Engine)!", 180);
-                        } else if (hs.entity == water_pipe and world.has_fact(donnie, carries_rel, axe_item.to_int())) {
-                            _ = try world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
-                            _ = try world.remember(donnie, flood_rel, 1, 0);
+                        } else if (hs.entity == water_pipe and action_world.has_fact(donnie, carries_rel, axe_item.to_int())) {
+                            _ = try action_world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
+                            _ = try action_world.remember(donnie, flood_rel, 1, 0);
                             display_bridge.back_buffer.host_status_mut(art.Status).darko_water_flooded = true;
                             win.play_sfx(.combine);
                             win.set_cue_banner("Donnie swings the axe! The water main ruptures violently, flooding the school!", 180);
-                        } else if (hs.entity == vortex_prop and world.has_fact(donnie, carries_rel, jet_engine.to_int())) {
-                            _ = try world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
-                            _ = try world.remember(donnie, closed_rel, 1, 0);
+                        } else if (hs.entity == vortex_prop and action_world.has_fact(donnie, carries_rel, jet_engine.to_int())) {
+                            _ = try spatial.transition_actor(jet_engine, ridge_scene, vortex_wp);
+                            _ = try action_world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
+                            _ = try action_world.remember(donnie, closed_rel, 1, 0);
                             display_bridge.back_buffer.host_status_mut(art.Status).darko_vortex_reached = true;
                             win.play_sfx(.combine);
                             win.set_cue_banner("The Jet Engine is guided into the Tangent Vortex! The loop closes safely!", 240);
@@ -678,13 +686,13 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                             _ = try vm.fire_cue(&compiled, "TalksTo", donnie, target_ent.entity, null);
                             try vm.step_tick();
                             var say_b: [256]u8 = undefined;
-                            if (bespoke.host.speech_this_tick(&world, &vm, &say_b)) |speech| {
+                            if (bespoke.host.speech_this_tick(session.active_world(), &vm, &say_b)) |speech| {
                                 win.set_cue_banner(speech, 180);
                             }
                         }
                     } else if (act.verb == .look_at) {
                         var look_b: [256]u8 = undefined;
-                        const speech = try execute_look_at(&world, &vm, &compiled, donnie, target_ent.entity, &look_b);
+                        const speech = try execute_look_at(session.active_world(), &vm, &compiled, donnie, target_ent.entity, &look_b);
                         win.set_cue_banner(speech, 180);
                     } else if (act.verb == .walk) {
                         const layout = bespoke.display.renderer.get_entity_screen_layout(act.actor_index, frame.entities[0..frame.entity_count], win.width, win.height);
@@ -700,7 +708,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const inv_item = frame.inventory[inv_act.item_index];
                     if (inv_act.verb == .look_at) {
                         var look_b: [256]u8 = undefined;
-                        const speech = try execute_look_at(&world, &vm, &compiled, donnie, inv_item.entity, &look_b);
+                        const speech = try execute_look_at(session.active_world(), &vm, &compiled, donnie, inv_item.entity, &look_b);
                         win.set_cue_banner(speech, 180);
                     }
                     action_taken = true;
@@ -710,16 +718,18 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                 if (u_hs.item_index < frame.inventory_count and u_hs.hotspot_index < frame.hotspot_count) {
                     const item_ent = frame.inventory[u_hs.item_index].entity;
                     const hs_ent = frame.hotspots[u_hs.hotspot_index].entity;
+                    const action_world = session.active_world();
 
                     if (item_ent == axe_item and hs_ent == water_pipe) {
-                        _ = try world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
-                        _ = try world.remember(donnie, flood_rel, 1, 0);
+                        _ = try action_world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
+                        _ = try action_world.remember(donnie, flood_rel, 1, 0);
                         display_bridge.back_buffer.host_status_mut(art.Status).darko_water_flooded = true;
                         win.play_sfx(.combine);
                         win.set_cue_banner("Donnie swings the axe! The water main ruptures violently, flooding the school!", 180);
                     } else if (item_ent == jet_engine and hs_ent == vortex_prop) {
-                        _ = try world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
-                        _ = try world.remember(donnie, closed_rel, 1, 0);
+                        _ = try spatial.transition_actor(jet_engine, ridge_scene, vortex_wp);
+                        _ = try action_world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
+                        _ = try action_world.remember(donnie, closed_rel, 1, 0);
                         display_bridge.back_buffer.host_status_mut(art.Status).darko_vortex_reached = true;
                         win.play_sfx(.combine);
                         win.set_cue_banner("The Jet Engine is guided into the Tangent Vortex! The loop closes safely!", 240);
@@ -736,7 +746,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const act_ent = frame.entities[u_act.actor_index].entity;
 
                     if (item_ent == env_item and act_ent == roberta) {
-                        _ = try world.remember(donnie, let_rel, roberta.to_int(), 0);
+                        _ = try session.active_world().remember(donnie, let_rel, roberta.to_int(), 0);
                         display_bridge.back_buffer.host_status_mut(art.Status).darko_letter_delivered = true;
                         win.play_sfx(.combine);
                         win.set_cue_banner("Delivered letter: 'Cellar door... the Living Receiver must guide the Artifact of Metal into the vortex!'", 180);
@@ -746,7 +756,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             },
             .dialogue_choice => |choice_idx| {
                 if (vm.current_scene == ridge_scene and choice_idx == 0) {
-                    _ = try world.remember(donnie, let_rel, roberta.to_int(), 0);
+                    _ = try session.active_world().remember(donnie, let_rel, roberta.to_int(), 0);
                     display_bridge.back_buffer.host_status_mut(art.Status).darko_letter_delivered = true;
                     win.play_sfx(.combine);
                     win.set_cue_banner("Delivered letter to Roberta Sparrow: 'Cellar door... The loop must close!'", 180);
@@ -769,7 +779,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
         }
 
         if (action_taken) {
-            if (evaluate_darko_solved(&world)) {
+            if (evaluate_darko_solved(session.active_world())) {
                 win.set_cue_banner("VICTORY ACHIEVED: Tangent Universe Loop Resolved Safely!", 300);
             }
             sync_temporal_hud(&display_bridge, &hypervisor);
@@ -778,7 +788,19 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
         if (session.tick_due()) {
             _ = try bespoke.host.tick(&vm, &compiled);
-            _ = try hypervisor.step_tick(&spatial);
+            const branch_world = session.active_world();
+            const branch_flooded = branch_world.has_fact(donnie, flood_rel, null);
+            const branch_letter_delivered = branch_world.has_fact(donnie, let_rel, null);
+            const temporal_result = try hypervisor.step_tick(&spatial);
+            if (temporal_result == .loop_resolved) {
+                // These causal consequences survive the branch collapse in primary reality. The
+                // hypervisor itself commits only generic keystone and dream-residue state.
+                if (branch_flooded) _ = try world.remember(donnie, flood_rel, 1, 0);
+                if (branch_letter_delivered) _ = try world.remember(donnie, let_rel, roberta.to_int(), 0);
+                if (evaluate_darko_solved(&world)) {
+                    win.set_cue_banner("VICTORY ACHIEVED: Tangent Universe Loop Resolved Safely!", 300);
+                }
+            }
 
             sync_temporal_hud(&display_bridge, &hypervisor);
             try session.record_now();
@@ -833,6 +855,43 @@ test "P31-03: Donnie Darko singularity collapse when countdown budget expires wi
     const res5 = try hypervisor.step_tick(&spatial);
     try testing.expect(res5 == .budget_expired or res5 == .singularity_collapse);
     try testing.expect(hypervisor.collapse_state == .budget_expired or hypervisor.collapse_state == .collapsed_singularity);
+}
+
+test "P31-05: interactive actions target the branch and satisfy loop closure" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const donnie = try world.intern_entity("Donnie");
+    const jet_engine = try world.intern_entity("JetEngineProp");
+    const ridge = try world.intern_entity("Tangent Vortex Ridge");
+    const vortex_wp = try spatial.graph.add_waypoint(ridge, 0, 0, "VortexMark");
+    try spatial.register_entity(jet_engine, vortex_wp, 8);
+
+    const flooded = try world.intern_relation("SchoolFlooded", .set);
+    const delivered = try world.intern_relation("LetterDelivered", .set);
+    const at_vortex = try world.intern_relation("ArtifactAtVortex", .set);
+    const loop_closed = try world.intern_relation("LoopClosed", .set);
+
+    var hypervisor = bespoke.TemporalHypervisor.init(testing.allocator, &world);
+    defer hypervisor.deinit();
+    const branch = try hypervisor.fork_branch(20, donnie, jet_engine);
+    hypervisor.set_convergence_target(vortex_wp);
+
+    const action_world = hypervisor.active_world();
+    try testing.expect(action_world == branch);
+    _ = try action_world.remember(donnie, flooded, 1, 0);
+    _ = try action_world.remember(donnie, delivered, 1, 0);
+    _ = try action_world.remember(donnie, at_vortex, jet_engine.to_int(), 0);
+    _ = try action_world.remember(donnie, loop_closed, 1, 0);
+
+    try testing.expect(!world.has_fact(donnie, loop_closed, 1));
+    try testing.expect(hypervisor.check_loop_closure(&spatial));
+    try testing.expectEqual(bespoke.HypervisorStepResult.loop_resolved, try hypervisor.step_tick(&spatial));
+    try testing.expect(!hypervisor.branch_active);
+    try testing.expect(hypervisor.active_world() == &world);
 }
 
 test "P31-03: Donnie Darko Novikov self-consistency validation" {

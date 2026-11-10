@@ -618,7 +618,20 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keep the fixed timeline and disable save/load in Darko: rejected because it hides state the UI already offered and leaves the phase's rewind claim false.
 - Store the branch world and countdown as ordinary `World` facts: rejected because the branch is a separate arena with its own tick and clone lifecycle; flattening it would collapse the hypervisor boundary.
 - Write a world-only version 2 and reconstruct the branch on load: rejected because countdown, dependencies, and residue cannot be reconstructed deterministically.
-**Consequences:** `.sav` version 2 is larger by one encoded branch world for temporal sessions. Existing version 1 saves still load in non-temporal tools; they cannot be loaded into a temporal session. Darko's timeline and saves now restore branch and countdown atomically. The proof's interactive action routing still targets the primary world while loop closure reads the branch, so that routing fix remains open as P31-05. D-033's fixed-timeline override is retired.
+**Consequences:** `.sav` version 2 is larger by one encoded branch world for temporal sessions. Existing version 1 saves still load in non-temporal tools; they cannot be loaded into a temporal session. Darko's timeline and saves now restore branch and countdown atomically. D-033's fixed-timeline override is retired. D-049 closes the subsequent action-routing gap.
+
+## D-049 The Active Temporal Branch Is the Gameplay Action World (2026-11-10, status: accepted)
+**Context:** D-048 made the primary and branch arenas one atomic persistence unit, but Darko's interactive VM, display, and direct actions still targeted primary while `TemporalHypervisor.check_loop_closure` inspected the branch. Player actions therefore appeared in the window yet could not close the loop. The maintainer required P31-05 to close before Phase 23.
+**Decision:**
+1. `TemporalHypervisor.active_world` returns its branch while the branch is active and its primary world otherwise.
+2. A temporal `host.Session` binds the VM to the active world and captures display and dialogue state from it. Initialization, refresh, tick advancement, timeline restore, and save restore re-establish the binding because applying a temporal snapshot replaces the branch arena.
+3. Game actions query and mutate `Session.active_world`; they never mirror ordinary mutations into both arenas. Primary and branch remain separately serialized under D-048.
+4. Branch collapse returns action authority to primary. The generic hypervisor commits only the keystone and declared dream residue. A proof or game explicitly projects any additional causal consequences that its narrative preserves after collapse.
+**Alternatives:**
+- Mirror every interactive mutation into primary and branch: rejected because primary would accumulate events that occurred only in a failed branch.
+- Leave VM and display on primary while routing only loop facts to branch: rejected because inventory, dialogue guards, status, and rewind would show different worlds.
+- Give Darko a proof-local arena selector: rejected because every temporal host needs the same lifecycle boundary.
+**Consequences:** Darko's inventory actions, cue execution, dialogue effects, and loop-closure facts share the arena the hypervisor evaluates. Timeline scrub, rewind, and save/load replace and rebind the branch without leaving a stale VM pointer. Hosts that advance a hypervisor outside `Session.advance` call `Session.sync_active_world` before using the VM; `Session.refresh` does this automatically.
 
 ## Held tensions
 

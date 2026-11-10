@@ -300,6 +300,7 @@ pub const Session = struct {
             .timeline = Timeline.init(allocator),
             .last_tick_ms = std.time.milliTimestamp(),
         };
+        s.sync_active_world();
         try s.record_snapshot();
         s.refresh();
         return s;
@@ -313,9 +314,26 @@ pub const Session = struct {
         return self.bridge.get_frame();
     }
 
+    /// Returns the arena that receives gameplay actions. Temporal sessions route actions to a
+    /// live branch; ordinary sessions and resolved branches use the primary world.
+    pub fn active_world(self: *Session) *World {
+        if (self.hypervisor) |hypervisor| return hypervisor.active_world();
+        return self.world;
+    }
+
+    /// Rebinds the VM after a branch fork, temporal restore, or collapse. This is idempotent and
+    /// may be called after a host advances its hypervisor outside `Session.advance`.
+    pub fn sync_active_world(self: *Session) void {
+        self.vm.bind_world(self.active_world());
+    }
+
     /// The open dialogue, reconstructed from World facts, or null (P32-30, D-046).
     pub fn dialogue_view(self: *const Session) ?dialogue_mod.View {
-        return dialogue_mod.view(self.world);
+        const world = if (self.hypervisor) |hypervisor|
+            if (hypervisor.branch_active and hypervisor.branch_world != null) &hypervisor.branch_world.? else self.world
+        else
+            self.world;
+        return dialogue_mod.view(world);
     }
 
     /// Selects an offered choice. Scripted choices resume the suspended fiber and advance one
@@ -332,7 +350,8 @@ pub const Session = struct {
 
     /// Captures and publishes the current state.
     pub fn refresh(self: *Session) void {
-        self.bridge.capture_frame(self.world, self.spatial, self.vm);
+        self.sync_active_world();
+        self.bridge.capture_frame(self.active_world(), self.spatial, self.vm);
         self.bridge.set_max_history_tick(self.timeline.last_index());
         self.bridge.swap();
     }
@@ -345,6 +364,7 @@ pub const Session = struct {
             else => false,
         };
         if (self.window.handle_save_action_with_temporal(action, self.world, self.spatial, self.vm, self.bridge, &self.is_paused, self.hypervisor)) {
+            self.sync_active_world();
             self.vm.sync_dialogue();
             if (restoring) {
                 // A loaded save has no persisted timeline. Start a new one from the loaded state
@@ -369,6 +389,7 @@ pub const Session = struct {
             .rewind => {
                 if (try self.timeline.step_back_with_temporal(self.world, self.hypervisor)) |i| {
                     self.cursor = i;
+                    self.sync_active_world();
                     self.vm.sync_dialogue();
                     self.refresh();
                     self.window.set_cue_banner("Stepped back one snapshot.", 60);
@@ -385,6 +406,7 @@ pub const Session = struct {
     pub fn jump_to(self: *Session, index: usize) !?usize {
         const i = (try self.timeline.restore_with_temporal(self.world, self.hypervisor, index)) orelse return null;
         self.cursor = i;
+        self.sync_active_world();
         self.vm.sync_dialogue();
         self.is_paused = true;
         self.refresh();
@@ -407,6 +429,7 @@ pub const Session = struct {
     /// re-dispatched. Advancing from a scrubbed-back cursor first discards the newer future.
     pub fn advance(self: *Session) !usize {
         self.timeline.discard_after(self.cursor);
+        self.sync_active_world();
         const dispatched = try tick(self.vm, self.compiled);
         try self.record_snapshot();
         self.cursor = self.timeline.last_index();

@@ -175,6 +175,12 @@ pub const VM = struct {
         };
     }
 
+    /// Rebinds execution to another arena with the same compiled symbol table. Temporal hosts use
+    /// this after a branch fork, restore, or collapse so bytecode never mutates a stale arena.
+    pub fn bind_world(self: *VM, world: *World) void {
+        self.world = world;
+    }
+
     pub fn deinit(self: *VM) void {
         for (self.fibers.items) |*f| {
             f.deinit();
