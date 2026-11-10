@@ -12,27 +12,27 @@ Changes: [CHANGELOG.md](CHANGELOG.md). Older sessions: [archive/](archive/README
 
 ## Current state
 
-_Last updated: 2026-11-09, session 29, on `feature/dialogue-duel`: P32-05 merged to `main` (`cb0bf03`); P32-17 complete (dialogue duel module `src/duel.zig`, sword-fighting proof migrated, D-035), uncommitted. Next: P32-18 (arrival cues), then P32-19; P32-20 and P32-21 await maintainer decisions. Phase 23 starts after Phase 32 by maintainer decision (2026-11-09)._
+_Last updated: 2026-11-09, session 29, on `feature/arrival-cues`: P32-17 committed on `feature/dialogue-duel` (`62d9b40`, not merged to `main`); P32-18 (arrival rules, D-036) and P32-19 (proof hygiene) complete and uncommitted in one working tree. Next: P32-20 and P32-21 need maintainer decisions, as do the new P32-27 and P32-28; P32-02 to P32-04 (presentation purge) need none. Phase 23 starts after Phase 32 by maintainer decision (2026-11-09)._
 
-**Session owner:** Claude Code (Fable 5), on `feature/dialogue-duel`, since 2026-11-09 (session 29). Took over from the session 28 Claude Code agent with maintainer approval.
+**Session owner:** Claude Code (Fable 5), on `feature/arrival-cues`, since 2026-11-09 (session 29). Took over from the session 28 Claude Code agent with maintainer approval.
 
 **Where things stand, in one paragraph:**
 All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, verified, and operational. The BeSpoke Engine is a standalone, systemic simulation engine ("Engine-as-Spine") and domain-specific game development language written in pure Zig. Raw narrative scripts compile directly to bytecode, driving deterministic simulations over flat relational fact arenas, discrete waypoint topologies, cooperative fibers, autonomous reactive rule cascades, declarative stageplay structures, multi-scene stage directing, dynamic dialogue choice pruning, multi-step item crafting, relational epistemological dialogues, external script file execution (`bespoke run`, `compile`, `check`), a decoupled procedural chiptune audio synthesizer (`src/audio.zig`), persistent disk save/load storage (`src/save.zig`), "The Living Village" systemic emergent simulation sandbox (`proofs/village.zig`, `--village`), the Broken Sword Lochmarne Goat puzzle (`proofs/goat_puzzle.zig`, `--goat`), the Day of the Tentacle multi-character three-era scenario (`proofs/dott_puzzle.zig`, `--dott`), and the Donnie Darko "Middlesex Anomaly" Tangent Universe scenario (`proofs/darko_puzzle.zig`, `--darko`). Phase 19 adds a zero-dependency `wasm32-freestanding` WebAssembly target and RGBA8888 software framebuffer (`src/wasm.zig`, `zig build wasm` -> `zig-out/bin/bespoke.wasm`), a browser mouse/keyboard/touch event bridge, and an interactive HTML5 `<canvas>` simulator deck embedded directly inside `docs/manual.html` hosting all vertical slices. Phase 31 adds the `TemporalHypervisor` managing ephemeral copy-on-write Tangent Universe arenas, discrete tick countdown budgets (`collapse_budget_ticks`), catastrophic black hole singularities upon budget expiration without closure, backward-chaining teleological Horn clause solvers, hyper-temporal fibers (the "Manipulated Dead"), pre-cognitive Fourth-Dimensional vector conduits (`VectorConduit`), concurrent bitemporal transceivers, and Novikov self-fulfilling loop validation. Phase 22 is complete and Phase 32 (engine / proof separation) is in progress; Phase 23 follows it.
 
-**Verified** (2026-11-09, session 29, `feature/dialogue-duel`, Linux x86_64, Zig 0.13.0; rows without a date were last measured in session 28)
+**Verified** (2026-11-09, session 29, `feature/arrival-cues`, Linux x86_64, Zig 0.13.0; rows without a date were last measured in session 28)
 
 | Suite | Result |
 | --- | --- |
 | `python3 tools/check_docs.py` | **0 errors, 0 warnings (includes 3x manual check)** |
-| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 43 entries, 0 warnings)** |
-| `zig build test-engine` | **131/131 passed (2026-11-09, after P32-17)** |
-| `zig build test-proofs` | **28/28 passed, including all nine golden transcripts (2026-11-09, after P32-17; sword fighting byte-identical)** |
-| `zig test -I/usr/include/SDL2 -lc -lSDL2 src/root.zig` | **131/131 passed (2026-11-09, includes host kit, distaff reach, society, and duel tests)** |
+| `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root .` | **passed (8 sections, 44 entries, 0 warnings; 2026-11-09)** |
+| `zig build test-engine` | **134/134 passed (2026-11-09, after P32-18)** |
+| `zig build test-proofs` | **30/30 passed, including all nine golden transcripts (30/30 on 2026-11-09, after P32-19; spitting contest golden changed in four reviewed lines)** |
+| `zig test -I/usr/include/SDL2 -lc -lSDL2 src/root.zig` | **134/134 passed (2026-11-09, includes host kit, distaff reach, society, duel, and arrival tests)** |
 | `zig build wasm` | **passed (2026-11-09)** |
-| `bespoke-proofs --<proof> --headless` for tavern, spitting-contest, gk3, sword-fighting, village, goat, dott, darko, loom | **all exit 0** |
+| `bespoke-proofs --<proof> --headless` for tavern, spitting-contest, gk3, sword-fighting, village, goat, dott, darko, loom | **all exit 0 (2026-11-09, after P32-19)** |
 | `bespoke run scenarios/tavern_heist.bespoke --headless` | **passed with rewind** |
 | Import probe from `src/` into `proofs/` | **rejected by the compiler (boundary holds)** |
-| `python3 tools/check_separation.py` | **0 errors; 339 proof names in engine code, equal to baseline (2026-11-09)** |
+| `python3 tools/check_separation.py` | **0 errors; 351 proof names in engine code, equal to baseline (2026-11-09; raised from 339 in P32-19 with maintainer approval, see SEPARATION)** |
 | `python3 -m unittest discover -s tests` | **37/37 passed** |
 
 **What works**
@@ -47,11 +47,13 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 - **Audio, Persistence & WebAssembly:** Procedural chiptune synth, 4-channel BGM sequencer, CRC32 `.sav` storage with `.bak` recovery, freestanding WebAssembly canvas, and embedded manual simulator (P16, P17, P19, D-019, D-020, D-022).
 - **Emergent Society (P32-05, D-034):** `src/society.zig` runs data-configured needs, roles, routines, witnesses, rumors, and justice over facts; The Living Village is its client.
 - **Dialogue Duel & Inquiry Fatigue (P32-17, D-035):** `src/duel.zig` runs data-configured challenge/reply pairs, opponent tiers, advantage, and staged mood decay over facts, with candidates filtered by `VM.prune_dialogue_choices`; Insult Sword Fighting is its client.
+- **Arrival Rules (P32-18, D-036):** `when <Actor> arrives at <Mark>:` fires once per completed walk, inside the tick; the Lochmarne Goat proof keeps its dig, plough, and ladder rules in its script.
 - **Proofs of Concept (`proofs/`, D-031):** 9 vertical slices built as `bespoke-proofs`; formerly described as 7 complete scenarios (Tavern Heist, Spitting Contest, GK3 Moustache, Insult Sword Fighting, Living Village, Broken Sword Goat, Day of the Tentacle Trio, Donnie Darko Middlesex Anomaly) runnable headless and interactive with time-travel rewind.
 
 **Not verified**
+- The spitting contest, GK3, DOTT, and Middlesex windows were launched offscreen for 5 seconds after P32-19 and not played.
+- The goat window was launched offscreen for 6 seconds after P32-18 and not played: the walk-back after a knockdown, the plough dash, and the ladder climb are covered by `zig build test-proofs` only.
 - The interactive sword-fighting window was not launched after P32-17; its loop does not call the duel (P32-23), and only `Duel.init` and `set_tier` run there (compiled, covered by `zig build test`).
-- `bespoke-proofs --<proof> --headless` was rerun in session 29 for sword-fighting only.
 - The Bell Tower has not been hand-played on a desktop: the HUD and both scenes were checked in offscreen SDL renders, the interactive loop was launched offscreen for 6 seconds, and note audio was verified by sample analysis, not by ear.
 - The wasm target and the manual simulator have no distaff or Bell Tower yet (D-030).
 
@@ -59,6 +61,11 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 - Two audit follow-ups need maintainer decisions before work: P32-20 (six engine features no proof exercises: prove or mark experimental) and P32-21 (renaming the hypervisor API away from film vocabulary).
 - Phase 32 order of work is in `docs/SEPARATION.md`: safety net (P32-06 lint, P32-07 goldens) before audits (P32-08 to P32-15), audits before extractions (P32-05, P32-16, and audit follow-ups), extractions before the presentation purge (P32-02 to P32-04).
 - Emergent society is `src/society.zig` (D-034). Hosts tick the VM with `host.tick` first, then call `Society.step`. Roster order is evaluation order, so reordering a config changes behaviour and goldens. Society state must stay in World facts (stays use the `Tending` property); the chronicle is display-only and is not rewound.
+- An unmatched cue runs the first handler with that cue name (ARCHITECTURE, Claims vs. code; P32-27). Give each actor a default handler (`on cue LooksAt(<Actor>):`) where that matters.
+- Script states use the entity `true` as their value, not 1 (P32-28). A host asserting a state for a script condition must do the same; see `set_state` in `proofs/spitting_contest.zig`.
+- The spitting contest and GK3 runners still assert most puzzle facts from Zig (P32-26).
+- Arrival rules (D-036): a host must call `vm.load_compiled_rules(&compiled)` or no `when` rule fires (the goat proof did not call it before P32-18). Placing an actor with `transition_actor` is not an arrival; a walk to the mark the actor stands on is. `.bspk` is format version 3.
+- `walk_to` toward the waypoint an agent just left, mid-edge, does not turn it around (ARCHITECTURE, Claims vs. code; P32-25). The village golden depends on this.
 - Dialogue duel is `src/duel.zig` (D-035). Call `Duel.init` before the first snapshot: it asserts the `Counters` and `VariantOf` knowledge base as facts. Candidate queries need a `*VM` (they run through `prune_dialogue_choices`). Tier variants match an opponent of exactly that tier. The inquiry count lives on a per-pair entity named `<speaker>-><npc>`.
 - The separation lint stays at 339 after P32-17: the sword-fighting hits in `src/` are themes, tokens, and music (P32-02, P32-03), not the duel.
 - Proofs live in `proofs/` and import the engine as `@import("bespoke")`; they cannot be compiled with a bare `zig test`. Use `zig build test-proofs` and `zig build run-proof -- --<proof>`. Engine files still name proof content until P32-02 to P32-04 land (ARCHITECTURE, Claims vs. code).
@@ -79,8 +86,8 @@ All 21 initial phases plus Phase 31 of the BeSpoke Engine roadmap are complete, 
 
 ### Session 29 (2026-11-09)
 - **Goal:** Take over session ownership, orient for Phase 23, then (maintainer decision) finish Phase 32 first, starting with P32-17.
-- **Work:** Read the repo and Phase 23; found the roadmap text for P23-01 and P23-03 predates D-031 (proof path in `src/`, mug names in `World`) and raised it with the maintainer, who chose to finish Phase 32 first. Corrected the stale handoff header (P32-05 was already merged). P32-17: maintainer chose host Zig config, candidates through `prune_dialogue_choices`, and fatigue keyed per speaker and NPC; recorded `D-035`. Added `src/duel.zig` (`Duel`, `InquiryFatigue`) with six tests on a riddle contest; rewrote `proofs/sword_fighting.zig` as its client (insult table kept, `DialogueDuelSystem` removed, tick routed through `host.tick`); filed P32-23 (playable duel) and P32-24 (script-declared duels).
-- **Outcome:** `zig build test` 8/8 steps (engine 131/131, proofs 28/28), sword-fighting golden byte-identical, `zig build wasm` and `--sword-fighting --headless` pass, mutation checks on the tier guard and the fatigue key each fail a P32-17 test, separation lint 339 (unchanged), `python3 tools/check_docs.py` clean. Phase 23 open points for later: P23-03's path must be `proofs/`, P23-01 needs a generic stage mechanic, `World.recently_expired` holds 16 expiries per tick, and `on_expire` rules match the first clause's relation and subject only.
+- **Work:** Read the repo and Phase 23; found the roadmap text for P23-01 and P23-03 predates D-031 (proof path in `src/`, mug names in `World`) and raised it with the maintainer, who chose to finish Phase 32 first. Corrected the stale handoff header (P32-05 was already merged). P32-17: maintainer chose host Zig config, candidates through `prune_dialogue_choices`, and fatigue keyed per speaker and NPC; recorded `D-035`. Added `src/duel.zig` (`Duel`, `InquiryFatigue`) with six tests on a riddle contest; rewrote `proofs/sword_fighting.zig` as its client (insult table kept, `DialogueDuelSystem` removed, tick routed through `host.tick`); filed P32-23 (playable duel) and P32-24 (script-declared duels); committed as `62d9b40`. P32-18: maintainer chose the `when <Actor> arrives at <Mark>:` form and arrival as the single home of the goat rules; recorded `D-036`. Added `MotorAgent.arrival_pending`, the `on_arrive` edge (lexer, parser with located diagnostics, codegen, VM, `.bspk` version 3), three tests, and a manual entry; rewrote the goat script and both runners around arrival rules with a shared `Stage`. A first attempt to make `walk_to` turn an agent back changed the village golden, so it was reverted and filed as P32-25. P32-19 (narrowed by the maintainer to the placement rule for the spitting contest): `Spits` handler and `Placed` fact, exact-fact checks in goat and GK3, look-at tables deleted from DOTT and Middlesex with default handlers; filed P32-26 to P32-28; lint baseline raised to 351 with approval.
+- **Outcome:** `zig build test` 8/8 steps (engine 131/131, proofs 28/28), sword-fighting golden byte-identical, `zig build wasm` and `--sword-fighting --headless` pass, mutation checks on the tier guard and the fatigue key each fail a P32-17 test, separation lint 339 (unchanged), `python3 tools/check_docs.py` clean. After P32-18: engine 134/134, proofs 28/28 with the goat golden byte-identical, all nine proofs headless, CLI check/compile/run on an arrival script, three mutation checks failing as expected. After P32-19: proofs 30/30, four reviewed golden lines in the spitting contest, four windows launched offscreen. Phase 23 open points for later: P23-03's path must be `proofs/`, P23-01 needs a generic stage mechanic, `World.recently_expired` holds 16 expiries per tick, and `on_expire` rules match the first clause's relation and subject only.
 
 ### Session 28 (2026-11-08)
 - **Goal:** Take over session ownership, commit pending Phase 31 work, and implement P22-01 (musical draft grammar and bytecode).

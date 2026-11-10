@@ -112,6 +112,18 @@ pub const DARKO_PUZZLE_SCRIPT =
     \\when LoopClosureReady(Donnie, 1):
     \\  interrupt Donnie with:
     \\    say Donnie: "The Jet Engine is aligned in the vortex ridge! The loop is ready to close!"
+    \\
+    \\on cue LooksAt(Donnie, JetEngine):
+    \\  say Donnie: "A four-ton aircraft jet engine resting where my bed was. The FAA can find no plane from which it fell."
+    \\
+    \\on cue LooksAt(Donnie, WaterPipe):
+    \\  say Donnie: "The high school main waterline pipe. One swing of the axe will flood the entire building."
+    \\
+    \\on cue LooksAt(Donnie, VortexEntrance):
+    \\  say Donnie: "A swirling atmospheric rift in the clouds atop the ridge. The gateway for the Artifact of Metal."
+    \\
+    \\on cue LooksAt(Donnie):
+    \\  say Donnie: "Nothing unusual to see here."
 ;
 
 /// Evaluates whether the Donnie Darko Tangent Universe loop closure scenario is completely solved (P31-03, D-027).
@@ -127,53 +139,8 @@ pub fn evaluate_darko_solved(world: *const bespoke.World) bool {
         world.has_fact(null, dream_rel, null);
 }
 
-/// Fallback description generator for props, actors, and items in Donnie Darko scenario.
-pub fn get_darko_look_description(actor_name: []const u8, target_name: []const u8) []const u8 {
-    _ = actor_name;
-    if (std.mem.eql(u8, target_name, "BedroomDesk")) {
-        return "Donnie: \"My desk. Roberta Sparrow's book 'The Philosophy of Time Travel' rests on the blotter.\"";
-    } else if (std.mem.eql(u8, target_name, "JetEngineProp") or std.mem.eql(u8, target_name, "JetEngine")) {
-        return "Donnie: \"A four-ton aircraft jet engine resting where my bed was. The FAA can find no plane from which it fell.\"";
-    } else if (std.mem.eql(u8, target_name, "Frank")) {
-        return "Donnie: \"A six-foot demonic silver rabbit. 'Why are you wearing that stupid bunny suit?'\"";
-    } else if (std.mem.eql(u8, target_name, "AxeProp") or std.mem.eql(u8, target_name, "Axe")) {
-        return "Donnie: \"A red fire emergency axe mounted in a glass cabinet. Frank whispers that the water main must be ruptured.\"";
-    } else if (std.mem.eql(u8, target_name, "WaterPipeProp") or std.mem.eql(u8, target_name, "WaterPipe")) {
-        return "Donnie: \"The high school main waterline pipe. One swing of the axe will flood the entire building.\"";
-    } else if (std.mem.eql(u8, target_name, "Gretchen")) {
-        return "Donnie: \"Gretchen Ross, the new girl at Middlesex High.\"";
-    } else if (std.mem.eql(u8, target_name, "RobertaSparrow")) {
-        return "Donnie: \"Roberta Sparrow, 'Grandma Death'. Former science teacher turned recluse, watching her empty mailbox.\"";
-    } else if (std.mem.eql(u8, target_name, "VortexEntranceProp") or std.mem.eql(u8, target_name, "VortexEntrance")) {
-        return "Donnie: \"A swirling atmospheric rift in the clouds atop the ridge. The gateway for the Artifact of Metal.\"";
-    } else if (std.mem.eql(u8, target_name, "EnvelopeProp") or std.mem.eql(u8, target_name, "Envelope")) {
-        return "Donnie: \"A sealed envelope addressed to Roberta Sparrow containing the words 'Cellar Door'.\"";
-    } else if (std.mem.eql(u8, target_name, "BedMark")) {
-        return "Donnie: \"Where my bed was before the jet engine crushed it into kindling.\"";
-    } else if (std.mem.eql(u8, target_name, "DeskMark")) {
-        return "Donnie: \"The carpet near my desk and bookshelf.\"";
-    } else if (std.mem.eql(u8, target_name, "BedroomDoor")) {
-        return "Donnie: \"Doorway leading out from my bedroom toward Middlesex High School.\"";
-    } else if (std.mem.eql(u8, target_name, "LockersMark")) {
-        return "Donnie: \"Rows of green metal student lockers lining the high school hallway.\"";
-    } else if (std.mem.eql(u8, target_name, "HallwayCenter")) {
-        return "Donnie: \"The central hallway corridor outside the classrooms.\"";
-    } else if (std.mem.eql(u8, target_name, "WaterPipeMark")) {
-        return "Donnie: \"The utility section housing the building's pressurized water main.\"";
-    } else if (std.mem.eql(u8, target_name, "RidgePeak")) {
-        return "Donnie: \"The chilly ridge summit overlooking the entire town of Middlesex.\"";
-    } else if (std.mem.eql(u8, target_name, "MailboxMark")) {
-        return "Donnie: \"Roberta Sparrow's solitary rusted roadside mailbox.\"";
-    } else if (std.mem.eql(u8, target_name, "VortexMark")) {
-        return "Donnie: \"The twisting gravitational epicenter of the atmospheric vortex.\"";
-    } else if (std.mem.eql(u8, target_name, "Donnie")) {
-        return "Donnie: \"Donnie Darko. Living Receiver, sleepwalker, and unwilling architect of time.\"";
-    } else {
-        return "Nothing unusual to see here.";
-    }
-}
-
-/// Helper to fire LooksAt cue, step the VM, and retrieve the speech message.
+/// Fires the script's `LooksAt` handler, runs the tick, and returns what was said. Every
+/// description is script text (P32-19); a per-actor `LooksAt(<Actor>)` handler is the default.
 pub fn execute_look_at(
     world: *bespoke.World,
     vm: *bespoke.VM,
@@ -182,12 +149,7 @@ pub fn execute_look_at(
     target: bespoke.EntityId,
     buf: []u8,
 ) ![]const u8 {
-    // Speech comes from the script's LooksAt handler via the host kit (P32-16); the fallback
-    // text below is proof content until P32-19 moves it into the script.
-    if (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) |msg| return msg;
-    const speaker_name = world.get_entity_name(speaker) orelse "Hero";
-    const target_name = world.get_entity_name(target) orelse "Object";
-    return get_darko_look_description(speaker_name, target_name);
+    return (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) orelse error.LookNotScripted;
 }
 
 /// Executes headless simulation of the Donnie Darko "Middlesex Anomaly" scenario (P31-03, D-027).
@@ -871,4 +833,31 @@ test "P31-03: Donnie Darko Novikov self-consistency validation" {
     _ = try world.remember(donnie, parad_rel, 1, 0);
     const rejected = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel);
     try testing.expect(!rejected);
+}
+
+test "P32-19: every look description comes from the script, with a per-actor default" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, DARKO_PUZZLE_SCRIPT);
+    defer compiled.deinit();
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+
+    const donnie = world.lookup_entity("Donnie").?;
+    var buf: [512]u8 = undefined;
+
+    // The carried item shares its prop's description through its own handler.
+    const engine = try execute_look_at(&world, &vm, &compiled, donnie, try world.intern_entity("JetEngine"), &buf);
+    try testing.expect(std.mem.indexOf(u8, engine, "four-ton aircraft jet engine") != null);
+
+    // A target with no handler of its own gets the actor's default line. Without the default
+    // the engine would run the first `LooksAt` handler in the script (ARCHITECTURE, Claims
+    // vs. code), which is why the old Zig fallback table was never reached.
+    const pebble = try world.intern_entity("UnscriptedPebble");
+    const fallback = try execute_look_at(&world, &vm, &compiled, donnie, pebble, &buf);
+    try testing.expectEqualStrings("Donnie: \"Nothing unusual to see here.\"", fallback);
 }

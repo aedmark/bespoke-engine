@@ -194,6 +194,15 @@ pub const DOTT_PUZZLE_SCRIPT =
     \\when TentacleFlagSewn(BetsyRoss, 1):
     \\  interrupt Laverne with:
     \\    say Laverne: "Look up at the guard post roof! Betsy's flag is flying as the official planetary standard!"
+    \\
+    \\on cue LooksAt(Bernard):
+    \\  say Bernard: "Nothing unusual to see here."
+    \\
+    \\on cue LooksAt(Hoagie):
+    \\  say Hoagie: "Nothing unusual to see here."
+    \\
+    \\on cue LooksAt(Laverne):
+    \\  say Laverne: "Nothing unusual to see here."
 ;
 
 /// Evaluates whether the Day of the Tentacle three-era milestone scenario is completely solved (P21-03, D-025).
@@ -211,85 +220,8 @@ pub fn evaluate_dott_solved(world: *const bespoke.World) bool {
         world.has_fact(null, disg_rel, null);
 }
 
-/// Fallback description generator for props, actors, and items across all three DOTT eras.
-pub fn get_dott_look_description(actor_name: []const u8, target_name: []const u8) []const u8 {
-    _ = actor_name;
-    if (std.mem.eql(u8, target_name, "VintageWineBottle") or std.mem.eql(u8, target_name, "VintageWine")) {
-        return "Bernard: \"A dusty 1993 vintage bottle of red wine sitting on the motel desk.\"";
-    } else if (std.mem.eql(u8, target_name, "TentacleFlyerProp") or std.mem.eql(u8, target_name, "TentacleFlyer")) {
-        return "Bernard: \"A campaign flyer showing Purple Tentacle's triangular silhouette. 'Vote Purple for Global Domination!'\"";
-    } else if (std.mem.eql(u8, target_name, "ChronoToilet1993")) {
-        return "Bernard: \"The Chron-o-John! Dr. Fred's temporal displacement unit disguised as standard plumbing.\"";
-    } else if (std.mem.eql(u8, target_name, "TimeCapsule1993")) {
-        return "Bernard: \"The motel lobby time capsule, sealed tight to preserve artifacts for centuries.\"";
-    } else if (std.mem.eql(u8, target_name, "LobbyDesk")) {
-        return "Bernard: \"The motel registration desk. A classic bell, guestbook, and decades of neglect.\"";
-    } else if (std.mem.eql(u8, target_name, "MotelEntrance")) {
-        return "Bernard: \"Double doors leading outside to the motel driveway. Better stay focused on saving the world.\"";
-    } else if (std.mem.eql(u8, target_name, "CapsuleNiche1993")) {
-        return "Bernard: \"The display niche where the bicentennial time capsule is embedded in the wall.\"";
-    } else if (std.mem.eql(u8, target_name, "ToiletMark1993")) {
-        return "Bernard: \"Restroom tiles around the 1993 Chron-o-John.\"";
-    } else if (std.mem.eql(u8, target_name, "DrFred")) {
-        return "Bernard: \"Dr. Fred Edison, pacing nervously while muttering about world domination and temporal coordinates.\"";
-    } else if (std.mem.eql(u8, target_name, "KumquatTree")) {
-        return "Hoagie: \"A small, bushy kumquat tree. George Washington is glaring at it impatiently.\"";
-    } else if (std.mem.eql(u8, target_name, "ChronoToilet1790")) {
-        return "Hoagie: \"My Chron-o-John in 1790. Needs electrical power before it can flush anything back to the future.\"";
-    } else if (std.mem.eql(u8, target_name, "TimeCapsule1790")) {
-        return "Hoagie: \"A bronze time capsule embedded in the colonial hearth. Anything placed inside will survive to 1993.\"";
-    } else if (std.mem.eql(u8, target_name, "WorkshopDoor")) {
-        return "Hoagie: \"Heavy wooden door leading out to the colonial grounds and kumquat orchard.\"";
-    } else if (std.mem.eql(u8, target_name, "Fireplace1790")) {
-        return "Hoagie: \"A brick hearth crackling with firewood. Great for aging vintage wine into vinegar.\"";
-    } else if (std.mem.eql(u8, target_name, "KumquatLawn")) {
-        return "Hoagie: \"The green colonial lawn where George Washington is testing his axe.\"";
-    } else if (std.mem.eql(u8, target_name, "CapsuleNiche1790")) {
-        return "Hoagie: \"A recessed stone niche housing the colonial time capsule.\"";
-    } else if (std.mem.eql(u8, target_name, "ToiletMark1790")) {
-        return "Hoagie: \"The dirt patch where my Chron-o-John crash-landed in 1790.\"";
-    } else if (std.mem.eql(u8, target_name, "RedPaintBucket")) {
-        return "Hoagie: \"A bucket of bright red colonial oil paint. Perfect for turning citrus trees into cherry trees.\"";
-    } else if (std.mem.eql(u8, target_name, "BatteryCasing")) {
-        return "Hoagie: \"An empty glass battery casing with copper and zinc electrodes. Just needs an acidic electrolyte!\"";
-    } else if (std.mem.eql(u8, target_name, "SuperBattery")) {
-        return "Hoagie: \"The Super Battery! 200-year-aged vinegar reacting with zinc and copper to produce mega-voltage!\"";
-    } else if (std.mem.eql(u8, target_name, "Vinegar200Years")) {
-        return "Hoagie: \"Two centuries of time-capsule aging turned that cheap wine into potent vinegar acid!\"";
-    } else if (std.mem.eql(u8, target_name, "Washington")) {
-        return "Hoagie: \"George Washington, father of our country. He is practically itching to chop down a cherry tree.\"";
-    } else if (std.mem.eql(u8, target_name, "BetsyRoss")) {
-        return "Hoagie: \"Betsy Ross, embroidering away at the national flag. She seems open to design suggestions.\"";
-    } else if (std.mem.eql(u8, target_name, "PurpleTentacle")) {
-        return "Laverne: \"A seven-foot mutant purple tentacle patrolling the security checkpoint. No humans allowed without a tentacle disguise.\"";
-    } else if (std.mem.eql(u8, target_name, "FutureTree")) {
-        return "Laverne: \"A bizarre 200-year-old kumquat tree reaching all the way to the roof. I am currently tangled in its branches!\"";
-    } else if (std.mem.eql(u8, target_name, "TentacleFlagProp") or std.mem.eql(u8, target_name, "TentacleFlag")) {
-        return "Laverne: \"Betsy Ross's 1790 flag design, perfectly altered to double as an authentic tentacle disguise!\"";
-    } else if (std.mem.eql(u8, target_name, "PowerSocketProp")) {
-        return "Laverne: \"A high-voltage power terminal on the roof, hooked into the Chron-o-John temporal conduit.\"";
-    } else if (std.mem.eql(u8, target_name, "ChronoToilet2193")) {
-        return "Laverne: \"The future Chron-o-John! Once hooked up to power, it will reconnect the party across time.\"";
-    } else if (std.mem.eql(u8, target_name, "GuardPost")) {
-        return "Laverne: \"The tentacle security barrier. No humans permitted without a tentacle disguise.\"";
-    } else if (std.mem.eql(u8, target_name, "RoofGutter")) {
-        return "Laverne: \"Copper drainage gutter leading down from the guard post roof.\"";
-    } else if (std.mem.eql(u8, target_name, "TreeBranch2193")) {
-        return "Laverne: \"A thick, gnarly branch of the mutated kumquat tree high in the air.\"";
-    } else if (std.mem.eql(u8, target_name, "ToiletMark2193")) {
-        return "Laverne: \"The rooftop patio where the future Chron-o-John sits.\"";
-    } else if (std.mem.eql(u8, target_name, "Bernard")) {
-        return "Bernard: \"Still me, still wearing my lucky bowtie and oversized glasses.\"";
-    } else if (std.mem.eql(u8, target_name, "Hoagie")) {
-        return "Hoagie: \"Heavy metal roadie with an unflappable attitude and a knack for American history.\"";
-    } else if (std.mem.eql(u8, target_name, "Laverne")) {
-        return "Laverne: \"Eccentric medical student with a unique perspective on human anatomy and mutant tentacles.\"";
-    } else {
-        return "Nothing unusual to see here.";
-    }
-}
-
-/// Helper to fire LooksAt cue, step the VM, and retrieve the speech message.
+/// Fires the script's `LooksAt` handler, runs the tick, and returns what was said. Every
+/// description is script text (P32-19); a per-actor `LooksAt(<Actor>)` handler is the default.
 pub fn execute_look_at(
     world: *bespoke.World,
     vm: *bespoke.VM,
@@ -298,12 +230,7 @@ pub fn execute_look_at(
     target: bespoke.EntityId,
     buf: []u8,
 ) ![]const u8 {
-    // Speech comes from the script's LooksAt handler via the host kit (P32-16); the fallback
-    // text below is proof content until P32-19 moves it into the script.
-    if (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) |msg| return msg;
-    const speaker_name = world.get_entity_name(speaker) orelse "Hero";
-    const target_name = world.get_entity_name(target) orelse "Object";
-    return get_dott_look_description(speaker_name, target_name);
+    return (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) orelse error.LookNotScripted;
 }
 
 /// Executes headless simulation of the Day of the Tentacle Trio scenario (P21-03, D-025).
@@ -1070,4 +997,28 @@ test "P21-03: Day of the Tentacle full puzzle DAG compilation, cross-era transfe
     try testing.expect(std.mem.indexOf(u8, buf.items, "Laverne looks at PurpleTentacle -> Laverne: \"A seven-foot mutant purple tentacle patrolling the security checkpoint. No humans allowed without a tentacle disguise.\"") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Hoagie inspects SuperBattery -> Hoagie: \"The Super Battery! 200-year-aged vinegar reacting with zinc and copper to produce mega-voltage!\"") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Laverne inspects TentacleFlag -> Laverne: \"Betsy Ross's 1790 flag design, perfectly altered to double as an authentic tentacle disguise!\"") != null);
+}
+
+test "P32-19: each party member has a scripted default look description" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, DOTT_PUZZLE_SCRIPT);
+    defer compiled.deinit();
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+
+    const pebble = try world.intern_entity("UnscriptedPebble");
+    var buf: [512]u8 = undefined;
+    inline for (.{ "Bernard", "Hoagie", "Laverne" }) |name| {
+        const said = try execute_look_at(&world, &vm, &compiled, world.lookup_entity(name).?, pebble, &buf);
+        try testing.expectEqualStrings(name ++ ": \"Nothing unusual to see here.\"", said);
+    }
+
+    // A specific handler still wins over the default.
+    const desk = try execute_look_at(&world, &vm, &compiled, world.lookup_entity("Bernard").?, world.lookup_entity("LobbyDesk").?, &buf);
+    try testing.expect(std.mem.indexOf(u8, desk, "Nothing unusual") == null);
 }

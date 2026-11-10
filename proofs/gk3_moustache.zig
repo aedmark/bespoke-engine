@@ -84,7 +84,7 @@ pub const GK3_MOUSTACHE_SCRIPT =
     \\on cue Uses(Gabriel, CatMoustache, Gabriel):
     \\  if PassportModified(Gabriel):
     \\    say Gabriel: "With Mosely's passport and my dashing cat-hair moustache, the resemblance is uncanny!"
-    \\    now Gabriel is disguised
+    \\    remember Disguised(Gabriel, true)
     \\  if not PassportModified(Gabriel):
     \\    say Gabriel: "I've got the moustache on, but Mosely's passport photo still has no moustache! I need to fix the passport."
     \\
@@ -108,38 +108,18 @@ pub const Gk3Stage = enum {
 
 /// Evaluates whether Gabriel Knight has completed his disguise to rent the motorcycle (P14-01, D-016).
 pub fn evaluate_disguise(world: *const bespoke.World) bool {
+    // The exact fact the script writes when Gabriel puts the moustache on, and the one the
+    // rental dialogue's `Disguised(Gabriel)` guards read (P32-19).
     const gabriel = world.lookup_entity("Gabriel") orelse return false;
-
-    // Check disguised status
-    var is_disguised = false;
-    if (world.lookup_relation("disguised") orelse world.lookup_relation("Disguised")) |rel| {
-        is_disguised = world.has_fact(gabriel, rel, null);
-    }
-
-    // Check carried cat moustache
-    var has_moustache = false;
-    if (world.lookup_relation("Carries")) |rel| {
-        if (world.lookup_entity("CatMoustache")) |m_id| {
-            has_moustache = world.has_fact(gabriel, rel, m_id.to_int());
-        }
-    }
-
-    // Check modified passport
-    var has_modified_passport = false;
-    if (world.lookup_relation("PassportModified")) |rel| {
-        has_modified_passport = world.has_fact(gabriel, rel, 1);
-    }
-
-    return is_disguised or (has_moustache and has_modified_passport);
+    const rel = world.lookup_relation("Disguised") orelse return false;
+    return world.has_fact(gabriel, rel, null);
 }
 
 /// Evaluates whether the motorcycle puzzle has been successfully solved (P14-01, D-016).
 pub fn evaluate_puzzle_victory(world: *const bespoke.World) bool {
     const gabriel = world.lookup_entity("Gabriel") orelse return false;
-    if (world.lookup_relation("HasBikeKeys") orelse world.lookup_relation("BikeRented")) |rel| {
-        return world.has_fact(gabriel, rel, null);
-    }
-    return false;
+    const rel = world.lookup_relation("HasBikeKeys") orelse return false;
+    return world.has_fact(gabriel, rel, null);
 }
 
 /// Executes headless simulation of the Gabriel Knight 3 Cat Moustache vertical slice (P14-01, P14-03, D-016).

@@ -6,6 +6,7 @@
       "gk3_moustache": 3,
       "goat_puzzle": 2,
       "loom_puzzle": 2,
+      "spitting_contest": 1,
       "sword_fighting": 4,
       "village": 2
     },
@@ -26,14 +27,14 @@
       "gk3_moustache": 34,
       "goat_puzzle": 21,
       "loom_puzzle": 6,
-      "spitting_contest": 19,
+      "spitting_contest": 27,
       "sword_fighting": 29,
       "tavern_heist": 12,
       "village": 33
     },
     "src/save.zig": {
       "gk3_moustache": 2,
-      "spitting_contest": 1,
+      "spitting_contest": 2,
       "sword_fighting": 3,
       "tavern_heist": 2,
       "village": 2
@@ -47,11 +48,11 @@
       "dott_puzzle": 11,
       "gk3_moustache": 11,
       "goat_puzzle": 9,
-      "spitting_contest": 7,
+      "spitting_contest": 9,
       "sword_fighting": 3,
       "tavern_heist": 10,
       "village": 26
     }
   },
-  "total": 339
+  "total": 351
 }

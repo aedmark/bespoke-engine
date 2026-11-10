@@ -22,7 +22,9 @@ const WhenEdge = parser_mod.WhenEdge;
 pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 2 appends the draft note table to the payload tail (P22-01, D-029). Version 1
 /// packages predate drafts and still load, with an empty draft table.
-pub const PACKAGE_VERSION: u32 = 2;
+/// Version 3 adds the arrival edge (byte 3) to reactive rules (P32-18, D-036); the layout is
+/// unchanged, so versions 1 and 2 still load.
+pub const PACKAGE_VERSION: u32 = 3;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -393,6 +395,7 @@ pub fn load_package(
             0 => .rising,
             1 => .falling,
             2 => .on_expire,
+            3 => if (header.version >= 3) .on_arrive else return error.InvalidWhenEdge,
             else => return error.InvalidWhenEdge,
         };
         const clause_count = try pr.readInt(u16, .little);
@@ -766,5 +769,57 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
         var loaded = try load_package(testing.allocator, stream.reader(), &world2, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.drafts.items.len);
+    }
+}
+
+test "P32-18: package round-trips an arrival rule and version 2 rejects its edge" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\scene: Yard
+        \\cast: Scout
+        \\marks: Well, Gate
+        \\
+        \\when Scout arrives at Gate:
+        \\  remember ReachedGate(Scout, true)
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var spatial1 = SpatialSystem.init(testing.allocator);
+    defer spatial1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
+    defer compiled1.deinit();
+
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+
+    {
+        var world2 = try World.init(testing.allocator, 1024 * 1024);
+        defer world2.deinit();
+        var spatial2 = SpatialSystem.init(testing.allocator);
+        defer spatial2.deinit();
+        var stream = std.io.fixedBufferStream(buffer.items);
+        var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+        defer compiled2.deinit();
+
+        try testing.expectEqual(@as(usize, 1), compiled2.reactive_rules.items.len);
+        const rule = compiled2.reactive_rules.items[0];
+        try testing.expectEqual(WhenEdge.on_arrive, rule.edge);
+        const gate = spatial2.graph.find_waypoint("Gate").?;
+        try testing.expectEqual(@as(u32, gate), rule.clauses[0].object.constant);
+        try testing.expectEqual(world2.lookup_entity("Scout").?.to_int(), rule.clauses[0].subject.constant);
+    }
+    {
+        // The same payload labelled version 2 must not load: that format has no arrival edge.
+        const v2 = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(v2);
+        reseal_for_test(v2, 2);
+        var world2 = try World.init(testing.allocator, 1024 * 1024);
+        defer world2.deinit();
+        var spatial2 = SpatialSystem.init(testing.allocator);
+        defer spatial2.deinit();
+        var stream = std.io.fixedBufferStream(v2);
+        try testing.expectError(error.InvalidWhenEdge, load_package(testing.allocator, stream.reader(), &world2, &spatial2));
     }
 }

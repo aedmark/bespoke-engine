@@ -71,6 +71,8 @@ pub const ReactiveEdge = enum {
     rising,
     falling,
     on_expire,
+    /// Fires when the rule's actor completes a walk at the rule's waypoint (P32-18, D-036).
+    on_arrive,
 };
 
 /// Reactive simulation rule evaluated continuously on tick boundary and state mutations (P8-02, P10-02, D-010, D-012).
@@ -313,11 +315,42 @@ pub const VM = struct {
             }
         }
 
+        // 1b. Check arrival rules (P32-18, D-036). The motor stepped earlier in this tick, so a
+        // walk that completed now fires now. Arrivals are cleared after this pass: each one is
+        // seen by exactly one evaluation, which is what makes the rule an edge and not a level.
+        if (self.spatial) |sp| {
+            for (self.reactive_rules.items) |*rule| {
+                if (rule.edge != .on_arrive or rule.clauses.len == 0) continue;
+                const clause = rule.clauses[0];
+                const actor = switch (clause.subject) {
+                    .constant => |c| EntityId.from_int(c),
+                    else => continue,
+                };
+                const mark = switch (clause.object) {
+                    .constant => |c| c,
+                    else => continue,
+                };
+                const arrived_at = sp.pending_arrival(actor) orelse continue;
+                if (arrived_at != mark) continue;
+
+                const interrupted = try self.interrupt_entity_priority(
+                    rule.target_entity,
+                    @intCast(rule.handler_pc),
+                    rule.priority,
+                );
+                if (!interrupted) {
+                    _ = try self.spawn_routine(rule.target_entity, rule.handler_pc);
+                }
+                fired_count += 1;
+            }
+            sp.clear_arrivals();
+        }
+
         // 2. Check rising and falling edge rules (P8-02, P10-02, D-010, D-012)
         var i: usize = 0;
         while (i < self.reactive_rules.items.len) : (i += 1) {
             var rule = &self.reactive_rules.items[i];
-            if (rule.edge == .on_expire) continue;
+            if (rule.edge == .on_expire or rule.edge == .on_arrive) continue;
 
             const matches = self.world.has_multi_match(rule.clauses);
 
@@ -366,6 +399,7 @@ pub const VM = struct {
                 .rising => .rising,
                 .falling => .falling,
                 .on_expire => .on_expire,
+                .on_arrive => .on_arrive,
             };
             _ = try self.add_reactive_rule_edge(r.target_entity, r.clauses, r.priority, r.handler_pc, edge);
         }

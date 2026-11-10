@@ -523,6 +523,30 @@
           "related": ["relational-facts", "edge-triggered-rules"]
         },
         {
+          "id": "arrival-rules",
+          "title": "Arrival Rules (when arrives at)",
+          "summary": "Fires a reactive routine when an actor completes a walk at a named mark.",
+          "synopsis": "when George arrives at DigOpening: transition to scene: Templar Crypt",
+          "tags": ["arrival", "marks", "walking", "hooks"],
+          "what": "Lets a script react to an actor reaching a mark, so rules such as a guard animal charging whoever reaches a doorway live in the script and not in host code. The rule fires once per completed walk. Resting on the mark, walking through it toward another mark, and being placed there by the host do not fire it.",
+          "how": [
+            "The parser reads when <Actor> arrives at <Mark>: and rejects an undeclared mark or a missing 'at' with line and column.",
+            "Codegen emits a reactive rule with the on_arrive edge and one clause holding the actor and the mark's waypoint id.",
+            "MotorAgent raises arrival_pending when a walk intent completes, including a walk to the mark the actor already stands on.",
+            "VM.evaluate_reactive_rules checks arrival rules after the motor steps in the same tick, interrupts the actor's routine (or spawns one), then clears every pending arrival."
+          ],
+          "why": "A host loop that polls an actor's waypoint each tick is a level check: it re-fires while the actor stands still and keeps game rules outside the script. An edge fired inside the tick needs no host dispatch, so every host gets the same behaviour.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-036", "target": "docs/DECISIONS.md#d-036", "kind": "decision"},
+            {"label": "Arrival pass in the reactive rule engine", "target": "src/vm.zig", "kind": "source"},
+            {"label": "Motor arrival flag", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "Arrival rule tests", "target": "src/compiler.zig", "kind": "source"},
+            {"label": "Lochmarne Goat script", "target": "proofs/goat_puzzle.zig", "kind": "source"}
+          ],
+          "related": ["edge-triggered-rules", "ttl-expiration-triggers"]
+        },
+        {
           "id": "priority-rule-cascades",
           "title": "Priority Rule Cascades & Preemption",
           "summary": "Rules with higher priority preempt lower-priority routines and restore them upon completion.",

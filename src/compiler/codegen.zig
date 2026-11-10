@@ -87,6 +87,11 @@ pub const CompiledProgram = struct {
 
     /// Finds entry PC for a cue handler matching cue name and arguments (P11-01, P11-02, D-013).
     /// Supports ternary item-combining with commutative matching (ItemA on ItemB == ItemB on ItemA).
+    /// Finds the handler for a fired cue (D-009, D-013, D-037). Tried in order, most specific
+    /// first: the exact signature (for two targets, also with the targets swapped), signatures
+    /// whose parameters were declared as variables (stored as `*`), then the actor-only
+    /// handler `on cue X(Actor):`. A cue no declared signature covers has no handler: there is
+    /// no fallback to a handler written for a different actor or target.
     pub fn find_cue_handler(
         self: *const CompiledProgram,
         cue_name: []const u8,
@@ -94,37 +99,62 @@ pub const CompiledProgram = struct {
         target_a: ?[]const u8,
         target_b: ?[]const u8,
     ) ?usize {
-        var buf: [128]u8 = undefined;
+        const who = actor orelse return null;
 
-        // 1. Try ternary signature (Actor + ItemA + ItemB)
-        if (actor != null and target_a != null and target_b != null) {
-            if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ cue_name, actor.?, target_a.?, target_b.? })) |sig| {
-                if (self.cue_handler_entries.get(sig)) |pc| return pc;
-            } else |_| {}
-            // Commutative permutation
-            if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}:{s}", .{ cue_name, actor.?, target_b.?, target_a.? })) |sig| {
-                if (self.cue_handler_entries.get(sig)) |pc| return pc;
-            } else |_| {}
+        if (target_a != null and target_b != null) {
+            const a = target_a.?;
+            const b = target_b.?;
+            const forms = [_][3][]const u8{
+                .{ who, a, b },            .{ who, b, a },
+                .{ who, a, CUE_WILDCARD }, .{ who, CUE_WILDCARD, b },
+                .{ who, b, CUE_WILDCARD }, .{ who, CUE_WILDCARD, a },
+                .{ who, CUE_WILDCARD, CUE_WILDCARD },
+                .{ CUE_WILDCARD, a, b },   .{ CUE_WILDCARD, b, a },
+                .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD },
+            };
+            for (forms) |f| {
+                if (self.lookup_cue(cue_name, &f)) |pc| return pc;
+            }
         }
 
-        // 2. Try binary signature (Actor + TargetA)
-        if (actor != null and target_a != null) {
-            if (std.fmt.bufPrint(&buf, "{s}:{s}:{s}", .{ cue_name, actor.?, target_a.? })) |sig| {
-                if (self.cue_handler_entries.get(sig)) |pc| return pc;
-            } else |_| {}
+        if (target_a) |a| {
+            const forms = [_][2][]const u8{
+                .{ who, a },
+                .{ who, CUE_WILDCARD },
+                .{ CUE_WILDCARD, a },
+                .{ CUE_WILDCARD, CUE_WILDCARD },
+            };
+            for (forms) |f| {
+                if (self.lookup_cue(cue_name, &f)) |pc| return pc;
+            }
         }
 
-        // 3. Try unary signature (Actor only)
-        if (actor != null) {
-            if (std.fmt.bufPrint(&buf, "{s}:{s}", .{ cue_name, actor.? })) |sig| {
-                if (self.cue_handler_entries.get(sig)) |pc| return pc;
-            } else |_| {}
-        }
+        if (self.lookup_cue(cue_name, &.{who})) |pc| return pc;
+        return self.lookup_cue(cue_name, &.{CUE_WILDCARD});
+    }
 
-        // 4. Fallback to cue name alone
-        return self.cue_handler_entries.get(cue_name);
+    fn lookup_cue(self: *const CompiledProgram, cue_name: []const u8, parts: []const []const u8) ?usize {
+        var buf: [192]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buf);
+        const w = stream.writer();
+        w.writeAll(cue_name) catch return null;
+        for (parts) |part| {
+            w.writeByte(':') catch return null;
+            w.writeAll(part) catch return null;
+        }
+        return self.cue_handler_entries.get(stream.getWritten());
     }
 };
+
+/// Stands in a handler signature for a parameter declared as a variable (D-037).
+pub const CUE_WILDCARD = "*";
+
+/// A cue handler parameter is a variable when it starts with `?`, `_`, or a lowercase letter,
+/// the same rule `when` trigger patterns use. Entity names start with an uppercase letter.
+fn cue_param_key(param: []const u8) []const u8 {
+    if (param.len == 0) return CUE_WILDCARD;
+    return if (param[0] == '?' or param[0] == '_' or std.ascii.isLower(param[0])) CUE_WILDCARD else param;
+}
 
 pub const Codegen = struct {
     allocator: std.mem.Allocator,
@@ -288,6 +318,18 @@ pub const Codegen = struct {
             var clauses = std.ArrayList(world_mod.PatternClause).init(mut_self.allocator);
             for (rule.trigger_patterns) |pat| {
                 const rel = try mut_self.resolve_relation(pat.relation);
+                if (rule.edge == .on_arrive) {
+                    // An arrival trigger names an actor and a mark, not a fact: the object is
+                    // the mark's waypoint id, matched against the motor agent (D-036).
+                    const actor = try mut_self.resolve_entity(pat.args[0]);
+                    const mark = mut_self.find_waypoint(pat.args[1]) orelse return error.UnknownArrivalMark;
+                    try clauses.append(.{
+                        .relation = rel,
+                        .subject = .{ .constant = actor.to_int() },
+                        .object = .{ .constant = mark },
+                    });
+                    continue;
+                }
                 const subj = try mut_self.resolve_pattern_term(pat.args[0], &var_map, &next_var);
                 const obj = if (pat.args.len > 1)
                     try mut_self.resolve_pattern_term(pat.args[1], &var_map, &next_var)
@@ -350,29 +392,22 @@ pub const Codegen = struct {
         for (ast.cue_handlers.items) |cue| {
             const entry_pc = mut_self.chunk.count();
 
-            // Register fallback key
-            if (!mut_self.cue_handler_entries.contains(cue.cue_name)) {
-                try mut_self.cue_handler_entries.put(cue.cue_name, entry_pc);
-            }
-
+            // One key per declared signature. Parameters declared as variables are stored as
+            // `*`; there is no key for the bare cue name, so an unmatched cue finds nothing
+            // (D-037).
             if (cue.params.len == 1) {
-                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}", .{ cue.cue_name, cue.params[0] });
+                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]) });
                 try mut_self.allocated_cue_keys.append(sig);
                 try mut_self.cue_handler_entries.put(sig, entry_pc);
             } else if (cue.params.len == 2) {
-                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}", .{ cue.cue_name, cue.params[0], cue.params[1] });
+                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]), cue_param_key(cue.params[1]) });
                 try mut_self.allocated_cue_keys.append(sig);
                 try mut_self.cue_handler_entries.put(sig, entry_pc);
             } else if (cue.params.len >= 3) {
-                // Primary signature: Uses:Actor:ItemA:ItemB
-                const sig1 = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue.params[0], cue.params[1], cue.params[2] });
-                try mut_self.allocated_cue_keys.append(sig1);
-                try mut_self.cue_handler_entries.put(sig1, entry_pc);
-
-                // Commutative permutation for in-hand item combining: Uses:Actor:ItemB:ItemA
-                const sig2 = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue.params[0], cue.params[2], cue.params[1] });
-                try mut_self.allocated_cue_keys.append(sig2);
-                try mut_self.cue_handler_entries.put(sig2, entry_pc);
+                // Uses:Actor:ItemA:ItemB; lookup also tries the two items swapped (D-013).
+                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]), cue_param_key(cue.params[1]), cue_param_key(cue.params[2]) });
+                try mut_self.allocated_cue_keys.append(sig);
+                try mut_self.cue_handler_entries.put(sig, entry_pc);
             }
 
             for (cue.body) |stmt| {
@@ -651,6 +686,14 @@ pub const Codegen = struct {
         }
     }
 
+    fn find_waypoint(self: *Codegen, name: []const u8) ?u16 {
+        const sp = self.spatial orelse return null;
+        for (sp.graph.waypoints.items) |wp| {
+            if (std.mem.eql(u8, wp.name, name)) return wp.id;
+        }
+        return null;
+    }
+
     fn resolve_waypoint(self: *Codegen, name: []const u8) !u16 {
         if (self.spatial) |sp| {
             for (sp.graph.waypoints.items) |wp| {
@@ -735,7 +778,8 @@ test "P7-02: codegen compiles verb declarations and say statements into cue emit
     var compiled = try codegen.compile(&ast);
     defer compiled.deinit();
 
-    try testing.expect(compiled.cue_handler_entries.contains("TalkTo"));
+    try testing.expect(compiled.cue_handler_entries.contains("TalkTo:*:*"));
+    try testing.expect(!compiled.cue_handler_entries.contains("TalkTo"));
 }
 
 test "P8-02: codegen compiles multi-clause when rules into reactive rules executed on VM" {

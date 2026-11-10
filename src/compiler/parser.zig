@@ -106,7 +106,12 @@ pub const WhenEdge = enum {
     rising, // when Condition: (or when currently Condition:)
     falling, // when Condition stops being State:
     on_expire, // when Entity forgets Relation:
+    on_arrive, // when Actor arrives at Mark:
 };
+
+/// Relation naming the single trigger pattern of an arrival rule: `ArrivesAt(Actor, Mark)`.
+/// It is never asserted as a fact; codegen resolves the mark to a waypoint id (P32-18, D-036).
+pub const ARRIVES_RELATION = "ArrivesAt";
 
 pub const WhenRule = struct {
     edge: WhenEdge = .rising,
@@ -199,6 +204,13 @@ pub const Diagnostic = struct {
     message: []const u8,
 };
 
+/// Source position of an arrival rule's mark, kept so undeclared marks report where they were used.
+const ArrivalRef = struct {
+    mark: []const u8,
+    line: u32,
+    column: u32,
+};
+
 pub const Parser = struct {
     lexer: *Lexer,
     current: Token,
@@ -206,6 +218,7 @@ pub const Parser = struct {
     diagnostic: ?Diagnostic = null,
     diag_buf: [256]u8 = undefined,
     weave_refs: std.ArrayList(WeaveRef),
+    arrival_refs: std.ArrayList(ArrivalRef),
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -215,6 +228,7 @@ pub const Parser = struct {
             .diagnostic = null,
             .diag_buf = undefined,
             .weave_refs = std.ArrayList(WeaveRef).init(allocator),
+            .arrival_refs = std.ArrayList(ArrivalRef).init(allocator),
         };
         try p.advance();
         return p;
@@ -385,6 +399,9 @@ pub const Parser = struct {
                         try self.advance();
                         if (self.current.tag == .comma) try self.advance();
                     }
+                    if (params.items.len == 0) {
+                        return self.set_error("a cue handler needs an actor parameter", .{});
+                    }
                     _ = try self.expect(.rparen);
 
                     var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
@@ -420,6 +437,9 @@ pub const Parser = struct {
                         try params.append(self.current.slice);
                         try self.advance();
                         if (self.current.tag == .comma) try self.advance();
+                    }
+                    if (params.items.len == 0) {
+                        return self.set_error("a cue handler needs an actor parameter", .{});
                     }
                     _ = try self.expect(.rparen);
 
@@ -466,6 +486,24 @@ pub const Parser = struct {
                             pat_args[1] = "_";
                             try trigger_patterns.append(.{
                                 .relation = rel_name,
+                                .args = pat_args,
+                            });
+                        } else if (self.current.tag == .kw_arrives) {
+                            try self.advance();
+                            // `at` stays an ordinary word so names may still contain it.
+                            if (self.current.tag != .identifier or !std.mem.eql(u8, self.current.slice, "at")) {
+                                return self.set_error("expected 'at' after 'arrives', found '{s}'", .{self.current.slice});
+                            }
+                            try self.advance();
+                            const mark_tok = self.current;
+                            const mark_name = try self.parse_name();
+                            try self.arrival_refs.append(.{ .mark = mark_name, .line = mark_tok.line, .column = mark_tok.col });
+                            edge = .on_arrive;
+                            var pat_args = try self.allocator.alloc([]const u8, 2);
+                            pat_args[0] = first_name;
+                            pat_args[1] = mark_name;
+                            try trigger_patterns.append(.{
+                                .relation = ARRIVES_RELATION,
                                 .args = pat_args,
                             });
                         } else if (self.current.tag == .kw_stops) {
@@ -635,7 +673,28 @@ pub const Parser = struct {
             }
         }
 
+        // An arrival rule must name a declared mark: an unknown one could never fire (D-036).
+        for (self.arrival_refs.items) |ref| {
+            if (!mark_declared(&ast, ref.mark)) {
+                const msg = std.fmt.bufPrint(&self.diag_buf, "arrival at undeclared mark '{s}'", .{ref.mark}) catch "arrival at undeclared mark";
+                self.diagnostic = .{ .line = ref.line, .column = ref.column, .message = msg };
+                return error.UnexpectedToken;
+            }
+        }
+
         return ast;
+    }
+
+    fn mark_declared(ast: *const AST, name: []const u8) bool {
+        for (ast.marks.items) |m| {
+            if (std.mem.eql(u8, m, name)) return true;
+        }
+        for (ast.scene_defs.items) |scene| {
+            for (scene.marks.items) |m| {
+                if (std.mem.eql(u8, m, name)) return true;
+            }
+        }
+        return false;
     }
 
     /// Parses `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` and rejects any sequence that

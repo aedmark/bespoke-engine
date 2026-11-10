@@ -208,6 +208,11 @@ pub const MotorAgent = struct {
     speed: u32, // units per tick
     is_moving: bool,
     arrived: bool,
+    /// Set when a walk intent completes, including a walk to the waypoint the agent already
+    /// stands on; cleared once the VM has evaluated arrival rules (P32-18, D-036). Unlike
+    /// `arrived`, which stays true while the agent rests, this marks the arrival itself. A
+    /// teleport (`transition_actor`) is not an arrival.
+    arrival_pending: bool = false,
 
     pub fn init(entity: EntityId, start_wp: WaypointId, pos: Point2D, speed: u32) MotorAgent {
         return MotorAgent{
@@ -242,6 +247,7 @@ pub const MotorAgent = struct {
         }
         self.is_moving = self.path_index < path.len;
         self.arrived = !self.is_moving;
+        if (self.arrived and path.len > 0) self.arrival_pending = true;
         if (path.len > 0) {
             self.target_wp = path[path.len - 1];
         }
@@ -255,6 +261,7 @@ pub const MotorAgent = struct {
         if (self.path_index >= path.len) {
             self.is_moving = false;
             self.arrived = true;
+            self.arrival_pending = true;
             return;
         }
 
@@ -274,6 +281,7 @@ pub const MotorAgent = struct {
             if (self.path_index >= path.len) {
                 self.is_moving = false;
                 self.arrived = true;
+                self.arrival_pending = true;
             }
         } else {
             // Step speed units toward next waypoint
@@ -439,6 +447,8 @@ pub const SpatialSystem = struct {
             agent.target_wp = null;
             agent.is_moving = false;
             agent.arrived = true;
+            // Being placed is not arriving: arrival rules react to completed walks only (D-036).
+            agent.arrival_pending = false;
             return true;
         } else {
             try self.register_entity(entity, dest_wp_id, 2);
@@ -463,6 +473,10 @@ pub const SpatialSystem = struct {
         const agent = self.agents.getPtr(entity) orelse return false;
         if (agent.current_wp == dest) {
             agent.arrived = true;
+            // An agent still moving here has left `dest` and is between waypoints; its old path
+            // keeps running (a known motor gap, see ARCHITECTURE, Claims vs. code), so this is
+            // not an arrival.
+            if (!agent.is_moving) agent.arrival_pending = true;
             return true;
         }
 
@@ -472,6 +486,19 @@ pub const SpatialSystem = struct {
             return true;
         }
         return false;
+    }
+
+    /// The waypoint `entity` arrived at since arrivals were last cleared, or null (P32-18, D-036).
+    pub fn pending_arrival(self: *const SpatialSystem, entity: EntityId) ?WaypointId {
+        const agent = self.agents.getPtr(entity) orelse return null;
+        return if (agent.arrival_pending) agent.current_wp else null;
+    }
+
+    /// Forgets every pending arrival. The VM calls this after evaluating arrival rules, so an
+    /// arrival is visible to exactly one rule pass.
+    pub fn clear_arrivals(self: *SpatialSystem) void {
+        var it = self.agents.valueIterator();
+        while (it.next()) |agent| agent.arrival_pending = false;
     }
 
     /// Advances all motor agents by 1 tick (P3-02).

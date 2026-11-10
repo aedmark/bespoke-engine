@@ -37,6 +37,9 @@ pub const GOAT_PUZZLE_SCRIPT =
     \\    say George: "That only seemed to make him angrier."
     \\
     \\on cue Uses(George, CellarEntrance):
+    \\  walk George to DigOpening
+    \\
+    \\when George arrives at DigOpening:
     \\  if BillyGoat is tangled:
     \\    say George: "With the goat tangled around the plough, the way down is clear!"
     \\    transition to scene: Templar Crypt
@@ -47,8 +50,12 @@ pub const GOAT_PUZZLE_SCRIPT =
     \\    now George is knocked_down
     \\    remember GoatRetreating(BillyGoat, true) for 30 ticks
     \\    walk BillyGoat to TetherCenter
+    \\    walk George to FallMark
     \\
     \\on cue Uses(George, FarmPlough):
+    \\  walk George to PloughMark
+    \\
+    \\when George arrives at PloughMark:
     \\  if BillyGoat is tangled:
     \\    say George: "The plough is already locking the goat's tether in place."
     \\  if BillyGoat is not tangled:
@@ -64,6 +71,9 @@ pub const GOAT_PUZZLE_SCRIPT =
     \\    if not GoatRetreating(BillyGoat):
     \\      say George: "If I try to move the heavy plough now, the goat will just butt me before I can budge it."
     \\
+    \\when George arrives at CryptLadder:
+    \\  transition to scene: Lochmarne Castle Courtyard
+    \\
     \\on cue LooksAt(George, CarvedMural):
     \\  say George: "A centuries-old stone carving of a Templar knight holding a chalice. Peagram's dig site was right on the trail!"
     \\
@@ -73,18 +83,10 @@ pub const GOAT_PUZZLE_SCRIPT =
 
 /// Evaluates whether the Billy Goat has been tangled around the plough (P20-01, D-023).
 pub fn evaluate_goat_tangled(world: *const bespoke.World) bool {
+    // The exact fact the script's `now BillyGoat is tangled` writes (P32-19).
     const goat = world.lookup_entity("BillyGoat") orelse return false;
-
-    if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled")) |rel| {
-        if (world.has_fact(goat, rel, null)) return true;
-    }
-    if (world.lookup_relation("TangledWith")) |rel| {
-        if (world.has_fact(goat, rel, null)) return true;
-    }
-    if (world.lookup_relation("PloughMoved")) |rel| {
-        if (world.has_fact(null, rel, 1)) return true;
-    }
-    return false;
+    const rel = world.lookup_relation("tangled") orelse return false;
+    return world.has_fact(goat, rel, null);
 }
 
 /// Evaluates whether George has descended into the subterranean Templar Crypt (P20-01, D-023).
@@ -95,6 +97,142 @@ pub fn evaluate_crypt_entered(world: *const bespoke.World, vm: *const bespoke.VM
                 return true;
             }
         }
+    }
+    return false;
+}
+
+/// Entities and marks of the two scenes, laid out and connected for both runners and the tests.
+const Stage = struct {
+    courtyard_scene: bespoke.EntityId,
+    crypt_scene: bespoke.EntityId,
+    george: bespoke.EntityId,
+    goat: bespoke.EntityId,
+    cellar_entrance: bespoke.EntityId,
+    farm_plough: bespoke.EntityId,
+    carved_mural: bespoke.EntityId,
+    crypt_altar: bespoke.EntityId,
+    entrance_wp: bespoke.WaypointId,
+    plough_wp: bespoke.WaypointId,
+    tether_wp: bespoke.WaypointId,
+    dig_wp: bespoke.WaypointId,
+    crypt_ladder_wp: bespoke.WaypointId,
+    altar_wp: bespoke.WaypointId,
+
+    fn init(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Stage {
+        const courtyard_scene = world.lookup_entity("Lochmarne Castle Courtyard").?;
+        const crypt_scene = world.lookup_entity("Templar Crypt").?;
+        const george = world.lookup_entity("George").?;
+        const goat = world.lookup_entity("BillyGoat").?;
+
+        const entrance_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "CourtyardEntrance") orelse 1;
+        const fall_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "FallMark") orelse 2;
+        const plough_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "PloughMark") orelse 3;
+        const tether_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "TetherCenter") orelse 4;
+        const dig_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "DigOpening") orelse 5;
+        const crypt_ladder_wp = spatial.graph.find_waypoint_in_room(crypt_scene, "CryptLadder") orelse 6;
+        const altar_wp = spatial.graph.find_waypoint_in_room(crypt_scene, "AltarMark") orelse 7;
+
+        // Calibrate coordinates for 1280x720 standardized layout
+        bespoke.host.place_waypoint(spatial, entrance_wp, 4, 0);
+        bespoke.host.place_waypoint(spatial, fall_wp, 8, 0);
+        bespoke.host.place_waypoint(spatial, plough_wp, 10, 8);
+        bespoke.host.place_waypoint(spatial, tether_wp, 16, 0);
+        bespoke.host.place_waypoint(spatial, dig_wp, 28, 0);
+        bespoke.host.place_waypoint(spatial, crypt_ladder_wp, 4, 0);
+        bespoke.host.place_waypoint(spatial, altar_wp, 20, 0);
+
+        spatial.graph.edges.clearRetainingCapacity();
+        try spatial.graph.connect(entrance_wp, fall_wp, null);
+        try spatial.graph.connect(fall_wp, tether_wp, null);
+        try spatial.graph.connect(fall_wp, plough_wp, null);
+        try spatial.graph.connect(plough_wp, tether_wp, null);
+        try spatial.graph.connect(tether_wp, dig_wp, null);
+        try spatial.graph.connect(crypt_ladder_wp, altar_wp, null);
+
+        const cellar_entrance = world.lookup_entity("CellarEntrance").?;
+        const farm_plough = world.lookup_entity("FarmPlough").?;
+        const tether_stake = world.lookup_entity("TetherStake").?;
+        const carved_mural = world.lookup_entity("CarvedMural").?;
+        const crypt_altar = world.lookup_entity("CryptAltar").?;
+
+        try spatial.add_hotspot(cellar_entrance, courtyard_scene, .{ .x = 28, .y = -4 }, 8, "Cellar Entrance", "A dark excavation pit leading down into the subterranean ruins.");
+        try spatial.add_hotspot(farm_plough, courtyard_scene, .{ .x = 10, .y = 8 }, 8, "Farm Plough", "An old, heavy iron farm plough resting in the weeds.");
+        try spatial.add_hotspot(tether_stake, courtyard_scene, .{ .x = 16, .y = -4 }, 6, "Tether Stake", "A sturdy wooden post driven into the Irish turf.");
+        try spatial.add_hotspot(crypt_altar, crypt_scene, .{ .x = 20, .y = -4 }, 8, "Crypt Altar", "An ancient Templar stone altar carved with medieval inscriptions.");
+        try spatial.add_hotspot(carved_mural, crypt_scene, .{ .x = 30, .y = -6 }, 8, "Carved Mural", "A wall carving of a Knights Templar bearing a chalice.");
+
+        // Register actors at starting waypoints
+        try spatial.register_entity(george, entrance_wp, 10);
+        try spatial.register_entity(goat, tether_wp, 8);
+
+        // Initial fact assertions
+        const tether_rel = try world.intern_relation("TetheredTo", .set);
+        try world.remember(goat, tether_rel, tether_stake.to_int(), 0);
+
+        return .{
+            .courtyard_scene = courtyard_scene,
+            .crypt_scene = crypt_scene,
+            .george = george,
+            .goat = goat,
+            .cellar_entrance = cellar_entrance,
+            .farm_plough = farm_plough,
+            .carved_mural = carved_mural,
+            .crypt_altar = crypt_altar,
+            .entrance_wp = entrance_wp,
+            .plough_wp = plough_wp,
+            .tether_wp = tether_wp,
+            .dig_wp = dig_wp,
+            .crypt_ladder_wp = crypt_ladder_wp,
+            .altar_wp = altar_wp,
+        };
+    }
+
+    /// Puts George at the foot or head of the ladder when a tick changed the scene. The script
+    /// decides the transition (arrival rules, P32-18); where an actor stands in the new scene
+    /// is layout. Placing is not arriving, so this cannot re-trigger the rule that fired.
+    fn follow_scene(self: Stage, vm: *const bespoke.VM, spatial: *bespoke.SpatialSystem, before: ?bespoke.EntityId) !bool {
+        const now = vm.current_scene orelse return false;
+        if (before != null and before.? == now) return false;
+        if (now == self.crypt_scene) {
+            _ = try spatial.transition_actor(self.george, self.crypt_scene, self.crypt_ladder_wp);
+        } else if (now == self.courtyard_scene) {
+            _ = try spatial.transition_actor(self.george, self.courtyard_scene, self.dig_wp);
+        }
+        return true;
+    }
+};
+
+/// Upper bound on the ticks one scripted walk and its arrival rule may take in the headless run.
+const MAX_WALK_TICKS: usize = 40;
+
+const Outcome = enum { goat_retreating, goat_tangled, crypt_entered };
+
+fn reached(outcome: Outcome, world: *const bespoke.World, vm: *const bespoke.VM, stage: Stage) bool {
+    return switch (outcome) {
+        .goat_retreating => world.has_fact(stage.goat, world.lookup_relation("GoatRetreating") orelse return false, null),
+        .goat_tangled => evaluate_goat_tangled(world),
+        .crypt_entered => evaluate_crypt_entered(world, vm),
+    };
+}
+
+/// Fires `Uses(George, target)` and ticks until the walk it starts has arrived and the arrival
+/// rule has produced `outcome`. Returns false if the bound runs out first.
+fn use_and_walk(
+    world: *bespoke.World,
+    spatial: *bespoke.SpatialSystem,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    stage: Stage,
+    target: bespoke.EntityId,
+    outcome: Outcome,
+) !bool {
+    _ = try vm.fire_cue(compiled, "Uses", stage.george, target, null);
+    var ticks: usize = 0;
+    while (ticks < MAX_WALK_TICKS) : (ticks += 1) {
+        const scene_before = vm.current_scene;
+        _ = try bespoke.host.tick(vm, compiled);
+        _ = try stage.follow_scene(vm, spatial, scene_before);
+        if (reached(outcome, world, vm, stage)) return true;
     }
     return false;
 }
@@ -116,67 +254,14 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, GOAT_PUZZLE_SCRIPT);
     defer compiled.deinit();
 
-    // Scene Room Entities
-    const courtyard_scene = world.lookup_entity("Lochmarne Castle Courtyard").?;
-    const crypt_scene = world.lookup_entity("Templar Crypt").?;
-
-    // Actor Entities
-    const george = world.lookup_entity("George").?;
-    const goat = world.lookup_entity("BillyGoat").?;
-
-    // Spatial Marks
-    const entrance_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "CourtyardEntrance") orelse 1;
-    const fall_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "FallMark") orelse 2;
-    const plough_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "PloughMark") orelse 3;
-    const tether_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "TetherCenter") orelse 4;
-    const dig_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "DigOpening") orelse 5;
-
-    const crypt_ladder_wp = spatial.graph.find_waypoint_in_room(crypt_scene, "CryptLadder") orelse 6;
-    const altar_wp = spatial.graph.find_waypoint_in_room(crypt_scene, "AltarMark") orelse 7;
-
-    // Calibrate coordinates for 1280x720 standardized layout
-    if (spatial.graph.get_waypoint(entrance_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 4, .y = 0 };
-    if (spatial.graph.get_waypoint(fall_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 8, .y = 0 };
-    if (spatial.graph.get_waypoint(plough_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 10, .y = 8 };
-    if (spatial.graph.get_waypoint(tether_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(dig_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 28, .y = 0 };
-
-    if (spatial.graph.get_waypoint(crypt_ladder_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 4, .y = 0 };
-    if (spatial.graph.get_waypoint(altar_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 20, .y = 0 };
-
-    spatial.graph.edges.clearRetainingCapacity();
-    try spatial.graph.connect(entrance_wp, fall_wp, null);
-    try spatial.graph.connect(fall_wp, tether_wp, null);
-    try spatial.graph.connect(fall_wp, plough_wp, null);
-    try spatial.graph.connect(plough_wp, tether_wp, null);
-    try spatial.graph.connect(tether_wp, dig_wp, null);
-    try spatial.graph.connect(crypt_ladder_wp, altar_wp, null);
-
-    const cellar_entrance = world.lookup_entity("CellarEntrance").?;
-    const farm_plough = world.lookup_entity("FarmPlough").?;
-    const tether_stake = world.lookup_entity("TetherStake").?;
-    const carved_mural = world.lookup_entity("CarvedMural").?;
-    const crypt_altar = world.lookup_entity("CryptAltar").?;
-
-    try spatial.add_hotspot(cellar_entrance, courtyard_scene, .{ .x = 28, .y = -4 }, 8, "Cellar Entrance", "A dark excavation pit leading down into the subterranean ruins.");
-    try spatial.add_hotspot(farm_plough, courtyard_scene, .{ .x = 10, .y = 8 }, 8, "Farm Plough", "An old, heavy iron farm plough resting in the weeds.");
-    try spatial.add_hotspot(tether_stake, courtyard_scene, .{ .x = 16, .y = -4 }, 6, "Tether Stake", "A sturdy wooden post driven into the Irish turf.");
-    try spatial.add_hotspot(crypt_altar, crypt_scene, .{ .x = 20, .y = -4 }, 8, "Crypt Altar", "An ancient Templar stone altar carved with medieval inscriptions.");
-    try spatial.add_hotspot(carved_mural, crypt_scene, .{ .x = 30, .y = -6 }, 8, "Carved Mural", "A wall carving of a Knights Templar bearing a chalice.");
-
-    // Register actors at starting waypoints
-    try spatial.register_entity(george, entrance_wp, 10);
-    try spatial.register_entity(goat, tether_wp, 8);
-
-    // Initial fact assertions
-    const tether_rel = try world.intern_relation("TetheredTo", .set);
-    try world.remember(goat, tether_rel, tether_stake.to_int(), 0);
+    const stage = try Stage.init(&world, &spatial);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
 
-    try vm.transition_to_scene(courtyard_scene);
+    try vm.transition_to_scene(stage.courtyard_scene);
 
     var display_bridge = bespoke.display.DisplayBridge.init();
 
@@ -186,19 +271,17 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try world.save_state(snapshot_0.writer());
 
     try writer.print("\n[Step 1] Initial Inspection: George arrives at Lochmarne Castle Courtyard.\n", .{});
-    _ = try vm.fire_cue(&compiled, "LooksAt", george, goat, null);
-    try vm.step_tick();
+    _ = try vm.fire_cue(&compiled, "LooksAt", stage.george, stage.goat, null);
+    _ = try bespoke.host.tick(&vm, &compiled);
     display_bridge.capture_frame(&world, &spatial, &vm);
     try writer.print("  -> Fact count: {d}, George at CourtyardEntrance, Goat at TetherCenter\n", .{world.fact_count()});
 
+    // Steps 2 to 4 walk George to a mark; the script's arrival rules do the rest (P32-18).
     try writer.print("\n[Step 2] Threat Radius Exploration: George approaches CellarEntrance.\n", .{});
-    _ = try vm.fire_cue(&compiled, "Uses", george, cellar_entrance, null);
-    try vm.step_tick();
+    const is_retreating = try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.cellar_entrance, .goat_retreating);
     display_bridge.capture_frame(&world, &spatial, &vm);
 
     // Verify headbutt knockback and 30-tick retreat window
-    const retreating_rel = world.lookup_relation("GoatRetreating").?;
-    const is_retreating = world.has_fact(goat, retreating_rel, null);
     try writer.print("  -> Goat reactive charge triggered! George knocked down to FallMark.\n", .{});
     try writer.print("  -> Goat retreating window active: {any} (30 ticks remaining)\n", .{is_retreating});
 
@@ -207,38 +290,34 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     }
 
     try writer.print("\n[Step 3] Seizing the Window: George hauls FarmPlough while goat retreats!\n", .{});
-    _ = try vm.fire_cue(&compiled, "Uses", george, farm_plough, null);
-    try vm.step_tick();
+    const is_tangled = try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.farm_plough, .goat_tangled);
     display_bridge.capture_frame(&world, &spatial, &vm);
 
-    const is_tangled = evaluate_goat_tangled(&world);
     try writer.print("  -> Plough hauled into rope path! Goat tangled status: {any}\n", .{is_tangled});
     if (!is_tangled) {
         return error.GoatNotTangled;
     }
 
     try writer.print("\n[Step 4] Accessing the Dig: George descends into CellarEntrance.\n", .{});
-    _ = try vm.fire_cue(&compiled, "Uses", george, cellar_entrance, null);
-    try vm.step_tick();
+    const entered_crypt = try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.cellar_entrance, .crypt_entered);
     display_bridge.capture_frame(&world, &spatial, &vm);
 
-    const entered_crypt = evaluate_crypt_entered(&world, &vm);
     try writer.print("  -> Multi-scene transition to Templar Crypt successful: {any}\n", .{entered_crypt});
     if (!entered_crypt) {
         return error.FailedToEnterCrypt;
     }
 
     try writer.print("\n[Step 5] Archaeological Discovery: George examines the CarvedMural.\n", .{});
-    _ = try vm.fire_cue(&compiled, "LooksAt", george, carved_mural, null);
-    try vm.step_tick();
+    _ = try vm.fire_cue(&compiled, "LooksAt", stage.george, stage.carved_mural, null);
+    _ = try bespoke.host.tick(&vm, &compiled);
     display_bridge.capture_frame(&world, &spatial, &vm);
 
     try writer.print("\n[Step 6] Time-Travel Rewind Verification: Restoring pristine Courtyard state.\n", .{});
     var stream = std.io.fixedBufferStream(snapshot_0.items);
     try world.restore_state(stream.reader());
-    vm.current_scene = courtyard_scene;
-    _ = try spatial.transition_actor(george, courtyard_scene, entrance_wp);
-    _ = try spatial.transition_actor(goat, courtyard_scene, tether_wp);
+    vm.current_scene = stage.courtyard_scene;
+    _ = try spatial.transition_actor(stage.george, stage.courtyard_scene, stage.entrance_wp);
+    _ = try spatial.transition_actor(stage.goat, stage.courtyard_scene, stage.tether_wp);
     display_bridge.capture_frame(&world, &spatial, &vm);
 
     const is_tangled_after_rewind = evaluate_goat_tangled(&world);
@@ -263,60 +342,24 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, GOAT_PUZZLE_SCRIPT);
     defer compiled.deinit();
 
-    const courtyard_scene = world.lookup_entity("Lochmarne Castle Courtyard").?;
-    const crypt_scene = world.lookup_entity("Templar Crypt").?;
-
-    const george = world.lookup_entity("George").?;
-    const goat = world.lookup_entity("BillyGoat").?;
-
-    const entrance_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "CourtyardEntrance") orelse 1;
-    const fall_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "FallMark") orelse 2;
-    const plough_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "PloughMark") orelse 3;
-    const tether_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "TetherCenter") orelse 4;
-    const dig_wp = spatial.graph.find_waypoint_in_room(courtyard_scene, "DigOpening") orelse 5;
-
-    const crypt_ladder_wp = spatial.graph.find_waypoint_in_room(crypt_scene, "CryptLadder") orelse 6;
-    const altar_wp = spatial.graph.find_waypoint_in_room(crypt_scene, "AltarMark") orelse 7;
-
-    // Calibrate coordinates for 1280x720 standardized layout
-    if (spatial.graph.get_waypoint(entrance_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 4, .y = 0 };
-    if (spatial.graph.get_waypoint(fall_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 8, .y = 0 };
-    if (spatial.graph.get_waypoint(plough_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 10, .y = 8 };
-    if (spatial.graph.get_waypoint(tether_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(dig_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 28, .y = 0 };
-
-    if (spatial.graph.get_waypoint(crypt_ladder_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 4, .y = 0 };
-    if (spatial.graph.get_waypoint(altar_wp)) |wp| spatial.graph.waypoints.items[wp.id - 1].pos = .{ .x = 20, .y = 0 };
-
-    spatial.graph.edges.clearRetainingCapacity();
-    try spatial.graph.connect(entrance_wp, fall_wp, null);
-    try spatial.graph.connect(fall_wp, tether_wp, null);
-    try spatial.graph.connect(fall_wp, plough_wp, null);
-    try spatial.graph.connect(plough_wp, tether_wp, null);
-    try spatial.graph.connect(tether_wp, dig_wp, null);
-    try spatial.graph.connect(crypt_ladder_wp, altar_wp, null);
-
-    const cellar_entrance = world.lookup_entity("CellarEntrance").?;
-    const farm_plough = world.lookup_entity("FarmPlough").?;
-    const tether_stake = world.lookup_entity("TetherStake").?;
-    const carved_mural = world.lookup_entity("CarvedMural").?;
-    const crypt_altar = world.lookup_entity("CryptAltar").?;
-
-    try spatial.add_hotspot(cellar_entrance, courtyard_scene, .{ .x = 28, .y = -4 }, 8, "Cellar Entrance", "A dark excavation pit leading down into the subterranean ruins.");
-    try spatial.add_hotspot(farm_plough, courtyard_scene, .{ .x = 10, .y = 8 }, 8, "Farm Plough", "An old, heavy iron farm plough resting in the weeds.");
-    try spatial.add_hotspot(tether_stake, courtyard_scene, .{ .x = 16, .y = -4 }, 6, "Tether Stake", "A sturdy wooden post driven into the Irish turf.");
-    try spatial.add_hotspot(crypt_altar, crypt_scene, .{ .x = 20, .y = -4 }, 8, "Crypt Altar", "An ancient Templar stone altar carved with medieval inscriptions.");
-    try spatial.add_hotspot(carved_mural, crypt_scene, .{ .x = 30, .y = -6 }, 8, "Carved Mural", "A wall carving of a Knights Templar bearing a chalice.");
-
-    try spatial.register_entity(george, entrance_wp, 10);
-    try spatial.register_entity(goat, tether_wp, 8);
-
-    const tether_rel = try world.intern_relation("TetheredTo", .set);
-    try world.remember(goat, tether_rel, tether_stake.to_int(), 0);
+    const stage = try Stage.init(&world, &spatial);
+    const courtyard_scene = stage.courtyard_scene;
+    const crypt_scene = stage.crypt_scene;
+    const george = stage.george;
+    const goat = stage.goat;
+    const farm_plough = stage.farm_plough;
+    const carved_mural = stage.carved_mural;
+    const crypt_altar = stage.crypt_altar;
+    const entrance_wp = stage.entrance_wp;
+    const plough_wp = stage.plough_wp;
+    const dig_wp = stage.dig_wp;
+    const crypt_ladder_wp = stage.crypt_ladder_wp;
+    const altar_wp = stage.altar_wp;
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
     try vm.transition_to_scene(courtyard_scene);
 
     var display_bridge = bespoke.display.DisplayBridge.init();
@@ -353,6 +396,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     window.set_cue_banner("Lochmarne Castle: Navigate past the fierce Billy Goat to reach Peagram's dig! [C/T] [1-4]", 180);
 
     const retreating_rel = world.lookup_relation("GoatRetreating").?;
+    const knocked_rel = world.lookup_relation("KnockedDown").?;
 
     while (true) {
         const action = window.poll_events(session.frame());
@@ -361,16 +405,11 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
             .walk_player => |wp_id| {
-                if (world.has_fact(george, world.lookup_relation("KnockedDown").?, null)) {
+                if (world.has_fact(george, knocked_rel, null)) {
                     window.set_cue_banner("George is knocked flat on his back! Recovering...", 60);
                 } else {
-                    const from_wp = spatial.get_current_waypoint(george);
+                    // Walking is all the host does; the script reacts when George arrives.
                     _ = try spatial.walk_to(george, wp_id);
-                    if (vm.current_scene == crypt_scene and wp_id == crypt_ladder_wp and from_wp != null and from_wp.? != crypt_ladder_wp) {
-                        try vm.transition_to_scene(courtyard_scene);
-                        _ = try spatial.transition_actor(george, courtyard_scene, dig_wp);
-                        window.set_cue_banner("Climbed ladder back up into the castle ruins courtyard! [T] Crypt", 120);
-                    }
                     display_bridge.capture_frame(&world, &spatial, &vm);
                     display_bridge.swap();
                     window.set_cue_banner("Directing George to waypoint.", 60);
@@ -390,7 +429,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         } else if (act.verb == .use_with or act.verb == .pick_up) {
                             if (world.has_fact(goat, retreating_rel, null)) {
                                 _ = try vm.fire_cue(&compiled, "Uses", george, farm_plough, null);
-                                window.set_cue_banner("★ VICTORY! Hauled plough into the rope! Goat is tangled and secured! ★", 180);
+                                window.set_cue_banner("George dashes for the heavy iron farm plough...", 90);
                             } else {
                                 window.set_cue_banner("George: 'I'm not getting within reach of those horns without a plan!'", 120);
                             }
@@ -511,31 +550,27 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
         // Stepping simulation clock
         if (session.tick_due()) {
+            const scene_before = vm.current_scene;
+            const was_down = world.has_fact(george, knocked_rel, null);
+            const was_tangled = evaluate_goat_tangled(&world);
+
             _ = try bespoke.host.tick(&vm, &compiled);
 
-            // Check George arrival events at key marks
-            if (spatial.get_current_waypoint(george)) |cur_wp| {
-                if (vm.current_scene == courtyard_scene) {
-                    if (cur_wp == dig_wp) {
-                        if (evaluate_goat_tangled(&world)) {
-                            try vm.transition_to_scene(crypt_scene);
-                            _ = try spatial.transition_actor(george, crypt_scene, crypt_ladder_wp);
-                            window.set_cue_banner("★ Descended ladder into subterranean Templar Crypt! [C] Return to Courtyard ★", 180);
-                        } else {
-                            _ = try vm.fire_cue(&compiled, "Uses", george, cellar_entrance, null);
-                            _ = try spatial.transition_actor(george, courtyard_scene, fall_wp);
-                            window.set_cue_banner("★ Billy Goat charges! George is knocked flat! (30-tick retreat window active!) ★", 180);
-                        }
-                    } else if (cur_wp == plough_wp) {
-                        if (world.has_fact(goat, retreating_rel, null) and !evaluate_goat_tangled(&world)) {
-                            _ = try vm.fire_cue(&compiled, "Uses", george, farm_plough, null);
-                            window.set_cue_banner("★ VICTORY! Hauled plough into the rope! Goat is tangled and secured! ★", 180);
-                        }
-                    }
+            // The script's arrival rules decided what happened this tick (P32-18); the host
+            // only places George in a new scene and narrates the change.
+            if (try stage.follow_scene(&vm, &spatial, scene_before)) {
+                if (vm.current_scene == crypt_scene) {
+                    window.set_cue_banner("★ Descended ladder into subterranean Templar Crypt! [C] Return to Courtyard ★", 180);
+                } else {
+                    window.set_cue_banner("Climbed ladder back up into the castle ruins courtyard! [T] Crypt", 120);
                 }
+            } else if (!was_down and world.has_fact(george, knocked_rel, null)) {
+                window.set_cue_banner("★ Billy Goat charges! George is knocked flat! (30-tick retreat window active!) ★", 180);
+            } else if (!was_tangled and evaluate_goat_tangled(&world)) {
+                window.set_cue_banner("★ VICTORY! Hauled plough into the rope! Goat is tangled and secured! ★", 180);
             }
 
-            // Record after the arrival rules above, so the snapshot includes their effects.
+            // Record after the placement above, so the snapshot includes it.
             try session.record_now();
         }
 
@@ -556,43 +591,52 @@ test "P20-01: compile and execute Broken Sword Goat Puzzle script" {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, GOAT_PUZZLE_SCRIPT);
     defer compiled.deinit();
 
-    const courtyard_scene = world.lookup_entity("Lochmarne Castle Courtyard").?;
-    const crypt_scene = world.lookup_entity("Templar Crypt").?;
-    const george = world.lookup_entity("George").?;
-    const goat = world.lookup_entity("BillyGoat").?;
-    const cellar = world.lookup_entity("CellarEntrance").?;
-    const plough = world.lookup_entity("FarmPlough").?;
+    const stage = try Stage.init(&world, &spatial);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
 
-    try vm.transition_to_scene(courtyard_scene);
+    try vm.transition_to_scene(stage.courtyard_scene);
 
     // Initial state: not tangled
     try std.testing.expect(!evaluate_goat_tangled(&world));
 
-    // Try moving plough without retreat window -> denied
-    _ = try vm.fire_cue(&compiled, "Uses", george, plough, null);
-    try vm.step_tick();
-    try std.testing.expect(!evaluate_goat_tangled(&world));
+    // Walk to the plough without a retreat window -> arrival, but the plough stays put
+    try std.testing.expect(!try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.farm_plough, .goat_tangled));
+    try std.testing.expectEqual(stage.plough_wp, spatial.get_current_waypoint(stage.george).?);
 
-    // Try cellar -> goat attacks, triggers retreat window
-    _ = try vm.fire_cue(&compiled, "Uses", george, cellar, null);
-    try vm.step_tick();
-    const retreating_rel = world.lookup_relation("GoatRetreating").?;
-    try std.testing.expect(world.has_fact(goat, retreating_rel, null));
+    // Walk to the cellar -> on arrival the goat attacks and the retreat window opens
+    try std.testing.expect(try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.cellar_entrance, .goat_retreating));
+    try std.testing.expectEqual(stage.dig_wp, spatial.get_current_waypoint(stage.george).?);
+    try std.testing.expect(!evaluate_crypt_entered(&world, &vm));
 
-    // Move plough during retreat window -> tangled!
-    _ = try vm.fire_cue(&compiled, "Uses", george, plough, null);
-    try vm.step_tick();
-    try std.testing.expect(evaluate_goat_tangled(&world));
+    // Reach the plough during the retreat window -> tangled!
+    try std.testing.expect(try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.farm_plough, .goat_tangled));
 
-    // Now descend cellar -> transitions to Templar Crypt
-    _ = try vm.fire_cue(&compiled, "Uses", george, cellar, null);
-    try vm.step_tick();
-    try std.testing.expect(evaluate_crypt_entered(&world, &vm));
-    try std.testing.expectEqual(crypt_scene, vm.current_scene.?);
+    // Now walk to the cellar -> the arrival rule transitions to the Templar Crypt
+    try std.testing.expect(try use_and_walk(&world, &spatial, &vm, &compiled, stage, stage.cellar_entrance, .crypt_entered));
+    try std.testing.expectEqual(stage.crypt_scene, vm.current_scene.?);
+    try std.testing.expectEqual(stage.crypt_ladder_wp, spatial.get_current_waypoint(stage.george).?);
+
+    // Walking off the ladder and back climbs out; being placed at the dig does not descend again
+    _ = try spatial.walk_to(stage.george, stage.altar_wp);
+    var ticks: usize = 0;
+    while (ticks < MAX_WALK_TICKS and spatial.get_current_waypoint(stage.george).? != stage.altar_wp) : (ticks += 1) {
+        _ = try bespoke.host.tick(&vm, &compiled);
+    }
+    _ = try spatial.walk_to(stage.george, stage.crypt_ladder_wp);
+    ticks = 0;
+    while (ticks < MAX_WALK_TICKS and vm.current_scene.? != stage.courtyard_scene) : (ticks += 1) {
+        const scene_before = vm.current_scene;
+        _ = try bespoke.host.tick(&vm, &compiled);
+        _ = try stage.follow_scene(&vm, &spatial, scene_before);
+    }
+    try std.testing.expectEqual(stage.courtyard_scene, vm.current_scene.?);
+    try std.testing.expectEqual(stage.dig_wp, spatial.get_current_waypoint(stage.george).?);
+    for (0..5) |_| _ = try bespoke.host.tick(&vm, &compiled);
+    try std.testing.expectEqual(stage.courtyard_scene, vm.current_scene.?);
 }
 
 test "P20-03: headless execution runs full scenario and time-travel rewind" {
