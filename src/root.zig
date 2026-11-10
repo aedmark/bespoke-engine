@@ -17,6 +17,7 @@ pub const draft = @import("draft.zig");
 pub const host = @import("host.zig");
 pub const society = @import("society.zig");
 pub const duel = @import("duel.zig");
+pub const dialogue = @import("dialogue.zig");
 
 pub const World = world.World;
 pub const EntityId = world.EntityId;
@@ -88,6 +89,7 @@ test "root test imports all modules" {
     _ = @import("host.zig");
     _ = @import("society.zig");
     _ = @import("duel.zig");
+    _ = @import("dialogue.zig");
     _ = @import("spatial.zig");
     _ = @import("compiler.zig");
     _ = @import("display.zig");

@@ -993,6 +993,7 @@
             "Duel.init asserts the immutable Counters and VariantOf knowledge base as World facts; what each fighter heard or mastered, opponent tiers, advantage, wins, inquiry counts, and moods are also facts.",
             "Duel.challenges and Duel.replies submit candidates through VM.prune_dialogue_choices, so the ordinary fact-guarded dialogue query path controls what can be offered.",
             "A duel declaration preserves pair, variant, tier, and fatigue-stage source order. The host applies its tier assignments after Duel.init and may initialize InquiryFatigue from the same declaration.",
+            "The Insult Sword Fighting proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, and stores the active opponent and challenge as facts so a rewind restores the round (P32-23, D-046).",
             ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table."
           ],
           "why": "Game-facing configuration belongs in distributable .bespoke source. The mechanic remains generic while each game controls its dialogue, tiers, vocabulary, and mood cadence.",

@@ -2,6 +2,17 @@ const std = @import("std");
 const bespoke = @import("bespoke");
 const art = @import("art.zig");
 
+/// Keys this proof binds through its theme (P32-02c); the engine returns them as
+/// `UserAction.custom`.
+const SwordKey = enum(u16) { duel_bob, duel_carla, talk_barkeep, wait_50 };
+
+const sword_theme = art.with_keys(&.{
+    .{ .key = bespoke.display.renderer.c.SDLK_d, .action = @intFromEnum(SwordKey.duel_bob), .sfx = art.sfx(.sword_clash) },
+    .{ .key = bespoke.display.renderer.c.SDLK_c, .action = @intFromEnum(SwordKey.duel_carla), .sfx = art.sfx(.sword_clash) },
+    .{ .key = bespoke.display.renderer.c.SDLK_t, .action = @intFromEnum(SwordKey.talk_barkeep) },
+    .{ .key = bespoke.display.renderer.c.SDLK_w, .action = @intFromEnum(SwordKey.wait_50) },
+});
+
 /// BeSpoke DSL Script for Monkey Island Insult Sword Fighting and Organic NPC Repetition
 pub const SWORD_FIGHTING_SCRIPT =
     \\scene: High Road
@@ -82,6 +93,7 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\    reply "I wanted to make sure you'd feel at home with me."
     \\    variant 1 "Every word you say to me is an insult."
     \\  fallback "I am shaking, I am shaking!"
+    \\  win 3
     \\  relations HeardInsult MasteredReply Counters SwordMasterVariant IsSwordMaster Advantage DuelsWon
     \\  tier Carla 1
     \\  fatigue Inquiries "welcoming":
@@ -399,6 +411,106 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n>>> ALL MONKEY ISLAND INSULT SWORD FIGHTING & REPETITION TESTS PASSED! <<<\n", .{});
 }
 
+/// The active duel is host state expressed as facts: which opponent and challenge the next
+/// reply answers. A rewind restores them with the generated dialogue set (D-046).
+const DuelState = struct {
+    opponent: bespoke.RelationKind,
+    challenge: bespoke.RelationKind,
+};
+
+fn clear_active_duel(world: *bespoke.World, fighter: bespoke.EntityId, state: DuelState) void {
+    if (world.get_property(fighter, state.opponent)) |opponent_raw| {
+        bespoke.dialogue.clear_open(world, bespoke.EntityId.from_int(opponent_raw)) catch {};
+    }
+    _ = world.forget(fighter, state.opponent, null);
+    _ = world.forget(fighter, state.challenge, null);
+}
+
+/// Offers the replies the fighter has mastered as a runtime-generated choice set. The action
+/// id is the reply entity, so selection resolves without a host-side candidate table.
+fn open_round(
+    session: *bespoke.host.Session,
+    vm: *bespoke.VM,
+    world: *bespoke.World,
+    duel: *const duel_mod.Duel,
+    fighter: bespoke.EntityId,
+    state: DuelState,
+) !void {
+    const opponent_raw = world.get_property(fighter, state.opponent) orelse return;
+    const challenge_raw = world.get_property(fighter, state.challenge) orelse return;
+    const opponent = bespoke.EntityId.from_int(opponent_raw);
+    const challenge = bespoke.EntityId.from_int(challenge_raw);
+
+    var candidates: [9]duel_mod.Candidate = undefined;
+    const count = duel.replies(vm, fighter, challenge, &candidates);
+    if (count == 0) return;
+
+    var choices: [9]bespoke.dialogue.Choice = undefined;
+    for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
+    _ = try vm.open_generated_dialogue(opponent, world.get_entity_name(challenge) orelse "", choices[0..count]);
+    try session.record_now();
+}
+
+fn start_duel(
+    session: *bespoke.host.Session,
+    vm: *bespoke.VM,
+    world: *bespoke.World,
+    duel: *const duel_mod.Duel,
+    fighter: bespoke.EntityId,
+    state: DuelState,
+    opponent: bespoke.EntityId,
+    challenge: bespoke.EntityId,
+) !void {
+    if (challenge == bespoke.EntityId.none) return;
+    clear_active_duel(world, fighter, state);
+    try world.remember(fighter, state.opponent, opponent.to_int(), 0);
+    try world.remember(fighter, state.challenge, challenge.to_int(), 0);
+    try world.remember(fighter, duel.advantage_rel, 0, 0);
+    try world.remember(opponent, duel.advantage_rel, 0, 0);
+    try open_round(session, vm, world, duel, fighter, state);
+}
+
+fn resolve_choice(
+    session: *bespoke.host.Session,
+    vm: *bespoke.VM,
+    world: *bespoke.World,
+    duel: *duel_mod.Duel,
+    fighter: bespoke.EntityId,
+    state: DuelState,
+    index: usize,
+    window: *bespoke.display.DisplayWindow,
+) !void {
+    const selection = (try session.choose_dialogue(index)) orelse return;
+    const opponent_raw = world.get_property(fighter, state.opponent) orelse return;
+    const challenge_raw = world.get_property(fighter, state.challenge) orelse return;
+    const opponent = bespoke.EntityId.from_int(opponent_raw);
+    const challenge = bespoke.EntityId.from_int(challenge_raw);
+    const reply = if (selection.action == 0) bespoke.EntityId.none else bespoke.EntityId.from_int(selection.action);
+    const round = try duel.resolve_round(opponent, fighter, challenge, reply);
+    const name = world.get_entity_name(opponent) orelse "The opponent";
+
+    var buf: [192]u8 = undefined;
+    if (round.winner) |winner| {
+        const msg = if (winner == fighter)
+            std.fmt.bufPrint(&buf, "Victory! {s} yields. Duels won: {d}.", .{ name, duel.wins(fighter) }) catch "Victory!"
+        else
+            std.fmt.bufPrint(&buf, "Defeat. {s} wins this duel.", .{name}) catch "Defeat.";
+        clear_active_duel(world, fighter, state);
+        try session.record_now();
+        window.set_cue_banner(msg, 180);
+        return;
+    }
+
+    const msg = std.fmt.bufPrint(&buf, "{s} Advantage: Guybrush {d}, {s} {d}.", .{
+        if (round.parried) "Parried!" else "Missed! The counter is learned.",
+        duel.advantage(fighter),
+        name,
+        duel.advantage(opponent),
+    }) catch "Round resolved.";
+    window.set_cue_banner(msg, 120);
+    try open_round(session, vm, world, duel, fighter, state);
+}
+
 /// Executes interactive 60 Hz playability with graphical display or falls back to headless simulation
 pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
@@ -413,6 +525,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     if (compiled.duels.items.len != 1) return error.MissingSwordDuel;
     const duel_decl = &compiled.duels.items[0];
     var duel = try duel_mod.Duel.init(&world, duel_decl.config);
+    var fatigue = try duel_mod.InquiryFatigue.init(&world, duel_decl.fatigue);
 
     const road_scene = try world.intern_entity("High Road");
     const sanctuary_scene = try world.intern_entity("Sword Master Sanctuary");
@@ -424,6 +537,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const barkeep = try world.intern_entity("Barkeep");
 
     try duel_decl.apply_tiers(&duel);
+    const duel_state = DuelState{
+        .opponent = try world.intern_relation("ActiveDuelOpponent", .property),
+        .challenge = try world.intern_relation("ActiveDuelChallenge", .property),
+    };
 
     const road_l = try spatial.graph.add_waypoint(road_scene, 0, 0, "RoadLeft");
     const road_c = try spatial.graph.add_waypoint(road_scene, 20, 0, "RoadCenter");
@@ -452,7 +569,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Monkey Island: Insult Sword Fighting", 1280, 720);
     defer window.deinit();
-    window.set_theme(&art.theme);
+    window.set_theme(&sword_theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
@@ -484,7 +601,61 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var is_running = true;
     while (is_running) {
         const action = window.poll_events(session.frame());
-        if (action == .quit) is_running = false else _ = try session.handle_common(action);
+        if (action == .quit) {
+            is_running = false;
+        } else if (!try session.handle_common(action)) {
+            switch (action) {
+                .dialogue_choice => |choice_idx| {
+                    try resolve_choice(&session, &vm, &world, &duel, guybrush, duel_state, choice_idx, &window);
+                },
+                .custom => |id| if (std.meta.intToEnum(SwordKey, id)) |key| switch (key) {
+                    .duel_bob => {
+                        try vm.transition_to_scene(road_scene);
+                        _ = try spatial.transition_actor(guybrush, road_scene, road_c);
+                        try start_duel(&session, &vm, &world, &duel, guybrush, duel_state, pirate_bob, duel.challenge(0, 0));
+                        window.set_cue_banner("Pirate Bob draws his cutlass. Choose a reply.", 120);
+                    },
+                    .duel_carla => {
+                        try vm.transition_to_scene(sanctuary_scene);
+                        _ = try spatial.transition_actor(guybrush, sanctuary_scene, arena_wp);
+                        try start_duel(&session, &vm, &world, &duel, guybrush, duel_state, carla, duel.challenge(4, 1));
+                        window.set_cue_banner("Carla, the Sword Master, raises her blade. Choose a reply.", 120);
+                    },
+                    .talk_barkeep => {
+                        if (world.get_property(guybrush, duel_state.opponent) != null) {
+                            window.set_cue_banner("Finish the duel first.", 90);
+                        } else {
+                            try vm.transition_to_scene(bar_scene);
+                            _ = try spatial.transition_actor(guybrush, bar_scene, bar_ent_wp);
+                            const mood = try fatigue.record(guybrush, barkeep);
+                            const line = if (mood) |stage|
+                                (if (stage == ANNOYED)
+                                    "Look, I already told you. Her mansion is on the hill."
+                                else
+                                    "Are ye deaf, pirate? Buy a grog or get out of my tavern!")
+                            else
+                                "Governor Marley? Sharp as a cutlass and twice as quick.";
+                            var buf: [192]u8 = undefined;
+                            const msg = std.fmt.bufPrint(&buf, "Barkeep [{s}]: \"{s}\"", .{ fatigue.label(mood), line }) catch "Barkeep";
+                            try session.record_now();
+                            window.set_cue_banner(msg, 150);
+                        }
+                    },
+                    .wait_50 => {
+                        if (world.get_property(guybrush, duel_state.opponent) != null) {
+                            window.set_cue_banner("Finish the duel first.", 90);
+                        } else {
+                            var waited: usize = 0;
+                            while (waited < 50) : (waited += 1) _ = try session.advance();
+                            var buf: [128]u8 = undefined;
+                            const msg = std.fmt.bufPrint(&buf, "Waited 50 ticks. Barkeep mood: {s}.", .{fatigue.label(fatigue.mood(barkeep, guybrush))}) catch "Waited 50 ticks.";
+                            window.set_cue_banner(msg, 120);
+                        }
+                    },
+                } else |_| {},
+                else => {},
+            }
+        }
 
         if (session.tick_due()) _ = try session.advance();
 
@@ -590,6 +761,58 @@ test "P15-03: conversational repetition fatigue asserts decaying mood facts" {
     try testing.expectEqual(@as(?usize, FURIOUS), fatigue.mood(barkeep, guybrush));
     while (tick < 250) : (tick += 1) _ = world.step_tick();
     try testing.expectEqual(@as(?usize, null), fatigue.mood(barkeep, guybrush));
+}
+
+test "P32-23: a declared duel offers generated replies and reaches a win at three advantage" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.duels.items.len);
+
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    try compiled.duels.items[0].apply_tiers(&duel);
+    try testing.expectEqual(@as(?u32, 3), duel.config.win_at);
+
+    const guybrush = try world.intern_entity("Guybrush");
+    const pirate_bob = try world.intern_entity("PirateBob");
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+
+    const challenge = duel.challenge(0, 0);
+    var candidates: [9]duel_mod.Candidate = undefined;
+    try testing.expectEqual(@as(usize, 1), duel.replies(&vm, guybrush, challenge, &candidates));
+    try testing.expectEqualStrings(duel.config.fallback.?, candidates[0].text);
+
+    var choices: [1]bespoke.dialogue.Choice = .{.{ .text = candidates[0].text, .action = candidates[0].entity.to_int() }};
+    _ = try vm.open_generated_dialogue(pirate_bob, world.get_entity_name(challenge).?, &choices);
+    const open = vm.dialogue_view().?;
+    try testing.expectEqualStrings(world.get_entity_name(challenge).?, open.prompt);
+    try testing.expectEqualStrings(duel.config.fallback.?, open.text(0));
+
+    const selection = (try vm.choose(0)).?;
+    try testing.expectEqual(@as(u32, 0), selection.action);
+    const lost = try duel.resolve_round(pirate_bob, guybrush, challenge, bespoke.EntityId.none);
+    try testing.expect(!lost.parried);
+    try testing.expectEqual(@as(u32, 1), duel.advantage(pirate_bob));
+
+    try testing.expectEqual(@as(usize, 1), duel.replies(&vm, guybrush, challenge, &candidates));
+    try testing.expect(candidates[0].counters);
+
+    var round_index: usize = 0;
+    while (round_index < 3) : (round_index += 1) {
+        const round = try duel.resolve_round(pirate_bob, guybrush, challenge, candidates[0].entity);
+        try testing.expect(round.parried);
+        if (round_index < 2) {
+            try testing.expect(round.winner == null);
+        } else {
+            try testing.expectEqual(guybrush, round.winner.?);
+        }
+    }
+    try testing.expectEqual(@as(u32, 1), duel.wins(guybrush));
 }
 
 test "P15-04: headless simulation of Monkey Island Insult Sword Fighting passes cleanly" {
