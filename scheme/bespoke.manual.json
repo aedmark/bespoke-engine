@@ -980,21 +980,23 @@
         {
           "id": "wasm-browser-target-and-simulator",
           "title": "WebAssembly (wasm32-freestanding) Target & Browser Simulator",
-          "summary": "Zero-dependency wasm32-freestanding RGBA8888 runtime harness, browser event bridge, and embedded HTML5 Canvas simulator in docs/manual.html.",
-          "synopsis": "zig build wasm | wasm_init(scenario_id); wasm_step_tick(); wasm_render_frame(); wasm_on_pointer_down(x, y);",
+          "summary": "Zero-dependency wasm32-freestanding RGBA8888 runtime with a browser event bridge; games supply its scenes as decks.",
+          "synopsis": "zig build wasm wasm-proofs | wasm_init(deck); wasm_step_tick(); wasm_render_frame(); wasm_on_pointer_down(x, y);",
           "tags": ["wasm", "browser", "canvas", "events", "simulator", "manual"],
-          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 640x360 RGBA8888 software framebuffer, a browser mouse/keyboard/touch event bridge, and an interactive HTML5 Canvas simulator embedded directly in docs/manual.html.",
+          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 640x360 RGBA8888 software framebuffer and a browser mouse/keyboard/touch event bridge. What is on stage comes from a deck table the host compiles in: the engine's own module has one neutral demo deck, and bespoke-proofs.wasm carries six proof decks.",
           "how": [
             "WasmCanvas renders rooms, topological waypoint edges, interactive hotspots, actor tokens, bitmap font strings, a timeline scrubber bar, and the 5-verb bar into a contiguous 640x360x4 RGBA8888 byte buffer in linear memory.",
-            "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 64-slot ring buffer of binary World snapshots inside a 2 MiB FixedBufferAllocator, exposing C-ABI exports (wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick).",
+            "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots inside a 2 MiB FixedBufferAllocator. Each Deck supplies load, after-tick, and catalyst callbacks, and wasm.export_runtime(decks) emits the C-ABI exports (wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick) for a build's decks.",
             "dispatch_event normalizes browser pointer_down, pointer_move, right_click, key_down, and touch events into BeSpoke walk_to motor intents, verb selection, hotspot inspection, catalyst triggers, and timeline scrubbing.",
-            "docs/manual.html embeds an interactive HTML5 Canvas Simulator Deck that hosts six proofs (Tavern Heist, Spitting Contest, GK3 Cat Moustache, The Living Village, Broken Sword Goat, and Day of the Tentacle Trio) with live fact inspection, REPL commands, and timeline scrubbing."
+            "docs/manual.html embeds a JavaScript model of the six proof decks (Tavern Heist, Spitting Contest, GK3 Cat Moustache, The Living Village, Broken Sword Goat, and Day of the Tentacle Trio) with fact inspection, REPL commands, and timeline scrubbing. It does not load the WebAssembly module; tools/wasm_smoke.js runs the real modules in Node."
           ],
-          "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required) and lets readers test emergent vertical slices directly inside the standalone 3x developer manual.",
+          "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required). Decks keep game content out of the engine module (D-042).",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-022", "target": "docs/DECISIONS.md#d-022", "kind": "decision"},
             {"label": "WebAssembly Runtime & Event Bridge", "target": "src/wasm.zig", "kind": "source"},
+          {"label": "Architectural Decision D-042", "target": "docs/DECISIONS.md#d-042", "kind": "decision"},
+          {"label": "Proof Decks", "target": "proofs/wasm_deck.zig", "kind": "source"},
             {"label": "Zig Wasm32 Build Step", "target": "build.zig", "kind": "source"},
             {"label": "3x Manual Generator & Simulator Deck", "target": "tools/manual.py", "kind": "source"}
           ],

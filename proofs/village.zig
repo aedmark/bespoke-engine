@@ -10,6 +10,16 @@ const std = @import("std");
 const bespoke = @import("bespoke");
 const art = @import("art.zig");
 
+/// Keys this proof binds through its theme (P32-02c); the engine returns them as
+/// `UserAction.custom`.
+const VillageKey = enum(u16) { theft, feast, tip };
+
+const village_theme = art.with_keys(&.{
+    .{ .key = bespoke.display.renderer.c.SDLK_s, .action = @intFromEnum(VillageKey.theft), .sfx = art.sfx(.whistle) },
+    .{ .key = bespoke.display.renderer.c.SDLK_f, .action = @intFromEnum(VillageKey.feast), .sfx = .{ .stock = .combine } },
+    .{ .key = bespoke.display.renderer.c.SDLK_g, .action = @intFromEnum(VillageKey.tip), .sfx = .{ .stock = .pickup } },
+});
+
 /// BeSpoke DSL Script for "The Living Village" settlement (P18-01, P18-02, P18-03, D-021).
 pub const VILLAGE_SCRIPT =
     \\scene: Living Village
@@ -460,7 +470,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Living Village (Emergent Simulation Sandbox)", 1280, 720);
     defer window.deinit();
-    window.set_theme(&art.theme);
+    window.set_theme(&village_theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
@@ -481,6 +491,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var repl_engine = bespoke.Repl.init(&world, &spatial, &vm);
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
     display_bridge.attach_audio_bridge(window.audio_bridge);
     // Snapshot 0 and the first frame (host kit, P32-16, D-033)
     var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
@@ -525,28 +536,30 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     window.set_cue_banner(msg, 160);
                 }
             },
-            .spit_contest_spit => {
-                // [S] hotkey triggers the Desperation Theft Catalyst in Living Village
-                try sim.trigger_desperation_catalyst(&world, &spatial);
-                window.set_cue_banner("Catalyst [S]: Drifter driven to desperate hunger at Bakery!", 150);
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.swap();
-            },
-            .tamper_flags => {
-                // [F] hotkey triggers Prosperity Feast (feeds all villagers)
-                try sim.feed_all_villagers(&world);
-                window.set_cue_banner("Catalyst [F]: Prosperity Feast! All villagers fed (+10g).", 150);
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.swap();
-            },
-            .drink_green_drink => {
-                // [G] hotkey tips off the Sheriff with the active rumor
-                try world.remember(sim.sheriff, sim.rel().knows_rumor, sim.drifter.to_int(), 0);
-                sim.society.chronicle.log(world.current_tick, .rumor, "Tip-off [G]: Sheriff alerted to rumor about Drifter!");
-                window.set_cue_banner("Catalyst [G]: Sheriff tipped off! Warrant cascade initiated!", 150);
-                display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.swap();
-            },
+            .custom => |id| if (std.meta.intToEnum(VillageKey, id)) |key| switch (key) {
+                .theft => {
+                    // [S] hotkey triggers the Desperation Theft Catalyst in Living Village
+                    try sim.trigger_desperation_catalyst(&world, &spatial);
+                    window.set_cue_banner("Catalyst [S]: Drifter driven to desperate hunger at Bakery!", 150);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
+                },
+                .feast => {
+                    // [F] hotkey triggers Prosperity Feast (feeds all villagers)
+                    try sim.feed_all_villagers(&world);
+                    window.set_cue_banner("Catalyst [F]: Prosperity Feast! All villagers fed (+10g).", 150);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
+                },
+                .tip => {
+                    // [G] hotkey tips off the Sheriff with the active rumor
+                    try world.remember(sim.sheriff, sim.rel().knows_rumor, sim.drifter.to_int(), 0);
+                    sim.society.chronicle.log(world.current_tick, .rumor, "Tip-off [G]: Sheriff alerted to rumor about Drifter!");
+                    window.set_cue_banner("Catalyst [G]: Sheriff tipped off! Warrant cascade initiated!", 150);
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.swap();
+                },
+            } else |_| {},
             .repl_command => |rc| {
                 const cmd_str = rc.buf[0..rc.len];
                 const res = repl_engine.execute(cmd_str);

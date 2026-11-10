@@ -2,6 +2,17 @@ const std = @import("std");
 const bespoke = @import("bespoke");
 const art = @import("art.zig");
 
+/// Keys this proof binds through its theme (P32-02c); the engine returns them as
+/// `UserAction.custom`.
+const SpitKey = enum(u16) { spit, horn, drink, flags };
+
+const spit_theme = art.with_keys(&.{
+    .{ .key = bespoke.display.renderer.c.SDLK_s, .action = @intFromEnum(SpitKey.spit), .sfx = art.sfx(.whistle) },
+    .{ .key = bespoke.display.renderer.c.SDLK_h, .action = @intFromEnum(SpitKey.horn), .sfx = art.sfx(.horn) },
+    .{ .key = bespoke.display.renderer.c.SDLK_g, .action = @intFromEnum(SpitKey.drink), .sfx = .{ .stock = .pickup } },
+    .{ .key = bespoke.display.renderer.c.SDLK_f, .action = @intFromEnum(SpitKey.flags), .sfx = .{ .stock = .combine } },
+});
+
 pub const SPITTING_CONTEST_SCRIPT =
     \\scene: Spitting Competition
     \\cast: Guybrush, Organiser, Onlookers
@@ -384,6 +395,9 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     try vm.load_compiled_rules(&compiled);
 
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("Guybrush")) |player| display_bridge.set_active_character(player);
     var repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
 
     if (compiled.routine_entries.get("EggingCrowd")) |entry| {
@@ -395,11 +409,11 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 1280, 720);
     defer window.deinit();
-    window.set_theme(&art.theme);
+    window.set_theme(&spit_theme);
 
     vm.current_scene = room_ent;
     display_bridge.attach_audio_bridge(window.audio_bridge);
-    window.set_bgm(.spitting_contest);
+    window.set_bgm(art.track(.spitting_contest));
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
@@ -522,7 +536,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                             _ = try spatial.walk_to(organiser, offstage_wp);
                             _ = try spatial.walk_to(onlookers, offstage_wp);
                             window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
-                            window.play_sfx(.horn);
+                            window.play_sound(art.sfx(.horn));
                         } else if (std.mem.indexOf(u8, item_name, "Drink") != null) {
                             try set_state(&world, spit_ent, thick_rel);
                             window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
@@ -539,15 +553,15 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     switch (res) {
                         .dribble_third => {
                             window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120);
-                            window.play_sfx(.splash);
+                            window.play_sound(art.sfx(.splash));
                         },
                         .thick_flags_untouched_third => {
                             window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120);
-                            window.play_sfx(.whistle);
+                            window.play_sound(art.sfx(.whistle));
                         },
                         .thick_flags_moved_no_wind_second => {
                             window.set_cue_banner("Guybrush: \"Ptooie!\" Flies past moved flags! Second Place! (Need wind!)", 120);
-                            window.play_sfx(.whistle);
+                            window.play_sound(art.sfx(.whistle));
                         },
                         .winner_first => {
                             window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180);
@@ -561,51 +575,53 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 }
             },
             .dismiss_dialogue => window.dismiss_dialogue(),
-            .spit_contest_spit => {
-                _ = try vm.fire_cue(&compiled, "Spits", guybrush, null, null);
-                _ = try session.advance();
-                const res = placement(&world) orelse return error.SpitNotJudged;
-                switch (res) {
-                    .dribble_third => {
-                        window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120);
-                        window.play_sfx(.splash);
-                    },
-                    .thick_flags_untouched_third => {
-                        window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120);
-                        window.play_sfx(.whistle);
-                    },
-                    .thick_flags_moved_no_wind_second => {
-                        window.set_cue_banner("Guybrush: \"Ptooie!\" Past moved flags! Second Place! (Need a gust of wind!)", 120);
-                        window.play_sfx(.whistle);
-                    },
-                    .winner_first => {
-                        window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180);
-                        window.play_sfx(.alert);
-                    },
-                }
-            },
-            .sound_horn => {
-                try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
-                _ = try spatial.walk_to(organiser, offstage_wp);
-                _ = try spatial.walk_to(onlookers, offstage_wp);
-                window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
-                window.play_sfx(.horn);
-            },
-            .drink_green_drink => {
-                try set_state(&world, spit_ent, thick_rel);
-                window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
-                window.play_sfx(.pickup);
-            },
-            .tamper_flags => {
-                const is_distracted = world.has_fact(organiser, distracted_rel, null);
-                if (is_distracted) {
-                    try set_state(&world, flags, tampered_rel);
-                    window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
-                    window.play_sfx(.combine);
-                } else {
-                    window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
-                }
-            },
+            .custom => |id| if (std.meta.intToEnum(SpitKey, id)) |key| switch (key) {
+                .spit => {
+                    _ = try vm.fire_cue(&compiled, "Spits", guybrush, null, null);
+                    _ = try session.advance();
+                    const res = placement(&world) orelse return error.SpitNotJudged;
+                    switch (res) {
+                        .dribble_third => {
+                            window.set_cue_banner("Guybrush: \"Ptooie!\" ...Dribbles on his chin! (3rd Place)", 120);
+                            window.play_sound(art.sfx(.splash));
+                        },
+                        .thick_flags_untouched_third => {
+                            window.set_cue_banner("Guybrush: \"Ptooie!\" Thick spit flies, but flags are untouched! (3rd Place)", 120);
+                            window.play_sound(art.sfx(.whistle));
+                        },
+                        .thick_flags_moved_no_wind_second => {
+                            window.set_cue_banner("Guybrush: \"Ptooie!\" Past moved flags! Second Place! (Need a gust of wind!)", 120);
+                            window.play_sound(art.sfx(.whistle));
+                        },
+                        .winner_first => {
+                            window.set_cue_banner("★ WINNER! Riding the wind past the champion line! FIRST PLACE! ★", 180);
+                            window.play_sfx(.alert);
+                        },
+                    }
+                },
+                .horn => {
+                    try world.remember(organiser, distracted_rel, onlookers.to_int(), 100);
+                    _ = try spatial.walk_to(organiser, offstage_wp);
+                    _ = try spatial.walk_to(onlookers, offstage_wp);
+                    window.set_cue_banner("HOOOOONK! Organiser: \"About time that damn ship came in!\" Crowd distracted!", 120);
+                    window.play_sound(art.sfx(.horn));
+                },
+                .drink => {
+                    try set_state(&world, spit_ent, thick_rel);
+                    window.set_cue_banner("\"Glug glug glug...\" Guybrush's spit is now thick and potent!", 120);
+                    window.play_sfx(.pickup);
+                },
+                .flags => {
+                    const is_distracted = world.has_fact(organiser, distracted_rel, null);
+                    if (is_distracted) {
+                        try set_state(&world, flags, tampered_rel);
+                        window.set_cue_banner("★ Flags secretly moved closer to the starting line! ★", 120);
+                        window.play_sfx(.combine);
+                    } else {
+                        window.set_cue_banner("Narrator: \"You better not, he's watching.\"", 90);
+                    }
+                },
+            } else |_| {},
             .repl_command => |cmd| {
                 const line = cmd.buf[0..cmd.len];
                 const res = repl_instance.execute(line);

@@ -68,6 +68,15 @@ pub inline fn eval_sawtooth(phase: u32) i16 {
     return @intCast(val - 32768);
 }
 
+/// Evaluates one oscillator through a wave shape (pulse uses `duty`), widened for mixing.
+pub inline fn eval_wave(shape: Wave, phase: u32, duty: u32) i32 {
+    return switch (shape) {
+        .pulse => eval_pulse(phase, duty),
+        .triangle => eval_triangle(phase),
+        .saw => eval_sawtooth(phase),
+    };
+}
+
 /// Generates pseudo-random uniform white noise via 32-bit Linear Congruential Generator.
 pub inline fn eval_noise(rng: *u32) i16 {
     rng.* = rng.* *% 1664525 +% 1013904223;
@@ -79,24 +88,15 @@ pub inline fn eval_noise(rng: *u32) i16 {
 // 3. Audio Kinds & Enums
 // ---------------------------------------------------------------------------
 
-/// Procedural sound effect categories for player/world interactions (P16-02, D-019).
+/// The engine's own sounds: interface feedback and the distaff (P16-02, P22-02). A game adds
+/// its own effects as `SfxPatch` data in its `Soundtrack` (P32-02d, D-040).
 pub const SoundEffectKind = enum(u8) {
     footstep,
     pickup,
     combine,
-    horn,
-    splash,
-    sword_clash,
     alert,
     dialogue_blip,
     click,
-    whistle,
-    goat_bleat,
-    thud,
-    toilet_flush,
-    snip_shears,
-    wood_chop,
-    // Musical draft spellcraft (P22-02, D-029)
     distaff_note,
     weave_success,
     weave_fizzle,
@@ -107,28 +107,111 @@ pub const SoundEffectKind = enum(u8) {
 pub const DISTAFF_MIDI = [7]u8{ 60, 62, 64, 65, 67, 69, 71 };
 pub const DISTAFF_NOTE_COUNT: u8 = DISTAFF_MIDI.len;
 
-/// Procedural background musical accompaniment tracks for narrative scenes (P16-03, D-019).
-pub const MusicTrackKind = enum(u8) {
-    none = 0,
-    tavern,
-    cellar,
-    spitting_contest,
-    high_road,
-    sanctuary,
-    scumm_bar,
-    courtyard,
-    bike_shop,
-    lochmarne,
-    tentacle,
-    bell_tower,
+/// A sound to play: one of the engine's, or an index into the host soundtrack's `sfx`.
+pub const Sound = union(enum) {
+    stock: SoundEffectKind,
+    host: u8,
+};
+
+pub const Wave = enum { pulse, triangle, saw };
+
+/// One addend of a voice's sample. `osc1` and `osc2` read that oscillator through `shape`
+/// (pulse uses the voice's duty); `noise` is the shared noise generator, read once per sample
+/// however many terms use it; `ring` multiplies `osc1` through `shape` by `osc2` through
+/// `shape2` and scales by 2^-15.
+pub const Term = struct {
+    source: enum { osc1, osc2, noise, ring },
+    shape: Wave = .triangle,
+    shape2: Wave = .triangle,
+    weight: i32 = 1,
+};
+
+/// How the summed terms are scaled: an arithmetic shift (floors) or a truncating divide.
+pub const Mix = union(enum) {
+    shift: u5,
+    div: i32,
+};
+
+/// A note change during a sound: oscillator 1 jumps to `note` (and the duty, if set) when the
+/// previous note's samples run out.
+pub const NoteStep = struct {
+    note: u8,
+    duty: ?u32 = null,
+    samples: u32 = 0,
+};
+
+/// A sound effect as data (P32-02d, D-040). Two oscillators start at `note1` and `note2`
+/// (MIDI; no `note2` leaves oscillator 2 still). Oscillator 1 glides by `sweep` phase units a
+/// sample. The envelope starts at `env` (0..32767) and falls by `decay` a sample for at most
+/// `samples` samples. After `step_samples` samples, `steps` are applied in order, each lasting
+/// its own `samples`; `loop` repeats them for as long as the sound lasts.
+pub const SfxPatch = struct {
+    note1: u8,
+    note2: ?u8 = null,
+    terms: []const Term,
+    mix: Mix = .{ .shift = 0 },
+    duty: u32 = 0x80000000,
+    sweep: i32 = 0,
+    env: i32,
+    decay: i32,
+    samples: u32,
+    step_samples: u32 = 0,
+    steps: []const NoteStep = &.{},
+    loop: bool = false,
+};
+
+/// A named music track for a soundtrack.
+pub const Music = struct {
+    name: []const u8,
+    pattern: BgmPattern,
+};
+
+/// A game's sounds, registered with `AudioBridge.set_soundtrack` (or a display `Theme`).
+/// Tracks and effects are referred to by index. Borrowed: the soundtrack must outlive the
+/// bridge, and the audio thread reads it, so it must not change once registered.
+pub const Soundtrack = struct {
+    tracks: []const Music = &.{},
+    sfx: []const SfxPatch = &.{},
+    /// The track to play in a scene, or null for silence. Called on the host thread.
+    track_for_scene: ?*const fn (scene_name: []const u8) ?u8 = null,
+};
+
+fn osc_term(source: @TypeOf(@as(Term, undefined).source), shape: Wave, weight: i32) Term {
+    return .{ .source = source, .shape = shape, .weight = weight };
+}
+
+/// The engine's own effects, indexed by `SoundEffectKind`.
+pub const STOCK_SFX = blk: {
+    var t: [std.meta.fields(SoundEffectKind).len]SfxPatch = undefined;
+    // Quick crisp noise burst with subtle bass tap
+    t[@intFromEnum(SoundEffectKind.footstep)] = .{ .note1 = 36, .sweep = -120, .env = 26000, .decay = 26, .samples = 1000, .terms = &.{ .{ .source = .noise, .weight = 3 }, osc_term(.osc1, .triangle, 1) }, .mix = .{ .shift = 2 } };
+    // Rising two-tone chime (note 64, then 71 at 50% duty)
+    t[@intFromEnum(SoundEffectKind.pickup)] = .{ .note1 = 64, .duty = 0x40000000, .env = 28000, .decay = 8, .samples = 5000, .step_samples = 1800, .steps = &.{.{ .note = 71, .duty = 0x80000000 }}, .terms = &.{osc_term(.osc1, .pulse, 1)} };
+    // Four-step arpeggio 60, 64, 67, 72
+    t[@intFromEnum(SoundEffectKind.combine)] = .{ .note1 = 60, .duty = 0x40000000, .env = 30000, .decay = 6, .samples = 9000, .step_samples = 1500, .steps = &.{ .{ .note = 64, .samples = 1500 }, .{ .note = 67, .samples = 1500 }, .{ .note = 72, .samples = 1500 } }, .terms = &.{ osc_term(.osc1, .pulse, 1), osc_term(.osc1, .triangle, 1) }, .mix = .{ .shift = 1 } };
+    // Dual detuned saw alarm
+    t[@intFromEnum(SoundEffectKind.alert)] = .{ .note1 = 50, .note2 = 56, .env = 31000, .decay = 4, .samples = 7500, .terms = &.{ osc_term(.osc1, .saw, 1), osc_term(.osc2, .saw, 1) }, .mix = .{ .shift = 1 } };
+    // Short falling square blip
+    t[@intFromEnum(SoundEffectKind.dialogue_blip)] = .{ .note1 = 62, .sweep = -1200, .env = 20000, .decay = 25, .samples = 800, .terms = &.{osc_term(.osc1, .pulse, 1)} };
+    // Tiny triangle tick
+    t[@intFromEnum(SoundEffectKind.click)] = .{ .note1 = 76, .env = 18000, .decay = 50, .samples = 360, .terms = &.{osc_term(.osc1, .triangle, 1)} };
+    // Sustained plucked-string tone; trigger_note sets the pitch (P22-02, D-029)
+    t[@intFromEnum(SoundEffectKind.distaff_note)] = .{ .note1 = DISTAFF_MIDI[0], .note2 = DISTAFF_MIDI[0] + 12, .duty = 0x40000000, .env = 26000, .decay = 2, .samples = 13000, .terms = &.{ osc_term(.osc1, .triangle, 3), osc_term(.osc2, .pulse, 1) }, .mix = .{ .shift = 2 } };
+    // Rising open fifth shimmer (C5 + G5) as a draft takes hold
+    t[@intFromEnum(SoundEffectKind.weave_success)] = .{ .note1 = 72, .note2 = 79, .sweep = 40, .env = 28000, .decay = 2, .samples = 14000, .terms = &.{ osc_term(.osc1, .triangle, 1), osc_term(.osc2, .triangle, 1) }, .mix = .{ .shift = 1 } };
+    // Falling detuned buzz as an unmatched draft unravels
+    t[@intFromEnum(SoundEffectKind.weave_fizzle)] = .{ .note1 = 55, .note2 = 56, .sweep = -900, .env = 24000, .decay = 4, .samples = 6000, .terms = &.{ osc_term(.osc1, .saw, 1), osc_term(.osc2, .saw, 1), .{ .source = .noise } }, .mix = .{ .shift = 2 } };
+    break :blk t;
 };
 
 /// Decoupled audio event queued by simulation or GUI and consumed by audio thread.
 pub const AudioEvent = union(enum) {
     play_sfx: SoundEffectKind,
+    play_host_sfx: u8,
     /// A distaff note by diatonic degree (0 = C .. 6 = B). Out-of-range degrees are dropped.
     play_note: u8,
-    set_bgm: MusicTrackKind,
+    set_bgm: ?u8,
+    set_soundtrack: ?*const Soundtrack,
     stop_bgm: void,
     set_master_volume: u8,
     set_sfx_volume: u8,
@@ -140,7 +223,7 @@ pub const AudioEvent = union(enum) {
 // ---------------------------------------------------------------------------
 
 pub const SfxVoice = struct {
-    kind: SoundEffectKind = .click,
+    patch: *const SfxPatch = &STOCK_SFX[@intFromEnum(SoundEffectKind.click)],
     active: bool = false,
     phase1: u32 = 0,
     phase_inc1: u32 = 0,
@@ -151,6 +234,7 @@ pub const SfxVoice = struct {
     env_level: i32 = 0, // Q15: 0..32767
     env_decay: i32 = 0, // Decay subtracted per sample
     samples_left: u32 = 0,
+    /// Index of the next `patch.steps` entry.
     step: u8 = 0,
     step_samples_left: u32 = 0,
     volume: u8 = 100, // 0..100
@@ -172,253 +256,6 @@ pub const BgmPattern = struct {
 };
 
 /// Generates pre-authored 32-step procedural score patterns for narrative locations (P16-03).
-pub fn get_track_pattern(track: MusicTrackKind) BgmPattern {
-    var p = BgmPattern{
-        .bpm = 120,
-        .step_count = 32,
-        .bass_notes = [_]u8{0} ** BGM_STEPS,
-        .lead_notes = [_]u8{0} ** BGM_STEPS,
-        .chord_notes = [_]u8{0} ** BGM_STEPS,
-        .drum_pattern = [_]u8{0} ** BGM_STEPS,
-    };
-
-    switch (track) {
-        .none => return p,
-
-        // The Tavern Heist: Lively G-Dorian pipe & lute jig
-        .tavern => {
-            p.bpm = 132;
-            p.bass_notes = [BGM_STEPS]u8{
-                43, 0, 43, 0, 38, 0, 43, 0, 41, 0, 41, 0, 36, 0, 38, 0,
-                43, 0, 43, 0, 38, 0, 43, 0, 41, 0, 41, 0, 38, 0, 43, 0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                67, 0, 70, 72, 74, 0, 72, 70, 69, 0, 65, 69, 67, 0, 0,  0,
-                67, 69, 70, 72, 74, 77, 74, 72, 70, 69, 67, 65, 67, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 53, 0, 57, 0,
-                55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 55, 0, 58, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 3, 3,
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
-            };
-        },
-
-        // The Wine Cellar: Moody subterranean minor bassline and dripping echoes
-        .cellar => {
-            p.bpm = 92;
-            p.bass_notes = [BGM_STEPS]u8{
-                36, 0, 0, 0, 39, 0, 0, 0, 43, 0, 0, 0, 44, 0, 43, 0,
-                36, 0, 0, 0, 39, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0,  0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                60, 0, 63, 0, 67, 0, 68, 67, 63, 0, 62, 0, 60, 0, 0,  0,
-                60, 0, 63, 0, 67, 0, 70, 68, 67, 0, 65, 0, 63, 62, 60, 0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                48, 0, 0, 0, 51, 0, 0, 0, 55, 0, 0, 0, 56, 0, 55, 0,
-                48, 0, 0, 0, 51, 0, 0, 0, 53, 0, 0, 0, 55, 0, 0,  0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
-                1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 0,
-            };
-        },
-
-        // Booty Island Spitting Contest: Jaunty Caribbean pirate regatta march
-        .spitting_contest => {
-            p.bpm = 126;
-            p.bass_notes = [BGM_STEPS]u8{
-                48, 0, 43, 0, 48, 0, 43, 0, 41, 0, 48, 0, 43, 0, 50, 0,
-                48, 0, 43, 0, 48, 0, 43, 0, 41, 0, 43, 0, 48, 0, 0,  0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                76, 0, 79, 0, 76, 74, 72, 0, 74, 0, 76, 77, 79, 0, 0,  0,
-                81, 0, 79, 76, 72, 0, 74, 0, 76, 74, 72, 0, 72, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                0, 60, 0, 60, 0, 60, 0, 60, 0, 57, 0, 57, 0, 55, 0, 55,
-                0, 60, 0, 60, 0, 60, 0, 60, 0, 57, 0, 55, 0, 60, 0, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 2, 3, 3,
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
-            };
-        },
-
-        // Mêlée Island High Road: Adventurous seafaring shanty progression
-        .high_road => {
-            p.bpm = 112;
-            p.bass_notes = [BGM_STEPS]u8{
-                45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 40, 0, 0, 0,
-                45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 45, 0, 0, 0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                64, 69, 72, 71, 69, 0, 67, 0, 69, 72, 74, 0, 76, 0, 0,  0,
-                76, 74, 72, 71, 69, 0, 67, 64, 65, 67, 69, 0, 69, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                57, 0, 60, 0, 53, 0, 57, 0, 55, 0, 59, 0, 52, 0, 55, 0,
-                57, 0, 60, 0, 53, 0, 57, 0, 55, 0, 59, 0, 57, 0, 60, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 0, 3, 0, 2, 0, 1, 0, 1, 0, 3, 0, 2, 0, 3, 0,
-                1, 0, 3, 0, 2, 0, 1, 0, 1, 0, 3, 0, 2, 3, 1, 2,
-            };
-        },
-
-        // Carla's Sanctuary: Intense, dramatic sword duel cadence
-        .sanctuary => {
-            p.bpm = 144;
-            p.bass_notes = [BGM_STEPS]u8{
-                38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 43, 43, 45, 45, 43, 41,
-                38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 45, 45, 38, 38, 0,  0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                74, 0, 77, 0, 81, 0, 79, 77, 76, 0, 77, 79, 81, 0, 0,  0,
-                86, 0, 81, 0, 77, 0, 74, 0, 76, 77, 76, 73, 74, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                50, 0, 53, 0, 53, 0, 57, 0, 55, 0, 58, 0, 57, 0, 61, 0,
-                50, 0, 53, 0, 53, 0, 57, 0, 55, 0, 57, 0, 50, 0, 53, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 1, 3, 2, 3, 1, 3, 1, 3, 1, 3, 2, 3, 1, 2,
-                1, 3, 1, 3, 2, 3, 1, 3, 1, 3, 1, 3, 2, 2, 1, 2,
-            };
-        },
-
-        // The Scumm Bar: Rowdy pirate tavern waltz in 3/4 time
-        .scumm_bar => {
-            p.bpm = 138;
-            p.bass_notes = [BGM_STEPS]u8{
-                48, 0, 0, 48, 0, 0, 43, 0, 0, 48, 0, 0, 41, 0, 0, 43,
-                48, 0, 0, 48, 0, 0, 45, 0, 0, 43, 0, 0, 48, 0, 0, 0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                72, 0, 74, 76, 0, 79, 81, 0, 79, 76, 0, 0, 72, 0, 76, 74,
-                72, 0, 74, 76, 0, 79, 81, 0, 79, 76, 74, 0, 72, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                0, 60, 60, 0, 60, 60, 0, 55, 55, 0, 60, 60, 0, 57, 57, 0,
-                0, 60, 60, 0, 60, 60, 0, 57, 57, 0, 55, 55, 0, 60, 60, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2,
-                1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2,
-            };
-        },
-
-        // Gabriel Knight 3 Hotel Courtyard Garden: Peaceful French provincial waltz
-        .courtyard => {
-            p.bpm = 104;
-            p.bass_notes = [BGM_STEPS]u8{
-                41, 0, 48, 0, 41, 0, 48, 0, 46, 0, 41, 0, 48, 0, 43, 0,
-                41, 0, 48, 0, 41, 0, 48, 0, 46, 0, 48, 0, 41, 0, 0,  0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                69, 0, 72, 0, 77, 0, 76, 74, 72, 0, 70, 0, 69, 0, 67, 0,
-                69, 0, 72, 0, 77, 0, 79, 77, 76, 0, 74, 0, 72, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                53, 0, 57, 0, 53, 0, 57, 0, 58, 0, 53, 0, 57, 0, 55, 0,
-                53, 0, 57, 0, 53, 0, 57, 0, 58, 0, 57, 0, 53, 0, 0,  0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 0, 3, 0, 0, 0, 3, 0, 1, 0, 3, 0, 0, 0, 3, 0,
-                1, 0, 3, 0, 0, 0, 3, 0, 1, 0, 3, 0, 0, 0, 1, 0,
-            };
-        },
-
-        // Gabriel Knight 3 Bike Rental Shop: Breezy French café accordion cadence
-        .bike_shop => {
-            p.bpm = 118;
-            p.bass_notes = [BGM_STEPS]u8{
-                43, 0, 50, 0, 43, 0, 50, 0, 41, 0, 48, 0, 43, 0, 50, 0,
-                43, 0, 50, 0, 43, 0, 50, 0, 41, 0, 45, 0, 43, 0, 0,  0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                67, 70, 74, 73, 74, 0, 70, 0, 67, 69, 70, 72, 69, 0, 0,  0,
-                67, 70, 74, 73, 74, 77, 74, 70, 69, 70, 69, 66, 67, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                0, 55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 55, 0, 58,
-                0, 55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 54, 0, 55, 0, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 3, 3,
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
-            };
-        },
-
-        // Lochmarne Castle & Templar Crypt: Lively Celtic whistle jig in 6/8 time (P20-03, D-023)
-        .lochmarne => {
-            p.bpm = 126;
-            p.bass_notes = [BGM_STEPS]u8{
-                43, 0, 50, 43, 0, 50, 41, 0, 48, 43, 0, 50, 43, 0, 50, 41,
-                43, 0, 50, 43, 0, 50, 45, 0, 52, 43, 0, 50, 43, 0, 0,  0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                71, 74, 76, 79, 76, 74, 76, 74, 71, 69, 71, 74, 71, 0, 0,  0,
-                71, 74, 76, 79, 81, 79, 76, 74, 76, 74, 71, 69, 71, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                0, 55, 59, 0, 55, 59, 0, 53, 57, 0, 55, 59, 0, 55, 59, 0,
-                0, 55, 59, 0, 55, 59, 0, 57, 60, 0, 55, 59, 0, 55, 59, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 3, 3,
-                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 1, 2,
-            };
-        },
-
-        // Day of the Tentacle Trio: Quirky cartoon march with bouncy bass and syncopated lead (P21-03, D-025)
-        .tentacle => {
-            p.bpm = 132;
-            p.bass_notes = [BGM_STEPS]u8{
-                36, 0, 48, 0, 39, 0, 51, 0, 41, 0, 53, 0, 43, 0, 55, 0,
-                36, 0, 48, 0, 39, 0, 51, 0, 44, 0, 56, 0, 43, 0, 41, 0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                60, 63, 67, 72, 70, 67, 63, 60, 65, 68, 72, 75, 72, 0, 0, 0,
-                60, 63, 67, 72, 75, 74, 72, 70, 72, 70, 67, 63, 60, 0, 0, 0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                0, 48, 51, 0, 48, 51, 0, 51, 55, 0, 53, 56, 0, 55, 58, 0,
-                0, 48, 51, 0, 48, 51, 0, 56, 60, 0, 55, 58, 0, 53, 56, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 1, 2, 2,
-                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 2, 3, 1,
-            };
-        },
-
-        // The Bell Tower: slow modal hymn; the lead quotes the Kindle and Toll drafts (P22-03)
-        .bell_tower => {
-            p.bpm = 72;
-            p.bass_notes = [BGM_STEPS]u8{
-                38, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0,
-                41, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 38, 0, 0, 0,
-            };
-            p.lead_notes = [BGM_STEPS]u8{
-                72, 0, 74, 0, 76, 0, 72, 0, 0,  0, 0, 0, 69, 0, 0,  0,
-                67, 0, 69, 0, 71, 0, 67, 0, 0,  0, 0, 0, 62, 0, 0,  0,
-            };
-            p.chord_notes = [BGM_STEPS]u8{
-                50, 0, 0, 0, 57, 0, 0, 0, 48, 0, 0, 0, 55, 0, 0, 0,
-                53, 0, 0, 0, 57, 0, 0, 0, 55, 0, 0, 0, 50, 0, 0, 0,
-            };
-            p.drum_pattern = [BGM_STEPS]u8{
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
-            };
-        },
-    }
-
-    return p;
-}
 
 // ---------------------------------------------------------------------------
 // 6. Complete Procedural Chiptune Synthesizer Engine
@@ -432,8 +269,10 @@ pub const ChiptuneSynth = struct {
     sfx_voices: [MAX_SFX_VOICES]SfxVoice = [_]SfxVoice{.{}} ** MAX_SFX_VOICES,
 
     // BGM Sequencer State
-    current_track: MusicTrackKind = .none,
-    target_track: MusicTrackKind = .none,
+    /// Read by the audio thread; replaced only through `AudioEvent.set_soundtrack`.
+    soundtrack: ?*const Soundtrack = null,
+    current_track: ?u8 = null,
+    target_track: ?u8 = null,
     active_pattern: BgmPattern = std.mem.zeroes(BgmPattern),
     current_step: usize = 0,
     samples_per_step: u32 = 5512,
@@ -469,19 +308,19 @@ pub const ChiptuneSynth = struct {
 
     pub fn init() ChiptuneSynth {
         var synth = ChiptuneSynth{};
-        synth.set_track(.none);
+        synth.set_track(null);
         return synth;
     }
 
     /// Sets or changes the active background music track (P16-03).
-    pub fn set_track(self: *ChiptuneSynth, track: MusicTrackKind) void {
+    pub fn set_track(self: *ChiptuneSynth, track: ?u8) void {
         if (self.current_track == track) return;
 
-        if (self.current_track == .none) {
+        if (self.current_track == null) {
             // Immediate start
             self.current_track = track;
             self.target_track = track;
-            self.active_pattern = get_track_pattern(track);
+            self.active_pattern = self.pattern_of(track);
             self.current_step = 0;
             self.step_sample_counter = 0;
             self.fade_level = 32767;
@@ -498,6 +337,22 @@ pub const ChiptuneSynth = struct {
         }
     }
 
+    /// The pattern of a soundtrack track; an unknown index or null is silence at 120 bpm.
+    fn pattern_of(self: *const ChiptuneSynth, track: ?u8) BgmPattern {
+        const silent = BgmPattern{
+            .bpm = 120,
+            .step_count = 32,
+            .bass_notes = [_]u8{0} ** BGM_STEPS,
+            .lead_notes = [_]u8{0} ** BGM_STEPS,
+            .chord_notes = [_]u8{0} ** BGM_STEPS,
+            .drum_pattern = [_]u8{0} ** BGM_STEPS,
+        };
+        const index = track orelse return silent;
+        const st = self.soundtrack orelse return silent;
+        if (index >= st.tracks.len) return silent;
+        return st.tracks[index].pattern;
+    }
+
     /// Plays one distaff note (P22-02). Degrees outside 0..6 come from an untrusted caller
     /// (host input or a wasm export) and are ignored rather than clamped to a wrong pitch.
     pub fn trigger_note(self: *ChiptuneSynth, degree: u8) void {
@@ -508,21 +363,29 @@ pub const ChiptuneSynth = struct {
         v.phase_inc2 = midi_to_phase_inc(midi + 12);
     }
 
-    /// Triggers an action sound effect in an available voice slot (P16-02).
+    /// Triggers one of the engine's sound effects in an available voice slot (P16-02).
     pub fn trigger_sfx(self: *ChiptuneSynth, kind: SoundEffectKind) void {
         _ = self.trigger_sfx_voice(kind);
     }
 
+    /// Triggers effect `index` of the registered soundtrack; an unknown index is ignored.
+    pub fn trigger_host_sfx(self: *ChiptuneSynth, index: u8) void {
+        const st = self.soundtrack orelse return;
+        if (index >= st.sfx.len) return;
+        _ = self.trigger_patch(&st.sfx[index]);
+    }
+
     fn trigger_sfx_voice(self: *ChiptuneSynth, kind: SoundEffectKind) *SfxVoice {
-        // Find inactive voice, or steal the voice with lowest envelope level
+        return self.trigger_patch(&STOCK_SFX[@intFromEnum(kind)]);
+    }
+
+    /// Starts `patch` in a free voice, or steals the quietest one (P32-02d, D-040).
+    pub fn trigger_patch(self: *ChiptuneSynth, patch: *const SfxPatch) *SfxVoice {
         var slot: usize = 0;
         var lowest_env: i32 = 32768;
-        var found_free = false;
-
         for (self.sfx_voices, 0..) |voice, i| {
             if (!voice.active) {
                 slot = i;
-                found_free = true;
                 break;
             }
             if (voice.env_level < lowest_env) {
@@ -531,170 +394,58 @@ pub const ChiptuneSynth = struct {
             }
         }
 
-        var v = &self.sfx_voices[slot];
+        const v = &self.sfx_voices[slot];
         v.* = SfxVoice{
-            .kind = kind,
+            .patch = patch,
             .active = true,
-            .phase1 = 0,
-            .phase2 = 0,
-            .step = 0,
+            .phase_inc1 = midi_to_phase_inc(patch.note1),
+            .phase_inc2 = if (patch.note2) |n| midi_to_phase_inc(n) else 0,
+            .duty = patch.duty,
+            .pitch_sweep = patch.sweep,
+            .env_level = patch.env,
+            .env_decay = patch.decay,
+            .samples_left = patch.samples,
+            .step_samples_left = patch.step_samples,
             .volume = 100,
         };
-
-        switch (kind) {
-            .footstep => {
-                // Quick crisp noise burst with subtle bass tap
-                v.phase_inc1 = midi_to_phase_inc(36);
-                v.pitch_sweep = -120;
-                v.env_level = 26000;
-                v.env_decay = 26; // ~1000 samples (~22 ms)
-                v.samples_left = 1000;
-            },
-            .pickup => {
-                // Rising two-tone chime (Note 64 -> Note 71)
-                v.phase_inc1 = midi_to_phase_inc(64);
-                v.duty = 0x40000000; // 25% pulse
-                v.env_level = 28000;
-                v.env_decay = 8;
-                v.samples_left = 5000;
-                v.step_samples_left = 1800; // First tone lasts 1800 samples
-            },
-            .combine => {
-                // Sparkling 4-tone ascending arpeggio (C5 -> E5 -> G5 -> C6)
-                v.phase_inc1 = midi_to_phase_inc(60);
-                v.duty = 0x40000000;
-                v.env_level = 30000;
-                v.env_decay = 6;
-                v.samples_left = 9000;
-                v.step_samples_left = 1500;
-            },
-            .horn => {
-                // Low brass dual-saw blare (D2 + A2)
-                v.phase_inc1 = midi_to_phase_inc(38);
-                v.phase_inc2 = midi_to_phase_inc(45);
-                v.env_level = 30000;
-                v.env_decay = 3;
-                v.samples_left = 11000; // ~250 ms
-            },
-            .splash => {
-                // Noise splash with descending bubble sweep
-                v.phase_inc1 = midi_to_phase_inc(72);
-                v.pitch_sweep = -6000;
-                v.env_level = 28000;
-                v.env_decay = 3;
-                v.samples_left = 9000;
-            },
-            .sword_clash => {
-                // High metallic ring modulation + noise impact
-                v.phase_inc1 = midi_to_phase_inc(84); // C7
-                v.phase_inc2 = midi_to_phase_inc(90); // F#7 inharmonic
-                v.env_level = 32000;
-                v.env_decay = 6;
-                v.samples_left = 5500;
-            },
-            .alert => {
-                // Dramatic diminished stinger (D3 + Ab3)
-                v.phase_inc1 = midi_to_phase_inc(50);
-                v.phase_inc2 = midi_to_phase_inc(56);
-                v.env_level = 31000;
-                v.env_decay = 4;
-                v.samples_left = 7500;
-            },
-            .dialogue_blip => {
-                // Subtle retro speech chirp (D5)
-                v.phase_inc1 = midi_to_phase_inc(62);
-                v.pitch_sweep = -1200;
-                v.env_level = 20000;
-                v.env_decay = 25;
-                v.samples_left = 800; // ~18 ms
-            },
-            .click => {
-                // Crisp 8ms UI tick
-                v.phase_inc1 = midi_to_phase_inc(76);
-                v.env_level = 18000;
-                v.env_decay = 50;
-                v.samples_left = 360; // ~8 ms
-            },
-            .whistle => {
-                // Ascending pure whistle
-                v.phase_inc1 = midi_to_phase_inc(60);
-                v.pitch_sweep = 3500;
-                v.env_level = 22000;
-                v.env_decay = 2;
-                v.samples_left = 11000;
-            },
-            .goat_bleat => {
-                // Dual saw-wave bleating voice with rapid vibrato modulation (P20-03, D-023)
-                v.phase_inc1 = midi_to_phase_inc(60); // C4
-                v.phase_inc2 = midi_to_phase_inc(63); // Eb4
-                v.duty = 0x60000000;
-                v.pitch_sweep = 150;
-                v.env_level = 30000;
-                v.env_decay = 3;
-                v.samples_left = 9000; // ~200 ms
-                v.step_samples_left = 1200;
-            },
-            .thud => {
-                // Heavy percussive headbutt impact with rapid pitch drop (P20-03, D-023)
-                v.phase_inc1 = midi_to_phase_inc(40); // E2
-                v.pitch_sweep = -1800;
-                v.env_level = 32000;
-                v.env_decay = 20;
-                v.samples_left = 1600; // ~36 ms
-            },
-            .toilet_flush => {
-                // Downward swirling resonant flush with noise and pitch glide (P21-03, D-025)
-                v.phase_inc1 = midi_to_phase_inc(64);
-                v.pitch_sweep = -120;
-                v.env_level = 28000;
-                v.env_decay = 2;
-                v.samples_left = 18000; // ~400 ms
-            },
-            .snip_shears => {
-                // Sharp metallic snip sound for Betsy Ross cutting cloth (P21-03, D-025)
-                v.phase_inc1 = midi_to_phase_inc(84);
-                v.pitch_sweep = -1200;
-                v.env_level = 26000;
-                v.env_decay = 18;
-                v.samples_left = 2200; // ~50 ms
-            },
-            .wood_chop => {
-                // Heavy wooden axe thud on timber for George Washington (P21-03, D-025)
-                v.phase_inc1 = midi_to_phase_inc(36);
-                v.pitch_sweep = -2200;
-                v.env_level = 32000;
-                v.env_decay = 24;
-                v.samples_left = 2000; // ~45 ms
-            },
-            .distaff_note => {
-                // Sustained plucked-string tone; trigger_note sets the pitch (P22-02, D-029)
-                v.phase_inc1 = midi_to_phase_inc(DISTAFF_MIDI[0]);
-                v.phase_inc2 = midi_to_phase_inc(DISTAFF_MIDI[0] + 12);
-                v.duty = 0x40000000;
-                v.env_level = 26000;
-                v.env_decay = 2;
-                v.samples_left = 13000; // ~300 ms
-            },
-            .weave_success => {
-                // Rising open fifth shimmer (C5 + G5) as a draft takes hold (P22-02, D-029)
-                v.phase_inc1 = midi_to_phase_inc(72);
-                v.phase_inc2 = midi_to_phase_inc(79);
-                v.pitch_sweep = 40;
-                v.env_level = 28000;
-                v.env_decay = 2;
-                v.samples_left = 14000; // ~320 ms
-            },
-            .weave_fizzle => {
-                // Falling detuned buzz as an unmatched draft unravels (P22-02, D-029)
-                v.phase_inc1 = midi_to_phase_inc(55);
-                v.phase_inc2 = midi_to_phase_inc(56);
-                v.pitch_sweep = -900;
-                v.env_level = 24000;
-                v.env_decay = 4;
-                v.samples_left = 6000; // ~135 ms
-            },
-        }
         return v;
+    }
+
+    /// One sample of a voice before its envelope: note steps first, then the patch's terms.
+    fn voice_sample(self: *ChiptuneSynth, v: *SfxVoice) i32 {
+        const p = v.patch;
+        if (p.steps.len > 0) {
+            if (v.step_samples_left == 0 and (v.step < p.steps.len or p.loop)) {
+                const st = p.steps[v.step];
+                v.phase_inc1 = midi_to_phase_inc(st.note);
+                if (st.duty) |d| v.duty = d;
+                v.step_samples_left = st.samples;
+                v.step = if (p.loop) @intCast((v.step + 1) % p.steps.len) else v.step + 1;
+            } else if (v.step_samples_left > 0) {
+                v.step_samples_left -= 1;
+            }
+        }
+
+        // Noise advances the shared generator, so it is drawn at most once per voice sample.
+        var noise: ?i32 = null;
+        var sum: i32 = 0;
+        for (p.terms) |t| {
+            const value: i32 = switch (t.source) {
+                .osc1 => eval_wave(t.shape, v.phase1, v.duty),
+                .osc2 => eval_wave(t.shape, v.phase2, v.duty),
+                .noise => noise orelse blk: {
+                    const n: i32 = eval_noise(&self.rng_state);
+                    noise = n;
+                    break :blk n;
+                },
+                .ring => (eval_wave(t.shape, v.phase1, v.duty) * eval_wave(t.shape2, v.phase2, v.duty)) >> 15,
+            };
+            sum += value * t.weight;
+        }
+        return switch (p.mix) {
+            .shift => |n| sum >> n,
+            .div => |d| @divTrunc(sum, d),
+        };
     }
 
     /// Renders stereo 16-bit PCM samples into output buffer (interleaved L, R, L, R...).
@@ -709,7 +460,7 @@ pub const ChiptuneSynth = struct {
 
         for (0..frame_count) |f| {
             // 1. Advance BGM Step Sequencer
-            if (self.current_track != .none) {
+            if (self.current_track != null) {
                 self.step_sample_counter += 1;
                 if (self.step_sample_counter >= self.samples_per_step) {
                     self.step_sample_counter = 0;
@@ -758,7 +509,7 @@ pub const ChiptuneSynth = struct {
                     self.fade_level = 0;
                     self.is_fading_out = false;
                     self.current_track = self.target_track;
-                    self.active_pattern = get_track_pattern(self.target_track);
+                    self.active_pattern = self.pattern_of(self.target_track);
                     self.current_step = 0;
                     self.step_sample_counter = 0;
                     if (self.active_pattern.bpm > 0) {
@@ -774,7 +525,7 @@ pub const ChiptuneSynth = struct {
             // 2. Synthesize BGM Channels
             var bgm_sample: i32 = 0;
 
-            if (self.current_track != .none and self.fade_level > 0) {
+            if (self.current_track != null and self.fade_level > 0) {
                 // Bass (Triangle)
                 if (self.bass_env > 0) {
                     const raw = eval_triangle(self.bass_phase);
@@ -852,125 +603,7 @@ pub const ChiptuneSynth = struct {
                     continue;
                 }
 
-                var voice_out: i32 = 0;
-
-                switch (v.kind) {
-                    .footstep => {
-                        const noise = eval_noise(&self.rng_state);
-                        const tap = eval_triangle(v.phase1);
-                        voice_out = (@as(i32, noise) * 3 + @as(i32, tap)) >> 2;
-                    },
-                    .pickup => {
-                        // Advance to second chime note if first finished
-                        if (v.step == 0 and v.step_samples_left == 0) {
-                            v.step = 1;
-                            v.phase_inc1 = midi_to_phase_inc(71); // B5
-                            v.duty = 0x80000000;
-                        } else if (v.step_samples_left > 0) {
-                            v.step_samples_left -= 1;
-                        }
-                        voice_out = eval_pulse(v.phase1, v.duty);
-                    },
-                    .combine => {
-                        // 4-step arpeggio: 60 -> 64 -> 67 -> 72
-                        if (v.step_samples_left == 0 and v.step < 3) {
-                            v.step += 1;
-                            v.step_samples_left = 1500;
-                            const note: u8 = switch (v.step) {
-                                1 => 64,
-                                2 => 67,
-                                else => 72,
-                            };
-                            v.phase_inc1 = midi_to_phase_inc(note);
-                        } else if (v.step_samples_left > 0) {
-                            v.step_samples_left -= 1;
-                        }
-                        const pulse = eval_pulse(v.phase1, v.duty);
-                        const tri = eval_triangle(v.phase1);
-                        voice_out = (@as(i32, pulse) + @as(i32, tri)) >> 1;
-                    },
-                    .horn => {
-                        const saw1 = eval_sawtooth(v.phase1);
-                        const saw2 = eval_sawtooth(v.phase2);
-                        voice_out = (@as(i32, saw1) + @as(i32, saw2)) >> 1;
-                    },
-                    .splash => {
-                        const noise = eval_noise(&self.rng_state);
-                        const bubble = eval_triangle(v.phase1);
-                        voice_out = @divTrunc(@as(i32, noise) * 2 + @as(i32, bubble), 3);
-                    },
-                    .sword_clash => {
-                        const tri1 = eval_triangle(v.phase1);
-                        const tri2 = eval_triangle(v.phase2);
-                        const ring = (@as(i32, tri1) * @as(i32, tri2)) >> 15;
-                        const noise = eval_noise(&self.rng_state);
-                        voice_out = (ring + @as(i32, noise)) >> 1;
-                    },
-                    .alert => {
-                        const saw1 = eval_sawtooth(v.phase1);
-                        const saw2 = eval_sawtooth(v.phase2);
-                        voice_out = (@as(i32, saw1) + @as(i32, saw2)) >> 1;
-                    },
-                    .dialogue_blip => {
-                        voice_out = eval_pulse(v.phase1, 0x80000000);
-                    },
-                    .click => {
-                        const tri = eval_triangle(v.phase1);
-                        voice_out = tri;
-                    },
-                    .whistle => {
-                        voice_out = eval_triangle(v.phase1);
-                    },
-                    .goat_bleat => {
-                        if (v.step_samples_left == 0) {
-                            v.step ^= 1;
-                            v.step_samples_left = 1200;
-                            v.phase_inc1 = if (v.step == 0) midi_to_phase_inc(60) else midi_to_phase_inc(63);
-                        } else {
-                            v.step_samples_left -= 1;
-                        }
-                        const saw = eval_sawtooth(v.phase1);
-                        const pulse = eval_pulse(v.phase2, v.duty);
-                        voice_out = (@as(i32, saw) + @as(i32, pulse)) >> 1;
-                    },
-                    .thud => {
-                        const noise = eval_noise(&self.rng_state);
-                        const tri = eval_triangle(v.phase1);
-                        voice_out = (@as(i32, noise) + @as(i32, tri) * 3) >> 2;
-                    },
-                    .toilet_flush => {
-                        const noise = eval_noise(&self.rng_state);
-                        const saw = eval_sawtooth(v.phase1);
-                        voice_out = (@as(i32, noise) + @as(i32, saw)) >> 1;
-                    },
-                    .snip_shears => {
-                        const pulse = eval_pulse(v.phase1, 0x40000000);
-                        const noise = eval_noise(&self.rng_state);
-                        voice_out = (@as(i32, pulse) + @as(i32, noise)) >> 1;
-                    },
-                    .wood_chop => {
-                        const noise = eval_noise(&self.rng_state);
-                        const tri = eval_triangle(v.phase1);
-                        voice_out = (@as(i32, noise) * 2 + @as(i32, tri) * 2) >> 2;
-                    },
-                    .distaff_note => {
-                        // Triangle body with a quiet octave pulse overtone
-                        const tri = eval_triangle(v.phase1);
-                        const over = eval_pulse(v.phase2, v.duty);
-                        voice_out = (@as(i32, tri) * 3 + @as(i32, over)) >> 2;
-                    },
-                    .weave_success => {
-                        const tri1 = eval_triangle(v.phase1);
-                        const tri2 = eval_triangle(v.phase2);
-                        voice_out = (@as(i32, tri1) + @as(i32, tri2)) >> 1;
-                    },
-                    .weave_fizzle => {
-                        const saw1 = eval_sawtooth(v.phase1);
-                        const saw2 = eval_sawtooth(v.phase2);
-                        const noise = eval_noise(&self.rng_state);
-                        voice_out = (@as(i32, saw1) + @as(i32, saw2) + @as(i32, noise)) >> 2;
-                    },
-                }
+                const voice_out = self.voice_sample(v);
 
                 // Envelope and volume scaling
                 const amp = @divTrunc((v.env_level >> 8) * @as(i32, v.volume), 100);
@@ -1024,6 +657,8 @@ pub const AudioBridge = struct {
 
     audio_enabled: bool = false,
     last_scene_hash: u32 = 0,
+    /// The host's sounds, as last registered; the synth receives its copy through the queue.
+    soundtrack: ?*const Soundtrack = null,
 
     pub fn init() AudioBridge {
         return AudioBridge{};
@@ -1055,14 +690,36 @@ pub const AudioBridge = struct {
         self.queue_head = next;
     }
 
-    /// Enqueues a scene background music change.
-    pub fn set_track(self: *AudioBridge, track: MusicTrackKind) void {
+    /// Enqueues a background music change: a soundtrack track index, or null for silence.
+    pub fn set_track(self: *AudioBridge, track: ?u8) void {
+        self.push(.{ .set_bgm = track });
+    }
+
+    /// Plays an engine or soundtrack effect.
+    pub fn enqueue_sound(self: *AudioBridge, sound: Sound) void {
+        switch (sound) {
+            .stock => |kind| self.enqueue_sfx(kind),
+            .host => |index| self.push(.{ .play_host_sfx = index }),
+        }
+    }
+
+    /// Registers a game's tracks, effects, and scene-to-track rule (P32-02d, D-040). The
+    /// audio thread switches to it at its next buffer; scene music is chosen afresh.
+    pub fn set_soundtrack(self: *AudioBridge, soundtrack: ?*const Soundtrack) void {
+        self.soundtrack = soundtrack;
+        self.last_scene_hash = 0;
+        self.push(.{ .set_soundtrack = soundtrack });
+    }
+
+    /// Queues an event, dropping it when the queue is full so the caller never blocks (D-001).
+    /// A dropped `set_soundtrack` would leave the synth on the old one; it is sent while the
+    /// queue is nearly empty (window setup), so this has not been observed.
+    fn push(self: *AudioBridge, event: AudioEvent) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-
         const next = (self.queue_head + 1) % MAX_AUDIO_EVENTS;
         if (next == self.queue_tail) return;
-        self.event_queue[self.queue_head] = AudioEvent{ .set_bgm = track };
+        self.event_queue[self.queue_head] = event;
         self.queue_head = next;
     }
 
@@ -1084,60 +741,12 @@ pub const AudioBridge = struct {
         self.master_volume = @min(volume, 100);
     }
 
-    /// Automatically maps scene name strings to narrative music tracks (P16-03).
-    pub fn get_track_for_scene(scene_name: []const u8) MusicTrackKind {
-        if (scene_name.len == 0) return .none;
-
-        // Checked first: later substrings ("Sanctuary", "Courtyard") belong to other slices.
-        if (std.mem.indexOf(u8, scene_name, "Bell Tower") != null) return .bell_tower;
-
-        if (std.mem.indexOf(u8, scene_name, "Spitting") != null or
-            std.mem.indexOf(u8, scene_name, "Booty") != null or
-            std.mem.indexOf(u8, scene_name, "Spit") != null)
-        {
-            return .spitting_contest;
-        } else if (std.mem.indexOf(u8, scene_name, "High Road") != null or
-            std.mem.indexOf(u8, scene_name, "Road") != null)
-        {
-            return .high_road;
-        } else if (std.mem.indexOf(u8, scene_name, "Sanctuary") != null or
-            std.mem.indexOf(u8, scene_name, "Sword Master") != null)
-        {
-            return .sanctuary;
-        } else if (std.mem.indexOf(u8, scene_name, "Scumm") != null) {
-            return .scumm_bar;
-        } else if (std.mem.indexOf(u8, scene_name, "Cellar") != null) {
-            return .cellar;
-        } else if (std.mem.indexOf(u8, scene_name, "Tavern") != null or
-            std.mem.indexOf(u8, scene_name, "Common") != null)
-        {
-            return .tavern;
-        } else if (std.mem.indexOf(u8, scene_name, "Garden") != null or
-            std.mem.indexOf(u8, scene_name, "Courtyard") != null or
-            std.mem.indexOf(u8, scene_name, "Corridor") != null)
-        {
-            return .courtyard;
-        } else if (std.mem.indexOf(u8, scene_name, "Bike") != null or
-            std.mem.indexOf(u8, scene_name, "Rental") != null)
-        {
-            return .bike_shop;
-        } else if (std.mem.indexOf(u8, scene_name, "Lochmarne") != null or
-            std.mem.indexOf(u8, scene_name, "Goat") != null or
-            std.mem.indexOf(u8, scene_name, "Crypt") != null or
-            std.mem.indexOf(u8, scene_name, "Templar") != null)
-        {
-            return .lochmarne;
-        } else if (std.mem.indexOf(u8, scene_name, "Colonial") != null or
-            std.mem.indexOf(u8, scene_name, "Motel") != null or
-            std.mem.indexOf(u8, scene_name, "Dystopia") != null or
-            std.mem.indexOf(u8, scene_name, "Tentacle") != null or
-            std.mem.indexOf(u8, scene_name, "Dott") != null or
-            std.mem.indexOf(u8, scene_name, "Chrono") != null)
-        {
-            return .tentacle;
-        }
-
-        return .tavern;
+    /// The registered track for a scene, or null (no music) when there is no soundtrack or it
+    /// has no rule for the scene (P32-02d, D-040).
+    pub fn track_for_scene(self: *const AudioBridge, scene_name: []const u8) ?u8 {
+        const st = self.soundtrack orelse return null;
+        const pick = st.track_for_scene orelse return null;
+        return pick(scene_name);
     }
 
     /// Examines the current simulation frame scene and cues, triggering procedural audio reactions.
@@ -1153,8 +762,7 @@ pub const AudioBridge = struct {
 
         if (h != self.last_scene_hash) {
             self.last_scene_hash = h;
-            const track = get_track_for_scene(scene_name);
-            self.set_track(track);
+            self.set_track(self.track_for_scene(scene_name));
         }
     }
 
@@ -1179,9 +787,15 @@ pub const AudioBridge = struct {
         for (pending_events[0..pending_count]) |ev| {
             switch (ev) {
                 .play_sfx => |kind| self.synth.trigger_sfx(kind),
+                .play_host_sfx => |index| self.synth.trigger_host_sfx(index),
+                .set_soundtrack => |st| {
+                    // A new soundtrack's track indices mean different music: stop the old.
+                    self.synth.soundtrack = st;
+                    self.synth.set_track(null);
+                },
                 .play_note => |degree| self.synth.trigger_note(degree),
                 .set_bgm => |track| self.synth.set_track(track),
-                .stop_bgm => self.synth.set_track(.none),
+                .stop_bgm => self.synth.set_track(null),
                 .set_master_volume => |v| self.master_volume = v,
                 .set_sfx_volume => |v| self.sfx_volume = v,
                 .set_bgm_volume => |v| self.bgm_volume = v,
@@ -1204,9 +818,10 @@ test "P16-01: AudioBridge event queueing and decoupled drainage" {
 
     bridge.enqueue_sfx(.footstep);
     bridge.enqueue_sfx(.pickup);
-    bridge.set_track(.tavern);
+    bridge.set_soundtrack(&TEST_SOUNDTRACK);
+    bridge.set_track(0);
 
-    try testing.expectEqual(@as(usize, 3), bridge.queue_head);
+    try testing.expectEqual(@as(usize, 4), bridge.queue_head);
     try testing.expectEqual(@as(usize, 0), bridge.queue_tail);
 
     // Render into mock PCM buffer
@@ -1215,7 +830,7 @@ test "P16-01: AudioBridge event queueing and decoupled drainage" {
 
     // Events were consumed
     try testing.expectEqual(bridge.queue_head, bridge.queue_tail);
-    try testing.expectEqual(MusicTrackKind.tavern, bridge.synth.current_track);
+    try testing.expectEqual(@as(?u8, 0), bridge.synth.current_track);
 }
 
 test "P16-02: Waveform generators produce bounded non-zero signals" {
@@ -1240,23 +855,14 @@ test "P16-02: Waveform generators produce bounded non-zero signals" {
 test "P16-02: Procedural SFX triggers generate active voices and decay to silence" {
     var synth = ChiptuneSynth.init();
 
-    // Trigger all sound effects to verify initialization parameters
-    const all_sfx = [_]SoundEffectKind{
-        .footstep,
-        .pickup,
-        .combine,
-        .horn,
-        .splash,
-        .sword_clash,
-        .alert,
-        .dialogue_blip,
-        .click,
-        .whistle,
-    };
+    // Trigger every engine effect and the test soundtrack's effect
+    const all_sfx = std.meta.tags(SoundEffectKind);
 
+    synth.soundtrack = &TEST_SOUNDTRACK;
     for (all_sfx) |kind| {
         synth.trigger_sfx(kind);
     }
+    synth.trigger_host_sfx(0);
 
     // Verify voices are active
     var active_count: usize = 0;
@@ -1277,27 +883,12 @@ test "P16-02: Procedural SFX triggers generate active voices and decay to silenc
     try testing.expect(non_zero_samples > 0);
 }
 
-test "P16-03: Scene BGM patterns and automatic scene name mapping" {
-    try testing.expectEqual(MusicTrackKind.spitting_contest, AudioBridge.get_track_for_scene("Booty Island Spitting Contest"));
-    try testing.expectEqual(MusicTrackKind.cellar, AudioBridge.get_track_for_scene("The Wine Cellar"));
-    try testing.expectEqual(MusicTrackKind.high_road, AudioBridge.get_track_for_scene("Mêlée Island High Road"));
-    try testing.expectEqual(MusicTrackKind.sanctuary, AudioBridge.get_track_for_scene("Carla's Sanctuary"));
-    try testing.expectEqual(MusicTrackKind.scumm_bar, AudioBridge.get_track_for_scene("The Scumm Bar"));
-    try testing.expectEqual(MusicTrackKind.courtyard, AudioBridge.get_track_for_scene("Hotel Courtyard Garden"));
-    try testing.expectEqual(MusicTrackKind.bike_shop, AudioBridge.get_track_for_scene("Bike Rental Shop"));
-    try testing.expectEqual(MusicTrackKind.tavern, AudioBridge.get_track_for_scene("Tavern Common Room"));
-
-    // Verify pattern contents
-    const tavern_pat = get_track_pattern(.tavern);
-    try testing.expectEqual(@as(u16, 132), tavern_pat.bpm);
-    try testing.expect(tavern_pat.bass_notes[0] > 0);
-    try testing.expect(tavern_pat.lead_notes[0] > 0);
-}
 
 test "P16-03: BGM step sequencer advances steps and renders non-clipping audio" {
     var synth = ChiptuneSynth.init();
-    synth.set_track(.tavern);
-    try testing.expectEqual(MusicTrackKind.tavern, synth.current_track);
+    synth.soundtrack = &TEST_SOUNDTRACK;
+    synth.set_track(0);
+    try testing.expectEqual(@as(?u8, 0), synth.current_track);
 
     var buf: [2048]i16 = undefined;
     for (0..10) |_| {
@@ -1325,18 +916,7 @@ test "P16-01: AudioBridge queue overflow drops events gracefully without blockin
 }
 
 test "P16-02: Individual SFX synthesis renders distinct non-zero waveforms" {
-    const sfx_list = [_]SoundEffectKind{
-        .footstep,
-        .pickup,
-        .combine,
-        .horn,
-        .splash,
-        .sword_clash,
-        .alert,
-        .dialogue_blip,
-        .click,
-        .whistle,
-    };
+    const sfx_list = comptime std.meta.tags(SoundEffectKind);
 
     inline for (sfx_list) |sfx| {
         var synth = ChiptuneSynth.init();
@@ -1373,21 +953,12 @@ test "P16-02: SFX voice stealing re-uses lowest envelope when pool exhausted" {
 }
 
 test "P16-03: All scene background music tracks synthesize cleanly without clipping" {
-    const tracks = [_]MusicTrackKind{
-        .tavern,
-        .cellar,
-        .spitting_contest,
-        .high_road,
-        .sanctuary,
-        .scumm_bar,
-        .courtyard,
-        .bike_shop,
-        .bell_tower,
-    };
+    const tracks = [_]u8{ 0, 1 };
 
     var buf: [1024]i16 = undefined;
     for (tracks) |t| {
         var synth = ChiptuneSynth.init();
+        synth.soundtrack = &TEST_SOUNDTRACK;
         synth.set_track(t);
 
         // Render multiple blocks
@@ -1402,13 +973,14 @@ test "P16-03: All scene background music tracks synthesize cleanly without clipp
 
 test "P16-03: Music track crossfade transitions between tracks smoothly" {
     var synth = ChiptuneSynth.init();
-    synth.set_track(.tavern);
-    try testing.expectEqual(MusicTrackKind.tavern, synth.current_track);
+    synth.soundtrack = &TEST_SOUNDTRACK;
+    synth.set_track(0);
+    try testing.expectEqual(@as(?u8, 0), synth.current_track);
 
     // Switch track while running
-    synth.set_track(.cellar);
+    synth.set_track(1);
     try testing.expect(synth.is_fading_out);
-    try testing.expectEqual(MusicTrackKind.cellar, synth.target_track);
+    try testing.expectEqual(@as(?u8, 1), synth.target_track);
 
     // Render through crossfade
     var buf: [2048]i16 = undefined;
@@ -1416,8 +988,8 @@ test "P16-03: Music track crossfade transitions between tracks smoothly" {
         synth.render_stereo(&buf, 80, 0, 80);
     }
 
-    // Now current_track should have transitioned to cellar
-    try testing.expectEqual(MusicTrackKind.cellar, synth.current_track);
+    // Now current_track should have transitioned to the second track
+    try testing.expectEqual(@as(?u8, 1), synth.current_track);
 }
 
 test "P22-02: distaff notes render at distinct pitches through the bridge" {
@@ -1429,7 +1001,7 @@ test "P22-02: distaff notes render at distinct pitches through the bridge" {
         var buf: [4096]i16 = undefined;
         bridge.render_samples(&buf);
         try testing.expect(bridge.synth.sfx_voices[0].active);
-        try testing.expectEqual(SoundEffectKind.distaff_note, bridge.synth.sfx_voices[0].kind);
+        try testing.expectEqual(&STOCK_SFX[@intFromEnum(SoundEffectKind.distaff_note)], bridge.synth.sfx_voices[0].patch);
 
         var count: usize = 0;
         var prev: i16 = buf[0];
@@ -1468,8 +1040,85 @@ test "P22-02: out-of-range note degrees are dropped and weave stingers synthesiz
     }
 }
 
-test "P22-03: Bell Tower scenes map to the bell tower track ahead of other substrings" {
-    try testing.expectEqual(MusicTrackKind.bell_tower, AudioBridge.get_track_for_scene("Bell Tower Base"));
-    try testing.expectEqual(MusicTrackKind.bell_tower, AudioBridge.get_track_for_scene("Bell Tower Belfry"));
-    try testing.expectEqual(MusicTrackKind.sanctuary, AudioBridge.get_track_for_scene("Sword Master Sanctuary"));
+
+/// A soundtrack for these tests, unrelated to any proof: two short tracks, one effect, and a
+/// rule that plays the first track in scenes whose name starts with "Upper".
+fn test_pattern(bpm: u16, root: u8) BgmPattern {
+    var p = BgmPattern{
+        .bpm = bpm,
+        .step_count = 8,
+        .bass_notes = [_]u8{0} ** BGM_STEPS,
+        .lead_notes = [_]u8{0} ** BGM_STEPS,
+        .chord_notes = [_]u8{0} ** BGM_STEPS,
+        .drum_pattern = [_]u8{0} ** BGM_STEPS,
+    };
+    for (0..8) |i| {
+        p.bass_notes[i] = if (i % 2 == 0) root else 0;
+        p.lead_notes[i] = root + 24 + @as(u8, @intCast(i));
+        p.drum_pattern[i] = @intCast(i % 4);
+    }
+    return p;
+}
+
+fn test_scene_rule(scene: []const u8) ?u8 {
+    return if (std.mem.startsWith(u8, scene, "Upper")) 0 else null;
+}
+
+const TEST_SOUNDTRACK = Soundtrack{
+    .tracks = &.{
+        .{ .name = "alpha", .pattern = test_pattern(140, 40) },
+        .{ .name = "beta", .pattern = test_pattern(90, 45) },
+    },
+    .sfx = &.{.{ .note1 = 48, .note2 = 55, .sweep = -300, .env = 30000, .decay = 5, .samples = 4000, .step_samples = 500, .steps = &.{ .{ .note = 50, .samples = 500 }, .{ .note = 48, .samples = 500 } }, .loop = true, .terms = &.{ .{ .source = .ring, .shape = .saw, .shape2 = .triangle }, .{ .source = .noise, .weight = 2 } }, .mix = .{ .div = 3 } }},
+    .track_for_scene = test_scene_rule,
+};
+
+test "P32-02d: a registered soundtrack chooses scene music; without one there is none" {
+    var bridge = AudioBridge.init();
+    try testing.expectEqual(@as(?u8, null), bridge.track_for_scene("Upper Hall"));
+
+    bridge.set_soundtrack(&TEST_SOUNDTRACK);
+    try testing.expectEqual(@as(?u8, 0), bridge.track_for_scene("Upper Hall"));
+    try testing.expectEqual(@as(?u8, null), bridge.track_for_scene("Lower Hall"));
+
+    bridge.process_scene_and_cues("Upper Hall");
+    var buf: [256]i16 = undefined;
+    bridge.render_samples(&buf);
+    try testing.expectEqual(@as(?*const Soundtrack, &TEST_SOUNDTRACK), bridge.synth.soundtrack);
+    try testing.expectEqual(@as(?u8, 0), bridge.synth.current_track);
+    try testing.expectEqual(@as(u16, 140), bridge.synth.active_pattern.bpm);
+
+    // Unregistering fades the music out and forgets the effects.
+    bridge.set_soundtrack(null);
+    bridge.enqueue_sound(.{ .host = 0 });
+    var fade: [4096]i16 = undefined;
+    bridge.render_samples(&fade);
+    try testing.expectEqual(@as(?u8, null), bridge.synth.current_track);
+    for (bridge.synth.sfx_voices) |v| try testing.expect(!v.active);
+}
+
+test "P32-02d: patches step, loop, ring-modulate, and divide as declared" {
+    var synth = ChiptuneSynth.init();
+    synth.soundtrack = &TEST_SOUNDTRACK;
+    synth.trigger_host_sfx(0);
+    synth.trigger_host_sfx(9); // no such effect: ignored
+    var active: usize = 0;
+    for (synth.sfx_voices) |v| active += @intFromBool(v.active);
+    try testing.expectEqual(@as(usize, 1), active);
+
+    const v = &synth.sfx_voices[0];
+    var buf: [2]i16 = undefined;
+    var notes_seen = [_]bool{false} ** 2;
+    var peak: i32 = 0;
+    for (0..2500) |_| {
+        synth.render_stereo(&buf, 100, 100, 0);
+        peak = @max(peak, @as(i32, @intCast(@abs(buf[0]))));
+        // The looping steps alternate oscillator 1 between notes 50 and 48 (the sweep then
+        // bends each), so its increment keeps returning near both notes.
+        if (v.phase_inc1 >= midi_to_phase_inc(50) - 600 and v.phase_inc1 <= midi_to_phase_inc(50)) notes_seen[0] = true;
+        if (v.phase_inc1 >= midi_to_phase_inc(48) - 600 and v.phase_inc1 <= midi_to_phase_inc(48)) notes_seen[1] = true;
+    }
+    try testing.expect(notes_seen[0] and notes_seen[1]);
+    try testing.expect(v.step < 2);
+    try testing.expect(peak > 500);
 }

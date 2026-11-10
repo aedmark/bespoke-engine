@@ -542,6 +542,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("   - [F1 / Tab]:             Toggle Debug Fact Overlay & REPL\n", .{});
 
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("Guybrush")) |player| display_bridge.set_active_character(player);
     display_bridge.attach_audio_bridge(window.audio_bridge);
     // The clock now runs at the shared tick interval (D-028) instead of once per display frame.
     var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);

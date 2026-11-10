@@ -529,10 +529,8 @@ pub const SpatialSystem = struct {
 
     /// Evaluates whether an actor can physically reach and access their room's transit portal (D-026).
     /// Both sender and recipient must satisfy this invariant under .portal_anchored transfers.
-    /// In Day of the Tentacle:
-    /// - Bernard (1993 Motel) and Hoagie (1790 Workshop) have unhindered physical access to their Chron-o-Johns.
-    /// - Laverne (2193 Dystopian Guard Post) can only reach the Chron-o-John once the kumquat tree is removed
-    ///   (not Trapped) AND (she is 'doing her business' in the yard OR she is wearing the tentacle costume).
+    /// An actor is blocked while the portal is `PortalBlocked` or the actor is `Trapped`; a
+    /// `Guarded` (or `Detained`) actor also needs `PassesGuard` or `DoingBusiness` / `InYard`.
     pub fn can_access_portal(
         self: *const SpatialSystem,
         world_opt: ?*const world_mod.World,
@@ -553,10 +551,10 @@ pub const SpatialSystem = struct {
                 if (world.has_fact(actor, trapped_rel, null)) return false;
             }
 
-            // 3. Security / detention guard invariant:
-            // Laverne (or any guarded/detained actor) can only reach the Chron-o-John if:
-            //   - she is 'doing her business' in the yard (DoingBusiness / InYard / collocated at portal waypoint), OR
-            //   - she has the costume (TentacleDisguiseActive).
+            // 3. Guarded actors (P32-03c, D-041): a `Guarded` or `Detained` actor reaches the
+            //    portal only while it holds `PassesGuard` (a disguise, a pass) or is let through
+            //    (`DoingBusiness` / `InYard`, or standing at the portal itself). The script or host
+            //    says who is guarded and what lets them pass; the engine names no one.
             const is_guarded = if (world.lookup_relation("Guarded")) |gr|
                 world.has_fact(actor, gr, null)
             else if (world.lookup_relation("Detained")) |dr|
@@ -564,14 +562,9 @@ pub const SpatialSystem = struct {
             else
                 false;
 
-            const is_laverne = if (world.get_entity_name(actor)) |name|
-                std.mem.eql(u8, name, "Laverne")
-            else
-                false;
-
-            if (is_guarded or is_laverne) {
-                const has_costume = if (world.lookup_relation("TentacleDisguiseActive")) |dr|
-                    world.has_fact(actor, dr, null)
+            if (is_guarded) {
+                const passes = if (world.lookup_relation("PassesGuard")) |pr|
+                    world.has_fact(actor, pr, null)
                 else
                     false;
 
@@ -582,7 +575,7 @@ pub const SpatialSystem = struct {
                 else
                     agent.current_wp == portal.waypoint;
 
-                if (!has_costume and !doing_business) {
+                if (!passes and !doing_business) {
                     return false;
                 }
             }
@@ -737,7 +730,7 @@ pub const SpatialSystem = struct {
 pub const MAX_CONDUIT_POINTS = 16;
 
 /// Pre-cognitive Fourth-Dimensional vector conduit extruding from an actor's position (P31-02, D-027).
-/// Displays ahead-of-time deterministic A* pathing in the Roberta Sparrow / Donnie Darko model.
+/// Shows an actor's planned A* path ahead of time.
 pub const VectorConduit = struct {
     entity: EntityId,
     points: [MAX_CONDUIT_POINTS]Point2D,
@@ -1019,79 +1012,86 @@ test "D-026: can_transfer_item respects portal_anchored policy and relational co
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    const room_1790 = EntityId.from_int(10);
-    const room_1993 = EntityId.from_int(20);
-    const room_2193 = EntityId.from_int(30);
+    const room_west = EntityId.from_int(10);
+    const room_east = EntityId.from_int(20);
+    const room_keep = EntityId.from_int(30);
     const room_void = EntityId.from_int(40);
 
-    const wp_hoagie = try spatial.graph.add_waypoint(room_1790, 0, 0, "ColonialWp");
-    const wp_toilet_1790 = try spatial.graph.add_waypoint(room_1790, 10, 0, "Toilet1790");
-    const wp_bernard = try spatial.graph.add_waypoint(room_1993, 100, 0, "MotelDesk");
-    const wp_toilet_1993 = try spatial.graph.add_waypoint(room_1993, 110, 0, "Toilet1993");
-    const wp_laverne = try spatial.graph.add_waypoint(room_2193, 200, 0, "GuardPost");
-    const wp_toilet_2193 = try spatial.graph.add_waypoint(room_2193, 210, 0, "Toilet2193");
+    const wp_ann = try spatial.graph.add_waypoint(room_west, 0, 0, "WestYard");
+    const wp_gate_west = try spatial.graph.add_waypoint(room_west, 10, 0, "WestGate");
+    const wp_ben = try spatial.graph.add_waypoint(room_east, 100, 0, "EastDesk");
+    const wp_gate_east = try spatial.graph.add_waypoint(room_east, 110, 0, "EastGate");
+    const wp_cora = try spatial.graph.add_waypoint(room_keep, 200, 0, "Cell");
+    const wp_gate_keep = try spatial.graph.add_waypoint(room_keep, 210, 0, "KeepGate");
     const wp_drifter = try spatial.graph.add_waypoint(room_void, 300, 0, "VoidSpot");
 
-    const hoagie = try world.intern_entity("Hoagie");
-    const bernard = try world.intern_entity("Bernard");
-    const laverne = try world.intern_entity("Laverne");
+    const ann = try world.intern_entity("Ann");
+    const ben = try world.intern_entity("Ben");
+    const cora = try world.intern_entity("Cora");
     const drifter = try world.intern_entity("Drifter");
 
-    try spatial.register_entity(hoagie, wp_hoagie, 2);
-    try spatial.register_entity(bernard, wp_bernard, 2);
-    try spatial.register_entity(laverne, wp_laverne, 2);
+    try spatial.register_entity(ann, wp_ann, 2);
+    try spatial.register_entity(ben, wp_ben, 2);
+    try spatial.register_entity(cora, wp_cora, 2);
     try spatial.register_entity(drifter, wp_drifter, 2);
 
-    const portal_1790 = EntityId.from_int(101);
-    const portal_1993 = EntityId.from_int(102);
-    const portal_2193 = EntityId.from_int(103);
+    const portal_west = EntityId.from_int(101);
+    const portal_east = EntityId.from_int(102);
+    const portal_keep = EntityId.from_int(103);
 
-    try spatial.register_portal(portal_1790, room_1790, wp_toilet_1790);
-    try spatial.register_portal(portal_1993, room_1993, wp_toilet_1993);
-    try spatial.register_portal(portal_2193, room_2193, wp_toilet_2193);
+    try spatial.register_portal(portal_west, room_west, wp_gate_west);
+    try spatial.register_portal(portal_east, room_east, wp_gate_east);
+    try spatial.register_portal(portal_keep, room_keep, wp_gate_keep);
 
-    // 1. Both Hoagie and Bernard have portals in their respective rooms -> succeeds
-    try testing.expect(spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
-    try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, hoagie, .portal_anchored));
+    // 1. Both Ann and Ben have portals in their respective rooms -> succeeds
+    try testing.expect(spatial.can_transfer_item_with_world(&world, ann, ben, .portal_anchored));
+    try testing.expect(spatial.can_transfer_item_with_world(&world, ben, ann, .portal_anchored));
 
     // 2. Drifter is in room_void without a portal -> transfer fails under portal_anchored
-    try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, drifter, .portal_anchored));
-    try testing.expect(!spatial.can_transfer_item_with_world(&world, drifter, bernard, .portal_anchored));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, ben, drifter, .portal_anchored));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, drifter, ben, .portal_anchored));
 
-    // 3. Relational constraint: Laverne is trapped in tree -> transfer fails
+    // 3. Relational constraint: Cora is trapped -> transfer fails
     const trapped_rel = try world.intern_relation("Trapped", .set);
-    _ = try world.remember(laverne, trapped_rel, 1, 0);
-    try testing.expect(!spatial.can_access_portal(&world, laverne));
-    try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
-    try testing.expect(!spatial.can_transfer_item_with_world(&world, laverne, bernard, .portal_anchored));
+    _ = try world.remember(cora, trapped_rel, 1, 0);
+    try testing.expect(!spatial.can_access_portal(&world, cora));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, ben, cora, .portal_anchored));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, cora, ben, .portal_anchored));
 
-    // 4. Laverne freed from tree, but at GuardPost and guarded without costume or doing business -> transfer fails (D-026)
-    _ = world.forget(laverne, trapped_rel, 1);
-    try testing.expect(!spatial.can_access_portal(&world, laverne));
-    try testing.expect(!spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+    // 4. Cora freed, but guarded with no pass and not let through -> transfer fails (D-026, D-041)
+    _ = world.forget(cora, trapped_rel, 1);
+    const guarded_rel = try world.intern_relation("Guarded", .set);
+    _ = try world.remember(cora, guarded_rel, 1, 0);
+    try testing.expect(!spatial.can_access_portal(&world, cora));
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, ben, cora, .portal_anchored));
 
-    // 4b. Laverne is 'doing her business' in the yard -> can access Chron-o-John!
+    // 4b. Cora is 'doing her business' in the yard -> can access portal!
     const doing_biz_rel = try world.intern_relation("DoingBusiness", .set);
-    _ = try world.remember(laverne, doing_biz_rel, 1, 0);
-    try testing.expect(spatial.can_access_portal(&world, laverne));
-    try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
-    _ = world.forget(laverne, doing_biz_rel, 1);
-    try testing.expect(!spatial.can_access_portal(&world, laverne));
+    _ = try world.remember(cora, doing_biz_rel, 1, 0);
+    try testing.expect(spatial.can_access_portal(&world, cora));
+    try testing.expect(spatial.can_transfer_item_with_world(&world, ben, cora, .portal_anchored));
+    _ = world.forget(cora, doing_biz_rel, 1);
+    try testing.expect(!spatial.can_access_portal(&world, cora));
 
-    // 4c. Laverne has the costume (TentacleDisguiseActive) -> can access Chron-o-John!
-    const disguise_rel = try world.intern_relation("TentacleDisguiseActive", .set);
-    _ = try world.remember(laverne, disguise_rel, 1, 0);
-    try testing.expect(spatial.can_access_portal(&world, laverne));
-    try testing.expect(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
+    // 4c. Cora holds a pass -> can access portal!
+    const pass_rel = try world.intern_relation("PassesGuard", .set);
+    _ = try world.remember(cora, pass_rel, 1, 0);
+    try testing.expect(spatial.can_access_portal(&world, cora));
+    try testing.expect(spatial.can_transfer_item_with_world(&world, ben, cora, .portal_anchored));
 
-    // 5. Relational constraint: 1790 portal blocked/unpowered -> transfer fails
+    // 4d. No one is guarded by name: an unguarded actor at the cell reaches the portal (D-041).
+    _ = world.forget(cora, guarded_rel, 1);
+    _ = world.forget(cora, pass_rel, 1);
+    try testing.expect(spatial.can_access_portal(&world, cora));
+
+    // 5. Relational constraint: west portal blocked/unpowered -> transfer fails
     const blocked_rel = try world.intern_relation("PortalBlocked", .set);
-    _ = try world.remember(portal_1790, blocked_rel, 1, 0);
-    try testing.expect(!spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
+    _ = try world.remember(portal_west, blocked_rel, 1, 0);
+    try testing.expect(!spatial.can_transfer_item_with_world(&world, ann, ben, .portal_anchored));
 
-    // Unblock 1790 portal -> succeeds again
-    _ = world.forget(portal_1790, blocked_rel, 1);
-    try testing.expect(spatial.can_transfer_item_with_world(&world, hoagie, bernard, .portal_anchored));
+    // Unblock west portal -> succeeds again
+    _ = world.forget(portal_west, blocked_rel, 1);
+    try testing.expect(spatial.can_transfer_item_with_world(&world, ann, ben, .portal_anchored));
 }
 
 test "P31-02: pre-cognitive vector conduits project ahead-of-time deterministic paths" {

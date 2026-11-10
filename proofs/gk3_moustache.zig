@@ -2,6 +2,25 @@ const std = @import("std");
 const bespoke = @import("bespoke");
 const art = @import("art.zig");
 
+/// Keys this proof binds through its theme (P32-02c); the engine returns them as
+/// `UserAction.custom`.
+const Gk3Key = enum(u16) { hotel, garden, bike_shop, scavenge, step_1, step_2, step_3, step_4, step_5, step_6, step_7, step_8 };
+
+const gk3_theme = art.with_keys(&.{
+    .{ .key = bespoke.display.renderer.c.SDLK_h, .action = @intFromEnum(Gk3Key.hotel) },
+    .{ .key = bespoke.display.renderer.c.SDLK_g, .action = @intFromEnum(Gk3Key.garden) },
+    .{ .key = bespoke.display.renderer.c.SDLK_b, .action = @intFromEnum(Gk3Key.bike_shop) },
+    .{ .key = bespoke.display.renderer.c.SDLK_0, .action = @intFromEnum(Gk3Key.scavenge) },
+    .{ .key = bespoke.display.renderer.c.SDLK_1, .action = @intFromEnum(Gk3Key.step_1) },
+    .{ .key = bespoke.display.renderer.c.SDLK_2, .action = @intFromEnum(Gk3Key.step_2) },
+    .{ .key = bespoke.display.renderer.c.SDLK_3, .action = @intFromEnum(Gk3Key.step_3) },
+    .{ .key = bespoke.display.renderer.c.SDLK_4, .action = @intFromEnum(Gk3Key.step_4) },
+    .{ .key = bespoke.display.renderer.c.SDLK_5, .action = @intFromEnum(Gk3Key.step_5) },
+    .{ .key = bespoke.display.renderer.c.SDLK_6, .action = @intFromEnum(Gk3Key.step_6) },
+    .{ .key = bespoke.display.renderer.c.SDLK_7, .action = @intFromEnum(Gk3Key.step_7) },
+    .{ .key = bespoke.display.renderer.c.SDLK_8, .action = @intFromEnum(Gk3Key.step_8) },
+});
+
 pub const GK3_MOUSTACHE_SCRIPT =
     \\scene: Hotel Corridor
     \\cast: Gabriel, Mosely
@@ -494,13 +513,16 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     }
 
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("Gabriel")) |player| display_bridge.set_active_character(player);
     const repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
     _ = repl_instance;
 
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Gabriel Knight 3: The Cat Moustache", 1280, 720);
     defer window.deinit();
-    window.set_theme(&art.theme);
+    window.set_theme(&gk3_theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
@@ -890,32 +912,34 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         // Check helper hotkeys
-        const keys = bespoke.display.renderer.c.SDL_GetKeyboardState(null);
-        if (keys != null) {
+        // Bound keys arrive once per press as `UserAction.custom` (P32-02c); they used to be
+        // polled every frame from SDL's keyboard state.
+        const pressed: ?Gk3Key = if (action == .custom) std.meta.intToEnum(Gk3Key, action.custom) catch null else null;
+        if (pressed != null) {
             var hotkey_handled = false;
             // [H] Hotel Corridor
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_H] != 0) {
+            if (pressed == .hotel) {
                 try vm.transition_to_scene(hotel_scene);
                 _ = try spatial.transition_actor(gabriel, hotel_scene, r25_wp);
                 window.set_cue_banner("Switched Scene: Hotel Corridor", 60);
                 hotkey_handled = true;
             }
             // [G] Courtyard Garden
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_G] != 0) {
+            if (pressed == .garden) {
                 try vm.transition_to_scene(garden_scene);
                 _ = try spatial.transition_actor(gabriel, garden_scene, garden_path_wp);
                 window.set_cue_banner("Switched Scene: Hotel Courtyard Garden", 60);
                 hotkey_handled = true;
             }
             // [B] Bike Rental Shop
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_B] != 0) {
+            if (pressed == .bike_shop) {
                 try vm.transition_to_scene(shop_scene);
                 _ = try spatial.transition_actor(gabriel, shop_scene, shop_ent_wp);
                 window.set_cue_banner("Switched Scene: Bike Rental Shop", 60);
                 hotkey_handled = true;
             }
             // [0] Quick Scavenge Supplies (Dev Shortcut)
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_0] != 0) {
+            if (pressed == .scavenge) {
                 try world.remember(gabriel, carries_rel, marker.to_int(), 0);
                 try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
                 try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
@@ -924,13 +948,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 hotkey_handled = true;
             }
             // [1] Snatch Passport
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_1] != 0) {
+            if (pressed == .step_1) {
                 try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
                 window.set_cue_banner("Step 1: Acquired Mosely's Passport from Room 33!", 90);
                 hotkey_handled = true;
             }
             // [2] Draw Moustache on Passport
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_2] != 0) {
+            if (pressed == .step_2) {
                 try world.remember(gabriel, carries_rel, marker.to_int(), 0);
                 try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
                 try world.remember(gabriel, passport_mod_rel, 1, 0);
@@ -938,14 +962,14 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 hotkey_handled = true;
             }
             // [3] Tape Fence Hole
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_3] != 0) {
+            if (pressed == .step_3) {
                 try world.remember(gabriel, carries_rel, masking_tape.to_int(), 0);
                 try world.remember(fence_hole, taped_rel, 1, 0);
                 window.set_cue_banner("Step 3: Stretched masking tape across fence hole!", 90);
                 hotkey_handled = true;
             }
             // [4] Squirt Stray Cat
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_4] != 0) {
+            if (pressed == .step_4) {
                 try world.remember(gabriel, carries_rel, spray_bottle.to_int(), 0);
                 try world.remember(stray_cat, startled_rel, 1, 0);
                 try world.remember(fence_hole, fence_hair_rel, 1, 0);
@@ -953,7 +977,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 hotkey_handled = true;
             }
             // [5] Collect Cat Hair
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_5] != 0) {
+            if (pressed == .step_5) {
                 try world.remember(gabriel, carries_rel, cat_hair_ent.to_int(), 0);
                 _ = world.forget(fence_hole, fence_hair_rel, null);
                 _ = world.forget(fence_hole, taped_rel, null);
@@ -961,7 +985,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 hotkey_handled = true;
             }
             // [6] Craft Cat Moustache with Syrup
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_6] != 0) {
+            if (pressed == .step_6) {
                 try world.remember(gabriel, carries_rel, syrup.to_int(), 0);
                 try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
                 try world.remember(gabriel, sticky_lip_rel, 1, 0);
@@ -969,7 +993,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 hotkey_handled = true;
             }
             // [7] Don Disguise
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_7] != 0) {
+            if (pressed == .step_7) {
                 try world.remember(gabriel, carries_rel, passport_ent.to_int(), 0);
                 try world.remember(gabriel, passport_mod_rel, 1, 0);
                 try world.remember(gabriel, carries_rel, moustache_ent.to_int(), 0);
@@ -978,7 +1002,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 hotkey_handled = true;
             }
             // [8] Talk to Buthane
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_8] != 0) {
+            if (pressed == .step_8) {
                 if (evaluate_disguise(&world)) {
                     try world.remember(gabriel, has_keys_rel, 1, 0);
                     window.set_cue_banner("★ Step 8 VICTORY: Buthane gave motorcycle keys to \"Mosely\"! ★", 180);
@@ -1056,6 +1080,9 @@ test "P14-02: verify scene transition capture to hotel garden" {
     try vm.transition_to_scene(hotel_scene);
 
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("Gabriel")) |player| display_bridge.set_active_character(player);
     display_bridge.capture_frame(&world, &spatial, &vm);
     display_bridge.swap();
 

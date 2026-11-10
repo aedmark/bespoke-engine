@@ -3,6 +3,9 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
+/// Stack for the wasm modules; see the note at `wasm_exe.stack_size`.
+const WASM_STACK_BYTES: u64 = 8 * 1024 * 1024;
+
 pub fn build(b: *std.Build) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -161,14 +164,38 @@ pub fn build(b: *std.Build) void {
     });
     const wasm_exe = b.addExecutable(.{
         .name = "bespoke",
-        .root_source_file = b.path("src/wasm.zig"),
+        .root_source_file = b.path("src/wasm_engine.zig"),
         .target = wasm_target,
         .optimize = .ReleaseSmall,
     });
     wasm_exe.entry = .disabled;
     wasm_exe.rdynamic = true;
+    // The runtime is about 1.2 MB and `WasmRuntime.init` returns it by value, so the default
+    // 1 MB wasm stack overflows on the first `wasm_init` (found in P32-04, D-042).
+    wasm_exe.stack_size = WASM_STACK_BYTES;
 
     const install_wasm = b.addInstallArtifact(wasm_exe, .{});
-    const wasm_step = b.step("wasm", "Build freestanding WebAssembly (wasm32-freestanding) runtime module");
+    const wasm_step = b.step("wasm", "Build the engine's WebAssembly module with its neutral demo deck");
     wasm_step.dependOn(&install_wasm.step);
+
+    // P32-04 (D-042): the proofs' decks in their own module, against the engine built for wasm.
+    // No SDL here: the wasm build references none of the display code.
+    const wasm_bespoke = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const wasm_proofs_exe = b.addExecutable(.{
+        .name = "bespoke-proofs",
+        .root_source_file = b.path("proofs/wasm_main.zig"),
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    wasm_proofs_exe.root_module.addImport("bespoke", wasm_bespoke);
+    wasm_proofs_exe.entry = .disabled;
+    wasm_proofs_exe.rdynamic = true;
+    wasm_proofs_exe.stack_size = WASM_STACK_BYTES;
+    const install_wasm_proofs = b.addInstallArtifact(wasm_proofs_exe, .{});
+    const wasm_proofs_step = b.step("wasm-proofs", "Build the proofs' WebAssembly module (bespoke-proofs.wasm)");
+    wasm_proofs_step.dependOn(&install_wasm_proofs.step);
 }

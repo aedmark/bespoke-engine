@@ -147,6 +147,8 @@ test {
     // bespoke-proofs executable never needs the test-only `golden_options` module.
     _ = @import("golden_test.zig");
     _ = @import("render_golden_test.zig");
+    _ = @import("audio_golden_test.zig");
+    _ = @import("wasm_golden_test.zig");
 }
 
 test "proofs: legacy flag spellings resolve to the same proofs" {

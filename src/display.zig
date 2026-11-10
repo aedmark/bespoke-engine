@@ -22,7 +22,8 @@ pub const UserAction = renderer.UserAction;
 pub const audio = @import("audio.zig");
 pub const AudioBridge = audio.AudioBridge;
 pub const SoundEffectKind = audio.SoundEffectKind;
-pub const MusicTrackKind = audio.MusicTrackKind;
+pub const Sound = audio.Sound;
+pub const Soundtrack = audio.Soundtrack;
 pub const ChiptuneSynth = audio.ChiptuneSynth;
 
 /// A lightweight, read-only representation of an entity for display peripherals (D-001, P5-01).
@@ -153,40 +154,6 @@ pub const RenderDebugFiber = struct {
     }
 };
 
-/// Physiological drive and status snapshot for a villager in "The Living Village" (P18-01, P18-03, D-021).
-pub const RenderVillagerDrive = struct {
-    entity: EntityId = .none,
-    name: [16]u8 = [_]u8{0} ** 16,
-    name_len: u8 = 0,
-    hunger: u8 = 0,
-    energy: u8 = 0,
-    gold: u16 = 0,
-    activity: u8 = 0,
-    knows_rumor: bool = false,
-    is_witness: bool = false,
-    is_arrested: bool = false,
-
-    pub fn get_name(self: *const RenderVillagerDrive) []const u8 {
-        return self.name[0..self.name_len];
-    }
-};
-
-/// A directed social or emergence edge for the live Social Graph HUD (P18-02, P18-03, D-021).
-pub const RenderSocialEdge = struct {
-    from_name: [16]u8 = [_]u8{0} ** 16,
-    from_len: u8 = 0,
-    to_name: [16]u8 = [_]u8{0} ** 16,
-    to_len: u8 = 0,
-    /// 0 = Friend, 1 = Grudge/Rival, 2 = KnowsRumor, 3 = WarrantFor, 4 = Arrested
-    kind: u8 = 0,
-
-    pub fn get_from(self: *const RenderSocialEdge) []const u8 {
-        return self.from_name[0..self.from_len];
-    }
-    pub fn get_to(self: *const RenderSocialEdge) []const u8 {
-        return self.to_name[0..self.to_len];
-    }
-};
 
 /// Pre-cognitive Fourth-Dimensional vector conduit render slice (P31-02, D-027).
 pub const RenderVectorConduit = struct {
@@ -237,59 +204,8 @@ pub const RenderFrame = struct {
     cues: [16]RenderCue,
     cue_count: usize,
     fact_count: usize,
-    cheese_holder: EntityId,
-    charmed_target: EntityId,
-    // Scenario status flags (P10-03, P14-02)
-    spit_is_thick: bool = false,
-    flags_tampered: bool = false,
-    wind_blowing: bool = false,
-    organiser_distracted: bool = false,
-    fence_taped: bool = false,
-    fence_has_hair: bool = false,
-    cat_startled: bool = false,
-    cat_hair_collected: bool = false,
-    gabriel_disguised: bool = false,
-    bike_rented: bool = false,
-    // Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
-    goat_is_tangled: bool = false,
-    goat_is_charging: bool = false,
-    goat_is_retreating: bool = false,
-    george_knocked_down: bool = false,
-    plough_moved: bool = false,
-    // Day of the Tentacle status flags (P21-03, D-025)
-    dott_tree_chopped: bool = false,
-    dott_wine_aged: bool = false,
-    dott_battery_charged: bool = false,
-    dott_flag_sewn: bool = false,
-    dott_laverne_freed: bool = false,
-    dott_laverne_disguised: bool = false,
-    dott_puzzle_solved: bool = false,
-    // Donnie Darko / Roberta Sparrow cinematic time state (P31-01..P31-03, D-027)
-    tangent_active: bool = false,
-    tangent_countdown: [16]u8 = [_]u8{0} ** 16,
-    tangent_countdown_len: u8 = 0,
-    singularity_collapsed: bool = false,
-    darko_water_flooded: bool = false,
-    darko_letter_delivered: bool = false,
-    darko_vortex_reached: bool = false,
-    darko_artifact_returned: bool = false,
-    darko_puzzle_solved: bool = false,
-    // The Bell Tower musical draft scenario (P22-03, D-029)
-    bell_brazier_lit: bool = false,
-    bell_chain_loosed: bool = false,
-    bell_fork_taken: bool = false,
-    bell_ringing: bool = false,
-    bell_beacon_lit: bool = false,
     vector_conduits: [4]RenderVectorConduit = [_]RenderVectorConduit{.{}} ** 4,
     vector_conduit_count: usize = 0,
-    // Living Village drives & social graph state (P18-01..P18-03, D-021)
-    villager_drives: [8]RenderVillagerDrive = [_]RenderVillagerDrive{.{}} ** 8,
-    villager_drive_count: usize = 0,
-    social_edges: [16]RenderSocialEdge = [_]RenderSocialEdge{.{}} ** 16,
-    social_edge_count: usize = 0,
-    village_crime_active: bool = false,
-    village_warrant_active: bool = false,
-    village_arrest_made: bool = false,
     // Multi-character party coordination state (P21-01, D-025)
     party: [MAX_PARTY_MEMBERS]RenderPartyMember = [_]RenderPartyMember{.{ .entity = EntityId.from_int(0) }} ** MAX_PARTY_MEMBERS,
     party_count: usize = 0,
@@ -303,21 +219,39 @@ pub const RenderFrame = struct {
     current_scene: [32]u8 = undefined,
     current_scene_len: u8 = 0,
     max_history_tick: u64,
+    /// The host's own status for its presentation (P32-03b, D-041): bytes the engine never
+    /// reads, filled by the bridge's status hook and read back typed with `host_status`.
+    host_status_bytes: [HOST_STATUS_BYTES]u8 align(8) = [_]u8{0} ** HOST_STATUS_BYTES,
+
+    /// The host status block as the host's own type. `T` must fit the block and must be valid
+    /// when every byte is zero, which is how the block starts.
+    pub fn host_status(self: *const RenderFrame, comptime T: type) *const T {
+        comptime check_host_status(T);
+        return @ptrCast(@alignCast(&self.host_status_bytes));
+    }
+
+    pub fn host_status_mut(self: *RenderFrame, comptime T: type) *T {
+        comptime check_host_status(T);
+        return @ptrCast(@alignCast(&self.host_status_bytes));
+    }
 
     pub fn get_current_scene(self: *const RenderFrame) []const u8 {
         return self.current_scene[0..self.current_scene_len];
     }
 
-    pub fn get_tangent_countdown(self: *const RenderFrame) []const u8 {
-        return self.tangent_countdown[0..self.tangent_countdown_len];
-    }
 };
 
-fn entity_in_state(world: *const World, entity_name: []const u8, state: []const u8) bool {
-    const ent = world.lookup_entity(entity_name) orelse return false;
-    const rel = world.lookup_relation(state) orelse return false;
-    return world.has_fact(ent, rel, null);
+/// Size of `RenderFrame.host_status_bytes`.
+pub const HOST_STATUS_BYTES: usize = 2048;
+
+fn check_host_status(comptime T: type) void {
+    if (@sizeOf(T) > HOST_STATUS_BYTES) @compileError("host status type is larger than HOST_STATUS_BYTES");
+    if (@alignOf(T) > 8) @compileError("host status type needs more than 8-byte alignment");
 }
+
+/// Fills the host's status block from the world after the engine has captured a frame; the
+/// frame's entities, scene, and other engine fields are already set. Must only read the world.
+pub const StatusHook = *const fn (world: *const World, frame: *RenderFrame) void;
 
 fn capture_distaff(world: *const World, maybe_input: ?*const DistaffInput) RenderDistaff {
     const input = maybe_input orelse return .{};
@@ -343,6 +277,7 @@ pub const DisplayBridge = struct {
     front_buffer: RenderFrame,
     back_buffer: RenderFrame,
     audio_bridge: ?*audio.AudioBridge = null,
+    status_hook: ?StatusHook = null,
     distaff: ?*const DistaffInput = null,
     active_player_character: ?EntityId = null,
     active_party_index: ?usize = null,
@@ -406,18 +341,11 @@ pub const DisplayBridge = struct {
         self.front_buffer.max_history_tick = max_tick;
     }
 
-    /// Sets the active Tangent Universe collapse countdown string in the display frame (P31-01, D-027).
-    pub fn set_tangent_countdown(self: *DisplayBridge, countdown_str: []const u8) void {
-        const copy_len = @min(countdown_str.len, self.back_buffer.tangent_countdown.len);
-        @memcpy(self.back_buffer.tangent_countdown[0..copy_len], countdown_str[0..copy_len]);
-        self.back_buffer.tangent_countdown_len = @intCast(copy_len);
-        self.back_buffer.tangent_active = true;
-    }
-
-    /// Sets or clears the singularity collapse fail-state in the display frame (P31-01, D-027).
-    pub fn set_singularity_collapsed(self: *DisplayBridge, collapsed: bool) void {
-        self.back_buffer.singularity_collapsed = collapsed;
-        self.front_buffer.singularity_collapsed = collapsed;
+    /// Registers the host's status capture, called at the end of every `capture_frame`
+    /// (P32-03b, D-041). The block is not cleared between frames, so status a host sets
+    /// directly on `back_buffer` persists until the hook or the host changes it.
+    pub fn set_status_hook(self: *DisplayBridge, hook: ?StatusHook) void {
+        self.status_hook = hook;
     }
 
     /// Explicitly registers a pre-cognitive vector conduit into the back buffer (P31-02, D-027).
@@ -567,180 +495,6 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.cue_count = c_count;
 
-        // 5. Query relational facts for status indicators
-        self.back_buffer.cheese_holder = .none;
-        self.back_buffer.charmed_target = .none;
-        if (world.lookup_entity("Cheese")) |cheese_id| {
-            if (world.lookup_relation("Carries")) |carries_rel| {
-                if (world.find_first(null, carries_rel, @intFromEnum(cheese_id))) |f| {
-                    self.back_buffer.cheese_holder = f.subject;
-                }
-            }
-        }
-        if (world.lookup_relation("CharmedBy")) |charmed_rel| {
-            if (world.find_first(null, charmed_rel, null)) |f| {
-                self.back_buffer.charmed_target = f.subject;
-            }
-        }
-
-        // 5b. Capture Spitting Contest facts (P10-03, D-012)
-        self.back_buffer.spit_is_thick = false;
-        if (world.lookup_relation("thick")) |rel| {
-            self.back_buffer.spit_is_thick = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.flags_tampered = false;
-        if (world.lookup_relation("tampered")) |rel| {
-            self.back_buffer.flags_tampered = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.wind_blowing = false;
-        if (world.lookup_relation("blowing")) |rel| {
-            self.back_buffer.wind_blowing = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.organiser_distracted = false;
-        if (world.lookup_relation("Distracted")) |rel| {
-            self.back_buffer.organiser_distracted = world.has_fact(null, rel, null);
-        }
-
-        // GK3 Cat Moustache scenario status flags (P14-02)
-        self.back_buffer.fence_taped = false;
-        if (world.lookup_relation("taped") orelse world.lookup_relation("Taped")) |rel| {
-            self.back_buffer.fence_taped = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.fence_has_hair = false;
-        if (world.lookup_relation("FenceHasHair")) |rel| {
-            self.back_buffer.fence_has_hair = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.cat_startled = false;
-        if (world.lookup_relation("startled") orelse world.lookup_relation("Startled")) |rel| {
-            self.back_buffer.cat_startled = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.cat_hair_collected = false;
-        if (world.lookup_relation("Carries")) |c_rel| {
-            if (world.lookup_entity("CatHair")) |ch_id| {
-                self.back_buffer.cat_hair_collected = world.has_fact(null, c_rel, ch_id.to_int());
-            }
-        }
-        self.back_buffer.gabriel_disguised = false;
-        if (world.lookup_relation("disguised") orelse world.lookup_relation("Disguised")) |rel| {
-            self.back_buffer.gabriel_disguised = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.bike_rented = false;
-        if (world.lookup_relation("HasBikeKeys") orelse world.lookup_relation("BikeRented")) |rel| {
-            self.back_buffer.bike_rented = world.has_fact(null, rel, null);
-        }
-
-        // 5c. Capture Living Village drives & social graph relations (P18-01..P18-03, D-021)
-        self.back_buffer.villager_drive_count = 0;
-        self.back_buffer.social_edge_count = 0;
-        self.back_buffer.village_crime_active = false;
-        self.back_buffer.village_warrant_active = false;
-        self.back_buffer.village_arrest_made = false;
-
-        if (world.lookup_relation("Hunger")) |hunger_rel| {
-            const energy_rel = world.lookup_relation("Energy");
-            const gold_rel = world.lookup_relation("Gold");
-            const act_rel = world.lookup_relation("Activity");
-            const rumor_rel = world.lookup_relation("KnowsRumor");
-            const wit_rel = world.lookup_relation("Witnessed");
-            const arr_rel = world.lookup_relation("Arrested");
-            const stolen_rel = world.lookup_relation("StolenFrom");
-            const warrant_rel = world.lookup_relation("WarrantFor");
-
-            if (stolen_rel) |sr| self.back_buffer.village_crime_active = world.has_fact(null, sr, null);
-            if (warrant_rel) |wr| self.back_buffer.village_warrant_active = world.has_fact(null, wr, null);
-            if (arr_rel) |ar| self.back_buffer.village_arrest_made = world.has_fact(null, ar, null);
-
-            var vd_count: usize = 0;
-            for (self.back_buffer.entities[0..self.back_buffer.entity_count]) |re| {
-                if (vd_count >= self.back_buffer.villager_drives.len) break;
-                if (world.get_property(re.entity, hunger_rel)) |h_val| {
-                    var vd = RenderVillagerDrive{
-                        .entity = re.entity,
-                        .hunger = @intCast(@min(100, h_val)),
-                        .energy = if (energy_rel) |er| @intCast(@min(100, world.get_property(re.entity, er) orelse 0)) else 0,
-                        .gold = if (gold_rel) |gr| @intCast(@min(999, world.get_property(re.entity, gr) orelse 0)) else 0,
-                        .activity = if (act_rel) |ar| @intCast(@min(20, world.get_property(re.entity, ar) orelse 0)) else 0,
-                        .knows_rumor = if (rumor_rel) |rr| world.has_fact(re.entity, rr, null) else false,
-                        .is_witness = if (wit_rel) |wr| world.has_fact(re.entity, wr, null) else false,
-                        .is_arrested = if (arr_rel) |ar| world.has_fact(re.entity, ar, null) else false,
-                    };
-                    const n = re.get_name();
-                    const nlen = @min(n.len, vd.name.len);
-                    @memcpy(vd.name[0..nlen], n[0..nlen]);
-                    vd.name_len = @intCast(nlen);
-                    self.back_buffer.villager_drives[vd_count] = vd;
-                    vd_count += 1;
-                }
-            }
-            self.back_buffer.villager_drive_count = vd_count;
-
-            // Capture key social and emergence edges for the Social Graph HUD
-            const edge_rels = [_]struct { name: []const u8, kind: u8 }{
-                .{ .name = "Arrested", .kind = 4 },
-                .{ .name = "WarrantFor", .kind = 3 },
-                .{ .name = "KnowsRumor", .kind = 2 },
-                .{ .name = "Grudge", .kind = 1 },
-                .{ .name = "Friend", .kind = 0 },
-            };
-            var se_count: usize = 0;
-            for (edge_rels) |er_info| {
-                if (world.lookup_relation(er_info.name)) |rel_id| {
-                    var q_it = world.query(null, rel_id, null);
-                    while (q_it.next()) |f| {
-                        if (se_count >= self.back_buffer.social_edges.len) break;
-                        const s_name = world.get_entity_name(f.subject) orelse continue;
-                        const o_name = world.get_entity_name(EntityId.from_int(f.object_or_value)) orelse continue;
-                        // Avoid duplicate undirected Friend lines
-                        if (er_info.kind == 0 and f.subject.to_int() > f.object_or_value) continue;
-
-                        var se = RenderSocialEdge{ .kind = er_info.kind };
-                        const slen = @min(s_name.len, se.from_name.len);
-                        @memcpy(se.from_name[0..slen], s_name[0..slen]);
-                        se.from_len = @intCast(slen);
-
-                        const olen = @min(o_name.len, se.to_name.len);
-                        @memcpy(se.to_name[0..olen], o_name[0..olen]);
-                        se.to_len = @intCast(olen);
-
-                        self.back_buffer.social_edges[se_count] = se;
-                        se_count += 1;
-                    }
-                }
-            }
-            self.back_buffer.social_edge_count = se_count;
-        }
-
-        // 5c-bell. Capture Bell Tower scenario state (P22-03). Looked up by entity, not just by
-        // relation, because `lit` is a generic state other scripts may also use.
-        self.back_buffer.bell_brazier_lit = entity_in_state(world, "Brazier", "lit");
-        self.back_buffer.bell_chain_loosed = entity_in_state(world, "IronChain", "loosed");
-        self.back_buffer.bell_ringing = entity_in_state(world, "GreatBell", "ringing");
-        self.back_buffer.bell_beacon_lit = entity_in_state(world, "Beacon", "lit");
-        self.back_buffer.bell_fork_taken = false;
-        if (world.lookup_relation("Carries")) |carries| {
-            if (world.lookup_entity("TuningFork")) |fork| {
-                self.back_buffer.bell_fork_taken = world.has_fact(null, carries, fork.to_int());
-            }
-        }
-
-        // 5d. Capture Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
-        self.back_buffer.goat_is_tangled = false;
-        if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
-            self.back_buffer.goat_is_tangled = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.goat_is_retreating = false;
-        if (world.lookup_relation("GoatRetreating") orelse world.lookup_relation("retreating")) |rel| {
-            self.back_buffer.goat_is_retreating = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.george_knocked_down = false;
-        if (world.lookup_relation("KnockedDown") orelse world.lookup_relation("knocked_down")) |rel| {
-            self.back_buffer.george_knocked_down = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.plough_moved = false;
-        if (world.lookup_relation("PloughMoved") orelse world.lookup_relation("plough_moved")) |rel| {
-            self.back_buffer.plough_moved = world.has_fact(null, rel, null);
-        }
-
         // 5e. Capture party coordination state (P21-01, D-025)
         var p_count: usize = 0;
         var active_p_idx: usize = 0;
@@ -770,58 +524,6 @@ pub const DisplayBridge = struct {
         self.back_buffer.party_count = p_count;
         self.back_buffer.active_party_index = active_p_idx;
 
-        // 5f. Capture Day of the Tentacle puzzle status flags (P21-03, D-025)
-        self.back_buffer.dott_tree_chopped = false;
-        if (world.lookup_relation("TreeChoppedDown")) |rel| {
-            self.back_buffer.dott_tree_chopped = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.dott_wine_aged = false;
-        if (world.lookup_relation("WineAgedIntoVinegar")) |rel| {
-            self.back_buffer.dott_wine_aged = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.dott_battery_charged = false;
-        if (world.lookup_relation("ToiletPowered")) |rel| {
-            self.back_buffer.dott_battery_charged = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.dott_flag_sewn = false;
-        if (world.lookup_relation("TentacleFlagSewn")) |rel| {
-            self.back_buffer.dott_flag_sewn = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.dott_laverne_freed = false;
-        if (world.lookup_relation("FreedFromTree")) |rel| {
-            self.back_buffer.dott_laverne_freed = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.dott_laverne_disguised = false;
-        if (world.lookup_relation("TentacleDisguiseActive")) |rel| {
-            self.back_buffer.dott_laverne_disguised = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.dott_puzzle_solved = false;
-        if (world.lookup_relation("DottSolved")) |rel| {
-            self.back_buffer.dott_puzzle_solved = world.has_fact(null, rel, null);
-        }
-
-        // 5g. Capture Donnie Darko / Roberta Sparrow status flags (P31-01..P31-03, D-027)
-        self.back_buffer.darko_water_flooded = false;
-        if (world.lookup_relation("SchoolFlooded")) |rel| {
-            self.back_buffer.darko_water_flooded = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.darko_letter_delivered = false;
-        if (world.lookup_relation("LetterDelivered")) |rel| {
-            self.back_buffer.darko_letter_delivered = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.darko_vortex_reached = false;
-        if (world.lookup_relation("VortexReady")) |rel| {
-            self.back_buffer.darko_vortex_reached = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.darko_artifact_returned = false;
-        if (world.lookup_relation("ArtifactMaterialized")) |rel| {
-            self.back_buffer.darko_artifact_returned = world.has_fact(null, rel, null);
-        }
-        self.back_buffer.darko_puzzle_solved = false;
-        if (world.lookup_relation("DarkoSolved")) |rel| {
-            self.back_buffer.darko_puzzle_solved = world.has_fact(null, rel, null);
-        }
-
         // Capture active pre-cognitive vector conduits from moving or designated actors (P31-02, D-027)
         self.back_buffer.vector_conduit_count = 0;
         if (spatial.agents.count() > 0) {
@@ -844,15 +546,9 @@ pub const DisplayBridge = struct {
 
         // 6. Capture player inventory (P7-03, D-007, D-025)
         var inv_count: usize = 0;
-        const player_id = self.active_player_character orelse
-            world.lookup_entity("Hoagie") orelse
-            world.lookup_entity("Bernard") orelse
-            world.lookup_entity("Laverne") orelse
-            world.lookup_entity("George") orelse
-            world.lookup_entity("Gabriel") orelse
-            world.lookup_entity("Guybrush") orelse
-            world.lookup_entity("Donnie") orelse
-            world.lookup_entity("Cat");
+        // The host names its player (`set_party` or `set_active_character`); the engine no
+        // longer guesses one from a list of proof characters (P32-03b).
+        const player_id = self.active_player_character;
         if (player_id) |pid| {
             if (world.lookup_relation("InInventory")) |inv_rel| {
                 var it_inv = world.query(pid, inv_rel, null);
@@ -992,6 +688,9 @@ pub const DisplayBridge = struct {
 
         // 8b. Capture distaff staff HUD (P22-02, D-029)
         self.back_buffer.distaff = capture_distaff(world, self.distaff);
+
+        // 8c. The host's own status, after every engine field is set (P32-03b, D-041)
+        if (self.status_hook) |hook| hook(world, &self.back_buffer);
 
         // 9. Forward scene and cues to attached audio bridge (P16-01, P16-03, D-019)
         if (self.audio_bridge) |ab| {

@@ -4,6 +4,7 @@
 //! to `wasm32-freestanding` with zero libc or external dependencies, rendering directly
 //! into a 640x360 RGBA8888 linear-memory framebuffer (`WasmCanvas`) for HTML5 Canvas
 //! `ImageData` blitting and bridging DOM mouse, keyboard, and touch events to BeSpoke intents.
+//! What is on the stage comes from the host's `Deck` table (P32-04, D-042).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -47,37 +48,18 @@ pub const RgbaColor = struct {
     pub const slate = RgbaColor{ .r = 148, .g = 163, .b = 184 };
 };
 
-/// Built-in vertical slice scenarios playable in the WebAssembly / HTML5 Canvas runtime (P19-01, P19-03, P21-03).
-pub const WasmScenario = enum(u8) {
-    tavern_heist = 0,
-    spitting_contest = 1,
-    gk3_moustache = 2,
-    living_village = 3,
-    goat_puzzle = 4,
-    dott_puzzle = 5,
+/// One playable scene of the browser runtime, supplied by the host (P32-04, D-042). `load`
+/// builds the stage on a freshly reset world, spatial graph, and VM; `after_tick` runs after
+/// every tick; `catalyst` answers the `[S]`, `[F]`, and `[G]` keys. Decks are numbered in
+/// table order, and the `[1]` to `[9]` keys switch between them.
+const NO_DECK_BACKGROUND = RgbaColor{ .r = 28, .g = 32, .b = 40 };
 
-    pub fn title(self: WasmScenario) []const u8 {
-        return switch (self) {
-            .tavern_heist => "TAVERN HEIST (GUARD, BARD & CAT)",
-            .spitting_contest => "BOOTY ISLAND SPITTING CONTEST",
-            .gk3_moustache => "GK3: CAT MOUSTACHE PUZZLE",
-            .living_village => "THE LIVING VILLAGE (EMERGENCE)",
-            .goat_puzzle => "BROKEN SWORD: LOCHMARNE GOAT",
-            .dott_puzzle => "DAY OF THE TENTACLE TRIO",
-        };
-    }
-
-    pub fn from_int(val: u8) WasmScenario {
-        return switch (val) {
-            0 => .tavern_heist,
-            1 => .spitting_contest,
-            2 => .gk3_moustache,
-            3 => .living_village,
-            4 => .goat_puzzle,
-            5 => .dott_puzzle,
-            else => .tavern_heist,
-        };
-    }
+pub const Deck = struct {
+    title: []const u8,
+    background: RgbaColor = RgbaColor{ .r = 28, .g = 32, .b = 40 },
+    load: *const fn (rt: *WasmRuntime) anyerror!void,
+    after_tick: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
+    catalyst: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
 };
 
 /// Adventure verbs selectable via mouse click, right-click cycle, or touch tap (P19-02, D-008).
@@ -311,7 +293,8 @@ pub const WasmRuntime = struct {
     spatial: SpatialSystem,
     chunk: bytecode_mod.BytecodeChunk,
     vm: VM,
-    scenario: WasmScenario = .tavern_heist,
+    decks: []const Deck,
+    deck_index: u8 = 0,
     active_verb: WasmVerb = .walk,
     is_paused: bool = false,
     hovered_x: i32 = 0,
@@ -330,18 +313,19 @@ pub const WasmRuntime = struct {
 
     canvas: WasmCanvas = .{},
 
-    pub fn init(allocator: std.mem.Allocator, initial_scenario: WasmScenario) !WasmRuntime {
+    /// Starts on deck `initial` of `decks`; an index past the end starts on the first deck.
+    pub fn init(allocator: std.mem.Allocator, decks: []const Deck, initial: u8) !WasmRuntime {
         var rt = WasmRuntime{
             .allocator = allocator,
             .world = try World.init(allocator, 256 * 1024),
             .spatial = SpatialSystem.init(allocator),
             .chunk = bytecode_mod.BytecodeChunk.init(allocator),
             .vm = undefined,
-            .scenario = initial_scenario,
+            .decks = decks,
         };
         rt.vm = VM.init(allocator, &rt.world, &rt.chunk);
         rt.vm.spatial = &rt.spatial;
-        try rt.load_scenario(initial_scenario);
+        try rt.load_deck(initial);
         return rt;
     }
 
@@ -362,8 +346,8 @@ pub const WasmRuntime = struct {
         return self.banner_buf[0..self.banner_len];
     }
 
-    /// Loads one of the 4 vertical slice scenarios into the WebAssembly runtime spine.
-    pub fn load_scenario(self: *WasmRuntime, scen: WasmScenario) !void {
+    /// Resets the spine and loads deck `index` (the first deck if out of range).
+    pub fn load_deck(self: *WasmRuntime, index: u8) !void {
         self.vm.deinit();
         self.chunk.deinit();
         self.spatial.deinit();
@@ -376,183 +360,13 @@ pub const WasmRuntime = struct {
         self.vm = VM.init(self.allocator, &self.world, &self.chunk);
         self.vm.spatial = &self.spatial;
 
-        self.scenario = scen;
+        self.deck_index = if (index < self.decks.len) index else 0;
         self.active_verb = .walk;
         self.is_paused = false;
         self.max_history_tick = 0;
         self.snapshot_count = 0;
 
-        switch (scen) {
-            .tavern_heist => {
-                const room = try self.world.intern_entity("Tavern");
-                const cat = try self.world.intern_entity("Cat");
-                const guard = try self.world.intern_entity("Guard");
-                const bard = try self.world.intern_entity("Bard");
-                const cheese = try self.world.intern_entity("Cheese");
-                const carries = try self.world.intern_relation("Carries", .set);
-
-                const hearth_wp = try self.spatial.graph.add_waypoint(room, 0, 0, "Hearth");
-                const bar_wp = try self.spatial.graph.add_waypoint(room, 20, 0, "Bar");
-                const cellar_wp = try self.spatial.graph.add_waypoint(room, 40, 0, "Cellar");
-                try self.spatial.graph.connect(hearth_wp, bar_wp, null);
-                try self.spatial.graph.connect(bar_wp, cellar_wp, null);
-
-                const fire_ent = try self.world.intern_entity("Fireplace");
-                const cask_ent = try self.world.intern_entity("WineCask");
-                try self.spatial.add_hotspot(fire_ent, room, .{ .x = 0, .y = -8 }, 6, "Fireplace", "Warm stone tavern hearth.");
-                try self.spatial.add_hotspot(cask_ent, room, .{ .x = 40, .y = -8 }, 6, "WineCask", "Oak wine cask in the cellar.");
-
-                try self.spatial.register_entity(cat, hearth_wp, 10);
-                try self.spatial.register_entity(guard, bar_wp, 8);
-                try self.spatial.register_entity(bard, hearth_wp, 8);
-                try self.world.remember(guard, carries, cheese.to_int(), 0);
-                self.player_entity = cat;
-                self.set_banner("Tavern Heist: Click waypoints to move Cat or press [S] to charm Guard!");
-            },
-            .spitting_contest => {
-                const room = try self.world.intern_entity("Booty Island");
-                const guybrush = try self.world.intern_entity("Guybrush");
-                const organiser = try self.world.intern_entity("Organiser");
-                const onlookers = try self.world.intern_entity("Onlookers");
-                const thick_rel = try self.world.intern_relation("thick", .property);
-                const wind_rel = try self.world.intern_relation("blowing", .property);
-
-                const start_wp = try self.spatial.graph.add_waypoint(room, 4, 2, "Starting Line");
-                const track_wp = try self.spatial.graph.add_waypoint(room, 22, 2, "Flag Marker");
-                const dock_wp = try self.spatial.graph.add_waypoint(room, 38, 2, "Lookout Dock");
-                try self.spatial.graph.connect(start_wp, track_wp, null);
-                try self.spatial.graph.connect(track_wp, dock_wp, null);
-
-                const flags_ent = try self.world.intern_entity("DistanceFlags");
-                try self.spatial.add_hotspot(flags_ent, room, .{ .x = 22, .y = -6 }, 6, "DistanceFlags", "Contest distance flags on the lawn.");
-
-                try self.spatial.register_entity(guybrush, start_wp, 10);
-                try self.spatial.register_entity(organiser, start_wp, 8);
-                try self.spatial.register_entity(onlookers, track_wp, 8);
-                try self.world.remember(guybrush, thick_rel, 0, 0);
-                try self.world.remember(room, wind_rel, 1, 0);
-                self.player_entity = guybrush;
-                self.set_banner("Spitting Contest: Press [G] GreenDrink, [F] Move Flags, [S] Spit!");
-            },
-            .gk3_moustache => {
-                const room = try self.world.intern_entity("Hotel Garden");
-                const gabriel = try self.world.intern_entity("Gabriel");
-                const mosely = try self.world.intern_entity("Mosely");
-                const stray_cat = try self.world.intern_entity("StrayCat");
-                const buthane = try self.world.intern_entity("Buthane");
-
-                const corr_wp = try self.spatial.graph.add_waypoint(room, 0, 2, "HotelCorridor");
-                const fence_wp = try self.spatial.graph.add_waypoint(room, 20, 2, "FenceGap");
-                const shop_wp = try self.spatial.graph.add_waypoint(room, 38, 2, "BikeShop");
-                try self.spatial.graph.connect(corr_wp, fence_wp, null);
-                try self.spatial.graph.connect(fence_wp, shop_wp, null);
-
-                const hole_ent = try self.world.intern_entity("FenceHole");
-                try self.spatial.add_hotspot(hole_ent, room, .{ .x = 20, .y = -7 }, 6, "FenceHole", "Broken picket fence gap.");
-
-                try self.spatial.register_entity(gabriel, corr_wp, 10);
-                try self.spatial.register_entity(mosely, corr_wp, 8);
-                try self.spatial.register_entity(stray_cat, fence_wp, 12);
-                try self.spatial.register_entity(buthane, shop_wp, 8);
-                self.player_entity = gabriel;
-                self.set_banner("GK3 Cat Moustache: Click FenceHole or press [S] to craft disguise!");
-            },
-            .living_village => {
-                const room = try self.world.intern_entity("Living Village");
-                const sheriff = try self.world.intern_entity("Sheriff");
-                const baker = try self.world.intern_entity("Baker");
-                const farmer = try self.world.intern_entity("Farmer");
-                const gossip = try self.world.intern_entity("Gossip");
-                const drifter = try self.world.intern_entity("Drifter");
-
-                const hunger_rel = try self.world.intern_relation("Hunger", .property);
-                const gold_rel = try self.world.intern_relation("Gold", .property);
-                const friend_rel = try self.world.intern_relation("Friend", .set);
-
-                const bakery_wp = try self.spatial.graph.add_waypoint(room, 2, -8, "Bakery");
-                const farm_wp = try self.spatial.graph.add_waypoint(room, 2, 6, "Farm");
-                const sq_wp = try self.spatial.graph.add_waypoint(room, 20, -1, "TownSquare");
-                const jail_wp = try self.spatial.graph.add_waypoint(room, 38, 6, "SheriffsPost");
-                try self.spatial.graph.connect(bakery_wp, sq_wp, null);
-                try self.spatial.graph.connect(farm_wp, sq_wp, null);
-                try self.spatial.graph.connect(sq_wp, jail_wp, null);
-
-                const oven_ent = try self.world.intern_entity("BakeryOven");
-                try self.spatial.add_hotspot(oven_ent, room, .{ .x = 2, .y = -12 }, 6, "BakeryOven", "Warm sourdough brick oven.");
-
-                try self.spatial.register_entity(sheriff, jail_wp, 12);
-                try self.spatial.register_entity(baker, bakery_wp, 10);
-                try self.spatial.register_entity(farmer, farm_wp, 10);
-                try self.spatial.register_entity(gossip, sq_wp, 12);
-                try self.spatial.register_entity(drifter, sq_wp, 11);
-
-                try self.world.remember(sheriff, hunger_rel, 20, 0);
-                try self.world.remember(baker, hunger_rel, 25, 0);
-                try self.world.remember(farmer, hunger_rel, 45, 0);
-                try self.world.remember(drifter, hunger_rel, 70, 0);
-                try self.world.remember(drifter, gold_rel, 0, 0);
-                try self.world.remember(baker, friend_rel, gossip.to_int(), 0);
-                try self.world.remember(gossip, friend_rel, sheriff.to_int(), 0);
-
-                self.player_entity = sheriff;
-                self.set_banner("Living Village: Watch autonomous drives or press [S] for Theft Catalyst!");
-            },
-            .goat_puzzle => {
-                const room = try self.world.intern_entity("Lochmarne Courtyard");
-                const george = try self.world.intern_entity("George");
-                const goat = try self.world.intern_entity("BillyGoat");
-                const stake = try self.world.intern_entity("TetherStake");
-
-                const tether_rel = try self.world.intern_relation("TetheredTo", .set);
-
-                const ent_wp = try self.spatial.graph.add_waypoint(room, 4, 2, "Entrance");
-                const plough_wp = try self.spatial.graph.add_waypoint(room, 16, 8, "Plough");
-                const tether_wp = try self.spatial.graph.add_waypoint(room, 24, 2, "Tether");
-                const dig_wp = try self.spatial.graph.add_waypoint(room, 38, 2, "CellarDig");
-                try self.spatial.graph.connect(ent_wp, plough_wp, null);
-                try self.spatial.graph.connect(plough_wp, tether_wp, null);
-                try self.spatial.graph.connect(tether_wp, dig_wp, null);
-
-                const cellar_ent = try self.world.intern_entity("CellarEntrance");
-                const plough_ent = try self.world.intern_entity("FarmPlough");
-                try self.spatial.add_hotspot(cellar_ent, room, .{ .x = 38, .y = -6 }, 6, "CellarEntrance", "Peagram's Templar excavation dig.");
-                try self.spatial.add_hotspot(plough_ent, room, .{ .x = 16, .y = 6 }, 6, "FarmPlough", "Old heavy iron farm plough.");
-
-                try self.spatial.register_entity(george, ent_wp, 10);
-                try self.spatial.register_entity(goat, tether_wp, 8);
-                try self.world.remember(goat, tether_rel, stake.to_int(), 0);
-
-                self.player_entity = george;
-                self.set_banner("Lochmarne Goat: [1] Approach Dig [2] Drag Plough [3] Descend to Crypt!");
-            },
-            .dott_puzzle => {
-                const room = try self.world.intern_entity("Motel Lobby");
-                const bernard = try self.world.intern_entity("Bernard");
-                const hoagie = try self.world.intern_entity("Hoagie");
-                const laverne = try self.world.intern_entity("Laverne");
-
-                const desk_wp = try self.spatial.graph.add_waypoint(room, 6, 2, "LobbyDesk");
-                const toilet_wp = try self.spatial.graph.add_waypoint(room, 20, 2, "ToiletMark1993");
-                const guard_wp = try self.spatial.graph.add_waypoint(room, 36, 2, "GuardPost");
-                try self.spatial.graph.connect(desk_wp, toilet_wp, null);
-                try self.spatial.graph.connect(toilet_wp, guard_wp, null);
-
-                const wine_ent = try self.world.intern_entity("VintageWine");
-                const flyer_ent = try self.world.intern_entity("TentacleFlyer");
-                const carries_rel = try self.world.intern_relation("Carries", .set);
-
-                try self.spatial.register_entity(bernard, desk_wp, 8);
-                try self.spatial.register_entity(hoagie, toilet_wp, 8);
-                try self.spatial.register_entity(laverne, guard_wp, 8);
-
-                _ = try self.world.remember(bernard, carries_rel, wine_ent.to_int(), 0);
-                _ = try self.world.remember(bernard, carries_rel, flyer_ent.to_int(), 0);
-
-                self.player_entity = bernard;
-                self.set_banner("DOTT Trio: [S] Flush Wine & Flyer to Hoagie, Craft Battery, Sew Flag!");
-            },
-        }
-
+        if (self.decks.len > 0) try self.decks[self.deck_index].load(self);
         self.record_snapshot();
         self.render_frame();
     }
@@ -600,34 +414,8 @@ pub const WasmRuntime = struct {
         self.vm.spatial = &self.spatial;
         try self.vm.step_tick();
 
-        if (self.scenario == .living_village) {
-            if (self.world.lookup_entity("Drifter")) |drifter| {
-                const hunger_rel = try self.world.intern_relation("Hunger", .property);
-                const stolen_rel = try self.world.intern_relation("StolenFrom", .set);
-                const rumor_rel = try self.world.intern_relation("KnowsRumor", .set);
-                const arrested_rel = try self.world.intern_relation("Arrested", .set);
-                const baker = self.world.lookup_entity("Baker") orelse .none;
-                const sheriff = self.world.lookup_entity("Sheriff") orelse .none;
-
-                if (!self.world.has_fact(drifter, arrested_rel, null)) {
-                    const h = @min(100, (self.world.get_property(drifter, hunger_rel) orelse 50) + 5);
-                    try self.world.remember(drifter, hunger_rel, h, 0);
-
-                    if (h >= 80 and !self.world.has_fact(drifter, stolen_rel, null)) {
-                        try self.world.remember(drifter, stolen_rel, baker.to_int(), 0);
-                        try self.world.remember(baker, rumor_rel, drifter.to_int(), 0);
-                        self.set_banner("[CRIME] Starving Drifter stole BreadLoaf from Baker!");
-                    } else if (self.world.has_fact(baker, rumor_rel, drifter.to_int()) and
-                        !self.world.has_fact(sheriff, rumor_rel, drifter.to_int()))
-                    {
-                        try self.world.remember(sheriff, rumor_rel, drifter.to_int(), 0);
-                        self.set_banner("[RUMOR] Baker & Gossip spread theft rumor to Sheriff!");
-                    } else if (self.world.has_fact(sheriff, rumor_rel, drifter.to_int())) {
-                        try self.world.remember(drifter, arrested_rel, sheriff.to_int(), 0);
-                        self.set_banner("[ARREST] Sheriff apprehended Drifter and restored order!");
-                    }
-                }
-            }
+        if (self.decks.len > 0) {
+            if (self.decks[self.deck_index].after_tick) |rule| try rule(self);
         }
 
         self.record_snapshot();
@@ -635,69 +423,11 @@ pub const WasmRuntime = struct {
 
     /// Triggers scenario-specific emergent or puzzle catalysts (`[S]`, `[F]`, `[G]`).
     pub fn trigger_catalyst(self: *WasmRuntime) !void {
-        switch (self.scenario) {
-            .tavern_heist => {
-                const guard = try self.world.intern_entity("Guard");
-                const bard = try self.world.intern_entity("Bard");
-                const cat = try self.world.intern_entity("Cat");
-                const cheese = try self.world.intern_entity("Cheese");
-                const charmed = try self.world.intern_relation("CharmedBy", .set);
-                const carries = try self.world.intern_relation("Carries", .set);
-
-                try self.world.remember(guard, charmed, bard.to_int(), self.world.current_tick + 10);
-                _ = self.world.forget(guard, carries, cheese.to_int());
-                try self.world.remember(cat, carries, cheese.to_int(), 0);
-                self.set_banner("Bard charmed Guard! Cat snatched the Cheese!");
-            },
-            .spitting_contest => {
-                const guybrush = try self.world.intern_entity("Guybrush");
-                const champion = try self.world.intern_relation("SpitChampion", .property);
-                try self.world.remember(guybrush, champion, 1, 0);
-                self.set_banner("Guybrush spits across the tailwind! 1st Place Champion!");
-            },
-            .gk3_moustache => {
-                const gabriel = try self.world.intern_entity("Gabriel");
-                const disguised = try self.world.intern_relation("Disguised", .property);
-                const keys = try self.world.intern_relation("HasBikeKeys", .property);
-                try self.world.remember(gabriel, disguised, 1, 0);
-                try self.world.remember(gabriel, keys, 1, 0);
-                self.set_banner("Gabriel crafts the cat-hair moustache and rents Mosely's bike!");
-            },
-            .living_village => {
-                const drifter = try self.world.intern_entity("Drifter");
-                const hunger_rel = try self.world.intern_relation("Hunger", .property);
-                const arrested_rel = try self.world.intern_relation("Arrested", .set);
-                const stolen_rel = try self.world.intern_relation("StolenFrom", .set);
-                _ = self.world.forget(drifter, arrested_rel, null);
-                _ = self.world.forget(drifter, stolen_rel, null);
-                try self.world.remember(drifter, hunger_rel, 85, 0);
-                try self.step_tick();
-            },
-            .goat_puzzle => {
-                const goat = try self.world.intern_entity("BillyGoat");
-                const plough = try self.world.intern_entity("FarmPlough");
-                const tangled_rel = try self.world.intern_relation("TangledWith", .property);
-                const moved_rel = try self.world.intern_relation("PloughMoved", .property);
-                try self.world.remember(goat, tangled_rel, plough.to_int(), 0);
-                try self.world.remember(plough, moved_rel, 1, 0);
-                self.set_banner("Hauled plough into rope line! Billy Goat is tangled and secured!");
-            },
-            .dott_puzzle => {
-                const hoagie = try self.world.intern_entity("Hoagie");
-                const laverne = try self.world.intern_entity("Laverne");
-                const bat_rel = try self.world.intern_relation("ToiletPowered", .property);
-                const flag_rel = try self.world.intern_relation("TentacleFlagSewn", .property);
-                const chop_rel = try self.world.intern_relation("TreeChoppedDown", .property);
-                const free_rel = try self.world.intern_relation("FreedFromTree", .property);
-                const disg_rel = try self.world.intern_relation("TentacleDisguiseActive", .property);
-
-                try self.world.remember(hoagie, bat_rel, 1, 0);
-                try self.world.remember(hoagie, flag_rel, 1, 0);
-                try self.world.remember(hoagie, chop_rel, 1, 0);
-                try self.world.remember(laverne, free_rel, 1, 0);
-                try self.world.remember(laverne, disg_rel, 1, 0);
-                self.set_banner("DOTT Trio Solved! Super Battery crafted, Tentacle Flag sewn, Laverne freed!");
-            },
+        const catalyst = if (self.decks.len > 0) self.decks[self.deck_index].catalyst else null;
+        if (catalyst) |run| {
+            try run(self);
+        } else {
+            self.set_banner("This deck has no catalyst.");
         }
         self.record_snapshot();
     }
@@ -834,9 +564,10 @@ pub const WasmRuntime = struct {
                         try self.trigger_catalyst();
                         return .catalyst_triggered;
                     },
-                    '1', '2', '3', '4', '5', '6' => {
+                    '1'...'9' => {
                         const idx: u8 = ev.key_code - '1';
-                        try self.load_scenario(WasmScenario.from_int(idx));
+                        if (idx >= self.decks.len) return .none;
+                        try self.load_deck(idx);
                         return .scenario_switched;
                     },
                     else => return .none,
@@ -849,20 +580,14 @@ pub const WasmRuntime = struct {
     /// Renders the current simulation frame into the 640x360 RGBA8888 `WasmCanvas` framebuffer (P19-01).
     pub fn render_frame(self: *WasmRuntime) void {
         // 1. Background theme per vertical slice
-        const bg_col = switch (self.scenario) {
-            .tavern_heist => RgbaColor{ .r = 28, .g = 21, .b = 18 },
-            .spitting_contest => RgbaColor{ .r = 16, .g = 42, .b = 58 },
-            .gk3_moustache => RgbaColor{ .r = 32, .g = 52, .b = 34 },
-            .living_village => RgbaColor{ .r = 22, .g = 44, .b = 28 },
-            .goat_puzzle => RgbaColor{ .r = 38, .g = 48, .b = 40 },
-            .dott_puzzle => RgbaColor{ .r = 42, .g = 24, .b = 48 },
-        };
+        const deck: ?Deck = if (self.decks.len > 0) self.decks[self.deck_index] else null;
+        const bg_col = if (deck) |d| d.background else NO_DECK_BACKGROUND;
         self.canvas.clear(bg_col);
 
         // Stage Arena Box
         self.canvas.fill_rect(12, 44, CANVAS_WIDTH - 24, 248, RgbaColor{ .r = 36, .g = 44, .b = 56 });
         self.canvas.draw_rect_outline(12, 44, CANVAS_WIDTH - 24, 248, RgbaColor.hud_border);
-        self.canvas.draw_text(self.scenario.title(), 22, 52, 1, RgbaColor.gold);
+        self.canvas.draw_text(if (deck) |d| d.title else "NO DECK", 22, 52, 1, RgbaColor.gold);
 
         // 2. Spatial Edges
         for (self.spatial.graph.edges.items) |e| {
@@ -953,119 +678,137 @@ pub const WasmRuntime = struct {
 };
 
 // =============================================================================
-// 3. Freestanding WebAssembly Global State & C-ABI Exports (P19-01, P19-02)
+// 3. Freestanding WebAssembly Global State & C-ABI Exports (P19-01, P19-02, P32-04)
 // =============================================================================
 
-var global_wasm_heap: [2 * 1024 * 1024]u8 = undefined;
-var global_fba = std.heap.FixedBufferAllocator.init(&global_wasm_heap);
-var global_runtime: ?WasmRuntime = null;
+/// Emits the `wasm_*` C-ABI exports for a build whose decks are `decks` (P32-04, D-042).
+/// Call it from a `comptime` block in the wasm build's root file; the engine's own module
+/// (`src/wasm_engine.zig`) and the proofs' (`proofs/wasm_main.zig`) differ only in their decks.
+pub fn export_runtime(comptime decks: []const Deck) void {
+    const Exports = struct {
+        var global_wasm_heap: [2 * 1024 * 1024]u8 = undefined;
+        var global_fba = std.heap.FixedBufferAllocator.init(&global_wasm_heap);
+        var global_runtime: ?WasmRuntime = null;
 
-pub export fn wasm_init(scenario_id: u8) void {
-    global_fba.reset();
-    global_runtime = WasmRuntime.init(
-        global_fba.allocator(),
-        WasmScenario.from_int(scenario_id),
-    ) catch null;
-}
-
-pub export fn wasm_load_scenario(scenario_id: u8) void {
-    wasm_init(scenario_id);
-}
-
-pub export fn wasm_step_tick() void {
-    if (global_runtime) |*rt| {
-        if (!rt.is_paused) {
-            rt.step_tick() catch {};
-            rt.render_frame();
+        fn wasm_init(scenario_id: u8) callconv(.C) void {
+            global_fba.reset();
+            global_runtime = WasmRuntime.init(global_fba.allocator(), decks, scenario_id) catch null;
         }
-    }
-}
 
-pub export fn wasm_render_frame() void {
-    if (global_runtime) |*rt| {
-        rt.render_frame();
-    }
-}
+        fn wasm_load_scenario(scenario_id: u8) callconv(.C) void {
+            wasm_init(scenario_id);
+        }
 
-pub export fn wasm_framebuffer_ptr() [*]const u8 {
-    if (global_runtime) |*rt| {
-        return &rt.canvas.pixels;
-    }
-    return &global_wasm_heap;
-}
+        fn wasm_step_tick() callconv(.C) void {
+            if (global_runtime) |*rt| {
+                if (!rt.is_paused) {
+                    rt.step_tick() catch {};
+                    rt.render_frame();
+                }
+            }
+        }
 
-pub export fn wasm_framebuffer_len() usize {
-    return FRAMEBUFFER_BYTES;
-}
+        fn wasm_render_frame() callconv(.C) void {
+            if (global_runtime) |*rt| {
+                rt.render_frame();
+            }
+        }
 
-pub export fn wasm_on_pointer_down(x: i32, y: i32) u8 {
-    if (global_runtime) |*rt| {
-        const tag = rt.dispatch_event(.{ .kind = .pointer_down, .x = x, .y = y }) catch .none;
-        rt.render_frame();
-        return @intFromEnum(tag);
-    }
-    return 0;
-}
+        fn wasm_framebuffer_ptr() callconv(.C) [*]const u8 {
+            if (global_runtime) |*rt| {
+                return &rt.canvas.pixels;
+            }
+            return &global_wasm_heap;
+        }
 
-pub export fn wasm_on_pointer_move(x: i32, y: i32) u8 {
-    if (global_runtime) |*rt| {
-        const tag = rt.dispatch_event(.{ .kind = .pointer_move, .x = x, .y = y }) catch .none;
-        return @intFromEnum(tag);
-    }
-    return 0;
-}
+        fn wasm_framebuffer_len() callconv(.C) usize {
+            return FRAMEBUFFER_BYTES;
+        }
 
-pub export fn wasm_on_right_click(x: i32, y: i32) u8 {
-    if (global_runtime) |*rt| {
-        const tag = rt.dispatch_event(.{ .kind = .right_click, .x = x, .y = y }) catch .none;
-        rt.render_frame();
-        return @intFromEnum(tag);
-    }
-    return 0;
-}
+        fn wasm_on_pointer_down(x: i32, y: i32) callconv(.C) u8 {
+            if (global_runtime) |*rt| {
+                const tag = rt.dispatch_event(.{ .kind = .pointer_down, .x = x, .y = y }) catch .none;
+                rt.render_frame();
+                return @intFromEnum(tag);
+            }
+            return 0;
+        }
 
-pub export fn wasm_on_key_down(key_code: u8) u8 {
-    if (global_runtime) |*rt| {
-        const tag = rt.dispatch_event(.{ .kind = .key_down, .key_code = key_code }) catch .none;
-        rt.render_frame();
-        return @intFromEnum(tag);
-    }
-    return 0;
-}
+        fn wasm_on_pointer_move(x: i32, y: i32) callconv(.C) u8 {
+            if (global_runtime) |*rt| {
+                const tag = rt.dispatch_event(.{ .kind = .pointer_move, .x = x, .y = y }) catch .none;
+                return @intFromEnum(tag);
+            }
+            return 0;
+        }
 
-pub export fn wasm_on_touch(kind_id: u8, x: i32, y: i32, points: u8) u8 {
-    if (global_runtime) |*rt| {
-        const kind: BrowserEventKind = switch (kind_id) {
-            0 => .touch_start,
-            1 => .touch_move,
-            else => .touch_end,
-        };
-        const tag = rt.dispatch_event(.{ .kind = kind, .x = x, .y = y, .touch_points = points }) catch .none;
-        rt.render_frame();
-        return @intFromEnum(tag);
-    }
-    return 0;
-}
+        fn wasm_on_right_click(x: i32, y: i32) callconv(.C) u8 {
+            if (global_runtime) |*rt| {
+                const tag = rt.dispatch_event(.{ .kind = .right_click, .x = x, .y = y }) catch .none;
+                rt.render_frame();
+                return @intFromEnum(tag);
+            }
+            return 0;
+        }
 
-pub export fn wasm_scrub_to_tick(target_tick: u32) void {
-    if (global_runtime) |*rt| {
-        rt.scrub_to_tick(target_tick);
-        rt.render_frame();
-    }
-}
+        fn wasm_on_key_down(key_code: u8) callconv(.C) u8 {
+            if (global_runtime) |*rt| {
+                const tag = rt.dispatch_event(.{ .kind = .key_down, .key_code = key_code }) catch .none;
+                rt.render_frame();
+                return @intFromEnum(tag);
+            }
+            return 0;
+        }
 
-pub export fn wasm_get_tick() u32 {
-    if (global_runtime) |*rt| {
-        return @intCast(rt.world.current_tick);
-    }
-    return 0;
-}
+        fn wasm_on_touch(kind_id: u8, x: i32, y: i32, points: u8) callconv(.C) u8 {
+            if (global_runtime) |*rt| {
+                const kind: BrowserEventKind = switch (kind_id) {
+                    0 => .touch_start,
+                    1 => .touch_move,
+                    else => .touch_end,
+                };
+                const tag = rt.dispatch_event(.{ .kind = kind, .x = x, .y = y, .touch_points = points }) catch .none;
+                rt.render_frame();
+                return @intFromEnum(tag);
+            }
+            return 0;
+        }
 
-pub export fn wasm_get_fact_count() u32 {
-    if (global_runtime) |*rt| {
-        return @intCast(rt.world.fact_count());
-    }
-    return 0;
+        fn wasm_scrub_to_tick(target_tick: u32) callconv(.C) void {
+            if (global_runtime) |*rt| {
+                rt.scrub_to_tick(target_tick);
+                rt.render_frame();
+            }
+        }
+
+        fn wasm_get_tick() callconv(.C) u32 {
+            if (global_runtime) |*rt| {
+                return @intCast(rt.world.current_tick);
+            }
+            return 0;
+        }
+
+        fn wasm_get_fact_count() callconv(.C) u32 {
+            if (global_runtime) |*rt| {
+                return @intCast(rt.world.fact_count());
+            }
+            return 0;
+        }
+    };
+    @export(Exports.wasm_init, .{ .name = "wasm_init" });
+    @export(Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
+    @export(Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
+    @export(Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });
+    @export(Exports.wasm_framebuffer_ptr, .{ .name = "wasm_framebuffer_ptr" });
+    @export(Exports.wasm_framebuffer_len, .{ .name = "wasm_framebuffer_len" });
+    @export(Exports.wasm_on_pointer_down, .{ .name = "wasm_on_pointer_down" });
+    @export(Exports.wasm_on_pointer_move, .{ .name = "wasm_on_pointer_move" });
+    @export(Exports.wasm_on_right_click, .{ .name = "wasm_on_right_click" });
+    @export(Exports.wasm_on_key_down, .{ .name = "wasm_on_key_down" });
+    @export(Exports.wasm_on_touch, .{ .name = "wasm_on_touch" });
+    @export(Exports.wasm_scrub_to_tick, .{ .name = "wasm_scrub_to_tick" });
+    @export(Exports.wasm_get_tick, .{ .name = "wasm_get_tick" });
+    @export(Exports.wasm_get_fact_count, .{ .name = "wasm_get_fact_count" });
 }
 
 // =============================================================================
@@ -1094,58 +837,82 @@ test "P19-01: WasmCanvas RGBA8888 framebuffer drawing primitives and bitmap font
     canvas.draw_text("BESPOKE", 50, 50, 2, RgbaColor.white);
 }
 
-test "P19-01: WasmRuntime initializes all 4 vertical slices, steps ticks, and renders RGBA8888 frames" {
+/// Two decks for these tests, unrelated to any proof.
+const TestDecks = struct {
+    fn load_yard(rt: *WasmRuntime) anyerror!void {
+        const yard = try rt.world.intern_entity("Yard");
+        const walker = try rt.world.intern_entity("Walker");
+        const gate = try rt.spatial.graph.add_waypoint(yard, 0, 0, "Gate");
+        const well = try rt.spatial.graph.add_waypoint(yard, 40, 0, "Well");
+        try rt.spatial.graph.connect(gate, well, null);
+        try rt.spatial.add_hotspot(try rt.world.intern_entity("Signpost"), yard, .{ .x = 20, .y = -8 }, 6, "Signpost", "Points both ways.");
+        try rt.spatial.register_entity(walker, gate, 10);
+        try rt.world.remember(walker, try rt.world.intern_relation("Rested", .set), 1, 0);
+        rt.player_entity = walker;
+        rt.set_banner("Yard deck");
+    }
+    fn ring_bell(rt: *WasmRuntime) anyerror!void {
+        try rt.world.remember(rt.player_entity, try rt.world.intern_relation("RangBell", .set), 1, 0);
+        rt.set_banner("Bell rung");
+    }
+    fn count_ticks(rt: *WasmRuntime) anyerror!void {
+        const rel = try rt.world.intern_relation("TicksSeen", .property);
+        const n = rt.world.get_property(rt.player_entity, rel) orelse 0;
+        try rt.world.remember(rt.player_entity, rel, n + 1, 0);
+    }
+    fn load_empty(rt: *WasmRuntime) anyerror!void {
+        rt.set_banner("Empty deck");
+    }
+    const decks = [_]Deck{
+        .{ .title = "YARD", .background = .{ .r = 10, .g = 60, .b = 30 }, .load = load_yard, .catalyst = ring_bell, .after_tick = count_ticks },
+        .{ .title = "EMPTY", .load = load_empty },
+    };
+};
+
+test "P32-04: the runtime loads, ticks, and switches host decks and runs their rules" {
     const testing = std.testing;
-    var rt = try WasmRuntime.init(testing.allocator, .tavern_heist);
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &TestDecks.decks, 0);
     defer rt.deinit();
 
+    try testing.expectEqual(@as(u8, 0), rt.deck_index);
+    try testing.expectEqualStrings("Yard deck", rt.get_banner());
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
     try testing.expect(rt.world.fact_count() > 0);
 
     try rt.step_tick();
-    try testing.expectEqual(@as(u64, 1), rt.world.current_tick);
+    try rt.step_tick();
+    try testing.expectEqual(@as(u64, 2), rt.world.current_tick);
+    try testing.expectEqual(@as(?u32, 2), rt.world.get_property(rt.player_entity, rt.world.lookup_relation("TicksSeen").?));
 
-    // Switch across all 4 vertical slice scenarios
-    try rt.load_scenario(.spitting_contest);
-    try testing.expectEqual(WasmScenario.spitting_contest, rt.scenario);
-
-    try rt.load_scenario(.gk3_moustache);
-    try testing.expectEqual(WasmScenario.gk3_moustache, rt.scenario);
-
-    try rt.load_scenario(.living_village);
-    try testing.expectEqual(WasmScenario.living_village, rt.scenario);
-
-    try rt.load_scenario(.goat_puzzle);
-    try testing.expectEqual(WasmScenario.goat_puzzle, rt.scenario);
     try rt.trigger_catalyst();
-    rt.render_frame();
-    const goat = rt.world.lookup_entity("BillyGoat").?;
-    const tangled_rel = rt.world.lookup_relation("TangledWith").?;
-    try testing.expect(rt.world.has_fact(goat, tangled_rel, null));
+    try testing.expect(rt.world.has_fact(rt.player_entity, rt.world.lookup_relation("RangBell").?, null));
 
-    try rt.load_scenario(.dott_puzzle);
-    try testing.expectEqual(WasmScenario.dott_puzzle, rt.scenario);
+    // The deck's background and title reach the canvas.
+    rt.render_frame();
+    const bg = rt.canvas.get_pixel(4, 300);
+    try testing.expectEqual(@as(u8, 60), bg.g);
+
+    // Key [2] switches deck; a deck without a catalyst says so; keys past the table do nothing.
+    try testing.expectEqual(BrowserActionTag.scenario_switched, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '2' }));
+    try testing.expectEqual(@as(u8, 1), rt.deck_index);
+    try testing.expectEqual(@as(usize, 0), rt.world.fact_count());
     try rt.trigger_catalyst();
-    rt.render_frame();
-    const hoagie = rt.world.lookup_entity("Hoagie").?;
-    const bat_rel = rt.world.lookup_relation("ToiletPowered").?;
-    try testing.expect(rt.world.has_fact(hoagie, bat_rel, null));
+    try testing.expectEqualStrings("This deck has no catalyst.", rt.get_banner());
+    try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '9' }));
+    try rt.step_tick();
 
-    // Reload and step Living Village through emergent theft, rumor, and arrest
-    try rt.load_scenario(.living_village);
-    var i: usize = 0;
-    while (i < 10) : (i += 1) {
-        try rt.step_tick();
-    }
-    rt.render_frame();
-    const drifter = rt.world.lookup_entity("Drifter").?;
-    const arrested = rt.world.lookup_relation("Arrested").?;
-    try testing.expect(rt.world.has_fact(drifter, arrested, null));
+    // An index past the table starts on the first deck.
+    try rt.load_deck(7);
+    try testing.expectEqual(@as(u8, 0), rt.deck_index);
 }
 
 test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeSpoke intents" {
     const testing = std.testing;
-    var rt = try WasmRuntime.init(testing.allocator, .tavern_heist);
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &TestDecks.decks, 0);
     defer rt.deinit();
 
     // 1. Click verb button 1 (LOOK) on bottom verb bar (x=75, y=335)
@@ -1163,7 +930,7 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
     try testing.expectEqual(BrowserActionTag.verb_changed, touch_res);
     try testing.expectEqual(WasmVerb.pick_up, rt.active_verb);
 
-    // 4. Click Cellar waypoint at world (40, 0) -> canvas (520, 185) issues walk_to motor intent
+    // 4. Click the Well waypoint at world (40, 0) -> canvas (520, 185) issues walk_to motor intent
     const walk_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 520, .y = 185 });
     try testing.expectEqual(BrowserActionTag.walk_issued, walk_res);
 

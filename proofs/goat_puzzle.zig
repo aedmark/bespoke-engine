@@ -2,6 +2,19 @@ const std = @import("std");
 const bespoke = @import("bespoke");
 const art = @import("art.zig");
 
+/// Keys this proof binds through its theme (P32-02c); the engine returns them as
+/// `UserAction.custom`.
+const GoatKey = enum(u16) { courtyard, crypt, step_1, step_2, step_3, step_4 };
+
+const goat_theme = art.with_keys(&.{
+    .{ .key = bespoke.display.renderer.c.SDLK_c, .action = @intFromEnum(GoatKey.courtyard) },
+    .{ .key = bespoke.display.renderer.c.SDLK_t, .action = @intFromEnum(GoatKey.crypt) },
+    .{ .key = bespoke.display.renderer.c.SDLK_1, .action = @intFromEnum(GoatKey.step_1) },
+    .{ .key = bespoke.display.renderer.c.SDLK_2, .action = @intFromEnum(GoatKey.step_2) },
+    .{ .key = bespoke.display.renderer.c.SDLK_3, .action = @intFromEnum(GoatKey.step_3) },
+    .{ .key = bespoke.display.renderer.c.SDLK_4, .action = @intFromEnum(GoatKey.step_4) },
+});
+
 pub const GOAT_PUZZLE_SCRIPT =
     \\scene: Lochmarne Castle Courtyard
     \\cast: George, BillyGoat
@@ -265,6 +278,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try vm.transition_to_scene(stage.courtyard_scene);
 
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("George")) |player| display_bridge.set_active_character(player);
 
     // Save initial state snapshot for time-travel verification
     var snapshot_0 = std.ArrayList(u8).init(allocator);
@@ -364,10 +380,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try vm.transition_to_scene(courtyard_scene);
 
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("George")) |player| display_bridge.set_active_character(player);
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Broken Sword: The Lochmarne Goat", 1280, 720);
     defer window.deinit();
-    window.set_theme(&art.theme);
+    window.set_theme(&goat_theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
@@ -503,43 +522,45 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         // Check helper hotkeys
-        const keys = bespoke.display.renderer.c.SDL_GetKeyboardState(null);
-        if (keys != null) {
+        // Bound keys arrive once per press as `UserAction.custom` (P32-02c); they used to be
+        // polled every frame from SDL's keyboard state.
+        const pressed: ?GoatKey = if (action == .custom) std.meta.intToEnum(GoatKey, action.custom) catch null else null;
+        if (pressed != null) {
             // [C] Courtyard Scene
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_C] != 0) {
+            if (pressed == .courtyard) {
                 try vm.transition_to_scene(courtyard_scene);
                 _ = try spatial.transition_actor(george, courtyard_scene, entrance_wp);
                 window.set_cue_banner("Switched Scene: Lochmarne Castle Courtyard", 60);
             }
             // [T] Templar Crypt Scene
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_T] != 0) {
+            if (pressed == .crypt) {
                 try vm.transition_to_scene(crypt_scene);
                 _ = try spatial.transition_actor(george, crypt_scene, crypt_ladder_wp);
                 window.set_cue_banner("Switched Scene: Subterranean Templar Crypt", 60);
             }
             // [1] Approach Cellar Dig (Step 1)
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_1] != 0) {
+            if (pressed == .step_1) {
                 if (vm.current_scene == courtyard_scene) {
                     _ = try spatial.walk_to(george, dig_wp);
                     window.set_cue_banner("Step 1: Directing George toward Cellar Dig (Billy Goat threat zone)...", 90);
                 }
             }
             // [2] Drag Plough (Step 2)
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_2] != 0) {
+            if (pressed == .step_2) {
                 if (vm.current_scene == courtyard_scene) {
                     _ = try spatial.walk_to(george, plough_wp);
                     window.set_cue_banner("Step 2: Directing George toward Farm Plough...", 90);
                 }
             }
             // [3] Descend into Crypt (Step 3)
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_3] != 0) {
+            if (pressed == .step_3) {
                 if (vm.current_scene == courtyard_scene) {
                     _ = try spatial.walk_to(george, dig_wp);
                     window.set_cue_banner("Step 3: Directing George toward Cellar Pit to descend into Crypt...", 90);
                 }
             }
             // [4] Inspect Templar Mural (Step 4)
-            if (keys[bespoke.display.renderer.c.SDL_SCANCODE_4] != 0) {
+            if (pressed == .step_4) {
                 if (vm.current_scene == crypt_scene) {
                     _ = try spatial.walk_to(george, altar_wp);
                     _ = try vm.fire_cue(&compiled, "LooksAt", george, carved_mural, null);

@@ -126,7 +126,7 @@ zig build test-proofs                     # every proof's tests
 - `where` guards on `on cue` handlers are parsed but not yet evaluated (dialogue-choice `where` guards and `when` rule patterns are). Use `if` checks inside cue handlers.
 - Societies are configured from Zig host code; declaring one in a script is planned (P32-22). One enforcer per society.
 - Some engine files still name proof content (renderer themes, music tracks, status flags). Removing it is planned as P32-02 to P32-04 in the [roadmap](ROADMAP.md).
-- The browser simulator embedded in the manual hosts six proofs; Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
+- The simulator embedded in the manual is a JavaScript model of six proofs, not the WebAssembly module. `zig build wasm-proofs` builds those six as `bespoke-proofs.wasm`; Insult Sword Fighting, The Middlesex Anomaly, and The Bell Tower are desktop-only for now.
 
 ---
 
@@ -145,7 +145,7 @@ BeSpoke adopts [The Manifold](docs/README.md) repository memory framework and th
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Security model, bytecode/package/save bounds verification, and reporting |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution workflow for human and agent contributors |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | User-visible change notes |
-| [`docs/manual.html`](docs/manual.html) | Standalone 3x What/How/Why manual with an embedded WebAssembly simulator |
+| [`docs/manual.html`](docs/manual.html) | Standalone 3x What/How/Why manual with a JavaScript model of six proofs |
 | [`site/index.html`](site/index.html) | Public showcase website with a JavaScript simulation playground |
 | [`whitepaper.md`](whitepaper.md) | Original foundational vision whitepaper |
 

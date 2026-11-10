@@ -905,8 +905,8 @@ SIMULATOR_HTML = r"""
 <section class="simulator-deck" id="live-simulator">
   <div class="sim-header">
     <div>
-      <h2 class="section-heading" style="margin:0;border:0;padding:0">Interactive BeSpoke Browser Simulator (Wasm32 / HTML5 Canvas)</h2>
-      <p class="section-description" style="margin:.2rem 0 0">Live vertical slices with mouse, keyboard, and touch event bridge, timeline scrubbing, and relational fact inspection (<a href="#wasm-browser-target-and-simulator">P19-01..P19-03</a>).</p>
+      <h2 class="section-heading" style="margin:0;border:0;padding:0">Interactive Proof Simulator (JavaScript model / HTML5 Canvas)</h2>
+      <p class="section-description" style="margin:.2rem 0 0">A JavaScript model of six proofs with the browser runtime's controls: clicks, keys, timeline scrubbing, and fact inspection. It does not load the engine's WebAssembly module (<a href="#wasm-browser-target-and-simulator">P19-01..P19-03, D-042</a>).</p>
     </div>
     <div class="sim-tabs" role="tablist" aria-label="Vertical slice scenarios">
       <button type="button" class="sim-btn active" data-scenario="0">[1] Tavern Heist</button>

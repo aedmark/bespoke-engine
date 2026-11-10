@@ -66,19 +66,123 @@ fn next_scene(lines: *std.mem.SplitIterator(u8, .scalar)) ?SceneCast {
     return null;
 }
 
+/// Proof status a scene's art may react to, by stable name. P32-03 moves this status out of
+/// `RenderFrame`; only `Status.apply` changes with it, never the names.
+const STATUS_VARIANTS = [_][]const u8{
+    "spit_is_thick",          "flags_tampered",       "wind_blowing",           "organiser_distracted",
+    "fence_taped",            "fence_has_hair",       "cat_startled",           "cat_hair_collected",
+    "gabriel_disguised",      "bike_rented",          "goat_is_tangled",        "goat_is_charging",
+    "goat_is_retreating",     "george_knocked_down",  "plough_moved",           "dott_tree_chopped",
+    "dott_wine_aged",         "dott_battery_charged", "dott_flag_sewn",         "dott_laverne_freed",
+    "dott_laverne_disguised", "dott_puzzle_solved",   "tangent_active",         "singularity_collapsed",
+    "darko_water_flooded",    "darko_letter_delivered", "darko_vortex_reached", "darko_artifact_returned",
+    "darko_puzzle_solved",    "bell_brazier_lit",     "bell_chain_loosed",      "bell_fork_taken",
+    "bell_ringing",           "bell_beacon_lit",      "village_crime_active",   "village_warrant_active",
+    "village_arrest_made",    "cheese_holder",        "charmed_target",         "countdown",
+    "villagers",
+};
+
+const Status = struct {
+    /// Sets one named piece of status on a copy of a captured frame. Returns false when the
+    /// frame has nothing to attach it to (no actor to hold the cheese, say).
+    fn apply(frame: *bespoke.RenderFrame, variant: []const u8) bool {
+        const st = frame.host_status_mut(art.Status);
+        inline for (@typeInfo(art.Status).Struct.fields) |field| {
+            if (field.type == bool and std.mem.eql(u8, field.name, variant)) {
+                @field(st, field.name) = true;
+                return true;
+            }
+        }
+        const first = if (frame.entity_count > 0) frame.entities[0].entity else return false;
+        if (std.mem.eql(u8, variant, "cheese_holder")) {
+            st.cheese_holder = first;
+        } else if (std.mem.eql(u8, variant, "charmed_target")) {
+            st.charmed_target = first;
+        } else if (std.mem.eql(u8, variant, "countdown")) {
+            const text = "00:00:12:34";
+            @memcpy(st.tangent_countdown[0..text.len], text);
+            st.tangent_countdown_len = text.len;
+            st.tangent_active = true;
+        } else if (std.mem.eql(u8, variant, "villagers")) {
+            const n = @min(frame.entity_count, 3);
+            for (0..n) |i| {
+                var d = art.VillagerDrive{
+                    .entity = frame.entities[i].entity,
+                    .hunger = @intCast(30 + 25 * i),
+                    .energy = @intCast(90 - 30 * i),
+                    .gold = @intCast(5 * i),
+                    .activity = @intCast(i),
+                    .knows_rumor = i == 1,
+                    .is_witness = i == 2,
+                };
+                const name = frame.entities[i].get_name();
+                const len = @min(name.len, d.name.len);
+                @memcpy(d.name[0..len], name[0..len]);
+                d.name_len = @intCast(len);
+                st.villager_drives[i] = d;
+                var e = art.SocialEdge{ .kind = @intCast(i) };
+                @memcpy(e.from_name[0..len], name[0..len]);
+                e.from_len = @intCast(len);
+                const to = frame.entities[(i + 1) % n].get_name();
+                const tlen = @min(to.len, e.to_name.len);
+                @memcpy(e.to_name[0..tlen], to[0..tlen]);
+                e.to_len = @intCast(tlen);
+                st.social_edges[i] = e;
+            }
+            st.villager_drive_count = n;
+            st.social_edge_count = n;
+        } else return false;
+        return true;
+    }
+};
+
+/// Save thumbnails, through whatever API P32-03d gives them; only this adapter changes.
+const Thumbs = struct {
+    fn make(world: *const bespoke.World, spatial: *const bespoke.SpatialSystem, scene: []const u8) [bespoke.save.THUMB_SIZE]u8 {
+        return bespoke.save.generate_thumbnail(world, spatial, scene, &art.thumbnails);
+    }
+};
+
 const Recorder = struct {
     allocator: std.mem.Allocator,
     window: *bespoke.display.DisplayWindow,
     out: std.ArrayList(u8),
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
+    /// Also draw each scene in its progress states.
+    variants: bool = true,
 
     /// Draws the current frame and appends `<label>: <hash>` to the record.
     fn draw(self: *Recorder, label: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem, vm: *bespoke.VM) !void {
         var bridge = bespoke.DisplayBridge.init();
+        bridge.set_status_hook(art.capture_status);
         bridge.capture_frame(world, spatial, vm);
         bridge.swap();
-        self.window.render_frame(bridge.get_frame(), true);
+        try self.draw_frame(label, bridge.get_frame());
+
+        // Progress states (P32-03a): the same scene with one piece of proof status set. Only
+        // states that change the picture are recorded, so the golden lists what each scene's
+        // art reacts to.
+        if (!self.variants) return;
+        const default_hash = self.window.frame_hash().?;
+        for (STATUS_VARIANTS) |variant| {
+            var frame = bridge.get_frame().*;
+            if (!Status.apply(&frame, variant)) continue;
+            self.window.render_frame(&frame, true);
+            if (self.window.frame_hash().? == default_hash) continue;
+            var label_buf: [160]u8 = undefined;
+            try self.draw_frame(try std.fmt.bufPrint(&label_buf, "{s} +{s}", .{ label, variant }), &frame);
+        }
+    }
+
+    /// Records the 16x12 save thumbnail for a scene (P32-03d): its backdrop and actor dots.
+    fn thumbnail(self: *Recorder, proof: []const u8, scene: []const u8, world: *const bespoke.World, spatial: *const bespoke.SpatialSystem) !void {
+        const thumb = Thumbs.make(world, spatial, scene);
+        try self.out.writer().print("thumb/{s}/{s}: {x:0>16}\n", .{ proof, scene, std.hash.Wyhash.hash(0, &thumb) });
+    }
+
+    fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        self.window.render_frame(frame, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         try self.out.writer().print("{s}: {x:0>16}\n", .{ label, hash });
 
@@ -134,6 +238,7 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     while (next_scene(&lines)) |sc| {
         const room = world.lookup_entity(sc.scene) orelse continue;
         try vm.transition_to_scene(room);
+        try rec.thumbnail(name, sc.scene, &world, &spatial);
         var label_buf: [128]u8 = undefined;
         try rec.draw(try std.fmt.bufPrint(&label_buf, "{s}/{s}", .{ name, sc.scene }), &world, &spatial, &vm);
     }
@@ -169,13 +274,16 @@ fn record_tavern(rec: *Recorder) !void {
     vm.spatial = &spatial;
 
     vm.current_scene = tavern;
+    try rec.thumbnail("tavern_heist", "Tavern", &world, &spatial);
+    // A save made with no scene set uses the empty scene name.
+    try rec.thumbnail("tavern_heist", "", &world, &spatial);
     try rec.draw("tavern_heist/Tavern", &world, &spatial, &vm);
     vm.current_scene = cellar_room;
     try rec.draw("tavern_heist/CellarRoom", &world, &spatial, &vm);
 }
 
-fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8) !std.ArrayList(u8) {
-    var rec = Recorder{ .allocator = allocator, .window = window, .out = std.ArrayList(u8).init(allocator), .dump_against = dump_against };
+fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.ArrayList(u8) {
+    var rec = Recorder{ .allocator = allocator, .window = window, .out = std.ArrayList(u8).init(allocator), .dump_against = dump_against, .variants = variants };
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
@@ -202,13 +310,18 @@ test "P32-02a: every proof scene draws the pixels recorded in its render golden"
     defer window.deinit();
     window.set_theme(&art.theme);
 
-    var actual = try record_all(allocator, &window, null);
+    var actual = try record_all(allocator, &window, null, true);
     defer actual.deinit();
 
-    // Drawing is a pure function of the frame: a second pass must give the same record.
-    var again = try record_all(allocator, &window, null);
+    // Drawing is a pure function of the frame: a second pass over the default states, drawn
+    // after every progress state, must give the same hashes as the first.
+    var again = try record_all(allocator, &window, null, false);
     defer again.deinit();
-    try std.testing.expectEqualStrings(actual.items, again.items);
+    var again_lines = std.mem.splitScalar(u8, again.items, '\n');
+    while (again_lines.next()) |line| {
+        if (line.len == 0) continue;
+        try std.testing.expect(std.mem.indexOf(u8, actual.items, line) != null);
+    }
 
     if (options.update_goldens) {
         try dir.writeFile(.{ .sub_path = GOLDEN_NAME, .data = actual.items });
@@ -229,7 +342,7 @@ test "P32-02a: every proof scene draws the pixels recorded in its render golden"
 
     try dir.writeFile(.{ .sub_path = ACTUAL_NAME, .data = actual.items });
     // Third pass: save an image of each scene that changed, to look at.
-    var dumped = try record_all(allocator, &window, expected);
+    var dumped = try record_all(allocator, &window, expected, true);
     dumped.deinit();
     var changed: usize = 0;
     var lines = std.mem.splitScalar(u8, actual.items, '\n');

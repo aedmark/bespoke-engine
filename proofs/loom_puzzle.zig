@@ -486,6 +486,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     sync_reach(&world, ids, &input);
 
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
     display_bridge.attach_audio_bridge(window.audio_bridge);
     display_bridge.attach_distaff(&input);
     display_bridge.set_active_character(ids.wren); // inventory tray shows Wren's Carries facts

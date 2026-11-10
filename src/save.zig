@@ -104,87 +104,36 @@ pub const SaveOptions = struct {
     timestamp: ?i64 = null,
     description: []const u8 = "",
     scene_override: ?[]const u8 = null,
+    thumbnail: ?*const ThumbnailPainter = null,
+};
+
+/// How a game colours its save thumbnails (P32-03d, D-041). Both callbacks return an RGB332
+/// colour (`pack_rgb332`), or null for the engine's neutral default.
+pub const ThumbnailPainter = struct {
+    /// The backdrop pixel at (x, y) of a 16x12 thumbnail for a scene.
+    backdrop: ?*const fn (scene_name: []const u8, x: usize, y: usize) ?u8 = null,
+    /// The dot colour of an actor.
+    actor: ?*const fn (name: []const u8) ?u8 = null,
 };
 
 /// Generates a 16x12 RGB332 miniature frame snapshot from active scene and spatial state (P17-01).
+/// Without a painter the backdrop is a neutral two-tone stage and actors are gold dots.
 pub fn generate_thumbnail(
     world: *const World,
     spatial: ?*const SpatialSystem,
     scene_name: []const u8,
+    painter: ?*const ThumbnailPainter,
 ) [THUMB_SIZE]u8 {
     var thumb: [THUMB_SIZE]u8 = undefined;
-
-    const is_spit = std.mem.indexOf(u8, scene_name, "Spit") != null or std.mem.indexOf(u8, scene_name, "Booty") != null;
-    const is_cellar = std.mem.indexOf(u8, scene_name, "Cellar") != null;
-    const is_garden = std.mem.indexOf(u8, scene_name, "Garden") != null or std.mem.indexOf(u8, scene_name, "Courtyard") != null;
-    const is_bike = std.mem.indexOf(u8, scene_name, "Bike") != null or std.mem.indexOf(u8, scene_name, "Shop") != null;
-    const is_hotel = std.mem.indexOf(u8, scene_name, "Hotel") != null or std.mem.indexOf(u8, scene_name, "Corridor") != null;
-    const is_road = std.mem.indexOf(u8, scene_name, "Road") != null;
-    const is_sanctuary = std.mem.indexOf(u8, scene_name, "Sanctuary") != null or std.mem.indexOf(u8, scene_name, "Carla") != null;
+    const backdrop = if (painter) |p| p.backdrop else null;
+    const actor_colour = if (painter) |p| p.actor else null;
 
     var y: usize = 0;
     while (y < THUMB_HEIGHT) : (y += 1) {
         var x: usize = 0;
         while (x < THUMB_WIDTH) : (x += 1) {
-            var pix: u8 = undefined;
-            if (is_spit) {
-                if (y < 4) {
-                    pix = pack_rgb332(25, 45, 95); // Dusk sky
-                } else if (y < 7) {
-                    pix = pack_rgb332(20, 90, 150); // Ocean
-                } else {
-                    pix = if (x < 10) pack_rgb332(45, 110, 55) else pack_rgb332(190, 170, 110); // Grass & beach
-                }
-            } else if (is_garden) {
-                if (y < 4) {
-                    pix = pack_rgb332(135, 185, 230); // French sky
-                } else if (y < 7) {
-                    pix = pack_rgb332(160, 110, 60); // Courtyard fence & stone
-                } else {
-                    pix = pack_rgb332(55, 125, 50); // Courtyard lawn
-                }
-            } else if (is_bike) {
-                if (y < 6) {
-                    pix = pack_rgb332(85, 75, 65); // Shop plaster wall
-                } else {
-                    pix = pack_rgb332(150, 95, 45); // Shop floor & counter
-                }
-            } else if (is_hotel) {
-                if (y < 6) {
-                    pix = pack_rgb332(110, 30, 40); // Burgundy wallpaper
-                } else {
-                    pix = pack_rgb332(55, 25, 20); // Mahogany wainscot & carpet
-                }
-            } else if (is_cellar) {
-                if (y < 6) {
-                    pix = pack_rgb332(25, 35, 55); // Subterranean cellar wall
-                } else {
-                    pix = pack_rgb332(40, 50, 70); // Stone floor
-                }
-            } else if (is_road) {
-                if (y < 5) {
-                    pix = pack_rgb332(15, 30, 70); // Night sky
-                } else {
-                    pix = pack_rgb332(40, 75, 50); // Forest path
-                }
-            } else if (is_sanctuary) {
-                if (y < 5) {
-                    pix = pack_rgb332(70, 20, 35); // Dramatic sanctuary
-                } else {
-                    pix = pack_rgb332(45, 35, 45); // Duel arena
-                }
-            } else {
-                // Default Tavern warm hearth & timber
-                if (y < 6) {
-                    pix = pack_rgb332(55, 38, 28);
-                } else {
-                    pix = pack_rgb332(80, 52, 34);
-                }
-                if (x >= 1 and x <= 3 and y >= 3 and y <= 5) {
-                    pix = pack_rgb332(245, 140, 30); // Hearth fire glow
-                }
-            }
-            thumb[y * THUMB_WIDTH + x] = pix;
+            const custom = if (backdrop) |paint| paint(scene_name, x, y) else null;
+            thumb[y * THUMB_WIDTH + x] = custom orelse if (y < 6) pack_rgb332(34, 38, 48) else pack_rgb332(52, 56, 66);
         }
     }
 
@@ -200,13 +149,9 @@ pub fn generate_thumbnail(
             const ty: usize = @intCast(3 + @divTrunc(clamped_y * 6, 24));
 
             var actor_col = pack_rgb332(250, 204, 21); // Default gold dot
-            if (world.get_entity_name(agent.entity)) |ename| {
-                if (std.mem.eql(u8, ename, "Guard") or std.mem.eql(u8, ename, "Guybrush") or std.mem.eql(u8, ename, "Mosely")) {
-                    actor_col = pack_rgb332(50, 130, 245); // Blue
-                } else if (std.mem.eql(u8, ename, "Cat") or std.mem.eql(u8, ename, "Gabriel")) {
-                    actor_col = pack_rgb332(240, 120, 30); // Orange / Tan
-                } else if (std.mem.eql(u8, ename, "Bard") or std.mem.eql(u8, ename, "Carla")) {
-                    actor_col = pack_rgb332(180, 70, 240); // Purple
+            if (actor_colour) |colour| {
+                if (world.get_entity_name(agent.entity)) |ename| {
+                    if (colour(ename)) |col| actor_col = col;
                 }
             }
 
@@ -330,7 +275,7 @@ pub fn build_metadata(
         .scene_id = 0,
     };
 
-    var resolved_scene: []const u8 = "Tavern";
+    var resolved_scene: []const u8 = "";
     if (options.scene_override) |so| {
         resolved_scene = so;
     } else if (vm) |v| {
@@ -372,7 +317,7 @@ pub fn build_metadata(
         meta.actor_count = a_count;
     }
 
-    meta.thumbnail = generate_thumbnail(world, spatial, meta.get_scene_name());
+    meta.thumbnail = generate_thumbnail(world, spatial, meta.get_scene_name(), options.thumbnail);
     return meta;
 }
 
@@ -700,6 +645,8 @@ pub const LoadResult = struct {
 
 /// Persistent Save/Load Slot Manager supporting numbered slots (1..8), Quick-Save (slot 0), and .bak recovery (P17-02, D-020).
 pub const SaveManager = struct {
+    /// Thumbnail colours for every save this manager writes; set from a display theme.
+    thumbnails: ?*const ThumbnailPainter = null,
     allocator: std.mem.Allocator,
     save_dir: []const u8,
     slots: [MAX_SLOTS + 1]SaveSlotInfo,
@@ -835,6 +782,7 @@ pub const SaveManager = struct {
         defer file.close();
 
         const meta = try write_save_state(self.allocator, file.writer(), world, spatial, vm, .{
+            .thumbnail = self.thumbnails,
             .slot_id = slot_id,
             .playtime_secs = self.current_playtime_secs(),
             .description = description,
@@ -983,7 +931,7 @@ test "P17-01: RGB332 thumbnail pixel packing and generation" {
     const wp = try spatial.graph.add_waypoint(tavern, 10, 0, "Bar");
     try spatial.register_entity(cat, wp, 4);
 
-    const thumb = generate_thumbnail(&world, &spatial, "Tavern");
+    const thumb = generate_thumbnail(&world, &spatial, "Stage", null);
     try testing.expectEqual(@as(usize, THUMB_SIZE), thumb.len);
 
     // Ensure non-zero pixels and hearth/actor variation
@@ -1193,4 +1141,53 @@ test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .b
     // Delete Slot 1
     try sm.delete_slot(1);
     try testing.expect(!sm.get_slot_info(1).?.occupied);
+}
+
+const TestPainter = struct {
+    fn backdrop(scene: []const u8, x: usize, y: usize) ?u8 {
+        if (!std.mem.eql(u8, scene, "Marsh")) return null;
+        return if (x == 0 and y == 0) pack_rgb332(0, 255, 0) else null;
+    }
+    fn actor(name: []const u8) ?u8 {
+        return if (std.mem.eql(u8, name, "Heron")) pack_rgb332(255, 0, 0) else null;
+    }
+};
+
+test "P32-03d: thumbnails are neutral by default and take a painter's colours" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const marsh = try world.intern_entity("Marsh");
+    const heron = try world.intern_entity("Heron");
+    const frog = try world.intern_entity("Frog");
+    const wp = try spatial.graph.add_waypoint(marsh, 10, 0, "Reeds");
+    const wp2 = try spatial.graph.add_waypoint(marsh, 40, 0, "Pool");
+    try spatial.register_entity(heron, wp, 4);
+    try spatial.register_entity(frog, wp2, 4);
+
+    const plain = generate_thumbnail(&world, &spatial, "Marsh", null);
+    // Neutral stage: one colour above row 6, another below, gold actor dots.
+    try testing.expectEqual(pack_rgb332(34, 38, 48), plain[0]);
+    try testing.expectEqual(pack_rgb332(52, 56, 66), plain[11 * THUMB_WIDTH]);
+
+    const painter = ThumbnailPainter{ .backdrop = TestPainter.backdrop, .actor = TestPainter.actor };
+    const painted = generate_thumbnail(&world, &spatial, "Marsh", &painter);
+    try testing.expectEqual(pack_rgb332(0, 255, 0), painted[0]);
+    // Pixels the painter declines keep the default.
+    try testing.expectEqual(plain[1], painted[1]);
+
+    var red: usize = 0;
+    var gold: usize = 0;
+    for (painted) |px| {
+        if (px == pack_rgb332(255, 0, 0)) red += 1;
+        if (px == pack_rgb332(250, 204, 21)) gold += 1;
+    }
+    try testing.expectEqual(@as(usize, 1), red); // the heron
+    try testing.expectEqual(@as(usize, 1), gold); // the frog, which the painter declines
+
+    // Another scene is untouched by this painter's backdrop.
+    const other = generate_thumbnail(&world, &spatial, "Moor", &painter);
+    try testing.expectEqual(plain[0], other[0]);
 }

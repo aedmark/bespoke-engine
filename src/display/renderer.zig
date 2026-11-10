@@ -17,7 +17,8 @@ pub fn to_layout(col: Color) text_layout.Color {
 }
 
 pub const SoundEffectKind = audio_mod.SoundEffectKind;
-pub const MusicTrackKind = audio_mod.MusicTrackKind;
+pub const Sound = audio_mod.Sound;
+pub const Soundtrack = audio_mod.Soundtrack;
 pub const AudioBridge = audio_mod.AudioBridge;
 pub const SaveManager = save_mod.SaveManager;
 pub const SaveMetadata = save_mod.SaveMetadata;
@@ -143,12 +144,9 @@ pub const UserAction = union(enum) {
     }, // Live interactive REPL console command (P9-03, D-011)
     toggle_debug,
     toggle_console,
-    spit_contest_spit,
-    sound_horn,
-    drink_green_drink,
-    tamper_flags,
-    // P31-02: Pre-cognitive Fourth-Dimensional vector conduit guidance (D-027)
-    darko_follow_conduit,
+    /// A key the host bound through its `Theme` (P32-02c, D-039); the value is the binding's
+    /// `action`, whose meaning only the host knows.
+    custom: u16,
     // P11-03: Two-operand inventory combining & in-hand actions (D-008, D-009, D-013)
     combine_inventory_items: struct {
         primary_index: usize,
@@ -666,6 +664,14 @@ pub const ActorView = struct {
     labels: *TextLayoutResolver,
 };
 
+/// A key a host binds (P32-02c). Pressing it returns `UserAction{ .custom = action }` from
+/// `poll_events`, after playing `sfx` if set. Keys are SDL keycodes (`c.SDLK_*`).
+pub const KeyBinding = struct {
+    key: c.SDL_Keycode,
+    action: u16,
+    sfx: ?audio_mod.Sound = null,
+};
+
 /// One line of key hints for the bottom bar.
 pub const FooterHint = struct {
     text: []const u8,
@@ -686,6 +692,16 @@ pub const Theme = struct {
     /// False hides walkways and mark discs for the frame (a scene without visible paths).
     shows_walkways: ?*const fn (*const RenderFrame) bool = null,
     footer: ?*const fn (*const RenderFrame) ?FooterHint = null,
+    /// Draws the host's HUD elements after the top status bar (P32-03b).
+    hud: ?*const fn (*DisplayWindow, *const RenderFrame) void = null,
+    /// Draws full-window overlays last, above the save drawer (P32-03b).
+    overlay: ?*const fn (*DisplayWindow, *const RenderFrame) void = null,
+    /// Colours for save-slot thumbnails, given to the window's save manager with the theme.
+    thumbnails: ?*const save_mod.ThumbnailPainter = null,
+    /// Keys the host handles itself, checked before the engine's own keys.
+    keys: []const KeyBinding = &.{},
+    /// The game's music and effects, registered with the window's audio when the theme is set.
+    soundtrack: ?*const audio_mod.Soundtrack = null,
 };
 
 pub const DisplayWindow = struct {
@@ -910,6 +926,8 @@ pub const DisplayWindow = struct {
 
     pub fn set_theme(self: *DisplayWindow, theme: ?*const Theme) void {
         self.theme = theme;
+        self.audio_bridge.set_soundtrack(if (theme) |t| t.soundtrack else null);
+        self.save_manager.thumbnails = if (theme) |t| t.thumbnails else null;
     }
 
     /// The stage drawn when no theme draws a backdrop: a cleared background and one framed
@@ -1030,7 +1048,13 @@ pub const DisplayWindow = struct {
     }
 
     /// Sets the active background musical accompaniment track (P16-03, D-019).
-    pub fn set_bgm(self: *DisplayWindow, track: audio_mod.MusicTrackKind) void {
+    /// Plays an engine effect or one from the theme's soundtrack.
+    pub fn play_sound(self: *DisplayWindow, sound: audio_mod.Sound) void {
+        self.audio_bridge.enqueue_sound(sound);
+    }
+
+    /// Plays soundtrack track `track`, or stops the music with null.
+    pub fn set_bgm(self: *DisplayWindow, track: ?u8) void {
         self.audio_bridge.set_track(track);
     }
 
@@ -1706,27 +1730,17 @@ pub const DisplayWindow = struct {
                         }
                     }
 
+                    // Host key bindings come before the engine's own keys, so a game may take a
+                    // letter the engine also uses (the REPL stays on [`] and [Tab]).
+                    if (self.theme) |t| {
+                        for (t.keys) |binding| {
+                            if (binding.key != sym) continue;
+                            if (binding.sfx) |sound| self.play_sound(sound);
+                            return .{ .custom = binding.action };
+                        }
+                    }
+
                     switch (sym) {
-                        c.SDLK_s => {
-                            self.play_sfx(.whistle);
-                            action = .spit_contest_spit;
-                        },
-                        c.SDLK_h => {
-                            self.play_sfx(.horn);
-                            action = .sound_horn;
-                        },
-                        c.SDLK_g => {
-                            self.play_sfx(.pickup);
-                            action = .drink_green_drink;
-                        },
-                        c.SDLK_f => {
-                            self.play_sfx(.combine);
-                            action = .tamper_flags;
-                        },
-                        c.SDLK_v => {
-                            self.play_sfx(.pickup);
-                            action = .darko_follow_conduit;
-                        },
                         c.SDLK_SPACE => action = .toggle_pause,
                         c.SDLK_n => action = .step_tick,
                         c.SDLK_MINUS, c.SDLK_KP_MINUS => {
@@ -2257,26 +2271,8 @@ pub const DisplayWindow = struct {
         const status_col = if (is_paused) Color.status_paused else Color.status_running;
         self.draw_text(top_text, 20, 16, 2, status_col);
 
-        // 6-tangent. Branch-world collapse countdown HUD (P31-01, P31-02, D-027)
-        if (frame.tangent_active) {
-            const count_str = frame.get_tangent_countdown();
-            const bw: i32 = 360;
-            const bh: i32 = 34;
-            const party_right_w: i32 = if (frame.party_count > 1)
-                @as(i32, @intCast(frame.party_count)) * (88 + 8) + 10
-            else
-                0;
-            const bx = self.width - bw - 20 - party_right_w;
-            const by: i32 = 7;
-
-            self.fill_rect(bx, by, bw, bh, Color{ .r = 25, .g = 15, .b = 40, .a = 235 });
-            self.draw_rect_outline(bx, by, bw, bh, Color.countdown_warn);
-            self.draw_rect_outline(bx + 1, by + 1, bw - 2, bh - 2, Color.vortex_purple);
-
-            var t_buf: [64]u8 = undefined;
-            const t_text = std.fmt.bufPrint(&t_buf, "TANGENT COLLAPSE: {s}", .{count_str}) catch "TANGENT COLLAPSE";
-            self.draw_text(t_text, bx + 12, by + 9, 2, Color{ .r = 254, .g = 202, .b = 202 });
-        }
+        // 6-host. The theme's own HUD elements, above the status bar (D-041)
+        if (self.theme) |t| if (t.hud) |draw| draw(self, frame);
 
         // 6a. Multi-Character Party Member Portraits (P21-01, D-025)
         if (frame.party_count > 1) {
@@ -2812,19 +2808,8 @@ pub const DisplayWindow = struct {
             }
         }
 
-        // 12b. Black Hole Singularity Catastrophic Fail-State Modal (P31-01, D-027)
-        if (frame.singularity_collapsed) {
-            self.fill_rect(0, 0, self.width, self.height, Color{ .r = 0, .g = 0, .b = 0, .a = 230 });
-            const mw: i32 = 640;
-            const mh: i32 = 120;
-            const mx = @divTrunc(self.width - mw, 2);
-            const my = @divTrunc(self.height - mh, 2);
-            self.fill_rect(mx, my, mw, mh, Color{ .r = 15, .g = 8, .b = 20, .a = 250 });
-            self.draw_rect_outline(mx, my, mw, mh, Color.countdown_warn);
-            self.draw_rect_outline(mx + 2, my + 2, mw - 4, mh - 4, Color.vortex_purple);
-            self.draw_text("BLACK HOLE SINGULARITY COLLAPSE", mx + 36, my + 24, 2, Color.countdown_warn);
-            self.draw_text("The Tangent Universe collapsed without loop closure. Rewind [R] required.", mx + 24, my + 66, 1, Color{ .r = 224, .g = 242, .b = 254 });
-        }
+        // 12b. The theme's overlays, above everything else (D-041)
+        if (self.theme) |t| if (t.overlay) |draw| draw(self, frame);
 
         // 13. Present Frame
         if (self.renderer) |r| {
@@ -3077,62 +3062,6 @@ test "P13-03: display renderer dynamic balloon sizing, scrolling, and choice sel
     try testing.expect(win.active_balloon == null);
 }
 
-test "P14-02: display renderer dynamically recognizes Gabriel Knight 3 scene themes and actors" {
-    const testing = std.testing;
-
-    var frame = std.mem.zeroes(RenderFrame);
-
-    // 1. Hotel corridor theme
-    const hotel_scene = "Hotel Corridor";
-    @memcpy(frame.current_scene[0..hotel_scene.len], hotel_scene);
-    frame.current_scene_len = hotel_scene.len;
-    try testing.expectEqualStrings("Hotel Corridor", frame.get_current_scene());
-
-    // 2. Garden fence theme
-    const garden_scene = "Hotel Garden";
-    @memcpy(frame.current_scene[0..garden_scene.len], garden_scene);
-    frame.current_scene_len = garden_scene.len;
-    try testing.expectEqualStrings("Hotel Garden", frame.get_current_scene());
-
-    // 3. Bike rental theme
-    const shop_scene = "Bike Rental Shop";
-    @memcpy(frame.current_scene[0..shop_scene.len], shop_scene);
-    frame.current_scene_len = shop_scene.len;
-    try testing.expectEqualStrings("Bike Rental Shop", frame.get_current_scene());
-
-    // 4. Add GK3 actors and props to frame
-    frame.entity_count = 4;
-    const gabriel_name = "Gabriel";
-    @memcpy(frame.entities[0].name[0..gabriel_name.len], gabriel_name);
-    frame.entities[0].name_len = gabriel_name.len;
-    frame.entities[0].entity = EntityId.from_int(10);
-
-    const mosely_name = "Mosely";
-    @memcpy(frame.entities[1].name[0..mosely_name.len], mosely_name);
-    frame.entities[1].name_len = mosely_name.len;
-    frame.entities[1].entity = EntityId.from_int(11);
-
-    const buthane_name = "Buthane";
-    @memcpy(frame.entities[2].name[0..buthane_name.len], buthane_name);
-    frame.entities[2].name_len = buthane_name.len;
-    frame.entities[2].entity = EntityId.from_int(12);
-
-    const cat_name = "StrayCat";
-    @memcpy(frame.entities[3].name[0..cat_name.len], cat_name);
-    frame.entities[3].name_len = cat_name.len;
-    frame.entities[3].entity = EntityId.from_int(13);
-
-    frame.gabriel_disguised = true;
-    frame.fence_taped = true;
-    frame.bike_rented = true;
-
-    // Verify headless window can render the frame without issue
-    var win = try DisplayWindow.init("GK3 Test", 960, 540);
-    defer win.deinit();
-
-    win.render_frame(&frame, false);
-}
-
 test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes without truncation" {
     const testing = std.testing;
 
@@ -3145,34 +3074,6 @@ test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes 
     try testing.expectEqual(long_msg.len, win.cue_banner_len);
     try testing.expectEqualStrings(long_msg, win.cue_banner_text[0..win.cue_banner_len]);
     try testing.expectEqual(@as(u32, 120), win.cue_banner_ticks);
-}
-
-test "P14-02: render_frame renders Hotel Garden with unique courtyard backdrop and fur tape indicators" {
-    const testing = std.testing;
-
-    var frame = std.mem.zeroes(RenderFrame);
-    const garden_name = "Hotel Garden";
-    @memcpy(frame.current_scene[0..garden_name.len], garden_name);
-    frame.current_scene_len = garden_name.len;
-
-    const cat_name = "StrayCat";
-    @memcpy(frame.entities[0].name[0..cat_name.len], cat_name);
-    frame.entities[0].name_len = cat_name.len;
-    frame.entities[0].entity = EntityId.from_int(10);
-    frame.entities[0].x = 34;
-    frame.entities[0].y = 0;
-    frame.entity_count = 1;
-
-    frame.fence_taped = true;
-    frame.fence_has_hair = true;
-    frame.cat_startled = true;
-
-    var win = try DisplayWindow.init("Garden Test", 1280, 720);
-    defer win.deinit();
-
-    win.render_frame(&frame, false);
-    try testing.expect(frame.fence_taped);
-    try testing.expect(frame.fence_has_hair);
 }
 
 test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save_action" {
@@ -3247,75 +3148,6 @@ test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save
     try testing.expect(is_paused);
 }
 
-test "P20-02: display renderer dynamically recognizes Broken Sword Goat Puzzle scene themes and actors" {
-    const testing = std.testing;
-
-    var frame = std.mem.zeroes(RenderFrame);
-
-    // 1. Lochmarne Castle Courtyard scene
-    const courtyard_scene = "Lochmarne Castle Courtyard";
-    @memcpy(frame.current_scene[0..courtyard_scene.len], courtyard_scene);
-    frame.current_scene_len = courtyard_scene.len;
-    try testing.expectEqualStrings("Lochmarne Castle Courtyard", frame.get_current_scene());
-
-    // 2. Add Broken Sword actors to frame
-    frame.entity_count = 2;
-    const george_name = "George";
-    @memcpy(frame.entities[0].name[0..george_name.len], george_name);
-    frame.entities[0].name_len = george_name.len;
-    frame.entities[0].entity = EntityId.from_int(10);
-    frame.entities[0].x = 4;
-    frame.entities[0].y = 0;
-
-    const goat_name = "BillyGoat";
-    @memcpy(frame.entities[1].name[0..goat_name.len], goat_name);
-    frame.entities[1].name_len = goat_name.len;
-    frame.entities[1].entity = EntityId.from_int(11);
-    frame.entities[1].x = 16;
-    frame.entities[1].y = 0;
-
-    // 3. Add Courtyard hotspots
-    frame.hotspot_count = 3;
-    const pit_name = "CellarEntrance";
-    @memcpy(frame.hotspots[0].name[0..pit_name.len], pit_name);
-    frame.hotspots[0].name_len = pit_name.len;
-    frame.hotspots[0].x = 28;
-    frame.hotspots[0].y = -4;
-
-    const plough_name = "FarmPlough";
-    @memcpy(frame.hotspots[1].name[0..plough_name.len], plough_name);
-    frame.hotspots[1].name_len = plough_name.len;
-    frame.hotspots[1].x = 10;
-    frame.hotspots[1].y = 8;
-
-    const tether_name = "TetherStake";
-    @memcpy(frame.hotspots[2].name[0..tether_name.len], tether_name);
-    frame.hotspots[2].name_len = tether_name.len;
-    frame.hotspots[2].x = 16;
-    frame.hotspots[2].y = -4;
-
-    // 4. Set goat scenario flags
-    frame.plough_moved = true;
-    frame.goat_is_tangled = true;
-    frame.george_knocked_down = true;
-
-    var win = try DisplayWindow.init("Goat Puzzle Test", 1280, 720);
-    defer win.deinit();
-
-    // Verify rendering Lochmarne Courtyard succeeds
-    win.render_frame(&frame, false);
-    try testing.expect(frame.goat_is_tangled);
-    try testing.expect(frame.plough_moved);
-
-    // 5. Switch to Templar Crypt scene and re-render
-    const crypt_scene = "Templar Crypt";
-    @memcpy(frame.current_scene[0..crypt_scene.len], crypt_scene);
-    frame.current_scene_len = crypt_scene.len;
-    try testing.expectEqualStrings("Templar Crypt", frame.get_current_scene());
-
-    win.render_frame(&frame, false);
-}
-
 test "P21-01: party portrait layout and hit-testing" {
     const testing = std.testing;
     const screen_w: i32 = 1280;
@@ -3343,73 +3175,6 @@ test "P21-01: party portrait layout and hit-testing" {
     // Hit testing outside bounds
     try testing.expectEqual(@as(?usize, null), hit_test_party_portrait(r0.x - 5, r0.y, party_count, screen_w));
     try testing.expectEqual(@as(?usize, null), hit_test_party_portrait(r0.x, r0.y + 50, party_count, screen_w));
-}
-
-test "P21-03: display renderer dynamically recognizes Day of the Tentacle scene themes and party actors" {
-    const testing = std.testing;
-
-    var frame = std.mem.zeroes(RenderFrame);
-
-    // 1. Colonial Workshop 1790
-    const past_scene = "Colonial Workshop";
-    @memcpy(frame.current_scene[0..past_scene.len], past_scene);
-    frame.current_scene_len = past_scene.len;
-    try testing.expectEqualStrings("Colonial Workshop", frame.get_current_scene());
-
-    frame.entity_count = 3;
-    const hname = "Hoagie";
-    @memcpy(frame.entities[0].name[0..hname.len], hname);
-    frame.entities[0].name_len = hname.len;
-    frame.entities[0].entity = EntityId.from_int(10);
-
-    const wname = "Washington";
-    @memcpy(frame.entities[1].name[0..wname.len], wname);
-    frame.entities[1].name_len = wname.len;
-    frame.entities[1].entity = EntityId.from_int(11);
-
-    const bname = "BetsyRoss";
-    @memcpy(frame.entities[2].name[0..bname.len], bname);
-    frame.entities[2].name_len = bname.len;
-    frame.entities[2].entity = EntityId.from_int(12);
-
-    frame.party_count = 3;
-    @memcpy(frame.party[0].name[0..hname.len], hname);
-    frame.party[0].name_len = hname.len;
-    frame.party[0].entity = EntityId.from_int(10);
-    frame.party[0].is_active = true;
-
-    frame.dott_battery_charged = true;
-    frame.dott_tree_chopped = true;
-    frame.dott_flag_sewn = true;
-
-    var win = try DisplayWindow.init("DOTT Renderer Test", 1280, 720);
-    defer win.deinit();
-
-    win.render_frame(&frame, false);
-
-    // 2. Motel Lobby 1993
-    const pres_scene = "Motel Lobby";
-    @memcpy(frame.current_scene[0..pres_scene.len], pres_scene);
-    frame.current_scene_len = pres_scene.len;
-    const ber_name = "Bernard";
-    @memcpy(frame.entities[0].name[0..ber_name.len], ber_name);
-    frame.entities[0].name_len = ber_name.len;
-
-    win.render_frame(&frame, false);
-
-    // 3. Dystopian Guard Post 2193
-    const fut_scene = "Dystopian Guard Post";
-    @memcpy(frame.current_scene[0..fut_scene.len], fut_scene);
-    frame.current_scene_len = fut_scene.len;
-    const lav_name = "Laverne";
-    @memcpy(frame.entities[0].name[0..lav_name.len], lav_name);
-    frame.entities[0].name_len = lav_name.len;
-    const tent_name = "PurpleTentacle";
-    @memcpy(frame.entities[1].name[0..tent_name.len], tent_name);
-    frame.entities[1].name_len = tent_name.len;
-
-    frame.dott_laverne_disguised = true;
-    win.render_frame(&frame, false);
 }
 
 test "P22-02: distaff panel geometry, note hit-testing, and reach limits" {
@@ -3571,4 +3336,42 @@ test "P32-02b: a theme draws what it claims and the engine draws the rest" {
     window.set_theme(null);
     window.render_frame(&frame, true);
     try testing.expectEqual(plain, window.frame_hash().?);
+}
+
+test "P32-02c: a host key binding returns its action before the engine's own key" {
+    const testing = std.testing;
+    if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
+    defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
+
+    var window = try DisplayWindow.init_offscreen(640, 360);
+    defer window.deinit();
+    const frame = std.mem.zeroes(RenderFrame);
+
+    const Press = struct {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+            // A poll that returned early leaves SDL's poll sentinel queued, and the next poll
+            // would stop at it before reaching this key (the key would arrive a frame later).
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_KEYDOWN;
+            ev.key.keysym.sym = sym;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+    };
+
+    // Without a theme, an unbound letter does nothing and the engine keeps its own keys.
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_s));
+    try testing.expectEqual(UserAction.step_tick, Press.key(&window, &frame, c.SDLK_n));
+
+    const theme = Theme{ .keys = &.{
+        .{ .key = c.SDLK_s, .action = 7 },
+        .{ .key = c.SDLK_c, .action = 9 },
+    } };
+    window.set_theme(&theme);
+    try testing.expectEqual(UserAction{ .custom = 7 }, Press.key(&window, &frame, c.SDLK_s));
+    // The binding wins over the engine's REPL letter; the console stays closed.
+    try testing.expectEqual(UserAction{ .custom = 9 }, Press.key(&window, &frame, c.SDLK_c));
+    try testing.expect(!window.show_console);
+    try testing.expectEqual(UserAction.step_tick, Press.key(&window, &frame, c.SDLK_n));
 }

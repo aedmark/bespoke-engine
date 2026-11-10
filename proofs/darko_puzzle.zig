@@ -2,6 +2,14 @@ const std = @import("std");
 const bespoke = @import("bespoke");
 const art = @import("art.zig");
 
+/// Keys this proof binds through its theme (P32-02c); the engine returns them as
+/// `UserAction.custom`.
+const DarkoKey = enum(u16) { follow_conduit };
+
+const darko_theme = art.with_keys(&.{
+    .{ .key = bespoke.display.renderer.c.SDLK_v, .action = @intFromEnum(DarkoKey.follow_conduit), .sfx = .{ .stock = .pickup } },
+});
+
 pub const DARKO_PUZZLE_SCRIPT =
     \\scene: Suburban Bedroom
     \\cast: Donnie, Frank
@@ -189,6 +197,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // 3. Register Party in DisplayBridge
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
     const party_members = [_]bespoke.EntityId{ donnie, frank, gretchen };
     display_bridge.set_party(&party_members);
     display_bridge.set_active_character(donnie);
@@ -252,7 +261,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("[Step 1] Midnight Anomaly: fork_tangent(280 ticks) creates Tangent Universe.\n", .{});
     const tangent_world = try hypervisor.fork_tangent(280, donnie, jet_engine);
     hypervisor.set_vortex_target(vortex_wp);
-    display_bridge.set_tangent_countdown("28:06:42:12");
+    art.set_countdown(&display_bridge, "28:06:42:12");
     try writer.print("         Tangent Universe active! Budget: 280 ticks (28 days).\n", .{});
     try writer.print("         Living Receiver: Donnie | Artifact of Metal: Jet Engine | Vortex Waypoint: {d}\n", .{vortex_wp});
 
@@ -327,7 +336,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Rupture water main
     _ = try tangent_world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
     _ = try tangent_world.remember(donnie, flood_rel, 1, 0);
-    display_bridge.back_buffer.darko_water_flooded = true;
+    display_bridge.back_buffer.host_status_mut(art.Status).darko_water_flooded = true;
     _ = try hypervisor.step_tick(&spatial);
     try writer.print("         *CHOP!* Water main severed! Relational facts asserted:\n", .{});
     try writer.print("           WaterPipeRuptured(Donnie, WaterPipeProp)\n", .{});
@@ -341,7 +350,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("         Donnie looks at Roberta Sparrow -> {s}\n", .{msg_roberta});
 
     _ = try tangent_world.remember(donnie, let_rel, roberta.to_int(), 0);
-    display_bridge.back_buffer.darko_letter_delivered = true;
+    display_bridge.back_buffer.host_status_mut(art.Status).darko_letter_delivered = true;
     _ = try hypervisor.step_tick(&spatial);
     try writer.print("         Letter delivered into mailbox! Relational fact asserted:\n", .{});
     try writer.print("           LetterDelivered(Donnie, RobertaSparrow)\n\n", .{});
@@ -351,7 +360,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try spatial.register_entity(jet_engine, vortex_wp, 8);
     _ = try tangent_world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
     _ = try tangent_world.remember(donnie, closed_rel, 1, 0);
-    display_bridge.back_buffer.darko_vortex_reached = true;
+    display_bridge.back_buffer.host_status_mut(art.Status).darko_vortex_reached = true;
     try writer.print("         Jet Engine guided to Vortex waypoint {d}!\n", .{vortex_wp});
     try writer.print("         Relational fact LoopClosed(Donnie, 1) asserted.\n\n", .{});
 
@@ -403,7 +412,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 pub fn run_interactive(allocator: std.mem.Allocator) !void {
     var win = try bespoke.display.renderer.DisplayWindow.init("BeSpoke Engine - The Middlesex Anomaly (Donnie Darko)", 1280, 720);
     defer win.deinit();
-    win.set_theme(&art.theme);
+    win.set_theme(&darko_theme);
 
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
@@ -440,6 +449,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     const env_item = try world.intern_entity("Envelope");
 
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
     const btn_bed = try world.intern_entity("Bedroom");
     const btn_sch = try world.intern_entity("School");
     const btn_rid = try world.intern_entity("Ridge");
@@ -492,7 +502,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
     _ = try hypervisor.fork_tangent(280, donnie, jet_engine);
     hypervisor.set_vortex_target(vortex_wp);
-    display_bridge.set_tangent_countdown("28:06:42:12");
+    art.set_countdown(&display_bridge, "28:06:42:12");
     win.set_cue_banner("The Middlesex Anomaly loaded! Press [1] Bedroom, [2] School, [3] Ridge to switch scenes. [V] Follow Conduit.", 180);
 
     var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &win);
@@ -511,27 +521,29 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             win.set_cue_banner("The tangent hypervisor governs time here; the timeline is fixed.", 90);
         } else if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
-            .darko_follow_conduit => {
-                if (spatial.get_agent_vector_conduit(donnie)) |c| {
-                    _ = try spatial.follow_conduit(donnie, c);
-                    display_bridge.add_vector_conduit(c);
-                    win.play_sfx(.pickup);
-                    if (vm.current_scene == bedroom_scene) {
-                        try vm.transition_to_scene(school_scene);
-                        _ = try spatial.transition_actor(donnie, school_scene, pipe_wp);
-                        display_bridge.set_active_party_index(1);
-                        win.set_cue_banner("Followed fluid conduit into Middlesex High School!", 120);
-                    } else if (vm.current_scene == school_scene) {
-                        try vm.transition_to_scene(ridge_scene);
-                        _ = try spatial.transition_actor(donnie, ridge_scene, vortex_wp);
-                        display_bridge.set_active_party_index(2);
-                        win.set_cue_banner("Followed fluid conduit to Tangent Vortex Ridge!", 120);
-                    } else {
-                        win.set_cue_banner("Following Fourth-Dimensional Vector Conduit...", 90);
+            .custom => |id| if (std.meta.intToEnum(DarkoKey, id)) |key| switch (key) {
+                .follow_conduit => {
+                    if (spatial.get_agent_vector_conduit(donnie)) |c| {
+                        _ = try spatial.follow_conduit(donnie, c);
+                        display_bridge.add_vector_conduit(c);
+                        win.play_sfx(.pickup);
+                        if (vm.current_scene == bedroom_scene) {
+                            try vm.transition_to_scene(school_scene);
+                            _ = try spatial.transition_actor(donnie, school_scene, pipe_wp);
+                            display_bridge.set_active_party_index(1);
+                            win.set_cue_banner("Followed fluid conduit into Middlesex High School!", 120);
+                        } else if (vm.current_scene == school_scene) {
+                            try vm.transition_to_scene(ridge_scene);
+                            _ = try spatial.transition_actor(donnie, ridge_scene, vortex_wp);
+                            display_bridge.set_active_party_index(2);
+                            win.set_cue_banner("Followed fluid conduit to Tangent Vortex Ridge!", 120);
+                        } else {
+                            win.set_cue_banner("Following Fourth-Dimensional Vector Conduit...", 90);
+                        }
+                        action_taken = true;
                     }
-                    action_taken = true;
-                }
-            },
+                },
+            } else |_| {},
             .switch_party_member => |p_idx| {
                 if (p_idx == 0) {
                     try vm.transition_to_scene(bedroom_scene);
@@ -604,13 +616,13 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         } else if (hs.entity == water_pipe and world.has_fact(donnie, carries_rel, axe_item.to_int())) {
                             _ = try world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
                             _ = try world.remember(donnie, flood_rel, 1, 0);
-                            display_bridge.back_buffer.darko_water_flooded = true;
+                            display_bridge.back_buffer.host_status_mut(art.Status).darko_water_flooded = true;
                             win.play_sfx(.combine);
                             win.set_cue_banner("Donnie swings the axe! The water main ruptures violently, flooding the school!", 180);
                         } else if (hs.entity == vortex_prop and world.has_fact(donnie, carries_rel, jet_engine.to_int())) {
                             _ = try world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
                             _ = try world.remember(donnie, closed_rel, 1, 0);
-                            display_bridge.back_buffer.darko_vortex_reached = true;
+                            display_bridge.back_buffer.host_status_mut(art.Status).darko_vortex_reached = true;
                             win.play_sfx(.combine);
                             win.set_cue_banner("The Jet Engine is guided into the Tangent Vortex! The loop closes safely!", 240);
                         } else {
@@ -687,13 +699,13 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     if (item_ent == axe_item and hs_ent == water_pipe) {
                         _ = try world.remember(donnie, pipe_rupt_rel, water_pipe.to_int(), 0);
                         _ = try world.remember(donnie, flood_rel, 1, 0);
-                        display_bridge.back_buffer.darko_water_flooded = true;
+                        display_bridge.back_buffer.host_status_mut(art.Status).darko_water_flooded = true;
                         win.play_sfx(.combine);
                         win.set_cue_banner("Donnie swings the axe! The water main ruptures violently, flooding the school!", 180);
                     } else if (item_ent == jet_engine and hs_ent == vortex_prop) {
                         _ = try world.remember(donnie, art_vortex_rel, jet_engine.to_int(), 0);
                         _ = try world.remember(donnie, closed_rel, 1, 0);
-                        display_bridge.back_buffer.darko_vortex_reached = true;
+                        display_bridge.back_buffer.host_status_mut(art.Status).darko_vortex_reached = true;
                         win.play_sfx(.combine);
                         win.set_cue_banner("The Jet Engine is guided into the Tangent Vortex! The loop closes safely!", 240);
                     } else {
@@ -710,7 +722,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
                     if (item_ent == env_item and act_ent == roberta) {
                         _ = try world.remember(donnie, let_rel, roberta.to_int(), 0);
-                        display_bridge.back_buffer.darko_letter_delivered = true;
+                        display_bridge.back_buffer.host_status_mut(art.Status).darko_letter_delivered = true;
                         win.play_sfx(.combine);
                         win.set_cue_banner("Delivered letter: 'Cellar door... the Living Receiver must guide the Artifact of Metal into the vortex!'", 180);
                     }
@@ -720,7 +732,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             .dialogue_choice => |choice_idx| {
                 if (vm.current_scene == ridge_scene and choice_idx == 0) {
                     _ = try world.remember(donnie, let_rel, roberta.to_int(), 0);
-                    display_bridge.back_buffer.darko_letter_delivered = true;
+                    display_bridge.back_buffer.host_status_mut(art.Status).darko_letter_delivered = true;
                     win.play_sfx(.combine);
                     win.set_cue_banner("Delivered letter to Roberta Sparrow: 'Cellar door... The loop must close!'", 180);
                 } else if (vm.current_scene == bedroom_scene) {
@@ -759,10 +771,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             else
                 0;
             const formatted = bespoke.format_countdown(remaining_ticks, &count_b);
-            display_bridge.set_tangent_countdown(formatted);
+            art.set_countdown(&display_bridge, formatted);
 
             if (hypervisor.collapse_state == .collapsed_singularity) {
-                display_bridge.set_singularity_collapsed(true);
+                art.set_collapsed(&display_bridge, true);
             }
 
             try session.record_now();

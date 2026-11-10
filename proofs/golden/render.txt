@@ -1,20 +1,125 @@
+thumb/tavern_heist/Tavern: ff21bac37e51254a
+thumb/tavern_heist/: ff21bac37e51254a
 tavern_heist/Tavern: 2edeb624af865da2
+tavern_heist/Tavern +tangent_active: 0ac6ba90d2158b7b
+tavern_heist/Tavern +singularity_collapsed: eb26d279769712bb
+tavern_heist/Tavern +cheese_holder: 9dbd733400837a05
+tavern_heist/Tavern +countdown: 944492853ec36c82
 tavern_heist/CellarRoom: 7333e3b730a056ab
+tavern_heist/CellarRoom +tangent_active: eb3067f7a0010fd5
+tavern_heist/CellarRoom +singularity_collapsed: e6624a85964ef01e
+thumb/spitting_contest/Spitting Competition: 61e816b848e745c1
 spitting_contest/Spitting Competition: c123fb85d1a5f8dd
+spitting_contest/Spitting Competition +spit_is_thick: 185eba74735db444
+spitting_contest/Spitting Competition +flags_tampered: c2363c584b07f898
+spitting_contest/Spitting Competition +wind_blowing: 9142405a9d60ef4e
+spitting_contest/Spitting Competition +organiser_distracted: 3ec8d1f6b7bf1a51
+spitting_contest/Spitting Competition +tangent_active: 6e41ba047a07e350
+spitting_contest/Spitting Competition +singularity_collapsed: fac3af1ff0f52965
+spitting_contest/Spitting Competition +countdown: c2caeb49ca6e6920
+thumb/gk3_moustache/Hotel Corridor: 631dad0477c7859e
 gk3_moustache/Hotel Corridor: afc4b1223a142e4e
+gk3_moustache/Hotel Corridor +gabriel_disguised: 5d08fb43c8d30fb7
+gk3_moustache/Hotel Corridor +tangent_active: 6e0581604e776358
+gk3_moustache/Hotel Corridor +singularity_collapsed: 031ebfaee6ed0640
+gk3_moustache/Hotel Corridor +countdown: cc39e1d7d323471f
+thumb/gk3_moustache/Hotel Garden: 54a8c33a1aa4a7d7
 gk3_moustache/Hotel Garden: 49910a8e8d8935a2
+gk3_moustache/Hotel Garden +fence_taped: 0b316ff01e75b788
+gk3_moustache/Hotel Garden +cat_startled: e2cc1a57fcddae06
+gk3_moustache/Hotel Garden +tangent_active: efdc42eb37456613
+gk3_moustache/Hotel Garden +singularity_collapsed: 9658826a02e7d242
+gk3_moustache/Hotel Garden +countdown: 4bbfd58e06ae96ae
+thumb/gk3_moustache/Bike Rental Shop: 5917a507bb207f30
 gk3_moustache/Bike Rental Shop: ffe8054b1faacc10
+gk3_moustache/Bike Rental Shop +bike_rented: 6306fe7fd0cd09cc
+gk3_moustache/Bike Rental Shop +tangent_active: 3d60927c783862f1
+gk3_moustache/Bike Rental Shop +singularity_collapsed: 1d028e57667f82e3
+gk3_moustache/Bike Rental Shop +countdown: 69d57957b82b629b
+thumb/sword_fighting/High Road: e0185a13b7445c31
 sword_fighting/High Road: 96178ae2491d180e
+sword_fighting/High Road +spit_is_thick: 5598beed51288c0a
+sword_fighting/High Road +tangent_active: 43e73625a14908e3
+sword_fighting/High Road +singularity_collapsed: 1fc2081d4de08f52
+sword_fighting/High Road +countdown: 8f8b4064e8a9c7d9
+thumb/sword_fighting/Sword Master Sanctuary: b18e109f2e745aab
 sword_fighting/Sword Master Sanctuary: 904936df02301884
+sword_fighting/Sword Master Sanctuary +tangent_active: 031da518903c92e2
+sword_fighting/Sword Master Sanctuary +singularity_collapsed: f53e3742ca47509c
+sword_fighting/Sword Master Sanctuary +countdown: d71ad0f6fdc45956
+thumb/sword_fighting/Scumm Bar: 593cbd5023f9e234
 sword_fighting/Scumm Bar: 4aba8172526d9311
+sword_fighting/Scumm Bar +tangent_active: 8e037ecaf7080554
+sword_fighting/Scumm Bar +singularity_collapsed: cc36c3ca4e44ed62
+sword_fighting/Scumm Bar +countdown: 46ff911e9ce1b438
+thumb/village/Living Village: b727fac90e9da417
 village/Living Village: 9bd504b6295dec67
+village/Living Village +tangent_active: 346739143f56340e
+village/Living Village +singularity_collapsed: de4d9f0293d81388
+village/Living Village +village_crime_active: 2a465b69ed9cab2d
+village/Living Village +village_warrant_active: fd91ea155d6cd589
+village/Living Village +village_arrest_made: 5fa494303431a534
+village/Living Village +countdown: d43a68feb132bcd8
+village/Living Village +villagers: c740b1ffe32f3172
+thumb/goat_puzzle/Lochmarne Castle Courtyard: 7cb7e88b391b0d94
 goat_puzzle/Lochmarne Castle Courtyard: 9284b2e242ef5068
+goat_puzzle/Lochmarne Castle Courtyard +goat_is_tangled: b690008ed4ee9077
+goat_puzzle/Lochmarne Castle Courtyard +goat_is_charging: 8a842075e32fe89d
+goat_puzzle/Lochmarne Castle Courtyard +goat_is_retreating: 2918220331a9343b
+goat_puzzle/Lochmarne Castle Courtyard +george_knocked_down: 9be2168da00da43f
+goat_puzzle/Lochmarne Castle Courtyard +plough_moved: 55437d515b2cfa04
+goat_puzzle/Lochmarne Castle Courtyard +tangent_active: 406b02e6aeefc303
+goat_puzzle/Lochmarne Castle Courtyard +singularity_collapsed: b72389bf3923b046
+goat_puzzle/Lochmarne Castle Courtyard +countdown: 2076807c55721de7
+thumb/goat_puzzle/Templar Crypt: 913799b2e824834d
 goat_puzzle/Templar Crypt: 2a9237bbab89f783
+goat_puzzle/Templar Crypt +tangent_active: fa2928bfe3ee11f0
+goat_puzzle/Templar Crypt +singularity_collapsed: 30f0030b8e8adaf2
+thumb/dott_puzzle/Colonial Workshop: 593cbd5023f9e234
 dott_puzzle/Colonial Workshop: 552bf12dab386da8
+dott_puzzle/Colonial Workshop +dott_tree_chopped: ba584f521fee2971
+dott_puzzle/Colonial Workshop +tangent_active: e0a2b69910041ba9
+dott_puzzle/Colonial Workshop +singularity_collapsed: 93da876ff96b83cc
+dott_puzzle/Colonial Workshop +countdown: d552c8d710e375b3
+thumb/dott_puzzle/Motel Lobby: 593cbd5023f9e234
 dott_puzzle/Motel Lobby: ac40afb409b81818
+dott_puzzle/Motel Lobby +tangent_active: 2b5a2a09bfad9211
+dott_puzzle/Motel Lobby +singularity_collapsed: d34e8782d81dd3fa
+dott_puzzle/Motel Lobby +countdown: 3a42be9538aa0adc
+thumb/dott_puzzle/Dystopian Guard Post: 593cbd5023f9e234
 dott_puzzle/Dystopian Guard Post: a11e0b18290dfaf4
+dott_puzzle/Dystopian Guard Post +flags_tampered: 284a4fdb7a8a7368
+dott_puzzle/Dystopian Guard Post +dott_flag_sewn: 85d801d6a7f158ff
+dott_puzzle/Dystopian Guard Post +dott_laverne_disguised: faa95800ba16e084
+dott_puzzle/Dystopian Guard Post +tangent_active: 888f18652a3ca15c
+dott_puzzle/Dystopian Guard Post +singularity_collapsed: 25bb8837fb77e5d6
+dott_puzzle/Dystopian Guard Post +countdown: eb83f5eb8bd5ee06
+thumb/darko_puzzle/Suburban Bedroom: 913799b2e824834d
 darko_puzzle/Suburban Bedroom: e443a5fe95119c6c
+darko_puzzle/Suburban Bedroom +tangent_active: ce66a036ed6bf37c
+darko_puzzle/Suburban Bedroom +singularity_collapsed: ab7467fe67632687
+darko_puzzle/Suburban Bedroom +countdown: ef56f8b5b39e34d3
+thumb/darko_puzzle/Middlesex High School: 913799b2e824834d
 darko_puzzle/Middlesex High School: 521794322d337779
+darko_puzzle/Middlesex High School +tangent_active: 7d4d911ff5ec5fc2
+darko_puzzle/Middlesex High School +singularity_collapsed: 2ddf48cc610a3bb0
+darko_puzzle/Middlesex High School +darko_water_flooded: b2da0080492ae823
+darko_puzzle/Middlesex High School +countdown: b1158bb80f4a3ef1
+thumb/darko_puzzle/Tangent Vortex Ridge: 913799b2e824834d
 darko_puzzle/Tangent Vortex Ridge: 8c4e8661de0eabe8
+darko_puzzle/Tangent Vortex Ridge +tangent_active: dd555ac0d5eccb6f
+darko_puzzle/Tangent Vortex Ridge +singularity_collapsed: 957d24d41af14a56
+darko_puzzle/Tangent Vortex Ridge +countdown: 81d27271cb56b238
+thumb/loom_puzzle/Bell Tower Base: de2e85e4d9574afc
 loom_puzzle/Bell Tower Base: a90e38dd6442b42d
+loom_puzzle/Bell Tower Base +tangent_active: b5812be95d3119de
+loom_puzzle/Bell Tower Base +singularity_collapsed: 951cbea4c84fbc13
+loom_puzzle/Bell Tower Base +bell_brazier_lit: b891b94a3fc9bc6a
+loom_puzzle/Bell Tower Base +countdown: 98567aab84b69e8a
+thumb/loom_puzzle/Bell Tower Belfry: de2e85e4d9574afc
 loom_puzzle/Bell Tower Belfry: 4caa252bbe05b2aa
+loom_puzzle/Bell Tower Belfry +tangent_active: f931acede4aefd12
+loom_puzzle/Bell Tower Belfry +singularity_collapsed: e60540ebed56646e
+loom_puzzle/Bell Tower Belfry +bell_chain_loosed: 41113a3485954538
+loom_puzzle/Bell Tower Belfry +bell_ringing: 3dbf369612b55076
+loom_puzzle/Bell Tower Belfry +bell_beacon_lit: 339a8653f716fdda

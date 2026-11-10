@@ -102,7 +102,19 @@ pub const theme = r.Theme{
     .walkway = walkway,
     .shows_walkways = shows_walkways,
     .footer = footer,
+    .soundtrack = &soundtrack,
+    .hud = hud,
+    .overlay = overlay,
+    .thumbnails = &thumbnails,
 };
+
+/// The shared theme with one proof's key bindings added (P32-02c). Call at container level so
+/// the result is a constant the window can borrow.
+pub fn with_keys(comptime keys: []const r.KeyBinding) r.Theme {
+    var t = theme;
+    t.keys = keys;
+    return t;
+}
 
 /// Which proof scene a frame shows, chosen by scene name and, when a host sets none, by the
 /// marks and cast present.
@@ -466,7 +478,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_text("CHAMPION LINE (1ST PLACE)", 600, field_y + field_h - 16, 1, Color{ .r = 250, .g = 204, .b = 21 });
 
         // Wind Indicator
-        if (frame.wind_blowing) {
+        if (status_of(frame).wind_blowing) {
             w.draw_text(">>> WIND GUST: STRONG TAILWIND (BLOWING EAST TOWARD TARGET!) >>>", field_x + 16, field_y + 44, 2, Palette.wind_color);
             w.draw_line(260, field_y + 140, 680, field_y + 140, Palette.wind_color);
             w.draw_line(280, field_y + 190, 710, field_y + 190, Palette.wind_color);
@@ -762,12 +774,12 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_text("FENCE GAP", hole_x + 4, hole_y - 12, 1, Color{ .r = 250, .g = 204, .b = 21 });
 
         // Masking tape indicator if taped
-        if (frame.fence_taped) {
+        if (status_of(frame).fence_taped) {
             // Wide tape band stretched taut across hole
             w.fill_rect(hole_x - 8, hole_y + 16, hole_w + 16, 12, Color{ .r = 254, .g = 243, .b = 199 });
             w.draw_rect_outline(hole_x - 8, hole_y + 16, hole_w + 16, 12, Color{ .r = 217, .g = 119, .b = 6 });
 
-            if (frame.fence_has_hair) {
+            if (status_of(frame).fence_has_hair) {
                 // Thick tuft of black cat hair stuck to the tape!
                 w.fill_rect(hole_x + 14, hole_y + 13, 32, 18, Color.black);
                 w.draw_rect_outline(hole_x + 14, hole_y + 13, 32, 18, Color{ .r = 250, .g = 204, .b = 21 });
@@ -859,7 +871,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(mc_x + 25, shop_y + shop_h - 140, 80, 25, Palette.motorcycle_red);
         w.draw_line(mc_x + 35, shop_y + shop_h - 155, mc_x + 60, shop_y + shop_h - 140, Color.white);
 
-        if (frame.bike_rented) {
+        if (status_of(frame).bike_rented) {
             w.draw_text("[RENTED TO MOSELY!]", mc_x + 10, shop_y + shop_h - 170, 2, Color.status_running);
         } else {
             w.draw_text("[RESERVED: MOSELY]", mc_x + 10, shop_y + shop_h - 170, 2, Color.cue_alert);
@@ -1018,7 +1030,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_text("VILLAGER DRIVES (P18-01)", lp_x + 10, lp_y + 10, 1, Color.wp_hover);
 
         var dy_cursor: i32 = lp_y + 28;
-        for (frame.villager_drives[0..frame.villager_drive_count]) |vd| {
+        for (status_of(frame).villager_drives[0..status_of(frame).villager_drive_count]) |vd| {
             const vname = vd.get_name();
             const act_label = switch (vd.activity) {
                 0 => "Work",
@@ -1072,16 +1084,16 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_text("EMERGENCE & SOCIAL GRAPH", rp_x + 10, rp_y + 10, 1, Color.wp_hover);
 
         var ry_cursor: i32 = rp_y + 28;
-        const crime_str = if (frame.village_crime_active) "1. Theft:   COMMITTED!" else "1. Theft:   None";
-        w.draw_text(crime_str, rp_x + 10, ry_cursor, 1, if (frame.village_crime_active) Color.cue_alert else Color.hud_subtext);
+        const crime_str = if (status_of(frame).village_crime_active) "1. Theft:   COMMITTED!" else "1. Theft:   None";
+        w.draw_text(crime_str, rp_x + 10, ry_cursor, 1, if (status_of(frame).village_crime_active) Color.cue_alert else Color.hud_subtext);
         ry_cursor += 14;
 
-        const war_str = if (frame.village_warrant_active) "2. Warrant: ACTIVE HUNT!" else "2. Warrant: None";
-        w.draw_text(war_str, rp_x + 10, ry_cursor, 1, if (frame.village_warrant_active) Color.status_paused else Color.hud_subtext);
+        const war_str = if (status_of(frame).village_warrant_active) "2. Warrant: ACTIVE HUNT!" else "2. Warrant: None";
+        w.draw_text(war_str, rp_x + 10, ry_cursor, 1, if (status_of(frame).village_warrant_active) Color.status_paused else Color.hud_subtext);
         ry_cursor += 14;
 
-        const arr_str = if (frame.village_arrest_made) "3. Justice: ARRESTED & JAILED!" else "3. Justice: Peace / Pending";
-        w.draw_text(arr_str, rp_x + 10, ry_cursor, 1, if (frame.village_arrest_made) Color.status_running else Color.hud_subtext);
+        const arr_str = if (status_of(frame).village_arrest_made) "3. Justice: ARRESTED & JAILED!" else "3. Justice: Peace / Pending";
+        w.draw_text(arr_str, rp_x + 10, ry_cursor, 1, if (status_of(frame).village_arrest_made) Color.status_running else Color.hud_subtext);
         ry_cursor += 18;
 
         w.draw_line(rp_x + 8, ry_cursor, rp_x + rp_w - 8, ry_cursor, Color{ .r = 51, .g = 65, .b = 85 });
@@ -1090,8 +1102,8 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         ry_cursor += 14;
 
         var edge_i: usize = 0;
-        while (edge_i < frame.social_edge_count and ry_cursor < rp_y + rp_h - 16) : (edge_i += 1) {
-            const se = &frame.social_edges[edge_i];
+        while (edge_i < status_of(frame).social_edge_count and ry_cursor < rp_y + rp_h - 16) : (edge_i += 1) {
+            const se = &status_of(frame).social_edges[edge_i];
             const rel_tag = switch (se.kind) {
                 0 => "Friend",
                 1 => "Grudge",
@@ -1182,7 +1194,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
 
         // Farm Plough (at PloughMark)
         const pt_plough = world_to_screen(10, 8, w.width, w.height);
-        const plough_draw_x = if (frame.plough_moved) pt_plough.x + 30 else pt_plough.x;
+        const plough_draw_x = if (status_of(frame).plough_moved) pt_plough.x + 30 else pt_plough.x;
         // Heavy iron beam & share
         w.fill_rect(plough_draw_x - 30, pt_plough.y - 8, 60, 16, Color{ .r = 65, .g = 55, .b = 50 });
         w.draw_rect_outline(plough_draw_x - 30, pt_plough.y - 8, 60, 16, Color{ .r = 95, .g = 85, .b = 80 });
@@ -1201,7 +1213,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
             }
         }
         if (goat_pt) |gpt| {
-            if (frame.goat_is_tangled) {
+            if (status_of(frame).goat_is_tangled) {
                 // Rope loops around the farm plough then connects to goat
                 w.draw_line(pt_tether.x, pt_tether.y - 14, plough_draw_x, pt_plough.y, Palette.rope_color);
                 w.draw_circle_outline(plough_draw_x, pt_plough.y, 14, Palette.rope_color);
@@ -1337,7 +1349,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_line(win_x, win_y + 75, win_x + 220, win_y + 75, Color.white);
 
         // Tree seen through window
-        if (frame.dott_tree_chopped) {
+        if (status_of(frame).dott_tree_chopped) {
             w.fill_rect(win_x + 100, win_y + 115, 20, 25, Color{ .r = 120, .g = 75, .b = 35 });
             w.fill_circle(win_x + 110, win_y + 115, 10, Color{ .r = 160, .g = 105, .b = 55 });
             w.draw_text("[TREE CHOPPED!]", win_x + 30, win_y + 20, 1, Color{ .r = 250, .g = 204, .b = 21 });
@@ -1357,7 +1369,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_rect_outline(t_x, t_y, 60, 90, Color{ .r = 150, .g = 100, .b = 50 });
         w.fill_circle(t_x + 30, t_y + 25, 8, Color{ .r = 250, .g = 204, .b = 21 });
         w.fill_circle(t_x + 34, t_y + 25, 6, Color{ .r = 105, .g = 65, .b = 35 });
-        if (frame.dott_battery_charged) {
+        if (status_of(frame).dott_battery_charged) {
             w.draw_text("[POWERED]", t_x - 4, t_y - 16, 1, Color.status_running);
         }
 
@@ -1446,7 +1458,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         // Roof gutter & flagpole
         w.fill_rect(post_x + 20, post_y + 10, 120, 12, Color{ .r = 71, .g = 85, .b = 105 });
         w.draw_line(post_x + 80, post_y + 10, post_x + 80, post_y - 30, Color.white);
-        if (frame.dott_flag_sewn) {
+        if (status_of(frame).dott_flag_sewn) {
             w.fill_rect(post_x + 80, post_y - 30, 40, 24, Palette.tentacle_purple);
             w.fill_circle(post_x + 100, post_y - 18, 5, Palette.tentacle_sucker);
             w.draw_text("[TENTACLE FLAG FLYING]", post_x + 30, post_y - 45, 1, Palette.tentacle_sucker);
@@ -1500,7 +1512,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(bedr_x + 40, bedr_y + bedr_h - 180, 50, 25, Color{ .r = 220, .g = 225, .b = 235 });
 
         // Smashed ceiling hole from falling Jet Engine if anomaly active
-        if (frame.tangent_active) {
+        if (status_of(frame).tangent_active) {
             w.fill_circle(bedr_x + @divTrunc(bedr_w, 2), bedr_y + 10, 50, Color{ .r = 10, .g = 12, .b = 20 });
             w.draw_circle_outline(bedr_x + @divTrunc(bedr_w, 2), bedr_y + 10, 52, Palette.tangent_glow);
             w.draw_line(bedr_x + @divTrunc(bedr_w, 2) - 40, bedr_y + 10, bedr_x + @divTrunc(bedr_w, 2) + 40, bedr_y + 35, Color{ .r = 90, .g = 60, .b = 30 });
@@ -1552,7 +1564,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_text("MIDDLESEX HIGH - HOME OF THE CAROUSEL BRONCOS", ban_x + 12, sch_y + 16, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
         // Water flooding if pipe broken
-        if (frame.darko_water_flooded) {
+        if (status_of(frame).darko_water_flooded) {
             w.fill_rect(sch_x, sch_y + sch_h - 40, sch_w, 40, Color{ .r = 56, .g = 189, .b = 248, .a = 150 });
             w.draw_line(sch_x, sch_y + sch_h - 40, sch_x + sch_w, sch_y + sch_h - 40, Color{ .r = 224, .g = 242, .b = 254 });
             w.draw_text("[WATER MAIN BURST - HIGH SCHOOL FLOODED!]", sch_x + 30, sch_y + sch_h - 28, 1, Color.white);
@@ -1675,13 +1687,13 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
 
             // Brazier: cold coals or a fire whose glow climbs the wall
             const br = world_to_screen(13, -1, w.width, w.height);
-            if (frame.bell_brazier_lit) {
+            if (status_of(frame).bell_brazier_lit) {
                 w.fill_circle(br.x, br.y - 20, 60, Color{ .r = 120, .g = 60, .b = 20, .a = 70 });
             }
             w.fill_rect(br.x - 30, br.y, 60, 12, iron);
             w.draw_line(br.x - 20, br.y + 12, br.x - 26, floor.y, iron);
             w.draw_line(br.x + 20, br.y + 12, br.x + 26, floor.y, iron);
-            if (frame.bell_brazier_lit) {
+            if (status_of(frame).bell_brazier_lit) {
                 w.fill_circle(br.x - 12, br.y - 8, 10, ember);
                 w.fill_circle(br.x + 10, br.y - 10, 12, ember);
                 w.fill_circle(br.x, br.y - 20, 9, flame);
@@ -1709,7 +1721,7 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
             // Stairwell: black until the brazier lights it
             const st = world_to_screen(36, -6, w.width, w.height);
             w.fill_rect(st.x - 40, st.y - 50, 80, floor.y - st.y + 50, Color{ .r = 8, .g = 8, .b = 12 });
-            if (frame.bell_brazier_lit) {
+            if (status_of(frame).bell_brazier_lit) {
                 var step: i32 = 0;
                 while (step < 6) : (step += 1) {
                     const sy = floor.y - 12 - step * 16;
@@ -1723,7 +1735,7 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
             // Great bell on its beam; motion arcs while it rings
             const bell = world_to_screen(21, -10, w.width, w.height);
             w.fill_rect(bell.x - 90, bell.y - 60, 180, 10, Color{ .r = 90, .g = 60, .b = 35 });
-            const sway: i32 = if (frame.bell_ringing) 12 else 0;
+            const sway: i32 = if (status_of(frame).bell_ringing) 12 else 0;
             const bx = bell.x + sway;
             w.draw_line(bell.x, bell.y - 50, bx, bell.y - 34, iron);
             var row: i32 = 0;
@@ -1733,7 +1745,7 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
             }
             w.fill_rect(bx - 44, bell.y + 16, 88, 6, Color{ .r = 150, .g = 105, .b = 45 });
             w.fill_circle(bx, bell.y + 26, 6, Color{ .r = 120, .g = 85, .b = 40 });
-            if (frame.bell_ringing) {
+            if (status_of(frame).bell_ringing) {
                 var arc: i32 = 0;
                 while (arc < 3) : (arc += 1) {
                     w.draw_circle_outline(bx, bell.y, 70 + arc * 18, Color{ .r = 253, .g = 224, .b = 71, .a = 120 });
@@ -1742,7 +1754,7 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
 
             // Chain wound around the clapper, or lying slack on the boards
             const ch = world_to_screen(16, -2, w.width, w.height);
-            if (!frame.bell_chain_loosed) {
+            if (!status_of(frame).bell_chain_loosed) {
                 var link: i32 = 0;
                 while (link < 7) : (link += 1) {
                     const lx = bx - 40 + link * 14;
@@ -1757,7 +1769,7 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
             }
 
             // Tuning fork: hidden under the chain, glinting once freed, gone when taken
-            if (frame.bell_chain_loosed and !frame.bell_fork_taken) {
+            if (status_of(frame).bell_chain_loosed and !status_of(frame).bell_fork_taken) {
                 const fk = world_to_screen(10, 3, w.width, w.height);
                 w.draw_line(fk.x, fk.y + 8, fk.x, fk.y - 4, bronze);
                 w.draw_line(fk.x - 4, fk.y - 4, fk.x - 4, fk.y - 16, bronze);
@@ -1768,14 +1780,14 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
 
             // Beacon basket on the parapet
             const bc = world_to_screen(36, -8, w.width, w.height);
-            if (frame.bell_beacon_lit) {
+            if (status_of(frame).bell_beacon_lit) {
                 w.fill_circle(bc.x, bc.y - 16, 70, Color{ .r = 120, .g = 60, .b = 20, .a = 70 });
             }
             w.draw_line(bc.x, bc.y + 14, bc.x, floor.y, iron);
             w.fill_rect(bc.x - 24, bc.y, 48, 14, iron);
             w.draw_line(bc.x - 24, bc.y, bc.x - 30, bc.y - 10, iron);
             w.draw_line(bc.x + 24, bc.y, bc.x + 30, bc.y - 10, iron);
-            if (frame.bell_beacon_lit) {
+            if (status_of(frame).bell_beacon_lit) {
                 w.fill_circle(bc.x - 8, bc.y - 6, 10, ember);
                 w.fill_circle(bc.x + 8, bc.y - 8, 11, ember);
                 w.fill_circle(bc.x, bc.y - 22, 9, flame);
@@ -1811,13 +1823,13 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
         w.draw_line(pt.x - 18, pt.y + 10, pt.x + 18, pt.y + 10, Color{ .r = 140, .g = 140, .b = 150 });
     } else if (std.mem.indexOf(u8, name, "Flag") != null) {
         // Spitting Competition Distance Flags (P10-03, D-012)
-        const flag_x = if (frame.flags_tampered) pt.x - 70 else pt.x;
+        const flag_x = if (status_of(frame).flags_tampered) pt.x - 70 else pt.x;
         w.fill_rect(flag_x - 2, pt.y - 32, 4, 40, Color{ .r = 217, .g = 119, .b = 6 });
-        const fcol = if (frame.flags_tampered) Palette.flag_tampered else Palette.flag_color;
+        const fcol = if (status_of(frame).flags_tampered) Palette.flag_tampered else Palette.flag_color;
         w.fill_rect(flag_x + 2, pt.y - 32, 28, 18, fcol);
         w.draw_line(flag_x + 2, pt.y - 14, flag_x + 30, pt.y - 32, Color.white);
 
-        if (frame.flags_tampered) {
+        if (status_of(frame).flags_tampered) {
             w.draw_rect_outline(pt.x - 1, pt.y - 30, 2, 38, Color.hud_subtext);
             w.draw_text("[MOVED!]", flag_x - 20, pt.y + 14, 2, Palette.flag_tampered);
         } else {
@@ -1827,7 +1839,7 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
         // Garden Fence Hole (P14-02, D-016)
         w.fill_rect(pt.x - 20, pt.y - 16, 40, 32, Palette.garden_fence);
         w.fill_rect(pt.x - 12, pt.y - 4, 24, 20, Color.black);
-        if (frame.fence_taped) {
+        if (status_of(frame).fence_taped) {
             w.fill_rect(pt.x - 14, pt.y + 4, 28, 6, Color{ .r = 254, .g = 243, .b = 199 });
         }
     } else if (std.mem.indexOf(u8, name, "Door") != null) {
@@ -1851,7 +1863,7 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
         w.fill_circle(pt.x + 14, pt.y + 12, 8, Color.black);
     } else if (std.mem.indexOf(u8, name, "Plough") != null) {
         // Broken Sword Farm Plough (P20-02, D-023)
-        const px = if (frame.plough_moved) pt.x + 25 else pt.x;
+        const px = if (status_of(frame).plough_moved) pt.x + 25 else pt.x;
         w.fill_rect(px - 18, pt.y - 8, 36, 14, Color{ .r = 65, .g = 55, .b = 50 });
         w.draw_rect_outline(px - 18, pt.y - 8, 36, 14, Color{ .r = 110, .g = 100, .b = 95 });
         w.draw_line(px - 14, pt.y - 8, px - 28, pt.y - 24, Color{ .r = 130, .g = 85, .b = 45 });
@@ -1888,7 +1900,7 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
         w.draw_line(pt.x + 14, pt.y - 14, pt.x - 14, pt.y + 14, Color{ .r = 140, .g = 150, .b = 165 });
         w.draw_line(pt.x, pt.y - 16, pt.x, pt.y + 16, Color{ .r = 140, .g = 150, .b = 165 });
         w.draw_line(pt.x - 16, pt.y, pt.x + 16, pt.y, Color{ .r = 140, .g = 150, .b = 165 });
-        if (frame.tangent_active) {
+        if (status_of(frame).tangent_active) {
             w.draw_circle_outline(pt.x, pt.y, 26, Palette.tangent_glow);
         }
     } else if (std.mem.indexOf(u8, name, "WaterPipe") != null or std.mem.indexOf(u8, name, "Pipe") != null) {
@@ -1896,7 +1908,7 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
         w.fill_rect(pt.x - 6, pt.y - 20, 12, 40, Color{ .r = 110, .g = 120, .b = 135 });
         w.draw_rect_outline(pt.x - 6, pt.y - 20, 12, 40, Color{ .r = 160, .g = 170, .b = 185 });
         w.fill_rect(pt.x - 10, pt.y - 8, 20, 16, Color{ .r = 90, .g = 100, .b = 115 });
-        if (frame.darko_water_flooded) {
+        if (status_of(frame).darko_water_flooded) {
             w.fill_circle(pt.x, pt.y - 14, 8, Palette.tangent_glow);
             w.draw_line(pt.x, pt.y - 14, pt.x - 18, pt.y + 16, Palette.tangent_core);
             w.draw_line(pt.x, pt.y - 14, pt.x + 18, pt.y + 16, Palette.tangent_core);
@@ -1957,7 +1969,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Carried Cheese
-        if (frame.cheese_holder == e.entity) {
+        if (status_of(frame).cheese_holder == e.entity) {
             w.fill_circle(pt.x + 14, pt.y - 10, 8, Palette.cheese_color);
             w.draw_circle_outline(pt.x + 14, pt.y - 10, 8, Color.white);
             w.draw_text("Cheese", pt.x + 24, pt.y - 14, 1, Palette.cheese_color);
@@ -1984,14 +1996,14 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Carried Cheese
-        if (frame.cheese_holder == e.entity) {
+        if (status_of(frame).cheese_holder == e.entity) {
             w.fill_circle(pt.x + 14, pt.y - 10, 8, Palette.cheese_color);
             w.draw_circle_outline(pt.x + 14, pt.y - 10, 8, Color.white);
             w.draw_text("Cheese", pt.x + 24, pt.y - 14, 1, Palette.cheese_color);
         }
 
         // Charmed status
-        if (frame.charmed_target == e.entity) {
+        if (status_of(frame).charmed_target == e.entity) {
             layout_resolver.submit(TextLabel.init(
                 "[Charmed!]",
                 pt.x,
@@ -2046,9 +2058,9 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Spit Status
-        const spit_str = if (frame.spit_is_thick) "[Thick Spit Ready!]" else "[Spit: Thin]";
-        const spit_col = if (frame.spit_is_thick) Palette.spit_color else Color.hud_subtext;
-        const spit_prio: LabelPriority = if (frame.spit_is_thick) .actor_alert else .actor_status;
+        const spit_str = if (status_of(frame).spit_is_thick) "[Thick Spit Ready!]" else "[Spit: Thin]";
+        const spit_col = if (status_of(frame).spit_is_thick) Palette.spit_color else Color.hud_subtext;
+        const spit_prio: LabelPriority = if (status_of(frame).spit_is_thick) .actor_alert else .actor_status;
         layout_resolver.submit(TextLabel.init(
             spit_str,
             pt.x,
@@ -2083,9 +2095,9 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Distracted / watching status
-        const org_str = if (frame.organiser_distracted) "[DISTRACTED!]" else "[Watching]";
-        const org_col = if (frame.organiser_distracted) Color.cue_alert else Color.status_running;
-        const org_prio: LabelPriority = if (frame.organiser_distracted) .actor_alert else .actor_status;
+        const org_str = if (status_of(frame).organiser_distracted) "[DISTRACTED!]" else "[Watching]";
+        const org_col = if (status_of(frame).organiser_distracted) Color.cue_alert else Color.status_running;
+        const org_prio: LabelPriority = if (status_of(frame).organiser_distracted) .actor_alert else .actor_status;
         layout_resolver.submit(TextLabel.init(
             org_str,
             pt.x,
@@ -2116,7 +2128,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
             .actor_name,
         ));
-        if (frame.organiser_distracted) {
+        if (status_of(frame).organiser_distracted) {
             layout_resolver.submit(TextLabel.init(
                 "[Looking Offstage]",
                 pt.x,
@@ -2141,7 +2153,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         w.fill_rect(pt.x - 5, pt.y + 4, 10, 4, Color{ .r = 70, .g = 130, .b = 200 });
 
         // Dizzy stars if knocked down
-        if (frame.george_knocked_down) {
+        if (status_of(frame).george_knocked_down) {
             w.fill_circle(pt.x - 12, pt.y - 16, 3, Color{ .r = 250, .g = 204, .b = 21 });
             w.fill_circle(pt.x, pt.y - 20, 4, Color{ .r = 254, .g = 240, .b = 138 });
             w.fill_circle(pt.x + 12, pt.y - 16, 3, Color{ .r = 250, .g = 204, .b = 21 });
@@ -2161,7 +2173,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Status
-        if (frame.george_knocked_down) {
+        if (status_of(frame).george_knocked_down) {
             layout_resolver.submit(TextLabel.init(
                 "[KNOCKED DOWN!]",
                 pt.x,
@@ -2205,7 +2217,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         w.fill_rect(pt.x - 2, pt.y + ACTOR_SCREEN_RADIUS - 2, 4, 6, Color{ .r = 210, .g = 205, .b = 195 });
 
         // Tangled coils if tangled
-        if (frame.goat_is_tangled) {
+        if (status_of(frame).goat_is_tangled) {
             w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 3, Palette.rope_color);
             w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 6, Palette.rope_color);
             w.fill_circle(pt.x - 10, pt.y - 18, 3, Color{ .r = 250, .g = 204, .b = 21 });
@@ -2226,7 +2238,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Status
-        if (frame.goat_is_tangled) {
+        if (status_of(frame).goat_is_tangled) {
             layout_resolver.submit(TextLabel.init(
                 "[TANGLED IN ROPE!]",
                 pt.x,
@@ -2238,7 +2250,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
                 .actor_alert,
             ));
-        } else if (frame.goat_is_retreating) {
+        } else if (status_of(frame).goat_is_retreating) {
             layout_resolver.submit(TextLabel.init(
                 "[RETREATING TO STAKE!]",
                 pt.x,
@@ -2250,7 +2262,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
                 .actor_alert,
             ));
-        } else if (frame.goat_is_charging) {
+        } else if (status_of(frame).goat_is_charging) {
             layout_resolver.submit(TextLabel.init(
                 "[CHARGING! RAMMING GEORGE!]",
                 pt.x,
@@ -2304,7 +2316,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         layout_resolver.submit(TextLabel.init("Bernard", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 2, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
     } else if (std.mem.eql(u8, name, "Laverne")) {
         // Laverne: Spiky blonde hair, cyan dress, wide eyes (P21-03, D-025)
-        const dress_col = if (frame.dott_laverne_disguised) Palette.tentacle_purple else Palette.laverne_dress;
+        const dress_col = if (status_of(frame).dott_laverne_disguised) Palette.tentacle_purple else Palette.laverne_dress;
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, dress_col);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
         // Spiky blonde hair
@@ -2318,7 +2330,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         w.fill_circle(pt.x + 4, pt.y - 4, 2, Color.black);
 
         layout_resolver.submit(TextLabel.init("Laverne", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-        if (frame.dott_laverne_disguised) {
+        if (status_of(frame).dott_laverne_disguised) {
             layout_resolver.submit(TextLabel.init("[DISGUISED AS TENTACLE]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.tentacle_purple), .actor_status, .actor_status));
         }
     } else if (std.mem.eql(u8, name, "Washington") or std.mem.eql(u8, name, "GeorgeWashington")) {
@@ -2379,7 +2391,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         w.draw_circle_outline(pt.x, pt.y + 2, 6, Palette.tangent_glow);
 
         layout_resolver.submit(TextLabel.init("Donnie", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-        if (frame.tangent_active) {
+        if (status_of(frame).tangent_active) {
             layout_resolver.submit(TextLabel.init("[LIVING RECEIVER]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.tangent_glow), .actor_status, .actor_status));
         }
     } else if (std.mem.eql(u8, name, "Frank")) {
@@ -2439,7 +2451,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         w.fill_rect(pt.x - 7, pt.y - 4, 14, 4, Color.black);
 
         // Cat-hair moustache if disguised
-        if (frame.gabriel_disguised) {
+        if (status_of(frame).gabriel_disguised) {
             w.fill_rect(pt.x - 6, pt.y + 2, 12, 4, Color.black);
             w.draw_rect_outline(pt.x - 6, pt.y + 2, 12, 4, Color{ .r = 250, .g = 204, .b = 21 });
         }
@@ -2458,7 +2470,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Status
-        if (frame.gabriel_disguised) {
+        if (status_of(frame).gabriel_disguised) {
             layout_resolver.submit(TextLabel.init(
                 "[DISGUISED AS MOSELY!]",
                 pt.x,
@@ -2572,7 +2584,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
 
-        if (frame.cat_startled) {
+        if (status_of(frame).cat_startled) {
             layout_resolver.submit(TextLabel.init(
                 "[STARTLED!]",
                 pt.x,
@@ -2739,9 +2751,9 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
             .actor_name,
         ));
-        const st = if (frame.village_warrant_active) "[Warrant Hunt!]" else "[Lawman]";
-        const st_col = if (frame.village_warrant_active) Color.cue_alert else Color.hud_subtext;
-        const st_prio: LabelPriority = if (frame.village_warrant_active) .actor_alert else .actor_status;
+        const st = if (status_of(frame).village_warrant_active) "[Warrant Hunt!]" else "[Lawman]";
+        const st_col = if (status_of(frame).village_warrant_active) Color.cue_alert else Color.hud_subtext;
+        const st_prio: LabelPriority = if (status_of(frame).village_warrant_active) .actor_alert else .actor_status;
         layout_resolver.submit(TextLabel.init(
             st,
             pt.x,
@@ -2823,9 +2835,9 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
     } else if (std.mem.eql(u8, name, "Drifter")) {
         // Drifter: Weathered cloak, shows crime/arrest state (P18-03, D-021)
-        const d_col = if (frame.village_arrest_made)
+        const d_col = if (status_of(frame).village_arrest_made)
             Color{ .r = 100, .g = 116, .b = 139 }
-        else if (frame.village_crime_active)
+        else if (status_of(frame).village_crime_active)
             Color.cue_alert
         else
             Color{ .r = 101, .g = 163, .b = 13 };
@@ -2843,13 +2855,13 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
             .actor_name,
         ));
-        const st = if (frame.village_arrest_made)
+        const st = if (status_of(frame).village_arrest_made)
             "[ARRESTED]"
-        else if (frame.village_crime_active)
+        else if (status_of(frame).village_crime_active)
             "[THIEF / WANTED]"
         else
             "[Hungry]";
-        const st_prio: LabelPriority = if (frame.village_arrest_made or frame.village_crime_active) .actor_alert else .actor_status;
+        const st_prio: LabelPriority = if (status_of(frame).village_arrest_made or status_of(frame).village_crime_active) .actor_alert else .actor_status;
         layout_resolver.submit(TextLabel.init(
             st,
             pt.x,
@@ -2897,8 +2909,837 @@ fn footer(frame: *const RenderFrame) ?r.FooterHint {
         return .{ .text = "[H]: Hotel | [G]: Garden | [B]: Bike Shop | [-]/[+]: Speed | [Space]: Pause | [0-8]: Steps", .color = HINT_GOLD };
     } else if (sc.is_village_scene) {
         return .{ .text = "[S]: Theft | [F]: Feast | [G]: Tip | [-]/[+]: Speed | [Space/N]: Pause/Step | [< / >]: Scrub", .color = HINT_GOLD };
-    } else if (sc.is_darko_bedroom_scene or sc.is_darko_school_scene or sc.is_darko_vortex_scene or frame.tangent_active) {
+    } else if (sc.is_darko_bedroom_scene or sc.is_darko_school_scene or sc.is_darko_vortex_scene or status_of(frame).tangent_active) {
         return .{ .text = "[1]: Bedroom | [2]: High School | [3]: Ridge | [V]: Conduit | [-]/[+]: Speed | [Space]: Pause", .color = Color{ .r = 168, .g = 85, .b = 247 } };
     }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// Sound (P32-02d, D-040): the proofs' music, scene-to-track rule, and effects
+// ---------------------------------------------------------------------------
+
+const audio = bespoke.audio;
+
+/// The proofs' music tracks, in soundtrack order.
+pub const Track = enum(u8) {
+    tavern,
+    cellar,
+    spitting_contest,
+    high_road,
+    sanctuary,
+    scumm_bar,
+    courtyard,
+    bike_shop,
+    lochmarne,
+    tentacle,
+    bell_tower,
+};
+
+/// The proofs' sound effects, in soundtrack order.
+pub const Sfx = enum(u8) {
+    horn,
+    splash,
+    sword_clash,
+    whistle,
+    goat_bleat,
+    thud,
+    toilet_flush,
+    snip_shears,
+    wood_chop,
+};
+
+pub fn track(t: Track) u8 {
+    return @intFromEnum(t);
+}
+
+pub fn sfx(s: Sfx) audio.Sound {
+    return .{ .host = @intFromEnum(s) };
+}
+
+pub const soundtrack = audio.Soundtrack{
+    .tracks = &TRACKS,
+    .sfx = &SFX,
+    .track_for_scene = track_for_scene,
+};
+
+const TRACKS = blk: {
+    @setEvalBranchQuota(20_000);
+    const tags = std.meta.tags(Track);
+    var t: [tags.len]audio.Music = undefined;
+    for (tags, 0..) |tag, i| t[i] = .{ .name = @tagName(tag), .pattern = track_pattern(tag) };
+    break :blk t;
+};
+
+fn wave(source: anytype, shape: audio.Wave, weight: i32) audio.Term {
+    return .{ .source = source, .shape = shape, .weight = weight };
+}
+
+const SFX = blk: {
+    var t: [std.meta.fields(Sfx).len]audio.SfxPatch = undefined;
+    // Two detuned saw voices: a ship's foghorn
+    t[@intFromEnum(Sfx.horn)] = .{ .note1 = 38, .note2 = 45, .env = 30000, .decay = 3, .samples = 11000, .terms = &.{ wave(.osc1, .saw, 1), wave(.osc2, .saw, 1) }, .mix = .{ .shift = 1 } };
+    // Falling bubble over noise
+    t[@intFromEnum(Sfx.splash)] = .{ .note1 = 72, .sweep = -6000, .env = 28000, .decay = 3, .samples = 9000, .terms = &.{ .{ .source = .noise, .weight = 2 }, wave(.osc1, .triangle, 1) }, .mix = .{ .div = 3 } };
+    // Inharmonic ring (C7 x F#7) with noise
+    t[@intFromEnum(Sfx.sword_clash)] = .{ .note1 = 84, .note2 = 90, .env = 32000, .decay = 6, .samples = 5500, .terms = &.{ .{ .source = .ring }, .{ .source = .noise } }, .mix = .{ .shift = 1 } };
+    // Rising slide whistle
+    t[@intFromEnum(Sfx.whistle)] = .{ .note1 = 60, .sweep = 3500, .env = 22000, .decay = 2, .samples = 11000, .terms = &.{wave(.osc1, .triangle, 1)} };
+    // Dual saw/pulse bleat alternating C4 and Eb4 (P20-03, D-023)
+    t[@intFromEnum(Sfx.goat_bleat)] = .{ .note1 = 60, .note2 = 63, .duty = 0x60000000, .sweep = 150, .env = 30000, .decay = 3, .samples = 9000, .step_samples = 1200, .steps = &.{ .{ .note = 63, .samples = 1200 }, .{ .note = 60, .samples = 1200 } }, .loop = true, .terms = &.{ wave(.osc1, .saw, 1), wave(.osc2, .pulse, 1) }, .mix = .{ .shift = 1 } };
+    // Heavy headbutt impact with a fast pitch drop (P20-03, D-023)
+    t[@intFromEnum(Sfx.thud)] = .{ .note1 = 40, .sweep = -1800, .env = 32000, .decay = 20, .samples = 1600, .terms = &.{ .{ .source = .noise }, wave(.osc1, .triangle, 3) }, .mix = .{ .shift = 2 } };
+    // Downward swirling flush (P21-03, D-025)
+    t[@intFromEnum(Sfx.toilet_flush)] = .{ .note1 = 64, .sweep = -120, .env = 28000, .decay = 2, .samples = 18000, .terms = &.{ .{ .source = .noise }, wave(.osc1, .saw, 1) }, .mix = .{ .shift = 1 } };
+    // Sharp metallic snip (P21-03, D-025)
+    t[@intFromEnum(Sfx.snip_shears)] = .{ .note1 = 84, .duty = 0x40000000, .sweep = -1200, .env = 26000, .decay = 18, .samples = 2200, .terms = &.{ wave(.osc1, .pulse, 1), .{ .source = .noise } }, .mix = .{ .shift = 1 } };
+    // Axe on timber (P21-03, D-025)
+    t[@intFromEnum(Sfx.wood_chop)] = .{ .note1 = 36, .sweep = -2200, .env = 32000, .decay = 24, .samples = 2000, .terms = &.{ .{ .source = .noise, .weight = 2 }, wave(.osc1, .triangle, 2) }, .mix = .{ .shift = 2 } };
+    break :blk t;
+};
+
+fn track_for_scene(scene_name: []const u8) ?u8 {
+    if (scene_name.len == 0) return null;
+
+    // Checked first: later substrings ("Sanctuary", "Courtyard") belong to other slices.
+    if (std.mem.indexOf(u8, scene_name, "Bell Tower") != null) return track(.bell_tower);
+
+    if (std.mem.indexOf(u8, scene_name, "Spitting") != null or
+        std.mem.indexOf(u8, scene_name, "Booty") != null or
+        std.mem.indexOf(u8, scene_name, "Spit") != null)
+    {
+        return track(.spitting_contest);
+    } else if (std.mem.indexOf(u8, scene_name, "High Road") != null or
+        std.mem.indexOf(u8, scene_name, "Road") != null)
+    {
+        return track(.high_road);
+    } else if (std.mem.indexOf(u8, scene_name, "Sanctuary") != null or
+        std.mem.indexOf(u8, scene_name, "Sword Master") != null)
+    {
+        return track(.sanctuary);
+    } else if (std.mem.indexOf(u8, scene_name, "Scumm") != null) {
+        return track(.scumm_bar);
+    } else if (std.mem.indexOf(u8, scene_name, "Cellar") != null) {
+        return track(.cellar);
+    } else if (std.mem.indexOf(u8, scene_name, "Tavern") != null or
+        std.mem.indexOf(u8, scene_name, "Common") != null)
+    {
+        return track(.tavern);
+    } else if (std.mem.indexOf(u8, scene_name, "Garden") != null or
+        std.mem.indexOf(u8, scene_name, "Courtyard") != null or
+        std.mem.indexOf(u8, scene_name, "Corridor") != null)
+    {
+        return track(.courtyard);
+    } else if (std.mem.indexOf(u8, scene_name, "Bike") != null or
+        std.mem.indexOf(u8, scene_name, "Rental") != null)
+    {
+        return track(.bike_shop);
+    } else if (std.mem.indexOf(u8, scene_name, "Lochmarne") != null or
+        std.mem.indexOf(u8, scene_name, "Goat") != null or
+        std.mem.indexOf(u8, scene_name, "Crypt") != null or
+        std.mem.indexOf(u8, scene_name, "Templar") != null)
+    {
+        return track(.lochmarne);
+    } else if (std.mem.indexOf(u8, scene_name, "Colonial") != null or
+        std.mem.indexOf(u8, scene_name, "Motel") != null or
+        std.mem.indexOf(u8, scene_name, "Dystopia") != null or
+        std.mem.indexOf(u8, scene_name, "Tentacle") != null or
+        std.mem.indexOf(u8, scene_name, "Dott") != null or
+        std.mem.indexOf(u8, scene_name, "Chrono") != null)
+    {
+        return track(.tentacle);
+    }
+
+    return track(.tavern);
+}
+
+
+fn track_pattern(comptime which: Track) audio.BgmPattern {
+    var p = audio.BgmPattern{
+        .bpm = 120,
+        .step_count = 32,
+        .bass_notes = [_]u8{0} ** audio.BGM_STEPS,
+        .lead_notes = [_]u8{0} ** audio.BGM_STEPS,
+        .chord_notes = [_]u8{0} ** audio.BGM_STEPS,
+        .drum_pattern = [_]u8{0} ** audio.BGM_STEPS,
+    };
+
+    switch (which) {
+
+        // The Tavern Heist: Lively G-Dorian pipe & lute jig
+        .tavern => {
+            p.bpm = 132;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                43, 0, 43, 0, 38, 0, 43, 0, 41, 0, 41, 0, 36, 0, 38, 0,
+                43, 0, 43, 0, 38, 0, 43, 0, 41, 0, 41, 0, 38, 0, 43, 0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                67, 0, 70, 72, 74, 0, 72, 70, 69, 0, 65, 69, 67, 0, 0,  0,
+                67, 69, 70, 72, 74, 77, 74, 72, 70, 69, 67, 65, 67, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 53, 0, 57, 0,
+                55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 55, 0, 58, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 3, 3,
+                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
+            };
+        },
+
+        // The Wine Cellar: Moody subterranean minor bassline and dripping echoes
+        .cellar => {
+            p.bpm = 92;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                36, 0, 0, 0, 39, 0, 0, 0, 43, 0, 0, 0, 44, 0, 43, 0,
+                36, 0, 0, 0, 39, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0,  0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                60, 0, 63, 0, 67, 0, 68, 67, 63, 0, 62, 0, 60, 0, 0,  0,
+                60, 0, 63, 0, 67, 0, 70, 68, 67, 0, 65, 0, 63, 62, 60, 0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                48, 0, 0, 0, 51, 0, 0, 0, 55, 0, 0, 0, 56, 0, 55, 0,
+                48, 0, 0, 0, 51, 0, 0, 0, 53, 0, 0, 0, 55, 0, 0,  0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 0,
+            };
+        },
+
+        // Booty Island Spitting Contest: Jaunty Caribbean pirate regatta march
+        .spitting_contest => {
+            p.bpm = 126;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                48, 0, 43, 0, 48, 0, 43, 0, 41, 0, 48, 0, 43, 0, 50, 0,
+                48, 0, 43, 0, 48, 0, 43, 0, 41, 0, 43, 0, 48, 0, 0,  0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                76, 0, 79, 0, 76, 74, 72, 0, 74, 0, 76, 77, 79, 0, 0,  0,
+                81, 0, 79, 76, 72, 0, 74, 0, 76, 74, 72, 0, 72, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                0, 60, 0, 60, 0, 60, 0, 60, 0, 57, 0, 57, 0, 55, 0, 55,
+                0, 60, 0, 60, 0, 60, 0, 60, 0, 57, 0, 55, 0, 60, 0, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 2, 3, 3,
+                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
+            };
+        },
+
+        // Mêlée Island High Road: Adventurous seafaring shanty progression
+        .high_road => {
+            p.bpm = 112;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 40, 0, 0, 0,
+                45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 45, 0, 0, 0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                64, 69, 72, 71, 69, 0, 67, 0, 69, 72, 74, 0, 76, 0, 0,  0,
+                76, 74, 72, 71, 69, 0, 67, 64, 65, 67, 69, 0, 69, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                57, 0, 60, 0, 53, 0, 57, 0, 55, 0, 59, 0, 52, 0, 55, 0,
+                57, 0, 60, 0, 53, 0, 57, 0, 55, 0, 59, 0, 57, 0, 60, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 0, 3, 0, 2, 0, 1, 0, 1, 0, 3, 0, 2, 0, 3, 0,
+                1, 0, 3, 0, 2, 0, 1, 0, 1, 0, 3, 0, 2, 3, 1, 2,
+            };
+        },
+
+        // Carla's Sanctuary: Intense, dramatic sword duel cadence
+        .sanctuary => {
+            p.bpm = 144;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 43, 43, 45, 45, 43, 41,
+                38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 45, 45, 38, 38, 0,  0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                74, 0, 77, 0, 81, 0, 79, 77, 76, 0, 77, 79, 81, 0, 0,  0,
+                86, 0, 81, 0, 77, 0, 74, 0, 76, 77, 76, 73, 74, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                50, 0, 53, 0, 53, 0, 57, 0, 55, 0, 58, 0, 57, 0, 61, 0,
+                50, 0, 53, 0, 53, 0, 57, 0, 55, 0, 57, 0, 50, 0, 53, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 1, 3, 2, 3, 1, 3, 1, 3, 1, 3, 2, 3, 1, 2,
+                1, 3, 1, 3, 2, 3, 1, 3, 1, 3, 1, 3, 2, 2, 1, 2,
+            };
+        },
+
+        // The Scumm Bar: Rowdy pirate tavern waltz in 3/4 time
+        .scumm_bar => {
+            p.bpm = 138;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                48, 0, 0, 48, 0, 0, 43, 0, 0, 48, 0, 0, 41, 0, 0, 43,
+                48, 0, 0, 48, 0, 0, 45, 0, 0, 43, 0, 0, 48, 0, 0, 0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                72, 0, 74, 76, 0, 79, 81, 0, 79, 76, 0, 0, 72, 0, 76, 74,
+                72, 0, 74, 76, 0, 79, 81, 0, 79, 76, 74, 0, 72, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                0, 60, 60, 0, 60, 60, 0, 55, 55, 0, 60, 60, 0, 57, 57, 0,
+                0, 60, 60, 0, 60, 60, 0, 57, 57, 0, 55, 55, 0, 60, 60, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2,
+                1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2,
+            };
+        },
+
+        // Gabriel Knight 3 Hotel Courtyard Garden: Peaceful French provincial waltz
+        .courtyard => {
+            p.bpm = 104;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                41, 0, 48, 0, 41, 0, 48, 0, 46, 0, 41, 0, 48, 0, 43, 0,
+                41, 0, 48, 0, 41, 0, 48, 0, 46, 0, 48, 0, 41, 0, 0,  0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                69, 0, 72, 0, 77, 0, 76, 74, 72, 0, 70, 0, 69, 0, 67, 0,
+                69, 0, 72, 0, 77, 0, 79, 77, 76, 0, 74, 0, 72, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                53, 0, 57, 0, 53, 0, 57, 0, 58, 0, 53, 0, 57, 0, 55, 0,
+                53, 0, 57, 0, 53, 0, 57, 0, 58, 0, 57, 0, 53, 0, 0,  0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 0, 3, 0, 0, 0, 3, 0, 1, 0, 3, 0, 0, 0, 3, 0,
+                1, 0, 3, 0, 0, 0, 3, 0, 1, 0, 3, 0, 0, 0, 1, 0,
+            };
+        },
+
+        // Gabriel Knight 3 Bike Rental Shop: Breezy French café accordion cadence
+        .bike_shop => {
+            p.bpm = 118;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                43, 0, 50, 0, 43, 0, 50, 0, 41, 0, 48, 0, 43, 0, 50, 0,
+                43, 0, 50, 0, 43, 0, 50, 0, 41, 0, 45, 0, 43, 0, 0,  0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                67, 70, 74, 73, 74, 0, 70, 0, 67, 69, 70, 72, 69, 0, 0,  0,
+                67, 70, 74, 73, 74, 77, 74, 70, 69, 70, 69, 66, 67, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                0, 55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 55, 0, 58,
+                0, 55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 54, 0, 55, 0, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 3, 3,
+                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
+            };
+        },
+
+        // Lochmarne Castle & Templar Crypt: Lively Celtic whistle jig in 6/8 time (P20-03, D-023)
+        .lochmarne => {
+            p.bpm = 126;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                43, 0, 50, 43, 0, 50, 41, 0, 48, 43, 0, 50, 43, 0, 50, 41,
+                43, 0, 50, 43, 0, 50, 45, 0, 52, 43, 0, 50, 43, 0, 0,  0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                71, 74, 76, 79, 76, 74, 76, 74, 71, 69, 71, 74, 71, 0, 0,  0,
+                71, 74, 76, 79, 81, 79, 76, 74, 76, 74, 71, 69, 71, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                0, 55, 59, 0, 55, 59, 0, 53, 57, 0, 55, 59, 0, 55, 59, 0,
+                0, 55, 59, 0, 55, 59, 0, 57, 60, 0, 55, 59, 0, 55, 59, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 3, 3,
+                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 1, 2,
+            };
+        },
+
+        // Day of the Tentacle Trio: Quirky cartoon march with bouncy bass and syncopated lead (P21-03, D-025)
+        .tentacle => {
+            p.bpm = 132;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                36, 0, 48, 0, 39, 0, 51, 0, 41, 0, 53, 0, 43, 0, 55, 0,
+                36, 0, 48, 0, 39, 0, 51, 0, 44, 0, 56, 0, 43, 0, 41, 0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                60, 63, 67, 72, 70, 67, 63, 60, 65, 68, 72, 75, 72, 0, 0, 0,
+                60, 63, 67, 72, 75, 74, 72, 70, 72, 70, 67, 63, 60, 0, 0, 0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                0, 48, 51, 0, 48, 51, 0, 51, 55, 0, 53, 56, 0, 55, 58, 0,
+                0, 48, 51, 0, 48, 51, 0, 56, 60, 0, 55, 58, 0, 53, 56, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 1, 2, 2,
+                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 2, 3, 1,
+            };
+        },
+
+        // The Bell Tower: slow modal hymn; the lead quotes the Kindle and Toll drafts (P22-03)
+        .bell_tower => {
+            p.bpm = 72;
+            p.bass_notes = [audio.BGM_STEPS]u8{
+                38, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0,
+                41, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 38, 0, 0, 0,
+            };
+            p.lead_notes = [audio.BGM_STEPS]u8{
+                72, 0, 74, 0, 76, 0, 72, 0, 0,  0, 0, 0, 69, 0, 0,  0,
+                67, 0, 69, 0, 71, 0, 67, 0, 0,  0, 0, 0, 62, 0, 0,  0,
+            };
+            p.chord_notes = [audio.BGM_STEPS]u8{
+                50, 0, 0, 0, 57, 0, 0, 0, 48, 0, 0, 0, 55, 0, 0, 0,
+                53, 0, 0, 0, 57, 0, 0, 0, 55, 0, 0, 0, 50, 0, 0, 0,
+            };
+            p.drum_pattern = [audio.BGM_STEPS]u8{
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
+            };
+        },
+    }
+
+    return p;
+}
+
+// ---------------------------------------------------------------------------
+// Status (P32-03b, D-041): what the proof art shows about puzzle progress
+// ---------------------------------------------------------------------------
+
+pub const VillagerDrive = struct {
+    entity: bespoke.EntityId = .none,
+    name: [16]u8 = [_]u8{0} ** 16,
+    name_len: u8 = 0,
+    hunger: u8 = 0,
+    energy: u8 = 0,
+    gold: u16 = 0,
+    activity: u8 = 0,
+    knows_rumor: bool = false,
+    is_witness: bool = false,
+    is_arrested: bool = false,
+
+    pub fn get_name(self: *const VillagerDrive) []const u8 {
+        return self.name[0..self.name_len];
+    }
+};
+
+/// A directed social or emergence edge for the live Social Graph HUD (P18-02, P18-03, D-021).
+pub const SocialEdge = struct {
+    from_name: [16]u8 = [_]u8{0} ** 16,
+    from_len: u8 = 0,
+    to_name: [16]u8 = [_]u8{0} ** 16,
+    to_len: u8 = 0,
+    /// 0 = Friend, 1 = Grudge/Rival, 2 = KnowsRumor, 3 = WarrantFor, 4 = Arrested
+    kind: u8 = 0,
+
+    pub fn get_from(self: *const SocialEdge) []const u8 {
+        return self.from_name[0..self.from_len];
+    }
+    pub fn get_to(self: *const SocialEdge) []const u8 {
+        return self.to_name[0..self.to_len];
+    }
+};
+
+/// The proofs' status block, carried in `RenderFrame.host_status_bytes`. Every field is valid
+/// at zero, which is how a frame's block starts.
+pub const Status = struct {
+    cheese_holder: bespoke.EntityId = .none,
+    charmed_target: bespoke.EntityId = .none,
+    spit_is_thick: bool = false,
+    flags_tampered: bool = false,
+    wind_blowing: bool = false,
+    organiser_distracted: bool = false,
+    fence_taped: bool = false,
+    fence_has_hair: bool = false,
+    cat_startled: bool = false,
+    cat_hair_collected: bool = false,
+    gabriel_disguised: bool = false,
+    bike_rented: bool = false,
+    goat_is_tangled: bool = false,
+    goat_is_charging: bool = false,
+    goat_is_retreating: bool = false,
+    george_knocked_down: bool = false,
+    plough_moved: bool = false,
+    dott_tree_chopped: bool = false,
+    dott_wine_aged: bool = false,
+    dott_battery_charged: bool = false,
+    dott_flag_sewn: bool = false,
+    dott_laverne_freed: bool = false,
+    dott_laverne_disguised: bool = false,
+    dott_puzzle_solved: bool = false,
+    tangent_active: bool = false,
+    singularity_collapsed: bool = false,
+    darko_water_flooded: bool = false,
+    darko_letter_delivered: bool = false,
+    darko_vortex_reached: bool = false,
+    darko_artifact_returned: bool = false,
+    darko_puzzle_solved: bool = false,
+    bell_brazier_lit: bool = false,
+    bell_chain_loosed: bool = false,
+    bell_fork_taken: bool = false,
+    bell_ringing: bool = false,
+    bell_beacon_lit: bool = false,
+    village_crime_active: bool = false,
+    village_warrant_active: bool = false,
+    village_arrest_made: bool = false,
+    tangent_countdown: [16]u8 = [_]u8{0} ** 16,
+    tangent_countdown_len: u8 = 0,
+    villager_drives: [8]VillagerDrive = [_]VillagerDrive{.{}} ** 8,
+    villager_drive_count: usize = 0,
+    social_edges: [16]SocialEdge = [_]SocialEdge{.{}} ** 16,
+    social_edge_count: usize = 0,
+
+    pub fn countdown(self: *const Status) []const u8 {
+        return self.tangent_countdown[0..self.tangent_countdown_len];
+    }
+};
+
+pub fn status_of(frame: *const RenderFrame) *const Status {
+    return frame.host_status(Status);
+}
+
+/// Shows the branch-world collapse countdown (the Middlesex Anomaly sets it every tick).
+pub fn set_countdown(bridge: *bespoke.DisplayBridge, text: []const u8) void {
+    const status = bridge.back_buffer.host_status_mut(Status);
+    const len = @min(text.len, status.tangent_countdown.len);
+    @memcpy(status.tangent_countdown[0..len], text[0..len]);
+    status.tangent_countdown_len = @intCast(len);
+    status.tangent_active = true;
+}
+
+/// Sets the collapse fail-state on both buffers, so it shows before the next capture.
+pub fn set_collapsed(bridge: *bespoke.DisplayBridge, collapsed: bool) void {
+    bridge.back_buffer.host_status_mut(Status).singularity_collapsed = collapsed;
+    bridge.front_buffer.host_status_mut(Status).singularity_collapsed = collapsed;
+}
+
+fn entity_in_state(world: *const bespoke.World, entity_name: []const u8, state: []const u8) bool {
+    const ent = world.lookup_entity(entity_name) orelse return false;
+    const rel = world.lookup_relation(state) orelse return false;
+    return world.has_fact(ent, rel, null);
+}
+
+/// The status hook every proof registers with its bridge: reads each proof's puzzle facts
+/// by the names its script uses. Moved unchanged from the engine's `capture_frame`.
+pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
+    const st = frame.host_status_mut(Status);
+    // 5. Query relational facts for status indicators
+    st.cheese_holder = .none;
+    st.charmed_target = .none;
+    if (world.lookup_entity("Cheese")) |cheese_id| {
+        if (world.lookup_relation("Carries")) |carries_rel| {
+            if (world.find_first(null, carries_rel, @intFromEnum(cheese_id))) |f| {
+                st.cheese_holder = f.subject;
+            }
+        }
+    }
+    if (world.lookup_relation("CharmedBy")) |charmed_rel| {
+        if (world.find_first(null, charmed_rel, null)) |f| {
+            st.charmed_target = f.subject;
+        }
+    }
+
+    // 5b. Capture Spitting Contest facts (P10-03, D-012)
+    st.spit_is_thick = false;
+    if (world.lookup_relation("thick")) |rel| {
+        st.spit_is_thick = world.has_fact(null, rel, null);
+    }
+    st.flags_tampered = false;
+    if (world.lookup_relation("tampered")) |rel| {
+        st.flags_tampered = world.has_fact(null, rel, null);
+    }
+    st.wind_blowing = false;
+    if (world.lookup_relation("blowing")) |rel| {
+        st.wind_blowing = world.has_fact(null, rel, null);
+    }
+    st.organiser_distracted = false;
+    if (world.lookup_relation("Distracted")) |rel| {
+        st.organiser_distracted = world.has_fact(null, rel, null);
+    }
+
+    // GK3 Cat Moustache scenario status flags (P14-02)
+    st.fence_taped = false;
+    if (world.lookup_relation("taped") orelse world.lookup_relation("Taped")) |rel| {
+        st.fence_taped = world.has_fact(null, rel, null);
+    }
+    st.fence_has_hair = false;
+    if (world.lookup_relation("FenceHasHair")) |rel| {
+        st.fence_has_hair = world.has_fact(null, rel, null);
+    }
+    st.cat_startled = false;
+    if (world.lookup_relation("startled") orelse world.lookup_relation("Startled")) |rel| {
+        st.cat_startled = world.has_fact(null, rel, null);
+    }
+    st.cat_hair_collected = false;
+    if (world.lookup_relation("Carries")) |c_rel| {
+        if (world.lookup_entity("CatHair")) |ch_id| {
+            st.cat_hair_collected = world.has_fact(null, c_rel, ch_id.to_int());
+        }
+    }
+    st.gabriel_disguised = false;
+    if (world.lookup_relation("disguised") orelse world.lookup_relation("Disguised")) |rel| {
+        st.gabriel_disguised = world.has_fact(null, rel, null);
+    }
+    st.bike_rented = false;
+    if (world.lookup_relation("HasBikeKeys") orelse world.lookup_relation("BikeRented")) |rel| {
+        st.bike_rented = world.has_fact(null, rel, null);
+    }
+
+    // 5c. Capture Living Village drives & social graph relations (P18-01..P18-03, D-021)
+    st.villager_drive_count = 0;
+    st.social_edge_count = 0;
+    st.village_crime_active = false;
+    st.village_warrant_active = false;
+    st.village_arrest_made = false;
+
+    if (world.lookup_relation("Hunger")) |hunger_rel| {
+        const energy_rel = world.lookup_relation("Energy");
+        const gold_rel = world.lookup_relation("Gold");
+        const act_rel = world.lookup_relation("Activity");
+        const rumor_rel = world.lookup_relation("KnowsRumor");
+        const wit_rel = world.lookup_relation("Witnessed");
+        const arr_rel = world.lookup_relation("Arrested");
+        const stolen_rel = world.lookup_relation("StolenFrom");
+        const warrant_rel = world.lookup_relation("WarrantFor");
+
+        if (stolen_rel) |sr| st.village_crime_active = world.has_fact(null, sr, null);
+        if (warrant_rel) |wr| st.village_warrant_active = world.has_fact(null, wr, null);
+        if (arr_rel) |ar| st.village_arrest_made = world.has_fact(null, ar, null);
+
+        var vd_count: usize = 0;
+        for (frame.entities[0..frame.entity_count]) |re| {
+            if (vd_count >= st.villager_drives.len) break;
+            if (world.get_property(re.entity, hunger_rel)) |h_val| {
+                var vd = VillagerDrive{
+                    .entity = re.entity,
+                    .hunger = @intCast(@min(100, h_val)),
+                    .energy = if (energy_rel) |er| @intCast(@min(100, world.get_property(re.entity, er) orelse 0)) else 0,
+                    .gold = if (gold_rel) |gr| @intCast(@min(999, world.get_property(re.entity, gr) orelse 0)) else 0,
+                    .activity = if (act_rel) |ar| @intCast(@min(20, world.get_property(re.entity, ar) orelse 0)) else 0,
+                    .knows_rumor = if (rumor_rel) |rr| world.has_fact(re.entity, rr, null) else false,
+                    .is_witness = if (wit_rel) |wr| world.has_fact(re.entity, wr, null) else false,
+                    .is_arrested = if (arr_rel) |ar| world.has_fact(re.entity, ar, null) else false,
+                };
+                const n = re.get_name();
+                const nlen = @min(n.len, vd.name.len);
+                @memcpy(vd.name[0..nlen], n[0..nlen]);
+                vd.name_len = @intCast(nlen);
+                st.villager_drives[vd_count] = vd;
+                vd_count += 1;
+            }
+        }
+        st.villager_drive_count = vd_count;
+
+        // Capture key social and emergence edges for the Social Graph HUD
+        const edge_rels = [_]struct { name: []const u8, kind: u8 }{
+            .{ .name = "Arrested", .kind = 4 },
+            .{ .name = "WarrantFor", .kind = 3 },
+            .{ .name = "KnowsRumor", .kind = 2 },
+            .{ .name = "Grudge", .kind = 1 },
+            .{ .name = "Friend", .kind = 0 },
+        };
+        var se_count: usize = 0;
+        for (edge_rels) |er_info| {
+            if (world.lookup_relation(er_info.name)) |rel_id| {
+                var q_it = world.query(null, rel_id, null);
+                while (q_it.next()) |f| {
+                    if (se_count >= st.social_edges.len) break;
+                    const s_name = world.get_entity_name(f.subject) orelse continue;
+                    const o_name = world.get_entity_name(bespoke.EntityId.from_int(f.object_or_value)) orelse continue;
+                    // Avoid duplicate undirected Friend lines
+                    if (er_info.kind == 0 and f.subject.to_int() > f.object_or_value) continue;
+
+                    var se = SocialEdge{ .kind = er_info.kind };
+                    const slen = @min(s_name.len, se.from_name.len);
+                    @memcpy(se.from_name[0..slen], s_name[0..slen]);
+                    se.from_len = @intCast(slen);
+
+                    const olen = @min(o_name.len, se.to_name.len);
+                    @memcpy(se.to_name[0..olen], o_name[0..olen]);
+                    se.to_len = @intCast(olen);
+
+                    st.social_edges[se_count] = se;
+                    se_count += 1;
+                }
+            }
+        }
+        st.social_edge_count = se_count;
+    }
+
+    // 5c-bell. Capture Bell Tower scenario state (P22-03). Looked up by entity, not just by
+    // relation, because `lit` is a generic state other scripts may also use.
+    st.bell_brazier_lit = entity_in_state(world, "Brazier", "lit");
+    st.bell_chain_loosed = entity_in_state(world, "IronChain", "loosed");
+    st.bell_ringing = entity_in_state(world, "GreatBell", "ringing");
+    st.bell_beacon_lit = entity_in_state(world, "Beacon", "lit");
+    st.bell_fork_taken = false;
+    if (world.lookup_relation("Carries")) |carries| {
+        if (world.lookup_entity("TuningFork")) |fork| {
+            st.bell_fork_taken = world.has_fact(null, carries, fork.to_int());
+        }
+    }
+
+    // 5d. Capture Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
+    st.goat_is_tangled = false;
+    if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
+        st.goat_is_tangled = world.has_fact(null, rel, null);
+    }
+    st.goat_is_retreating = false;
+    if (world.lookup_relation("GoatRetreating") orelse world.lookup_relation("retreating")) |rel| {
+        st.goat_is_retreating = world.has_fact(null, rel, null);
+    }
+    st.george_knocked_down = false;
+    if (world.lookup_relation("KnockedDown") orelse world.lookup_relation("knocked_down")) |rel| {
+        st.george_knocked_down = world.has_fact(null, rel, null);
+    }
+    st.plough_moved = false;
+    if (world.lookup_relation("PloughMoved") orelse world.lookup_relation("plough_moved")) |rel| {
+        st.plough_moved = world.has_fact(null, rel, null);
+    }
+
+    // 5f. Capture Day of the Tentacle puzzle status flags (P21-03, D-025)
+    st.dott_tree_chopped = false;
+    if (world.lookup_relation("TreeChoppedDown")) |rel| {
+        st.dott_tree_chopped = world.has_fact(null, rel, null);
+    }
+    st.dott_wine_aged = false;
+    if (world.lookup_relation("WineAgedIntoVinegar")) |rel| {
+        st.dott_wine_aged = world.has_fact(null, rel, null);
+    }
+    st.dott_battery_charged = false;
+    if (world.lookup_relation("ToiletPowered")) |rel| {
+        st.dott_battery_charged = world.has_fact(null, rel, null);
+    }
+    st.dott_flag_sewn = false;
+    if (world.lookup_relation("TentacleFlagSewn")) |rel| {
+        st.dott_flag_sewn = world.has_fact(null, rel, null);
+    }
+    st.dott_laverne_freed = false;
+    if (world.lookup_relation("FreedFromTree")) |rel| {
+        st.dott_laverne_freed = world.has_fact(null, rel, null);
+    }
+    st.dott_laverne_disguised = false;
+    if (world.lookup_relation("TentacleDisguiseActive")) |rel| {
+        st.dott_laverne_disguised = world.has_fact(null, rel, null);
+    }
+    st.dott_puzzle_solved = false;
+    if (world.lookup_relation("DottSolved")) |rel| {
+        st.dott_puzzle_solved = world.has_fact(null, rel, null);
+    }
+
+    // 5g. Capture Donnie Darko / Roberta Sparrow status flags (P31-01..P31-03, D-027)
+    st.darko_water_flooded = false;
+    if (world.lookup_relation("SchoolFlooded")) |rel| {
+        st.darko_water_flooded = world.has_fact(null, rel, null);
+    }
+    st.darko_letter_delivered = false;
+    if (world.lookup_relation("LetterDelivered")) |rel| {
+        st.darko_letter_delivered = world.has_fact(null, rel, null);
+    }
+    st.darko_vortex_reached = false;
+    if (world.lookup_relation("VortexReady")) |rel| {
+        st.darko_vortex_reached = world.has_fact(null, rel, null);
+    }
+    st.darko_artifact_returned = false;
+    if (world.lookup_relation("ArtifactMaterialized")) |rel| {
+        st.darko_artifact_returned = world.has_fact(null, rel, null);
+    }
+    st.darko_puzzle_solved = false;
+    if (world.lookup_relation("DarkoSolved")) |rel| {
+        st.darko_puzzle_solved = world.has_fact(null, rel, null);
+    }
+}
+
+fn hud(w: *DisplayWindow, frame: *const RenderFrame) void {
+    // 6-tangent. Branch-world collapse countdown HUD (P31-01, P31-02, D-027)
+    if (status_of(frame).tangent_active) {
+        const count_str = status_of(frame).countdown();
+        const bw: i32 = 360;
+        const bh: i32 = 34;
+        const party_right_w: i32 = if (frame.party_count > 1)
+            @as(i32, @intCast(frame.party_count)) * (88 + 8) + 10
+        else
+            0;
+        const bx = w.width - bw - 20 - party_right_w;
+        const by: i32 = 7;
+
+        w.fill_rect(bx, by, bw, bh, Color{ .r = 25, .g = 15, .b = 40, .a = 235 });
+        w.draw_rect_outline(bx, by, bw, bh, Color.countdown_warn);
+        w.draw_rect_outline(bx + 1, by + 1, bw - 2, bh - 2, Color.vortex_purple);
+
+        var t_buf: [64]u8 = undefined;
+        const t_text = std.fmt.bufPrint(&t_buf, "TANGENT COLLAPSE: {s}", .{count_str}) catch "TANGENT COLLAPSE";
+        w.draw_text(t_text, bx + 12, by + 9, 2, Color{ .r = 254, .g = 202, .b = 202 });
+    }
+}
+
+fn overlay(w: *DisplayWindow, frame: *const RenderFrame) void {
+    // 12b. Black Hole Singularity Catastrophic Fail-State Modal (P31-01, D-027)
+    if (status_of(frame).singularity_collapsed) {
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 0, .g = 0, .b = 0, .a = 230 });
+        const mw: i32 = 640;
+        const mh: i32 = 120;
+        const mx = @divTrunc(w.width - mw, 2);
+        const my = @divTrunc(w.height - mh, 2);
+        w.fill_rect(mx, my, mw, mh, Color{ .r = 15, .g = 8, .b = 20, .a = 250 });
+        w.draw_rect_outline(mx, my, mw, mh, Color.countdown_warn);
+        w.draw_rect_outline(mx + 2, my + 2, mw - 4, mh - 4, Color.vortex_purple);
+        w.draw_text("BLACK HOLE SINGULARITY COLLAPSE", mx + 36, my + 24, 2, Color.countdown_warn);
+        w.draw_text("The Tangent Universe collapsed without loop closure. Rewind [R] required.", mx + 24, my + 66, 1, Color{ .r = 224, .g = 242, .b = 254 });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Save thumbnails (P32-03d, D-041): the proofs' 16x12 save-slot palettes
+// ---------------------------------------------------------------------------
+
+const save = bespoke.save;
+
+pub const thumbnails = save.ThumbnailPainter{
+    .backdrop = thumbnail_backdrop,
+    .actor = thumbnail_actor,
+};
+
+/// Moved unchanged from the engine's `generate_thumbnail`. Scenes it does not recognise,
+/// including a save with no scene, get the tavern's hearth.
+fn thumbnail_backdrop(scene_name: []const u8, x: usize, y: usize) ?u8 {
+    const has = struct {
+        fn f(name: []const u8, part: []const u8) bool {
+            return std.mem.indexOf(u8, name, part) != null;
+        }
+    }.f;
+    const rgb = save.pack_rgb332;
+    if (has(scene_name, "Spit") or has(scene_name, "Booty")) {
+        if (y < 4) return rgb(25, 45, 95); // Dusk sky
+        if (y < 7) return rgb(20, 90, 150); // Ocean
+        return if (x < 10) rgb(45, 110, 55) else rgb(190, 170, 110); // Grass & beach
+    } else if (has(scene_name, "Garden") or has(scene_name, "Courtyard")) {
+        if (y < 4) return rgb(135, 185, 230); // French sky
+        if (y < 7) return rgb(160, 110, 60); // Courtyard fence & stone
+        return rgb(55, 125, 50); // Courtyard lawn
+    } else if (has(scene_name, "Bike") or has(scene_name, "Shop")) {
+        return if (y < 6) rgb(85, 75, 65) else rgb(150, 95, 45); // Shop wall, floor & counter
+    } else if (has(scene_name, "Hotel") or has(scene_name, "Corridor")) {
+        return if (y < 6) rgb(110, 30, 40) else rgb(55, 25, 20); // Burgundy wallpaper, wainscot
+    } else if (has(scene_name, "Cellar")) {
+        return if (y < 6) rgb(25, 35, 55) else rgb(40, 50, 70); // Cellar wall, stone floor
+    } else if (has(scene_name, "Road")) {
+        return if (y < 5) rgb(15, 30, 70) else rgb(40, 75, 50); // Night sky, forest path
+    } else if (has(scene_name, "Sanctuary") or has(scene_name, "Carla")) {
+        return if (y < 5) rgb(70, 20, 35) else rgb(45, 35, 45); // Sanctuary, duel arena
+    }
+    // Tavern warm hearth & timber
+    if (x >= 1 and x <= 3 and y >= 3 and y <= 5) return rgb(245, 140, 30); // Hearth fire glow
+    return if (y < 6) rgb(55, 38, 28) else rgb(80, 52, 34);
+}
+
+fn thumbnail_actor(name: []const u8) ?u8 {
+    const is = struct {
+        fn f(a: []const u8, b: []const u8) bool {
+            return std.mem.eql(u8, a, b);
+        }
+    }.f;
+    if (is(name, "Guard") or is(name, "Guybrush") or is(name, "Mosely")) return save.pack_rgb332(50, 130, 245); // Blue
+    if (is(name, "Cat") or is(name, "Gabriel")) return save.pack_rgb332(240, 120, 30); // Orange / Tan
+    if (is(name, "Bard") or is(name, "Carla")) return save.pack_rgb332(180, 70, 240); // Purple
     return null;
 }

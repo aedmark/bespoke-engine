@@ -85,6 +85,9 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
     try vm.load_compiled_rules(&compiled);
 
     var display_bridge = bespoke.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
+    // The player whose inventory the tray shows.
+    if (world.lookup_entity("Cat")) |player| display_bridge.set_active_character(player);
     var repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
 
     const patrol_pc = compiled.routine_entries.get("Patrol").?;
@@ -108,7 +111,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
     vm.current_scene = tavern;
     if (window_storage) |*w| {
         display_bridge.attach_audio_bridge(w.audio_bridge);
-        w.set_bgm(.tavern);
+        w.set_bgm(art.track(.tavern));
     }
 
     if (window_storage == null or window_storage.?.is_headless) {
@@ -262,7 +265,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
                                 try stdout.print("\n[Dialogue Started with {s}]\n", .{tname});
                             },
                             .pick_up => {
-                                if (frame.cheese_holder == target_entity.entity) {
+                                if (art.status_of(frame).cheese_holder == target_entity.entity) {
                                     _ = world.forget(target_entity.entity, carries, cheese.to_int());
                                     try world.remember(cat, carries, cheese.to_int(), 0);
                                     window.set_cue_banner("★ You snatched the Cheese from the Guard! ★", 120);

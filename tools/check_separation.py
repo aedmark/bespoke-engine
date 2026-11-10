@@ -76,10 +76,16 @@ def proof_names(proof_file):
     }
 
 
+# Files in proofs/ that are not proofs. main.zig is the launcher; art.zig is the presentation the
+# proofs share (D-039), and every name it uses belongs to a proof script already, so counting it
+# would count the same leak twice.
+NOT_PROOFS = {"main.zig", "art.zig"}
+
+
 def load_proofs(root):
     proofs = {}
     for f in sorted((root / "proofs").glob("*.zig")):
-        if f.name == "main.zig":
+        if f.name in NOT_PROOFS:
             continue
         names = proof_names(f)
         if names:
@@ -194,9 +200,10 @@ def write_baseline(root, counts, accept_increase):
         for p in sorted(set(counts.get(f, {})) | set(baseline.get(f, {}))):
             now = counts.get(f, {}).get(p, 0)
             base = baseline.get(f, {}).get(p)
-            if base is not None and now > base and not accept_increase:
-                raised.append(f"{f} [{p}]: {base} -> {now}")
-                now = base
+            # A file or proof the baseline has never seen counts as 0: a new leak is an increase too.
+            if now > (base or 0) and not accept_increase:
+                raised.append(f"{f} [{p}]: {base or 0} -> {now}")
+                now = base or 0
             if now:
                 merged.setdefault(f, {})[p] = now
     if raised:

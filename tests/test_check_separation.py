@@ -36,6 +36,7 @@ class SeparationLintTests(unittest.TestCase):
         (root / "tools").mkdir()
         (root / "proofs" / "moon.zig").write_text(PROOF, encoding="utf-8")
         (root / "proofs" / "main.zig").write_text('//! launcher, ignored\nconst Astra = 1;\n', encoding="utf-8")
+        (root / "proofs" / "art.zig").write_text('//! shared presentation, ignored\n_ = world.lookup_entity("Airlock");\n', encoding="utf-8")
         (root / "src" / "engine.zig").write_text(engine_source, encoding="utf-8")
         if baseline is not None:
             (root / sep.BASELINE_NAME).write_text(json.dumps({"counts": baseline}), encoding="utf-8")
@@ -49,6 +50,7 @@ class SeparationLintTests(unittest.TestCase):
         self.assertNotIn("Cat", names)      # shorter than MIN_NAME_LENGTH
         self.assertNotIn("Player", names)   # generic engine vocabulary
         self.assertNotIn("main", sep.load_proofs(root))
+        self.assertNotIn("art", sep.load_proofs(root))
 
     def test_test_blocks_are_ignored_even_with_braces_in_strings(self):
         engine = (
@@ -94,6 +96,16 @@ class SeparationLintTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.assertEqual(sep.write_baseline(root, counts, accept_increase=True), 0)
         self.assertEqual(sep.load_baseline(root), {"src/engine.zig": {"moon": 2}})
+
+    def test_a_proof_new_to_the_baseline_needs_accept_increase(self):
+        root = self.make_repo('const a = "Astra";\n', baseline={})
+        counts, _ = sep.scan(root)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(sep.write_baseline(root, counts, accept_increase=False), 1)
+        self.assertEqual(sep.load_baseline(root), {})
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(sep.write_baseline(root, counts, accept_increase=True), 0)
+        self.assertEqual(sep.load_baseline(root), {"src/engine.zig": {"moon": 1}})
 
     def test_zero_counts_are_dropped_from_the_baseline(self):
         root = self.make_repo("pub fn clean() void {}\n", baseline={"src/engine.zig": {"moon": 4}})

@@ -10,11 +10,13 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | 3x Manual Validation & Tests | `python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . && python3 -m unittest discover -s tests -v` | 3x What/How/Why schema conformance, evidence link validity, and manual generator unit tests | Graphical browser layout | < 1s, Python 3 stdlib |
 | World Store Unit Tests | `zig test src/world.zig` | Fact insertion, TTL expiration pruning, queries, `memcpy` snapshots | VM execution or parser | < 2s, Zig compiler |
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
-| WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm` | `WasmCanvas` RGBA8888 framebuffer rendering, browser mouse/keyboard/touch event routing, and `wasm32-freestanding` binary compilation | Live DOM rendering | < 3s, Zig compiler |
+| WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm wasm-proofs && node tools/wasm_smoke.js` | `WasmCanvas` rendering, browser event routing, deck loading and rules on neutral test decks; both modules build, instantiate in Node, and run every deck | A browser page; the manual's JavaScript model | < 10s, Zig compiler; Node.js 18+ for the smoke check (optional) |
+| Wasm Golden | `zig build test-proofs` (`proofs/wasm_golden_test.zig`) | Each proof deck, driven natively through a ten-step event script, shows the pixels, facts, ticks, and banners in `proofs/golden/wasm.txt` (P32-04) | The wasm32 build itself (see the smoke check) | < 1s |
 | Separation Lint | `python3 tools/check_separation.py` (also inside `check_docs.py`); `--report` for every hit | Proof names in non-test `src/` code do not exceed `tools/separation_baseline.json` | That engine code is free of proof *logic* expressed without proof names; audits cover that | < 1s, Python 3 |
 | Engine Tests | `zig build test-engine` | Every test reachable from `src/root.zig` and `src/main.zig` | Proof scenarios | < 5s, Zig compiler, SDL2 headers |
 | Proof-of-Concept Tests | `zig build test-proofs` | Every proof's scripted run and rewind (`proofs/main.zig` imports each proof), and that each headless transcript matches `proofs/golden/<proof>.txt` (P32-07) | Engine internals not exercised by a proof | < 5s, Zig compiler, SDL2 headers |
-| Render Goldens | `zig build test-proofs` (`proofs/render_golden_test.zig`) | Every proof scene, staged from its script in its default state, draws the pixels hashed in `proofs/golden/render.txt` (P32-02a) | Progress-dependent art (moved props, status badges), HUD overlays, input, audio; hashes are tied to the SDL build | < 1s, SDL2 library, no display |
+| Render Goldens | `zig build test-proofs` (`proofs/render_golden_test.zig`) | Every proof scene, staged from its script, draws the pixels hashed in `proofs/golden/render.txt` in its default state and once per piece of proof status that changes it (P32-02a, P32-03a); each scene's save thumbnail hashes as recorded (P32-03d) | Combinations of status, HUD overlays beyond the countdown and collapse modal, input, audio; hashes are tied to the SDL build | about 7s, SDL2 library, no display |
+| Audio Goldens | `zig build test-proofs` (`proofs/audio_golden_test.zig`) | Every effect, distaff note, and proof track renders offline to the samples hashed in `proofs/golden/audio.txt`, a crossfade too, and each proof scene picks its recorded track (P32-02d) | How it sounds through a real device; mixing of overlapping voices beyond one effect at a time | < 1s, no audio device |
 | Full Engine Test Suite | `zig build test` | End-to-end integration across compiler, VM, and spatial graph | Peripheral display output (Raylib/Sokol) | < 5s, Zig compiler |
 
 **The fast set** (before every commit):
@@ -57,7 +59,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
 | Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |
 | Dialogue Duel (`src/duel.zig`) | `zig build test-engine` | `zig build test-proofs` (sword-fighting golden) |
-| WebAssembly Target (`src/wasm.zig`) | `zig test src/wasm.zig && zig build wasm` | Manual canvas simulator deck in `docs/manual.html` |
+| WebAssembly Target (`src/wasm.zig`, `proofs/wasm_deck.zig`) | `zig test src/wasm.zig && zig build wasm wasm-proofs`, `zig build test-proofs` (wasm golden) | `node tools/wasm_smoke.js` |
 | Peripheral SDL2 Display (`src/display/`) | `zig test -lc -lSDL2 src/display.zig` | Interactive GUI run verifying 60 Hz rendering and controls |
 
 ## Manual Checks (Before a Release)
@@ -68,7 +70,7 @@ What only a person can check, and how. Record who checked what, where, and when 
 - Scrub backward and forward across the interactive timeline scrubber (`[<]`, `[>]`, click scrubber) and verify instant visual replay and divergent timeline truncation.
 - Toggle Pause & Save/Load drawer (`[P]`, `[F2]`, `[F3]`), save a slot, verify the 16x12 RGB332 graphical thumbnail, and load back.
 - **HUD layout without a display:** render a frame offscreen and inspect the image. `DisplayWindow.init_offscreen` with `save_frame_bmp` does this from a test (P32-02a); the older route is a small harness that calls `DisplayWindow.init`, fills a `RenderFrame`, calls `render_frame`, then `SDL_RenderReadPixels` and `SDL_SaveBMP`, and run it with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy zig run -I/usr/include/SDL2 -lc -lSDL2 --dep bespoke -Mroot=<harness>.zig -I/usr/include/SDL2 -Mbespoke=src/root.zig`. This checks layout only, not audio or input.
-- Open `docs/manual.html` directly in a browser via `file://`; run the embedded interactive Wasm simulator deck (`#live-simulator`).
+- Open `docs/manual.html` directly in a browser via `file://`; run the embedded simulator deck (`#live-simulator`), a JavaScript model of six proofs (D-042).
 
 ## Before Any Run
 
@@ -83,6 +85,7 @@ What only a person can check, and how. Record who checked what, where, and when 
 - **Test filters and the root module:** `zig test src/root.zig --test-filter X` runs 0 tests, because the filter also drops the named test that imports every module. Filter through a file that imports what you need, e.g. `zig test -I/usr/include/SDL2 -lc -lSDL2 src/package.zig --test-filter P22-01`. Files under `src/compiler/` cannot be run alone (they import `../`).
 - **Proof files cannot be tested alone:** files in `proofs/` import the engine as `@import("bespoke")`, a module only the build graph provides, so `zig test proofs/x.zig` fails. Use `zig build test-proofs`.
 - **Golden mismatches:** a failing `test-proofs` run names the proof and first differing line and writes `proofs/golden/<proof>.actual.txt`. If the change is intended, regenerate with `zig build test-proofs -Dupdate-goldens` and review `git diff proofs/golden`. A later passing run served from the build cache does not delete a stale `.actual.txt`; it is gitignored, so remove it by hand.
+- **Audio golden mismatches:** a failing run prints each differing line and writes `proofs/golden/audio.actual.txt`. The synth is integer arithmetic with a seeded noise generator, so a change is never machine noise.
 - **Render golden mismatches:** a failing run names each changed scene and writes `proofs/golden/render.actual.txt` plus one `<proof>_<scene>.actual.bmp` per changed scene (gitignored). Look at the image before regenerating with `-Dupdate-goldens`. If every scene changes at once with no renderer change, suspect an SDL upgrade.
 - **Headless runs read stdin:** scenario binaries wait for input after printing SUCCESS. Run them with `</dev/null` in scripts and loops.
 - **Mutation check discipline:** A mutation check must break the fix, not the test. Reverting a whole file can fail a test for an unrelated reason. Remove just the fix.

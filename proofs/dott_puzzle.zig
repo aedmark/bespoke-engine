@@ -266,6 +266,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // 3. Register Party in DisplayBridge
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
     const party_members = [_]bespoke.EntityId{ hoagie, bernard, laverne };
     display_bridge.set_party(&party_members);
     display_bridge.set_active_character(bernard);
@@ -311,6 +312,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Assert initial relational constraints (D-026)
     const trapped_rel = try world.intern_relation("Trapped", .set);
     _ = try world.remember(laverne, trapped_rel, 1, 0);
+    // The 2193 guard post holds Laverne: the engine's portal rule reads `Guarded` (D-041).
+    const guarded_rel = try world.intern_relation("Guarded", .set);
+    _ = try world.remember(laverne, guarded_rel, 1, 0);
 
     // Explicit hotspot locations aligned with scene waypoints across all 3 eras
     const wine_prop = world.lookup_entity("VintageWineBottle").?;
@@ -563,6 +567,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("         Laverne inspects TentacleFlag -> {s}\n", .{msg_flag});
     const disg_rel = try world.intern_relation("TentacleDisguiseActive", .set);
     _ = try world.remember(laverne, disg_rel, 1, 0);
+    // The disguise gets her past the guard.
+    _ = try world.remember(laverne, try world.intern_relation("PassesGuard", .set), 1, 0);
     std.debug.assert(spatial.can_access_portal(&world, laverne));
     std.debug.assert(spatial.can_transfer_item_with_world(&world, bernard, laverne, .portal_anchored));
     try writer.print("         [D-026 Invariant] Portal Access Gating: Laverne wearing tentacle disguise -> permanent Chron-o-John access granted!\n", .{});
@@ -579,7 +585,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n[Time-Travel] Verifying deterministic rewind back to tick 0...\n", .{});
     display_bridge.capture_frame(&world, &spatial, &vm);
     display_bridge.swap();
-    const final_frame = display_bridge.get_frame();
+    const final_frame = art.status_of(display_bridge.get_frame());
     std.debug.assert(final_frame.dott_battery_charged);
     std.debug.assert(final_frame.dott_flag_sewn);
     std.debug.assert(final_frame.dott_tree_chopped);
@@ -649,6 +655,9 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
     const trapped_rel = try world.intern_relation("Trapped", .set);
     _ = try world.remember(laverne, trapped_rel, 1, 0);
+    // The 2193 guard post holds Laverne: the engine's portal rule reads `Guarded` (D-041).
+    const guarded_rel = try world.intern_relation("Guarded", .set);
+    _ = try world.remember(laverne, guarded_rel, 1, 0);
 
     const carries_rel = try world.intern_relation("Carries", .set);
     const wine = try world.intern_entity("VintageWine");
@@ -706,9 +715,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     var win = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Day of the Tentacle Trio", 1280, 720);
     defer win.deinit();
     win.set_theme(&art.theme);
-    win.audio_bridge.set_track(.tentacle);
+    win.audio_bridge.set_track(art.track(.tentacle));
 
     var display_bridge = bespoke.display.DisplayBridge.init();
+    display_bridge.set_status_hook(art.capture_status);
     display_bridge.attach_audio_bridge(win.audio_bridge);
     const party = [_]bespoke.EntityId{ hoagie, bernard, laverne };
     display_bridge.set_party(&party);
@@ -897,6 +907,8 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         win.set_cue_banner("Betsy Ross: 'A tentacle flag? Avant-garde! I shall sew it at once!' Flag complete!", 180);
                     } else if (item_ent == flag and (act_ent == laverne or act_ent == tentacle)) {
                         _ = try world.remember(laverne, disg_rel, 1, 0);
+                        // The disguise gets her past the guard.
+                        _ = try world.remember(laverne, try world.intern_relation("PassesGuard", .set), 1, 0);
                         win.play_sfx(.pickup);
                         win.set_cue_banner("Laverne dons the Tentacle Flag disguise! Security checkpoint access granted!", 180);
                     }
@@ -947,7 +959,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         win.set_cue_banner(block_msg, 120);
                     } else {
                         _ = try world.transfer_item(item_ent, from_id, to_id);
-                        win.play_sfx(.toilet_flush);
+                        win.play_sound(art.sfx(.toilet_flush));
                     }
                     action_taken = true;
                 }
