@@ -268,6 +268,7 @@ pub const DegradationDecl = struct {
     substance: []const u8,
     stages: []const DegradationStageDecl,
     vessels: []const DegradationVesselDecl,
+    spill_per_moving_tick: u32 = 0,
     relations: [5][]const u8 = .{ "Contains", "Volume", "ContainerStage", "ContainerExposure", "ContainerFailedAt" },
 };
 
@@ -1105,6 +1106,7 @@ pub const Parser = struct {
         var substance: ?[]const u8 = null;
         var stages = std.ArrayList(DegradationStageDecl).init(self.allocator);
         var vessels = std.ArrayList(DegradationVesselDecl).init(self.allocator);
+        var spill_per_moving_tick: u32 = 0;
         var relations = (DegradationDecl{ .name = "", .substance = "", .stages = &.{}, .vessels = &.{} }).relations;
 
         while (self.current.tag != .dedent and self.current.tag != .eof) {
@@ -1122,6 +1124,8 @@ pub const Parser = struct {
                     .initial_volume = try self.take_u32(),
                     .initial_stage = try self.take_atom(),
                 });
+            } else if (std.mem.eql(u8, directive, "spill")) {
+                spill_per_moving_tick = try self.take_u32();
             } else if (std.mem.eql(u8, directive, "relations")) {
                 for (&relations) |*relation| relation.* = try self.take_atom();
             } else return self.set_error("unknown degradation directive '{s}'", .{directive});
@@ -1134,6 +1138,7 @@ pub const Parser = struct {
             .substance = substance.?,
             .stages = try stages.toOwnedSlice(),
             .vessels = try vessels.toOwnedSlice(),
+            .spill_per_moving_tick = spill_per_moving_tick,
             .relations = relations,
         };
     }

@@ -18,6 +18,13 @@ pub const MAX_VESSELS: usize = 32;
 
 pub const Error = error{
     InvalidConfig,
+    UnknownVessel,
+    SameVessel,
+    SourceEmpty,
+    TargetNotEmpty,
+    InsufficientCapacity,
+    VesselFailed,
+    InvalidState,
 };
 
 /// A stable stage entity and the exposure time before the vessel advances to the next stage.
@@ -50,6 +57,7 @@ pub const Config = struct {
     substance: EntityId,
     stages: []const Stage,
     vessels: []const Vessel,
+    spill_per_moving_tick: u32 = 0,
     relations: Relations = .{},
 };
 
@@ -114,10 +122,64 @@ pub const ContainerSystem = struct {
         return self;
     }
 
-    /// Advances governed vessels whose current exposure fact expired in the most recent World
-    /// tick. This scans vessels instead of World.recently_expired because that diagnostic ring is
-    /// intentionally bounded and must not limit simultaneous simulation transitions.
+    /// Atomically transfers all liquid between compatible vessels. Both entities retain their
+    /// damage stages. The emptied source stops degrading; the destination restarts exposure at
+    /// its current stage, never at the pristine stage.
+    pub fn pour(self: *const ContainerSystem, world: *World, source: EntityId, target: EntityId) !u32 {
+        if (source == target) return Error.SameVessel;
+        _ = self.vessel_definition(source) orelse return Error.UnknownVessel;
+        const target_def = self.vessel_definition(target) orelse return Error.UnknownVessel;
+        if (!world.has_fact(source, self.rel.contains, self.config.substance.to_int())) return Error.SourceEmpty;
+        const amount = world.get_property(source, self.rel.volume) orelse return Error.InvalidState;
+        if (amount == 0) return Error.SourceEmpty;
+        const target_volume = world.get_property(target, self.rel.volume) orelse return Error.InvalidState;
+        if (target_volume != 0 or world.has_fact(target, self.rel.contains, null)) return Error.TargetNotEmpty;
+        if (amount > target_def.capacity) return Error.InsufficientCapacity;
+        const target_stage_value = world.get_property(target, self.rel.stage) orelse return Error.InvalidState;
+        const target_stage_index = self.stage_index(EntityId.from_int(target_stage_value)) orelse return Error.InvalidState;
+        if (target_stage_index == self.config.stages.len - 1) return Error.VesselFailed;
+
+        // Add the two potentially allocating target facts before changing either volume. If an
+        // arena-capacity error occurs, errdefer removes them and the source remains untouched.
+        try world.remember(target, self.rel.contains, self.config.substance.to_int(), 0);
+        errdefer _ = world.forget(target, self.rel.contains, self.config.substance.to_int());
+        const target_stage = self.config.stages[target_stage_index];
+        try arm_exposure(self, world, target, target_stage);
+        errdefer _ = world.forget(target, self.rel.exposure, target_stage.entity.to_int());
+
+        try world.remember(target, self.rel.volume, amount, 0);
+        try world.remember(source, self.rel.volume, 0, 0);
+        _ = world.forget(source, self.rel.contains, self.config.substance.to_int());
+        _ = world.forget(source, self.rel.exposure, null);
+        return amount;
+    }
+
+    /// True when a governed vessel currently contains the configured substance at or above the
+    /// caller's delivery threshold.
+    pub fn has_volume_at_least(self: *const ContainerSystem, world: *const World, vessel_entity: EntityId, threshold: u32) bool {
+        if (!self.owns(vessel_entity) or !world.has_fact(vessel_entity, self.rel.contains, self.config.substance.to_int())) return false;
+        return (world.get_property(vessel_entity, self.rel.volume) orelse 0) >= threshold;
+    }
+
+    /// Applies movement spill, then advances governed vessels whose current exposure fact
+    /// expired in the most recent World tick. Spill goes first so a vessel emptied on the same
+    /// tick as its deadline stops degrading. The stage scan avoids World.recently_expired because
+    /// that diagnostic ring is intentionally bounded.
     pub fn step(self: *const ContainerSystem, world: *World, spatial: ?*const SpatialSystem) !void {
+        if (self.config.spill_per_moving_tick > 0) if (spatial) |space| {
+            for (self.config.vessels) |definition| {
+                if (!world.has_fact(definition.entity, self.rel.contains, self.config.substance.to_int())) continue;
+                if (!self.is_moving(world, space, definition.entity)) continue;
+                const volume = world.get_property(definition.entity, self.rel.volume) orelse continue;
+                const remaining = volume -| self.config.spill_per_moving_tick;
+                try world.remember(definition.entity, self.rel.volume, remaining, 0);
+                if (remaining == 0) {
+                    _ = world.forget(definition.entity, self.rel.contains, self.config.substance.to_int());
+                    _ = world.forget(definition.entity, self.rel.exposure, null);
+                }
+            }
+        };
+
         for (self.config.vessels) |definition| {
             const vessel = definition.entity;
             if (!world.has_fact(vessel, self.rel.contains, self.config.substance.to_int())) continue;
@@ -147,13 +209,26 @@ pub const ContainerSystem = struct {
     }
 
     pub fn owns(self: *const ContainerSystem, entity: EntityId) bool {
-        for (self.config.vessels) |vessel| if (vessel.entity == entity) return true;
-        return false;
+        return self.vessel_definition(entity) != null;
+    }
+
+    pub fn vessel_definition(self: *const ContainerSystem, entity: EntityId) ?Vessel {
+        for (self.config.vessels) |definition| if (definition.entity == entity) return definition;
+        return null;
     }
 
     fn arm_exposure(self: *const ContainerSystem, world: *World, vessel: EntityId, stage: Stage) !void {
         if (stage.duration_ticks == 0) return;
         try world.remember(vessel, self.rel.exposure, stage.entity.to_int(), stage.duration_ticks);
+    }
+
+    fn is_moving(self: *const ContainerSystem, world: *const World, spatial: *const SpatialSystem, vessel_entity: EntityId) bool {
+        _ = self;
+        if (spatial.is_moving(vessel_entity)) return true;
+        const carries = world.lookup_relation("Carries") orelse return false;
+        var carriers = world.query(null, carries, vessel_entity.to_int());
+        while (carriers.next()) |fact| if (spatial.is_moving(fact.subject)) return true;
+        return false;
     }
 };
 
@@ -308,4 +383,105 @@ test "P23-01: invalid stage ladders, vessels, and relation vocabularies are refu
         .vessels = &valid_vessels,
         .relations = .{ .contains = "Same", .volume = "Same" },
     }));
+}
+
+test "P23-02: pouring conserves volume and resets only the destination exposure timer" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const substance = try world.intern_entity("TestReagent");
+    const source = try world.intern_entity("SourceVial");
+    const target = try world.intern_entity("TargetVial");
+    const sound = try world.intern_entity("Sound");
+    const etched = try world.intern_entity("Etched");
+    const failed = try world.intern_entity("Failed");
+    const stages = [_]Stage{ .{ .entity = sound, .duration_ticks = 5 }, .{ .entity = etched, .duration_ticks = 3 }, .{ .entity = failed, .duration_ticks = 0 } };
+    const vessels = [_]Vessel{
+        .{ .entity = source, .capacity = 8, .initial_volume = 6, .initial_stage = 1 },
+        .{ .entity = target, .capacity = 8, .initial_stage = 1 },
+    };
+    const system = try ContainerSystem.init(&world, .{ .substance = substance, .stages = &stages, .vessels = &vessels });
+
+    const before = world.get_property(source, system.rel.volume).? + world.get_property(target, system.rel.volume).?;
+    try testing.expectEqual(@as(u32, 6), try system.pour(&world, source, target));
+    const after = world.get_property(source, system.rel.volume).? + world.get_property(target, system.rel.volume).?;
+    try testing.expectEqual(before, after);
+    try testing.expectEqual(etched.to_int(), world.get_property(source, system.rel.stage).?);
+    try testing.expectEqual(etched.to_int(), world.get_property(target, system.rel.stage).?);
+    try testing.expect(!world.has_fact(source, system.rel.exposure, null));
+    const exposure = world.find_first(target, system.rel.exposure, etched.to_int()).?;
+    try testing.expectEqual(world.current_tick + 3, exposure.expires_at_tick);
+    try testing.expect(system.has_volume_at_least(&world, target, 6));
+    try testing.expect(!system.has_volume_at_least(&world, target, 7));
+    for (0..3) |_| {
+        _ = world.step_tick();
+        try system.step(&world, null);
+    }
+    try testing.expectEqual(etched.to_int(), world.get_property(source, system.rel.stage).?);
+}
+
+test "P23-02: rejected pours leave both vessels unchanged" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const substance = try world.intern_entity("TestReagent");
+    const source = try world.intern_entity("SourceVial");
+    const occupied = try world.intern_entity("OccupiedVial");
+    const small = try world.intern_entity("SmallVial");
+    const broken = try world.intern_entity("BrokenVial");
+    const outsider = try world.intern_entity("OutsiderVial");
+    const sound = try world.intern_entity("Sound");
+    const failed = try world.intern_entity("Failed");
+    const stages = [_]Stage{ .{ .entity = sound, .duration_ticks = 5 }, .{ .entity = failed, .duration_ticks = 0 } };
+    const vessels = [_]Vessel{
+        .{ .entity = source, .capacity = 8, .initial_volume = 6 },
+        .{ .entity = occupied, .capacity = 8, .initial_volume = 1 },
+        .{ .entity = small, .capacity = 3 },
+        .{ .entity = broken, .capacity = 8 },
+    };
+    const system = try ContainerSystem.init(&world, .{ .substance = substance, .stages = &stages, .vessels = &vessels });
+
+    try testing.expectError(Error.TargetNotEmpty, system.pour(&world, source, occupied));
+    try testing.expectError(Error.InsufficientCapacity, system.pour(&world, source, small));
+    try testing.expectError(Error.UnknownVessel, system.pour(&world, source, outsider));
+    try world.remember(broken, system.rel.stage, failed.to_int(), 0);
+    try testing.expectError(Error.VesselFailed, system.pour(&world, source, broken));
+    try testing.expectEqual(@as(u32, 6), world.get_property(source, system.rel.volume).?);
+    try testing.expectEqual(@as(u32, 1), world.get_property(occupied, system.rel.volume).?);
+    try testing.expectEqual(@as(u32, 0), world.get_property(small, system.rel.volume).?);
+    try testing.expect(world.has_fact(source, system.rel.contains, substance.to_int()));
+}
+
+test "P23-02: a carried vessel spills per moving tick and stops degrading when empty" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const room = try world.intern_entity("TestRoom");
+    const left = try spatial.graph.add_waypoint(room, 0, 0, "Left");
+    const right = try spatial.graph.add_waypoint(room, 20, 0, "Right");
+    try spatial.graph.connect(left, right, null);
+    const carrier = try world.intern_entity("Carrier");
+    try spatial.register_entity(carrier, left, 1);
+    const substance = try world.intern_entity("TestReagent");
+    const vessel = try world.intern_entity("TestVial");
+    const sound = try world.intern_entity("Sound");
+    const failed = try world.intern_entity("Failed");
+    const stages = [_]Stage{ .{ .entity = sound, .duration_ticks = 2 }, .{ .entity = failed, .duration_ticks = 0 } };
+    const vessels = [_]Vessel{.{ .entity = vessel, .capacity = 3, .initial_volume = 3 }};
+    const system = try ContainerSystem.init(&world, .{ .substance = substance, .stages = &stages, .vessels = &vessels, .spill_per_moving_tick = 2 });
+    const carries = try world.intern_relation("Carries", .set);
+    try world.remember(carrier, carries, vessel.to_int(), 0);
+    try testing.expect(try spatial.walk_to(carrier, right));
+
+    _ = world.step_tick();
+    try system.step(&world, &spatial);
+    try testing.expectEqual(@as(u32, 1), world.get_property(vessel, system.rel.volume).?);
+    _ = world.step_tick();
+    try system.step(&world, &spatial);
+    try testing.expectEqual(@as(u32, 0), world.get_property(vessel, system.rel.volume).?);
+    try testing.expect(!world.has_fact(vessel, system.rel.contains, substance.to_int()));
+    try testing.expect(!world.has_fact(vessel, system.rel.exposure, null));
+    try testing.expectEqual(sound.to_int(), world.get_property(vessel, system.rel.stage).?);
 }

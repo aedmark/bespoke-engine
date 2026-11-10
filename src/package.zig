@@ -29,7 +29,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// unchanged, so versions 1 and 2 still load. Version 4 appends script-declared society and
 /// duel configuration tables (P32-22, P32-24); versions 1 through 3 load empty tables. Version 5
 /// appends degradation profiles (P23-01); versions 1 through 4 load an empty profile table.
-pub const PACKAGE_VERSION: u32 = 5;
+/// Version 6 adds per-moving-tick spill volume to each profile (P23-02); version 5 profiles load
+/// with spill disabled.
+pub const PACKAGE_VERSION: u32 = 6;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -207,6 +209,7 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
     for (compiled.degradations.items) |decl| {
         const config = decl.config;
         try writer.writeInt(u32, config.substance.to_int(), .little);
+        try writer.writeInt(u32, config.spill_per_moving_tick, .little);
         try writer.writeByte(@intCast(config.stages.len));
         for (config.stages) |stage| {
             try writer.writeInt(u32, stage.entity.to_int(), .little);
@@ -497,8 +500,9 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
     };
 }
 
-fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !container_mod.Declaration {
+fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_spill: bool) !container_mod.Declaration {
     const substance = try read_entity_ref(world, reader);
+    const spill_per_moving_tick = if (has_spill) try reader.readInt(u32, .little) else 0;
     const stage_count = try reader.readByte();
     if (stage_count < 2 or stage_count > container_mod.MAX_STAGES) return error.InvalidContainerConfig;
     const stages = try allocator.alloc(container_mod.Stage, stage_count);
@@ -529,6 +533,7 @@ fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const Worl
         .substance = substance,
         .stages = stages,
         .vessels = vessels,
+        .spill_per_moving_tick = spill_per_moving_tick,
         .relations = .{ .contains = relations[0], .volume = relations[1], .stage = relations[2], .exposure = relations[3], .failed_at = relations[4] },
     };
     try container_mod.validate(config);
@@ -968,7 +973,7 @@ pub fn load_package(
     if (header.version >= 5) {
         const degradation_count = try pr.readInt(u32, .little);
         var ci: u32 = 0;
-        while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr));
+        while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr, header.version >= 6));
     }
 
     return CompiledProgram{
@@ -1299,7 +1304,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     }
 }
 
-test "P23-01: package version 5 round-trips degradation declarations" {
+test "P23-01/P23-02: package version 6 round-trips degradation declarations" {
     const testing = std.testing;
     const compiler = @import("compiler.zig");
     const script =
@@ -1309,6 +1314,7 @@ test "P23-01: package version 5 round-trips degradation declarations" {
         \\  stage Etched 2
         \\  stage Failed 0
         \\  vessel TestVial 8 5 Sound
+        \\  spill 2
         \\  relations HoldsReagent ReagentVolume VialState ReagentExposure VialFailedAt
     ;
     var world1 = try World.init(testing.allocator, 1024 * 1024);
@@ -1328,11 +1334,27 @@ test "P23-01: package version 5 round-trips degradation declarations" {
     const declaration = &compiled2.degradations.items[0];
     try testing.expectEqual(@as(usize, 3), declaration.config.stages.len);
     try testing.expectEqual(@as(u32, 8), declaration.config.vessels[0].capacity);
+    try testing.expectEqual(@as(u32, 2), declaration.config.spill_per_moving_tick);
     var system = try container_mod.ContainerSystem.init(&world2, declaration.config);
     const vial = world2.lookup_entity("TestVial").?;
     _ = world2.step_tick();
     try system.step(&world2, null);
     try testing.expectEqual(world2.lookup_entity("Sound").?.to_int(), world2.get_property(vial, system.rel.stage).?);
+
+    // Version 5 stored the same declaration without the u32 spill field.
+    const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4;
+    const spill_offset = buffer.items.len - bytes_after_spill - 4;
+    var v5 = std.ArrayList(u8).init(testing.allocator);
+    defer v5.deinit();
+    try v5.appendSlice(buffer.items[0..spill_offset]);
+    try v5.appendSlice(buffer.items[spill_offset + 4 ..]);
+    reseal_for_test(v5.items, 5);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v5_stream = std.io.fixedBufferStream(v5.items);
+    var compiled3 = try load_package(testing.allocator, v5_stream.reader(), &world3, null);
+    defer compiled3.deinit();
+    try testing.expectEqual(@as(u32, 0), compiled3.degradations.items[0].config.spill_per_moving_tick);
 }
 
 test "P32-18: package round-trips an arrival rule and version 2 rejects its edge" {
@@ -1387,7 +1409,7 @@ test "P32-18: package round-trips an arrival rule and version 2 rejects its edge
     }
 }
 
-test "P32-22/P32-24: package version 5 round-trips society and duel declarations" {
+test "P32-22/P32-24: package version 6 round-trips society and duel declarations" {
     const testing = std.testing;
     const compiler = @import("compiler.zig");
     const script =

@@ -650,6 +650,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Configure profiles only in proof Zig: rejected because distributable scripts and packages must own game-facing mechanic data.
 **Consequences:** Container degradation is reusable across themes and multiple declarations. Hosts using `host.tick` receive the lifecycle automatically. Direct callers of bare `VM.step_tick` do not advance declared subsystems and remain outside the supported host lifecycle. Package v5 is required to distribute degradation declarations.
 
+## D-051 Atomic Pouring, Persistent Damage, and Movement Spill (2026-11-10, status: accepted)
+**Context:** P23-02 needs rapid transfers to preserve liquid as matter while damage belongs to physical vessels. The maintainer accepted full-volume atomic pouring, no magical repair, exposure reset at the destination's current stage, empty-vessel suspension, movement-based spill, and a delivered-volume threshold.
+**Decision:**
+1. `ContainerSystem.pour(source, target)` transfers the complete source volume or returns an error before mutation. Both vessels must belong to the same profile; the target must be empty, nonterminal, and large enough. Profile membership is compatibility.
+2. Vessel stages never transfer or reset. The emptied source retains its damage and loses its contents and exposure fact. The destination retains its damage and receives a new exposure deadline for that stage.
+3. `spill_per_moving_tick` removes bounded volume before degradation evaluation. A vessel spills while it is a moving motor agent or is held by a moving subject through the canonical `Carries` relation. Reaching zero removes contents and exposure, so an expiry on the same tick cannot degrade an empty vessel.
+4. `has_volume_at_least` exposes a generic delivery-threshold query; lock identity and required volume remain proof data.
+5. A `spill N` directive supplies the rate. `.bspk` version 6 adds the field; version 5 declarations load with zero spill.
+**Alternatives:**
+- Partial pours into smaller vessels: rejected because a failed rapid transfer would become a hidden lossy mutation and complicate atomic interaction feedback.
+- Restore the destination to its first stage: rejected because pouring liquid cannot repair physical damage.
+- Reset the source timer or keep empty vessels degrading: rejected because exposure belongs to the vessel currently holding the substance.
+- Store a lock threshold in the engine profile: rejected because delivery goals are game rules, while the engine only needs a volume predicate.
+**Consequences:** Games can build transfer chains without duplicating or silently destroying liquid. The only modeled loss is the declared movement spill. Callers surface pour errors as interaction feedback and decide which volume threshold satisfies their goal.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

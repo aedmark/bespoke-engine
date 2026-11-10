@@ -693,6 +693,7 @@ pub const Codegen = struct {
             .substance = try self.world.intern_entity(decl.substance),
             .stages = stages,
             .vessels = vessels,
+            .spill_per_moving_tick = decl.spill_per_moving_tick,
             .relations = .{
                 .contains = try self.intern_program_text(r[0]),
                 .volume = try self.intern_program_text(r[1]),
@@ -1589,6 +1590,7 @@ test "P23-01: degradation declarations compile into executable container profile
         \\  stage Etched 2
         \\  stage Failed 0
         \\  vessel TestVial 8 5 Sound
+        \\  spill 2
         \\  relations HoldsReagent ReagentVolume VialState ReagentExposure VialFailedAt
     ;
     var world = try World.init(testing.allocator, 1024 * 1024);
@@ -1598,6 +1600,7 @@ test "P23-01: degradation declarations compile into executable container profile
 
     try testing.expectEqual(@as(usize, 1), compiled.degradations.items.len);
     const declaration = &compiled.degradations.items[0];
+    try testing.expectEqual(@as(u32, 2), declaration.config.spill_per_moving_tick);
     const system = try container_mod.ContainerSystem.init(&world, declaration.config);
     const vial = world.lookup_entity("TestVial").?;
     try testing.expectEqual(world.lookup_entity("Sound").?.to_int(), world.get_property(vial, system.rel.stage).?);
