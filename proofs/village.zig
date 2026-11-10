@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 /// BeSpoke DSL Script for "The Living Village" settlement (P18-01, P18-02, P18-03, D-021).
 pub const VILLAGE_SCRIPT =
@@ -459,6 +460,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Living Village (Emergent Simulation Sandbox)", 1280, 720);
     defer window.deinit();
+    window.set_theme(&art.theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});

@@ -21,17 +21,6 @@
       "tavern_heist": 1,
       "village": 3
     },
-    "src/display/renderer.zig": {
-      "darko_puzzle": 22,
-      "dott_puzzle": 35,
-      "gk3_moustache": 34,
-      "goat_puzzle": 21,
-      "loom_puzzle": 6,
-      "spitting_contest": 27,
-      "sword_fighting": 29,
-      "tavern_heist": 12,
-      "village": 33
-    },
     "src/save.zig": {
       "gk3_moustache": 2,
       "spitting_contest": 2,
@@ -54,5 +43,5 @@
       "village": 26
     }
   },
-  "total": 351
+  "total": 132
 }

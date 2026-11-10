@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 pub const DOTT_PUZZLE_SCRIPT =
     \\scene: Colonial Workshop
@@ -704,6 +705,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
     var win = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Day of the Tentacle Trio", 1280, 720);
     defer win.deinit();
+    win.set_theme(&art.theme);
     win.audio_bridge.set_track(.tentacle);
 
     var display_bridge = bespoke.display.DisplayBridge.init();

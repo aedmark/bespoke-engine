@@ -1,0 +1,20 @@
+tavern_heist/Tavern: 2edeb624af865da2
+tavern_heist/CellarRoom: 7333e3b730a056ab
+spitting_contest/Spitting Competition: c123fb85d1a5f8dd
+gk3_moustache/Hotel Corridor: afc4b1223a142e4e
+gk3_moustache/Hotel Garden: 49910a8e8d8935a2
+gk3_moustache/Bike Rental Shop: ffe8054b1faacc10
+sword_fighting/High Road: 96178ae2491d180e
+sword_fighting/Sword Master Sanctuary: 904936df02301884
+sword_fighting/Scumm Bar: 4aba8172526d9311
+village/Living Village: 9bd504b6295dec67
+goat_puzzle/Lochmarne Castle Courtyard: 9284b2e242ef5068
+goat_puzzle/Templar Crypt: 2a9237bbab89f783
+dott_puzzle/Colonial Workshop: 552bf12dab386da8
+dott_puzzle/Motel Lobby: ac40afb409b81818
+dott_puzzle/Dystopian Guard Post: a11e0b18290dfaf4
+darko_puzzle/Suburban Bedroom: e443a5fe95119c6c
+darko_puzzle/Middlesex High School: 521794322d337779
+darko_puzzle/Tangent Vortex Ridge: 8c4e8661de0eabe8
+loom_puzzle/Bell Tower Base: a90e38dd6442b42d
+loom_puzzle/Bell Tower Belfry: 4caa252bbe05b2aa

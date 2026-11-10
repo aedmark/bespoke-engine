@@ -479,6 +479,19 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Multi-turn social duel minigame: rejected; standard epistemic dialogue choice trees with evidence pruning naturally resolve persuasion and leverage while staying integrated with the narrative DSL.
 **Consequences:** Actors actively counter player investigations in real time. The subsystem will be validated by Phase 33 ("The Bayou Estate" vertical slice).
 
+## D-039 Presentation Through a Theme of Callbacks; Proof Art in One Shared Module (2026-11-09, status: accepted)
+**Context:** After D-031 the engine's `render_frame` still chose a look by scene-name substring (20 flags), drew every proof's backdrop, drew props by hotspot-name substring and tokens by entity name, and picked footer hints per proof: about 2,400 lines of proof art and 62 proof colours inside `src/display/renderer.zig`, and the engine's default backdrop was the tavern. The maintainer chose (2026-11-09) callbacks over declarative art data, a staged delivery (P32-02a to P32-02d), and pixel goldens before the move.
+**Decision:**
+1. **Hook:** `renderer.Theme` is a struct of optional callbacks registered with `DisplayWindow.set_theme`: `backdrop`, `prop`, `actor`, `walkway`, `shows_walkways`, and `footer`. A drawing callback returns true when it drew the element; false hands it back to the engine. The theme draws with the window's public drawing functions and receives a `PropView` or `ActorView` holding the element, its screen position, and the label resolver.
+2. **Engine defaults are neutral:** a plain framed stage titled with the scene name, a box for a prop, a labelled disc for an actor, a corridor line for a walkway, the generic key hints. The tavern is no longer the engine's default scene.
+3. **Proof art lives in `proofs/art.zig`** as one theme shared by all nine proofs, with its scene detection, backdrops, prop and token chains, walkway style, footer hints, and palette. Each proof window calls `window.set_theme(&art.theme)`.
+4. **Behaviour preserved by test:** the move had to leave every hash in `proofs/golden/render.txt` unchanged, and did.
+**Alternatives:**
+- Declarative art data interpreted by the engine: not chosen by the maintainer; every drawing would be rewritten as data and conditional art needs an expression format.
+- One theme per proof: not done in this change. The prop chain matches generic substrings (`Door`, `Desk`, `Bar`) in a fixed order shared across proofs, so splitting it per proof risks changing which branch a prop takes. The boundary does not need the split; it can follow as its own change, checked by the same hashes.
+- A theme that owns the whole frame: rejected; labels, hover prompts, HUD, and overlays are engine behaviour every game shares.
+**Consequences:** The renderer shrinks from 6,214 to about 3,570 lines and names no proof scene, prop, or character outside tests (lint: 219 hits to 0 in that file; total 351 to 132). A proof without a theme still runs, with the neutral look. The theme is borrowed and must outlive the window. Callbacks run inside `render_frame` and must only draw. Still in the renderer and tracked elsewhere: scenario `UserAction` variants and letter keys (P32-02c), and HUD elements driven by proof-specific `RenderFrame` fields, such as the collapse countdown and the collapse modal (P32-03). The render goldens cover default states only, so progress-dependent art (a moved plough, a tampered flag) moved without pixel coverage; it was moved mechanically with the rest.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

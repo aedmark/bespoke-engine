@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 /// The Tavern Heist: the original Engine-as-Spine vertical slice (P5, P6, P9), moved out of
 /// the engine CLI so `src/main.zig` carries no scenario content (D-031).
@@ -102,6 +103,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
     else
         try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 1280, 720);
     defer if (window_storage) |*w| w.deinit();
+    if (window_storage) |*w| w.set_theme(&art.theme);
 
     vm.current_scene = tavern;
     if (window_storage) |*w| {

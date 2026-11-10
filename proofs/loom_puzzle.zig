@@ -8,6 +8,7 @@
 //! `Kindle` on the beacon from inside the handler, which exercises host re-dispatch (D-029).
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 const draft = bespoke.draft;
 const Note = draft.Note;
 const Notes = draft.Notes;
@@ -463,6 +464,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Bell Tower", 1280, 720);
     defer window.deinit();
+    window.set_theme(&art.theme);
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});
         try run_headless(allocator, stdout);

@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 /// BeSpoke DSL Script for Monkey Island Insult Sword Fighting and Organic NPC Repetition
 pub const SWORD_FIGHTING_SCRIPT =
@@ -522,6 +523,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Monkey Island: Insult Sword Fighting", 1280, 720);
     defer window.deinit();
+    window.set_theme(&art.theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});

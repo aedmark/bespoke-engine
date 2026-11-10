@@ -55,6 +55,7 @@ Extraction is test-first and behaviour-preserving.
 | Module boundary | `src/` cannot import `proofs/` (compiler: "import of file outside module path") | In place (P32-01) |
 | Separation lint | Names declared by each proof (cast, props, marks, scenes, drafts, and `lookup_entity` literals) must not appear in non-test `src/` code beyond a committed baseline; the baseline may only shrink | In place (P32-06): `python3 tools/check_separation.py`, also run by `tools/check_docs.py` |
 | Characterization | Each proof's headless transcript matches a committed golden file byte for byte | In place (P32-07): `zig build test-proofs`; final-state digest deferred to P32-16 |
+| Render characterization | Each proof scene draws the pixels hashed in `proofs/golden/render.txt` | In place (P32-02a): `zig build test-proofs` |
 | Second-theme tests | Each extracted mechanic runs under a second, unrelated configuration | Per extraction |
 | Review checklist | No proof names in new engine code; new engine code named by function; proof keeps only content and assertions | Every change |
 
@@ -101,7 +102,7 @@ These recur in most proofs and are handled once, not per proof.
 
 | Finding | Where | Class | Follow-up |
 | --- | --- | --- | --- |
-| Scene themes chosen by scene-name substring (20 `is_*_scene` flags), backdrops, prop art keyed by hotspot name, actor tokens keyed by entity name | `src/display/renderer.zig` `render_frame` | Theme hook | P32-02 |
+| Scene themes chosen by scene-name substring (20 `is_*_scene` flags), backdrops, prop art keyed by hotspot name, actor tokens keyed by entity name | `src/display/renderer.zig` `render_frame` | Theme hook | Done (P32-02b, D-039): `proofs/art.zig` |
 | Scenario music tracks and scene-name track mapping; scenario SFX (`goat_bleat`, `toilet_flush`, `snip_shears`, `wood_chop`, `horn`) | `src/audio.zig` | Theme hook | P32-02 |
 | Scenario `UserAction` variants (`spit_contest_spit`, `sound_horn`, `drink_green_drink`, `tamper_flags`, `darko_follow_conduit`) bound to global letter keys, and raw `SDL_GetKeyboardState` hotkeys in proof loops | `src/display/renderer.zig` `poll_events`; gk3 and goat loops | Theme hook (proof-registered actions and keys) | P32-02 |
 | 41 proof-specific `RenderFrame` status fields, filled by `capture_frame` from 46 relation names, several probed under two or three spellings | `src/display.zig` | Theme hook (host-supplied status channel) | P32-03 |
@@ -201,9 +202,10 @@ These recur in most proofs and are handled once, not per proof.
 1. **Safety net:** separation lint (P32-06) and characterization goldens (P32-07).
 2. **Audits:** one per proof (P32-08 to P32-15), completed 2026-11-09; findings above.
 3. **Extractions and fixes:** host kit (P32-16, done), emergent society (P32-05, done), dialogue duel (P32-17, done), arrival rules (P32-18, done), proof hygiene (P32-19, done); P32-20 and P32-21 wait on maintainer decisions.
-4. **Presentation and core purge:** theme hooks (P32-02), core logic (P32-03), wasm split (P32-04). These remove most leak hits and benefit from the host kit and goldens being in place.
+4. **Presentation and core purge:** theme hooks (P32-02, staged as P32-02a render goldens (done), P32-02b renderer hook (done, D-039: art in `proofs/art.zig`), P32-02c actions and keys, P32-02d audio), core logic (P32-03), wasm split (P32-04). These remove most leak hits and benefit from the host kit and goldens being in place.
 
 ## Baseline changes
 
 - 2026-11-09, 347 to 339: P32-06 ratchet while the lint was built.
+- 2026-11-09, 351 to 132 (P32-02b): proof art left the renderer (219 hits to 0 in that file).
 - 2026-11-09, 339 to 351 (P32-19, maintainer approved): the spitting proof now looks up the script entities `Spit` and `Wind` by name, so the lint counts 12 existing engine lines in the renderer, audio, save, and wasm that use those words. No engine file changed. P32-02 to P32-04 remove them.

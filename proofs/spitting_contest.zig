@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 pub const SPITTING_CONTEST_SCRIPT =
     \\scene: Spitting Competition
@@ -394,6 +395,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Booty Island Spitting Contest", 1280, 720);
     defer window.deinit();
+    window.set_theme(&art.theme);
 
     vm.current_scene = room_ent;
     display_bridge.attach_audio_bridge(window.audio_bridge);

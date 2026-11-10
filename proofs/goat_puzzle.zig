@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 pub const GOAT_PUZZLE_SCRIPT =
     \\scene: Lochmarne Castle Courtyard
@@ -366,6 +367,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Broken Sword: The Lochmarne Goat", 1280, 720);
     defer window.deinit();
+    window.set_theme(&art.theme);
 
     if (window.is_headless) {
         try stdout.print("Warning: Graphical display unavailable (headless fallback). Running console simulation.\n", .{});

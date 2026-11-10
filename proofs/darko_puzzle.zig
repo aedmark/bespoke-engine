@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const art = @import("art.zig");
 
 pub const DARKO_PUZZLE_SCRIPT =
     \\scene: Suburban Bedroom
@@ -402,6 +403,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 pub fn run_interactive(allocator: std.mem.Allocator) !void {
     var win = try bespoke.display.renderer.DisplayWindow.init("BeSpoke Engine - The Middlesex Anomaly (Donnie Darko)", 1280, 720);
     defer win.deinit();
+    win.set_theme(&art.theme);
 
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
