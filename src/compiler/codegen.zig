@@ -16,6 +16,8 @@ pub const RelationKind = world_mod.RelationKind;
 pub const SpatialSystem = spatial_mod.SpatialSystem;
 pub const WhenEdge = parser_mod.WhenEdge;
 const draft_mod = @import("../draft.zig");
+const society_mod = @import("../society.zig");
+const duel_mod = @import("../duel.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
@@ -38,8 +40,15 @@ pub const CompiledProgram = struct {
     initial_entry: ?usize = null,
     /// Draft note table (P22-01, D-029). Program data, not world state: never saved in `.sav`.
     drafts: std.ArrayList(CompiledDraft),
+    /// Script-declared reusable subsystem configuration (P32-22, P32-24).
+    societies: std.ArrayList(society_mod.Declaration),
+    duels: std.ArrayList(duel_mod.Declaration),
 
     pub fn deinit(self: *CompiledProgram) void {
+        for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
+        self.societies.deinit();
+        for (self.duels.items) |*duel| duel.deinit_owned(self.chunk.allocator);
+        self.duels.deinit();
         self.drafts.deinit();
         self.chunk.deinit();
         self.routine_entries.deinit();
@@ -105,12 +114,11 @@ pub const CompiledProgram = struct {
             const a = target_a.?;
             const b = target_b.?;
             const forms = [_][3][]const u8{
-                .{ who, a, b },            .{ who, b, a },
-                .{ who, a, CUE_WILDCARD }, .{ who, CUE_WILDCARD, b },
-                .{ who, b, CUE_WILDCARD }, .{ who, CUE_WILDCARD, a },
-                .{ who, CUE_WILDCARD, CUE_WILDCARD },
-                .{ CUE_WILDCARD, a, b },   .{ CUE_WILDCARD, b, a },
-                .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD },
+                .{ who, a, b },                       .{ who, b, a },
+                .{ who, a, CUE_WILDCARD },            .{ who, CUE_WILDCARD, b },
+                .{ who, b, CUE_WILDCARD },            .{ who, CUE_WILDCARD, a },
+                .{ who, CUE_WILDCARD, CUE_WILDCARD }, .{ CUE_WILDCARD, a, b },
+                .{ CUE_WILDCARD, b, a },              .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD },
             };
             for (forms) |f| {
                 if (self.lookup_cue(cue_name, &f)) |pc| return pc;
@@ -167,6 +175,8 @@ pub const Codegen = struct {
     cue_handler_entries: std.StringHashMap(usize),
     allocated_cue_keys: std.ArrayList([]const u8),
     reactive_rules: std.ArrayList(CompiledWhenRule),
+    societies: std.ArrayList(society_mod.Declaration),
+    duels: std.ArrayList(duel_mod.Declaration),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -180,6 +190,8 @@ pub const Codegen = struct {
             .cue_handler_entries = std.StringHashMap(usize).init(allocator),
             .allocated_cue_keys = std.ArrayList([]const u8).init(allocator),
             .reactive_rules = std.ArrayList(CompiledWhenRule).init(allocator),
+            .societies = std.ArrayList(society_mod.Declaration).init(allocator),
+            .duels = std.ArrayList(duel_mod.Declaration).init(allocator),
         };
     }
 
@@ -266,6 +278,9 @@ pub const Codegen = struct {
                 }
             }
         }
+
+        for (ast.societies.items) |decl| try mut_self.societies.append(try mut_self.compile_society(decl));
+        for (ast.duels.items) |decl| try mut_self.duels.append(try mut_self.compile_duel(decl));
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
@@ -426,6 +441,220 @@ pub const Codegen = struct {
             .reactive_rules = mut_self.reactive_rules,
             .initial_entry = initial_entry,
             .drafts = drafts,
+            .societies = mut_self.societies,
+            .duels = mut_self.duels,
+        };
+    }
+
+    fn intern_program_text(self: *Codegen, text_value: []const u8) ![]const u8 {
+        const entity = try self.world.intern_entity(text_value);
+        return self.world.get_entity_name(entity) orelse return error.InvalidProgramText;
+    }
+
+    fn society_member_index(decl: parser_mod.SocietyDecl, name: []const u8) !usize {
+        for (decl.members, 0..) |member, index| {
+            if (std.mem.eql(u8, member.name, name)) return index;
+        }
+        return error.UnknownSocietyMember;
+    }
+
+    fn activity_from_name(name: []const u8) !society_mod.Activity {
+        const fields = std.meta.fields(society_mod.Activity);
+        inline for (fields) |field| if (std.mem.eql(u8, name, field.name)) return @enumFromInt(field.value);
+        return error.UnknownSocietyActivity;
+    }
+
+    fn society_waypoint(self: *Codegen, name: []const u8) !spatial_mod.WaypointId {
+        const spatial = self.spatial orelse return error.SocietyNeedsSpatialSystem;
+        return spatial.graph.find_waypoint(name) orelse error.UnknownSocietyPlace;
+    }
+
+    fn compile_society(self: *Codegen, decl: parser_mod.SocietyDecl) !society_mod.Declaration {
+        const needs = try self.allocator.alloc(society_mod.Need, decl.needs.len);
+        errdefer self.allocator.free(needs);
+        for (decl.needs, 0..) |source, i| {
+            const worse: society_mod.Worse = if (std.mem.eql(u8, source.worse, "high")) .high else if (std.mem.eql(u8, source.worse, "low")) .low else return error.InvalidSocietyWorse;
+            needs[i] = .{
+                .name = try self.intern_program_text(source.name),
+                .worse = worse,
+                .max = source.max,
+                .rate = source.rate,
+                .resting_rate = source.resting_rate,
+                .seek = source.seek,
+                .satisfy = switch (source.satisfy) {
+                    .trade => |trade| .{ .trade = .{
+                        .provider = if (trade.provider) |name| try society_member_index(decl, name) else null,
+                        .price = trade.price,
+                        .relief = trade.relief,
+                        .floor = trade.floor,
+                        .critical = trade.critical,
+                        .theft_relief = trade.theft_relief,
+                        .theft_floor = trade.theft_floor,
+                        .item = try self.intern_program_text(trade.item),
+                    } },
+                    .stay => |stay| .{ .stay = .{
+                        .at = try self.society_waypoint(stay.at),
+                        .restore = stay.restore,
+                        .until = stay.until,
+                        .activity = try activity_from_name(stay.activity),
+                        .unaware = stay.unaware,
+                        .state = try self.intern_program_text(stay.state),
+                        .verb = try self.intern_program_text(stay.verb),
+                    } },
+                },
+            };
+        }
+
+        const members = try self.allocator.alloc(society_mod.Member, decl.members.len);
+        var built_members: usize = 0;
+        errdefer {
+            for (members[0..built_members]) |member| {
+                self.allocator.free(member.needs);
+                self.allocator.free(member.routine.stops);
+                self.allocator.free(member.owns);
+                self.allocator.free(member.carries);
+            }
+            self.allocator.free(members);
+        }
+        for (decl.members, 0..) |source, i| {
+            if (source.needs.len != decl.needs.len) return error.InvalidSocietyMemberNeeds;
+            const member_needs = try self.allocator.alloc(society_mod.MemberNeed, source.needs.len);
+            errdefer self.allocator.free(member_needs);
+            for (source.needs, 0..) |member_need, ni| {
+                if (!std.mem.eql(u8, member_need.name, decl.needs[ni].name)) return error.InvalidSocietyMemberNeeds;
+                member_needs[ni] = .{
+                    .value = member_need.value,
+                    .rate = member_need.rate,
+                    .provider = if (member_need.provider) |provider| try society_member_index(decl, provider) else null,
+                };
+            }
+            const stops = try self.allocator.alloc(spatial_mod.WaypointId, source.stops.len);
+            errdefer self.allocator.free(stops);
+            for (source.stops, 0..) |stop, si| stops[si] = try self.society_waypoint(stop);
+            const owns = try self.allocator.alloc(EntityId, source.owns.len);
+            errdefer self.allocator.free(owns);
+            for (source.owns, 0..) |item, oi| owns[oi] = try self.world.intern_entity(item);
+            const carries = try self.allocator.alloc(EntityId, source.carries.len);
+            errdefer self.allocator.free(carries);
+            for (source.carries, 0..) |item, ci| carries[ci] = try self.world.intern_entity(item);
+            members[i] = .{
+                .entity = try self.world.intern_entity(source.name),
+                .needs = member_needs,
+                .gold = source.gold,
+                .idle = try activity_from_name(source.idle),
+                .routine = .{
+                    .activity = if (source.routine_activity) |activity| try activity_from_name(activity) else null,
+                    .stops = stops,
+                    .period = source.period,
+                    .work = if (source.work) |work| .{
+                        .at = try self.society_waypoint(work.at),
+                        .every = work.every,
+                        .earn = work.earn,
+                        .restock = work.restock,
+                    } else null,
+                },
+                .merchant = if (source.merchant) |merchant| .{
+                    .post = try self.society_waypoint(merchant.post),
+                    .goods = try self.world.intern_entity(merchant.goods),
+                } else null,
+                .broadcaster = source.broadcaster,
+                .owns = owns,
+                .carries = carries,
+            };
+            built_members += 1;
+        }
+
+        const friends = try self.allocator.alloc(society_mod.FriendLink, decl.friends.len);
+        errdefer self.allocator.free(friends);
+        for (decl.friends, 0..) |friend, i| friends[i] = .{
+            .a = try self.world.intern_entity(friend[0]),
+            .b = try self.world.intern_entity(friend[1]),
+        };
+        const relation_names = decl.relations;
+        return .{ .config = .{
+            .needs = needs,
+            .members = members,
+            .enforcer = if (decl.enforcer) |name| try society_member_index(decl, name) else null,
+            .holding = if (decl.holding) |place| try self.society_waypoint(place) else null,
+            .gathering = try self.society_waypoint(decl.gathering),
+            .flight = .{ .to = try self.society_waypoint(decl.flight_to), .then = if (decl.flight_then) |place| try self.society_waypoint(place) else null, .every = decl.flight_every },
+            .radii = .{ .witness = decl.radii[0], .culprit = decl.radii[1], .rumor = decl.radii[2], .arrest = decl.radii[3] },
+            .witness_grudge_ticks = decl.grudge_ticks[0],
+            .rumor_grudge_ticks = decl.grudge_ticks[1],
+            .warrant_priority = decl.warrant_priority,
+            .currency_unit = try self.intern_program_text(decl.currency_unit),
+            .relations = .{
+                .currency = try self.intern_program_text(relation_names[0]),
+                .activity = try self.intern_program_text(relation_names[1]),
+                .tending = try self.intern_program_text(relation_names[2]),
+                .friend = try self.intern_program_text(relation_names[3]),
+                .rival = try self.intern_program_text(relation_names[4]),
+                .grudge = try self.intern_program_text(relation_names[5]),
+                .owns = try self.intern_program_text(relation_names[6]),
+                .carries = try self.intern_program_text(relation_names[7]),
+                .stolen_from = try self.intern_program_text(relation_names[8]),
+                .crime_scene = try self.intern_program_text(relation_names[9]),
+                .witnessed = try self.intern_program_text(relation_names[10]),
+                .knows_rumor = try self.intern_program_text(relation_names[11]),
+                .warrant_for = try self.intern_program_text(relation_names[12]),
+                .arrested = try self.intern_program_text(relation_names[13]),
+            },
+            .friends = friends,
+        } };
+    }
+
+    fn compile_duel(self: *Codegen, decl: parser_mod.DuelDecl) !duel_mod.Declaration {
+        const pairs = try self.allocator.alloc(duel_mod.Pair, decl.pairs.len);
+        var built_pairs: usize = 0;
+        errdefer {
+            for (pairs[0..built_pairs]) |pair| self.allocator.free(pair.variants);
+            self.allocator.free(pairs);
+        }
+        for (decl.pairs, 0..) |source, i| {
+            const variants = try self.allocator.alloc([]const u8, source.variants.len);
+            errdefer self.allocator.free(variants);
+            for (source.variants, 0..) |variant, vi| variants[vi] = try self.intern_program_text(variant);
+            pairs[i] = .{
+                .name = try self.intern_program_text(source.name),
+                .challenge = try self.intern_program_text(source.challenge),
+                .reply = try self.intern_program_text(source.reply),
+                .variants = variants,
+            };
+            built_pairs += 1;
+        }
+        const stages = try self.allocator.alloc(duel_mod.Stage, decl.fatigue_stages.len);
+        errdefer self.allocator.free(stages);
+        for (decl.fatigue_stages, 0..) |source, i| stages[i] = .{
+            .relation = try self.intern_program_text(source.relation),
+            .at = source.at,
+            .ttl = source.ttl,
+            .label = try self.intern_program_text(source.label),
+        };
+        const tiers = try self.allocator.alloc(duel_mod.TierAssignment, decl.tiers.len);
+        errdefer self.allocator.free(tiers);
+        for (decl.tiers, 0..) |source, i| tiers[i] = .{ .opponent = try self.world.intern_entity(source.opponent), .tier = source.tier };
+        const r = decl.relations;
+        return .{
+            .config = .{
+                .pairs = pairs,
+                .fallback = if (decl.fallback) |fallback| try self.intern_program_text(fallback) else null,
+                .win_at = decl.win_at,
+                .relations = .{
+                    .heard = try self.intern_program_text(r[0]),
+                    .mastered = try self.intern_program_text(r[1]),
+                    .counters = try self.intern_program_text(r[2]),
+                    .variant_of = try self.intern_program_text(r[3]),
+                    .tier = try self.intern_program_text(r[4]),
+                    .advantage = try self.intern_program_text(r[5]),
+                    .wins = try self.intern_program_text(r[6]),
+                },
+            },
+            .fatigue = .{
+                .stages = stages,
+                .count_relation = try self.intern_program_text(decl.fatigue_count_relation),
+                .calm_label = try self.intern_program_text(decl.fatigue_calm_label),
+            },
+            .tiers = tiers,
         };
     }
 
@@ -564,36 +793,64 @@ pub const Codegen = struct {
                 try self.chunk.emit_transition_scene(scene_ent);
             },
             .choice_block => |choices| {
-                var jump_end_pcs = std.ArrayList(usize).init(self.allocator);
-                defer jump_end_pcs.deinit();
+                // A choice set emits a pruned option table first, then one body per eligible
+                // choice. The VM stores the table as World facts and suspends; selection
+                // resumes the fiber at the chosen body. Bodies jump past the whole set.
+                var offer_pcs = std.ArrayList(usize).init(self.allocator);
+                defer offer_pcs.deinit();
+                var body_pcs = std.ArrayList(usize).init(self.allocator);
+                defer body_pcs.deinit();
+                var body_jumps = std.ArrayList(usize).init(self.allocator);
+                defer body_jumps.deinit();
+
+                _ = try self.chunk.emit_op(.choices_begin);
 
                 for (choices) |choice| {
-                    var jump_skip_pc: ?usize = null;
+                    var skip_pcs = std.ArrayList(usize).init(self.allocator);
+                    defer skip_pcs.deinit();
+
                     if (choice.guard) |guard| {
                         try self.compile_expr(guard);
-                        jump_skip_pc = try self.chunk.emit_op(.jump_if_false);
-                        try self.chunk.emit_i16(0); // placeholder
+                        const pc = try self.chunk.emit_op(.jump_if_false);
+                        try self.chunk.emit_i16(0);
+                        try skip_pcs.append(pc);
+                    }
+                    for (choice.where_patterns) |pattern| {
+                        try self.compile_expr(.{ .has_fact = pattern });
+                        const pc = try self.chunk.emit_op(.jump_if_false);
+                        try self.chunk.emit_i16(0);
+                        try skip_pcs.append(pc);
                     }
 
-                    for (choice.body) |s| {
-                        try self.compile_stmt(s);
-                    }
+                    const text_id = try self.world.intern_entity(choice.text);
+                    const offer_pc = try self.chunk.emit_offer_choice(text_id, 0);
+                    try offer_pcs.append(offer_pc);
 
-                    const j_end = try self.chunk.emit_op(.jump);
-                    try self.chunk.emit_i16(0);
-                    try jump_end_pcs.append(j_end);
-
-                    if (jump_skip_pc) |skip_pc| {
-                        const dest_pc = self.chunk.count();
-                        const offset: i16 = @intCast(dest_pc - (skip_pc + 3));
+                    const after_offer = self.chunk.count();
+                    for (skip_pcs.items) |skip_pc| {
+                        const offset: i16 = @intCast(after_offer - (skip_pc + 3));
                         std.mem.writeInt(i16, self.chunk.code.items[skip_pc + 1 ..][0..2], offset, .little);
                     }
                 }
 
+                const choices_end_pc = try self.chunk.emit_choices_end(0);
+
+                for (choices) |choice| {
+                    try body_pcs.append(self.chunk.count());
+                    for (choice.body) |s| try self.compile_stmt(s);
+                    const jump_pc = try self.chunk.emit_op(.jump);
+                    try self.chunk.emit_i16(0);
+                    try body_jumps.append(jump_pc);
+                }
+
                 const end_pc = self.chunk.count();
-                for (jump_end_pcs.items) |j_end| {
-                    const offset: i16 = @intCast(end_pc - (j_end + 3));
-                    std.mem.writeInt(i16, self.chunk.code.items[j_end + 1 ..][0..2], offset, .little);
+                std.mem.writeInt(u16, self.chunk.code.items[choices_end_pc + 1 ..][0..2], @intCast(end_pc), .little);
+                for (offer_pcs.items, body_pcs.items) |offer_pc, body_pc| {
+                    std.mem.writeInt(u16, self.chunk.code.items[offer_pc + 5 ..][0..2], @intCast(body_pc), .little);
+                }
+                for (body_jumps.items) |jump_pc| {
+                    const offset: i16 = @intCast(end_pc - (jump_pc + 3));
+                    std.mem.writeInt(i16, self.chunk.code.items[jump_pc + 1 ..][0..2], offset, .little);
                 }
             },
             .resume_stmt => {
@@ -747,7 +1004,7 @@ test "P4-03: end-to-end compilation from source text to bytecode chunk" {
     defer vm.deinit();
 
     _ = try vm.spawn_routine(try world.intern_entity("Guard"), 0);
-    try vm.step_tick();
+    _ = try vm.step_tick();
 
     try testing.expect(world.has_fact(
         try world.intern_entity("Guard"),
@@ -837,12 +1094,12 @@ test "P8-02: codegen compiles multi-clause when rules into reactive rules execut
 
     // Tick 1: Guard starts StandWatch. Only carries cheese, not charmed -> rule does not fire
     try world.remember(guard, carries, cheese.to_int(), 0);
-    try vm.step_tick();
+    _ = try vm.step_tick();
     try testing.expectEqual(@as(usize, 0), vm.fibers.items[0].interrupt_stack.items.len);
 
     // Bard charms Guard -> both clauses match -> reactive rule edge-triggers interrupt!
     try world.remember(guard, charmed, bard.to_int(), 10);
-    try vm.step_tick();
+    _ = try vm.step_tick();
     try testing.expectEqual(@as(usize, 1), vm.fibers.items[0].interrupt_stack.items.len);
 }
 
@@ -993,12 +1250,12 @@ test "P22-01: weaving by notes, reversed notes, in-script weaves, and fizzles en
 
     // Forward notes resolve to Kindle and run its handler.
     try testing.expect((try vm.weave_notes(&compiled, player, .{ .C, .E, .G, .E }, brazier)) != null);
-    try vm.step_tick();
+    _ = try vm.step_tick();
     try testing.expect(world.has_fact(brazier, lit, player.to_int()));
 
     // Reversed notes resolve to Douse: the complementary effect.
     try testing.expect((try vm.weave_notes(&compiled, player, .{ .E, .G, .E, .C }, brazier)) != null);
-    try vm.step_tick();
+    _ = try vm.step_tick();
     try testing.expect(!world.has_fact(brazier, lit, null));
 
     // Unknown notes, a draft with no handler, and a handler-less target all fizzle.
@@ -1015,8 +1272,8 @@ test "P22-01: weaving by notes, reversed notes, in-script weaves, and fizzles en
 
     // In-script weave queues for host re-dispatch instead of running mid-tick.
     _ = try vm.spawn_routine(player, compiled.routine_entries.get("Ritual").?);
-    try vm.step_tick(); // wait 1 tick
-    try vm.step_tick(); // executes weave opcode
+    _ = try vm.step_tick(); // wait 1 tick
+    _ = try vm.step_tick(); // executes weave opcode
     try testing.expectEqual(@as(usize, 1), vm.pending_weaves.items.len);
     try testing.expectEqual(kindle, vm.pending_weaves.items[0].draft);
     try testing.expectEqual(player, vm.pending_weaves.items[0].caster);
@@ -1024,7 +1281,7 @@ test "P22-01: weaving by notes, reversed notes, in-script weaves, and fizzles en
 
     try testing.expectEqual(@as(usize, 1), try vm.dispatch_pending_weaves(&compiled));
     try testing.expectEqual(@as(usize, 0), vm.pending_weaves.items.len);
-    try vm.step_tick(); // handler fiber runs
+    _ = try vm.step_tick(); // handler fiber runs
     try testing.expect(world.has_fact(brazier, lit, player.to_int()));
 }
 
@@ -1097,7 +1354,7 @@ test "P32-28: Option C predicate presence for states without synthetic true enti
     // 2. Execute initial declarative statements (`now Flags are Tampered`)
     if (compiled.initial_entry) |init_pc| {
         _ = try vm.spawn_routine(guybrush, init_pc);
-        try vm.step_tick();
+        _ = try vm.step_tick();
     }
 
     // Initial statement remembered with object_or_value = 0
@@ -1107,7 +1364,7 @@ test "P32-28: Option C predicate presence for states without synthetic true enti
     // 3. Execute routine Check on VM to test `if Flags are Tampered:` and `now Flags are not Tampered`
     const entry_pc = compiled.routine_entries.get("Check").?;
     _ = try vm.spawn_routine(guybrush, entry_pc);
-    try vm.step_tick();
+    _ = try vm.step_tick();
 
     // 4. Verify "now Flags are not Tampered" cleared the state
     try testing.expect(!world.has_fact(flags, tampered, null));
@@ -1115,4 +1372,163 @@ test "P32-28: Option C predicate presence for states without synthetic true enti
     // 5. Verify host asserting with object_or_value = 0 is immediately recognized
     try world.remember(flags, tampered, 0, 0);
     try testing.expect(world.has_fact(flags, tampered, null));
+}
+
+test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen body" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const dialogue_mod = @import("../dialogue.zig");
+    const source =
+        \\entity Actor, Host, Coin
+        \\relation Carries(holder, item)
+        \\
+        \\on cue Talk(Actor, Host):
+        \\  say Host: "Choose."
+        \\  choice "Always":
+        \\    say Host: "Always body."
+        \\  choice "Only with coin" if Carries(Actor, Coin):
+        \\    say Host: "Coin body."
+        \\  choice "Without coin" if not Carries(Actor, Coin):
+        \\    say Host: "No coin body."
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+    var codegen = Codegen.init(alloc, &world, null);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    const actor = try world.intern_entity("Actor");
+    const host = try world.intern_entity("Host");
+    var vm = vm_mod.VM.init(alloc, &world, &compiled.chunk);
+    defer vm.deinit();
+
+    try vm.set_dialogue_speaker(actor, host);
+    _ = try vm.fire_cue(&compiled, "Talk", actor, host, null);
+    _ = try vm.step_tick();
+
+    const open = vm.dialogue_view().?;
+    try testing.expectEqual(@as(usize, 2), open.count);
+    try testing.expectEqualStrings("Always", open.text(0));
+    try testing.expectEqualStrings("Without coin", open.text(1));
+    try testing.expectEqual(host, open.display_speaker);
+    try testing.expectEqualStrings("Choose.", world.get_entity_name(EntityId.from_int(vm.emitted_cues.items[0].args[1])).?);
+
+    const selection = (try vm.choose(1)).?;
+    try testing.expect(selection.is_scripted());
+    _ = try vm.step_tick();
+    try testing.expect(vm.dialogue_view() == null);
+
+    var found = false;
+    for (vm.emitted_cues.items) |cue| {
+        if (world.get_entity_name(EntityId.from_int(cue.args[1]))) |text| {
+            if (std.mem.eql(u8, text, "No coin body.")) found = true;
+        }
+    }
+    try testing.expect(found);
+
+    // The same set with the guard true offers the other variant, and a world snapshot carries
+    // the open set because every option is a fact (P32-30).
+    const coin = try world.intern_entity("Coin");
+    try world.remember(actor, try world.intern_relation("Carries", .set), coin.to_int(), 0);
+    try vm.set_dialogue_speaker(actor, host);
+    _ = try vm.fire_cue(&compiled, "Talk", actor, host, null);
+    _ = try vm.step_tick();
+    try testing.expectEqualStrings("Only with coin", vm.dialogue_view().?.text(1));
+
+    var snap = std.ArrayList(u8).init(alloc);
+    defer snap.deinit();
+    try world.save_state(snap.writer());
+    var stream = std.io.fixedBufferStream(snap.items);
+    try world.restore_state(stream.reader());
+    try testing.expectEqualStrings("Only with coin", vm.dialogue_view().?.text(1));
+
+    const coin_selection = (try vm.choose(1)).?;
+    try testing.expectEqual(@as(u32, 1), coin_selection.index);
+    _ = try vm.step_tick();
+    try testing.expect(vm.dialogue_view() == null);
+
+    const generated = [_]dialogue_mod.Choice{
+        .{ .text = "Parry high.", .action = 11 },
+        .{ .text = "Parry low.", .action = 12 },
+    };
+    _ = try vm.open_generated_dialogue(host, "Choose a guard.", &generated);
+    const generated_view = vm.dialogue_view().?;
+    try testing.expectEqualStrings("Choose a guard.", generated_view.prompt);
+    try testing.expectEqual(@as(u32, 12), generated_view.action(1));
+    const generated_selection = (try vm.choose(1)).?;
+    try testing.expect(!generated_selection.is_scripted());
+    try testing.expectEqual(@as(u32, 12), generated_selection.action);
+}
+
+test "P32-22/P32-24: society and duel declarations compile into executable program data" {
+    const testing = std.testing;
+    const source =
+        \\scene: Test Square
+        \\cast: Alice, Merchant, Rival
+        \\marks: Home, Market, Square
+        \\
+        \\society TestSociety:
+        \\  need Hunger high 100 1 0 50 trade Merchant 2 20 0 80 30 0 "a meal"
+        \\  member Alice 5 working:
+        \\    need Hunger 10 none Merchant
+        \\    routine working 2 Home, Square
+        \\  member Merchant 10 working:
+        \\    need Hunger 10 none Merchant
+        \\    routine working 2 Market
+        \\    merchant Market Goods
+        \\    owns Goods
+        \\    carries Goods
+        \\  gathering Square
+        \\  flight Home none 4
+        \\  friend Alice Merchant
+        \\
+        \\duel TestDuel:
+        \\  pair Riddle:
+        \\    challenge "What speaks without a mouth?"
+        \\    reply "An echo."
+        \\    variant 1 "Voiceless, I answer."
+        \\  fallback "I do not know."
+        \\  win 3
+        \\  tier Rival 1
+        \\  fatigue Inquiries "calm":
+        \\    stage AnnoyedWith 2 10 "annoyed"
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var world = try World.init(alloc, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(alloc);
+    defer spatial.deinit();
+    var lexer = lexer_mod.Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try parser_mod.Parser.init(alloc, &lexer);
+    const ast = try parser.parse_program();
+    var codegen = Codegen.init(alloc, &world, &spatial);
+    var compiled = try codegen.compile(&ast);
+    defer compiled.deinit();
+
+    try testing.expectEqual(@as(usize, 1), compiled.societies.items.len);
+    var society = try society_mod.Society.init(&world, compiled.societies.items[0].config);
+    try testing.expectEqual(@as(usize, 0), society.need_index("Hunger").?);
+    const alice = world.lookup_entity("Alice").?;
+    try testing.expectEqual(@as(u32, 10), society.get_need(&world, alice, 0));
+
+    try testing.expectEqual(@as(usize, 1), compiled.duels.items.len);
+    const duel_decl = &compiled.duels.items[0];
+    var duel = try duel_mod.Duel.init(&world, duel_decl.config);
+    try duel_decl.apply_tiers(&duel);
+    const rival = world.lookup_entity("Rival").?;
+    try testing.expectEqual(@as(u32, 1), world.get_property(rival, duel.tier_rel).?);
+    var fatigue = try duel_mod.InquiryFatigue.init(&world, duel_decl.fatigue);
+    try testing.expectEqual(@as(?usize, null), try fatigue.record(alice, rival));
 }

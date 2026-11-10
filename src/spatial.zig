@@ -336,12 +336,19 @@ pub const SpatialSystem = struct {
         }
         self.agents.deinit();
         self.graph.deinit();
+        self.clear_hotspots();
+        self.hotspots.deinit();
+        self.portals.deinit();
+    }
+
+    /// Removes every hotspot and releases its owned labels. Hosts rebuilding a compiled scene
+    /// must use this instead of clearing the public array directly.
+    pub fn clear_hotspots(self: *SpatialSystem) void {
         for (self.hotspots.items) |h| {
             self.allocator.free(h.name);
             self.allocator.free(h.examine_text);
         }
-        self.hotspots.deinit();
-        self.portals.deinit();
+        self.hotspots.clearRetainingCapacity();
     }
 
     /// Registers a transit portal (e.g. Chron-o-John or teleport pad) located at a waypoint (D-026).

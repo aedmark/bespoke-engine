@@ -369,6 +369,32 @@ pub const FatigueConfig = struct {
     calm_label: []const u8 = "calm",
 };
 
+/// An opponent tier assigned by a script-declared duel.
+pub const TierAssignment = struct {
+    opponent: EntityId,
+    tier: u32,
+};
+
+/// Complete immutable program data for one declared duel, including its fatigue ladder.
+/// The compiler owns the arrays; strings point into the World's intern table.
+pub const Declaration = struct {
+    config: Config,
+    fatigue: FatigueConfig,
+    tiers: []const TierAssignment = &.{},
+
+    pub fn apply_tiers(self: *const Declaration, duel: *Duel) !void {
+        for (self.tiers) |assignment| try duel.set_tier(assignment.opponent, assignment.tier);
+    }
+
+    pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
+        for (self.config.pairs) |pair| allocator.free(pair.variants);
+        allocator.free(self.config.pairs);
+        allocator.free(self.fatigue.stages);
+        allocator.free(self.tiers);
+        self.* = undefined;
+    }
+};
+
 pub const InquiryFatigue = struct {
     world: *World,
     config: FatigueConfig,

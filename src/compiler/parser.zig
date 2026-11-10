@@ -146,6 +146,110 @@ pub const SceneDef = struct {
     }
 };
 
+pub const SocietyNeedDecl = struct {
+    name: []const u8,
+    worse: []const u8,
+    max: u32,
+    rate: u32,
+    resting_rate: u32,
+    seek: u32,
+    satisfy: union(enum) {
+        trade: struct {
+            provider: ?[]const u8,
+            price: u32,
+            relief: u32,
+            floor: u32,
+            critical: ?u32,
+            theft_relief: u32,
+            theft_floor: u32,
+            item: []const u8,
+        },
+        stay: struct {
+            at: []const u8,
+            restore: u32,
+            until: u32,
+            activity: []const u8,
+            unaware: bool,
+            state: []const u8,
+            verb: []const u8,
+        },
+    },
+};
+
+pub const SocietyMemberNeedDecl = struct {
+    name: []const u8,
+    value: u32,
+    rate: ?u32,
+    provider: ?[]const u8,
+};
+
+pub const SocietyWorkDecl = struct { at: []const u8, every: u64, earn: u32, restock: bool };
+pub const SocietyMerchantDecl = struct { post: []const u8, goods: []const u8 };
+
+pub const SocietyMemberDecl = struct {
+    name: []const u8,
+    gold: u32,
+    idle: []const u8,
+    needs: []const SocietyMemberNeedDecl,
+    routine_activity: ?[]const u8,
+    stops: []const []const u8,
+    period: u64,
+    work: ?SocietyWorkDecl,
+    merchant: ?SocietyMerchantDecl,
+    broadcaster: bool,
+    owns: []const []const u8,
+    carries: []const []const u8,
+};
+
+pub const SocietyDecl = struct {
+    name: []const u8,
+    needs: []const SocietyNeedDecl,
+    members: []const SocietyMemberDecl,
+    enforcer: ?[]const u8,
+    holding: ?[]const u8,
+    gathering: []const u8,
+    flight_to: []const u8,
+    flight_then: ?[]const u8,
+    flight_every: u64,
+    friends: []const [2][]const u8,
+    radii: [4]i32 = .{ 14, 12, 15, 14 },
+    grudge_ticks: [2]u64 = .{ 60, 50 },
+    warrant_priority: u16 = 10,
+    currency_unit: []const u8 = "g",
+    relations: [14][]const u8 = .{
+        "Gold",    "Activity",   "Tending",    "Friend",    "Rival",      "Grudge",     "Owns",
+        "Carries", "StolenFrom", "CrimeScene", "Witnessed", "KnowsRumor", "WarrantFor", "Arrested",
+    },
+};
+
+pub const DuelPairDecl = struct {
+    name: []const u8,
+    challenge: []const u8,
+    reply: []const u8,
+    variants: []const []const u8,
+};
+
+pub const FatigueStageDecl = struct {
+    relation: []const u8,
+    at: u32,
+    ttl: u64,
+    label: []const u8,
+};
+
+pub const DuelTierDecl = struct { opponent: []const u8, tier: u32 };
+
+pub const DuelDecl = struct {
+    name: []const u8,
+    pairs: []const DuelPairDecl,
+    fallback: ?[]const u8,
+    win_at: ?u32,
+    relations: [7][]const u8 = .{ "HeardChallenge", "MasteredReply", "Counters", "VariantOf", "DuelTier", "Advantage", "DuelsWon" },
+    tiers: []const DuelTierDecl,
+    fatigue_count_relation: []const u8,
+    fatigue_calm_label: []const u8,
+    fatigue_stages: []const FatigueStageDecl,
+};
+
 pub const AST = struct {
     entities: std.ArrayList([]const u8),
     relations: std.ArrayList(RelationDecl),
@@ -159,6 +263,8 @@ pub const AST = struct {
     props: std.ArrayList([]const u8),
     marks: std.ArrayList([]const u8),
     drafts: std.ArrayList(DraftDecl),
+    societies: std.ArrayList(SocietyDecl),
+    duels: std.ArrayList(DuelDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -175,6 +281,8 @@ pub const AST = struct {
             .props = std.ArrayList([]const u8).init(allocator),
             .marks = std.ArrayList([]const u8).init(allocator),
             .drafts = std.ArrayList(DraftDecl).init(allocator),
+            .societies = std.ArrayList(SocietyDecl).init(allocator),
+            .duels = std.ArrayList(DuelDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -195,6 +303,8 @@ pub const AST = struct {
         self.props.deinit();
         self.marks.deinit();
         self.drafts.deinit();
+        self.societies.deinit();
+        self.duels.deinit();
     }
 };
 
@@ -370,6 +480,8 @@ pub const Parser = struct {
                 .kw_weave => {
                     return self.set_error("'weave' must appear inside a routine, cue, or rule body; it needs a caster", .{});
                 },
+                .kw_society => try ast.societies.append(try self.parse_society_decl()),
+                .kw_duel => try ast.duels.append(try self.parse_duel_decl()),
                 .kw_routine => {
                     try self.advance();
                     const name = (try self.expect(.identifier)).slice;
@@ -693,6 +805,269 @@ pub const Parser = struct {
             }
         }
         return false;
+    }
+
+    fn take_atom(self: *Parser) ![]const u8 {
+        return switch (self.current.tag) {
+            .identifier, .string_literal, .number => blk: {
+                const value = self.current.slice;
+                try self.advance();
+                break :blk value;
+            },
+            else => self.set_error("expected value, found {s} ('{s}')", .{ @tagName(self.current.tag), self.current.slice }),
+        };
+    }
+
+    fn take_word(self: *Parser, expected: []const u8) !void {
+        if (!std.mem.eql(u8, self.current.slice, expected)) {
+            return self.set_error("expected '{s}', found '{s}'", .{ expected, self.current.slice });
+        }
+        try self.advance();
+    }
+
+    fn take_u32(self: *Parser) !u32 {
+        const tok = try self.expect(.number);
+        return std.fmt.parseInt(u32, tok.slice, 10) catch self.set_error("invalid integer '{s}'", .{tok.slice});
+    }
+
+    fn take_u64(self: *Parser) !u64 {
+        const tok = try self.expect(.number);
+        return std.fmt.parseInt(u64, tok.slice, 10) catch self.set_error("invalid integer '{s}'", .{tok.slice});
+    }
+
+    fn take_i32(self: *Parser) !i32 {
+        const tok = try self.expect(.number);
+        return std.fmt.parseInt(i32, tok.slice, 10) catch self.set_error("invalid integer '{s}'", .{tok.slice});
+    }
+
+    fn take_bool(self: *Parser) !bool {
+        const value = try self.take_atom();
+        if (std.mem.eql(u8, value, "true")) return true;
+        if (std.mem.eql(u8, value, "false")) return false;
+        return self.set_error("expected true or false, found '{s}'", .{value});
+    }
+
+    fn take_optional_name(self: *Parser) !?[]const u8 {
+        const value = try self.take_atom();
+        return if (std.mem.eql(u8, value, "none")) null else value;
+    }
+
+    fn take_line_names(self: *Parser, line: u32) ![]const []const u8 {
+        var names = std.ArrayList([]const u8).init(self.allocator);
+        while (self.current.line == line and self.current.tag != .dedent and self.current.tag != .eof) {
+            if (self.current.tag == .comma) {
+                try self.advance();
+                continue;
+            }
+            try names.append(try self.take_atom());
+        }
+        return try names.toOwnedSlice();
+    }
+
+    /// P32-22 declaration grammar. Values are positional so every field is explicit and package
+    /// serialization has one canonical representation; nested member lines hold per-member data.
+    fn parse_society_decl(self: *Parser) !SocietyDecl {
+        try self.advance(); // society
+        const name = try self.take_atom();
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+
+        var needs = std.ArrayList(SocietyNeedDecl).init(self.allocator);
+        var members = std.ArrayList(SocietyMemberDecl).init(self.allocator);
+        var friends = std.ArrayList([2][]const u8).init(self.allocator);
+        var enforcer: ?[]const u8 = null;
+        var holding: ?[]const u8 = null;
+        var gathering: ?[]const u8 = null;
+        var flight_to: ?[]const u8 = null;
+        var flight_then: ?[]const u8 = null;
+        var flight_every: u64 = 4;
+        var radii = [4]i32{ 14, 12, 15, 14 };
+        var grudge_ticks = [2]u64{ 60, 50 };
+        var warrant_priority: u16 = 10;
+        var currency_unit: []const u8 = "g";
+        var relations = (SocietyDecl{ .name = "", .needs = &.{}, .members = &.{}, .enforcer = null, .holding = null, .gathering = "", .flight_to = "", .flight_then = null, .flight_every = 4, .friends = &.{} }).relations;
+
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            if (std.mem.eql(u8, directive, "need")) {
+                try self.advance();
+                const need_name = try self.take_atom();
+                const worse = try self.take_atom();
+                const max = try self.take_u32();
+                const rate = try self.take_u32();
+                const resting_rate = try self.take_u32();
+                const seek = try self.take_u32();
+                const kind = try self.take_atom();
+                if (std.mem.eql(u8, kind, "trade")) {
+                    try needs.append(.{
+                        .name = need_name,
+                        .worse = worse,
+                        .max = max,
+                        .rate = rate,
+                        .resting_rate = resting_rate,
+                        .seek = seek,
+                        .satisfy = .{ .trade = .{
+                            .provider = try self.take_optional_name(),
+                            .price = try self.take_u32(),
+                            .relief = try self.take_u32(),
+                            .floor = try self.take_u32(),
+                            .critical = blk: {
+                                const value = try self.take_optional_name();
+                                break :blk if (value) |v| std.fmt.parseInt(u32, v, 10) catch return self.set_error("invalid critical value '{s}'", .{v}) else null;
+                            },
+                            .theft_relief = try self.take_u32(),
+                            .theft_floor = try self.take_u32(),
+                            .item = try self.take_atom(),
+                        } },
+                    });
+                } else if (std.mem.eql(u8, kind, "stay")) {
+                    try needs.append(.{
+                        .name = need_name,
+                        .worse = worse,
+                        .max = max,
+                        .rate = rate,
+                        .resting_rate = resting_rate,
+                        .seek = seek,
+                        .satisfy = .{ .stay = .{
+                            .at = try self.take_atom(),
+                            .restore = try self.take_u32(),
+                            .until = try self.take_u32(),
+                            .activity = try self.take_atom(),
+                            .unaware = try self.take_bool(),
+                            .state = try self.take_atom(),
+                            .verb = try self.take_atom(),
+                        } },
+                    });
+                } else return self.set_error("society need '{s}' must use trade or stay", .{need_name});
+            } else if (std.mem.eql(u8, directive, "member")) {
+                try self.advance();
+                const member_name = try self.take_atom();
+                const gold = try self.take_u32();
+                const idle = try self.take_atom();
+                _ = try self.expect(.colon);
+                _ = try self.expect(.indent);
+                var member_needs = std.ArrayList(SocietyMemberNeedDecl).init(self.allocator);
+                var routine_activity: ?[]const u8 = null;
+                var stops: []const []const u8 = &.{};
+                var period: u64 = 1;
+                var work: ?SocietyWorkDecl = null;
+                var merchant: ?SocietyMerchantDecl = null;
+                var broadcaster = false;
+                var owns: []const []const u8 = &.{};
+                var carries: []const []const u8 = &.{};
+                while (self.current.tag != .dedent and self.current.tag != .eof) {
+                    const member_directive = self.current.slice;
+                    const line = self.current.line;
+                    try self.advance();
+                    if (std.mem.eql(u8, member_directive, "need")) {
+                        try member_needs.append(.{ .name = try self.take_atom(), .value = try self.take_u32(), .rate = blk: {
+                            const v = try self.take_optional_name();
+                            break :blk if (v) |text| std.fmt.parseInt(u32, text, 10) catch return self.set_error("invalid member need rate '{s}'", .{text}) else null;
+                        }, .provider = try self.take_optional_name() });
+                    } else if (std.mem.eql(u8, member_directive, "routine")) {
+                        routine_activity = try self.take_optional_name();
+                        period = try self.take_u64();
+                        stops = try self.take_line_names(line);
+                    } else if (std.mem.eql(u8, member_directive, "work")) {
+                        work = .{ .at = try self.take_atom(), .every = try self.take_u64(), .earn = try self.take_u32(), .restock = try self.take_bool() };
+                    } else if (std.mem.eql(u8, member_directive, "merchant")) {
+                        merchant = .{ .post = try self.take_atom(), .goods = try self.take_atom() };
+                    } else if (std.mem.eql(u8, member_directive, "broadcaster")) {
+                        broadcaster = true;
+                    } else if (std.mem.eql(u8, member_directive, "owns")) {
+                        owns = try self.take_line_names(line);
+                    } else if (std.mem.eql(u8, member_directive, "carries")) {
+                        carries = try self.take_line_names(line);
+                    } else return self.set_error("unknown society member directive '{s}'", .{member_directive});
+                }
+                _ = try self.expect(.dedent);
+                try members.append(.{ .name = member_name, .gold = gold, .idle = idle, .needs = try member_needs.toOwnedSlice(), .routine_activity = routine_activity, .stops = stops, .period = period, .work = work, .merchant = merchant, .broadcaster = broadcaster, .owns = owns, .carries = carries });
+            } else {
+                try self.advance();
+                if (std.mem.eql(u8, directive, "enforcer")) enforcer = try self.take_optional_name() else if (std.mem.eql(u8, directive, "holding")) holding = try self.take_optional_name() else if (std.mem.eql(u8, directive, "gathering")) gathering = try self.take_atom() else if (std.mem.eql(u8, directive, "flight")) {
+                    flight_to = try self.take_atom();
+                    flight_then = try self.take_optional_name();
+                    flight_every = try self.take_u64();
+                } else if (std.mem.eql(u8, directive, "friend")) {
+                    try friends.append(.{ try self.take_atom(), try self.take_atom() });
+                } else if (std.mem.eql(u8, directive, "radii")) {
+                    for (&radii) |*value| value.* = try self.take_i32();
+                } else if (std.mem.eql(u8, directive, "grudges")) {
+                    grudge_ticks = .{ try self.take_u64(), try self.take_u64() };
+                } else if (std.mem.eql(u8, directive, "priority")) {
+                    warrant_priority = @intCast(try self.take_u32());
+                } else if (std.mem.eql(u8, directive, "currency")) {
+                    currency_unit = try self.take_atom();
+                } else if (std.mem.eql(u8, directive, "relations")) {
+                    for (&relations) |*relation| relation.* = try self.take_atom();
+                } else return self.set_error("unknown society directive '{s}'", .{directive});
+            }
+        }
+        _ = try self.expect(.dedent);
+        if (gathering == null or flight_to == null) return self.set_error("society '{s}' needs gathering and flight directives", .{name});
+        return .{ .name = name, .needs = try needs.toOwnedSlice(), .members = try members.toOwnedSlice(), .enforcer = enforcer, .holding = holding, .gathering = gathering.?, .flight_to = flight_to.?, .flight_then = flight_then, .flight_every = flight_every, .friends = try friends.toOwnedSlice(), .radii = radii, .grudge_ticks = grudge_ticks, .warrant_priority = warrant_priority, .currency_unit = currency_unit, .relations = relations };
+    }
+
+    fn parse_duel_decl(self: *Parser) !DuelDecl {
+        try self.advance(); // duel
+        const name = try self.take_atom();
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var pairs = std.ArrayList(DuelPairDecl).init(self.allocator);
+        var tiers = std.ArrayList(DuelTierDecl).init(self.allocator);
+        var stages = std.ArrayList(FatigueStageDecl).init(self.allocator);
+        var fallback: ?[]const u8 = null;
+        var win_at: ?u32 = null;
+        var relations = (DuelDecl{ .name = "", .pairs = &.{}, .fallback = null, .win_at = null, .tiers = &.{}, .fatigue_count_relation = "Inquiries", .fatigue_calm_label = "calm", .fatigue_stages = &.{} }).relations;
+        var count_relation: []const u8 = "Inquiries";
+        var calm_label: []const u8 = "calm";
+
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            try self.advance();
+            if (std.mem.eql(u8, directive, "pair")) {
+                const pair_name = try self.take_atom();
+                _ = try self.expect(.colon);
+                _ = try self.expect(.indent);
+                var challenge: ?[]const u8 = null;
+                var reply: ?[]const u8 = null;
+                var variants = std.ArrayList([]const u8).init(self.allocator);
+                while (self.current.tag != .dedent and self.current.tag != .eof) {
+                    const field = self.current.slice;
+                    try self.advance();
+                    if (std.mem.eql(u8, field, "challenge")) challenge = try self.take_atom() else if (std.mem.eql(u8, field, "reply")) reply = try self.take_atom() else if (std.mem.eql(u8, field, "variant")) {
+                        const tier = try self.take_u32();
+                        if (tier != variants.items.len + 1) return self.set_error("duel variants must declare contiguous tiers starting at 1", .{});
+                        try variants.append(try self.take_atom());
+                    } else return self.set_error("unknown duel pair field '{s}'", .{field});
+                }
+                _ = try self.expect(.dedent);
+                if (challenge == null or reply == null) return self.set_error("duel pair '{s}' needs challenge and reply", .{pair_name});
+                try pairs.append(.{ .name = pair_name, .challenge = challenge.?, .reply = reply.?, .variants = try variants.toOwnedSlice() });
+            } else if (std.mem.eql(u8, directive, "fallback")) {
+                fallback = try self.take_optional_name();
+            } else if (std.mem.eql(u8, directive, "win")) {
+                const value = try self.take_optional_name();
+                win_at = if (value) |v| std.fmt.parseInt(u32, v, 10) catch return self.set_error("invalid duel win value '{s}'", .{v}) else null;
+            } else if (std.mem.eql(u8, directive, "relations")) {
+                for (&relations) |*relation| relation.* = try self.take_atom();
+            } else if (std.mem.eql(u8, directive, "tier")) {
+                try tiers.append(.{ .opponent = try self.take_atom(), .tier = try self.take_u32() });
+            } else if (std.mem.eql(u8, directive, "fatigue")) {
+                count_relation = try self.take_atom();
+                calm_label = try self.take_atom();
+                _ = try self.expect(.colon);
+                _ = try self.expect(.indent);
+                while (self.current.tag != .dedent and self.current.tag != .eof) {
+                    try self.take_word("stage");
+                    try stages.append(.{ .relation = try self.take_atom(), .at = try self.take_u32(), .ttl = try self.take_u64(), .label = try self.take_atom() });
+                }
+                _ = try self.expect(.dedent);
+            } else return self.set_error("unknown duel directive '{s}'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+        if (pairs.items.len == 0 or stages.items.len == 0) return self.set_error("duel '{s}' needs at least one pair and fatigue stage", .{name});
+        return .{ .name = name, .pairs = try pairs.toOwnedSlice(), .fallback = fallback, .win_at = win_at, .relations = relations, .tiers = try tiers.toOwnedSlice(), .fatigue_count_relation = count_relation, .fatigue_calm_label = calm_label, .fatigue_stages = try stages.toOwnedSlice() };
     }
 
     /// Parses `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` and rejects any sequence that

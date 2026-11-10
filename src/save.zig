@@ -190,6 +190,12 @@ fn write_fiber_state(writer: anytype, state: FiberState) !void {
             try writer.writeByte(5);
             try writer.writeInt(u64, 0, .little);
         },
+        .waiting_dialogue => {
+            // The open set itself is World facts (P32-30); the fiber only needs its tag back.
+            // Loading calls `VM.sync_dialogue` to keep this wait only if those facts survive.
+            try writer.writeByte(6);
+            try writer.writeInt(u64, 0, .little);
+        },
     }
 }
 
@@ -203,6 +209,7 @@ fn read_fiber_state(reader: anytype) !FiberState {
         3 => FiberState{ .waiting_motor = EntityId.from_int(@intCast(val)) },
         4 => FiberState{ .halted = {} },
         5 => FiberState{ .paused = {} },
+        6 => FiberState{ .waiting_dialogue = {} },
         else => error.InvalidSaveMagic,
     };
 }

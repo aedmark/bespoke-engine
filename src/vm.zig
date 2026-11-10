@@ -5,6 +5,7 @@ const spatial_mod = @import("spatial.zig");
 const parser_mod = @import("compiler/parser.zig");
 const draft_mod = @import("draft.zig");
 pub const PendingWeave = draft_mod.PendingWeave;
+const dialogue_mod = @import("dialogue.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -41,6 +42,7 @@ pub const FiberStateTag = enum {
     waiting_ticks,
     waiting_cond,
     waiting_motor,
+    waiting_dialogue,
     halted,
     paused,
 };
@@ -50,6 +52,7 @@ pub const FiberState = union(FiberStateTag) {
     waiting_ticks: u64, // target tick to wake up
     waiting_cond: u16, // cond_pc to evaluate
     waiting_motor: EntityId, // waiting for entity to finish walking (P3-02)
+    waiting_dialogue: void, // suspended on a scripted choice set (P32-30)
     halted: void,
     paused: void,
 };
@@ -508,6 +511,58 @@ pub const VM = struct {
             _ = try self.weave_draft(compiled, w.caster, w.draft, w.target);
         }
         return queued.len;
+    }
+
+    /// Names the entity the frame channel presents as the speaker for the next scripted set
+    /// (P32-30). Presentation only; the set stays keyed by the fiber's owner.
+    pub fn set_dialogue_speaker(self: *VM, owner: EntityId, display: EntityId) !void {
+        return dialogue_mod.set_speaker(self.world, owner, display);
+    }
+
+    /// Opens a runtime-generated dialogue set (P32-30, D-046). The host supplies the text and
+    /// an opaque action id per choice; `choose` returns the action without touching a fiber.
+    pub fn open_generated_dialogue(
+        self: *VM,
+        speaker: EntityId,
+        prompt: []const u8,
+        choices: []const dialogue_mod.Choice,
+    ) !usize {
+        return dialogue_mod.open_generated(self.world, speaker, prompt, choices);
+    }
+
+    /// The open dialogue, reconstructed from World facts, or null when none is open.
+    pub fn dialogue_view(self: *const VM) ?dialogue_mod.View {
+        return dialogue_mod.view(self.world);
+    }
+
+    /// Selects an offered choice. Scripted choices resume their fiber at the compiled body;
+    /// generated choices return their action id to the host. Null when no choice matches.
+    pub fn choose(self: *VM, index: usize) !?dialogue_mod.Selection {
+        const open = dialogue_mod.view(self.world) orelse return null;
+        const selection = (try dialogue_mod.choose(self.world, open.speaker, index)) orelse return null;
+        if (selection.fiber_id != 0) {
+            for (self.fibers.items) |*f| {
+                if (f.id == selection.fiber_id) {
+                    f.pc = @intCast(selection.body_pc);
+                    f.state = .{ .ready = {} };
+                    break;
+                }
+            }
+        }
+        return selection;
+    }
+
+    /// Reconciles suspended dialogue fibers with World facts after a snapshot restore. A fiber
+    /// waiting on a dialogue the restored world does not contain continues past the set.
+    pub fn sync_dialogue(self: *VM) void {
+        const open = dialogue_mod.view(self.world);
+        for (self.fibers.items) |*f| {
+            if (f.state != .waiting_dialogue) continue;
+            if (open) |v| {
+                if (v.speaker == f.owner and dialogue_mod.fiber_id(self.world, v.speaker) == f.id) continue;
+            }
+            f.state = .{ .ready = {} };
+        }
     }
 
     /// Transitions simulation to target scene entity, pausing old scene fibers and waking/resuming target scene fibers (P12-01, D-014).
@@ -1077,6 +1132,27 @@ pub const VM = struct {
                     });
                 },
 
+                // --- Executable Dialogue Lifecycle (P32-30, D-046) ---
+                .choices_begin => {
+                    try dialogue_mod.begin(self.world, f.owner, f.id);
+                },
+                .offer_choice => {
+                    const text_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
+                    f.pc += 4;
+                    const body_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
+                    f.pc += 2;
+                    try dialogue_mod.offer(self.world, f.owner, EntityId.from_int(text_raw), body_pc);
+                },
+                .choices_end => {
+                    const end_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
+                    f.pc += 2;
+                    const count = try dialogue_mod.finish(self.world, f.owner, end_pc);
+                    f.pc = end_pc;
+                    if (count > 0) {
+                        f.state = .{ .waiting_dialogue = {} };
+                        return;
+                    }
+                },
                 else => return error.InvalidOpcode,
             }
         }

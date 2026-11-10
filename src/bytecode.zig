@@ -77,6 +77,14 @@ pub const Opcode = enum(u8) {
     /// Queues a weave for host re-dispatch; the caster is the executing fiber's owner.
     /// Pops: target: u32, draft: u32 (EntityIds). No operand.
     weave = 0x51,
+
+    // --- Executable Dialogue Lifecycle (P32-30, D-046) ---
+    /// Begins a scripted choice set for the executing fiber. No operand.
+    choices_begin = 0x52,
+    /// Appends one offered choice to the open set. Operands: text: u32, body_pc: u16.
+    offer_choice = 0x53,
+    /// Ends the set. Operand: end_pc: u16. Suspends the fiber when the set offered any choice.
+    choices_end = 0x54,
 };
 
 /// A compiled container of bytecode instructions and constant data.
@@ -173,6 +181,21 @@ pub const BytecodeChunk = struct {
     pub fn emit_transition_scene(self: *BytecodeChunk, scene_id: EntityId) !void {
         _ = try self.emit_op(.transition_scene);
         try self.emit_u32(scene_id.to_int());
+    }
+
+    /// Returns the opcode pc; the u16 body operand sits at `pc + 5` for patching.
+    pub fn emit_offer_choice(self: *BytecodeChunk, text: EntityId, body_pc: u16) !usize {
+        const pc = try self.emit_op(.offer_choice);
+        try self.emit_u32(text.to_int());
+        try self.emit_u16(body_pc);
+        return pc;
+    }
+
+    /// Returns the opcode pc; the u16 end operand sits at `pc + 1` for patching.
+    pub fn emit_choices_end(self: *BytecodeChunk, end_pc: u16) !usize {
+        const pc = try self.emit_op(.choices_end);
+        try self.emit_u16(end_pc);
+        return pc;
     }
 };
 

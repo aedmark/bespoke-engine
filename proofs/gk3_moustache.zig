@@ -159,6 +159,7 @@ fn scripted_action(
     var ticks: usize = 0;
     while (ticks < max_ticks) : (ticks += 1) {
         _ = try bespoke.host.tick(vm, compiled);
+        if (vm.dialogue_view() != null) _ = try vm.choose(0);
         if (bespoke.host.speech_this_tick(world, vm, speech_buf)) |speech| return speech;
     }
     return null;
@@ -437,7 +438,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Gabriel selects Choice 1!\n", .{});
 
     const has_keys_rel = try world.intern_relation("HasBikeKeys", .property);
-    const rental_speech = try scripted_action(&world, &vm, &compiled, "TalksTo", gabriel, buthane, null, 1, &speech_buf);
+    const rental_speech = try scripted_action(&world, &vm, &compiled, "TalksTo", gabriel, buthane, null, 4, &speech_buf);
     try writer.print("   -> {s}\n", .{rental_speech orelse "Buthane hands Gabriel the keys."});
     try std.testing.expect(world.has_fact(gabriel, has_keys_rel, null));
     try writer.print("   -> Has Motorcycle Keys? {s}\n", .{if (evaluate_puzzle_victory(&world)) "YES! PUZZLE SOLVED!" else "NO"});
@@ -763,7 +764,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (act.actor_index < frame.entity_count) {
                     const target_entity = frame.entities[act.actor_index];
                     const tname = target_entity.get_name();
-                    const pt = bespoke.display.renderer.get_entity_screen_pos(act.actor_index, frame.entities[0..frame.entity_count], window.width, window.height);
 
                     if (act.verb == .look_at) {
                         if (std.mem.eql(u8, tname, "Buthane")) {
@@ -777,32 +777,11 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         }
                     } else if (act.verb == .talk_to or act.verb == .use_with) {
                         if (std.mem.eql(u8, tname, "Buthane")) {
-                            const is_dg = evaluate_disguise(&world);
-                            if (is_dg) {
-                                window.show_dialogue(
-                                    target_entity.entity,
-                                    pt,
-                                    "Madame Buthane",
-                                    "\"Bonjour, monsieur! How can I help you today?\"",
-                                    &[_][]const u8{
-                                        "I am detective Franklin Mosely. I've come for my bike.",
-                                        "Do you know whose cat that is outside?",
-                                        "Au revoir, madame.",
-                                    },
-                                );
-                            } else {
-                                window.show_dialogue(
-                                    target_entity.entity,
-                                    pt,
-                                    "Madame Buthane",
-                                    "\"Bonjour, monsieur! How can I help you today?\"",
-                                    &[_][]const u8{
-                                        "I'd like to rent a motorcycle.",
-                                        "Do you know whose cat that is outside?",
-                                        "Au revoir, madame.",
-                                    },
-                                );
-                            }
+                            // The script owns the line, the pruned options, and the outcome
+                            // (P32-30); the host supplies the intent to talk and who is shown
+                            // as speaking. The set itself is keyed by the fiber's owner.
+                            try vm.set_dialogue_speaker(gabriel, buthane);
+                            _ = try vm.fire_cue(&compiled, "TalksTo", gabriel, buthane, null);
                         } else if (std.mem.eql(u8, tname, "Mosely")) {
                             window.set_cue_banner("Mosely: \"Hey Gabriel! Taking in the French sights?\"", 90);
                         } else if (std.mem.eql(u8, tname, "StrayCat")) {
@@ -923,18 +902,17 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 }
             },
             .dialogue_choice => |choice_idx| {
-                const is_dg = evaluate_disguise(&world);
-                if (is_dg and choice_idx == 0) {
-                    try session_scripted_action(&session, &vm, &compiled, "TalksTo", gabriel, buthane, null, 1);
-                    window.set_cue_banner("★ VICTORY! Buthane: \"Ah, Monsieur Mosely! Here are the keys!\" ★", 180);
-                } else if (!is_dg and choice_idx == 0) {
-                    window.set_cue_banner("Buthane: \"Désolé, monsieur! The last motorcycle is reserved for Mosely.\"", 120);
-                } else if (choice_idx == 1) {
-                    window.set_cue_banner("Buthane: \"It belongs to the village priest. Don't frighten the cat!\"", 120);
+                if (try session.choose_dialogue(choice_idx)) |_| {
+                    var speech_buf: [256]u8 = undefined;
+                    if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |speech| {
+                        window.set_cue_banner(speech, 180);
+                    }
+                    if (evaluate_puzzle_victory(&world)) {
+                        window.set_cue_banner("★ VICTORY! Madame Buthane hands over the keys! ★", 180);
+                    }
                 } else {
-                    window.set_cue_banner("Buthane: \"Bonne journée, monsieur!\"", 90);
+                    window.dismiss_dialogue();
                 }
-                window.dismiss_dialogue();
             },
             else => {},
         }

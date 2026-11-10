@@ -5,6 +5,8 @@ const bytecode_mod = @import("bytecode.zig");
 const codegen_mod = @import("compiler/codegen.zig");
 const parser_mod = @import("compiler/parser.zig");
 const draft_mod = @import("draft.zig");
+const society_mod = @import("society.zig");
+const duel_mod = @import("duel.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -23,8 +25,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 2 appends the draft note table to the payload tail (P22-01, D-029). Version 1
 /// packages predate drafts and still load, with an empty draft table.
 /// Version 3 adds the arrival edge (byte 3) to reactive rules (P32-18, D-036); the layout is
-/// unchanged, so versions 1 and 2 still load.
-pub const PACKAGE_VERSION: u32 = 3;
+/// unchanged, so versions 1 and 2 still load. Version 4 appends script-declared society and
+/// duel configuration tables (P32-22, P32-24); versions 1 through 3 load empty tables.
+pub const PACKAGE_VERSION: u32 = 4;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -55,6 +58,421 @@ fn read_str(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const buf = try allocator.alloc(u8, len);
     try reader.readNoEof(buf);
     return buf;
+}
+
+fn write_text_ref(world: *const World, writer: anytype, value: []const u8) !void {
+    const entity = world.lookup_entity(value) orelse return error.UninternedProgramText;
+    try writer.writeInt(u32, entity.to_int(), .little);
+}
+
+fn read_text_ref(world: *const World, reader: anytype) ![]const u8 {
+    const raw = try reader.readInt(u32, .little);
+    return world.get_entity_name(EntityId.from_int(raw)) orelse error.InvalidProgramTextRef;
+}
+
+fn write_optional_index(writer: anytype, value: ?usize) !void {
+    try writer.writeInt(i32, if (value) |v| @intCast(v) else -1, .little);
+}
+
+fn write_optional_waypoint(writer: anytype, value: ?spatial_mod.WaypointId) !void {
+    try writer.writeInt(i32, if (value) |v| @intCast(v) else -1, .little);
+}
+
+fn write_program_declarations(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    try writer.writeInt(u32, @intCast(compiled.societies.items.len), .little);
+    for (compiled.societies.items) |decl| {
+        const config = decl.config;
+        try writer.writeInt(u32, @intCast(config.needs.len), .little);
+        for (config.needs) |need| {
+            try write_text_ref(world, writer, need.name);
+            try writer.writeByte(@intFromEnum(need.worse));
+            try writer.writeInt(u32, need.max, .little);
+            try writer.writeInt(u32, need.rate, .little);
+            try writer.writeInt(u32, need.resting_rate, .little);
+            try writer.writeInt(u32, need.seek, .little);
+            switch (need.satisfy) {
+                .stay => |stay| {
+                    try writer.writeByte(0);
+                    try writer.writeInt(u16, stay.at, .little);
+                    try writer.writeInt(u32, stay.restore, .little);
+                    try writer.writeInt(u32, stay.until, .little);
+                    try writer.writeByte(@intCast(@intFromEnum(stay.activity)));
+                    try writer.writeByte(@intFromBool(stay.unaware));
+                    try write_text_ref(world, writer, stay.state);
+                    try write_text_ref(world, writer, stay.verb);
+                },
+                .trade => |trade| {
+                    try writer.writeByte(1);
+                    try write_optional_index(writer, trade.provider);
+                    try writer.writeInt(u32, trade.price, .little);
+                    try writer.writeInt(u32, trade.relief, .little);
+                    try writer.writeInt(u32, trade.floor, .little);
+                    try writer.writeInt(i64, if (trade.critical) |value| @intCast(value) else -1, .little);
+                    try writer.writeInt(u32, trade.theft_relief, .little);
+                    try writer.writeInt(u32, trade.theft_floor, .little);
+                    try write_text_ref(world, writer, trade.item);
+                },
+            }
+        }
+        try writer.writeInt(u32, @intCast(config.members.len), .little);
+        for (config.members) |member| {
+            try writer.writeInt(u32, member.entity.to_int(), .little);
+            try writer.writeInt(u32, @intCast(member.needs.len), .little);
+            for (member.needs) |need| {
+                try writer.writeInt(u32, need.value, .little);
+                try writer.writeInt(i64, if (need.rate) |value| @intCast(value) else -1, .little);
+                try write_optional_index(writer, need.provider);
+            }
+            try writer.writeInt(u32, member.gold, .little);
+            try writer.writeByte(@intCast(@intFromEnum(member.idle)));
+            try writer.writeByte(if (member.routine.activity) |activity| @intCast(@intFromEnum(activity)) else 255);
+            try writer.writeInt(u16, @intCast(member.routine.stops.len), .little);
+            for (member.routine.stops) |stop| try writer.writeInt(u16, stop, .little);
+            try writer.writeInt(u64, member.routine.period, .little);
+            try writer.writeByte(@intFromBool(member.routine.work != null));
+            if (member.routine.work) |work| {
+                try writer.writeInt(u16, work.at, .little);
+                try writer.writeInt(u64, work.every, .little);
+                try writer.writeInt(u32, work.earn, .little);
+                try writer.writeByte(@intFromBool(work.restock));
+            }
+            try writer.writeByte(@intFromBool(member.merchant != null));
+            if (member.merchant) |merchant| {
+                try writer.writeInt(u16, merchant.post, .little);
+                try writer.writeInt(u32, merchant.goods.to_int(), .little);
+            }
+            try writer.writeByte(@intFromBool(member.broadcaster));
+            try writer.writeInt(u16, @intCast(member.owns.len), .little);
+            for (member.owns) |item| try writer.writeInt(u32, item.to_int(), .little);
+            try writer.writeInt(u16, @intCast(member.carries.len), .little);
+            for (member.carries) |item| try writer.writeInt(u32, item.to_int(), .little);
+        }
+        try write_optional_index(writer, config.enforcer);
+        try write_optional_waypoint(writer, config.holding);
+        try writer.writeInt(u16, config.gathering, .little);
+        try writer.writeInt(u16, config.flight.to, .little);
+        try write_optional_waypoint(writer, config.flight.then);
+        try writer.writeInt(u64, config.flight.every, .little);
+        try writer.writeInt(i32, config.radii.witness, .little);
+        try writer.writeInt(i32, config.radii.culprit, .little);
+        try writer.writeInt(i32, config.radii.rumor, .little);
+        try writer.writeInt(i32, config.radii.arrest, .little);
+        try writer.writeInt(u64, config.witness_grudge_ticks, .little);
+        try writer.writeInt(u64, config.rumor_grudge_ticks, .little);
+        try writer.writeInt(u16, config.warrant_priority, .little);
+        try write_text_ref(world, writer, config.currency_unit);
+        const r = config.relations;
+        for ([_][]const u8{ r.currency, r.activity, r.tending, r.friend, r.rival, r.grudge, r.owns, r.carries, r.stolen_from, r.crime_scene, r.witnessed, r.knows_rumor, r.warrant_for, r.arrested }) |name| try write_text_ref(world, writer, name);
+        try writer.writeInt(u32, @intCast(config.friends.len), .little);
+        for (config.friends) |friend| {
+            try writer.writeInt(u32, friend.a.to_int(), .little);
+            try writer.writeInt(u32, friend.b.to_int(), .little);
+        }
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.duels.items.len), .little);
+    for (compiled.duels.items) |decl| {
+        try writer.writeInt(u32, @intCast(decl.config.pairs.len), .little);
+        for (decl.config.pairs) |pair| {
+            try write_text_ref(world, writer, pair.name);
+            try write_text_ref(world, writer, pair.challenge);
+            try write_text_ref(world, writer, pair.reply);
+            try writer.writeByte(@intCast(pair.variants.len));
+            for (pair.variants) |variant| try write_text_ref(world, writer, variant);
+        }
+        try writer.writeByte(@intFromBool(decl.config.fallback != null));
+        if (decl.config.fallback) |fallback| try write_text_ref(world, writer, fallback);
+        try writer.writeInt(i64, if (decl.config.win_at) |value| @intCast(value) else -1, .little);
+        const r = decl.config.relations;
+        for ([_][]const u8{ r.heard, r.mastered, r.counters, r.variant_of, r.tier, r.advantage, r.wins }) |name| try write_text_ref(world, writer, name);
+        try write_text_ref(world, writer, decl.fatigue.count_relation);
+        try write_text_ref(world, writer, decl.fatigue.calm_label);
+        try writer.writeByte(@intCast(decl.fatigue.stages.len));
+        for (decl.fatigue.stages) |stage| {
+            try write_text_ref(world, writer, stage.relation);
+            try writer.writeInt(u32, stage.at, .little);
+            try writer.writeInt(u64, stage.ttl, .little);
+            try write_text_ref(world, writer, stage.label);
+        }
+        try writer.writeByte(@intCast(decl.tiers.len));
+        for (decl.tiers) |tier| {
+            try writer.writeInt(u32, tier.opponent.to_int(), .little);
+            try writer.writeInt(u32, tier.tier, .little);
+        }
+    }
+}
+
+fn read_entity_ref(world: *const World, reader: anytype) !EntityId {
+    const raw = try reader.readInt(u32, .little);
+    if (world.get_entity_name(EntityId.from_int(raw)) == null) return error.InvalidProgramEntity;
+    return EntityId.from_int(raw);
+}
+
+fn read_optional_index(reader: anytype) !?usize {
+    const raw = try reader.readInt(i32, .little);
+    if (raw < -1) return error.InvalidProgramIndex;
+    return if (raw < 0) null else @intCast(raw);
+}
+
+fn read_optional_waypoint(reader: anytype, waypoint_count: usize) !?spatial_mod.WaypointId {
+    const raw = try reader.readInt(i32, .little);
+    if (raw < -1 or raw > waypoint_count or raw == 0) return error.InvalidProgramWaypoint;
+    return if (raw < 0) null else @intCast(raw);
+}
+
+fn read_waypoint(reader: anytype, waypoint_count: usize) !spatial_mod.WaypointId {
+    const value = try reader.readInt(u16, .little);
+    if (value == 0 or value > waypoint_count) return error.InvalidProgramWaypoint;
+    return value;
+}
+
+fn read_activity(reader: anytype) !society_mod.Activity {
+    const raw = try reader.readByte();
+    if (raw > @intFromEnum(society_mod.Activity.arrested)) return error.InvalidProgramActivity;
+    return @enumFromInt(raw);
+}
+
+fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, waypoint_count: usize) !society_mod.Declaration {
+    const need_count = try reader.readInt(u32, .little);
+    if (need_count == 0 or need_count > society_mod.MAX_NEEDS) return error.InvalidSocietyConfig;
+    const needs = try allocator.alloc(society_mod.Need, need_count);
+    errdefer allocator.free(needs);
+    for (needs) |*need| {
+        const name = try read_text_ref(world, reader);
+        const worse_raw = try reader.readByte();
+        if (worse_raw > 1) return error.InvalidSocietyConfig;
+        const max = try reader.readInt(u32, .little);
+        const rate = try reader.readInt(u32, .little);
+        const resting_rate = try reader.readInt(u32, .little);
+        const seek = try reader.readInt(u32, .little);
+        const kind = try reader.readByte();
+        need.* = .{
+            .name = name,
+            .worse = @enumFromInt(worse_raw),
+            .max = max,
+            .rate = rate,
+            .resting_rate = resting_rate,
+            .seek = seek,
+            .satisfy = switch (kind) {
+                0 => .{ .stay = .{
+                    .at = try read_waypoint(reader, waypoint_count),
+                    .restore = try reader.readInt(u32, .little),
+                    .until = try reader.readInt(u32, .little),
+                    .activity = try read_activity(reader),
+                    .unaware = switch (try reader.readByte()) {
+                        0 => false,
+                        1 => true,
+                        else => return error.InvalidSocietyConfig,
+                    },
+                    .state = try read_text_ref(world, reader),
+                    .verb = try read_text_ref(world, reader),
+                } },
+                1 => blk: {
+                    const provider = try read_optional_index(reader);
+                    const price = try reader.readInt(u32, .little);
+                    const relief = try reader.readInt(u32, .little);
+                    const floor = try reader.readInt(u32, .little);
+                    const critical_raw = try reader.readInt(i64, .little);
+                    if (critical_raw < -1 or critical_raw > std.math.maxInt(u32)) return error.InvalidSocietyConfig;
+                    break :blk .{ .trade = .{
+                        .provider = provider,
+                        .price = price,
+                        .relief = relief,
+                        .floor = floor,
+                        .critical = if (critical_raw < 0) null else @intCast(critical_raw),
+                        .theft_relief = try reader.readInt(u32, .little),
+                        .theft_floor = try reader.readInt(u32, .little),
+                        .item = try read_text_ref(world, reader),
+                    } };
+                },
+                else => return error.InvalidSocietyConfig,
+            },
+        };
+    }
+
+    const member_count = try reader.readInt(u32, .little);
+    if (member_count == 0 or member_count > society_mod.MAX_MEMBERS) return error.InvalidSocietyConfig;
+    const members = try allocator.alloc(society_mod.Member, member_count);
+    var built: usize = 0;
+    errdefer {
+        for (members[0..built]) |member| {
+            allocator.free(member.needs);
+            allocator.free(member.routine.stops);
+            allocator.free(member.owns);
+            allocator.free(member.carries);
+        }
+        allocator.free(members);
+    }
+    for (members) |*member| {
+        const entity = try read_entity_ref(world, reader);
+        const member_need_count = try reader.readInt(u32, .little);
+        if (member_need_count != need_count) return error.InvalidSocietyConfig;
+        const member_needs = try allocator.alloc(society_mod.MemberNeed, member_need_count);
+        errdefer allocator.free(member_needs);
+        for (member_needs) |*need| {
+            const value = try reader.readInt(u32, .little);
+            const rate_raw = try reader.readInt(i64, .little);
+            if (rate_raw < -1 or rate_raw > std.math.maxInt(u32)) return error.InvalidSocietyConfig;
+            const provider = try read_optional_index(reader);
+            need.* = .{ .value = value, .rate = if (rate_raw < 0) null else @intCast(rate_raw), .provider = provider };
+        }
+        const gold = try reader.readInt(u32, .little);
+        const idle = try read_activity(reader);
+        const routine_activity_raw = try reader.readByte();
+        if (routine_activity_raw != 255 and routine_activity_raw > @intFromEnum(society_mod.Activity.arrested)) return error.InvalidProgramActivity;
+        const stop_count = try reader.readInt(u16, .little);
+        if (stop_count > society_mod.MAX_STOPS) return error.InvalidSocietyConfig;
+        const stops = try allocator.alloc(spatial_mod.WaypointId, stop_count);
+        errdefer allocator.free(stops);
+        for (stops) |*stop| stop.* = try read_waypoint(reader, waypoint_count);
+        const period = try reader.readInt(u64, .little);
+        const has_work = try reader.readByte();
+        const work: ?society_mod.Work = switch (has_work) {
+            0 => null,
+            1 => .{ .at = try read_waypoint(reader, waypoint_count), .every = try reader.readInt(u64, .little), .earn = try reader.readInt(u32, .little), .restock = switch (try reader.readByte()) {
+                0 => false,
+                1 => true,
+                else => return error.InvalidSocietyConfig,
+            } },
+            else => return error.InvalidSocietyConfig,
+        };
+        const has_merchant = try reader.readByte();
+        const merchant: ?society_mod.Merchant = switch (has_merchant) {
+            0 => null,
+            1 => .{ .post = try read_waypoint(reader, waypoint_count), .goods = try read_entity_ref(world, reader) },
+            else => return error.InvalidSocietyConfig,
+        };
+        const broadcaster = switch (try reader.readByte()) {
+            0 => false,
+            1 => true,
+            else => return error.InvalidSocietyConfig,
+        };
+        const owns = try allocator.alloc(EntityId, try reader.readInt(u16, .little));
+        errdefer allocator.free(owns);
+        for (owns) |*item| item.* = try read_entity_ref(world, reader);
+        const carries = try allocator.alloc(EntityId, try reader.readInt(u16, .little));
+        errdefer allocator.free(carries);
+        for (carries) |*item| item.* = try read_entity_ref(world, reader);
+        member.* = .{
+            .entity = entity,
+            .needs = member_needs,
+            .gold = gold,
+            .idle = idle,
+            .routine = .{ .activity = if (routine_activity_raw == 255) null else @enumFromInt(routine_activity_raw), .stops = stops, .period = period, .work = work },
+            .merchant = merchant,
+            .broadcaster = broadcaster,
+            .owns = owns,
+            .carries = carries,
+        };
+        built += 1;
+    }
+
+    const enforcer = try read_optional_index(reader);
+    const holding = try read_optional_waypoint(reader, waypoint_count);
+    const gathering = try read_waypoint(reader, waypoint_count);
+    const flight_to = try read_waypoint(reader, waypoint_count);
+    const flight_then = try read_optional_waypoint(reader, waypoint_count);
+    const flight_every = try reader.readInt(u64, .little);
+    const radii = society_mod.Radii{
+        .witness = try reader.readInt(i32, .little),
+        .culprit = try reader.readInt(i32, .little),
+        .rumor = try reader.readInt(i32, .little),
+        .arrest = try reader.readInt(i32, .little),
+    };
+    const witness_grudge_ticks = try reader.readInt(u64, .little);
+    const rumor_grudge_ticks = try reader.readInt(u64, .little);
+    const warrant_priority = try reader.readInt(u16, .little);
+    const currency_unit = try read_text_ref(world, reader);
+    var relation_names: [14][]const u8 = undefined;
+    for (&relation_names) |*name| name.* = try read_text_ref(world, reader);
+    const friend_count = try reader.readInt(u32, .little);
+    const friends = try allocator.alloc(society_mod.FriendLink, friend_count);
+    errdefer allocator.free(friends);
+    for (friends) |*friend| friend.* = .{ .a = try read_entity_ref(world, reader), .b = try read_entity_ref(world, reader) };
+    return .{ .config = .{
+        .needs = needs,
+        .members = members,
+        .enforcer = enforcer,
+        .holding = holding,
+        .gathering = gathering,
+        .flight = .{ .to = flight_to, .then = flight_then, .every = flight_every },
+        .radii = radii,
+        .witness_grudge_ticks = witness_grudge_ticks,
+        .rumor_grudge_ticks = rumor_grudge_ticks,
+        .warrant_priority = warrant_priority,
+        .currency_unit = currency_unit,
+        .relations = .{
+            .currency = relation_names[0],
+            .activity = relation_names[1],
+            .tending = relation_names[2],
+            .friend = relation_names[3],
+            .rival = relation_names[4],
+            .grudge = relation_names[5],
+            .owns = relation_names[6],
+            .carries = relation_names[7],
+            .stolen_from = relation_names[8],
+            .crime_scene = relation_names[9],
+            .witnessed = relation_names[10],
+            .knows_rumor = relation_names[11],
+            .warrant_for = relation_names[12],
+            .arrested = relation_names[13],
+        },
+        .friends = friends,
+    } };
+}
+
+fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !duel_mod.Declaration {
+    const pair_count = try reader.readInt(u32, .little);
+    if (pair_count == 0 or pair_count > duel_mod.MAX_PAIRS) return error.InvalidDuelConfig;
+    const pairs = try allocator.alloc(duel_mod.Pair, pair_count);
+    var built: usize = 0;
+    errdefer {
+        for (pairs[0..built]) |pair| allocator.free(pair.variants);
+        allocator.free(pairs);
+    }
+    for (pairs) |*pair| {
+        const name = try read_text_ref(world, reader);
+        const challenge = try read_text_ref(world, reader);
+        const reply = try read_text_ref(world, reader);
+        const variant_count = try reader.readByte();
+        if (variant_count >= duel_mod.MAX_TIERS) return error.InvalidDuelConfig;
+        const variants = try allocator.alloc([]const u8, variant_count);
+        errdefer allocator.free(variants);
+        for (variants) |*variant| variant.* = try read_text_ref(world, reader);
+        pair.* = .{ .name = name, .challenge = challenge, .reply = reply, .variants = variants };
+        built += 1;
+    }
+    const has_fallback = try reader.readByte();
+    const fallback: ?[]const u8 = switch (has_fallback) {
+        0 => null,
+        1 => try read_text_ref(world, reader),
+        else => return error.InvalidDuelConfig,
+    };
+    const win_raw = try reader.readInt(i64, .little);
+    if (win_raw < -1 or win_raw > std.math.maxInt(u32)) return error.InvalidDuelConfig;
+    var relations: [7][]const u8 = undefined;
+    for (&relations) |*name| name.* = try read_text_ref(world, reader);
+    const count_relation = try read_text_ref(world, reader);
+    const calm_label = try read_text_ref(world, reader);
+    const stage_count = try reader.readByte();
+    if (stage_count == 0 or stage_count > duel_mod.MAX_STAGES) return error.InvalidFatigueConfig;
+    const stages = try allocator.alloc(duel_mod.Stage, stage_count);
+    errdefer allocator.free(stages);
+    for (stages) |*stage| stage.* = .{ .relation = try read_text_ref(world, reader), .at = try reader.readInt(u32, .little), .ttl = try reader.readInt(u64, .little), .label = try read_text_ref(world, reader) };
+    const tier_count = try reader.readByte();
+    const tiers = try allocator.alloc(duel_mod.TierAssignment, tier_count);
+    errdefer allocator.free(tiers);
+    for (tiers) |*tier| tier.* = .{ .opponent = try read_entity_ref(world, reader), .tier = try reader.readInt(u32, .little) };
+    return .{
+        .config = .{
+            .pairs = pairs,
+            .fallback = fallback,
+            .win_at = if (win_raw < 0) null else @intCast(win_raw),
+            .relations = .{ .heard = relations[0], .mastered = relations[1], .counters = relations[2], .variant_of = relations[3], .tier = relations[4], .advantage = relations[5], .wins = relations[6] },
+        },
+        .fatigue = .{ .stages = stages, .count_relation = count_relation, .calm_label = calm_label },
+        .tiers = tiers,
+    };
 }
 
 /// Serializes a CompiledProgram and associated spatial topology to a binary package stream (P15-02, D-018).
@@ -194,6 +612,9 @@ pub fn save_package(
         try pw.writeByte(if (d.inverse != null) 1 else 0);
         try pw.writeInt(u32, if (d.inverse) |inv| inv.to_int() else 0, .little);
     }
+
+    // 10. Script-declared subsystem configuration (version 4+).
+    try write_program_declarations(world, pw, compiled);
 
     // Compute CRC32 checksum over the payload
     const crc = std.hash.Crc32.hash(payload.items);
@@ -461,6 +882,25 @@ pub fn load_package(
         }
     }
 
+    var societies = std.ArrayList(society_mod.Declaration).init(allocator);
+    errdefer {
+        for (societies.items) |*decl| decl.deinit_owned(allocator);
+        societies.deinit();
+    }
+    var duels = std.ArrayList(duel_mod.Declaration).init(allocator);
+    errdefer {
+        for (duels.items) |*decl| decl.deinit_owned(allocator);
+        duels.deinit();
+    }
+    if (header.version >= 4) {
+        const society_count = try pr.readInt(u32, .little);
+        var si: u32 = 0;
+        while (si < society_count) : (si += 1) try societies.append(try read_society_declaration(allocator, world, pr, header.waypoint_count));
+        const duel_count = try pr.readInt(u32, .little);
+        var di: u32 = 0;
+        while (di < duel_count) : (di += 1) try duels.append(try read_duel_declaration(allocator, world, pr));
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -471,6 +911,8 @@ pub fn load_package(
         .allocated_cue_keys = allocated_cue_keys,
         .reactive_rules = reactive_rules,
         .initial_entry = if (header.initial_entry >= 0) @intCast(header.initial_entry) else null,
+        .societies = societies,
+        .duels = duels,
     };
 }
 
@@ -746,8 +1188,10 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
 
     // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
+    // Version 4 follows the draft table with empty society and duel counts (two u32 values).
+    const declaration_tail_len = 8;
     const tail_len = 4 + 4 + 4 + 1 + 4;
-    const first_note = buffer.items.len - tail_len + 8;
+    const first_note = buffer.items.len - declaration_tail_len - tail_len + 8;
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
@@ -760,7 +1204,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     }
     {
         // A version 1 package is the same payload without the draft tail.
-        const v1 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - tail_len]);
+        const v1 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - tail_len - declaration_tail_len]);
         defer testing.allocator.free(v1);
         reseal_for_test(v1, 1);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
@@ -822,4 +1266,64 @@ test "P32-18: package round-trips an arrival rule and version 2 rejects its edge
         var stream = std.io.fixedBufferStream(v2);
         try testing.expectError(error.InvalidWhenEdge, load_package(testing.allocator, stream.reader(), &world2, &spatial2));
     }
+}
+
+test "P32-22/P32-24: package version 4 round-trips society and duel declarations" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\scene: Test Square
+        \\cast: Alice, Merchant, Rival
+        \\marks: Home, Market, Square
+        \\society TestSociety:
+        \\  need Hunger high 100 1 0 50 trade Merchant 2 20 0 80 30 0 "a meal"
+        \\  member Alice 5 working:
+        \\    need Hunger 10 none Merchant
+        \\    routine working 2 Home, Square
+        \\  member Merchant 10 working:
+        \\    need Hunger 10 none Merchant
+        \\    routine working 2 Market
+        \\    merchant Market Goods
+        \\    owns Goods
+        \\    carries Goods
+        \\  gathering Square
+        \\  flight Home none 4
+        \\  friend Alice Merchant
+        \\duel TestDuel:
+        \\  pair Riddle:
+        \\    challenge "What speaks without a mouth?"
+        \\    reply "An echo."
+        \\    variant 1 "Voiceless, I answer."
+        \\  fallback "I do not know."
+        \\  win 3
+        \\  tier Rival 1
+        \\  fatigue Inquiries "calm":
+        \\    stage AnnoyedWith 2 10 "annoyed"
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var spatial1 = SpatialSystem.init(testing.allocator);
+    defer spatial1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var spatial2 = SpatialSystem.init(testing.allocator);
+    defer spatial2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.societies.items.len);
+    try testing.expectEqual(@as(usize, 1), compiled2.duels.items.len);
+    var society = try society_mod.Society.init(&world2, compiled2.societies.items[0].config);
+    const alice = world2.lookup_entity("Alice").?;
+    try testing.expectEqual(@as(u32, 10), society.get_need(&world2, alice, 0));
+    var duel = try duel_mod.Duel.init(&world2, compiled2.duels.items[0].config);
+    try compiled2.duels.items[0].apply_tiers(&duel);
+    const rival = world2.lookup_entity("Rival").?;
+    try testing.expectEqual(@as(u32, 1), world2.get_property(rival, duel.tier_rel).?);
 }

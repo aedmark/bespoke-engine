@@ -27,6 +27,54 @@ pub const VILLAGE_SCRIPT =
     \\props: BakeryOven, TownFountain, SheriffJail, FarmGranary, TavernHearth, VillageCottages
     \\marks: Bakery, Farm, TownSquare, Cottages, Tavern, SheriffsPost
     \\
+    \\society VillageSociety:
+    \\  need Hunger high 100 3 1 55 trade Baker 5 50 5 80 60 10 "a warm meal"
+    \\  need Energy low 100 2 0 22 stay Cottages 14 90 sleeping true "exhausted" "sleep"
+    \\  member Sheriff 25 patrolling:
+    \\    need Hunger 20 none Innkeeper
+    \\    need Energy 90 none none
+    \\    routine patrolling 5 TownSquare, SheriffsPost
+    \\  member Baker 30 working:
+    \\    need Hunger 25 none none
+    \\    need Energy 85 none none
+    \\    routine working 1 Bakery
+    \\    work Bakery 5 1 true
+    \\    merchant Bakery BreadLoaf
+    \\    owns BreadLoaf
+    \\    carries BreadLoaf
+    \\  member Farmer 15 working:
+    \\    need Hunger 45 none none
+    \\    need Energy 80 none none
+    \\    routine working 6 Farm, TownSquare
+    \\    work Farm 4 2 false
+    \\    owns WheatBundle
+    \\  member Innkeeper 25 working:
+    \\    need Hunger 30 none Innkeeper
+    \\    need Energy 85 none none
+    \\    routine working 1 Tavern
+    \\    work Tavern 5 1 false
+    \\    merchant Tavern AleMug
+    \\    owns AleMug
+    \\  member Gossip 12 socializing:
+    \\    need Hunger 35 none none
+    \\    need Energy 90 none none
+    \\    routine none 4 TownSquare, Bakery, Tavern
+    \\    broadcaster
+    \\  member Drifter 0 socializing:
+    \\    need Hunger 64 4 none
+    \\    need Energy 75 none none
+    \\    routine none 1 TownSquare
+    \\  enforcer Sheriff
+    \\  holding SheriffsPost
+    \\  gathering TownSquare
+    \\  flight Farm Cottages 4
+    \\  friend Baker Farmer
+    \\  friend Baker Gossip
+    \\  friend Farmer Innkeeper
+    \\  friend Gossip Innkeeper
+    \\  friend Gossip Sheriff
+    \\  friend Innkeeper Sheriff
+    \\
     \\on cue Uses(Sheriff, BakeryOven):
     \\  say Sheriff: "Warm brick ovens smelling of fresh sourdough loaves."
     \\
@@ -58,11 +106,6 @@ const society = bespoke.society;
 /// Member activities come from the engine's emergent society module (P32-05, D-032).
 pub const VillagerActivity = society.Activity;
 pub const ChronicleCategory = society.ChronicleCategory;
-
-pub const DESPERATION_HUNGER_THRESHOLD: u32 = 80;
-pub const HUNGRY_BUY_THRESHOLD: u32 = 55;
-pub const LOW_ENERGY_THRESHOLD: u32 = 22;
-pub const MEAL_PRICE_GOLD: u32 = 5;
 
 /// Roster order is evaluation order: each society tick visits members in this order, so it is
 /// part of the proof's observable behaviour (and its golden).
@@ -102,7 +145,7 @@ pub const VillageSimulation = struct {
     society: society.Society,
 
     /// Builds the settlement map and hands the roster to the engine's society module.
-    pub fn init(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !VillageSimulation {
+    pub fn init(world: *bespoke.World, spatial: *bespoke.SpatialSystem, compiled: *const bespoke.CompiledProgram) !VillageSimulation {
         const village_scene = try world.intern_entity("Living Village");
         const sheriff = try world.intern_entity("Sheriff");
         const baker = try world.intern_entity("Baker");
@@ -118,12 +161,20 @@ pub const VillageSimulation = struct {
         // Six-building settlement laid out beside the left and right HUD panels at 1280x720:
         // left column (x=2) Bakery and Farm, centre (x=15) TownSquare and Cottages,
         // right (x=28) Tavern and SheriffsPost.
-        const bakery_wp = try spatial.graph.add_waypoint(village_scene, 2, -10, "Bakery");
-        const farm_wp = try spatial.graph.add_waypoint(village_scene, 2, 6, "Farm");
-        const town_square_wp = try spatial.graph.add_waypoint(village_scene, 15, -2, "TownSquare");
-        const cottages_wp = try spatial.graph.add_waypoint(village_scene, 15, 9, "Cottages");
-        const tavern_wp = try spatial.graph.add_waypoint(village_scene, 28, -10, "Tavern");
-        const sheriffs_post_wp = try spatial.graph.add_waypoint(village_scene, 28, 6, "SheriffsPost");
+        const bakery_wp = spatial.graph.find_waypoint("Bakery") orelse return error.MissingVillageMark;
+        const farm_wp = spatial.graph.find_waypoint("Farm") orelse return error.MissingVillageMark;
+        const town_square_wp = spatial.graph.find_waypoint("TownSquare") orelse return error.MissingVillageMark;
+        const cottages_wp = spatial.graph.find_waypoint("Cottages") orelse return error.MissingVillageMark;
+        const tavern_wp = spatial.graph.find_waypoint("Tavern") orelse return error.MissingVillageMark;
+        const sheriffs_post_wp = spatial.graph.find_waypoint("SheriffsPost") orelse return error.MissingVillageMark;
+
+        spatial.graph.waypoints.items[bakery_wp - 1].pos = .{ .x = 2, .y = -10 };
+        spatial.graph.waypoints.items[farm_wp - 1].pos = .{ .x = 2, .y = 6 };
+        spatial.graph.waypoints.items[town_square_wp - 1].pos = .{ .x = 15, .y = -2 };
+        spatial.graph.waypoints.items[cottages_wp - 1].pos = .{ .x = 15, .y = 9 };
+        spatial.graph.waypoints.items[tavern_wp - 1].pos = .{ .x = 28, .y = -10 };
+        spatial.graph.waypoints.items[sheriffs_post_wp - 1].pos = .{ .x = 28, .y = 6 };
+        spatial.graph.edges.clearRetainingCapacity();
 
         try spatial.graph.connect(bakery_wp, town_square_wp, null);
         try spatial.graph.connect(farm_wp, town_square_wp, null);
@@ -135,6 +186,7 @@ pub const VillageSimulation = struct {
         try spatial.graph.connect(cottages_wp, farm_wp, null);
         try spatial.graph.connect(cottages_wp, sheriffs_post_wp, null);
 
+        spatial.clear_hotspots();
         const oven_ent = try world.intern_entity("BakeryOven");
         const fountain_ent = try world.intern_entity("TownFountain");
         const jail_ent = try world.intern_entity("SheriffJail");
@@ -156,92 +208,8 @@ pub const VillageSimulation = struct {
         try spatial.register_entity(gossip, town_square_wp, 13);
         try spatial.register_entity(drifter, cottages_wp, 11);
 
-        // Hunger rises and is bought from a merchant (stolen past 80 with no coin);
-        // Energy falls and is restored by sleeping at the Cottages.
-        const needs = [_]society.Need{
-            .{ .name = "Hunger", .rate = 3, .resting_rate = 1, .seek = HUNGRY_BUY_THRESHOLD, .satisfy = .{ .trade = .{
-                .provider = BAKER,
-                .price = MEAL_PRICE_GOLD,
-                .relief = 50,
-                .floor = 5,
-                .critical = DESPERATION_HUNGER_THRESHOLD,
-                .theft_relief = 60,
-                .theft_floor = 10,
-                .item = "a warm meal",
-            } } },
-            .{ .name = "Energy", .worse = .low, .rate = 2, .seek = LOW_ENERGY_THRESHOLD, .satisfy = .{ .stay = .{
-                .at = cottages_wp,
-                .restore = 14,
-                .until = 90,
-                .state = "exhausted",
-                .verb = "sleep",
-            } } },
-        };
-        const members = [_]society.Member{
-            .{
-                .entity = sheriff,
-                .needs = &.{ .{ .value = 20, .provider = INNKEEPER }, .{ .value = 90 } },
-                .gold = 25,
-                .idle = .patrolling,
-                .routine = .{ .activity = .patrolling, .stops = &.{ town_square_wp, sheriffs_post_wp }, .period = 5 },
-            },
-            .{
-                .entity = baker,
-                .needs = &.{ .{ .value = 25 }, .{ .value = 85 } },
-                .gold = 30,
-                .merchant = .{ .post = bakery_wp, .goods = bread_loaf },
-                .owns = &.{bread_loaf},
-                .carries = &.{bread_loaf},
-                .routine = .{ .activity = .working, .stops = &.{bakery_wp}, .work = .{ .at = bakery_wp, .every = 5, .earn = 1, .restock = true } },
-            },
-            .{
-                .entity = farmer,
-                .needs = &.{ .{ .value = 45 }, .{ .value = 80 } },
-                .gold = 15,
-                .owns = &.{wheat_bundle},
-                .routine = .{ .activity = .working, .stops = &.{ farm_wp, town_square_wp }, .period = 6, .work = .{ .at = farm_wp, .every = 4, .earn = 2 } },
-            },
-            .{
-                .entity = innkeeper,
-                .needs = &.{ .{ .value = 30, .provider = INNKEEPER }, .{ .value = 85 } },
-                .gold = 25,
-                .merchant = .{ .post = tavern_wp, .goods = ale_mug },
-                .owns = &.{ale_mug},
-                .routine = .{ .activity = .working, .stops = &.{tavern_wp}, .work = .{ .at = tavern_wp, .every = 5, .earn = 1 } },
-            },
-            .{
-                .entity = gossip,
-                .needs = &.{ .{ .value = 35 }, .{ .value = 90 } },
-                .gold = 12,
-                .idle = .socializing,
-                .broadcaster = true,
-                .routine = .{ .stops = &.{ town_square_wp, bakery_wp, tavern_wp }, .period = 4 },
-            },
-            .{
-                // An impoverished newcomer: hungry, penniless, and hungering faster than the rest.
-                .entity = drifter,
-                .needs = &.{ .{ .value = 64, .rate = 4 }, .{ .value = 75 } },
-                .gold = 0,
-                .idle = .socializing,
-                .routine = .{ .stops = &.{town_square_wp} },
-            },
-        };
-
-        var soc = try society.Society.init(world, .{
-            .needs = &needs,
-            .members = &members,
-            .enforcer = SHERIFF,
-            .holding = sheriffs_post_wp,
-            .gathering = town_square_wp,
-            .flight = .{ .to = farm_wp, .then = cottages_wp, .every = 4 },
-        });
-
-        try soc.befriend(world, baker, farmer);
-        try soc.befriend(world, baker, gossip);
-        try soc.befriend(world, farmer, innkeeper);
-        try soc.befriend(world, gossip, innkeeper);
-        try soc.befriend(world, gossip, sheriff);
-        try soc.befriend(world, innkeeper, sheriff);
+        if (compiled.societies.items.len != 1) return error.MissingVillageSociety;
+        var soc = try society.Society.init(world, compiled.societies.items[0].config);
 
         soc.chronicle.log(0, .social, "Living Village initialized: 6 autonomous villagers active.");
 
@@ -348,7 +316,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, VILLAGE_SCRIPT);
     defer compiled.deinit();
 
-    var sim = try VillageSimulation.init(&world, &spatial);
+    var sim = try VillageSimulation.init(&world, &spatial, &compiled);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -461,7 +429,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, VILLAGE_SCRIPT);
     defer compiled.deinit();
 
-    var sim = try VillageSimulation.init(&world, &spatial);
+    var sim = try VillageSimulation.init(&world, &spatial, &compiled);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -603,7 +571,7 @@ test "P18-01: Village relational schema and autonomous NPC drive metabolism" {
     var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, VILLAGE_SCRIPT);
     defer compiled.deinit();
 
-    var sim = try VillageSimulation.init(&world, &spatial);
+    var sim = try VillageSimulation.init(&world, &spatial, &compiled);
 
     // Verify all 6 villagers and initial property relations exist
     try testing.expectEqual(@as(u32, 20), sim.get_hunger(&world, sim.sheriff));
@@ -636,12 +604,12 @@ test "P18-01: Tired villager walks to Cottages and sleeps to restore Energy" {
     var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, VILLAGE_SCRIPT);
     defer compiled.deinit();
 
-    var sim = try VillageSimulation.init(&world, &spatial);
+    var sim = try VillageSimulation.init(&world, &spatial, &compiled);
     var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
 
-    // Set Farmer Energy to 15 (below LOW_ENERGY_THRESHOLD = 22)
+    // Set Farmer Energy below the script-declared work threshold.
     try world.remember(sim.farmer, sim.society.need_relation(1), 15, 0);
 
     // Step simulation: Farmer should transition to .sleeping and walk to Cottages
@@ -667,7 +635,7 @@ test "P18-01: Hungry villager with Gold purchases meal from Baker and strengthen
     var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, VILLAGE_SCRIPT);
     defer compiled.deinit();
 
-    var sim = try VillageSimulation.init(&world, &spatial);
+    var sim = try VillageSimulation.init(&world, &spatial, &compiled);
     var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
@@ -682,9 +650,10 @@ test "P18-01: Hungry villager with Gold purchases meal from Baker and strengthen
         try sim.step_simulation(&world, &spatial, &vm, &compiled);
     }
 
-    // Farmer should have paid 5g to Baker and reduced Hunger
+    // Farmer should have paid the script-declared meal price and reduced Hunger.
+    const meal_price = compiled.societies.items[0].config.needs[0].satisfy.trade.price;
     try testing.expect(sim.get_hunger(&world, sim.farmer) < 40);
-    try testing.expect(sim.get_gold(&world, sim.baker) >= initial_baker_gold + MEAL_PRICE_GOLD);
+    try testing.expect(sim.get_gold(&world, sim.baker) >= initial_baker_gold + meal_price);
     try testing.expect(world.has_fact(sim.farmer, sim.rel().friend, sim.baker.to_int()));
 }
 
@@ -699,7 +668,7 @@ test "P18-02: Emergent cascade — desperation theft, witness detection, rumor p
     var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, VILLAGE_SCRIPT);
     defer compiled.deinit();
 
-    var sim = try VillageSimulation.init(&world, &spatial);
+    var sim = try VillageSimulation.init(&world, &spatial, &compiled);
     var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;

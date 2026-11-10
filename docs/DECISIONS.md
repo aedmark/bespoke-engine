@@ -562,6 +562,35 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Full breaking purge without aliases: rejected because maintaining backwards-compatible aliases preserves existing proof callers and characterization goldens.
 **Consequences:** Hypervisor API is completely generic and decoupled from narrative film vocabulary. All nine proof goldens remain unchanged.
 
+## D-045 Society and Duel Configuration as Script-Owned Program Data (2026-11-10, status: accepted)
+**Context:** D-034 and D-035 extracted reusable society and dialogue-duel mechanics, but every game still needed Zig arrays to configure them. P32-22 and P32-24 require those tables in the language and distributable package. The maintainer accepted complete script authority over both proof configurations while retaining the direct Zig APIs for engine embedding and tests.
+**Decision:**
+1. Top-level `society Name:` declarations define needs, member initial values, roles, routines, places, friendships, tuning, currency, and relation vocabulary. Top-level `duel Name:` declarations define challenge/reply pairs, tier variants and opponent assignments, win threshold, fallback reply, relation vocabulary, and inquiry-fatigue stages.
+2. Declaration directives use one canonical positional grammar. Nested blocks express member and pair data. Names resolve during code generation; missing members, providers, activities, waypoints, and invalid capacities are compile errors.
+3. `CompiledProgram` owns `societies` and `duels` declaration arrays and their allocated slices. Declaration text is interned in the World's entity-name table, giving it the same lifetime as other compiled program symbols.
+4. Runtime modules keep their direct config APIs. A host selects a compiled declaration, calls `Society.init`, `Duel.init`, or `InquiryFatigue.init`, and applies a duel declaration's tier assignments. This supports multiple independent declarations without embedding proof content in the engine.
+5. `.bspk` format version 4 appends society and duel tables to the payload. The loader validates capacities, references, enum values, indexes, and waypoints. Versions 1 through 3 remain loadable and produce empty declaration tables.
+**Alternatives:**
+- Retaining host-authored Zig tables as the game-facing format: rejected because games could not ship or theme these mechanics from `.bespoke` source alone.
+- Encoding configuration as ordinary startup bytecode facts: rejected because routines need typed, immutable topology and tuning data, while runtime state belongs in facts.
+- A free-form named-argument grammar: deferred. The positional grammar supplies a single representation and keeps this phase bounded; future syntax can lower to the same declaration types.
+**Consequences:** The Living Village and Insult Sword Fighting scripts own their complete mechanic configurations. Their proofs contain no corresponding Zig config tables, and their goldens remain unchanged. Package v4 must be used to distribute these declarations. Program declarations borrow stable World text and therefore cannot outlive the World used to compile or load them.
+
+## D-046 Executable Dialogue Lifecycle in World Facts (2026-11-10, status: accepted)
+**Context:** Phase 13 introduced `choice` blocks and fact-based pruning, but codegen executed the first eligible choice body immediately; no fiber suspended for a player's selection. Hosts that wanted interactive dialogue kept their own if-ladders and `show_dialogue` calls (the GK3 proof did), so dialogue could not carry the same state through snapshots or serve as the foundation for P32-23's duel UI and Phase 33's epistemic encounters.
+**Decision:**
+1. A `choice` block compiles to `choices_begin`, one `offer_choice` per choice after its `if` and `where` guards, `choices_end`, then each body. The VM writes the offered set as World facts and suspends the fiber at `choices_end`; selecting a choice resumes that fiber at the selected body. With no eligible choice, the fiber continues at the instruction after the set and never suspends.
+2. `src/dialogue.zig` owns the fact vocabulary: `DialogueRevision`, `DialogueOpen`, `DialoguePrompt`, `DialogueFiber`, `DialogueEnd`, `DialogueOption`, `DialogueBody`, `DialogueAction`, `DialogueChosen`, and `DialogueSpeaker`. Option entities are named `<owner>#<n>`; at most 9 are offered. The module names no game, speaker, or line.
+3. The same lifecycle serves runtime-generated choices through `open_generated` and `VM.open_generated_dialogue`: text and an opaque host action id are stored as facts, no fiber is involved, and `choose` returns the action for the host to resolve. This is the interface P32-23's duel and Phase 33's encounters use.
+4. Dialogue state is World facts, not host fields or VM-only state. Snapshots, `.sav` files, and timeline rewinds therefore carry the open set; `VM.sync_dialogue` reconciles a suspended fiber after a restore, releasing it when the restored world no longer contains its set. Save tag 6 preserves a `waiting_dialogue` fiber.
+5. `RenderFrame.dialogue` publishes the open set to peripherals by revision; the renderer mirrors it into the speech balloon and dismisses it when the set closes. `DialogueSpeaker` lets a host present an NPC as speaking while the set stays keyed by the fiber owner for unambiguous selection.
+6. `host.Session.choose_dialogue` selects a choice, advances one tick for scripted sets so the body runs, and records generated selections without ticking. Hosts call it from their dialogue-choice action.
+**Alternatives:**
+- Keep host-side if-ladders and only extend `prune_dialogue_choices`: rejected because the script's bodies would remain host logic and selection would not survive a rewind.
+- Store the open set in the VM: rejected because `World` is the snapshot boundary, and dialogue must rewind with the facts it reads.
+- Encode the display speaker in bytecode: rejected because a `choice` block does not name its conversation partner; presentation is host intent, not script structure.
+**Consequences:** The GK3 Buthane conversation now runs through its script's choices with an unchanged headless transcript. `script_spec.md` documents the lifecycle, and `src/dialogue.zig` has fact-layer tests plus a compiler-to-VM test covering pruning, suspension, selection, generated actions, and snapshot restore. Older saves remain readable.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

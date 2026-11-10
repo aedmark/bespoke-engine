@@ -203,6 +203,12 @@ pub const Relations = struct {
     arrested: []const u8 = "Arrested",
 };
 
+/// An undirected social link seeded when a society starts.
+pub const FriendLink = struct {
+    a: EntityId,
+    b: EntityId,
+};
+
 pub const Config = struct {
     needs: []const Need,
     members: []const Member,
@@ -219,6 +225,26 @@ pub const Config = struct {
     warrant_priority: u16 = 10,
     currency_unit: []const u8 = "g",
     relations: Relations = .{},
+    friends: []const FriendLink = &.{},
+};
+
+/// Complete immutable program data for one script-declared society. The compiler owns the
+/// arrays; names and theme text point into the World's intern table.
+pub const Declaration = struct {
+    config: Config,
+
+    pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
+        for (self.config.members) |member| {
+            allocator.free(member.needs);
+            allocator.free(member.routine.stops);
+            allocator.free(member.owns);
+            allocator.free(member.carries);
+        }
+        allocator.free(self.config.needs);
+        allocator.free(self.config.members);
+        allocator.free(self.config.friends);
+        self.* = undefined;
+    }
 };
 
 pub const ChronicleCategory = enum(u8) {
@@ -439,6 +465,7 @@ pub const Society = struct {
             for (m.owns) |e| try world.remember(m.entity, self.rel.owns, e.to_int(), 0);
             for (m.carries) |e| try world.remember(m.entity, self.rel.carries, e.to_int(), 0);
         }
+        for (config.friends) |link| try self.befriend(world, link.a, link.b);
         return self;
     }
 

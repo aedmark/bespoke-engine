@@ -11,6 +11,7 @@ pub const VM = vm_mod.VM;
 pub const EmittedCue = vm_mod.EmittedCue;
 const draft_mod = @import("draft.zig");
 pub const DistaffInput = draft_mod.DistaffInput;
+const dialogue_mod = @import("dialogue.zig");
 pub const WeaveOutcome = draft_mod.WeaveOutcome;
 
 pub const font = @import("display/font.zig");
@@ -188,6 +189,36 @@ pub const RenderDistaff = struct {
     }
 };
 
+/// A read-only snapshot of the open dialogue set (P32-30, D-046). The engine owns the facts;
+/// the host renders this channel. `revision` changes when a new set opens.
+pub const RenderDialogue = struct {
+    active: bool = false,
+    revision: u32 = 0,
+    speaker: EntityId = EntityId.from_int(0),
+    x: i32 = 0,
+    y: i32 = 0,
+    speaker_name: [32]u8 = undefined,
+    speaker_name_len: u8 = 0,
+    prompt: [160]u8 = undefined,
+    prompt_len: u8 = 0,
+    choices: [dialogue_mod.MAX_CHOICES][80]u8 = undefined,
+    choice_lens: [dialogue_mod.MAX_CHOICES]u8 = [_]u8{0} ** dialogue_mod.MAX_CHOICES,
+    choice_count: u8 = 0,
+
+    pub fn get_speaker_name(self: *const RenderDialogue) []const u8 {
+        return self.speaker_name[0..self.speaker_name_len];
+    }
+
+    pub fn get_prompt(self: *const RenderDialogue) []const u8 {
+        return self.prompt[0..self.prompt_len];
+    }
+
+    pub fn get_choice(self: *const RenderDialogue, index: usize) []const u8 {
+        if (index >= self.choice_count) return "";
+        return self.choices[index][0..self.choice_lens[index]];
+    }
+};
+
 /// A double-buffered render state slice captured at a discrete simulation tick (D-001, P5-01, P6-02).
 pub const RenderFrame = struct {
     tick: u64,
@@ -212,6 +243,8 @@ pub const RenderFrame = struct {
     active_party_index: usize = 0,
     // Distaff staff HUD for musical drafts (P22-02, D-029)
     distaff: RenderDistaff = .{},
+    // Executable dialogue channel (P32-30, D-046)
+    dialogue: RenderDialogue = .{},
     debug_facts: [32]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
@@ -273,6 +306,47 @@ fn capture_distaff(world: *const World, maybe_input: ?*const DistaffInput) Rende
 }
 
 /// Double-buffered display bridge separating simulation spine from peripheral consumers (D-001, P5-01).
+/// Publishes the open dialogue set, if any, into the frame channel (P32-30, D-046). Reads only
+/// World facts, so it is safe on a capture tick with no host involvement.
+fn capture_dialogue(world: *const World, frame: *RenderFrame) void {
+    frame.dialogue = .{};
+    const open = dialogue_mod.view(world) orelse return;
+
+    var speaker_name: []const u8 = world.get_entity_name(open.display_speaker) orelse "";
+    var x: i32 = 0;
+    var y: i32 = 0;
+    for (frame.entities[0..frame.entity_count]) |entity| {
+        if (entity.entity != open.display_speaker) continue;
+        speaker_name = entity.get_name();
+        x = entity.x;
+        y = entity.y;
+        break;
+    }
+
+    var out = &frame.dialogue;
+    out.active = true;
+    out.revision = open.revision;
+    out.speaker = open.display_speaker;
+    out.x = x;
+    out.y = y;
+
+    const nlen = @min(speaker_name.len, out.speaker_name.len);
+    @memcpy(out.speaker_name[0..nlen], speaker_name[0..nlen]);
+    out.speaker_name_len = @intCast(nlen);
+
+    const plen = @min(open.prompt.len, out.prompt.len);
+    @memcpy(out.prompt[0..plen], open.prompt[0..plen]);
+    out.prompt_len = @intCast(plen);
+
+    for (0..open.count) |i| {
+        const text = open.text(i);
+        const len = @min(text.len, out.choices[i].len);
+        @memcpy(out.choices[i][0..len], text[0..len]);
+        out.choice_lens[i] = @intCast(len);
+    }
+    out.choice_count = @intCast(open.count);
+}
+
 pub const DisplayBridge = struct {
     front_buffer: RenderFrame,
     back_buffer: RenderFrame,
@@ -405,6 +479,7 @@ pub const DisplayBridge = struct {
             e_count += 1;
         }
         self.back_buffer.entity_count = e_count;
+        capture_dialogue(world, &self.back_buffer);
 
         // 2. Capture spatial waypoints (scoped to active scene if set)
         var wp_count: usize = 0;

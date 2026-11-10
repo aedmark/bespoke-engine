@@ -3,6 +3,7 @@ const display_mod = @import("../display.zig");
 const audio_mod = @import("../audio.zig");
 const save_mod = @import("../save.zig");
 const vm_mod = @import("../vm.zig");
+const dialogue_mod = @import("../dialogue.zig");
 const font = @import("font.zig");
 const text_layout = @import("text_layout.zig");
 
@@ -721,6 +722,8 @@ pub const DisplayWindow = struct {
     hovered_party_member: ?usize = null,
     target_wp: ?WaypointId = null,
     active_balloon: ?SpeechBalloon = null,
+    balloon_revision: u32 = 0,
+    balloon_from_frame: bool = false,
     hovered_choice: ?u8 = null,
     is_headless: bool = false,
     audio_bridge: *audio_mod.AudioBridge,
@@ -1123,7 +1126,7 @@ pub const DisplayWindow = struct {
             .speaker_name_len = 0,
             .text = undefined,
             .text_len = 0,
-            .ticks_remaining = 360,
+            .ticks_remaining = if (choices.len > 0) std.math.maxInt(u32) else 360,
             .choices = undefined,
             .choice_lens = [_]u8{0} ** 9,
             .choice_count = 0,
@@ -1147,6 +1150,31 @@ pub const DisplayWindow = struct {
         }
 
         self.active_balloon = sb;
+    }
+
+    /// Mirrors the frame's dialogue channel into the balloon overlay (P32-30, D-046). A new
+    /// revision replaces the balloon; a closed set dismisses only a balloon this opened.
+    fn sync_dialogue_balloon(self: *DisplayWindow, frame: *const RenderFrame) void {
+        if (frame.dialogue.active) {
+            if (!self.balloon_from_frame or self.balloon_revision != frame.dialogue.revision) {
+                var choices: [dialogue_mod.MAX_CHOICES][]const u8 = undefined;
+                const count: usize = @intCast(frame.dialogue.choice_count);
+                for (0..count) |i| choices[i] = frame.dialogue.get_choice(i);
+                const pt = world_to_screen(frame.dialogue.x, frame.dialogue.y, self.width, self.height);
+                self.show_dialogue(
+                    frame.dialogue.speaker,
+                    pt,
+                    frame.dialogue.get_speaker_name(),
+                    frame.dialogue.get_prompt(),
+                    choices[0..count],
+                );
+                self.balloon_revision = frame.dialogue.revision;
+                self.balloon_from_frame = true;
+            }
+        } else if (self.balloon_from_frame) {
+            self.dismiss_dialogue();
+            self.balloon_from_frame = false;
+        }
     }
 
     /// Dismisses active speech balloon.
@@ -1982,6 +2010,7 @@ pub const DisplayWindow = struct {
 
     pub fn render_frame(self: *DisplayWindow, frame: *const RenderFrame, is_paused: bool) void {
         if (self.is_headless or self.renderer == null) return;
+        self.sync_dialogue_balloon(frame);
 
         // Trigger procedural music and cue audio reactions (P16-01, P16-03, D-019)
         self.audio_bridge.process_scene_and_cues(frame.get_current_scene());

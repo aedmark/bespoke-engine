@@ -16,6 +16,78 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\cast: Barkeep, Citizen
     \\marks: BarEntrance, CounterMark, FireplaceMark
     \\
+    \\duel InsultSwordFighting:
+    \\  pair Insult1:
+    \\    challenge "You fight like a dairy farmer!"
+    \\    reply "How appropriate. You fight like a cow!"
+    \\    variant 1 "I will milk every drop of blood from your body!"
+    \\  pair Insult2:
+    \\    challenge "This is the END for you, you gutter-crawling cur!"
+    \\    reply "And I've got a little TIP for you, get the POINT?"
+    \\    variant 1 "I've got the courage and skill of a master!"
+    \\  pair Insult3:
+    \\    challenge "I've spoken with apes more polite than you!"
+    \\    reply "I'm glad to hear you attended your family reunion."
+    \\    variant 1 "Now I know what filth and stupidity really are."
+    \\  pair Insult4:
+    \\    challenge "Soon you'll be wearing my sword like a shish kebab!"
+    \\    reply "First you'd better stop waving it like a feather duster."
+    \\    variant 1 "My sword is famous all across the Caribbean!"
+    \\  pair Insult5:
+    \\    challenge "People fall at my feet when they see me coming!"
+    \\    reply "Even BEFORE they smell your breath?"
+    \\    variant 1 "My wisest enemies run away at the first sight of me!"
+    \\  pair Insult6:
+    \\    challenge "I'm not going to take your insolence sitting down!"
+    \\    reply "Your hemorhoids are flaring up again eh?"
+    \\    variant 1 "I usually work with people who have more courage than you."
+    \\  pair Insult7:
+    \\    challenge "I once owned a dog that was smarter than you."
+    \\    reply "He must have taught you everything you know."
+    \\    variant 1 "Only once have I met such a coward!"
+    \\  pair Insult8:
+    \\    challenge "Nobody's ever drawn blood from me and nobody ever will."
+    \\    reply "You run THAT fast?"
+    \\    variant 1 "No one has ever faced ME and lived to tell about it!"
+    \\  pair Insult9:
+    \\    challenge "Have you stopped wearing diapers yet?"
+    \\    reply "Why, did you want to borrow one?"
+    \\    variant 1 "I hope you have a boat ready for a quick escape."
+    \\  pair Insult10:
+    \\    challenge "There are no words for how disgusting you are."
+    \\    reply "Yes there are, you just never learned them."
+    \\    variant 1 "There are no clever moves that can help you now."
+    \\  pair Insult11:
+    \\    challenge "You make me want to puke."
+    \\    reply "You make me think somebody already did."
+    \\    variant 1 "If your brother's like you, better to marry a pig."
+    \\  pair Insult12:
+    \\    challenge "My handkerchief will wipe up your blood!"
+    \\    reply "So you got that job as a janitor, after all."
+    \\    variant 1 "My name is feared in every dirty salon!"
+    \\  pair Insult13:
+    \\    challenge "I got this scar on my face during a mighty struggle!"
+    \\    reply "I hope now you've learned to stop picking your nose."
+    \\    variant 1 "My face is a portrait of ruthless brutality!"
+    \\  pair Insult14:
+    \\    challenge "I've heard you are a contemptible sneak."
+    \\    reply "Too bad no one's ever heard of YOU at all."
+    \\    variant 1 "I will make sure no one remembers your name."
+    \\  pair Insult15:
+    \\    challenge "You're no match for my brains, you poor fool."
+    \\    reply "I'd be in real trouble if you used them."
+    \\    variant 1 "I've got a long, sharp lesson for you to learn today."
+    \\  pair Insult16:
+    \\    challenge "You have the manners of a beggar."
+    \\    reply "I wanted to make sure you'd feel at home with me."
+    \\    variant 1 "Every word you say to me is an insult."
+    \\  fallback "I am shaking, I am shaking!"
+    \\  relations HeardInsult MasteredReply Counters SwordMasterVariant IsSwordMaster Advantage DuelsWon
+    \\  tier Carla 1
+    \\  fatigue Inquiries "welcoming":
+    \\    stage AnnoyedWith 2 100 "annoyed"
+    \\    stage FuriousWith 3 250 "furious"
+    \\
     \\routine PatrolRoad(PirateBob):
     \\  loop:
     \\    walk PirateBob to RoadLeft
@@ -45,155 +117,9 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\    say Barkeep: "Go see the pirate leaders in the back room."
 ;
 
-pub const InsultPair = struct {
-    id: u8,
-    standard_insult: []const u8,
-    counter_reply: []const u8,
-    carla_insult: []const u8,
-};
-
-/// The canonical 16 Monkey Island 1 Insults, Counter Replies, and Carla Sword Master Variants
-pub const MONKEY_ISLAND_INSULTS = [_]InsultPair{
-    .{
-        .id = 1,
-        .standard_insult = "You fight like a dairy farmer!",
-        .counter_reply = "How appropriate. You fight like a cow!",
-        .carla_insult = "I will milk every drop of blood from your body!",
-    },
-    .{
-        .id = 2,
-        .standard_insult = "This is the END for you, you gutter-crawling cur!",
-        .counter_reply = "And I've got a little TIP for you, get the POINT?",
-        .carla_insult = "I've got the courage and skill of a master!",
-    },
-    .{
-        .id = 3,
-        .standard_insult = "I've spoken with apes more polite than you!",
-        .counter_reply = "I'm glad to hear you attended your family reunion.",
-        .carla_insult = "Now I know what filth and stupidity really are.",
-    },
-    .{
-        .id = 4,
-        .standard_insult = "Soon you'll be wearing my sword like a shish kebab!",
-        .counter_reply = "First you'd better stop waving it like a feather duster.",
-        .carla_insult = "My sword is famous all across the Caribbean!",
-    },
-    .{
-        .id = 5,
-        .standard_insult = "People fall at my feet when they see me coming!",
-        .counter_reply = "Even BEFORE they smell your breath?",
-        .carla_insult = "My wisest enemies run away at the first sight of me!",
-    },
-    .{
-        .id = 6,
-        .standard_insult = "I'm not going to take your insolence sitting down!",
-        .counter_reply = "Your hemorhoids are flaring up again eh?",
-        .carla_insult = "I usually work with people who have more courage than you.",
-    },
-    .{
-        .id = 7,
-        .standard_insult = "I once owned a dog that was smarter than you.",
-        .counter_reply = "He must have taught you everything you know.",
-        .carla_insult = "Only once have I met such a coward!",
-    },
-    .{
-        .id = 8,
-        .standard_insult = "Nobody's ever drawn blood from me and nobody ever will.",
-        .counter_reply = "You run THAT fast?",
-        .carla_insult = "No one has ever faced ME and lived to tell about it!",
-    },
-    .{
-        .id = 9,
-        .standard_insult = "Have you stopped wearing diapers yet?",
-        .counter_reply = "Why, did you want to borrow one?",
-        .carla_insult = "I hope you have a boat ready for a quick escape.",
-    },
-    .{
-        .id = 10,
-        .standard_insult = "There are no words for how disgusting you are.",
-        .counter_reply = "Yes there are, you just never learned them.",
-        .carla_insult = "There are no clever moves that can help you now.",
-    },
-    .{
-        .id = 11,
-        .standard_insult = "You make me want to puke.",
-        .counter_reply = "You make me think somebody already did.",
-        .carla_insult = "If your brother's like you, better to marry a pig.",
-    },
-    .{
-        .id = 12,
-        .standard_insult = "My handkerchief will wipe up your blood!",
-        .counter_reply = "So you got that job as a janitor, after all.",
-        .carla_insult = "My name is feared in every dirty salon!",
-    },
-    .{
-        .id = 13,
-        .standard_insult = "I got this scar on my face during a mighty struggle!",
-        .counter_reply = "I hope now you've learned to stop picking your nose.",
-        .carla_insult = "My face is a portrait of ruthless brutality!",
-    },
-    .{
-        .id = 14,
-        .standard_insult = "I've heard you are a contemptible sneak.",
-        .counter_reply = "Too bad no one's ever heard of YOU at all.",
-        .carla_insult = "I will make sure no one remembers your name.",
-    },
-    .{
-        .id = 15,
-        .standard_insult = "You're no match for my brains, you poor fool.",
-        .counter_reply = "I'd be in real trouble if you used them.",
-        .carla_insult = "I've got a long, sharp lesson for you to learn today.",
-    },
-    .{
-        .id = 16,
-        .standard_insult = "You have the manners of a beggar.",
-        .counter_reply = "I wanted to make sure you'd feel at home with me.",
-        .carla_insult = "Every word you say to me is an insult.",
-    },
-};
-
-pub const FALLBACK_REPLY = "I am shaking, I am shaking!";
-
 const duel_mod = bespoke.duel;
-
-/// The insult table as engine duel pairs: each pair's variant is the Sword Master's phrasing.
-const DUEL_PAIRS = blk: {
-    var pairs: [MONKEY_ISLAND_INSULTS.len]duel_mod.Pair = undefined;
-    for (MONKEY_ISLAND_INSULTS, 0..) |pair, i| {
-        pairs[i] = .{
-            .name = std.fmt.comptimePrint("Insult{d}", .{pair.id}),
-            .challenge = pair.standard_insult,
-            .reply = pair.counter_reply,
-            .variants = &[_][]const u8{pair.carla_insult},
-        };
-    }
-    break :blk pairs;
-};
-
-/// Tier 1 is the Sword Master. `win_at` is unset: this proof scripts its own duel victory.
-pub const DUEL_CONFIG = duel_mod.Config{
-    .pairs = &DUEL_PAIRS,
-    .fallback = FALLBACK_REPLY,
-    .relations = .{
-        .heard = "HeardInsult",
-        .variant_of = "SwordMasterVariant",
-        .tier = "IsSwordMaster",
-    },
-};
-
-const SWORD_MASTER_TIER: u32 = 1;
-
-const FATIGUE_STAGES = [_]duel_mod.Stage{
-    .{ .relation = "AnnoyedWith", .at = 2, .ttl = 100, .label = "annoyed" },
-    .{ .relation = "FuriousWith", .at = 3, .ttl = 250, .label = "furious" },
-};
 const ANNOYED: usize = 0;
 const FURIOUS: usize = 1;
-
-pub const FATIGUE_CONFIG = duel_mod.FatigueConfig{
-    .stages = &FATIGUE_STAGES,
-    .calm_label = "welcoming",
-};
 
 /// Executes deterministic headless simulation of Monkey Island Insult Sword Fighting and Organic NPC Repetition
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
@@ -212,8 +138,10 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
     defer compiled.deinit();
 
-    var duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
-    var fatigue = try duel_mod.InquiryFatigue.init(&world, FATIGUE_CONFIG);
+    if (compiled.duels.items.len != 1) return error.MissingSwordDuel;
+    const duel_decl = &compiled.duels.items[0];
+    var duel = try duel_mod.Duel.init(&world, duel_decl.config);
+    var fatigue = try duel_mod.InquiryFatigue.init(&world, duel_decl.fatigue);
     const swagger_rel = try world.intern_relation("Swagger", .property);
     const path_chosen_rel = try world.intern_relation("PathChosen", .property);
 
@@ -226,8 +154,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const citizen = try world.intern_entity("Citizen");
     _ = citizen;
 
-    // Carla is the legendary Sword Master
-    try duel.set_tier(carla, SWORD_MASTER_TIER);
+    try duel_decl.apply_tiers(&duel);
 
     var timeline = bespoke.host.Timeline.init(allocator);
     defer timeline.deinit();
@@ -254,23 +181,23 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var reply_count = duel.replies(&vm, guybrush, insult_1, &candidate_replies);
 
     try writer.print("   -> Pirate Bob approaches on the High Road and draws cutlass!\n", .{});
-    try writer.print("   -> Bob throws Insult 1: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
+    try writer.print("   -> Bob throws Insult 1: \"{s}\"\n", .{duel.config.pairs[0].challenge});
     try writer.print("   -> Active Choices Available to Guybrush ({d}):\n", .{reply_count});
     for (candidate_replies[0..reply_count], 0..) |cand, i| {
         try writer.print("      [{d}] \"{s}\"\n", .{ i + 1, cand.text });
     }
     try std.testing.expectEqual(@as(usize, 1), reply_count);
-    try std.testing.expectEqualStrings(FALLBACK_REPLY, candidate_replies[0].text);
+    try std.testing.expectEqualStrings(duel.config.fallback.?, candidate_replies[0].text);
 
     // Guybrush uses fallback reply
-    try writer.print("   -> Guybrush stammers: \"{s}\"\n", .{FALLBACK_REPLY});
+    try writer.print("   -> Guybrush stammers: \"{s}\"\n", .{duel.config.fallback.?});
     const round_step1 = try duel.resolve_round(pirate_bob, guybrush, insult_1, candidate_replies[0].entity);
     try std.testing.expect(!round_step1.parried);
 
-    try writer.print("   -> Bob strikes! Taunts: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].counter_reply});
+    try writer.print("   -> Bob strikes! Taunts: \"{s}\"\n", .{duel.config.pairs[0].reply});
     try writer.print("   -> Relational Learning Triggered:\n", .{});
-    try writer.print("      - Remembered HeardInsult(Guybrush, 1): \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
-    try writer.print("      - Remembered MasteredReply(Guybrush, 1): \"{s}\"\n\n", .{MONKEY_ISLAND_INSULTS[0].counter_reply});
+    try writer.print("      - Remembered HeardInsult(Guybrush, 1): \"{s}\"\n", .{duel.config.pairs[0].challenge});
+    try writer.print("      - Remembered MasteredReply(Guybrush, 1): \"{s}\"\n\n", .{duel.config.pairs[0].reply});
 
     try std.testing.expect(world.has_fact(guybrush, duel.heard_rel, insult_1.to_int()));
     try std.testing.expect(world.has_fact(guybrush, duel.mastered_rel, reply_1.to_int()));
@@ -288,10 +215,10 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
         try writer.print("      [{d}] \"{s}\"\n", .{ i + 1, cand.text });
     }
     try std.testing.expectEqual(@as(usize, 1), insult_count);
-    try std.testing.expectEqualStrings(MONKEY_ISLAND_INSULTS[0].standard_insult, candidate_insults[0].text);
+    try std.testing.expectEqualStrings(duel.config.pairs[0].challenge, candidate_insults[0].text);
 
-    try writer.print("   -> Guybrush throws Insult 1: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
-    try writer.print("   -> Pegleg fails to counter and retorts with Insult 5: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[4].standard_insult});
+    try writer.print("   -> Guybrush throws Insult 1: \"{s}\"\n", .{duel.config.pairs[0].challenge});
+    try writer.print("   -> Pegleg fails to counter and retorts with Insult 5: \"{s}\"\n", .{duel.config.pairs[4].challenge});
 
     // Defender hears Insult 5 and learns Reply 5 through combat
     try duel.hear(guybrush, insult_5);
@@ -303,7 +230,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // -------------------------------------------------------------------------
     try writer.print("[Step 3: Relational Query Pruning & Duel Victory]\n", .{});
     try writer.print("   -> Pirate Bob challenges Guybrush again!\n", .{});
-    try writer.print("   -> Bob throws Insult 1: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[0].standard_insult});
+    try writer.print("   -> Bob throws Insult 1: \"{s}\"\n", .{duel.config.pairs[0].challenge});
 
     reply_count = duel.replies(&vm, guybrush, insult_1, &candidate_replies);
     try writer.print("   -> Guybrush's Mastered Dialogue Options ({d}):\n", .{reply_count});
@@ -339,8 +266,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Guybrush crosses the rope bridge to Carla's Sword Master Sanctuary.\n", .{});
 
     // Carla throws the Sword Master variant of Insult 5
-    const carla_insult = duel.challenge(4, SWORD_MASTER_TIER);
-    const carla_insult_text = MONKEY_ISLAND_INSULTS[4].carla_insult;
+    const carla_insult = duel.challenge(4, 1);
+    const carla_insult_text = duel.config.pairs[4].variants[0];
     try writer.print("   -> Carla sneers: \"{s}\"\n", .{carla_insult_text});
 
     reply_count = duel.replies(&vm, guybrush, carla_insult, &candidate_replies);
@@ -357,7 +284,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Guybrush parries Carla's elevated master insult
     const round_carla = try duel.resolve_round(carla, guybrush, carla_insult, reply_5);
     try std.testing.expect(round_carla.parried);
-    try writer.print("   -> Guybrush parries Carla: \"{s}\"\n", .{MONKEY_ISLAND_INSULTS[4].counter_reply});
+    try writer.print("   -> Guybrush parries Carla: \"{s}\"\n", .{duel.config.pairs[4].reply});
     try writer.print("   -> Carla is stunned: \"A sharp tongue as well as a sharp blade!\"\n", .{});
 
     // Test Pete Invariant: Guybrush has heard Carla's variant (the round above taught it).
@@ -483,7 +410,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
     defer compiled.deinit();
 
-    var duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
+    if (compiled.duels.items.len != 1) return error.MissingSwordDuel;
+    const duel_decl = &compiled.duels.items[0];
+    var duel = try duel_mod.Duel.init(&world, duel_decl.config);
 
     const road_scene = try world.intern_entity("High Road");
     const sanctuary_scene = try world.intern_entity("Sword Master Sanctuary");
@@ -494,7 +423,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const carla = try world.intern_entity("Carla");
     const barkeep = try world.intern_entity("Barkeep");
 
-    try duel.set_tier(carla, SWORD_MASTER_TIER);
+    try duel_decl.apply_tiers(&duel);
 
     const road_l = try spatial.graph.add_waypoint(road_scene, 0, 0, "RoadLeft");
     const road_c = try spatial.graph.add_waypoint(road_scene, 20, 0, "RoadCenter");
@@ -573,11 +502,18 @@ test "P15-01: canonical Monkey Island insults and counters are correctly mapped"
     var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    const duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.duels.items.len);
+
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    try compiled.duels.items[0].apply_tiers(&duel);
 
     // All 16 counters match their standard insult and its Sword Master variant
-    for (MONKEY_ISLAND_INSULTS, 0..) |_, i| {
-        const variant = duel.challenge(i, SWORD_MASTER_TIER);
+    for (duel.config.pairs, 0..) |_, i| {
+        const variant = duel.challenge(i, 1);
         try testing.expect(duel.counters(duel.reply(i), duel.challenge(i, 0)));
         try testing.expectEqual(duel.challenge(i, 0), duel.base_of(variant));
         try testing.expect(duel.counters(duel.reply(i), variant));
@@ -593,15 +529,21 @@ test "P15-02: Pete/Arantor Sword Master target invariant prevents master insults
     var vm = bespoke.VM.init(testing.allocator, &world, &chunk);
     defer vm.deinit();
 
-    var duel = try duel_mod.Duel.init(&world, DUEL_CONFIG);
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.duels.items.len);
+
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    try compiled.duels.items[0].apply_tiers(&duel);
     const guybrush = try world.intern_entity("Guybrush");
     const pirate_bob = try world.intern_entity("PirateBob");
     const carla = try world.intern_entity("Carla");
-    try duel.set_tier(carla, SWORD_MASTER_TIER);
 
     // Guybrush learns standard insult 4 and Carla's variant of it
     try duel.hear(guybrush, duel.challenge(3, 0));
-    try duel.hear(guybrush, duel.challenge(3, SWORD_MASTER_TIER));
+    try duel.hear(guybrush, duel.challenge(3, 1));
 
     // Querying against regular pirate Bob: only standard insult 4 is permitted
     var bob_candidates: [4]duel_mod.Candidate = undefined;
@@ -620,7 +562,13 @@ test "P15-03: conversational repetition fatigue asserts decaying mood facts" {
     var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    var fatigue = try duel_mod.InquiryFatigue.init(&world, FATIGUE_CONFIG);
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.duels.items.len);
+
+    var fatigue = try duel_mod.InquiryFatigue.init(&world, compiled.duels.items[0].fatigue);
     const guybrush = try world.intern_entity("Guybrush");
     const barkeep = try world.intern_entity("Barkeep");
 

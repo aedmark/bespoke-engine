@@ -11,6 +11,7 @@ const vm_mod = @import("vm.zig");
 const spatial_mod = @import("spatial.zig");
 const display_mod = @import("display.zig");
 const codegen = @import("compiler/codegen.zig");
+const dialogue_mod = @import("dialogue.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -237,6 +238,23 @@ pub const Session = struct {
         return self.bridge.get_frame();
     }
 
+    /// The open dialogue, reconstructed from World facts, or null (P32-30, D-046).
+    pub fn dialogue_view(self: *const Session) ?dialogue_mod.View {
+        return dialogue_mod.view(self.world);
+    }
+
+    /// Selects an offered choice. Scripted choices resume the suspended fiber and advance one
+    /// tick so the chosen body runs; generated choices record the selection for the host.
+    pub fn choose_dialogue(self: *Session, index: usize) !?dialogue_mod.Selection {
+        const selection = (try self.vm.choose(index)) orelse return null;
+        if (selection.is_scripted()) {
+            _ = try self.advance();
+        } else {
+            try self.record_now();
+        }
+        return selection;
+    }
+
     /// Captures and publishes the current state.
     pub fn refresh(self: *Session) void {
         self.bridge.capture_frame(self.world, self.spatial, self.vm);
@@ -248,6 +266,7 @@ pub const Session = struct {
     /// action was consumed; the host handles everything else.
     pub fn handle_common(self: *Session, action: display_mod.UserAction) !bool {
         if (self.window.handle_save_action(action, self.world, self.spatial, self.vm, self.bridge, &self.is_paused)) {
+            self.vm.sync_dialogue();
             self.refresh();
             return true;
         }
@@ -264,6 +283,7 @@ pub const Session = struct {
             .rewind => {
                 if (try self.timeline.step_back(self.world)) |i| {
                     self.cursor = i;
+                    self.vm.sync_dialogue();
                     self.refresh();
                     self.window.set_cue_banner("Stepped back one snapshot.", 60);
                 }
@@ -279,6 +299,7 @@ pub const Session = struct {
     pub fn jump_to(self: *Session, index: usize) !?usize {
         const i = (try self.timeline.restore(self.world, index)) orelse return null;
         self.cursor = i;
+        self.vm.sync_dialogue();
         self.is_paused = true;
         self.refresh();
         return i;

@@ -618,14 +618,15 @@
         {
           "id": "branching-dialogue-balloons",
           "title": "Branching Dialogue Trees & Dynamic Choice Pruning",
-          "summary": "Temporal speech balloons with actor name tags, dialogue lines, and relational fact-guarded branching choices.",
+          "summary": "Temporal speech balloons with actor name tags, dialogue lines, and relational fact-guarded branching choices that suspend the script until selection.",
           "synopsis": "choice \"Rent motorcycle\" if Carries(Gabriel, License): say Buthane: \"Keys.\"",
           "tags": ["dialogue", "speech", "balloons", "choices", "pruning"],
           "what": "Renders stylized parchment speech balloons anchored above talking actors with automatic text wrapping, speech tails, dynamic height scaling, scrolling, and keyboard hotkey selection (1-9).",
           "how": [
             "SpeechBalloon stores speaker coordinates, name, line text, and up to 9 branching choices with dynamic height scaling and scroll offset.",
-            "Fibers executing choice blocks evaluate relational guards against the World store at spawn time, pruning unsatisfied branches before display.",
+            "Fibers executing choice blocks evaluate relational guards, record the eligible options as World facts, and suspend until a selection resumes the chosen body.",
             "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks, mouse wheel scrolling, and number keys 1-9 to trigger selections.",
+            "The open set lives in World facts, so snapshots and rewinds carry it; RenderFrame.dialogue publishes it to the balloon by revision.",
             "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions."
           ],
           "why": "Hardcoding dialogue choices in host language ladders causes script fragmentation and breaks time-travel rewinds. Fact-guarded choice trees declared in DSL prune systemically based on active inventory and knowledge facts.",
@@ -633,6 +634,8 @@
           "evidence": [
             {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
             {"label": "Architectural Decision D-015", "target": "docs/DECISIONS.md#d-015", "kind": "decision"},
+            {"label": "Architectural Decision D-046", "target": "docs/DECISIONS.md#d-046", "kind": "decision"},
+            {"label": "Executable Dialogue Lifecycle", "target": "src/dialogue.zig", "kind": "source"},
             {"label": "Dialogue Choice Parser Grammar", "target": "src/compiler/parser.zig", "kind": "source"},
             {"label": "VM Choice Pruning Logic", "target": "src/vm.zig", "kind": "source"},
             {"label": "Speech Balloon Rendering & Hotkeys", "target": "src/display/renderer.zig", "kind": "source"}
@@ -955,27 +958,52 @@
           "id": "living-village-emergent-sandbox",
           "title": "Emergent Society Simulation (The Living Village)",
           "summary": "Core emergent society mechanic: needs-driven agents, witness detection, rumor propagation, and justice cascades, demonstrated by The Living Village proof.",
-          "synopsis": "zig build run-proof -- --village [--headless] | var soc = try bespoke.society.Society.init(&world, config); _ = try bespoke.host.tick(&vm, &compiled); try soc.step(&world, &spatial, &vm);",
+          "synopsis": "society Hamlet: ... | var soc = try bespoke.society.Society.init(&world, compiled.societies.items[0].config); try soc.step(&world, &spatial, &vm);",
           "tags": ["emergence", "village", "drives", "rumors", "justice", "sandbox"],
-          "what": "An engine mechanic for unscripted social simulation (src/society.zig). A host supplies a config: a list of needs, a roster with data roles (merchant, broadcaster, enforcer) and routines, and the places the systems use. The Living Village proof is one configuration: 6 villagers across a 6-building settlement.",
+          "what": "An engine mechanic for unscripted social simulation (src/society.zig). A script-level society declaration or direct Zig config supplies a list of needs, a roster with data roles (merchant, broadcaster, enforcer) and routines, friendships, and the places the systems use. The Living Village script declares one configuration: 6 villagers across a 6-building settlement.",
           "how": [
             "Each need is a property relation with a direction, a per-tick rate, and a seek threshold, met by staying at a place (rest) or by trading with a merchant; past a critical value, a member who cannot pay steals the merchant's goods.",
             "Each tick a member takes the first applicable branch: held, staying, decay, enforcer on duty, start a stay, desperation theft, flight, trade, broadcast, routine.",
             "Aware members near a crime scene while the culprit is there record Witnessed, KnowsRumor, and expiring Grudge facts.",
             "Rumors spread one hop per tick between co-located members who are friends, or when the speaker is a witness or broadcaster, or the listener is the enforcer.",
-            "The enforcer issues a warrant with a priority fiber interrupt, pursues, arrests on contact, recovers stolen goods, and escorts the culprit to the holding place. All of this is World facts, so rewind and saves cover it."
+            "The enforcer issues a warrant with a priority fiber interrupt, pursues, arrests on contact, recovers stolen goods, and escorts the culprit to the holding place. All of this is World facts, so rewind and saves cover it.",
+            "CompiledProgram owns society declarations in source order; .bspk format version 4 serializes them and validates their member, waypoint, and entity references."
           ],
           "why": "Shows that the flat relational fact store, property auto-overwrite, and priority interrupt spine support unscripted systemic emergence for any cast and setting, with full time-travel scrubbing and disk save compatibility.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-021", "target": "docs/DECISIONS.md#d-021", "kind": "decision"},
             {"label": "Architectural Decision D-034", "target": "docs/DECISIONS.md#d-034", "kind": "decision"},
+            {"label": "Architectural Decision D-045", "target": "docs/DECISIONS.md#d-045", "kind": "decision"},
             {"label": "Emergent Society Module", "target": "src/society.zig", "kind": "source"},
             {"label": "The Living Village Proof", "target": "proofs/village.zig", "kind": "source"},
             {"label": "Settlement & Social Graph Renderer", "target": "src/display/renderer.zig", "kind": "source"},
             {"label": "Display Frame Drive & Edge Capture", "target": "src/display.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "headless-and-interactive-cli", "persistent-save-load-and-slot-management", "wasm-browser-target-and-simulator"]
+        },
+        {
+          "id": "script-declared-dialogue-duels",
+          "title": "Script-Declared Dialogue Duels",
+          "summary": "Challenge/reply contests with learned counters, opponent tiers, fact-guarded candidates, wins, and per-NPC inquiry fatigue.",
+          "synopsis": "duel RiddleContest: ... | var duel = try bespoke.duel.Duel.init(&world, compiled.duels.items[0].config); try compiled.duels.items[0].apply_tiers(&duel);",
+          "tags": ["dialogue", "duel", "choices", "tiers", "fatigue", "dsl"],
+          "what": "A reusable dialogue-duel mechanic configured by a script-level duel declaration or direct Zig data. Declarations contain challenge/reply pairs, optional tier variants and opponent assignments, a fallback, a win threshold, relation vocabulary, and staged inquiry-fatigue moods.",
+          "how": [
+            "Duel.init asserts the immutable Counters and VariantOf knowledge base as World facts; what each fighter heard or mastered, opponent tiers, advantage, wins, inquiry counts, and moods are also facts.",
+            "Duel.challenges and Duel.replies submit candidates through VM.prune_dialogue_choices, so the ordinary fact-guarded dialogue query path controls what can be offered.",
+            "A duel declaration preserves pair, variant, tier, and fatigue-stage source order. The host applies its tier assignments after Duel.init and may initialize InquiryFatigue from the same declaration.",
+            ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table."
+          ],
+          "why": "Game-facing configuration belongs in distributable .bespoke source. The mechanic remains generic while each game controls its dialogue, tiers, vocabulary, and mood cadence.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-035", "target": "docs/DECISIONS.md#d-035", "kind": "decision"},
+            {"label": "Architectural Decision D-045", "target": "docs/DECISIONS.md#d-045", "kind": "decision"},
+            {"label": "Dialogue Duel Module", "target": "src/duel.zig", "kind": "source"},
+            {"label": "Insult Sword Fighting Proof", "target": "proofs/sword_fighting.zig", "kind": "source"}
+          ],
+          "related": ["engine-as-spine", "living-village-emergent-sandbox", "branching-dialogue-balloons", "persistent-save-load-and-slot-management"]
         },
         {
           "id": "wasm-browser-target-and-simulator",

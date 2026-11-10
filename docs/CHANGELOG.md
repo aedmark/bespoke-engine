@@ -4,6 +4,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Interactive dialogue can now run from script `choice` blocks (`P32-30`, `D-046`): the VM records the pruned options as World facts, suspends the fiber, and resumes at the selected body. Hosts can open the same lifecycle for runtime-generated choices with `VM.open_generated_dialogue` and resolve them with `VM.choose`; `RenderFrame.dialogue` and `Session.choose_dialogue` carry it to a window. Dialogue state survives snapshots and rewinds, and the GK3 Buthane conversation now runs through its script's choices with an unchanged golden.
+- Scripts can declare complete emergent societies and dialogue duels (`P32-22`, `P32-24`, `D-045`). `society` blocks configure needs, rosters, roles, routines, places, friendships, and vocabulary; `duel` blocks configure challenge/reply pairs, tier variants and assignments, and inquiry-fatigue stages. The Living Village and Insult Sword Fighting now consume their script declarations instead of Zig configuration tables, with unchanged goldens.
+- `.bspk` packages are now format version 4 and carry compiled society and duel declarations. Versions 1 through 3 still load with empty declaration tables (`D-045`).
+
 ### Fixed
 - `SpatialSystem.walk_to` now turns an in-flight actor back toward the waypoint it just left and raises the normal arrival edge there (`P32-25`).
 - The Spitting Contest and GK3 proof runners now send player intent through their DSL cue handlers instead of writing puzzle facts from Zig; their transcripts use the dialogue the scripts emit (`P32-26`).

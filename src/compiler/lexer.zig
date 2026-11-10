@@ -55,6 +55,8 @@ pub const TokenTag = enum {
     kw_choice,
     kw_draft,
     kw_weave,
+    kw_society,
+    kw_duel,
 
     // Identifiers & Literals
     identifier,
@@ -423,6 +425,8 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "choice", .kw_choice },
         .{ "draft", .kw_draft },
         .{ "weave", .kw_weave },
+        .{ "society", .kw_society },
+        .{ "duel", .kw_duel },
     });
 
     return map.get(ident) orelse .identifier;
@@ -616,4 +620,3 @@ test "P13-01: lexer tokenizes dialogue choice keywords" {
     try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
 }
-
