@@ -9,6 +9,7 @@ const society_mod = @import("society.zig");
 const duel_mod = @import("duel.zig");
 const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
+const agency_mod = @import("agency.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -34,8 +35,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// with spill disabled. Version 7 appends grid overlays with their initial cell layouts
 /// (P25-01, D-054); versions 1 through 6 load with no grids. Version 8 adds the `burning` and
 /// `smoke` attributes and four automata rates per grid (P25-02, D-055); version 7 grids load
-/// with every rule off.
-pub const PACKAGE_VERSION: u32 = 8;
+/// with every rule off. Version 9 appends agendas (P33-01, D-056); versions 1 through 8 load
+/// with none.
+pub const PACKAGE_VERSION: u32 = 9;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -247,6 +249,25 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
         const r = decl.rules;
         for ([_]u32{ r.burn_ticks, r.spread_ticks, r.dissipate_ticks, r.flow_ticks }) |rate| try writer.writeInt(u32, rate, .little);
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.agendas.items.len), .little);
+    for (compiled.agendas.items) |decl| {
+        const a = decl.agenda;
+        try writer.writeInt(u32, a.entity.to_int(), .little);
+        try writer.writeInt(u32, a.actor.to_int(), .little);
+        try writer.writeInt(u32, a.target.to_int(), .little);
+        try writer.writeInt(u16, a.priority, .little);
+        try writer.writeInt(u32, a.cooldown_ticks, .little);
+        try writer.writeByte(@intFromBool(a.once));
+        try writer.writeByte(@intCast(a.clauses.len));
+        for (a.clauses) |clause| {
+            try write_text_ref(world, writer, clause.relation);
+            // Zero is the `_` wildcard; EntityId.none is never a real entity.
+            try writer.writeInt(u32, if (clause.subject) |e| e.to_int() else 0, .little);
+            try writer.writeInt(u32, if (clause.object) |e| e.to_int() else 0, .little);
+            try writer.writeByte(@intFromBool(clause.negated));
+        }
     }
 }
 
@@ -559,6 +580,55 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
     const declaration = grid_mod.Declaration{ .grid = grid, .cells = cells, .rules = rules };
     declaration.validate() catch return error.InvalidGridConfig;
     return declaration;
+}
+
+/// Untrusted input: every entity and text reference, the clause count, and flag bytes are
+/// checked before the agenda reaches the World.
+fn read_agenda_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !agency_mod.Declaration {
+    const entity = try read_entity_ref(world, reader);
+    const actor = try read_entity_ref(world, reader);
+    const target = try read_entity_ref(world, reader);
+    const priority = try reader.readInt(u16, .little);
+    const cooldown_ticks = try reader.readInt(u32, .little);
+    const once = try read_flag(reader);
+    const clause_count = try reader.readByte();
+    if (clause_count == 0 or clause_count > agency_mod.MAX_CLAUSES) return error.InvalidAgendaConfig;
+    const clauses = try allocator.alloc(agency_mod.Clause, clause_count);
+    errdefer allocator.free(clauses);
+    for (clauses) |*clause| {
+        clause.* = .{
+            .relation = try read_text_ref(world, reader),
+            .subject = try read_optional_entity_ref(world, reader),
+            .object = try read_optional_entity_ref(world, reader),
+            .negated = try read_flag(reader),
+        };
+    }
+    const agenda = agency_mod.Agenda{
+        .entity = entity,
+        .actor = actor,
+        .target = target,
+        .priority = priority,
+        .cooldown_ticks = cooldown_ticks,
+        .once = once,
+        .clauses = clauses,
+    };
+    agency_mod.validate(agenda) catch return error.InvalidAgendaConfig;
+    return .{ .agenda = agenda };
+}
+
+fn read_flag(reader: anytype) !bool {
+    return switch (try reader.readByte()) {
+        0 => false,
+        1 => true,
+        else => error.InvalidAgendaConfig,
+    };
+}
+
+fn read_optional_entity_ref(world: *const World, reader: anytype) !?EntityId {
+    const raw = try reader.readInt(u32, .little);
+    if (raw == 0) return null;
+    if (world.get_entity_name(EntityId.from_int(raw)) == null) return error.InvalidProgramEntity;
+    return EntityId.from_int(raw);
 }
 
 fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_spill: bool) !container_mod.Declaration {
@@ -1054,6 +1124,24 @@ pub fn load_package(
             if (spatial) |sp| sp.add_grid(decl.grid) catch return error.InvalidGridConfig;
         }
     }
+    var agendas = std.ArrayList(agency_mod.Declaration).init(allocator);
+    errdefer {
+        for (agendas.items) |*decl| decl.deinit_owned(allocator);
+        agendas.deinit();
+    }
+    if (header.version >= 9) {
+        const agenda_count = try pr.readInt(u32, .little);
+        if (agenda_count > agency_mod.MAX_AGENDAS) return error.InvalidAgendaConfig;
+        var ai: u32 = 0;
+        while (ai < agenda_count) : (ai += 1) {
+            var decl = try read_agenda_declaration(allocator, world, pr);
+            agendas.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        agency_mod.validate_all(agendas.items) catch return error.InvalidAgendaConfig;
+    }
 
     return CompiledProgram{
         .drafts = drafts,
@@ -1069,6 +1157,7 @@ pub fn load_package(
         .duels = duels,
         .degradations = degradations,
         .grids = grids,
+        .agendas = agendas,
     };
 }
 
@@ -1344,8 +1433,9 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
 
     // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
-    // Version 7 follows the draft table with empty society, duel, degradation, and grid counts.
-    const declaration_tail_len = 16;
+    // Version 9 follows the draft table with empty society, duel, degradation, grid, and agenda
+    // counts.
+    const declaration_tail_len = 20;
     const tail_len = 4 + 4 + 4 + 1 + 4;
     const first_note = buffer.items.len - declaration_tail_len - tail_len + 8;
     {
@@ -1360,7 +1450,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     }
     {
         // A real version 4 payload ends after the duel table and loads no degradation profiles.
-        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 8]);
+        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 12]);
         defer testing.allocator.free(v4);
         reseal_for_test(v4, 4);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
@@ -1421,8 +1511,9 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
     try system.step(&world2, null);
     try testing.expectEqual(world2.lookup_entity("Sound").?.to_int(), world2.get_property(vial, system.rel.stage).?);
 
-    // Version 5 stored the same declaration without the u32 spill field and had no grid count.
-    const grid_count_len = 4;
+    // Version 5 stored the same declaration without the u32 spill field and had no grid or
+    // agenda count.
+    const grid_count_len = 4 + 4;
     const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4 + grid_count_len;
     const spill_offset = buffer.items.len - bytes_after_spill - 4;
     var v5 = std.ArrayList(u8).init(testing.allocator);
@@ -1486,10 +1577,12 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
     try testing.expect(grid_mod.has_attribute(&world2, grid, .{ .x = 1, .y = 1 }, .liquid));
 
     // Tail layout: grid count, entity, room, width, height, cell size, origin x/y, cell count,
-    // four (index u32, attribute u8) cells, then four u32 rates (version 8).
+    // four (index u32, attribute u8) cells, four u32 rates (version 8), then the empty agenda
+    // count (version 9).
     const cells_len = 4 * (4 + 1);
     const rules_len = 4 * 4;
-    const first_cell_index = buffer.items.len - rules_len - cells_len;
+    const agenda_count_len = 4;
+    const first_cell_index = buffer.items.len - agenda_count_len - rules_len - cells_len;
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
@@ -1512,7 +1605,7 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
     }
     {
         // A version 7 payload has no rates; its grids load with every rule off.
-        const v7 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - rules_len]);
+        const v7 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - agenda_count_len - rules_len]);
         defer testing.allocator.free(v7);
         reseal_for_test(v7, 7);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -1532,7 +1625,7 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
     }
     {
         // A version 6 payload ends before the grid table and loads no grids.
-        const grid_section_len = 4 + 4 + 4 + 2 + 2 + 4 + 4 + 4 + 4 + cells_len + rules_len;
+        const grid_section_len = 4 + 4 + 4 + 2 + 2 + 4 + 4 + 4 + 4 + cells_len + rules_len + agenda_count_len;
         const v6 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - grid_section_len]);
         defer testing.allocator.free(v6);
         reseal_for_test(v6, 6);
@@ -1545,6 +1638,69 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.grids.items.len);
         try testing.expectEqual(@as(usize, 0), spatial3.grids.items.len);
+    }
+}
+
+test "P33-01: package version 9 round-trips agendas, rejects bad flags, and loads version 8" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\relation Investigated(who, place)
+        \\agenda WarnOff:
+        \\  actor Keeper
+        \\  target Hero
+        \\  priority 4
+        \\  cooldown 12
+        \\  requires Investigated(Hero, _)
+        \\  unless Warned(Hero)
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.agendas.items.len);
+    const agenda = compiled2.agendas.items[0].agenda;
+    try testing.expectEqual(@as(u16, 4), agenda.priority);
+    try testing.expectEqual(@as(u32, 12), agenda.cooldown_ticks);
+    try testing.expectEqualStrings("Hero", world2.get_entity_name(agenda.target).?);
+    try testing.expectEqual(@as(usize, 2), agenda.clauses.len);
+    try testing.expect(agenda.clauses[0].object == null and !agenda.clauses[0].negated);
+    try testing.expect(agenda.clauses[1].negated and agenda.clauses[1].object == null);
+    try testing.expectEqualStrings("Warned", agenda.clauses[1].relation);
+
+    // Tail: each clause is text ref, subject, object (u32 each) and a negated byte.
+    const clause_len = 4 + 4 + 4 + 1;
+    {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        bad[bad.len - 1] = 2; // the last clause's negated flag
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidAgendaConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        // A version 8 payload ends before the agenda table and loads none.
+        const agenda_section_len = 4 + 4 + 4 + 4 + 2 + 4 + 1 + 1 + 2 * clause_len;
+        const v8 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - agenda_section_len]);
+        defer testing.allocator.free(v8);
+        reseal_for_test(v8, 8);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v8_stream = std.io.fixedBufferStream(v8);
+        var loaded = try load_package(testing.allocator, v8_stream.reader(), &world3, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.agendas.items.len);
     }
 }
 

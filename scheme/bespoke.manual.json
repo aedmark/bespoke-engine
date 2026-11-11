@@ -593,6 +593,29 @@
             {"label": "Priority Preemption Stacks", "target": "src/vm.zig", "kind": "source"}
           ],
           "related": ["continuous-when-rules", "cue-dispatch-and-interruption"]
+        },
+        {
+          "id": "agendas-and-proactive-agency",
+          "title": "Agendas: Proactive Social Agency",
+          "summary": "Script-declared intentions that set an NPC pursuing a target when facts hold or are missing.",
+          "synopsis": "agenda <Name>:  actor A  target T  [priority N]  [cooldown N]  [once]  requires Rel(A, B)  unless Rel(A, B)",
+          "tags": ["agency", "agenda", "npc", "omission"],
+          "what": "Lets an NPC react to what the player did, or failed to do, by starting to pursue them; the engine chooses which agendas pursue and keeps their stages as facts.",
+          "how": [
+            "An agenda declaration compiles into CompiledProgram.agendas; requires lines must hold, unless lines must not, with names or _ wildcards.",
+            "Each agenda entity carries AgendaState(Agenda, Idle | Pursuing | Done); cooldowns are AgendaCooldown facts that expire after N ticks.",
+            "agency.step runs in host.tick: a pursuing agenda whose trigger lapses returns to Idle, and for each target one triggered agenda starts pursuing, chosen by priority, then route cost, then declaration order.",
+            "agency.resolve ends a pursuit: once agendas become Done, others return to Idle with their cooldown.",
+            ".bspk version 9 stores agendas; pursuit across the waypoint graph and the interception cue arrive in P33-02."
+          ],
+          "why": "Wandering characters on fixed schedules only answer when asked. Agendas let them act on player behaviour, including omissions, while every stage stays in the fact store so saves, rewinds, and branches carry it, and constant trigger lines avoid changing the reactive rule engine.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-038", "target": "docs/DECISIONS.md#d-038", "kind": "decision"},
+            {"label": "Architectural Decision D-056", "target": "docs/DECISIONS.md#d-056", "kind": "decision"},
+            {"label": "Agenda Engine", "target": "src/agency.zig", "kind": "source"}
+          ],
+          "related": ["continuous-when-rules", "relational-facts", "living-village-emergent-sandbox"]
         }
       ]
     },

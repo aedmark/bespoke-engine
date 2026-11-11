@@ -5,6 +5,7 @@ pub const Token = lexer_mod.Token;
 pub const TokenTag = lexer_mod.TokenTag;
 const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
+const agency_mod = @import("../agency.zig");
 pub const Note = draft_mod.Note;
 pub const Notes = draft_mod.Notes;
 
@@ -308,6 +309,24 @@ pub const GridDecl = struct {
     flow_ticks: u32 = 0,
 };
 
+/// One agenda trigger line (P33-01, D-056): `requires` must hold, `unless` must not. `_` is a
+/// wildcard; a one-argument pattern matches any object.
+pub const AgendaClauseDecl = struct {
+    pattern: FactPattern,
+    negated: bool,
+};
+
+/// `agenda <Name>:` owns one actor's intention to intercept a target.
+pub const AgendaDecl = struct {
+    name: []const u8,
+    actor: []const u8,
+    target: []const u8,
+    priority: u16 = 0,
+    cooldown_ticks: u32 = 0,
+    once: bool = false,
+    clauses: []const AgendaClauseDecl,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -334,6 +353,7 @@ pub const AST = struct {
     degradations: std.ArrayList(DegradationDecl),
     paths: std.ArrayList(PathDecl),
     grids: std.ArrayList(GridDecl),
+    agendas: std.ArrayList(AgendaDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -355,6 +375,7 @@ pub const AST = struct {
             .degradations = std.ArrayList(DegradationDecl).init(allocator),
             .paths = std.ArrayList(PathDecl).init(allocator),
             .grids = std.ArrayList(GridDecl).init(allocator),
+            .agendas = std.ArrayList(AgendaDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -380,6 +401,7 @@ pub const AST = struct {
         self.degradations.deinit();
         self.paths.deinit();
         self.grids.deinit();
+        self.agendas.deinit();
     }
 };
 
@@ -559,6 +581,13 @@ pub const Parser = struct {
                 .kw_duel => try ast.duels.append(try self.parse_duel_decl()),
                 .kw_degradation => try ast.degradations.append(try self.parse_degradation_decl()),
                 .kw_path => try ast.paths.append(try self.parse_path_decl()),
+                .kw_agenda => {
+                    const decl = try self.parse_agenda_decl();
+                    for (ast.agendas.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("agenda '{s}' is declared twice", .{decl.name});
+                    }
+                    try ast.agendas.append(decl);
+                },
                 .kw_grid => {
                     const decl = try self.parse_grid_decl();
                     for (ast.grids.items) |prior| {
@@ -1262,6 +1291,50 @@ pub const Parser = struct {
             .dissipate_ticks = rates[2] orelse 0,
             .flow_ticks = rates[3] orelse 0,
         };
+    }
+
+    /// P33-01 grammar. `actor`, `target`, and at least one trigger line are required.
+    fn parse_agenda_decl(self: *Parser) !AgendaDecl {
+        try self.advance(); // agenda
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var actor: ?[]const u8 = null;
+        var target: ?[]const u8 = null;
+        var decl = AgendaDecl{ .name = name, .actor = "", .target = "", .clauses = &.{} };
+        var clauses = std.ArrayList(AgendaClauseDecl).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            try self.advance();
+            if (std.mem.eql(u8, directive, "actor")) {
+                if (actor != null) return self.set_error("agenda '{s}' declares actor twice", .{name});
+                actor = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "target")) {
+                if (target != null) return self.set_error("agenda '{s}' declares target twice", .{name});
+                target = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "priority")) {
+                const value = try self.take_u32();
+                if (value > std.math.maxInt(u16)) return self.set_error("agenda '{s}' priority is above {d}", .{ name, std.math.maxInt(u16) });
+                decl.priority = @intCast(value);
+            } else if (std.mem.eql(u8, directive, "cooldown")) {
+                decl.cooldown_ticks = try self.take_u32();
+            } else if (std.mem.eql(u8, directive, "once")) {
+                decl.once = true;
+            } else if (std.mem.eql(u8, directive, "requires") or std.mem.eql(u8, directive, "unless")) {
+                const pattern = try self.parse_fact_pattern();
+                if (pattern.args.len == 0 or pattern.args.len > 2)
+                    return self.set_error("agenda '{s}' trigger {s} needs one or two arguments", .{ name, pattern.relation });
+                try clauses.append(.{ .pattern = pattern, .negated = directive[0] == 'u' });
+            } else return self.set_error("unknown agenda directive '{s}'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+        decl.actor = actor orelse return self.set_error("agenda '{s}' needs an actor", .{name});
+        decl.target = target orelse return self.set_error("agenda '{s}' needs a target", .{name});
+        if (std.mem.eql(u8, decl.actor, decl.target)) return self.set_error("agenda '{s}' cannot target its own actor", .{name});
+        if (clauses.items.len == 0 or clauses.items.len > agency_mod.MAX_CLAUSES)
+            return self.set_error("agenda '{s}' needs between 1 and {d} trigger lines", .{ name, agency_mod.MAX_CLAUSES });
+        decl.clauses = try clauses.toOwnedSlice();
+        return decl;
     }
 
     fn rate_index(names: []const []const u8, directive: []const u8) ?usize {

@@ -20,6 +20,7 @@ const society_mod = @import("../society.zig");
 const duel_mod = @import("../duel.zig");
 const container_mod = @import("../container.zig");
 const grid_mod = @import("../grid.zig");
+const agency_mod = @import("../agency.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
@@ -49,6 +50,8 @@ pub const CompiledProgram = struct {
     /// Grid overlays with their initial cell layouts (P25-01, D-054). Geometry is also
     /// registered in the SpatialSystem the program was compiled or loaded into.
     grids: std.ArrayList(grid_mod.Declaration),
+    /// Agendas in declaration order, which breaks contention ties (P33-01, D-056).
+    agendas: std.ArrayList(agency_mod.Declaration),
 
     pub fn deinit(self: *CompiledProgram) void {
         for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
@@ -59,6 +62,8 @@ pub const CompiledProgram = struct {
         self.degradations.deinit();
         for (self.grids.items) |*grid| grid.deinit_owned(self.chunk.allocator);
         self.grids.deinit();
+        for (self.agendas.items) |*agenda| agenda.deinit_owned(self.chunk.allocator);
+        self.agendas.deinit();
         self.drafts.deinit();
         self.chunk.deinit();
         self.routine_entries.deinit();
@@ -201,6 +206,7 @@ pub const Codegen = struct {
     duels: std.ArrayList(duel_mod.Declaration),
     degradations: std.ArrayList(container_mod.Declaration),
     grids: std.ArrayList(grid_mod.Declaration),
+    agendas: std.ArrayList(agency_mod.Declaration),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -218,6 +224,7 @@ pub const Codegen = struct {
             .duels = std.ArrayList(duel_mod.Declaration).init(allocator),
             .degradations = std.ArrayList(container_mod.Declaration).init(allocator),
             .grids = std.ArrayList(grid_mod.Declaration).init(allocator),
+            .agendas = std.ArrayList(agency_mod.Declaration).init(allocator),
         };
     }
 
@@ -312,6 +319,8 @@ pub const Codegen = struct {
         for (ast.duels.items) |decl| try mut_self.duels.append(try mut_self.compile_duel(decl));
         for (ast.degradations.items) |decl| try mut_self.degradations.append(try mut_self.compile_degradation(decl));
         for (ast.grids.items) |decl| try mut_self.grids.append(try mut_self.compile_grid(decl));
+        for (ast.agendas.items) |decl| try mut_self.agendas.append(try mut_self.compile_agenda(decl));
+        try agency_mod.validate_all(mut_self.agendas.items);
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
@@ -513,6 +522,7 @@ pub const Codegen = struct {
             .duels = mut_self.duels,
             .degradations = mut_self.degradations,
             .grids = mut_self.grids,
+            .agendas = mut_self.agendas,
         };
     }
 
@@ -780,6 +790,36 @@ pub const Codegen = struct {
             }
         }
         return declaration;
+    }
+
+    fn compile_agenda(self: *Codegen, decl: parser_mod.AgendaDecl) !agency_mod.Declaration {
+        const clauses = try self.allocator.alloc(agency_mod.Clause, decl.clauses.len);
+        errdefer self.allocator.free(clauses);
+        for (decl.clauses, 0..) |source, i| {
+            const args = source.pattern.args;
+            clauses[i] = .{
+                .relation = try self.intern_program_text(source.pattern.relation),
+                .subject = try self.agenda_term(args[0]),
+                .object = if (args.len > 1) try self.agenda_term(args[1]) else null,
+                .negated = source.negated,
+            };
+        }
+        const agenda = agency_mod.Agenda{
+            .entity = try self.world.intern_entity(decl.name),
+            .actor = try self.world.intern_entity(decl.actor),
+            .target = try self.world.intern_entity(decl.target),
+            .priority = decl.priority,
+            .cooldown_ticks = decl.cooldown_ticks,
+            .once = decl.once,
+            .clauses = clauses,
+        };
+        try agency_mod.validate(agenda);
+        return .{ .agenda = agenda };
+    }
+
+    fn agenda_term(self: *Codegen, name: []const u8) !?world_mod.EntityId {
+        if (std.mem.eql(u8, name, "_")) return null;
+        return try self.world.intern_entity(name);
     }
 
     fn compile_degradation(self: *Codegen, decl: parser_mod.DegradationDecl) !container_mod.Declaration {
@@ -1799,6 +1839,44 @@ test "P25-01: grid declarations reject malformed and out-of-range layouts" {
     var spatial = SpatialSystem.init(testing.allocator);
     defer spatial.deinit();
     try testing.expectError(error.GridMarkOutsideRoom, compiler.compile_source(testing.allocator, &world, &spatial, misplaced));
+}
+
+test "P33-01: agenda declarations compile and reject malformed agendas" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\agenda WarnOff:
+        \\  actor Keeper
+        \\  target Hero
+        \\  priority 3
+        \\  once
+        \\  requires Investigated(Hero, Shed)
+        \\  unless Warned(_)
+        \\agenda Gossip:
+        \\  actor Maid
+        \\  target Hero
+        \\  requires Seen(Hero)
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.agendas.items.len);
+    const warn = compiled.agendas.items[0].agenda;
+    try testing.expect(warn.once and warn.priority == 3);
+    try testing.expectEqual(world.lookup_entity("Shed").?, warn.clauses[0].object.?);
+    try testing.expect(warn.clauses[1].subject == null and warn.clauses[1].negated);
+    try testing.expectEqualStrings("Gossip", world.get_entity_name(compiled.agendas.items[1].agenda.entity).?);
+
+    const bad = [_][]const u8{
+        "agenda A:\n  target Hero\n  requires Seen(Hero)\n",
+        "agenda A:\n  actor Keeper\n  requires Seen(Hero)\n",
+        "agenda A:\n  actor Keeper\n  target Hero\n",
+        "agenda A:\n  actor Hero\n  target Hero\n  requires Seen(Hero)\n",
+        "agenda A:\n  actor Keeper\n  target Hero\n  requires Seen(Hero, Shed, Barn)\n",
+        "agenda A:\n  actor Keeper\n  target Hero\n  wants Seen(Hero)\n",
+        "agenda A:\n  actor K\n  target H\n  requires S(H)\nagenda A:\n  actor K\n  target H\n  requires S(H)\n",
+    };
+    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic != null);
 }
 
 test "P23-01: degradation declarations compile into executable container profiles" {

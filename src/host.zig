@@ -16,6 +16,7 @@ const hypervisor_mod = @import("hypervisor.zig");
 const temporal_mod = @import("temporal_snapshot.zig");
 const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
+const agency_mod = @import("agency.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -33,6 +34,7 @@ pub fn initialize_subsystems(world: *World, compiled: *const CompiledProgram) !v
         _ = try container_mod.ContainerSystem.init(world, declaration.config);
     }
     for (compiled.grids.items) |declaration| try grid_mod.seed(world, declaration);
+    try agency_mod.seed(world, compiled.agendas.items);
 }
 
 /// One engine lifecycle tick: initialize declared subsystems, step the VM, advance subsystem
@@ -52,6 +54,8 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
         for (compiled.grids.items) |declaration| try grid_mod.step(vm.world, declaration);
         if (vm.spatial) |sp| try sp.update_grid_hazards(vm.world);
     }
+    // Agendas see this tick's facts, cell hazards included (D-056).
+    try agency_mod.step(vm.world, vm.spatial, vm.allocator, compiled.agendas.items);
     return try vm.dispatch_pending_weaves(compiled);
 }
 
@@ -681,4 +685,43 @@ test "P25-02: host lifecycle spreads a scripted fire to an actor and fires a haz
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(hero, scorched, null));
     try testing.expect(world.has_fact(hero, world.lookup_relation("InSmokeCell").?, null));
+}
+
+test "P33-01: host lifecycle seeds agendas and starts pursuit when an omission holds" {
+    const compiler = @import("compiler.zig");
+    const agency = @import("agency.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\relation Investigated(who, place)
+        \\relation Warned(who)
+        \\agenda WarnOff:
+        \\  actor Keeper
+        \\  target Hero
+        \\  cooldown 5
+        \\  requires Investigated(Hero, Shed)
+        \\  unless Warned(Hero)
+        \\
+        \\on cue Snoops(Hero, Shed):
+        \\  remember Investigated(Hero, Shed)
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try vm.load_compiled_rules(&compiled);
+    try initialize_subsystems(&world, &compiled);
+
+    const warn_off = world.lookup_entity("WarnOff").?;
+    try testing.expectEqual(agency.Stage.idle, agency.stage_of(&world, warn_off).?);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(agency.Stage.idle, agency.stage_of(&world, warn_off).?);
+
+    _ = try vm.fire_cue(&compiled, "Snoops", world.lookup_entity("Hero").?, world.lookup_entity("Shed").?, null);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(agency.Stage.pursuing, agency.stage_of(&world, warn_off).?);
+
+    // The encounter (P33-02) resolves it; the cooldown holds it idle although the trigger holds.
+    try agency.resolve(&world, compiled.agendas.items[0].agenda);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(agency.Stage.idle, agency.stage_of(&world, warn_off).?);
 }

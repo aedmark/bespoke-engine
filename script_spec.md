@@ -146,6 +146,28 @@ grid HallFloor in "Great Hall":
 
 Each set attribute is a fact on the grid entity: `CellFlammable(HallFloor, index)`, `CellLiquid`, or `CellBlocking`, where `index` is `y * W + x`. The host lifecycle writes the declared layout once, so later changes survive save, rewind, and re-initialisation. A mark standing in a `blocking` cell is treated like `WaypointBlocked`: scripted walks plan around it, and a walk to it is refused. Package format version 7 carries grids; versions 1 through 6 load without them.
 
+### Agendas (P33-01, D-038, D-056)
+
+An agenda is an actor's intention to intercept a target when its trigger lines hold.
+
+```bespoke
+relation Investigated(who, place)
+relation Warned(who)
+
+agenda WarnOff:
+  actor Keeper
+  target Hero
+  priority 3
+  cooldown 60
+  requires Investigated(Hero, Boathouse)
+  unless Warned(Hero)
+```
+
+- `actor` and `target` are required and must differ; `priority` (default 0) and `cooldown N` (ticks, default 0) are optional, and `once` ends the agenda for good after its first encounter.
+- `requires Rel(A, B)` must hold and `unless Rel(A, B)` must not. Arguments are names or `_`; a one-argument line matches any object. There are no variables. An omission window is an expiring prerequisite: `remember Investigated(Hero, Boathouse) for 120 ticks`.
+- Each agenda is an entity with `AgendaState(Agenda, Idle | Pursuing | Done)`, so scripts can test or react to it (`if AgendaState(WarnOff, Pursuing):`). A pursuing agenda whose trigger stops holding goes back to `Idle`.
+- When several agendas target the same actor, one pursues: highest priority, then the actor with the shorter route, then the first declared. Package format version 9 carries agendas.
+
 #### Fire, smoke, and water (P25-02, D-055)
 
 A grid may also declare `burning` and `smoke` cells and four rates. Each rate is off unless declared.

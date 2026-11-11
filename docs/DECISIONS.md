@@ -466,7 +466,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Removing the fallback without wildcards: rejected during implementation; it would have made the spec's variable-parameter handlers unreachable.
 **Consequences:** No proof golden changed. Interactive proofs that fire a cue for an unscripted pair now get no response where they used to get an unrelated handler. Variable parameters are still not bound in handler bodies: a body that names `target` refers to an entity called `target` (ARCHITECTURE, Claims vs. code). `.bspk` packages compiled before this change keep their old keys; handlers with variable parameters in them are unreachable until recompiled, and their bare-name keys are ignored.
 
-## D-038 Proactive Social Agency: Dynamic Pursuit Agendas and Epistemic Contests (2026-11-09, status: accepted)
+## D-038 Proactive Social Agency: Dynamic Pursuit Agendas and Epistemic Contests (2026-11-09, status: accepted; refined by D-056)
 **Context:** Classic mystery games (*The Colonel's Bequest*, *The Dagger of Amon Ra*) present wandering characters on static schedules that respond passively when interrogated. In BeSpoke, autonomous actors can possess social survival instincts: reacting to player actions or omissions by dynamically intercepting the player to persuade, dissuade, warn, or plant false alibis. The maintainer chose (2026-11-09) to architect this as a generalized, data-driven engine subsystem in `src/agency.zig` coordinating between `Society`, `SpatialSystem`, and `VM`, backed by idiomatic relational `World` facts and validated by "The Bayou Estate" vertical slice (`proofs/bayou_puzzle.zig`, `--bayou`).
 **Decision:**
 1. **Engine module (`src/agency.zig`):** `AgencySystem` is a reusable engine component holding data-driven `AgendaDef` configurations. It names no characters or narrative tokens (D-031).
@@ -730,6 +730,22 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Cue dispatch on entering a hazard: rejected in favour of state facts, which give rising and falling edges, survive rewinds, and need no new dispatch path.
 - Interrupting an in-flight walk when its path catches fire: deferred, as in D-053; the hazard state lets a script interrupt the walker instead.
 **Consequences:** Hazard state is ordinary World state, so saving, rewinding, and branching need nothing new. Each grid step costs one pass over the fact table plus fixed work per cell (bounded by 4096 cells). Flooding is unbounded within a room unless blocking cells contain it. Hazard reactions lag one tick behind the cell change.
+
+## D-056 Script-Declared Agendas, Owned Trigger Clauses, and Per-Agenda State (2026-11-10, status: accepted)
+**Context:** P33-01 begins D-038's agency subsystem. D-038 predates D-043 (unary states as presence), D-045 (mechanic configuration owned by scripts), and D-055 (timers as fact lifetimes), and its state shape `AgendaState(NPC, Pursuing)` cannot hold two agendas for one NPC. `when` rule clauses cannot be negated, so omission triggers need a home. The maintainer accepted the defaults below; this decision refines D-038 without reversing it.
+**Decision:**
+1. A top-level `agenda <Name>:` declaration owns its actor, target, priority, optional `cooldown N`, optional `once`, and trigger lines. `CompiledProgram.agendas` holds them; `.bspk` version 9 stores them.
+2. Trigger lines are `requires Rel(A, B)` (must hold) and `unless Rel(A, B)` (must not hold), with constant names or `_` wildcards and no variables; a one-argument line matches any object. An agenda is triggered when every line holds. Omission windows use expiring prerequisite facts (D-038 point 3). The `when` rule engine is unchanged.
+3. Each agenda is an entity. Its stage is the property `AgendaState(Agenda, Idle | Pursuing | Done)`; `Done` is reached only by `once` agendas. A cooldown is the presence fact `AgendaCooldown(Agenda)` expiring after N ticks.
+4. `agency.step` runs in `host.tick` after the grid step when a program declares agendas. A pursuing agenda whose trigger stops holding returns to `Idle` without a cooldown. Each idle, triggered, cooled-down agenda is a candidate; per target, one agenda pursues at a time, chosen by highest priority, then shortest route cost from actor to target, then declaration order. An existing pursuit is not preempted, and an actor pursues one agenda at a time.
+5. `agency.resolve` ends a pursuit: a `once` agenda becomes `Done`; any other returns to `Idle` and starts its cooldown. P33-02 calls it after the interception cue; until then hosts may call it directly.
+6. P33-02 will add a `Pursuing(NPC)` unary state that `Society.step` honours by not moving that NPC, so society routines and pursuit do not issue competing walks.
+**Alternatives:**
+- Configure agendas in host Zig only: rejected; distributable games own mechanic data in scripts since D-045.
+- Add negation to `when` clauses: deferred; it would change reactive rule matching, codegen, and package layout for every script, while agendas need only constant clauses.
+- `AgendaState(NPC, Stage)` as D-038 wrote it: rejected because one NPC may hold several agendas.
+- Preempt a lower-priority pursuit when a higher one triggers: deferred; without interception (P33-02) there is no observable cost to waiting, and preemption needs a policy for the abandoned agenda.
+**Consequences:** Agenda state saves, rewinds, and branches with the World. Script clauses cannot bind variables, so an agenda names its own actor and target. The P33-03 slice will use an original cast and setting; the planned homage would recreate an existing game's characters.
 
 ## Held tensions
 
