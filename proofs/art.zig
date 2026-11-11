@@ -127,6 +127,7 @@ const Scene = struct {
 
     is_bell_base_scene: bool = false,
     is_gallery_scene: bool = false,
+    is_observatory_scene: bool = false,
     is_bell_belfry_scene: bool = false,
     is_bike_rental_scene: bool = false,
     is_darko_bedroom_scene: bool = false,
@@ -157,6 +158,8 @@ fn detect(frame: *const RenderFrame) Scene {
         // Checked first: "Bell Tower" scenes must not fall through to substring themes below.
         if (std.mem.indexOf(u8, cur_scene, "Hollin Keep") != null) {
             sc.is_gallery_scene = true;
+        } else if (std.mem.indexOf(u8, cur_scene, "Larkspur") != null) {
+            sc.is_observatory_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Bell Tower") != null) {
             if (std.mem.indexOf(u8, cur_scene, "Belfry") != null) {
                 sc.is_bell_belfry_scene = true;
@@ -246,7 +249,7 @@ fn detect(frame: *const RenderFrame) Scene {
     }
 
     // Fallback detection if current_scene wasn't explicitly set
-    if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and
+    if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and !sc.is_observatory_scene and
         !sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
         !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
@@ -440,6 +443,8 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
     const sc = detect(frame);
     if (sc.is_gallery_scene) {
         render_gallery(w, frame);
+    } else if (sc.is_observatory_scene) {
+        render_observatory(w);
     } else if (sc.is_bell_base_scene or sc.is_bell_belfry_scene) {
         render_bell_tower(w, frame, sc.is_bell_belfry_scene);
     } else if (sc.is_spitting_scene) {
@@ -3452,6 +3457,33 @@ fn capture_gallery(world: *const bespoke.World, st: *Status) void {
 
 fn gallery_has(st: *const Status, i: usize, attribute: bespoke.grid.Attribute) bool {
     return st.gallery_cells[i] & (@as(u8, 1) << @intCast(@intFromEnum(attribute))) != 0;
+}
+
+/// The Larkspur Observatory (P33-03): a night sky with the dome, over two floors whose rows
+/// match the proof's mark layout (public floor above, working floor below).
+fn render_observatory(w: *DisplayWindow) void {
+    w.fill_rect(0, 0, w.width, w.height, Color{ .r = 8, .g = 12, .b = 30 });
+    var star: i32 = 0;
+    while (star < 40) : (star += 1) {
+        w.fill_rect(@mod(star * 211, w.width), 60 + @mod(star * 97, 80), 2, 2, Color{ .r = 226, .g = 232, .b = 240 });
+    }
+    // The script's `LarkspurPlan` grid: six 8-unit cells per floor, public floor on top.
+    const left = world_to_screen(0, 0, w.width, w.height).x;
+    const right = world_to_screen(48, 0, w.width, w.height).x;
+    const upper = world_to_screen(0, 0, w.width, w.height).y;
+    const middle = world_to_screen(0, 8, w.width, w.height).y;
+    const lower = world_to_screen(0, 16, w.width, w.height).y;
+    // The dome rises above the Dome room's column.
+    const dome = world_to_screen(36, 0, w.width, w.height);
+    w.fill_circle(dome.x, upper - 10, 70, Color{ .r = 148, .g = 163, .b = 184 });
+    w.fill_rect(dome.x - 6, upper - 80, 12, 70, Color{ .r = 30, .g = 41, .b = 59 });
+    w.fill_rect(left, upper, right - left, middle - upper, Color{ .r = 51, .g = 65, .b = 85 });
+    w.fill_rect(left, middle, right - left, lower - middle, Color{ .r = 41, .g = 37, .b = 36 });
+    w.draw_rect_outline(left, upper, right - left, lower - upper, Color{ .r = 100, .g = 116, .b = 139 });
+    w.draw_line(left, middle, right, middle, Color{ .r = 100, .g = 116, .b = 139 });
+    w.draw_text("LARKSPUR OBSERVATORY - THE NIGHT PLATE 41 VANISHED", left + 12, upper - 34, 2, Color{ .r = 191, .g = 219, .b = 254 });
+    w.draw_text("PUBLIC FLOOR", left + 8, upper + 6, 1, Color.hud_subtext);
+    w.draw_text("WORKING FLOOR", left + 8, middle + 6, 1, Color.hud_subtext);
 }
 
 /// Hollin Keep's long gallery (P25-03): a wall band with the tapestry, door, trough, and

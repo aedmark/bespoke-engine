@@ -615,7 +615,8 @@
           "evidence": [
             {"label": "Architectural Decision D-038", "target": "docs/DECISIONS.md#d-038", "kind": "decision"},
             {"label": "Architectural Decision D-056", "target": "docs/DECISIONS.md#d-056", "kind": "decision"},
-            {"label": "Agenda Engine", "target": "src/agency.zig", "kind": "source"}
+            {"label": "Agenda Engine", "target": "src/agency.zig", "kind": "source"},
+            {"label": "The Larkspur Observatory proof", "target": "proofs/observatory_puzzle.zig", "kind": "source"}
           ],
           "related": ["continuous-when-rules", "relational-facts", "living-village-emergent-sandbox"]
         }

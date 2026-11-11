@@ -135,3 +135,8 @@ grid_puzzle/Hollin Keep Gallery +singularity_collapsed: a8bb22e09d1ed460
 grid_puzzle/Hollin Keep Gallery +countdown: 60930bd45f82f86a
 grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: cc9c6edb50a2e976
 grid_puzzle/Hollin Keep Gallery +gallery_fire: 854ca4013026bca5
+thumb/observatory_puzzle/Larkspur Observatory: cb00ba92a3345d46
+observatory_puzzle/Larkspur Observatory: 856014bb67ddfe33
+observatory_puzzle/Larkspur Observatory +tangent_active: f5cf33110f74565f
+observatory_puzzle/Larkspur Observatory +singularity_collapsed: 4c31823124a972eb
+observatory_puzzle/Larkspur Observatory +countdown: 31561375bddeb906

@@ -30,6 +30,7 @@ const darko_puzzle = @import("darko_puzzle.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
+const observatory_puzzle = @import("observatory_puzzle.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -47,6 +48,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "loom_puzzle", .script = loom_puzzle.BELL_TOWER_SCRIPT },
     .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
     .{ .name = "grid_puzzle", .script = grid_puzzle.GRID_PUZZLE_SCRIPT },
+    .{ .name = "observatory_puzzle", .script = observatory_puzzle.OBSERVATORY_SCRIPT },
 };
 
 /// A `scene:` block's name and `cast:` line, read from script text. The compiler does not

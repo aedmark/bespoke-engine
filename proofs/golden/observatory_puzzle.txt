@@ -1,0 +1,40 @@
+===================================================================
+       BeSpoke Engine: The Larkspur Observatory (Social Agency)    
+       (Agendas * Omissions * Pursuit * Soft Interrupts * Rewind)  
+===================================================================
+
+  -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
+
+[Night 1] Ines searches the darkroom, then reads the log empty-handed.
+  [ 13] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
+  -> Agendas: Dissuade Pursuing, PlantAlibi Idle, ShedWarning Idle
+  [ 18] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
+  -> Agendas: Dissuade Pursuing, PlantAlibi Idle, ShedWarning Idle
+  -> Both agendas hold; Halloran (priority 5) already pursues Ines, so Pell (3) waits.
+  [ 21] Halloran: "The darkroom is no place to wander at night, Miss Varga. Go to bed."
+  [ 27] Pell: "I was in the library from midnight to three. Ask anyone."
+  -> Agendas: Dissuade Done, PlantAlibi Done, ShedWarning Idle
+  -> Ines was talked out of the darkroom and believes Pell's alibi.
+
+[Rewind] Restore the saved opening.
+  -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
+
+[Night 2] Ines takes the evidence first.
+  [  7] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
+  [ 10] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
+  -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
+  [ 16] Ines: "A cotton glove, stained brown with developer. Monogrammed H."
+  [ 17] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
+  [ 29] Halloran: "That glove... I can explain. The plate is safe in my office."
+
+[Night 2] Ines lingers by the generator shed.
+  [ 48] Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
+  -> Agendas: Dissuade Done, PlantAlibi Idle, ShedWarning Idle
+
+[Night 2] Ines confronts Pell with the slip.
+  [ 49] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+
+===================================================================
+  VERIFICATION COMPLETE: plate 41 is in Halloran's office.         
+===================================================================
+

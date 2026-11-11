@@ -17,6 +17,7 @@ pub const loom_puzzle = @import("loom_puzzle.zig");
 pub const grog_puzzle = @import("grog_puzzle.zig");
 pub const atlantis_puzzle = @import("atlantis_puzzle.zig");
 pub const grid_puzzle = @import("grid_puzzle.zig");
+pub const observatory_puzzle = @import("observatory_puzzle.zig");
 
 const Proof = enum {
     tavern,
@@ -31,6 +32,7 @@ const Proof = enum {
     grog,
     atlantis,
     grid,
+    observatory,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -67,6 +69,8 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "grid", .proof = .grid },
     .{ .name = "castle-fire", .proof = .grid },
     .{ .name = "fire-escape", .proof = .grid },
+    .{ .name = "observatory", .proof = .observatory },
+    .{ .name = "larkspur", .proof = .observatory },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -95,6 +99,7 @@ const usage =
     \\  --grog               Caustic Grog (container degradation, pours, spill)
     \\  --atlantis           The Fate of Atlantis: Algiers (three paths, route locks)
     \\  --grid               The Castle Fire Escape (grid fire, smoke, water, hazards)
+    \\  --observatory        The Larkspur Observatory (agendas, pursuit, interception)
     \\
 ;
 
@@ -146,6 +151,7 @@ pub fn main() !void {
         .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
         .atlantis => if (headless) try atlantis_puzzle.run_headless(allocator, stdout) else try atlantis_puzzle.run_interactive(allocator, stdout),
         .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, stdout),
+        .observatory => if (headless) try observatory_puzzle.run_headless(allocator, stdout) else try observatory_puzzle.run_interactive(allocator, stdout),
     }
 }
 
@@ -162,6 +168,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = grog_puzzle;
     _ = atlantis_puzzle;
     _ = grid_puzzle;
+    _ = observatory_puzzle;
     std.testing.refAllDecls(@This());
 }
 
