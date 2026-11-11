@@ -975,6 +975,32 @@
             "multi-scene-transitions-spatial-partitioning",
             "cue-dispatch-and-interruption"
           ]
+        },
+        {
+          "id": "mml-script-scores",
+          "title": "Script Scores: MML Music and Its Triggers",
+          "summary": "Scripts compose four-part chiptune music in Music Macro Language and choose it by scene or by narrative event.",
+          "synopsis": "score Calm: (lead, bass, chords, drums, scene lines) | play score Chase | stop score",
+          "tags": ["audio", "mml", "music", "scores", "dsl"],
+          "what": "A score declares lead, bass, chords, and drums parts in MML, optionally bound to scenes. play score and stop score override scene music from any routine, cue, or rule. The synthesizer plays the four parts in step and loops them together.",
+          "how": [
+            "mml.parse turns each part's text into integer-timed events at 192 ticks per whole note: notes, rests, k/s/h drum hits, tempo, volume, and envelope presets, with ties, re-read [ ]n repeats, and one L loop point. Errors report the script line and column.",
+            "The synthesizer runs one integer tick clock for all four parts; a tempo in any part sets it for all. When every part has ended, each part with an L restarts there on the same tick.",
+            "@0 sounds like the engine's grid music; @1 to @7 are organ, pluck, long fade, swell, staccato, tremolo, and soft pad, released at each note's written length. v0 to v15 scale volume.",
+            "scene lines seed SceneScore(Scene, Score) facts; play score sets the PlayingScore property of Music and stop score removes it. The frame resolves the override, else the scene default, to current_score.",
+            "host.ScriptSoundtrack turns a program's scores into a soundtrack whose tracks are named after them; the audio bridge plays the track whose name the frame gives. bespoke run registers it and, headless, prints each change of music.",
+            "Packages (version 11) store the MML text and re-parse it on load."
+          ],
+          "why": "Music that follows the story belongs in the script, beside the scenes and rules that cause it. Keeping the choice in World facts makes save, rewind, and temporal branches restore the music with everything else, and integer time keeps four parts from drifting.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-060", "target": "docs/DECISIONS.md#d-060", "kind": "decision"},
+            {"label": "Architectural Decision D-061", "target": "docs/DECISIONS.md#d-061", "kind": "decision"},
+            {"label": "Architectural Decision D-062", "target": "docs/DECISIONS.md#d-062", "kind": "decision"},
+            {"label": "MML Parser", "target": "src/mml.zig", "kind": "source"},
+            {"label": "Night Watch Scenario", "target": "scenarios/night_watch.bespoke", "kind": "source"}
+          ],
+          "related": ["peripheral-audio-and-procedural-synthesizer", "multi-scene-transitions-spatial-partitioning", "snapshot-time-travel"]
         }
       ]
     },

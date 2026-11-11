@@ -12,6 +12,7 @@ pub const EmittedCue = vm_mod.EmittedCue;
 const draft_mod = @import("draft.zig");
 pub const DistaffInput = draft_mod.DistaffInput;
 const dialogue_mod = @import("dialogue.zig");
+const mml_mod = @import("mml.zig");
 pub const WeaveOutcome = draft_mod.WeaveOutcome;
 
 pub const font = @import("display/font.zig");
@@ -332,6 +333,10 @@ pub const RenderFrame = struct {
     debug_fiber_count: usize,
     current_scene: [32]u8 = undefined,
     current_scene_len: u8 = 0,
+    /// The script score that should play (P28-03, D-062): the `play score` override, else the
+    /// current scene's `SceneScore`; empty when neither names one.
+    current_score: [32]u8 = undefined,
+    current_score_len: u8 = 0,
     max_history_tick: u64,
     /// The host's own status for its presentation (P32-03b, D-041): bytes the engine never
     /// reads, filled by the bridge's status hook and read back typed with `host_status`.
@@ -351,6 +356,10 @@ pub const RenderFrame = struct {
 
     pub fn get_current_scene(self: *const RenderFrame) []const u8 {
         return self.current_scene[0..self.current_scene_len];
+    }
+
+    pub fn get_current_score(self: *const RenderFrame) []const u8 {
+        return self.current_score[0..self.current_score_len];
     }
 };
 
@@ -437,6 +446,20 @@ fn capture_dialogue(world: *const World, frame: *RenderFrame) void {
         out.branches[i].failure_len = @intCast(failure_len);
     }
     out.branch_count = @intCast(open.branch_count);
+}
+
+/// The score a script wants now: the `PlayingScore` property of `Music` if set, else the
+/// `SceneScore` of the current scene (P28-03, D-062). Null without script music.
+pub fn current_score_entity(world: *const world_mod.World, scene: ?EntityId) ?EntityId {
+    if (world.lookup_relation(mml_mod.PLAYING_RELATION)) |rel| {
+        if (world.lookup_entity(mml_mod.MUSIC_ENTITY)) |music| {
+            if (world.get_property(music, rel)) |raw| return EntityId.from_int(raw);
+        }
+    }
+    const scene_id = scene orelse return null;
+    const rel = world.lookup_relation(mml_mod.SCENE_RELATION) orelse return null;
+    const fact = world.find_first(scene_id, rel, null) orelse return null;
+    return EntityId.from_int(fact.object_or_value);
 }
 
 pub const DisplayBridge = struct {
@@ -818,6 +841,17 @@ pub const DisplayBridge = struct {
             self.back_buffer.current_scene_len = 0;
         }
 
+        // 8a. Choose script music from World facts alone (P28-03, D-062), so a restored save
+        // or rewind brings its music back without the compiled program.
+        self.back_buffer.current_score_len = 0;
+        if (current_score_entity(world, vm.current_scene)) |score_id| {
+            if (world.get_entity_name(score_id)) |name| {
+                const len = @min(name.len, self.back_buffer.current_score.len);
+                @memcpy(self.back_buffer.current_score[0..len], name[0..len]);
+                self.back_buffer.current_score_len = @intCast(len);
+            }
+        }
+
         self.back_buffer.max_history_tick = prev_max_history;
 
         // 8b. Capture distaff staff HUD (P22-02, D-029)
@@ -828,7 +862,7 @@ pub const DisplayBridge = struct {
 
         // 9. Forward scene and cues to attached audio bridge (P16-01, P16-03, D-019)
         if (self.audio_bridge) |ab| {
-            ab.process_scene_and_cues(self.back_buffer.get_current_scene());
+            ab.process_scene_and_cues(self.back_buffer.get_current_scene(), self.back_buffer.get_current_score());
         }
     }
 

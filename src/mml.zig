@@ -100,6 +100,71 @@ pub fn parse(allocator: std.mem.Allocator, text: []const u8, kind: TrackKind, di
     };
 }
 
+/// The four parts of a script score, in `MmlScore` order, with their directive words.
+pub const PART_COUNT: usize = 4;
+pub const PART_NAMES = [PART_COUNT][]const u8{ "lead", "bass", "chords", "drums" };
+pub const MAX_SCORE_SCENES: usize = 16;
+/// Relations the engine reads to choose script music (P28-03, D-062). `PlayingScore` is a
+/// property of the `Music` entity set by `play score` and cleared by `stop score`;
+/// `SceneScore(Scene, Score)` is seeded from each score's `scene` lines.
+pub const PLAYING_RELATION = "PlayingScore";
+pub const SCENE_RELATION = "SceneScore";
+pub const MUSIC_ENTITY = "Music";
+
+pub fn part_kind(index: usize) TrackKind {
+    return if (index == PART_COUNT - 1) .percussion else .melodic;
+}
+
+/// A script `score` declaration (P28-03, D-062): MML text per part (empty for a silent part)
+/// and the scenes it is the default for. Program data, owned by a `CompiledProgram`; the text
+/// is kept rather than events so a package stores what the author wrote and re-validates it
+/// on load.
+pub const ScoreDecl = struct {
+    name: []const u8,
+    scenes: []const []const u8 = &.{},
+    parts: [PART_COUNT][]const u8 = .{ "", "", "", "" },
+
+    /// Checks every part; on failure `diag` holds the first error and `part` its index.
+    pub fn validate(self: *const ScoreDecl, allocator: std.mem.Allocator, diag: *Diagnostic, part: *usize) ParseError!void {
+        for (self.parts, 0..) |text, i| {
+            part.* = i;
+            var score = try parse(allocator, text, part_kind(i), diag);
+            score.deinit();
+        }
+    }
+
+    pub fn deinit_owned(self: *ScoreDecl, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        for (self.scenes) |scene| allocator.free(scene);
+        allocator.free(self.scenes);
+        for (self.parts) |text| allocator.free(text);
+    }
+
+    /// Copies a declaration whose strings are borrowed (from the parser) into owned memory.
+    pub fn dupe(allocator: std.mem.Allocator, src: ScoreDecl) !ScoreDecl {
+        var out = ScoreDecl{ .name = try allocator.dupe(u8, src.name) };
+        errdefer allocator.free(out.name);
+        const scenes = try allocator.alloc([]const u8, src.scenes.len);
+        var made: usize = 0;
+        errdefer {
+            for (scenes[0..made]) |scene| allocator.free(scene);
+            allocator.free(scenes);
+        }
+        for (src.scenes, 0..) |scene, i| {
+            scenes[i] = try allocator.dupe(u8, scene);
+            made += 1;
+        }
+        var parts_made: usize = 0;
+        errdefer for (out.parts[0..parts_made]) |text| allocator.free(text);
+        for (src.parts, 0..) |text, i| {
+            out.parts[i] = try allocator.dupe(u8, text);
+            parts_made += 1;
+        }
+        out.scenes = scenes;
+        return out;
+    }
+};
+
 const Repeat = struct {
     /// Offset of the `[`, for an unclosed-repeat error.
     open: usize,

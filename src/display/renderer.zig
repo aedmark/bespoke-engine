@@ -2476,7 +2476,7 @@ pub const DisplayWindow = struct {
         self.sync_dialogue_balloon(frame);
 
         // Trigger procedural music and cue audio reactions (P16-01, P16-03, D-019)
-        self.audio_bridge.process_scene_and_cues(frame.get_current_scene());
+        self.audio_bridge.process_scene_and_cues(frame.get_current_scene(), frame.get_current_score());
 
         // 1. Backdrop: the host's theme draws its scene; without one, a neutral stage (D-039)
         const backdrop_drawn = if (self.theme) |t| (if (t.backdrop) |draw| draw(self, frame) else false) else false;

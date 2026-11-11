@@ -22,6 +22,7 @@ const container_mod = @import("../container.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const command_mod = @import("../command.zig");
+const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
@@ -57,8 +58,12 @@ pub const CompiledProgram = struct {
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.ArrayList(command_mod.CommandDecl),
     aliases: std.ArrayList(command_mod.AliasDecl),
+    /// Script music in declaration order, as validated MML text (P28-03, D-062).
+    scores: std.ArrayList(mml.ScoreDecl),
 
     pub fn deinit(self: *CompiledProgram) void {
+        for (self.scores.items) |*score| score.deinit_owned(self.chunk.allocator);
+        self.scores.deinit();
         for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
         self.societies.deinit();
         for (self.duels.items) |*duel| duel.deinit_owned(self.chunk.allocator);
@@ -218,6 +223,7 @@ pub const Codegen = struct {
     agendas: std.ArrayList(agency_mod.Declaration),
     commands: std.ArrayList(command_mod.CommandDecl),
     aliases: std.ArrayList(command_mod.AliasDecl),
+    scores: std.ArrayList(mml.ScoreDecl),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -238,6 +244,7 @@ pub const Codegen = struct {
             .agendas = std.ArrayList(agency_mod.Declaration).init(allocator),
             .commands = std.ArrayList(command_mod.CommandDecl).init(allocator),
             .aliases = std.ArrayList(command_mod.AliasDecl).init(allocator),
+            .scores = std.ArrayList(mml.ScoreDecl).init(allocator),
         };
     }
 
@@ -336,6 +343,13 @@ pub const Codegen = struct {
         try agency_mod.validate_all(mut_self.agendas.items);
         for (ast.commands.items) |decl| try mut_self.commands.append(try mut_self.compile_command(decl));
         for (ast.aliases.items) |decl| try mut_self.aliases.append(try mut_self.compile_alias(decl));
+        for (ast.scores.items) |decl| {
+            var owned = try mml.ScoreDecl.dupe(mut_self.allocator, decl);
+            mut_self.scores.append(owned) catch |err| {
+                owned.deinit_owned(mut_self.allocator);
+                return err;
+            };
+        }
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
@@ -346,6 +360,13 @@ pub const Codegen = struct {
         }
         if (ast.paths.items.len > 0) {
             _ = try mut_self.world.intern_relation("PathActive", .property);
+        }
+        // Music relations (P28-03, D-062): interned before any statement so `PlayingScore` is a
+        // property (one score at a time) even where a rule mentions it first.
+        if (ast.scores.items.len > 0) {
+            _ = try mut_self.world.intern_relation(mml.PLAYING_RELATION, .property);
+            _ = try mut_self.world.intern_relation(mml.SCENE_RELATION, .set);
+            _ = try mut_self.world.intern_entity(mml.MUSIC_ENTITY);
         }
 
         // 2b. Build the draft note table; a declared reverse becomes its own entry (D-029)
@@ -362,8 +383,22 @@ pub const Codegen = struct {
 
         // 3. Compile initial declarative statements
         var initial_entry: ?usize = null;
-        if (ast.initial_stmts.items.len > 0) {
+        var scene_bindings: usize = 0;
+        for (ast.scores.items) |decl| scene_bindings += decl.scenes.len;
+        if (ast.initial_stmts.items.len > 0 or scene_bindings > 0) {
             initial_entry = mut_self.chunk.count();
+            // Scene defaults are World facts, seeded before the script's own statements, so the
+            // display can pick a scene's score from World alone and saves carry the binding.
+            for (ast.scores.items) |decl| {
+                const score_entity = try mut_self.world.intern_entity(decl.name);
+                const scene_rel = try mut_self.world.intern_relation(mml.SCENE_RELATION, .set);
+                for (decl.scenes) |scene| {
+                    try mut_self.chunk.emit_push_entity(try mut_self.world.intern_entity(scene));
+                    try mut_self.chunk.emit_push_relation(scene_rel);
+                    try mut_self.chunk.emit_push_const(score_entity.to_int());
+                    try mut_self.chunk.emit_remember(0);
+                }
+            }
             for (ast.initial_stmts.items) |stmt| {
                 try mut_self.compile_stmt(stmt);
             }
@@ -540,6 +575,7 @@ pub const Codegen = struct {
             .agendas = mut_self.agendas,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
+            .scores = mut_self.scores,
         };
     }
 
@@ -1053,6 +1089,21 @@ pub const Codegen = struct {
             .transition_scene => |ts| {
                 const scene_ent = try self.resolve_entity(ts.target_scene);
                 try self.chunk.emit_transition_scene(scene_ent);
+            },
+            .play_score => |name| {
+                // `PlayingScore` is a property of `Music`, so playing replaces the previous
+                // override and `stop score` removes it, returning to the scene default.
+                const music = try self.resolve_entity(mml.MUSIC_ENTITY);
+                const rel = try self.world.intern_relation(mml.PLAYING_RELATION, .property);
+                try self.chunk.emit_push_entity(music);
+                try self.chunk.emit_push_relation(rel);
+                if (name) |score| {
+                    try self.chunk.emit_push_const((try self.resolve_entity(score)).to_int());
+                    try self.chunk.emit_remember(0);
+                } else {
+                    _ = try self.chunk.emit_op(.forget);
+                    try self.chunk.emit_u8(0);
+                }
             },
             .choice_block => |choices| {
                 // A choice set emits a pruned option table first, then one body per eligible
@@ -2148,4 +2199,117 @@ test "P24-02: active path mutates obstacle facts and prunes rival dialogue choic
 
     _ = world.forget(hero, trapped, null);
     try testing.expect(spatial.can_access_portal(&world, hero));
+}
+
+/// Parses `source` and returns its diagnostic with the message copied into `buf`, for score
+/// error tests; null when the source parses.
+fn score_parse_error(source: []const u8, buf: []u8) !?parser_mod.Diagnostic {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lex = lexer_mod.Lexer.init(arena.allocator(), source);
+    var parser = try parser_mod.Parser.init(arena.allocator(), &lex);
+    _ = parser.parse_program() catch {
+        var d = parser.diagnostic.?;
+        const n = @min(d.message.len, buf.len);
+        @memcpy(buf[0..n], d.message[0..n]);
+        d.message = buf[0..n];
+        return d;
+    };
+    return null;
+}
+
+test "P28-03: score declarations compile, seed scene facts, and play and stop by World facts" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    const host = @import("../host.zig");
+    const display = @import("../display.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\score Calm:
+        \\  lead "t96 o5 l8 c e g e"
+        \\  bass "o3 c2 g2"
+        \\  drums "k4 h4"
+        \\  scene Gatehouse
+        \\score Chase: "t160 o5 l16 L c d e d"
+        \\transition to scene Gatehouse
+        \\routine Watch(Warden):
+        \\  wait 2 ticks
+        \\  play score Chase
+        \\  wait 2 ticks
+        \\  transition to scene Rampart
+        \\  wait 2 ticks
+        \\  stop score
+        \\  wait 2 ticks
+        \\  transition to scene Gatehouse
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.scores.items.len);
+    const calm = compiled.scores.items[0];
+    try testing.expectEqualStrings("Calm", calm.name);
+    try testing.expectEqualStrings("o3 c2 g2", calm.parts[1]);
+    try testing.expectEqualStrings("", calm.parts[2]);
+    try testing.expectEqualStrings("Gatehouse", calm.scenes[0]);
+    // The one-line form is a lead-only score with no scenes.
+    try testing.expectEqualStrings("t160 o5 l16 L c d e d", compiled.scores.items[1].parts[0]);
+    try testing.expectEqual(@as(usize, 0), compiled.scores.items[1].scenes.len);
+    // `PlayingScore` is a property, so a second `play score` replaces the first.
+    try testing.expectEqual(world_mod.RelationType.property, world.get_relation_meta(world.lookup_relation("PlayingScore").?).?.rel_type);
+
+    var vm = @import("../vm.zig").VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try host.run_initial_statements(&world, &vm, &compiled);
+    const calm_id = world.lookup_entity("Calm").?;
+    const chase_id = world.lookup_entity("Chase").?;
+    try testing.expectEqual(@as(?EntityId, calm_id), display.current_score_entity(&world, vm.current_scene));
+
+    const warden = try world.intern_entity("Warden");
+    _ = try vm.spawn_routine(warden, compiled.routine_entries.get("Watch").?);
+    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    defer snapshot.deinit();
+    var seen = std.ArrayList(?EntityId).init(testing.allocator);
+    defer seen.deinit();
+    for (0..12) |t| {
+        _ = try host.tick(&vm, &compiled);
+        const now = display.current_score_entity(&world, vm.current_scene);
+        if (seen.items.len == 0 or seen.items[seen.items.len - 1] != now) try seen.append(now);
+        if (t == 3) try world.save_state(snapshot.writer());
+    }
+    // Calm, then the Chase override, which persists into the Rampart (no scene score there);
+    // `stop score` in the Rampart leaves silence, and the Gatehouse brings Calm back.
+    try testing.expectEqualSlices(?EntityId, &.{ calm_id, chase_id, null, calm_id }, seen.items);
+
+    // A rewind restores the override along with the rest of the World.
+    var stream = std.io.fixedBufferStream(snapshot.items);
+    try world.restore_state(stream.reader());
+    try testing.expectEqual(@as(?EntityId, chase_id), display.current_score_entity(&world, vm.current_scene));
+}
+
+test "P28-03: score errors name the script position, the part, and the rule broken" {
+    const testing = std.testing;
+    var buf: [256]u8 = undefined;
+    const Case = struct { source: []const u8, line: u32, column: u32, message: []const u8 };
+    const cases = [_]Case{
+        // `x` is MML column 4; the string's quote is at script column 8, so `x` is at 12.
+        .{ .source = "score A:\n  lead \"c4 x\"\n", .line = 2, .column = 12, .message = "score 'A' lead: unknown MML command" },
+        .{ .source = "score A: \"o4 k\"\n", .line = 1, .column = 14, .message = "score 'A' lead: drum letters k, s, and h belong on a percussion track" },
+        .{ .source = "score A:\n  drums \"c4\"\n", .line = 2, .column = 10, .message = "score 'A' drums: a percussion track plays k, s, and h, not notes" },
+        .{ .source = "score A:\n  tune \"c\"\n", .line = 2, .column = 3, .message = "unknown score directive 'tune'; use lead, bass, chords, drums, or scene" },
+        .{ .source = "score A:\n  lead \"c\"\n  lead \"d\"\n", .line = 3, .column = 3, .message = "score 'A' declares lead twice" },
+        .{ .source = "score A:\n  bass c\n", .line = 2, .column = 8, .message = "score 'A' bass needs an MML string" },
+        .{ .source = "score A: \"c\"\nscore A: \"d\"\n", .line = 3, .column = 1, .message = "score 'A' is declared twice" },
+        .{ .source = "score A:\n  scene Hall\nscore B:\n  scene Hall\n", .line = 5, .column = 1, .message = "scene 'Hall' already plays score 'A'" },
+        .{ .source = "routine R(X):\n  play score Missing\n", .line = 2, .column = 14, .message = "play of undeclared score 'Missing'" },
+    };
+    for (cases) |case| {
+        const d = (try score_parse_error(case.source, &buf)) orelse {
+            std.debug.print("expected an error for: {s}\n", .{case.source});
+            return error.TestExpectedError;
+        };
+        try testing.expectEqualStrings(case.message, d.message);
+        try testing.expectEqual(case.line, d.line);
+        try testing.expectEqual(case.column, d.column);
+    }
+    // `stop animate` still parses beside `stop score`.
+    try testing.expectEqual(@as(?parser_mod.Diagnostic, null), try score_parse_error("score A: \"c\"\nroutine R(X):\n  stop score\n  stop animate Sway\n  play score A\n", &buf));
 }

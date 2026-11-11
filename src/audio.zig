@@ -1027,20 +1027,41 @@ pub const AudioBridge = struct {
         return pick(scene_name);
     }
 
-    /// Examines the current simulation frame scene and cues, triggering procedural audio reactions.
-    pub fn process_scene_and_cues(self: *AudioBridge, scene_name: []const u8) void {
-        if (scene_name.len == 0) return;
+    /// The track to play: the soundtrack track named `score_name` when there is one (script
+    /// music, P28-03, D-062), else the soundtrack's rule for the scene.
+    pub fn track_for(self: *const AudioBridge, scene_name: []const u8, score_name: []const u8) ?u8 {
+        if (score_name.len > 0) {
+            if (self.soundtrack) |st| {
+                for (st.tracks, 0..) |music, i| {
+                    if (i > std.math.maxInt(u8)) break;
+                    if (std.mem.eql(u8, music.name, score_name)) return @intCast(i);
+                }
+            }
+        }
+        return self.track_for_scene(scene_name);
+    }
 
-        // Hash scene name to detect transitions
+    /// Examines the current frame's scene and chosen score, changing music when either changes.
+    pub fn process_scene_and_cues(self: *AudioBridge, scene_name: []const u8, score_name: []const u8) void {
+        if (scene_name.len == 0 and score_name.len == 0) return;
+
+        // Hash scene and score names to detect transitions; the separator keeps "ab"+"c" and
+        // "a"+"bc" apart.
         var h: u32 = 2166136261;
         for (scene_name) |b| {
+            h ^= b;
+            h *%= 16777619;
+        }
+        h ^= 0xFF;
+        h *%= 16777619;
+        for (score_name) |b| {
             h ^= b;
             h *%= 16777619;
         }
 
         if (h != self.last_scene_hash) {
             self.last_scene_hash = h;
-            self.set_track(self.track_for_scene(scene_name));
+            self.set_track(self.track_for(scene_name, score_name));
         }
     }
 
@@ -1359,7 +1380,7 @@ test "P32-02d: a registered soundtrack chooses scene music; without one there is
     try testing.expectEqual(@as(?u8, 0), bridge.track_for_scene("Upper Hall"));
     try testing.expectEqual(@as(?u8, null), bridge.track_for_scene("Lower Hall"));
 
-    bridge.process_scene_and_cues("Upper Hall");
+    bridge.process_scene_and_cues("Upper Hall", "");
     var buf: [256]i16 = undefined;
     bridge.render_samples(&buf);
     try testing.expectEqual(@as(?*const Soundtrack, &TEST_SOUNDTRACK), bridge.synth.soundtrack);

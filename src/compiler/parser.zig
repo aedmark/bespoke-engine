@@ -7,6 +7,7 @@ const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const command_mod = @import("../command.zig");
+const mml = @import("../mml.zig");
 pub const Note = draft_mod.Note;
 pub const Notes = draft_mod.Notes;
 
@@ -69,6 +70,8 @@ pub const Stmt = union(enum) {
         draft: []const u8,
         target: []const u8,
     },
+    /// `play score <Name>`, or `stop score` when null (P28-03, D-062).
+    play_score: ?[]const u8,
 };
 
 /// `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` (P22-01, D-029).
@@ -369,6 +372,8 @@ pub const AST = struct {
     agendas: std.ArrayList(AgendaDecl),
     commands: std.ArrayList(CommandDecl),
     aliases: std.ArrayList(AliasDecl),
+    /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
+    scores: std.ArrayList(mml.ScoreDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -393,6 +398,7 @@ pub const AST = struct {
             .agendas = std.ArrayList(AgendaDecl).init(allocator),
             .commands = std.ArrayList(CommandDecl).init(allocator),
             .aliases = std.ArrayList(AliasDecl).init(allocator),
+            .scores = std.ArrayList(mml.ScoreDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -421,6 +427,7 @@ pub const AST = struct {
         self.agendas.deinit();
         self.commands.deinit();
         self.aliases.deinit();
+        self.scores.deinit();
     }
 };
 
@@ -437,6 +444,14 @@ const ArrivalRef = struct {
     column: u32,
 };
 
+/// Source position of a `play score` statement, so an undeclared score reports where it was
+/// played; scores may be declared after the statement that plays them.
+const ScoreRef = struct {
+    score: []const u8,
+    line: u32,
+    column: u32,
+};
+
 pub const Parser = struct {
     lexer: *Lexer,
     current: Token,
@@ -445,6 +460,7 @@ pub const Parser = struct {
     diag_buf: [256]u8 = undefined,
     weave_refs: std.ArrayList(WeaveRef),
     arrival_refs: std.ArrayList(ArrivalRef),
+    score_refs: std.ArrayList(ScoreRef),
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -455,6 +471,7 @@ pub const Parser = struct {
             .diag_buf = undefined,
             .weave_refs = std.ArrayList(WeaveRef).init(allocator),
             .arrival_refs = std.ArrayList(ArrivalRef).init(allocator),
+            .score_refs = std.ArrayList(ScoreRef).init(allocator),
         };
         try p.advance();
         return p;
@@ -609,6 +626,17 @@ pub const Parser = struct {
                         return self.set_error("command '{s}' frame \"{s}\" must start with a lowercase word, use at most two <thing> slots, and never put two slots together", .{ cue, text });
                     try ast.commands.append(.{ .cue = cue, .text = text });
                 },
+                .kw_score => {
+                    const decl = try self.parse_score_decl();
+                    for (ast.scores.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("score '{s}' is declared twice", .{decl.name});
+                        for (prior.scenes) |ps| for (decl.scenes) |ds| {
+                            if (std.mem.eql(u8, ps, ds)) return self.set_error("scene '{s}' already plays score '{s}'", .{ ds, prior.name });
+                        };
+                    }
+                    try ast.scores.append(decl);
+                },
+                .kw_play, .kw_stop => try ast.initial_stmts.append(try self.parse_music_stmt()),
                 .kw_alias => {
                     try self.advance();
                     const entity = (try self.expect(.identifier)).slice;
@@ -924,6 +952,18 @@ pub const Parser = struct {
             }
         }
 
+        // A played score must be declared somewhere in the program (P28-03, D-062).
+        for (self.score_refs.items) |ref| {
+            const declared = for (ast.scores.items) |decl| {
+                if (std.mem.eql(u8, decl.name, ref.score)) break true;
+            } else false;
+            if (!declared) {
+                const msg = std.fmt.bufPrint(&self.diag_buf, "play of undeclared score '{s}'", .{ref.score}) catch "play of undeclared score";
+                self.diagnostic = .{ .line = ref.line, .column = ref.column, .message = msg };
+                return error.UnexpectedToken;
+            }
+        }
+
         // An arrival rule must name a declared mark: an unknown one could never fire (D-036).
         for (self.arrival_refs.items) |ref| {
             if (!mark_declared(&ast, ref.mark)) {
@@ -1213,6 +1253,83 @@ pub const Parser = struct {
 
     /// P23-01 declaration grammar. The ordered stage list defines progression; each vessel
     /// explicitly names its initial stage so scripts remain authoritative over setup.
+    /// `score <Name>: "<lead MML>"`, or a block of `lead`, `bass`, `chords`, and `drums` lines
+    /// with MML strings and `scene <Scene>` lines (P28-03, D-062). Each part is parsed here, so
+    /// an MML error reports its script line and column.
+    fn parse_score_decl(self: *Parser) !mml.ScoreDecl {
+        try self.advance(); // score
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.colon);
+        var decl = mml.ScoreDecl{ .name = name };
+        if (self.current.tag == .string_literal) {
+            const tok = self.current;
+            try self.advance();
+            decl.parts[0] = tok.slice;
+            try self.check_score_part(name, 0, tok);
+            return decl;
+        }
+        _ = try self.expect(.indent);
+        var scenes = std.ArrayList([]const u8).init(self.allocator);
+        var seen = [_]bool{false} ** mml.PART_COUNT;
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            if (self.current.tag == .kw_scene) {
+                try self.advance();
+                const scene = try self.parse_name();
+                for (scenes.items) |prior| {
+                    if (std.mem.eql(u8, prior, scene)) return self.set_error("score '{s}' names scene '{s}' twice", .{ name, scene });
+                }
+                if (scenes.items.len == mml.MAX_SCORE_SCENES) return self.set_error("score '{s}' names more than {d} scenes", .{ name, mml.MAX_SCORE_SCENES });
+                try scenes.append(scene);
+                continue;
+            }
+            const directive = self.current.slice;
+            const index = for (mml.PART_NAMES, 0..) |part, i| {
+                if (self.current.tag == .identifier and std.mem.eql(u8, part, directive)) break i;
+            } else return self.set_error("unknown score directive '{s}'; use lead, bass, chords, drums, or scene", .{directive});
+            if (seen[index]) return self.set_error("score '{s}' declares {s} twice", .{ name, directive });
+            seen[index] = true;
+            try self.advance();
+            if (self.current.tag != .string_literal) return self.set_error("score '{s}' {s} needs an MML string", .{ name, directive });
+            const tok = self.current;
+            try self.advance();
+            decl.parts[index] = tok.slice;
+            try self.check_score_part(name, index, tok);
+        }
+        _ = try self.expect(.dedent);
+        decl.scenes = try scenes.toOwnedSlice();
+        return decl;
+    }
+
+    /// Parses one part's MML and maps an error inside the string to the script position: the
+    /// token's column is its opening quote, so MML column 1 is one column to its right.
+    fn check_score_part(self: *Parser, name: []const u8, index: usize, tok: Token) !void {
+        var diag = mml.Diagnostic{};
+        var score = mml.parse(self.allocator, tok.slice, mml.part_kind(index), &diag) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.InvalidScore => {
+                const msg = std.fmt.bufPrint(&self.diag_buf, "score '{s}' {s}: {s}", .{ name, mml.PART_NAMES[index], diag.message }) catch "invalid MML";
+                self.diagnostic = .{
+                    .line = tok.line + diag.line - 1,
+                    .column = if (diag.line == 1) tok.col + diag.column else diag.column,
+                    .message = msg,
+                };
+                return error.UnexpectedToken;
+            },
+        };
+        score.deinit();
+    }
+
+    /// `play score <Name>` or `stop score` (P28-03, D-062).
+    fn parse_music_stmt(self: *Parser) !Stmt {
+        const is_play = self.current.tag == .kw_play;
+        try self.advance();
+        _ = try self.expect(.kw_score);
+        if (!is_play) return .{ .play_score = null };
+        const tok = try self.expect(.identifier);
+        try self.score_refs.append(.{ .score = tok.slice, .line = tok.line, .column = tok.col });
+        return .{ .play_score = tok.slice };
+    }
+
     fn parse_degradation_decl(self: *Parser) !DegradationDecl {
         try self.advance(); // degradation
         const name = try self.take_atom();
@@ -1663,8 +1780,14 @@ pub const Parser = struct {
                         try list.append(.{ .animate = .{ .target = "Scene", .clip = clip, .is_stop = false } });
                     }
                 },
+                .kw_play => try list.append(try self.parse_music_stmt()),
                 .kw_stop => {
                     try self.advance();
+                    if (self.current.tag == .kw_score) {
+                        try self.advance();
+                        try list.append(.{ .play_score = null });
+                        continue;
+                    }
                     _ = try self.expect(.kw_animate);
                     const clip = try self.parse_name();
                     try list.append(.{ .animate = .{ .target = "Scene", .clip = clip, .is_stop = true } });

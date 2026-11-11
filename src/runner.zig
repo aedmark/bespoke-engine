@@ -140,6 +140,11 @@ pub fn run_file(
 
     try bespoke.host.initialize_subsystems(&world, &compiled);
 
+    // Script scores become the window's soundtrack (P28-03, D-062). Declared after `compiled`
+    // so it is released first; the window's bridge stops reading it when the window closes.
+    var script_music = try bespoke.host.ScriptSoundtrack.init(allocator, &compiled);
+    defer script_music.deinit();
+
     // Initialize Virtual Machine
     var vm = VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -208,6 +213,17 @@ pub fn run_file(
         try world.save_state(snap0.writer());
         try history_snapshots.append(snap0);
 
+        // Headless runs report each change of script music, so a score's triggers can be
+        // checked without an audio device. Scripts without scores print nothing.
+        var last_score_buf: [32]u8 = undefined;
+        var last_score: []const u8 = "";
+        {
+            const first = display_bridge.get_frame().get_current_score();
+            if (first.len > 0) try stdout.print("[Tick {d:>3}] Music: {s}\n", .{ world.current_tick, first });
+            @memcpy(last_score_buf[0..first.len], first);
+            last_score = last_score_buf[0..first.len];
+        }
+
         var tick_count: usize = 0;
         while (tick_count < config.ticks) : (tick_count += 1) {
             _ = try bespoke.host.tick(&vm, &compiled);
@@ -218,6 +234,13 @@ pub fn run_file(
 
             display_bridge.capture_frame(&world, &spatial, &vm);
             display_bridge.swap();
+
+            const score_now = display_bridge.get_frame().get_current_score();
+            if (!std.mem.eql(u8, score_now, last_score)) {
+                try stdout.print("[Tick {d:>3}] Music: {s}\n", .{ world.current_tick, if (score_now.len > 0) score_now else "none" });
+                @memcpy(last_score_buf[0..score_now.len], score_now);
+                last_score = last_score_buf[0..score_now.len];
+            }
 
             if (config.verbose and (tick_count % 5 == 0 or tick_count == config.ticks - 1)) {
                 try stdout.print("[Tick {d:>3}] Active Facts: {d}, Active Fibers: {d}\n", .{
@@ -249,6 +272,7 @@ pub fn run_file(
         defer window.deinit();
 
         display_bridge.attach_audio_bridge(window.audio_bridge);
+        if (script_music.has_scores()) window.audio_bridge.set_soundtrack(&script_music.soundtrack);
 
         try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
         try stdout.print("   - [Left Click Waypoint]: Direct actor to walk\n", .{});

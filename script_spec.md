@@ -146,6 +146,28 @@ grid HallFloor in "Great Hall":
 
 Each set attribute is a fact on the grid entity: `CellFlammable(HallFloor, index)`, `CellLiquid`, or `CellBlocking`, where `index` is `y * W + x`. The host lifecycle writes the declared layout once, so later changes survive save, rewind, and re-initialisation. A mark standing in a `blocking` cell is treated like `WaypointBlocked`: scripted walks plan around it, and a walk to it is refused. Package format version 7 carries grids; versions 1 through 6 load without them.
 
+### Scores (P28-03, D-062)
+
+A `score` declares four-part music in Music Macro Language (D-060). Each part line holds one MML string; `drums` uses `k`, `s`, and `h`. A `scene` line makes the score that scene's default. The one-line form is a lead-only score.
+
+```bespoke
+score Calm:
+  lead "t96 o5 l8 @1 e g a g e4 d4 L c4 e4 g2"
+  bass "o3 l4 c g a e L f c g c"
+  drums "l8 v10 k h h h L k h s h"
+  scene Gatehouse
+
+score Chase: "t160 o5 l16 @5 L [c d e d]2 [e f g f]2"
+
+when Alarm(watch):
+  play score Chase
+
+when Warden forgets Alarm:
+  stop score
+```
+
+`play score <Name>` overrides scene music in every scene until `stop score` or another `play score`. Parts loop together from their `L` once every part has ended (D-061). The choice is World state (`SceneScore` facts and the `PlayingScore` property of `Music`), so saves and rewinds restore it.
+
 ### Typed commands (P26-01, D-057)
 
 A typed line such as `> pour the grog into the mug` is matched against sentence shapes (frames) and becomes a cue. The engine provides frames for looking, using, talking, and walking; a script adds its own, which are tried first.

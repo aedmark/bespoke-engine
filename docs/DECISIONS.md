@@ -830,6 +830,23 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - New MML-only voices: rejected for now; the grid voices give scores the engine's existing timbre and keep one set of synthesis code.
 **Consequences:** Every grid golden line is unchanged; `proofs/golden/audio.txt` gains `mml/demo`. A part rests at its end until the longest part finishes, so an author who wants a short phrase to repeat under a long one writes the repeat (`[ ]n`) rather than relying on independent loops. Scripts still cannot declare scores; P28-03 adds `score` and scene triggering.
 
+## D-062 Script Scores: Block Declarations, Scene Defaults and Overrides as World Facts, and Name-Matched Tracks (2026-11-11, status: accepted)
+**Context:** P28-03 lets scripts declare MML scores (D-060) and choose when they play (D-061 plays them). Scene music has come from a host `track_for_scene` callback, which cannot see compiled script data. The maintainer chose the defaults below (2026-11-11).
+**Decision:**
+1. **Syntax.** `score <Name>:` opens a block of `lead`, `bass`, `chords`, and `drums` lines, each with one MML string, and `scene <Scene>` lines (up to 16). The roadmap's one-line `score <Name>: "<MML>"` is a lead-only score with no scenes. Each part is parsed at compile time; an MML error reports the script line and the column inside the string. A score name is declared once, and a scene has at most one score.
+2. **Choosing music is World state.** `scene` lines seed `SceneScore(Scene, Score)` facts before the script's own top-level statements. `play score <Name>` sets the `PlayingScore` property of the `Music` entity, and `stop score` removes it; both work in routines, cue handlers, `when` rules, and at top level, and `play score` must name a declared score. Saves, rewinds, and temporal branches therefore restore the music with the World.
+3. **The override persists.** While `PlayingScore` is set it plays in every scene; scene defaults return only after `stop score`. A scene with no score and no override is silent.
+4. **The frame names the score.** `DisplayBridge.capture_frame` resolves the override, else the current scene's `SceneScore`, into `RenderFrame.current_score` from World facts alone (`display.current_score_entity`). `AudioBridge.process_scene_and_cues` takes the scene and score names; `track_for` plays the soundtrack track whose `Music.name` equals the score, else the soundtrack's scene rule.
+5. **Hosts register script music.** `host.ScriptSoundtrack` parses a program's scores into one `Music` per score, named after it, in declaration order. `bespoke run` registers it with its window, and its headless mode prints each change of music.
+6. **Packages store text.** `.bspk` version 11 appends each score's name, scenes, and four MML strings; loading re-parses every part and rejects the package if one fails, because a package is untrusted. Versions 1 to 10 load with no scores.
+**Alternatives:**
+- One-line scores split by `|`: not chosen; long scores become unreadable lines.
+- Statements only, without scene binding: not chosen; every scene change would need its own `play score`.
+- Clearing the override on a scene transition: not chosen; chase music would stop at every door.
+- Keeping the selection in the VM or the host: rejected; a rewind would restore the World without its music.
+- A new opcode for `play score`: rejected; `remember` and `forget` of an engine relation already express it.
+**Consequences:** `score` and `play` are now keywords. `Music`, `PlayingScore`, and `SceneScore` are engine names in a script's World; a script entity named `Music` shares that entity. Proof soundtracks are unchanged: proofs declare no scores, so `current_score` is empty and their scene rule still chooses. The stock runner, which played nothing since D-040, now plays a script's own scores.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

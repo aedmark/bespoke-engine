@@ -11,6 +11,7 @@ const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
 const command_mod = @import("command.zig");
+const mml = @import("mml.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -38,8 +39,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// `smoke` attributes and four automata rates per grid (P25-02, D-055); version 7 grids load
 /// with every rule off. Version 9 appends agendas (P33-01, D-056); versions 1 through 8 load
 /// with none. Version 10 appends typed-command frames and noun aliases (P26-01, D-057);
-/// versions 1 through 9 load with neither.
-pub const PACKAGE_VERSION: u32 = 10;
+/// versions 1 through 9 load with neither. Version 11 appends script scores as MML text with
+/// their scenes (P28-03, D-062); versions 1 through 10 load with none.
+pub const PACKAGE_VERSION: u32 = 11;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -282,6 +284,14 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         try writer.writeInt(u32, a.entity.to_int(), .little);
         try writer.writeByte(@intCast(a.phrases.len));
         for (a.phrases) |phrase| try write_str(writer, phrase);
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.scores.items.len), .little);
+    for (compiled.scores.items) |score| {
+        try write_str(writer, score.name);
+        try writer.writeByte(@intCast(score.scenes.len));
+        for (score.scenes) |scene| try write_str(writer, scene);
+        for (score.parts) |text| try write_str(writer, text);
     }
 }
 
@@ -658,6 +668,41 @@ fn read_alias_declaration(allocator: std.mem.Allocator, world: *const World, rea
     }
     const decl = command_mod.AliasDecl{ .entity = entity, .phrases = phrases };
     decl.validate() catch return error.InvalidCommandConfig;
+    return decl;
+}
+
+/// Untrusted input: scene counts are bounded and every part's MML is parsed again, so a
+/// package cannot hand the audio thread a score the compiler would have rejected.
+fn read_score_declaration(allocator: std.mem.Allocator, reader: anytype) !mml.ScoreDecl {
+    var decl = mml.ScoreDecl{ .name = try read_str(allocator, reader) };
+    var scenes_made: usize = 0;
+    var parts_made: usize = 0;
+    var scenes: []([]const u8) = &.{};
+    errdefer {
+        allocator.free(decl.name);
+        for (scenes[0..scenes_made]) |scene| allocator.free(scene);
+        allocator.free(scenes);
+        for (decl.parts[0..parts_made]) |text| allocator.free(text);
+    }
+    const scene_count = try reader.readByte();
+    if (scene_count > mml.MAX_SCORE_SCENES) return error.InvalidScoreConfig;
+    scenes = try allocator.alloc([]const u8, scene_count);
+    for (scenes) |*scene| {
+        scene.* = try read_str(allocator, reader);
+        scenes_made += 1;
+    }
+    for (&decl.parts) |*text| {
+        text.* = try read_str(allocator, reader);
+        parts_made += 1;
+    }
+    decl.scenes = scenes;
+    if (decl.name.len == 0) return error.InvalidScoreConfig;
+    var diag = mml.Diagnostic{};
+    var part: usize = 0;
+    decl.validate(allocator, &diag, &part) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.InvalidScore => error.InvalidScoreConfig,
+    };
     return decl;
 }
 
@@ -1220,6 +1265,24 @@ pub fn load_package(
         }
     }
 
+    var scores = std.ArrayList(mml.ScoreDecl).init(allocator);
+    errdefer {
+        for (scores.items) |*decl| decl.deinit_owned(allocator);
+        scores.deinit();
+    }
+    if (header.version >= 11) {
+        const score_count = try pr.readInt(u32, .little);
+        if (score_count > 256) return error.InvalidScoreConfig;
+        var si2: u32 = 0;
+        while (si2 < score_count) : (si2 += 1) {
+            var decl = try read_score_declaration(allocator, pr);
+            scores.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1237,6 +1300,7 @@ pub fn load_package(
         .agendas = agendas,
         .commands = commands,
         .aliases = aliases,
+        .scores = scores,
     };
 }
 
@@ -1460,10 +1524,12 @@ test "P15-02: package file save and load roundtrip" {
 }
 
 /// Bytes that empty sections added after version 9 append to every package tail: the
-/// command and alias counts (version 10). Tests that locate earlier sections from the end of
-/// a package add this; a later version that appends a section adds its empty size here, so
-/// those tests need no other change.
-const EMPTY_TAIL_AFTER_V9: usize = 4 + 4;
+/// command and alias counts (version 10) and the score count (version 11). Tests that locate
+/// earlier sections from the end of a package add this; a later version that appends a
+/// section adds its empty size here, so those tests need no other change.
+const EMPTY_TAIL_AFTER_V9: usize = 4 + 4 + EMPTY_TAIL_AFTER_V10;
+/// The empty score count (version 11), for tests that locate version 10 sections from the end.
+const EMPTY_TAIL_AFTER_V10: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -1820,7 +1886,7 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
         // A frame whose verb is not lowercase is rejected on load.
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
-        const frame_start = bad.len - alias_section_len - "pour <thing> into <thing>".len;
+        const frame_start = bad.len - EMPTY_TAIL_AFTER_V10 - alias_section_len - "pour <thing> into <thing>".len;
         bad[frame_start] = 'P';
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -1829,7 +1895,7 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
         try testing.expectError(error.InvalidCommandConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
     }
     {
-        const v9 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - alias_section_len - command_section_len]);
+        const v9 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V10 - alias_section_len - command_section_len]);
         defer testing.allocator.free(v9);
         reseal_for_test(v9, 9);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -1838,6 +1904,65 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
         var loaded = try load_package(testing.allocator, v9_stream.reader(), &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.commands.items.len + loaded.aliases.items.len);
+    }
+}
+
+test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads version 10" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\score Night:
+        \\  lead "t96 o5 l8 c e g e"
+        \\  drums "k4 h4"
+        \\  scene Courtyard
+        \\  scene Wine Cellar
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+    const score = compiled2.scores.items[0];
+    try testing.expectEqualStrings("Night", score.name);
+    try testing.expectEqualStrings("Wine Cellar", score.scenes[1]);
+    try testing.expectEqualStrings("t96 o5 l8 c e g e", score.parts[0]);
+    try testing.expectEqualStrings("", score.parts[1]);
+    try testing.expectEqualStrings("k4 h4", score.parts[3]);
+
+    // Tail: count, name, scene count, two scenes, four parts.
+    const score_section_len = 4 + (2 + "Night".len) + 1 + (2 + "Courtyard".len) + (2 + "Wine Cellar".len) +
+        (2 + "t96 o5 l8 c e g e".len) + 2 + 2 + (2 + "k4 h4".len);
+    {
+        // A drum letter smuggled into the lead part is rejected on load, as the compiler would.
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        const lead_start = bad.len - (2 + "k4 h4".len) - 2 - 2 - "t96 o5 l8 c e g e".len;
+        try testing.expectEqual(@as(u8, 't'), bad[lead_start]);
+        bad[lead_start + 4] = 'k';
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidScoreConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        const v10 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - score_section_len]);
+        defer testing.allocator.free(v10);
+        reseal_for_test(v10, 10);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v10_stream = std.io.fixedBufferStream(v10);
+        var loaded = try load_package(testing.allocator, v10_stream.reader(), &world3, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.scores.items.len);
     }
 }
 

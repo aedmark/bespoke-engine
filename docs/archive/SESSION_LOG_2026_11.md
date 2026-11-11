@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 45 (2026-11-10)
+- **Goal:** Ship P33-02 and build P33-03 as an original mystery.
+- **Work:** Merged P33-02 (`d94e9e0`). The maintainer approved The Larkspur Observatory in place of the planned homage. Added `proofs/observatory_puzzle.zig` (script with a three-member society, three agendas, evidence-guarded `Intercepts` handlers, an arrival rule with an expiring fact, and a layout grid; headless run with contention, false alibi, rewind, and the informed night; interactive window on keys 1 to 3), a night-sky backdrop in `proofs/art.zig`, launcher flags, and transcript and render goldens. Renamed Phase 33 and P33-03 in the roadmap.
+- **Outcome:** See the Verified table. The window launched offscreen for 6 seconds; it was not hand-played. Fast-forwarded to `main` and pushed.
+
 ### Session 44 (2026-11-10)
 - **Goal:** Ship P33-01 and implement P33-02 on D-056's design.
 - **Work:** Merged P33-01 (`bf594b8`). Added `agency.pursue` (walks to the target's current waypoint, re-plans when it changes, intercepts when both are idle on one waypoint, resolves the agenda), `Pursuing(Actor)` facts kept in step with agenda stages, `host.tick` firing `Intercepts(Actor, Target, Agenda)`, and a `Pursuing` guard in `Society.walk_to` (its 15 society callers and the Village drifter catalyst now pass the World).

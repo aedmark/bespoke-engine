@@ -18,6 +18,8 @@ const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
 const command_mod = @import("command.zig");
+const audio_mod = @import("audio.zig");
+const mml_mod = @import("mml.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -175,6 +177,66 @@ fn walk_target(world: *const World, sp: *const SpatialSystem, room: ?EntityId, t
 /// Collects `say` lines into one string./// Collects `say` lines into one string. `VM.step_tick` clears `emitted_cues` at the start of
 /// every tick, so speech must be collected after each tick; a cue index taken before a tick is
 /// meaningless after it (the bug this replaces in the old per-proof readers).
+/// A program's script scores as a playable soundtrack (P28-03, D-062): one `Music` per score,
+/// named after it, in declaration order. Register `&soundtrack` with
+/// `AudioBridge.set_soundtrack`; the audio thread then reads this value, so it must not move or
+/// be deinitialised while registered. The frame's `current_score` picks the track by name.
+pub const ScriptSoundtrack = struct {
+    allocator: std.mem.Allocator,
+    parsed: []mml_mod.Score,
+    scores: []audio_mod.MmlScore,
+    music: []audio_mod.Music,
+    soundtrack: audio_mod.Soundtrack,
+
+    pub fn init(allocator: std.mem.Allocator, compiled: *const codegen.CompiledProgram) !ScriptSoundtrack {
+        const decls = compiled.scores.items;
+        const parsed = try allocator.alloc(mml_mod.Score, decls.len * mml_mod.PART_COUNT);
+        var parsed_made: usize = 0;
+        errdefer {
+            for (parsed[0..parsed_made]) |*p| p.deinit();
+            allocator.free(parsed);
+        }
+        const scores = try allocator.alloc(audio_mod.MmlScore, decls.len);
+        errdefer allocator.free(scores);
+        const music = try allocator.alloc(audio_mod.Music, decls.len);
+        errdefer allocator.free(music);
+        for (decls, 0..) |decl, i| {
+            scores[i] = .{};
+            for (decl.parts, 0..) |text, part| {
+                // Compiled and loaded scores were validated already; a failure here is a bug in
+                // that validation, reported rather than played.
+                var diag = mml_mod.Diagnostic{};
+                const slot = &parsed[i * mml_mod.PART_COUNT + part];
+                slot.* = mml_mod.parse(allocator, text, mml_mod.part_kind(part), &diag) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.InvalidScore => return error.InvalidScoreConfig,
+                };
+                parsed_made += 1;
+                scores[i].parts[part] = audio_mod.MmlTrack.of(slot);
+            }
+            music[i] = .{ .name = decl.name, .score = &scores[i] };
+        }
+        return .{
+            .allocator = allocator,
+            .parsed = parsed,
+            .scores = scores,
+            .music = music,
+            .soundtrack = .{ .tracks = music },
+        };
+    }
+
+    pub fn has_scores(self: *const ScriptSoundtrack) bool {
+        return self.music.len > 0;
+    }
+
+    pub fn deinit(self: *ScriptSoundtrack) void {
+        for (self.parsed) |*p| p.deinit();
+        self.allocator.free(self.parsed);
+        self.allocator.free(self.scores);
+        self.allocator.free(self.music);
+    }
+};
+
 pub const SpeechLog = struct {
     stream: std.io.FixedBufferStream([]u8),
     count: usize = 0,
@@ -950,4 +1012,71 @@ test "P26-02: typed lines fire script cues, walk, and reply when nothing answers
 
     reply = try run_command(&vm, &compiled, &interp, cook, "talk to the xyzzy", &buf);
     try testing.expectEqualStrings("I don't know the word \"xyzzy\".", reply.text.?);
+}
+
+test "P28-03: script scores become a soundtrack the frame's score name selects" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = spatial_mod.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene Hall:
+        \\  marks: Door
+        \\score Calm:
+        \\  lead "o5 l8 L c e g e"
+        \\  drums "L k4 h4"
+        \\  scene Hall
+        \\score Chase: "t160 L c16 d16"
+        \\transition to scene Hall
+        \\routine Alarm(Guard):
+        \\  wait 1 ticks
+        \\  play score Chase
+    );
+    defer compiled.deinit();
+    var music = try ScriptSoundtrack.init(testing.allocator, &compiled);
+    defer music.deinit();
+    try testing.expect(music.has_scores());
+    try testing.expectEqual(@as(usize, 2), music.soundtrack.tracks.len);
+    try testing.expectEqualStrings("Chase", music.soundtrack.tracks[1].name);
+    try testing.expectEqual(@as(usize, 2), music.scores[0].part(.percussion).events.len);
+
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try run_initial_statements(&world, &vm, &compiled);
+
+    var audio = audio_mod.AudioBridge.init();
+    audio.set_soundtrack(&music.soundtrack);
+    var bridge = display_mod.DisplayBridge.init();
+    bridge.attach_audio_bridge(&audio);
+    var pcm: [512]i16 = undefined;
+
+    // The scene's score plays first.
+    bridge.capture_frame(&world, &spatial, &vm);
+    try testing.expectEqualStrings("Calm", bridge.back_buffer.get_current_score());
+    audio.render_samples(&pcm);
+    try testing.expectEqual(@as(?u8, 0), audio.synth.current_track);
+    try testing.expectEqual(@as(?*const audio_mod.MmlScore, &music.scores[0]), audio.synth.mml.score);
+
+    // `play score` overrides it; the bridge crossfades to the named track.
+    _ = try vm.spawn_routine(try world.intern_entity("Guard"), compiled.routine_entries.get("Alarm").?);
+    for (0..3) |_| _ = try tick(&vm, &compiled);
+    bridge.capture_frame(&world, &spatial, &vm);
+    try testing.expectEqualStrings("Chase", bridge.back_buffer.get_current_score());
+    var fade: [8192]i16 = undefined;
+    audio.render_samples(&fade);
+    try testing.expectEqual(@as(?u8, 1), audio.synth.current_track);
+
+    // A name the soundtrack lacks falls back to the scene rule, which a script soundtrack has
+    // not got, so it is silence rather than a wrong track.
+    try testing.expectEqual(@as(?u8, null), audio.track_for("Hall", "Unknown"));
+    try testing.expectEqual(@as(?u8, 0), audio.track_for("Anywhere", "Calm"));
+
+    // A program without scores makes an empty soundtrack.
+    var plain = try compiler.compile_source(testing.allocator, &world, null, "entity Lamp\n");
+    defer plain.deinit();
+    var none = try ScriptSoundtrack.init(testing.allocator, &plain);
+    defer none.deinit();
+    try testing.expect(!none.has_scores());
 }
