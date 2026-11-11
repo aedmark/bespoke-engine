@@ -29,6 +29,7 @@ const dott_puzzle = @import("dott_puzzle.zig");
 const darko_puzzle = @import("darko_puzzle.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
+const grid_puzzle = @import("grid_puzzle.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -45,6 +46,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "darko_puzzle", .script = darko_puzzle.DARKO_PUZZLE_SCRIPT },
     .{ .name = "loom_puzzle", .script = loom_puzzle.BELL_TOWER_SCRIPT },
     .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
+    .{ .name = "grid_puzzle", .script = grid_puzzle.GRID_PUZZLE_SCRIPT },
 };
 
 /// A `scene:` block's name and `cast:` line, read from script text. The compiler does not
@@ -81,7 +83,7 @@ const STATUS_VARIANTS = [_][]const u8{
     "darko_puzzle_solved",    "bell_brazier_lit",       "bell_chain_loosed",    "bell_fork_taken",
     "bell_ringing",           "bell_beacon_lit",        "village_crime_active", "village_warrant_active",
     "village_arrest_made",    "cheese_holder",          "charmed_target",       "countdown",
-    "villagers",
+    "villagers",              "gallery_door_revealed",  "gallery_fire",
 };
 
 const Status = struct {
@@ -105,6 +107,16 @@ const Status = struct {
             @memcpy(st.tangent_countdown[0..text.len], text);
             st.tangent_countdown_len = text.len;
             st.tangent_active = true;
+        } else if (std.mem.eql(u8, variant, "gallery_fire")) {
+            // Mid-escape: a spent smoking cell, two fires, and water on the door.
+            const A = bespoke.grid.Attribute;
+            const bit = struct {
+                fn of(attribute: A) u8 {
+                    return @as(u8, 1) << @intCast(@intFromEnum(attribute));
+                }
+            }.of;
+            st.gallery_cells = .{ 0, 0, bit(.smoke), bit(.burning) | bit(.smoke), bit(.burning), bit(.liquid) };
+            st.gallery_door_revealed = true;
         } else if (std.mem.eql(u8, variant, "villagers")) {
             const n = @min(frame.entity_count, 3);
             for (0..n) |i| {
@@ -212,6 +224,9 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     defer spatial.deinit();
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, script);
     defer compiled.deinit();
+    // Seed grid layouts so a grid scene shows its opening cells. Only grids: seeding other
+    // subsystems here would redraw scenes whose goldens predate it.
+    for (compiled.grids.items) |declaration| try bespoke.grid.seed(&world, declaration);
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;

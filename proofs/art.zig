@@ -95,6 +95,11 @@ const Palette = struct {
 };
 
 
+/// The Castle Fire Escape gallery grid (`proofs/grid_puzzle.zig`): one row of cells. The proof's
+/// layout test fails if its script declares a different grid.
+pub const GALLERY_CELLS: u16 = 6;
+pub const GALLERY_CELL_SIZE: u32 = 8;
+
 pub const theme = r.Theme{
     .backdrop = backdrop,
     .prop = prop,
@@ -121,6 +126,7 @@ pub fn with_keys(comptime keys: []const r.KeyBinding) r.Theme {
 const Scene = struct {
 
     is_bell_base_scene: bool = false,
+    is_gallery_scene: bool = false,
     is_bell_belfry_scene: bool = false,
     is_bike_rental_scene: bool = false,
     is_darko_bedroom_scene: bool = false,
@@ -149,7 +155,9 @@ fn detect(frame: *const RenderFrame) Scene {
 
     if (cur_scene.len > 0) {
         // Checked first: "Bell Tower" scenes must not fall through to substring themes below.
-        if (std.mem.indexOf(u8, cur_scene, "Bell Tower") != null) {
+        if (std.mem.indexOf(u8, cur_scene, "Hollin Keep") != null) {
+            sc.is_gallery_scene = true;
+        } else if (std.mem.indexOf(u8, cur_scene, "Bell Tower") != null) {
             if (std.mem.indexOf(u8, cur_scene, "Belfry") != null) {
                 sc.is_bell_belfry_scene = true;
             } else {
@@ -238,7 +246,7 @@ fn detect(frame: *const RenderFrame) Scene {
     }
 
     // Fallback detection if current_scene wasn't explicitly set
-    if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and
+    if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and
         !sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
         !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
@@ -430,7 +438,9 @@ fn detect(frame: *const RenderFrame) Scene {
 
 fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
     const sc = detect(frame);
-    if (sc.is_bell_base_scene or sc.is_bell_belfry_scene) {
+    if (sc.is_gallery_scene) {
+        render_gallery(w, frame);
+    } else if (sc.is_bell_base_scene or sc.is_bell_belfry_scene) {
         render_bell_tower(w, frame, sc.is_bell_belfry_scene);
     } else if (sc.is_spitting_scene) {
         // Sky
@@ -1803,6 +1813,9 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
     const hs = view.hotspot;
     const pt = view.pos;
     const name = hs.get_name();
+    // The gallery backdrop draws its trough, torch, tapestry, and door from grid state; its
+    // hotspots stay clickable but get no separate art.
+    if (sc.is_gallery_scene) return true;
     if (std.mem.indexOf(u8, name, "Fire") != null or std.mem.indexOf(u8, name, "Hearth") != null) {
         // Stone fireplace & fire glow
         w.fill_rect(pt.x - 22, pt.y - 24, 44, 48, Color{ .r = 55, .g = 45, .b = 40 });
@@ -3386,6 +3399,10 @@ pub const Status = struct {
     village_arrest_made: bool = false,
     tangent_countdown: [16]u8 = [_]u8{0} ** 16,
     tangent_countdown_len: u8 = 0,
+    /// Castle Fire Escape (P25-03): one attribute mask per gallery cell, bit n set when
+    /// `grid.Attribute` n holds, and whether the hidden door has been found.
+    gallery_cells: [GALLERY_CELLS]u8 = [_]u8{0} ** GALLERY_CELLS,
+    gallery_door_revealed: bool = false,
     villager_drives: [8]VillagerDrive = [_]VillagerDrive{.{}} ** 8,
     villager_drive_count: usize = 0,
     social_edges: [16]SocialEdge = [_]SocialEdge{.{}} ** 16,
@@ -3415,6 +3432,113 @@ pub fn set_collapsed(bridge: *bespoke.DisplayBridge, collapsed: bool) void {
     bridge.front_buffer.host_status_mut(Status).singularity_collapsed = collapsed;
 }
 
+/// Reads the gallery grid's cell facts by the names its script uses (P25-03).
+fn capture_gallery(world: *const bespoke.World, st: *Status) void {
+    st.gallery_cells = [_]u8{0} ** GALLERY_CELLS;
+    st.gallery_door_revealed = false;
+    const floor = world.lookup_entity("GalleryFloor") orelse return;
+    inline for (@typeInfo(bespoke.grid.Attribute).Enum.fields) |field| {
+        const attribute: bespoke.grid.Attribute = @enumFromInt(field.value);
+        if (world.lookup_relation(attribute.relation_name())) |rel| {
+            for (&st.gallery_cells, 0..) |*mask, i| {
+                if (world.has_fact(floor, rel, @intCast(i))) mask.* |= @as(u8, 1) << field.value;
+            }
+        }
+    }
+    // The same rule as the proof host: the door shows once the tapestry beside it (cell 4)
+    // has caught and stopped being flammable.
+    st.gallery_door_revealed = !gallery_has(st, 4, .flammable);
+}
+
+fn gallery_has(st: *const Status, i: usize, attribute: bespoke.grid.Attribute) bool {
+    return st.gallery_cells[i] & (@as(u8, 1) << @intCast(@intFromEnum(attribute))) != 0;
+}
+
+/// Hollin Keep's long gallery (P25-03): a wall band with the tapestry, door, trough, and
+/// torch above a one-row floor whose cells show the grid's state.
+fn render_gallery(w: *DisplayWindow, frame: *const RenderFrame) void {
+    const st = status_of(frame);
+    const stone = Color{ .r = 52, .g = 48, .b = 46 };
+    const mortar = Color{ .r = 34, .g = 31, .b = 30 };
+    w.fill_rect(0, 0, w.width, w.height, Color{ .r = 14, .g = 12, .b = 14 });
+
+    const origin = world_to_screen(0, 0, w.width, w.height);
+    const far = world_to_screen(@as(i32, GALLERY_CELLS) * @as(i32, GALLERY_CELL_SIZE), @as(i32, GALLERY_CELL_SIZE), w.width, w.height);
+    const cell_w = @divTrunc(far.x - origin.x, GALLERY_CELLS);
+    const wall_top: i32 = 150;
+    const wall_h = origin.y - wall_top;
+
+    // Wall band with coursed stone.
+    w.fill_rect(origin.x, wall_top, far.x - origin.x, wall_h, stone);
+    var course = wall_top + 28;
+    while (course < origin.y) : (course += 28) w.draw_line(origin.x, course, far.x, course, mortar);
+    w.draw_text("HOLLIN KEEP - THE LONG GALLERY", origin.x + 12, wall_top - 40, 2, Color{ .r = 253, .g = 186, .b = 116 });
+    w.draw_text("(THE ONLY WAY OUT IS BEHIND THE TAPESTRY)", origin.x + 12, wall_top - 18, 1, Color.hud_subtext);
+
+    for (0..GALLERY_CELLS) |i| {
+        const x = origin.x + @as(i32, @intCast(i)) * cell_w;
+        const burning = gallery_has(st, i, .burning);
+        const flammable = gallery_has(st, i, .flammable);
+        const wet = gallery_has(st, i, .liquid);
+        const rubble = gallery_has(st, i, .blocking);
+        // Cells 2 to 5 are the tapestry's span; a span cell that is neither flammable nor
+        // burning has been consumed.
+        const in_span = i >= 2;
+        const spent = in_span and !flammable and !burning;
+
+        // Wall decoration above the cell.
+        if (i == 0) {
+            w.fill_rect(x + 24, origin.y - 70, cell_w - 48, 50, Color{ .r = 88, .g = 84, .b = 80 });
+            w.fill_rect(x + 30, origin.y - 64, cell_w - 60, 20, Color{ .r = 37, .g = 99, .b = 155 });
+        } else if (i == 1) {
+            w.fill_rect(x + @divTrunc(cell_w, 2) - 4, wall_top + 60, 8, 40, Color{ .r = 70, .g = 60, .b = 50 });
+            w.fill_circle(x + @divTrunc(cell_w, 2), wall_top + 52, 10, Color{ .r = 245, .g = 158, .b = 11 });
+            w.fill_circle(x + @divTrunc(cell_w, 2), wall_top + 49, 5, Color{ .r = 254, .g = 240, .b = 138 });
+        } else if (i == 5 and (st.gallery_door_revealed or spent or rubble)) {
+            const door_col = if (rubble) Color{ .r = 30, .g = 26, .b = 24 } else Color{ .r = 101, .g = 67, .b = 33 };
+            w.fill_rect(x + 30, wall_top + 40, cell_w - 60, wall_h - 40, door_col);
+            w.draw_rect_outline(x + 30, wall_top + 40, cell_w - 60, wall_h - 40, Color{ .r = 60, .g = 40, .b = 20 });
+        }
+        if (in_span and flammable and !(i == 5 and st.gallery_door_revealed)) {
+            w.fill_rect(x + 2, wall_top + 20, cell_w - 4, wall_h - 30, Color{ .r = 128, .g = 28, .b = 40 });
+            w.draw_line(x + 10, wall_top + 60, x + cell_w - 10, wall_top + 60, Color{ .r = 202, .g = 138, .b = 4 });
+        } else if (in_span and spent and i != 5) {
+            w.fill_rect(x + 2, origin.y - 24, cell_w - 4, 18, Color{ .r = 28, .g = 22, .b = 20 });
+        }
+        if (burning) {
+            var f: i32 = 0;
+            while (f < 4) : (f += 1) {
+                const fx = x + 18 + f * @divTrunc(cell_w - 36, 3);
+                w.fill_circle(fx, origin.y - 40 - @mod(f * 17, 30), 16, Color{ .r = 234, .g = 88, .b = 12 });
+                w.fill_circle(fx, origin.y - 34 - @mod(f * 17, 30), 8, Color{ .r = 253, .g = 224, .b = 71 });
+            }
+        }
+
+        // Floor tile.
+        const floor_col = if (rubble)
+            Color{ .r = 40, .g = 36, .b = 34 }
+        else if (burning)
+            Color{ .r = 150, .g = 52, .b = 12 }
+        else if (wet)
+            Color{ .r = 32, .g = 74, .b = 120 }
+        else if (flammable)
+            Color{ .r = 150, .g = 128, .b = 62 }
+        else if (spent)
+            Color{ .r = 36, .g = 30, .b = 28 }
+        else
+            Color{ .r = 72, .g = 68, .b = 64 };
+        w.fill_rect(x, origin.y, cell_w, far.y - origin.y, floor_col);
+        w.draw_rect_outline(x, origin.y, cell_w, far.y - origin.y, mortar);
+        if (rubble) {
+            w.draw_line(x + 10, origin.y + 10, x + cell_w - 10, far.y - 10, Color{ .r = 90, .g = 84, .b = 80 });
+            w.draw_line(x + cell_w - 10, origin.y + 10, x + 10, far.y - 10, Color{ .r = 90, .g = 84, .b = 80 });
+        }
+        if (gallery_has(st, i, .smoke)) {
+            w.fill_rect(x, wall_top, cell_w, far.y - wall_top, Color{ .r = 140, .g = 140, .b = 150, .a = 90 });
+        }
+    }
+}
+
 fn entity_in_state(world: *const bespoke.World, entity_name: []const u8, state: []const u8) bool {
     const ent = world.lookup_entity(entity_name) orelse return false;
     const rel = world.lookup_relation(state) orelse return false;
@@ -3425,6 +3549,7 @@ fn entity_in_state(world: *const bespoke.World, entity_name: []const u8, state: 
 /// by the names its script uses. Moved unchanged from the engine's `capture_frame`.
 pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
     const st = frame.host_status_mut(Status);
+    capture_gallery(world, st);
     // 5. Query relational facts for status indicators
     st.cheese_holder = .none;
     st.charmed_target = .none;

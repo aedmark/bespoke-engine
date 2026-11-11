@@ -1,0 +1,40 @@
+===================================================================
+       BeSpoke Engine: The Castle Fire Escape (Grid Automata)      
+       (Fire Spread * Smoke * Water Flow * Hazard Rules * Rewind)  
+===================================================================
+
+  -> Gallery: ..tttt  (t tapestry, F fire, s smoke, ~ water, # rubble)
+
+[Failure 1] Wren lights the tapestry and runs straight through it.
+  [ 4] Wren: "The torch touches the hem. It goes up like hay."
+  [ 6] Wren: "Smoke. Keep low and keep moving."
+  [ 7] Wren: "Fire! My cloak is alight!"
+  -> Gallery: ..FFtt  (t tapestry, F fire, s smoke, ~ water, # rubble)
+
+[Rewind] Restore the saved opening.
+  -> Gallery: ..tttt  (t tapestry, F fire, s smoke, ~ water, # rubble)
+
+[Failure 2] Wren lights the tapestry from the torch and only watches.
+  [ 4] Wren: "The torch touches the hem. It goes up like hay."
+  [10] Wren: "There, behind the burning cloth: a door!"
+  [13] Wren: "The lintel gives way. That door is lost."
+  -> Gallery: ..sFFF  (t tapestry, F fire, s smoke, ~ water, # rubble)
+  -> DoorMark sits in a blocking cell; no walk can reach it.
+
+[Rewind] Restore the saved opening again.
+
+[Solution] Fill the bucket, burn the tapestry, save the door, walk out.
+  [ 2] Wren: "The bucket is full and heavy."
+  [ 5] Wren: "The torch touches the hem. It goes up like hay."
+  [11] Wren: "There, behind the burning cloth: a door!"
+  -> Gallery: ..FFFt  (t tapestry, F fire, s smoke, ~ water, # rubble)
+  [12] Wren: "Water across the door before it catches!"
+  -> Gallery: ..sF~~  (t tapestry, F fire, s smoke, ~ water, # rubble)
+  -> Gallery: ..s~~~  (t tapestry, F fire, s smoke, ~ water, # rubble)
+  [15] Wren: "Smoke. Keep low and keep moving."
+  [21] Wren: "Night air. I am out of the keep."
+
+===================================================================
+  VERIFICATION COMPLETE: Wren is out. The keep burned as written.  
+===================================================================
+

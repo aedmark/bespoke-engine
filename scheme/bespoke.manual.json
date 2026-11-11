@@ -474,7 +474,8 @@
             {"label": "Architectural Decision D-054", "target": "docs/DECISIONS.md#d-054", "kind": "decision"},
             {"label": "Architectural Decision D-055", "target": "docs/DECISIONS.md#d-055", "kind": "decision"},
             {"label": "Grid Geometry and Cell Facts", "target": "src/grid.zig", "kind": "source"},
-            {"label": "Grid Overlay and Blocking", "target": "src/spatial.zig", "kind": "source"}
+            {"label": "Grid Overlay and Blocking", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "The Castle Fire Escape proof", "target": "proofs/grid_puzzle.zig", "kind": "source"}
           ],
           "related": ["waypoint-room-graph", "multi-scene-transitions-spatial-partitioning", "relational-facts"]
         }

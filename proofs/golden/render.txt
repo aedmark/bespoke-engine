@@ -128,3 +128,10 @@ grog_puzzle/Saltglass Stockade: 803cdc99aa61f30a
 grog_puzzle/Saltglass Stockade +tangent_active: ebc97ce0fc4a2ae3
 grog_puzzle/Saltglass Stockade +singularity_collapsed: 92fc68d973cd8350
 grog_puzzle/Saltglass Stockade +countdown: 359c6c920ac4c6b0
+thumb/grid_puzzle/Hollin Keep Gallery: 85b839fa0992cedc
+grid_puzzle/Hollin Keep Gallery: 7de702946046ef8b
+grid_puzzle/Hollin Keep Gallery +tangent_active: 7142849ba72a395a
+grid_puzzle/Hollin Keep Gallery +singularity_collapsed: a8bb22e09d1ed460
+grid_puzzle/Hollin Keep Gallery +countdown: 60930bd45f82f86a
+grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: cc9c6edb50a2e976
+grid_puzzle/Hollin Keep Gallery +gallery_fire: 854ca4013026bca5

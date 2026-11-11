@@ -121,6 +121,7 @@ zig build test-proofs                     # every proof's tests
 | `--loom` | The Bell Tower | Musical drafts, reversed drafts, distaff reach, in-script weaves |
 | `--grog` | Caustic Grog | Script-declared vessel degradation, atomic pours, movement spill |
 | `--atlantis` | The Fate of Atlantis: Algiers | Three stageplay paths, fact-backed waypoint locks, route-pruned dialogue |
+| `--grid` | The Castle Fire Escape | Grid fire spread, smoke, water flow and dousing, hazard rules on actors |
 
 ---
 
