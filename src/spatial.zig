@@ -3,6 +3,9 @@ const world_mod = @import("world.zig");
 const EntityId = world_mod.EntityId;
 const RelationKind = world_mod.RelationKind;
 const World = world_mod.World;
+const grid_mod = @import("grid.zig");
+pub const Grid = grid_mod.Grid;
+pub const GridCell = grid_mod.Cell;
 
 pub const WaypointId = u16;
 
@@ -111,6 +114,20 @@ pub const SpatialGraph = struct {
 
         try self.edges.append(.{ .from = a, .to = b, .cost = c });
         try self.edges.append(.{ .from = b, .to = a, .cost = c });
+    }
+
+    /// Moves a waypoint and resets every incident edge to the new Euclidean distance, so the
+    /// A* heuristic (straight-line distance) stays admissible. Explicit edge costs on the moved
+    /// node are replaced; the compiler, its only caller, connects marks by distance (P25-01).
+    pub fn move_waypoint(self: *SpatialGraph, id: WaypointId, pos: Point2D) !void {
+        if (id == 0 or id > self.waypoints.items.len) return error.WaypointNotFound;
+        self.waypoints.items[id - 1].pos = pos;
+        for (self.edges.items) |*edge| {
+            if (edge.from != id and edge.to != id) continue;
+            const a = self.waypoints.items[edge.from - 1].pos;
+            const b = self.waypoints.items[edge.to - 1].pos;
+            edge.cost = a.distance_to(b);
+        }
     }
 
     /// Finds optimal path between two waypoints using A* pathfinding (P3-01).
@@ -332,6 +349,9 @@ pub const SpatialSystem = struct {
     agents: std.AutoHashMap(EntityId, MotorAgent),
     hotspots: std.ArrayList(Hotspot),
     portals: std.ArrayList(Portal),
+    /// Discrete grid overlays, at most one per room (P25-01, D-054). Geometry only: cell
+    /// attributes live in World facts, so this list is program data and is never saved.
+    grids: std.ArrayList(Grid),
 
     pub fn init(allocator: std.mem.Allocator) SpatialSystem {
         return SpatialSystem{
@@ -340,6 +360,7 @@ pub const SpatialSystem = struct {
             .agents = std.AutoHashMap(EntityId, MotorAgent).init(allocator),
             .hotspots = std.ArrayList(Hotspot).init(allocator),
             .portals = std.ArrayList(Portal).init(allocator),
+            .grids = std.ArrayList(Grid).init(allocator),
         };
     }
 
@@ -353,6 +374,47 @@ pub const SpatialSystem = struct {
         self.clear_hotspots();
         self.hotspots.deinit();
         self.portals.deinit();
+        self.grids.deinit();
+    }
+
+    /// Registers a grid overlay over a room. A room has at most one grid so every waypoint
+    /// maps to at most one cell; a second grid for the room, or a reused grid entity, is an error.
+    pub fn add_grid(self: *SpatialSystem, grid: Grid) !void {
+        try grid_mod.validate_grid(grid);
+        if (self.grids.items.len >= grid_mod.MAX_GRIDS) return grid_mod.Error.InvalidGrid;
+        for (self.grids.items) |existing| {
+            if (existing.room == grid.room) return grid_mod.Error.DuplicateRoomGrid;
+            if (existing.entity == grid.entity) return grid_mod.Error.DuplicateGrid;
+        }
+        try self.grids.append(grid);
+    }
+
+    pub fn grid_in_room(self: *const SpatialSystem, room: EntityId) ?Grid {
+        for (self.grids.items) |grid| if (grid.room == room) return grid;
+        return null;
+    }
+
+    pub fn find_grid(self: *const SpatialSystem, entity: EntityId) ?Grid {
+        for (self.grids.items) |grid| if (grid.entity == entity) return grid;
+        return null;
+    }
+
+    /// The grid cell under a waypoint, through its room's overlay, or null when the room has
+    /// no grid or the waypoint lies outside it.
+    pub fn waypoint_cell(self: *const SpatialSystem, waypoint: WaypointId) ?struct { grid: Grid, cell: GridCell } {
+        const wp = self.graph.get_waypoint(waypoint) orelse return null;
+        const grid = self.grid_in_room(wp.room) orelse return null;
+        const cell = grid.cell_at(wp.pos.x, wp.pos.y) orelse return null;
+        return .{ .grid = grid, .cell = cell };
+    }
+
+    /// The grid cell an agent currently stands in, from its interpolated position.
+    pub fn agent_cell(self: *const SpatialSystem, entity: EntityId) ?struct { grid: Grid, cell: GridCell } {
+        const agent = self.agents.getPtr(entity) orelse return null;
+        const wp = self.graph.get_waypoint(agent.current_wp) orelse return null;
+        const grid = self.grid_in_room(wp.room) orelse return null;
+        const cell = grid.cell_at(agent.pos.x, agent.pos.y) orelse return null;
+        return .{ .grid = grid, .cell = cell };
     }
 
     /// Removes every hotspot and releases its owned labels. Hosts rebuilding a compiled scene
@@ -543,9 +605,14 @@ pub const SpatialSystem = struct {
         return false;
     }
 
-    /// True when the waypoint's mark entity carries a `WaypointBlocked` fact (P24-02).
+    /// True when the waypoint's mark entity carries a `WaypointBlocked` fact (P24-02), or the
+    /// waypoint lies in a grid cell with the `blocking` attribute (P25-01, D-054). Both are
+    /// read at walk planning, so a cell that becomes blocking does not stop an in-flight walk.
     pub fn waypoint_blocked(self: *const SpatialSystem, world: *const World, waypoint: WaypointId) bool {
         const wp = self.graph.get_waypoint(waypoint) orelse return false;
+        if (self.waypoint_cell(waypoint)) |placed| {
+            if (grid_mod.has_attribute(world, placed.grid, placed.cell, .blocking)) return true;
+        }
         const relation = world.lookup_relation("WaypointBlocked") orelse return false;
         const mark = world.lookup_entity(wp.name) orelse return false;
         return world.has_fact(mark, relation, null);
@@ -556,10 +623,8 @@ pub const SpatialSystem = struct {
         world: *const World,
         out: *std.ArrayList(WaypointId),
     ) !void {
-        const relation = world.lookup_relation("WaypointBlocked") orelse return;
         for (self.graph.waypoints.items) |wp| {
-            const mark = world.lookup_entity(wp.name) orelse continue;
-            if (world.has_fact(mark, relation, null)) try out.append(wp.id);
+            if (self.waypoint_blocked(world, wp.id)) try out.append(wp.id);
         }
     }
 
@@ -1004,6 +1069,53 @@ test "P24-02: WaypointBlocked facts reroute walks without mutating the graph" {
 
     _ = world.forget(locked_mark, blocked, null);
     try testing.expect(!spatial.waypoint_blocked(&world, locked));
+}
+
+test "P25-01: blocking grid cells reroute walks and map waypoints to cells" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = try world.intern_entity("GridRoom");
+    const other_room = try world.intern_entity("OtherRoom");
+    const start = try spatial.graph.add_waypoint(room, 5, 5, "GridStart");
+    const hot = try spatial.graph.add_waypoint(room, 15, 5, "GridHot");
+    const safe = try spatial.graph.add_waypoint(room, 5, 15, "GridSafe");
+    const goal = try spatial.graph.add_waypoint(room, 15, 15, "GridGoal");
+    const outside = try spatial.graph.add_waypoint(other_room, 15, 5, "Elsewhere");
+    try spatial.graph.connect(start, hot, 10);
+    try spatial.graph.connect(hot, goal, 10);
+    try spatial.graph.connect(start, safe, 10);
+    try spatial.graph.connect(safe, goal, 10);
+
+    const grid = Grid{ .entity = try world.intern_entity("GridFloor"), .room = room, .width = 2, .height = 2, .cell_size = 10 };
+    try spatial.add_grid(grid);
+    try testing.expectError(grid_mod.Error.DuplicateRoomGrid, spatial.add_grid(.{ .entity = try world.intern_entity("GridFloor2"), .room = room, .width = 1, .height = 1, .cell_size = 10 }));
+    try testing.expectError(grid_mod.Error.DuplicateGrid, spatial.add_grid(.{ .entity = grid.entity, .room = other_room, .width = 1, .height = 1, .cell_size = 10 }));
+
+    try testing.expectEqual(GridCell{ .x = 1, .y = 0 }, spatial.waypoint_cell(hot).?.cell);
+    try testing.expect(spatial.waypoint_cell(outside) == null);
+
+    try grid_mod.set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .blocking, true);
+    try testing.expect(spatial.waypoint_blocked(&world, hot));
+    // Only the overlay's own room is affected; the same coordinates elsewhere stay open.
+    try testing.expect(!spatial.waypoint_blocked(&world, outside));
+
+    const hero = try world.intern_entity("GridHero");
+    try spatial.register_entity(hero, start, 5);
+    try testing.expectEqual(GridCell{ .x = 0, .y = 0 }, spatial.agent_cell(hero).?.cell);
+    try testing.expect(try spatial.walk_to_with_world(&world, hero, goal));
+    const agent = spatial.agents.get(hero).?;
+    try testing.expect(std.mem.indexOfScalar(WaypointId, agent.path.?, hot) == null);
+    try testing.expect(std.mem.indexOfScalar(WaypointId, agent.path.?, safe) != null);
+    try testing.expect(!(try spatial.walk_to_with_world(&world, hero, hot)));
+    // The lock-free graph walk ignores cell attributes, as it ignores WaypointBlocked.
+    try testing.expect(try spatial.walk_to(hero, hot));
+
+    try grid_mod.set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .blocking, false);
+    try testing.expect(!spatial.waypoint_blocked(&world, hot));
 }
 
 test "P32-25: walk intent toward the waypoint just left turns the agent back" {

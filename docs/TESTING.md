@@ -57,6 +57,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Relational Store (`src/world.zig`) | `zig test src/world.zig` | `zig build test` (mutation check on TTL decay or snapshot) |
 | VM, Bytecode, Compiler (`src/vm.zig`, `src/compiler/`) | `zig test src/vm.zig`, `zig test src/compiler.zig` | `zig build test`, `bespoke check scenarios/tavern_heist.bespoke` |
 | Spatial Graph (`src/spatial.zig`) | `zig test src/spatial.zig` | Waypoint pathfinding verification in headless scenarios |
+| Grid Overlay (`src/grid.zig`) | `zig test src/grid.zig`, `zig test src/spatial.zig` | `zig test src/package.zig` (v7 round-trip, corrupt cells, v6 load); `zig test src/compiler.zig` (declaration and `place`) |
 | Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification; version 1/2 compatibility and temporal envelope round-trip |
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
 | Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |

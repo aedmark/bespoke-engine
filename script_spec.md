@@ -121,4 +121,27 @@ degradation ReactiveContainers:
   relations Contains Volume ContainerStage ContainerExposure ContainerFailedAt
 ```
 
-Society `need` and `member` order is significant. It establishes need and roster indexes, including society tick evaluation order. Duel pairs and tier variants preserve source order. A degradation profile's stage order is its progression order; every nonterminal stage has a positive duration and the final stage has duration zero. Each vessel declares capacity, initial volume, and initial stage. `spill N` removes up to N volume per tick while the vessel or its `Carries` holder is moving. The optional `relations` line supplies five distinct names for contents, volume, stage, exposure, and failure location. Compilation rejects invalid capacities, stages, members, providers, activities, and waypoints. Package format version 6 preserves all three declaration tables and spill rates; versions 1 through 5 remain readable.
+Society `need` and `member` order is significant. It establishes need and roster indexes, including society tick evaluation order. Duel pairs and tier variants preserve source order. A degradation profile's stage order is its progression order; every nonterminal stage has a positive duration and the final stage has duration zero. Each vessel declares capacity, initial volume, and initial stage. `spill N` removes up to N volume per tick while the vessel or its `Carries` holder is moving. The optional `relations` line supplies five distinct names for contents, volume, stage, exposure, and failure location. Compilation rejects invalid capacities, stages, members, providers, activities, and waypoints. Package format version 6 added spill rates to the three declaration tables; version 7 (below) adds grids, and every earlier version remains readable.
+
+### Grids
+
+A room may carry one discrete grid overlay (P25-01, D-054). The grid complements the room's waypoints; it does not replace them.
+
+```bespoke
+scene: Great Hall
+marks: HallDoor, HallStair
+
+grid HallFloor in "Great Hall":
+  size 8 4
+  cell 20
+  origin 0 0
+  flammable 2 1 3 1
+  liquid 0 3
+  blocking 7 0 1 4
+  place HallDoor 0 2
+  place HallStair 6 0
+```
+
+`size W H` and `cell N` are required; `origin X Y` (non-negative in scripts) defaults to `0 0`. Cell (x, y) covers room coordinates from `origin + x*N` up to, not including, `origin + (x+1)*N`. An attribute line names one cell, or a rectangle when it adds a width and height. The attributes are `flammable`, `liquid`, and `blocking`. `place` moves a mark of the same room to the centre of a cell. A grid holds at most 4096 cells, and a room has at most one grid; quote multi-word room names.
+
+Each set attribute is a fact on the grid entity: `CellFlammable(HallFloor, index)`, `CellLiquid`, or `CellBlocking`, where `index` is `y * W + x`. The host lifecycle writes the declared layout once, so later changes survive save, rewind, and re-initialisation. A mark standing in a `blocking` cell is treated like `WaypointBlocked`: scripted walks plan around it, and a walk to it is refused. Package format version 7 carries grids; versions 1 through 6 load without them.

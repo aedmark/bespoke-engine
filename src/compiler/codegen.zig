@@ -19,6 +19,7 @@ const draft_mod = @import("../draft.zig");
 const society_mod = @import("../society.zig");
 const duel_mod = @import("../duel.zig");
 const container_mod = @import("../container.zig");
+const grid_mod = @import("../grid.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
@@ -45,6 +46,9 @@ pub const CompiledProgram = struct {
     societies: std.ArrayList(society_mod.Declaration),
     duels: std.ArrayList(duel_mod.Declaration),
     degradations: std.ArrayList(container_mod.Declaration),
+    /// Grid overlays with their initial cell layouts (P25-01, D-054). Geometry is also
+    /// registered in the SpatialSystem the program was compiled or loaded into.
+    grids: std.ArrayList(grid_mod.Declaration),
 
     pub fn deinit(self: *CompiledProgram) void {
         for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
@@ -53,6 +57,8 @@ pub const CompiledProgram = struct {
         self.duels.deinit();
         for (self.degradations.items) |*degradation| degradation.deinit_owned(self.chunk.allocator);
         self.degradations.deinit();
+        for (self.grids.items) |*grid| grid.deinit_owned(self.chunk.allocator);
+        self.grids.deinit();
         self.drafts.deinit();
         self.chunk.deinit();
         self.routine_entries.deinit();
@@ -194,6 +200,7 @@ pub const Codegen = struct {
     societies: std.ArrayList(society_mod.Declaration),
     duels: std.ArrayList(duel_mod.Declaration),
     degradations: std.ArrayList(container_mod.Declaration),
+    grids: std.ArrayList(grid_mod.Declaration),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -210,6 +217,7 @@ pub const Codegen = struct {
             .societies = std.ArrayList(society_mod.Declaration).init(allocator),
             .duels = std.ArrayList(duel_mod.Declaration).init(allocator),
             .degradations = std.ArrayList(container_mod.Declaration).init(allocator),
+            .grids = std.ArrayList(grid_mod.Declaration).init(allocator),
         };
     }
 
@@ -303,6 +311,7 @@ pub const Codegen = struct {
         for (ast.societies.items) |decl| try mut_self.societies.append(try mut_self.compile_society(decl));
         for (ast.duels.items) |decl| try mut_self.duels.append(try mut_self.compile_duel(decl));
         for (ast.degradations.items) |decl| try mut_self.degradations.append(try mut_self.compile_degradation(decl));
+        for (ast.grids.items) |decl| try mut_self.grids.append(try mut_self.compile_grid(decl));
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
@@ -503,6 +512,7 @@ pub const Codegen = struct {
             .societies = mut_self.societies,
             .duels = mut_self.duels,
             .degradations = mut_self.degradations,
+            .grids = mut_self.grids,
         };
     }
 
@@ -716,6 +726,55 @@ pub const Codegen = struct {
             },
             .tiers = tiers,
         };
+    }
+
+    /// Expands attribute rectangles into the sparse initial layout and, when compiling into a
+    /// SpatialSystem, registers the overlay and moves placed marks to their cell centres. Marks
+    /// keep their graph edges, whose costs follow the new positions; packages carry placement
+    /// in the existing waypoint table.
+    fn compile_grid(self: *Codegen, decl: parser_mod.GridDecl) !grid_mod.Declaration {
+        const grid = grid_mod.Grid{
+            .entity = try self.world.intern_entity(decl.name),
+            .room = try self.world.intern_entity(decl.room),
+            .width = @intCast(decl.width),
+            .height = @intCast(decl.height),
+            .cell_size = decl.cell_size,
+            .origin_x = decl.origin_x,
+            .origin_y = decl.origin_y,
+        };
+        var cells = std.ArrayList(grid_mod.InitialCell).init(self.allocator);
+        errdefer cells.deinit();
+        for (decl.rects) |rect| {
+            const attribute = grid_mod.Attribute.from_name(rect.attribute) orelse return error.UnknownGridAttribute;
+            var y = rect.y;
+            while (y < rect.y + rect.height) : (y += 1) {
+                var x = rect.x;
+                while (x < rect.x + rect.width) : (x += 1) {
+                    const index = try grid.index_of(.{ .x = @intCast(x), .y = @intCast(y) });
+                    // Overlapping rectangles name the same cell twice; keep one row.
+                    var seen = false;
+                    for (cells.items) |prior| {
+                        if (prior.index == index and prior.attribute == attribute) seen = true;
+                    }
+                    if (!seen) try cells.append(.{ .index = index, .attribute = attribute });
+                }
+            }
+        }
+        const declaration = grid_mod.Declaration{ .grid = grid, .cells = try cells.toOwnedSlice() };
+        errdefer self.allocator.free(declaration.cells);
+        try declaration.validate();
+
+        if (self.spatial) |sp| {
+            try sp.add_grid(grid);
+            for (decl.places) |place| {
+                const id = self.find_waypoint(place.mark) orelse return error.UnknownGridMark;
+                const wp = sp.graph.get_waypoint(id).?;
+                if (wp.room != grid.room) return error.GridMarkOutsideRoom;
+                const center = grid.cell_center(.{ .x = @intCast(place.x), .y = @intCast(place.y) });
+                try sp.graph.move_waypoint(id, .{ .x = center.x, .y = center.y });
+            }
+        }
+        return declaration;
     }
 
     fn compile_degradation(self: *Codegen, decl: parser_mod.DegradationDecl) !container_mod.Declaration {
@@ -1643,6 +1702,98 @@ test "P32-22/P32-24: society and duel declarations compile into executable progr
     try testing.expectEqual(@as(u32, 1), world.get_property(rival, duel.tier_rel).?);
     var fatigue = try duel_mod.InquiryFatigue.init(&world, duel_decl.fatigue);
     try testing.expectEqual(@as(?usize, null), try fatigue.record(alice, rival));
+}
+
+test "P25-01: grid declarations compile into overlays, layouts, and placed marks" {
+    const testing = std.testing;
+    const host = @import("../host.zig");
+    const grid_mod_t = @import("../grid.zig");
+    const source =
+        \\scene: Great Hall
+        \\marks: HallDoor, HallHearth, HallStair
+        \\
+        \\grid HallFloor in "Great Hall":
+        \\  size 4 3
+        \\  cell 20
+        \\  flammable 1 0 2 2
+        \\  flammable 2 1
+        \\  liquid 0 2
+        \\  blocking 3 0
+        \\  place HallDoor 0 0
+        \\  place HallStair 3 0
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try @import("../compiler.zig").compile_source(testing.allocator, &world, &spatial, source);
+    defer compiled.deinit();
+
+    try testing.expectEqual(@as(usize, 1), compiled.grids.items.len);
+    const declaration = compiled.grids.items[0];
+    // The 2x2 rectangle and the overlapping single cell expand to four flammable rows.
+    try testing.expectEqual(@as(usize, 6), declaration.cells.len);
+    const room = world.lookup_entity("Great Hall").?;
+    const grid = spatial.grid_in_room(room).?;
+    try testing.expectEqual(world.lookup_entity("HallFloor").?, grid.entity);
+
+    // Placed marks sit at cell centres; the unplaced hearth keeps its compiler position.
+    const door = spatial.graph.find_waypoint("HallDoor").?;
+    const stair = spatial.graph.find_waypoint("HallStair").?;
+    try testing.expectEqual(GridCellT{ .x = 0, .y = 0 }, spatial.waypoint_cell(door).?.cell);
+    try testing.expectEqual(GridCellT{ .x = 3, .y = 0 }, spatial.waypoint_cell(stair).?.cell);
+    try testing.expectEqual(@as(i32, 70), spatial.graph.get_waypoint(stair).?.pos.x);
+
+    try host.initialize_subsystems(&world, &compiled);
+    try testing.expect(grid_mod_t.has_attribute(&world, grid, .{ .x = 2, .y = 1 }, .flammable));
+    try testing.expect(grid_mod_t.has_attribute(&world, grid, .{ .x = 0, .y = 2 }, .liquid));
+    try testing.expect(!grid_mod_t.has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .flammable));
+    try testing.expect(spatial.waypoint_blocked(&world, stair));
+    try testing.expect(!spatial.waypoint_blocked(&world, door));
+
+    // Seeding is idempotent: a cleared cell stays cleared through re-initialisation.
+    try grid_mod_t.set_attribute(&world, grid, .{ .x = 3, .y = 0 }, .blocking, false);
+    try host.initialize_subsystems(&world, &compiled);
+    try testing.expect(!spatial.waypoint_blocked(&world, stair));
+}
+
+const GridCellT = @import("../grid.zig").Cell;
+
+test "P25-01: grid declarations reject malformed and out-of-range layouts" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    const bad = [_][]const u8{
+        "grid G in Room:\n  cell 10\n",
+        "grid G in Room:\n  size 2 2\n",
+        "grid G in Room:\n  size 2 2\n  cell 10\n  flammable 1 1 2 1\n",
+        "grid G in Room:\n  size 2 2\n  cell 10\n  place Somewhere 2 0\n",
+        "grid G in Room:\n  size 2 2\n  cell 10\n  wet 0 0\n",
+        "grid G in Room:\n  size 65 64\n  cell 10\n",
+        "grid G in Room:\n  size 1 1\n  cell 10\ngrid H in Room:\n  size 1 1\n  cell 10\n",
+    };
+    for (bad) |source| {
+        const result = compiler.check_source(testing.allocator, source);
+        try testing.expect(result.diagnostic != null);
+    }
+
+    // A placed mark must exist and belong to the grid's room.
+    const misplaced =
+        \\scene: Yard
+        \\marks: YardGate
+        \\
+        \\scene: Keep
+        \\marks: KeepDoor
+        \\
+        \\grid KeepFloor in Keep:
+        \\  size 2 2
+        \\  cell 10
+        \\  place YardGate 0 0
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    try testing.expectError(error.GridMarkOutsideRoom, compiler.compile_source(testing.allocator, &world, &spatial, misplaced));
 }
 
 test "P23-01: degradation declarations compile into executable container profiles" {

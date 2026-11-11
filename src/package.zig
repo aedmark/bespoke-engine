@@ -8,6 +8,7 @@ const draft_mod = @import("draft.zig");
 const society_mod = @import("society.zig");
 const duel_mod = @import("duel.zig");
 const container_mod = @import("container.zig");
+const grid_mod = @import("grid.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -30,8 +31,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// duel configuration tables (P32-22, P32-24); versions 1 through 3 load empty tables. Version 5
 /// appends degradation profiles (P23-01); versions 1 through 4 load an empty profile table.
 /// Version 6 adds per-moving-tick spill volume to each profile (P23-02); version 5 profiles load
-/// with spill disabled.
-pub const PACKAGE_VERSION: u32 = 6;
+/// with spill disabled. Version 7 appends grid overlays with their initial cell layouts
+/// (P25-01, D-054); versions 1 through 6 load with no grids.
+pub const PACKAGE_VERSION: u32 = 7;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -224,6 +226,23 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
         const r = config.relations;
         for ([_][]const u8{ r.contains, r.volume, r.stage, r.exposure, r.failed_at }) |name| try write_text_ref(world, writer, name);
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.grids.items.len), .little);
+    for (compiled.grids.items) |decl| {
+        const grid = decl.grid;
+        try writer.writeInt(u32, grid.entity.to_int(), .little);
+        try writer.writeInt(u32, grid.room.to_int(), .little);
+        try writer.writeInt(u16, grid.width, .little);
+        try writer.writeInt(u16, grid.height, .little);
+        try writer.writeInt(u32, grid.cell_size, .little);
+        try writer.writeInt(i32, grid.origin_x, .little);
+        try writer.writeInt(i32, grid.origin_y, .little);
+        try writer.writeInt(u32, @intCast(decl.cells.len), .little);
+        for (decl.cells) |cell| {
+            try writer.writeInt(u32, cell.index, .little);
+            try writer.writeByte(@intFromEnum(cell.attribute));
+        }
     }
 }
 
@@ -498,6 +517,36 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
         .fatigue = .{ .stages = stages, .count_relation = count_relation, .calm_label = calm_label },
         .tiers = tiers,
     };
+}
+
+/// Untrusted input: entity references, geometry, cell indexes, and attribute bytes are checked
+/// before anything reaches the World or SpatialSystem. The cell count is bounded by the grid
+/// area times the attribute count, the largest layout a valid declaration can hold.
+fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !grid_mod.Declaration {
+    const grid = grid_mod.Grid{
+        .entity = try read_entity_ref(world, reader),
+        .room = try read_entity_ref(world, reader),
+        .width = try reader.readInt(u16, .little),
+        .height = try reader.readInt(u16, .little),
+        .cell_size = try reader.readInt(u32, .little),
+        .origin_x = try reader.readInt(i32, .little),
+        .origin_y = try reader.readInt(i32, .little),
+    };
+    grid_mod.validate_grid(grid) catch return error.InvalidGridConfig;
+    const attribute_count = @typeInfo(grid_mod.Attribute).Enum.fields.len;
+    const cell_count = try reader.readInt(u32, .little);
+    if (cell_count > grid.cell_count() * attribute_count) return error.InvalidGridConfig;
+    const cells = try allocator.alloc(grid_mod.InitialCell, cell_count);
+    errdefer allocator.free(cells);
+    for (cells) |*cell| {
+        const index = try reader.readInt(u32, .little);
+        const raw = try reader.readByte();
+        if (raw >= attribute_count) return error.InvalidGridConfig;
+        cell.* = .{ .index = index, .attribute = @enumFromInt(raw) };
+    }
+    const declaration = grid_mod.Declaration{ .grid = grid, .cells = cells };
+    declaration.validate() catch return error.InvalidGridConfig;
+    return declaration;
 }
 
 fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_spill: bool) !container_mod.Declaration {
@@ -975,6 +1024,24 @@ pub fn load_package(
         var ci: u32 = 0;
         while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr, header.version >= 6));
     }
+    var grids = std.ArrayList(grid_mod.Declaration).init(allocator);
+    errdefer {
+        for (grids.items) |*decl| decl.deinit_owned(allocator);
+        grids.deinit();
+    }
+    if (header.version >= 7) {
+        const grid_count = try pr.readInt(u32, .little);
+        if (grid_count > grid_mod.MAX_GRIDS) return error.InvalidGridConfig;
+        var gi: u32 = 0;
+        while (gi < grid_count) : (gi += 1) {
+            var decl = try read_grid_declaration(allocator, world, pr);
+            grids.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+            if (spatial) |sp| sp.add_grid(decl.grid) catch return error.InvalidGridConfig;
+        }
+    }
 
     return CompiledProgram{
         .drafts = drafts,
@@ -989,6 +1056,7 @@ pub fn load_package(
         .societies = societies,
         .duels = duels,
         .degradations = degradations,
+        .grids = grids,
     };
 }
 
@@ -1264,8 +1332,8 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
 
     // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
-    // Version 5 follows the draft table with empty society, duel, and degradation counts.
-    const declaration_tail_len = 12;
+    // Version 7 follows the draft table with empty society, duel, degradation, and grid counts.
+    const declaration_tail_len = 16;
     const tail_len = 4 + 4 + 4 + 1 + 4;
     const first_note = buffer.items.len - declaration_tail_len - tail_len + 8;
     {
@@ -1280,7 +1348,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     }
     {
         // A real version 4 payload ends after the duel table and loads no degradation profiles.
-        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 4]);
+        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 8]);
         defer testing.allocator.free(v4);
         reseal_for_test(v4, 4);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
@@ -1304,7 +1372,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     }
 }
 
-test "P23-01/P23-02: package version 6 round-trips degradation declarations" {
+test "P23-01/P23-02: package round-trips degradation declarations and loads version 5" {
     const testing = std.testing;
     const compiler = @import("compiler.zig");
     const script =
@@ -1341,13 +1409,14 @@ test "P23-01/P23-02: package version 6 round-trips degradation declarations" {
     try system.step(&world2, null);
     try testing.expectEqual(world2.lookup_entity("Sound").?.to_int(), world2.get_property(vial, system.rel.stage).?);
 
-    // Version 5 stored the same declaration without the u32 spill field.
-    const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4;
+    // Version 5 stored the same declaration without the u32 spill field and had no grid count.
+    const grid_count_len = 4;
+    const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4 + grid_count_len;
     const spill_offset = buffer.items.len - bytes_after_spill - 4;
     var v5 = std.ArrayList(u8).init(testing.allocator);
     defer v5.deinit();
     try v5.appendSlice(buffer.items[0..spill_offset]);
-    try v5.appendSlice(buffer.items[spill_offset + 4 ..]);
+    try v5.appendSlice(buffer.items[spill_offset + 4 .. buffer.items.len - grid_count_len]);
     reseal_for_test(v5.items, 5);
     var world3 = try World.init(testing.allocator, 1024 * 1024);
     defer world3.deinit();
@@ -1355,6 +1424,90 @@ test "P23-01/P23-02: package version 6 round-trips degradation declarations" {
     var compiled3 = try load_package(testing.allocator, v5_stream.reader(), &world3, null);
     defer compiled3.deinit();
     try testing.expectEqual(@as(u32, 0), compiled3.degradations.items[0].config.spill_per_moving_tick);
+}
+
+test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads version 6" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\scene: Armory
+        \\marks: ArmoryDoor, ArmoryRack
+        \\
+        \\grid ArmoryFloor in Armory:
+        \\  size 3 2
+        \\  cell 10
+        \\  origin 5 5
+        \\  liquid 0 1 3 1
+        \\  blocking 2 0
+        \\  place ArmoryRack 2 0
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var spatial1 = SpatialSystem.init(testing.allocator);
+    defer spatial1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var spatial2 = SpatialSystem.init(testing.allocator);
+    defer spatial2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.grids.items.len);
+    const grid = spatial2.grid_in_room(world2.lookup_entity("Armory").?).?;
+    try testing.expectEqual(@as(i32, 5), grid.origin_x);
+    try testing.expectEqual(@as(usize, 4), compiled2.grids.items[0].cells.len);
+    const rack = spatial2.graph.find_waypoint("ArmoryRack").?;
+    try testing.expectEqual(grid_mod.Cell{ .x = 2, .y = 0 }, spatial2.waypoint_cell(rack).?.cell);
+    try @import("host.zig").initialize_subsystems(&world2, &compiled2);
+    try testing.expect(spatial2.waypoint_blocked(&world2, rack));
+    try testing.expect(grid_mod.has_attribute(&world2, grid, .{ .x = 1, .y = 1 }, .liquid));
+
+    // Tail layout: grid count, entity, room, width, height, cell size, origin x/y, cell count,
+    // then four (index u32, attribute u8) cells.
+    const cells_len = 4 * (4 + 1);
+    const first_cell_index = buffer.items.len - cells_len;
+    {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        std.mem.writeInt(u32, bad[first_cell_index..][0..4], 6, .little); // one past the 3x2 area
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        bad[first_cell_index + 4] = 3; // no fourth attribute
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        // A version 6 payload ends before the grid table and loads no grids.
+        const grid_section_len = 4 + 4 + 4 + 2 + 2 + 4 + 4 + 4 + 4 + cells_len;
+        const v6 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - grid_section_len]);
+        defer testing.allocator.free(v6);
+        reseal_for_test(v6, 6);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var spatial3 = SpatialSystem.init(testing.allocator);
+        defer spatial3.deinit();
+        var v6_stream = std.io.fixedBufferStream(v6);
+        var loaded = try load_package(testing.allocator, v6_stream.reader(), &world3, &spatial3);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.grids.items.len);
+        try testing.expectEqual(@as(usize, 0), spatial3.grids.items.len);
+    }
 }
 
 test "P24-01: package round-trips path initializers and guarded routines" {

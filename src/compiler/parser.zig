@@ -4,6 +4,7 @@ pub const Lexer = lexer_mod.Lexer;
 pub const Token = lexer_mod.Token;
 pub const TokenTag = lexer_mod.TokenTag;
 const draft_mod = @import("../draft.zig");
+const grid_mod = @import("../grid.zig");
 pub const Note = draft_mod.Note;
 pub const Notes = draft_mod.Notes;
 
@@ -272,6 +273,36 @@ pub const DegradationDecl = struct {
     relations: [5][]const u8 = .{ "Contains", "Volume", "ContainerStage", "ContainerExposure", "ContainerFailedAt" },
 };
 
+/// One attribute rectangle in a grid's initial layout (P25-01). A single cell has width and
+/// height 1.
+pub const GridRectDecl = struct {
+    attribute: []const u8,
+    x: u32,
+    y: u32,
+    width: u32 = 1,
+    height: u32 = 1,
+};
+
+/// Moves a scene mark to the centre of a grid cell, tying the waypoint graph to the grid.
+pub const GridPlaceDecl = struct {
+    mark: []const u8,
+    x: u32,
+    y: u32,
+};
+
+/// `grid <Name> in <Room>:` owns one room's discrete overlay and its initial cell layout.
+pub const GridDecl = struct {
+    name: []const u8,
+    room: []const u8,
+    width: u32,
+    height: u32,
+    cell_size: u32,
+    origin_x: i32 = 0,
+    origin_y: i32 = 0,
+    rects: []const GridRectDecl,
+    places: []const GridPlaceDecl,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -297,6 +328,7 @@ pub const AST = struct {
     duels: std.ArrayList(DuelDecl),
     degradations: std.ArrayList(DegradationDecl),
     paths: std.ArrayList(PathDecl),
+    grids: std.ArrayList(GridDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -317,6 +349,7 @@ pub const AST = struct {
             .duels = std.ArrayList(DuelDecl).init(allocator),
             .degradations = std.ArrayList(DegradationDecl).init(allocator),
             .paths = std.ArrayList(PathDecl).init(allocator),
+            .grids = std.ArrayList(GridDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -341,6 +374,7 @@ pub const AST = struct {
         self.duels.deinit();
         self.degradations.deinit();
         self.paths.deinit();
+        self.grids.deinit();
     }
 };
 
@@ -520,6 +554,14 @@ pub const Parser = struct {
                 .kw_duel => try ast.duels.append(try self.parse_duel_decl()),
                 .kw_degradation => try ast.degradations.append(try self.parse_degradation_decl()),
                 .kw_path => try ast.paths.append(try self.parse_path_decl()),
+                .kw_grid => {
+                    const decl = try self.parse_grid_decl();
+                    for (ast.grids.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("grid '{s}' is declared twice", .{decl.name});
+                        if (std.mem.eql(u8, prior.room, decl.room)) return self.set_error("room '{s}' already has grid '{s}'", .{ decl.room, prior.name });
+                    }
+                    try ast.grids.append(decl);
+                },
                 .kw_routine => try ast.routines.append(try self.parse_routine_decl()),
                 .kw_on => {
                     try self.advance(); // consume 'on'
@@ -1135,6 +1177,76 @@ pub const Parser = struct {
             .vessels = try vessels.toOwnedSlice(),
             .spill_per_moving_tick = spill_per_moving_tick,
             .relations = relations,
+        };
+    }
+
+    /// P25-01 grammar. `size` and `cell` are required; attribute lines name a cell or, with a
+    /// trailing width and height, a rectangle. Bounds are checked here so a script error points
+    /// at the grid rather than surfacing later as an engine validation failure.
+    fn parse_grid_decl(self: *Parser) !GridDecl {
+        try self.advance(); // grid
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.kw_in);
+        // A string literal names a multi-word scene (`grid Racks in "Wine Cellar":`).
+        const room = try self.take_atom();
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var width: ?u32 = null;
+        var height: u32 = 0;
+        var cell_size: ?u32 = null;
+        var origin_x: i32 = 0;
+        var origin_y: i32 = 0;
+        var rects = std.ArrayList(GridRectDecl).init(self.allocator);
+        var places = std.ArrayList(GridPlaceDecl).init(self.allocator);
+
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            try self.advance();
+            if (std.mem.eql(u8, directive, "size")) {
+                if (width != null) return self.set_error("grid '{s}' declares size twice", .{name});
+                width = try self.take_u32();
+                height = try self.take_u32();
+            } else if (std.mem.eql(u8, directive, "cell")) {
+                if (cell_size != null) return self.set_error("grid '{s}' declares cell twice", .{name});
+                cell_size = try self.take_u32();
+            } else if (std.mem.eql(u8, directive, "origin")) {
+                origin_x = try self.take_i32();
+                origin_y = try self.take_i32();
+            } else if (std.mem.eql(u8, directive, "place")) {
+                try places.append(.{ .mark = try self.take_atom(), .x = try self.take_u32(), .y = try self.take_u32() });
+            } else if (grid_mod.Attribute.from_name(directive) != null) {
+                var rect = GridRectDecl{ .attribute = directive, .x = try self.take_u32(), .y = try self.take_u32() };
+                if (self.current.tag == .number) {
+                    rect.width = try self.take_u32();
+                    rect.height = try self.take_u32();
+                }
+                try rects.append(rect);
+            } else return self.set_error("unknown grid directive '{s}'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+
+        const w = width orelse return self.set_error("grid '{s}' needs a size", .{name});
+        const size = cell_size orelse return self.set_error("grid '{s}' needs a cell size", .{name});
+        if (w == 0 or height == 0 or size == 0 or w > std.math.maxInt(u16) or height > std.math.maxInt(u16) or
+            @as(u64, w) * height > grid_mod.MAX_CELLS)
+            return self.set_error("grid '{s}' size must be positive with at most {d} cells", .{ name, grid_mod.MAX_CELLS });
+        for (rects.items) |rect| {
+            if (rect.width == 0 or rect.height == 0 or @as(u64, rect.x) + rect.width > w or @as(u64, rect.y) + rect.height > height)
+                return self.set_error("grid '{s}' {s} cells lie outside the grid", .{ name, rect.attribute });
+        }
+        for (places.items) |place| {
+            if (place.x >= w or place.y >= height) return self.set_error("grid '{s}' places '{s}' outside the grid", .{ name, place.mark });
+        }
+        return .{
+            .name = name,
+            .room = room,
+            .width = w,
+            .height = height,
+            .cell_size = size,
+            .origin_x = origin_x,
+            .origin_y = origin_y,
+            .rects = try rects.toOwnedSlice(),
+            .places = try places.toOwnedSlice(),
         };
     }
 

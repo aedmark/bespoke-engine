@@ -15,6 +15,7 @@ const dialogue_mod = @import("dialogue.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 const temporal_mod = @import("temporal_snapshot.zig");
 const container_mod = @import("container.zig");
+const grid_mod = @import("grid.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -31,6 +32,7 @@ pub fn initialize_subsystems(world: *World, compiled: *const CompiledProgram) !v
     for (compiled.degradations.items) |declaration| {
         _ = try container_mod.ContainerSystem.init(world, declaration.config);
     }
+    for (compiled.grids.items) |declaration| try grid_mod.seed(world, declaration);
 }
 
 /// One engine lifecycle tick: initialize declared subsystems, step the VM, advance subsystem

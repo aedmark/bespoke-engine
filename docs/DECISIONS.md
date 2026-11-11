@@ -697,6 +697,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Interrupt in-flight walks when a lock appears: deferred because it needs a route-change policy and fiber resumption semantics; P24-02 shapes the next walk intent only.
 **Consequences:** P24-03 can select a route, lock its incompatible waypoints, and prune its dialogue. Switching paths still requires retracting the previous path's facts and fibers (D-052).
 
+## D-054 Discrete Grid Overlay With Sparse Fact-Backed Cell Attributes (2026-11-10, status: accepted)
+**Context:** P25-01 adds the discrete 2D grid that D-005 and Q-001 deferred, as an optional overlay that complements the waypoint graph rather than replacing it. Phase 25's automata (P25-02) will mutate cells every tick, and the maintainer requires full save, rewind, and branch restore. The maintainer accepted static geometry on the grid, mutable attributes as facts, a script declaration with `.bspk` version 7, one grid per room with waypoints mapped by position, blocking cells honored at walk planning, and a fixed attribute set.
+**Decision:**
+1. `src/grid.zig` defines `Grid` geometry: entity, room, width, height, cell size, and origin in room coordinates. `SpatialSystem.grids` holds at most one overlay per room; geometry is program data and is never written to `.sav`.
+2. Cell attributes are the fixed set `flammable`, `liquid`, `blocking`. Each set attribute is one World fact on the grid entity (`CellFlammable`, `CellLiquid`, `CellBlocking`, set relations) whose value is the row-major cell index. An unset attribute has no fact, so the fact table grows with populated cells, not grid area. A grid holds at most 4096 cells.
+3. A top-level `grid <Name> in <Room>:` declaration owns size, cell size, origin, attribute cells or rectangles, and `place <Mark> x y`, which moves a mark of that room to a cell centre and refreshes its edge costs. `host.initialize_subsystems` seeds the initial layout once and asserts `GridSeeded(Grid)`; later calls, including after a restore, leave runtime changes in place.
+4. A waypoint maps to the cell containing its position in its room's grid. `SpatialSystem.waypoint_blocked` treats a `blocking` cell like `WaypointBlocked`: world-aware walks plan around it, a blocking destination refuses the walk, and an in-flight walk keeps its path (D-053). The lock-free `walk_to` ignores cells.
+5. `.bspk` version 7 appends the grid table. The loader bounds grid and cell counts and validates entity references, geometry, cell indexes, attribute bytes, duplicates, and one grid per room. Versions 1 through 6 load with no grids.
+**Alternatives:**
+- A dense cell array owned by the grid, saved in a new `.sav` section: rejected because World is the snapshot boundary, and a second state channel would need its own rewind and hypervisor-branch handling.
+- One World entity per cell: rejected because interning an entity per cell spends names and entity slots on empty cells and gives scripts no way to address a cell by coordinate.
+- Script-declared attribute names: deferred; P25-02's rules need a known vocabulary, and a fixed enum keeps package validation exact.
+- Grid as the primary topology: rejected by D-005; adventure scenes stay waypoint-first.
+**Consequences:** Grid cell state is saved, rewound, and branched for free. `host.tick` reseeds nothing after the first tick, but calls the seed check each tick (one fact scan per grid). Scripts address cells only through their index value; DSL coordinate queries and automata rules arrive with P25-02. Liquid is a presence flag with no depth; flow volume, if needed, is a P25-02 decision.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has
@@ -727,6 +742,6 @@ Format:
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
 
-- **Q-001** ~~Spatial topology representation: Should the default spatial model in the spine be a discrete 2D tile grid, a room/waypoint node graph, or a hybrid?~~ Answered 2026-11-04: Room/waypoint node graph adopted for graphical adventure game priority; 2D tile grids deferred, D-005.
+- **Q-001** ~~Spatial topology representation: Should the default spatial model in the spine be a discrete 2D tile grid, a room/waypoint node graph, or a hybrid?~~ Answered 2026-11-04: Room/waypoint node graph adopted for graphical adventure game priority; 2D tile grids deferred, D-005. Revisited 2026-11-10: an optional grid overlay complements the graph, D-054.
 - **Q-002** ~~Fact query indexing: At what scale does linear scanning over `MultiArrayList(Fact)` need to be augmented with sparse bitsets or entity-indexed hash tables?~~ Answered 2026-11-04: Linear scan over SoA columns adopted as baseline; cache-efficient and preserves zero-overhead `memcpy` saves, D-006.
 - **Q-003** ~~Continuous numerical stats representation: Should continuous/metered stats be stored in a dedicated numeric table/struct per entity, or represented as ternary relational facts?~~ Answered 2026-11-04: Unified ternary facts with functional property auto-overwrite adopted, D-007.

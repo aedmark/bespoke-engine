@@ -206,9 +206,9 @@ Goal: Implement structural multi-path narrative divergence inspired by *Indiana 
 
 Goal: Complement the waypoint navigation graph with an optional discrete 2D grid subsystem (`Q-001`), supporting systemic environmental propagation such as fire spreading across dry terrain, liquid flooding, and line-of-sight stealth detection.
 
-- [ ] P25-01 Discrete 2D grid data structure and spatial overlay in `SpatialSystem`, mapping grid coordinates to room topologies with configurable cell attributes (flammable, liquid, blocking).
+- [x] P25-01 Discrete 2D grid data structure and spatial overlay in `SpatialSystem`, mapping grid coordinates to room topologies with configurable cell attributes (flammable, liquid, blocking). (D-054; completed 2026-11-10: `src/grid.zig` geometry, one overlay per room in `SpatialSystem.grids`, sparse `CellFlammable`/`CellLiquid`/`CellBlocking` World facts seeded once by `host.initialize_subsystems`, `grid` script declarations with `place`, blocking cells honored by world-aware walks, and `.bspk` version 7. Verified by `zig build test` and focused grid, spatial, compiler, and package tests.)
 - [ ] P25-02 Tick-based cellular automata rules evaluated in engine spine: fire spreading, smoke dissipation, water flow, and reactive interrupts on actors traversing hazardous cells.
-- [ ] P25-03 The Castle Fire Escape systemic scenario (`src/grid_puzzle.zig`, `--grid`): flammable tapestry, torch ignition, fire propagation, bucket dousing, and dual headless/interactive verification.
+- [ ] P25-03 The Castle Fire Escape systemic scenario (`proofs/grid_puzzle.zig`, `--grid`; D-031): flammable tapestry, torch ignition, fire propagation, bucket dousing, and dual headless/interactive verification.
 
 ## Phase 26: Hybrid Text Parser & Natural Language Input
 
