@@ -226,9 +226,9 @@ Phase 26 is complete (2026-11-10): typed commands have a vocabulary, a matcher w
 
 Goal: Build an interactive visual debugging overlay rendering live relational state graphs, NPC belief networks, cooperative fiber execution stacks, and dialogue choice availability DAGs.
 
-- [ ] P27-01 Real-time relational fact and belief network graph renderer in `DisplayWindow`, drawing nodes (entities) and directed edges (relations, beliefs) with color-coded TTL states.
+- [x] P27-01 Real-time relational fact and belief network graph renderer in `DisplayWindow`, drawing nodes (entities) and directed edges (relations, beliefs) with color-coded TTL states. (D-058; completed 2026-11-10: a State tab in the `P` drawer, 128 captured facts with ids, entity flags, and just-expired copies, `src/display/state_graph.zig` with a fixed ego layout around the best-connected or chosen entity, belief edges in their own colour, and white/green/amber/red/grey bands by remaining ticks. Verified by `zig build test` (255/255), a render golden of the tab, a key test that the tab never saves or loads, and a mutation check on layout order.)
 - [ ] P27-02 Dialogue branch and causality DAG inspector, highlighting active dialogue choices, pruned branches with failed guards, and forward-projecting temporal cascades.
-- [ ] P27-03 Interactive graph navigation, filtering by entity or relation kind, and integration into the existing `[P]` Pause / Save drawer and the showcase site's browser simulator (`site/index.html`; the manual's embedded simulator was removed by D-047).
+- [ ] P27-03 Interactive graph navigation, filtering by entity or relation kind, and integration into the existing `[P]` Pause / Save drawer. The showcase site's browser simulator part moves to Phase 30 (D-058): the wasm runtime keeps no VM state of this kind.
 
 ## Phase 28: Music Macro Language (MML) Scripting & In-DSL Chiptune Composition
 
@@ -253,6 +253,7 @@ Goal: Polish the public-facing showcase website in `site/index.html` with the co
 - [~] P30-01 Enhanced retro web terminal and scenario launcher in `site/index.html`, letting visitors launch and play any BeSpoke vertical slice in browser canvas with audio. (partial 2026-11-10: seven proof decks run the embedded `bespoke-proofs.wasm` through `tools/site_simulator.js`; the page remains self-contained, but audio and decks for the four remaining proofs (Insult Sword Fighting, The Middlesex Anomaly, The Bell Tower, The Fate of Atlantis: Algiers) are open; corrected 2026-11-10.)
 - [ ] P30-02 Neocities deployment pipeline and static export tooling (`tools/deploy_site.py`), optimizing WASM asset size, metadata headers, and offline caching.
 - [ ] P30-03 Interactive scenario gallery, architecture diagram embeds, and live script source viewer accompanying each playable slice.
+- [ ] P30-04 State inspector in the showcase site's browser simulator (moved from P27-03 by D-058), once the browser runtime exposes fact and dialogue state.
 
 ## Phase 31: Cinematic Temporal Hypervisors, The Roberta Sparrow Model, and Pre-Cognitive Vector Conduits
 

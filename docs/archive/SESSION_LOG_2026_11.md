@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 40 (2026-11-10)
+- **Goal:** Implement P25-01, the discrete grid overlay, with the maintainer-approved defaults.
+- **Work:** Added `src/grid.zig` (geometry, fixed attribute set, sparse fact-backed cells, idempotent seeding), `SpatialSystem.grids` with `add_grid`, `grid_in_room`, `waypoint_cell`, `agent_cell`, and `SpatialGraph.move_waypoint`; blocking cells feed `waypoint_blocked`. Added the `grid` declaration (lexer, parser, codegen, `place`), `CompiledProgram.grids`, host seeding, and `.bspk` version 7. Recorded D-054, corrected P25-03's path to `proofs/` (D-031), and updated ARCHITECTURE, script_spec, TESTING, CHANGELOG, ROADMAP, and the manual.
+- **Outcome:** See the Verified table. A mutation check (grid blocking disabled) failed the P25-01 spatial test as intended. Fast-forwarded to `main` at `cdc4c91` and pushed; no proof or golden changed.
+
 ### Session 39 (2026-11-10)
 - **Goal:** Close Phase 24 by implementing P24-02 and P24-03, documenting route mutation, and merging the branch.
 - **Work:** P24-02 added `WaypointBlocked` facts, `SpatialGraph.find_path_avoiding`, `SpatialSystem.walk_to_with_world`, and the world-aware VM walk opcode; path-asserted obstacle facts feed `can_access_portal`, and `PathActive` guards prune dialogue. D-053 records the design. P24-03 added `proofs/atlantis_puzzle.zig`, where Wits, Fists, and Team lock rival bazaar gates, prune Omar's dialogue, and run only their own solution. The native window uses a generated dialogue selector; headless coverage and a selector test verify all three routes. Updated ROADMAP, README, ARCHITECTURE, CHANGELOG, the manual, and this handoff.

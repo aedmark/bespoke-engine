@@ -140,3 +140,4 @@ observatory_puzzle/Larkspur Observatory: 856014bb67ddfe33
 observatory_puzzle/Larkspur Observatory +tangent_active: f5cf33110f74565f
 observatory_puzzle/Larkspur Observatory +singularity_collapsed: 4c31823124a972eb
 observatory_puzzle/Larkspur Observatory +countdown: 31561375bddeb906
+inspector/Larkspur Observatory: 9bc5b0b1ee464ca5

@@ -595,6 +595,28 @@
           "related": ["continuous-when-rules", "cue-dispatch-and-interruption"]
         },
         {
+          "id": "state-inspector-graph",
+          "title": "State Inspector: the Fact Graph",
+          "summary": "A paused, drawn view of who relates to whom, what each believes, and how long each fact has left.",
+          "synopsis": "[P] then [Tab] to STATE",
+          "tags": ["inspector", "debug", "facts", "beliefs"],
+          "what": "Draws the selected entity with its connected entities around it, each fact as a labelled arrow, and lists its values and states, coloured by remaining ticks.",
+          "how": [
+            "DisplayBridge.capture_frame copies up to 128 facts per frame with subject and object ids, whether the object names an entity, and the facts that just expired.",
+            "state_graph.default_focus picks the entity with most edges; state_graph.build places it in the centre and its neighbours on a ring in entity-id order.",
+            "Facts whose object is an entity are arrows; Believes, Knows, and Rejects arrows are purple; value and state facts are listed beside the graph.",
+            "Colours: white permanent, then green, amber, and red as fewer than 60 and 20 ticks remain, grey for just expired.",
+            "The inspector is the third tab of the P drawer, so the game is paused; Enter, digits, and Space never save or load there."
+          ],
+          "why": "A text list of 10 facts cannot show how state connects. A fixed layout around one entity stays readable at any world size and draws the same picture for the same state, so it can be pinned by a render golden.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-058", "target": "docs/DECISIONS.md#d-058", "kind": "decision"},
+            {"label": "State Graph Layout", "target": "src/display/state_graph.zig", "kind": "source"}
+          ],
+          "related": ["developer-dashboard", "relational-facts", "snapshot-time-travel"]
+        },
+        {
           "id": "typed-commands-vocabulary",
           "title": "Typed Commands: Words, Frames, and Nouns",
           "summary": "The vocabulary that turns a typed line into a cue and the entities it names.",

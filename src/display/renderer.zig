@@ -6,6 +6,7 @@ const hypervisor_mod = @import("../hypervisor.zig");
 const vm_mod = @import("../vm.zig");
 const dialogue_mod = @import("../dialogue.zig");
 const command_mod = @import("../command.zig");
+const state_graph = @import("state_graph.zig");
 const font = @import("font.zig");
 const text_layout = @import("text_layout.zig");
 
@@ -30,6 +31,17 @@ pub const SaveSlotInfo = save_mod.SaveSlotInfo;
 pub const SaveMenuMode = enum(u8) {
     save = 0,
     load = 1,
+    /// The state inspector (P27-01, D-058).
+    state = 2,
+
+    /// Tab order: Save, Load, State, then Save again.
+    pub fn next(self: SaveMenuMode) SaveMenuMode {
+        return switch (self) {
+            .save => .load,
+            .load => .state,
+            .state => .save,
+        };
+    }
 };
 
 pub const SaveDrawerTab = enum(u8) {
@@ -37,6 +49,7 @@ pub const SaveDrawerTab = enum(u8) {
     load_mode = 1,
     resume_game = 2,
     quit_game = 3,
+    state_mode = 4,
 };
 
 const RenderFrame = display_mod.RenderFrame;
@@ -648,9 +661,24 @@ pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_R
 
     if (mouse_x >= drawer_rect.x + 20 and mouse_x <= drawer_rect.x + 170) return .save_mode;
     if (mouse_x >= drawer_rect.x + 180 and mouse_x <= drawer_rect.x + 330) return .load_mode;
+    if (mouse_x >= drawer_rect.x + 340 and mouse_x <= drawer_rect.x + 470) return .state_mode;
     if (mouse_x >= drawer_rect.x + drawer_rect.w - 270 and mouse_x <= drawer_rect.x + drawer_rect.w - 140) return .resume_game;
     if (mouse_x >= drawer_rect.x + drawer_rect.w - 130 and mouse_x <= drawer_rect.x + drawer_rect.w - 20) return .quit_game;
     return null;
+}
+
+/// State inspector colours (D-058 point 3).
+const INSPECTOR_ACCENT = Color{ .r = 56, .g = 189, .b = 248 };
+const INSPECTOR_BELIEF = Color{ .r = 192, .g = 132, .b = 252 };
+
+fn band_color(b: state_graph.Band) Color {
+    return switch (b) {
+        .permanent => Color.hud_text,
+        .fresh => Color.status_running,
+        .waning => Color{ .r = 245, .g = 158, .b = 11 },
+        .ending => Color.cue_alert,
+        .expired => Color{ .r = 100, .g = 116, .b = 139 },
+    };
 }
 
 /// The SDL2 peripheral window consumer (D-001, D-008, P6-01 through P6-04).
@@ -743,6 +771,8 @@ pub const DisplayWindow = struct {
     // Phase 9 Debug, Scrubber & REPL (P9-01, P9-02, P9-03, D-011)
     show_debug_overlay: bool = false,
     show_console: bool = false,
+    /// The entity the state inspector centres on; null picks the best-connected one (D-058).
+    inspector_focus: ?display_mod.EntityId = null,
     /// Typed-command bar (P26-03, D-057). Off unless the host enables it; while focused, every
     /// key is text, so no engine or host binding fires.
     command_bar_enabled: bool = false,
@@ -1235,6 +1265,76 @@ pub const DisplayWindow = struct {
     }
 
     /// Appends a line to the REPL console history buffer (P9-03, D-011).
+    /// The State tab of the drawer (P27-01, D-058): the focused entity with its neighbours on a
+    /// ring and the facts between them as labelled arrows, its value and state facts listed on
+    /// the right, coloured by remaining ticks.
+    fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: c.SDL_Rect, top: i32) void {
+        const facts = frame.debug_facts[0..frame.debug_fact_count];
+        const area_x = drect.x + 16;
+        const area_w = drect.w - 32;
+        const area_h = drect.y + drect.h - 12 - top;
+        self.fill_rect(area_x, top, area_w, area_h, Color{ .r = 9, .g = 14, .b = 26, .a = 250 });
+        self.draw_rect_outline(area_x, top, area_w, area_h, Color{ .r = 51, .g = 65, .b = 85 });
+
+        var footer_buf: [96]u8 = undefined;
+        const footer = std.fmt.bufPrint(&footer_buf, "TICK {d} | {d} FACTS SHOWN | TAB: SAVE/LOAD/STATE | ESC: RESUME", .{ frame.tick, facts.len }) catch "";
+        self.draw_text(footer, area_x + 10, top + area_h - 16, 1, Color.hud_subtext);
+
+        const focus = self.inspector_focus orelse state_graph.default_focus(facts) orelse {
+            self.draw_text("No fact links two entities yet.", area_x + 20, top + 20, 2, Color.hud_subtext);
+            return;
+        };
+        const graph_w = @divTrunc(area_w * 62, 100);
+        const cx = area_x + @divTrunc(graph_w, 2);
+        const cy = top + @divTrunc(area_h - 20, 2);
+        const layout = state_graph.build(facts, focus, cx, cy, @divTrunc(graph_w, 2) - 70, @divTrunc(area_h - 20, 2) - 34);
+
+        for (layout.edges[0..layout.edge_len]) |edge| {
+            const f = &facts[edge.fact];
+            const node = layout.ring[edge.ring];
+            const line_col = if (state_graph.is_belief(f)) INSPECTOR_BELIEF else band_color(state_graph.band(f, frame.tick));
+            self.draw_line(cx, cy, node.x, node.y, line_col);
+            // The arrowhead sits near the object's end of the edge.
+            const tip_x = if (edge.outward) node.x + @divTrunc(cx - node.x, 5) else cx + @divTrunc(node.x - cx, 5);
+            const tip_y = if (edge.outward) node.y + @divTrunc(cy - node.y, 5) else cy + @divTrunc(node.y - cy, 5);
+            self.fill_circle(tip_x, tip_y, 4, line_col);
+            self.draw_text(f.get_relation(), @divTrunc(cx + node.x, 2) - 30, @divTrunc(cy + node.y, 2) - 10, 1, band_color(state_graph.band(f, frame.tick)));
+        }
+        for (layout.ring_nodes()) |node| {
+            self.fill_circle(node.x, node.y, 12, Color{ .r = 51, .g = 65, .b = 85 });
+            self.draw_text(state_graph.name_of(facts, node.entity), node.x - 30, node.y + 16, 1, Color.hud_text);
+        }
+        self.fill_circle(cx, cy, 18, INSPECTOR_ACCENT);
+        self.draw_text(state_graph.name_of(facts, focus), cx - 30, cy + 22, 2, Color.white);
+        if (layout.hidden_neighbours > 0) {
+            var more_buf: [32]u8 = undefined;
+            self.draw_text(std.fmt.bufPrint(&more_buf, "+{d} MORE", .{layout.hidden_neighbours}) catch "", area_x + 10, top + 10, 1, Color.hud_subtext);
+        }
+
+        const list_x = area_x + graph_w + 10;
+        self.draw_line(list_x - 10, top + 8, list_x - 10, top + area_h - 24, Color{ .r = 51, .g = 65, .b = 85 });
+        self.draw_text("STATES & VALUES", list_x, top + 10, 1, Color.hud_subtext);
+        var y = top + 28;
+        for (layout.listed[0..layout.listed_len]) |i| {
+            const f = &facts[i];
+            var line_buf: [64]u8 = undefined;
+            const line = if (f.object_raw == 0)
+                f.get_relation()
+            else
+                std.fmt.bufPrint(&line_buf, "{s} = {s}", .{ f.get_relation(), f.get_object() }) catch f.get_relation();
+            self.draw_text(line, list_x, y, 1, band_color(state_graph.band(f, frame.tick)));
+            if (f.expires_at_tick > 0 and !f.recently_expired) {
+                var exp_buf: [24]u8 = undefined;
+                self.draw_text(std.fmt.bufPrint(&exp_buf, "until {d}", .{f.expires_at_tick}) catch "", list_x + 150, y, 1, Color.hud_subtext);
+            }
+            y += 14;
+        }
+        if (layout.hidden_listed > 0) {
+            var more_buf: [32]u8 = undefined;
+            self.draw_text(std.fmt.bufPrint(&more_buf, "+{d} MORE", .{layout.hidden_listed}) catch "", list_x, y, 1, Color.hud_subtext);
+        }
+    }
+
     /// Turns the command bar on or off. Turning it off also unfocuses it.
     pub fn enable_command_bar(self: *DisplayWindow, enabled: bool) void {
         self.command_bar_enabled = enabled;
@@ -1403,6 +1503,10 @@ pub const DisplayWindow = struct {
                                         self.save_menu_mode = .load;
                                         return .none;
                                     },
+                                    .state_mode => {
+                                        self.save_menu_mode = .state;
+                                        return .none;
+                                    },
                                     .resume_game => {
                                         self.show_save_drawer = false;
                                         return .toggle_save_drawer;
@@ -1410,7 +1514,9 @@ pub const DisplayWindow = struct {
                                     .quit_game => return .quit,
                                 }
                             }
-                            if (hit_test_save_slot(event.button.x, event.button.y, drect)) |slot_id| {
+                            // The State tab draws over the slot cards; a click there is not a slot.
+                            const slot_hit = if (self.save_menu_mode == .state) null else hit_test_save_slot(event.button.x, event.button.y, drect);
+                            if (slot_hit) |slot_id| {
                                 self.selected_save_slot = slot_id;
                                 return if (self.save_menu_mode == .save)
                                     .{ .save_slot = slot_id }
@@ -1775,12 +1881,32 @@ pub const DisplayWindow = struct {
                         return .none;
                     }
 
+                    if (self.show_save_drawer and self.save_menu_mode == .state) {
+                        // The inspector has no slots: Enter, digits, and arrows must not save or
+                        // load. P27-03 gives arrows and Enter their navigation meaning.
+                        if (sym == c.SDLK_ESCAPE or sym == c.SDLK_p) {
+                            self.show_save_drawer = false;
+                            self.play_sfx(.click);
+                            return .toggle_save_drawer;
+                        } else if (sym == c.SDLK_TAB) {
+                            self.save_menu_mode = self.save_menu_mode.next();
+                            self.play_sfx(.click);
+                        } else if (sym == c.SDLK_q) {
+                            return .quit;
+                        }
+                        return .none;
+                    }
+
                     if (self.show_save_drawer) {
                         if (sym == c.SDLK_ESCAPE or sym == c.SDLK_p) {
                             self.show_save_drawer = false;
                             self.play_sfx(.click);
                             return .toggle_save_drawer;
-                        } else if (sym == c.SDLK_TAB or sym == c.SDLK_LEFT or sym == c.SDLK_RIGHT) {
+                        } else if (sym == c.SDLK_TAB) {
+                            self.save_menu_mode = self.save_menu_mode.next();
+                            self.play_sfx(.click);
+                            return .none;
+                        } else if (sym == c.SDLK_LEFT or sym == c.SDLK_RIGHT) {
                             self.save_menu_mode = if (self.save_menu_mode == .save) .load else .save;
                             self.play_sfx(.click);
                             return .none;
@@ -2880,9 +3006,16 @@ pub const DisplayWindow = struct {
             self.draw_text("SAVE GAME [F2]", drect.x + 32, tab_y + 8, 2, if (is_save_mode) Color.black else Color.hud_text);
 
             // Load Mode Tab
-            self.fill_rect(drect.x + 180, tab_y, 150, 28, if (!is_save_mode) Color.wp_target else Color{ .r = 30, .g = 41, .b = 59 });
-            self.draw_rect_outline(drect.x + 180, tab_y, 150, 28, if (!is_save_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
-            self.draw_text("LOAD GAME [F3]", drect.x + 192, tab_y + 8, 2, if (!is_save_mode) Color.black else Color.hud_text);
+            const is_load_mode = (self.save_menu_mode == .load);
+            self.fill_rect(drect.x + 180, tab_y, 150, 28, if (is_load_mode) Color.wp_target else Color{ .r = 30, .g = 41, .b = 59 });
+            self.draw_rect_outline(drect.x + 180, tab_y, 150, 28, if (is_load_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_text("LOAD GAME [F3]", drect.x + 192, tab_y + 8, 2, if (is_load_mode) Color.black else Color.hud_text);
+
+            // State Inspector Tab (P27-01, D-058)
+            const is_state_mode = (self.save_menu_mode == .state);
+            self.fill_rect(drect.x + 340, tab_y, 130, 28, if (is_state_mode) INSPECTOR_ACCENT else Color{ .r = 30, .g = 41, .b = 59 });
+            self.draw_rect_outline(drect.x + 340, tab_y, 130, 28, if (is_state_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
+            self.draw_text("STATE", drect.x + 376, tab_y + 8, 2, if (is_state_mode) Color.black else Color.hud_text);
 
             // Resume Button
             self.fill_rect(drect.x + drect.w - 270, tab_y, 130, 28, Color{ .r = 22, .g = 101, .b = 52 });
@@ -2894,9 +3027,11 @@ pub const DisplayWindow = struct {
             self.draw_rect_outline(drect.x + drect.w - 130, tab_y, 110, 28, Color.cue_alert);
             self.draw_text("QUIT [Q]", drect.x + drect.w - 108, tab_y + 8, 2, Color.white);
 
+            if (is_state_mode) self.draw_state_inspector(frame, drect, tab_y + 40);
+
             // Render Slot Cards (0 = Quick-Save, 1..8 = Numbered Slots)
             var slot_id: u8 = 0;
-            while (slot_id <= save_mod.MAX_SLOTS) : (slot_id += 1) {
+            while (slot_id <= save_mod.MAX_SLOTS and !is_state_mode) : (slot_id += 1) {
                 const srect = get_save_slot_rect(slot_id, drect);
                 const sinfo = self.save_manager.get_slot_info(slot_id) orelse SaveSlotInfo{ .slot_id = slot_id };
                 const is_sel = (self.selected_save_slot == slot_id) or (self.hovered_save_slot != null and self.hovered_save_slot.? == slot_id);
@@ -3628,4 +3763,37 @@ test "P26-03: the command bar takes every key while focused and submits typed li
     try testing.expect(!window.command_bar_focused);
     try testing.expectEqual(UserAction{ .custom = 7 }, Input.key(&window, &frame, c.SDLK_t));
     try testing.expectEqual(UserAction.step_tick, Input.key(&window, &frame, c.SDLK_n));
+}
+
+test "P27-01: the State tab cycles in with Tab and never saves or loads" {
+    const testing = std.testing;
+    if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
+    defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
+    var window = try DisplayWindow.init_offscreen(640, 360);
+    defer window.deinit();
+    const frame = std.mem.zeroes(RenderFrame);
+    const Press = struct {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_KEYDOWN;
+            ev.key.keysym.sym = sym;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+    };
+    window.show_save_drawer = true;
+    try testing.expectEqual(SaveMenuMode.save, window.save_menu_mode);
+    _ = Press.key(&window, &frame, c.SDLK_TAB);
+    _ = Press.key(&window, &frame, c.SDLK_TAB);
+    try testing.expectEqual(SaveMenuMode.state, window.save_menu_mode);
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_RETURN));
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_3));
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_SPACE));
+    _ = Press.key(&window, &frame, c.SDLK_TAB);
+    try testing.expectEqual(SaveMenuMode.save, window.save_menu_mode);
+    _ = Press.key(&window, &frame, c.SDLK_TAB);
+    _ = Press.key(&window, &frame, c.SDLK_TAB);
+    try testing.expectEqual(UserAction.toggle_save_drawer, Press.key(&window, &frame, c.SDLK_ESCAPE));
+    try testing.expect(!window.show_save_drawer);
 }

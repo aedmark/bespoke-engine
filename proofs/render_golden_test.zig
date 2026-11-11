@@ -301,11 +301,57 @@ fn record_tavern(rec: *Recorder) !void {
     try rec.draw("tavern_heist/CellarRoom", &world, &spatial, &vm);
 }
 
+/// The State tab of the drawer (P27-01, D-058) over a staged observatory: the opening facts
+/// plus evidence, a belief, a timed warning, and a just-expired fact, centred on Ines.
+fn record_inspector(rec: *Recorder) !void {
+    const allocator = rec.allocator;
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, observatory_puzzle.OBSERVATORY_SCRIPT);
+    defer compiled.deinit();
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.transition_to_scene(world.lookup_entity("Larkspur Observatory").?);
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    try bespoke.host.initialize_subsystems(&world, &compiled);
+    const ines = world.lookup_entity("Ines").?;
+    const e = struct {
+        fn id(w: *bespoke.World, name: []const u8) !u32 {
+            return (try w.intern_entity(name)).to_int();
+        }
+    };
+    try world.remember(ines, world.lookup_relation("Carries").?, try e.id(&world, "ExposureSlip"), 0);
+    try world.remember(ines, world.lookup_relation("Believes").?, try e.id(&world, "PellInLibrary"), 0);
+    try world.remember(ines, world.lookup_relation("Investigated").?, try e.id(&world, "Darkroom"), 0);
+    try world.remember(world.lookup_entity("Halloran").?, try world.intern_relation("Watching", .set), ines.to_int(), 40);
+    try world.remember(ines, world.lookup_relation("NearShed").?, 0, 1);
+    try world.remember(ines, try world.intern_relation("Suspicious", .set), 0, 90);
+    _ = world.step_tick(); // NearShed expires this tick and shows grey
+
+    var bridge = bespoke.DisplayBridge.init();
+    bridge.set_status_hook(art.capture_status);
+    bridge.capture_frame(&world, &spatial, &vm);
+    bridge.swap();
+    rec.window.show_save_drawer = true;
+    rec.window.save_menu_mode = .state;
+    rec.window.inspector_focus = ines;
+    defer {
+        rec.window.show_save_drawer = false;
+        rec.window.save_menu_mode = .save;
+        rec.window.inspector_focus = null;
+    }
+    try rec.draw_frame("inspector/Larkspur Observatory", bridge.get_frame());
+}
+
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.ArrayList(u8) {
     var rec = Recorder{ .allocator = allocator, .window = window, .out = std.ArrayList(u8).init(allocator), .dump_against = dump_against, .variants = variants };
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
+    try record_inspector(&rec);
     return rec.out;
 }
 

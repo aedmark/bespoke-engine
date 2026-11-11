@@ -764,6 +764,20 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Resolving nouns against the whole World: rejected; typed commands would reach entities the player cannot see.
 **Consequences:** Typed and clicked actions meet at the same cue handlers. Matching is word-subset, not fuzzy, so misspellings fail with "I don't know the word". A noun such as "key" is ambiguous whenever two keys are in scope, by design.
 
+## D-058 State Inspector: a Drawer Tab, 128 Captured Facts, a Fixed Ego Layout, and a Next-to-Happen List (2026-11-10, status: accepted)
+**Context:** Phase 27 adds a live view of world state. The `D` overlay lists 10 of the 32 facts each frame copies, as text; the `P` drawer holds save and load. The maintainer accepted the defaults below.
+**Decision:**
+1. The inspector is a third "State" tab of the `P` drawer (Tab cycles Save, Load, State), so the game is paused while it is read. The `D` overlay is unchanged.
+2. Each frame copies up to 128 facts (was 32), adding the subject and object ids, whether the object names an entity, and a flag for facts in `World.recently_expired`.
+3. Entities are nodes. A fact whose object names an entity is a directed edge labelled with its relation; value and state facts are listed under their subject. `Believes`, `Knows`, and `Rejects` edges use a belief colour. Fact colours: permanent white; green, amber, then red as the remaining ticks fall below 60 and 20; grey for just-expired.
+4. The layout is fixed and deterministic: the focused entity in the centre, its neighbours on a ring in entity-id order. The default focus is the entity with the most edges (lowest id on ties). Every redraw of the same state draws the same picture.
+5. P27-02 shows the open dialogue's options with pruned ones and their failed guards, and a "next to happen" list of expiring facts by tick. P27-03 adds keyboard navigation (move, recentre) and relation filters. The browser simulator part of P27-03 moves to Phase 30, because the wasm runtime keeps no VM state of this kind.
+**Alternatives:**
+- A force-directed layout of the whole world: rejected; it is unreadable past a few dozen facts and changes between runs, so no golden can pin it.
+- A separate overlay key: rejected; free letters are scarce and an inspector belongs with pause.
+- Capturing every fact: rejected; the frame is copied by value twice per tick.
+**Consequences:** The frame grows by about 14 KB. Facts carry no type for their object, so a numeric value equal to an entity id is drawn as an edge, as the text inspector already shows it; the engine's known value relations (`CellFlammable`, `CellLiquid`, `CellBlocking`, `CellBurning`, `CellSmoke`, `Volume`) are always treated as values. Worlds with more than 128 facts show the first 128 in fact-table order.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

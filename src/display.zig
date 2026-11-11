@@ -103,6 +103,55 @@ pub const RenderInventoryItem = struct {
 
 /// A party member in a multi-protagonist scenario (P21-01, D-025).
 pub const MAX_PARTY_MEMBERS = 4;
+/// Facts copied into each frame for the inspectors (D-058; was 32).
+pub const MAX_DEBUG_FACTS = 128;
+
+/// Relations the engine itself fills with numbers, never entity ids, whatever the number
+/// happens to equal (D-058).
+const VALUE_RELATIONS = [_][]const u8{ "CellFlammable", "CellLiquid", "CellBlocking", "CellBurning", "CellSmoke", "Volume" };
+
+fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDebugFact {
+    var df = RenderDebugFact{
+        .subject_name = undefined,
+        .subject_len = 0,
+        .relation_name = undefined,
+        .relation_len = 0,
+        .object_name = undefined,
+        .object_len = 0,
+        .expires_at_tick = fact.expires_at_tick,
+        .subject = fact.subject,
+        .object_raw = fact.object_or_value,
+        .recently_expired = expired,
+    };
+    if (world.get_entity_name(fact.subject)) |sn| {
+        const len = @min(sn.len, df.subject_name.len);
+        @memcpy(df.subject_name[0..len], sn[0..len]);
+        df.subject_len = @intCast(len);
+    }
+    var value_relation = false;
+    if (world.get_relation_meta(fact.relation)) |rm| {
+        const len = @min(rm.name.len, df.relation_name.len);
+        @memcpy(df.relation_name[0..len], rm.name[0..len]);
+        df.relation_len = @intCast(len);
+        for (VALUE_RELATIONS) |v| if (std.mem.eql(u8, v, rm.name)) {
+            value_relation = true;
+        };
+    }
+    const object_name = if (value_relation or fact.object_or_value == 0) null else world.get_entity_name(EntityId.from_int(fact.object_or_value));
+    if (object_name) |on| {
+        const len = @min(on.len, df.object_name.len);
+        @memcpy(df.object_name[0..len], on[0..len]);
+        df.object_len = @intCast(len);
+        df.object_is_entity = true;
+    } else {
+        var num_buf: [16]u8 = undefined;
+        const formatted = std.fmt.bufPrint(&num_buf, "{d}", .{fact.object_or_value}) catch "?";
+        const len = @min(formatted.len, df.object_name.len);
+        @memcpy(df.object_name[0..len], formatted[0..len]);
+        df.object_len = @intCast(len);
+    }
+    return df;
+}
 pub const RenderPartyMember = struct {
     entity: EntityId,
     name: [32]u8 = undefined,
@@ -123,6 +172,13 @@ pub const RenderDebugFact = struct {
     object_name: [24]u8,
     object_len: u8,
     expires_at_tick: u64,
+    /// State inspector fields (P27-01, D-058).
+    subject: EntityId = .none,
+    object_raw: u32 = 0,
+    /// The object names an entity, so the inspector draws the fact as an edge.
+    object_is_entity: bool = false,
+    /// Copied from `World.recently_expired`: gone this tick, drawn grey.
+    recently_expired: bool = false,
 
     pub fn get_subject(self: *const RenderDebugFact) []const u8 {
         return self.subject_name[0..self.subject_len];
@@ -245,7 +301,7 @@ pub const RenderFrame = struct {
     distaff: RenderDistaff = .{},
     // Executable dialogue channel (P32-30, D-046)
     dialogue: RenderDialogue = .{},
-    debug_facts: [32]RenderDebugFact,
+    debug_facts: [MAX_DEBUG_FACTS]RenderDebugFact,
     debug_fact_count: usize,
     debug_fibers: [8]RenderDebugFiber,
     debug_fiber_count: usize,
@@ -664,51 +720,18 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.inventory_count = inv_count;
 
-        // 7. Capture active relational facts for debug inspector (P9-01, D-011)
+        // 7. Capture relational facts for the inspectors (P9-01, D-011, D-058): live facts first,
+        // then the ones that expired this tick, up to MAX_DEBUG_FACTS.
         var df_count: usize = 0;
         const slice = world.facts.slice();
-        const subjects = slice.items(.subject);
-        const relations = slice.items(.relation);
-        const objects = slice.items(.object_or_value);
-        const expirations = slice.items(.expires_at_tick);
-
-        var fi: usize = 0;
-        while (fi < world.facts.len and df_count < self.back_buffer.debug_facts.len) : (fi += 1) {
-            var df = RenderDebugFact{
-                .subject_name = undefined,
-                .subject_len = 0,
-                .relation_name = undefined,
-                .relation_len = 0,
-                .object_name = undefined,
-                .object_len = 0,
-                .expires_at_tick = expirations[fi],
-            };
-
-            if (world.get_entity_name(subjects[fi])) |sn| {
-                const len = @min(sn.len, df.subject_name.len);
-                @memcpy(df.subject_name[0..len], sn[0..len]);
-                df.subject_len = @intCast(len);
-            }
-
-            if (world.get_relation_meta(relations[fi])) |rm| {
-                const len = @min(rm.name.len, df.relation_name.len);
-                @memcpy(df.relation_name[0..len], rm.name[0..len]);
-                df.relation_len = @intCast(len);
-            }
-
-            if (world.get_entity_name(EntityId.from_int(objects[fi]))) |on| {
-                const len = @min(on.len, df.object_name.len);
-                @memcpy(df.object_name[0..len], on[0..len]);
-                df.object_len = @intCast(len);
-            } else {
-                var num_buf: [16]u8 = undefined;
-                const formatted = std.fmt.bufPrint(&num_buf, "{d}", .{objects[fi]}) catch "?";
-                const len = @min(formatted.len, df.object_name.len);
-                @memcpy(df.object_name[0..len], formatted[0..len]);
-                df.object_len = @intCast(len);
-            }
-
-            self.back_buffer.debug_facts[df_count] = df;
+        for (0..world.facts.len) |fi| {
+            if (df_count == self.back_buffer.debug_facts.len) break;
+            self.back_buffer.debug_facts[df_count] = debug_fact(world, slice.get(fi), false);
+            df_count += 1;
+        }
+        for (world.get_recently_expired()) |fact| {
+            if (df_count == self.back_buffer.debug_facts.len) break;
+            self.back_buffer.debug_facts[df_count] = debug_fact(world, fact, true);
             df_count += 1;
         }
         self.back_buffer.debug_fact_count = df_count;
