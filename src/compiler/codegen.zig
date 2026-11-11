@@ -1964,7 +1964,7 @@ test "P25-01: grid declarations reject malformed and out-of-range layouts" {
     };
     for (bad) |source| {
         const result = compiler.check_source(testing.allocator, source);
-        try testing.expect(result.diagnostic != null);
+        try testing.expect(result.diagnostic() != null);
     }
 
     // A placed mark must exist and belong to the grid's room.
@@ -2022,7 +2022,7 @@ test "P33-01: agenda declarations compile and reject malformed agendas" {
         "agenda A:\n  actor Keeper\n  target Hero\n  wants Seen(Hero)\n",
         "agenda A:\n  actor K\n  target H\n  requires S(H)\nagenda A:\n  actor K\n  target H\n  requires S(H)\n",
     };
-    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic != null);
+    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic() != null);
 }
 
 test "P26-01: command and alias declarations compile and reject malformed ones" {
@@ -2052,7 +2052,7 @@ test "P26-01: command and alias declarations compile and reject malformed ones" 
         "alias Slip: \"\"\n",
         "alias Slip:\n",
     };
-    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic != null);
+    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic() != null);
 }
 
 test "P23-01: degradation declarations compile into executable container profiles" {
@@ -2201,23 +2201,6 @@ test "P24-02: active path mutates obstacle facts and prunes rival dialogue choic
     try testing.expect(spatial.can_access_portal(&world, hero));
 }
 
-/// Parses `source` and returns its diagnostic with the message copied into `buf`, for score
-/// error tests; null when the source parses.
-fn score_parse_error(source: []const u8, buf: []u8) !?parser_mod.Diagnostic {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var lex = lexer_mod.Lexer.init(arena.allocator(), source);
-    var parser = try parser_mod.Parser.init(arena.allocator(), &lex);
-    _ = parser.parse_program() catch {
-        var d = parser.diagnostic.?;
-        const n = @min(d.message.len, buf.len);
-        @memcpy(buf[0..n], d.message[0..n]);
-        d.message = buf[0..n];
-        return d;
-    };
-    return null;
-}
-
 test "P28-03: score declarations compile, seed scene facts, and play and stop by World facts" {
     const testing = std.testing;
     const compiler = @import("../compiler.zig");
@@ -2287,7 +2270,7 @@ test "P28-03: score declarations compile, seed scene facts, and play and stop by
 
 test "P28-03: score errors name the script position, the part, and the rule broken" {
     const testing = std.testing;
-    var buf: [256]u8 = undefined;
+    const compiler = @import("../compiler.zig");
     const Case = struct { source: []const u8, line: u32, column: u32, message: []const u8 };
     const cases = [_]Case{
         // `x` is MML column 4; the string's quote is at script column 8, so `x` is at 12.
@@ -2302,7 +2285,8 @@ test "P28-03: score errors name the script position, the part, and the rule brok
         .{ .source = "routine R(X):\n  play score Missing\n", .line = 2, .column = 14, .message = "play of undeclared score 'Missing'" },
     };
     for (cases) |case| {
-        const d = (try score_parse_error(case.source, &buf)) orelse {
+        const res = compiler.check_source(testing.allocator, case.source);
+        const d = res.diagnostic() orelse {
             std.debug.print("expected an error for: {s}\n", .{case.source});
             return error.TestExpectedError;
         };
@@ -2311,5 +2295,5 @@ test "P28-03: score errors name the script position, the part, and the rule brok
         try testing.expectEqual(case.column, d.column);
     }
     // `stop animate` still parses beside `stop score`.
-    try testing.expectEqual(@as(?parser_mod.Diagnostic, null), try score_parse_error("score A: \"c\"\nroutine R(X):\n  stop score\n  stop animate Sway\n  play score A\n", &buf));
+    try testing.expect(compiler.check_source(testing.allocator, "score A: \"c\"\nroutine R(X):\n  stop score\n  stop animate Sway\n  play score A\n").is_valid);
 }

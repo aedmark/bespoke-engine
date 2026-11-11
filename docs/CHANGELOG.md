@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- `bespoke check`, `bespoke compile`, and `bespoke run` now print compile error messages from memory the check result owns. The text was read after the parser that held it had returned, so it could print garbage. `CheckResult.diagnostic` is now a method, and `CheckResult.message()` returns the text.
 - Fixed whole-line comments. A line that starts with `#` or `~` (after any indentation) is now ignored entirely; before, its text was read as code, so a comment mentioning a keyword such as `when`, `score`, or `play` failed to compile.
 - Added `bespoke init <name>` (`P29-01`, `D-063`). It creates a standalone game project: a `build.zig` that depends on this engine checkout, a host that runs `scripts/main.bespoke` in a window or headless, a starter lighthouse story with an agenda, dialogue, and music, and tests you run with `zig build test`. `--engine <dir>` points the project at another checkout.
 - Completed Phase 28: scripts compose and direct their own music (`P28-03`, `D-062`). Declare `score Name:` with `lead`, `bass`, `chords`, and `drums` MML lines and `scene` lines (or the one-line `score Name: "t120 o4 l8 cdef e2"`); a scene plays its score, and `play score Chase` / `stop score` in any routine, cue, or `when` rule override it. Music choice is saved and rewound with the world. `bespoke run` now plays a script's scores and, headless, prints each change of music; try `scenarios/night_watch.bespoke`. Packages are format version 11.

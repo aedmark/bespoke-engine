@@ -37,14 +37,43 @@ pub fn compile_source(
 
 pub const Diagnostic = parser.Diagnostic;
 
+/// Bytes a `CheckResult` keeps for its diagnostic message; matches `Parser.diag_buf`, so a
+/// parser message is never cut.
+pub const check_message_capacity = 256;
+
+/// Outcome of `check_source`. It owns its diagnostic text: the parser's message lives in a
+/// stack-local `Parser.diag_buf` or the check arena, both gone once `check_source` returns,
+/// so the message is copied into `message_buf` before they are freed.
 pub const CheckResult = struct {
     is_valid: bool,
-    diagnostic: ?Diagnostic = null,
+    line: u32 = 0,
+    column: u32 = 0,
+    message_buf: [check_message_capacity]u8 = undefined,
+    message_len: usize = 0,
     entity_count: usize = 0,
     routine_count: usize = 0,
     rule_count: usize = 0,
     scene_count: usize = 0,
     bytecode_len: usize = 0,
+
+    fn failure(line: u32, column: u32, text: []const u8) CheckResult {
+        var res = CheckResult{ .is_valid = false, .line = line, .column = column };
+        res.message_len = @min(text.len, res.message_buf.len);
+        @memcpy(res.message_buf[0..res.message_len], text[0..res.message_len]);
+        return res;
+    }
+
+    /// The diagnostic text; empty when the source is valid. Borrows from `self`.
+    pub fn message(self: *const CheckResult) []const u8 {
+        return self.message_buf[0..self.message_len];
+    }
+
+    /// The diagnostic, or null when the source is valid. Its message borrows from `self`, so
+    /// read it while `self` lives (copying the result moves the bytes, not the slice).
+    pub fn diagnostic(self: *const CheckResult) ?Diagnostic {
+        if (self.is_valid) return null;
+        return .{ .line = self.line, .column = self.column, .message = self.message() };
+    }
 };
 
 /// Validates syntax and semantic compilation of BeSpoke DSL source without permanent side effects (P15-03, D-018).
@@ -56,55 +85,26 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
     var lex = Lexer.init(alloc, source);
     defer lex.deinit();
 
-    var parse = Parser.init(alloc, &lex) catch |err| {
-        return .{
-            .is_valid = false,
-            .diagnostic = .{
-                .line = 1,
-                .column = 1,
-                .message = @errorName(err),
-            },
-        };
-    };
+    var parse = Parser.init(alloc, &lex) catch |err| return CheckResult.failure(1, 1, @errorName(err));
 
     const ast = parse.parse_program() catch {
-        return .{
-            .is_valid = false,
-            .diagnostic = parse.diagnostic orelse Diagnostic{
-                .line = parse.current.line,
-                .column = parse.current.col,
-                .message = "syntax error",
-            },
-        };
+        // `parse.diagnostic.message` points into `parse.diag_buf`; `failure` copies it out.
+        if (parse.diagnostic) |d| return CheckResult.failure(d.line, d.column, d.message);
+        return CheckResult.failure(parse.current.line, parse.current.col, "syntax error");
     };
 
-    var dummy_world = World.init(alloc, 1024 * 1024) catch |err| {
-        return .{
-            .is_valid = false,
-            .diagnostic = .{ .line = 1, .column = 1, .message = @errorName(err) },
-        };
-    };
+    var dummy_world = World.init(alloc, 1024 * 1024) catch |err| return CheckResult.failure(1, 1, @errorName(err));
     defer dummy_world.deinit();
 
     var dummy_spatial = SpatialSystem.init(alloc);
     defer dummy_spatial.deinit();
 
     var cg = Codegen.init(alloc, &dummy_world, &dummy_spatial);
-    var compiled = cg.compile(&ast) catch |err| {
-        return .{
-            .is_valid = false,
-            .diagnostic = .{
-                .line = 1,
-                .column = 1,
-                .message = @errorName(err),
-            },
-        };
-    };
+    var compiled = cg.compile(&ast) catch |err| return CheckResult.failure(1, 1, @errorName(err));
     defer compiled.deinit();
 
     return .{
         .is_valid = true,
-        .diagnostic = null,
         .entity_count = ast.entities.items.len,
         .routine_count = ast.routines.items.len,
         .rule_count = ast.when_rules.items.len,
@@ -131,7 +131,7 @@ test "P15-03: check_source validates valid script and returns counts" {
 
     const res = check_source(testing.allocator, script);
     try testing.expect(res.is_valid);
-    try testing.expect(res.diagnostic == null);
+    try testing.expect(res.diagnostic() == null);
     try testing.expectEqual(@as(usize, 2), res.entity_count);
     try testing.expectEqual(@as(usize, 1), res.routine_count);
     try testing.expect(res.bytecode_len > 0);
@@ -146,10 +146,40 @@ test "P15-03: check_source reports diagnostic on invalid script syntax" {
 
     const res = check_source(testing.allocator, script);
     try testing.expect(!res.is_valid);
-    try testing.expect(res.diagnostic != null);
-    try testing.expectEqual(@as(u32, 1), res.diagnostic.?.line);
-    try testing.expectEqual(@as(u32, 16), res.diagnostic.?.column);
-    try testing.expect(std.mem.indexOf(u8, res.diagnostic.?.message, "expected lparen") != null);
+    try testing.expect(res.diagnostic() != null);
+    try testing.expectEqual(@as(u32, 1), res.diagnostic().?.line);
+    try testing.expectEqual(@as(u32, 16), res.diagnostic().?.column);
+    try testing.expect(std.mem.indexOf(u8, res.diagnostic().?.message, "expected lparen") != null);
+}
+
+/// Fills a large stack frame with a byte pattern, so any slice still pointing at a returned
+/// function's frame reads garbage. `noinline` keeps the frame real in release builds.
+noinline fn scribble_stack(byte: u8) u8 {
+    var junk: [8192]u8 = undefined;
+    @memset(&junk, byte);
+    std.mem.doNotOptimizeAway(&junk);
+    return junk[junk.len / 2];
+}
+
+test "CheckResult owns its message after check_source returns" {
+    const testing = std.testing;
+    const res = check_source(testing.allocator, "routine Patrol Guard):\n  wait 5 ticks\n");
+    // Reuse the stack the parser's `diag_buf` lived in, and the heap the arena held.
+    _ = scribble_stack(0xAA);
+    const noise = try testing.allocator.alloc(u8, 4096);
+    defer testing.allocator.free(noise);
+    @memset(noise, 0x55);
+
+    const d = res.diagnostic().?;
+    try testing.expectEqualStrings("expected lparen, found identifier ('Guard')", d.message);
+    try testing.expectEqualStrings(d.message, res.message());
+    try testing.expectEqual(@as(u32, 1), d.line);
+    try testing.expectEqual(@as(u32, 16), d.column);
+
+    // A copied result carries the bytes, not a slice into the original.
+    const copy = res;
+    _ = scribble_stack(0x33);
+    try testing.expectEqualStrings("expected lparen, found identifier ('Guard')", copy.message());
 }
 
 const ARRIVAL_SCRIPT =
@@ -264,8 +294,8 @@ test "P32-18: arrival rules report a missing 'at' and an undeclared mark with a 
         \\  remember ReachedGate(Scout, true)
     );
     try testing.expect(!no_at.is_valid);
-    try testing.expectEqual(@as(u32, 5), no_at.diagnostic.?.line);
-    try testing.expect(std.mem.indexOf(u8, no_at.diagnostic.?.message, "expected 'at'") != null);
+    try testing.expectEqual(@as(u32, 5), no_at.diagnostic().?.line);
+    try testing.expect(std.mem.indexOf(u8, no_at.diagnostic().?.message, "expected 'at'") != null);
 
     const unknown = check_source(testing.allocator,
         \\scene: Yard
@@ -276,9 +306,9 @@ test "P32-18: arrival rules report a missing 'at' and an undeclared mark with a 
         \\  remember ReachedGate(Scout, true)
     );
     try testing.expect(!unknown.is_valid);
-    try testing.expectEqual(@as(u32, 5), unknown.diagnostic.?.line);
-    try testing.expectEqual(@as(u32, 23), unknown.diagnostic.?.column);
-    try testing.expect(std.mem.indexOf(u8, unknown.diagnostic.?.message, "undeclared mark 'Cellar'") != null);
+    try testing.expectEqual(@as(u32, 5), unknown.diagnostic().?.line);
+    try testing.expectEqual(@as(u32, 23), unknown.diagnostic().?.column);
+    try testing.expect(std.mem.indexOf(u8, unknown.diagnostic().?.message, "undeclared mark 'Cellar'") != null);
 
     const valid = check_source(testing.allocator, ARRIVAL_SCRIPT);
     try testing.expect(valid.is_valid);
@@ -347,5 +377,5 @@ test "P32-27: an unmatched cue has no handler; defaults and variable parameters 
     // A handler with no parameters could never be fired, so it is a compile error.
     const empty = check_source(testing.allocator, "entity Scout\non cue Rings():\n  wait 1 ticks\n");
     try testing.expect(!empty.is_valid);
-    try testing.expect(std.mem.indexOf(u8, empty.diagnostic.?.message, "needs an actor") != null);
+    try testing.expect(std.mem.indexOf(u8, empty.diagnostic().?.message, "needs an actor") != null);
 }

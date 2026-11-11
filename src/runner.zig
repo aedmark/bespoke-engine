@@ -40,7 +40,7 @@ pub fn check_file(allocator: std.mem.Allocator, path: []const u8, stdout: anytyp
         });
         return true;
     } else {
-        if (res.diagnostic) |d| {
+        if (res.diagnostic()) |d| {
             try stdout.print("{s}:{d}:{d}: error: {s}\n", .{ path, d.line, d.column, d.message });
         } else {
             try stdout.print("{s}: error: compilation failed\n", .{path});
@@ -71,7 +71,7 @@ pub fn compile_file(
 
     var compiled = bespoke.compile_source(allocator, &world, &spatial, source) catch |err| {
         const res = bespoke.check_source(allocator, source);
-        if (res.diagnostic) |d| {
+        if (res.diagnostic()) |d| {
             try stdout.print("{s}:{d}:{d}: error: {s}\n", .{ in_path, d.line, d.column, d.message });
         } else {
             try stdout.print("{s}: error: compilation failed ({s})\n", .{ in_path, @errorName(err) });
@@ -128,7 +128,7 @@ pub fn run_file(
         if (config.verbose) try stdout.print("[Runner] Compiling narrative script '{s}'...\n", .{path});
         compiled = bespoke.compile_source(allocator, &world, &spatial, data) catch |err| {
             const res = bespoke.check_source(allocator, data);
-            if (res.diagnostic) |d| {
+            if (res.diagnostic()) |d| {
                 try stdout.print("{s}:{d}:{d}: error: {s}\n", .{ path, d.line, d.column, d.message });
             } else {
                 try stdout.print("{s}: error: compilation failed ({s})\n", .{ path, @errorName(err) });
