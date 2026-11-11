@@ -27,6 +27,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 - `.bspk` packages are now format version 4 and carry compiled society and duel declarations. Versions 1 through 3 still load with empty declaration tables (`D-045`).
 
 ### Fixed
+- The Larkspur Observatory and Castle Fire Escape windows now show what characters say on the banner; before, script speech was spoken but never drawn. Pressing an observatory key in the wrong place says where it works, `[4]` confronts Pell when he is on Ines's mark or the next one (he walks his rounds, so clicking his sprite was unreliable), and every staff member answers when spoken to.
 - `SpatialSystem.walk_to` now turns an in-flight actor back toward the waypoint it just left and raises the normal arrival edge there (`P32-25`).
 - The Spitting Contest and GK3 proof runners now send player intent through their DSL cue handlers instead of writing puzzle facts from Zig; their transcripts use the dialogue the scripts emit (`P32-26`).
 - The WebAssembly module no longer faults on its first call, `wasm_init`: it now has an 8 MB stack, where its 1.2 MB runtime overflowed the default 1 MB (`D-042`).

@@ -118,6 +118,14 @@ pub const OBSERVATORY_SCRIPT =
     \\  if Carries(Ines, ExposureSlip):
     \\    Pell is cornered
     \\    say Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+    \\  if not Carries(Ines, ExposureSlip):
+    \\    say Pell: "Not now, Miss Varga. Some of us have plates to measure."
+    \\
+    \\on cue TalksTo(Ines, Halloran):
+    \\  say Halloran: "It is late, Miss Varga. Whatever it is can wait for morning."
+    \\
+    \\on cue TalksTo(Ines, Moss):
+    \\  say Moss: "Evening, miss. Cold one on the mountain tonight."
 ;
 
 const Ids = struct {
@@ -355,12 +363,92 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 const action_search: u16 = 1;
 const action_take: u16 = 2;
 const action_read: u16 = 3;
+const action_confront: u16 = 4;
 const keys = [_]bespoke.display.renderer.KeyBinding{
     .{ .key = bespoke.display.renderer.c.SDLK_1, .action = action_search },
     .{ .key = bespoke.display.renderer.c.SDLK_2, .action = action_take },
     .{ .key = bespoke.display.renderer.c.SDLK_3, .action = action_read },
+    .{ .key = bespoke.display.renderer.c.SDLK_4, .action = action_confront },
 };
 const theme = art.with_keys(&keys);
+
+/// True when two actors stand on the same mark or on marks joined by an edge, close enough to
+/// talk without chasing a walking actor's sprite with the mouse.
+fn within_reach(spatial: *const bespoke.SpatialSystem, a: bespoke.EntityId, b: bespoke.EntityId) bool {
+    const wa = spatial.get_current_waypoint(a) orelse return false;
+    const wb = spatial.get_current_waypoint(b) orelse return false;
+    if (wa == wb) return true;
+    for (spatial.graph.edges.items) |edge| if (edge.from == wa and edge.to == wb) return true;
+    return false;
+}
+
+/// One window session's game logic, separate from the event loop so tests can drive it with
+/// synthetic actions on an offscreen window.
+const Play = struct {
+    world: *bespoke.World,
+    spatial: *bespoke.SpatialSystem,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    staff: *society.Society,
+    session: *host.Session,
+    window: *bespoke.display.DisplayWindow,
+    ids: Ids,
+
+    /// One tick with the society, then whatever the script said, on the banner. The window draws
+    /// no script speech by itself, so every tick goes through here.
+    fn advance(self: Play) !void {
+        _ = try self.session.advance();
+        try self.staff.step(self.world, self.spatial, self.vm);
+        var buf: [512]u8 = undefined;
+        if (host.speech_this_tick(self.world, self.vm, &buf)) |line| self.window.set_cue_banner(line, 300);
+    }
+
+    fn act(self: Play, cue: []const u8, target: bespoke.EntityId) !void {
+        _ = try self.vm.fire_cue(self.compiled, cue, self.ids.ines, target, null);
+        try self.advance();
+    }
+
+    fn hint(self: Play, text: []const u8) void {
+        self.window.set_cue_banner(text, 150);
+    }
+
+    /// Handles one proof action; engine actions are the session's.
+    fn handle(self: Play, action: bespoke.display.renderer.UserAction) !void {
+        const ids = self.ids;
+        switch (action) {
+            .walk_player => |waypoint| {
+                if (!(try self.spatial.walk_to_with_world(self.world, ids.ines, waypoint))) self.hint("That way is blocked.");
+            },
+            .custom => |which| {
+                const here = self.spatial.get_current_waypoint(ids.ines);
+                if (self.spatial.is_moving(ids.ines)) {
+                    self.hint("Ines must stop walking first.");
+                } else if (which == action_search) {
+                    if (here == ids.darkroom_wp) try self.act("Searches", ids.darkroom) else self.hint("[1] searches the Darkroom. Walk there first.");
+                } else if (which == action_take) {
+                    if (here == ids.darkroom_wp) {
+                        try self.act("Takes", ids.glove);
+                    } else if (here == ids.archive_wp) {
+                        try self.act("Takes", ids.slip);
+                    } else self.hint("[2] takes the glove in the Darkroom or the slip in the Archive.");
+                } else if (which == action_read) {
+                    if (here == ids.telescope_wp) try self.act("Reads", ids.log) else self.hint("[3] reads the log on the TelescopeFloor. Walk there first.");
+                } else if (which == action_confront) {
+                    if (within_reach(self.spatial, ids.ines, ids.pell)) try self.act("TalksTo", ids.pell) else self.hint("Pell is too far away. Get within one mark of him.");
+                }
+            },
+            .interact_actor => |a| {
+                const frame = self.session.frame();
+                if (a.actor_index < frame.entity_count) try self.act("TalksTo", frame.entities[a.actor_index].entity);
+            },
+            else => {},
+        }
+    }
+
+    fn banner(self: Play) []const u8 {
+        return self.window.cue_banner_text[0..self.window.cue_banner_len];
+    }
+};
 
 /// Native window proof. The ordinary Session supplies pause, save/load, scrub, and rewind.
 pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
@@ -384,7 +472,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
-    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log. Talk to Pell to confront him.\n");
+    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] confronts Pell when he is on Ines's mark or the next one. Clicking a staff member talks to them.\n");
     try stdout.writeAll("Pause/save/load, single-step, scrub, rewind, debug, and console use the standard engine controls.\n\n");
 
     var bridge = bespoke.DisplayBridge.init();
@@ -394,41 +482,14 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
     defer session.deinit();
     window.set_cue_banner("Plate 41 is missing. Find it before the staff decide what you believe.", 240);
+    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .window = &window, .ids = ids };
 
     while (true) {
         const action = window.poll_events(session.frame());
         if (action == .quit) break;
-        if (!(try session.handle_common(action))) switch (action) {
-            .walk_player => |waypoint| {
-                if (!(try spatial.walk_to_with_world(&world, ids.ines, waypoint))) window.set_cue_banner("That way is blocked.", 90);
-            },
-            .custom => |which| {
-                const here = spatial.get_current_waypoint(ids.ines);
-                if (which == action_search and here == ids.darkroom_wp) {
-                    _ = try vm.fire_cue(&compiled, "Searches", ids.ines, ids.darkroom, null);
-                    _ = try session.advance();
-                } else if (which == action_take and (here == ids.darkroom_wp or here == ids.archive_wp)) {
-                    _ = try vm.fire_cue(&compiled, "Takes", ids.ines, if (here == ids.darkroom_wp) ids.glove else ids.slip, null);
-                    _ = try session.advance();
-                } else if (which == action_read and here == ids.telescope_wp) {
-                    _ = try vm.fire_cue(&compiled, "Reads", ids.ines, ids.log, null);
-                    _ = try session.advance();
-                } else window.set_cue_banner("Nothing to do with that here.", 90);
-            },
-            .interact_actor => |act| {
-                const frame = session.frame();
-                if (act.actor_index < frame.entity_count) {
-                    _ = try vm.fire_cue(&compiled, "TalksTo", ids.ines, frame.entities[act.actor_index].entity, null);
-                    _ = try session.advance();
-                }
-            },
-            else => {},
-        };
+        if (!(try session.handle_common(action))) try play.handle(action);
         if (action != .none and action != .step_tick and action != .toggle_pause) session.refresh();
-        if (session.tick_due()) {
-            _ = try session.advance();
-            try soc.step(&world, &spatial, &vm);
-        }
+        if (session.tick_due()) try play.advance();
         session.render();
         bespoke.display.renderer.c.SDL_Delay(16);
     }
@@ -448,4 +509,86 @@ test "P33-03: script declares three agendas with distinct priorities" {
     try std.testing.expectEqual(@as(usize, 3), compiled.agendas.items.len);
     try std.testing.expect(compiled.agendas.items[0].agenda.priority > compiled.agendas.items[1].agenda.priority);
     try std.testing.expectEqual(@as(usize, 12), spatial.graph.waypoints.items.len);
+}
+
+test "P33-03: window actions give feedback and Pell can be confronted within reach" {
+    const allocator = std.testing.allocator;
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, OBSERVATORY_SCRIPT);
+    defer compiled.deinit();
+    const ids = try configure(&world, &spatial);
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.transition_to_scene(ids.scene);
+    try vm.load_compiled_rules(&compiled);
+    try host.run_initial_statements(&world, &vm, &compiled);
+    try host.initialize_subsystems(&world, &compiled);
+    var soc = try staff(&world, &compiled);
+    var window = try bespoke.display.DisplayWindow.init_offscreen(1280, 720);
+    defer window.deinit();
+    window.set_theme(&theme);
+    var bridge = bespoke.DisplayBridge.init();
+    bridge.set_status_hook(art.capture_status);
+    bridge.set_active_character(ids.ines);
+    var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
+    defer session.deinit();
+    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .window = &window, .ids = ids };
+    const has = struct {
+        fn text(p: Play, needle: []const u8) bool {
+            return std.mem.indexOf(u8, p.banner(), needle) != null;
+        }
+    }.text;
+
+    // A key pressed in the wrong place says where it works.
+    try play.handle(.{ .custom = action_read });
+    try std.testing.expect(has(play, "TelescopeFloor"));
+    // Pell starts in the Library, one stair from Ines: within reach, and without the slip he
+    // brushes her off instead of saying nothing.
+    try play.handle(.{ .custom = action_confront });
+    try std.testing.expect(has(play, "Not now"));
+
+    // Walk to the archive; the script's line for taking the slip reaches the banner.
+    try play.handle(.{ .walk_player = ids.archive_wp });
+    var guard: usize = 0;
+    while (spatial.is_moving(ids.ines)) : (guard += 1) {
+        try std.testing.expect(guard < 40);
+        try play.advance();
+    }
+    try play.handle(.{ .custom = action_take });
+    try std.testing.expect(has(play, "exposure slip"));
+
+    // Wait, ticking, until Pell's routine brings him within one mark, then confront him.
+    guard = 0;
+    while (!within_reach(&spatial, ids.ines, ids.pell)) : (guard += 1) {
+        try std.testing.expect(guard < 80);
+        try play.advance();
+    }
+    while (spatial.is_moving(ids.ines)) try play.advance();
+    try play.handle(.{ .custom = action_confront });
+    try std.testing.expect(has(play, "Ask Halloran"));
+    try std.testing.expect(host.has_state(&world, ids.pell, "cornered"));
+}
+
+test "P33-03: reach is the same mark or one edge away" {
+    var world = try bespoke.World.init(std.testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(std.testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(std.testing.allocator, &world, &spatial, OBSERVATORY_SCRIPT);
+    defer compiled.deinit();
+    _ = try configure(&world, &spatial);
+    const scene = world.lookup_entity("Larkspur Observatory").?;
+    const a = try world.intern_entity("ReachProbeA");
+    const b = try world.intern_entity("ReachProbeB");
+    try spatial.register_entity(a, spatial.graph.find_waypoint_in_room(scene, "CablePlatform").?, 1);
+    try spatial.register_entity(b, spatial.graph.find_waypoint_in_room(scene, "Terrace").?, 1);
+    try std.testing.expect(!within_reach(&spatial, a, b)); // two edges apart
+    _ = try spatial.transition_actor(b, scene, spatial.graph.find_waypoint_in_room(scene, "Stair").?);
+    try std.testing.expect(within_reach(&spatial, a, b)); // neighbours
+    _ = try spatial.transition_actor(b, scene, spatial.graph.find_waypoint_in_room(scene, "Library").?);
+    try std.testing.expect(within_reach(&spatial, a, b)); // joined by the host's stair
 }

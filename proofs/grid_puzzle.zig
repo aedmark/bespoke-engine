@@ -348,6 +348,13 @@ const keys = [_]bespoke.display.renderer.KeyBinding{
 };
 const theme = art.with_keys(&keys);
 
+/// Shows what the script said during the last tick on the banner. The window draws no speech
+/// by itself, so every tick that can carry a line is followed by this.
+fn show_speech(window: *bespoke.display.DisplayWindow, world: *bespoke.World, vm: *bespoke.VM) void {
+    var buf: [512]u8 = undefined;
+    if (host.speech_this_tick(world, vm, &buf)) |line| window.set_cue_banner(line, 300);
+}
+
 /// Native window proof. The ordinary Session supplies pause, save/load, scrub, and rewind.
 pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
@@ -396,6 +403,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     } else {
                         _ = try vm.fire_cue(&compiled, "Fills", ids.wren, ids.bucket, null);
                         _ = try session.advance();
+                        show_speech(&window, &world, &vm);
                     }
                 } else if (which == action_torch) {
                     if (spatial.get_current_waypoint(ids.wren) != ids.torch_wp) {
@@ -403,6 +411,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     } else if (try grid.ignite(&world, decl, cell(TAPESTRY_FIRST_CELL))) {
                         _ = try vm.fire_cue(&compiled, "Ignites", ids.wren, ids.tapestry, null);
                         _ = try session.advance();
+                        show_speech(&window, &world, &vm);
                     } else window.set_cue_banner("The tapestry will not catch.", 90);
                 } else if (which == action_throw) {
                     if (!host.has_state(&world, ids.bucket, "full")) {
@@ -411,6 +420,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         try grid.set_attribute(&world, decl.grid, cell(DOOR_CELL), .liquid, true);
                         _ = try vm.fire_cue(&compiled, "Throws", ids.wren, ids.bucket, null);
                         _ = try session.advance();
+                        show_speech(&window, &world, &vm);
                     }
                 }
             },
@@ -424,6 +434,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (index < frame.hotspot_count) {
                     _ = try vm.fire_cue(&compiled, "LooksAt", ids.wren, frame.hotspots[index].entity, null);
                     _ = try session.advance();
+                    show_speech(&window, &world, &vm);
                 }
             },
             else => {},
@@ -432,6 +443,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         if (session.tick_due()) {
             _ = try session.advance();
             try after_tick(&world, &vm, &compiled, ids);
+            show_speech(&window, &world, &vm);
         }
         if (!announced_escape and host.has_state(&world, ids.wren, "escaped")) {
             announced_escape = true;
