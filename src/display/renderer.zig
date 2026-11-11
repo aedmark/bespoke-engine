@@ -5,6 +5,7 @@ const save_mod = @import("../save.zig");
 const hypervisor_mod = @import("../hypervisor.zig");
 const vm_mod = @import("../vm.zig");
 const dialogue_mod = @import("../dialogue.zig");
+const command_mod = @import("../command.zig");
 const font = @import("font.zig");
 const text_layout = @import("text_layout.zig");
 
@@ -146,6 +147,11 @@ pub const UserAction = union(enum) {
     }, // Live interactive REPL console command (P9-03, D-011)
     toggle_debug,
     toggle_console,
+    /// A line submitted from the command bar (P26-03, D-057); the host interprets it.
+    typed_command: struct {
+        buf: [128]u8,
+        len: usize,
+    },
     /// A key the host bound through its `Theme` (P32-02c, D-039); the value is the binding's
     /// `action`, whose meaning only the host knows.
     custom: u16,
@@ -737,6 +743,19 @@ pub const DisplayWindow = struct {
     // Phase 9 Debug, Scrubber & REPL (P9-01, P9-02, P9-03, D-011)
     show_debug_overlay: bool = false,
     show_console: bool = false,
+    /// Typed-command bar (P26-03, D-057). Off unless the host enables it; while focused, every
+    /// key is text, so no engine or host binding fires.
+    command_bar_enabled: bool = false,
+    command_bar_focused: bool = false,
+    command_input: [128]u8 = undefined,
+    command_len: usize = 0,
+    command_history: [8][128]u8 = undefined,
+    command_history_lens: [8]usize = [_]usize{0} ** 8,
+    command_history_count: usize = 0,
+    /// Index into the history while Up/Down browse it; null when editing a fresh line.
+    command_history_cursor: ?usize = null,
+    /// Words Tab may complete, refreshed by the host from what is in scope.
+    command_words: command_mod.WordList = .{},
     console_input: [128]u8 = undefined,
     console_len: usize = 0,
     console_history: [5][128]u8 = undefined,
@@ -1216,6 +1235,83 @@ pub const DisplayWindow = struct {
     }
 
     /// Appends a line to the REPL console history buffer (P9-03, D-011).
+    /// Turns the command bar on or off. Turning it off also unfocuses it.
+    pub fn enable_command_bar(self: *DisplayWindow, enabled: bool) void {
+        self.command_bar_enabled = enabled;
+        if (!enabled) self.command_bar_focused = false;
+    }
+
+    fn add_command_history(self: *DisplayWindow, text: []const u8) void {
+        if (self.command_history_count == self.command_history.len) {
+            var i: usize = 0;
+            while (i + 1 < self.command_history.len) : (i += 1) {
+                self.command_history[i] = self.command_history[i + 1];
+                self.command_history_lens[i] = self.command_history_lens[i + 1];
+            }
+            self.command_history_count -= 1;
+        }
+        const idx = self.command_history_count;
+        const len = @min(text.len, self.command_history[idx].len);
+        @memcpy(self.command_history[idx][0..len], text[0..len]);
+        self.command_history_lens[idx] = len;
+        self.command_history_count += 1;
+    }
+
+    /// Appends typed text to the focused command bar; editing ends any history browsing.
+    fn command_bar_text(self: *DisplayWindow, text: []const u8) void {
+        for (text) |ch| {
+            if (self.command_len == self.command_input.len) break;
+            self.command_input[self.command_len] = ch;
+            self.command_len += 1;
+        }
+        self.command_history_cursor = null;
+    }
+
+    fn recall_command(self: *DisplayWindow, idx: usize) void {
+        const len = self.command_history_lens[idx];
+        @memcpy(self.command_input[0..len], self.command_history[idx][0..len]);
+        self.command_len = len;
+    }
+
+    /// Keys while the command bar is focused. Every key is consumed: text arrives separately
+    /// as SDL_TEXTINPUT, and a key that also has a binding must not trigger it.
+    fn command_bar_key(self: *DisplayWindow, sym: c.SDL_Keycode) UserAction {
+        if (sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER) {
+            if (self.command_len == 0) return .none;
+            const line = self.command_input[0..self.command_len];
+            self.add_command_history(line);
+            const act = UserAction{ .typed_command = .{ .buf = self.command_input, .len = self.command_len } };
+            self.command_len = 0;
+            self.command_history_cursor = null;
+            return act;
+        } else if (sym == c.SDLK_ESCAPE) {
+            self.command_bar_focused = false;
+            self.command_history_cursor = null;
+        } else if (sym == c.SDLK_BACKSPACE) {
+            if (self.command_len > 0) self.command_len -= 1;
+        } else if (sym == c.SDLK_UP) {
+            if (self.command_history_count > 0) {
+                const cur = self.command_history_cursor orelse self.command_history_count;
+                const next = if (cur > 0) cur - 1 else 0;
+                self.command_history_cursor = next;
+                self.recall_command(next);
+            }
+        } else if (sym == c.SDLK_DOWN) {
+            if (self.command_history_cursor) |cur| {
+                if (cur + 1 < self.command_history_count) {
+                    self.command_history_cursor = cur + 1;
+                    self.recall_command(cur + 1);
+                } else {
+                    self.command_history_cursor = null;
+                    self.command_len = 0;
+                }
+            }
+        } else if (sym == c.SDLK_TAB) {
+            self.command_len = self.command_words.complete(&self.command_input, self.command_len);
+        }
+        return .none;
+    }
+
     pub fn add_console_history(self: *DisplayWindow, text: []const u8) void {
         if (self.console_history_count < 5) {
             const idx = self.console_history_count;
@@ -1636,7 +1732,9 @@ pub const DisplayWindow = struct {
                     }
                 },
                 c.SDL_TEXTINPUT => {
-                    if (self.show_console) {
+                    if (self.command_bar_focused and !self.show_console) {
+                        self.command_bar_text(std.mem.sliceTo(&event.text.text, 0));
+                    } else if (self.show_console) {
                         var i: usize = 0;
                         while (event.text.text[i] != 0 and self.console_len < 127) : (i += 1) {
                             self.console_input[self.console_len] = event.text.text[i];
@@ -1715,6 +1813,18 @@ pub const DisplayWindow = struct {
                             return .quit;
                         }
                         return .none;
+                    }
+
+                    // Typed-command bar (P26-03): focused, it takes every key; unfocused, Enter
+                    // focuses it unless a choice balloon is waiting for an answer.
+                    if (self.command_bar_enabled) {
+                        if (self.command_bar_focused) return self.command_bar_key(sym);
+                        const choices_open = if (self.active_balloon) |b| b.choice_count > 0 else false;
+                        if ((sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER) and !choices_open) {
+                            self.command_bar_focused = true;
+                            self.play_sfx(.click);
+                            return .none;
+                        }
                     }
 
                     // Handle active dialogue balloon hotkeys and controls (P13-03, D-015)
@@ -2694,6 +2804,23 @@ pub const DisplayWindow = struct {
             }
         }
 
+        // 10b. Typed-command bar (P26-03, D-057), above the verb bar.
+        if (self.command_bar_enabled and !self.show_console) {
+            const cmd_x: i32 = 20;
+            const cmd_w: i32 = self.width - 40;
+            const cmd_h: i32 = 26;
+            const cmd_y: i32 = self.height - 92 - cmd_h;
+            const focused = self.command_bar_focused;
+            self.fill_rect(cmd_x, cmd_y, cmd_w, cmd_h, Color{ .r = 15, .g = 23, .b = 42, .a = 235 });
+            self.draw_rect_outline(cmd_x, cmd_y, cmd_w, cmd_h, if (focused) Color.wp_hover else Color{ .r = 51, .g = 65, .b = 85 });
+            var line_buf: [160]u8 = undefined;
+            const line = if (focused)
+                std.fmt.bufPrint(&line_buf, "> {s}_", .{self.command_input[0..self.command_len]}) catch "> _"
+            else
+                "[Enter] type a command   (Esc leaves, Up/Down history, Tab completes)";
+            self.draw_text(line, cmd_x + 10, cmd_y + 6, if (focused) 2 else 1, if (focused) Color.white else Color.hud_subtext);
+        }
+
         // 11. Live Interactive REPL Console Drawer (P9-03, D-011)
         if (self.show_console) {
             const con_x: i32 = 20;
@@ -3435,4 +3562,70 @@ test "P32-02c: a host key binding returns its action before the engine's own key
     try testing.expectEqual(UserAction{ .custom = 9 }, Press.key(&window, &frame, c.SDLK_c));
     try testing.expect(!window.show_console);
     try testing.expectEqual(UserAction.step_tick, Press.key(&window, &frame, c.SDLK_n));
+}
+
+test "P26-03: the command bar takes every key while focused and submits typed lines" {
+    const testing = std.testing;
+    if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
+    defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
+
+    var window = try DisplayWindow.init_offscreen(640, 360);
+    defer window.deinit();
+    const frame = std.mem.zeroes(RenderFrame);
+    const keys = [_]KeyBinding{.{ .key = c.SDLK_t, .action = 7 }};
+    const theme = Theme{ .keys = &keys };
+    window.set_theme(&theme);
+
+    const Input = struct {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_KEYDOWN;
+            ev.key.keysym.sym = sym;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+        // A synthetic SDL_TEXTINPUT crashes inside the SDL2-on-SDL3 compatibility layer, so text
+        // goes straight to the handler the event calls; keys still travel through SDL.
+        fn text(w: *DisplayWindow, f: *const RenderFrame, s: []const u8) void {
+            _ = f;
+            w.command_bar_text(s);
+        }
+    };
+
+    // Disabled: Enter does nothing special, and bindings work.
+    try testing.expectEqual(UserAction{ .custom = 7 }, Input.key(&window, &frame, c.SDLK_t));
+    window.enable_command_bar(true);
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_RETURN));
+    try testing.expect(window.command_bar_focused);
+
+    // Focused: the bound letter and the step key are text, not actions.
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_t));
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_n));
+    Input.text(&window, &frame, "take sl");
+    window.command_words.add("slip");
+    window.command_words.add("take");
+    _ = Input.key(&window, &frame, c.SDLK_TAB);
+    try testing.expectEqualStrings("take slip ", window.command_input[0..window.command_len]);
+    _ = Input.key(&window, &frame, c.SDLK_BACKSPACE);
+    const submitted = Input.key(&window, &frame, c.SDLK_RETURN);
+    try testing.expectEqualStrings("take slip", submitted.typed_command.buf[0..submitted.typed_command.len]);
+    try testing.expectEqual(@as(usize, 0), window.command_len);
+
+    // History: Up recalls the last line, Down past the end clears it.
+    Input.text(&window, &frame, "read log");
+    _ = Input.key(&window, &frame, c.SDLK_RETURN);
+    _ = Input.key(&window, &frame, c.SDLK_UP);
+    try testing.expectEqualStrings("read log", window.command_input[0..window.command_len]);
+    _ = Input.key(&window, &frame, c.SDLK_UP);
+    try testing.expectEqualStrings("take slip", window.command_input[0..window.command_len]);
+    _ = Input.key(&window, &frame, c.SDLK_DOWN);
+    _ = Input.key(&window, &frame, c.SDLK_DOWN);
+    try testing.expectEqual(@as(usize, 0), window.command_len);
+
+    // Esc leaves the bar; keys act again.
+    _ = Input.key(&window, &frame, c.SDLK_ESCAPE);
+    try testing.expect(!window.command_bar_focused);
+    try testing.expectEqual(UserAction{ .custom = 7 }, Input.key(&window, &frame, c.SDLK_t));
+    try testing.expectEqual(UserAction.step_tick, Input.key(&window, &frame, c.SDLK_n));
 }

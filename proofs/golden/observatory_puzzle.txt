@@ -34,6 +34,23 @@
 [Night 2] Ines confronts Pell with the slip.
   [ 49] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
 
+[Rewind] Restore the saved opening for a typed playthrough.
+
+[Typed] The same evidence, by keyboard.
+  > examine the telescope
+    Which do you mean: the telescope log or the telescope floor?
+  > log
+  [  1] Ines: "The night's log, open at plate 41."
+  > xyzzy
+    I don't know the word "xyzzy".
+  > take the slip
+    The slip is in the Archive.
+  > go to the archive
+  > pick up the exposure slip
+  [  8] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
+  > ask the rival about the slip
+  [  9] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+
 ===================================================================
   VERIFICATION COMPLETE: plate 41 is in Halloran's office.         
 ===================================================================

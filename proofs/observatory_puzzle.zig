@@ -126,6 +126,27 @@ pub const OBSERVATORY_SCRIPT =
     \\
     \\on cue TalksTo(Ines, Moss):
     \\  say Moss: "Evening, miss. Cold one on the mountain tonight."
+    \\
+    \\command Takes: "take <thing>"
+    \\command Takes: "pick up <thing>"
+    \\command Reads: "read <thing>"
+    \\command Searches: "search <thing>"
+    \\alias Halloran: "director"
+    \\alias Pell: "rival"
+    \\alias Moss: "porter"
+    \\
+    \\on cue LooksAt(Ines, TelescopeLog):
+    \\  say Ines: "The night's log, open at plate 41."
+    \\
+    \\on cue LooksAt(Ines, StainedGlove):
+    \\  say Ines: "Developer stains, and an H stitched at the cuff."
+    \\
+    \\on cue TalksTo(Ines, Pell, ExposureSlip):
+    \\  if Carries(Ines, ExposureSlip):
+    \\    Pell is cornered
+    \\    say Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+    \\  if not Carries(Ines, ExposureSlip):
+    \\    say Pell: "What slip? I have no idea what you mean."
 ;
 
 const Ids = struct {
@@ -198,6 +219,41 @@ fn staff(world: *bespoke.World, compiled: *const bespoke.CompiledProgram) !socie
     return society.Society.init(world, compiled.societies.items[0].config);
 }
 
+/// Where Ines must stand for a typed action, as a refusal, or null when it may run. Typed
+/// commands need this because the whole observatory is one room: every prop is in scope from
+/// every mark, so the noun rules alone would let Ines take the slip from the cable car.
+fn refusal(spatial: *const bespoke.SpatialSystem, ids: Ids, command: bespoke.command.Command) ?[]const u8 {
+    if (std.mem.eql(u8, command.cue, "WalksTo")) return null;
+    if (spatial.is_moving(ids.ines)) return "Ines must stop walking first.";
+    const here = spatial.get_current_waypoint(ids.ines);
+    const a = command.a orelse return null;
+    if (std.mem.eql(u8, command.cue, "Takes")) {
+        if (a == ids.glove and here != ids.darkroom_wp) return "The glove is in the Darkroom.";
+        if (a == ids.slip and here != ids.archive_wp) return "The slip is in the Archive.";
+    } else if (std.mem.eql(u8, command.cue, "Reads")) {
+        if (a == ids.log and here != ids.telescope_wp) return "The log is on the TelescopeFloor.";
+    } else if (std.mem.eql(u8, command.cue, "Searches")) {
+        if (a == ids.darkroom and here != ids.darkroom_wp) return "Ines must be in the Darkroom to search it.";
+    } else if (std.mem.eql(u8, command.cue, "TalksTo")) {
+        if (a == ids.pell and !within_reach(spatial, ids.ines, ids.pell)) return "Pell is too far away. Get within one mark of him.";
+    }
+    return null;
+}
+
+pub const Typed = struct { text: ?[]const u8 = null, fired: bool = false, walking: bool = false };
+
+/// One typed line for Ines: interpret, check where she stands, then dispatch.
+fn type_line(vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, interp: *bespoke.command.Interpreter, spatial: *const bespoke.SpatialSystem, ids: Ids, line: []const u8, buf: []u8) !Typed {
+    switch (host.interpret_command(vm, compiled, interp, ids.ines, line, buf)) {
+        .reply => |text| return .{ .text = text },
+        .command => |command| {
+            if (refusal(spatial, ids, command)) |why| return .{ .text = why };
+            const reply = try host.dispatch_command(vm, compiled, ids.ines, command);
+            return .{ .text = reply.text, .fired = reply.fired, .walking = reply.walking };
+        },
+    }
+}
+
 const Stage = struct {
     world: *bespoke.World,
     spatial: *bespoke.SpatialSystem,
@@ -205,6 +261,23 @@ const Stage = struct {
     compiled: *const bespoke.CompiledProgram,
     staff: *society.Society,
     ids: Ids,
+    interp: *bespoke.command.Interpreter,
+
+    /// Types a line as the player would, prints the reply, and ticks so a fired cue speaks
+    /// and a walk finishes.
+    fn typed(self: Stage, writer: anytype, line: []const u8) !Typed {
+        try writer.print("  > {s}\n", .{line});
+        var buf: [160]u8 = undefined;
+        const result = try type_line(self.vm, self.compiled, self.interp, self.spatial, self.ids, line, &buf);
+        if (result.text) |text| try writer.print("    {s}\n", .{text});
+        if (result.fired) try self.tick(writer);
+        var guard: usize = 0;
+        while (self.spatial.is_moving(self.ids.ines)) : (guard += 1) {
+            if (guard >= 60) return error.WalkTooLong;
+            try self.tick(writer);
+        }
+        return result;
+    }
 
     /// One host tick, the society tick, and any lines spoken.
     fn tick(self: Stage, writer: anytype) !void {
@@ -255,6 +328,10 @@ const Stage = struct {
     }
 };
 
+fn pell_near(s: Stage) bool {
+    return !s.spatial.is_moving(s.ids.ines) and within_reach(s.spatial, s.ids.ines, s.ids.pell);
+}
+
 fn dissuade_over(s: Stage) bool {
     return agency.stage_of(s.world, s.ids.dissuade) == .done;
 }
@@ -299,7 +376,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try host.run_initial_statements(&world, &vm, &compiled);
     try host.initialize_subsystems(&world, &compiled);
     var soc = try staff(&world, &compiled);
-    const stage = Stage{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .ids = ids };
+    var interp = bespoke.command.Interpreter{};
+    const stage = Stage{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .ids = ids, .interp = &interp };
 
     var opening = std.ArrayList(u8).init(allocator);
     defer opening.deinit();
@@ -355,6 +433,25 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try stage.act(writer, "TalksTo", ids.pell);
     try expect_true(host.has_state(&world, ids.pell, "cornered") and !holds(&world, ids.ines, "Believes", null), error.CaseOpen);
 
+    try writer.writeAll("\n[Rewind] Restore the saved opening for a typed playthrough.\n");
+    var again = std.io.fixedBufferStream(opening.items);
+    _ = try bespoke.read_save_state(allocator, again.reader(), &world, &spatial, &vm);
+    interp = .{};
+
+    try writer.writeAll("\n[Typed] The same evidence, by keyboard.\n");
+    const which = try stage.typed(writer, "examine the telescope");
+    try expect_true(which.text != null and std.mem.startsWith(u8, which.text.?, "Which do you mean"), error.NoDisambiguation);
+    try expect_true((try stage.typed(writer, "log")).fired, error.AnswerNotDispatched);
+    _ = try stage.typed(writer, "xyzzy");
+    const too_far = try stage.typed(writer, "take the slip");
+    try expect_true(too_far.text != null and !too_far.fired, error.TookFromAfar);
+    _ = try stage.typed(writer, "go to the archive");
+    try expect_true(spatial.get_current_waypoint(ids.ines) == ids.archive_wp, error.TypedWalkFailed);
+    try expect_true((try stage.typed(writer, "pick up the exposure slip")).fired, error.TypedTakeFailed);
+    try stage.tick_until(writer, pell_near, 80, error.PellNeverNear);
+    try expect_true((try stage.typed(writer, "ask the rival about the slip")).fired, error.TypedAskFailed);
+    try expect_true(host.has_state(&world, ids.pell, "cornered"), error.CaseOpen);
+
     try writer.writeAll("\n===================================================================\n");
     try writer.writeAll("  VERIFICATION COMPLETE: plate 41 is in Halloran's office.         \n");
     try writer.writeAll("===================================================================\n\n");
@@ -391,6 +488,7 @@ const Play = struct {
     compiled: *const bespoke.CompiledProgram,
     staff: *society.Society,
     session: *host.Session,
+    interp: *bespoke.command.Interpreter,
     window: *bespoke.display.DisplayWindow,
     ids: Ids,
 
@@ -401,6 +499,11 @@ const Play = struct {
         try self.staff.step(self.world, self.spatial, self.vm);
         var buf: [512]u8 = undefined;
         if (host.speech_this_tick(self.world, self.vm, &buf)) |line| self.window.set_cue_banner(line, 300);
+        self.refresh_words();
+    }
+
+    fn refresh_words(self: Play) void {
+        host.command_words(self.vm, self.compiled, self.ids.ines, &self.window.command_words);
     }
 
     fn act(self: Play, cue: []const u8, target: bespoke.EntityId) !void {
@@ -437,6 +540,13 @@ const Play = struct {
                     if (within_reach(self.spatial, ids.ines, ids.pell)) try self.act("TalksTo", ids.pell) else self.hint("Pell is too far away. Get within one mark of him.");
                 }
             },
+            .typed_command => |t| {
+                var buf: [160]u8 = undefined;
+                const result = try type_line(self.vm, self.compiled, self.interp, self.spatial, ids, t.buf[0..t.len], &buf);
+                if (result.text) |text| self.window.set_cue_banner(text, 240);
+                if (result.fired) try self.advance();
+                self.refresh_words();
+            },
             .interact_actor => |a| {
                 const frame = self.session.frame();
                 if (a.actor_index < frame.entity_count) try self.act("TalksTo", frame.entities[a.actor_index].entity);
@@ -472,7 +582,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
-    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] confronts Pell when he is on Ines's mark or the next one. Clicking a staff member talks to them.\n");
+    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] confronts Pell when he is on Ines's mark or the next one. Clicking a staff member talks to them. [Enter] opens the command bar: try 'go to the archive', 'take the slip', 'ask pell about the slip'.\n");
     try stdout.writeAll("Pause/save/load, single-step, scrub, rewind, debug, and console use the standard engine controls.\n\n");
 
     var bridge = bespoke.DisplayBridge.init();
@@ -482,7 +592,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
     defer session.deinit();
     window.set_cue_banner("Plate 41 is missing. Find it before the staff decide what you believe.", 240);
-    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .window = &window, .ids = ids };
+    window.enable_command_bar(true);
+    var interp = bespoke.command.Interpreter{};
+    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .interp = &interp, .window = &window, .ids = ids };
+    play.refresh_words();
 
     while (true) {
         const action = window.poll_events(session.frame());
@@ -536,7 +649,8 @@ test "P33-03: window actions give feedback and Pell can be confronted within rea
     bridge.set_active_character(ids.ines);
     var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
     defer session.deinit();
-    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .window = &window, .ids = ids };
+    var interp = bespoke.command.Interpreter{};
+    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .interp = &interp, .window = &window, .ids = ids };
     const has = struct {
         fn text(p: Play, needle: []const u8) bool {
             return std.mem.indexOf(u8, p.banner(), needle) != null;
@@ -591,4 +705,55 @@ test "P33-03: reach is the same mark or one edge away" {
     try std.testing.expect(within_reach(&spatial, a, b)); // neighbours
     _ = try spatial.transition_actor(b, scene, spatial.graph.find_waypoint_in_room(scene, "Library").?);
     try std.testing.expect(within_reach(&spatial, a, b)); // joined by the host's stair
+}
+
+test "P26-03: typed commands in the window reply on the banner and respect where Ines stands" {
+    const allocator = std.testing.allocator;
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, OBSERVATORY_SCRIPT);
+    defer compiled.deinit();
+    const ids = try configure(&world, &spatial);
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.transition_to_scene(ids.scene);
+    try vm.load_compiled_rules(&compiled);
+    try host.run_initial_statements(&world, &vm, &compiled);
+    try host.initialize_subsystems(&world, &compiled);
+    var soc = try staff(&world, &compiled);
+    var window = try bespoke.display.DisplayWindow.init_offscreen(1280, 720);
+    defer window.deinit();
+    window.set_theme(&theme);
+    window.enable_command_bar(true);
+    var bridge = bespoke.DisplayBridge.init();
+    bridge.set_status_hook(art.capture_status);
+    var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
+    defer session.deinit();
+    var interp = bespoke.command.Interpreter{};
+    const play = Play{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .session = &session, .interp = &interp, .window = &window, .ids = ids };
+    play.refresh_words();
+
+    const typed = struct {
+        fn line(p: Play, text: []const u8) !void {
+            var t = bespoke.display.renderer.UserAction{ .typed_command = .{ .buf = undefined, .len = text.len } };
+            @memcpy(t.typed_command.buf[0..text.len], text);
+            try p.handle(t);
+        }
+    }.line;
+
+    try typed(play, "examine telescope");
+    try std.testing.expect(std.mem.startsWith(u8, play.banner(), "Which do you mean"));
+    try typed(play, "log");
+    try std.testing.expect(std.mem.indexOf(u8, play.banner(), "plate 41") != null);
+    try typed(play, "take slip");
+    try std.testing.expectEqualStrings("The slip is in the Archive.", play.banner());
+    // Completion words follow scope: "exposure" is in the list while the slip is in the room.
+    var found = false;
+    for (0..window.command_words.len) |i| {
+        if (std.mem.eql(u8, window.command_words.word(i), "exposure")) found = true;
+    }
+    try std.testing.expect(found);
 }

@@ -385,6 +385,81 @@ pub fn match_frame(frame: *const Frame, words: []const []const u8) ?Match {
     return m;
 }
 
+pub const MAX_COMPLETIONS: usize = 96;
+pub const MAX_COMPLETION_LEN: usize = 24;
+
+/// Words the command bar may complete (D-057 point 6): every frame word and every name or
+/// alias word of an entity in scope. Stored by value, so a window can keep a copy.
+pub const WordList = struct {
+    buf: [MAX_COMPLETIONS][MAX_COMPLETION_LEN]u8 = undefined,
+    lens: [MAX_COMPLETIONS]u8 = undefined,
+    len: usize = 0,
+
+    pub fn word(self: *const WordList, i: usize) []const u8 {
+        return self.buf[i][0..self.lens[i]];
+    }
+
+    pub fn add(self: *WordList, w: []const u8) void {
+        if (w.len == 0 or w.len > MAX_COMPLETION_LEN or self.len == MAX_COMPLETIONS) return;
+        for (0..self.len) |i| if (std.mem.eql(u8, self.word(i), w)) return;
+        @memcpy(self.buf[self.len][0..w.len], w);
+        self.lens[self.len] = @intCast(w.len);
+        self.len += 1;
+    }
+
+    /// Completes the last word of `input` in place: a unique match is finished and followed by
+    /// a space; several matches extend to their common prefix. Returns the new length.
+    pub fn complete(self: *const WordList, input: []u8, len: usize) usize {
+        var start = len;
+        while (start > 0 and input[start - 1] != ' ') start -= 1;
+        const prefix = input[start..len];
+        if (prefix.len == 0) return len;
+        var common: ?[]const u8 = null;
+        var count: usize = 0;
+        for (0..self.len) |i| {
+            const w = self.word(i);
+            if (w.len < prefix.len or !std.ascii.eqlIgnoreCase(w[0..prefix.len], prefix)) continue;
+            count += 1;
+            if (common) |c| {
+                var n: usize = 0;
+                while (n < c.len and n < w.len and c[n] == w[n]) n += 1;
+                common = c[0..n];
+            } else common = w;
+        }
+        const fill = common orelse return len;
+        var out_len = start;
+        for (fill) |ch| {
+            if (out_len == input.len) return out_len;
+            input[out_len] = ch;
+            out_len += 1;
+        }
+        if (count == 1 and out_len < input.len) {
+            input[out_len] = ' ';
+            out_len += 1;
+        }
+        return @max(out_len, len);
+    }
+};
+
+pub fn completion_words(world: *const World, aliases: []const AliasDecl, frames: []const Frame, scope: *const Scope, out: *WordList) void {
+    out.len = 0;
+    for (frames) |f| for (f.slice()) |e| switch (e) {
+        .word => |w| out.add(w),
+        .thing => {},
+    };
+    for (scope.slice()) |entity| {
+        const words = NameWords.of(world.get_entity_name(entity) orelse continue);
+        for (0..words.len) |i| out.add(words.word(i));
+        for (aliases) |alias| {
+            if (alias.entity != entity) continue;
+            for (alias.phrases) |phrase| {
+                var it = std.mem.tokenizeScalar(u8, phrase, ' ');
+                while (it.next()) |w| out.add(w);
+            }
+        }
+    }
+}
+
 /// A resolved typed command: a cue and its targets.
 pub const Command = struct {
     cue: []const u8,
@@ -687,4 +762,22 @@ test "P26-02: the interpreter resolves commands, asks which, and explains failur
     // Script frames are tried first and reach script cues.
     const poured = interp.interpret(&world, &aliases, frames.slice(), &scope, "pour lantern into brass key");
     try testing.expectEqualStrings("Pours", poured.command.cue);
+}
+
+test "P26-03: completion finishes unique words and extends shared prefixes" {
+    var list = WordList{};
+    for ([_][]const u8{ "examine", "exposure", "slip", "take", "take" }) |w| list.add(w);
+    try testing.expectEqual(@as(usize, 4), list.len);
+    var input: [32]u8 = undefined;
+    @memcpy(input[0..7], "take sl");
+    var n = list.complete(&input, 7);
+    try testing.expectEqualStrings("take slip ", input[0..n]);
+    @memcpy(input[0..2], "ex");
+    n = list.complete(&input, 2);
+    try testing.expectEqualStrings("ex", input[0..n]); // examine and exposure share only "ex"
+    @memcpy(input[0..3], "exa");
+    n = list.complete(&input, 3);
+    try testing.expectEqualStrings("examine ", input[0..n]);
+    @memcpy(input[0..5], "take ");
+    try testing.expectEqual(@as(usize, 5), list.complete(&input, 5)); // nothing to complete
 }

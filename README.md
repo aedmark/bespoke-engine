@@ -122,7 +122,7 @@ zig build test-proofs                     # every proof's tests
 | `--grog` | Caustic Grog | Script-declared vessel degradation, atomic pours, movement spill |
 | `--atlantis` | The Fate of Atlantis: Algiers | Three stageplay paths, fact-backed waypoint locks, route-pruned dialogue |
 | `--grid` | The Castle Fire Escape | Grid fire spread, smoke, water flow and dousing, hazard rules on actors |
-| `--observatory` | The Larkspur Observatory | Agendas with omission triggers, contention, pursuit, soft-interrupt interception |
+| `--observatory` | The Larkspur Observatory | Agendas with omission triggers, contention, pursuit, soft-interrupt interception; typed commands |
 
 ---
 

@@ -77,10 +77,9 @@ pub const CommandReply = struct {
     walking: bool = false,
 };
 
-/// Interprets one typed line for `actor` and dispatches it. Nouns resolve in the actor's room
-/// (its waypoint's room, else the VM's current scene) and its holdings. `WalksTo` starts a
-/// world-aware walk to a mark or to an agent's waypoint and also fires its cue if handled. A
-/// command nothing answers replies "Nothing happens."
+/// Interprets one typed line for `actor` and dispatches it: `interpret_command` then
+/// `dispatch_command`. Hosts that must check a command before it runs (a proof whose actions
+/// depend on where the actor stands) call the two halves themselves.
 pub fn run_command(
     vm: *VM,
     compiled: *const CompiledProgram,
@@ -89,27 +88,59 @@ pub fn run_command(
     input: []const u8,
     buf: []u8,
 ) !CommandReply {
-    const world = vm.world;
+    return switch (interpret_command(vm, compiled, interp, actor, input, buf)) {
+        .reply => |text| .{ .text = text },
+        .command => |command| try dispatch_command(vm, compiled, actor, command),
+    };
+}
+
+pub const Interpreted = union(enum) {
+    /// Show this and do nothing else (an empty line gives an empty reply).
+    reply: ?[]const u8,
+    command: command_mod.Command,
+};
+
+fn command_room(vm: *VM, actor: EntityId) ?EntityId {
     var room: ?EntityId = vm.current_scene;
     if (vm.spatial) |sp| {
         if (sp.get_current_waypoint(actor)) |wp| {
             if (sp.graph.get_waypoint(wp)) |w| room = w.room;
         }
     }
+    return room;
+}
+
+/// Interprets one typed line (P26-02, D-057). Nouns resolve in the actor's room (its
+/// waypoint's room, else the VM's current scene) and its holdings.
+pub fn interpret_command(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    interp: *command_mod.Interpreter,
+    actor: EntityId,
+    input: []const u8,
+    buf: []u8,
+) Interpreted {
+    const world = vm.world;
+    const room = command_room(vm, actor);
     const frames = command_mod.FrameList.build(compiled.commands.items);
     const scope = command_mod.Scope.gather(world, vm.spatial, room, actor);
     const outcome = interp.interpret(world, compiled.aliases.items, frames.slice(), &scope, input);
-    if (outcome.message(world, buf)) |text| return .{ .text = text };
-    const command = switch (outcome) {
-        .command => |c| c,
-        else => return .{},
+    return switch (outcome) {
+        .command => |c| .{ .command = c },
+        else => .{ .reply = outcome.message(world, buf) },
     };
+}
 
+/// Runs an interpreted command. `WalksTo` starts a world-aware walk to a mark or to an agent's
+/// waypoint and also fires its cue if handled. A command nothing answers replies
+/// "Nothing happens."
+pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, command: command_mod.Command) !CommandReply {
+    const world = vm.world;
     var reply = CommandReply{};
     var blocked = false;
     if (std.mem.eql(u8, command.cue, "WalksTo")) {
         if (vm.spatial) |sp| {
-            if (walk_target(world, sp, room, command.a)) |dest| {
+            if (walk_target(world, sp, command_room(vm, actor), command.a)) |dest| {
                 reply.walking = try sp.walk_to_with_world(world, actor, dest);
                 blocked = !reply.walking;
             }
@@ -120,6 +151,15 @@ pub fn run_command(
         reply.text = if (blocked) "You can't get there from here." else "Nothing happens.";
     }
     return reply;
+}
+
+/// Fills `out` with the words the command bar may complete for `actor`: frame words and the
+/// name and alias words of everything in scope (P26-03). Call after each tick or refresh.
+pub fn command_words(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, out: *command_mod.WordList) void {
+    const room = command_room(vm, actor);
+    const frames = command_mod.FrameList.build(compiled.commands.items);
+    const scope = command_mod.Scope.gather(vm.world, vm.spatial, room, actor);
+    command_mod.completion_words(vm.world, compiled.aliases.items, frames.slice(), &scope, out);
 }
 
 /// The waypoint a `WalksTo` target names: a mark in the room, or the waypoint an agent last

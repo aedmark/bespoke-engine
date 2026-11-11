@@ -608,13 +608,15 @@
             "Scope.gather collects agents, hotspots, and marks in the actor's room plus what it Carries or holds InInventory; resolve reports one match, several, or none.",
             ".bspk version 10 stores command and alias declarations.",
             "command.Interpreter matches script frames before the defaults, resolves each slot in scope, and keeps one open Which do you mean question that a following bare noun answers.",
-            "host.run_command fires the matched cue, walks for WalksTo, and returns a reply when a word is unknown, a sentence or noun does not fit, or no handler answers (Nothing happens)."
+            "host.run_command fires the matched cue, walks for WalksTo, and returns a reply when a word is unknown, a sentence or noun does not fit, or no handler answers (Nothing happens).",
+            "DisplayWindow.enable_command_bar shows a bar above the verb row: Enter focuses it, every key is then text, Esc leaves, Up and Down recall history, and Tab completes from host.command_words; submitted lines arrive as UserAction.typed_command."
           ],
           "why": "Proofs name their own cues, so typed commands need script-owned verbs on top of a few shared defaults. Resolving nouns only in scope keeps typed commands from reaching what the player cannot see, and refusing to guess between two matches keeps the parser predictable.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-057", "target": "docs/DECISIONS.md#d-057", "kind": "decision"},
-            {"label": "Typed Command Vocabulary", "target": "src/command.zig", "kind": "source"}
+            {"label": "Typed Command Vocabulary", "target": "src/command.zig", "kind": "source"},
+            {"label": "Typed playthrough in The Larkspur Observatory", "target": "proofs/observatory_puzzle.zig", "kind": "source"}
           ],
           "related": ["classic-adventure-verbs", "cue-dispatch-and-interruption", "relational-facts"]
         },

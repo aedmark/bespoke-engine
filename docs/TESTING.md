@@ -41,6 +41,8 @@ Expected results live in [HANDOFF.md](HANDOFF.md)'s "Verified" table, with the d
 - Assert on what happened (a fact in the arena, an entity coordinate reached, a return code or event emitted), not on words in a message: a message can mention the right word for the wrong reason.
 - Before trusting a new check, make it fail: undo the fix (only the fix) and run it. A check that passes either way proves nothing.
 
+- Window key tests push real `SDL_KEYDOWN` events (flush the queue first). Do not push synthetic `SDL_TEXTINPUT` events: on systems where SDL2 is the SDL3 compatibility layer they crash inside SDL; call the window's text handler (`command_bar_text`) directly instead.
+
 ## Runs That Vary
 
 The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discrete integer counts, and PRNG rolls (e.g. `roll 2d6`) use deterministic seedable sequences. However, when testing emergent multi-agent simulations or asynchronous peripheral integrations:
@@ -57,7 +59,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Relational Store (`src/world.zig`) | `zig test src/world.zig` | `zig build test` (mutation check on TTL decay or snapshot) |
 | VM, Bytecode, Compiler (`src/vm.zig`, `src/compiler/`) | `zig test src/vm.zig`, `zig test src/compiler.zig` | `zig build test`, `bespoke check scenarios/tavern_heist.bespoke` |
 | Spatial Graph (`src/spatial.zig`) | `zig test src/spatial.zig` | Waypoint pathfinding verification in headless scenarios |
-| Typed Commands (`src/command.zig`) | `zig test src/command.zig` | `zig test src/package.zig` (v10 round-trip, bad frame, v9 load); `zig test src/compiler.zig` (declarations and diagnostics) |
+| Typed Commands (`src/command.zig`) | `zig test src/command.zig`; `zig build test-engine` (the command-bar key test in `src/display/renderer.zig`) | `zig test src/package.zig` (v10 round-trip, bad frame, v9 load); `zig test src/compiler.zig` (declarations and diagnostics) |
 | Agency (`src/agency.zig`) | `zig test src/agency.zig`, `zig test src/host.zig`, `zig test src/society.zig` (pursuit guard) | `zig test src/package.zig` (v9 round-trip, bad flag, v8 load); `zig test src/compiler.zig` (declaration and diagnostics) |
 | Grid Overlay and Automata (`src/grid.zig`) | `zig test src/grid.zig`, `zig test src/spatial.zig`, `zig test src/host.zig` | `zig test src/package.zig` (v8 round-trip, corrupt cells, v6 and v7 loads); `zig test src/compiler.zig` (declaration, `place`, rates) |
 | Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification; version 1/2 compatibility and temporal envelope round-trip |
