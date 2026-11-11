@@ -319,6 +319,214 @@ pub fn known_word(world: *const World, aliases: []const AliasDecl, scope: *const
     return false;
 }
 
+/// Frames in match order: the script's first, in declaration order, then the engine defaults.
+pub const FrameList = struct {
+    items: [MAX_FRAMES]Frame = undefined,
+    len: usize = 0,
+
+    pub fn build(script: []const CommandDecl) FrameList {
+        var list = FrameList{};
+        for (script) |decl| {
+            if (list.len == MAX_FRAMES) break;
+            // Compiled and loaded commands were validated; a frame that still fails is skipped
+            // rather than aborting every typed line.
+            list.items[list.len] = decl.frame() catch continue;
+            list.len += 1;
+        }
+        for (DEFAULT_FRAMES) |d| {
+            if (list.len == MAX_FRAMES) break;
+            list.items[list.len] = parse_frame(d.cue, d.text) catch unreachable;
+            list.len += 1;
+        }
+        return list;
+    }
+
+    pub fn slice(self: *const FrameList) []const Frame {
+        return self.items[0..self.len];
+    }
+};
+
+pub const MAX_FRAMES: usize = 64;
+
+/// A frame matched against words: the noun phrase each slot captured.
+pub const Match = struct {
+    frame: *const Frame,
+    phrases: [MAX_SLOTS][]const []const u8 = .{ &.{}, &.{} },
+    slots: usize = 0,
+};
+
+/// Matches words against one frame. A word element must equal the next word; a slot takes
+/// every word up to the frame's next literal word (or the end) and must take at least one.
+pub fn match_frame(frame: *const Frame, words: []const []const u8) ?Match {
+    var m = Match{ .frame = frame };
+    var w: usize = 0;
+    const elements = frame.slice();
+    for (elements, 0..) |element, e| {
+        switch (element) {
+            .word => |lit| {
+                if (w >= words.len or !std.mem.eql(u8, words[w], lit)) return null;
+                w += 1;
+            },
+            .thing => {
+                // The next literal word bounds this slot; a trailing slot runs to the end.
+                const stop: ?[]const u8 = if (e + 1 < elements.len) elements[e + 1].word else null;
+                const start = w;
+                while (w < words.len) : (w += 1) {
+                    if (stop) |st| if (std.mem.eql(u8, words[w], st)) break;
+                }
+                if (w == start) return null;
+                if (stop != null and w == words.len) return null;
+                m.phrases[m.slots] = words[start..w];
+                m.slots += 1;
+            },
+        }
+    }
+    if (w != words.len) return null;
+    return m;
+}
+
+/// A resolved typed command: a cue and its targets.
+pub const Command = struct {
+    cue: []const u8,
+    a: ?EntityId = null,
+    b: ?EntityId = null,
+};
+
+/// What a typed line produced (D-057 point 4). `ambiguous` keeps its candidates so the next
+/// line can answer the question with a bare noun.
+pub const Outcome = union(enum) {
+    empty,
+    unknown_word: []const u8,
+    not_understood,
+    not_here,
+    ambiguous: struct { items: [MAX_CANDIDATES]EntityId, len: usize },
+    command: Command,
+
+    /// The reply a player sees, or null when the command goes on to its cue.
+    pub fn message(self: Outcome, world: *const World, buf: []u8) ?[]const u8 {
+        var stream = std.io.fixedBufferStream(buf);
+        const out = stream.writer();
+        switch (self) {
+            .empty, .command => return null,
+            .unknown_word => |word| out.print("I don't know the word \"{s}\".", .{word}) catch {},
+            .not_understood => out.writeAll("I don't understand that.") catch {},
+            .not_here => out.writeAll("You don't see that here.") catch {},
+            .ambiguous => |amb| {
+                out.writeAll("Which do you mean: ") catch {};
+                for (amb.items[0..amb.len], 0..) |entity, i| {
+                    if (i > 0) out.writeAll(if (i + 1 == amb.len) " or " else ", ") catch {};
+                    out.writeAll("the ") catch {};
+                    const words = NameWords.of(world.get_entity_name(entity) orelse "thing");
+                    for (0..words.len) |k| {
+                        if (k > 0) out.writeByte(' ') catch {};
+                        out.writeAll(words.word(k)) catch {};
+                    }
+                }
+                out.writeByte('?') catch {};
+            },
+        }
+        return stream.getWritten();
+    }
+};
+
+/// Turns typed lines into commands, remembering one open "which do you mean" question.
+pub const Interpreter = struct {
+    /// The last line's words; `unknown_word` outcomes point here.
+    words: Words = .{},
+    answered_cue: [64]u8 = undefined,
+    pending: ?Pending = null,
+
+    /// An open "which do you mean" question: the command so far and the slot it is missing.
+    const Pending = struct {
+        cue_buf: [64]u8 = undefined,
+        cue_len: usize,
+        resolved: [MAX_SLOTS]?EntityId,
+        open_slot: usize,
+        slots: usize,
+        candidates: [MAX_CANDIDATES]EntityId,
+        candidate_count: usize,
+    };
+
+    /// Interprets one line. A line matching no frame while a question is open is taken as
+    /// the answer, a noun naming one of the candidates; any other line drops the question.
+    pub fn interpret(self: *Interpreter, world: *const World, aliases: []const AliasDecl, frames: []const Frame, scope: *const Scope, input: []const u8) Outcome {
+        tokenize(input, &self.words) catch return .not_understood;
+        const words = self.words.slice();
+        if (words.len == 0) return .empty;
+
+        var matched: ?Match = null;
+        for (frames) |*f| {
+            if (match_frame(f, words)) |m| {
+                matched = m;
+                break;
+            }
+        }
+
+        if (matched == null) {
+            if (self.pending) |*p| {
+                var narrowed = Scope{};
+                for (p.candidates[0..p.candidate_count]) |c| narrowed.add(c, .none);
+                switch (resolve(world, aliases, &narrowed, words)) {
+                    .one => |entity| {
+                        p.resolved[p.open_slot] = entity;
+                        const command = Command{ .cue = "", .a = p.resolved[0], .b = if (p.slots > 1) p.resolved[1] else null };
+                        return self.finish(command);
+                    },
+                    else => {},
+                }
+            }
+            self.pending = null;
+            for (words) |word| if (!known_word(world, aliases, scope, frames, word)) return .{ .unknown_word = word };
+            return .not_understood;
+        }
+
+        self.pending = null;
+        const m = matched.?;
+        var resolved: [MAX_SLOTS]?EntityId = .{ null, null };
+        for (0..m.slots) |i| {
+            switch (resolve(world, aliases, scope, m.phrases[i])) {
+                .one => |entity| resolved[i] = entity,
+                .none => {
+                    for (m.phrases[i]) |word| if (!known_word(world, aliases, scope, frames, word)) return .{ .unknown_word = word };
+                    return .not_here;
+                },
+                .many => |amb| {
+                    var p = Pending{
+                        .cue_len = @min(m.frame.cue.len, 64),
+                        .resolved = resolved,
+                        .open_slot = i,
+                        .slots = m.slots,
+                        .candidates = amb.items,
+                        .candidate_count = amb.len,
+                    };
+                    @memcpy(p.cue_buf[0..p.cue_len], m.frame.cue[0..p.cue_len]);
+                    // Later slots are resolved now so the answer completes the command.
+                    var later = i + 1;
+                    while (later < m.slots) : (later += 1) {
+                        switch (resolve(world, aliases, scope, m.phrases[later])) {
+                            .one => |entity| p.resolved[later] = entity,
+                            else => return .not_understood,
+                        }
+                    }
+                    self.pending = p;
+                    return .{ .ambiguous = .{ .items = amb.items, .len = amb.len } };
+                },
+            }
+        }
+        return .{ .command = .{ .cue = m.frame.cue, .a = resolved[0], .b = resolved[1] } };
+    }
+
+    /// Completes a command from the open question and closes it. The cue is copied to
+    /// `answered_cue`, which the returned command borrows until the next line.
+    fn finish(self: *Interpreter, command: Command) Outcome {
+        const p = self.pending.?;
+        self.pending = null;
+        @memcpy(self.answered_cue[0..p.cue_len], p.cue_buf[0..p.cue_len]);
+        var c = command;
+        c.cue = self.answered_cue[0..p.cue_len];
+        return .{ .command = c };
+    }
+};
 const testing = std.testing;
 
 test "P26-01: tokenizer lowercases, drops articles and punctuation, keeps prepositions" {
@@ -403,4 +611,80 @@ test "P26-01: nouns resolve within scope, through aliases, and report ambiguity"
     try testing.expect(known_word(&world, &aliases, &scope, &frames, "examine"));
     try testing.expect(known_word(&world, &aliases, &scope, &frames, "lantern"));
     try testing.expect(!known_word(&world, &aliases, &scope, &frames, "xyzzy"));
+}
+
+test "P26-02: frames match slots bounded by their next word" {
+    const pour = try parse_frame("Pours", "pour <thing> into <thing>");
+    const m = match_frame(&pour, &.{ "pour", "caustic", "grog", "into", "pewter", "mug" }).?;
+    try testing.expectEqual(@as(usize, 2), m.slots);
+    try testing.expectEqual(@as(usize, 2), m.phrases[0].len);
+    try testing.expectEqualStrings("pewter", m.phrases[1][0]);
+    try testing.expect(match_frame(&pour, &.{ "pour", "grog" }) == null); // missing "into"
+    try testing.expect(match_frame(&pour, &.{ "pour", "into", "mug" }) == null); // empty slot
+    const look = try parse_frame("LooksAt", "look at <thing>");
+    try testing.expect(match_frame(&look, &.{ "look", "at" }) == null);
+    try testing.expect(match_frame(&look, &.{ "look", "lamp" }) == null);
+}
+
+test "P26-02: the interpreter resolves commands, asks which, and explains failures" {
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const room = try world.intern_entity("ParseStudy");
+    const desk_wp = try spatial.graph.add_waypoint(room, 0, 0, "ParseDesk");
+    _ = try world.intern_entity("ParseDesk");
+    const hero = try world.intern_entity("ParseHero");
+    const butler = try world.intern_entity("ParseButler");
+    const brass = try world.intern_entity("BrassKey");
+    const iron = try world.intern_entity("IronKey");
+    const lamp = try world.intern_entity("OilLamp");
+    try spatial.register_entity(hero, desk_wp, 1);
+    try spatial.register_entity(butler, desk_wp, 1);
+    try spatial.add_hotspot(lamp, room, .{ .x = 0, .y = 0 }, 2, "Oil Lamp", "A lamp.");
+    const carries = try world.intern_relation("Carries", .set);
+    try world.remember(hero, carries, brass.to_int(), 0);
+    try world.remember(hero, carries, iron.to_int(), 0);
+    const scope = Scope.gather(&world, &spatial, room, hero);
+
+    const script = [_]CommandDecl{.{ .cue = "Pours", .text = "pour <thing> into <thing>" }};
+    const frames = FrameList.build(&script);
+    const lantern = [_][]const u8{"lantern"};
+    const aliases = [_]AliasDecl{.{ .entity = lamp, .phrases = &lantern }};
+    var interp = Interpreter{};
+    var buf: [128]u8 = undefined;
+
+    const look = interp.interpret(&world, &aliases, frames.slice(), &scope, "> Examine the lantern.");
+    try testing.expectEqualStrings("LooksAt", look.command.cue);
+    try testing.expectEqual(lamp, look.command.a.?);
+
+    const use = interp.interpret(&world, &aliases, frames.slice(), &scope, "use brass key on lamp");
+    try testing.expectEqualStrings("Uses", use.command.cue);
+    try testing.expectEqual(brass, use.command.a.?);
+    try testing.expectEqual(lamp, use.command.b.?);
+
+    const ask = interp.interpret(&world, &aliases, frames.slice(), &scope, "ask butler about iron key");
+    try testing.expectEqualStrings("TalksTo", ask.command.cue);
+    try testing.expectEqual(iron, ask.command.b.?);
+
+    // "key" names two things: the interpreter asks, and a bare noun answers.
+    const which = interp.interpret(&world, &aliases, frames.slice(), &scope, "use key on lamp");
+    try testing.expectEqualStrings("Which do you mean: the brass key or the iron key?", which.message(&world, &buf).?);
+    const answered = interp.interpret(&world, &aliases, frames.slice(), &scope, "iron");
+    try testing.expectEqualStrings("Uses", answered.command.cue);
+    try testing.expectEqual(iron, answered.command.a.?);
+    try testing.expectEqual(lamp, answered.command.b.?);
+    // The question is closed: the same bare noun now means nothing.
+    try testing.expectEqual(Outcome.not_understood, interp.interpret(&world, &aliases, frames.slice(), &scope, "iron"));
+
+    const unknown = interp.interpret(&world, &aliases, frames.slice(), &scope, "examine xyzzy");
+    try testing.expectEqualStrings("I don't know the word \"xyzzy\".", unknown.message(&world, &buf).?);
+    // A word known only from frames, naming nothing in scope.
+    try testing.expectEqual(Outcome.not_here, interp.interpret(&world, &aliases, frames.slice(), &scope, "examine pour"));
+    try testing.expectEqual(Outcome.not_understood, interp.interpret(&world, &aliases, frames.slice(), &scope, "lamp examine"));
+    try testing.expectEqual(Outcome.empty, interp.interpret(&world, &aliases, frames.slice(), &scope, "  the  "));
+
+    // Script frames are tried first and reach script cues.
+    const poured = interp.interpret(&world, &aliases, frames.slice(), &scope, "pour lantern into brass key");
+    try testing.expectEqualStrings("Pours", poured.command.cue);
 }

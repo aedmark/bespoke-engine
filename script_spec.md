@@ -160,6 +160,7 @@ alias ExposureSlip: "slip", "receipt"
 - Typed input ignores case, punctuation, and the articles `a`, `an`, `the`.
 - An entity answers to the words of its name, split at capitals, spaces, and underscores (`ExposureSlip` answers to "exposure slip" and "slip"), and to the words of its `alias` phrases. Only what is in the actor's room or carried by the actor can be named. If two things match, the command is ambiguous and the game asks which.
 - Package format version 10 carries commands and aliases.
+- What the player sees: a matched, resolved command fires its cue, whose handler speaks on the next tick; `go to <mark>` or `go to <person>` also walks there. Otherwise the reply is one of "I don't know the word \"x\".", "I don't understand that.", "You don't see that here.", "Which do you mean: the brass key or the iron key?" (answer with a noun such as "brass"), or "Nothing happens." when no handler answers.
 
 ### Agendas (P33-01, D-038, D-056)
 

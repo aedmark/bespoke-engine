@@ -17,6 +17,7 @@ const temporal_mod = @import("temporal_snapshot.zig");
 const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
+const command_mod = @import("command.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -68,7 +69,70 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
     return try vm.dispatch_pending_weaves(compiled);
 }
 
-/// Collects `say` lines into one string. `VM.step_tick` clears `emitted_cues` at the start of
+/// What a typed line did (P26-02, D-057). `text` is a reply to show now; when `fired` is set,
+/// the cue's handler speaks after the next tick, like any fired cue.
+pub const CommandReply = struct {
+    text: ?[]const u8 = null,
+    fired: bool = false,
+    walking: bool = false,
+};
+
+/// Interprets one typed line for `actor` and dispatches it. Nouns resolve in the actor's room
+/// (its waypoint's room, else the VM's current scene) and its holdings. `WalksTo` starts a
+/// world-aware walk to a mark or to an agent's waypoint and also fires its cue if handled. A
+/// command nothing answers replies "Nothing happens."
+pub fn run_command(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    interp: *command_mod.Interpreter,
+    actor: EntityId,
+    input: []const u8,
+    buf: []u8,
+) !CommandReply {
+    const world = vm.world;
+    var room: ?EntityId = vm.current_scene;
+    if (vm.spatial) |sp| {
+        if (sp.get_current_waypoint(actor)) |wp| {
+            if (sp.graph.get_waypoint(wp)) |w| room = w.room;
+        }
+    }
+    const frames = command_mod.FrameList.build(compiled.commands.items);
+    const scope = command_mod.Scope.gather(world, vm.spatial, room, actor);
+    const outcome = interp.interpret(world, compiled.aliases.items, frames.slice(), &scope, input);
+    if (outcome.message(world, buf)) |text| return .{ .text = text };
+    const command = switch (outcome) {
+        .command => |c| c,
+        else => return .{},
+    };
+
+    var reply = CommandReply{};
+    var blocked = false;
+    if (std.mem.eql(u8, command.cue, "WalksTo")) {
+        if (vm.spatial) |sp| {
+            if (walk_target(world, sp, room, command.a)) |dest| {
+                reply.walking = try sp.walk_to_with_world(world, actor, dest);
+                blocked = !reply.walking;
+            }
+        }
+    }
+    reply.fired = (try vm.fire_cue(compiled, command.cue, actor, command.a, command.b)) != null;
+    if (!reply.fired and !reply.walking) {
+        reply.text = if (blocked) "You can't get there from here." else "Nothing happens.";
+    }
+    return reply;
+}
+
+/// The waypoint a `WalksTo` target names: a mark in the room, or the waypoint an agent last
+/// reached.
+fn walk_target(world: *const World, sp: *const SpatialSystem, room: ?EntityId, target: ?EntityId) ?spatial_mod.WaypointId {
+    const entity = target orelse return null;
+    if (sp.get_current_waypoint(entity)) |wp| return wp;
+    const name = world.get_entity_name(entity) orelse return null;
+    if (room) |r| return sp.graph.find_waypoint_in_room(r, name);
+    return sp.graph.find_waypoint(name);
+}
+
+/// Collects `say` lines into one string./// Collects `say` lines into one string. `VM.step_tick` clears `emitted_cues` at the start of
 /// every tick, so speech must be collected after each tick; a cue index taken before a tick is
 /// meaningless after it (the bug this replaces in the old per-proof readers).
 pub const SpeechLog = struct {
@@ -787,4 +851,63 @@ test "P33-02: host lifecycle walks a pursuer to its target and fires Intercepts"
     // Warned ends the omission, so the agenda stays idle after its encounter.
     _ = try tick(&vm, &compiled);
     try testing.expectEqual(agency.Stage.idle, agency.stage_of(&world, world.lookup_entity("WarnOff").?).?);
+}
+
+test "P26-02: typed lines fire script cues, walk, and reply when nothing answers" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Galley
+        \\cast: Cook, Mate
+        \\props: Ladle, Kettle, Grog, Mug
+        \\marks: Stove, Hatch
+        \\
+        \\command Pours: "pour <thing> into <thing>"
+        \\alias Kettle: "pot"
+        \\
+        \\on cue LooksAt(Cook, Kettle):
+        \\  say Cook: "Soot and old soup."
+        \\
+        \\on cue Pours(Cook, Grog, Mug):
+        \\  say Cook: "Mind the fumes."
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    const galley = world.lookup_entity("Galley").?;
+    try vm.transition_to_scene(galley);
+    const cook = world.lookup_entity("Cook").?;
+    const stove = spatial.graph.find_waypoint("Stove").?;
+    try spatial.register_entity(cook, stove, 10);
+    try spatial.register_entity(world.lookup_entity("Mate").?, stove, 10);
+    const carries = try world.intern_relation("Carries", .set);
+    try world.remember(cook, carries, world.lookup_entity("Grog").?.to_int(), 0);
+
+    var interp = command_mod.Interpreter{};
+    var buf: [128]u8 = undefined;
+    var speech: [128]u8 = undefined;
+
+    var reply = try run_command(&vm, &compiled, &interp, cook, "examine the pot", &buf);
+    try testing.expect(reply.fired and reply.text == null);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqualStrings("Cook: \"Soot and old soup.\"", speech_this_tick(&world, &vm, &speech).?);
+
+    reply = try run_command(&vm, &compiled, &interp, cook, "pour grog into mug", &buf);
+    try testing.expect(reply.fired);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqualStrings("Cook: \"Mind the fumes.\"", speech_this_tick(&world, &vm, &speech).?);
+
+    reply = try run_command(&vm, &compiled, &interp, cook, "examine ladle", &buf);
+    try testing.expectEqualStrings("Nothing happens.", reply.text.?);
+
+    reply = try run_command(&vm, &compiled, &interp, cook, "go to hatch", &buf);
+    try testing.expect(reply.walking and reply.text == null);
+    try testing.expectEqual(spatial.graph.find_waypoint("Hatch").?, spatial.agents.get(cook).?.target_wp.?);
+
+    reply = try run_command(&vm, &compiled, &interp, cook, "talk to the xyzzy", &buf);
+    try testing.expectEqualStrings("I don't know the word \"xyzzy\".", reply.text.?);
 }

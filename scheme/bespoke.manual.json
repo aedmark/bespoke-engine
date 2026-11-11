@@ -606,7 +606,9 @@
             "A frame is lowercase words with up to two <thing> slots; the engine provides frames for LooksAt, Uses, TalksTo, and WalksTo, and script command lines add more.",
             "An entity's name splits into words at capitals and separators, and alias lines add words; a noun matches when all its words belong to the entity.",
             "Scope.gather collects agents, hotspots, and marks in the actor's room plus what it Carries or holds InInventory; resolve reports one match, several, or none.",
-            ".bspk version 10 stores command and alias declarations; matching and the command bar arrive in P26-02 and P26-03."
+            ".bspk version 10 stores command and alias declarations.",
+            "command.Interpreter matches script frames before the defaults, resolves each slot in scope, and keeps one open Which do you mean question that a following bare noun answers.",
+            "host.run_command fires the matched cue, walks for WalksTo, and returns a reply when a word is unknown, a sentence or noun does not fit, or no handler answers (Nothing happens)."
           ],
           "why": "Proofs name their own cues, so typed commands need script-owned verbs on top of a few shared defaults. Resolving nouns only in scope keeps typed commands from reaching what the player cannot see, and refusing to guess between two matches keeps the parser predictable.",
           "why_basis": "recorded",
