@@ -224,7 +224,7 @@ Goal: Build an interactive visual debugging overlay rendering live relational st
 
 - [ ] P27-01 Real-time relational fact and belief network graph renderer in `DisplayWindow`, drawing nodes (entities) and directed edges (relations, beliefs) with color-coded TTL states.
 - [ ] P27-02 Dialogue branch and causality DAG inspector, highlighting active dialogue choices, pruned branches with failed guards, and forward-projecting temporal cascades.
-- [ ] P27-03 Interactive graph navigation, filtering by entity or relation kind, and integration into the existing `[P]` Pause / Save drawer and WebAssembly manual viewer.
+- [ ] P27-03 Interactive graph navigation, filtering by entity or relation kind, and integration into the existing `[P]` Pause / Save drawer and the showcase site's browser simulator (`site/index.html`; the manual's embedded simulator was removed by D-047).
 
 ## Phase 28: Music Macro Language (MML) Scripting & In-DSL Chiptune Composition
 
@@ -246,7 +246,7 @@ Goal: Package an independent project boilerplate, scaffolding CLI (`bespoke init
 
 Goal: Polish the public-facing showcase website in `site/index.html` with the complete freestanding WebAssembly runtime, hosting all scenarios in an interactive retro terminal shell.
 
-- [~] P30-01 Enhanced retro web terminal and scenario launcher in `site/index.html`, letting visitors launch and play any BeSpoke vertical slice in browser canvas with audio. (partial 2026-11-10: seven proof decks run the embedded `bespoke-proofs.wasm` through `tools/site_simulator.js`; the page remains self-contained, but audio and the remaining three decks are open.)
+- [~] P30-01 Enhanced retro web terminal and scenario launcher in `site/index.html`, letting visitors launch and play any BeSpoke vertical slice in browser canvas with audio. (partial 2026-11-10: seven proof decks run the embedded `bespoke-proofs.wasm` through `tools/site_simulator.js`; the page remains self-contained, but audio and decks for the four remaining proofs (Insult Sword Fighting, The Middlesex Anomaly, The Bell Tower, The Fate of Atlantis: Algiers) are open; corrected 2026-11-10.)
 - [ ] P30-02 Neocities deployment pipeline and static export tooling (`tools/deploy_site.py`), optimizing WASM asset size, metadata headers, and offline caching.
 - [ ] P30-03 Interactive scenario gallery, architecture diagram embeds, and live script source viewer accompanying each playable slice.
 
