@@ -145,3 +145,30 @@ grid HallFloor in "Great Hall":
 `size W H` and `cell N` are required; `origin X Y` (non-negative in scripts) defaults to `0 0`. Cell (x, y) covers room coordinates from `origin + x*N` up to, not including, `origin + (x+1)*N`. An attribute line names one cell, or a rectangle when it adds a width and height. The attributes are `flammable`, `liquid`, and `blocking`. `place` moves a mark of the same room to the centre of a cell. A grid holds at most 4096 cells, and a room has at most one grid; quote multi-word room names.
 
 Each set attribute is a fact on the grid entity: `CellFlammable(HallFloor, index)`, `CellLiquid`, or `CellBlocking`, where `index` is `y * W + x`. The host lifecycle writes the declared layout once, so later changes survive save, rewind, and re-initialisation. A mark standing in a `blocking` cell is treated like `WaypointBlocked`: scripted walks plan around it, and a walk to it is refused. Package format version 7 carries grids; versions 1 through 6 load without them.
+
+#### Fire, smoke, and water (P25-02, D-055)
+
+A grid may also declare `burning` and `smoke` cells and four rates. Each rate is off unless declared.
+
+```bespoke
+grid HallFloor in "Great Hall":
+  size 8 4
+  cell 20
+  flammable 1 1 6 1
+  burning 0 1
+  liquid 7 3
+  burn 6
+  spread 2
+  dissipate 10
+  flow 4
+
+when Hero is InBurningCell:
+  remember Scorched(Hero)
+```
+
+- `burn N`: a fire lasts N ticks, then the cell is spent and cannot relight. Without it, fires never go out.
+- `spread N`: a fire that has burned N ticks lights its flammable, dry, unlit neighbours (up, down, left, right). An ignited cell stops being flammable.
+- `dissipate N`: every fire keeps smoke in its cell; the smoke clears N ticks after the fire last fed it.
+- `flow N`: on every tick divisible by N, liquid spreads into neighbouring cells that are not blocking. Liquid puts out any fire in its cell, and a wet cell cannot catch.
+
+All decisions in a tick read the grid as it stood at the start of that tick, so the result never depends on cell order, and rewinds replay exactly. The engine marks each actor with `InBurningCell`, `InSmokeCell`, and `InLiquidCell` for the cell it stands in; `when Actor is InBurningCell:` and `when Actor stops being InBurningCell:` react to them on the following tick. Package format version 8 carries the rates and the two new cell kinds.

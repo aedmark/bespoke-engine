@@ -32,8 +32,10 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// appends degradation profiles (P23-01); versions 1 through 4 load an empty profile table.
 /// Version 6 adds per-moving-tick spill volume to each profile (P23-02); version 5 profiles load
 /// with spill disabled. Version 7 appends grid overlays with their initial cell layouts
-/// (P25-01, D-054); versions 1 through 6 load with no grids.
-pub const PACKAGE_VERSION: u32 = 7;
+/// (P25-01, D-054); versions 1 through 6 load with no grids. Version 8 adds the `burning` and
+/// `smoke` attributes and four automata rates per grid (P25-02, D-055); version 7 grids load
+/// with every rule off.
+pub const PACKAGE_VERSION: u32 = 8;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -243,6 +245,8 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeInt(u32, cell.index, .little);
             try writer.writeByte(@intFromEnum(cell.attribute));
         }
+        const r = decl.rules;
+        for ([_]u32{ r.burn_ticks, r.spread_ticks, r.dissipate_ticks, r.flow_ticks }) |rate| try writer.writeInt(u32, rate, .little);
     }
 }
 
@@ -522,7 +526,7 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
 /// Untrusted input: entity references, geometry, cell indexes, and attribute bytes are checked
 /// before anything reaches the World or SpatialSystem. The cell count is bounded by the grid
 /// area times the attribute count, the largest layout a valid declaration can hold.
-fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !grid_mod.Declaration {
+fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_rules: bool) !grid_mod.Declaration {
     const grid = grid_mod.Grid{
         .entity = try read_entity_ref(world, reader),
         .room = try read_entity_ref(world, reader),
@@ -533,7 +537,8 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
         .origin_y = try reader.readInt(i32, .little),
     };
     grid_mod.validate_grid(grid) catch return error.InvalidGridConfig;
-    const attribute_count = @typeInfo(grid_mod.Attribute).Enum.fields.len;
+    // Version 7 knew only flammable, liquid, and blocking; a later attribute byte there is corrupt.
+    const attribute_count: usize = if (has_rules) @typeInfo(grid_mod.Attribute).Enum.fields.len else 3;
     const cell_count = try reader.readInt(u32, .little);
     if (cell_count > grid.cell_count() * attribute_count) return error.InvalidGridConfig;
     const cells = try allocator.alloc(grid_mod.InitialCell, cell_count);
@@ -544,7 +549,14 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
         if (raw >= attribute_count) return error.InvalidGridConfig;
         cell.* = .{ .index = index, .attribute = @enumFromInt(raw) };
     }
-    const declaration = grid_mod.Declaration{ .grid = grid, .cells = cells };
+    var rules = grid_mod.Rules{};
+    if (has_rules) {
+        rules.burn_ticks = try reader.readInt(u32, .little);
+        rules.spread_ticks = try reader.readInt(u32, .little);
+        rules.dissipate_ticks = try reader.readInt(u32, .little);
+        rules.flow_ticks = try reader.readInt(u32, .little);
+    }
+    const declaration = grid_mod.Declaration{ .grid = grid, .cells = cells, .rules = rules };
     declaration.validate() catch return error.InvalidGridConfig;
     return declaration;
 }
@@ -1034,7 +1046,7 @@ pub fn load_package(
         if (grid_count > grid_mod.MAX_GRIDS) return error.InvalidGridConfig;
         var gi: u32 = 0;
         while (gi < grid_count) : (gi += 1) {
-            var decl = try read_grid_declaration(allocator, world, pr);
+            var decl = try read_grid_declaration(allocator, world, pr, header.version >= 8);
             grids.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
@@ -1426,7 +1438,7 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
     try testing.expectEqual(@as(u32, 0), compiled3.degradations.items[0].config.spill_per_moving_tick);
 }
 
-test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads version 6" {
+test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and loads versions 6 and 7" {
     const testing = std.testing;
     const compiler = @import("compiler.zig");
     const script =
@@ -1440,6 +1452,10 @@ test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads 
         \\  liquid 0 1 3 1
         \\  blocking 2 0
         \\  place ArmoryRack 2 0
+        \\  burn 5
+        \\  spread 2
+        \\  dissipate 7
+        \\  flow 3
     ;
     var world1 = try World.init(testing.allocator, 1024 * 1024);
     defer world1.deinit();
@@ -1462,6 +1478,7 @@ test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads 
     const grid = spatial2.grid_in_room(world2.lookup_entity("Armory").?).?;
     try testing.expectEqual(@as(i32, 5), grid.origin_x);
     try testing.expectEqual(@as(usize, 4), compiled2.grids.items[0].cells.len);
+    try testing.expectEqual(grid_mod.Rules{ .burn_ticks = 5, .spread_ticks = 2, .dissipate_ticks = 7, .flow_ticks = 3 }, compiled2.grids.items[0].rules);
     const rack = spatial2.graph.find_waypoint("ArmoryRack").?;
     try testing.expectEqual(grid_mod.Cell{ .x = 2, .y = 0 }, spatial2.waypoint_cell(rack).?.cell);
     try @import("host.zig").initialize_subsystems(&world2, &compiled2);
@@ -1469,9 +1486,10 @@ test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads 
     try testing.expect(grid_mod.has_attribute(&world2, grid, .{ .x = 1, .y = 1 }, .liquid));
 
     // Tail layout: grid count, entity, room, width, height, cell size, origin x/y, cell count,
-    // then four (index u32, attribute u8) cells.
+    // four (index u32, attribute u8) cells, then four u32 rates (version 8).
     const cells_len = 4 * (4 + 1);
-    const first_cell_index = buffer.items.len - cells_len;
+    const rules_len = 4 * 4;
+    const first_cell_index = buffer.items.len - rules_len - cells_len;
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
@@ -1485,7 +1503,7 @@ test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads 
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
-        bad[first_cell_index + 4] = 3; // no fourth attribute
+        bad[first_cell_index + 4] = 5; // past smoke, the last attribute
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
@@ -1493,8 +1511,28 @@ test "P25-01: package version 7 round-trips grids, rejects bad cells, and loads 
         try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
     }
     {
+        // A version 7 payload has no rates; its grids load with every rule off.
+        const v7 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - rules_len]);
+        defer testing.allocator.free(v7);
+        reseal_for_test(v7, 7);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v7_stream = std.io.fixedBufferStream(v7);
+        var loaded = try load_package(testing.allocator, v7_stream.reader(), &world3, null);
+        defer loaded.deinit();
+        try testing.expect(!loaded.grids.items[0].rules.any());
+
+        // Version 7 predates the burning attribute, so its byte is corrupt there.
+        v7[first_cell_index + 4] = @intFromEnum(grid_mod.Attribute.burning);
+        reseal_for_test(v7, 7);
+        var world4 = try World.init(testing.allocator, 1024 * 1024);
+        defer world4.deinit();
+        var bad_stream = std.io.fixedBufferStream(v7);
+        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world4, null));
+    }
+    {
         // A version 6 payload ends before the grid table and loads no grids.
-        const grid_section_len = 4 + 4 + 4 + 2 + 2 + 4 + 4 + 4 + 4 + cells_len;
+        const grid_section_len = 4 + 4 + 4 + 2 + 2 + 4 + 4 + 4 + 4 + cells_len + rules_len;
         const v6 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - grid_section_len]);
         defer testing.allocator.free(v6);
         reseal_for_test(v6, 6);

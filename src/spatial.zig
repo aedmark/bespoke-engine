@@ -556,6 +556,34 @@ pub const SpatialSystem = struct {
         return self.walk_to_with_world(null, entity, dest);
     }
 
+    /// Unary states set on an agent for the hazard in the cell it stands in (P25-02, D-055).
+    pub const HazardStates = [_]struct { attribute: grid_mod.Attribute, relation: []const u8 }{
+        .{ .attribute = .burning, .relation = "InBurningCell" },
+        .{ .attribute = .smoke, .relation = "InSmokeCell" },
+        .{ .attribute = .liquid, .relation = "InLiquidCell" },
+    };
+
+    /// Mirrors each agent's cell hazards as predicate-presence facts on the agent (D-043), so a
+    /// script reacts with ordinary edge-triggered rules (`when Hero is InBurningCell:`) and a
+    /// rewind restores them. `host.tick` calls this after the automata step; the VM's rules see
+    /// the result on the next tick. An agent outside every grid has no hazard states.
+    pub fn update_grid_hazards(self: *const SpatialSystem, world: *World) !void {
+        var relations: [HazardStates.len]RelationKind = undefined;
+        for (HazardStates, 0..) |hazard, i| relations[i] = try world.intern_relation(hazard.relation, .set);
+        var it = self.agents.iterator();
+        while (it.next()) |entry| {
+            const placed = self.agent_cell(entry.key_ptr.*);
+            for (HazardStates, 0..) |hazard, i| {
+                const on = if (placed) |p| grid_mod.has_attribute(world, p.grid, p.cell, hazard.attribute) else false;
+                if (on) {
+                    try world.remember(entry.key_ptr.*, relations[i], 0, 0);
+                } else {
+                    _ = world.forget(entry.key_ptr.*, relations[i], null);
+                }
+            }
+        }
+    }
+
     /// Issues a walk intent while honoring `WaypointBlocked` facts (P24-02). A waypoint is
     /// blocked when its same-named World entity carries the fact; a path initializer can assert
     /// it, so route selection mutates topology without rewriting the graph. Locks apply when a
@@ -1116,6 +1144,42 @@ test "P25-01: blocking grid cells reroute walks and map waypoints to cells" {
 
     try grid_mod.set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .blocking, false);
     try testing.expect(!spatial.waypoint_blocked(&world, hot));
+}
+
+test "P25-02: agents carry hazard states for the cell they stand in" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = try world.intern_entity("HazardRoom");
+    const dry = try spatial.graph.add_waypoint(room, 5, 5, "HazardDry");
+    const hot = try spatial.graph.add_waypoint(room, 15, 5, "HazardHot");
+    try spatial.graph.connect(dry, hot, 10);
+    const grid = Grid{ .entity = try world.intern_entity("HazardFloor"), .room = room, .width = 2, .height = 1, .cell_size = 10 };
+    try spatial.add_grid(grid);
+    try grid_mod.set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .burning, true);
+    try grid_mod.set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .smoke, true);
+
+    const hero = try world.intern_entity("HazardHero");
+    try spatial.register_entity(hero, dry, 10);
+    try spatial.update_grid_hazards(&world);
+    const in_fire = world.lookup_relation("InBurningCell").?;
+    const in_smoke = world.lookup_relation("InSmokeCell").?;
+    try testing.expect(!world.has_fact(hero, in_fire, null));
+
+    try testing.expect(try spatial.walk_to(hero, hot));
+    spatial.step_tick();
+    try spatial.update_grid_hazards(&world);
+    try testing.expect(world.has_fact(hero, in_fire, null));
+    try testing.expect(world.has_fact(hero, in_smoke, null));
+
+    // The fire goes out; the state clears, producing the falling edge scripts can react to.
+    try grid_mod.set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .burning, false);
+    try spatial.update_grid_hazards(&world);
+    try testing.expect(!world.has_fact(hero, in_fire, null));
+    try testing.expect(world.has_fact(hero, in_smoke, null));
 }
 
 test "P32-25: walk intent toward the waypoint just left turns the agent back" {

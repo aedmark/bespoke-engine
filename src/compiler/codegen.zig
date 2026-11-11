@@ -760,7 +760,12 @@ pub const Codegen = struct {
                 }
             }
         }
-        const declaration = grid_mod.Declaration{ .grid = grid, .cells = try cells.toOwnedSlice() };
+        const declaration = grid_mod.Declaration{ .grid = grid, .cells = try cells.toOwnedSlice(), .rules = .{
+            .burn_ticks = decl.burn_ticks,
+            .spread_ticks = decl.spread_ticks,
+            .dissipate_ticks = decl.dissipate_ticks,
+            .flow_ticks = decl.flow_ticks,
+        } };
         errdefer self.allocator.free(declaration.cells);
         try declaration.validate();
 

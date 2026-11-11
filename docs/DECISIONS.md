@@ -712,6 +712,25 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Grid as the primary topology: rejected by D-005; adventure scenes stay waypoint-first.
 **Consequences:** Grid cell state is saved, rewound, and branched for free. `host.tick` reseeds nothing after the first tick, but calls the seed check each tick (one fact scan per grid). Scripts address cells only through their index value; DSL coordinate queries and automata rules arrive with P25-02. Liquid is a presence flag with no depth; flow volume, if needed, is a P25-02 decision.
 
+## D-055 Grid Automata as Synchronous Rules Over Fact Lifetimes (2026-11-10, status: accepted)
+**Context:** P25-02 adds fire spreading, smoke dissipation, water flow, and reactive interrupts on actors in hazardous cells. The rules mutate cells every tick and must survive save, rewind, and branch restore exactly. The maintainer accepted script-owned rates with `.bspk` version 8, fact lifetimes as timers, synchronous deterministic updates, flow without depth, hazard presence facts on agents, and a step after the VM tick.
+**Decision:**
+1. Two attributes join the fixed set: `burning` (`CellBurning`) and `smoke` (`CellSmoke`). A grid declaration may set four rates, each zero (off) by default: `burn N` (ticks a fire lasts), `spread N` (ticks a fire burns before it ignites neighbours), `dissipate N` (ticks smoke lingers after its fire last fed it), and `flow N` (liquid floods on ticks divisible by N).
+2. Timers are fact lifetimes. Ignition removes `flammable` and remembers `CellBurning` with a TTL of `burn`; World pruning ends the fire, leaving a spent cell that cannot relight. A fire's age is `burn` minus its remaining lifetime. A permanent fire (no `burn`) counts as old enough to spread. Each fire refreshes its cell's `CellSmoke` lifetime; declared permanent smoke stays permanent.
+3. `grid.step` reads every cell once, decides all ignitions (flammable, dry, unlit 4-neighbours of fires old enough) and floods (non-blocking dry 4-neighbours of liquid, on the flow cadence) from that start-of-step state, then applies them. Liquid then douses any fire in its cell, and remaining fires refresh smoke. No randomness; results do not depend on cell order.
+4. `SpatialSystem.update_grid_hazards` mirrors the agent's cell as unary states `InBurningCell`, `InSmokeCell`, and `InLiquidCell` (D-043). Scripts react with existing edge-triggered rules (`when Hero is InBurningCell:`), which can interrupt fibers. An agent outside every grid has none.
+5. `host.tick` runs each grid's step after the VM tick and container step, then the hazard update, before weave dispatch. Rules therefore see a hazard on the tick after it appears. Programs without grids skip both, so their relation tables and goldens are unchanged. Temporal sessions tick the active branch world the same way.
+6. `grid.ignite` is the host action for a torch or spell: it lights a flammable, dry, unlit cell with the declared lifetime.
+7. `.bspk` version 8 adds the two attribute bytes and four rates per grid. Version 7 grids load with every rule off and reject attribute bytes above `blocking`.
+**Alternatives:**
+- A per-cell ignition-tick fact or a deadline relation like D-050: rejected because the fact's own expiry already carries the deadline and pruning ends the fire with no extra scan.
+- In-place updates in scan order: rejected because fire would race along the scan direction and rewinds would depend on iteration order.
+- Random ignition chances: rejected for now; deterministic spread is easier to author and verify, and a seeded roll can be added as a rate later.
+- Liquid depth and source cells: deferred; a presence flag with a flow cadence covers dousing and flooding, and depth would need a property relation per cell.
+- Cue dispatch on entering a hazard: rejected in favour of state facts, which give rising and falling edges, survive rewinds, and need no new dispatch path.
+- Interrupting an in-flight walk when its path catches fire: deferred, as in D-053; the hazard state lets a script interrupt the walker instead.
+**Consequences:** Hazard state is ordinary World state, so saving, rewinding, and branching need nothing new. Each grid step costs one pass over the fact table plus fixed work per cell (bounded by 4096 cells). Flooding is unbounded within a room unless blocking cells contain it. Hazard reactions lag one tick behind the cell change.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

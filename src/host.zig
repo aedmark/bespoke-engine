@@ -45,6 +45,13 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
         const system = try container_mod.ContainerSystem.init(vm.world, declaration.config);
         try system.step(vm.world, vm.spatial);
     }
+    // Grid automata run after the VM tick has pruned expired fires and smoke (D-055). Hazard
+    // states follow, so scripts react to them on the next tick. Programs without grids skip
+    // both, keeping their relation tables unchanged.
+    if (compiled.grids.items.len > 0) {
+        for (compiled.grids.items) |declaration| try grid_mod.step(vm.world, declaration);
+        if (vm.spatial) |sp| try sp.update_grid_hazards(vm.world);
+    }
     return try vm.dispatch_pending_weaves(compiled);
 }
 
@@ -625,4 +632,53 @@ test "P31-04: Timeline restores the hypervisor branch and countdown with the wor
     defer plain.deinit();
     try plain.record(&world);
     try testing.expectError(error.MissingTemporalSnapshot, plain.restore_with_temporal(&world, &hypervisor, 0));
+}
+
+test "P25-02: host lifecycle spreads a scripted fire to an actor and fires a hazard rule" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\relation Scorched(actor)
+        \\scene: Gallery
+        \\marks: GalleryEnd, GalleryStand
+        \\
+        \\grid GalleryFloor in Gallery:
+        \\  size 3 1
+        \\  cell 10
+        \\  flammable 1 0 2 1
+        \\  burning 0 0
+        \\  place GalleryEnd 0 0
+        \\  place GalleryStand 2 0
+        \\  burn 4
+        \\  spread 1
+        \\  dissipate 3
+        \\
+        \\when Hero is InBurningCell:
+        \\  remember Scorched(Hero)
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    try initialize_subsystems(&world, &compiled);
+
+    const hero = try world.intern_entity("Hero");
+    try spatial.register_entity(hero, spatial.graph.find_waypoint("GalleryStand").?, 5);
+    const scorched = world.lookup_relation("Scorched").?;
+    const grid = spatial.grid_in_room(world.lookup_entity("Gallery").?).?;
+
+    // Tick 1 lights cell 1, tick 2 lights the hero's cell 2, tick 3's rules see the hazard.
+    _ = try tick(&vm, &compiled);
+    try testing.expect(grid_mod.has_attribute(&world, grid, .{ .x = 1, .y = 0 }, .burning));
+    try testing.expect(!world.has_fact(hero, scorched, null));
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(hero, world.lookup_relation("InBurningCell").?, null));
+    _ = try tick(&vm, &compiled);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(hero, scorched, null));
+    try testing.expect(world.has_fact(hero, world.lookup_relation("InSmokeCell").?, null));
 }

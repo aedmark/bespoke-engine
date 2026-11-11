@@ -301,6 +301,11 @@ pub const GridDecl = struct {
     origin_y: i32 = 0,
     rects: []const GridRectDecl,
     places: []const GridPlaceDecl,
+    /// Automata rates (P25-02); zero disables a rule.
+    burn_ticks: u32 = 0,
+    spread_ticks: u32 = 0,
+    dissipate_ticks: u32 = 0,
+    flow_ticks: u32 = 0,
 };
 
 /// `path <Name>:` owns the facts and routines available to one operational approach
@@ -1198,6 +1203,8 @@ pub const Parser = struct {
         var origin_y: i32 = 0;
         var rects = std.ArrayList(GridRectDecl).init(self.allocator);
         var places = std.ArrayList(GridPlaceDecl).init(self.allocator);
+        var rates = [_]?u32{null} ** 4;
+        const rate_names = [_][]const u8{ "burn", "spread", "dissipate", "flow" };
 
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             const directive = self.current.slice;
@@ -1212,6 +1219,9 @@ pub const Parser = struct {
             } else if (std.mem.eql(u8, directive, "origin")) {
                 origin_x = try self.take_i32();
                 origin_y = try self.take_i32();
+            } else if (rate_index(&rate_names, directive)) |r| {
+                if (rates[r] != null) return self.set_error("grid '{s}' declares {s} twice", .{ name, directive });
+                rates[r] = try self.take_u32();
             } else if (std.mem.eql(u8, directive, "place")) {
                 try places.append(.{ .mark = try self.take_atom(), .x = try self.take_u32(), .y = try self.take_u32() });
             } else if (grid_mod.Attribute.from_name(directive) != null) {
@@ -1247,7 +1257,16 @@ pub const Parser = struct {
             .origin_y = origin_y,
             .rects = try rects.toOwnedSlice(),
             .places = try places.toOwnedSlice(),
+            .burn_ticks = rates[0] orelse 0,
+            .spread_ticks = rates[1] orelse 0,
+            .dissipate_ticks = rates[2] orelse 0,
+            .flow_ticks = rates[3] orelse 0,
         };
+    }
+
+    fn rate_index(names: []const []const u8, directive: []const u8) ?usize {
+        for (names, 0..) |n, i| if (std.mem.eql(u8, n, directive)) return i;
+        return null;
     }
 
     /// Parses `draft <Name>(n1, n2, n3, n4) [reverse <Inverse>]` and rejects any sequence that

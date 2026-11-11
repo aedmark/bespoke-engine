@@ -1,10 +1,15 @@
-//! Discrete 2D grid overlay for room topologies (P25-01).
+//! Discrete 2D grid overlay for room topologies (P25-01) and its cellular automata (P25-02).
 //!
 //! A grid is static program data: its entity, room, dimensions, cell size, and origin never
 //! change at runtime. Cell attributes are World facts on the grid entity, one row per set
 //! attribute, so save, rewind, and branch restore capture every change P25-02's rules make
 //! without a grid-specific snapshot. A cell with no attribute has no fact, which keeps the fact
 //! table proportional to the populated cells rather than to the grid area (D-054).
+//!
+//! Automata timers are fact lifetimes (D-055): a burning cell is a `CellBurning` fact that
+//! expires `burn` ticks after ignition, and smoke is a `CellSmoke` fact that expires `dissipate`
+//! ticks after the fire last fed it. The remaining lifetime gives a fire's age, so no timer
+//! state lives outside the World.
 
 const std = @import("std");
 const world_mod = @import("world.zig");
@@ -32,13 +37,22 @@ pub const Attribute = enum(u8) {
     flammable = 0,
     liquid = 1,
     blocking = 2,
+    /// Package version 8 added the two automata attributes (P25-02).
+    burning = 3,
+    smoke = 4,
 
     pub fn relation_name(self: Attribute) []const u8 {
         return switch (self) {
             .flammable => "CellFlammable",
             .liquid => "CellLiquid",
             .blocking => "CellBlocking",
+            .burning => "CellBurning",
+            .smoke => "CellSmoke",
         };
+    }
+
+    fn bit(self: Attribute) u8 {
+        return @as(u8, 1) << @intCast(@intFromEnum(self));
     }
 
     pub fn from_name(name: []const u8) ?Attribute {
@@ -129,10 +143,30 @@ pub const InitialCell = struct {
     attribute: Attribute,
 };
 
-/// Compiler-owned declaration: geometry plus the initial attribute layout seeded into World.
+/// Tick rates for the grid's automata. Zero disables a rule; every field defaults to off, so a
+/// grid without rules is a static overlay exactly as in P25-01.
+pub const Rules = struct {
+    /// Ticks a cell burns before it is spent. Zero: fires never burn out.
+    burn_ticks: u32 = 0,
+    /// A fire ignites its flammable, dry 4-neighbours once it has burned this many ticks.
+    /// Zero: fire does not spread.
+    spread_ticks: u32 = 0,
+    /// Ticks smoke lingers after its fire last fed it. Zero: fires make no smoke.
+    dissipate_ticks: u32 = 0,
+    /// Liquid floods its non-blocking 4-neighbours on every tick divisible by this. Zero: still.
+    flow_ticks: u32 = 0,
+
+    pub fn any(self: Rules) bool {
+        return self.burn_ticks != 0 or self.spread_ticks != 0 or self.dissipate_ticks != 0 or self.flow_ticks != 0;
+    }
+};
+
+/// Compiler-owned declaration: geometry, the initial attribute layout seeded into World, and
+/// the automata rules `step` applies.
 pub const Declaration = struct {
     grid: Grid,
     cells: []const InitialCell,
+    rules: Rules = .{},
 
     pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
         allocator.free(self.cells);
@@ -168,9 +202,170 @@ pub fn seed(world: *World, declaration: Declaration) !void {
     try declaration.validate();
     for (declaration.cells) |cell| {
         const relation = try attribute_relation(world, cell.attribute);
-        try world.remember(declaration.grid.entity, relation, cell.index, 0);
+        // Declared fires and smoke start their lifetimes at seeding, like any other ignition.
+        const ttl: u64 = switch (cell.attribute) {
+            .burning => declaration.rules.burn_ticks,
+            .smoke => declaration.rules.dissipate_ticks,
+            else => 0,
+        };
+        try world.remember(declaration.grid.entity, relation, cell.index, ttl);
     }
     try world.remember(declaration.grid.entity, marker, 0, 0);
+}
+
+/// Attribute masks and timer expiries for every cell, read in one pass over the fact table.
+/// Per-cell `has_fact` calls would scan the table once per cell and neighbour each tick.
+const CellState = struct {
+    masks: [MAX_CELLS]u8 = [_]u8{0} ** MAX_CELLS,
+    burning_expires: [MAX_CELLS]u64 = [_]u64{0} ** MAX_CELLS,
+    smoke_expires: [MAX_CELLS]u64 = [_]u64{0} ** MAX_CELLS,
+
+    fn has(self: *const CellState, index: u32, attribute: Attribute) bool {
+        return self.masks[index] & attribute.bit() != 0;
+    }
+
+    fn load(self: *CellState, world: *const World, grid: Grid) void {
+        var relations: [@typeInfo(Attribute).Enum.fields.len]?RelationKind = undefined;
+        inline for (@typeInfo(Attribute).Enum.fields, 0..) |field, i| {
+            relations[i] = world.lookup_relation(Attribute.relation_name(@enumFromInt(field.value)));
+        }
+        const slice = world.facts.slice();
+        const subjects = slice.items(.subject);
+        const relation_column = slice.items(.relation);
+        const objects = slice.items(.object_or_value);
+        const expirations = slice.items(.expires_at_tick);
+        for (0..world.facts.len) |row| {
+            if (subjects[row] != grid.entity) continue;
+            const index = objects[row];
+            if (index >= grid.cell_count()) continue;
+            for (relations, 0..) |maybe_relation, a| {
+                const relation = maybe_relation orelse continue;
+                if (relation_column[row] != relation) continue;
+                const attribute: Attribute = @enumFromInt(a);
+                self.masks[index] |= attribute.bit();
+                if (attribute == .burning) self.burning_expires[index] = expirations[row];
+                if (attribute == .smoke) self.smoke_expires[index] = expirations[row];
+            }
+        }
+    }
+};
+
+fn neighbours(grid: Grid, index: u32) struct { items: [4]u32, len: usize } {
+    const cell = grid.cell_of_index(index).?;
+    var out: [4]u32 = undefined;
+    var len: usize = 0;
+    // Fixed order: up, left, right, down. Results do not depend on it (decisions are
+    // collected before any mutation), but a fixed order keeps traces reproducible.
+    if (cell.y > 0) {
+        out[len] = index - grid.width;
+        len += 1;
+    }
+    if (cell.x > 0) {
+        out[len] = index - 1;
+        len += 1;
+    }
+    if (cell.x + 1 < grid.width) {
+        out[len] = index + 1;
+        len += 1;
+    }
+    if (cell.y + 1 < grid.height) {
+        out[len] = index + grid.width;
+        len += 1;
+    }
+    return .{ .items = out, .len = len };
+}
+
+/// Ignites a cell as a host action (a torch, a spell). A cell must be flammable and dry; a
+/// burning cell is left alone so its lifetime is not restarted. Returns whether it caught.
+pub fn ignite(world: *World, declaration: Declaration, cell: Cell) !bool {
+    const grid = declaration.grid;
+    const index = try grid.index_of(cell);
+    if (!has_attribute(world, grid, cell, .flammable) or has_attribute(world, grid, cell, .liquid) or
+        has_attribute(world, grid, cell, .burning)) return false;
+    _ = world.forget(grid.entity, try attribute_relation(world, .flammable), index);
+    try world.remember(grid.entity, try attribute_relation(world, .burning), index, declaration.rules.burn_ticks);
+    return true;
+}
+
+/// Advances one grid by one tick (P25-02, D-055). Runs after `VM.step_tick`, so expired fires
+/// and smoke are already pruned. Every decision reads the state at the start of the step and
+/// all changes apply afterwards, so the result is independent of cell order:
+/// 1. A fire that has burned `spread` ticks ignites flammable, dry, unlit neighbours; an
+///    ignited cell stops being flammable, so a spent cell cannot relight.
+/// 2. On ticks divisible by `flow`, liquid floods non-blocking dry neighbours.
+/// 3. Liquid douses any fire in its cell.
+/// 4. Each remaining fire refreshes its cell's smoke lifetime.
+pub fn step(world: *World, declaration: Declaration) !void {
+    const rules = declaration.rules;
+    if (!rules.any()) return;
+    const grid = declaration.grid;
+    const count = grid.cell_count();
+    const now = world.current_tick;
+
+    var state = CellState{};
+    state.load(world, grid);
+    var ignite_set = std.StaticBitSet(MAX_CELLS).initEmpty();
+    var flood_set = std.StaticBitSet(MAX_CELLS).initEmpty();
+    const flows = rules.flow_ticks != 0 and now % rules.flow_ticks == 0;
+
+    var index: u32 = 0;
+    while (index < count) : (index += 1) {
+        if (rules.spread_ticks != 0 and state.has(index, .burning)) {
+            const expires = state.burning_expires[index];
+            // A permanent fire has no ignition tick to measure from; treat it as old enough.
+            const age: u64 = if (expires == 0 or rules.burn_ticks == 0)
+                std.math.maxInt(u64)
+            else
+                rules.burn_ticks -| (expires -| now);
+            if (age >= rules.spread_ticks) {
+                const near = neighbours(grid, index);
+                for (near.items[0..near.len]) |n| {
+                    if (state.has(n, .flammable) and !state.has(n, .liquid) and !state.has(n, .burning)) ignite_set.set(n);
+                }
+            }
+        }
+        if (flows and state.has(index, .liquid)) {
+            const near = neighbours(grid, index);
+            for (near.items[0..near.len]) |n| {
+                if (!state.has(n, .blocking) and !state.has(n, .liquid)) flood_set.set(n);
+            }
+        }
+    }
+
+    const flammable = try attribute_relation(world, .flammable);
+    const burning = try attribute_relation(world, .burning);
+    const liquid = try attribute_relation(world, .liquid);
+    var it = ignite_set.iterator(.{});
+    while (it.next()) |n| {
+        const cell: u32 = @intCast(n);
+        _ = world.forget(grid.entity, flammable, cell);
+        try world.remember(grid.entity, burning, cell, rules.burn_ticks);
+        state.masks[cell] = (state.masks[cell] & ~Attribute.flammable.bit()) | Attribute.burning.bit();
+        state.burning_expires[cell] = if (rules.burn_ticks == 0) 0 else now + rules.burn_ticks;
+    }
+    it = flood_set.iterator(.{});
+    while (it.next()) |n| {
+        const cell: u32 = @intCast(n);
+        try world.remember(grid.entity, liquid, cell, 0);
+        state.masks[cell] |= Attribute.liquid.bit();
+    }
+
+    const smoke = if (rules.dissipate_ticks != 0) try attribute_relation(world, .smoke) else null;
+    index = 0;
+    while (index < count) : (index += 1) {
+        if (!state.has(index, .burning)) continue;
+        if (state.has(index, .liquid)) {
+            _ = world.forget(grid.entity, burning, index);
+            continue;
+        }
+        // Refreshing a permanent fact with a lifetime would demote it, so declared permanent
+        // smoke stays permanent.
+        if (smoke) |relation| {
+            if (!(state.has(index, .smoke) and state.smoke_expires[index] == 0)) {
+                try world.remember(grid.entity, relation, index, rules.dissipate_ticks);
+            }
+        }
+    }
 }
 
 /// True when the cell carries the attribute in the current World.
@@ -294,4 +489,112 @@ test "P25-01: declaration validation rejects out-of-range and duplicate cells" {
     try testing.expectError(Error.CellOutOfBounds, (Declaration{ .grid = grid, .cells = &outside }).validate());
     const twice = [_]InitialCell{ .{ .index = 2, .attribute = .liquid }, .{ .index = 2, .attribute = .liquid } };
     try testing.expectError(Error.InvalidGrid, (Declaration{ .grid = grid, .cells = &twice }).validate());
+}
+
+fn layout_mask(world: *const World, grid: Grid) [16]u8 {
+    var state = CellState{};
+    state.load(world, grid);
+    var out: [16]u8 = undefined;
+    @memcpy(&out, state.masks[0..16]);
+    return out;
+}
+
+test "P25-02: fire spreads along flammable cells, burns out, and leaves dissipating smoke" {
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const grid = Grid{ .entity = try world.intern_entity("FireRow"), .room = try world.intern_entity("FireRoom"), .width = 4, .height = 1, .cell_size = 10 };
+    const cells = [_]InitialCell{
+        .{ .index = 0, .attribute = .flammable }, .{ .index = 1, .attribute = .flammable },
+        .{ .index = 2, .attribute = .flammable }, .{ .index = 3, .attribute = .flammable },
+    };
+    const declaration = Declaration{ .grid = grid, .cells = &cells, .rules = .{ .burn_ticks = 3, .spread_ticks = 1, .dissipate_ticks = 2 } };
+    try seed(&world, declaration);
+    try testing.expect(try ignite(&world, declaration, .{ .x = 0, .y = 0 }));
+    // A burning cell is not relit; its lifetime keeps running.
+    try testing.expect(!(try ignite(&world, declaration, .{ .x = 0, .y = 0 })));
+
+    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    defer snapshot.deinit();
+    var at_tick_three: [16]u8 = undefined;
+    var tick: u32 = 1;
+    while (tick <= 3) : (tick += 1) {
+        _ = world.step_tick();
+        try step(&world, declaration);
+        if (tick == 1) {
+            try world.save_state(snapshot.writer());
+            try testing.expect(has_attribute(&world, grid, .{ .x = 1, .y = 0 }, .burning));
+            try testing.expect(!has_attribute(&world, grid, .{ .x = 2, .y = 0 }, .burning));
+            try testing.expect(has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .smoke));
+        }
+    }
+    at_tick_three = layout_mask(&world, grid);
+    // Cell 0 burned its three ticks and is spent: neither burning nor flammable.
+    try testing.expect(!has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .burning));
+    try testing.expect(!has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .flammable));
+    try testing.expect(has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .smoke));
+    try testing.expect(has_attribute(&world, grid, .{ .x = 3, .y = 0 }, .burning));
+
+    // Rewinding to tick 1 and replaying reproduces the same layout (D-001).
+    var stream = std.io.fixedBufferStream(snapshot.items);
+    try world.restore_state(stream.reader());
+    try testing.expectEqual(@as(u64, 1), world.current_tick);
+    _ = world.step_tick();
+    try step(&world, declaration);
+    _ = world.step_tick();
+    try step(&world, declaration);
+    try testing.expectEqualSlices(u8, &at_tick_three, &layout_mask(&world, grid));
+
+    while (world.current_tick < 12) {
+        _ = world.step_tick();
+        try step(&world, declaration);
+    }
+    // Everything burned and every plume has dissipated.
+    try testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &layout_mask(&world, grid));
+}
+
+test "P25-02: liquid flows around blocking cells on its cadence and douses fire" {
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    // Row 0: liquid, blocking, dry. Row 1: dry, burning (permanent), dry.
+    const grid = Grid{ .entity = try world.intern_entity("FloodGrid"), .room = try world.intern_entity("FloodRoom"), .width = 3, .height = 2, .cell_size = 10 };
+    const cells = [_]InitialCell{
+        .{ .index = 0, .attribute = .liquid },
+        .{ .index = 1, .attribute = .blocking },
+        .{ .index = 4, .attribute = .burning },
+    };
+    const declaration = Declaration{ .grid = grid, .cells = &cells, .rules = .{ .flow_ticks = 2 } };
+    try seed(&world, declaration);
+
+    _ = world.step_tick();
+    try step(&world, declaration);
+    try testing.expect(!has_attribute(&world, grid, .{ .x = 0, .y = 1 }, .liquid)); // tick 1: off cadence
+    _ = world.step_tick();
+    try step(&world, declaration);
+    try testing.expect(has_attribute(&world, grid, .{ .x = 0, .y = 1 }, .liquid));
+    try testing.expect(!has_attribute(&world, grid, .{ .x = 1, .y = 0 }, .liquid)); // blocking stays dry
+    try testing.expect(has_attribute(&world, grid, .{ .x = 1, .y = 1 }, .burning));
+    _ = world.step_tick();
+    try step(&world, declaration);
+    _ = world.step_tick();
+    try step(&world, declaration);
+    try testing.expect(has_attribute(&world, grid, .{ .x = 1, .y = 1 }, .liquid));
+    try testing.expect(!has_attribute(&world, grid, .{ .x = 1, .y = 1 }, .burning));
+    // A wet cell cannot be ignited.
+    try set_attribute(&world, grid, .{ .x = 1, .y = 1 }, .flammable, true);
+    try testing.expect(!(try ignite(&world, declaration, .{ .x = 1, .y = 1 })));
+}
+
+test "P25-02: a grid without rules is a static overlay" {
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const grid = try test_grid(&world);
+    const cells = [_]InitialCell{ .{ .index = 0, .attribute = .burning }, .{ .index = 1, .attribute = .flammable }, .{ .index = 5, .attribute = .liquid } };
+    const declaration = Declaration{ .grid = grid, .cells = &cells };
+    try seed(&world, declaration);
+    const before = layout_mask(&world, grid);
+    for (0..6) |_| {
+        _ = world.step_tick();
+        try step(&world, declaration);
+    }
+    try testing.expectEqualSlices(u8, &before, &layout_mask(&world, grid));
 }

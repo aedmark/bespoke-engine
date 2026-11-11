@@ -455,7 +455,7 @@
         {
           "id": "discrete-grid-overlay",
           "title": "Discrete Grid Overlay",
-          "summary": "An optional per-room grid whose cell attributes are sparse World facts.",
+          "summary": "An optional per-room grid whose cell attributes and fire, smoke, and water automata live in World facts.",
           "synopsis": "grid <Name> in <Room>:  size W H  cell N  [origin X Y]  flammable|liquid|blocking x y [w h]  place <Mark> x y",
           "tags": ["grid", "spatial", "cells", "hazards"],
           "what": "Overlays a room with a discrete grid of cells carrying flammable, liquid, and blocking attributes, and maps each waypoint to the cell under its position.",
@@ -464,12 +464,15 @@
             "Each set attribute is a CellFlammable, CellLiquid, or CellBlocking fact on the grid entity whose value is the cell index y*W+x; empty cells have no facts.",
             "A grid script declaration compiles into CompiledProgram.grids; host.initialize_subsystems seeds the layout once and marks it with GridSeeded.",
             "place moves a mark to a cell centre and refreshes its edge costs; SpatialSystem.waypoint_blocked treats a blocking cell like WaypointBlocked for world-aware walks.",
-            ".bspk version 7 stores grids; versions 1 through 6 load without them."
+            ".bspk version 7 stores grids; versions 1 through 6 load without them.",
+            "Rates burn, spread, dissipate, and flow drive grid.step each host.tick: fires are CellBurning facts whose TTL is their remaining burn, smoke is CellSmoke refreshed by each fire, and liquid floods non-blocking neighbours and douses fire.",
+            "All ignitions and floods are decided from the start-of-step state before any applies; agents then carry InBurningCell, InSmokeCell, and InLiquidCell states that when rules react to on the next tick."
           ],
           "why": "Fire, flooding, and line-of-sight need area state that a sparse waypoint graph cannot express, while adventure scenes still navigate by waypoints. Keeping cell attributes in World facts lets save, rewind, and temporal branches carry hazard state with no new snapshot channel, and storing only set attributes keeps the fixed-capacity fact table small.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-054", "target": "docs/DECISIONS.md#d-054", "kind": "decision"},
+            {"label": "Architectural Decision D-055", "target": "docs/DECISIONS.md#d-055", "kind": "decision"},
             {"label": "Grid Geometry and Cell Facts", "target": "src/grid.zig", "kind": "source"},
             {"label": "Grid Overlay and Blocking", "target": "src/spatial.zig", "kind": "source"}
           ],
