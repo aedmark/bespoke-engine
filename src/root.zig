@@ -112,6 +112,7 @@ test "root test imports all modules" {
     _ = @import("runner.zig");
     _ = @import("audio.zig");
     _ = @import("mml.zig");
+    _ = @import("scaffold.zig");
     _ = @import("save.zig");
     _ = @import("wasm.zig");
     _ = @import("hypervisor.zig");

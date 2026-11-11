@@ -1,0 +1,42 @@
+const std = @import("std");
+
+// {{name}}: a game built on the BeSpoke engine. The engine is the `bespoke` dependency in
+// build.zig.zon; its module carries the compiler, VM, display window, and audio.
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+    const engine = b.dependency("bespoke", .{ .target = target, .optimize = optimize });
+    const bespoke = engine.module("bespoke");
+
+    const exe = b.addExecutable(.{
+        .name = "{{name}}",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("bespoke", bespoke);
+    exe.linkLibC();
+    exe.linkSystemLibrary("SDL2");
+    b.installArtifact(exe);
+
+    // The game reads scripts/ at run time, so run it from the project root.
+    const run_cmd = b.addRunArtifact(exe);
+    run_cmd.setCwd(b.path("."));
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run_cmd.addArgs(args);
+    const run_step = b.step("run", "Run the game (add -- --headless --ticks N for a text run)");
+    run_step.dependOn(&run_cmd.step);
+
+    const tests = b.addTest(.{
+        .root_source_file = b.path("src/game_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    tests.root_module.addImport("bespoke", bespoke);
+    tests.linkLibC();
+    tests.linkSystemLibrary("SDL2");
+    const run_tests = b.addRunArtifact(tests);
+    run_tests.setCwd(b.path("."));
+    const test_step = b.step("test", "Compile the game script and check its simulation");
+    test_step.dependOn(&run_tests.step);
+}

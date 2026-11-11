@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 46 (2026-11-10)
+- **Goal:** Fix what the maintainer hit hand-playing the observatory: Pell could not be talked to, and keys 1 to 3 showed nothing.
+- **Work:** Found that neither new proof ever drew script speech (the window shows `say` lines only when the host passes them to a banner) and that Pell's routine kept his sprite moving. Moved the observatory's action handling into a testable `Play` struct that shows each tick's speech and also runs the society on action ticks; added hints for keys pressed in the wrong place, a `[4]` confront key with one-mark reach, and replies for every staff member. Added speech display to the fire escape loop.
+- **Outcome:** See the Verified table. A mutation removing the banner line failed the new window test. Not re-played by hand; fast-forwarded to `main` and pushed at the maintainer's request.
+
 ### Session 45 (2026-11-10)
 - **Goal:** Ship P33-02 and build P33-03 as an original mystery.
 - **Work:** Merged P33-02 (`d94e9e0`). The maintainer approved The Larkspur Observatory in place of the planned homage. Added `proofs/observatory_puzzle.zig` (script with a three-member society, three agendas, evidence-guarded `Intercepts` handlers, an arrival rule with an expiring fact, and a layout grid; headless run with contention, false alibi, rewind, and the informed night; interactive window on keys 1 to 3), a night-sky backdrop in `proofs/art.zig`, launcher flags, and transcript and render goldens. Renamed Phase 33 and P33-03 in the roadmap.

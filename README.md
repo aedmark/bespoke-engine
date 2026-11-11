@@ -86,6 +86,10 @@ python3 tools/build_site.py
 zig build run -- check scenarios/tavern_heist.bespoke
 zig build run -- compile scenarios/tavern_heist.bespoke -o scenarios/tavern_heist.bspk
 zig build run -- run scenarios/tavern_heist.bspk --headless
+
+# Start your own game beside this checkout, then build and test it
+./zig-out/bin/bespoke init lighthouse
+cd lighthouse && zig build test && zig build run
 ```
 
 The repository has three layers:

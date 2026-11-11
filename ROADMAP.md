@@ -242,7 +242,7 @@ Goal: Enable game authors to compose procedural background melodies, arpeggios, 
 
 Goal: Package an independent project boilerplate, scaffolding CLI (`bespoke init <project_name>`), and authoring starter kit for developers building standalone narrative games with BeSpoke.
 
-- [ ] P29-01 CLI scaffolding generator (`bespoke init <name>`), producing a clean project directory with `build.zig`, sample scenario scripts, custom actor configs, and test harness.
+- [x] P29-01 CLI scaffolding generator (`bespoke init <name>`), producing a clean project directory with `build.zig`, sample scenario scripts, custom actor configs, and test harness. (D-063; completed 2026-11-11: `src/scaffold.zig` with embedded templates writes `build.zig`, `build.zig.zon` (the engine as a relative path dependency), a host that runs `scripts/main.bespoke` in a window or headless, a starter script whose actors are configured by scene, routines, an agenda, dialogue, and scores, a test harness, README, and `.gitignore`; `--engine` overrides the recorded checkout. Verified by `zig build test` (284/284), three scaffold tests, a mutation check on the overwrite guard, and a generated project whose own `zig build test` (2/2) and headless `zig build run` pass.)
 - [ ] P29-02 Comprehensive authoring guide and API documentation in `docs/` and `scheme/bespoke.manual.json`, walking through creating custom scenes, dialogues, and reactive puzzles.
 - [ ] P29-03 Reference starter game template with verified unit test suites, asset bundling, and reproducible build pipelines across Linux, Windows, macOS, and WebAssembly.
 

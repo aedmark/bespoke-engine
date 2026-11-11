@@ -40,6 +40,10 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
+    // `bespoke init` records this checkout as a new project's engine (P29-01, D-063).
+    const build_opts = b.addOptions();
+    build_opts.addOption([]const u8, "engine_root", b.pathFromRoot("."));
+    exe.root_module.addOptions("build_options", build_opts);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -120,6 +124,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe_unit_tests.root_module.addOptions("build_options", build_opts);
     exe_unit_tests.linkLibC();
     exe_unit_tests.linkSystemLibrary("SDL2");
 

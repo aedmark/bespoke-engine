@@ -847,6 +847,20 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A new opcode for `play score`: rejected; `remember` and `forget` of an engine relation already express it.
 **Consequences:** `score` and `play` are now keywords. `Music`, `PlayingScore`, and `SceneScore` are engine names in a script's World; a script entity named `Music` shares that entity. Proof soundtracks are unchanged: proofs declare no scores, so `current_score` is empty and their scene rule still chooses. The stock runner, which played nothing since D-040, now plays a script's own scores.
 
+## D-063 Project Scaffolding: Embedded Templates, a Relative Path Dependency, and a Script-Only Starter (2026-11-11, status: accepted)
+**Context:** P29-01 adds `bespoke init <name>` so an author can start a standalone game on the engine. The maintainer chose a local path dependency over a git URL or a vendored copy, and script declarations over a separate actor data file (2026-11-11).
+**Decision:**
+1. **Templates are embedded.** `src/scaffold/*.tmpl` are compiled into the `bespoke` binary with `@embedFile`; `src/scaffold.zig` fills in the project name and the engine path and writes seven files: `build.zig`, `build.zig.zon`, `src/main.zig`, `src/game_test.zig`, `scripts/main.bespoke`, `README.md`, `.gitignore`.
+2. **The engine is a relative path dependency.** The binary records its own checkout (`build_options.engine_root`, set by the engine's `build.zig`); `--engine <dir>` overrides it. `build.zig.zon` stores the engine's path relative to the new project, because Zig 0.13 rejects absolute `.path` dependencies. The project uses the engine's exported `bespoke` module (with SDL2) through `b.dependency("bespoke", ...)`.
+3. **Names are lowercase identifiers.** A project name is a lowercase letter followed by lowercase letters, digits, or underscores, at most 32 characters, because it becomes a directory, a package name, and an executable name. `init` refuses a name whose path already exists and creates files exclusively, so it never overwrites work.
+4. **The starter is one script and a thin host.** `scripts/main.bespoke` configures its actors the engine's own way: a scene with cast, props, and marks; routines; an agenda; an interception cue with a dialogue choice; a scene score and a `when` rule that plays another. `src/main.zig` calls `bespoke.run_file` (window, or `--headless --ticks N`), reading the script at run time so edits need no rebuild. `src/game_test.zig` compiles the script and checks the interception and music by World facts; `zig build test` and `zig build run` run from the project root.
+**Alternatives:**
+- A git URL and hash dependency: not chosen now; it needs a tagged release. P29-03 can switch the template.
+- Copying the engine's `src/` into each project: not chosen; copies drift from the engine.
+- An `actors.zon` read by the host: not chosen; it would add a second configuration format beside the DSL.
+- Templates as a directory read at run time: rejected; the binary would need to find its own install tree.
+**Consequences:** A generated project builds only beside the engine checkout it names; moving either means editing `.path`. On Windows, an engine on another drive than the project cannot be expressed and `init` refuses. The starter's whole-line comments avoid language keywords until the comment-lexing fix lands. The starter's names (Hero, Keeper, Lighthouse) live in `src/` as template text, not as engine code paths.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

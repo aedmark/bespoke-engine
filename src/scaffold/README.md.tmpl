@@ -1,0 +1,35 @@
+# {{name}}
+
+A narrative game built on the [BeSpoke Engine](https://github.com/aedmark/bespoke-engine).
+
+## Layout
+
+| Path | Purpose |
+| --- | --- |
+| `scripts/main.bespoke` | The game: scenes, actors, routines, rules, dialogue, agendas, and music |
+| `src/main.zig` | The host: runs the script in a window, or headless |
+| `src/game_test.zig` | Tests that compile the script and check its simulation |
+| `build.zig`, `build.zig.zon` | The build, with the engine as the `bespoke` dependency |
+
+## Commands
+
+```bash
+zig build run
+```
+
+```bash
+zig build run -- --headless --ticks 80
+```
+
+```bash
+zig build test
+```
+
+The engine needs Zig 0.13 and SDL2 development libraries. `build.zig.zon` points at the engine
+checkout `bespoke init` was run from; change `.path` if the engine moves.
+
+## Next steps
+
+Change a line in `scripts/main.bespoke`, run `zig build test`, and add a test to
+`src/game_test.zig` for each puzzle you write. The engine's `script_spec.md` and
+`docs/manual.html` describe the language.

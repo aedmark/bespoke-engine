@@ -1,0 +1,30 @@
+//! {{name}}: runs scripts/main.bespoke in a BeSpoke window, or headless with `--headless`.
+const std = @import("std");
+const bespoke = @import("bespoke");
+
+pub const SCRIPT_PATH = "scripts/main.bespoke";
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var config = bespoke.runner.RunConfig{};
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+    _ = args.next();
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--headless")) {
+            config.is_headless = true;
+        } else if (std.mem.eql(u8, arg, "--ticks")) {
+            const value = args.next() orelse return error.MissingTickCount;
+            config.ticks = try std.fmt.parseInt(usize, value, 10);
+        } else if (std.mem.eql(u8, arg, "--quiet")) {
+            config.verbose = false;
+        } else {
+            std.debug.print("usage: {{name}} [--headless] [--ticks N] [--quiet]\n", .{});
+            return error.UnknownArgument;
+        }
+    }
+    try bespoke.run_file(allocator, SCRIPT_PATH, config, std.io.getStdOut().writer());
+}
