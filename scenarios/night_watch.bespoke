@@ -1,6 +1,5 @@
 # BeSpoke Narrative Scenario: The Night Watch (P28-03, D-062)
 # Script music with scene defaults, an alarm override, and a return to the scene music.
-# Whole-line comments avoid language keywords: the lexer tokenizes their text (see HANDOFF).
 
 scene Gatehouse:
   cast: Warden

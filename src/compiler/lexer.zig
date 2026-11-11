@@ -172,10 +172,23 @@ pub const Lexer = struct {
                     indent_spaces += 1;
                 }
 
-                // If blank line or comment, skip
-                if (scan < self.source.len and (self.source[scan] == '\n' or self.source[scan] == '\r' or self.source[scan] == '#' or self.source[scan] == '~')) {
+                // If blank line, skip it
+                if (scan < self.source.len and (self.source[scan] == '\n' or self.source[scan] == '\r')) {
                     self.pos = scan;
                     _ = self.advance_char();
+                    continue;
+                }
+
+                // A whole-line comment is skipped through its newline. It must
+                // not reach the indentation logic below: its indent is
+                // decoration, so it emits no indent, dedent, or newline token,
+                // and the next real line is measured against the open block.
+                if (scan < self.source.len and (self.source[scan] == '#' or self.source[scan] == '~')) {
+                    self.pos = scan;
+                    while (self.pos < self.source.len and self.source[self.pos] != '\n') {
+                        _ = self.advance_char();
+                    }
+                    if (self.pos < self.source.len) _ = self.advance_char();
                     continue;
                 }
 
@@ -635,4 +648,67 @@ test "P13-01: lexer tokenizes dialogue choice keywords" {
     try testing.expectEqualStrings("Leave shop", s2.slice);
     try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
+}
+
+test "lexer skips a whole-line comment that contains keywords" {
+    const testing = std.testing;
+    const src =
+        \\# a note about when to play the score
+        \\~ entity scene when
+        \\entity A
+        \\
+    ;
+    var lexer = Lexer.init(testing.allocator, src);
+    defer lexer.deinit();
+
+    try testing.expectEqual(TokenTag.kw_entity, (try lexer.next()).tag);
+    const a_tok = try lexer.next();
+    try testing.expectEqual(TokenTag.identifier, a_tok.tag);
+    try testing.expectEqualStrings("A", a_tok.slice);
+    try testing.expectEqual(@as(u32, 3), a_tok.line);
+    try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);
+    try testing.expectEqual(TokenTag.eof, (try lexer.next()).tag);
+}
+
+test "lexer skips indented whole-line comments without changing indentation" {
+    const testing = std.testing;
+    // The deeper comment must not open a block, and the column-0 comment
+    // must not close one: both lines are invisible to indent tracking.
+    const src =
+        \\when Ready:
+        \\  say A: "one"
+        \\      # play when deeper
+        \\# score at column zero
+        \\  say A: "two"
+        \\entity B
+    ;
+    var lexer = Lexer.init(testing.allocator, src);
+    defer lexer.deinit();
+
+    const expected = [_]TokenTag{
+        .kw_when,        .identifier,     .colon,      .newline,
+        .indent,         .kw_say,         .identifier, .colon,
+        .string_literal, .newline,        .kw_say,     .identifier,
+        .colon,          .string_literal, .newline,    .dedent,
+        .kw_entity,      .identifier,     .eof,
+    };
+    for (expected) |tag| {
+        try testing.expectEqual(tag, (try lexer.next()).tag);
+    }
+}
+
+test "lexer keeps code before a trailing comment" {
+    const testing = std.testing;
+    const src = "entity A # when play score\nentity B ~ scene\n";
+    var lexer = Lexer.init(testing.allocator, src);
+    defer lexer.deinit();
+
+    const expected = [_]TokenTag{
+        .kw_entity, .identifier, .newline,
+        .kw_entity, .identifier, .newline,
+        .eof,
+    };
+    for (expected) |tag| {
+        try testing.expectEqual(tag, (try lexer.next()).tag);
+    }
 }
