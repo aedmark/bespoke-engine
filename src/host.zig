@@ -54,8 +54,17 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
         for (compiled.grids.items) |declaration| try grid_mod.step(vm.world, declaration);
         if (vm.spatial) |sp| try sp.update_grid_hazards(vm.world);
     }
-    // Agendas see this tick's facts, cell hazards included (D-056).
-    try agency_mod.step(vm.world, vm.spatial, vm.allocator, compiled.agendas.items);
+    // Agendas see this tick's facts, cell hazards included (D-056). Pursuers then move, and
+    // each interception becomes `Intercepts(Actor, Target, Agenda)`, whose handler runs next
+    // tick like any fired cue.
+    if (compiled.agendas.items.len > 0) {
+        try agency_mod.step(vm.world, vm.spatial, vm.allocator, compiled.agendas.items);
+        if (vm.spatial) |sp| {
+            var met: [agency_mod.MAX_AGENDAS]agency_mod.Interception = undefined;
+            const n = try agency_mod.pursue(vm.world, sp, compiled.agendas.items, &met);
+            for (met[0..n]) |m| _ = try vm.fire_cue(compiled, "Intercepts", m.actor, m.target, m.agenda);
+        }
+    }
     return try vm.dispatch_pending_weaves(compiled);
 }
 
@@ -724,4 +733,58 @@ test "P33-01: host lifecycle seeds agendas and starts pursuit when an omission h
     try agency.resolve(&world, compiled.agendas.items[0].agenda);
     _ = try tick(&vm, &compiled);
     try testing.expectEqual(agency.Stage.idle, agency.stage_of(&world, warn_off).?);
+}
+
+test "P33-02: host lifecycle walks a pursuer to its target and fires Intercepts" {
+    const compiler = @import("compiler.zig");
+    const agency = @import("agency.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Estate
+        \\cast: Keeper, Hero
+        \\marks: Lodge, Lawn, Boathouse
+        \\
+        \\relation Investigated(who, place)
+        \\relation Warned(who)
+        \\agenda WarnOff:
+        \\  actor Keeper
+        \\  target Hero
+        \\  requires Investigated(Hero, Boathouse)
+        \\  unless Warned(Hero)
+        \\
+        \\on cue Snoops(Hero, Boathouse):
+        \\  remember Investigated(Hero, Boathouse)
+        \\
+        \\on cue Intercepts(Keeper, Hero, WarnOff):
+        \\  remember Warned(Hero)
+        \\  say Keeper: "The boathouse is no place for guests."
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    try initialize_subsystems(&world, &compiled);
+    const keeper = world.lookup_entity("Keeper").?;
+    const hero = world.lookup_entity("Hero").?;
+    try spatial.register_entity(keeper, spatial.graph.find_waypoint("Lodge").?, 10);
+    try spatial.register_entity(hero, spatial.graph.find_waypoint("Boathouse").?, 10);
+
+    _ = try vm.fire_cue(&compiled, "Snoops", hero, world.lookup_entity("Boathouse").?, null);
+    var spoke = false;
+    var ticks: usize = 0;
+    var buf: [128]u8 = undefined;
+    while (!spoke) : (ticks += 1) {
+        try testing.expect(ticks < 20);
+        _ = try tick(&vm, &compiled);
+        if (speech_this_tick(&world, &vm, &buf)) |line| spoke = std.mem.indexOf(u8, line, "boathouse") != null;
+    }
+    try testing.expectEqual(spatial.graph.find_waypoint("Boathouse").?, spatial.get_current_waypoint(keeper).?);
+    try testing.expect(world.has_fact(hero, world.lookup_relation("Warned").?, null));
+    // Warned ends the omission, so the agenda stays idle after its encounter.
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(agency.Stage.idle, agency.stage_of(&world, world.lookup_entity("WarnOff").?).?);
 }

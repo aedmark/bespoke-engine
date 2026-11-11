@@ -167,6 +167,14 @@ agenda WarnOff:
 - `requires Rel(A, B)` must hold and `unless Rel(A, B)` must not. Arguments are names or `_`; a one-argument line matches any object. There are no variables. An omission window is an expiring prerequisite: `remember Investigated(Hero, Boathouse) for 120 ticks`.
 - Each agenda is an entity with `AgendaState(Agenda, Idle | Pursuing | Done)`, so scripts can test or react to it (`if AgendaState(WarnOff, Pursuing):`). A pursuing agenda whose trigger stops holding goes back to `Idle`.
 - When several agendas target the same actor, one pursues: highest priority, then the actor with the shorter route, then the first declared. Package format version 9 carries agendas.
+- A pursuing actor walks to the mark its target last reached and follows when the target moves on. When both stand still on the same mark, the agenda ends (with its cooldown, or for good if `once`) and the engine fires `Intercepts(Actor, Target, Agenda)`. While pursuing, the actor carries `Pursuing`, and society routines do not move it.
+
+```bespoke
+on cue Intercepts(Keeper, Hero, WarnOff):
+  remember Warned(Hero)
+  choice "I was only looking.":
+    say Keeper: "Look elsewhere, then."
+```
 
 #### Fire, smoke, and water (P25-02, D-055)
 

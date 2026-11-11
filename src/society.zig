@@ -20,6 +20,7 @@ const std = @import("std");
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const vm_mod = @import("vm.zig");
+const agency_mod = @import("agency.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -591,10 +592,15 @@ pub const Society = struct {
     }
 
     /// Walks an agent toward `target` unless it is there or already heading there.
-    /// Returns true only if the agent stands at `target`.
-    pub fn walk_to(spatial: *SpatialSystem, entity: EntityId, target: WaypointId) !bool {
+    /// Returns true only if the agent stands at `target`. An agent holding `Pursuing` belongs
+    /// to its agenda (P33-02, D-056): society routines leave its walk alone, so the two never
+    /// issue competing walk intents.
+    pub fn walk_to(world: *const World, spatial: *SpatialSystem, entity: EntityId, target: WaypointId) !bool {
         if (spatial.agents.get(entity)) |agent| {
             if (agent.current_wp == target and !agent.is_moving) return true;
+            if (world.lookup_relation(agency_mod.PURSUING_RELATION)) |pursuing| {
+                if (world.has_fact(entity, pursuing, null)) return false;
+            }
             if (agent.is_moving and agent.target_wp == target) return false;
             _ = try spatial.walk_to(entity, target);
         }
@@ -668,7 +674,7 @@ pub const Society = struct {
             if (world.has_fact(npc, self.rel.arrested, null)) {
                 _ = world.forget(npc, self.rel.tending, null);
                 try world.remember(npc, self.rel.activity, @intFromEnum(Activity.arrested), 0);
-                if (self.holding) |h| _ = try walk_to(spatial, npc, h);
+                if (self.holding) |h| _ = try walk_to(world, spatial, npc, h);
                 continue;
             }
 
@@ -681,7 +687,7 @@ pub const Society = struct {
             if (world.get_property(npc, self.rel.tending)) |tended| {
                 if (tended < self.need_count and self.needs[tended].kind == .stay) {
                     const stay = self.needs[tended].kind.stay;
-                    if (try walk_to(spatial, npc, stay.at)) {
+                    if (try walk_to(world, spatial, npc, stay.at)) {
                         for (self.needs[0..self.need_count], 0..) |*n, ni| {
                             pressure[ni] = if (ni == tended)
                                 pressure[ni] -| stay.restore
@@ -715,7 +721,7 @@ pub const Society = struct {
                     const stay = n.kind.stay;
                     try world.remember(npc, self.rel.activity, @intFromEnum(stay.activity), 0);
                     try world.remember(npc, self.rel.tending, @intCast(ni), 0);
-                    _ = try walk_to(spatial, npc, stay.at);
+                    _ = try walk_to(world, spatial, npc, stay.at);
                     self.chronicle.logf(tick, .work, "{s} is {s} ({s} {d}) and heads to {s} to {s}.", .{
                         name_of(world, npc), stay.state, n.name, n.to_value(pressure[ni]), waypoint_name(spatial, stay.at), stay.verb,
                     });
@@ -729,8 +735,8 @@ pub const Society = struct {
             if (try self.try_theft(world, spatial, m, mi, &pressure, gold, tick)) continue;
 
             if (cur_act == .fleeing) {
-                if ((try walk_to(spatial, npc, self.flight.to)) and tick % self.flight.every == 0) {
-                    if (self.flight.then) |then| _ = try walk_to(spatial, npc, then);
+                if ((try walk_to(world, spatial, npc, self.flight.to)) and tick % self.flight.every == 0) {
+                    if (self.flight.then) |then| _ = try walk_to(world, spatial, npc, then);
                 }
                 continue;
             }
@@ -744,7 +750,7 @@ pub const Society = struct {
                 if (pressure[ni] < n.seek or gold < trade.price) continue;
                 const provider = &self.members[pi];
                 try world.remember(npc, self.rel.activity, @intFromEnum(Activity.eating), 0);
-                if (try walk_to(spatial, npc, provider.merchant.?.post)) {
+                if (try walk_to(world, spatial, npc, provider.merchant.?.post)) {
                     pressure[ni] = if (pressure[ni] > trade.relief) pressure[ni] - trade.relief else trade.floor;
                     try world.remember(npc, n.relation, n.to_value(pressure[ni]), 0);
                     if (pi != mi) {
@@ -769,7 +775,7 @@ pub const Society = struct {
             {
                 try world.remember(npc, self.rel.activity, @intFromEnum(Activity.socializing), 0);
                 const dest = if (spatial.agents.get(enforcer.?)) |a| a.current_wp else self.gathering;
-                _ = try walk_to(spatial, npc, dest);
+                _ = try walk_to(world, spatial, npc, dest);
                 continue;
             }
 
@@ -800,7 +806,7 @@ pub const Society = struct {
 
             const merchant = victim.merchant.?;
             try world.remember(npc, self.rel.activity, @intFromEnum(Activity.stealing), 0);
-            if (try walk_to(spatial, npc, merchant.post)) {
+            if (try walk_to(world, spatial, npc, merchant.post)) {
                 try world.remember(npc, self.rel.stolen_from, victim.entity.to_int(), 0);
                 try world.remember(npc, self.rel.crime_scene, merchant.post, 0);
                 try world.remember(npc, self.rel.carries, merchant.goods.to_int(), 0);
@@ -817,7 +823,7 @@ pub const Society = struct {
 
                 // Anyone present at the moment of the crime sees it.
                 try self.evaluate_witnesses(world, spatial);
-                _ = try walk_to(spatial, npc, self.flight.to);
+                _ = try walk_to(world, spatial, npc, self.flight.to);
             }
             return true;
         }
@@ -828,7 +834,7 @@ pub const Society = struct {
         if (m.routine_activity) |a| try world.remember(m.entity, self.rel.activity, @intFromEnum(a), 0);
         if (m.stop_count == 0) return;
         const dest = m.stops[@intCast((tick / m.period) % m.stop_count)];
-        if (!(try walk_to(spatial, m.entity, dest))) return;
+        if (!(try walk_to(world, spatial, m.entity, dest))) return;
         const work = m.work orelse return;
         if (work.at != dest or tick % work.every != 0) return;
         if (work.restock) {
@@ -874,7 +880,7 @@ pub const Society = struct {
                     name_of(world, witness), name_of(world, thief), goods, world.get_relation_meta(self.rel.grudge).?.name,
                 });
 
-                if (enforcer == null or witness != enforcer.?) _ = try walk_to(spatial, witness, self.gathering);
+                if (enforcer == null or witness != enforcer.?) _ = try walk_to(world, spatial, witness, self.gathering);
             }
         }
     }
@@ -906,7 +912,7 @@ pub const Society = struct {
 
                 const enforcer_knows = if (enforcer) |e| world.has_fact(e, self.rel.knows_rumor, thief.to_int()) else false;
                 if (!enforcer_knows and (enforcer == null or speaker != enforcer.?)) {
-                    _ = try walk_to(spatial, speaker, self.gathering);
+                    _ = try walk_to(world, spatial, speaker, self.gathering);
                 }
 
                 for (self.members[0..self.member_count]) |*l| {
@@ -956,7 +962,7 @@ pub const Society = struct {
             }
 
             try world.remember(enforcer, self.rel.activity, @intFromEnum(Activity.investigating), 0);
-            if (spatial.agents.get(thief)) |a| _ = try walk_to(spatial, enforcer, a.current_wp);
+            if (spatial.agents.get(thief)) |a| _ = try walk_to(world, spatial, enforcer, a.current_wp);
 
             if (!are_colocated(spatial, enforcer, thief, self.radii.arrest)) continue;
 
@@ -973,8 +979,8 @@ pub const Society = struct {
                 try world.remember(s.victim, self.rel.carries, s.goods.to_int(), 0);
             }
             if (self.holding) |h| {
-                _ = try walk_to(spatial, thief, h);
-                _ = try walk_to(spatial, enforcer, h);
+                _ = try walk_to(world, spatial, thief, h);
+                _ = try walk_to(world, spatial, enforcer, h);
             }
 
             if (stolen) |s| {
@@ -1224,4 +1230,28 @@ test "P32-05: invalid configs are refused" {
         .gathering = 1,
         .flight = .{ .to = 1 },
     }));
+}
+
+test "P33-02: society routines do not move an actor that is pursuing an agenda" {
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const room = try world.intern_entity("SocietyGuardRoom");
+    const home = try spatial.graph.add_waypoint(room, 0, 0, "SocietyGuardHome");
+    const work = try spatial.graph.add_waypoint(room, 10, 0, "SocietyGuardWork");
+    try spatial.graph.connect(home, work, null);
+    const npc = try world.intern_entity("SocietyGuardNpc");
+    try spatial.register_entity(npc, home, 5);
+
+    const pursuing = try world.intern_relation(agency_mod.PURSUING_RELATION, .set);
+    try world.remember(npc, pursuing, 0, 0);
+    try testing.expect(!(try Society.walk_to(&world, &spatial, npc, work)));
+    try testing.expect(!spatial.is_moving(npc));
+    // Standing at the destination still counts as arrived.
+    try testing.expect(try Society.walk_to(&world, &spatial, npc, home));
+
+    _ = world.forget(npc, pursuing, null);
+    _ = try Society.walk_to(&world, &spatial, npc, work);
+    try testing.expect(spatial.is_moving(npc));
 }

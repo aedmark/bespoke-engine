@@ -285,7 +285,7 @@ pub const VillageSimulation = struct {
         try self.society.set_need(world, self.drifter, HUNGER, 88);
         try self.society.set_gold(world, self.drifter, 0);
         try self.society.set_activity(world, self.drifter, .stealing);
-        _ = try society.Society.walk_to(spatial, self.drifter, self.bakery_wp);
+        _ = try society.Society.walk_to(world, spatial, self.drifter, self.bakery_wp);
         self.society.chronicle.log(world.current_tick, .crime, "Catalyst injected: Drifter is starving (Hunger 88, Gold 0)!");
     }
 

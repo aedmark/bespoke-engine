@@ -1,11 +1,13 @@
-//! Proactive social agency: agendas (P33-01, D-038, D-056).
+//! Proactive social agency: agendas, pursuit, and interception (P33-01, P33-02, D-038, D-056).
 //!
 //! An agenda is a script-declared intention: an actor sets out to intercept a target when a set
-//! of trigger clauses holds. This module decides which agendas are pursuing; P33-02 adds the
-//! pursuit itself and the interception. All lifecycle state is World facts on the agenda's own
-//! entity, so save, rewind, and branch restore need no agency snapshot:
-//!   AgendaState(Agenda, Idle | Pursuing | Done)   property
+//! of trigger clauses holds. `step` decides which agendas are pursuing; `pursue` walks each
+//! pursuer toward its target and reports an interception once both stand idle on the same
+//! waypoint. All lifecycle state is World facts, so save, rewind, and branch restore need no
+//! agency snapshot:
+//!   AgendaState(Agenda, Idle | Pursuing | Done)   property on the agenda entity
 //!   AgendaCooldown(Agenda)                         presence, expiring after `cooldown` ticks
+//!   Pursuing(Actor)                                presence while any of its agendas pursues
 
 const std = @import("std");
 const world_mod = @import("world.zig");
@@ -21,6 +23,8 @@ pub const MAX_AGENDAS: usize = 32;
 
 pub const STATE_RELATION = "AgendaState";
 pub const COOLDOWN_RELATION = "AgendaCooldown";
+/// Unary state on an actor while it pursues; `Society` does not move an actor holding it.
+pub const PURSUING_RELATION = "Pursuing";
 pub const STAGE_NAMES = [_][]const u8{ "Idle", "Pursuing", "Done" };
 
 pub const Stage = enum(u8) { idle = 0, pursuing = 1, done = 2 };
@@ -76,12 +80,14 @@ pub fn validate_all(declarations: []const Declaration) !void {
 const Vocabulary = struct {
     state: RelationKind,
     cooldown: RelationKind,
+    pursuing: RelationKind,
     stages: [STAGE_NAMES.len]EntityId,
 
     fn intern(world: *World) !Vocabulary {
         var v = Vocabulary{
             .state = try world.intern_relation(STATE_RELATION, .property),
             .cooldown = try world.intern_relation(COOLDOWN_RELATION, .set),
+            .pursuing = try world.intern_relation(PURSUING_RELATION, .set),
             .stages = undefined,
         };
         // A script that declared either name with the other type would make stage writes
@@ -206,6 +212,64 @@ pub fn step(world: *World, spatial: ?*const SpatialSystem, allocator: std.mem.Al
         try v.set(world, declarations[best].agenda.entity, .pursuing);
         stages[best] = .pursuing;
     }
+    try sync_pursuing(world, v, declarations);
+}
+
+/// Makes `Pursuing(Actor)` hold exactly for actors with a pursuing agenda.
+fn sync_pursuing(world: *World, v: Vocabulary, declarations: []const Declaration) !void {
+    for (declarations) |decl| {
+        const actor = decl.agenda.actor;
+        var any = false;
+        for (declarations) |other| {
+            if (other.agenda.actor == actor and v.stage_of(world, other.agenda.entity) == .pursuing) any = true;
+        }
+        if (any) {
+            try world.remember(actor, v.pursuing, 0, 0);
+        } else {
+            _ = world.forget(actor, v.pursuing, null);
+        }
+    }
+}
+
+/// An encounter `pursue` has just resolved; the host fires `Intercepts(actor, target, agenda)`.
+pub const Interception = struct {
+    agenda: EntityId,
+    actor: EntityId,
+    target: EntityId,
+};
+
+/// Moves every pursuer and reports encounters (P33-02, D-038 points 4 and 5). Runs after `step`.
+/// - Interception is a soft interrupt: it happens only when actor and target stand on the same
+///   waypoint and neither is walking, so no motor path is cut mid-edge. The agenda is resolved
+///   (`resolve`) and reported in `out`; the host fires the cue.
+/// - Otherwise the actor walks to the target's current waypoint, the last one the target
+///   reached. A walk already headed there is kept; when the target reaches a new waypoint the
+///   destination changes and the actor re-plans. Walks honour waypoint locks and blocking cells.
+///   An actor already standing where a moving target was waits for it to arrive somewhere.
+/// Returns how many interceptions were written to `out`.
+pub fn pursue(world: *World, spatial: *SpatialSystem, declarations: []const Declaration, out: []Interception) !usize {
+    if (declarations.len == 0) return 0;
+    const v = try Vocabulary.intern(world);
+    var count: usize = 0;
+    for (declarations) |decl| {
+        const agenda = decl.agenda;
+        if (v.stage_of(world, agenda.entity) != .pursuing) continue;
+        const actor = spatial.agents.get(agenda.actor) orelse continue;
+        const target = spatial.agents.get(agenda.target) orelse continue;
+        if (actor.current_wp == target.current_wp and !actor.is_moving and !target.is_moving) {
+            if (count == out.len) break;
+            try resolve(world, agenda);
+            out[count] = .{ .agenda = agenda.entity, .actor = agenda.actor, .target = agenda.target };
+            count += 1;
+            continue;
+        }
+        const dest = target.current_wp;
+        if (actor.is_moving and actor.target_wp == dest) continue;
+        if (!actor.is_moving and actor.current_wp == dest) continue;
+        _ = try spatial.walk_to_with_world(world, agenda.actor, dest);
+    }
+    if (count > 0) try sync_pursuing(world, v, declarations);
+    return count;
 }
 
 /// True when the agenda's target is already being pursued, or its actor already pursues.
@@ -403,4 +467,61 @@ test "P33-01: validation rejects self-targeting, empty, and duplicate agendas" {
     try testing.expectError(Error.InvalidAgenda, validate(agenda));
     agenda = try fx.agenda("TestAgenda", "TestKeeper", 0, &clauses);
     try testing.expectError(Error.InvalidAgenda, validate_all(&.{ .{ .agenda = agenda }, .{ .agenda = agenda } }));
+}
+
+test "P33-02: a pursuer re-plans toward a moving target and intercepts only when both are idle" {
+    var fx = try Fixture.init();
+    defer fx.world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const room = try fx.world.intern_entity("TestManor");
+    var wps: [4]spatial_mod.WaypointId = undefined;
+    for (&wps, 0..) |*wp, i| {
+        var name_buf: [16]u8 = undefined;
+        wp.* = try spatial.graph.add_waypoint(room, @as(i32, @intCast(i)) * 10, 0, try std.fmt.bufPrint(&name_buf, "TestRoom{d}", .{i}));
+        if (i > 0) try spatial.graph.connect(wps[i - 1], wp.*, null);
+    }
+    const clauses = [_]Clause{.{ .relation = "Investigated", .subject = fx.hero }};
+    var agenda = try fx.agenda("TestWarnOff", "TestKeeper", 1, &clauses);
+    agenda.cooldown_ticks = 50;
+    const decls = [_]Declaration{.{ .agenda = agenda }};
+    try spatial.register_entity(agenda.actor, wps[0], 5);
+    // The hero is slow, so the keeper reaches room 2 while the hero is still walking away from
+    // it: sharing a waypoint with a moving target must not count as an interception.
+    try spatial.register_entity(fx.hero, wps[2], 1);
+    try fx.world.remember(fx.hero, fx.investigated, fx.shed.to_int(), 0);
+    try seed(&fx.world, &decls);
+
+    var out: [4]Interception = undefined;
+    try step(&fx.world, &spatial, testing.allocator, &decls);
+    const pursuing = fx.world.lookup_relation(PURSUING_RELATION).?;
+    try testing.expect(fx.world.has_fact(agenda.actor, pursuing, null));
+    try testing.expectEqual(@as(usize, 0), try pursue(&fx.world, &spatial, &decls, &out));
+    try testing.expectEqual(wps[2], spatial.agents.get(agenda.actor).?.target_wp.?);
+
+    // The hero walks on to room 3; once there the keeper's destination changes.
+    _ = try spatial.walk_to(fx.hero, wps[3]);
+    var ticks: usize = 0;
+    var met: usize = 0;
+    var waited_on_moving_target = false;
+    while (met == 0) : (ticks += 1) {
+        try testing.expect(ticks < 30);
+        spatial.step_tick();
+        _ = fx.world.step_tick();
+        try step(&fx.world, &spatial, testing.allocator, &decls);
+        met = try pursue(&fx.world, &spatial, &decls, &out);
+        if (met == 0 and spatial.agents.get(agenda.actor).?.current_wp == spatial.agents.get(fx.hero).?.current_wp) {
+            // Sharing a waypoint is not enough while either is still walking.
+            try testing.expect(spatial.is_moving(agenda.actor) or spatial.is_moving(fx.hero));
+            if (!spatial.is_moving(agenda.actor)) waited_on_moving_target = true;
+        }
+    }
+    try testing.expect(waited_on_moving_target);
+    try testing.expectEqual(wps[3], spatial.get_current_waypoint(agenda.actor).?);
+    try testing.expectEqual(agenda.entity, out[0].agenda);
+    try testing.expectEqual(fx.hero, out[0].target);
+    // Resolved: idle with a cooldown, and the keeper is free again.
+    try testing.expectEqual(Stage.idle, stage_of(&fx.world, agenda.entity).?);
+    try testing.expect(!fx.world.has_fact(agenda.actor, pursuing, null));
+    try testing.expect(fx.world.has_fact(agenda.entity, fx.world.lookup_relation(COOLDOWN_RELATION).?, null));
 }
