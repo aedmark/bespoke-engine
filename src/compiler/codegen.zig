@@ -21,6 +21,7 @@ const duel_mod = @import("../duel.zig");
 const container_mod = @import("../container.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
+const command_mod = @import("../command.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
@@ -52,6 +53,9 @@ pub const CompiledProgram = struct {
     grids: std.ArrayList(grid_mod.Declaration),
     /// Agendas in declaration order, which breaks contention ties (P33-01, D-056).
     agendas: std.ArrayList(agency_mod.Declaration),
+    /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
+    commands: std.ArrayList(command_mod.CommandDecl),
+    aliases: std.ArrayList(command_mod.AliasDecl),
 
     pub fn deinit(self: *CompiledProgram) void {
         for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
@@ -64,6 +68,10 @@ pub const CompiledProgram = struct {
         self.grids.deinit();
         for (self.agendas.items) |*agenda| agenda.deinit_owned(self.chunk.allocator);
         self.agendas.deinit();
+        for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
+        self.commands.deinit();
+        for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
+        self.aliases.deinit();
         self.drafts.deinit();
         self.chunk.deinit();
         self.routine_entries.deinit();
@@ -207,6 +215,8 @@ pub const Codegen = struct {
     degradations: std.ArrayList(container_mod.Declaration),
     grids: std.ArrayList(grid_mod.Declaration),
     agendas: std.ArrayList(agency_mod.Declaration),
+    commands: std.ArrayList(command_mod.CommandDecl),
+    aliases: std.ArrayList(command_mod.AliasDecl),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -225,6 +235,8 @@ pub const Codegen = struct {
             .degradations = std.ArrayList(container_mod.Declaration).init(allocator),
             .grids = std.ArrayList(grid_mod.Declaration).init(allocator),
             .agendas = std.ArrayList(agency_mod.Declaration).init(allocator),
+            .commands = std.ArrayList(command_mod.CommandDecl).init(allocator),
+            .aliases = std.ArrayList(command_mod.AliasDecl).init(allocator),
         };
     }
 
@@ -321,6 +333,8 @@ pub const Codegen = struct {
         for (ast.grids.items) |decl| try mut_self.grids.append(try mut_self.compile_grid(decl));
         for (ast.agendas.items) |decl| try mut_self.agendas.append(try mut_self.compile_agenda(decl));
         try agency_mod.validate_all(mut_self.agendas.items);
+        for (ast.commands.items) |decl| try mut_self.commands.append(try mut_self.compile_command(decl));
+        for (ast.aliases.items) |decl| try mut_self.aliases.append(try mut_self.compile_alias(decl));
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
@@ -523,6 +537,8 @@ pub const Codegen = struct {
             .degradations = mut_self.degradations,
             .grids = mut_self.grids,
             .agendas = mut_self.agendas,
+            .commands = mut_self.commands,
+            .aliases = mut_self.aliases,
         };
     }
 
@@ -790,6 +806,35 @@ pub const Codegen = struct {
             }
         }
         return declaration;
+    }
+
+    fn compile_command(self: *Codegen, decl: parser_mod.CommandDecl) !command_mod.CommandDecl {
+        const cue = try self.allocator.dupe(u8, decl.cue);
+        errdefer self.allocator.free(cue);
+        const text = try self.allocator.dupe(u8, decl.text);
+        errdefer self.allocator.free(text);
+        const owned = command_mod.CommandDecl{ .cue = cue, .text = text };
+        _ = try owned.frame();
+        return owned;
+    }
+
+    /// Phrases are stored lowercase so typed words, which the tokenizer lowercases, match them.
+    fn compile_alias(self: *Codegen, decl: parser_mod.AliasDecl) !command_mod.AliasDecl {
+        const phrases = try self.allocator.alloc([]const u8, decl.phrases.len);
+        var made: usize = 0;
+        errdefer {
+            for (phrases[0..made]) |p| self.allocator.free(p);
+            self.allocator.free(phrases);
+        }
+        for (decl.phrases, 0..) |phrase, i| {
+            const lower = try self.allocator.alloc(u8, phrase.len);
+            for (phrase, 0..) |ch, j| lower[j] = std.ascii.toLower(ch);
+            phrases[i] = lower;
+            made += 1;
+        }
+        const alias = command_mod.AliasDecl{ .entity = try self.world.intern_entity(decl.entity), .phrases = phrases };
+        try alias.validate();
+        return alias;
     }
 
     fn compile_agenda(self: *Codegen, decl: parser_mod.AgendaDecl) !agency_mod.Declaration {
@@ -1875,6 +1920,36 @@ test "P33-01: agenda declarations compile and reject malformed agendas" {
         "agenda A:\n  actor Keeper\n  target Hero\n  requires Seen(Hero, Shed, Barn)\n",
         "agenda A:\n  actor Keeper\n  target Hero\n  wants Seen(Hero)\n",
         "agenda A:\n  actor K\n  target H\n  requires S(H)\nagenda A:\n  actor K\n  target H\n  requires S(H)\n",
+    };
+    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic != null);
+}
+
+test "P26-01: command and alias declarations compile and reject malformed ones" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\command Pours: "pour <thing> into <thing>"
+        \\command Takes: "take <thing>"
+        \\alias ExposureSlip: "Plate Slip", "receipt"
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.commands.items.len);
+    const pour = try compiled.commands.items[0].frame();
+    try testing.expectEqualStrings("Pours", pour.cue);
+    try testing.expectEqual(@as(usize, 2), pour.slots());
+    try testing.expectEqual(@as(usize, 1), compiled.aliases.items.len);
+    const alias = compiled.aliases.items[0];
+    try testing.expectEqual(world.lookup_entity("ExposureSlip").?, alias.entity);
+    try testing.expectEqualStrings("plate slip", alias.phrases[0]); // stored lowercase
+
+    const bad = [_][]const u8{
+        "command Pours: \"<thing> into <thing>\"\n",
+        "command Pours: \"give <thing> <thing>\"\n",
+        "command Pours: pour\n",
+        "alias Slip: \"\"\n",
+        "alias Slip:\n",
     };
     for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic != null);
 }

@@ -57,6 +57,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Relational Store (`src/world.zig`) | `zig test src/world.zig` | `zig build test` (mutation check on TTL decay or snapshot) |
 | VM, Bytecode, Compiler (`src/vm.zig`, `src/compiler/`) | `zig test src/vm.zig`, `zig test src/compiler.zig` | `zig build test`, `bespoke check scenarios/tavern_heist.bespoke` |
 | Spatial Graph (`src/spatial.zig`) | `zig test src/spatial.zig` | Waypoint pathfinding verification in headless scenarios |
+| Typed Commands (`src/command.zig`) | `zig test src/command.zig` | `zig test src/package.zig` (v10 round-trip, bad frame, v9 load); `zig test src/compiler.zig` (declarations and diagnostics) |
 | Agency (`src/agency.zig`) | `zig test src/agency.zig`, `zig test src/host.zig`, `zig test src/society.zig` (pursuit guard) | `zig test src/package.zig` (v9 round-trip, bad flag, v8 load); `zig test src/compiler.zig` (declaration and diagnostics) |
 | Grid Overlay and Automata (`src/grid.zig`) | `zig test src/grid.zig`, `zig test src/spatial.zig`, `zig test src/host.zig` | `zig test src/package.zig` (v8 round-trip, corrupt cells, v6 and v7 loads); `zig test src/compiler.zig` (declaration, `place`, rates) |
 | Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification; version 1/2 compatibility and temporal envelope round-trip |

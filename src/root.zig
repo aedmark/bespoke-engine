@@ -21,6 +21,7 @@ pub const duel = @import("duel.zig");
 pub const container = @import("container.zig");
 pub const grid = @import("grid.zig");
 pub const agency = @import("agency.zig");
+pub const command = @import("command.zig");
 pub const dialogue = @import("dialogue.zig");
 
 pub const World = world.World;
@@ -99,6 +100,7 @@ test "root test imports all modules" {
     _ = @import("container.zig");
     _ = @import("grid.zig");
     _ = @import("agency.zig");
+    _ = @import("command.zig");
     _ = @import("dialogue.zig");
     _ = @import("spatial.zig");
     _ = @import("compiler.zig");

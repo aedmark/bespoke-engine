@@ -6,6 +6,7 @@ pub const TokenTag = lexer_mod.TokenTag;
 const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
+const command_mod = @import("../command.zig");
 pub const Note = draft_mod.Note;
 pub const Notes = draft_mod.Notes;
 
@@ -316,6 +317,18 @@ pub const AgendaClauseDecl = struct {
     negated: bool,
 };
 
+/// `command <Cue>: "frame"` adds a typed-command frame (P26-01, D-057).
+pub const CommandDecl = struct {
+    cue: []const u8,
+    text: []const u8,
+};
+
+/// `alias <Entity>: "phrase", "phrase"` adds words a typed noun may use (P26-01, D-057).
+pub const AliasDecl = struct {
+    entity: []const u8,
+    phrases: []const []const u8,
+};
+
 /// `agenda <Name>:` owns one actor's intention to intercept a target.
 pub const AgendaDecl = struct {
     name: []const u8,
@@ -354,6 +367,8 @@ pub const AST = struct {
     paths: std.ArrayList(PathDecl),
     grids: std.ArrayList(GridDecl),
     agendas: std.ArrayList(AgendaDecl),
+    commands: std.ArrayList(CommandDecl),
+    aliases: std.ArrayList(AliasDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
@@ -376,6 +391,8 @@ pub const AST = struct {
             .paths = std.ArrayList(PathDecl).init(allocator),
             .grids = std.ArrayList(GridDecl).init(allocator),
             .agendas = std.ArrayList(AgendaDecl).init(allocator),
+            .commands = std.ArrayList(CommandDecl).init(allocator),
+            .aliases = std.ArrayList(AliasDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -402,6 +419,8 @@ pub const AST = struct {
         self.paths.deinit();
         self.grids.deinit();
         self.agendas.deinit();
+        self.commands.deinit();
+        self.aliases.deinit();
     }
 };
 
@@ -581,6 +600,31 @@ pub const Parser = struct {
                 .kw_duel => try ast.duels.append(try self.parse_duel_decl()),
                 .kw_degradation => try ast.degradations.append(try self.parse_degradation_decl()),
                 .kw_path => try ast.paths.append(try self.parse_path_decl()),
+                .kw_command => {
+                    try self.advance();
+                    const cue = (try self.expect(.identifier)).slice;
+                    _ = try self.expect(.colon);
+                    const text = (try self.expect(.string_literal)).slice;
+                    _ = command_mod.parse_frame(cue, text) catch
+                        return self.set_error("command '{s}' frame \"{s}\" must start with a lowercase word, use at most two <thing> slots, and never put two slots together", .{ cue, text });
+                    try ast.commands.append(.{ .cue = cue, .text = text });
+                },
+                .kw_alias => {
+                    try self.advance();
+                    const entity = (try self.expect(.identifier)).slice;
+                    _ = try self.expect(.colon);
+                    var phrases = std.ArrayList([]const u8).init(self.allocator);
+                    while (true) {
+                        const phrase = (try self.expect(.string_literal)).slice;
+                        if (phrase.len == 0) return self.set_error("alias for '{s}' has an empty phrase", .{entity});
+                        try phrases.append(phrase);
+                        if (self.current.tag != .comma) break;
+                        try self.advance();
+                    }
+                    if (phrases.items.len > command_mod.MAX_ALIAS_PHRASES)
+                        return self.set_error("alias for '{s}' has more than {d} phrases", .{ entity, command_mod.MAX_ALIAS_PHRASES });
+                    try ast.aliases.append(.{ .entity = entity, .phrases = try phrases.toOwnedSlice() });
+                },
                 .kw_agenda => {
                     const decl = try self.parse_agenda_decl();
                     for (ast.agendas.items) |prior| {

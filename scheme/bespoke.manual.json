@@ -595,6 +595,28 @@
           "related": ["continuous-when-rules", "cue-dispatch-and-interruption"]
         },
         {
+          "id": "typed-commands-vocabulary",
+          "title": "Typed Commands: Words, Frames, and Nouns",
+          "summary": "The vocabulary that turns a typed line into a cue and the entities it names.",
+          "synopsis": "command <Cue>: \"verb <thing> prep <thing>\"   alias <Entity>: \"phrase\", \"phrase\"",
+          "tags": ["parser", "text", "commands", "vocabulary"],
+          "what": "Lets players type commands such as pour grog into mug: input becomes words, a frame names the cue, and each noun resolves to an entity the actor can see or holds.",
+          "how": [
+            "command.tokenize lowercases input and drops punctuation and the articles a, an, the; prepositions such as with, into, and about are kept.",
+            "A frame is lowercase words with up to two <thing> slots; the engine provides frames for LooksAt, Uses, TalksTo, and WalksTo, and script command lines add more.",
+            "An entity's name splits into words at capitals and separators, and alias lines add words; a noun matches when all its words belong to the entity.",
+            "Scope.gather collects agents, hotspots, and marks in the actor's room plus what it Carries or holds InInventory; resolve reports one match, several, or none.",
+            ".bspk version 10 stores command and alias declarations; matching and the command bar arrive in P26-02 and P26-03."
+          ],
+          "why": "Proofs name their own cues, so typed commands need script-owned verbs on top of a few shared defaults. Resolving nouns only in scope keeps typed commands from reaching what the player cannot see, and refusing to guess between two matches keeps the parser predictable.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-057", "target": "docs/DECISIONS.md#d-057", "kind": "decision"},
+            {"label": "Typed Command Vocabulary", "target": "src/command.zig", "kind": "source"}
+          ],
+          "related": ["classic-adventure-verbs", "cue-dispatch-and-interruption", "relational-facts"]
+        },
+        {
           "id": "agendas-and-proactive-agency",
           "title": "Agendas: Proactive Social Agency",
           "summary": "Script-declared intentions that set an NPC pursuing a target when facts hold or are missing.",

@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 37 (2026-11-10)
+- **Goal:** Close P31-05 before Phase 23 by routing Darko's interactive actions to the world evaluated by the active temporal branch.
+- **Work:** Recorded D-049. Added `TemporalHypervisor.active_world`, `VM.bind_world`, and `Session.active_world` / `sync_active_world`; temporal sessions now bind VM execution, dialogue lookup, and display capture to the branch and rebind after timeline or save restore and collapse. Darko routes its inventory, inspection, cue, dialogue, and loop facts through the session action world, moves the keystone to convergence, registers dream residue, and projects the flood and letter consequences after successful collapse. Added engine and proof regression tests. A mutation returning primary unconditionally failed the new P31-05 engine test.
+- **Outcome:** `zig test -I/usr/include/SDL2 -lc -lSDL2 src/root.zig` passed 150/150 and `zig build test-proofs` passed with all goldens unchanged. Full final checks are recorded in the Verified table. The interactive Darko window was not played by hand.
+
 ### Session 36 (2026-11-10)
 - **Goal:** Implement the maintainer's chosen long-term option for hypervisor save/restore: save branch state, countdown, and world state atomically instead of leaving temporal state outside `World` snapshots.
 - **Work:** Recorded D-048. Added `src/temporal_snapshot.zig` with a `BTSV` versioned envelope for the branch world, active flag, budget, elapsed ticks, collapse state, receiver and keystone, convergence waypoint, teleological dependencies, and dream residue. Added `Timeline.record_with_temporal` / `restore_with_temporal`, `Session.initWithHypervisor`, and save/load routing through `SaveManager` and `display.handle_save_action_with_temporal`. `.sav` version 2 writes the temporal section before World/Spatial/VM; version 1 stays readable, and temporal readers reject envelope-less saves with `MissingTemporalState`. Darko now initializes a temporal session, records after actions and hypervisor ticks, and no longer intercepts scrub or rewind. Updated `ROADMAP.md` (P31-04 complete, P31-05 filed), `docs/ARCHITECTURE.md`, `docs/TESTING.md`, `docs/SECURITY.md`, `docs/CHANGELOG.md`, and `docs/HANDOFF.md`. Archived Session 25.

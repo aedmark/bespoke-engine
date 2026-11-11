@@ -10,6 +10,7 @@ const duel_mod = @import("duel.zig");
 const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
+const command_mod = @import("command.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -36,8 +37,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// (P25-01, D-054); versions 1 through 6 load with no grids. Version 8 adds the `burning` and
 /// `smoke` attributes and four automata rates per grid (P25-02, D-055); version 7 grids load
 /// with every rule off. Version 9 appends agendas (P33-01, D-056); versions 1 through 8 load
-/// with none.
-pub const PACKAGE_VERSION: u32 = 9;
+/// with none. Version 10 appends typed-command frames and noun aliases (P26-01, D-057);
+/// versions 1 through 9 load with neither.
+pub const PACKAGE_VERSION: u32 = 10;
 const MIN_PACKAGE_VERSION: u32 = 1;
 
 pub const PackageHeader = extern struct {
@@ -268,6 +270,18 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeInt(u32, if (clause.object) |e| e.to_int() else 0, .little);
             try writer.writeByte(@intFromBool(clause.negated));
         }
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.commands.items.len), .little);
+    for (compiled.commands.items) |c| {
+        try write_str(writer, c.cue);
+        try write_str(writer, c.text);
+    }
+    try writer.writeInt(u32, @intCast(compiled.aliases.items.len), .little);
+    for (compiled.aliases.items) |a| {
+        try writer.writeInt(u32, a.entity.to_int(), .little);
+        try writer.writeByte(@intCast(a.phrases.len));
+        for (a.phrases) |phrase| try write_str(writer, phrase);
     }
 }
 
@@ -614,6 +628,37 @@ fn read_agenda_declaration(allocator: std.mem.Allocator, world: *const World, re
     };
     agency_mod.validate(agenda) catch return error.InvalidAgendaConfig;
     return .{ .agenda = agenda };
+}
+
+/// Untrusted input: frame text must parse, and alias entities, phrase counts, and phrase
+/// characters are checked before use.
+fn read_command_declaration(allocator: std.mem.Allocator, reader: anytype) !command_mod.CommandDecl {
+    const cue = try read_str(allocator, reader);
+    errdefer allocator.free(cue);
+    const text = try read_str(allocator, reader);
+    errdefer allocator.free(text);
+    const decl = command_mod.CommandDecl{ .cue = cue, .text = text };
+    _ = decl.frame() catch return error.InvalidCommandConfig;
+    return decl;
+}
+
+fn read_alias_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !command_mod.AliasDecl {
+    const entity = try read_entity_ref(world, reader);
+    const count = try reader.readByte();
+    if (count == 0 or count > command_mod.MAX_ALIAS_PHRASES) return error.InvalidCommandConfig;
+    const phrases = try allocator.alloc([]const u8, count);
+    var made: usize = 0;
+    errdefer {
+        for (phrases[0..made]) |p| allocator.free(p);
+        allocator.free(phrases);
+    }
+    for (phrases) |*phrase| {
+        phrase.* = try read_str(allocator, reader);
+        made += 1;
+    }
+    const decl = command_mod.AliasDecl{ .entity = entity, .phrases = phrases };
+    decl.validate() catch return error.InvalidCommandConfig;
+    return decl;
 }
 
 fn read_flag(reader: anytype) !bool {
@@ -1142,6 +1187,38 @@ pub fn load_package(
         }
         agency_mod.validate_all(agendas.items) catch return error.InvalidAgendaConfig;
     }
+    var commands = std.ArrayList(command_mod.CommandDecl).init(allocator);
+    errdefer {
+        for (commands.items) |*decl| decl.deinit_owned(allocator);
+        commands.deinit();
+    }
+    var aliases = std.ArrayList(command_mod.AliasDecl).init(allocator);
+    errdefer {
+        for (aliases.items) |*decl| decl.deinit_owned(allocator);
+        aliases.deinit();
+    }
+    if (header.version >= 10) {
+        const command_count = try pr.readInt(u32, .little);
+        if (command_count > 256) return error.InvalidCommandConfig;
+        var ci2: u32 = 0;
+        while (ci2 < command_count) : (ci2 += 1) {
+            var decl = try read_command_declaration(allocator, pr);
+            commands.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        const alias_count = try pr.readInt(u32, .little);
+        if (alias_count > 256) return error.InvalidCommandConfig;
+        var ai2: u32 = 0;
+        while (ai2 < alias_count) : (ai2 += 1) {
+            var decl = try read_alias_declaration(allocator, world, pr);
+            aliases.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+    }
 
     return CompiledProgram{
         .drafts = drafts,
@@ -1158,6 +1235,8 @@ pub fn load_package(
         .degradations = degradations,
         .grids = grids,
         .agendas = agendas,
+        .commands = commands,
+        .aliases = aliases,
     };
 }
 
@@ -1380,6 +1459,12 @@ test "P15-02: package file save and load roundtrip" {
     try testing.expectEqualStrings("Cat", compiled2.routine_entities.get("Prowl").?);
 }
 
+/// Bytes that empty sections added after version 9 append to every package tail: the
+/// command and alias counts (version 10). Tests that locate earlier sections from the end of
+/// a package add this; a later version that appends a section adds its empty size here, so
+/// those tests need no other change.
+const EMPTY_TAIL_AFTER_V9: usize = 4 + 4;
+
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
     const header: *PackageHeader = @ptrCast(@alignCast(buf[0..@sizeOf(PackageHeader)].ptr));
@@ -1433,9 +1518,9 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
 
     // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
-    // Version 9 follows the draft table with empty society, duel, degradation, grid, and agenda
-    // counts.
-    const declaration_tail_len = 20;
+    // The draft table is followed by empty society, duel, degradation, grid, and agenda counts,
+    // then the sections added after version 9.
+    const declaration_tail_len = 20 + EMPTY_TAIL_AFTER_V9;
     const tail_len = 4 + 4 + 4 + 1 + 4;
     const first_note = buffer.items.len - declaration_tail_len - tail_len + 8;
     {
@@ -1450,7 +1535,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     }
     {
         // A real version 4 payload ends after the duel table and loads no degradation profiles.
-        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 12]);
+        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 12 - EMPTY_TAIL_AFTER_V9]);
         defer testing.allocator.free(v4);
         reseal_for_test(v4, 4);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
@@ -1513,7 +1598,7 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
 
     // Version 5 stored the same declaration without the u32 spill field and had no grid or
     // agenda count.
-    const grid_count_len = 4 + 4;
+    const grid_count_len = 4 + 4 + EMPTY_TAIL_AFTER_V9;
     const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4 + grid_count_len;
     const spill_offset = buffer.items.len - bytes_after_spill - 4;
     var v5 = std.ArrayList(u8).init(testing.allocator);
@@ -1581,7 +1666,7 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
     // count (version 9).
     const cells_len = 4 * (4 + 1);
     const rules_len = 4 * 4;
-    const agenda_count_len = 4;
+    const agenda_count_len = 4 + EMPTY_TAIL_AFTER_V9;
     const first_cell_index = buffer.items.len - agenda_count_len - rules_len - cells_len;
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
@@ -1682,7 +1767,7 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
-        bad[bad.len - 1] = 2; // the last clause's negated flag
+        bad[bad.len - EMPTY_TAIL_AFTER_V9 - 1] = 2; // the last clause's negated flag
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
@@ -1692,7 +1777,7 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
     {
         // A version 8 payload ends before the agenda table and loads none.
         const agenda_section_len = 4 + 4 + 4 + 4 + 2 + 4 + 1 + 1 + 2 * clause_len;
-        const v8 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - agenda_section_len]);
+        const v8 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - agenda_section_len - EMPTY_TAIL_AFTER_V9]);
         defer testing.allocator.free(v8);
         reseal_for_test(v8, 8);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -1701,6 +1786,58 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
         var loaded = try load_package(testing.allocator, v8_stream.reader(), &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.agendas.items.len);
+    }
+}
+
+test "P26-01: package version 10 round-trips commands and aliases and loads version 9" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\command Pours: "pour <thing> into <thing>"
+        \\alias OilLamp: "lantern"
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqualStrings("pour <thing> into <thing>", compiled2.commands.items[0].text);
+    try testing.expectEqualStrings("lantern", compiled2.aliases.items[0].phrases[0]);
+    try testing.expectEqualStrings("OilLamp", world2.get_entity_name(compiled2.aliases.items[0].entity).?);
+
+    // Tail: command count, cue and frame strings, alias count, entity, phrase count, phrase.
+    const alias_section_len = 4 + 4 + 1 + (2 + "lantern".len);
+    const command_section_len = 4 + (2 + "Pours".len) + (2 + "pour <thing> into <thing>".len);
+    {
+        // A frame whose verb is not lowercase is rejected on load.
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        const frame_start = bad.len - alias_section_len - "pour <thing> into <thing>".len;
+        bad[frame_start] = 'P';
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidCommandConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        const v9 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - alias_section_len - command_section_len]);
+        defer testing.allocator.free(v9);
+        reseal_for_test(v9, 9);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v9_stream = std.io.fixedBufferStream(v9);
+        var loaded = try load_package(testing.allocator, v9_stream.reader(), &world3, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.commands.items.len + loaded.aliases.items.len);
     }
 }
 

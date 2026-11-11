@@ -747,6 +747,23 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Preempt a lower-priority pursuit when a higher one triggers: deferred; without interception (P33-02) there is no observable cost to waiting, and preemption needs a policy for the abandoned agenda.
 **Consequences:** Agenda state saves, rewinds, and branches with the World. Script clauses cannot bind variables, so an agenda names its own actor and target. The P33-03 slice will use an original cast and setting; the planned homage would recreate an existing game's characters.
 
+## D-057 Typed Commands: Engine Default Frames, Script Commands and Aliases, Scoped Nouns, a Focused Command Bar (2026-11-10, status: accepted)
+**Context:** Phase 26 adds Infocom-style typed commands that fire the same cues as mouse verbs. The engine has no fixed verb-to-cue table (each proof chooses cue names), `verb X(...)` is only another spelling of `on cue X(...)`, the window already owns one text field (the REPL), and letter keys are bound by the engine, the distaff, and proofs. The maintainer accepted the defaults below.
+**Decision:**
+1. `src/command.zig` is an engine module naming no proof content. It lowercases input, splits words, drops the articles `a`, `an`, `the`, and tags the prepositions `with`, `on`, `to`, `about`, `into`, `in`, `at`, `from`.
+2. A frame is a sentence shape: literal words and up to two `<thing>` slots, mapped to a cue (`pour <thing> into <thing>` to `Pours`). The engine ships default frames for `LooksAt` (`look at`, `examine`, `x`), `Uses` (`use <thing> with/on <thing>`, `use <thing>`), `TalksTo` (`talk to`, `ask <thing> about <thing>`), and `WalksTo` (`go to`, `walk to`). A script `command <Cue>: <frame>` declaration adds a frame, tried before the defaults.
+3. Nouns: an entity answers to the words of its name, split at case changes, spaces, and underscores (`ExposureSlip` answers to "exposure slip" and "slip"), plus words from script `alias <Entity>: phrase, phrase` declarations. A noun phrase matches an entity when every word of the phrase is one of the entity's words. Only entities in scope resolve: agents, hotspots, and marks in the actor's room, and entities the actor holds through `Carries` or `InInventory`.
+4. One match resolves; several matches produce no cue and a "Which do you mean" question that a following bare noun answers; none produces "I don't know" for an unknown word. A sentence whose cue has no handler produces "Nothing happens" (P26-02).
+5. `go to <mark>` starts a world-aware walk and also fires `WalksTo` when the script handles it (P26-02).
+6. The command bar (P26-03) is separate from the REPL and enabled per host. Enter focuses it; while focused every key is text, so no engine or proof binding fires; Enter submits and Esc leaves; Up/Down walk the history; Tab completes from frame words and nouns in scope.
+7. Script commands and aliases are program data: `CompiledProgram.commands` and `.aliases`, stored by `.bspk` version 10. The Larkspur Observatory verifies the phase in its transcript and window.
+**Alternatives:**
+- A fixed engine verb table only: rejected; proofs and games name their own cues (`Takes`, `Pours`).
+- Script-only frames with no defaults: rejected; every game would redeclare looking, using, talking, and walking.
+- Typing into the REPL console: rejected; the REPL evaluates engine commands for developers and must not run game commands.
+- Resolving nouns against the whole World: rejected; typed commands would reach entities the player cannot see.
+**Consequences:** Typed and clicked actions meet at the same cue handlers. Matching is word-subset, not fuzzy, so misspellings fail with "I don't know the word". A noun such as "key" is ambiguous whenever two keys are in scope, by design.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

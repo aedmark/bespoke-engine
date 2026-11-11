@@ -146,6 +146,21 @@ grid HallFloor in "Great Hall":
 
 Each set attribute is a fact on the grid entity: `CellFlammable(HallFloor, index)`, `CellLiquid`, or `CellBlocking`, where `index` is `y * W + x`. The host lifecycle writes the declared layout once, so later changes survive save, rewind, and re-initialisation. A mark standing in a `blocking` cell is treated like `WaypointBlocked`: scripted walks plan around it, and a walk to it is refused. Package format version 7 carries grids; versions 1 through 6 load without them.
 
+### Typed commands (P26-01, D-057)
+
+A typed line such as `> pour the grog into the mug` is matched against sentence shapes (frames) and becomes a cue. The engine provides frames for looking, using, talking, and walking; a script adds its own, which are tried first.
+
+```bespoke
+command Pours: "pour <thing> into <thing>"
+command Takes: "take <thing>"
+alias ExposureSlip: "slip", "receipt"
+```
+
+- A frame is lowercase words and at most two `<thing>` slots, starting with a word and never with two slots side by side. Engine frames: `look at`, `examine`, `x` (`LooksAt`); `use <thing> with/on <thing>`, `use <thing>` (`Uses`); `ask <thing> about <thing>`, `talk to <thing>` (`TalksTo`); `go to`, `walk to` (`WalksTo`).
+- Typed input ignores case, punctuation, and the articles `a`, `an`, `the`.
+- An entity answers to the words of its name, split at capitals, spaces, and underscores (`ExposureSlip` answers to "exposure slip" and "slip"), and to the words of its `alias` phrases. Only what is in the actor's room or carried by the actor can be named. If two things match, the command is ambiguous and the game asks which.
+- Package format version 10 carries commands and aliases.
+
 ### Agendas (P33-01, D-038, D-056)
 
 An agenda is an actor's intention to intercept a target when its trigger lines hold.

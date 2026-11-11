@@ -216,7 +216,7 @@ Phase 25 is complete (2026-11-10): the grid overlay, its automata, and the Castl
 
 Goal: Provide a classic text-command interface (in the style of Infocom and Sierra SCI) that tokenizes natural language commands (`> examine desk`, `> pour grog into mug`, `> ask washington about cherry tree`) and maps them directly to BeSpoke VM cues alongside mouse verbs.
 
-- [ ] P26-01 Command lexer and vocabulary tokenizer supporting verbs, prepositions (`with`, `on`, `to`, `about`), articles, and entity alias resolution against active scene scope.
+- [x] P26-01 Command lexer and vocabulary tokenizer supporting verbs, prepositions (`with`, `on`, `to`, `about`), articles, and entity alias resolution against active scene scope. (D-057; completed 2026-11-10: `src/command.zig` tokenizer, frames with `<thing>` slots and engine defaults for `LooksAt`, `Uses`, `TalksTo`, `WalksTo`, name-word splitting, `alias` and `command` script declarations, room-and-inventory scope, and one/many/none resolution; `.bspk` version 10. Verified by `zig build test-engine` (197/197) and a mutation check on alias matching.)
 - [ ] P26-02 Text parser dispatcher mapping recognized sentence structures to BeSpoke cues (`LooksAt`, `Uses`, `TalksTo`, `WalksTo`), with descriptive disambiguation queries when targets are ambiguous.
 - [ ] P26-03 In-engine text parser console bar in `DisplayWindow`, with command history (`Up`/`Down` arrows), inline autocompletion, and dual headless/interactive test verification.
 
