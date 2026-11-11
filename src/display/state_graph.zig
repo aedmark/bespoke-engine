@@ -12,6 +12,7 @@ pub const RenderDebugFact = display.RenderDebugFact;
 pub const MAX_RING: usize = 16;
 pub const MAX_EDGES: usize = 64;
 pub const MAX_LISTED: usize = 14;
+pub const MAX_NEXT: usize = 6;
 
 pub const BELIEF_RELATIONS = [_][]const u8{ "Believes", "Knows", "Rejects" };
 
@@ -33,6 +34,10 @@ pub fn band(fact: *const RenderDebugFact, now: u64) Band {
 }
 
 fn is_edge(fact: *const RenderDebugFact) bool {
+    // Dialogue branch entities are an inspector persistence detail. Their human-readable text
+    // belongs in the dialogue panel, not as extra nodes that can steal the graph's default focus.
+    if (std.mem.eql(u8, fact.get_relation(), "DialogueBranchText") or
+        std.mem.eql(u8, fact.get_relation(), "DialogueBranchFailure")) return false;
     return fact.object_is_entity and EntityId.from_int(fact.object_raw) != fact.subject;
 }
 
@@ -154,6 +159,52 @@ pub fn build(facts: []const RenderDebugFact, focus: EntityId, cx: i32, cy: i32, 
     return layout;
 }
 
+pub const ExpiryList = struct {
+    facts: [MAX_NEXT]usize = undefined,
+    len: usize = 0,
+    hidden: usize = 0,
+};
+
+fn expires_before(facts: []const RenderDebugFact, a: usize, b: usize) bool {
+    const left = facts[a];
+    const right = facts[b];
+    if (left.expires_at_tick != right.expires_at_tick) return left.expires_at_tick < right.expires_at_tick;
+    if (left.subject != right.subject) return left.subject.to_int() < right.subject.to_int();
+    const rel_order = std.mem.order(u8, left.get_relation(), right.get_relation());
+    if (rel_order != .eq) return rel_order == .lt;
+    return left.object_raw < right.object_raw;
+}
+
+/// The next live fact expirations in deterministic order (D-058 point 5). This projects only
+/// deadlines already present in World state; it never speculatively executes a future tick.
+pub fn next_expiring(facts: []const RenderDebugFact, now: u64) ExpiryList {
+    var candidates: [display.MAX_DEBUG_FACTS]usize = undefined;
+    var count: usize = 0;
+    for (facts, 0..) |fact, i| {
+        if (fact.recently_expired or fact.expires_at_tick == 0 or fact.expires_at_tick <= now) continue;
+        candidates[count] = i;
+        count += 1;
+    }
+
+    // The frame is capped at 128 facts, so insertion sort is small and keeps this helper
+    // allocation-free for the renderer.
+    var i: usize = 1;
+    while (i < count) : (i += 1) {
+        const candidate = candidates[i];
+        var j = i;
+        while (j > 0 and expires_before(facts, candidate, candidates[j - 1])) : (j -= 1) {
+            candidates[j] = candidates[j - 1];
+        }
+        candidates[j] = candidate;
+    }
+
+    var out = ExpiryList{};
+    out.len = @min(count, MAX_NEXT);
+    out.hidden = count - out.len;
+    @memcpy(out.facts[0..out.len], candidates[0..out.len]);
+    return out;
+}
+
 const testing = std.testing;
 
 fn test_fact(subject: u32, subject_name: []const u8, relation: []const u8, object: u32, object_name: ?[]const u8, expires: u64) RenderDebugFact {
@@ -226,4 +277,32 @@ test "P27-01: facts are banded by remaining ticks and beliefs are recognised" {
     try testing.expectEqual(Band.expired, band(&f, 81));
     const carries = test_fact(1, "A", "Carries", 2, "B", 0);
     try testing.expect(!is_belief(&carries));
+}
+
+test "P27-02: next-to-happen facts are ordered by expiry then stable fact identity" {
+    var expired = test_fact(9, "Old", "Gone", 0, null, 2);
+    expired.recently_expired = true;
+    const facts = [_]RenderDebugFact{
+        test_fact(3, "C", "Later", 0, null, 30),
+        test_fact(2, "B", "SameTick", 0, null, 12),
+        test_fact(1, "A", "Soon", 0, null, 8),
+        test_fact(1, "A", "SameTick", 0, null, 12),
+        test_fact(4, "D", "Permanent", 0, null, 0),
+        expired,
+    };
+    const next = next_expiring(&facts, 5);
+    try testing.expectEqual(@as(usize, 4), next.len);
+    try testing.expectEqualStrings("Soon", facts[next.facts[0]].get_relation());
+    try testing.expectEqual(EntityId.from_int(1), facts[next.facts[1]].subject);
+    try testing.expectEqual(EntityId.from_int(2), facts[next.facts[2]].subject);
+    try testing.expectEqualStrings("Later", facts[next.facts[3]].get_relation());
+}
+
+test "P27-02: persisted dialogue branch metadata never steals graph focus" {
+    const facts = [_]RenderDebugFact{
+        test_fact(1, "Actor", "Carries", 2, "Key", 0),
+        test_fact(50, "Actor~0", "DialogueBranchText", 60, "Ask about the key", 0),
+        test_fact(50, "Actor~0", "DialogueBranchFailure", 61, "missing Carries", 0),
+    };
+    try testing.expectEqual(EntityId.from_int(1), default_focus(&facts).?);
 }

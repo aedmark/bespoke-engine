@@ -596,23 +596,26 @@
         },
         {
           "id": "state-inspector-graph",
-          "title": "State Inspector: the Fact Graph",
-          "summary": "A paused, drawn view of who relates to whom, what each believes, and how long each fact has left.",
+          "title": "State Inspector: Facts, Dialogue, and Deadlines",
+          "summary": "A paused view of relational state, dialogue availability and pruning reasons, and the next fact deadlines.",
           "synopsis": "[P] then [Tab] to STATE",
-          "tags": ["inspector", "debug", "facts", "beliefs"],
-          "what": "Draws the selected entity with its connected entities around it, each fact as a labelled arrow, and lists its values and states, coloured by remaining ticks.",
+          "tags": ["inspector", "debug", "facts", "beliefs", "dialogue", "ttl"],
+          "what": "Draws the selected entity and its relationships, lists values and states, explains which dialogue branches are active or pruned, and orders upcoming fact expirations.",
           "how": [
             "DisplayBridge.capture_frame copies up to 128 facts per frame with subject and object ids, whether the object names an entity, and the facts that just expired.",
             "state_graph.default_focus picks the entity with most edges; state_graph.build places it in the centre and its neighbours on a ring in entity-id order.",
             "Facts whose object is an entity are arrows; Believes, Knows, and Rejects arrows are purple; value and state facts are listed beside the graph.",
             "Colours: white permanent, then green, amber, and red as fewer than 60 and 20 ticks remain, grey for just expired.",
+            "Newly compiled choice blocks write source-order DialogueBranch facts. Active branches are green; pruned branches are red and show the first guard that failed. Generated and older sets show their offered choices as active.",
+            "state_graph.next_expiring sorts the next six captured live TTL deadlines by expiration tick and stable fact identity; it does not execute future ticks.",
             "The inspector is the third tab of the P drawer, so the game is paused; Enter, digits, and Space never save or load there."
           ],
-          "why": "A text list of 10 facts cannot show how state connects. A fixed layout around one entity stays readable at any world size and draws the same picture for the same state, so it can be pinned by a render golden.",
+          "why": "A text list cannot show how state connects or why a conversation option disappeared. Persisting branch diagnostics as World facts keeps the explanation correct after save, rewind, and temporal restore; projecting only known deadlines keeps the inspector read-only and deterministic.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-058", "target": "docs/DECISIONS.md#d-058", "kind": "decision"},
-            {"label": "State Graph Layout", "target": "src/display/state_graph.zig", "kind": "source"}
+            {"label": "State Graph Layout", "target": "src/display/state_graph.zig", "kind": "source"},
+            {"label": "Dialogue Lifecycle", "target": "src/dialogue.zig", "kind": "source"}
           ],
           "related": ["developer-dashboard", "relational-facts", "snapshot-time-travel"]
         },

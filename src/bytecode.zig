@@ -85,6 +85,12 @@ pub const Opcode = enum(u8) {
     offer_choice = 0x53,
     /// Ends the set. Operand: end_pc: u16. Suspends the fiber when the set offered any choice.
     choices_end = 0x54,
+    /// Appends one offered choice and its source-order inspector branch.
+    /// Operands: text: u32, body_pc: u16, source_index: u8 (P27-02, D-058).
+    offer_choice_inspected = 0x55,
+    /// Records a pruned source-order branch and the first guard that rejected it.
+    /// Operands: text: u32, source_index: u8, failure_text: u32 (P27-02, D-058).
+    reject_choice = 0x56,
 };
 
 /// A compiled container of bytecode instructions and constant data.
@@ -189,6 +195,22 @@ pub const BytecodeChunk = struct {
         try self.emit_u32(text.to_int());
         try self.emit_u16(body_pc);
         return pc;
+    }
+
+    /// Returns the opcode pc; the u16 body operand sits at `pc + 5` for patching.
+    pub fn emit_offer_choice_inspected(self: *BytecodeChunk, text: EntityId, body_pc: u16, source_index: u8) !usize {
+        const pc = try self.emit_op(.offer_choice_inspected);
+        try self.emit_u32(text.to_int());
+        try self.emit_u16(body_pc);
+        try self.emit_u8(source_index);
+        return pc;
+    }
+
+    pub fn emit_reject_choice(self: *BytecodeChunk, text: EntityId, source_index: u8, failure_text: EntityId) !void {
+        _ = try self.emit_op(.reject_choice);
+        try self.emit_u32(text.to_int());
+        try self.emit_u8(source_index);
+        try self.emit_u32(failure_text.to_int());
     }
 
     /// Returns the opcode pc; the u16 end operand sits at `pc + 1` for patching.

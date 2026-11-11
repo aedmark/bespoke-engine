@@ -22,6 +22,7 @@ const container_mod = @import("../container.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const command_mod = @import("../command.zig");
+const dialogue_lifecycle = @import("../dialogue.zig");
 pub const CompiledDraft = draft_mod.CompiledDraft;
 
 /// Compiled reactive simulation rule representation (P8-02, D-010).
@@ -1066,31 +1067,50 @@ pub const Codegen = struct {
 
                 _ = try self.chunk.emit_op(.choices_begin);
 
-                for (choices) |choice| {
-                    var skip_pcs = std.ArrayList(usize).init(self.allocator);
-                    defer skip_pcs.deinit();
+                for (choices, 0..) |choice, source_index| {
+                    if (source_index >= dialogue_lifecycle.MAX_CHOICES) return error.DialogueTooLarge;
+                    const source_index_u8: u8 = @intCast(source_index);
+                    const text_id = try self.world.intern_entity(choice.text);
+                    const FailureJump = struct { jump_pc: usize, failure_text: EntityId };
+                    var failures = std.ArrayList(FailureJump).init(self.allocator);
+                    defer failures.deinit();
 
                     if (choice.guard) |guard| {
                         try self.compile_expr(guard);
                         const pc = try self.chunk.emit_op(.jump_if_false);
                         try self.chunk.emit_i16(0);
-                        try skip_pcs.append(pc);
+                        try failures.append(.{ .jump_pc = pc, .failure_text = try self.guard_failure_text(guard) });
                     }
                     for (choice.where_patterns) |pattern| {
                         try self.compile_expr(.{ .has_fact = pattern });
                         const pc = try self.chunk.emit_op(.jump_if_false);
                         try self.chunk.emit_i16(0);
-                        try skip_pcs.append(pc);
+                        try failures.append(.{ .jump_pc = pc, .failure_text = try self.guard_failure_text(.{ .has_fact = pattern }) });
                     }
 
-                    const text_id = try self.world.intern_entity(choice.text);
-                    const offer_pc = try self.chunk.emit_offer_choice(text_id, 0);
+                    const offer_pc = try self.chunk.emit_offer_choice_inspected(text_id, 0, source_index_u8);
                     try offer_pcs.append(offer_pc);
+                    const success_jump = try self.chunk.emit_op(.jump);
+                    try self.chunk.emit_i16(0);
 
-                    const after_offer = self.chunk.count();
-                    for (skip_pcs.items) |skip_pc| {
-                        const offset: i16 = @intCast(after_offer - (skip_pc + 3));
-                        std.mem.writeInt(i16, self.chunk.code.items[skip_pc + 1 ..][0..2], offset, .little);
+                    var rejection_exits = std.ArrayList(usize).init(self.allocator);
+                    defer rejection_exits.deinit();
+                    for (failures.items) |failure| {
+                        const reject_pc = self.chunk.count();
+                        const reject_offset: i16 = @intCast(reject_pc - (failure.jump_pc + 3));
+                        std.mem.writeInt(i16, self.chunk.code.items[failure.jump_pc + 1 ..][0..2], reject_offset, .little);
+                        try self.chunk.emit_reject_choice(text_id, source_index_u8, failure.failure_text);
+                        const exit_pc = try self.chunk.emit_op(.jump);
+                        try self.chunk.emit_i16(0);
+                        try rejection_exits.append(exit_pc);
+                    }
+
+                    const after_choice = self.chunk.count();
+                    const success_offset: i16 = @intCast(after_choice - (success_jump + 3));
+                    std.mem.writeInt(i16, self.chunk.code.items[success_jump + 1 ..][0..2], success_offset, .little);
+                    for (rejection_exits.items) |exit_pc| {
+                        const exit_offset: i16 = @intCast(after_choice - (exit_pc + 3));
+                        std.mem.writeInt(i16, self.chunk.code.items[exit_pc + 1 ..][0..2], exit_offset, .little);
                     }
                 }
 
@@ -1123,6 +1143,23 @@ pub const Codegen = struct {
                 try self.chunk.emit_weave(draft_ent, target_ent);
             },
         }
+    }
+
+    /// Interns a stable explanation of the condition that pruned a dialogue branch (P27-02).
+    fn guard_failure_text(self: *Codegen, expr: Expr) !EntityId {
+        const text = switch (expr) {
+            .has_fact => |pat| if (pat.args.len > 1)
+                try std.fmt.allocPrint(self.allocator, "missing {s}({s}, {s})", .{ pat.relation, pat.args[0], pat.args[1] })
+            else
+                try std.fmt.allocPrint(self.allocator, "missing {s}({s})", .{ pat.relation, pat.args[0] }),
+            .not_fact => |pat| if (pat.args.len > 1)
+                try std.fmt.allocPrint(self.allocator, "blocked by {s}({s}, {s})", .{ pat.relation, pat.args[0], pat.args[1] })
+            else
+                try std.fmt.allocPrint(self.allocator, "blocked by {s}({s})", .{ pat.relation, pat.args[0] }),
+            .roll_gte => |roll| try std.fmt.allocPrint(self.allocator, "failed {d}d{d} >= {d}", .{ roll.count, roll.sides, roll.threshold }),
+        };
+        defer self.allocator.free(text);
+        return self.world.intern_entity(text);
     }
 
     fn compile_expr(self: *Codegen, expr: Expr) !void {
@@ -1680,6 +1717,12 @@ test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen 
     try testing.expectEqualStrings("Always", open.text(0));
     try testing.expectEqualStrings("Without coin", open.text(1));
     try testing.expectEqual(host, open.display_speaker);
+    try testing.expectEqual(@as(usize, 3), open.branch_count);
+    try testing.expect(open.branch(0).active);
+    try testing.expect(!open.branch(1).active);
+    try testing.expectEqualStrings("Only with coin", open.branch(1).text);
+    try testing.expectEqualStrings("missing Carries(Actor, Coin)", open.branch(1).failure);
+    try testing.expect(open.branch(2).active);
     try testing.expectEqualStrings("Choose.", world.get_entity_name(EntityId.from_int(vm.emitted_cues.items[0].args[1])).?);
 
     const selection = (try vm.choose(1)).?;
@@ -1702,7 +1745,11 @@ test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen 
     try vm.set_dialogue_speaker(actor, host);
     _ = try vm.fire_cue(&compiled, "Talk", actor, host, null);
     _ = try vm.step_tick();
-    try testing.expectEqualStrings("Only with coin", vm.dialogue_view().?.text(1));
+    const with_coin = vm.dialogue_view().?;
+    try testing.expectEqualStrings("Only with coin", with_coin.text(1));
+    try testing.expect(with_coin.branch(1).active);
+    try testing.expect(!with_coin.branch(2).active);
+    try testing.expectEqualStrings("blocked by Carries(Actor, Coin)", with_coin.branch(2).failure);
 
     var snap = std.ArrayList(u8).init(alloc);
     defer snap.deinit();
@@ -1710,6 +1757,7 @@ test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen 
     var stream = std.io.fixedBufferStream(snap.items);
     try world.restore_state(stream.reader());
     try testing.expectEqualStrings("Only with coin", vm.dialogue_view().?.text(1));
+    try testing.expectEqualStrings("blocked by Carries(Actor, Coin)", vm.dialogue_view().?.branch(2).failure);
 
     const coin_selection = (try vm.choose(1)).?;
     try testing.expectEqual(@as(u32, 1), coin_selection.index);
@@ -1724,6 +1772,8 @@ test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen 
     const generated_view = vm.dialogue_view().?;
     try testing.expectEqualStrings("Choose a guard.", generated_view.prompt);
     try testing.expectEqual(@as(u32, 12), generated_view.action(1));
+    try testing.expectEqual(@as(usize, 2), generated_view.branch_count);
+    try testing.expect(generated_view.branch(0).active);
     const generated_selection = (try vm.choose(1)).?;
     try testing.expect(!generated_selection.is_scripted());
     try testing.expectEqual(@as(u32, 12), generated_selection.action);

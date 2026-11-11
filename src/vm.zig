@@ -1165,6 +1165,24 @@ pub const VM = struct {
                     f.pc += 2;
                     try dialogue_mod.offer(self.world, f.owner, EntityId.from_int(text_raw), body_pc);
                 },
+                .offer_choice_inspected => {
+                    const text_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
+                    f.pc += 4;
+                    const body_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
+                    f.pc += 2;
+                    const source_index = code[f.pc];
+                    f.pc += 1;
+                    try dialogue_mod.offer_inspected(self.world, f.owner, EntityId.from_int(text_raw), body_pc, source_index);
+                },
+                .reject_choice => {
+                    const text_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
+                    f.pc += 4;
+                    const source_index = code[f.pc];
+                    f.pc += 1;
+                    const failure_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
+                    f.pc += 4;
+                    try dialogue_mod.reject(self.world, f.owner, EntityId.from_int(text_raw), source_index, EntityId.from_int(failure_raw));
+                },
                 .choices_end => {
                     const end_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
                     f.pc += 2;

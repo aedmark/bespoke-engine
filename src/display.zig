@@ -108,7 +108,12 @@ pub const MAX_DEBUG_FACTS = 128;
 
 /// Relations the engine itself fills with numbers, never entity ids, whatever the number
 /// happens to equal (D-058).
-const VALUE_RELATIONS = [_][]const u8{ "CellFlammable", "CellLiquid", "CellBlocking", "CellBurning", "CellSmoke", "Volume" };
+const VALUE_RELATIONS = [_][]const u8{
+    "CellFlammable",  "CellLiquid",          "CellBlocking",         "CellBurning",
+    "CellSmoke",      "Volume",              "DialogueOpen",         "DialogueFiber",
+    "DialogueEnd",    "DialogueRevision",    "DialogueBody",         "DialogueAction",
+    "DialogueChosen", "DialogueBranchCount", "DialogueBranchActive",
+};
 
 fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDebugFact {
     var df = RenderDebugFact{
@@ -211,7 +216,6 @@ pub const RenderDebugFiber = struct {
     }
 };
 
-
 /// Pre-cognitive Fourth-Dimensional vector conduit render slice (P31-02, D-027).
 pub const RenderVectorConduit = struct {
     entity: EntityId = EntityId.from_int(0),
@@ -245,6 +249,23 @@ pub const RenderDistaff = struct {
     }
 };
 
+/// One source-order branch of the open dialogue, including rejected choices (P27-02, D-058).
+pub const RenderDialogueBranch = struct {
+    active: bool = false,
+    text: [80]u8 = undefined,
+    text_len: u8 = 0,
+    failure: [96]u8 = undefined,
+    failure_len: u8 = 0,
+
+    pub fn get_text(self: *const RenderDialogueBranch) []const u8 {
+        return self.text[0..self.text_len];
+    }
+
+    pub fn get_failure(self: *const RenderDialogueBranch) []const u8 {
+        return self.failure[0..self.failure_len];
+    }
+};
+
 /// A read-only snapshot of the open dialogue set (P32-30, D-046). The engine owns the facts;
 /// the host renders this channel. `revision` changes when a new set opens.
 pub const RenderDialogue = struct {
@@ -260,6 +281,9 @@ pub const RenderDialogue = struct {
     choices: [dialogue_mod.MAX_CHOICES][80]u8 = undefined,
     choice_lens: [dialogue_mod.MAX_CHOICES]u8 = [_]u8{0} ** dialogue_mod.MAX_CHOICES,
     choice_count: u8 = 0,
+    /// Source-order active and pruned branches for the paused inspector (P27-02, D-058).
+    branches: [dialogue_mod.MAX_CHOICES]RenderDialogueBranch = [_]RenderDialogueBranch{.{}} ** dialogue_mod.MAX_CHOICES,
+    branch_count: u8 = 0,
 
     pub fn get_speaker_name(self: *const RenderDialogue) []const u8 {
         return self.speaker_name[0..self.speaker_name_len];
@@ -327,7 +351,6 @@ pub const RenderFrame = struct {
     pub fn get_current_scene(self: *const RenderFrame) []const u8 {
         return self.current_scene[0..self.current_scene_len];
     }
-
 };
 
 /// Size of `RenderFrame.host_status_bytes`.
@@ -401,6 +424,18 @@ fn capture_dialogue(world: *const World, frame: *RenderFrame) void {
         out.choice_lens[i] = @intCast(len);
     }
     out.choice_count = @intCast(open.count);
+
+    for (0..open.branch_count) |i| {
+        const branch = open.branch(i);
+        out.branches[i].active = branch.active;
+        const text_len = @min(branch.text.len, out.branches[i].text.len);
+        @memcpy(out.branches[i].text[0..text_len], branch.text[0..text_len]);
+        out.branches[i].text_len = @intCast(text_len);
+        const failure_len = @min(branch.failure.len, out.branches[i].failure.len);
+        @memcpy(out.branches[i].failure[0..failure_len], branch.failure[0..failure_len]);
+        out.branches[i].failure_len = @intCast(failure_len);
+    }
+    out.branch_count = @intCast(open.branch_count);
 }
 
 pub const DisplayBridge = struct {

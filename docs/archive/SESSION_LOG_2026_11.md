@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 41 (2026-11-10)
+- **Goal:** Merge P25-01, then implement P25-02 with the maintainer-approved defaults.
+- **Work:** Fast-forwarded `main` to `cdc4c91`, pushed, and recorded the merge (`73ab2c2`). P25-02: added `burning` and `smoke` attributes, `Rules` (`burn`, `spread`, `dissipate`, `flow`), `grid.step` (one fact pass, synchronous decisions, douse, smoke refresh), and `grid.ignite`; `SpatialSystem.update_grid_hazards`; the four grid directives; `host.tick` wiring guarded by the presence of grids; and `.bspk` version 8 with v7 compatibility. Recorded D-055 and updated ROADMAP, ARCHITECTURE, script_spec, TESTING, CHANGELOG, and the manual.
+- **Outcome:** See the Verified table. Mutation checks (hazard update removed from `host.tick`; douse removed from `grid.step`) each failed a P25-02 test. Fast-forwarded to `main` and pushed; no proof or golden changed.
+
 ### Session 40 (2026-11-10)
 - **Goal:** Implement P25-01, the discrete grid overlay, with the maintainer-approved defaults.
 - **Work:** Added `src/grid.zig` (geometry, fixed attribute set, sparse fact-backed cells, idempotent seeding), `SpatialSystem.grids` with `add_grid`, `grid_in_room`, `waypoint_cell`, `agent_cell`, and `SpatialGraph.move_waypoint`; blocking cells feed `waypoint_blocked`. Added the `grid` declaration (lexer, parser, codegen, `place`), `CompiledProgram.grids`, host seeding, and `.bspk` version 7. Recorded D-054, corrected P25-03's path to `proofs/` (D-031), and updated ARCHITECTURE, script_spec, TESTING, CHANGELOG, ROADMAP, and the manual.

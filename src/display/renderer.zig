@@ -1315,7 +1315,8 @@ pub const DisplayWindow = struct {
         self.draw_line(list_x - 10, top + 8, list_x - 10, top + area_h - 24, Color{ .r = 51, .g = 65, .b = 85 });
         self.draw_text("STATES & VALUES", list_x, top + 10, 1, Color.hud_subtext);
         var y = top + 28;
-        for (layout.listed[0..layout.listed_len]) |i| {
+        const shown_states = @min(layout.listed_len, 4);
+        for (layout.listed[0..shown_states]) |i| {
             const f = &facts[i];
             var line_buf: [64]u8 = undefined;
             const line = if (f.object_raw == 0)
@@ -1329,9 +1330,62 @@ pub const DisplayWindow = struct {
             }
             y += 14;
         }
-        if (layout.hidden_listed > 0) {
+        const hidden_states = layout.hidden_listed + layout.listed_len - shown_states;
+        if (hidden_states > 0) {
             var more_buf: [32]u8 = undefined;
-            self.draw_text(std.fmt.bufPrint(&more_buf, "+{d} MORE", .{layout.hidden_listed}) catch "", list_x, y, 1, Color.hud_subtext);
+            self.draw_text(std.fmt.bufPrint(&more_buf, "+{d} MORE", .{hidden_states}) catch "", list_x, y, 1, Color.hud_subtext);
+            y += 14;
+        }
+
+        y += 8;
+        self.draw_line(list_x, y, area_x + area_w - 10, y, Color{ .r = 51, .g = 65, .b = 85 });
+        y += 10;
+        if (frame.dialogue.active) {
+            var dialogue_title_buf: [80]u8 = undefined;
+            const dialogue_title = std.fmt.bufPrint(&dialogue_title_buf, "DIALOGUE: {s}", .{frame.dialogue.get_speaker_name()}) catch "DIALOGUE";
+            self.draw_text(dialogue_title, list_x, y, 1, Color.hud_subtext);
+            y += 15;
+            for (frame.dialogue.branches[0..frame.dialogue.branch_count]) |*branch| {
+                var branch_buf: [96]u8 = undefined;
+                const branch_line = std.fmt.bufPrint(&branch_buf, "{s} {s}", .{ if (branch.active) "+" else "x", branch.get_text() }) catch branch.get_text();
+                self.draw_text(branch_line, list_x, y, 1, if (branch.active) Color.status_running else Color.cue_alert);
+                y += 11;
+                if (!branch.active and branch.failure_len > 0) {
+                    var failure_buf: [112]u8 = undefined;
+                    const failure_line = std.fmt.bufPrint(&failure_buf, "  {s}", .{branch.get_failure()}) catch branch.get_failure();
+                    self.draw_text(failure_line, list_x, y, 1, Color{ .r = 248, .g = 113, .b = 113 });
+                    y += 10;
+                }
+            }
+        } else {
+            self.draw_text("DIALOGUE: NONE OPEN", list_x, y, 1, Color.hud_subtext);
+            y += 15;
+        }
+
+        y += 6;
+        self.draw_line(list_x, y, area_x + area_w - 10, y, Color{ .r = 51, .g = 65, .b = 85 });
+        y += 10;
+        self.draw_text("NEXT TO HAPPEN", list_x, y, 1, Color.hud_subtext);
+        y += 15;
+        const next = state_graph.next_expiring(facts, frame.tick);
+        const row_budget: usize = @intCast(@max(0, @divTrunc(top + area_h - 24 - y, 12)));
+        const shown_next = @min(next.len, row_budget);
+        for (next.facts[0..shown_next]) |i| {
+            const f = &facts[i];
+            var next_buf: [128]u8 = undefined;
+            const line = std.fmt.bufPrint(
+                &next_buf,
+                "T{d} (+{d}) {s}({s}, {s})",
+                .{ f.expires_at_tick, f.expires_at_tick - frame.tick, f.get_relation(), f.get_subject(), f.get_object() },
+            ) catch "?";
+            self.draw_text(line, list_x, y, 1, band_color(state_graph.band(f, frame.tick)));
+            y += 12;
+        }
+        if (next.len == 0) {
+            self.draw_text("No scheduled expirations.", list_x, y, 1, Color.hud_subtext);
+        } else if (next.hidden + next.len - shown_next > 0) {
+            var more_buf: [32]u8 = undefined;
+            self.draw_text(std.fmt.bufPrint(&more_buf, "+{d} LATER", .{next.hidden + next.len - shown_next}) catch "", list_x, y, 1, Color.hud_subtext);
         }
     }
 

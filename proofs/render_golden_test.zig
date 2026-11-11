@@ -301,8 +301,8 @@ fn record_tavern(rec: *Recorder) !void {
     try rec.draw("tavern_heist/CellarRoom", &world, &spatial, &vm);
 }
 
-/// The State tab of the drawer (P27-01, D-058) over a staged observatory: the opening facts
-/// plus evidence, a belief, a timed warning, and a just-expired fact, centred on Ines.
+/// The State tab of the drawer (P27-01/P27-02, D-058) over a staged observatory: the opening
+/// facts, a timed cascade, and an open dialogue with active and pruned branches.
 fn record_inspector(rec: *Recorder) !void {
     const allocator = rec.allocator;
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
@@ -330,6 +330,20 @@ fn record_inspector(rec: *Recorder) !void {
     try world.remember(ines, world.lookup_relation("NearShed").?, 0, 1);
     try world.remember(ines, try world.intern_relation("Suspicious", .set), 0, 90);
     _ = world.step_tick(); // NearShed expires this tick and shows grey
+
+    const pell = world.lookup_entity("Pell").?;
+    try bespoke.dialogue.set_speaker(&world, ines, pell);
+    try bespoke.dialogue.begin(&world, ines, 99);
+    try bespoke.dialogue.offer_inspected(&world, ines, try world.intern_entity("Ask about the exposure slip"), 100, 0);
+    try bespoke.dialogue.reject(
+        &world,
+        ines,
+        try world.intern_entity("Accuse Pell of breaking the lens"),
+        1,
+        try world.intern_entity("missing Knows(Ines, BrokenLens)"),
+    );
+    try bespoke.dialogue.offer_inspected(&world, ines, try world.intern_entity("Leave the matter for now"), 200, 2);
+    _ = try bespoke.dialogue.finish(&world, ines, 300);
 
     var bridge = bespoke.DisplayBridge.init();
     bridge.set_status_hook(art.capture_status);

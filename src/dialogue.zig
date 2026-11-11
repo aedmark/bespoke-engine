@@ -12,6 +12,10 @@
 //!   DialogueBody(speaker#n, pc)       scripted body entry; 0 for generated sets
 //!   DialogueAction(speaker#n, id)     host action id for generated sets; 0 otherwise
 //!   DialogueChosen(speaker, index)    last selection, cleared by the next set
+//!   DialogueBranchCount(speaker, n)   source choices captured for the inspector
+//!   DialogueBranchText(speaker~n, text)
+//!   DialogueBranchActive(speaker~n, 0 | 1)
+//!   DialogueBranchFailure(speaker~n, text) first failed guard for a pruned branch
 //!
 //! Scripted sets are emitted by the compiler as `choices_begin` / `offer_choice` /
 //! `choices_end`. Generated sets are opened by a host with `open_generated`, which writes the
@@ -50,6 +54,12 @@ pub const Selection = struct {
     }
 };
 
+pub const Branch = struct {
+    text: []const u8 = "",
+    active: bool = false,
+    failure: []const u8 = "",
+};
+
 pub const View = struct {
     /// The entity the option facts are keyed by; `choose` selects through it.
     speaker: EntityId,
@@ -60,6 +70,8 @@ pub const View = struct {
     count: usize,
     texts: [MAX_CHOICES][]const u8,
     actions: [MAX_CHOICES]u32,
+    branch_count: usize,
+    branches: [MAX_CHOICES]Branch,
 
     pub fn text(self: *const View, index: usize) []const u8 {
         return if (index < self.count) self.texts[index] else "";
@@ -67,6 +79,10 @@ pub const View = struct {
 
     pub fn action(self: *const View, index: usize) u32 {
         return if (index < self.count) self.actions[index] else 0;
+    }
+
+    pub fn branch(self: *const View, index: usize) Branch {
+        return if (index < self.branch_count) self.branches[index] else .{};
     }
 };
 
@@ -81,6 +97,10 @@ const Names = struct {
     action: []const u8 = "DialogueAction",
     chosen: []const u8 = "DialogueChosen",
     speaker: []const u8 = "DialogueSpeaker",
+    branch_count: []const u8 = "DialogueBranchCount",
+    branch_text: []const u8 = "DialogueBranchText",
+    branch_active: []const u8 = "DialogueBranchActive",
+    branch_failure: []const u8 = "DialogueBranchFailure",
 };
 
 pub const Relations = struct {
@@ -94,6 +114,13 @@ pub const Relations = struct {
     action: RelationKind,
     chosen: RelationKind,
     speaker: RelationKind,
+};
+
+const BranchRelations = struct {
+    branch_count: RelationKind,
+    branch_text: RelationKind,
+    branch_active: RelationKind,
+    branch_failure: RelationKind,
 };
 
 const NAMES = Names{};
@@ -131,6 +158,24 @@ fn lookup_relations(world: *const World) ?Relations {
     };
 }
 
+fn branch_relations(world: *World) !BranchRelations {
+    return .{
+        .branch_count = try world.intern_relation(NAMES.branch_count, .property),
+        .branch_text = try world.intern_relation(NAMES.branch_text, .property),
+        .branch_active = try world.intern_relation(NAMES.branch_active, .property),
+        .branch_failure = try world.intern_relation(NAMES.branch_failure, .property),
+    };
+}
+
+fn lookup_branch_relations(world: *const World) ?BranchRelations {
+    return .{
+        .branch_count = world.lookup_relation(NAMES.branch_count) orelse return null,
+        .branch_text = world.lookup_relation(NAMES.branch_text) orelse return null,
+        .branch_active = world.lookup_relation(NAMES.branch_active) orelse return null,
+        .branch_failure = world.lookup_relation(NAMES.branch_failure) orelse return null,
+    };
+}
+
 /// Names the entity a host presents as the speaker for sets owned by `owner` (P32-30).
 /// Presentation only: option facts stay keyed by the owner so selection is unambiguous.
 pub fn set_speaker(world: *World, owner: EntityId, display: EntityId) !void {
@@ -161,14 +206,25 @@ pub fn offer(world: *World, speaker: EntityId, text: EntityId, body_pc: u16) !vo
     try world.remember(speaker, r.open, count + 1, 0);
 }
 
+/// Appends one offered choice and records its source-order branch for the paused inspector.
+pub fn offer_inspected(world: *World, speaker: EntityId, text: EntityId, body_pc: u16, source_index: usize) !void {
+    try offer(world, speaker, text, body_pc);
+    try record_branch(world, speaker, source_index, text, true, null);
+}
+
+/// Records a choice rejected by its first failed guard. It is diagnostic state only and never
+/// enters the selectable option table.
+pub fn reject(world: *World, speaker: EntityId, text: EntityId, source_index: usize, failure: EntityId) !void {
+    try record_branch(world, speaker, source_index, text, false, failure);
+}
+
 /// Ends a scripted set. Returns how many choices were offered. With none, the VM continues at
 /// `end_pc`; with any, the fiber suspends and the facts describe the open set.
 pub fn finish(world: *World, speaker: EntityId, after_pc: u16) !usize {
     const r = try relations(world);
     const count = world.get_property(speaker, r.open) orelse 0;
     if (count == 0) {
-        _ = world.forget(speaker, r.open, null);
-        _ = world.forget(speaker, r.fiber, null);
+        try clear_open(world, speaker);
         return 0;
     }
     try world.remember(speaker, r.end, after_pc, 0);
@@ -225,6 +281,8 @@ pub fn view(world: *const World) ?View {
         .count = count,
         .texts = [_][]const u8{""} ** MAX_CHOICES,
         .actions = [_]u32{0} ** MAX_CHOICES,
+        .branch_count = 0,
+        .branches = [_]Branch{.{}} ** MAX_CHOICES,
     };
 
     if (world.get_property(speaker, r.prompt)) |prompt_id| {
@@ -237,6 +295,28 @@ pub fn view(world: *const World) ?View {
             out.texts[i] = world.get_entity_name(EntityId.from_int(text_id)) orelse "";
         }
         out.actions[i] = world.get_property(option, r.action) orelse 0;
+    }
+
+    const branch_r = lookup_branch_relations(world);
+    const branch_count: usize = if (branch_r) |br| @intCast(world.get_property(speaker, br.branch_count) orelse 0) else 0;
+    if (branch_r != null and branch_count > 0 and branch_count <= MAX_CHOICES) {
+        const br = branch_r.?;
+        out.branch_count = branch_count;
+        for (0..branch_count) |i| {
+            const entity = branch_entity_lookup(world, speaker, i) orelse continue;
+            if (world.get_property(entity, br.branch_text)) |text_id| {
+                out.branches[i].text = world.get_entity_name(EntityId.from_int(text_id)) orelse "";
+            }
+            out.branches[i].active = (world.get_property(entity, br.branch_active) orelse 0) != 0;
+            if (world.get_property(entity, br.branch_failure)) |failure_id| {
+                out.branches[i].failure = world.get_entity_name(EntityId.from_int(failure_id)) orelse "";
+            }
+        }
+    } else {
+        // Generated and pre-P27-02 scripted sets have no diagnostics; every offered choice is
+        // active and remains inspectable.
+        out.branch_count = count;
+        for (0..count) |i| out.branches[i] = .{ .text = out.texts[i], .active = true };
     }
     return out;
 }
@@ -278,6 +358,17 @@ pub fn clear_open(world: *World, speaker: EntityId) !void {
         _ = world.forget(option, r.body, null);
         _ = world.forget(option, r.action, null);
     }
+    if (lookup_branch_relations(world)) |br| {
+        const branch_count = world.get_property(speaker, br.branch_count) orelse 0;
+        i = 0;
+        while (i < branch_count and i < MAX_CHOICES) : (i += 1) {
+            const entity = try branch_entity(world, speaker, i);
+            _ = world.forget(entity, br.branch_text, null);
+            _ = world.forget(entity, br.branch_active, null);
+            _ = world.forget(entity, br.branch_failure, null);
+        }
+        _ = world.forget(speaker, br.branch_count, null);
+    }
     _ = world.forget(speaker, r.open, null);
     _ = world.forget(speaker, r.prompt, null);
     _ = world.forget(speaker, r.fiber, null);
@@ -300,6 +391,41 @@ fn option_entity(world: *World, speaker: EntityId, index: usize) !EntityId {
     var buf: [NAME_BUF_LEN]u8 = undefined;
     const name = try option_name(&buf, world, speaker, index);
     return world.intern_entity(name);
+}
+
+fn record_branch(
+    world: *World,
+    speaker: EntityId,
+    source_index: usize,
+    text: EntityId,
+    active: bool,
+    failure: ?EntityId,
+) !void {
+    if (source_index >= MAX_CHOICES) return Error.DialogueTooLarge;
+    const r = try branch_relations(world);
+    const entity = try branch_entity(world, speaker, source_index);
+    try world.remember(entity, r.branch_text, text.to_int(), 0);
+    try world.remember(entity, r.branch_active, @intFromBool(active), 0);
+    if (failure) |failed| try world.remember(entity, r.branch_failure, failed.to_int(), 0);
+    const previous = world.get_property(speaker, r.branch_count) orelse 0;
+    if (source_index + 1 > previous) try world.remember(speaker, r.branch_count, @intCast(source_index + 1), 0);
+}
+
+fn branch_entity(world: *World, speaker: EntityId, index: usize) !EntityId {
+    var buf: [NAME_BUF_LEN]u8 = undefined;
+    const name = try branch_name(&buf, world, speaker, index);
+    return world.intern_entity(name);
+}
+
+fn branch_entity_lookup(world: *const World, speaker: EntityId, index: usize) ?EntityId {
+    var buf: [NAME_BUF_LEN]u8 = undefined;
+    const name = branch_name(&buf, world, speaker, index) catch return null;
+    return world.lookup_entity(name);
+}
+
+fn branch_name(buf: []u8, world: *const World, speaker: EntityId, index: usize) ![]const u8 {
+    const speaker_name = world.get_entity_name(speaker) orelse return Error.DialogueTooLarge;
+    return std.fmt.bufPrint(buf, "{s}~{d}", .{ speaker_name, index }) catch Error.DialogueTooLarge;
 }
 
 fn option_entity_lookup(world: *const World, speaker: EntityId, index: usize) ?EntityId {
