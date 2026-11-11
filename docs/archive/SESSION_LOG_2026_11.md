@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 43 (2026-11-10)
+- **Goal:** Ship P25-03 and start Phase 33 with P33-01.
+- **Work:** Merged P25-03 (`bc0b949`), closing Phase 25. Reviewed D-038 against later decisions and recorded D-056 (script agendas, owned `requires`/`unless` lines, per-agenda state, contention, and the P33-02 society rule); reworded P33-03 to an original cast because the planned homage recreated an existing game's characters. Added `src/agency.zig`, the `agenda` declaration, `CompiledProgram.agendas`, host seeding and stepping, and `.bspk` version 9; updated three hand-computed package test offsets for the new tail.
+- **Outcome:** See the Verified table. A mutation check on the route-cost tie-break failed the contention test as intended. Fast-forwarded to `main` and pushed.
+
 ### Session 42 (2026-11-10)
 - **Goal:** Ship P25-02, review the engine's state, correct stale claims, and implement P25-03.
 - **Work:** Merged P25-02 (`77af24c`). Wrote a state-of-the-engine review; removed ARCHITECTURE's claims of an unbuilt agency subsystem and Bayou proof and corrected P30-01 and P27-03 (`a234041`). P25-03: added `proofs/grid_puzzle.zig` (script with grid, rates, hazard rules; host door rules for reveal and collapse; headless run with two failures and two full-save rewinds; interactive window on keys 1 to 3), gallery art in `proofs/art.zig` driven by captured cell masks, launcher flags, transcript and render goldens, and grid seeding in render staging (grids only, so no existing hash moved).

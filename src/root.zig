@@ -10,6 +10,7 @@ pub const repl = @import("repl.zig");
 pub const package = @import("package.zig");
 pub const runner = @import("runner.zig");
 pub const audio = @import("audio.zig");
+pub const mml = @import("mml.zig");
 pub const save = @import("save.zig");
 pub const wasm = @import("wasm.zig");
 pub const hypervisor = @import("hypervisor.zig");
@@ -110,6 +111,7 @@ test "root test imports all modules" {
     _ = @import("package.zig");
     _ = @import("runner.zig");
     _ = @import("audio.zig");
+    _ = @import("mml.zig");
     _ = @import("save.zig");
     _ = @import("wasm.zig");
     _ = @import("hypervisor.zig");

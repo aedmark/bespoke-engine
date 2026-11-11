@@ -796,6 +796,24 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keeping navigation in World facts so it rewinds: rejected; the inspector is read-only (D-058), and a debugging view must not change a save.
 **Consequences:** Neighbours beyond the ring's 16 slots stay unreachable by keys until a filter narrows the ring. The relation filter is exact and case-sensitive. The State tab footer now names the filter and the keys, which moved the `inspector/` render golden.
 
+## D-060 MML Scores: a Std-Only Parser, Integer Ticks, Re-Read Repeats, Drum Letters, and Coexistence With Grid Patterns (2026-11-11, status: accepted)
+**Context:** Phase 28 lets scripts compose music in Music Macro Language. The engine's music is a `BgmPattern`: 32 sixteenth steps, one note per step on four fixed channels, with no note lengths, volumes, or loop points, used by the proofs' 11 tracks. The maintainer chose the four defaults below (2026-11-11).
+**Decision:**
+1. **Command set (core plus loops).** `t` tempo (32 to 255), `o` octave (0 to 8), `>` up and `<` down an octave, `l` default length, notes `a` to `g` with `+`/`#` sharp or `-` flat, lengths 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64 with dots, `r` rest, `&` tie, `v` volume (0 to 15), `[ ]n` repeat (n 1 to 99, default 2, four deep), `L` loop point, `@` envelope preset (0 to 7, defined by P28-02). Commands are case-sensitive (`l` length, `L` loop); o4 `c` is MIDI 60.
+2. **Integer time.** 192 ticks per whole note. A length that does not divide 192, or a dot that would halve an odd tick count, is an error rather than a rounded value.
+3. **"Synthesizer bytecode" is an event list.** `mml.parse` turns one track's text into a slice of `Event`s (note, rest, hit, tempo, volume, envelope) with a loop-start index and total ticks. It is data, as effects are data (D-040), not VM opcodes. The module is `src/mml.zig` and imports only `std`, so the audio thread (P28-02) and the compiler (P28-03) can both use it without importing each other.
+4. **Repeats are re-read, not copied.** Each pass of `[ ]n` parses the body again, so relative commands (`>`, `<`, `l`) apply on every pass as in an MML player. The work of re-reading is bounded (262,144 characters) along with events (4,096) and depth (4), because score text comes from scripts.
+5. **Percussion uses drum letters.** A track is melodic or percussion. A percussion track plays `k` kick, `s` snare, and `h` hat (the engine's three drum voices) and refuses notes and octaves; a melodic track refuses drum letters.
+6. **Ties and loop points are checked.** `&` must follow a note, rest, or hit and may repeat only the same symbol. One `L` per track, outside repeats, followed by at least one tick of time, so a looping track always advances.
+7. **MML coexists with grid patterns.** P28-02 adds MML scores beside `BgmPattern`; the proofs' tracks and `proofs/golden/audio.txt` stay as they are.
+**Alternatives:**
+- The minimal set without repeats or envelopes, or a full MCK-style set with detune, sweep, and duty macros: not chosen by the maintainer.
+- Copying a repeat's events: rejected; `[c >]2` would replay one pitch where MML players climb.
+- Noise-coloured percussion notes: not chosen; it cannot reproduce the engine's kick and snare.
+- Converting the proofs' grid tracks to MML: not chosen; it would change every music golden for no new capability.
+- Parsing inside `src/compiler/`: rejected; the audio thread would then import compiler code.
+**Consequences:** Tempo is a per-track event; how four tracks with different tempo events stay in step is decided in P28-02. `@` presets parse but mean nothing until P28-02 defines them. Errors carry offset, line, and column within the score text; P28-03 maps them to the script position.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

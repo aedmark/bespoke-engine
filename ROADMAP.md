@@ -234,7 +234,7 @@ Goal: Build an interactive visual debugging overlay rendering live relational st
 
 Goal: Enable game authors to compose procedural background melodies, arpeggios, and action sound effects directly within `.bespoke` scripts using standard Music Macro Language (MML) notation.
 
-- [ ] P28-01 MML text parser in compiler front-end converting MML score strings (tempo, octave, note lengths, volume envelopes) into procedural synthesizer bytecode chunks.
+- [x] P28-01 MML text parser in compiler front-end converting MML score strings (tempo, octave, note lengths, volume envelopes) into procedural synthesizer bytecode chunks. (D-060; completed 2026-11-11: `src/mml.zig`, a std-only parser from one track's text to integer-timed events at 192 ticks per whole note, with ties, re-read `[ ]n` repeats, an `L` loop point, `v` volume, `@` envelope presets, and `k`/`s`/`h` drum letters on percussion tracks. Bounded events, depth, and repeat work; errors give line and column. Verified by `zig build test` (269/269), 8 parser tests, and mutation checks on repeat re-reading and dot precision.)
 - [ ] P28-02 Multi-channel MML track execution in `src/audio.zig`, supporting 4 simultaneous tracks (Lead, Bass, Chords, Percussion) with cross-channel synchronization and loop points.
 - [ ] P28-03 DSL syntax integration (`score <TrackName>: "t120 o4 l8 cdef e2"`) with dynamic track triggering on scene transitions and narrative dramatic shifts.
 

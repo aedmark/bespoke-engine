@@ -65,6 +65,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 | Grid Overlay and Automata (`src/grid.zig`) | `zig test src/grid.zig`, `zig test src/spatial.zig`, `zig test src/host.zig` | `zig test src/package.zig` (v8 round-trip, corrupt cells, v6 and v7 loads); `zig test src/compiler.zig` (declaration, `place`, rates) |
 | Save / Load System (`src/save.zig`) | `zig test src/save.zig` | CRC32 corruption fallback test; quicksave verification; version 1/2 compatibility and temporal envelope round-trip |
 | Audio Synthesizer (`src/audio.zig`) | `zig test src/audio.zig` | Offline PCM buffer test; headless fallback run |
+| MML Scores (`src/mml.zig`) | `zig test src/mml.zig` (example score, accidentals and dots, ties, re-read repeats, loop point, drum letters, range errors with line and column, bounds) | `zig build test-engine` |
 | Emergent Village (`proofs/village.zig`) | `zig build test-proofs` | `zig build run-proof -- --village --headless` cascade run |
 | Dialogue Duel (`src/duel.zig`) | `zig build test-engine` | `zig build test-proofs` (sword-fighting golden) |
 | WebAssembly Target (`src/wasm.zig`, `proofs/wasm_deck.zig`) | `zig test src/wasm.zig && zig build wasm wasm-proofs`, `zig build test-proofs` (wasm golden) | `node tools/wasm_smoke.js`, `python3 tools/build_site.py --check` |
