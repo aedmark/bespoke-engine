@@ -18,6 +18,7 @@ pub const font = @import("display/font.zig");
 pub const text_layout = @import("display/text_layout.zig");
 pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const renderer = @import("display/renderer.zig");
+pub const state_graph = @import("display/state_graph.zig");
 pub const DisplayWindow = renderer.DisplayWindow;
 pub const UserAction = renderer.UserAction;
 pub const audio = @import("audio.zig");

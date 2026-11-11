@@ -667,6 +667,42 @@ pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_R
     return null;
 }
 
+/// How many earlier focuses Backspace can return to (D-059); the oldest drops off first.
+pub const INSPECTOR_HISTORY: usize = 8;
+
+/// Where the inspector draws inside the drawer. Drawing and mouse hit tests share it, so a
+/// click lands on the node the player sees.
+const InspectorGeometry = struct {
+    area_x: i32,
+    top: i32,
+    area_w: i32,
+    area_h: i32,
+    graph_w: i32,
+    cx: i32,
+    cy: i32,
+    rx: i32,
+    ry: i32,
+};
+
+fn inspector_geometry(drect: c.SDL_Rect) InspectorGeometry {
+    const top = drect.y + 82;
+    const area_x = drect.x + 16;
+    const area_w = drect.w - 32;
+    const area_h = drect.y + drect.h - 12 - top;
+    const graph_w = @divTrunc(area_w * 62, 100);
+    return .{
+        .area_x = area_x,
+        .top = top,
+        .area_w = area_w,
+        .area_h = area_h,
+        .graph_w = graph_w,
+        .cx = area_x + @divTrunc(graph_w, 2),
+        .cy = top + @divTrunc(area_h - 20, 2),
+        .rx = @divTrunc(graph_w, 2) - 70,
+        .ry = @divTrunc(area_h - 20, 2) - 34,
+    };
+}
+
 /// State inspector colours (D-058 point 3).
 const INSPECTOR_ACCENT = Color{ .r = 56, .g = 189, .b = 248 };
 const INSPECTOR_BELIEF = Color{ .r = 192, .g = 132, .b = 252 };
@@ -773,6 +809,13 @@ pub const DisplayWindow = struct {
     show_console: bool = false,
     /// The entity the state inspector centres on; null picks the best-connected one (D-058).
     inspector_focus: ?display_mod.EntityId = null,
+    /// State inspector navigation (P27-03, D-059): window state only, never World, so moving
+    /// around the graph cannot change the simulation or a save. The selected ring index is
+    /// clamped against each frame's layout, because a tick or restore can shrink the ring.
+    inspector_selected: usize = 0,
+    inspector_history: [INSPECTOR_HISTORY]display_mod.EntityId = undefined,
+    inspector_history_len: usize = 0,
+    inspector_filter: state_graph.Filter = .{},
     /// Typed-command bar (P26-03, D-057). Off unless the host enables it; while focused, every
     /// key is text, so no engine or host binding fires.
     command_bar_enabled: bool = false,
@@ -1268,26 +1311,121 @@ pub const DisplayWindow = struct {
     /// The State tab of the drawer (P27-01, D-058): the focused entity with its neighbours on a
     /// ring and the facts between them as labelled arrows, its value and state facts listed on
     /// the right, coloured by remaining ticks.
-    fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: c.SDL_Rect, top: i32) void {
+    /// Drops a focus the frame no longer mentions (after a rewind or a load) along with the
+    /// history built on it, then clamps the selection to the ring (D-059).
+    fn inspector_sync(self: *DisplayWindow, facts: []const display_mod.RenderDebugFact) void {
+        if (self.inspector_focus) |f| {
+            if (!state_graph.mentions(facts, f)) {
+                self.inspector_focus = null;
+                self.inspector_history_len = 0;
+                self.inspector_selected = 0;
+            }
+        }
+    }
+
+    /// The explicit focus, else the best-connected entity under the filter, else the
+    /// best-connected entity overall, so a filter with no edges still has a centre.
+    fn inspector_resolved_focus(self: *const DisplayWindow, facts: []const display_mod.RenderDebugFact) ?display_mod.EntityId {
+        return self.inspector_focus orelse state_graph.default_focus(facts, self.inspector_filter) orelse state_graph.default_focus(facts, .{});
+    }
+
+    fn inspector_layout(self: *DisplayWindow, frame: *const RenderFrame) ?state_graph.Layout {
         const facts = frame.debug_facts[0..frame.debug_fact_count];
-        const area_x = drect.x + 16;
-        const area_w = drect.w - 32;
-        const area_h = drect.y + drect.h - 12 - top;
+        self.inspector_sync(facts);
+        const focus = self.inspector_resolved_focus(facts) orelse return null;
+        const g = inspector_geometry(get_save_drawer_rect(self.width, self.height));
+        const layout = state_graph.build(facts, focus, self.inspector_filter, g.cx, g.cy, g.rx, g.ry);
+        if (self.inspector_selected >= layout.ring_len) self.inspector_selected = 0;
+        return layout;
+    }
+
+    /// Centres on `entity`, remembering the old centre for Backspace.
+    fn inspector_recentre(self: *DisplayWindow, from: display_mod.EntityId, entity: display_mod.EntityId) void {
+        if (self.inspector_history_len == INSPECTOR_HISTORY) {
+            std.mem.copyForwards(display_mod.EntityId, self.inspector_history[0 .. INSPECTOR_HISTORY - 1], self.inspector_history[1..INSPECTOR_HISTORY]);
+            self.inspector_history_len -= 1;
+        }
+        self.inspector_history[self.inspector_history_len] = from;
+        self.inspector_history_len += 1;
+        self.inspector_focus = entity;
+        self.inspector_selected = 0;
+    }
+
+    /// State tab keys (P27-03, D-059). Returns true when the key was a navigation key.
+    fn inspector_key(self: *DisplayWindow, frame: *const RenderFrame, sym: c.SDL_Keycode) bool {
+        const facts = frame.debug_facts[0..frame.debug_fact_count];
+        const layout = self.inspector_layout(frame);
+        const ring_len = if (layout) |l| l.ring_len else 0;
+        switch (sym) {
+            c.SDLK_RIGHT, c.SDLK_LEFT => {
+                if (ring_len == 0) return true;
+                self.inspector_selected = if (sym == c.SDLK_RIGHT)
+                    (self.inspector_selected + 1) % ring_len
+                else
+                    (self.inspector_selected + ring_len - 1) % ring_len;
+            },
+            c.SDLK_RETURN, c.SDLK_KP_ENTER => {
+                const l = layout orelse return true;
+                if (ring_len == 0) return true;
+                self.inspector_recentre(l.center.entity, l.ring[self.inspector_selected].entity);
+            },
+            c.SDLK_BACKSPACE => {
+                if (self.inspector_history_len == 0) return true;
+                self.inspector_history_len -= 1;
+                self.inspector_focus = self.inspector_history[self.inspector_history_len];
+                self.inspector_selected = 0;
+            },
+            c.SDLK_HOME => {
+                self.inspector_focus = null;
+                self.inspector_history_len = 0;
+                self.inspector_selected = 0;
+            },
+            c.SDLK_f => {
+                self.inspector_filter = state_graph.next_filter(facts, self.inspector_filter);
+                self.inspector_selected = 0;
+            },
+            else => return false,
+        }
+        self.play_sfx(.click);
+        return true;
+    }
+
+    /// A click on a ring node recentres on it, as Enter does on the selection.
+    fn inspector_click(self: *DisplayWindow, frame: *const RenderFrame, x: i32, y: i32) bool {
+        const layout = self.inspector_layout(frame) orelse return false;
+        const ring = layout.hit_ring(x, y, 14) orelse return false;
+        self.inspector_recentre(layout.center.entity, layout.ring[ring].entity);
+        self.play_sfx(.click);
+        return true;
+    }
+
+    fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: c.SDL_Rect) void {
+        const facts = frame.debug_facts[0..frame.debug_fact_count];
+        const g = inspector_geometry(drect);
+        const area_x = g.area_x;
+        const top = g.top;
+        const area_w = g.area_w;
+        const area_h = g.area_h;
         self.fill_rect(area_x, top, area_w, area_h, Color{ .r = 9, .g = 14, .b = 26, .a = 250 });
         self.draw_rect_outline(area_x, top, area_w, area_h, Color{ .r = 51, .g = 65, .b = 85 });
 
-        var footer_buf: [96]u8 = undefined;
-        const footer = std.fmt.bufPrint(&footer_buf, "TICK {d} | {d} FACTS SHOWN | TAB: SAVE/LOAD/STATE | ESC: RESUME", .{ frame.tick, facts.len }) catch "";
+        var footer_buf: [160]u8 = undefined;
+        const footer = std.fmt.bufPrint(
+            &footer_buf,
+            "TICK {d} | {d} FACTS | FILTER {s} | ARROWS SELECT, ENTER CENTRE, BKSP BACK, HOME RESET, F FILTER",
+            .{ frame.tick, facts.len, self.inspector_filter.label() },
+        ) catch "";
         self.draw_text(footer, area_x + 10, top + area_h - 16, 1, Color.hud_subtext);
 
-        const focus = self.inspector_focus orelse state_graph.default_focus(facts) orelse {
+        const maybe_layout = self.inspector_layout(frame);
+        const layout = maybe_layout orelse {
             self.draw_text("No fact links two entities yet.", area_x + 20, top + 20, 2, Color.hud_subtext);
             return;
         };
-        const graph_w = @divTrunc(area_w * 62, 100);
-        const cx = area_x + @divTrunc(graph_w, 2);
-        const cy = top + @divTrunc(area_h - 20, 2);
-        const layout = state_graph.build(facts, focus, cx, cy, @divTrunc(graph_w, 2) - 70, @divTrunc(area_h - 20, 2) - 34);
+        const focus = layout.center.entity;
+        const graph_w = g.graph_w;
+        const cx = g.cx;
+        const cy = g.cy;
 
         for (layout.edges[0..layout.edge_len]) |edge| {
             const f = &facts[edge.fact];
@@ -1300,7 +1438,8 @@ pub const DisplayWindow = struct {
             self.fill_circle(tip_x, tip_y, 4, line_col);
             self.draw_text(f.get_relation(), @divTrunc(cx + node.x, 2) - 30, @divTrunc(cy + node.y, 2) - 10, 1, band_color(state_graph.band(f, frame.tick)));
         }
-        for (layout.ring_nodes()) |node| {
+        for (layout.ring_nodes(), 0..) |node, r| {
+            if (r == self.inspector_selected) self.draw_circle_outline(node.x, node.y, 16, INSPECTOR_ACCENT);
             self.fill_circle(node.x, node.y, 12, Color{ .r = 51, .g = 65, .b = 85 });
             self.draw_text(state_graph.name_of(facts, node.entity), node.x - 30, node.y + 16, 1, Color.hud_text);
         }
@@ -1569,6 +1708,7 @@ pub const DisplayWindow = struct {
                                 }
                             }
                             // The State tab draws over the slot cards; a click there is not a slot.
+                            if (self.save_menu_mode == .state and self.inspector_click(frame, event.button.x, event.button.y)) return .none;
                             const slot_hit = if (self.save_menu_mode == .state) null else hit_test_save_slot(event.button.x, event.button.y, drect);
                             if (slot_hit) |slot_id| {
                                 self.selected_save_slot = slot_id;
@@ -1937,7 +2077,8 @@ pub const DisplayWindow = struct {
 
                     if (self.show_save_drawer and self.save_menu_mode == .state) {
                         // The inspector has no slots: Enter, digits, and arrows must not save or
-                        // load. P27-03 gives arrows and Enter their navigation meaning.
+                        // load. Arrows, Enter, Backspace, Home, and F navigate (P27-03, D-059).
+                        if (self.inspector_key(frame, sym)) return .none;
                         if (sym == c.SDLK_ESCAPE or sym == c.SDLK_p) {
                             self.show_save_drawer = false;
                             self.play_sfx(.click);
@@ -3081,7 +3222,7 @@ pub const DisplayWindow = struct {
             self.draw_rect_outline(drect.x + drect.w - 130, tab_y, 110, 28, Color.cue_alert);
             self.draw_text("QUIT [Q]", drect.x + drect.w - 108, tab_y + 8, 2, Color.white);
 
-            if (is_state_mode) self.draw_state_inspector(frame, drect, tab_y + 40);
+            if (is_state_mode) self.draw_state_inspector(frame, drect);
 
             // Render Slot Cards (0 = Quick-Save, 1..8 = Numbered Slots)
             var slot_id: u8 = 0;
@@ -3850,4 +3991,106 @@ test "P27-01: the State tab cycles in with Tab and never saves or loads" {
     _ = Press.key(&window, &frame, c.SDLK_TAB);
     try testing.expectEqual(UserAction.toggle_save_drawer, Press.key(&window, &frame, c.SDLK_ESCAPE));
     try testing.expect(!window.show_save_drawer);
+}
+
+test "P27-03: State tab keys select, recentre, go back, reset, filter, and click without saving" {
+    const testing = std.testing;
+    if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
+    defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
+    var window = try DisplayWindow.init_offscreen(640, 360);
+    defer window.deinit();
+    const Fact = struct {
+        fn make(subject: u32, subject_name: []const u8, relation: []const u8, object: u32, object_name: []const u8) display_mod.RenderDebugFact {
+            var f = std.mem.zeroes(display_mod.RenderDebugFact);
+            @memcpy(f.subject_name[0..subject_name.len], subject_name);
+            f.subject_len = @intCast(subject_name.len);
+            @memcpy(f.relation_name[0..relation.len], relation);
+            f.relation_len = @intCast(relation.len);
+            @memcpy(f.object_name[0..object_name.len], object_name);
+            f.object_len = @intCast(object_name.len);
+            f.subject = display_mod.EntityId.from_int(subject);
+            f.object_raw = object;
+            f.object_is_entity = true;
+            return f;
+        }
+    };
+    var frame = std.mem.zeroes(RenderFrame);
+    const facts = [_]display_mod.RenderDebugFact{
+        Fact.make(5, "Ines", "Carries", 9, "Slip"),
+        Fact.make(5, "Ines", "Believes", 12, "PellAlibi"),
+        Fact.make(8, "Halloran", "Warned", 5, "Ines"),
+        Fact.make(9, "Slip", "LyingIn", 11, "Archive"),
+    };
+    @memcpy(frame.debug_facts[0..facts.len], &facts);
+    frame.debug_fact_count = facts.len;
+    const Press = struct {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_KEYDOWN;
+            ev.key.keysym.sym = sym;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+        fn click(w: *DisplayWindow, f: *const RenderFrame, x: i32, y: i32) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_MOUSEBUTTONDOWN;
+            ev.button.button = c.SDL_BUTTON_LEFT;
+            ev.button.x = x;
+            ev.button.y = y;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+    };
+    window.show_save_drawer = true;
+    window.save_menu_mode = .state;
+    const id = display_mod.EntityId.from_int;
+
+    // Ines (5) is the default centre; her ring is Halloran (8), Slip (9), PellAlibi (12).
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_RIGHT));
+    try testing.expectEqual(@as(usize, 1), window.inspector_selected);
+    _ = Press.key(&window, &frame, c.SDLK_LEFT);
+    _ = Press.key(&window, &frame, c.SDLK_LEFT);
+    try testing.expectEqual(@as(usize, 2), window.inspector_selected);
+    _ = Press.key(&window, &frame, c.SDLK_RIGHT);
+    _ = Press.key(&window, &frame, c.SDLK_RIGHT);
+    // Enter centres on Slip and remembers Ines; Slip's ring is Ines (5), Archive (11).
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_RETURN));
+    try testing.expectEqual(@as(?display_mod.EntityId, id(9)), window.inspector_focus);
+    try testing.expectEqual(@as(usize, 1), window.inspector_history_len);
+    try testing.expectEqual(@as(usize, 0), window.inspector_selected);
+    _ = Press.key(&window, &frame, c.SDLK_BACKSPACE);
+    try testing.expectEqual(@as(?display_mod.EntityId, id(5)), window.inspector_focus);
+    try testing.expectEqual(@as(usize, 0), window.inspector_history_len);
+    // Backspace with no history and Home both leave the default centre.
+    _ = Press.key(&window, &frame, c.SDLK_BACKSPACE);
+    try testing.expectEqual(@as(?display_mod.EntityId, id(5)), window.inspector_focus);
+    _ = Press.key(&window, &frame, c.SDLK_HOME);
+    try testing.expectEqual(@as(?display_mod.EntityId, null), window.inspector_focus);
+
+    // F cycles the filter: beliefs leave Ines one neighbour, so Right stays on it.
+    _ = Press.key(&window, &frame, c.SDLK_f);
+    try testing.expectEqual(state_graph.Filter.Kind.beliefs, window.inspector_filter.kind);
+    _ = Press.key(&window, &frame, c.SDLK_RIGHT);
+    try testing.expectEqual(@as(usize, 0), window.inspector_selected);
+    _ = Press.key(&window, &frame, c.SDLK_f);
+    try testing.expectEqualStrings("Believes", window.inspector_filter.relation());
+    for (0..4) |_| _ = Press.key(&window, &frame, c.SDLK_f);
+    try testing.expectEqual(state_graph.Filter.Kind.all, window.inspector_filter.kind);
+
+    // A click on a ring node recentres; the drawer stays open and nothing saves or loads.
+    const layout = window.inspector_layout(&frame).?;
+    const halloran = layout.ring[0];
+    try testing.expectEqual(id(8), halloran.entity);
+    try testing.expectEqual(UserAction.none, Press.click(&window, &frame, halloran.x, halloran.y));
+    try testing.expectEqual(@as(?display_mod.EntityId, id(8)), window.inspector_focus);
+    try testing.expect(window.show_save_drawer);
+
+    // A focus the frame no longer mentions falls back to the default and drops the history.
+    frame.debug_fact_count = 1;
+    try testing.expectEqual(UserAction.none, Press.key(&window, &frame, c.SDLK_RIGHT));
+    try testing.expectEqual(@as(?display_mod.EntityId, null), window.inspector_focus);
+    try testing.expectEqual(@as(usize, 0), window.inspector_history_len);
+    try testing.expectEqual(UserAction.toggle_save_drawer, Press.key(&window, &frame, c.SDLK_ESCAPE));
 }

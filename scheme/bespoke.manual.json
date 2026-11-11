@@ -598,7 +598,7 @@
           "id": "state-inspector-graph",
           "title": "State Inspector: Facts, Dialogue, and Deadlines",
           "summary": "A paused view of relational state, dialogue availability and pruning reasons, and the next fact deadlines.",
-          "synopsis": "[P] then [Tab] to STATE",
+          "synopsis": "[P] then [Tab] to STATE; arrows, Enter, Backspace, Home, F",
           "tags": ["inspector", "debug", "facts", "beliefs", "dialogue", "ttl"],
           "what": "Draws the selected entity and its relationships, lists values and states, explains which dialogue branches are active or pruned, and orders upcoming fact expirations.",
           "how": [
@@ -608,12 +608,14 @@
             "Colours: white permanent, then green, amber, and red as fewer than 60 and 20 ticks remain, grey for just expired.",
             "Newly compiled choice blocks write source-order DialogueBranch facts. Active branches are green; pruned branches are red and show the first guard that failed. Generated and older sets show their offered choices as active.",
             "state_graph.next_expiring sorts the next six captured live TTL deadlines by expiration tick and stable fact identity; it does not execute future ticks.",
-            "The inspector is the third tab of the P drawer, so the game is paused; Enter, digits, and Space never save or load there."
+            "The inspector is the third tab of the P drawer, so the game is paused; Enter, digits, and Space never save or load there.",
+            "Left and Right select a ring node; Enter or a click centres on it, Backspace returns through up to eight earlier centres, and Home resets. F cycles the filter: all, beliefs, then each relation in the frame. Navigation is window state and never enters a save."
           ],
           "why": "A text list cannot show how state connects or why a conversation option disappeared. Persisting branch diagnostics as World facts keeps the explanation correct after save, rewind, and temporal restore; projecting only known deadlines keeps the inspector read-only and deterministic.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-058", "target": "docs/DECISIONS.md#d-058", "kind": "decision"},
+            {"label": "Architectural Decision D-059", "target": "docs/DECISIONS.md#d-059", "kind": "decision"},
             {"label": "State Graph Layout", "target": "src/display/state_graph.zig", "kind": "source"},
             {"label": "Dialogue Lifecycle", "target": "src/dialogue.zig", "kind": "source"}
           ],

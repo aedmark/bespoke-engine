@@ -356,8 +356,17 @@ fn record_inspector(rec: *Recorder) !void {
         rec.window.show_save_drawer = false;
         rec.window.save_menu_mode = .save;
         rec.window.inspector_focus = null;
+        rec.window.inspector_filter = .{};
+        rec.window.inspector_selected = 0;
+        rec.window.inspector_history_len = 0;
     }
     try rec.draw_frame("inspector/Larkspur Observatory", bridge.get_frame());
+    // P27-03 (D-059): the Watching filter on Halloran, with Ines remembered as the way back.
+    rec.window.inspector_filter = bespoke.display.state_graph.Filter.of_relation("Watching");
+    rec.window.inspector_focus = world.lookup_entity("Halloran").?;
+    rec.window.inspector_history[0] = ines;
+    rec.window.inspector_history_len = 1;
+    try rec.draw_frame("inspector-filtered/Larkspur Observatory", bridge.get_frame());
 }
 
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.ArrayList(u8) {

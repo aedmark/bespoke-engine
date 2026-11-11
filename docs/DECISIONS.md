@@ -781,6 +781,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Predicting future reactive cascades by cloning and ticking the World: rejected for P27-02 because the inspector is read-only and an expiry deadline is the only future event the current frame can state without executing game logic.
 **Consequences:** The frame grows by about 16 KB after both P27-01 and P27-02. Facts carry no type for their object, so a numeric value equal to an entity id is drawn as an edge, as the text inspector already shows it; the engine's known numeric cell, volume, and dialogue lifecycle relations are always treated as values. Worlds with more than 128 facts show the first 128 in fact-table order. The first failed guard is diagnostic text interned at compile time; later guards are not evaluated after that failure.
 
+## D-059 State Inspector Navigation: Window-Owned Focus, a Ring Selection, Eight-Step History, and a Cycling Relation Filter (2026-11-10, status: accepted)
+**Context:** D-058 point 6 leaves P27-03 to add keyboard navigation (move, recentre) and relation filters to the State tab. The maintainer accepted the defaults below.
+**Decision:**
+1. Navigation is window state (`inspector_focus`, `inspector_selected`, `inspector_history`, `inspector_filter` on `DisplayWindow`), never World state. It survives closing the drawer and is not saved, rewound, or branched.
+2. Left and Right move a selection around the ring in ring order (clockwise from the top), wrapping. The selected node has an accent outline. Enter centres on the selected node and pushes the old centre onto a history of eight; the oldest drops off when full. Backspace pops the history. Home clears the focus and the history, returning to the default focus. A left click on a ring node recentres as Enter does.
+3. F cycles the filter: all, beliefs (`Believes`, `Knows`, `Rejects`), then each relation in the frame in byte order, then all. The filter limits edges, ring neighbours, and the states list, and the default focus counts only matching edges; when nothing matches, the default falls back to the unfiltered one. The dialogue panel and the "Next to Happen" list ignore the filter, because they describe the whole paused moment. A relation that left the frame advances to the next name after it.
+4. A focus the frame no longer mentions (after a rewind, a load, or an expiry) is dropped with its history, and the default focus returns. The selection is clamped to the ring each frame.
+5. The filter copies its relation name into a 24-byte buffer, the width of a captured relation, because each capture overwrites the frame it came from.
+**Alternatives:**
+- A free text filter typed into the tab: rejected; the drawer has no text field, and the command bar owns typing (D-057).
+- Selecting by number keys: rejected; digits mean slots in the Save and Load tabs, and the ring holds up to 16 nodes.
+- Filtering the "Next to Happen" list too: rejected; a deadline outside the filter is still about to happen, and hiding it misstates the moment.
+- Keeping navigation in World facts so it rewinds: rejected; the inspector is read-only (D-058), and a debugging view must not change a save.
+**Consequences:** Neighbours beyond the ring's 16 slots stay unreachable by keys until a filter narrows the ring. The relation filter is exact and case-sensitive. The State tab footer now names the filter and the keys, which moved the `inspector/` render golden.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

@@ -1,6 +1,7 @@
 //! The state inspector's graph: which facts become nodes, edges, and listed values, and where
 //! each node is drawn (P27-01, D-058). Pure functions over a frame's captured facts, so the
 //! layout is testable without a window and every redraw of the same state is identical.
+//! P27-03 (D-059) adds a relation filter; the window owns focus, selection, and history.
 
 const std = @import("std");
 const display = @import("../display.zig");
@@ -33,24 +34,93 @@ pub fn band(fact: *const RenderDebugFact, now: u64) Band {
     return .ending;
 }
 
+fn is_branch_text(fact: *const RenderDebugFact) bool {
+    return std.mem.eql(u8, fact.get_relation(), "DialogueBranchText") or
+        std.mem.eql(u8, fact.get_relation(), "DialogueBranchFailure");
+}
+
 fn is_edge(fact: *const RenderDebugFact) bool {
     // Dialogue branch entities are an inspector persistence detail. Their human-readable text
     // belongs in the dialogue panel, not as extra nodes that can steal the graph's default focus.
-    if (std.mem.eql(u8, fact.get_relation(), "DialogueBranchText") or
-        std.mem.eql(u8, fact.get_relation(), "DialogueBranchFailure")) return false;
+    if (is_branch_text(fact)) return false;
     return fact.object_is_entity and EntityId.from_int(fact.object_raw) != fact.subject;
 }
 
-/// The entity with the most edges, lowest id on ties; null when no fact links two entities.
-pub fn default_focus(facts: []const RenderDebugFact) ?EntityId {
+/// Which facts the graph and the states list show (D-059). The relation name is copied, not
+/// borrowed, because the frame it came from is overwritten on the next capture.
+pub const Filter = struct {
+    kind: Kind = .all,
+    relation_buf: [24]u8 = undefined,
+    relation_len: u8 = 0,
+
+    pub const Kind = enum { all, beliefs, relation };
+
+    pub fn of_relation(name: []const u8) Filter {
+        var f = Filter{ .kind = .relation };
+        const len = @min(name.len, f.relation_buf.len);
+        @memcpy(f.relation_buf[0..len], name[0..len]);
+        f.relation_len = @intCast(len);
+        return f;
+    }
+
+    pub fn relation(self: *const Filter) []const u8 {
+        return self.relation_buf[0..self.relation_len];
+    }
+
+    pub fn matches(self: *const Filter, fact: *const RenderDebugFact) bool {
+        return switch (self.kind) {
+            .all => true,
+            .beliefs => is_belief(fact),
+            .relation => std.mem.eql(u8, self.relation(), fact.get_relation()),
+        };
+    }
+
+    /// The footer's name for the filter.
+    pub fn label(self: *const Filter) []const u8 {
+        return switch (self.kind) {
+            .all => "ALL",
+            .beliefs => "BELIEFS",
+            .relation => self.relation(),
+        };
+    }
+};
+
+/// The filter after `current`: all, beliefs, then each relation in the frame in byte order,
+/// then all again. A relation that left the frame still advances to the next one after it,
+/// so cycling never sticks on a stale name.
+pub fn next_filter(facts: []const RenderDebugFact, current: Filter) Filter {
+    if (current.kind == .all) return .{ .kind = .beliefs };
+    var best: ?[]const u8 = null;
+    for (facts) |*f| {
+        if (is_branch_text(f)) continue;
+        const rel = f.get_relation();
+        if (current.kind == .relation and std.mem.order(u8, rel, current.relation()) != .gt) continue;
+        if (best == null or std.mem.order(u8, rel, best.?) == .lt) best = rel;
+    }
+    return if (best) |rel| Filter.of_relation(rel) else .{};
+}
+
+/// True when any captured fact names `entity`. A focus the frame no longer mentions (after a
+/// rewind or a load) is stale, and the window falls back to the default focus.
+pub fn mentions(facts: []const RenderDebugFact, entity: EntityId) bool {
+    for (facts) |*f| {
+        if (f.subject == entity) return true;
+        if (f.object_is_entity and EntityId.from_int(f.object_raw) == entity) return true;
+    }
+    return false;
+}
+
+/// The entity with the most edges the filter shows, lowest id on ties; null when no such
+/// fact links two entities.
+pub fn default_focus(facts: []const RenderDebugFact, filter: Filter) ?EntityId {
     var best: ?EntityId = null;
     var best_degree: usize = 0;
     for (facts) |*candidate_fact| {
-        if (!is_edge(candidate_fact)) continue;
+        if (!is_edge(candidate_fact) or !filter.matches(candidate_fact)) continue;
         for ([_]EntityId{ candidate_fact.subject, EntityId.from_int(candidate_fact.object_raw) }) |entity| {
             var degree: usize = 0;
             for (facts) |*f| {
-                if (!is_edge(f)) continue;
+                if (!is_edge(f) or !filter.matches(f)) continue;
                 if (f.subject == entity or EntityId.from_int(f.object_raw) == entity) degree += 1;
             }
             const better = degree > best_degree or (degree == best_degree and best != null and entity.to_int() < best.?.to_int());
@@ -103,18 +173,29 @@ pub const Layout = struct {
     pub fn ring_nodes(self: *const Layout) []const Node {
         return self.ring[0..self.ring_len];
     }
+
+    /// The ring node within `radius` pixels of (x, y), for a mouse recentre.
+    pub fn hit_ring(self: *const Layout, x: i32, y: i32, radius: i32) ?usize {
+        for (self.ring_nodes(), 0..) |node, i| {
+            const dx = node.x - x;
+            const dy = node.y - y;
+            if (dx * dx + dy * dy <= radius * radius) return i;
+        }
+        return null;
+    }
 };
 
 /// Lays out `focus` and its neighbours (D-058 point 4): the focus at (cx, cy), neighbours on an
 /// ellipse of radii (rx, ry) in entity-id order, starting at the top and going clockwise.
-pub fn build(facts: []const RenderDebugFact, focus: EntityId, cx: i32, cy: i32, rx: i32, ry: i32) Layout {
+/// Only facts the filter matches become edges, neighbours, or listed values (D-059).
+pub fn build(facts: []const RenderDebugFact, focus: EntityId, filter: Filter, cx: i32, cy: i32, rx: i32, ry: i32) Layout {
     var layout = Layout{ .center = .{ .entity = focus, .x = cx, .y = cy } };
 
     // Neighbours in id order, so the picture does not depend on fact-table order.
     var neighbours: [MAX_EDGES]EntityId = undefined;
     var n: usize = 0;
     for (facts) |*f| {
-        if (!is_edge(f)) continue;
+        if (!is_edge(f) or !filter.matches(f)) continue;
         const other = if (f.subject == focus) EntityId.from_int(f.object_raw) else if (EntityId.from_int(f.object_raw) == focus) f.subject else continue;
         if (std.mem.indexOfScalar(EntityId, neighbours[0..n], other) != null) continue;
         if (n == neighbours.len) break;
@@ -138,6 +219,7 @@ pub fn build(facts: []const RenderDebugFact, focus: EntityId, cx: i32, cy: i32, 
     }
 
     for (facts, 0..) |*f, i| {
+        if (!filter.matches(f)) continue;
         if (is_edge(f)) {
             const outward = f.subject == focus;
             const other = if (outward) EntityId.from_int(f.object_raw) else if (EntityId.from_int(f.object_raw) == focus) f.subject else continue;
@@ -238,12 +320,12 @@ test "P27-01: the default focus is the best-connected entity and the layout is d
         test_fact(5, "Ines", "Volume", 3, null, 0),
         test_fact(9, "Slip", "LyingIn", 11, "Archive", 0),
     };
-    const focus = default_focus(&facts).?;
+    const focus = default_focus(&facts, .{}).?;
     try testing.expectEqual(EntityId.from_int(5), focus);
     try testing.expectEqualStrings("Ines", name_of(&facts, focus));
     try testing.expectEqualStrings("Archive", name_of(&facts, EntityId.from_int(11)));
 
-    const a = build(&facts, focus, 400, 300, 200, 140);
+    const a = build(&facts, focus, .{}, 400, 300, 200, 140);
     // Three neighbours in id order: Halloran (8), Slip (9), PellAlibi (12); the first at the top.
     try testing.expectEqual(@as(usize, 3), a.ring_len);
     try testing.expectEqual(EntityId.from_int(8), a.ring[0].entity);
@@ -261,7 +343,7 @@ test "P27-01: the default focus is the best-connected entity and the layout is d
 
     // The same facts in another order give the same picture.
     const shuffled = [_]RenderDebugFact{ facts[5], facts[3], facts[1], facts[4], facts[0], facts[2] };
-    const b = build(&shuffled, focus, 400, 300, 200, 140);
+    const b = build(&shuffled, focus, .{}, 400, 300, 200, 140);
     for (a.ring_nodes(), b.ring_nodes()) |na, nb| try testing.expectEqual(na, nb);
 }
 
@@ -304,5 +386,66 @@ test "P27-02: persisted dialogue branch metadata never steals graph focus" {
         test_fact(50, "Actor~0", "DialogueBranchText", 60, "Ask about the key", 0),
         test_fact(50, "Actor~0", "DialogueBranchFailure", 61, "missing Carries", 0),
     };
-    try testing.expectEqual(EntityId.from_int(1), default_focus(&facts).?);
+    try testing.expectEqual(EntityId.from_int(1), default_focus(&facts, .{}).?);
+}
+
+test "P27-03: filters restrict edges, listed values, and the default focus" {
+    const facts = [_]RenderDebugFact{
+        test_fact(5, "Ines", "Carries", 9, "Slip", 0),
+        test_fact(5, "Ines", "Carries", 10, "Lamp", 0),
+        test_fact(5, "Ines", "Volume", 3, null, 0),
+        test_fact(7, "Pell", "Believes", 12, "PellAlibi", 0),
+        test_fact(5, "Ines", "Believes", 7, "Pell", 0),
+    };
+    // Unfiltered, Ines has the most edges; under beliefs, Pell has two and Ines one.
+    try testing.expectEqual(EntityId.from_int(5), default_focus(&facts, .{}).?);
+    const beliefs = Filter{ .kind = .beliefs };
+    try testing.expectEqual(EntityId.from_int(7), default_focus(&facts, beliefs).?);
+    const pell = build(&facts, EntityId.from_int(7), beliefs, 400, 300, 200, 140);
+    try testing.expectEqual(@as(usize, 2), pell.ring_len);
+
+    const carries = Filter.of_relation("Carries");
+    const ines = build(&facts, EntityId.from_int(5), carries, 400, 300, 200, 140);
+    try testing.expectEqual(@as(usize, 2), ines.ring_len);
+    try testing.expectEqual(EntityId.from_int(9), ines.ring[0].entity);
+    try testing.expectEqual(@as(usize, 0), ines.listed_len);
+    const volume = build(&facts, EntityId.from_int(5), Filter.of_relation("Volume"), 400, 300, 200, 140);
+    try testing.expectEqual(@as(usize, 0), volume.ring_len);
+    try testing.expectEqual(@as(usize, 1), volume.listed_len);
+    // No fact matches: there is no default focus under that filter.
+    try testing.expectEqual(@as(?EntityId, null), default_focus(&facts, Filter.of_relation("Missing")));
+}
+
+test "P27-03: the filter cycles all, beliefs, then relations in byte order, and wraps" {
+    const facts = [_]RenderDebugFact{
+        test_fact(5, "Ines", "Volume", 3, null, 0),
+        test_fact(5, "Ines", "Carries", 9, "Slip", 0),
+        test_fact(5, "Ines", "Believes", 7, "Pell", 0),
+        test_fact(50, "Ines~0", "DialogueBranchText", 60, "Ask", 0),
+        test_fact(9, "Slip", "Carries", 10, "Lamp", 0),
+    };
+    var f = Filter{};
+    f = next_filter(&facts, f);
+    try testing.expectEqual(Filter.Kind.beliefs, f.kind);
+    const expected = [_][]const u8{ "Believes", "Carries", "Volume" };
+    for (expected) |name| {
+        f = next_filter(&facts, f);
+        try testing.expectEqual(Filter.Kind.relation, f.kind);
+        try testing.expectEqualStrings(name, f.relation());
+    }
+    try testing.expectEqual(Filter.Kind.all, next_filter(&facts, f).kind);
+    // A relation that left the frame advances to the next name after it.
+    try testing.expectEqualStrings("Carries", next_filter(&facts, Filter.of_relation("Bribed")).relation());
+}
+
+test "P27-03: a focus the frame no longer mentions is stale, and ring hits find nodes" {
+    const facts = [_]RenderDebugFact{
+        test_fact(5, "Ines", "Carries", 9, "Slip", 0),
+    };
+    try testing.expect(mentions(&facts, EntityId.from_int(5)));
+    try testing.expect(mentions(&facts, EntityId.from_int(9)));
+    try testing.expect(!mentions(&facts, EntityId.from_int(7)));
+    const layout = build(&facts, EntityId.from_int(5), .{}, 400, 300, 200, 140);
+    try testing.expectEqual(@as(?usize, 0), layout.hit_ring(404, 163, 14));
+    try testing.expectEqual(@as(?usize, null), layout.hit_ring(400, 300, 14));
 }

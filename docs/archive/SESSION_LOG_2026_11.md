@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 42 (2026-11-10)
+- **Goal:** Ship P25-02, review the engine's state, correct stale claims, and implement P25-03.
+- **Work:** Merged P25-02 (`77af24c`). Wrote a state-of-the-engine review; removed ARCHITECTURE's claims of an unbuilt agency subsystem and Bayou proof and corrected P30-01 and P27-03 (`a234041`). P25-03: added `proofs/grid_puzzle.zig` (script with grid, rates, hazard rules; host door rules for reveal and collapse; headless run with two failures and two full-save rewinds; interactive window on keys 1 to 3), gallery art in `proofs/art.zig` driven by captured cell masks, launcher flags, transcript and render goldens, and grid seeding in render staging (grids only, so no existing hash moved).
+- **Outcome:** See the Verified table. The interactive window launched offscreen for 6 seconds; it was not hand-played. Fast-forwarded to `main` and pushed.
+
 ### Session 41 (2026-11-10)
 - **Goal:** Merge P25-01, then implement P25-02 with the maintainer-approved defaults.
 - **Work:** Fast-forwarded `main` to `cdc4c91`, pushed, and recorded the merge (`73ab2c2`). P25-02: added `burning` and `smoke` attributes, `Rules` (`burn`, `spread`, `dissipate`, `flow`), `grid.step` (one fact pass, synchronous decisions, douse, smoke refresh), and `grid.ignite`; `SpatialSystem.update_grid_hazards`; the four grid directives; `host.tick` wiring guarded by the presence of grids; and `.bspk` version 8 with v7 compatibility. Recorded D-055 and updated ROADMAP, ARCHITECTURE, script_spec, TESTING, CHANGELOG, and the manual.
