@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const testing = std.testing;
+const mml = @import("mml.zig");
 
 pub const SAMPLE_RATE: u32 = 44100;
 pub const MAX_SFX_VOICES: usize = 8;
@@ -160,10 +161,12 @@ pub const SfxPatch = struct {
     loop: bool = false,
 };
 
-/// A named music track for a soundtrack.
+/// A named music track for a soundtrack: a grid pattern, or an MML score (P28-02, D-061).
+/// When `score` is set it plays and `pattern` is ignored.
 pub const Music = struct {
     name: []const u8,
-    pattern: BgmPattern,
+    pattern: BgmPattern = SILENT_PATTERN,
+    score: ?*const MmlScore = null,
 };
 
 /// A game's sounds, registered with `AudioBridge.set_soundtrack` (or a display `Theme`).
@@ -255,6 +258,104 @@ pub const BgmPattern = struct {
     drum_pattern: [BGM_STEPS]u8, // 0 = rest, 1 = kick, 2 = snare, 3 = hat
 };
 
+/// A pattern that triggers nothing: an unknown track, no track, or an MML-only `Music`.
+pub const SILENT_PATTERN = BgmPattern{
+    .bpm = 120,
+    .step_count = 32,
+    .bass_notes = [_]u8{0} ** BGM_STEPS,
+    .lead_notes = [_]u8{0} ** BGM_STEPS,
+    .chord_notes = [_]u8{0} ** BGM_STEPS,
+    .drum_pattern = [_]u8{0} ** BGM_STEPS,
+};
+
+// ---------------------------------------------------------------------------
+// 5b. MML Score Playback (P28-02, D-061)
+// ---------------------------------------------------------------------------
+
+/// The four parts of an MML score, in the order they are processed each tick. Lead, bass, and
+/// chords play the grid sequencer's lead, bass, and chord voices; percussion plays its drums.
+pub const MmlPart = enum(u8) { lead, bass, chords, percussion };
+pub const MML_PART_COUNT: usize = 4;
+
+/// One part's events, borrowed from an `mml.Score` or static data.
+pub const MmlTrack = struct {
+    events: []const mml.Event = &.{},
+    loop_start: ?usize = null,
+
+    pub fn of(score: *const mml.Score) MmlTrack {
+        return .{ .events = score.events, .loop_start = score.loop_start };
+    }
+};
+
+/// A four-part MML score. Borrowed like a `Soundtrack`: the audio thread reads it, so it must
+/// outlive the bridge and must not change once registered.
+pub const MmlScore = struct {
+    parts: [MML_PART_COUNT]MmlTrack = [_]MmlTrack{.{}} ** MML_PART_COUNT,
+
+    pub fn part(self: *const MmlScore, which: MmlPart) MmlTrack {
+        return self.parts[@intFromEnum(which)];
+    }
+};
+
+/// An `@n` envelope (D-061). Levels are in the voice's envelope units; `sustain` is in 256ths
+/// of the note's peak. `decay = null` uses the grid voice's own decay, and `release = 0` lets
+/// the note ring past its written length, as grid notes do.
+pub const Envelope = struct {
+    attack: i32 = 0,
+    decay: ?i32 = null,
+    sustain: i32 = 0,
+    release: i32 = 0,
+    tremolo: bool = false,
+};
+
+pub const ENVELOPES = [mml.MAX_ENVELOPE + 1]Envelope{
+    .{}, // @0 grid: the voice's own fixed decay, no note-off
+    .{ .decay = 0, .sustain = 256, .release = 40 }, // @1 organ: hold, release at note end
+    .{ .decay = 12, .release = 40 }, // @2 pluck
+    .{ .decay = 1, .release = 2 }, // @3 long fade
+    .{ .attack = 3, .decay = 0, .sustain = 256, .release = 6 }, // @4 swell
+    .{ .decay = 30, .release = 120 }, // @5 staccato
+    .{ .decay = 0, .sustain = 256, .release = 40, .tremolo = true }, // @6 tremolo
+    .{ .attack = 1, .decay = 2, .sustain = 180, .release = 3 }, // @7 soft pad
+};
+
+/// Peak envelope and grid decay of the lead, bass, and chord voices, as the grid sequencer
+/// sets them, so `@0` sounds like a grid note.
+const MML_VOICE_PEAK = [3]i32{ 28000, 30000, 22000 };
+const MML_VOICE_DECAY = [3]i32{ 4, 6, 3 };
+/// About 6 Hz at 44.1 kHz.
+const MML_TREMOLO_INC: u32 = 584337;
+
+const EnvStage = enum { off, attack, decay, sustain, release };
+
+pub const MmlPartState = struct {
+    /// Next event to read.
+    index: usize = 0,
+    /// Ticks left in the current note, rest, or hit.
+    wait: u32 = 0,
+    /// Read past the last event; waits for the whole-score loop.
+    finished: bool = true,
+    volume: u8 = @intCast(mml.MAX_VOLUME),
+    envelope: u8 = 0,
+    stage: EnvStage = .off,
+    level: i32 = 0,
+    peak: i32 = 0,
+    notes_started: u32 = 0,
+};
+
+/// Playback state of the current MML track. Time is integer: the clock gains `tempo * 48`
+/// each sample and spends `sample_rate * 60` per tick, so a tick lasts exactly
+/// `60 / (tempo * 48)` seconds on average and four parts can never drift apart.
+pub const MmlState = struct {
+    score: ?*const MmlScore = null,
+    parts: [MML_PART_COUNT]MmlPartState = [_]MmlPartState{.{}} ** MML_PART_COUNT,
+    /// One tempo for every part (D-061): a `t` in any part sets it for all.
+    tempo: u16 = mml.DEFAULT_TEMPO,
+    clock: u32 = 0,
+    ticks: u64 = 0,
+    lfo_phase: u32 = 0,
+};
+
 /// Generates pre-authored 32-step procedural score patterns for narrative locations (P16-03).
 
 // ---------------------------------------------------------------------------
@@ -302,6 +403,9 @@ pub const ChiptuneSynth = struct {
 
     hat_env: i32 = 0,
 
+    /// MML playback (P28-02); `mml.score` is null while a grid pattern or nothing plays.
+    mml: MmlState = .{},
+
     // Track Crossfade
     fade_level: i32 = 32767, // 0..32767
     is_fading_out: bool = false,
@@ -321,6 +425,7 @@ pub const ChiptuneSynth = struct {
             self.current_track = track;
             self.target_track = track;
             self.active_pattern = self.pattern_of(track);
+            self.start_mml(track);
             self.current_step = 0;
             self.step_sample_counter = 0;
             self.fade_level = 32767;
@@ -339,18 +444,185 @@ pub const ChiptuneSynth = struct {
 
     /// The pattern of a soundtrack track; an unknown index or null is silence at 120 bpm.
     fn pattern_of(self: *const ChiptuneSynth, track: ?u8) BgmPattern {
-        const silent = BgmPattern{
-            .bpm = 120,
-            .step_count = 32,
-            .bass_notes = [_]u8{0} ** BGM_STEPS,
-            .lead_notes = [_]u8{0} ** BGM_STEPS,
-            .chord_notes = [_]u8{0} ** BGM_STEPS,
-            .drum_pattern = [_]u8{0} ** BGM_STEPS,
-        };
-        const index = track orelse return silent;
-        const st = self.soundtrack orelse return silent;
-        if (index >= st.tracks.len) return silent;
-        return st.tracks[index].pattern;
+        const music = self.music_of(track) orelse return SILENT_PATTERN;
+        return music.pattern;
+    }
+
+    fn music_of(self: *const ChiptuneSynth, track: ?u8) ?*const Music {
+        const index = track orelse return null;
+        const st = self.soundtrack orelse return null;
+        if (index >= st.tracks.len) return null;
+        return &st.tracks[index];
+    }
+
+    /// Starts the track's MML score from its first event, or stops MML when it has none.
+    fn start_mml(self: *ChiptuneSynth, track: ?u8) void {
+        self.mml = .{};
+        const music = self.music_of(track) orelse return;
+        const score = music.score orelse return;
+        self.mml.score = score;
+        for (&self.mml.parts) |*p| p.finished = false;
+        self.mml_advance(score);
+    }
+
+    /// One tick: count down every part, release notes whose written length ended, read the
+    /// next events, and loop the whole score once every part has finished (D-061).
+    fn mml_tick(self: *ChiptuneSynth) void {
+        const score = self.mml.score orelse return;
+        self.mml.ticks += 1;
+        for (&self.mml.parts) |*p| {
+            if (p.finished or p.wait == 0) continue;
+            p.wait -= 1;
+            if (p.wait == 0) mml_note_off(p);
+        }
+        self.mml_advance(score);
+    }
+
+    fn mml_advance(self: *ChiptuneSynth, score: *const MmlScore) void {
+        for (0..MML_PART_COUNT) |i| self.mml_advance_part(score, i);
+        for (self.mml.parts) |p| if (!p.finished) return;
+        // Every part has ended: looping parts restart at their own L together, so parts of
+        // different lengths re-align each pass; parts without L stay silent. A restart happens
+        // at most once per tick, so even a hand-built loop with no duration cannot spin here.
+        var looped = false;
+        for (&self.mml.parts, 0..) |*p, i| {
+            const track = score.parts[i];
+            const start = track.loop_start orelse continue;
+            if (start >= track.events.len) continue;
+            p.index = start;
+            p.finished = false;
+            looped = true;
+        }
+        if (looped) {
+            for (0..MML_PART_COUNT) |i| self.mml_advance_part(score, i);
+        }
+    }
+
+    /// Reads a part's zero-time events up to and including its next note, rest, or hit.
+    fn mml_advance_part(self: *ChiptuneSynth, score: *const MmlScore, i: usize) void {
+        const p = &self.mml.parts[i];
+        if (p.finished or p.wait > 0) return;
+        const events = score.parts[i].events;
+        const percussion = i == @intFromEnum(MmlPart.percussion);
+        while (p.index < events.len) {
+            const e = events[p.index];
+            p.index += 1;
+            // Values are clamped, not trusted: a score may be built by hand rather than parsed.
+            switch (e) {
+                .tempo => |bpm| self.mml.tempo = std.math.clamp(bpm, @as(u16, mml.MIN_TEMPO), @as(u16, mml.MAX_TEMPO)),
+                .volume => |v| p.volume = @min(v, @as(u8, mml.MAX_VOLUME)),
+                .envelope => |n| p.envelope = @min(n, @as(u8, ENVELOPES.len - 1)),
+                .note => |n| {
+                    if (!percussion) self.mml_note_on(i, n.midi);
+                    p.wait = n.ticks;
+                },
+                .rest => |t| p.wait = t,
+                .hit => |h| {
+                    if (percussion) self.mml_hit(h.drum, p.volume);
+                    p.wait = h.ticks;
+                },
+            }
+            if (p.wait > 0) return;
+        }
+        p.finished = true;
+    }
+
+    fn mml_note_on(self: *ChiptuneSynth, i: usize, midi: u8) void {
+        const p = &self.mml.parts[i];
+        const inc = midi_to_phase_inc(@min(midi, 127));
+        switch (i) {
+            0 => self.lead_phase_inc = inc,
+            1 => self.bass_phase_inc = inc,
+            else => self.chord_phase_inc = inc,
+        }
+        const env = ENVELOPES[p.envelope];
+        p.peak = @divTrunc(MML_VOICE_PEAK[i] * @as(i32, p.volume), @as(i32, mml.MAX_VOLUME));
+        if (env.attack > 0) {
+            p.level = 0;
+            p.stage = .attack;
+        } else {
+            p.level = p.peak;
+            p.stage = .decay;
+        }
+        p.notes_started += 1;
+    }
+
+    fn mml_note_off(p: *MmlPartState) void {
+        if (p.stage == .off) return;
+        if (ENVELOPES[p.envelope].release > 0) p.stage = .release;
+    }
+
+    /// The grid sequencer's drums at the part's volume; envelopes do not apply to drums.
+    fn mml_hit(self: *ChiptuneSynth, drum: mml.Drum, volume: u8) void {
+        const v: i32 = volume;
+        const full: i32 = mml.MAX_VOLUME;
+        switch (drum) {
+            .kick => {
+                self.kick_phase_inc = midi_to_phase_inc(36) * 2;
+                self.kick_env = @divTrunc(32000 * v, full);
+            },
+            .snare => {
+                self.snare_phase_inc = midi_to_phase_inc(48);
+                self.snare_env = @divTrunc(30000 * v, full);
+            },
+            .hat => self.hat_env = @divTrunc(24000 * v, full),
+        }
+        self.mml.parts[@intFromEnum(MmlPart.percussion)].notes_started += 1;
+    }
+
+    /// Advances the MML clock by one sample, running every tick that falls due.
+    fn mml_clock_step(self: *ChiptuneSynth) void {
+        self.mml.clock += @as(u32, self.mml.tempo) * (mml.TICKS_PER_WHOLE / 4);
+        const per_tick = self.sample_rate * 60;
+        while (self.mml.clock >= per_tick) {
+            self.mml.clock -= per_tick;
+            self.mml_tick();
+        }
+    }
+
+    /// Steps each melodic part's envelope one sample and hands the level to its grid voice,
+    /// which then synthesizes exactly as for a grid note. The voice's own per-sample decay is
+    /// overwritten here every sample, so it never acts on an MML note.
+    fn mml_apply_envelopes(self: *ChiptuneSynth) void {
+        self.mml.lfo_phase +%= MML_TREMOLO_INC;
+        const lfo: i32 = eval_triangle(self.mml.lfo_phase);
+        for (0..3) |i| {
+            const p = &self.mml.parts[i];
+            const env = ENVELOPES[p.envelope];
+            switch (p.stage) {
+                .off => p.level = 0,
+                .attack => {
+                    p.level += env.attack;
+                    if (p.level >= p.peak) {
+                        p.level = p.peak;
+                        p.stage = .decay;
+                    }
+                },
+                .decay => {
+                    const floor = @divTrunc(p.peak * env.sustain, 256);
+                    p.level -= env.decay orelse MML_VOICE_DECAY[i];
+                    if (p.level <= floor) {
+                        p.level = floor;
+                        p.stage = if (floor > 0) .sustain else .off;
+                    }
+                },
+                .sustain => {},
+                .release => {
+                    p.level -= env.release;
+                    if (p.level <= 0) {
+                        p.level = 0;
+                        p.stage = .off;
+                    }
+                },
+            }
+            // Tremolo swings between half and full level.
+            const out = if (env.tremolo) (p.level * (24576 + (lfo >> 2))) >> 15 else p.level;
+            switch (i) {
+                0 => self.lead_env = out,
+                1 => self.bass_env = out,
+                else => self.chord_env = out,
+            }
+        }
     }
 
     /// Plays one distaff note (P22-02). Degrees outside 0..6 come from an untrusted caller
@@ -459,8 +731,8 @@ pub const ChiptuneSynth = struct {
         const frame_count = buffer.len / 2;
 
         for (0..frame_count) |f| {
-            // 1. Advance BGM Step Sequencer
-            if (self.current_track != null) {
+            // 1. Advance BGM Step Sequencer (an MML track runs its own clock instead)
+            if (self.current_track != null and self.mml.score == null) {
                 self.step_sample_counter += 1;
                 if (self.step_sample_counter >= self.samples_per_step) {
                     self.step_sample_counter = 0;
@@ -510,6 +782,7 @@ pub const ChiptuneSynth = struct {
                     self.is_fading_out = false;
                     self.current_track = self.target_track;
                     self.active_pattern = self.pattern_of(self.target_track);
+                    self.start_mml(self.target_track);
                     self.current_step = 0;
                     self.step_sample_counter = 0;
                     if (self.active_pattern.bpm > 0) {
@@ -520,6 +793,11 @@ pub const ChiptuneSynth = struct {
             } else if (self.fade_level < 32767) {
                 self.fade_level += 32;
                 if (self.fade_level > 32767) self.fade_level = 32767;
+            }
+
+            if (self.mml.score != null) {
+                self.mml_clock_step();
+                self.mml_apply_envelopes();
             }
 
             // 2. Synthesize BGM Channels
@@ -1121,4 +1399,245 @@ test "P32-02d: patches step, loop, ring-modulate, and divide as declared" {
     try testing.expect(notes_seen[0] and notes_seen[1]);
     try testing.expect(v.step < 2);
     try testing.expect(peak > 500);
+}
+
+// ---------------------------------------------------------------------------
+// MML playback tests (P28-02, D-061)
+// ---------------------------------------------------------------------------
+
+/// Parses four parts into an `MmlScore`; the parsed scores own the events and must outlive it.
+const MmlFixture = struct {
+    parsed: [MML_PART_COUNT]mml.Score = undefined,
+    count: usize = 0,
+    score: MmlScore = .{},
+    music: [1]Music = undefined,
+    soundtrack: Soundtrack = .{},
+
+    fn init(self: *MmlFixture, texts: [MML_PART_COUNT][]const u8) !void {
+        for (texts, 0..) |text, i| {
+            var diag = mml.Diagnostic{};
+            const kind: mml.TrackKind = if (i == @intFromEnum(MmlPart.percussion)) .percussion else .melodic;
+            self.parsed[i] = try mml.parse(testing.allocator, text, kind, &diag);
+            self.count += 1;
+            self.score.parts[i] = MmlTrack.of(&self.parsed[i]);
+        }
+        self.music = .{.{ .name = "mml", .score = &self.score }};
+        self.soundtrack = .{ .tracks = &self.music };
+    }
+
+    fn deinit(self: *MmlFixture) void {
+        for (self.parsed[0..self.count]) |*p| p.deinit();
+    }
+
+    fn synth(self: *const MmlFixture) ChiptuneSynth {
+        var s = ChiptuneSynth.init();
+        s.soundtrack = &self.soundtrack;
+        s.set_track(0);
+        return s;
+    }
+};
+
+fn render_frames(synth: *ChiptuneSynth, frames: usize) void {
+    var buf: [1024]i16 = undefined;
+    var left = frames;
+    while (left > 0) {
+        const n: usize = @min(left, buf.len / 2);
+        synth.render_stereo(buf[0 .. n * 2], 100, 100, 100);
+        left -= n;
+    }
+}
+
+fn run_to_tick(synth: *ChiptuneSynth, tick: u64) void {
+    var buf: [2]i16 = undefined;
+    while (synth.mml.ticks < tick) synth.render_stereo(&buf, 100, 100, 100);
+}
+
+fn part_of(synth: *const ChiptuneSynth, which: MmlPart) MmlPartState {
+    return synth.mml.parts[@intFromEnum(which)];
+}
+
+test "P28-02: the MML clock counts exact integer ticks at any tempo" {
+    var f = MmlFixture{};
+    defer f.deinit();
+    try f.init(.{ "c1 c1", "", "", "" });
+    var s = f.synth();
+    // A quarter note at 120 bpm is 22,050 samples and 48 ticks, with no rounding drift.
+    render_frames(&s, 22_050 * 3);
+    try testing.expectEqual(@as(u64, 144), s.mml.ticks);
+
+    var g = MmlFixture{};
+    defer g.deinit();
+    try g.init(.{ "t100 c1", "", "", "" });
+    var t = g.synth();
+    render_frames(&t, 26_459);
+    try testing.expectEqual(@as(u64, 47), t.mml.ticks);
+    render_frames(&t, 1);
+    try testing.expectEqual(@as(u64, 48), t.mml.ticks);
+}
+
+test "P28-02: a tempo in any part sets the one clock for every part" {
+    var f = MmlFixture{};
+    defer f.deinit();
+    try f.init(.{ "c4 d4", "t240 c2", "", "" });
+    var s = f.synth();
+    // At 240 bpm the lead's first quarter ends after 11,025 samples, not 22,050.
+    render_frames(&s, 11_024);
+    try testing.expectEqual(@as(u32, 1), part_of(&s, .lead).notes_started);
+    render_frames(&s, 1);
+    try testing.expectEqual(@as(u32, 2), part_of(&s, .lead).notes_started);
+    try testing.expectEqual(midi_to_phase_inc(62), s.lead_phase_inc);
+}
+
+test "P28-02: looping parts restart together at their own L once every part has ended" {
+    var f = MmlFixture{};
+    defer f.deinit();
+    // Lead: an intro note, then a looped quarter. Bass: a looped half. Chords play once.
+    try f.init(.{ "c4 L d4", "L e2", "g1", "" });
+    var s = f.synth();
+    run_to_tick(&s, 96);
+    try testing.expectEqual(@as(u32, 2), part_of(&s, .lead).notes_started);
+    try testing.expect(part_of(&s, .lead).finished);
+    try testing.expect(part_of(&s, .bass).finished);
+    // The chord's whole note holds the score until tick 192; nothing restarts before it.
+    run_to_tick(&s, 191);
+    try testing.expectEqual(@as(u32, 2), part_of(&s, .lead).notes_started);
+    try testing.expectEqual(@as(u32, 1), part_of(&s, .bass).notes_started);
+    run_to_tick(&s, 192);
+    try testing.expectEqual(@as(u32, 3), part_of(&s, .lead).notes_started);
+    try testing.expectEqual(@as(u32, 2), part_of(&s, .bass).notes_started);
+    try testing.expectEqual(midi_to_phase_inc(62), s.lead_phase_inc);
+    try testing.expect(part_of(&s, .chords).finished);
+    // Second pass: the bass's half outlasts the lead's quarter, so both restart at 288.
+    run_to_tick(&s, 287);
+    try testing.expectEqual(@as(u32, 3), part_of(&s, .lead).notes_started);
+    run_to_tick(&s, 288);
+    try testing.expectEqual(@as(u32, 4), part_of(&s, .lead).notes_started);
+    try testing.expectEqual(@as(u32, 3), part_of(&s, .bass).notes_started);
+    try testing.expectEqual(@as(u32, 1), part_of(&s, .chords).notes_started);
+}
+
+test "P28-02: a score without L plays once and falls silent" {
+    var f = MmlFixture{};
+    defer f.deinit();
+    try f.init(.{ "@1 c4", "", "", "" });
+    var s = f.synth();
+    run_to_tick(&s, 60);
+    for (s.mml.parts) |p| try testing.expect(p.finished);
+    try testing.expectEqual(@as(i32, 0), s.lead_env);
+    var buf: [512]i16 = undefined;
+    s.render_stereo(&buf, 100, 100, 100);
+    for (buf) |x| try testing.expectEqual(@as(i16, 0), x);
+}
+
+test "P28-02: envelopes hold, release at the written length, swell, and tremble" {
+    var organ = MmlFixture{};
+    defer organ.deinit();
+    try organ.init(.{ "@1 c4 r4", "@0 c4 r4", "@4 c1", "" });
+    var s = organ.synth();
+    // Part levels, not voice envelopes: a voice subtracts its grid decay once after each sample
+    // before the next sample's level overwrites it.
+    run_to_tick(&s, 1);
+    // A swell starts near silence.
+    try testing.expect(part_of(&s, .chords).level < 2_000);
+    try testing.expectEqual(EnvStage.attack, part_of(&s, .chords).stage);
+    run_to_tick(&s, 5);
+    // The organ holds its peak; the grid preset decays like a grid note, 6 a sample
+    // (five ticks are about 2,297 samples).
+    try testing.expectEqual(@as(i32, 28_000), part_of(&s, .lead).level);
+    try testing.expect(part_of(&s, .bass).level < 30_000 - 6 * 2_000);
+    try testing.expect(part_of(&s, .bass).level > 0);
+    run_to_tick(&s, 40);
+    try testing.expectEqual(@as(i32, 22_000), part_of(&s, .chords).level);
+    run_to_tick(&s, 50);
+    // At the written length the organ releases; the grid preset has no note-off and simply
+    // runs out, as a grid note does.
+    try testing.expectEqual(@as(i32, 0), part_of(&s, .lead).level);
+    try testing.expectEqual(EnvStage.off, part_of(&s, .lead).stage);
+    try testing.expectEqual(@as(i32, 0), s.lead_env);
+
+    var trem = MmlFixture{};
+    defer trem.deinit();
+    try trem.init(.{ "@6 c1", "", "", "" });
+    var t = trem.synth();
+    var lo: i32 = std.math.maxInt(i32);
+    var hi: i32 = 0;
+    var buf: [2]i16 = undefined;
+    for (0..20_000) |_| {
+        t.render_stereo(&buf, 100, 100, 100);
+        lo = @min(lo, t.lead_env);
+        hi = @max(hi, t.lead_env);
+    }
+    try testing.expectEqual(@as(i32, 28_000), part_of(&t, .lead).level);
+    try testing.expect(hi - lo > 10_000);
+}
+
+test "P28-02: volume scales notes and drums, and v0 is silent" {
+    var quiet = MmlFixture{};
+    defer quiet.deinit();
+    try quiet.init(.{ "v0 c1", "v0 c1", "v0 c1", "v0 k1" });
+    var s = quiet.synth();
+    var buf: [4096]i16 = undefined;
+    s.render_stereo(&buf, 100, 100, 100);
+    for (buf) |x| try testing.expectEqual(@as(i16, 0), x);
+
+    var mid = MmlFixture{};
+    defer mid.deinit();
+    try mid.init(.{ "v8 @1 c1", "", "", "v5 k4 s4 h4" });
+    var m = mid.synth();
+    try testing.expectEqual(@as(i32, 32_000 * 5 / 15), m.kick_env);
+    run_to_tick(&m, 2);
+    try testing.expectEqual(@as(i32, 28_000 * 8 / 15), part_of(&m, .lead).level);
+    run_to_tick(&m, 48);
+    // The snare voice has already decayed one sample (40) since the hit.
+    try testing.expectEqual(@as(i32, 30_000 * 5 / 15 - 40), m.snare_env);
+    try testing.expectEqual(@as(u32, 2), part_of(&m, .percussion).notes_started);
+}
+
+test "P28-02: hand-built scores are clamped and cannot stall the audio thread" {
+    // Events no parser would produce: a drum hit on the lead, a note on percussion, an
+    // out-of-range tempo and envelope, and a loop whose body takes no time.
+    const lead = [_]mml.Event{ .{ .tempo = 1000 }, .{ .envelope = 200 }, .{ .hit = .{ .drum = .kick, .ticks = 4 } } };
+    const drums = [_]mml.Event{ .{ .note = .{ .midi = 60, .ticks = 4 } }, .{ .volume = 99 } };
+    const score = MmlScore{ .parts = .{
+        .{ .events = &lead, .loop_start = 0 },
+        .{},
+        .{},
+        .{ .events = &drums, .loop_start = 1 },
+    } };
+    const music = [_]Music{.{ .name = "raw", .score = &score }};
+    const st = Soundtrack{ .tracks = &music };
+    var s = ChiptuneSynth.init();
+    s.soundtrack = &st;
+    s.set_track(0);
+    try testing.expectEqual(@as(u16, 255), s.mml.tempo);
+    try testing.expectEqual(@as(i32, 0), s.kick_env);
+    render_frames(&s, 5_000);
+    try testing.expect(s.mml.ticks > 0);
+    try testing.expectEqual(@as(u8, 15), part_of(&s, .percussion).volume);
+    try testing.expectEqual(@as(u8, ENVELOPES.len - 1), part_of(&s, .lead).envelope);
+}
+
+test "P28-02: grid and MML tracks crossfade into each other" {
+    var f = MmlFixture{};
+    defer f.deinit();
+    try f.init(.{ "L c4 e4", "", "", "" });
+    const tracks = [_]Music{
+        .{ .name = "grid", .pattern = test_pattern(140, 40) },
+        .{ .name = "mml", .score = &f.score },
+    };
+    const st = Soundtrack{ .tracks = &tracks };
+    var s = ChiptuneSynth.init();
+    s.soundtrack = &st;
+    s.set_track(0);
+    try testing.expectEqual(@as(?*const MmlScore, null), s.mml.score);
+    render_frames(&s, 4_000);
+    s.set_track(1);
+    render_frames(&s, 4_000);
+    try testing.expectEqual(@as(?u8, 1), s.current_track);
+    try testing.expectEqual(@as(?*const MmlScore, &f.score), s.mml.score);
+    try testing.expectEqual(@as(u32, 1), part_of(&s, .lead).notes_started);
+    s.set_track(0);
+    render_frames(&s, 4_000);
+    try testing.expectEqual(@as(?*const MmlScore, null), s.mml.score);
+    try testing.expectEqual(@as(u16, 140), s.active_pattern.bpm);
 }

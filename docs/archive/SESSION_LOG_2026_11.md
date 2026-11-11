@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 44 (2026-11-10)
+- **Goal:** Ship P33-01 and implement P33-02 on D-056's design.
+- **Work:** Merged P33-01 (`bf594b8`). Added `agency.pursue` (walks to the target's current waypoint, re-plans when it changes, intercepts when both are idle on one waypoint, resolves the agenda), `Pursuing(Actor)` facts kept in step with agenda stages, `host.tick` firing `Intercepts(Actor, Target, Agenda)`, and a `Pursuing` guard in `Society.walk_to` (its 15 society callers and the Village drifter catalyst now pass the World).
+- **Outcome:** See the Verified table. The first mutation of the idle-target gate survived because the test's target never lingered; slowing the target made the mutation fail the test. The Village golden is unchanged, and 8 wasm decks pass the Node smoke check. Fast-forwarded to `main` and pushed.
+
 ### Session 43 (2026-11-10)
 - **Goal:** Ship P25-03 and start Phase 33 with P33-01.
 - **Work:** Merged P25-03 (`bc0b949`), closing Phase 25. Reviewed D-038 against later decisions and recorded D-056 (script agendas, owned `requires`/`unless` lines, per-agenda state, contention, and the P33-02 society rule); reworded P33-03 to an original cast because the planned homage recreated an existing game's characters. Added `src/agency.zig`, the `agenda` declaration, `CompiledProgram.agendas`, host seeding and stepping, and `.bspk` version 9; updated three hand-computed package test offsets for the new tail.

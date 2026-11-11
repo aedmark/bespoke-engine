@@ -89,6 +89,34 @@ fn render(allocator: std.mem.Allocator, s: *audio.ChiptuneSynth, frames: usize) 
     return hash_samples(buf);
 }
 
+/// An engine MML score, not a proof's (P28-02, D-061): every envelope preset, a volume change,
+/// a tempo change from the bass part, all three drums, and parts of unequal length looping
+/// together. Two passes are recorded so the whole-score loop is heard.
+const MML_DEMO = [4][]const u8{
+    "t132 o5 l8 @1 c e g > c < @2 g e @4 c4 L @5 d f a f @6 e2 @7 c4 @3 r4",
+    "o3 l4 @0 c c g g t120 L a f g g",
+    "o4 l2 v10 @7 e g L f e",
+    "l8 v12 k h s h k k s h L [k h s h]2",
+};
+
+fn record_mml(allocator: std.mem.Allocator, w: anytype) !void {
+    var parsed: [4]bespoke.mml.Score = undefined;
+    var score = audio.MmlScore{};
+    for (MML_DEMO, 0..) |text, i| {
+        var diag = bespoke.mml.Diagnostic{};
+        parsed[i] = try bespoke.mml.parse(allocator, text, if (i == 3) .percussion else .melodic, &diag);
+        score.parts[i] = audio.MmlTrack.of(&parsed[i]);
+    }
+    defer for (&parsed) |*p| p.deinit();
+    const music = [_]audio.Music{.{ .name = "mml-demo", .score = &score }};
+    const soundtrack = audio.Soundtrack{ .tracks = &music };
+    var s = audio.ChiptuneSynth.init();
+    s.soundtrack = &soundtrack;
+    s.set_track(0);
+    // Intro (4 quarters) plus two passes of the loop (4 quarters each) at 120 bpm or faster.
+    try w.print("mml/demo: {x:0>16}\n", .{try render(allocator, &s, 22_050 * 12)});
+}
+
 fn record_all(allocator: std.mem.Allocator) !std.ArrayList(u8) {
     var out = std.ArrayList(u8).init(allocator);
     errdefer out.deinit();
@@ -128,6 +156,8 @@ fn record_all(allocator: std.mem.Allocator) !std.ArrayList(u8) {
     for (SCENES) |scene| {
         try w.print("scene/{s}: {s}\n", .{ scene, Sounds.for_scene(scene) });
     }
+
+    try record_mml(allocator, w);
     return out;
 }
 

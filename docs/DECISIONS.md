@@ -814,6 +814,22 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Parsing inside `src/compiler/`: rejected; the audio thread would then import compiler code.
 **Consequences:** Tempo is a per-track event; how four tracks with different tempo events stay in step is decided in P28-02. `@` presets parse but mean nothing until P28-02 defines them. Errors carry offset, line, and column within the score text; P28-03 maps them to the script position.
 
+## D-061 MML Playback: One Integer Clock, a Whole-Score Loop, an Envelope Table, and the Grid Voices (2026-11-11, status: accepted)
+**Context:** P28-02 plays the event lists P28-01 parses (D-060) as four simultaneous parts. D-060 left open how parts share tempo and what `@0` to `@7` mean; the roadmap asks for cross-channel synchronization and loop points. The maintainer chose the defaults below (2026-11-11).
+**Decision:**
+1. **A score is four borrowed parts.** `MmlScore` holds lead, bass, chords, and percussion `MmlTrack`s (event slices with a loop start). `Music` gains an optional `score`; when set it plays and `pattern` is ignored, and `pattern` now defaults to `SILENT_PATTERN`. Grid tracks are unchanged.
+2. **One integer clock.** A `t` in any part sets the tempo for every part from that tick. The clock gains `tempo * 48` per sample and spends `sample_rate * 60` per tick, so ticks never drift and no floating point enters MML timing. Each tick, parts count down and read events in fixed order (lead, bass, chords, percussion); within one tick the last tempo read wins.
+3. **Whole-score loop.** A part that reaches its end waits. When every part has ended, each part with an `L` restarts there, all on the same tick, and parts without `L` stay silent; with no `L` anywhere the music ends. Parts of unequal length therefore re-align on every pass.
+4. **Envelopes are a fixed table.** `@0` is the grid voice's own sound (fixed peak and decay, no note-off). `@1` organ, `@2` pluck, `@3` long fade, `@4` swell, `@5` staccato, `@6` tremolo (about 6 Hz, half to full level), and `@7` soft pad have an attack, decay, sustain level, and release, and release when the note's written length ends. Envelopes do not apply to drums.
+5. **Parts play the grid voices.** Lead, bass, and chords drive the existing pulse-with-vibrato, triangle, and pad voices; the MML envelope overwrites the voice's level every sample. Percussion triggers the existing kick, snare, and hat. `v` scales a note's peak or a hit's level by n/15.
+6. **The audio thread trusts nothing.** Tempo, volume, and envelope values are clamped at playback; a drum hit on a melodic part or a note on percussion keeps its time but makes no sound; a loop restart happens at most once per tick, so a hand-built score with a zero-length loop cannot stall the thread.
+**Alternatives:**
+- Per-part tempo: not chosen; parts drift apart unless tempos match.
+- Independent per-part loops, as classic MML players do: not chosen; unequal loop lengths slide out of phase.
+- Eight decay speeds with no note-off: not chosen; written lengths would only set when the next note starts.
+- New MML-only voices: rejected for now; the grid voices give scores the engine's existing timbre and keep one set of synthesis code.
+**Consequences:** Every grid golden line is unchanged; `proofs/golden/audio.txt` gains `mml/demo`. A part rests at its end until the longest part finishes, so an author who wants a short phrase to repeat under a long one writes the repeat (`[ ]n`) rather than relying on independent loops. Scripts still cannot declare scores; P28-03 adds `score` and scene triggering.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has
