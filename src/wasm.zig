@@ -764,11 +764,22 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     const Exports = struct {
         var global_wasm_heap: [2 * 1024 * 1024]u8 = undefined;
         var global_fba = std.heap.FixedBufferAllocator.init(&global_wasm_heap);
-        var global_runtime: ?WasmRuntime = null;
+        // The runtime is about 1.2 MB. Held as `?WasmRuntime = null` it was an initialised
+        // global, so the module carried 1.2 MB of zero bytes in its data section; `undefined`
+        // plus a flag leaves it uninitialised memory that costs nothing to download (P30-02,
+        // D-067).
+        var global_runtime: WasmRuntime = undefined;
+        var runtime_ready: bool = false;
+
+        fn runtime() ?*WasmRuntime {
+            return if (runtime_ready) &global_runtime else null;
+        }
 
         fn wasm_init(scenario_id: u8) callconv(.C) void {
             global_fba.reset();
-            global_runtime = WasmRuntime.init(global_fba.allocator(), decks, scenario_id) catch null;
+            runtime_ready = false;
+            global_runtime = WasmRuntime.init(global_fba.allocator(), decks, scenario_id) catch return;
+            runtime_ready = true;
         }
 
         fn wasm_load_scenario(scenario_id: u8) callconv(.C) void {
@@ -776,7 +787,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_step_tick() callconv(.C) void {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 if (!rt.is_paused) {
                     rt.step_tick() catch {};
                     rt.render_frame();
@@ -785,13 +796,13 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_render_frame() callconv(.C) void {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 rt.render_frame();
             }
         }
 
         fn wasm_framebuffer_ptr() callconv(.C) [*]const u8 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 return &rt.canvas.pixels;
             }
             return &global_wasm_heap;
@@ -802,7 +813,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_on_pointer_down(x: i32, y: i32) callconv(.C) u8 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .pointer_down, .x = x, .y = y }) catch .none;
                 rt.render_frame();
                 return @intFromEnum(tag);
@@ -811,7 +822,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_on_pointer_move(x: i32, y: i32) callconv(.C) u8 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .pointer_move, .x = x, .y = y }) catch .none;
                 return @intFromEnum(tag);
             }
@@ -819,7 +830,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_on_right_click(x: i32, y: i32) callconv(.C) u8 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .right_click, .x = x, .y = y }) catch .none;
                 rt.render_frame();
                 return @intFromEnum(tag);
@@ -828,7 +839,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_on_key_down(key_code: u8) callconv(.C) u8 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .key_down, .key_code = key_code }) catch .none;
                 rt.render_frame();
                 return @intFromEnum(tag);
@@ -837,7 +848,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_on_touch(kind_id: u8, x: i32, y: i32, points: u8) callconv(.C) u8 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 const kind: BrowserEventKind = switch (kind_id) {
                     0 => .touch_start,
                     1 => .touch_move,
@@ -851,21 +862,21 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_scrub_to_tick(target_tick: u32) callconv(.C) void {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 rt.scrub_to_tick(target_tick);
                 rt.render_frame();
             }
         }
 
         fn wasm_get_tick() callconv(.C) u32 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 return @intCast(rt.world.current_tick);
             }
             return 0;
         }
 
         fn wasm_get_fact_count() callconv(.C) u32 {
-            if (global_runtime) |*rt| {
+            if (runtime()) |rt| {
                 return @intCast(rt.world.fact_count());
             }
             return 0;

@@ -13,3 +13,5 @@ __pycache__/
 saves/
 
 *.actual.bmp
+
+dist/

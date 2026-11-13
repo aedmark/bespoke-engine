@@ -1302,6 +1302,30 @@
           "related": ["engine-as-spine", "living-village-emergent-sandbox", "branching-dialogue-balloons", "persistent-save-load-and-slot-management"]
         },
         {
+          "id": "showcase-deploy-pipeline",
+          "title": "Showcase Deployment: Export, Offline Cache, and Neocities Upload",
+          "summary": "tools/deploy_site.py turns the self-contained showcase page into a static site with sharing metadata and an offline cache, and uploads only what changed.",
+          "synopsis": "python3 tools/deploy_site.py export [--site-url https://NAME.neocities.org/] | NEOCITIES_API_KEY=... python3 tools/deploy_site.py upload [--yes]",
+          "tags": ["site", "deploy", "neocities", "wasm", "offline"],
+          "what": "export writes dist/site/index.html and sw.js from site/index.html, which stays unchanged; upload compares dist/site/ with the live site and sends the differences.",
+          "how": [
+            "export refuses a stale page, then adds OpenGraph, Twitter, and theme-colour tags from the page's own title and description, plus canonical and og:url when --site-url is given.",
+            "A registration script added before </body> registers sw.js only over http(s), so the file:// page is unaffected.",
+            "sw.js names its cache after a hash of the exported page, deletes older caches on activation, and answers from the network first, falling back to the cache offline.",
+            "upload reads NEOCITIES_API_KEY from the environment, lists the site's SHA-1 hashes through the API, and uploads changed files in one multipart request; without --yes it only lists them, and it never deletes remote files.",
+            "The embedded module is small because the wasm runtime's state is an uninitialised global; node tools/wasm_smoke.js fails any module over 1 MiB."
+          ],
+          "why": "Neocities serves static files and allows no custom headers, so caching and metadata live in the files themselves. Uploading by hash keeps deploys cheap and repeatable, and a dry run by default keeps a publish from happening by accident.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-067", "target": "docs/DECISIONS.md#d-067", "kind": "decision"},
+            {"label": "Deploy Tool", "target": "tools/deploy_site.py", "kind": "source"},
+            {"label": "Deploy Tests", "target": "tests/test_deploy_site.py", "kind": "test"},
+            {"label": "Wasm Smoke Check", "target": "tools/wasm_smoke.js", "kind": "source"}
+          ],
+          "related": ["wasm-browser-target-and-simulator"]
+        },
+        {
           "id": "wasm-browser-target-and-simulator",
           "title": "WebAssembly (wasm32-freestanding) Target & Browser Runtime",
           "summary": "Zero-dependency wasm32-freestanding RGBA8888 runtime with a browser event bridge; games supply its scenes as decks.",

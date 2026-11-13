@@ -7,8 +7,16 @@ const path = require('path');
 const bin = path.join(__dirname, '..', 'zig-out', 'bin');
 const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 7]];
 let failed = false;
+// Each module stays under 1 MiB. The runtime's 1.2 MB of state must stay uninitialised; held
+// as an initialised global it ships as zero bytes in the data section (D-067).
+const MAX_MODULE_BYTES = 1024 * 1024;
 for (const [file, decks] of modules) {
-  const exp = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(bin, file))), {}).exports;
+  const bytes = fs.readFileSync(path.join(bin, file));
+  if (bytes.length > MAX_MODULE_BYTES) {
+    console.log(`FAIL ${file}: ${bytes.length} bytes, over ${MAX_MODULE_BYTES}`);
+    failed = true;
+  }
+  const exp = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
   for (let d = 0; d < decks; d++) {
     try {
       exp.wasm_init(d);

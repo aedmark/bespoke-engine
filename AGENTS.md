@@ -108,6 +108,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `site/index.html` | Standalone public showcase website with the embedded proof WebAssembly playground |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
+| `tools/deploy_site.py` | Showcase export to `dist/site/` and Neocities upload by hash |
 
 ## Engineering conventions
 

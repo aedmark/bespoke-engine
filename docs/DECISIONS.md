@@ -907,6 +907,21 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A committed example project: not chosen; it would drift from the templates.
 **Consequences:** Windows and macOS builds are verified only when a generated project is pushed to GitHub; the Windows SDL2 setup is the least certain. The browser runtime's 2 MiB heap bounds how large a game can be in the browser. The runner's top-level statements now stop after 64 ticks, as every other host's did. `zig-out/lib/libbespoke.a` is now `libbespoke-core.a`.
 
+## D-067 Showcase Deployment: Static Export, Neocities Upload by Hash, and a Small Wasm Module (2026-11-12, status: accepted)
+**Context:** P30-02 asks for a Neocities deployment pipeline that optimizes the wasm asset size, adds metadata, and caches the site offline. The showcase page embedded a 1.28 MB `bespoke-proofs.wasm` as base64 (a 1.78 MB page), of which 1.18 MB was zero bytes: the browser runtime's state was a global `?WasmRuntime = null`, which the compiler emitted as initialised data. Neocities allows no custom response headers. The maintainer chose (2026-11-12): API upload with a dry run by default, the module kept embedded, the public URL passed as an option, and a service worker.
+**Decision:**
+1. **The runtime's state is uninitialised.** `export_runtime` holds the runtime as `undefined` with a ready flag, so the module carries no zero data: `bespoke-proofs.wasm` is 97 KB and `bespoke.wasm` 324 KB, and the page 200 KB. `tools/wasm_smoke.js` fails a module over 1 MiB.
+2. **The page stays one file.** The module stays embedded as base64 in `site/index.html`, which still opens from `file://` and needs no `.wasm` file type on the host.
+3. **`tools/deploy_site.py export` writes `dist/site/`.** It refuses a stale page (the same rendering `build_site.py --check` compares), then adds sharing metadata built from the page's own title and description (OpenGraph, Twitter, theme colour; canonical and `og:url` only with `--site-url https://...`), and a service-worker registration guarded to http(s). The repository page is not changed. `dist/` is ignored by git.
+4. **`sw.js` caches by content.** Its cache name carries a hash of the exported page, so each deploy installs a new cache and deletes the old ones. Fetches go to the network first and fall back to the cache, so online visitors always get the deployed page.
+5. **`upload` sends only changed files.** It reads `NEOCITIES_API_KEY` from the environment, lists the site through the API, compares SHA-1 hashes, and uploads files that differ in one request. Without `--yes` it only lists them. It never deletes remote files and never prints the key. `NEOCITIES_API_URL` points it at a test server.
+**Alternatives:**
+- A separate `.wasm` file with streaming compilation: not chosen; after the fix the gain is small, and Neocities' free plan restricts file types.
+- Stripping or `wasm-opt`: not needed; the zero data was the whole problem, and neither tool is a dependency.
+- Export only, with manual upload: not chosen; re-uploading unchanged files by hand invites mistakes.
+- Cache-first service worker: rejected; visitors would see the previous deploy until a second visit.
+**Consequences:** The service worker has not run in a real browser: the desktop app's browser pane refuses service workers, so it was checked by syntax only. Uploads are tested against a local mock of the API, not Neocities. Removing a file from the site is still done in the Neocities dashboard.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has
