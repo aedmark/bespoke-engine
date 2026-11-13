@@ -100,6 +100,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `docs/CHANGELOG.md` | User-visible release notes |
 | `docs/manual.html` | Standalone interactive 3x manual and developer guide |
 | `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
+| `docs/runbooks/release-hand-test.md` | Release hand-test pass with a results table (P34-07) |
 | `docs/archive/` | Historical material no longer current |
 | `scheme/` | 3x manual schemas and source definitions |
 | `src/` | The engine: spine, VM, compiler, spatial, emergent society, audio, display, persistence, wasm runtime, host kit; exported as the `bespoke` module |

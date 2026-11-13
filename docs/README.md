@@ -18,6 +18,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`CHANGELOG.md`](CHANGELOG.md) | Users | Released and unreleased user-visible changes | Commit-by-commit history |
 | [`AUTHORING.md`](AUTHORING.md) | Game authors | Learning order for the script language, walkthroughs, testing, and the host API contract | Complete syntax (`script_spec.md`) or design rationale |
 | [`SEPARATION.md`](SEPARATION.md) | Developers and auditors | Engine / proof separation rule, classification rubric, audit and extraction method, checks, baseline inventory | Decision rationale (DECISIONS) or task status (ROADMAP) |
+| [`runbooks/release-hand-test.md`](runbooks/release-hand-test.md) | Release owners and the maintainer | The hand-test pass before a release: desktop proofs, listening, browser builds, export, Neocities upload, macOS and Windows CI, and its results table | Automated suites and commands (TESTING) |
 | [`manual.html`](manual.html) | Developers and agents | Standalone 3x interactive manual & developer guide (What, How, Why) | Raw Markdown sources |
 
 ## Update Triggers
