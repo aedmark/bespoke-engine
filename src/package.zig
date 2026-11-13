@@ -43,7 +43,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// their scenes (P28-03, D-062); versions 1 through 10 load with none. Version 12 appends each
 /// cast member's starting mark (D-065); versions 1 through 11 load with none, so a host places
 /// nobody for them.
-pub const PACKAGE_VERSION: u32 = 12;
+/// Version 13 appends cue handler `where` guards (D-072); versions 1 through 12 load with none,
+/// so every handler runs as it did unguarded.
+pub const PACKAGE_VERSION: u32 = 13;
 const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
 const MAX_CAST: u32 = 4096;
@@ -303,6 +305,64 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         try writer.writeInt(u32, place.actor.to_int(), .little);
         try writer.writeInt(u16, place.mark, .little);
     }
+
+    try writer.writeInt(u32, @intCast(compiled.cue_guards.items.len), .little);
+    for (compiled.cue_guards.items) |guard| {
+        try writer.writeInt(u32, @intCast(guard.handler_pc), .little);
+        for (guard.param_slots) |slot| try writer.writeByte(slot orelse NO_GUARD_SLOT);
+        try writer.writeInt(u16, @intCast(guard.clauses.len), .little);
+        for (guard.clauses) |clause| try write_pattern_clause(writer, clause);
+    }
+}
+
+/// Marks a cue parameter with no guard variable slot in a package (D-072).
+const NO_GUARD_SLOT: u8 = 0xFF;
+const MAX_CUE_GUARDS: u32 = 4096;
+const MAX_GUARD_CLAUSES: u16 = 64;
+
+fn write_pattern_term(writer: anytype, term: PatternTerm) !void {
+    switch (term) {
+        .wildcard => {
+            try writer.writeByte(0);
+            try writer.writeInt(u32, 0, .little);
+        },
+        .constant => |val| {
+            try writer.writeByte(1);
+            try writer.writeInt(u32, val, .little);
+        },
+        .variable => |v| {
+            try writer.writeByte(2);
+            try writer.writeInt(u32, @as(u32, v), .little);
+        },
+    }
+}
+
+fn write_pattern_clause(writer: anytype, clause: PatternClause) !void {
+    try writer.writeInt(u16, clause.relation.to_int(), .little);
+    try write_pattern_term(writer, clause.subject);
+    try write_pattern_term(writer, clause.object);
+}
+
+/// Untrusted input: a variable index must name one of the eight binding slots
+/// (`VariableBindings`); a larger value would truncate when narrowed to `u8`.
+fn read_pattern_term(reader: anytype) !PatternTerm {
+    const tag = try reader.readByte();
+    const val = try reader.readInt(u32, .little);
+    return switch (tag) {
+        0 => .{ .wildcard = {} },
+        1 => .{ .constant = val },
+        2 => if (val < 8) .{ .variable = @intCast(val) } else error.InvalidPatternVariable,
+        else => error.InvalidPatternTermTag,
+    };
+}
+
+fn read_pattern_clause(reader: anytype) !PatternClause {
+    const rel_kind = try reader.readInt(u16, .little);
+    return .{
+        .relation = RelationKind.from_int(rel_kind),
+        .subject = try read_pattern_term(reader),
+        .object = try read_pattern_term(reader),
+    };
 }
 
 fn read_entity_ref(world: *const World, reader: anytype) !EntityId {
@@ -865,39 +925,7 @@ pub fn save_package(
         try pw.writeInt(u32, @intCast(r.handler_pc), .little);
         try pw.writeByte(@intFromEnum(r.edge));
         try pw.writeInt(u16, @intCast(r.clauses.len), .little);
-        for (r.clauses) |clause| {
-            try pw.writeInt(u16, clause.relation.to_int(), .little);
-            // Subject PatternTerm
-            switch (clause.subject) {
-                .wildcard => {
-                    try pw.writeByte(0);
-                    try pw.writeInt(u32, 0, .little);
-                },
-                .constant => |val| {
-                    try pw.writeByte(1);
-                    try pw.writeInt(u32, val, .little);
-                },
-                .variable => |v| {
-                    try pw.writeByte(2);
-                    try pw.writeInt(u32, @as(u32, v), .little);
-                },
-            }
-            // Object PatternTerm
-            switch (clause.object) {
-                .wildcard => {
-                    try pw.writeByte(0);
-                    try pw.writeInt(u32, 0, .little);
-                },
-                .constant => |val| {
-                    try pw.writeByte(1);
-                    try pw.writeInt(u32, val, .little);
-                },
-                .variable => |v| {
-                    try pw.writeByte(2);
-                    try pw.writeInt(u32, @as(u32, v), .little);
-                },
-            }
-        }
+        for (r.clauses) |clause| try write_pattern_clause(pw, clause);
     }
 
     // 9. Draft note table (version 2+)
@@ -1117,30 +1145,8 @@ pub fn load_package(
         };
         const clause_count = try pr.readInt(u16, .little);
         const clauses = try allocator.alloc(PatternClause, clause_count);
-        for (clauses) |*cl| {
-            const rel_kind = try pr.readInt(u16, .little);
-            cl.relation = RelationKind.from_int(rel_kind);
-
-            // Subject
-            const s_tag = try pr.readByte();
-            const s_val = try pr.readInt(u32, .little);
-            cl.subject = switch (s_tag) {
-                0 => PatternTerm{ .wildcard = {} },
-                1 => PatternTerm{ .constant = s_val },
-                2 => PatternTerm{ .variable = @intCast(s_val) },
-                else => return error.InvalidPatternTermTag,
-            };
-
-            // Object
-            const o_tag = try pr.readByte();
-            const o_val = try pr.readInt(u32, .little);
-            cl.object = switch (o_tag) {
-                0 => PatternTerm{ .wildcard = {} },
-                1 => PatternTerm{ .constant = o_val },
-                2 => PatternTerm{ .variable = @intCast(o_val) },
-                else => return error.InvalidPatternTermTag,
-            };
-        }
+        errdefer allocator.free(clauses);
+        for (clauses) |*cl| cl.* = try read_pattern_clause(pr);
 
         try reactive_rules.append(.{
             .clauses = clauses,
@@ -1307,6 +1313,41 @@ pub fn load_package(
         }
     }
 
+    var cue_guards = std.ArrayListUnmanaged(codegen_mod.CueGuard){};
+    errdefer {
+        for (cue_guards.items) |guard| allocator.free(guard.clauses);
+        cue_guards.deinit(allocator);
+    }
+    if (header.version >= 13) {
+        const guard_count = try pr.readInt(u32, .little);
+        if (guard_count > MAX_CUE_GUARDS) return error.InvalidCueGuard;
+        try cue_guards.ensureTotalCapacity(allocator, guard_count);
+        var gi: u32 = 0;
+        while (gi < guard_count) : (gi += 1) {
+            const handler_pc = try pr.readInt(u32, .little);
+            // A guard belongs to a cue handler; any other pc would never be consulted.
+            if (handler_pc >= header.bytecode_len) return error.InvalidCueGuard;
+            var names_handler = false;
+            var entries = cue_handler_entries.valueIterator();
+            while (entries.next()) |pc| {
+                if (pc.* == handler_pc) names_handler = true;
+            }
+            if (!names_handler) return error.InvalidCueGuard;
+            var guard = codegen_mod.CueGuard{ .handler_pc = handler_pc, .clauses = &.{} };
+            for (&guard.param_slots) |*slot| {
+                const raw = try pr.readByte();
+                slot.* = if (raw == NO_GUARD_SLOT) null else if (raw < 8) raw else return error.InvalidCueGuard;
+            }
+            const clause_count = try pr.readInt(u16, .little);
+            if (clause_count == 0 or clause_count > MAX_GUARD_CLAUSES) return error.InvalidCueGuard;
+            const clauses = try allocator.alloc(PatternClause, clause_count);
+            errdefer allocator.free(clauses);
+            for (clauses) |*cl| cl.* = try read_pattern_clause(pr);
+            guard.clauses = clauses;
+            cue_guards.appendAssumeCapacity(guard);
+        }
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1326,6 +1367,7 @@ pub fn load_package(
         .aliases = aliases,
         .scores = scores,
         .cast = cast,
+        .cue_guards = cue_guards,
     };
 }
 
@@ -1556,8 +1598,10 @@ const EMPTY_TAIL_AFTER_V9: usize = 4 + 4 + EMPTY_TAIL_AFTER_V10;
 /// The empty score count (version 11) and cast count (version 12), for tests that locate
 /// version 10 sections from the end.
 const EMPTY_TAIL_AFTER_V10: usize = 4 + EMPTY_TAIL_AFTER_V11;
-/// The empty cast count (version 12).
-const EMPTY_TAIL_AFTER_V11: usize = 4;
+/// The empty cast count (version 12) and cue guard count (version 13).
+const EMPTY_TAIL_AFTER_V11: usize = 4 + EMPTY_TAIL_AFTER_V12;
+/// The empty cue guard count (version 13).
+const EMPTY_TAIL_AFTER_V12: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -2198,7 +2242,7 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
-        std.mem.writeInt(u16, bad[bad.len - 2 ..][0..2], 99, .little);
+        std.mem.writeInt(u16, bad[bad.len - EMPTY_TAIL_AFTER_V12 - 2 ..][0..2], 99, .little);
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
@@ -2206,7 +2250,7 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
         try testing.expectError(error.InvalidProgramWaypoint, load_package(testing.allocator, bad_stream.reader(), &world3, null));
     }
     {
-        const v11 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - cast_section_len]);
+        const v11 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - cast_section_len - EMPTY_TAIL_AFTER_V12]);
         defer testing.allocator.free(v11);
         reseal_for_test(v11, 11);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -2215,5 +2259,62 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
         var loaded = try load_package(testing.allocator, v11_stream.reader(), &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.cast.items.len);
+    }
+}
+
+test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and loads version 12" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\entity Cat, Guard, Cheese
+        \\on cue Steal(Cat, victim) where Carries(victim, Cheese):
+        \\  remember Stolen(Cheese)
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled1.cue_guards.items.len);
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.cue_guards.items.len);
+    const cat = world2.lookup_entity("Cat").?;
+    const guard_ent = world2.lookup_entity("Guard").?;
+    const cheese = world2.lookup_entity("Cheese").?;
+    // The loaded guard still binds `victim` to the cue's target.
+    try testing.expectEqual(@as(?usize, null), compiled2.select_cue_handler(&world2, "Steal", cat, guard_ent, null));
+    _ = try world2.remember(guard_ent, try world2.intern_relation("Carries", .set), cheese.to_int(), 0);
+    try testing.expect(compiled2.select_cue_handler(&world2, "Steal", cat, guard_ent, null) != null);
+
+    // Tail: count, then pc, three slot bytes, clause count, and one clause of 2 + 5 + 5 bytes.
+    const guard_section_len = 4 + 4 + 3 + 2 + (2 + 5 + 5);
+    {
+        // The clause's subject is the bound `victim`, variable slot 0; slot 9 cannot exist.
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        std.mem.writeInt(u32, bad[bad.len - 5 - 4 ..][0..4], 9, .little);
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidPatternVariable, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        const v12 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - guard_section_len]);
+        defer testing.allocator.free(v12);
+        reseal_for_test(v12, 12);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v12_stream = std.io.fixedBufferStream(v12);
+        var loaded = try load_package(testing.allocator, v12_stream.reader(), &world3, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.cue_guards.items.len);
     }
 }

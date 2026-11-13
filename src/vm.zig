@@ -440,11 +440,10 @@ pub const VM = struct {
         target_a: ?EntityId,
         target_b: ?EntityId,
     ) !?FiberId {
-        const actor_name = self.world.get_entity_name(actor);
-        const name_a = if (target_a) |ta| self.world.get_entity_name(ta) else null;
-        const name_b = if (target_b) |tb| self.world.get_entity_name(tb) else null;
-
-        const handler_pc = compiled.find_cue_handler(cue_name, actor_name, name_a, name_b) orelse return null;
+        // The guard is read now, at the cue, not when the handler fiber first runs: a guard
+        // describes the moment of the action, and a cue fired before a save must not change
+        // its mind after a restore (D-072).
+        const handler_pc = compiled.select_cue_handler(self.world, cue_name, actor, target_a, target_b) orelse return null;
 
         // Record cue emission for peripheral visual/audio bridge
         var emitted = EmittedCue{
@@ -1734,6 +1733,22 @@ test "P11-02: VM.fire_cue executes 3-argument item combining cue with commutativ
                 } else |_| {}
             }
             return null;
+        }
+        /// The VM dispatches through the guarded lookup (D-072); this mock has no guards.
+        pub fn select_cue_handler(
+            self: *const @This(),
+            w: *const World,
+            cue_name: []const u8,
+            actor: EntityId,
+            target_a: ?EntityId,
+            target_b: ?EntityId,
+        ) ?usize {
+            return self.find_cue_handler(
+                cue_name,
+                w.get_entity_name(actor),
+                if (target_a) |t| w.get_entity_name(t) else null,
+                if (target_b) |t| w.get_entity_name(t) else null,
+            );
         }
     };
     const mock_prog = MockProgram{ .cue_handler_entries = cue_map };

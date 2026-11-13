@@ -112,7 +112,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `site/index.html` | Standalone public showcase website with the embedded proof WebAssembly playground |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
-| `tools/deploy_site.py` | Showcase export to `dist/site/` and Neocities upload by hash |
+| `tools/deploy_site.py` | Showcase export to `dist/site/` for hand upload (D-074) |
 
 ## Engineering conventions
 

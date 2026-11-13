@@ -549,8 +549,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     _ = try transceiver.sync_past_mutation(&world, tree_prop, tree_prop.to_int());
 
     // Causal decay tracker models timeline existence probability (P32-20)
-    const prob = bespoke.CausalDecayTracker.get_existence_probability(world.current_tick, 0, 1000);
-    std.debug.assert(prob > 0.0);
+    const remaining = bespoke.CausalDecayTracker.existence_permille(world.current_tick, 0, 1000);
+    std.debug.assert(remaining > 0);
     std.debug.assert(!bespoke.CausalDecayTracker.is_erased(world.current_tick, 0, 1000));
 
     const free_rel = try world.intern_relation("FreedFromTree", .set);
@@ -1086,12 +1086,9 @@ test "P32-20: DOTT exercises BitemporalTransceiver, CausalDecayTracker, and reje
     try testing.expect(world.has_fact(future_tree, chop_rel, 1));
 
     // 3. CausalDecayTracker existence decay calculation
-    const prob_start = bespoke.CausalDecayTracker.get_existence_probability(100, 100, 200);
-    try testing.expectEqual(@as(f32, 1.0), prob_start);
-    const prob_mid = bespoke.CausalDecayTracker.get_existence_probability(200, 100, 200);
-    try testing.expectEqual(@as(f32, 0.5), prob_mid);
-    const prob_end = bespoke.CausalDecayTracker.get_existence_probability(300, 100, 200);
-    try testing.expectEqual(@as(f32, 0.0), prob_end);
+    try testing.expectEqual(@as(u16, 1000), bespoke.CausalDecayTracker.existence_permille(100, 100, 200));
+    try testing.expectEqual(@as(u16, 500), bespoke.CausalDecayTracker.existence_permille(200, 100, 200));
+    try testing.expectEqual(@as(u16, 0), bespoke.CausalDecayTracker.existence_permille(300, 100, 200));
     try testing.expect(bespoke.CausalDecayTracker.is_erased(300, 100, 200));
     try testing.expect(!bespoke.CausalDecayTracker.is_erased(200, 100, 200));
 }

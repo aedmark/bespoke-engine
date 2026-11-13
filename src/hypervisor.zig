@@ -39,6 +39,38 @@ pub const TeleologicalDependency = struct {
     target_goal_relation: RelationKind,
 };
 
+/// True when `from` is `to` or reaches it through `dependencies` (D-073). A simple path uses
+/// each edge at most once, so the search stops at `dependencies.len` steps: a cycle in the
+/// declared dependencies cannot recurse forever.
+pub fn leads_to(dependencies: []const TeleologicalDependency, from: RelationKind, to: RelationKind) bool {
+    return reaches(dependencies, from, to, dependencies.len);
+}
+
+fn reaches(dependencies: []const TeleologicalDependency, from: RelationKind, to: RelationKind, steps_left: usize) bool {
+    if (from == to) return true;
+    if (steps_left == 0) return false;
+    for (dependencies) |dep| {
+        if (dep.prerequisite_relation == from and reaches(dependencies, dep.target_goal_relation, to, steps_left - 1)) return true;
+    }
+    return false;
+}
+
+/// Novikov self-consistency (P31-02, D-027, D-073): history is fixed, so an action that would
+/// bring about a paradox cannot happen. `candidate_action` is inconsistent when the actor
+/// already holds `paradox_relation`, when the action is the paradox, or when the declared
+/// cause-to-effect `consequences` lead from the action to the paradox. Hosts pass a
+/// hypervisor's teleological dependencies, or call `TemporalHypervisor.is_novikov_consistent`.
+pub fn validate_novikov_consistency(
+    world: *const World,
+    actor: EntityId,
+    candidate_action: RelationKind,
+    paradox_relation: RelationKind,
+    consequences: []const TeleologicalDependency,
+) bool {
+    if (world.has_fact(actor, paradox_relation, null)) return false;
+    return !leads_to(consequences, candidate_action, paradox_relation);
+}
+
 /// Outcome of advancing the temporal hypervisor by one discrete simulation tick (P31-01, P32-21, D-027, D-044).
 pub const HypervisorStepResult = enum {
     running,
@@ -168,23 +200,26 @@ pub const TemporalHypervisor = struct {
         });
     }
 
-    /// Backward-chaining teleological Horn clause solver: evaluates if candidate advances target goal (P31-01, D-027).
+    /// True when `candidate_relation` is the goal or reaches it through registered
+    /// prerequisite-to-goal edges (P31-01, D-027, D-073). Each edge is a one-premise rule
+    /// ("a prerequisite advances its goal"), so this is backward chaining over those rules.
     pub fn is_teleologically_justified(
         self: *const TemporalHypervisor,
         candidate_relation: RelationKind,
         target_goal_relation: RelationKind,
     ) bool {
-        if (candidate_relation == target_goal_relation) return true;
+        return leads_to(self.teleological_dependencies.items, candidate_relation, target_goal_relation);
+    }
 
-        for (self.teleological_dependencies.items) |dep| {
-            if (dep.prerequisite_relation == candidate_relation) {
-                if (dep.target_goal_relation == target_goal_relation) return true;
-                if (self.is_teleologically_justified(dep.target_goal_relation, target_goal_relation)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+    /// Novikov self-consistency against this hypervisor's registered dependencies, in the
+    /// world the player is acting in (D-049, D-073). See `validate_novikov_consistency`.
+    pub fn is_novikov_consistent(
+        self: *TemporalHypervisor,
+        actor: EntityId,
+        candidate_action: RelationKind,
+        paradox_relation: RelationKind,
+    ) bool {
+        return validate_novikov_consistency(self.active_world(), actor, candidate_action, paradox_relation, self.teleological_dependencies.items);
     }
 
     /// Evaluates whether causal loop closure invariants are satisfied (P31-01, P32-21, D-027, D-044).
@@ -214,9 +249,9 @@ pub const TemporalHypervisor = struct {
             }
         }
 
-        // 2. Check relational ConvergenceReady / VortexReady / LoopClosed state fact
+        // 2. A `ConvergenceReady` or `LoopClosed` fact must hold. Both names are the engine's
+        // neutral vocabulary (D-044); the proof-specific `VortexReady` alias was removed (D-073).
         const closed_rel = bw.lookup_relation("ConvergenceReady") orelse
-            bw.lookup_relation("VortexReady") orelse
             bw.lookup_relation("LoopClosed") orelse return false;
 
         return bw.has_fact(null, closed_rel, null);
@@ -395,7 +430,7 @@ test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dre
 
     const donnie = try primary.intern_entity("Donnie");
     const jet_engine = try primary.intern_entity("JetEngine");
-    const vortex_rel = try primary.intern_relation("VortexReady", .set);
+    const vortex_rel = try primary.intern_relation("LoopClosed", .set);
     const dream_rel = try primary.intern_relation("DreamPrecognition", .set);
 
     var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
@@ -501,4 +536,33 @@ test "P32-21: TemporalHypervisor neutral vocabulary (fork_branch, convergence ta
 
     const key_mat_rel = primary.lookup_relation("KeystoneMaterialized").?;
     try testing.expect(primary.has_fact(keystone, key_mat_rel, 1));
+}
+
+test "D-073: the Novikov check reads the candidate action's consequences, and chains stop on cycles" {
+    const testing = std.testing;
+    var primary = try World.init(testing.allocator, 1024 * 1024);
+    defer primary.deinit();
+    var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
+    defer hypervisor.deinit();
+
+    const traveler = try primary.intern_entity("Traveler");
+    const warn_rel = try primary.intern_relation("WarnsInventor", .set);
+    const abandon_rel = try primary.intern_relation("InventorAbandonsMachine", .set);
+    const paradox_rel = try primary.intern_relation("MachineNeverBuilt", .set);
+    const fetch_rel = try primary.intern_relation("FetchesPart", .set);
+    try hypervisor.register_teleological_dependency(warn_rel, abandon_rel);
+    try hypervisor.register_teleological_dependency(abandon_rel, paradox_rel);
+
+    // Warning the inventor leads to the paradox; fetching a part does not.
+    try testing.expect(!hypervisor.is_novikov_consistent(traveler, warn_rel, paradox_rel));
+    try testing.expect(hypervisor.is_novikov_consistent(traveler, fetch_rel, paradox_rel));
+    try testing.expect(!hypervisor.is_novikov_consistent(traveler, paradox_rel, paradox_rel));
+    // A held paradox rejects every action.
+    _ = try primary.remember(traveler, paradox_rel, 0, 0);
+    try testing.expect(!hypervisor.is_novikov_consistent(traveler, fetch_rel, paradox_rel));
+
+    // A cycle in the declared dependencies terminates with an answer.
+    try hypervisor.register_teleological_dependency(abandon_rel, warn_rel);
+    try testing.expect(!hypervisor.is_teleologically_justified(abandon_rel, fetch_rel));
+    try testing.expect(hypervisor.is_teleologically_justified(abandon_rel, paradox_rel));
 }

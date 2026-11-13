@@ -537,8 +537,14 @@ pub const World = struct {
 
     /// Finds the first satisfying set of variable bindings for a conjunction of relational clauses (P8-01).
     pub fn find_first_match(self: *const World, clauses: []const PatternClause) ?VariableBindings {
-        if (clauses.len == 0) return VariableBindings{};
-        return self.match_multi_step(clauses, 0, VariableBindings{});
+        return self.find_first_match_from(clauses, VariableBindings{});
+    }
+
+    /// Like `find_first_match`, but starts from bindings already set, so a variable bound by the
+    /// caller (a cue argument, D-072) must match that value in every clause that mentions it.
+    pub fn find_first_match_from(self: *const World, clauses: []const PatternClause, initial: VariableBindings) ?VariableBindings {
+        if (clauses.len == 0) return initial;
+        return self.match_multi_step(clauses, 0, initial);
     }
 
     /// Tests whether a conjunction of relational clauses is satisfied in the active fact store (P8-01).

@@ -135,8 +135,7 @@ zig build test-proofs                     # every proof's tests
 
 ## Known Limitations
 
-- `where` guards on `on cue` handlers are parsed but not evaluated, and the compiler accepts them without a warning, so the handler runs whether or not the guard holds. Dialogue-choice `where` guards and `when` rule patterns are evaluated. Put the check inside the handler with `if`.
-- Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity but are not bound to it in the body.
+- Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
 - The Bell Tower, Caustic Grog, and Algiers windows have not been hand-played on a desktop, and the Castle Fire Escape has not been replayed since its speech fix; macOS and Windows builds have never run (the template's CI workflow is untested). See [Phase 34](ROADMAP.md) and the [release hand-test](docs/runbooks/release-hand-test.md).
 - The showcase site embeds `bespoke-proofs.wasm`, so its eleven decks run their proofs' scripts in the real browser runtime from `file://`, with the engine's own audio; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`. The Castle Fire Escape and The Larkspur Observatory are desktop-only for now.

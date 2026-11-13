@@ -43,6 +43,19 @@ pub const CastPlace = struct {
     mark: spatial_mod.WaypointId,
 };
 
+/// Most parameters a cue handler binds: the actor and two targets (D-013).
+pub const MAX_CUE_PARAMS = 3;
+
+/// A cue handler's `where` guard (Q-006, D-072). Each variable parameter has a pattern
+/// variable slot, filled from the fired cue's arguments before the clauses are joined, so
+/// `on cue Steal(Cat, victim) where CharmedBy(victim, _)` asks about the actual victim.
+/// Named parameters have no slot: their clauses already hold the entity as a constant.
+pub const CueGuard = struct {
+    handler_pc: usize,
+    param_slots: [MAX_CUE_PARAMS]?u8 = .{ null, null, null },
+    clauses: []const world_mod.PatternClause,
+};
+
 pub const CompiledProgram = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
@@ -70,8 +83,12 @@ pub const CompiledProgram = struct {
     scores: std.ArrayList(mml.ScoreDecl),
     /// Each cast member's starting mark, in source order (D-065). Empty without a SpatialSystem.
     cast: std.ArrayListUnmanaged(CastPlace) = .{},
+    /// `where` guards of cue handlers, in source order (D-072). Handlers without one are absent.
+    cue_guards: std.ArrayListUnmanaged(CueGuard) = .{},
 
     pub fn deinit(self: *CompiledProgram) void {
+        for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
+        self.cue_guards.deinit(self.chunk.allocator);
         self.cast.deinit(self.chunk.allocator);
         for (self.scores.items) |*score| score.deinit_owned(self.chunk.allocator);
         self.scores.deinit();
@@ -142,13 +159,9 @@ pub const CompiledProgram = struct {
         return self.routine_entries.get(key);
     }
 
-    /// Finds entry PC for a cue handler matching cue name and arguments (P11-01, P11-02, D-013).
-    /// Supports ternary item-combining with commutative matching (ItemA on ItemB == ItemB on ItemA).
-    /// Finds the handler for a fired cue (D-009, D-013, D-037). Tried in order, most specific
-    /// first: the exact signature (for two targets, also with the targets swapped), signatures
-    /// whose parameters were declared as variables (stored as `*`), then the actor-only
-    /// handler `on cue X(Actor):`. A cue no declared signature covers has no handler: there is
-    /// no fallback to a handler written for a different actor or target.
+    /// Finds the handler for a fired cue by name alone, without evaluating `where` guards
+    /// (D-009, D-013, D-037). Hosts dispatch through `select_cue_handler`, which also checks
+    /// guards; this form answers "which handler does this signature name".
     pub fn find_cue_handler(
         self: *const CompiledProgram,
         cue_name: []const u8,
@@ -157,19 +170,65 @@ pub const CompiledProgram = struct {
         target_b: ?[]const u8,
     ) ?usize {
         const who = actor orelse return null;
+        return self.resolve_cue(null, cue_name, who, target_a, target_b, .{ .none, .none, .none });
+    }
+
+    /// Finds the handler a fired cue runs (D-009, D-013, D-037, D-072). Tried in order, most
+    /// specific first: the exact signature (for two targets, also with the targets swapped),
+    /// signatures whose parameters were declared as variables (stored as `*`), then the
+    /// actor-only handler `on cue X(Actor):`. A handler with a `where` guard is taken only if the
+    /// guard holds with its variable parameters bound to this cue's arguments; otherwise the
+    /// search continues with the next, less specific signature. A cue no declared signature
+    /// covers has no handler: there is no fallback to a handler written for a different actor
+    /// or target.
+    pub fn select_cue_handler(
+        self: *const CompiledProgram,
+        world: *const World,
+        cue_name: []const u8,
+        actor: EntityId,
+        target_a: ?EntityId,
+        target_b: ?EntityId,
+    ) ?usize {
+        const who = world.get_entity_name(actor) orelse return null;
+        const name_a = if (target_a) |ta| world.get_entity_name(ta) else null;
+        const name_b = if (target_b) |tb| world.get_entity_name(tb) else null;
+        return self.resolve_cue(world, cue_name, who, name_a, name_b, .{
+            actor,
+            target_a orelse .none,
+            target_b orelse .none,
+        });
+    }
+
+    /// One search over the signature forms. With a World, each found handler's guard is checked
+    /// against `ids`, reordered to match the form: a swapped form binds the second parameter
+    /// to the second target, so a guard reads the arguments in the order its handler declares.
+    fn resolve_cue(
+        self: *const CompiledProgram,
+        world: ?*const World,
+        cue_name: []const u8,
+        who: []const u8,
+        target_a: ?[]const u8,
+        target_b: ?[]const u8,
+        ids: [3]EntityId,
+    ) ?usize {
+        const straight = [3]EntityId{ ids[0], ids[1], ids[2] };
+        const swapped = [3]EntityId{ ids[0], ids[2], ids[1] };
 
         if (target_a != null and target_b != null) {
             const a = target_a.?;
             const b = target_b.?;
-            const forms = [_][3][]const u8{
-                .{ who, a, b },                       .{ who, b, a },
-                .{ who, a, CUE_WILDCARD },            .{ who, CUE_WILDCARD, b },
-                .{ who, b, CUE_WILDCARD },            .{ who, CUE_WILDCARD, a },
-                .{ who, CUE_WILDCARD, CUE_WILDCARD }, .{ CUE_WILDCARD, a, b },
-                .{ CUE_WILDCARD, b, a },              .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD },
+            const Form = struct { parts: [3][]const u8, swap: bool };
+            const forms = [_]Form{
+                .{ .parts = .{ who, a, b }, .swap = false },                                  .{ .parts = .{ who, b, a }, .swap = true },
+                .{ .parts = .{ who, a, CUE_WILDCARD }, .swap = false },                       .{ .parts = .{ who, CUE_WILDCARD, b }, .swap = false },
+                .{ .parts = .{ who, b, CUE_WILDCARD }, .swap = true },                        .{ .parts = .{ who, CUE_WILDCARD, a }, .swap = true },
+                .{ .parts = .{ who, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },            .{ .parts = .{ CUE_WILDCARD, a, b }, .swap = false },
+                .{ .parts = .{ CUE_WILDCARD, b, a }, .swap = true },                          .{ .parts = .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },
             };
             for (forms) |f| {
-                if (self.lookup_cue(cue_name, &f)) |pc| return pc;
+                if (self.lookup_cue(cue_name, &f.parts)) |pc| {
+                    if (self.guard_admits(world, pc, if (f.swap) &swapped else &straight)) return pc;
+                }
             }
         }
 
@@ -181,12 +240,41 @@ pub const CompiledProgram = struct {
                 .{ CUE_WILDCARD, CUE_WILDCARD },
             };
             for (forms) |f| {
-                if (self.lookup_cue(cue_name, &f)) |pc| return pc;
+                if (self.lookup_cue(cue_name, &f)) |pc| {
+                    if (self.guard_admits(world, pc, straight[0..2])) return pc;
+                }
             }
         }
 
-        if (self.lookup_cue(cue_name, &.{who})) |pc| return pc;
-        return self.lookup_cue(cue_name, &.{CUE_WILDCARD});
+        if (self.lookup_cue(cue_name, &.{who})) |pc| {
+            if (self.guard_admits(world, pc, straight[0..1])) return pc;
+        }
+        if (self.lookup_cue(cue_name, &.{CUE_WILDCARD})) |pc| {
+            if (self.guard_admits(world, pc, straight[0..1])) return pc;
+        }
+        return null;
+    }
+
+    /// The `where` guard of the handler at `pc`, if it has one (D-072).
+    pub fn find_cue_guard(self: *const CompiledProgram, pc: usize) ?*const CueGuard {
+        for (self.cue_guards.items) |*guard| {
+            if (guard.handler_pc == pc) return guard;
+        }
+        return null;
+    }
+
+    /// True when the handler at `pc` has no guard, no World was given (name-only lookup), or
+    /// its guard's clauses match the World with each variable parameter bound to its argument.
+    fn guard_admits(self: *const CompiledProgram, world: ?*const World, pc: usize, args: []const EntityId) bool {
+        const w = world orelse return true;
+        const guard = self.find_cue_guard(pc) orelse return true;
+        var bindings = world_mod.VariableBindings{};
+        for (guard.param_slots, 0..) |slot, i| {
+            const s = slot orelse continue;
+            if (i >= args.len) return false;
+            if (!bindings.set(s, args[i].to_int())) return false;
+        }
+        return w.find_first_match_from(guard.clauses, bindings) != null;
     }
 
     fn lookup_cue(self: *const CompiledProgram, cue_name: []const u8, parts: []const []const u8) ?usize {
@@ -236,6 +324,7 @@ pub const Codegen = struct {
     aliases: std.ArrayList(command_mod.AliasDecl),
     scores: std.ArrayList(mml.ScoreDecl),
     cast: std.ArrayListUnmanaged(CastPlace) = .{},
+    cue_guards: std.ArrayListUnmanaged(CueGuard) = .{},
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -578,6 +667,10 @@ pub const Codegen = struct {
                 try mut_self.cue_handler_entries.put(sig, entry_pc);
             }
 
+            if (cue.where_patterns.len > 0) {
+                try mut_self.cue_guards.append(mut_self.allocator, try mut_self.compile_cue_guard(cue, entry_pc));
+            }
+
             for (cue.body) |stmt| {
                 try mut_self.compile_stmt(stmt);
             }
@@ -603,6 +696,7 @@ pub const Codegen = struct {
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
             .cast = mut_self.cast,
+            .cue_guards = mut_self.cue_guards,
         };
     }
 
@@ -1294,6 +1388,47 @@ pub const Codegen = struct {
             const ent = try self.resolve_entity(name);
             return ent.to_int();
         }
+    }
+
+    /// Compiles a cue handler's `where` guard into join clauses (Q-006, D-072). Variable
+    /// parameters take the first variable slots, in parameter order, before any variable that
+    /// appears only in the guard, so dispatch can bind them to the cue's arguments. A guard
+    /// pattern names a state (one argument) or a fact (two); the join has eight slots in all.
+    fn compile_cue_guard(self: *Codegen, cue: parser_mod.CueHandler, entry_pc: usize) !CueGuard {
+        if (cue.params.len > MAX_CUE_PARAMS) return error.TooManyCueParameters;
+        var var_map = std.StringHashMap(u8).init(self.allocator);
+        defer var_map.deinit();
+        var next_var: u8 = 0;
+        var guard = CueGuard{ .handler_pc = entry_pc, .clauses = &.{} };
+        for (cue.params, 0..) |param, i| {
+            if (std.mem.eql(u8, cue_param_key(param), CUE_WILDCARD) and !std.mem.eql(u8, param, "_")) {
+                if (var_map.get(param)) |slot| {
+                    guard.param_slots[i] = slot;
+                } else {
+                    try var_map.put(param, next_var);
+                    guard.param_slots[i] = next_var;
+                    next_var += 1;
+                }
+            }
+        }
+
+        const clauses = try self.allocator.alloc(world_mod.PatternClause, cue.where_patterns.len);
+        errdefer self.allocator.free(clauses);
+        for (cue.where_patterns, clauses) |pattern, *clause| {
+            if (pattern.args.len == 0 or pattern.args.len > 2) return error.InvalidCueGuardPattern;
+            clause.* = .{
+                .relation = try self.resolve_relation(pattern.relation),
+                .subject = try self.resolve_pattern_term(pattern.args[0], &var_map, &next_var),
+                .object = if (pattern.args.len == 2)
+                    try self.resolve_pattern_term(pattern.args[1], &var_map, &next_var)
+                else
+                    .{ .wildcard = {} },
+            };
+            // `VariableBindings` holds eight slots; a ninth variable could never bind.
+            if (next_var > 8) return error.TooManyCueGuardVariables;
+        }
+        guard.clauses = clauses;
+        return guard;
     }
 
     fn resolve_pattern_term(

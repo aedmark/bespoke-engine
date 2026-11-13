@@ -385,5 +385,5 @@ A window host follows the loop documented on `host.Session` in [`src/host.zig`](
 These are recorded under Claims vs. code in [`ARCHITECTURE.md`](ARCHITECTURE.md):
 
 - A cue handler parameter written in lowercase (`on cue Shows(Hero, item):`) matches any entity but is not bound; the body cannot use `item`. Write one handler per concrete name.
-- `where` guards on `on cue` handlers are parsed but not evaluated. Put the check inside the body with `if`.
+- A `where` guard on an `on cue` handler binds the handler's lowercase parameters to the cue's arguments, but the handler body does not: inside the body, a lowercase parameter is read as an entity name. Name the entities in the body, or check them with `if`.
 - The stock window answers dialogue and typed commands, but clicking a person does not talk to them; type `talk to <name>`.

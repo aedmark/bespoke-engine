@@ -379,3 +379,98 @@ test "P32-27: an unmatched cue has no handler; defaults and variable parameters 
     try testing.expect(!empty.is_valid);
     try testing.expect(std.mem.indexOf(u8, empty.diagnostic().?.message, "needs an actor") != null);
 }
+
+test "D-072: cue where guards bind cue parameters and fall through to the next handler" {
+    const testing = std.testing;
+    const script =
+        \\entity Cat, Guard, Bard, Cheese, Fish, Lamp, Oil
+        \\
+        \\on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):
+        \\  remember Stolen(Cat)
+        \\
+        \\on cue Steal(thief, victim):
+        \\  remember Caught(thief)
+        \\
+        \\on cue Fills(Cat, Lamp, fuel) where Fuel(fuel):
+        \\  remember Lit(Lamp)
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, script);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.cue_guards.items.len);
+
+    const cat = world.lookup_entity("Cat").?;
+    const guard = world.lookup_entity("Guard").?;
+    const bard = world.lookup_entity("Bard").?;
+    const cheese = world.lookup_entity("Cheese").?;
+    const fish = world.lookup_entity("Fish").?;
+    const carries = world.lookup_relation("Carries").?;
+    const charmed = world.lookup_relation("CharmedBy").?;
+
+    const guarded = compiled.find_cue_handler("Steal", "Cat", "Guard", null).?;
+    const fallback = compiled.find_cue_handler("Steal", "Bard", "Guard", null).?;
+    try testing.expect(guarded != fallback);
+
+    // Neither fact holds: the guarded handler declines and the variable handler runs.
+    try testing.expectEqual(fallback, compiled.select_cue_handler(&world, "Steal", cat, guard, null).?);
+
+    // The facts hold for the Bard, not for the Guard the cue names: `victim` is bound to the
+    // cue's target, so the guard still fails.
+    _ = try world.remember(bard, charmed, guard.to_int(), 0);
+    _ = try world.remember(bard, carries, cheese.to_int(), 0);
+    try testing.expectEqual(fallback, compiled.select_cue_handler(&world, "Steal", cat, guard, null).?);
+    try testing.expectEqual(guarded, compiled.select_cue_handler(&world, "Steal", cat, bard, null).?);
+
+    // Both clauses must hold for the same victim.
+    _ = try world.remember(guard, charmed, bard.to_int(), 0);
+    try testing.expectEqual(fallback, compiled.select_cue_handler(&world, "Steal", cat, guard, null).?);
+    _ = try world.remember(guard, carries, fish.to_int(), 0);
+    try testing.expectEqual(guarded, compiled.select_cue_handler(&world, "Steal", cat, guard, null).?);
+
+    // Two items combine in either order (D-013). Fired as (Oil, Lamp), the handler matches with
+    // the targets swapped, so `fuel` binds to the Oil, not to the cue's second target.
+    const oil = world.lookup_entity("Oil").?;
+    const lamp = world.lookup_entity("Lamp").?;
+    _ = try world.remember(oil, try world.intern_relation("Fuel", .set), 0, 0);
+    const fills = compiled.find_cue_handler("Fills", "Cat", "Lamp", "Oil").?;
+    try testing.expectEqual(fills, compiled.select_cue_handler(&world, "Fills", cat, lamp, oil).?);
+    try testing.expectEqual(fills, compiled.select_cue_handler(&world, "Fills", cat, oil, lamp).?);
+    try testing.expectEqual(@as(?usize, null), compiled.select_cue_handler(&world, "Fills", cat, lamp, fish));
+
+    // A guard pattern names a state or a fact; three arguments are a compile error.
+    const wide = check_source(testing.allocator,
+        \\entity Cat
+        \\on cue Pounce(Cat, prey) where Near(Cat, prey, 3):
+        \\  wait 1 ticks
+    );
+    try testing.expect(!wide.is_valid);
+    try testing.expect(std.mem.indexOf(u8, wide.diagnostic().?.message, "InvalidCueGuardPattern") != null);
+}
+
+test "D-072: VM.fire_cue runs nothing when every matching handler's guard fails" {
+    const testing = std.testing;
+    const vm_mod = @import("vm.zig");
+    const script =
+        \\entity Cat, Guard, Cheese
+        \\on cue Steal(Cat, victim) where Carries(victim, Cheese):
+        \\  remember Stolen(Cheese)
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, script);
+    defer compiled.deinit();
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    const cat = world.lookup_entity("Cat").?;
+    const guard = world.lookup_entity("Guard").?;
+    const cheese = world.lookup_entity("Cheese").?;
+
+    try testing.expectEqual(@as(?vm_mod.FiberId, null), try vm.fire_cue(&compiled, "Steal", cat, guard, null));
+    try testing.expectEqual(@as(usize, 0), vm.emitted_cues.items.len);
+
+    _ = try world.remember(guard, try world.intern_relation("Carries", .set), cheese.to_int(), 0);
+    try testing.expect((try vm.fire_cue(&compiled, "Steal", cat, guard, null)) != null);
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(cheese, world.lookup_relation("Stolen").?, null));
+}

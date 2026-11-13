@@ -954,32 +954,24 @@ pub const BitemporalTransceiver = struct {
     }
 };
 
-/// Novikov self-consistency validator rejecting paradox-inducing temporal contradictions (12 Monkeys model) (P31-02, D-027).
-pub fn validate_novikov_consistency(
-    world: *const world_mod.World,
-    actor: EntityId,
-    candidate_action: RelationKind,
-    paradox_relation: RelationKind,
-) bool {
-    if (world.has_fact(actor, paradox_relation, null)) return false;
-    _ = candidate_action;
-    return true;
-}
-
-/// Asynchronous causal ripple and existence probability decay tracker (Back to the Future model) (P31-02, D-027).
+/// Existence decay after a change to the past (P31-02, D-027): a thing fades from 1000 per
+/// mille at the fracture tick to 0 when the fade ends. Integer per mille, not a float, because
+/// tick-driven simulation logic stays in integers (AGENTS.md, D-073).
 pub const CausalDecayTracker = struct {
-    /// Computes normalized existence probability [1.0 .. 0.0] based on elapsed ticks since timeline fracture.
-    pub fn get_existence_probability(current_tick: u64, fracture_tick: u64, fade_duration_ticks: u64) f32 {
-        if (current_tick <= fracture_tick) return 1.0;
+    pub const FULL: u16 = 1000;
+
+    /// Remaining existence in per mille, rounded down; 1000 at or before the fracture.
+    pub fn existence_permille(current_tick: u64, fracture_tick: u64, fade_duration_ticks: u64) u16 {
+        if (current_tick <= fracture_tick) return FULL;
         const elapsed = current_tick - fracture_tick;
-        if (elapsed >= fade_duration_ticks) return 0.0;
-        const remaining: f32 = @floatFromInt(fade_duration_ticks - elapsed);
-        const total: f32 = @floatFromInt(fade_duration_ticks);
-        return remaining / total;
+        if (elapsed >= fade_duration_ticks) return 0;
+        return @intCast((fade_duration_ticks - elapsed) * FULL / fade_duration_ticks);
     }
 
+    /// True once the whole fade has elapsed. Decided from ticks, not from the rounded per
+    /// mille, so a long fade is not called erased while a sliver remains.
     pub fn is_erased(current_tick: u64, fracture_tick: u64, fade_duration_ticks: u64) bool {
-        return get_existence_probability(current_tick, fracture_tick, fade_duration_ticks) <= 0.0;
+        return current_tick > fracture_tick and current_tick - fracture_tick >= fade_duration_ticks;
     }
 };
 
@@ -1471,30 +1463,14 @@ test "P31-02: bitemporal transceiver synchronizes physical prop mutations in rea
     try testing.expect(world.has_fact(desk_1999, scorched, 1));
 }
 
-test "P31-02: Novikov self-consistency validator and causal ripple existence probability decay" {
+test "P31-02: causal ripple existence decays in integer per mille" {
     const testing = std.testing;
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-
-    const traveler = try world.intern_entity("Cole");
-    const shoot_scientist = try world.intern_relation("ShootScientist", .set);
-    const self_refuting = try world.intern_relation("TimeMachineDestroyed", .set);
-
-    // Novikov check: action is consistent as long as self-refuting paradox fact is not asserted
-    try testing.expect(validate_novikov_consistency(&world, traveler, shoot_scientist, self_refuting));
-
-    // Assert paradox fact -> Novikov validation rejects
-    _ = try world.remember(traveler, self_refuting, 1, 0);
-    try testing.expect(!validate_novikov_consistency(&world, traveler, shoot_scientist, self_refuting));
-
-    // Back to the Future existence decay: 100 ticks fade duration
-    const prob_0 = CausalDecayTracker.get_existence_probability(100, 100, 100);
-    try testing.expectEqual(@as(f32, 1.0), prob_0);
-
-    const prob_50 = CausalDecayTracker.get_existence_probability(150, 100, 100);
-    try testing.expectApproxEqAbs(@as(f32, 0.5), prob_50, 0.01);
-
-    const prob_100 = CausalDecayTracker.get_existence_probability(200, 100, 100);
-    try testing.expectEqual(@as(f32, 0.0), prob_100);
+    try testing.expectEqual(@as(u16, 1000), CausalDecayTracker.existence_permille(100, 100, 100));
+    try testing.expectEqual(@as(u16, 500), CausalDecayTracker.existence_permille(150, 100, 100));
+    try testing.expectEqual(@as(u16, 0), CausalDecayTracker.existence_permille(200, 100, 100));
     try testing.expect(CausalDecayTracker.is_erased(200, 100, 100));
+    try testing.expect(!CausalDecayTracker.is_erased(199, 100, 100));
+    // Rounded down to 0 per mille with one tick of 2,000 left: not erased yet.
+    try testing.expectEqual(@as(u16, 0), CausalDecayTracker.existence_permille(1999, 0, 2000));
+    try testing.expect(!CausalDecayTracker.is_erased(1999, 0, 2000));
 }

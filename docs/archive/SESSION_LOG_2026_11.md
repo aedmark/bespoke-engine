@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 49 (2026-11-10)
+- **Goal:** Ship P26-02 and finish Phase 26 with the command bar.
+- **Work:** Merged P26-02 (`3a4b3b7`). Added `WordList` completion to `src/command.zig`; the window's command bar (focus, key capture, history, Tab, drawing) and `UserAction.typed_command`; `host.command_words`, and `interpret_command`/`dispatch_command` split out of `run_command`. The observatory gained script commands and aliases, a location `refusal` for typed actions, a typed transcript section, and the bar in its window.
+- **Outcome:** See the Verified table. A synthetic SDL text event segfaulted inside the SDL2-on-SDL3 layer, so the window test feeds text through the handler and injects only keys (noted in TESTING). A mutation that let bound keys through the focused bar failed the window test. The window was launched offscreen, the focused bar checked in one offscreen frame, and the maintainer hand-played the observatory with the bar and reported no problems. Fast-forwarded to `main` and pushed.
+
 ### Session 48 (2026-11-10)
 - **Goal:** Ship P26-01 and implement P26-02.
 - **Work:** Merged P26-01 (`f6d9cfb`). Added `FrameList`, `match_frame`, `Outcome` with player-facing replies, and `Interpreter` (one open "which do you mean" question, answered by a bare noun) to `src/command.zig`, and `host.run_command` (cue dispatch through `fire_cue`, `WalksTo` walking to a mark or an agent's waypoint, "Nothing happens." when no handler answers).

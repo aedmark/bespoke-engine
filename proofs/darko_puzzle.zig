@@ -400,7 +400,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Novikov Self-Consistency Check (P31-02, D-027)
     const cand_rel = try world.intern_relation("EjectArtifact", .set);
     const parad_rel = try world.intern_relation("GrandfatherParadox", .set);
-    const novikov_consistent = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel);
+    const novikov_consistent = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel, hypervisor.teleological_dependencies.items);
     std.debug.assert(novikov_consistent);
     try writer.print("         [D-027 Invariant] Novikov self-consistency check verified: Consistent causal loop.\n\n", .{});
 
@@ -903,12 +903,16 @@ test "P31-03: Donnie Darko Novikov self-consistency validation" {
     const cand_rel = try world.intern_relation("EjectArtifact", .set);
     const parad_rel = try world.intern_relation("GrandfatherParadox", .set);
 
-    const consistent = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel);
+    const consistent = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel, &.{});
     try testing.expect(consistent);
+
+    // An action whose declared consequence is the paradox is inconsistent (D-073).
+    const leads = [_]bespoke.hypervisor.TeleologicalDependency{.{ .prerequisite_relation = cand_rel, .target_goal_relation = parad_rel }};
+    try testing.expect(!bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel, &leads));
 
     // If paradox fact is asserted, Novikov check returns false
     _ = try world.remember(donnie, parad_rel, 1, 0);
-    const rejected = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel);
+    const rejected = bespoke.validate_novikov_consistency(&world, donnie, cand_rel, parad_rel, &.{});
     try testing.expect(!rejected);
 }
 

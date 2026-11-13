@@ -12,7 +12,7 @@ Time: about four hours for everything, or about ninety minutes for sections 1, 2
 - Speakers or headphones. Set the volume low before the first sound check: the synthesizer has never been heard through real hardware.
 - Firefox and a Chromium-based browser (Chrome, Chromium, or Edge). The desktop app's browser pane refuses service workers, so use a real browser for section 7.
 - For section 9: a GitHub account and a new empty repository you are willing to push a sample game to.
-- For section 8: your Neocities API key, exported as `NEOCITIES_API_KEY` in the shell that runs the upload. Never paste it into a file, a commit, or a chat.
+- For section 8: access to your Neocities account, to upload `dist/site/` by hand.
 - A clean `main`: `git status` shows nothing, and `git log -1` is the commit you are testing. Write that commit in the results table.
 
 ## 1. Automated Baseline
@@ -182,16 +182,10 @@ python3 -m http.server -d dist/site 8000
 
 ## 8. Neocities Release
 
-The upload publishes the site. Run it yourself.
+Upload `dist/site/index.html` and `dist/site/sw.js` from section 7 to your site by hand (D-074).
 
-```bash
-python3 tools/deploy_site.py upload        # dry run: lists what would change
-python3 tools/deploy_site.py upload --yes  # uploads
-```
-
-- [ ] The dry run lists only the files you expect, and the key is not printed anywhere in the output.
-- [ ] After `--yes`, open the live site in a private window. The playground runs, audio plays after a click, and the service worker activates.
-- [ ] Run the dry run again: it lists no changes.
+- [ ] Open the live site in a private window. The playground runs, audio plays after a click, and the service worker activates.
+- [ ] The Manual link in the page header: note whether it opens (Q-007; the export does not include the manual).
 - [ ] Share the URL in a link preview (a chat app, or an OpenGraph checker): the title and description show. The export adds no preview image, so none is expected.
 
 ## 9. macOS and Windows

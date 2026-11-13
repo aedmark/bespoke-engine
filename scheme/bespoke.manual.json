@@ -298,7 +298,7 @@
           "tags": ["cues", "events", "interrupts"],
           "what": "Delivers external player interactions and systemic world events to registered cue handlers, preempting lower-priority routines and cleanly resuming them upon completion.",
           "how": [
-            "Cues are emitted via VM.fire_cue, which looks up matching entry points in CompiledProgram.cue_handler_entries.",
+            "Cues are emitted via VM.fire_cue, which asks CompiledProgram.select_cue_handler for the most specific matching handler whose where guard holds, with the handler's variable parameters bound to the cue's arguments; a failed guard falls through to the next, less specific handler (D-072).",
             "When an interrupt occurs (e.g. thief alert), the entity's active fiber is pushed onto an interrupt stack.",
             "The higher-priority handler executes to completion.",
             "Opcode resume_routine pops the interrupted fiber state, restoring its instruction pointer and continuing its original routine."
@@ -308,6 +308,7 @@
           "evidence": [
             {"label": "Architectural Decision D-004", "target": "docs/DECISIONS.md#d-004", "kind": "decision"},
             {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
+            {"label": "Architectural Decision D-072", "target": "docs/DECISIONS.md#d-072", "kind": "decision"},
             {"label": "VM Cue Dispatcher", "target": "src/vm.zig", "kind": "source"}
           ],
           "related": ["commutative-item-combining", "priority-rule-cascades"]
@@ -904,7 +905,8 @@
             "Each step_tick advances the branch one tick and runs check_loop_closure: the keystone entity must stand on the convergence waypoint and a ConvergenceReady, VortexReady, or LoopClosed fact must hold.",
             "On closure, collapse_branch commits the keystone and any recorded residue facts to the primary World (resolved_and_merged). If the countdown runs out first, the branch is discarded (budget_expired) and the player rewinds.",
             "SpatialSystem.get_agent_vector_conduit precomputes an actor's A* route as a polyline that the renderer draws as a preview line.",
-            "VM.spawn_hyper_temporal_routine starts a routine at priority 255 so a guide character's lines cannot be preempted. is_teleologically_justified and validate_novikov_consistency exist with unit tests but no caller (see Claims vs. code in ARCHITECTURE.md)."
+            "VM.spawn_hyper_temporal_routine starts a routine at priority 255 so a guide character's lines cannot be preempted.",
+            "Hosts register cause-to-effect edges between relations with register_teleological_dependency. is_teleologically_justified follows them (a bounded search, so a cycle terminates), and is_novikov_consistent rejects an action that the edges lead to a paradox, or any action while the actor holds the paradox (D-073)."
           ],
           "why": "A branch that is a full World copy needs no special rules for which facts it may touch: everything inside it is ordinary facts, and save, rewind, and the inspector treat it like the primary World (D-048, D-049). D-044 gives the mechanism neutral names so other games can use it.",
           "why_basis": "recorded",
@@ -1326,22 +1328,22 @@
         },
         {
           "id": "showcase-deploy-pipeline",
-          "title": "Showcase Deployment: Export, Offline Cache, and Neocities Upload",
-          "summary": "tools/deploy_site.py turns the self-contained showcase page into a static site with sharing metadata and an offline cache, and uploads only what changed.",
-          "synopsis": "python3 tools/deploy_site.py export [--site-url https://NAME.neocities.org/] | NEOCITIES_API_KEY=... python3 tools/deploy_site.py upload [--yes]",
-          "tags": ["site", "deploy", "neocities", "wasm", "offline"],
-          "what": "export writes dist/site/index.html and sw.js from site/index.html, which stays unchanged; upload compares dist/site/ with the live site and sends the differences.",
+          "title": "Showcase Export: Sharing Metadata and an Offline Cache",
+          "summary": "tools/deploy_site.py turns the self-contained showcase page into a static site with sharing metadata and an offline cache, ready to upload by hand.",
+          "synopsis": "python3 tools/deploy_site.py export [--site-url https://NAME.neocities.org/]",
+          "tags": ["site", "export", "wasm", "offline"],
+          "what": "export writes dist/site/index.html and sw.js from site/index.html, which stays unchanged. The maintainer uploads dist/site/ to the host by hand.",
           "how": [
             "export refuses a stale page, then adds OpenGraph, Twitter, and theme-colour tags from the page's own title and description, plus canonical and og:url when --site-url is given.",
             "A registration script added before </body> registers sw.js only over http(s), so the file:// page is unaffected.",
             "sw.js names its cache after a hash of the exported page, deletes older caches on activation, and answers from the network first, falling back to the cache offline.",
-            "upload reads NEOCITIES_API_KEY from the environment, lists the site's SHA-1 hashes through the API, and uploads changed files in one multipart request; without --yes it only lists them, and it never deletes remote files.",
             "The embedded module is small because the wasm runtime's state is an uninitialised global; node tools/wasm_smoke.js fails any module over 1 MiB."
           ],
-          "why": "Neocities serves static files and allows no custom headers, so caching and metadata live in the files themselves. Uploading by hash keeps deploys cheap and repeatable, and a dry run by default keeps a publish from happening by accident.",
+          "why": "Neocities serves static files and allows no custom headers, so caching and metadata live in the files themselves. Publishing stays a manual step the maintainer takes (D-074), so the repository holds no host credentials.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-067", "target": "docs/DECISIONS.md#d-067", "kind": "decision"},
+            {"label": "Architectural Decision D-074", "target": "docs/DECISIONS.md#d-074", "kind": "decision"},
             {"label": "Deploy Tool", "target": "tools/deploy_site.py", "kind": "source"},
             {"label": "Deploy Tests", "target": "tests/test_deploy_site.py", "kind": "test"},
             {"label": "Wasm Smoke Check", "target": "tools/wasm_smoke.js", "kind": "source"}

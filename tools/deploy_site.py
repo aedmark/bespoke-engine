@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
-"""Export the showcase site for static hosting and upload it to Neocities (P30-02, D-067).
+"""Export the showcase site for static hosting (P30-02, D-067, D-074).
 
     zig build wasm-proofs && python3 tools/build_site.py
     python3 tools/deploy_site.py export [--site-url https://NAME.neocities.org/]
-    NEOCITIES_API_KEY=... python3 tools/deploy_site.py upload          # dry run: lists changes
-    NEOCITIES_API_KEY=... python3 tools/deploy_site.py upload --yes    # uploads them
 
 `export` writes dist/site/: site/index.html with sharing metadata and a service-worker
 registration added, and sw.js, which precaches the page under a cache named after its
-content hash so each deploy replaces the last one. The repository's site/index.html is not
-changed and still opens from file://. Export refuses a stale page (see tools/build_site.py).
-
-`upload` asks Neocities for the SHA-1 of every file on the site and uploads only files whose
-content differs. It never deletes remote files. The API key is read from the environment and
-is never printed. NEOCITIES_API_URL overrides the API base, for tests.
+content hash so each new upload replaces the last one. The repository's site/index.html is
+not changed and still opens from file://. Export refuses a stale page (see
+tools/build_site.py). Uploading dist/site/ is done by hand (D-074).
 """
 from __future__ import annotations
 
@@ -21,20 +16,12 @@ import argparse
 import hashlib
 import html
 import importlib.util
-import json
-import os
 import sys
-import urllib.error
-import urllib.request
-import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE_HTML = ROOT / "site" / "index.html"
 DEFAULT_OUT = ROOT / "dist" / "site"
-DEFAULT_API = "https://neocities.org/api"
-KEY_ENV = "NEOCITIES_API_KEY"
-API_ENV = "NEOCITIES_API_URL"
 HEAD_MARKER = "<!-- DEPLOY_METADATA -->"
 BODY_MARKER = "<!-- DEPLOY_SERVICE_WORKER -->"
 
@@ -180,99 +167,17 @@ def export(out_dir: Path, site_url: str | None, page_path: Path = SITE_HTML, che
     return written
 
 
-def sha1_file(path: Path) -> str:
-    return hashlib.sha1(path.read_bytes()).hexdigest()
-
-
-def local_files(out_dir: Path) -> dict[str, Path]:
-    if not (out_dir / "index.html").is_file():
-        raise DeployError(f"{out_dir} has no index.html; run `python3 tools/deploy_site.py export` first")
-    return {p.relative_to(out_dir).as_posix(): p for p in sorted(out_dir.rglob("*")) if p.is_file()}
-
-
-class Neocities:
-    """The two calls the deploy needs. The key travels only in the Authorization header."""
-
-    def __init__(self, key: str, base: str = DEFAULT_API):
-        self._key = key
-        self.base = base.rstrip("/")
-
-    def _request(self, path: str, data: bytes | None = None, content_type: str | None = None) -> dict:
-        req = urllib.request.Request(self.base + path, data=data, method="POST" if data is not None else "GET")
-        req.add_header("Authorization", f"Bearer {self._key}")
-        req.add_header("User-Agent", "bespoke-deploy")
-        if content_type:
-            req.add_header("Content-Type", content_type)
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise DeployError(f"Neocities refused {path}: HTTP {exc.code}") from None
-        except urllib.error.URLError as exc:
-            raise DeployError(f"could not reach Neocities: {exc.reason}") from None
-        if body.get("result") != "success":
-            raise DeployError(f"Neocities refused {path}: {body.get('message', 'no message')}")
-        return body
-
-    def remote_hashes(self) -> dict[str, str]:
-        files = self._request("/list").get("files", [])
-        return {f["path"]: f.get("sha1_hash", "") for f in files if not f.get("is_directory")}
-
-    def upload(self, files: dict[str, Path]) -> None:
-        boundary = uuid.uuid4().hex
-        parts = []
-        for remote, path in files.items():
-            parts.append(
-                f"--{boundary}\r\nContent-Disposition: form-data; name=\"{remote}\"; filename=\"{remote}\"\r\n"
-                "Content-Type: application/octet-stream\r\n\r\n".encode("utf-8")
-                + path.read_bytes()
-                + b"\r\n"
-            )
-        body = b"".join(parts) + f"--{boundary}--\r\n".encode("utf-8")
-        self._request("/upload", body, f"multipart/form-data; boundary={boundary}")
-
-
-def plan_upload(local: dict[str, Path], remote: dict[str, str]) -> dict[str, Path]:
-    """Files whose content differs from the site's, or that the site lacks."""
-    return {name: path for name, path in local.items() if remote.get(name) != sha1_file(path)}
-
-
-def upload(out_dir: Path, confirm: bool, out=sys.stdout) -> int:
-    key = os.environ.get(KEY_ENV, "")
-    if not key:
-        raise DeployError(f"set {KEY_ENV} to the site's API key (Neocities: Settings, API)")
-    local = local_files(out_dir)
-    site = Neocities(key, os.environ.get(API_ENV, DEFAULT_API))
-    changed = plan_upload(local, site.remote_hashes())
-    if not changed:
-        print("Neocities already has every file; nothing to upload.", file=out)
-        return 0
-    for name, path in changed.items():
-        print(f"  {'upload' if confirm else 'would upload'} {name} ({path.stat().st_size:,} bytes)", file=out)
-    if not confirm:
-        print("Dry run. Pass --yes to upload.", file=out)
-        return 0
-    site.upload(changed)
-    print(f"Uploaded {len(changed)} file(s).", file=out)
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     exp = sub.add_parser("export", help="write dist/site/ for static hosting")
     exp.add_argument("--site-url", help="public https:// address, for canonical and OpenGraph tags")
     exp.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    up = sub.add_parser("upload", help="upload changed files from dist/site/ to Neocities")
-    up.add_argument("--dir", type=Path, default=DEFAULT_OUT)
-    up.add_argument("--yes", action="store_true", help="upload; without it, only list the changes")
     args = parser.parse_args(argv)
     try:
-        if args.command == "export":
-            for path in export(args.out, args.site_url):
-                print(f"wrote {path} ({path.stat().st_size:,} bytes)")
-            return 0
-        return upload(args.dir, args.yes)
+        for path in export(args.out, args.site_url):
+            print(f"wrote {path} ({path.stat().st_size:,} bytes)")
+        return 0
     except DeployError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
