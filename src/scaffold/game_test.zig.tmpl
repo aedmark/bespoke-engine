@@ -24,6 +24,8 @@ const Game = struct {
         self.vm.spatial = &self.spatial;
         try self.vm.load_compiled_rules(&self.compiled);
         try bespoke.host.run_initial_statements(&self.world, &self.vm, &self.compiled);
+        // Everyone the script lists in a scene starts on that scene's first mark.
+        try bespoke.host.place_cast(&self.spatial, &self.compiled);
     }
 
     fn deinit(self: *Game) void {
@@ -34,7 +36,7 @@ const Game = struct {
         testing.allocator.free(self.source);
     }
 
-    /// Places an actor on its scene's first mark and starts its routine.
+    /// Starts an actor's routine, placing the actor first if no scene lists it.
     fn start(self: *Game, routine: []const u8, actor_name: []const u8) !void {
         const actor = try self.world.intern_entity(actor_name);
         if (!self.spatial.agents.contains(actor)) {

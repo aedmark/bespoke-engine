@@ -74,7 +74,7 @@ routine Day(Hero):
 
 ## 3. Walkthrough: a scene
 
-A `scene` block declares a room and what is in it. `cast` are people, `props` are things to look at and use, and `marks` are the places people stand and walk between. An actor not placed elsewhere starts on the scene's first mark. `transition to scene X` changes the room the window shows.
+A `scene` block declares a room and what is in it. `cast` are people, `props` are things to look at and use, and `marks` are the places people stand and walk between. Each cast member starts on the first mark of the first scene that lists it; an actor no scene lists starts on the script's first mark. `transition to scene X` changes the room the window shows.
 
 <!-- example: scene -->
 ```bespoke
@@ -150,9 +150,6 @@ relation Refused(who)
 routine Wait(Hero):
   wait 1 ticks
 
-routine Mind(Pilot):
-  walk Pilot to Pier
-
 on cue TalksTo(Hero, Pilot):
   say Pilot: "Crossing tonight?"
   choice "Show the ticket." if Carries(Hero, Ticket):
@@ -179,7 +176,7 @@ How a player reaches it:
 - **Typing.** The window's command bar opens with Enter. `talk to pilot` fires `TalksTo(Hero, Pilot)`, `ask pilot about ticket` fires `TalksTo(Hero, Pilot, Ticket)`, and `take ticket` fires `Takes(Hero, Ticket)` through the script's own `command` line. Articles and case are ignored, and only things in the player's room or carried by the player can be named.
 - **Choosing.** The window draws the offered options; click one or press its number key. The chosen body runs on the next tick, and the handler then continues after the whole set of choices.
 - **The player** is the actor of the first routine in the script, here the Hero (D-064). Clicks on marks walk the player; typed commands act for the player.
-- **Every person needs a routine.** A cast member is placed in the room when its first routine starts; one with no routine is never placed, so it cannot be seen, named, or talked to. `Mind(Pilot)` exists for that reason.
+- **The Pilot needs no routine.** Every cast member starts on the first mark of its scene, so a person who only talks can simply stand there (D-065).
 
 Things to know:
 
@@ -363,6 +360,7 @@ A host is the Zig program that owns the window, the clock, and the player's inpu
 | `bespoke.run_file(allocator, path, config, writer)` | The stock runner: window, or headless with `config.is_headless` |
 | `host.initialize_subsystems(&world, &compiled)` | Seeds declared grids, agendas, and containers; safe to repeat |
 | `host.run_initial_statements(&world, &vm, &compiled)` | Runs the script's top-level statements |
+| `host.place_cast(&spatial, &compiled)` | Puts each cast member on its scene's first mark, unless already placed; call before starting routines |
 | `host.tick(&vm, &compiled)` | One lifecycle tick: VM, containers, grids, agendas, weaves. Never call `vm.step_tick` alone (D-033) |
 | `host.speech_this_tick(&world, &vm, buf)` / `host.SpeechLog` | What `say` produced on the latest tick; read it after every tick |
 | `host.run_command(&vm, &compiled, &interp, actor, line, buf)` | Interprets a typed line and fires its cue; returns a reply to show |
@@ -381,5 +379,4 @@ These are recorded under Claims vs. code in [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
 - A cue handler parameter written in lowercase (`on cue Shows(Hero, item):`) matches any entity but is not bound; the body cannot use `item`. Write one handler per concrete name.
 - `where` guards on `on cue` handlers are parsed but not evaluated. Put the check inside the body with `if`.
-- A cast member with no routine is never placed in its room (section 4). Give every person at least a one-line routine.
 - The stock window answers dialogue and typed commands, but clicking a person does not talk to them; type `talk to <name>`.

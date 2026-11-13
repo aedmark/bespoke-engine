@@ -877,6 +877,19 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Placing cast members that have no routine: out of scope; recorded under Claims vs. code.
 **Consequences:** `bespoke run` output gains `Scene:`, speech, and `Choices for` lines; tools that parse it must allow them. A script whose first routine belongs to a non-player character now gives that character the player's clicks; reorder the routines to choose. The engine tests read a file outside `src/`, so they run from a checkout, as they already do.
 
+## D-065 Cast Members Start on Their Scene's First Mark, Placed by the Host Kit (2026-11-12, status: accepted)
+**Context:** A `scene` block's `cast` names were only interned. Hosts registered an actor on a mark only when one of its routines started, and the stock runner used the script's first mark whatever the actor's scene. A cast member with no routine could not be seen, named in a typed command, or talked to (found writing the P29-02 dialogue walkthrough; recorded under Claims vs. code). Registering cast members inside compilation changed 103 render goldens across 12 of the 13 proofs, because proofs place their own actors and the extra early registrations changed what they draw. The maintainer chose placement through the host kit (2026-11-12).
+**Decision:**
+1. **Compilation records, it does not place.** For each scene with marks, every cast member not already recorded gets a `CastPlace { actor, mark }` with that scene's first mark, in source order; a scene without marks records nothing. `CompiledProgram.cast` holds them. Compilation without a SpatialSystem records none.
+2. **`host.place_cast(spatial, compiled)` places them.** It registers each recorded actor at its mark with `host.CAST_SPEED` unless the SpatialSystem already has that actor, so a host's own placement wins and repeated calls change nothing. Hosts call it after placing actors by hand and before starting routines.
+3. **The stock hosts call it.** `bespoke run` calls it before spawning routines; routine actors no scene lists still start on the script's first mark. The `bespoke init` test template and the authoring guide test call it too. Proofs do not, so their goldens are unchanged.
+4. **Packages carry the table.** `.bspk` version 12 appends a count and, per place, the actor's entity id and the waypoint id. Loading checks both references and caps the count at 4,096. Versions 1 to 11 load with no places, so a host places nobody for them.
+**Alternatives:**
+- Register cast members during compilation: not chosen; every host would get it, but 103 proof render goldens change and proofs lose control of their opening layout.
+- Place cast in `host.initialize_subsystems`: not chosen; that function takes no SpatialSystem and runs on every tick, and proofs call it.
+- A per-actor `at <Mark>` clause in `cast:` lines: deferred; first-mark placement needs no syntax, and a later clause can extend `CastPlace`.
+**Consequences:** In the stock runner a routine actor that is in a cast now starts in its own scene rather than on the script's first mark; scripts whose routines walk between scenes may start differently. Old packages run as before. The guide's dialogue walkthrough drops its workaround routine and serves as the end-to-end check.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

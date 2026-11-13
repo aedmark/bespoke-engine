@@ -160,7 +160,9 @@ pub fn run_file(
         }
     }
 
-    // 2. Auto-register spatial actors on marks if waypoints exist
+    // 2. Place each cast member in its own scene (D-065), then any other routine actor on the
+    // first mark.
+    try bespoke.host.place_cast(&spatial, &compiled);
     const default_wp = if (spatial.graph.waypoints.items.len > 0)
         spatial.graph.waypoints.items[0].id
     else
@@ -176,7 +178,7 @@ pub fn run_file(
 
         if (default_wp) |dwp| {
             if (!spatial.agents.contains(actor_ent)) {
-                try spatial.register_entity(actor_ent, dwp, 10);
+                try spatial.register_entity(actor_ent, dwp, bespoke.host.CAST_SPEED);
             }
         }
 

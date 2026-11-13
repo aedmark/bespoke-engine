@@ -1036,7 +1036,7 @@
           "id": "host-kit-api",
           "title": "Host Kit API: Driving the Engine from Zig",
           "summary": "A host compiles a script, ticks it through host.tick, reads speech after each tick, and routes typed commands and dialogue choices to the VM.",
-          "synopsis": "compile_source | host.initialize_subsystems | host.run_initial_statements | host.tick | host.run_command | VM.choose | host.Session",
+          "synopsis": "compile_source | host.initialize_subsystems | host.run_initial_statements | host.place_cast | host.tick | host.run_command | VM.choose | host.Session",
           "tags": ["host", "api", "zig", "lifecycle", "authoring"],
           "what": "The bespoke module exports the calls every game host needs: compilation and checking, package loading, the lifecycle tick, speech collection, typed-command dispatch, dialogue views and answers, path selection, the interactive Session loop, and the script soundtrack.",
           "how": [
@@ -1044,6 +1044,7 @@
             "host.tick runs one lifecycle tick: the VM, containers, grids, agendas, and queued weaves. Hosts never call VM.step_tick alone, or declared rules do not run.",
             "Speech is read after every tick with host.speech_this_tick or SpeechLog, because the next tick clears the emitted cues.",
             "host.run_command interprets a typed line for an actor and fires its cue; dialogue.view and VM.choose present and answer the open set of choices.",
+            "host.place_cast puts each cast member on the first mark of its scene unless the host already placed it (D-065); call it before starting routines.",
             "host.Session owns the timeline, rewind, scrub, saves, pause, and single step for a window host."
           ],
           "why": "Hosts that copied loop and speech plumbing drifted apart. One documented kit keeps every host on the same lifecycle, and the authoring guide's table gives authors the contract without reading engine source.",
@@ -1051,6 +1052,7 @@
           "evidence": [
             {"label": "Architectural Decision D-033", "target": "docs/DECISIONS.md#d-033", "kind": "decision"},
             {"label": "Architectural Decision D-064", "target": "docs/DECISIONS.md#d-064", "kind": "decision"},
+            {"label": "Architectural Decision D-065", "target": "docs/DECISIONS.md#d-065", "kind": "decision"},
             {"label": "Host Kit", "target": "src/host.zig", "kind": "source"},
             {"label": "Authoring Guide, Host API", "target": "docs/AUTHORING.md#8-host-api", "kind": "document"}
           ],

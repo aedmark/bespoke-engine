@@ -35,6 +35,14 @@ pub const CompiledWhenRule = struct {
     edge: WhenEdge = .rising,
 };
 
+/// Where a cast member starts: the first mark of the scene that lists it (D-065). The program
+/// only records this; `host.place_cast` registers the actor, so hosts that place their own
+/// actors (the proofs) are unaffected.
+pub const CastPlace = struct {
+    actor: EntityId,
+    mark: spatial_mod.WaypointId,
+};
+
 pub const CompiledProgram = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
@@ -60,8 +68,11 @@ pub const CompiledProgram = struct {
     aliases: std.ArrayList(command_mod.AliasDecl),
     /// Script music in declaration order, as validated MML text (P28-03, D-062).
     scores: std.ArrayList(mml.ScoreDecl),
+    /// Each cast member's starting mark, in source order (D-065). Empty without a SpatialSystem.
+    cast: std.ArrayListUnmanaged(CastPlace) = .{},
 
     pub fn deinit(self: *CompiledProgram) void {
+        self.cast.deinit(self.chunk.allocator);
         for (self.scores.items) |*score| score.deinit_owned(self.chunk.allocator);
         self.scores.deinit();
         for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
@@ -224,6 +235,7 @@ pub const Codegen = struct {
     commands: std.ArrayList(command_mod.CommandDecl),
     aliases: std.ArrayList(command_mod.AliasDecl),
     scores: std.ArrayList(mml.ScoreDecl),
+    cast: std.ArrayListUnmanaged(CastPlace) = .{},
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -276,6 +288,7 @@ pub const Codegen = struct {
                 for (ast.scene_defs.items) |*sc_def| {
                     const sent = mut_self.world.lookup_entity(sc_def.name) orelse try mut_self.world.intern_entity(sc_def.name);
                     var prev_wp: ?u16 = null;
+                    var first_wp: ?u16 = null;
                     for (sc_def.marks.items, 0..) |mname, idx| {
                         const wx: i32 = @as(i32, @intCast(idx)) * 20;
                         var found = false;
@@ -293,12 +306,25 @@ pub const Codegen = struct {
                             }
                             prev_wp = wp_id;
                         }
+                        if (idx == 0) first_wp = prev_wp;
                     }
 
                     for (sc_def.props.items, 0..) |pname, idx| {
                         const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
                         const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
                         sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
+                    }
+
+                    // A cast member starts on the first mark of the first scene that lists it
+                    // (D-065). A scene without marks has nowhere to put anyone.
+                    if (first_wp) |start| {
+                        for (sc_def.cast.items) |cname| {
+                            const cent = mut_self.world.lookup_entity(cname) orelse try mut_self.world.intern_entity(cname);
+                            const seen = for (mut_self.cast.items) |c| {
+                                if (c.actor.to_int() == cent.to_int()) break true;
+                            } else false;
+                            if (!seen) try mut_self.cast.append(mut_self.allocator, .{ .actor = cent, .mark = start });
+                        }
                     }
                 }
             } else {
@@ -576,6 +602,7 @@ pub const Codegen = struct {
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
+            .cast = mut_self.cast,
         };
     }
 

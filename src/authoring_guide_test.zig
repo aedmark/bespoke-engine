@@ -36,7 +36,8 @@ fn example(text: []const u8, name: []const u8) ![]const u8 {
 }
 
 /// A guide script running headless the way `bespoke run` starts it: top-level statements
-/// first, then every routine on its actor, with actors placed on the first mark.
+/// first, the cast on their scenes' first marks, then every routine on its actor (any actor
+/// still unplaced goes on the first mark).
 const Play = struct {
     world: bespoke.World,
     spatial: bespoke.SpatialSystem,
@@ -58,6 +59,7 @@ const Play = struct {
         self.interp = .{};
         self.said = std.ArrayList(u8).init(testing.allocator);
         try bespoke.host.run_initial_statements(&self.world, &self.vm, &self.compiled);
+        try bespoke.host.place_cast(&self.spatial, &self.compiled);
         const first_mark = self.spatial.graph.waypoints.items[0].id;
         var it = self.compiled.routine_entries.iterator();
         while (it.next()) |entry| {

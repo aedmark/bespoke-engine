@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- People listed in a scene's `cast:` now start on that scene's first mark in `bespoke run`, `bespoke init` projects, and any host that calls `host.place_cast` (`D-065`). Before, someone with no routine was never placed, so they could not be seen, named, or talked to. Routine actors that are in a cast now start in their own scene instead of on the script's first mark. `.bspk` packages are format version 12; older packages still load and place nobody.
 - Added the authoring guide, `docs/AUTHORING.md` (`P29-02`, `D-064`): start a project, the model, walkthroughs for a scene, a dialogue, and a reactive puzzle, testing, the host API, and known limits. `zig build test` compiles every script in it and plays the walkthroughs. The manual gains an Authoring Games section.
 - `bespoke run` (and every `bespoke init` project) is now playable: click a dialogue option or press its number to answer, press Enter to type commands such as `talk to pilot` or `use match on lantern`, and read each spoken line in the banner. The window acts for the actor of the script's first routine. Headless runs now print speech, scene changes, and offered choices with their tick.
 - `bespoke check`, `bespoke compile`, and `bespoke run` now print compile error messages from memory the check result owns. The text was read after the parser that held it had returned, so it could print garbage. `CheckResult.diagnostic` is now a method, and `CheckResult.message()` returns the text.

@@ -40,9 +40,13 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// with every rule off. Version 9 appends agendas (P33-01, D-056); versions 1 through 8 load
 /// with none. Version 10 appends typed-command frames and noun aliases (P26-01, D-057);
 /// versions 1 through 9 load with neither. Version 11 appends script scores as MML text with
-/// their scenes (P28-03, D-062); versions 1 through 10 load with none.
-pub const PACKAGE_VERSION: u32 = 11;
+/// their scenes (P28-03, D-062); versions 1 through 10 load with none. Version 12 appends each
+/// cast member's starting mark (D-065); versions 1 through 11 load with none, so a host places
+/// nobody for them.
+pub const PACKAGE_VERSION: u32 = 12;
 const MIN_PACKAGE_VERSION: u32 = 1;
+/// Upper bound on cast entries a package may declare; a larger count is corrupt input.
+const MAX_CAST: u32 = 4096;
 
 pub const PackageHeader = extern struct {
     magic: [4]u8 = PACKAGE_MAGIC,
@@ -292,6 +296,12 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         try writer.writeByte(@intCast(score.scenes.len));
         for (score.scenes) |scene| try write_str(writer, scene);
         for (score.parts) |text| try write_str(writer, text);
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.cast.items.len), .little);
+    for (compiled.cast.items) |place| {
+        try writer.writeInt(u32, place.actor.to_int(), .little);
+        try writer.writeInt(u16, place.mark, .little);
     }
 }
 
@@ -1283,6 +1293,20 @@ pub fn load_package(
         }
     }
 
+    var cast = std.ArrayListUnmanaged(codegen_mod.CastPlace){};
+    errdefer cast.deinit(allocator);
+    if (header.version >= 12) {
+        const cast_count = try pr.readInt(u32, .little);
+        if (cast_count > MAX_CAST) return error.InvalidCastConfig;
+        try cast.ensureTotalCapacity(allocator, cast_count);
+        var ci: u32 = 0;
+        while (ci < cast_count) : (ci += 1) {
+            const actor = try read_entity_ref(world, pr);
+            const mark = try read_waypoint(pr, header.waypoint_count);
+            cast.appendAssumeCapacity(.{ .actor = actor, .mark = mark });
+        }
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1301,6 +1325,7 @@ pub fn load_package(
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
+        .cast = cast,
     };
 }
 
@@ -1528,8 +1553,11 @@ test "P15-02: package file save and load roundtrip" {
 /// earlier sections from the end of a package add this; a later version that appends a
 /// section adds its empty size here, so those tests need no other change.
 const EMPTY_TAIL_AFTER_V9: usize = 4 + 4 + EMPTY_TAIL_AFTER_V10;
-/// The empty score count (version 11), for tests that locate version 10 sections from the end.
-const EMPTY_TAIL_AFTER_V10: usize = 4;
+/// The empty score count (version 11) and cast count (version 12), for tests that locate
+/// version 10 sections from the end.
+const EMPTY_TAIL_AFTER_V10: usize = 4 + EMPTY_TAIL_AFTER_V11;
+/// The empty cast count (version 12).
+const EMPTY_TAIL_AFTER_V11: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -1944,7 +1972,7 @@ test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads 
         // A drum letter smuggled into the lead part is rejected on load, as the compiler would.
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
-        const lead_start = bad.len - (2 + "k4 h4".len) - 2 - 2 - "t96 o5 l8 c e g e".len;
+        const lead_start = bad.len - EMPTY_TAIL_AFTER_V11 - (2 + "k4 h4".len) - 2 - 2 - "t96 o5 l8 c e g e".len;
         try testing.expectEqual(@as(u8, 't'), bad[lead_start]);
         bad[lead_start + 4] = 'k';
         reseal_for_test(bad, PACKAGE_VERSION);
@@ -1954,7 +1982,7 @@ test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads 
         try testing.expectError(error.InvalidScoreConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
     }
     {
-        const v10 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - score_section_len]);
+        const v10 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - score_section_len - EMPTY_TAIL_AFTER_V11]);
         defer testing.allocator.free(v10);
         reseal_for_test(v10, 10);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -2130,4 +2158,62 @@ test "P32-22/P32-24: package version 6 round-trips society and duel declarations
     try compiled2.duels.items[0].apply_tiers(&duel);
     const rival = world2.lookup_entity("Rival").?;
     try testing.expectEqual(@as(u32, 1), world2.get_property(rival, duel.tier_rel).?);
+}
+
+test "D-065: package version 12 round-trips cast places, rejects a bad mark, and loads version 11" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\scene Quay:
+        \\  cast: Pilot
+        \\  marks: Steps, Pier
+        \\scene Ferry:
+        \\  cast: Captain
+        \\  marks: Deck
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var spatial1 = SpatialSystem.init(testing.allocator);
+    defer spatial1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
+    defer compiled1.deinit();
+    var buffer = std.ArrayList(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var spatial2 = SpatialSystem.init(testing.allocator);
+    defer spatial2.deinit();
+    var stream = std.io.fixedBufferStream(buffer.items);
+    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled2.cast.items.len);
+    const captain = compiled2.cast.items[1];
+    try testing.expectEqualStrings("Captain", world2.get_entity_name(captain.actor).?);
+    try testing.expectEqualStrings("Deck", spatial2.graph.get_waypoint(captain.mark).?.name);
+
+    // Tail: count, then entity and mark per member.
+    const cast_section_len = 4 + 2 * (4 + 2);
+    {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        std.mem.writeInt(u16, bad[bad.len - 2 ..][0..2], 99, .little);
+        reseal_for_test(bad, PACKAGE_VERSION);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var bad_stream = std.io.fixedBufferStream(bad);
+        try testing.expectError(error.InvalidProgramWaypoint, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+    }
+    {
+        const v11 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - cast_section_len]);
+        defer testing.allocator.free(v11);
+        reseal_for_test(v11, 11);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v11_stream = std.io.fixedBufferStream(v11);
+        var loaded = try load_package(testing.allocator, v11_stream.reader(), &world3, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.cast.items.len);
+    }
 }

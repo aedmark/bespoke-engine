@@ -313,6 +313,21 @@ pub fn run_initial_statements(world: *World, vm: *VM, compiled: *const CompiledP
     }
 }
 
+/// Puts each cast member on the first mark of its scene (D-065), so a person the script lists
+/// can be seen, named, and talked to before any routine moves them. An actor the host already
+/// placed keeps its place, so call this after placing actors by hand and before starting
+/// routines. Repeated calls change nothing.
+pub fn place_cast(spatial: *SpatialSystem, compiled: *const CompiledProgram) !void {
+    for (compiled.cast.items) |place| {
+        if (spatial.agents.contains(place.actor)) continue;
+        try spatial.register_entity(place.actor, place.mark, CAST_SPEED);
+    }
+}
+
+/// Walking speed for cast members placed by `place_cast`; the same speed the stock runner
+/// gives routine actors.
+pub const CAST_SPEED: u32 = 10;
+
 /// True when `subject` holds the state `state` (a `X is state` fact), regardless of value.
 pub fn has_state(world: *const World, subject: EntityId, state: []const u8) bool {
     const rel = world.lookup_relation(state) orelse return false;
@@ -1079,4 +1094,44 @@ test "P28-03: script scores become a soundtrack the frame's score name selects" 
     var none = try ScriptSoundtrack.init(testing.allocator, &plain);
     defer none.deinit();
     try testing.expect(!none.has_scores());
+}
+
+test "D-065: place_cast puts each cast member on its own scene's first mark" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, world_mod.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene Gatehouse:
+        \\  cast: Warden, Porter
+        \\  marks: Gate, Stair
+        \\
+        \\scene Rampart:
+        \\  cast: Sentry, Warden
+        \\  marks: Tower, Walk
+        \\
+        \\scene Void:
+        \\  cast: Ghost
+    );
+    defer compiled.deinit();
+    // The Warden is listed twice and starts in the first scene; the Ghost's scene has no mark.
+    try testing.expectEqual(@as(usize, 3), compiled.cast.items.len);
+
+    const porter = world.lookup_entity("Porter").?;
+    const sentry = world.lookup_entity("Sentry").?;
+    const warden = world.lookup_entity("Warden").?;
+    const stair = spatial.graph.find_waypoint("Stair").?;
+    try spatial.register_entity(porter, stair, 7);
+    try place_cast(&spatial, &compiled);
+    try place_cast(&spatial, &compiled);
+
+    const gate = spatial.graph.find_waypoint("Gate").?;
+    const tower = spatial.graph.find_waypoint("Tower").?;
+    try testing.expectEqual(gate, spatial.get_current_waypoint(warden).?);
+    try testing.expectEqual(tower, spatial.get_current_waypoint(sentry).?);
+    // An actor the host placed keeps its mark.
+    try testing.expectEqual(stair, spatial.get_current_waypoint(porter).?);
+    try testing.expect(!spatial.agents.contains(world.lookup_entity("Ghost").?));
+    try testing.expectEqual(@as(usize, 3), spatial.agents.count());
 }
