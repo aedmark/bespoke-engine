@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The showcase's Manual link now points to `docs/manual.html` beside the page, where the published site serves it (`Q-007`). Opening `site/index.html` from a checkout no longer reaches the manual through that link; open `docs/manual.html` directly.
 - `tools/deploy_site.py` only exports now (`D-074`): `python3 tools/deploy_site.py export` still writes `dist/site/` with sharing metadata and an offline cache, and you upload it yourself. The `upload` command and its Neocities API key handling are gone.
 - `where` guards on `on cue` handlers now work (`D-072`). `on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):` runs only when the cue's victim is charmed and carries something; otherwise the cue goes to the next, less specific handler, such as `on cue Steal(thief, victim):`, or does nothing. Before, the guard was accepted and ignored. Packages are format version 13; older packages load as before. Inside the handler body, lowercase parameters are still read as names, not bound.
 - The time-branch helpers do what their names say (`D-073`). The Novikov check now rejects an action whose declared consequences lead to the paradox (it used to ignore the action), the dependency chain search stops on a cycle instead of running forever, the branch closure no longer looks for the proof-specific `VortexReady` fact, and existence decay is reported in whole per mille instead of a float. `validate_novikov_consistency` takes the consequences as a new argument.

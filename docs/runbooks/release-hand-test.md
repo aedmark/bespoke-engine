@@ -185,7 +185,7 @@ python3 -m http.server -d dist/site 8000
 Upload `dist/site/index.html` and `dist/site/sw.js` from section 7 to your site by hand (D-074).
 
 - [ ] Open the live site in a private window. The playground runs, audio plays after a click, and the service worker activates.
-- [ ] The Manual link in the page header: note whether it opens (Q-007; the export does not include the manual).
+- [ ] The Manual link in the page header opens the manual. Upload `docs/manual.html` to `docs/manual.html` on the site: the export does not include it (Q-007).
 - [ ] Share the URL in a link preview (a chat app, or an OpenGraph checker): the title and description show. The export adds no preview image, so none is expected.
 
 ## 9. macOS and Windows
