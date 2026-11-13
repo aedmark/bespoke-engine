@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Embed the proof WebAssembly module and browser wrapper into site/index.html.
+"""Generate the showcase page's two generated regions in site/index.html.
 
     zig build wasm-proofs
     python3 tools/build_site.py
     python3 tools/build_site.py --check
 
-The showcase page remains a single self-contained file that runs from file://.
-Edit tools/site_simulator.js, not the generated script region in site/index.html.
+The simulator region embeds bespoke-proofs.wasm and tools/site_simulator.js. The gallery
+region (P30-03, D-068) holds one card per proof from tools/site_gallery.json, with each proof's
+real script extracted from its source and highlighted, for the script viewer. The page remains
+a single self-contained file that runs from file://. Edit the inputs, not the generated regions.
 """
+from __future__ import annotations
+
 import argparse
 import base64
+import html as html_lib
+import json
+import re
 import sys
 import textwrap
 from pathlib import Path
@@ -21,6 +28,10 @@ WASM_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-proofs.wasm"
 START_MARKER = "<!-- SITE_SIMULATOR_START -->"
 END_MARKER = "<!-- SITE_SIMULATOR_END -->"
 PLACEHOLDER = "__BESPOKE_PROOFS_WASM_BASE64__"
+GALLERY_PATH = Path(__file__).with_name("site_gallery.json")
+LEXER_PATH = ROOT / "src" / "compiler" / "lexer.zig"
+GALLERY_START = "<!-- SITE_GALLERY_START -->"
+GALLERY_END = "<!-- SITE_GALLERY_END -->"
 
 
 def load_wasm(path: Path = WASM_ARTIFACT) -> bytes:
@@ -57,15 +68,121 @@ def render_page(html: str, wrapper: str, payload: bytes) -> str:
     return html[:start] + block + html[end:]
 
 
+def replace_region(html: str, start_marker: str, end_marker: str, block: str, what: str) -> str:
+    if html.count(start_marker) != 1 or html.count(end_marker) != 1:
+        raise SystemExit(f"site/index.html needs exactly one {what} start and end marker")
+    start = html.rfind("\n", 0, html.index(start_marker)) + 1
+    end = html.index(end_marker, start) + len(end_marker)
+    return html[:start] + block + html[end:]
+
+
+def keywords(lexer_source: str) -> set[str]:
+    """The DSL's keywords, read from the lexer's table so highlighting never drifts from it."""
+    words = set(re.findall(r'\.\{ "([a-z]+)", \.kw_', lexer_source))
+    if not words:
+        raise SystemExit(f"no keywords found in {LEXER_PATH}")
+    return words
+
+
+def extract_script(source: str, root: Path = ROOT) -> str:
+    """A `.bespoke` file's text, or `file.zig#CONSTANT`: that Zig multiline string's lines."""
+    path_text, _, constant = source.partition("#")
+    text = (root / path_text).read_text(encoding="utf-8")
+    if not constant:
+        return text.rstrip("\n") + "\n"
+    match = re.search(rf"^(?:pub )?const {re.escape(constant)} =\n((?:[ \t]*\\\\.*\n)+)[ \t]*;", text, re.M)
+    if match is None:
+        raise SystemExit(f"{path_text} has no multiline string constant {constant}")
+    return "".join(line.split("\\\\", 1)[1] + "\n" for line in match.group(1).splitlines())
+
+
+TOKEN = re.compile(r'(?P<comment>(?:^|(?<=\n))[ \t]*[#~][^\n]*)|(?P<string>"[^"\n]*")|(?P<number>\b\d+\b)|(?P<word>\b[A-Za-z_]+\b)')
+
+
+def highlight(script: str, words: set[str]) -> str:
+    """Escaped HTML with keyword, string, number, and comment spans, one block-level
+    `<span class=line>` per source line so CSS can number them. No newline separates the line
+    spans: inside `<pre>` it would add a blank line after each."""
+    out = []
+    pos = 0
+    for m in TOKEN.finditer(script):
+        out.append(html_lib.escape(script[pos:m.start()], quote=False))
+        text = html_lib.escape(m.group(0), quote=False)
+        kind = m.lastgroup
+        if kind == "word":
+            out.append(f'<span class="code-kw">{text}</span>' if m.group(0) in words else text)
+        else:
+            css = {"comment": "code-comment", "string": "code-str", "number": "code-num"}[kind]
+            out.append(f'<span class="{css}">{text}</span>')
+        pos = m.end()
+    out.append(html_lib.escape(script[pos:], quote=False))
+    lines = "".join(out).rstrip("\n").split("\n")
+    return "".join(f'<span class="line">{line}</span>' for line in lines)
+
+
+def render_gallery_block(entries: list[dict], words: set[str], root: Path = ROOT) -> str:
+    cards = []
+    scripts = {}
+    for number, entry in enumerate(entries, start=1):
+        esc = lambda value: html_lib.escape(value, quote=True)  # noqa: E731
+        source = entry["source"]
+        script = extract_script(source, root)
+        deck = entry.get("deck")
+        if deck is None:
+            play = (
+                f'<span class="gallery-desktop">Desktop only: <code>zig build run-proof -- --{esc(entry["flag"])}</code></span>'
+            )
+        else:
+            play = f'<button class="sim-btn" type="button" data-play-deck="{deck}">[{deck + 1}] Play here</button>'
+        cards.append(
+            f'        <div class="scenario-card gallery-card" id="proof-{esc(entry["id"])}">\n'
+            '          <div class="scenario-info">\n'
+            f'            <span class="scenario-tag">Proof {number:02d} · {esc(entry["tag"])}</span>\n'
+            f'            <h3 class="scenario-heading">{esc(entry["title"])}</h3>\n'
+            f'            <p class="scenario-text">{esc(entry["blurb"])}</p>\n'
+            '          </div>\n'
+            '          <div class="gallery-actions">\n'
+            f'            {play}\n'
+            f'            <button class="sim-btn" type="button" data-view-script="{esc(entry["id"])}">View script ({script.count(chr(10))} lines)</button>\n'
+            '          </div>\n'
+            '        </div>\n'
+        )
+        scripts[entry["id"]] = {
+            "title": entry["title"],
+            "source": source.replace("#", " ", 1),
+            "note": entry.get("source_note", ""),
+            "deck": deck,
+            "html": highlight(script, words),
+        }
+    data = json.dumps(scripts, ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
+    return (
+        f"      {GALLERY_START}\n"
+        "      <!-- Generated by tools/build_site.py from tools/site_gallery.json and each proof's script. -->\n"
+        '      <div class="scenario-grid">\n'
+        + "".join(cards)
+        + "      </div>\n"
+        f'      <script type="application/json" id="proof-scripts">{data}</script>\n'
+        f"      {GALLERY_END}"
+    )
+
+
+def render_site(html: str, root: Path = ROOT) -> str:
+    """The page with both generated regions rendered from the current inputs."""
+    wrapper = SIMULATOR_JS_PATH.read_text(encoding="utf-8")
+    page = render_page(html, wrapper, load_wasm())
+    entries = json.loads(GALLERY_PATH.read_text(encoding="utf-8"))["proofs"]
+    block = render_gallery_block(entries, keywords(LEXER_PATH.read_text(encoding="utf-8")), root)
+    return replace_region(page, GALLERY_START, GALLERY_END, block, "gallery")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="verify site/index.html is current")
     args = parser.parse_args(argv)
 
     payload = load_wasm()
-    wrapper = SIMULATOR_JS_PATH.read_text(encoding="utf-8")
     html = HTML_PATH.read_text(encoding="utf-8")
-    rendered = render_page(html, wrapper, payload)
+    rendered = render_site(html)
 
     if args.check:
         if rendered != html:

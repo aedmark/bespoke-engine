@@ -1,0 +1,123 @@
+{
+  "_comment": "Showcase gallery (P30-03, D-068). tools/build_site.py renders one card per entry and extracts each script from `source`: a .bespoke file, or `file#CONSTANT` for a Zig multiline string in a proof. `deck` is the playground deck index in proofs/wasm_deck.zig, or null for a desktop-only proof. `flag` is the bespoke-proofs argument.",
+  "proofs": [
+    {
+      "id": "tavern",
+      "title": "The Tavern Heist",
+      "tag": "Systemic emergence",
+      "blurb": "A patrolling Guard carries the Cheese. The Bard's lute charms him, and the Cat takes the cheese while he is distracted. No cutscene: rules react to facts as they change.",
+      "source": "scenarios/tavern_heist.bespoke",
+      "source_note": "This proof builds its stage in Zig; the script shown is the stock CLI version of the same slice, which `bespoke run` plays.",
+      "deck": 0,
+      "flag": "tavern"
+    },
+    {
+      "id": "spit",
+      "title": "Booty Island Spitting Contest",
+      "tag": "Environmental hooks",
+      "blurb": "Guybrush needs a winning spit. He sounds the ship's horn to distract the crowd, moves the distance flags, drinks something thick and green, and waits for the wind.",
+      "source": "proofs/spitting_contest.zig#SPITTING_CONTEST_SCRIPT",
+      "deck": 1,
+      "flag": "spit"
+    },
+    {
+      "id": "gk3",
+      "title": "The Cat Moustache",
+      "tag": "Multi-scene crafting",
+      "blurb": "Gabriel must pass as Mosely to rent a motorcycle. Tape, a marker, syrup, a passport, and some cat hair combine across three scenes into a convincing disguise.",
+      "source": "proofs/gk3_moustache.zig#GK3_MOUSTACHE_SCRIPT",
+      "deck": 2,
+      "flag": "gk3"
+    },
+    {
+      "id": "village",
+      "title": "The Living Village",
+      "tag": "Emergent society",
+      "blurb": "Six villagers with hunger, energy, and money run their own days. A starving drifter steals, a witness talks, rumours spread, and the Sheriff makes an arrest, with nothing scripted in between.",
+      "source": "proofs/village.zig#VILLAGE_SCRIPT",
+      "deck": 3,
+      "flag": "village"
+    },
+    {
+      "id": "goat",
+      "title": "The Lochmarne Goat",
+      "tag": "Arrival rules",
+      "blurb": "A tethered goat knocks George down whenever he heads for the cellar. Move the plough, tangle the goat's rope around it, and the way down to the crypt is clear. Each step is an arrival rule in the script.",
+      "source": "proofs/goat_puzzle.zig#GOAT_PUZZLE_SCRIPT",
+      "deck": 4,
+      "flag": "goat"
+    },
+    {
+      "id": "dott",
+      "title": "Day of the Tentacle Trio",
+      "tag": "Three eras, one world",
+      "blurb": "Three characters in three eras pass items through time. A change in the past is a fact the future reads, so each era's puzzles depend on the others.",
+      "source": "proofs/dott_puzzle.zig#DOTT_PUZZLE_SCRIPT",
+      "deck": 5,
+      "flag": "dott"
+    },
+    {
+      "id": "grog",
+      "title": "Caustic Grog",
+      "tag": "Container degradation",
+      "blurb": "Three cups of grog eat through themselves on the way from the barrel to the lock. Pour from cup to cup before each fails, and arrive with enough to dissolve the lock.",
+      "source": "proofs/grog_puzzle.zig#GROG_PUZZLE_SCRIPT",
+      "deck": 6,
+      "flag": "grog"
+    },
+    {
+      "id": "sword",
+      "title": "Insult Sword Fighting",
+      "tag": "Learning dialogue",
+      "blurb": "Every duel teaches insults and their comebacks. Opponents grow tired of repeated questions, and the duel's rounds and moods live in World facts, so a rewind replays them exactly.",
+      "source": "proofs/sword_fighting.zig#SWORD_FIGHTING_SCRIPT",
+      "deck": null,
+      "flag": "sword"
+    },
+    {
+      "id": "darko",
+      "title": "The Middlesex Anomaly",
+      "tag": "Tangent worlds",
+      "blurb": "A copy-on-write tangent universe runs on a countdown. Close the loop before the budget runs out, or the branch collapses.",
+      "source": "proofs/darko_puzzle.zig#DARKO_PUZZLE_SCRIPT",
+      "deck": null,
+      "flag": "darko"
+    },
+    {
+      "id": "loom",
+      "title": "The Bell Tower",
+      "tag": "Musical drafts",
+      "blurb": "Four-note drafts woven on a distaff change the world. Played backwards, each draft does its opposite.",
+      "source": "proofs/loom_puzzle.zig#BELL_TOWER_SCRIPT",
+      "deck": null,
+      "flag": "bell-tower"
+    },
+    {
+      "id": "atlantis",
+      "title": "Algiers: Three Paths",
+      "tag": "Stageplay paths",
+      "blurb": "Wits, Fists, or Team: choosing a path locks rival gates, prunes the dialogue to that approach, and runs only that path's solution.",
+      "source": "proofs/atlantis_puzzle.zig#ATLANTIS_PUZZLE_SCRIPT",
+      "deck": null,
+      "flag": "atlantis"
+    },
+    {
+      "id": "grid",
+      "title": "The Castle Fire Escape",
+      "tag": "Fire, smoke, and water",
+      "blurb": "Burn a tapestry to find the hidden door, then soak the door before the fire reaches it. Water floods back through the corridor and puts the fire out.",
+      "source": "proofs/grid_puzzle.zig#GRID_PUZZLE_SCRIPT",
+      "deck": null,
+      "flag": "grid"
+    },
+    {
+      "id": "observatory",
+      "title": "The Larkspur Observatory",
+      "tag": "Agendas and typed commands",
+      "blurb": "Investigate a missing comet plate while the staff go about their night. Each of them has an agenda and intercepts you when your evidence threatens it. Type your commands.",
+      "source": "proofs/observatory_puzzle.zig#OBSERVATORY_SCRIPT",
+      "deck": null,
+      "flag": "observatory"
+    }
+  ]
+}

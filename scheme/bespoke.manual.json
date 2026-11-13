@@ -1302,6 +1302,29 @@
           "related": ["engine-as-spine", "living-village-emergent-sandbox", "branching-dialogue-balloons", "persistent-save-load-and-slot-management"]
         },
         {
+          "id": "showcase-gallery-and-viewer",
+          "title": "Showcase Gallery, Script Viewer, and Diagrams",
+          "summary": "The showcase lists every proof, plays seven in the viewport, and shows each proof's real script in a viewer that follows the active deck.",
+          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html",
+          "tags": ["site", "gallery", "scripts", "diagrams"],
+          "what": "A generated gallery of thirteen proof cards with Play and View script buttons, a line-numbered script viewer under the viewport, and a How It Works section of three inline SVG diagrams.",
+          "how": [
+            "build_site.py reads tools/site_gallery.json and extracts each script from a .bespoke file or a Zig multiline constant (file.zig#CONSTANT).",
+            "Scripts are highlighted at build time with the keyword list read from src/compiler/lexer.zig, escaped, and embedded as JSON with </ escaped.",
+            "site_simulator.js shows the active deck's script whenever a deck loads, and any proof's script when its View script button is pressed.",
+            "build_site.py --check, and deploy_site.py export, treat a changed script or gallery entry as a stale page."
+          ],
+          "why": "Hand-copied snippets had drifted from the proofs. Extracting the scripts at build time keeps the showcase honest, and labelling them as the desktop proofs' source keeps it honest about the browser decks being Zig reconstructions.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-068", "target": "docs/DECISIONS.md#d-068", "kind": "decision"},
+            {"label": "Gallery Data", "target": "tools/site_gallery.json", "kind": "source"},
+            {"label": "Site Build", "target": "tools/build_site.py", "kind": "source"},
+            {"label": "Site Tests", "target": "tests/test_site.py", "kind": "test"}
+          ],
+          "related": ["showcase-deploy-pipeline", "wasm-browser-target-and-simulator"]
+        },
+        {
           "id": "showcase-deploy-pipeline",
           "title": "Showcase Deployment: Export, Offline Cache, and Neocities Upload",
           "summary": "tools/deploy_site.py turns the self-contained showcase page into a static site with sharing metadata and an offline cache, and uploads only what changed.",

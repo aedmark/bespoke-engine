@@ -922,6 +922,20 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Cache-first service worker: rejected; visitors would see the previous deploy until a second visit.
 **Consequences:** The service worker has not run in a real browser: the desktop app's browser pane refuses service workers, so it was checked by syntax only. Uploads are tested against a local mock of the API, not Neocities. Removing a file from the site is still done in the Neocities dashboard.
 
+## D-068 Showcase Gallery, Script Viewer, and Architecture Diagrams (2026-11-12, status: accepted)
+**Context:** P30-03 asks for an interactive scenario gallery, architecture diagram embeds, and a live script source viewer beside each playable slice. The page's five scenario cards carried hand-written script snippets that had drifted from the proofs (one named a scene the proof does not have), and covered ten of thirteen proofs. The seven browser decks rebuild their stages in Zig (`proofs/wasm_deck.zig`) and do not run the proofs' scripts. The maintainer chose (2026-11-12): show each proof's real script, labelled as the desktop proof's source; a generated gallery whose viewer follows the active deck; and hand-drawn inline SVG diagrams.
+**Decision:**
+1. **The gallery is generated.** `tools/site_gallery.json` lists all thirteen proofs with a title, tag, blurb, script source, playground deck (or none), and `bespoke-proofs` flag. `tools/build_site.py` renders a second generated region (`SITE_GALLERY_START`/`END`) with one card per proof: Play here switches the viewport to its deck, desktop-only proofs show their `zig build run-proof` command, and View script opens the viewer.
+2. **Scripts come from their sources.** A source is a `.bespoke` file or `file.zig#CONSTANT`, a Zig multiline string read line by line. The Tavern Heist proof builds its stage in Zig, so its card shows `scenarios/tavern_heist.bespoke` and says so. Scripts are highlighted at build time with the keyword list read from `src/compiler/lexer.zig`, escaped, and embedded as JSON whose `</` is escaped so it cannot close its element.
+3. **The viewer follows the deck.** A panel under the viewport shows the active deck's script with line numbers and a note that the browser deck is a Zig reconstruction. It fills before the module loads, so it works even if WebAssembly fails.
+4. **Diagrams are inline SVG.** A How It Works section draws Engine-as-Spine, the cue-to-story-beat cycle, and the script-to-platform build, styled by CSS classes on the page's theme variables. No external files; the page still opens from `file://`.
+5. **Staleness is one check.** `build_site.py --check` and `deploy_site.py export` compare the whole page, gallery included, with a fresh render, so a changed proof script or gallery entry makes the page stale.
+**Alternatives:**
+- Converting the browser decks to script decks (D-066) so what plays is what is shown: not chosen now; proof catalysts and after-tick rules would move into scripts and every wasm golden would change. A candidate roadmap item.
+- Keeping static cards with real code: not chosen; nothing would connect the code to the viewport.
+- Reusing manual figures: the manual has no diagrams of these flows.
+**Consequences:** The page grew from 200 KB to 360 KB with thirteen scripts. Blurbs are prose in the JSON and are checked only for presence; the scripts, decks, and flags are checked by tests.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

@@ -30,6 +30,17 @@
   const runtimePaused = document.querySelector('#runtime-paused');
   const scenarioTabs = [...document.querySelectorAll('[data-scenario]')];
   const verbButtons = [...document.querySelectorAll('[data-verb]')];
+  // Script viewer (P30-03, D-068): build_site.py embeds every proof's script as JSON beside the
+  // gallery. The viewer follows the active deck; a gallery card's View script opens any proof.
+  const scriptData = (() => {
+    const el = document.querySelector('#proof-scripts');
+    try { return el ? JSON.parse(el.textContent) : {}; } catch (_) { return {}; }
+  })();
+  const scriptTitle = document.querySelector('#script-view-title');
+  const scriptSource = document.querySelector('#script-view-source');
+  const scriptNote = document.querySelector('#script-view-note');
+  const scriptCode = document.querySelector('#script-view-code');
+  const DEFAULT_SCRIPT_NOTE = scriptNote ? scriptNote.textContent : '';
 
   const VERBS = ['WALK', 'LOOK', 'TALK', 'TAKE', 'USE'];
   const DECK_NAMES = [
@@ -128,6 +139,20 @@
     ctx.putImageData(new ImageData(pixels, 640, 360), 0, 0);
   }
 
+  function showScript(id) {
+    const entry = scriptData[id];
+    if (!entry || !scriptCode) return;
+    scriptTitle.textContent = `${entry.title}: script`;
+    scriptSource.textContent = entry.source;
+    scriptNote.textContent = entry.note || DEFAULT_SCRIPT_NOTE;
+    scriptCode.innerHTML = entry.html;
+    scriptCode.parentElement.scrollTop = 0;
+  }
+
+  function scriptForDeck(index) {
+    return Object.keys(scriptData).find((id) => scriptData[id].deck === index);
+  }
+
   function log(prefix, message, type = 'info') {
     if (!eventLog) return;
     const entry = document.createElement('div');
@@ -168,6 +193,8 @@
     syncVerbs();
     lastTickTime = performance.now();
     log('DECK', `Loaded ${DECK_NAMES[index]} from bespoke-proofs.wasm.`, 'cue');
+    const id = scriptForDeck(index);
+    if (id) showScript(id);
     refresh();
   }
 
@@ -249,6 +276,22 @@
   verbButtons.forEach((button, index) => {
     button.addEventListener('click', () => applyVerb(index));
   });
+
+  document.querySelectorAll('[data-play-deck]').forEach((button) => {
+    button.addEventListener('click', () => {
+      loadDeck(Number(button.dataset.playDeck));
+      document.querySelector('#playground').scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+  document.querySelectorAll('[data-view-script]').forEach((button) => {
+    button.addEventListener('click', () => {
+      showScript(button.dataset.viewScript);
+      document.querySelector('#script-viewer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  // The viewer works before the module loads and when it fails to.
+  const firstScript = scriptForDeck(0);
+  if (firstScript) showScript(firstScript);
 
   canvas.addEventListener('pointerdown', (event) => {
     if (!exp) return;

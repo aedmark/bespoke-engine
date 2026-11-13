@@ -100,12 +100,11 @@ def load_build_site():
 def require_current_page(page: str) -> None:
     """The exported page must be what build_site.py would write from the current module."""
     build_site = load_build_site()
-    wrapper = build_site.SIMULATOR_JS_PATH.read_text(encoding="utf-8")
     try:
-        payload = build_site.load_wasm()
+        current = build_site.render_site(page)
     except SystemExit as exc:
         raise DeployError(str(exc)) from exc
-    if build_site.render_page(page, wrapper, payload) != page:
+    if current != page:
         raise DeployError("site/index.html is stale; run `zig build wasm-proofs` and `python3 tools/build_site.py`")
 
 
