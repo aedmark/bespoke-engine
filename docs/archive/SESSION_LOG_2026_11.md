@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 48 (2026-11-10)
+- **Goal:** Ship P26-01 and implement P26-02.
+- **Work:** Merged P26-01 (`f6d9cfb`). Added `FrameList`, `match_frame`, `Outcome` with player-facing replies, and `Interpreter` (one open "which do you mean" question, answered by a bare noun) to `src/command.zig`, and `host.run_command` (cue dispatch through `fire_cue`, `WalksTo` walking to a mark or an agent's waypoint, "Nothing happens." when no handler answers).
+- **Outcome:** See the Verified table. A mutation that left the question open after an answer failed the interpreter test. Fast-forwarded to `main` and pushed.
+
 ### Session 47 (2026-11-10)
 - **Goal:** Ship the window feedback fixes and start Phase 26 with P26-01.
 - **Work:** Merged the window fixes (`eeb686f`); the maintainer re-played the observatory with no problems. Recorded D-057 for the whole phase. Added `src/command.zig` (tokenizer, frames and engine defaults, name words, scope, resolution), `command` and `alias` declarations, and `.bspk` version 10. Fixed a dangling-slice bug in name splitting found by the first resolve test (the name-split test had passed by luck), and replaced three hand-patched package-test offsets with one `EMPTY_TAIL_AFTER_V9` constant.

@@ -75,10 +75,19 @@
       "flag": "sword"
     },
     {
+      "id": "atlantis",
+      "title": "Algiers: Three Paths",
+      "tag": "Stageplay paths",
+      "blurb": "Wits, Fists, or Team: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach's solution.",
+      "source": "proofs/atlantis_puzzle.zig#ATLANTIS_PUZZLE_SCRIPT",
+      "deck": 8,
+      "flag": "atlantis"
+    },
+    {
       "id": "darko",
       "title": "The Middlesex Anomaly",
-      "tag": "Tangent worlds",
-      "blurb": "A copy-on-write tangent universe runs on a countdown. Close the loop before the budget runs out, or the branch collapses.",
+      "tag": "Branch worlds",
+      "blurb": "The world splits into a temporary copy with a countdown. Carry one object to the right place before time runs out and the copy merges back; miss it and the copy collapses, so you rewind and try again.",
       "source": "proofs/darko_puzzle.zig#DARKO_PUZZLE_SCRIPT",
       "deck": 9,
       "flag": "darko"
@@ -87,19 +96,10 @@
       "id": "loom",
       "title": "The Bell Tower",
       "tag": "Musical drafts",
-      "blurb": "Four-note drafts woven on a distaff change the world. Played backwards, each draft does its opposite.",
+      "blurb": "Play four-note tunes (drafts) on a musical staff to change the world. Played backwards, each tune does its opposite.",
       "source": "proofs/loom_puzzle.zig#BELL_TOWER_SCRIPT",
       "deck": 10,
       "flag": "bell-tower"
-    },
-    {
-      "id": "atlantis",
-      "title": "Algiers: Three Paths",
-      "tag": "Stageplay paths",
-      "blurb": "Wits, Fists, or Team: choosing a path locks rival gates, prunes the dialogue to that approach, and runs only that path's solution.",
-      "source": "proofs/atlantis_puzzle.zig#ATLANTIS_PUZZLE_SCRIPT",
-      "deck": 8,
-      "flag": "atlantis"
     },
     {
       "id": "grid",

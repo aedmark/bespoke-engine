@@ -1200,11 +1200,11 @@
       <nav class="nav-links">
         <a href="#playground">Playground</a>
         <a href="#tenets">Tenets</a>
-        <a href="#scenarios">Scenarios</a>
+        <a href="#scenarios">Proofs</a>
         <a href="#dialogue">Dialogue</a>
         <a href="#how-it-works">How It Works</a>
         <a href="#architecture">Architecture</a>
-        <a href="../docs/manual.html">3x Manual</a>
+        <a href="../docs/manual.html">Manual</a>
         <a href="https://github.com/aedmark/bespoke-engine" target="_blank" rel="noopener">GitHub</a>
       </nav>
 
@@ -1228,9 +1228,9 @@
 
       <h1 class="hero-title">The Simulation Runtime IS the Spine.</h1>
       <p class="hero-tagline">
-        A bespoke simulation engine &amp; DSL written in pure Zig. 
-        Where game worlds are <strong>flat relational facts</strong>, behaviors are <strong>cooperative fibers</strong>, 
-        and time travel is an <strong>instant snapshot rewind</strong>.
+        A small engine and scripting language for story-driven games, written in Zig.
+        The world is a list of <strong>plain facts</strong>, characters follow <strong>scripts that can pause and resume</strong>,
+        and any moment can be <strong>rewound and replayed</strong>.
       </p>
 
       <div class="hero-buttons">
@@ -1327,7 +1327,7 @@
         <div class="interactive-card">
           <div class="interactive-card-title">
             <span>Adventure Verbs</span>
-            <span style="font-size:0.7rem; color:var(--text-dim);">WASM POINTER BRIDGE</span>
+            <span style="font-size:0.7rem; color:var(--text-dim);">CLICK TO ACT</span>
           </div>
           <div class="button-bank">
             <button class="sim-btn active" data-verb="WALK">[W] Walk</button>
@@ -1389,8 +1389,8 @@
         <h2 class="section-title">Simulation as First Principle</h2>
         <p class="section-desc">
           Drawing spiritual inspiration from the deterministic clockwork of Chris Sawyer's <em>RollerCoaster Tycoon</em>, 
-          the actor/cue architecture of Sierra's <em>SCI</em> and LucasArts' <em>SCUMM</em>, and the emergent relationship graphs of <em>Dwarf Fortress</em>. 
-          BeSpoke replaces frame-delta accumulation and deep class hierarchies with pure, reproducible simulation.
+          the actor/cue architecture of Sierra's <em>SCI</em> and LucasArts' <em>SCUMM</em>, and the emergent relationship graphs of <em>Dwarf Fortress</em>.
+          BeSpoke counts time in whole steps (ticks) and stores the world as facts, so the same inputs always produce the same story.
         </p>
       </div>
 
@@ -1400,14 +1400,14 @@
           <div class="card-label">PILLAR 01</div>
           <h3 class="card-title">Engine-as-Spine</h3>
           <p class="card-body">
-            The VM is <code>main()</code>. It owns the master discrete tick clock, entity lifecycles, 
-            spatial topologies, and relational facts. Visuals (an SDL2 desktop window or a WebAssembly canvas) are downstream, 
-            read-only peripheral display bridges.
+            The engine runs the game; the screen only shows it. The engine owns the clock, the characters,
+            the map, and the facts. The window (SDL2 on the desktop, a canvas in the browser) draws what the engine
+            reports and passes player input back; it never changes the world itself.
           </p>
           <div class="code-chip">
-            // Core simulation is zero-dependency Zig<br>
-            var world = World.init(allocator);<br>
-            var vm = VM.init(&amp;world, &amp;chunk);
+            // A host starts a script, then asks for ticks<br>
+            _ = try host.start_script(&amp;world, &amp;spatial, &amp;vm, &amp;compiled);<br>
+            _ = try host.tick(&amp;vm, &amp;compiled);
           </div>
         </div>
 
@@ -1416,9 +1416,9 @@
           <div class="card-label">PILLAR 02</div>
           <h3 class="card-title">Flat Relational State</h3>
           <p class="card-body">
-            No class hierarchies. No pointers inside serialized state. Truth consists of contiguous 4-tuples: 
-            <code>(Subject, Relation, Object, TTL)</code> in arena memory. First-class TTL decay allows charms, distractions, 
-            and alerts to expire naturally without manual cleanup loops.
+            Everything the game knows is a row of four values: <code>(subject, relation, object, expires_at_tick)</code>,
+            such as "the Guard carries the Cheese". A fact can carry an expiry tick, so a charm, a distraction,
+            or an alarm ends on its own without cleanup code.
           </p>
           <div class="code-chip">
             remember Carries(Guard, Cheese)<br>
@@ -1431,12 +1431,13 @@
           <div class="card-label">PILLAR 03</div>
           <h3 class="card-title">Fibers &amp; Time Travel</h3>
           <p class="card-body">
-            Write game logic like a play script using cooperative fibers with built-in <code>wait</code> and <code>wait until</code>. 
-            Because state is a contiguous flat array in arena memory, save states and time-travel rewinds are a single-call <code>memcpy</code>.
+            Write behaviour like a play script: a routine walks, waits, and speaks, and pauses with <code>wait</code> or
+            <code>wait until</code> without blocking anything else. The facts sit in four flat columns, so a snapshot copies
+            those columns and the name tables as raw bytes; rewinding copies them back.
           </p>
           <div class="code-chip">
             walk Guard to Cellar<br>
-            wait 120 ticks<br>
+            wait 5 ticks<br>
             walk Guard to Hearth
           </div>
         </div>
@@ -1451,7 +1452,8 @@
         <div class="section-eyebrow">Proofs of Concept</div>
         <h2 class="section-title">Classic Adventure &amp; Systemic Proofs</h2>
         <p class="section-desc">
-          Thirteen proofs of concept drive the engine end to end, each with scripted headless assertions and a rewind check.
+          Thirteen proofs of concept drive the engine end to end. Each runs without a window and checks its own outcome;
+          twelve also rewind and check the world matches (Algiers does not yet).
           They live in <code>proofs/</code>, depend on the engine through its public module, and build as a separate
           <code>bespoke-proofs</code> binary; the engine itself never imports a proof. Eleven play in the viewport above.
           Every card opens the script its proof runs; the browser decks run those same scripts.
@@ -1549,37 +1551,37 @@
             <button class="sim-btn" type="button" data-view-script="sword">View script (112 lines)</button>
           </div>
         </div>
-        <div class="scenario-card gallery-card" id="proof-darko">
+        <div class="scenario-card gallery-card" id="proof-atlantis">
           <div class="scenario-info">
-            <span class="scenario-tag">Proof 09 · Tangent worlds</span>
-            <h3 class="scenario-heading">The Middlesex Anomaly</h3>
-            <p class="scenario-text">A copy-on-write tangent universe runs on a countdown. Close the loop before the budget runs out, or the branch collapses.</p>
+            <span class="scenario-tag">Proof 09 · Stageplay paths</span>
+            <h3 class="scenario-heading">Algiers: Three Paths</h3>
+            <p class="scenario-text">Wits, Fists, or Team: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach&#x27;s solution.</p>
           </div>
           <div class="gallery-actions">
-            <button class="sim-btn" type="button" data-play-deck="9">[10] Play here</button>
+            <button class="sim-btn" type="button" data-play-deck="8">[9] Play here</button>
+            <button class="sim-btn" type="button" data-view-script="atlantis">View script (46 lines)</button>
+          </div>
+        </div>
+        <div class="scenario-card gallery-card" id="proof-darko">
+          <div class="scenario-info">
+            <span class="scenario-tag">Proof 10 · Branch worlds</span>
+            <h3 class="scenario-heading">The Middlesex Anomaly</h3>
+            <p class="scenario-text">The world splits into a temporary copy with a countdown. Carry one object to the right place before time runs out and the copy merges back; miss it and the copy collapses, so you rewind and try again.</p>
+          </div>
+          <div class="gallery-actions">
+            <button class="sim-btn" type="button" data-play-deck="9">Play here</button>
             <button class="sim-btn" type="button" data-view-script="darko">View script (122 lines)</button>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-loom">
           <div class="scenario-info">
-            <span class="scenario-tag">Proof 10 · Musical drafts</span>
+            <span class="scenario-tag">Proof 11 · Musical drafts</span>
             <h3 class="scenario-heading">The Bell Tower</h3>
-            <p class="scenario-text">Four-note drafts woven on a distaff change the world. Played backwards, each draft does its opposite.</p>
+            <p class="scenario-text">Play four-note tunes (drafts) on a musical staff to change the world. Played backwards, each tune does its opposite.</p>
           </div>
           <div class="gallery-actions">
-            <button class="sim-btn" type="button" data-play-deck="10">[11] Play here</button>
+            <button class="sim-btn" type="button" data-play-deck="10">Play here</button>
             <button class="sim-btn" type="button" data-view-script="loom">View script (129 lines)</button>
-          </div>
-        </div>
-        <div class="scenario-card gallery-card" id="proof-atlantis">
-          <div class="scenario-info">
-            <span class="scenario-tag">Proof 11 · Stageplay paths</span>
-            <h3 class="scenario-heading">Algiers: Three Paths</h3>
-            <p class="scenario-text">Wits, Fists, or Team: choosing a path locks rival gates, prunes the dialogue to that approach, and runs only that path&#x27;s solution.</p>
-          </div>
-          <div class="gallery-actions">
-            <button class="sim-btn" type="button" data-play-deck="8">[9] Play here</button>
-            <button class="sim-btn" type="button" data-view-script="atlantis">View script (46 lines)</button>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-grid">
@@ -1614,74 +1616,60 @@
          ======================================================================== -->
     <section id="dialogue" class="compare-box">
       <div class="section-title-wrap">
-        <div class="section-eyebrow">Conversational Epistemology</div>
-        <h2 class="section-title">No More Flag Spaghetti:<br> Relational Dialogue Trees</h2>
+        <div class="section-eyebrow">Dialogue</div>
+        <h2 class="section-title">Dialogue That Reads the World</h2>
         <p class="section-desc">
-          Dialogue in adventure games has always had sharp edges. The Infocom parser model ("ask X about Y") is brittle, 
-          while classic dialogue trees in SCUMM and AGS drown in hundreds of ad-hoc boolean flags. 
-          BeSpoke replaces flag thickets with pattern-matched relational queries over the world fact store.
+          Adventure-game dialogue usually tracks what the player has said with a pile of yes/no flags.
+          In BeSpoke, each dialogue option carries a condition written against the world's facts, and the option
+          appears only while that condition holds. Both examples below are excerpts from the Insult Sword Fighting proof's script.
         </p>
       </div>
 
-      <!-- Dialogue Grid: Problem vs Solution -->
       <div class="dialogue-grid">
-        <!-- Specimen 1: Insult Sword Fighting -->
         <div class="scenario-card">
           <div class="scenario-info">
             <span class="scenario-tag">Pattern 01 · Insult Sword Fighting</span>
-            <h3 class="scenario-heading">Combinatorial Memory Queries</h3>
+            <h3 class="scenario-heading">A Duel Declared as Data</h3>
             <p class="scenario-text">
-              In SCUMM, tracking 16 heard insults and 16 learned counters across pirates and the Sword Master required 
-              deep trees of mutable boolean flags. In BeSpoke, dialogue choices are direct queries over relational facts: 
-              <code>where KnowsReply(player, reply) and Counters(reply, active_insult)</code>.
+              The script lists insult and comeback pairs; the engine's duel module turns them into facts
+              (<code>HeardInsult</code>, <code>MasteredReply</code>, <code>Counters</code>). Each round, the replies the player
+              may choose are the ones they have learned, filtered through the same dialogue engine as every other choice.
+              The dialogue text is shortened here.
             </p>
           </div>
-          <pre class="scenario-code"><code><span class="code-kw">relation</span> HeardInsult(fighter, insult)
-<span class="code-kw">relation</span> MasteredReply(fighter, reply)
-<span class="code-kw">relation</span> Counters(reply, insult)
-<span class="code-kw">relation</span> SwordMasterVariant(master_insult, standard_insult)
-
-<span class="code-kw">on cue</span> DuelInsult(pirate, target, insult):
-  <span class="code-kw">remember</span> HeardInsult(target, insult)
-  <span class="code-kw">say</span> pirate: insult
-
-  <span class="code-comment">// Dynamic choices query the relational fact arena</span>
-  <span class="code-kw">choice</span> reply <span class="code-kw">where</span> MasteredReply(target, reply) <span class="code-kw">and</span> Counters(reply, insult):
-    <span class="code-kw">say</span> target: reply
-    <span class="code-kw">strike</span> target <span class="code-kw">against</span> pirate
-    <span class="code-kw">remember</span> Advantage(target)
-
-  <span class="code-kw">choice</span> fallback <span class="code-kw">if not</span> MasteredReply(target, _):
-    <span class="code-kw">say</span> target: <span class="code-str">"I am shaking, I am shaking!"</span>
-    <span class="code-kw">yield</span> advantage <span class="code-kw">to</span> pirate</code></pre>
+          <pre class="scenario-code"><code><span class="code-kw">duel</span> InsultSwordFighting:
+  pair Insult1:
+    challenge <span class="code-str">"..."</span>
+    reply <span class="code-str">"..."</span>
+  <span class="code-comment"># sixteen pairs in all</span>
+  fallback <span class="code-str">"..."</span>
+  win 3
+  relations HeardInsult MasteredReply Counters SwordMasterVariant IsSwordMaster Advantage DuelsWon
+  fatigue Inquiries <span class="code-str">"welcoming"</span>:
+    stage AnnoyedWith 2 100 <span class="code-str">"annoyed"</span>
+    stage FuriousWith 3 250 <span class="code-str">"furious"</span></code></pre>
         </div>
 
-        <!-- Specimen 2: Conversational Fatigue & Shifting Moods -->
         <div class="scenario-card">
           <div class="scenario-info">
             <span class="scenario-tag">Pattern 02 · Repetition &amp; Fatigue</span>
-            <h3 class="scenario-heading">Organic NPC Irritation</h3>
+            <h3 class="scenario-heading">Characters Who Lose Patience</h3>
             <p class="scenario-text">
-              Traditional adventure games treat dialogue as a timeless vending machine. Real people lose patience 
-              when asked the same question repeatedly. BeSpoke tracks conversational frequency using relational facts 
-              with TTL decay, allowing NPCs to shift from welcoming, to terse, to furiously slamming the door.
+              Ask the barkeep the same question twice and the answer changes. Each option checks a fact, and the
+              annoyance is a fact that expires after 100 ticks, so the barkeep calms down on their own.
             </p>
           </div>
-          <pre class="scenario-code"><code><span class="code-kw">relation</span> Inquired(speaker, topic, count)
-<span class="code-kw">relation</span> AnnoyedWith(npc, speaker) <span class="code-kw">for</span> ticks
-
-<span class="code-kw">on cue</span> TalksTo(Guybrush, Barkeep):
-  <span class="code-kw">choice</span> <span class="code-str">"Tell me about the Governor."</span> <span class="code-kw">if not</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, _):
+          <pre class="scenario-code"><code><span class="code-kw">on cue</span> TalksTo(Guybrush, Barkeep):
+  <span class="code-kw">choice</span> <span class="code-str">"Tell me about Governor Marley."</span> <span class="code-kw">if not</span> Inquired(Guybrush, Marley, _):
     <span class="code-kw">say</span> Barkeep: <span class="code-str">"Governor Marley? Sharp as a cutlass and twice as quick."</span>
-    <span class="code-kw">remember</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, 1)
-
-  <span class="code-kw">choice</span> <span class="code-str">"Tell me more about Governor Marley."</span> <span class="code-kw">if</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, 1):
+    <span class="code-kw">remember</span> Inquired(Guybrush, Marley, 1)
+  <span class="code-kw">choice</span> <span class="code-str">"Tell me more about Governor Marley."</span> <span class="code-kw">if</span> Inquired(Guybrush, Marley, 1):
     <span class="code-kw">say</span> Barkeep: <span class="code-str">"Look, I already told you. Her mansion is on the hill."</span>
-    <span class="code-kw">remember</span> Inquired(Guybrush, <span class="code-str">"Governor"</span>, 2)
-    <span class="code-kw">remember</span> AnnoyedWith(Barkeep, Guybrush) <span class="code-kw">for</span> <span class="code-num">300 ticks</span>
-
+    <span class="code-kw">remember</span> Inquired(Guybrush, Marley, 2)
+    <span class="code-kw">remember</span> AnnoyedWith(Barkeep, Guybrush) <span class="code-kw">for</span> <span class="code-num">100 ticks</span>
   <span class="code-kw">choice</span> <span class="code-str">"About Governor Marley..."</span> <span class="code-kw">if</span> AnnoyedWith(Barkeep, Guybrush):
-    <span class="code-kw">say</span> Barkeep: <span class="code-str">"Are ye deaf, pirate? Buy a grog or get out of my tavern!"</span></code></pre>
+    <span class="code-kw">say</span> Barkeep: <span class="code-str">"Are ye deaf, pirate? Buy a grog or get out of my tavern!"</span>
+    <span class="code-kw">remember</span> FuriousWith(Barkeep, Guybrush) <span class="code-kw">for</span> <span class="code-num">250 ticks</span></code></pre>
         </div>
       </div>
     </section>
@@ -1806,8 +1794,9 @@
         <div class="section-eyebrow">Engine Architecture</div>
         <h2 class="section-title">Comparing Engine Philosophies</h2>
         <p class="section-desc">
-          General-purpose 3D engines are optimized for rendering complex visual scenes with scripting attached. 
-          BeSpoke is built inside-out: a deterministic simulation spine where visuals are downstream peripherals.
+          General-purpose engines are built around drawing frames, with game logic attached to the render loop.
+          BeSpoke starts from the simulation and treats drawing as one consumer of it. The left column describes the
+          common default, not every engine.
         </p>
       </div>
 
@@ -1823,32 +1812,32 @@
           <tr>
             <td>Who owns <code>main()</code>?</td>
             <td>Graphics pipeline &amp; frame-rate render loop</td>
-            <td><span class="badge-yes">Deterministic Discrete-Tick VM Spine (Pure Zig; display at 60 Hz)</span></td>
+            <td><span class="badge-yes">The simulation, one whole tick at a time (1 per second by default; the display redraws at 60 Hz)</span></td>
           </tr>
           <tr>
             <td>World State Representation</td>
             <td>Transform hierarchies, heap pointers &amp; GC objects</td>
-            <td><span class="badge-yes">Flat Relational Tuples in Contiguous Arena</span></td>
+            <td><span class="badge-yes">Rows of facts in one fixed block of memory</span></td>
           </tr>
           <tr>
             <td>Time-Travel &amp; Save States</td>
             <td>Custom serializers &amp; object-graph reconstruction</td>
-            <td><span class="badge-yes">Single-Call <code>memcpy</code> Snapshot Rewind</span></td>
+            <td><span class="badge-yes">Copy the fact columns and name tables as raw bytes, with a checksum</span></td>
           </tr>
           <tr>
             <td>Temporal Logic (Waiting, Routines)</td>
             <td>Delta-time accumulation, per-frame callbacks, state booleans</td>
-            <td><span class="badge-yes">Cooperative Fibers with Native <code>wait</code> &amp; Discrete Ticks</span></td>
+            <td><span class="badge-yes">Routines that pause with <code>wait</code> and resume on a later tick</span></td>
           </tr>
           <tr>
             <td>Ephemeral State (Buffs, Alerts)</td>
             <td>Explicit timer handles &amp; manual polling loops</td>
-            <td><span class="badge-yes">First-Class Relational TTL Decrement</span></td>
+            <td><span class="badge-yes">An expiry tick on the fact itself; the engine drops it when the clock passes</span></td>
           </tr>
           <tr>
             <td>Toolchain &amp; Footprint</td>
-            <td>Multi-gigabyte SDKs &amp; heavy runtime scaffolding</td>
-            <td><span class="badge-yes">Single Zig Toolchain; Zero-Dependency Core (SDL2 Only for the Desktop Window)</span></td>
+            <td>A large editor and runtime to install</td>
+            <td><span class="badge-yes">The Zig 0.13 toolchain; the core needs nothing else, and SDL2 only for the desktop window</span></td>
           </tr>
         </tbody>
       </table>

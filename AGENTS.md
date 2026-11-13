@@ -69,6 +69,8 @@ Never force-push, rewrite shared history, or delete production data without expl
 
 ## Names and terms
 
+Engine and language terms (fact, routine, expiry tick, branch world, proof, deck, and the rest) live in `docs/GLOSSARY.md`, with the word to use in user-facing copy. The table below holds the project-level and process terms.
+
 | Canonical term | Meaning | Formerly / not to be confused with |
 | --- | --- | --- |
 | BeSpoke Engine | The entire runtime, language compiler, and simulation spine | Generic scripting plugin |
@@ -99,6 +101,7 @@ Never force-push, rewrite shared history, or delete production data without expl
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |
 | `docs/manual.html` | Standalone interactive 3x manual and developer guide |
+| `docs/GLOSSARY.md` | Engine and language terms in plain language, and which word to use in user-facing copy |
 | `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
 | `docs/runbooks/release-hand-test.md` | Release hand-test pass with a results table (P34-07) |
 | `docs/archive/` | Historical material no longer current |
@@ -114,9 +117,9 @@ Never force-push, rewrite shared history, or delete production data without expl
 ## Engineering conventions
 
 - **Language:** Zig (0.13+) for runtime and compiler; Python 3 stdlib for documentation tooling.
-- **Dependencies:** Zero external dependencies for the core compiler and VM. Optional Raylib or Sokol C bindings strictly for peripheral display.
+- **Dependencies:** Zero external dependencies for the core compiler and VM. SDL2 (C) only for the desktop window and audio; the browser build uses none (D-008, D-022).
 - **Memory:** Contiguous arena allocation for world state; zero raw pointers inside serialized fact structures.
-- **Timing:** Pure discrete tick clock (e.g. 20 or 60 Hz). No floating-point delta accumulation in core simulation logic.
+- **Timing:** Pure discrete tick clock, 1 Hz by default and adjustable from 10 Hz to 0.33 Hz (D-028); the display redraws at 60 Hz independently. No floating-point delta accumulation in core simulation logic.
 
 ## Environments
 

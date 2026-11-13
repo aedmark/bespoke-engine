@@ -133,7 +133,9 @@ def render_gallery_block(entries: list[dict], words: set[str], root: Path = ROOT
                 f'<span class="gallery-desktop">Desktop only: <code>zig build run-proof -- --{esc(entry["flag"])}</code></span>'
             )
         else:
-            play = f'<button class="sim-btn" type="button" data-play-deck="{deck}">[{deck + 1}] Play here</button>'
+            # Number keys 1 to 9 select decks; later decks have no key, so their button shows none.
+            key = f"[{deck + 1}] " if deck < 9 else ""
+            play = f'<button class="sim-btn" type="button" data-play-deck="{deck}">{key}Play here</button>'
         cards.append(
             f'        <div class="scenario-card gallery-card" id="proof-{esc(entry["id"])}">\n'
             '          <div class="scenario-info">\n'

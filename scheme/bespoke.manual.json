@@ -51,7 +51,7 @@
             "DisplayBridge captures double-buffered snapshot frames (RenderFrame) containing entities, waypoints, and dialogue.",
             "Peripheral display renderers (like SDL2 or headless runners) read double-buffered frames and deliver input intents as UserAction events."
           ],
-          "why": "Embedded scripting plugins in commercial game engines suffer from frame-rate dependent logic bugs, garbage collection spikes, non-deterministic state serialization, and tight coupling to rendering backends. Owning the spine ensures 100% deterministic, headless testability and seamless time-travel rewind.",
+          "why": "Scripting embedded in a frame-driven engine tends to inherit frame-rate dependent logic, garbage collection pauses, and coupling to the renderer. Owning the spine keeps the simulation deterministic, testable without a window, and rewindable.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
@@ -73,7 +73,7 @@
             "Fibers suspended via wait_ticks or wait_until wake up when the integer tick target is met.",
             "Visual renderers interpolate fractional positions between consecutive ticks for smooth 60 Hz screen motion."
           ],
-          "why": "Floating-point delta time introduces accumulation errors, platform-dependent rounding discrepancies, and non-deterministic divergence that destroys replayability and networking. Integer ticks make simulation states bit-for-bit identical across runs.",
+          "why": "Floating-point delta time introduces accumulation errors, platform-dependent rounding discrepancies, and non-deterministic divergence that destroys replayability and networking. With integer ticks, repeated runs produce identical states; the proof goldens check this on every test run (on Linux x86_64; other platforms are untested).",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
@@ -85,7 +85,7 @@
         {
           "id": "contiguous-arena-memory",
           "title": "Contiguous Arena Allocation & Zero Raw Pointers",
-          "summary": "World state is stored in a contiguous byte arena with zero internal pointers, enabling instant memcpy snapshots.",
+          "summary": "World state is stored in a fixed byte arena with no internal pointers, so a snapshot copies the fact columns as raw bytes.",
           "synopsis": "pub const World = struct { arena: std.heap.ArenaAllocator, facts: std.MultiArrayList(Fact), ... }",
           "tags": ["memory", "performance", "serialization"],
           "what": "Houses all simulation entities, relations, and fact rows in contiguous array allocations, referencing entities and strings by integer handles rather than raw virtual memory addresses.",
@@ -95,7 +95,7 @@
             "Entities are typed 32-bit handles (EntityId) indexing interned string tables.",
             "Serialization (save_state and restore_state) writes and reads raw memory buffers with CRC32 checksums."
           ],
-          "why": "Raw pointers break across processes, prevent binary snapshot persistence, and cause cache misses during bulk queries. Contiguous array arenas maximize CPU cache line locality and allow instant memory rewind with zero deserialization overhead.",
+          "why": "Raw pointers break across processes, prevent binary snapshot persistence, and cause cache misses during bulk queries. Flat columns keep queries cache-friendly, and a rewind copies the columns back and rebuilds two name maps rather than reconstructing an object graph.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-003", "target": "docs/DECISIONS.md#d-003", "kind": "decision"},
@@ -110,7 +110,7 @@
           "summary": "The core simulation runtime, compiler, and VM require zero external C or package dependencies beyond pure Zig.",
           "synopsis": "build.zig: exe = b.addExecutable(.{ .name = \"bespoke\", .root_source_file = b.path(\"src/main.zig\") });",
           "tags": ["dependencies", "toolchain", "portability"],
-          "what": "Guarantees that the compiler, relational database, bytecode VM, pathfinding, and REPL build and run out-of-the-box on any Linux, macOS, or Windows target with only the Zig 0.13+ compiler.",
+          "what": "The compiler, relational database, bytecode VM, pathfinding, and REPL need only the Zig 0.13 compiler. They are built and tested on Linux x86_64 and wasm32; macOS and Windows builds are written into the template's CI workflow but have never run.",
           "how": [
             "The compiler front-end uses custom recursive-descent lexing and Pratt parsing written from scratch.",
             "Display rendering optionally links SDL2 as a peripheral consumer, but falls back seamlessly to headless terminal mode if unavailable.",
@@ -198,7 +198,7 @@
         {
           "id": "snapshot-time-travel",
           "title": "CRC32 Snapshots & Time-Travel Rewind",
-          "summary": "Instantaneous serialization and deserialization of complete simulation state with CRC32 integrity checks.",
+          "summary": "Serialization of the complete world state into a memory buffer, with a CRC32 check on restore.",
           "synopsis": "try world.save_state(writer); ... try world.restore_state(reader);",
           "tags": ["time-travel", "snapshots", "rewind"],
           "what": "Captures the entire relational world state into an in-memory byte buffer on each tick, allowing players and developers to scrub backward or forward across history instantaneously.",
@@ -260,7 +260,7 @@
             "wait_until evaluates a relational condition pattern each tick and resumes when satisfied.",
             "On each simulation tick, VM steps all active, non-waiting fibers up to their yield points."
           ],
-          "why": "Operating system threads introduce non-deterministic race conditions, locks, and heavy memory overhead. Cooperative fibers are 100% deterministic, pause with zero CPU cost, and can be serialized cleanly.",
+          "why": "Operating system threads introduce non-deterministic race conditions, locks, and heavy memory overhead. Cooperative fibers run in a fixed order on one thread, cost nothing while waiting except their stored state, and serialize cleanly.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-004", "target": "docs/DECISIONS.md#d-004", "kind": "decision"},
@@ -355,7 +355,7 @@
             "SpatialGraph.find_path computes the shortest sequence of waypoints using Manhattan/Euclidean integer heuristics.",
             "Actors traverse edges step-by-step at discrete velocities."
           ],
-          "why": "Continuous 3D physics sandboxes require complex collision meshes and floating-point math that destroy determinism. Topological waypoint graphs fit narrative graphic adventures perfectly and compute in sub-microsecond time.",
+          "why": "Continuous 3D physics sandboxes require complex collision meshes and floating-point math that destroy determinism. Topological waypoint graphs fit narrative graphic adventures and keep pathfinding small and deterministic.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-005", "target": "docs/DECISIONS.md#d-005", "kind": "decision"},
@@ -489,7 +489,7 @@
         {
           "id": "continuous-when-rules",
           "title": "Continuous When Rule Pattern Matching",
-          "summary": "Rules evaluated continuously against active world facts, automatically firing interrupts without polling.",
+          "summary": "Rules are checked against the world's facts on every tick and fire interrupts without any script polling for them.",
           "synopsis": "when currently Wind is blowing: loop: animate wind-blowing",
           "tags": ["reactive", "rules", "pattern-matching"],
           "what": "Provides declarative rule evaluation inside the engine spine: whenever world state matches the rule's relational pattern, the VM triggers associated behavior routines automatically.",
@@ -498,7 +498,7 @@
             "VM.evaluate_reactive_rules checks rules on tick boundaries or following fact mutations.",
             "Pattern matches are verified against World using multi-clause relational unification."
           ],
-          "why": "Polling inside entity scripts creates bloated boilerplate, missed frame events, and CPU thrashing. Built-in reactive evaluation guarantees rules fire immediately when systemic conditions arise.",
+          "why": "Polling inside entity scripts creates bloated boilerplate, missed frame events, and CPU thrashing. Built-in reactive evaluation fires a rule on the tick its condition first holds, with no polling code in scripts.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-010", "target": "docs/DECISIONS.md#d-010", "kind": "decision"},
@@ -540,7 +540,7 @@
             "VM evaluates on_expire reactive rules against recently_expired during the tick step.",
             "Matches trigger interrupt routines (e.g. Organiser walks back to the starting line after crowd distraction ends)."
           ],
-          "why": "Manual timer countdown routines in scripts are error-prone and hard to synchronize with world state. Integrating expiration directly into the database engine ensures perfect temporal lifecycle hooks.",
+          "why": "Manual timer countdown routines in scripts are error-prone and hard to synchronize with world state. Integrating expiration into the fact store means an expiry and its rule fire on the same tick every run.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
@@ -894,26 +894,26 @@
         },
         {
           "id": "roberta-sparrow-temporal-hypervisor-and-vector-conduits",
-          "title": "Roberta Sparrow Temporal Hypervisor & Pre-Cognitive Vector Conduits",
-          "summary": "Ephemeral Tangent Universe copy-on-write arenas, discrete countdown tick budgets, black hole gravitational collapse, and Fourth-Dimensional vector conduits.",
+          "title": "Branch Worlds (Temporal Hypervisor) & Path Previews",
+          "summary": "A temporary copy of the world that runs on a countdown and either merges back or is discarded, plus precomputed path lines drawn ahead of an actor.",
           "synopsis": "zig build run-proof -- --darko [--headless]",
-          "tags": ["darko", "hypervisor", "tangent-universe", "vector-conduits", "teleological-solver", "novikov-loop", "time-travel"],
-          "what": "Implements the Roberta Sparrow Tangent Universe model (Donnie Darko) with ephemeral copy-on-write world state branching, Fourth-Dimensional pre-cognitive vector conduits, hyper-temporal fibers for out-of-time actors, and backward-chaining teleological Horn clause solvers.",
+          "tags": ["darko", "hypervisor", "branch-world", "vector-conduits", "time-travel"],
+          "what": "TemporalHypervisor forks the primary World into a temporary branch world with a countdown. The branch merges back when its closure condition holds, or is discarded when the countdown runs out. The Middlesex Anomaly proof uses it for a time-loop puzzle.",
           "how": [
-            "TemporalHypervisor manages copy-on-write tangent arenas via World.clone(), stepping ticks against a discrete collapse countdown budget.",
-            "If the countdown budget expires before loop closure, the hypervisor executes a black hole gravitational singularity fail-state.",
-            "SpatialSystem.get_agent_vector_conduit extrudes deterministic future A* pathing into Fourth-Dimensional spatial conduits rendered as fluid glowing tendrils.",
-            "Hyper-temporal execution fibers (the Manipulated Dead) guide the player with out-of-time foresight while Novikov consistency checks prevent causal paradoxes.",
-            "Causal loop closure verifies the illegal duplicate Artifact of Metal reaches the vortex mark before time expiration, safely collapsing the tangent universe and committing the artifact into the primary universe at T0."
+            "fork_branch copies the primary World with World.clone() and starts a countdown of collapse_budget_ticks.",
+            "Each step_tick advances the branch one tick and runs check_loop_closure: the keystone entity must stand on the convergence waypoint and a ConvergenceReady, VortexReady, or LoopClosed fact must hold.",
+            "On closure, collapse_branch commits the keystone and any recorded residue facts to the primary World (resolved_and_merged). If the countdown runs out first, the branch is discarded (budget_expired) and the player rewinds.",
+            "SpatialSystem.get_agent_vector_conduit precomputes an actor's A* route as a polyline that the renderer draws as a preview line.",
+            "VM.spawn_hyper_temporal_routine starts a routine at priority 255 so a guide character's lines cannot be preempted. is_teleologically_justified and validate_novikov_consistency exist with unit tests but no caller (see Claims vs. code in ARCHITECTURE.md)."
           ],
-          "why": "Cinematic time models require formal mathematical constraints beyond simple timeline branching. Ephemeral tangent arenas, mass conservation invariants, and teleological Horn clauses enable rich deterministic time loop mechanics without non-deterministic state explosion.",
+          "why": "A branch that is a full World copy needs no special rules for which facts it may touch: everything inside it is ordinary facts, and save, rewind, and the inspector treat it like the primary World (D-048, D-049). D-044 gives the mechanism neutral names so other games can use it.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-027", "target": "docs/DECISIONS.md#d-027", "kind": "decision"},
-            {"label": "Temporal Hypervisor & Tangent Collapse", "target": "src/hypervisor.zig", "kind": "source"},
-            {"label": "Spatial Vector Conduits & Novikov Consistency", "target": "src/spatial.zig", "kind": "source"},
-            {"label": "The Middlesex Anomaly Puzzle Scenario", "target": "proofs/darko_puzzle.zig", "kind": "source"},
-            {"label": "Display Vector Conduit & Singularity Renderer", "target": "src/display/renderer.zig", "kind": "source"}
+            {"label": "Temporal Hypervisor", "target": "src/hypervisor.zig", "kind": "source"},
+            {"label": "Vector Conduits", "target": "src/spatial.zig", "kind": "source"},
+            {"label": "The Middlesex Anomaly Proof", "target": "proofs/darko_puzzle.zig", "kind": "source"},
+            {"label": "Conduit and Countdown Rendering", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["snapshot-time-travel", "asynchronous-motor-intents", "day-of-the-tentacle-scenario", "multi-scene-transitions-spatial-partitioning"]
         },
@@ -1096,7 +1096,7 @@
           "summary": "Live developer dashboard overlay displaying active facts, TTL counters, fibers, call stacks, and spatial coordinates.",
           "synopsis": "Toggle via [F1] or [D] key in running interactive window",
           "tags": ["hud", "debugger", "inspector", "dashboard"],
-          "what": "Provides an instantaneous, zero-latency HUD overlay drawn directly in the running game window to inspect the live simulation spine.",
+          "what": "Provides a HUD overlay drawn directly in the running game window to inspect the live simulation spine.",
           "how": [
             "DisplayWindow.render_frame inspects RenderFrame debug fields when show_debug_overlay is true.",
             "Lists all active relational facts with remaining TTL ticks.",
@@ -1304,7 +1304,7 @@
         {
           "id": "showcase-gallery-and-viewer",
           "title": "Showcase Gallery, Script Viewer, and Diagrams",
-          "summary": "The showcase lists every proof, plays seven in the viewport, and shows each proof's real script in a viewer that follows the active deck.",
+          "summary": "The showcase lists every proof, plays eleven in the viewport, and shows each proof's real script in a viewer that follows the active deck.",
           "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html",
           "tags": ["site", "gallery", "scripts", "diagrams"],
           "what": "A generated gallery of thirteen proof cards with Play and View script buttons, a line-numbered script viewer under the viewport, and a How It Works section of three inline SVG diagrams.",
@@ -1400,7 +1400,7 @@
             "python3 tools/check_docs.py validates cross-references, decision numbers, and session logs.",
             "python3 tools/manual.py check scheme/bespoke.manual.json --check-evidence --root . verifies manual integrity."
           ],
-          "why": "Rigorous multi-tiered testing ensures that language grammar extensions, VM opcodes, and layout changes never regress core simulation determinism.",
+          "why": "Unit tests, proof transcripts compared with goldens, render and audio hashes, and documentation checks catch changes to grammar, opcodes, or layout that alter simulation behaviour.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Testing Strategy Document", "target": "docs/TESTING.md", "kind": "spec"},
@@ -1442,7 +1442,7 @@
             "why_basis tracks provenance: recorded, observed, inferred, or external.",
             "tools/manual.py check --check-evidence verifies that every cited file, decision, and test exists in the repository."
           ],
-          "why": "Traditional freeform documentation frequently omits rationale, goes stale, or drifts from code reality. The 3x contract guarantees actionable clarity for both human developers and autonomous AI agents.",
+          "why": "Traditional freeform documentation frequently omits rationale, goes stale, or drifts from code reality. The 3x contract gives human developers and coding agents the reason behind each component and the code that backs it.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Manual Schema Specification", "target": "scheme/manual.schema.json", "kind": "spec"},
