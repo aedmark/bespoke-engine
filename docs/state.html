@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeSpoke Engine Today</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1f2328; --muted: #5b636e; --rule: #e3e0d8;
+    --accent: #2f6f5e; --card: #ffffff; --warn: #8a5a12; --warnbg: #fbf3e4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181c; --fg: #e6e8eb; --muted: #9aa3ad; --rule: #2a3038;
+      --accent: #7cc4ad; --card: #1b1f24; --warn: #e5b56a; --warnbg: #2a2318;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181c; --fg: #e6e8eb; --muted: #9aa3ad; --rule: #2a3038;
+    --accent: #7cc4ad; --card: #1b1f24; --warn: #e5b56a; --warnbg: #2a2318;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 Georgia, "Iowan Old Style", serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1, h2, h3 { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.25; }
+  h1 { font-size: 2rem; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-family: system-ui, sans-serif; font-size: .95rem; margin: 0 0 36px; }
+  h2 { font-size: 1.3rem; margin: 44px 0 10px; padding-top: 18px; border-top: 1px solid var(--rule); }
+  h3 { font-size: 1.02rem; margin: 22px 0 4px; }
+  p { margin: 0 0 14px; }
+  ul, ol { padding-left: 1.3em; margin: 0 0 14px; }
+  li { margin: 4px 0; }
+  code { font: .88em ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
+  pre { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: .85rem/1.5 ui-monospace, Menlo, Consolas, monospace; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 8px; font-family: system-ui, sans-serif; }
+  .fact { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
+  .fact b { display: block; font-size: 1.5rem; color: var(--accent); }
+  .fact span { font-size: .85rem; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 14px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .note { background: var(--warnbg); border-left: 3px solid var(--warn); padding: 12px 16px; border-radius: 4px; }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+<h1>BeSpoke Engine, today</h1>
+<p class="sub">Where the engine stands on 13 November 2026, written for people who will play with it, test it, or build on it. No background in programming languages needed.</p>
+
+<div class="facts">
+  <div class="fact"><b>13</b><span>playable demo games</span></div>
+  <div class="fact"><b>11</b><span>of them also play in a web browser</span></div>
+  <div class="fact"><b>554</b><span>automatic checks, all passing</span></div>
+  <div class="fact"><b>0</b><span>outside libraries in the core</span></div>
+</div>
+
+<h2>What it is</h2>
+<p>BeSpoke is a toolkit for making story-driven adventure games, the kind where you walk characters around rooms, pick things up, talk to people, and solve puzzles. Think of the classic point-and-click adventures, with one difference: the world keeps running on its own. Characters have routines, they notice things, they react to each other, and a puzzle can be solved in ways nobody wrote down step by step.</p>
+<p>It comes in two parts. One is a small, readable writing language for describing a game: who is in a room, what they do, what they say, and what happens when something changes. The other is the program that reads that writing and runs it as a game, in a desktop window or in a web page.</p>
+
+<h2>What it can do</h2>
+<h3>Run a living world</h3>
+<ul>
+  <li>Characters walk between spots in a room or across rooms, finding their own way.</li>
+  <li>Each character can follow a routine ("walk to the cellar, wait a while, walk back") and be interrupted when something more urgent happens, then pick up where they left off.</li>
+  <li>Rules watch the world and fire when something becomes true: "when the cat is holding the cheese, the guard turns to look".</li>
+  <li>Things can be temporary: a distraction that lasts ten seconds, a smell that fades, a fire that burns out.</li>
+  <li>A whole village can run itself: people get hungry and tired, work, trade, steal, gossip, and a sheriff makes arrests, without anyone scripting each event.</li>
+</ul>
+
+<h3>Tell a story</h3>
+<ul>
+  <li>Branching conversations where the options depend on what you know or have done.</li>
+  <li>Characters who believe, doubt, or reject what they are told.</li>
+  <li>Several scenes and rooms, several playable characters, and items passed between them (even between time periods, in one demo).</li>
+  <li>Characters with their own goals who come and find you when you threaten them.</li>
+  <li>Typing commands such as "take the slip" or "ask pell about the slip", alongside clicking.</li>
+</ul>
+
+<h3>Play with time</h3>
+<ul>
+  <li>Rewind at any moment and watch the world replay exactly the same way.</li>
+  <li>Scrub backward and forward through recent history, like a video.</li>
+  <li>Save and load to slots, each with a small picture of the moment.</li>
+  <li>Run a temporary "what if" copy of the world that either merges back or collapses.</li>
+</ul>
+
+<h3>Make sound and music</h3>
+<ul>
+  <li>A built-in synthesizer plays retro-style music and sound effects, with no sound files needed.</li>
+  <li>Music can be written as short lines of notes inside the game script, and changes with the scene.</li>
+  <li>One demo uses musical notes as spells: play four notes on a staff and the world changes.</li>
+</ul>
+
+<h3>Help the people making the game</h3>
+<ul>
+  <li>One command creates a new, ready-to-run game project.</li>
+  <li>A checker reports mistakes in a script with the line and column.</li>
+  <li>A "state inspector" shows everything the world currently knows, as a map of who relates to what.</li>
+  <li>A game can be packed into a single program to hand to players, or built for a web page.</li>
+</ul>
+
+<h2>How it does it</h2>
+<p>Four simple ideas carry nearly everything.</p>
+<h3>1. The world is a notebook of facts</h3>
+<p>Everything true about the game is written as a short line: "Guard carries Cheese", "Bard charmed Guard (until 2 minutes from now)". There are no hidden objects with private settings. To ask a question, the engine reads the notebook. Because the whole world is one notebook, saving a game or rewinding it is just copying the notebook, which is why rewind is instant and exact.</p>
+<h3>2. Time moves in ticks</h3>
+<p>The game moves forward in small, counted steps (ticks), like the hand of a clock. Nothing depends on how fast your computer is. Given the same start and the same button presses, the game plays out identically every time, which makes replays, rewinds, and testing reliable.</p>
+<h3>3. Characters have to-do lists</h3>
+<p>Each character runs a routine, a list of things to do, which can pause ("wait 5 ticks", "wait until the door is open"). When something important happens, the routine is set aside, the interruption runs, and the routine resumes. Writers describe behaviour in the order it happens, without building complicated state machines.</p>
+<h3>4. Pictures and sound only watch</h3>
+<p>The window, the web page, and the speakers never decide anything. They look at the world each tick and draw or play what they see. The same game therefore runs in a desktop window, in a browser, or with no screen at all (handy for automatic testing).</p>
+<p>Underneath, the engine is written in a language called Zig. It turns game scripts into a compact internal form and runs them quickly, with nothing borrowed from other engines.</p>
+
+<h2>Why we made it</h2>
+<p>Most game tools fall into two camps. Big engines (Unity, Godot, RPG Maker) are built around graphics and physics, and story logic gets bolted on as small scripts scattered across objects. General programming languages give you total freedom but make you build all the plumbing yourself: timers, save systems, state tracking, cleanup.</p>
+<p>Story and simulation games need different things at their core: a clear record of what is true, characters that act over time, rules that react, and the ability to save or rewind without bugs. BeSpoke puts those at the centre and treats graphics as a window onto them.</p>
+<p>The inspirations are the deterministic simulations of <em>RollerCoaster Tycoon</em>, the actor-and-cue design of the old Sierra and LucasArts adventure engines, and the emergent relationships of <em>Dwarf Fortress</em>. The goal is whimsical, systemic games where puzzles fall out of how the world works, and where the writer spends time on the story instead of on plumbing.</p>
+
+<h2>How to make a game with it</h2>
+<ol>
+  <li><strong>Create a project.</strong> Run <code>bespoke init my-game</code>. You get a folder with a starter story, a test file, a desktop version, a web version, and automatic builds for Linux, Mac, and Windows.</li>
+  <li><strong>Write the story</strong> in <code>scripts/main.bespoke</code>. Describe the rooms, the characters, their routines, the conversations, and the rules. A small example:
+<pre>scene Tavern:
+  cast: Guard, Bard, Cat
+  marks: Hearth, Bar, Cellar
+
+routine Patrol(Guard):
+  walk Guard to Cellar
+  wait 5 ticks
+  walk Guard to Hearth
+
+when Carries(Cat, Cheese):
+  interrupt Guard with:
+    face Guard toward Cat
+    wait 2 ticks</pre></li>
+  <li><strong>Check it.</strong> <code>bespoke check</code> points at mistakes. Running the game "headless" prints what happens, line by line, without opening a window.</li>
+  <li><strong>Play it</strong> in a window with <code>zig build run</code>.</li>
+  <li><strong>Lock it in with tests.</strong> Write a short check for each puzzle ("after these steps, the door is open"), so later changes cannot quietly break it.</li>
+  <li><strong>Share it.</strong> Build one program file for players, or a web version for a website.</li>
+</ol>
+<p>The authoring guide in the repository (<code>docs/AUTHORING.md</code>) walks through a scene, a conversation, and a puzzle, and every example in it is tested automatically. The full language reference is <code>script_spec.md</code>.</p>
+
+<h2>The demo games</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Demo</th><th>What it shows</th><th>Browser</th></tr>
+  <tr><td>The Tavern Heist</td><td>A cat steals cheese while a bard distracts the guard; no cutscene, just rules reacting</td><td>Yes</td></tr>
+  <tr><td>Booty Island Spitting Contest</td><td>Rigging a contest with a horn, moved flags, and a thick green drink</td><td>Yes</td></tr>
+  <tr><td>The Cat Moustache</td><td>A disguise built from items gathered across three scenes</td><td>Yes</td></tr>
+  <tr><td>The Living Village</td><td>Six villagers living their days; theft, gossip, and an arrest emerge on their own</td><td>Yes</td></tr>
+  <tr><td>The Lochmarne Goat</td><td>Getting past a goat by tangling its rope</td><td>Yes</td></tr>
+  <tr><td>Day of the Tentacle Trio</td><td>Three characters in three eras passing items through time</td><td>Yes</td></tr>
+  <tr><td>Caustic Grog</td><td>Carrying grog that eats through its cups, pouring before each fails</td><td>Yes</td></tr>
+  <tr><td>Insult Sword Fighting</td><td>Duels won with comebacks you learn by losing</td><td>Yes</td></tr>
+  <tr><td>Algiers: Three Paths</td><td>One puzzle, three approaches; choosing one closes the others</td><td>Yes</td></tr>
+  <tr><td>The Middlesex Anomaly</td><td>A temporary copy of the world on a countdown</td><td>Yes</td></tr>
+  <tr><td>The Bell Tower</td><td>Spells played as four-note tunes; backwards, they do the opposite</td><td>Yes</td></tr>
+  <tr><td>The Castle Fire Escape</td><td>Fire, smoke, and water spreading room by room</td><td>Not yet</td></tr>
+  <tr><td>The Larkspur Observatory</td><td>Staff with their own agendas who intercept you; typed commands</td><td>Not yet</td></tr>
+</table>
+</div>
+<p>Some demos borrow situations from classic adventure games to prove the engine can handle them. They are technical demonstrations, not releases of those games.</p>
+
+<h2>What it cannot do yet</h2>
+<div class="note">
+<ul>
+  <li><strong>Graphics are simple.</strong> Rooms, people, and objects are drawn as shapes and labels by code. There is no way yet to load your own artwork or sprite images.</li>
+  <li><strong>Nobody has listened to the sound</strong> on real speakers. It has been checked by measuring the sound waves, not by ear.</li>
+  <li><strong>Mac and Windows are untested.</strong> The automatic builds for them exist but have never run.</li>
+  <li><strong>The public website is not online yet.</strong> The upload tool works against a test server; the first real upload is still to do.</li>
+  <li><strong>In the browser,</strong> two demos are missing and typed commands do not work.</li>
+  <li><strong>Small writing gaps:</strong> a few script features parse but do nothing yet (for example, some conditions on event handlers), and clicking a person in the basic window does not start a conversation (type "talk to" instead).</li>
+  <li><strong>Once you choose a path</strong> in a multi-path puzzle, you cannot switch.</li>
+</ul>
+</div>
+<p>All of these are listed as Phase 34 in the roadmap, alongside the hand-testing pass.</p>
+
+<h2>For testers</h2>
+<p>Every feature above has automatic checks, but none of it has been played by hand at length. That is the next job. The step-by-step guide is <code>docs/runbooks/release-hand-test.md</code> in the repository: it lists what to try in each demo, what you should see and hear, and a table to record results. A full pass takes about four hours; a useful short pass (the basics, the desktop demos, the browser, and a listening check) takes about ninety minutes.</p>
+<p>Anything odd is worth writing down with the demo name and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
+</main>
+</body>
+</html>
