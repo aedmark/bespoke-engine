@@ -1015,6 +1015,18 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keep upload as an option: rejected; it put a credential path in the repository that nobody uses.
 **Consequences:** Publishing is a manual step outside the repository. The release hand-test checks the live site after the maintainer's upload. The page links the manual at `docs/manual.html`, the path the maintainer uploads it to (Q-007); the export does not copy the manual, so it is uploaded separately.
 
+## D-075 Third-Party Name Lint: Counted Terms, Digested Lines, a Shrink-Only Baseline (2026-11-13, status: accepted)
+**Context:** Phase 35 (Q-005) rewrites the proofs that borrow from commercial games and a film. Without a count, a rename can miss a file, and a later change can bring a name back.
+**Decision:**
+1. `tools/third_party_terms.json` lists names per source; `tools/check_third_party.py` counts them in `src/`, `proofs/` (goldens included), `scenarios/`, `scheme/`, the site, the gallery data, `README.md`, and `docs/state.html`, and compares with `tools/third_party_baseline.json`, which only shrinks (the separation lint's pattern, D-031).
+2. Names match case-sensitively as whole words, also as CamelCase parts and identifier parts (`BillyGoat`, `darko_puzzle`).
+3. Quoted lines are stored as SHA-256 digests of their lowercased, whitespace-collapsed text, so the term list does not copy the text it exists to remove. Matching strips HTML tags and JSON escapes first, so the site's highlighted script viewer counts.
+4. History is not scanned: DECISIONS, CHANGELOG, the archive, and finished roadmap items record what was true. `docs/manual.html` is built from `scheme/` and is not counted twice. Naming an engine as an inspiration (SCUMM, SCI) is attribution and is not listed.
+**Alternatives:**
+- Fold into `check_separation.py`: rejected; that lint asks whether engine code names a proof, which is a different question with a different scope.
+- Store quoted lines as text: rejected; it would add another copy of the material.
+**Consequences:** `check_docs.py` fails if a listed term rises in any file. Each P35 item ends by lowering the baseline. The list holds what a review found; a term nobody listed is not counted.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

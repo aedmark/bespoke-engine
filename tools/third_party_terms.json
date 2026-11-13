@@ -1,0 +1,137 @@
+{
+  "about": "Third-party titles, characters, places, and lines that Phase 35 removes (Q-005, P35-01). Names match case-sensitively as whole words; a name may be followed by a capital, digit-free CamelCase part or an underscore, so `BillyGoat` and `darko_puzzle` count. Quoted lines are stored only as SHA-256 digests of the lowercased, whitespace-collapsed text, so this file does not reproduce them. Add a term when a review finds one; each P35 item removes its source's terms from the code, not from this list.",
+  "sources": {
+    "Monkey Island": {
+      "names": [
+        "Monkey Island",
+        "Guybrush",
+        "Threepwood",
+        "Governor Marley",
+        "Marley",
+        "Melee Island",
+        "Melee",
+        "Scumm Bar",
+        "Booty Island",
+        "Carla",
+        "LeChuck"
+      ],
+      "lines_sha256": [
+        "0ed56424de9bb9a2ff01e99e2c1cda2ee1c3ae41d41f80a3bfae0ddd802a2edd",
+        "1242b9735408e2a6557ebafcc1bbe28c8159d3684880bacceda1fd36f6bc5e57",
+        "17ebfcbcd2da6d8ec31517b59aa204af50b4b7c2807a132e53722d04ed1b864a",
+        "1b42a369265b3157cefaa7e6bdcc7ee3bf7cbf3a6042104e5170077c4d985ff5",
+        "1bc8a93be47fb8dbc795533d5e89a4fadd844ff6a7bc66cd0dbb2bcb557d9bb3",
+        "23b69fc86cd1772fd1810706a69cac0d7cdae983581dc254758fbf1640d7fb19",
+        "23e4c5260ea48babc0cf0b8f08720886a2f24c0433d56c6ac3ad6b8ff7102850",
+        "2851a4a13989a967fab38728252b1452ba0cabdbc641d29a0922fbd6b04cf3a2",
+        "2b08825fb67308738a300691732c372f19589f9009f988a46b2664cdb382e98b",
+        "301677d94b6bc4cb7bd78e397297b587281731f7b1fee0b8d085380b376750f2",
+        "32e31e94aa92d27e13c0d104e461ff2e39cd105906362c3b9404bbd9b68f4071",
+        "338acf715fc34e05c34bf779f7215c81d4907b9c0dc8dbbdbb491bcef2099989",
+        "358022f75669a2a06aa3a2f920383d2bde3db0d0143c2e49f0c801a8f5d8fdb8",
+        "3cd8a8f5a2a6a16dd06bb5ed9c49c403a00d0c2e1e9a5ac598937aa2ecb0498f",
+        "3f5fdf5e6cc120a6a243ed45ce5935ec2575dbada44234c72e49aa9ee37f4791",
+        "41928a6f8f192e2a03bf401fbb8de2abf7f0a35634d63fdc13fde702221be1c3",
+        "46d599a68358c7379f5111a60a39c030df0bc05f6da144350db6231cc21c38b6",
+        "4a1b17762e2b18986b564d5fe85ac675ad4b66281ba4aa74fe4fccb558a088ad",
+        "4a93c4c7a37d7184477cdceabcb2f74a81c2eed39493ef2a2c46ffbf75d71bab",
+        "520ab260350e98f7cd02958588209d55a8185c39c668971260fca9bc1816e9cd",
+        "56a3e582b56227331102b64723a130e82bf6ac3fccc1c1dc857400480f37c39b",
+        "573ad2374208bdb4c68233e2a5ef77bfe59df5d4eb48c8f1e8ccee2bb02f5dd4",
+        "57cee7ae82815affbee416a00a15c24fa9598ad97b2ffbc326291b8029071de1",
+        "65b9836a2a1b1068e2e90600c78d6024c3d94c8f1b7596d21eb078471d05f100",
+        "74e521f7dfe2d9592039f8d6ed37cd63de98722d8bc12f0762d04250d91d0fe1",
+        "79afbdbe134e57291d47906627d68774e8afc9e2e5673ff996aa1d0d68fc4f8b",
+        "7b011e13198ef7c00c8a40b669084263514b0a49565862f1607214d09c74044f",
+        "7b6578f66462ca7e0e0cbfacbe66b8703979eefe168958f1d9b87485ac43559a",
+        "7d8f3c0698dc3761d5f1e17099782747a2336c01b6e51a014f1f17cf17c6d19d",
+        "80eb46705bf358a2d3f52fd11b7f4c6a01c77728464d7c051befa6d13efa4210",
+        "8e8e4da5fd6491d54aac185a110adbf01e4ff0d32df606eeb72c170d9203dcbd",
+        "8f5eb7d123c9e365d5959304a868794a4b67e20cb6c4ed73051b807fc4dae059",
+        "9099f3bcf590d8bfd36c2d4ce30eae2d9002fc844271fcc6a47cc04de1601031",
+        "962ad71da7b4ec0b36676f00419cb395c3faca3dc989a1a4757df8d8501b004f",
+        "9fee317965d5dd64de5d365628d8835e1c0aee67d7b86a5c388f9da5a14fef15",
+        "a30c1db930dae39e00f273f473320fa5c95a6d34ab3fea4fc60bc7d904dce305",
+        "a42966a0055fc2ab5f1ae5d372b675aac5aae027eeaf7efaac576b7dee0b19dc",
+        "ae9b132a9b927b715303faf79cd46bedc588fc938254e813f0ff266c5bc26da7",
+        "c4c6dbe3d7ad37e9a127b6b919face6b0da54e7449da3e3901b6ef1fe1adbc84",
+        "c7d00af6b6bf2bbec8b4a7c3be3fce83a1bf4baf3001196adf3011842137c80d",
+        "ce7abab79e823d37d6d4bd30d45112abc8f875709b7e9364f3ac72fe484d6aaf",
+        "dbe1bfb817bf2f03e11c235669e680c1f4129e89b55743a77d89fe00701449d5",
+        "e01403c135816601f528f74c6d861f90443d79735874116e7d51db09a7262a72",
+        "e2fb7d6604155b62e8cecbba329ad271537cf9e011665b5f334df415d24aafcc",
+        "e40d1e2d46cd0e2ecf0ab3cc4e01b8b56229923cbf36027f4497ae9301d9b391",
+        "e7213227ccaab5fa92ef4f322353fce44851200283fdfbe83ca10bea134034a1",
+        "ed67634fed77e6db7e725996e3b47b67915f4ad7394465b87239ae2eedf71a08",
+        "ff9504abece810d382fafb5c037cd62892c3860889176c6aea56bafbc2eace99",
+        "ff970f3607c0bbfce9238c32d1555577222db5952cefa7028bbc1782fe28a91d"
+      ]
+    },
+    "Gabriel Knight 3": {
+      "names": [
+        "Gabriel Knight",
+        "Gabriel",
+        "Mosely",
+        "Buthane",
+        "gk3",
+        "GK3"
+      ]
+    },
+    "Broken Sword": {
+      "names": [
+        "Broken Sword",
+        "George",
+        "Lochmarne",
+        "BillyGoat",
+        "Billy Goat"
+      ]
+    },
+    "Day of the Tentacle": {
+      "names": [
+        "Day of the Tentacle",
+        "Tentacle",
+        "PurpleTentacle",
+        "Hoagie",
+        "Bernard",
+        "Laverne",
+        "DrFred",
+        "Dr. Fred",
+        "DOTT",
+        "dott"
+      ]
+    },
+    "Donnie Darko": {
+      "names": [
+        "Donnie Darko",
+        "Donnie",
+        "Darko",
+        "darko",
+        "Frank",
+        "Gretchen",
+        "RobertaSparrow",
+        "Roberta Sparrow",
+        "Middlesex",
+        "Tangent Universe",
+        "Artifact of Metal",
+        "Manipulated Dead"
+      ]
+    },
+    "Indiana Jones and the Fate of Atlantis": {
+      "names": [
+        "Indiana Jones",
+        "Fate of Atlantis",
+        "Indy",
+        "Omar",
+        "atlantis",
+        "Atlantis"
+      ]
+    },
+    "Loom": {
+      "names": [
+        "Loom",
+        "loom",
+        "Bobbin"
+      ]
+    }
+  }
+}

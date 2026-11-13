@@ -56,7 +56,7 @@ when Carries(Cat, Cheese):
 zig build run -- run scenarios/tavern_heist.bespoke --headless
 ```
 
-Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Cheese, he stops to look before carrying on. The language also covers dialogue choices, several scenes, combining items, what characters believe, and short melodies that act as spells (`draft Kindle(C, D, E, C) reverse Douse`, `weave Kindle on Brazier`). See the [authoring guide](docs/AUTHORING.md), the [script reference](script_spec.md), the [manual](docs/manual.html), and the [glossary](docs/GLOSSARY.md) for the terms used here.
+Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Cheese, he stops to look before carrying on. The language also covers dialogue choices, several scenes, combining items, what characters believe, and short melodies that act as spells (`draft Kindle(C, D, E, C) reverse Douse`, `weave Kindle on Brazier`). See the [authoring guide](docs/AUTHORING.md), the [script reference](docs/script_spec.md), the [manual](docs/manual.html), and the [glossary](docs/GLOSSARY.md) for the terms used here.
 
 ---
 
@@ -161,7 +161,7 @@ The [documentation map](docs/README.md) says which document owns which fact. The
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | User-visible change notes |
 | [`docs/manual.html`](docs/manual.html) | Standalone interactive 3x What/How/Why manual and developer guide |
 | [`site/index.html`](site/index.html) | Public showcase website with the embedded proof WebAssembly playground |
-| [`whitepaper.md`](whitepaper.md) | The original vision statement (2026-11-04), kept as written |
+| [`docs/whitepaper.md`](docs/whitepaper.md) | The original vision statement (2026-11-04), kept as written |
 
 ---
 

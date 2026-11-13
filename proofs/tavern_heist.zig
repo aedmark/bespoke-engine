@@ -37,7 +37,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
     try spatial.add_hotspot(bar_counter, tavern, .{ .x = 20, .y = -6 }, 8, "Bar Counter", "A sturdy oak counter with empty tankards and spilled ale.");
     try spatial.add_hotspot(wine_cask, cellar_room, .{ .x = 40, .y = -6 }, 8, "Wine Cask", "A massive oak barrel filled with vintage elven wine.");
 
-    // 3. The 20-line DSL Source Script from script_spec.md
+    // 3. The 20-line DSL Source Script from docs/script_spec.md
     const script =
         \\entity Guard, Bard, Cat, Cheese
         \\relation Carries(holder, item)

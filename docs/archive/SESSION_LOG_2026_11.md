@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 50 (2026-11-10)
+- **Goal:** Ship P26-03 and start Phase 27 with P27-01.
+- **Work:** Merged P26-03 (`666de69`), closing Phase 26. Recorded D-058. Widened the frame's fact copy to 128 with ids, entity flags, and just-expired copies; added `src/display/state_graph.zig` (default focus, ego layout, bands, beliefs) and the drawer's State tab (drawing, Tab cycling, key and click guards so it never saves or loads); a render golden of the tab over a staged observatory. Moved the browser part of P27-03 to new item P30-04.
+- **Outcome:** See the Verified table. A mutation removing the neighbour sort failed the layout test. The tab was checked in one offscreen frame; not hand-played. Not merged.
+
 ### Session 49 (2026-11-10)
 - **Goal:** Ship P26-02 and finish Phase 26 with the command bar.
 - **Work:** Merged P26-02 (`3a4b3b7`). Added `WordList` completion to `src/command.zig`; the window's command bar (focus, key capture, history, Tab, drawing) and `UserAction.typed_command`; `host.command_words`, and `interpret_command`/`dispatch_command` split out of `run_command`. The observatory gained script commands and aliases, a location `refusal` for typed actions, a typed transcript section, and the bar in its window.

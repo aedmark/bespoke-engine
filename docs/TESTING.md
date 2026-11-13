@@ -19,6 +19,7 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 | VM & Fiber Scheduler Tests | `zig test src/vm.zig` | Bytecode dispatch, fiber yielding on `wait`, interrupt stack pushes | Spatial pathfinding | < 2s, Zig compiler |
 | WebAssembly Target & Event Bridge | `zig test src/wasm.zig && zig build wasm wasm-proofs && node tools/wasm_smoke.js` | `WasmCanvas` rendering, browser event routing, deck loading and rules on neutral test decks; both modules build, instantiate in Node, and run every deck | A browser page; the showcase DOM controls | < 10s, Zig compiler; Node.js 18+ for the smoke check (optional) |
 | Wasm Golden | `zig build test-proofs` (`proofs/wasm_golden_test.zig`) | Each proof deck, driven natively through a ten-step event script, shows the pixels, facts, ticks, and banners in `proofs/golden/wasm.txt` (P32-04) | The wasm32 build itself (see the smoke check) | < 1s |
+| Third-Party Name Lint (P35-01) | `python3 -m unittest tests.test_check_third_party`; `python3 tools/check_third_party.py` (also inside `check_docs.py`); `--report` for every hit | Names match whole words, CamelCase parts, and identifiers; quoted lines match by digest inside the site's highlighted viewer; the wasm embed and history are skipped; a rise fails and the baseline only shrinks; the repository is at its baseline | That the term list is complete: it holds what a review found (D-075) |
 | Separation Lint | `python3 tools/check_separation.py` (also inside `check_docs.py`); `--report` for every hit | Proof names in non-test `src/` code do not exceed `tools/separation_baseline.json` | That engine code is free of proof *logic* expressed without proof names; audits cover that | < 1s, Python 3 |
 | Engine Tests | `zig build test-engine` | Every test reachable from `src/root.zig` and `src/main.zig` | Proof scenarios | < 5s, Zig compiler, SDL2 headers |
 | Proof-of-Concept Tests | `zig build test-proofs` | Every proof's scripted run and rewind (`proofs/main.zig` imports each proof), and that each headless transcript matches `proofs/golden/<proof>.txt` (P32-07) | Engine internals not exercised by a proof | < 5s, Zig compiler, SDL2 headers |
@@ -28,7 +29,7 @@ How to run tests for the BeSpoke Engine, what each proves, and what it cannot. R
 
 **The fast set** (before every commit):
 ```bash
-python3 tools/check_docs.py          # includes the separation lint
+python3 tools/check_docs.py          # includes the separation and third-party lints
 zig test src/world.zig
 ```
 

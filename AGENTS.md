@@ -90,8 +90,8 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `CLAUDE.md` | Single-line import of AGENTS.md |
 | `README.md` | Project overview, tenets, and getting started |
 | `ROADMAP.md` | Planned work with stable IDs |
-| `script_spec.md` | Vertical slice DSL syntax specification |
-| `whitepaper.md` | Foundational design vision document |
+| `docs/script_spec.md` | Script language syntax reference |
+| `docs/whitepaper.md` | Original vision statement (2026-11-04), kept as written |
 | `docs/README.md` | Documentation map and update triggers |
 | `docs/HANDOFF.md` | Current state, next steps, gotchas, and bounded session history |
 | `docs/ARCHITECTURE.md` | Components, boundaries, invariants, state, and failure modes |
@@ -101,6 +101,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |
 | `docs/manual.html` | Standalone interactive 3x manual and developer guide |
+| `docs/state.html` | Plain-language status page for players, testers, and newcomers |
 | `docs/GLOSSARY.md` | Engine and language terms in plain language, and which word to use in user-facing copy |
 | `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
 | `docs/runbooks/release-hand-test.md` | Release hand-test pass with a results table (P34-07) |
@@ -112,6 +113,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `site/index.html` | Standalone public showcase website with the embedded proof WebAssembly playground |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
+| `tools/check_third_party.py` | Third-party name lint with `tools/third_party_terms.json` and a shrink-only baseline (P35-01, D-075) |
 | `tools/deploy_site.py` | Showcase export to `dist/site/` for hand upload (D-074) |
 
 ## Engineering conventions
@@ -135,5 +137,6 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 - Proofs of concept: `zig build run-proof -- --<proof> [--headless]` (see `bespoke-proofs --help`).
 - Hosts drive the engine through `src/host.zig`: tick with `host.tick` or `Session.advance` (never bare `step_tick`), and read speech after the tick with `SpeechLog`. Do not copy loop or speech plumbing into a proof (D-033).
 - Proof goldens: `zig build test-proofs` compares every proof's headless transcript with `proofs/golden/`. Regenerate only for an intended behaviour change (`-Dupdate-goldens`) and call out the golden diff in review.
+- Third-party name lint: `python3 tools/check_third_party.py` (run by `check_docs.py`). When a Phase 35 item removes borrowed names, lower the baseline with `--update-baseline`; never pass `--accept-increase` without maintainer approval. Add quoted lines to `tools/third_party_terms.json` as digests only, never as text (D-075).
 - Separation lint: `python3 tools/check_separation.py` (run by `check_docs.py`). If you remove proof content from `src/`, lower the baseline with `--update-baseline`; never pass `--accept-increase` without maintainer approval.
 - Boundary rule: engine code in `src/` never names a proof, a proof's entities, or its art. Proof-specific behaviour belongs in `proofs/` (D-031).

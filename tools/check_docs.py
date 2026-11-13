@@ -226,6 +226,21 @@ def main():
         except Exception as e:
             errors.append(f"tools/check_separation.py: failed to run: {e}")
 
+    # Third-party name lint (tools/check_third_party.py, P35-01, Q-005): borrowed titles,
+    # characters, places, and lines may not exceed the committed baseline.
+    tp_tool = ROOT / "tools" / "check_third_party.py"
+    if tp_tool.is_file():
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("check_third_party", tp_tool)
+            tp = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(tp)
+            t_errors, t_notes = tp.check(ROOT)
+            errors.extend(f"third-party: {e}" for e in t_errors)
+            warnings.extend(f"third-party: {n}" for n in t_notes)
+        except Exception as e:
+            errors.append(f"tools/check_third_party.py: failed to run: {e}")
+
     for line in errors:
         print(f"ERROR {line}")
     for line in warnings:

@@ -1,6 +1,6 @@
 # Whitepaper: A Bespoke Whimsical Game Development Language
 
-> Written 2026-11-04, before any code, and kept as written. Its performance phrases (sub-millisecond compiles, instant serialization) are goals that have not been measured. For what the engine does today, read [`README.md`](README.md); for the terms, [`docs/GLOSSARY.md`](docs/GLOSSARY.md).
+> Written 2026-11-04, before any code, and kept as written. Its performance phrases (sub-millisecond compiles, instant serialization) are goals that have not been measured. For what the engine does today, read [`README.md`](../README.md); for the terms, [`docs/GLOSSARY.md`](GLOSSARY.md).
 
 ## 1. Executive Summary
 Most game-making languages are either rigid engines with scripting tacked on (RPG Maker, Unity) or general-purpose systems that force developers to build state machine scaffolding from scratch (C#, Odin, C++). 

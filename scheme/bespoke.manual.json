@@ -120,7 +120,7 @@
           "why_basis": "recorded",
           "evidence": [
             {"label": "Canonical Agent Instructions", "target": "AGENTS.md", "kind": "spec"},
-            {"label": "Foundational Design Vision", "target": "whitepaper.md", "kind": "spec"},
+            {"label": "Foundational Design Vision", "target": "docs/whitepaper.md", "kind": "spec"},
             {"label": "Build System Configuration", "target": "build.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "test-verification-hierarchy"]

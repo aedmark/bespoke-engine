@@ -1,6 +1,6 @@
 # Authoring Guide
 
-This guide teaches you to write a BeSpoke game: scenes, dialogue, and reactive puzzles, and the Zig host API underneath them. It assumes you can run a shell command. [`script_spec.md`](../script_spec.md) is the complete syntax reference; this guide is the order to learn it in. [`GLOSSARY.md`](GLOSSARY.md) defines the terms (fact, routine, cue, rule, mark) in plain language.
+This guide teaches you to write a BeSpoke game: scenes, dialogue, and reactive puzzles, and the Zig host API underneath them. It assumes you can run a shell command. [`script_spec.md`](script_spec.md) is the complete syntax reference; this guide is the order to learn it in. [`GLOSSARY.md`](GLOSSARY.md) defines the terms (fact, routine, cue, rule, mark) in plain language.
 
 Every ```` ```bespoke ```` block below is a whole script, and `zig build test` compiles each one and plays the three walkthroughs (`src/authoring_guide_test.zig`, D-064). Fragments are fenced as `text`.
 
@@ -133,7 +133,7 @@ To build out a scene:
 - `walk X to Mark` plans a route over the marks and finishes when the actor arrives. `face X toward Y` turns one actor to another.
 - `wait N ticks`, `wait until <condition>`, and `loop:` shape a routine. A routine that ends simply stops.
 - `when X arrives at Mark:` reacts to any arrival; it is the usual way to make a place do something.
-- A `grid` gives a room cells with fire, smoke, and water ([Grids](../script_spec.md#grids)). An `agenda` sends one actor after another (section 6).
+- A `grid` gives a room cells with fire, smoke, and water ([Grids](script_spec.md#grids)). An `agenda` sends one actor after another (section 6).
 
 ## 4. Walkthrough: a dialogue
 
@@ -290,7 +290,7 @@ Patterns that keep puzzles honest:
 - **`when` triggers list facts that must hold, joined by `and`.** A trigger cannot say `not`; put negative checks inside the body with `if not`, as the bell handler does.
 - **Prefer facts over flags in routines.** A routine that waits with `wait until Signalled(Quay)` resumes correctly after a rewind; a counter in the host does not.
 
-Music follows the same idea. A score declared with `scene` is that scene's default; `play score X` overrides it everywhere until `stop score` ([Scores](../script_spec.md#scores-p28-03-d-062)).
+Music follows the same idea. A score declared with `scene` is that scene's default; `play score X` overrides it everywhere until `stop score` ([Scores](script_spec.md#scores-p28-03-d-062)).
 
 ```bespoke
 scene Quay:
@@ -319,7 +319,7 @@ routine Sound(Watch):
 
 ## 6. More mechanics
 
-Each of these is a declaration a script carries; [`script_spec.md`](../script_spec.md) gives the full syntax.
+Each of these is a declaration a script carries; [`script_spec.md`](script_spec.md) gives the full syntax.
 
 | Mechanic | Declaration | Use it for |
 | --- | --- | --- |

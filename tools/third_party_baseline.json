@@ -1,0 +1,206 @@
+{
+  "about": "Third-party terms allowed today. Only shrinks; see tools/check_third_party.py (P35-01).",
+  "counts": {
+    "README.md": {
+      "Broken Sword": 2,
+      "Day of the Tentacle": 3,
+      "Donnie Darko": 2,
+      "Gabriel Knight 3": 3,
+      "Indiana Jones and the Fate of Atlantis": 3,
+      "Loom": 3,
+      "Monkey Island": 1
+    },
+    "docs/state.html": {
+      "Broken Sword": 1,
+      "Day of the Tentacle": 2,
+      "Donnie Darko": 1,
+      "Monkey Island": 1
+    },
+    "proofs/art.zig": {
+      "Broken Sword": 9,
+      "Day of the Tentacle": 59,
+      "Donnie Darko": 54,
+      "Gabriel Knight 3": 12,
+      "Monkey Island": 12
+    },
+    "proofs/atlantis_puzzle.zig": {
+      "Indiana Jones and the Fate of Atlantis": 42
+    },
+    "proofs/audio_golden_test.zig": {
+      "Broken Sword": 1,
+      "Donnie Darko": 1,
+      "Monkey Island": 1
+    },
+    "proofs/darko_puzzle.zig": {
+      "Donnie Darko": 227
+    },
+    "proofs/dott_puzzle.zig": {
+      "Broken Sword": 6,
+      "Day of the Tentacle": 309
+    },
+    "proofs/gk3_moustache.zig": {
+      "Gabriel Knight 3": 146
+    },
+    "proofs/goat_puzzle.zig": {
+      "Broken Sword": 89
+    },
+    "proofs/golden/atlantis_puzzle.txt": {
+      "Indiana Jones and the Fate of Atlantis": 11
+    },
+    "proofs/golden/audio.txt": {
+      "Broken Sword": 1,
+      "Donnie Darko": 1,
+      "Monkey Island": 1
+    },
+    "proofs/golden/darko_puzzle.txt": {
+      "Donnie Darko": 47
+    },
+    "proofs/golden/dott_puzzle.txt": {
+      "Broken Sword": 2,
+      "Day of the Tentacle": 99
+    },
+    "proofs/golden/gk3_moustache.txt": {
+      "Gabriel Knight 3": 36
+    },
+    "proofs/golden/goat_puzzle.txt": {
+      "Broken Sword": 12
+    },
+    "proofs/golden/render.txt": {
+      "Broken Sword": 10,
+      "Day of the Tentacle": 22,
+      "Donnie Darko": 23,
+      "Gabriel Knight 3": 19,
+      "Loom": 13,
+      "Monkey Island": 5
+    },
+    "proofs/golden/spitting_contest.txt": {
+      "Monkey Island": 6
+    },
+    "proofs/golden/sword_fighting.txt": {
+      "Monkey Island": 60
+    },
+    "proofs/golden/wasm.txt": {
+      "Broken Sword": 8,
+      "Day of the Tentacle": 5,
+      "Donnie Darko": 5,
+      "Gabriel Knight 3": 4,
+      "Indiana Jones and the Fate of Atlantis": 4,
+      "Monkey Island": 2
+    },
+    "proofs/golden_test.zig": {
+      "Day of the Tentacle": 4,
+      "Donnie Darko": 4,
+      "Gabriel Knight 3": 4,
+      "Indiana Jones and the Fate of Atlantis": 4,
+      "Loom": 4
+    },
+    "proofs/main.zig": {
+      "Broken Sword": 2,
+      "Day of the Tentacle": 15,
+      "Donnie Darko": 14,
+      "Gabriel Knight 3": 13,
+      "Indiana Jones and the Fate of Atlantis": 15,
+      "Loom": 13,
+      "Monkey Island": 1
+    },
+    "proofs/render_golden_test.zig": {
+      "Day of the Tentacle": 12,
+      "Donnie Darko": 9,
+      "Gabriel Knight 3": 5,
+      "Loom": 4
+    },
+    "proofs/spitting_contest.zig": {
+      "Monkey Island": 59
+    },
+    "proofs/sword_fighting.zig": {
+      "Indiana Jones and the Fate of Atlantis": 1,
+      "Monkey Island": 140
+    },
+    "proofs/wasm_deck.zig": {
+      "Broken Sword": 17,
+      "Day of the Tentacle": 45,
+      "Donnie Darko": 46,
+      "Gabriel Knight 3": 43,
+      "Indiana Jones and the Fate of Atlantis": 22,
+      "Loom": 14,
+      "Monkey Island": 22
+    },
+    "scheme/bespoke.manual.json": {
+      "Broken Sword": 12,
+      "Day of the Tentacle": 12,
+      "Donnie Darko": 5,
+      "Gabriel Knight 3": 18,
+      "Indiana Jones and the Fate of Atlantis": 8,
+      "Loom": 2,
+      "Monkey Island": 6
+    },
+    "site/index.html": {
+      "Broken Sword": 61,
+      "Day of the Tentacle": 158,
+      "Donnie Darko": 106,
+      "Gabriel Knight 3": 69,
+      "Indiana Jones and the Fate of Atlantis": 26,
+      "Loom": 2,
+      "Monkey Island": 123
+    },
+    "src/compiler/codegen.zig": {
+      "Gabriel Knight 3": 7,
+      "Monkey Island": 5
+    },
+    "src/compiler/lexer.zig": {
+      "Gabriel Knight 3": 2,
+      "Monkey Island": 2
+    },
+    "src/compiler/parser.zig": {
+      "Gabriel Knight 3": 11,
+      "Monkey Island": 17
+    },
+    "src/display.zig": {
+      "Day of the Tentacle": 12
+    },
+    "src/display/text_layout.zig": {
+      "Broken Sword": 15
+    },
+    "src/host.zig": {
+      "Donnie Darko": 1
+    },
+    "src/hypervisor.zig": {
+      "Donnie Darko": 10
+    },
+    "src/main.zig": {
+      "Day of the Tentacle": 1,
+      "Loom": 1
+    },
+    "src/save.zig": {
+      "Donnie Darko": 1
+    },
+    "src/spatial.zig": {
+      "Donnie Darko": 3,
+      "Monkey Island": 2
+    },
+    "src/temporal_snapshot.zig": {
+      "Donnie Darko": 2
+    },
+    "src/vm.zig": {
+      "Broken Sword": 2,
+      "Day of the Tentacle": 2,
+      "Donnie Darko": 7,
+      "Gabriel Knight 3": 16,
+      "Monkey Island": 16
+    },
+    "src/world.zig": {
+      "Day of the Tentacle": 9,
+      "Donnie Darko": 4
+    },
+    "tools/site_gallery.json": {
+      "Broken Sword": 2,
+      "Day of the Tentacle": 6,
+      "Donnie Darko": 4,
+      "Gabriel Knight 3": 6,
+      "Indiana Jones and the Fate of Atlantis": 3,
+      "Loom": 2,
+      "Monkey Island": 2
+    }
+  },
+  "total": 2699
+}

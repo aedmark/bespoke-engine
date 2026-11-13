@@ -51,7 +51,7 @@
 <div class="facts">
   <div class="fact"><b>13</b><span>playable demo games</span></div>
   <div class="fact"><b>11</b><span>of them also play in a web browser</span></div>
-  <div class="fact"><b>554</b><span>automatic checks, all passing</span></div>
+  <div class="fact"><b>562</b><span>automatic checks, all passing</span></div>
   <div class="fact"><b>0</b><span>outside libraries in the core</span></div>
 </div>
 
@@ -104,7 +104,7 @@
 <h2>How it does it</h2>
 <p>Four simple ideas carry nearly everything.</p>
 <h3>1. The world is a notebook of facts</h3>
-<p>Everything true about the game is written as a short line: "Guard carries Cheese", "Bard charmed Guard (until 2 minutes from now)". There are no hidden objects with private settings. To ask a question, the engine reads the notebook. Because the whole world is one notebook, saving a game or rewinding it is just copying the notebook, which is why rewind is instant and exact.</p>
+<p>Everything true about the game is written as a short line: "Guard carries Cheese", "Bard charmed Guard (until 2 minutes from now)". There are no hidden objects with private settings. To ask a question, the engine reads the notebook. Because the whole world is one notebook, saving a game or rewinding it is copying the notebook (with a checksum to catch damage), which is why rewind is quick and exact.</p>
 <h3>2. Time moves in ticks</h3>
 <p>The game moves forward in small, counted steps (ticks), like the hand of a clock. Nothing depends on how fast your computer is. Given the same start and the same button presses, the game plays out identically every time, which makes replays, rewinds, and testing reliable.</p>
 <h3>3. Characters have to-do lists</h3>
@@ -120,7 +120,7 @@
 
 <h2>How to make a game with it</h2>
 <ol>
-  <li><strong>Create a project.</strong> Run <code>bespoke init my-game</code>. You get a folder with a starter story, a test file, a desktop version, a web version, and automatic builds for Linux, Mac, and Windows.</li>
+  <li><strong>Create a project.</strong> Run <code>bespoke init my-game</code>. You get a folder with a starter story, a test file, a desktop version, a web version, and a setup for automatic builds on Linux, Mac, and Windows (written, not yet run).</li>
   <li><strong>Write the story</strong> in <code>scripts/main.bespoke</code>. Describe the rooms, the characters, their routines, the conversations, and the rules. A small example:
 <pre>scene Tavern:
   cast: Guard, Bard, Cat
@@ -161,7 +161,7 @@ when Carries(Cat, Cheese):
   <tr><td>The Larkspur Observatory</td><td>Staff with their own agendas who intercept you; typed commands</td><td>Not yet</td></tr>
 </table>
 </div>
-<p>Some demos borrow situations from classic adventure games to prove the engine can handle them. They are technical demonstrations, not releases of those games.</p>
+<p>Several demos borrow situations, characters, and lines from classic adventure games and a film. They are being rewritten one at a time as original stories that show the same engine features (Phase 35 in the roadmap).</p>
 
 <h2>What it cannot do yet</h2>
 <div class="note">
@@ -169,13 +169,13 @@ when Carries(Cat, Cheese):
   <li><strong>Graphics are simple.</strong> Rooms, people, and objects are drawn as shapes and labels by code. There is no way yet to load your own artwork or sprite images.</li>
   <li><strong>Nobody has listened to the sound</strong> on real speakers. It has been checked by measuring the sound waves, not by ear.</li>
   <li><strong>Mac and Windows are untested.</strong> The automatic builds for them exist but have never run.</li>
-  <li><strong>The public website is not online yet.</strong> The upload tool works against a test server; the first real upload is still to do.</li>
+  <li><strong>The public website is uploaded by hand.</strong> A tool prepares the page; nothing in the repository publishes it.</li>
   <li><strong>In the browser,</strong> two demos are missing and typed commands do not work.</li>
-  <li><strong>Small writing gaps:</strong> a few script features parse but do nothing yet (for example, some conditions on event handlers), and clicking a person in the basic window does not start a conversation (type "talk to" instead).</li>
+  <li><strong>Small writing gaps:</strong> inside an event handler, a placeholder such as <code>victim</code> is not yet filled in with the actual character (conditions on the handler now are), and clicking a person in the basic window does not start a conversation (type "talk to" instead).</li>
   <li><strong>Once you choose a path</strong> in a multi-path puzzle, you cannot switch.</li>
 </ul>
 </div>
-<p>All of these are listed as Phase 34 in the roadmap, alongside the hand-testing pass.</p>
+<p>Most of these are listed as Phase 34 in the roadmap, alongside the hand-testing pass; the rewrite of borrowed demos is Phase 35.</p>
 
 <h2>For testers</h2>
 <p>Every feature above has automatic checks, but none of it has been played by hand at length. That is the next job. The step-by-step guide is <code>docs/runbooks/release-hand-test.md</code> in the repository: it lists what to try in each demo, what you should see and hear, and a table to record results. A full pass takes about four hours; a useful short pass (the basics, the desktop demos, the browser, and a listening check) takes about ninety minutes.</p>
