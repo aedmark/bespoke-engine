@@ -23,6 +23,8 @@ zig build run
 | `scripts/main.bespoke` | The starter story; edit it |
 | `src/main.zig` | A host that runs the script in a window, or headless with `--headless` |
 | `src/game_test.zig` | Tests that compile the script and check its story; add one per puzzle |
+| `src/web.zig`, `web/` | The browser version and its smoke check |
+| `.github/workflows/build.yml` | CI: tests and release builds on Linux, macOS, and Windows, and the browser build |
 | `build.zig`, `build.zig.zon` | The build; the engine is a relative path dependency |
 
 The loop while writing is: edit the script, `bespoke check` it for syntax, run it headless to read what happens, then add a test for anything the story depends on.
@@ -33,6 +35,8 @@ zig build run -- --headless --ticks 80
 ```
 
 A headless run prints each line spoken, each change of scene and music, and each set of choices offered, with its tick. The window runs the same script at 20 ticks a second.
+
+To share the game, `zig build -Dbundle -Doptimize=ReleaseSafe` builds one executable with the compiled script inside, and `zig build web` builds a browser version into `zig-out/web/` (D-066). The project's README lists the platform requirements.
 
 ## 2. The model in five terms
 
@@ -359,6 +363,9 @@ A host is the Zig program that owns the window, the clock, and the player's inpu
 | `bespoke.load_package(allocator, reader, &world, &spatial)` | Loads a `.bspk` package written by `bespoke compile` |
 | `bespoke.run_file(allocator, path, config, writer)` | The stock runner: window, or headless with `config.is_headless` |
 | `host.initialize_subsystems(&world, &compiled)` | Seeds declared grids, agendas, and containers; safe to repeat |
+| `host.start_script(&world, &spatial, &vm, &compiled)` | Starts a script as every stock host does: top-level statements, the cast, every routine; returns the player |
+| `bespoke.run_bytes(allocator, name, data, config, writer)` | The stock runner on a script or package already in memory, such as an embedded one |
+| `bespoke.wasm.script_deck(title, program)` | A browser deck that runs an embedded script or package |
 | `host.run_initial_statements(&world, &vm, &compiled)` | Runs the script's top-level statements |
 | `host.place_cast(&spatial, &compiled)` | Puts each cast member on its scene's first mark, unless already placed; call before starting routines |
 | `host.tick(&vm, &compiled)` | One lifecycle tick: VM, containers, grids, agendas, weaves. Never call `vm.step_tick` alone (D-033) |

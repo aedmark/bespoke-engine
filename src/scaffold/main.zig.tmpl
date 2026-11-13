@@ -1,6 +1,8 @@
 //! {{name}}: runs scripts/main.bespoke in a BeSpoke window, or headless with `--headless`.
+//! Built with `-Dbundle`, it runs the compiled script embedded in the executable instead.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const game_options = @import("game_options");
 
 pub const SCRIPT_PATH = "scripts/main.bespoke";
 
@@ -26,5 +28,10 @@ pub fn main() !void {
             return error.UnknownArgument;
         }
     }
-    try bespoke.run_file(allocator, SCRIPT_PATH, config, std.io.getStdOut().writer());
+    const stdout = std.io.getStdOut().writer();
+    if (game_options.bundled) {
+        try bespoke.run_bytes(allocator, "{{name}}", @embedFile("game_package"), config, stdout);
+    } else {
+        try bespoke.run_file(allocator, SCRIPT_PATH, config, stdout);
+    }
 }

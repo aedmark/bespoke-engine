@@ -14,6 +14,10 @@ const vm_mod = @import("vm.zig");
 const spatial_mod = @import("spatial.zig");
 const compiler_mod = @import("compiler.zig");
 const repl_mod = @import("repl.zig");
+const host_mod = @import("host.zig");
+const package_mod = @import("package.zig");
+const dialogue_mod = @import("dialogue.zig");
+const CompiledProgram = compiler_mod.codegen.CompiledProgram;
 const font = @import("display/font.zig");
 
 pub const World = world_mod.World;
@@ -61,6 +65,19 @@ pub const Deck = struct {
     after_tick: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
     catalyst: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
 };
+
+/// A deck that runs a game's own script (P29-03, D-066). `program` is a `.bspk` package or
+/// `.bespoke` source, usually embedded with `@embedFile`; a package needs no compiler work in
+/// the browser. The deck ticks through `host.tick`, shows speech in the banner, and answers an
+/// open dialogue with the number keys.
+pub fn script_deck(comptime title: []const u8, comptime program: []const u8) Deck {
+    const Loader = struct {
+        fn load(rt: *WasmRuntime) anyerror!void {
+            try rt.load_program(program);
+        }
+    };
+    return .{ .title = title, .load = Loader.load };
+}
 
 /// Adventure verbs selectable via mouse click, right-click cycle, or touch tap (P19-02, D-008).
 pub const WasmVerb = enum(u8) {
@@ -119,6 +136,8 @@ pub const BrowserActionTag = enum(u8) {
     rewound,
     scenario_switched,
     catalyst_triggered,
+    /// A number key answered the open dialogue of a script deck (P29-03, D-066).
+    dialogue_answered,
 };
 
 // =============================================================================
@@ -300,6 +319,8 @@ pub const WasmRuntime = struct {
     hovered_x: i32 = 0,
     hovered_y: i32 = 0,
     player_entity: EntityId = .none,
+    /// The compiled script of a script deck; null for decks built in Zig (D-066).
+    program: ?CompiledProgram = null,
 
     banner_buf: [96]u8 = [_]u8{0} ** 96,
     banner_len: usize = 0,
@@ -330,6 +351,8 @@ pub const WasmRuntime = struct {
     }
 
     pub fn deinit(self: *WasmRuntime) void {
+        // Declarations borrow World text, so the program goes before the World.
+        self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
         self.spatial.deinit();
@@ -348,6 +371,7 @@ pub const WasmRuntime = struct {
 
     /// Resets the spine and loads deck `index` (the first deck if out of range).
     pub fn load_deck(self: *WasmRuntime, index: u8) !void {
+        self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
         self.spatial.deinit();
@@ -369,6 +393,43 @@ pub const WasmRuntime = struct {
         if (self.decks.len > 0) try self.decks[self.deck_index].load(self);
         self.record_snapshot();
         self.render_frame();
+    }
+
+    fn drop_program(self: *WasmRuntime) void {
+        if (self.program) |*program| program.deinit();
+        self.program = null;
+    }
+
+    /// Loads a script or package into the freshly reset spine and starts it as the stock hosts
+    /// do (`host.start_script`). Called from a deck's `load`.
+    pub fn load_program(self: *WasmRuntime, data: []const u8) !void {
+        const is_package = data.len >= 4 and std.mem.eql(u8, data[0..4], &package_mod.PACKAGE_MAGIC);
+        if (is_package) {
+            var stream = std.io.fixedBufferStream(data);
+            self.program = try package_mod.load_package(self.allocator, stream.reader(), &self.world, &self.spatial);
+        } else {
+            self.program = try compiler_mod.compile_source(self.allocator, &self.world, &self.spatial, data);
+        }
+        const program = &self.program.?;
+        self.vm.deinit();
+        self.vm = VM.init(self.allocator, &self.world, &program.chunk);
+        self.vm.spatial = &self.spatial;
+        try host_mod.initialize_subsystems(&self.world, program);
+        try self.vm.load_compiled_rules(program);
+        self.player_entity = try host_mod.start_script(&self.world, &self.spatial, &self.vm, program);
+        self.show_story();
+    }
+
+    /// Puts this tick's speech, else a newly offered set of choices, in the banner.
+    fn show_story(self: *WasmRuntime) void {
+        var buf: [256]u8 = undefined;
+        if (host_mod.speech_this_tick(&self.world, &self.vm, &buf)) |line| self.set_banner(line);
+        if (dialogue_mod.view(&self.world)) |open| {
+            var fbs = std.io.fixedBufferStream(&buf);
+            const w = fbs.writer();
+            for (0..open.count) |i| w.print("{s}[{d}] {s}", .{ if (i == 0) "" else "  ", i + 1, open.text(i) }) catch break;
+            self.set_banner(fbs.getWritten());
+        }
     }
 
     pub fn record_snapshot(self: *WasmRuntime) void {
@@ -409,10 +470,17 @@ pub const WasmRuntime = struct {
 
     /// Steps one discrete simulation tick across the active scenario spine.
     pub fn step_tick(self: *WasmRuntime) !void {
+        // The runtime is returned by value from `init`, so pointers into it are rebound here.
         self.vm.world = &self.world;
-        self.vm.chunk = &self.chunk;
         self.vm.spatial = &self.spatial;
-        try self.vm.step_tick();
+        if (self.program) |*program| {
+            self.vm.chunk = &program.chunk;
+            _ = try host_mod.tick(&self.vm, program);
+            self.show_story();
+        } else {
+            self.vm.chunk = &self.chunk;
+            try self.vm.step_tick();
+        }
 
         if (self.decks.len > 0) {
             if (self.decks[self.deck_index].after_tick) |rule| try rule(self);
@@ -566,6 +634,14 @@ pub const WasmRuntime = struct {
                     },
                     '1'...'9' => {
                         const idx: u8 = ev.key_code - '1';
+                        // While a script deck's dialogue is open, the number keys answer it;
+                        // a scripted choice ticks at once so its body runs.
+                        if (self.program != null and dialogue_mod.view(&self.world) != null) {
+                            self.vm.world = &self.world;
+                            const selection = (try self.vm.choose(idx)) orelse return .none;
+                            if (selection.is_scripted()) try self.step_tick();
+                            return .dialogue_answered;
+                        }
                         if (idx >= self.decks.len) return .none;
                         try self.load_deck(idx);
                         return .scenario_switched;
@@ -943,5 +1019,58 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
 
     const scrub_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 14, .y = 28 });
     try testing.expectEqual(BrowserActionTag.timeline_scrubbed, scrub_res);
+    try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+}
+
+test "D-066: a script deck compiles its script, speaks in the banner, and answers with number keys" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\
+        \\relation Arrived(who)
+        \\
+        \\routine Walk(Hero):
+        \\  walk Hero to Pier
+        \\  remember Arrived(Hero)
+        \\
+        \\when Arrived(Hero):
+        \\  say Pilot: "Mind the gap."
+        \\
+        \\on cue TalksTo(Hero, Pilot):
+        \\  choice "Ask the way.":
+        \\    say Pilot: "Over the water."
+        \\  choice "Leave.":
+        \\    say Pilot: "Goodbye."
+    ;
+    const decks = [_]Deck{script_deck("QUAY", script)};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    // The first routine's actor is the player, and the Pilot stands in the scene with no routine.
+    try testing.expectEqualStrings("Hero", rt.world.get_entity_name(rt.player_entity).?);
+    try testing.expect(rt.spatial.agents.contains(rt.world.lookup_entity("Pilot").?));
+
+    var heard = false;
+    for (0..12) |_| {
+        try rt.step_tick();
+        if (std.mem.indexOf(u8, rt.get_banner(), "Mind the gap.") != null) heard = true;
+    }
+    try testing.expect(heard);
+
+    const program = &rt.program.?;
+    _ = (try rt.vm.fire_cue(program, "TalksTo", rt.player_entity, rt.world.lookup_entity("Pilot").?, null)).?;
+    try rt.step_tick();
+    try testing.expectEqualStrings("[1] Ask the way.  [2] Leave.", rt.get_banner());
+    // An open dialogue takes the number keys from deck switching.
+    try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' }));
+    try testing.expectEqualStrings("Pilot: \"Over the water.\"", rt.get_banner());
+    try testing.expect(dialogue_mod.view(&rt.world) == null);
+
+    // Reloading the deck releases the program and starts again.
+    try rt.load_deck(0);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
 }

@@ -1,0 +1,9 @@
+//! {{name}} in a browser: the engine's WebAssembly runtime running the compiled script, which
+//! the build embeds as `game_package`. `zig build web` writes zig-out/web/.
+const bespoke = @import("bespoke");
+
+comptime {
+    bespoke.wasm.export_runtime(&[_]bespoke.wasm.Deck{
+        bespoke.wasm.script_deck("{{name}}", @embedFile("game_package")),
+    });
+}

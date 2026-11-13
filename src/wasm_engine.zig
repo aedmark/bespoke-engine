@@ -17,7 +17,34 @@ fn load_stage(rt: *wasm.WasmRuntime) anyerror!void {
     rt.set_banner("BeSpoke stage: click a mark to walk.");
 }
 
-const decks = [_]wasm.Deck{.{ .title = "BESPOKE STAGE", .load = load_stage }};
+/// A second deck that compiles and runs a script in the browser (P29-03, D-066), so the
+/// engine's own module exercises script decks and the smoke check covers them.
+const STAGE_SCRIPT =
+    \\scene Stage:
+    \\  cast: Walker, Greeter
+    \\  props: Signpost
+    \\  marks: Left, Centre, Right
+    \\
+    \\relation Greeted(who)
+    \\
+    \\routine Stroll(Walker):
+    \\  walk Walker to Right
+    \\  remember Greeted(Walker)
+    \\
+    \\when Greeted(Walker):
+    \\  say Greeter: "Welcome to the stage."
+    \\
+    \\on cue TalksTo(Walker, Greeter):
+    \\  choice "Hello.":
+    \\    say Greeter: "Hello yourself."
+    \\  choice "Goodbye.":
+    \\    say Greeter: "Come back soon."
+;
+
+const decks = [_]wasm.Deck{
+    .{ .title = "BESPOKE STAGE", .load = load_stage },
+    wasm.script_deck("BESPOKE SCRIPT STAGE", STAGE_SCRIPT),
+};
 
 comptime {
     wasm.export_runtime(&decks);

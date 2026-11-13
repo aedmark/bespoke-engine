@@ -35,9 +35,7 @@ fn example(text: []const u8, name: []const u8) ![]const u8 {
     return (next_block(text, at) orelse return error.ExampleBlockMissing).body;
 }
 
-/// A guide script running headless the way `bespoke run` starts it: top-level statements
-/// first, the cast on their scenes' first marks, then every routine on its actor (any actor
-/// still unplaced goes on the first mark).
+/// A guide script running headless, started as `bespoke run` starts it (`host.start_script`).
 const Play = struct {
     world: bespoke.World,
     spatial: bespoke.SpatialSystem,
@@ -58,16 +56,7 @@ const Play = struct {
         try self.vm.load_compiled_rules(&self.compiled);
         self.interp = .{};
         self.said = std.ArrayList(u8).init(testing.allocator);
-        try bespoke.host.run_initial_statements(&self.world, &self.vm, &self.compiled);
-        try bespoke.host.place_cast(&self.spatial, &self.compiled);
-        const first_mark = self.spatial.graph.waypoints.items[0].id;
-        var it = self.compiled.routine_entries.iterator();
-        while (it.next()) |entry| {
-            const actor = try self.world.intern_entity(self.compiled.routine_entities.get(entry.key_ptr.*).?);
-            if (!self.spatial.agents.contains(actor)) try self.spatial.register_entity(actor, first_mark, 10);
-            _ = try self.vm.spawn_routine(actor, entry.value_ptr.*);
-        }
-        self.hero = try self.world.intern_entity(bespoke.runner.player_actor(&self.compiled).?);
+        self.hero = try bespoke.host.start_script(&self.world, &self.spatial, &self.vm, &self.compiled);
     }
 
     fn deinit(self: *Play) void {

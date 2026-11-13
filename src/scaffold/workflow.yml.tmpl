@@ -1,0 +1,109 @@
+# {{name}}: build and test on Linux, macOS, and Windows, and build the browser version.
+# The engine is fetched beside the game and build.zig.zon is pointed at it, because the
+# local `.path` in build.zig.zon names a checkout that exists only on your machine. Pin
+# BESPOKE_ENGINE_REF to a commit for builds that do not move with the engine.
+name: build
+
+on:
+  push:
+  pull_request:
+
+env:
+  BESPOKE_ENGINE_REPO: aedmark/bespoke-engine
+  BESPOKE_ENGINE_REF: main
+  ZIG_VERSION: 0.13.0
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: game
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.BESPOKE_ENGINE_REPO }}
+          ref: ${{ env.BESPOKE_ENGINE_REF }}
+          path: bespoke-engine
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Point the game at the fetched engine
+        run: perl -pi -e 's|\.path = ".*"|.path = "../bespoke-engine"|' game/build.zig.zon
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Install SDL2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sdl2
+      - name: Install SDL2 (Windows)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-SDL2
+      - name: Choose build flags
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            prefix="$(cygpath -m '${{ steps.msys2.outputs.msys2-location }}')/mingw64"
+            echo "ZIG_FLAGS=-Dtarget=x86_64-windows-gnu --search-prefix $prefix" >> "$GITHUB_ENV"
+            echo "$(cygpath -w "$prefix/bin")" >> "$GITHUB_PATH"
+          else
+            echo "ZIG_FLAGS=" >> "$GITHUB_ENV"
+          fi
+      - name: Test
+        working-directory: game
+        run: zig build test $ZIG_FLAGS
+      - name: Build the bundled release
+        working-directory: game
+        run: zig build -Dbundle -Doptimize=ReleaseSafe $ZIG_FLAGS
+      - name: Run it headless
+        working-directory: game
+        run: |
+          cd zig-out/bin
+          ./{{name}} --headless --ticks 40 --quiet < /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: {{name}}-${{ runner.os }}
+          path: game/zig-out/bin/
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: game
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.BESPOKE_ENGINE_REPO }}
+          ref: ${{ env.BESPOKE_ENGINE_REF }}
+          path: bespoke-engine
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Point the game at the fetched engine
+        run: perl -pi -e 's|\.path = ".*"|.path = "../bespoke-engine"|' game/build.zig.zon
+      # The browser build compiles the script with the engine's native tool, which links SDL2.
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Build and smoke-test the browser version
+        working-directory: game
+        run: |
+          zig build web
+          node web/smoke.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: {{name}}-web
+          path: game/zig-out/web/

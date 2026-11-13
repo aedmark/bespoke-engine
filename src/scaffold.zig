@@ -23,6 +23,10 @@ pub const FILES = [_]File{
     .{ .path = "build.zig.zon", .template = @embedFile("scaffold/build.zig.zon.tmpl") },
     .{ .path = "src/main.zig", .template = @embedFile("scaffold/main.zig.tmpl") },
     .{ .path = "src/game_test.zig", .template = @embedFile("scaffold/game_test.zig.tmpl") },
+    .{ .path = "src/web.zig", .template = @embedFile("scaffold/web.zig.tmpl") },
+    .{ .path = "web/index.html", .template = @embedFile("scaffold/index.html.tmpl") },
+    .{ .path = "web/smoke.js", .template = @embedFile("scaffold/smoke.js.tmpl") },
+    .{ .path = ".github/workflows/build.yml", .template = @embedFile("scaffold/workflow.yml.tmpl") },
     .{ .path = "scripts/main.bespoke", .template = @embedFile("scaffold/main.bespoke.tmpl") },
     .{ .path = "README.md", .template = @embedFile("scaffold/README.md.tmpl") },
     .{ .path = ".gitignore", .template = @embedFile("scaffold/gitignore.tmpl") },
@@ -42,6 +46,8 @@ pub fn validate_name(name: []const u8) Error!void {
 
 /// Replaces `{{name}}` and `{{engine_root}}`. The engine root lands inside a ZON string, so
 /// backslashes and quotes are escaped; a control character is refused rather than escaped.
+/// Any other `{{` is copied as it is: the CI workflow's `${{ expr }}` expressions belong to
+/// GitHub Actions, and placeholders never start with a space.
 pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const u8, engine_root: []const u8) ![]u8 {
     var out = std.ArrayList(u8).init(allocator);
     errdefer out.deinit();
@@ -111,11 +117,15 @@ test "P29-01: templates substitute the name and escape the engine path for ZON" 
     defer testing.allocator.free(text);
     try testing.expectEqualStrings(".name = \"tide\", .path = \"C:\\\\eng \\\"x\\\"\"", text);
     try testing.expectError(error.InvalidEngineRoot, render(testing.allocator, "{{engine_root}}", "a", "bad\npath"));
-    // No template keeps a placeholder after rendering.
+    // No template keeps a placeholder after rendering. A placeholder is `{{` and a name;
+    // GitHub Actions expressions (`${{ matrix.os }}`) start with a space and stay.
     for (FILES) |file| {
         const out = try render(testing.allocator, file.template, "tide", "/engine");
         defer testing.allocator.free(out);
-        try testing.expect(std.mem.indexOf(u8, out, "{{") == null);
+        var at: usize = 0;
+        while (std.mem.indexOfPos(u8, out, at, "{{")) |i| : (at = i + 2) {
+            try testing.expect(i + 2 < out.len and out[i + 2] == ' ');
+        }
     }
 }
 

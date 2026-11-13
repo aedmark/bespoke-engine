@@ -63,6 +63,7 @@ pub const load_package = package.load_package;
 pub const save_package_file = package.save_package_file;
 pub const load_package_file = package.load_package_file;
 pub const run_file = runner.run_file;
+pub const run_bytes = runner.run_bytes;
 pub const compile_file = runner.compile_file;
 pub const check_file = runner.check_file;
 pub const DisplayBridge = display.DisplayBridge;

@@ -18,8 +18,10 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // Named apart from the `bespoke` CLI so a game's build can fetch the CLI by artifact name
+    // to compile its script (P29-03, D-066); Zig refuses a name two installed artifacts share.
     const lib = b.addStaticLibrary(.{
-        .name = "bespoke",
+        .name = "bespoke-core",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
         .root_source_file = b.path("src/root.zig"),
@@ -77,13 +79,16 @@ pub fn build(b: *std.Build) void {
     // The engine is exported as the `bespoke` module. Proofs import it by name and live outside
     // src/, so the compiler rejects any attempt by engine code to import a proof: the boundary is
     // enforced by module paths, not by convention.
+    // A game built for the browser asks for this module with a wasm target; that build uses no
+    // libc and none of the SDL display code, so neither is linked there (P29-03, D-066).
+    const is_wasm = target.result.cpu.arch.isWasm();
     const bespoke_mod = b.addModule("bespoke", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
+        .link_libc = !is_wasm,
     });
-    bespoke_mod.linkSystemLibrary("SDL2", .{});
+    if (!is_wasm) bespoke_mod.linkSystemLibrary("SDL2", .{});
 
     const proofs_exe = b.addExecutable(.{
         .name = "bespoke-proofs",
@@ -164,6 +169,36 @@ pub fn build(b: *std.Build) void {
 
     const test_proofs_step = b.step("test-proofs", "Run proof-of-concept tests only (proofs/)");
     test_proofs_step.dependOn(&run_proofs_unit_tests.step);
+
+    // P29-03 (D-066): the reference template is what `bespoke init` writes. This step generates
+    // a project into the cache, then runs its tests, its bundled release build, and its browser
+    // build with this checkout as the engine. It runs nested `zig build`s, so it stays out of
+    // `zig build test`.
+    b.cache_root.handle.makePath("tmp") catch {};
+    const template_root = b.cache_root.join(b.allocator, &.{"tmp"}) catch @panic("OOM");
+    const starter_dir = b.pathJoin(&.{ template_root, "template_check" });
+    const clear_template = b.addRemoveDirTree(starter_dir);
+    const init_template = b.addRunArtifact(exe);
+    init_template.has_side_effects = true;
+    init_template.addArgs(&.{ "init", "template_check", "--engine", b.pathFromRoot(".") });
+    init_template.setCwd(.{ .cwd_relative = template_root });
+    init_template.step.dependOn(&clear_template.step);
+    var previous: *std.Build.Step = &init_template.step;
+    const template_steps = [_][]const []const u8{
+        &.{ "build", "test" },
+        &.{ "build", "-Dbundle", "-Doptimize=ReleaseSafe" },
+        &.{ "build", "web" },
+    };
+    for (template_steps) |args| {
+        const nested = b.addSystemCommand(&.{b.graph.zig_exe});
+        nested.addArgs(args);
+        nested.setCwd(.{ .cwd_relative = starter_dir });
+        nested.has_side_effects = true;
+        nested.step.dependOn(previous);
+        previous = &nested.step;
+    }
+    const test_template_step = b.step("test-template", "Generate a project with `bespoke init` and run its tests, bundle, and web builds");
+    test_template_step.dependOn(previous);
 
     // Phase 19 (P19-01): Zero-dependency WebAssembly (wasm32-freestanding) target
     const wasm_target = b.resolveTargetQuery(.{

@@ -1,0 +1,17 @@
+// Smoke check for the browser build: load zig-out/web/{{name}}.wasm with no imports, run 40
+// ticks, click, render, and check the clock advanced, the script made facts, and the frame is
+// not blank. Run after `zig build web`:  node web/smoke.js   (Node.js 18 or later)
+const fs = require('fs');
+const path = require('path');
+const file = path.join(__dirname, '..', 'zig-out', 'web', '{{name}}.wasm');
+const w = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(file)), {}).exports;
+w.wasm_init(0);
+for (let k = 0; k < 40; k++) w.wasm_step_tick();
+w.wasm_on_pointer_down(320, 185);
+w.wasm_render_frame();
+const px = new Uint8Array(w.memory.buffer, w.wasm_framebuffer_ptr(), w.wasm_framebuffer_len());
+const colours = new Set();
+for (let k = 0; k < px.length; k += 4 * 101) colours.add((px[k] << 16) | (px[k + 1] << 8) | px[k + 2]);
+const ok = w.wasm_get_tick() >= 40 && w.wasm_get_fact_count() > 0 && colours.size > 3;
+console.log(`${ok ? 'ok' : 'FAIL'} {{name}}.wasm: tick ${w.wasm_get_tick()}, facts ${w.wasm_get_fact_count()}, ${colours.size} colours`);
+process.exit(ok ? 0 : 1);

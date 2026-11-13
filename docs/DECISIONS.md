@@ -890,6 +890,23 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A per-actor `at <Mark>` clause in `cast:` lines: deferred; first-mark placement needs no syntax, and a later clause can extend `CastPlace`.
 **Consequences:** In the stock runner a routine actor that is in a cast now starts in its own scene rather than on the script's first mark; scripts whose routines walk between scenes may start differently. Old packages run as before. The guide's dialogue walkthrough drops its workaround routine and serves as the end-to-end check.
 
+## D-066 Reference Starter Template: Bundled Packages, Browser Script Decks, and CI Across Platforms (2026-11-12, status: accepted)
+**Context:** P29-03 asks for a reference starter template with verified tests, asset bundling, and reproducible builds on Linux, Windows, macOS, and WebAssembly. The browser runtime ran only decks built in Zig and could not run a script. Only Linux is available to verify on, and SDL2 for the other platforms is not installed. The maintainer chose (2026-11-12): script decks in wasm, a GitHub Actions workflow in the template, an embedded compiled package for releases, and `bespoke init` output as the template, checked by a separate build step.
+**Decision:**
+1. **The template is what `bespoke init` writes.** It gains `src/web.zig`, `web/index.html`, `web/smoke.js`, and `.github/workflows/build.yml`. `zig build test-template` in the engine generates a project into `.zig-cache/tmp/template_check` and runs its `zig build test`, `zig build -Dbundle -Doptimize=ReleaseSafe`, and `zig build web`; `zig build test` does not run it, because it takes about a minute.
+2. **Releases embed a compiled package.** With `-Dbundle`, the game's build runs the engine's own `bespoke compile` (built for the build machine) on `scripts/main.bespoke` and embeds the `.bspk`; `src/main.zig` then calls `bespoke.run_bytes`. Without it, `zig build run` reads the script live. A script error fails the build. The option is `-Dbundle`, not `-Drelease`, because `-Drelease` belongs to Zig's own optimize option.
+3. **The browser runs scripts.** `wasm.script_deck(title, program)` makes a deck from an embedded package or source; `WasmRuntime.load_program` loads it, starts it with `host.start_script`, and ticks through `host.tick`. Speech and offered choices show in the banner, and while a dialogue is open the number keys answer it instead of switching decks. The engine's `bespoke.wasm` gains a script deck so its own build and smoke check exercise this. Typed commands are not bridged to the browser.
+4. **One start-up sequence.** `host.start_script` runs top-level statements (bounded, as `run_initial_statements` was), places the cast, starts every routine, and returns the player; `host.player_actor` moves from the runner. The runner, the guide test, and the wasm runtime use it.
+5. **The exported module builds for wasm.** For a wasm target the `bespoke` module links neither libc nor SDL2, so a game can depend on the engine for its browser build.
+6. **CI lives in the template.** The workflow builds and tests on `ubuntu-latest`, `macos-latest`, and `windows-latest` (SDL2 from apt, Homebrew, and MSYS2 with `-Dtarget=x86_64-windows-gnu`), runs the bundled release headless, and builds and smoke-tests the browser version. It fetches the engine from `aedmark/bespoke-engine` at `BESPOKE_ENGINE_REF` (default `main`) and rewrites `.path` to it.
+7. **The static library is `bespoke-core`.** `Dependency.artifact` refuses a name two installed artifacts share, and the game's build fetches the `bespoke` CLI by name.
+**Alternatives:**
+- A dist folder that copies `scripts/`: not chosen; the executable would still depend on files beside it.
+- Deferring wasm: not chosen; the roadmap item names WebAssembly.
+- Cross-compiling Windows and macOS from Linux: not possible without their SDL2 libraries.
+- A committed example project: not chosen; it would drift from the templates.
+**Consequences:** Windows and macOS builds are verified only when a generated project is pushed to GitHub; the Windows SDL2 setup is the least certain. The browser runtime's 2 MiB heap bounds how large a game can be in the browser. The runner's top-level statements now stop after 64 ticks, as every other host's did. `zig-out/lib/libbespoke.a` is now `libbespoke-core.a`.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

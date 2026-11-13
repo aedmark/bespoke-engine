@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{name}}</title>
+<style>
+  body { margin: 0; background: #12161d; color: #c8d0dc; font: 14px system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; }
+  canvas { margin-top: 16px; width: min(96vw, 1280px); image-rendering: pixelated; border: 1px solid #2c3442; }
+  p { max-width: 640px; text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="stage" width="640" height="360"></canvas>
+<p>Click a mark to walk. Right-click changes the verb. Space pauses, N steps, R rewinds, and the number keys answer a dialogue.</p>
+<script>
+// Loads {{name}}.wasm (the engine's browser runtime with the game's compiled script) and drives it:
+// 20 ticks a second, pointer and key events in, the RGBA framebuffer out. Serve this folder
+// over HTTP; browsers refuse to fetch a module from a file:// page.
+const TICK_MS = 50;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const toCanvas = (e) => {
+  const r = canvas.getBoundingClientRect();
+  return [Math.round((e.clientX - r.left) * canvas.width / r.width), Math.round((e.clientY - r.top) * canvas.height / r.height)];
+};
+WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {}).then(({ instance }) => {
+  const w = instance.exports;
+  w.wasm_init(0);
+  const draw = () => {
+    w.wasm_render_frame();
+    const px = new Uint8ClampedArray(w.memory.buffer, w.wasm_framebuffer_ptr(), w.wasm_framebuffer_len());
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(px), canvas.width, canvas.height), 0, 0);
+  };
+  canvas.addEventListener('mousedown', (e) => { if (e.button === 0) { w.wasm_on_pointer_down(...toCanvas(e)); draw(); } });
+  canvas.addEventListener('mousemove', (e) => w.wasm_on_pointer_move(...toCanvas(e)));
+  canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); w.wasm_on_right_click(...toCanvas(e)); draw(); });
+  window.addEventListener('keydown', (e) => {
+    if (e.key.length !== 1) return;
+    e.preventDefault();
+    w.wasm_on_key_down(e.key.charCodeAt(0));
+    draw();
+  });
+  setInterval(() => { w.wasm_step_tick(); draw(); }, TICK_MS);
+  draw();
+});
+</script>
+</body>
+</html>

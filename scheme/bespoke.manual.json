@@ -1033,6 +1033,30 @@
           "related": ["host-kit-api", "standalone-script-runner-and-package-compiler", "branching-dialogue-balloons", "continuous-when-rules"]
         },
         {
+          "id": "starter-template-builds",
+          "title": "Starter Template: Bundled Releases, Browser Builds, and CI",
+          "summary": "bespoke init writes a project that tests, builds a self-contained release, builds a browser version, and carries a CI workflow for Linux, macOS, Windows, and the web.",
+          "synopsis": "zig build test | zig build -Dbundle -Doptimize=ReleaseSafe | zig build web | node web/smoke.js | zig build test-template",
+          "tags": ["template", "scaffolding", "wasm", "ci", "release", "authoring"],
+          "what": "The generated project's build compiles the script with the engine's own compiler for releases and for the browser, embeds the package, and runs it through the stock runner or the wasm runtime. A GitHub Actions workflow repeats the build and tests on three operating systems and checks the browser build.",
+          "how": [
+            "-Dbundle runs the engine's bespoke compile, built for the build machine, on scripts/main.bespoke and embeds the .bspk as game_package; src/main.zig passes it to bespoke.run_bytes.",
+            "zig build web builds src/web.zig for wasm32-freestanding against the engine module (no libc or SDL there) with the same package, and installs it with web/index.html into zig-out/web/.",
+            "wasm.script_deck loads the package, starts it with host.start_script, ticks through host.tick, shows speech and choices in the banner, and lets the number keys answer an open dialogue.",
+            "The workflow fetches the engine at BESPOKE_ENGINE_REF beside the game, rewrites .path in build.zig.zon, installs SDL2 per platform, tests, builds and runs the bundled release headless, and smoke-tests the browser build with Node.",
+            "zig build test-template in the engine generates a project into the cache and runs its tests, bundled build, and web build."
+          ],
+          "why": "A starter that only builds on the author's machine teaches the wrong habit. Compiling the script at build time catches script errors before release and gives one file to ship, and running the same package in the browser keeps the web version in step with the native one.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-066", "target": "docs/DECISIONS.md#d-066", "kind": "decision"},
+            {"label": "Scaffold Templates", "target": "src/scaffold.zig", "kind": "source"},
+            {"label": "Browser Runtime", "target": "src/wasm.zig", "kind": "source"},
+            {"label": "Engine Build", "target": "build.zig", "kind": "source"}
+          ],
+          "related": ["authoring-guide-walkthroughs", "host-kit-api", "wasm-browser-target-and-simulator"]
+        },
+        {
           "id": "host-kit-api",
           "title": "Host Kit API: Driving the Engine from Zig",
           "summary": "A host compiles a script, ticks it through host.tick, reads speech after each tick, and routes typed commands and dialogue choices to the VM.",
@@ -1044,6 +1068,7 @@
             "host.tick runs one lifecycle tick: the VM, containers, grids, agendas, and queued weaves. Hosts never call VM.step_tick alone, or declared rules do not run.",
             "Speech is read after every tick with host.speech_this_tick or SpeechLog, because the next tick clears the emitted cues.",
             "host.run_command interprets a typed line for an actor and fires its cue; dialogue.view and VM.choose present and answer the open set of choices.",
+            "host.start_script runs the top-level statements, places the cast, starts every routine, and returns the player; the stock runner, the guide test, and browser script decks all start scripts this way (D-066).",
             "host.place_cast puts each cast member on the first mark of its scene unless the host already placed it (D-065); call it before starting routines.",
             "host.Session owns the timeline, rewind, scrub, saves, pause, and single step for a window host."
           ],

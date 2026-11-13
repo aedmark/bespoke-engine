@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const bin = path.join(__dirname, '..', 'zig-out', 'bin');
-const modules = [['bespoke.wasm', 1], ['bespoke-proofs.wasm', 7]];
+const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 7]];
 let failed = false;
 for (const [file, decks] of modules) {
   const exp = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(bin, file))), {}).exports;
@@ -21,6 +21,11 @@ for (const [file, decks] of modules) {
       const distinct = new Set();
       for (let k = 0; k < px.length; k += 4 * 101) distinct.add((px[k] << 16) | (px[k + 1] << 8) | px[k + 2]);
       // Three ticks; a catalyst may run one more (the village's does).
+      // The engine's script deck (D-066) must run its script: after a walk it records a fact.
+      if (file === 'bespoke.wasm' && d === 1) {
+        for (let k = 0; k < 12; k++) exp.wasm_step_tick();
+        if (exp.wasm_get_fact_count() === 0) throw new Error('script deck recorded no facts');
+      }
       const ok = exp.wasm_get_tick() >= 3 && distinct.size > 3;
       console.log(`${ok ? 'ok  ' : 'FAIL'} ${file} deck ${d}: tick ${exp.wasm_get_tick()}, facts ${exp.wasm_get_fact_count()}, ${distinct.size} colours`);
       if (!ok) failed = true;

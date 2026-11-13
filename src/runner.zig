@@ -110,7 +110,19 @@ pub fn run_file(
     const max_size: usize = 32 * 1024 * 1024;
     const data = try file.readToEndAlloc(allocator, max_size);
     defer allocator.free(data);
+    try run_bytes(allocator, path, data, config, stdout);
+}
 
+/// Executes a script or `.bspk` package already in memory; `name` labels messages. A game that
+/// embeds its compiled package runs through this (P29-03, D-066).
+pub fn run_bytes(
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    data: []const u8,
+    config: RunConfig,
+    stdout: anytype,
+) !void {
+    const path = name;
     var world = try World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
@@ -151,43 +163,9 @@ pub fn run_file(
     vm.spatial = &spatial;
     try vm.load_compiled_rules(&compiled);
 
-    // 1. Execute initial top-level declarative statements if compiled
-    if (compiled.initial_entry) |init_pc| {
-        const root_ent = try world.intern_entity("SimulationRoot");
-        const f_init = try vm.spawn_routine(root_ent, init_pc);
-        while (f_init <= vm.fibers.items.len and vm.fibers.items[f_init - 1].state != .halted) {
-            _ = try bespoke.host.tick(&vm, &compiled);
-        }
-    }
-
-    // 2. Place each cast member in its own scene (D-065), then any other routine actor on the
-    // first mark.
-    try bespoke.host.place_cast(&spatial, &compiled);
-    const default_wp = if (spatial.graph.waypoints.items.len > 0)
-        spatial.graph.waypoints.items[0].id
-    else
-        null;
-
-    // 3. Spawn all defined routines for their declared actors
-    var r_it = compiled.routine_entries.iterator();
-    while (r_it.next()) |entry| {
-        const rname = entry.key_ptr.*;
-        const rpc = entry.value_ptr.*;
-        const actor_name = compiled.routine_entities.get(rname) orelse "Player";
-        const actor_ent = try world.intern_entity(actor_name);
-
-        if (default_wp) |dwp| {
-            if (!spatial.agents.contains(actor_ent)) {
-                try spatial.register_entity(actor_ent, dwp, bespoke.host.CAST_SPEED);
-            }
-        }
-
-        _ = try vm.spawn_routine(actor_ent, rpc);
-    }
-
-    // The window's clicks and typed commands act for one actor, chosen from the script so the
-    // choice is the same on every run (P29-02, D-064).
-    const player_entity = try world.intern_entity(player_actor(&compiled) orelse "Player");
+    // Top-level statements, the cast in its scenes, then every routine (P29-03, D-066). The
+    // window's clicks and typed commands act for the returned player (D-064).
+    const player_entity = try bespoke.host.start_script(&world, &spatial, &vm, &compiled);
 
     var display_bridge = DisplayBridge.init();
     var repl_instance = Repl.init(&world, &spatial, &vm);
@@ -447,24 +425,8 @@ pub const StoryReport = struct {
     }
 };
 
-/// The actor the stock window acts for: the actor of the first top-level routine in source
-/// order (P29-02, D-064). Routines compile in source order, so the lowest entry wins; this holds
-/// for packages too, which keep entry addresses. Path initializers are skipped; path routines
-/// compile after every top-level routine, so they are chosen only when no top-level routine
-/// exists. Null when the script declares no routine.
-pub fn player_actor(compiled: *const CompiledProgram) ?[]const u8 {
-    var best_pc: usize = std.math.maxInt(usize);
-    var best: ?[]const u8 = null;
-    var it = compiled.routine_entries.iterator();
-    while (it.next()) |entry| {
-        const name = entry.key_ptr.*;
-        if (std.mem.startsWith(u8, name, bespoke.compiler.codegen.PATH_ROUTINE_PREFIX)) continue;
-        if (entry.value_ptr.* >= best_pc) continue;
-        best_pc = entry.value_ptr.*;
-        best = compiled.routine_entities.get(name);
-    }
-    return best;
-}
+/// The actor the stock window acts for (D-064); see `host.player_actor`.
+pub const player_actor = bespoke.host.player_actor;
 
 /// Answers the open dialogue with option `index`. Returns true when a scripted body must run,
 /// which takes one tick; an index past the offered options changes nothing.

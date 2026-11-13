@@ -328,6 +328,44 @@ pub fn place_cast(spatial: *SpatialSystem, compiled: *const CompiledProgram) !vo
 /// gives routine actors.
 pub const CAST_SPEED: u32 = 10;
 
+/// The actor a host's clicks and typed commands act for: the actor of the first top-level routine in source
+/// order (P29-02, D-064). Routines compile in source order, so the lowest entry wins; this holds
+/// for packages too, which keep entry addresses. Path initializers are skipped; path routines
+/// compile after every top-level routine, so they are chosen only when no top-level routine
+/// exists. Null when the script declares no routine.
+pub fn player_actor(compiled: *const CompiledProgram) ?[]const u8 {
+    var best_pc: usize = std.math.maxInt(usize);
+    var best: ?[]const u8 = null;
+    var it = compiled.routine_entries.iterator();
+    while (it.next()) |entry| {
+        const name = entry.key_ptr.*;
+        if (std.mem.startsWith(u8, name, codegen.PATH_ROUTINE_PREFIX)) continue;
+        if (entry.value_ptr.* >= best_pc) continue;
+        best_pc = entry.value_ptr.*;
+        best = compiled.routine_entities.get(name);
+    }
+    return best;
+}
+
+/// Starts a compiled script the way every stock host does (P29-03, D-066): runs the top-level
+/// statements, places the cast (D-065), then starts every routine on its actor, putting any
+/// actor still unplaced on the script's first mark. Returns the player (`player_actor`, else an
+/// entity named `Player`). Call once, after `vm.load_compiled_rules`.
+pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *const CompiledProgram) !EntityId {
+    try run_initial_statements(world, vm, compiled);
+    try place_cast(spatial, compiled);
+    const first_mark: ?spatial_mod.WaypointId = if (spatial.graph.waypoints.items.len > 0) spatial.graph.waypoints.items[0].id else null;
+    var it = compiled.routine_entries.iterator();
+    while (it.next()) |entry| {
+        const actor = try world.intern_entity(compiled.routine_entities.get(entry.key_ptr.*) orelse "Player");
+        if (first_mark) |mark| {
+            if (!spatial.agents.contains(actor)) try spatial.register_entity(actor, mark, CAST_SPEED);
+        }
+        _ = try vm.spawn_routine(actor, entry.value_ptr.*);
+    }
+    return world.intern_entity(player_actor(compiled) orelse "Player");
+}
+
 /// True when `subject` holds the state `state` (a `X is state` fact), regardless of value.
 pub fn has_state(world: *const World, subject: EntityId, state: []const u8) bool {
     const rel = world.lookup_relation(state) orelse return false;
