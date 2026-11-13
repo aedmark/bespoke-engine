@@ -42,6 +42,10 @@ const SCRIPT = [_]struct { label: []const u8, step: Step }{
     .{ .label = "scrubbed", .step = .{ .event = .{ .kind = .pointer_down, .x = 320, .y = 30 } } },
     .{ .label = "rewound", .step = .{ .event = .{ .kind = .key_down, .key_code = 'R' } } },
     .{ .label = "paused", .step = .{ .event = .{ .kind = .key_down, .key_code = ' ' } } },
+    // The state inspector (P30-04, D-070): open it, move the selection, and close it.
+    .{ .label = "inspector", .step = .{ .event = .{ .kind = .key_down, .key_code = 'I' } } },
+    .{ .label = "inspector-next", .step = .{ .event = .{ .kind = .key_down, .key_code = wasm.InspectorKey.right } } },
+    .{ .label = "inspector-closed", .step = .{ .event = .{ .kind = .key_down, .key_code = 'I' } } },
     .{ .label = "two-finger", .step = .{ .event = .{ .kind = .touch_start, .x = 100, .y = 100, .touch_points = 2 } } },
 };
 

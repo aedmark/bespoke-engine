@@ -17,6 +17,9 @@ const repl_mod = @import("repl.zig");
 const host_mod = @import("host.zig");
 const package_mod = @import("package.zig");
 const dialogue_mod = @import("dialogue.zig");
+const inspector_mod = @import("wasm_inspector.zig");
+pub const Inspector = inspector_mod.Inspector;
+pub const InspectorKey = inspector_mod.Key;
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
 const font = @import("display/font.zig");
 
@@ -180,6 +183,10 @@ pub const BrowserActionTag = enum(u8) {
     dialogue_answered,
     /// A verb on a person or prop fired the script's cue (P30-05, D-069).
     cue_fired,
+    /// `I` opened or closed the state inspector (P30-04, D-070).
+    inspector_toggled,
+    /// A key or click moved the inspector's selection, focus, or filter.
+    inspector_navigated,
 };
 
 // =============================================================================
@@ -400,6 +407,8 @@ pub const WasmRuntime = struct {
     player_entity: EntityId = .none,
     /// The compiled script of a script deck; null for decks built in Zig (D-066).
     program: ?CompiledProgram = null,
+    /// The state inspector overlay (D-070). Its navigation is not World state.
+    inspector: Inspector = .{},
 
     banner_buf: [96]u8 = [_]u8{0} ** 96,
     banner_len: usize = 0,
@@ -464,6 +473,7 @@ pub const WasmRuntime = struct {
         self.vm.spatial = &self.spatial;
 
         self.deck_index = if (index < self.decks.len) index else 0;
+        self.inspector = .{};
         self.active_verb = .walk;
         self.is_paused = false;
         self.max_history_tick = 0;
@@ -673,6 +683,13 @@ pub const WasmRuntime = struct {
                 self.hovered_x = ev.x;
                 self.hovered_y = ev.y;
 
+                // While the inspector is open, the stage belongs to it; the timeline still scrubs.
+                const on_timeline = ev.y >= 22 and ev.y <= 38 and ev.x >= 12 and ev.x <= 628;
+                if (self.inspector.open and !on_timeline) {
+                    self.inspector.capture(&self.world);
+                    return if (self.inspector.click(ev.x, ev.y)) .inspector_navigated else .none;
+                }
+
                 // Two-finger touch tap cycles the active adventure verb
                 if (ev.kind == .touch_start and ev.touch_points >= 2) {
                     self.active_verb = self.active_verb.next();
@@ -779,6 +796,17 @@ pub const WasmRuntime = struct {
                 return .none;
             },
             .key_down => {
+                if (ev.key_code == 'i' or ev.key_code == 'I') {
+                    self.inspector.toggle(&self.is_paused);
+                    return .inspector_toggled;
+                }
+                // While the inspector is open its keys come first, the timeline keys still work,
+                // and the clock, deck, and solve keys wait until it closes.
+                if (self.inspector.open) {
+                    self.inspector.capture(&self.world);
+                    if (self.inspector.key(ev.key_code)) return .inspector_navigated;
+                    if (ev.key_code != 'r' and ev.key_code != 'R') return .none;
+                }
                 switch (ev.key_code) {
                     ' ' => {
                         self.is_paused = !self.is_paused;
@@ -882,6 +910,12 @@ pub const WasmRuntime = struct {
             self.canvas.draw_text(name, px - 14, py - 20, 1, RgbaColor.white);
         }
 
+        // The inspector draws over the stage; the HUD, timeline, and verb bar stay visible.
+        if (self.inspector.open) {
+            self.inspector.capture(&self.world);
+            self.inspector.draw(&self.canvas, &self.world);
+        }
+
         // 6. Top Status & Timeline Scrubber Bar
         self.canvas.fill_rect(0, 0, CANVAS_WIDTH, 20, RgbaColor.hud_bg);
         var hdr_buf: [80]u8 = undefined;
@@ -918,7 +952,7 @@ pub const WasmRuntime = struct {
             self.canvas.draw_rect_outline(bx, 326, 52, 24, RgbaColor.white);
             self.canvas.draw_text(v.label(), bx + 12, 334, 1, if (is_sel) RgbaColor.black else RgbaColor.white);
         }
-        self.canvas.draw_text("[1-4]:Slice [S]:Catalyst [Space]:Pause [R]:Rewind", 310, 334, 1, RgbaColor.slate);
+        self.canvas.draw_text("[S]:Solve [I]:Inspect [Spc]:Pause [R]:Rewind", 310, 334, 1, RgbaColor.slate);
     }
 };
 
@@ -1051,6 +1085,12 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
+        /// 1 while the state inspector is open (D-070); the clock is paused then.
+        fn wasm_inspector_open() callconv(.C) u8 {
+            if (runtime()) |rt| return @intFromBool(rt.inspector.open);
+            return 0;
+        }
+
         fn wasm_get_fact_count() callconv(.C) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.world.fact_count());
@@ -1060,6 +1100,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     };
     @export(Exports.wasm_init, .{ .name = "wasm_init" });
     @export(Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
+    @export(Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
     @export(Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
     @export(Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
     @export(Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });
@@ -1261,4 +1302,78 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     // Reloading the deck releases the program and starts again.
     try rt.load_deck(0);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+}
+
+test "D-070: the inspector pauses, navigates like the desktop's, and draws over the stage" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot, Keeper
+        \\  props: Lamp
+        \\  marks: Steps, Pier
+        \\
+        \\relation Knows(who, whom)
+        \\relation Owes(who, whom)
+        \\relation Lit(lamp)
+        \\
+        \\remember Knows(Hero, Pilot)
+        \\remember Owes(Hero, Keeper)
+        \\remember Knows(Pilot, Keeper)
+        \\remember Lit(Lamp) for 40 ticks
+        \\
+        \\routine Wait(Hero):
+        \\  wait 1 ticks
+    ;
+    const decks = [_]Deck{script_deck("QUAY", script)};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    // Opening pauses the clock, and closing restores the run state it found.
+    try testing.expectEqual(BrowserActionTag.inspector_toggled, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'I' }));
+    try testing.expect(rt.inspector.open and rt.is_paused);
+    const tick = rt.world.current_tick;
+    // Clock and deck keys wait while it is open.
+    try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'N' }));
+    try testing.expectEqual(tick, rt.world.current_tick);
+
+    // The capture is the desktop's: the same function, the same facts.
+    rt.render_frame();
+    const display = @import("display.zig");
+    var desktop: [display.MAX_DEBUG_FACTS]display.RenderDebugFact = undefined;
+    try testing.expectEqual(display.capture_debug_facts(&rt.world, &desktop), rt.inspector.fact_count);
+
+    // Hero has the most edges, so it is the default focus; Right then Enter recentres.
+    const hero = rt.world.lookup_entity("Hero").?;
+    const first = rt.inspector.layout().?;
+    try testing.expectEqual(hero, first.center.entity);
+    try testing.expectEqual(@as(usize, 2), first.ring_len);
+    try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.right }));
+    try testing.expectEqual(@as(usize, 1), rt.inspector.selected);
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.enter });
+    try testing.expectEqual(first.ring[1].entity, rt.inspector.focus.?);
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.backspace });
+    try testing.expectEqual(hero, rt.inspector.focus.?);
+
+    // A click on a ring node recentres on it, as on desktop.
+    const ring0 = rt.inspector.layout().?.ring[0];
+    try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .pointer_down, .x = ring0.x, .y = ring0.y }));
+    try testing.expectEqual(ring0.entity, rt.inspector.focus.?);
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.home });
+    try testing.expect(rt.inspector.focus == null);
+
+    // F cycles the filter: all, beliefs (Knows), then each relation.
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'F' });
+    try testing.expectEqualStrings("BELIEFS", rt.inspector.filter.label());
+
+    // The overlay replaces the stage: its panel colour fills the stage box.
+    rt.render_frame();
+    const px = rt.canvas.get_pixel(300, 100);
+    try testing.expectEqual(@as(u8, 9), px.r);
+
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'i' });
+    try testing.expect(!rt.inspector.open and !rt.is_paused);
+    try rt.step_tick();
+    try testing.expect(rt.world.current_tick > tick);
 }

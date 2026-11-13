@@ -952,6 +952,19 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Running the whole solution on one key press: not chosen; a beat per press lets a visitor watch each step.
 **Consequences:** `bespoke-proofs.wasm` now carries the compiler and grew from 97 KB to 383 KB, under the 1 MiB guard; the page is about 722 KB. Every wasm golden line changed; the desktop transcript and render goldens did not. DOTT's solution is mostly host facts, as on desktop, so its browser beats set those facts rather than fire cues. Typed commands are still desktop only. The engine's own Zig deck also renders through the fitted projection.
 
+## D-070 Browser State Inspector: the Desktop Inspector Drawn in the Canvas (2026-11-12, status: accepted)
+**Context:** P30-04 (moved from P27-03 by D-058) waited for the browser runtime to hold fact and dialogue state, which D-069 provided. The desktop State tab (D-058, D-059) is drawn by the SDL renderer, but its fact capture (`display.zig`) and its layout, filter, and expiry logic (`display/state_graph.zig`) use no SDL. The maintainer chose (2026-11-12) to draw the inspector in the wasm canvas and to pause while it is open.
+**Decision:**
+1. **One capture, one layout.** `display.capture_debug_facts` is the desktop frame's 128-fact capture, made a public function; the desktop frame and the browser both call it. `src/wasm_inspector.zig` lays out the graph with `state_graph.build`, cycles filters with `next_filter`, and lists deadlines with `next_expiring`, so both inspectors draw the same state the same way.
+2. **The overlay replaces the stage.** `I` toggles it. It draws the focus in the centre with neighbours on a ring and labelled edges (labels of several facts between the same pair stack), the focus's values and states, the open dialogue's branches with pruned ones in red, and the next six expirations, in the desktop's colours. The HUD, timeline, banner, and verb bar stay visible.
+3. **It pauses.** Opening pauses the clock and remembers the run state; closing restores it. While open, clock, deck, and solve keys wait; R and the timeline still rewind and scrub, and a focus the World no longer mentions is dropped with its history.
+4. **The desktop's keys, as DOM key codes.** The runtime's key event is one byte, so the page sends the DOM `keyCode` for Left (37), Right (39), Enter (13), Backspace (8), and Home (36); F filters. A click on a ring node recentres. Navigation lives in the runtime, not the World, and is never saved.
+5. **Pages forward the keys.** The showcase and the `bespoke init` page send `I` and the named keys; `wasm_inspector_open` lets the showcase stop deck and clock keys while it is open and label the state INSPECTING.
+**Alternatives:**
+- An HTML panel fed by a JSON export: not chosen; only the showcase would have it, and the layout logic would be redone in JavaScript.
+- A live inspector that keeps ticking: not chosen; the desktop pauses, and a moving graph is hard to read.
+**Consequences:** Every wasm build, including generated projects' web builds, has the inspector. The canvas is 640 by 360, so long names are clipped. The wasm golden records the overlay for every deck. The proofs module grew to 412 KB.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

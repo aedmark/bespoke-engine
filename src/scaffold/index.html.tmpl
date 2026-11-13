@@ -12,7 +12,7 @@
 </head>
 <body>
 <canvas id="stage" width="640" height="360"></canvas>
-<p>Click a mark to walk. Right-click changes the verb. Space pauses, N steps, R rewinds, and the number keys answer a dialogue.</p>
+<p>Click a mark to walk. Right-click changes the verb. Space pauses, N steps, R rewinds, and the number keys answer a dialogue. I opens the state inspector: arrows select, Enter centres, Backspace goes back, Home resets, F filters.</p>
 <script>
 // Loads {{name}}.wasm (the engine's browser runtime with the game's compiled script) and drives it:
 // 20 ticks a second, pointer and key events in, the RGBA framebuffer out. Serve this folder
@@ -35,10 +35,13 @@ WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {}).then(({ instance })
   canvas.addEventListener('mousedown', (e) => { if (e.button === 0) { w.wasm_on_pointer_down(...toCanvas(e)); draw(); } });
   canvas.addEventListener('mousemove', (e) => w.wasm_on_pointer_move(...toCanvas(e)));
   canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); w.wasm_on_right_click(...toCanvas(e)); draw(); });
+  // Named keys reach the state inspector as their DOM keyCodes; other keys as characters.
+  const NAMED = { ArrowLeft: 37, ArrowRight: 39, Enter: 13, Backspace: 8, Home: 36 };
   window.addEventListener('keydown', (e) => {
-    if (e.key.length !== 1) return;
+    const code = NAMED[e.key] || (e.key.length === 1 ? e.key.charCodeAt(0) : 0);
+    if (!code) return;
     e.preventDefault();
-    w.wasm_on_key_down(e.key.charCodeAt(0));
+    w.wasm_on_key_down(code);
     draw();
   });
   setInterval(() => { w.wasm_step_tick(); draw(); }, TICK_MS);

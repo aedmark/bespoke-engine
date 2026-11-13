@@ -127,7 +127,8 @@
     btnPlayPause.innerHTML = paused ? '<span>▶</span> Resume' : '<span>[||]</span> Pause';
     simLed.className = `led-dot ${paused ? 'amber' : 'green'}`;
     simStateText.textContent = paused ? 'SIMULATION PAUSED' : 'SIMULATION RUNNING';
-    runtimePaused.textContent = paused ? 'PAUSED' : 'RUNNING';
+    const inspecting = exp && exp.wasm_inspector_open && exp.wasm_inspector_open();
+    runtimePaused.textContent = inspecting ? 'INSPECTING' : paused ? 'PAUSED' : 'RUNNING';
   }
 
   function drawFrame() {
@@ -343,8 +344,28 @@
     if (soundEnabled) playBeep(880, 'sine', 0.1, 0.2);
   });
 
+  // The state inspector's named keys (D-070), sent as the DOM keyCodes the runtime expects.
+  const INSPECTOR_KEYS = { ArrowLeft: 37, ArrowRight: 39, Enter: 13, Backspace: 8, Home: 36, f: 70, F: 70 };
+
   window.addEventListener('keydown', (event) => {
     if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
+    if (exp && (event.key === 'i' || event.key === 'I')) {
+      event.preventDefault();
+      exp.wasm_on_key_down(73);
+      log('INSPECT', exp.wasm_inspector_open() ? 'State inspector open; the clock is paused.' : 'State inspector closed.', 'info');
+      refresh();
+      return;
+    }
+    if (exp && exp.wasm_inspector_open && exp.wasm_inspector_open()) {
+      // While it is open the inspector takes its keys; R still rewinds, the rest wait.
+      if (event.key in INSPECTOR_KEYS) {
+        event.preventDefault();
+        exp.wasm_on_key_down(INSPECTOR_KEYS[event.key]);
+        refresh();
+        return;
+      }
+      if (event.key !== 'r' && event.key !== 'R') return;
+    }
     if (event.key >= '1' && event.key <= '9' && exp && exp.wasm_dialogue_open && exp.wasm_dialogue_open()) {
       // An open dialogue takes the number keys (D-069); otherwise they switch decks.
       event.preventDefault();

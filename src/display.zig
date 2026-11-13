@@ -117,6 +117,25 @@ const VALUE_RELATIONS = [_][]const u8{
     "DialogueChosen", "DialogueBranchCount", "DialogueBranchActive",
 };
 
+/// Copies the World's facts for the inspectors (P9-01, D-011, D-058): live facts first, then the
+/// ones that expired this tick, up to `out.len`. Returns the count. The browser runtime calls this
+/// too, so both inspectors read the same capture (P30-04, D-070).
+pub fn capture_debug_facts(world: *const World, out: []RenderDebugFact) usize {
+    var count: usize = 0;
+    const slice = world.facts.slice();
+    for (0..world.facts.len) |fi| {
+        if (count == out.len) break;
+        out[count] = debug_fact(world, slice.get(fi), false);
+        count += 1;
+    }
+    for (world.get_recently_expired()) |fact| {
+        if (count == out.len) break;
+        out[count] = debug_fact(world, fact, true);
+        count += 1;
+    }
+    return count;
+}
+
 fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDebugFact {
     var df = RenderDebugFact{
         .subject_name = undefined,
@@ -781,19 +800,7 @@ pub const DisplayBridge = struct {
 
         // 7. Capture relational facts for the inspectors (P9-01, D-011, D-058): live facts first,
         // then the ones that expired this tick, up to MAX_DEBUG_FACTS.
-        var df_count: usize = 0;
-        const slice = world.facts.slice();
-        for (0..world.facts.len) |fi| {
-            if (df_count == self.back_buffer.debug_facts.len) break;
-            self.back_buffer.debug_facts[df_count] = debug_fact(world, slice.get(fi), false);
-            df_count += 1;
-        }
-        for (world.get_recently_expired()) |fact| {
-            if (df_count == self.back_buffer.debug_facts.len) break;
-            self.back_buffer.debug_facts[df_count] = debug_fact(world, fact, true);
-            df_count += 1;
-        }
-        self.back_buffer.debug_fact_count = df_count;
+        self.back_buffer.debug_fact_count = capture_debug_facts(world, &self.back_buffer.debug_facts);
 
         // 8. Capture active fibers for debug inspector (P9-01, D-011)
         var fib_count: usize = 0;
