@@ -60,18 +60,23 @@ fn record(allocator: std.mem.Allocator, out: *std.ArrayList(u8), index: u8) !voi
             .ticks => |n| try tick(rt, n),
             .event => |ev| _ = try rt.dispatch_event(ev),
             .walks => {
-                // Every mark in order, letting the player arrive at each.
+                // Every mark on stage in order, letting the player arrive at each. Positions come
+                // from the runtime's own projection (D-069), as a visitor's clicks would.
                 const count = rt.spatial.graph.waypoints.items.len;
                 for (0..count) |i| {
                     const wp = rt.spatial.graph.waypoints.items[i];
-                    const pt = wasm.world_to_canvas(wp.pos.x, wp.pos.y);
+                    const proj = rt.projection();
+                    if (!proj.shows(wp.room)) continue;
+                    const pt = proj.point(wp.pos.x, wp.pos.y);
                     _ = try rt.dispatch_event(.{ .kind = .pointer_down, .x = pt.x, .y = pt.y });
                     try tick(rt, 4);
                 }
             },
             .hotspots => {
                 for (rt.spatial.hotspots.items) |hs| {
-                    const pt = wasm.world_to_canvas(hs.pos.x, hs.pos.y);
+                    const proj = rt.projection();
+                    if (!proj.shows(hs.room)) continue;
+                    const pt = proj.point(hs.pos.x, hs.pos.y);
                     _ = try rt.dispatch_event(.{ .kind = .pointer_down, .x = pt.x, .y = pt.y });
                 }
             },

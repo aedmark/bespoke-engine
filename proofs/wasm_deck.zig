@@ -1,518 +1,491 @@
-//! The proofs' decks for the browser runtime (P32-04, D-042): each deck's stage, its
-//! after-tick rule, and its `[S]` catalyst, moved unchanged from the engine's `src/wasm.zig`.
-//! `proofs/wasm_main.zig` exports them as `bespoke-proofs.wasm`; `proofs/wasm_golden_test.zig`
-//! drives them natively.
+//! The proofs' decks for the browser runtime (P30-05, D-069). Each deck runs its proof's own
+//! script through `wasm.script_deck_with`, so the showcase plays the script its viewer shows.
+//! What stays here is the host work the desktop proofs do in Zig: who the player is, opening
+//! placements, the Living Village's society, and the `[S]` solve key, which plays the desktop
+//! proof's solution one beat per press. `proofs/wasm_main.zig` exports these as
+//! `bespoke-proofs.wasm`; `proofs/wasm_golden_test.zig` drives them natively.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const society = bespoke.society;
 const wasm = bespoke.wasm;
 const WasmRuntime = wasm.WasmRuntime;
+const EntityId = bespoke.EntityId;
+
+const TAVERN_SCRIPT = @embedFile("tavern_script");
+const SPITTING_CONTEST_SCRIPT = @import("spitting_contest.zig").SPITTING_CONTEST_SCRIPT;
+const GK3_MOUSTACHE_SCRIPT = @import("gk3_moustache.zig").GK3_MOUSTACHE_SCRIPT;
+const VILLAGE_SCRIPT = @import("village.zig").VILLAGE_SCRIPT;
+const GOAT_PUZZLE_SCRIPT = @import("goat_puzzle.zig").GOAT_PUZZLE_SCRIPT;
+const DOTT_PUZZLE_SCRIPT = @import("dott_puzzle.zig").DOTT_PUZZLE_SCRIPT;
+const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
 
 pub const decks = [_]wasm.Deck{
-    .{ .title = "TAVERN HEIST (GUARD, BARD & CAT)", .background = .{ .r = 28, .g = 21, .b = 18 }, .load = load_tavern_heist, .catalyst = catalyst_tavern_heist },
-    .{ .title = "BOOTY ISLAND SPITTING CONTEST", .background = .{ .r = 16, .g = 42, .b = 58 }, .load = load_spitting_contest, .catalyst = catalyst_spitting_contest },
-    .{ .title = "GK3: CAT MOUSTACHE PUZZLE", .background = .{ .r = 32, .g = 52, .b = 34 }, .load = load_gk3_moustache, .catalyst = catalyst_gk3_moustache },
-    .{ .title = "THE LIVING VILLAGE (EMERGENCE)", .background = .{ .r = 22, .g = 44, .b = 28 }, .load = load_living_village, .catalyst = catalyst_living_village, .after_tick = village_after_tick },
-    .{ .title = "BROKEN SWORD: LOCHMARNE GOAT", .background = .{ .r = 38, .g = 48, .b = 40 }, .load = load_goat_puzzle, .catalyst = catalyst_goat_puzzle },
-    .{ .title = "DAY OF THE TENTACLE TRIO", .background = .{ .r = 42, .g = 24, .b = 48 }, .load = load_dott_puzzle, .catalyst = catalyst_dott_puzzle },
-    .{ .title = "CAUSTIC GROG (CONTAINER DEGRADATION)", .background = .{ .r = 20, .g = 42, .b = 40 }, .load = load_grog_puzzle, .catalyst = catalyst_grog_puzzle, .after_tick = grog_after_tick },
+    wasm.script_deck_with("TAVERN HEIST (GUARD, BARD & CAT)", TAVERN_SCRIPT, .{
+        .player = "Cat",
+        .intro = "Tavern Heist: you are the Cat. Click a mark to walk; [S] plays the solution.",
+        .background = .{ .r = 28, .g = 21, .b = 18 },
+        .catalyst = solver(&TAVERN_SOLUTION),
+    }),
+    wasm.script_deck_with("BOOTY ISLAND SPITTING CONTEST", SPITTING_CONTEST_SCRIPT, .{
+        .player = "Guybrush",
+        .intro = "Spitting Contest: TALK, LOOK, or USE on people and props; [S] plays the solution.",
+        .background = .{ .r = 16, .g = 42, .b = 58 },
+        .catalyst = solver(&SPIT_SOLUTION),
+    }),
+    wasm.script_deck_with("GK3: CAT MOUSTACHE PUZZLE", GK3_MOUSTACHE_SCRIPT, .{
+        .player = "Gabriel",
+        .intro = "GK3: Gabriel needs a disguise. Use the verbs, or [S] for the next step.",
+        .background = .{ .r = 32, .g = 52, .b = 34 },
+        .setup = gk3_setup,
+        .catalyst = solver(&GK3_SOLUTION),
+    }),
+    wasm.script_deck_with("THE LIVING VILLAGE (EMERGENCE)", VILLAGE_SCRIPT, .{
+        .background = .{ .r = 22, .g = 44, .b = 28 },
+        .setup = village_setup,
+        .catalyst = village_desperation,
+        .after_tick = village_after_tick,
+    }),
+    wasm.script_deck_with("BROKEN SWORD: LOCHMARNE GOAT", GOAT_PUZZLE_SCRIPT, .{
+        .player = "George",
+        .intro = "Lochmarne: get past the goat into the cellar. [S] plays the next step.",
+        .background = .{ .r = 38, .g = 48, .b = 40 },
+        .setup = goat_setup,
+        .catalyst = solver(&GOAT_SOLUTION),
+    }),
+    wasm.script_deck_with("DAY OF THE TENTACLE TRIO", DOTT_PUZZLE_SCRIPT, .{
+        .player = "Bernard",
+        .intro = "DOTT: three eras, one toilet. [S] plays the next step of the solution.",
+        .background = .{ .r = 42, .g = 24, .b = 48 },
+        .setup = dott_setup,
+        .catalyst = solver(&DOTT_SOLUTION),
+    }),
+    wasm.script_deck_with("CAUSTIC GROG (CONTAINER DEGRADATION)", GROG_PUZZLE_SCRIPT, .{
+        .player = "Mara",
+        .intro = "Caustic Grog: press [S] now to run for the lock before the cups fail.",
+        .background = .{ .r = 20, .g = 42, .b = 40 },
+        .catalyst = solver(&GROG_SOLUTION),
+    }),
 };
 
-fn load_tavern_heist(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Tavern");
-    const cat = try rt.world.intern_entity("Cat");
-    const guard = try rt.world.intern_entity("Guard");
-    const bard = try rt.world.intern_entity("Bard");
-    const cheese = try rt.world.intern_entity("Cheese");
-    const carries = try rt.world.intern_relation("Carries", .set);
+// =============================================================================
+// Solve key: the desktop proofs' solutions, one beat per press
+// =============================================================================
 
-    const hearth_wp = try rt.spatial.graph.add_waypoint(room, 0, 0, "Hearth");
-    const bar_wp = try rt.spatial.graph.add_waypoint(room, 20, 0, "Bar");
-    const cellar_wp = try rt.spatial.graph.add_waypoint(room, 40, 0, "Cellar");
-    try rt.spatial.graph.connect(hearth_wp, bar_wp, null);
-    try rt.spatial.graph.connect(bar_wp, cellar_wp, null);
+const Fact = struct {
+    subject: []const u8,
+    relation: []const u8,
+    /// An entity name for the object, or null to use `value`.
+    object: ?[]const u8 = null,
+    value: u32 = 0,
+    /// Lifetime in ticks; 0 is permanent.
+    ttl: u64 = 0,
+};
 
-    const fire_ent = try rt.world.intern_entity("Fireplace");
-    const cask_ent = try rt.world.intern_entity("WineCask");
-    try rt.spatial.add_hotspot(fire_ent, room, .{ .x = 0, .y = -8 }, 6, "Fireplace", "Warm stone tavern hearth.");
-    try rt.spatial.add_hotspot(cask_ent, room, .{ .x = 40, .y = -8 }, 6, "WineCask", "Oak wine cask in the cellar.");
+/// One host action. Cues are what a player does; the rest is host work the desktop proof does
+/// in Zig (walks, scene changes, item transfers, pours) or facts its host sets directly.
+const Action = union(enum) {
+    cue: struct { name: []const u8, actor: []const u8, a: ?[]const u8 = null, b: ?[]const u8 = null },
+    /// Runs ticks; an open dialogue is answered with its first option, as the proofs do.
+    ticks: u8,
+    /// Ticks until the actor stops walking (at most 40).
+    settle: []const u8,
+    walk: struct { actor: []const u8, mark: []const u8 },
+    scene: struct { scene: []const u8, actor: ?[]const u8 = null, mark: ?[]const u8 = null },
+    remember: Fact,
+    forget: Fact,
+    transfer: struct { item: []const u8, from: []const u8, to: []const u8 },
+    /// A container pour; the beat stops with a hint when nothing moves.
+    pour: struct { from: []const u8, to: []const u8 },
+};
 
-    try rt.spatial.register_entity(cat, hearth_wp, 10);
-    try rt.spatial.register_entity(guard, bar_wp, 8);
-    try rt.spatial.register_entity(bard, hearth_wp, 8);
-    try rt.world.remember(guard, carries, cheese.to_int(), 0);
-    rt.player_entity = cat;
-    rt.set_banner("Tavern Heist: Click waypoints to move Cat or press [S] to charm Guard!");
-}
+const Beat = struct {
+    note: []const u8,
+    actions: []const Action,
+};
 
-fn load_spitting_contest(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Booty Island");
-    const guybrush = try rt.world.intern_entity("Guybrush");
-    const organiser = try rt.world.intern_entity("Organiser");
-    const onlookers = try rt.world.intern_entity("Onlookers");
-    const thick_rel = try rt.world.intern_relation("thick", .property);
-    const wind_rel = try rt.world.intern_relation("blowing", .property);
+/// Progress is a World fact, so rewinding the timeline rewinds the solve key with it.
+const PROGRESS_SUBJECT = "SolveKey";
+const PROGRESS_RELATION = "SolveBeat";
 
-    const start_wp = try rt.spatial.graph.add_waypoint(room, 4, 2, "Starting Line");
-    const track_wp = try rt.spatial.graph.add_waypoint(room, 22, 2, "Flag Marker");
-    const dock_wp = try rt.spatial.graph.add_waypoint(room, 38, 2, "Lookout Dock");
-    try rt.spatial.graph.connect(start_wp, track_wp, null);
-    try rt.spatial.graph.connect(track_wp, dock_wp, null);
-
-    const flags_ent = try rt.world.intern_entity("DistanceFlags");
-    try rt.spatial.add_hotspot(flags_ent, room, .{ .x = 22, .y = -6 }, 6, "DistanceFlags", "Contest distance flags on the lawn.");
-
-    try rt.spatial.register_entity(guybrush, start_wp, 10);
-    try rt.spatial.register_entity(organiser, start_wp, 8);
-    try rt.spatial.register_entity(onlookers, track_wp, 8);
-    try rt.world.remember(guybrush, thick_rel, 0, 0);
-    try rt.world.remember(room, wind_rel, 1, 0);
-    rt.player_entity = guybrush;
-    rt.set_banner("Spitting Contest: Press [G] GreenDrink, [F] Move Flags, [S] Spit!");
-}
-
-fn load_gk3_moustache(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Hotel Garden");
-    const gabriel = try rt.world.intern_entity("Gabriel");
-    const mosely = try rt.world.intern_entity("Mosely");
-    const stray_cat = try rt.world.intern_entity("StrayCat");
-    const buthane = try rt.world.intern_entity("Buthane");
-
-    const corr_wp = try rt.spatial.graph.add_waypoint(room, 0, 2, "HotelCorridor");
-    const fence_wp = try rt.spatial.graph.add_waypoint(room, 20, 2, "FenceGap");
-    const shop_wp = try rt.spatial.graph.add_waypoint(room, 38, 2, "BikeShop");
-    try rt.spatial.graph.connect(corr_wp, fence_wp, null);
-    try rt.spatial.graph.connect(fence_wp, shop_wp, null);
-
-    const hole_ent = try rt.world.intern_entity("FenceHole");
-    try rt.spatial.add_hotspot(hole_ent, room, .{ .x = 20, .y = -7 }, 6, "FenceHole", "Broken picket fence gap.");
-
-    try rt.spatial.register_entity(gabriel, corr_wp, 10);
-    try rt.spatial.register_entity(mosely, corr_wp, 8);
-    try rt.spatial.register_entity(stray_cat, fence_wp, 12);
-    try rt.spatial.register_entity(buthane, shop_wp, 8);
-    rt.player_entity = gabriel;
-    rt.set_banner("GK3 Cat Moustache: Click FenceHole or press [S] to craft disguise!");
-}
-
-fn load_living_village(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Living Village");
-    const sheriff = try rt.world.intern_entity("Sheriff");
-    const baker = try rt.world.intern_entity("Baker");
-    const farmer = try rt.world.intern_entity("Farmer");
-    const gossip = try rt.world.intern_entity("Gossip");
-    const drifter = try rt.world.intern_entity("Drifter");
-
-    const hunger_rel = try rt.world.intern_relation("Hunger", .property);
-    const gold_rel = try rt.world.intern_relation("Gold", .property);
-    const friend_rel = try rt.world.intern_relation("Friend", .set);
-
-    const bakery_wp = try rt.spatial.graph.add_waypoint(room, 2, -8, "Bakery");
-    const farm_wp = try rt.spatial.graph.add_waypoint(room, 2, 6, "Farm");
-    const sq_wp = try rt.spatial.graph.add_waypoint(room, 20, -1, "TownSquare");
-    const jail_wp = try rt.spatial.graph.add_waypoint(room, 38, 6, "SheriffsPost");
-    try rt.spatial.graph.connect(bakery_wp, sq_wp, null);
-    try rt.spatial.graph.connect(farm_wp, sq_wp, null);
-    try rt.spatial.graph.connect(sq_wp, jail_wp, null);
-
-    const oven_ent = try rt.world.intern_entity("BakeryOven");
-    try rt.spatial.add_hotspot(oven_ent, room, .{ .x = 2, .y = -12 }, 6, "BakeryOven", "Warm sourdough brick oven.");
-
-    try rt.spatial.register_entity(sheriff, jail_wp, 12);
-    try rt.spatial.register_entity(baker, bakery_wp, 10);
-    try rt.spatial.register_entity(farmer, farm_wp, 10);
-    try rt.spatial.register_entity(gossip, sq_wp, 12);
-    try rt.spatial.register_entity(drifter, sq_wp, 11);
-
-    try rt.world.remember(sheriff, hunger_rel, 20, 0);
-    try rt.world.remember(baker, hunger_rel, 25, 0);
-    try rt.world.remember(farmer, hunger_rel, 45, 0);
-    try rt.world.remember(drifter, hunger_rel, 70, 0);
-    try rt.world.remember(drifter, gold_rel, 0, 0);
-    try rt.world.remember(baker, friend_rel, gossip.to_int(), 0);
-    try rt.world.remember(gossip, friend_rel, sheriff.to_int(), 0);
-
-    rt.player_entity = sheriff;
-    rt.set_banner("Living Village: Watch autonomous drives or press [S] for Theft Catalyst!");
-}
-
-fn load_goat_puzzle(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Lochmarne Courtyard");
-    const george = try rt.world.intern_entity("George");
-    const goat = try rt.world.intern_entity("BillyGoat");
-    const stake = try rt.world.intern_entity("TetherStake");
-
-    const tether_rel = try rt.world.intern_relation("TetheredTo", .set);
-
-    const ent_wp = try rt.spatial.graph.add_waypoint(room, 4, 2, "Entrance");
-    const plough_wp = try rt.spatial.graph.add_waypoint(room, 16, 8, "Plough");
-    const tether_wp = try rt.spatial.graph.add_waypoint(room, 24, 2, "Tether");
-    const dig_wp = try rt.spatial.graph.add_waypoint(room, 38, 2, "CellarDig");
-    try rt.spatial.graph.connect(ent_wp, plough_wp, null);
-    try rt.spatial.graph.connect(plough_wp, tether_wp, null);
-    try rt.spatial.graph.connect(tether_wp, dig_wp, null);
-
-    const cellar_ent = try rt.world.intern_entity("CellarEntrance");
-    const plough_ent = try rt.world.intern_entity("FarmPlough");
-    try rt.spatial.add_hotspot(cellar_ent, room, .{ .x = 38, .y = -6 }, 6, "CellarEntrance", "Peagram's Templar excavation dig.");
-    try rt.spatial.add_hotspot(plough_ent, room, .{ .x = 16, .y = 6 }, 6, "FarmPlough", "Old heavy iron farm plough.");
-
-    try rt.spatial.register_entity(george, ent_wp, 10);
-    try rt.spatial.register_entity(goat, tether_wp, 8);
-    try rt.world.remember(goat, tether_rel, stake.to_int(), 0);
-
-    rt.player_entity = george;
-    rt.set_banner("Lochmarne Goat: [1] Approach Dig [2] Drag Plough [3] Descend to Crypt!");
-}
-
-fn load_dott_puzzle(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Motel Lobby");
-    const bernard = try rt.world.intern_entity("Bernard");
-    const hoagie = try rt.world.intern_entity("Hoagie");
-    const laverne = try rt.world.intern_entity("Laverne");
-
-    const desk_wp = try rt.spatial.graph.add_waypoint(room, 6, 2, "LobbyDesk");
-    const toilet_wp = try rt.spatial.graph.add_waypoint(room, 20, 2, "ToiletMark1993");
-    const guard_wp = try rt.spatial.graph.add_waypoint(room, 36, 2, "GuardPost");
-    try rt.spatial.graph.connect(desk_wp, toilet_wp, null);
-    try rt.spatial.graph.connect(toilet_wp, guard_wp, null);
-
-    const wine_ent = try rt.world.intern_entity("VintageWine");
-    const flyer_ent = try rt.world.intern_entity("TentacleFlyer");
-    const carries_rel = try rt.world.intern_relation("Carries", .set);
-
-    try rt.spatial.register_entity(bernard, desk_wp, 8);
-    try rt.spatial.register_entity(hoagie, toilet_wp, 8);
-    try rt.spatial.register_entity(laverne, guard_wp, 8);
-
-    _ = try rt.world.remember(bernard, carries_rel, wine_ent.to_int(), 0);
-    _ = try rt.world.remember(bernard, carries_rel, flyer_ent.to_int(), 0);
-
-    rt.player_entity = bernard;
-    rt.set_banner("DOTT Trio: [S] Flush Wine & Flyer to Hoagie, Craft Battery, Sew Flag!");
-}
-
-fn catalyst_tavern_heist(rt: *WasmRuntime) anyerror!void {
-    const guard = try rt.world.intern_entity("Guard");
-    const bard = try rt.world.intern_entity("Bard");
-    const cat = try rt.world.intern_entity("Cat");
-    const cheese = try rt.world.intern_entity("Cheese");
-    const charmed = try rt.world.intern_relation("CharmedBy", .set);
-    const carries = try rt.world.intern_relation("Carries", .set);
-
-    try rt.world.remember(guard, charmed, bard.to_int(), rt.world.current_tick + 10);
-    _ = rt.world.forget(guard, carries, cheese.to_int());
-    try rt.world.remember(cat, carries, cheese.to_int(), 0);
-    rt.set_banner("Bard charmed Guard! Cat snatched the Cheese!");
-}
-
-fn catalyst_spitting_contest(rt: *WasmRuntime) anyerror!void {
-    const guybrush = try rt.world.intern_entity("Guybrush");
-    const champion = try rt.world.intern_relation("SpitChampion", .property);
-    try rt.world.remember(guybrush, champion, 1, 0);
-    rt.set_banner("Guybrush spits across the tailwind! 1st Place Champion!");
-}
-
-fn catalyst_gk3_moustache(rt: *WasmRuntime) anyerror!void {
-    const gabriel = try rt.world.intern_entity("Gabriel");
-    const disguised = try rt.world.intern_relation("Disguised", .property);
-    const keys = try rt.world.intern_relation("HasBikeKeys", .property);
-    try rt.world.remember(gabriel, disguised, 1, 0);
-    try rt.world.remember(gabriel, keys, 1, 0);
-    rt.set_banner("Gabriel crafts the cat-hair moustache and rents Mosely's bike!");
-}
-
-fn catalyst_living_village(rt: *WasmRuntime) anyerror!void {
-    const drifter = try rt.world.intern_entity("Drifter");
-    const hunger_rel = try rt.world.intern_relation("Hunger", .property);
-    const arrested_rel = try rt.world.intern_relation("Arrested", .set);
-    const stolen_rel = try rt.world.intern_relation("StolenFrom", .set);
-    _ = rt.world.forget(drifter, arrested_rel, null);
-    _ = rt.world.forget(drifter, stolen_rel, null);
-    try rt.world.remember(drifter, hunger_rel, 85, 0);
-    try rt.step_tick();
-}
-
-fn catalyst_goat_puzzle(rt: *WasmRuntime) anyerror!void {
-    const goat = try rt.world.intern_entity("BillyGoat");
-    const plough = try rt.world.intern_entity("FarmPlough");
-    const tangled_rel = try rt.world.intern_relation("TangledWith", .property);
-    const moved_rel = try rt.world.intern_relation("PloughMoved", .property);
-    try rt.world.remember(goat, tangled_rel, plough.to_int(), 0);
-    try rt.world.remember(plough, moved_rel, 1, 0);
-    rt.set_banner("Hauled plough into rope line! Billy Goat is tangled and secured!");
-}
-
-fn catalyst_dott_puzzle(rt: *WasmRuntime) anyerror!void {
-    const hoagie = try rt.world.intern_entity("Hoagie");
-    const laverne = try rt.world.intern_entity("Laverne");
-    const bat_rel = try rt.world.intern_relation("ToiletPowered", .property);
-    const flag_rel = try rt.world.intern_relation("TentacleFlagSewn", .property);
-    const chop_rel = try rt.world.intern_relation("TreeChoppedDown", .property);
-    const free_rel = try rt.world.intern_relation("FreedFromTree", .property);
-    const disg_rel = try rt.world.intern_relation("TentacleDisguiseActive", .property);
-
-    try rt.world.remember(hoagie, bat_rel, 1, 0);
-    try rt.world.remember(hoagie, flag_rel, 1, 0);
-    try rt.world.remember(hoagie, chop_rel, 1, 0);
-    try rt.world.remember(laverne, free_rel, 1, 0);
-    try rt.world.remember(laverne, disg_rel, 1, 0);
-    rt.set_banner("DOTT Trio Solved! Super Battery crafted, Tentacle Flag sewn, Laverne freed!");
-}
-
-/// The browser stage's stage ladder and exposure lengths. The desktop proof uses its script's
-/// 4/3/2 ticks and 10 measures; the browser's four-tick walk legs need a little more room, so
-/// this deck keeps the same rule with its own tuning.
-const GROG_STAGE_NAMES = [_][]const u8{ "GrogSound", "Pitted", "Buckling", "GrogFailed" };
-const GROG_STAGE_TICKS = [_]u64{ 6, 4, 3 };
-
-fn grog_stage_index(name: []const u8) ?usize {
-    for (GROG_STAGE_NAMES, 0..) |stage, i| {
-        if (std.mem.eql(u8, stage, name)) return i;
-    }
-    return null;
-}
-
-fn load_grog_puzzle(rt: *WasmRuntime) anyerror!void {
-    const room = try rt.world.intern_entity("Saltglass Stockade");
-    const mara = try rt.world.intern_entity("Mara");
-    const ivo = try rt.world.intern_entity("Ivo");
-    const barrel = try rt.world.intern_entity("GrogBarrel");
-    const cup_a = try rt.world.intern_entity("CupA");
-    const cup_b = try rt.world.intern_entity("CupB");
-    const cup_c = try rt.world.intern_entity("CupC");
-    const lock = try rt.world.intern_entity("CellLock");
-    const grog = try rt.world.intern_entity("CausticGrog");
-    const sound = try rt.world.intern_entity("GrogSound");
-    for (GROG_STAGE_NAMES) |stage_name| _ = try rt.world.intern_entity(stage_name);
-
-    const contains = try rt.world.intern_relation("Contains", .set);
-    const volume = try rt.world.intern_relation("Volume", .property);
-    const stage = try rt.world.intern_relation("ContainerStage", .property);
-    const exposure = try rt.world.intern_relation("ContainerExposure", .property);
-    const carries = try rt.world.intern_relation("Carries", .set);
-    const imprisoned = try rt.world.intern_relation("imprisoned", .property);
-
-    const barrel_wp = try rt.spatial.graph.add_waypoint(room, 0, 4, "BarrelMark");
-    const gallery_one_wp = try rt.spatial.graph.add_waypoint(room, 14, 4, "GalleryOne");
-    const gallery_two_wp = try rt.spatial.graph.add_waypoint(room, 28, 4, "GalleryTwo");
-    const lock_wp = try rt.spatial.graph.add_waypoint(room, 40, 4, "LockMark");
-    try rt.spatial.graph.connect(barrel_wp, gallery_one_wp, null);
-    try rt.spatial.graph.connect(gallery_one_wp, gallery_two_wp, null);
-    try rt.spatial.graph.connect(gallery_two_wp, lock_wp, null);
-
-    try rt.spatial.add_hotspot(barrel, room, .{ .x = 0, .y = -4 }, 7, "Grog Barrel", "A tarred barrel breathing sharp green fumes.");
-    try rt.spatial.add_hotspot(lock, room, .{ .x = 40, .y = -3 }, 7, "Cell Lock", "A thick iron lock between Ivo and the docks.");
-
-    try rt.spatial.register_entity(mara, barrel_wp, 10);
-    try rt.spatial.register_entity(ivo, lock_wp, 1);
-    try rt.world.remember(mara, carries, cup_a.to_int(), 0);
-    try rt.world.remember(mara, carries, cup_b.to_int(), 0);
-    try rt.world.remember(mara, carries, cup_c.to_int(), 0);
-    for ([_]bespoke.EntityId{ cup_a, cup_b, cup_c }) |cup| {
-        try rt.world.remember(cup, stage, sound.to_int(), 0);
-        try rt.world.remember(cup, volume, 0, 0);
-    }
-    try rt.world.remember(cup_a, volume, 16, 0);
-    try rt.world.remember(cup_a, contains, grog.to_int(), 0);
-    try rt.world.remember(cup_a, exposure, sound.to_int(), GROG_STAGE_TICKS[0]);
-    try rt.world.remember(ivo, imprisoned, 0, 0);
-
-    rt.player_entity = mara;
-    rt.set_banner("Caustic Grog: [S] pours A to B, then B to C; reach LockMark with four measures!");
-}
-
-/// The deck's own container lifecycle: spill while the holder moves, then advance an expired
-/// stage. The desktop proof runs the engine's ContainerSystem; this keeps the browser stage
-/// playable without compiling a script into the wasm module.
-fn grog_after_tick(rt: *WasmRuntime) anyerror!void {
-    const mara = rt.world.lookup_entity("Mara") orelse return;
-    const grog = rt.world.lookup_entity("CausticGrog") orelse return;
-    const contains = rt.world.lookup_relation("Contains") orelse return;
-    const volume = rt.world.lookup_relation("Volume") orelse return;
-    const stage_rel = rt.world.lookup_relation("ContainerStage") orelse return;
-    const exposure = rt.world.lookup_relation("ContainerExposure") orelse return;
-    const failed_rel = try rt.world.intern_relation("ContainerFailedAt", .property);
-    const moving = rt.spatial.is_moving(mara);
-
-    for ([_][]const u8{ "CupA", "CupB", "CupC" }) |cup_name| {
-        const cup = rt.world.lookup_entity(cup_name) orelse continue;
-        if (!rt.world.has_fact(cup, contains, grog.to_int())) continue;
-
-        if (moving) {
-            const before = rt.world.get_property(cup, volume) orelse continue;
-            const after = before -| 1;
-            try rt.world.remember(cup, volume, after, 0);
-            if (after == 0) {
-                _ = rt.world.forget(cup, contains, grog.to_int());
-                _ = rt.world.forget(cup, exposure, null);
-                var msg: [80]u8 = undefined;
-                rt.set_banner(std.fmt.bufPrint(&msg, "{s} runs dry in transit.", .{cup_name}) catch "A cup runs dry.");
-                continue;
+fn solver(comptime beats: []const Beat) *const fn (rt: *WasmRuntime) anyerror!void {
+    return struct {
+        fn run(rt: *WasmRuntime) anyerror!void {
+            const key = try rt.world.intern_entity(PROGRESS_SUBJECT);
+            const progress = try rt.world.intern_relation(PROGRESS_RELATION, .property);
+            const done: usize = rt.world.get_property(key, progress) orelse 0;
+            if (done >= beats.len) {
+                rt.set_banner("Solved. Press [R] to rewind and play it yourself.");
+                return;
             }
+            const beat = beats[done];
+            rt.set_banner(beat.note);
+            for (beat.actions) |action| {
+                if (!try perform(rt, action)) return;
+            }
+            try rt.world.remember(key, progress, @intCast(done + 1), 0);
         }
+    }.run;
+}
 
-        const stage_value = rt.world.get_property(cup, stage_rel) orelse continue;
-        if (rt.world.has_fact(cup, exposure, stage_value)) continue;
-        const stage_name = rt.world.get_entity_name(bespoke.EntityId.from_int(stage_value)) orelse continue;
-        const current = grog_stage_index(stage_name) orelse continue;
-        if (current + 1 >= GROG_STAGE_NAMES.len) continue;
-        const next = rt.world.lookup_entity(GROG_STAGE_NAMES[current + 1]) orelse continue;
-        try rt.world.remember(cup, stage_rel, next.to_int(), 0);
+fn entity(rt: *WasmRuntime, name: []const u8) !EntityId {
+    return rt.world.intern_entity(name);
+}
 
-        var msg: [96]u8 = undefined;
-        if (current + 1 == GROG_STAGE_NAMES.len - 1) {
-            _ = rt.world.forget(cup, contains, grog.to_int());
-            try rt.world.remember(cup, volume, 0, 0);
-            if (rt.spatial.get_current_waypoint(mara)) |waypoint| {
-                try rt.world.remember(cup, failed_rel, waypoint, 0);
-            }
-            rt.set_banner(std.fmt.bufPrint(&msg, "{s} fails in Mara's hands.", .{cup_name}) catch "A cup fails.");
-        } else {
-            try rt.world.remember(cup, exposure, next.to_int(), GROG_STAGE_TICKS[current + 1]);
-            rt.set_banner(std.fmt.bufPrint(&msg, "{s} reaches {s}.", .{ cup_name, GROG_STAGE_NAMES[current + 1] }) catch "A cup degrades.");
+fn relation(rt: *WasmRuntime, name: []const u8) !bespoke.RelationKind {
+    return rt.world.lookup_relation(name) orelse rt.world.intern_relation(name, .set);
+}
+
+fn fact_object(rt: *WasmRuntime, fact: Fact) !u32 {
+    return if (fact.object) |name| (try entity(rt, name)).to_int() else fact.value;
+}
+
+fn mark_in_room(rt: *WasmRuntime, actor: EntityId, name: []const u8) ?bespoke.WaypointId {
+    if (rt.spatial.get_current_waypoint(actor)) |wp| {
+        if (rt.spatial.graph.get_waypoint(wp)) |here| {
+            if (rt.spatial.graph.find_waypoint_in_room(here.room, name)) |found| return found;
         }
     }
+    return rt.spatial.graph.find_waypoint(name);
 }
 
-fn grog_has_contents(rt: *WasmRuntime, cup: bespoke.EntityId) bool {
-    const grog = rt.world.lookup_entity("CausticGrog") orelse return false;
-    const contains = rt.world.lookup_relation("Contains") orelse return false;
-    return rt.world.has_fact(cup, contains, grog.to_int());
-}
-
-fn grog_has_volume(rt: *WasmRuntime, cup: bespoke.EntityId) bool {
-    if (!grog_has_contents(rt, cup)) return false;
-    const volume = rt.world.lookup_relation("Volume") orelse return false;
-    return (rt.world.get_property(cup, volume) orelse 0) > 0;
-}
-
-fn grog_at_lock(rt: *WasmRuntime) bool {
-    const mara = rt.world.lookup_entity("Mara") orelse return false;
-    const waypoint = rt.spatial.get_current_waypoint(mara) orelse return false;
-    const mark = rt.spatial.graph.get_waypoint(waypoint) orelse return false;
-    return std.mem.eql(u8, mark.name, "LockMark");
-}
-
-fn grog_pour(rt: *WasmRuntime, source: bespoke.EntityId, target: bespoke.EntityId, target_name: []const u8) anyerror!bool {
-    const grog = rt.world.lookup_entity("CausticGrog") orelse return false;
-    const contains = rt.world.lookup_relation("Contains") orelse return false;
-    const volume = rt.world.lookup_relation("Volume") orelse return false;
-    const stage_rel = rt.world.lookup_relation("ContainerStage") orelse return false;
-    const exposure = rt.world.lookup_relation("ContainerExposure") orelse return false;
-
-    const target_stage_value = rt.world.get_property(target, stage_rel) orelse return false;
-    const target_stage_name = rt.world.get_entity_name(bespoke.EntityId.from_int(target_stage_value)) orelse return false;
-    const target_stage = grog_stage_index(target_stage_name) orelse return false;
-    if (target_stage >= GROG_STAGE_NAMES.len - 1) {
-        rt.set_banner("That cup is already ruined.");
-        return false;
+/// Returns false when the beat cannot go on; the banner then says why.
+fn perform(rt: *WasmRuntime, action: Action) !bool {
+    switch (action) {
+        .cue => |c| {
+            const program = if (rt.program) |*p| p else return false;
+            const a = if (c.a) |n| try entity(rt, n) else null;
+            const b = if (c.b) |n| try entity(rt, n) else null;
+            _ = try rt.vm.fire_cue(program, c.name, try entity(rt, c.actor), a, b);
+        },
+        .ticks => |n| for (0..n) |_| {
+            try rt.step_tick();
+            if (bespoke.dialogue.view(&rt.world) != null) {
+                if ((try rt.vm.choose(0)) != null) try rt.step_tick();
+            }
+        },
+        .settle => |name| {
+            const actor = try entity(rt, name);
+            var guard: usize = 0;
+            while (guard < 40) : (guard += 1) {
+                try rt.step_tick();
+                if (!rt.spatial.is_moving(actor)) break;
+            }
+        },
+        .walk => |w| {
+            const actor = try entity(rt, w.actor);
+            const mark = mark_in_room(rt, actor, w.mark) orelse return false;
+            _ = try rt.spatial.walk_to_with_world(&rt.world, actor, mark);
+        },
+        .scene => |s| {
+            const scene = try entity(rt, s.scene);
+            try rt.vm.transition_to_scene(scene);
+            if (s.actor) |name| {
+                const mark = if (s.mark) |m| rt.spatial.graph.find_waypoint_in_room(scene, m) else null;
+                _ = try rt.spatial.transition_actor(try entity(rt, name), scene, mark);
+            }
+        },
+        .remember => |f| try rt.world.remember(try entity(rt, f.subject), try relation(rt, f.relation), try fact_object(rt, f), f.ttl),
+        .forget => |f| _ = rt.world.forget(try entity(rt, f.subject), try relation(rt, f.relation), if (f.object != null or f.value != 0) try fact_object(rt, f) else null),
+        .transfer => |t| _ = try rt.world.transfer_item(try entity(rt, t.item), try entity(rt, t.from), try entity(rt, t.to)),
+        .pour => |p| {
+            const program = if (rt.program) |*prog| prog else return false;
+            if (program.degradations.items.len == 0) return false;
+            const system = try bespoke.container.ContainerSystem.init(&rt.world, program.degradations.items[0].config);
+            const moved = system.pour(&rt.world, try entity(rt, p.from), try entity(rt, p.to)) catch 0;
+            if (moved == 0) {
+                rt.set_banner("The cup gave out before the pour. Press [R] to rewind, then [S] at once.");
+                return false;
+            }
+        },
     }
-
-    const amount = rt.world.get_property(source, volume) orelse return false;
-    try rt.world.remember(target, contains, grog.to_int(), 0);
-    try rt.world.remember(target, volume, amount, 0);
-    try rt.world.remember(source, volume, 0, 0);
-    _ = rt.world.forget(source, contains, grog.to_int());
-    _ = rt.world.forget(source, exposure, null);
-    try rt.world.remember(target, exposure, target_stage_value, GROG_STAGE_TICKS[target_stage]);
-
-    var msg: [96]u8 = undefined;
-    rt.set_banner(std.fmt.bufPrint(&msg, "Poured {d} measures into {s}; its damage stays.", .{ amount, target_name }) catch "Poured without loss.");
     return true;
 }
 
-fn catalyst_grog_puzzle(rt: *WasmRuntime) anyerror!void {
-    const ivo = rt.world.lookup_entity("Ivo") orelse return;
-    const lock = rt.world.lookup_entity("CellLock") orelse return;
-    const cup_a = rt.world.lookup_entity("CupA") orelse return;
-    const cup_b = rt.world.lookup_entity("CupB") orelse return;
-    const cup_c = rt.world.lookup_entity("CupC") orelse return;
-    const volume = rt.world.lookup_relation("Volume") orelse return;
-    const cup_c_volume = if (grog_has_contents(rt, cup_c)) (rt.world.get_property(cup_c, volume) orelse 0) else 0;
-    const at_lock = grog_at_lock(rt);
+// The Tavern Heist's desktop host charms the Guard and moves the Cheese itself; the script's
+// rules make the Guard turn to each.
+const TAVERN_SOLUTION = [_]Beat{
+    .{ .note = "The Bard's lute charms the Guard.", .actions = &.{
+        .{ .remember = .{ .subject = "Guard", .relation = "CharmedBy", .object = "Bard", .ttl = 10 } },
+        .{ .ticks = 2 },
+    } },
+    .{ .note = "While the Guard is charmed, the Cat takes the Cheese.", .actions = &.{
+        .{ .forget = .{ .subject = "Guard", .relation = "Carries", .object = "Cheese" } },
+        .{ .remember = .{ .subject = "Cat", .relation = "Carries", .object = "Cheese" } },
+        .{ .ticks = 2 },
+    } },
+};
 
-    if (cup_c_volume >= 4 and at_lock) {
-        const dissolved = try rt.world.intern_relation("dissolved", .property);
-        const imprisoned = try rt.world.intern_relation("imprisoned", .property);
-        try rt.world.remember(lock, dissolved, 0, 0);
-        _ = rt.world.forget(ivo, imprisoned, null);
-        rt.set_banner("The grog bites through the lock. Ivo is free!");
-        return;
-    }
-    if (cup_c_volume >= 4) {
-        rt.set_banner("Cup C holds four measures; Mara must stand at LockMark.");
-        return;
-    }
+const SPIT_SOLUTION = [_]Beat{
+    .{ .note = "Guybrush drinks the green drink.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Guybrush", .a = "GreenDrink" } }, .{ .ticks = 2 } } },
+    .{ .note = "Guybrush sounds the ship's horn.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Guybrush", .a = "Horn" } }, .{ .ticks = 2 } } },
+    .{ .note = "Guybrush moves the flags while nobody watches.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Guybrush", .a = "Flags" } }, .{ .ticks = 2 } } },
+    .{ .note = "The wind picks up.", .actions = &.{ .{ .cue = .{ .name = "Gusts", .actor = "Guybrush" } }, .{ .ticks = 1 } } },
+    .{ .note = "Guybrush spits.", .actions = &.{ .{ .cue = .{ .name = "Spits", .actor = "Guybrush" } }, .{ .ticks = 1 } } },
+};
 
-    if (grog_has_volume(rt, cup_a) and !grog_has_contents(rt, cup_b)) {
-        _ = try grog_pour(rt, cup_a, cup_b, "Cup B");
-        return;
-    }
-    if (grog_has_volume(rt, cup_b) and !grog_has_contents(rt, cup_c)) {
-        _ = try grog_pour(rt, cup_b, cup_c, "Cup C");
-        return;
-    }
-    if (at_lock) {
-        rt.set_banner("Cup C is dry; rewind with [R] and pour sooner.");
-    } else {
-        rt.set_banner("The cups are dry; rewind with [R] and pour sooner.");
+const GK3_SOLUTION = [_]Beat{
+    .{ .note = "Gabriel searches his desk.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "RoomDesk" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel takes Mosely's passport.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "MoselyDoor" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel draws a moustache on the passport.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "Marker", .b = "MoselyPassport" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel heads into the garden and finds the spray bottle.", .actions = &.{
+        .{ .scene = .{ .scene = "Hotel Garden", .actor = "Gabriel", .mark = "GardenPath" } },
+        .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "GardenShrub" } },
+        .{ .ticks = 1 },
+    } },
+    .{ .note = "Gabriel tapes the hole in the fence.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "MaskingTape", .b = "FenceHole" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel sprays the cat through the fence.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "SprayBottle", .b = "StrayCat" } }, .{ .ticks = 8 } } },
+    .{ .note = "Gabriel collects the cat hair from the tape.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "FenceHole" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel makes a moustache with the syrup.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "CatHair", .b = "Syrup" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel puts on the moustache.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "CatMoustache", .b = "Gabriel" } }, .{ .ticks = 1 } } },
+    .{ .note = "Gabriel asks Madame Buthane for Mosely's motorcycle.", .actions = &.{
+        .{ .scene = .{ .scene = "Bike Rental Shop", .actor = "Gabriel", .mark = "ShopEntrance" } },
+        .{ .cue = .{ .name = "TalksTo", .actor = "Gabriel", .a = "Buthane" } },
+        .{ .ticks = 4 },
+    } },
+};
+
+const GOAT_SOLUTION = [_]Beat{
+    .{ .note = "George heads for the cellar.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "George", .a = "CellarEntrance" } }, .{ .settle = "George" }, .{ .ticks = 1 } } },
+    .{ .note = "George hauls the plough into the goat's path.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "George", .a = "FarmPlough" } }, .{ .settle = "George" }, .{ .ticks = 1 } } },
+    .{ .note = "George tries the cellar again.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "George", .a = "CellarEntrance" } }, .{ .settle = "George" }, .{ .ticks = 1 } } },
+    .{ .note = "George studies the mural in the crypt.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "George", .a = "CarvedMural" } }, .{ .ticks = 1 } } },
+};
+
+// The Day of the Tentacle proof's host passes items through the Chron-o-Johns and sets the
+// facts each era's rules react to; the rules' interruptions are the script's.
+const DOTT_SOLUTION = [_]Beat{
+    .{ .note = "Bernard flushes the vintage wine back to 1790.", .actions = &.{
+        .{ .transfer = .{ .item = "VintageWine", .from = "Bernard", .to = "Hoagie" } },
+        .{ .scene = .{ .scene = "Colonial Workshop" } },
+        .{ .ticks = 1 },
+    } },
+    .{ .note = "Hoagie seals the wine in the time capsule; two centuries turn it to vinegar.", .actions = &.{
+        .{ .forget = .{ .subject = "Hoagie", .relation = "Carries", .object = "VintageWine" } },
+        .{ .remember = .{ .subject = "VintageWine", .relation = "SealedInCapsule", .value = 1 } },
+        .{ .remember = .{ .subject = "VintageWine", .relation = "WineAgedIntoVinegar", .value = 1 } },
+        .{ .scene = .{ .scene = "Motel Lobby" } },
+        .{ .remember = .{ .subject = "Bernard", .relation = "Carries", .object = "Vinegar200Years" } },
+        .{ .ticks = 1 },
+    } },
+    .{ .note = "The vinegar goes back to Hoagie, who builds a super battery for the toilet.", .actions = &.{
+        .{ .transfer = .{ .item = "Vinegar200Years", .from = "Bernard", .to = "Hoagie" } },
+        .{ .forget = .{ .subject = "Hoagie", .relation = "Carries", .object = "Vinegar200Years" } },
+        .{ .forget = .{ .subject = "Hoagie", .relation = "Carries", .object = "BatteryCasing" } },
+        .{ .remember = .{ .subject = "Hoagie", .relation = "Carries", .object = "SuperBattery" } },
+        .{ .remember = .{ .subject = "Hoagie", .relation = "ToiletPowered", .value = 1 } },
+        .{ .scene = .{ .scene = "Colonial Workshop" } },
+        .{ .ticks = 1 },
+    } },
+    .{ .note = "Betsy Ross sews a flag from the tentacle flyer.", .actions = &.{
+        .{ .transfer = .{ .item = "TentacleFlyer", .from = "Bernard", .to = "Hoagie" } },
+        .{ .remember = .{ .subject = "BetsyRoss", .relation = "TentacleFlagSewn", .value = 1 } },
+        .{ .ticks = 2 },
+    } },
+    .{ .note = "Washington chops down the painted kumquat tree.", .actions = &.{
+        .{ .remember = .{ .subject = "Washington", .relation = "TreeChoppedDown", .object = "KumquatTree" } },
+        .{ .ticks = 2 },
+    } },
+    .{ .note = "In 2193 the tree is gone, and Laverne is free.", .actions = &.{
+        .{ .scene = .{ .scene = "Dystopian Guard Post" } },
+        .{ .remember = .{ .subject = "Laverne", .relation = "FreedFromTree", .value = 1 } },
+        .{ .forget = .{ .subject = "Laverne", .relation = "Trapped", .value = 1 } },
+        .{ .ticks = 1 },
+    } },
+};
+
+// The grog cups give out about nine ticks after the scene opens, so the whole sprint is one
+// beat: press [S] at once, or after [R].
+const GROG_SOLUTION = [_]Beat{
+    .{ .note = "Mara runs for the lock, pouring before each cup fails.", .actions = &.{
+        .{ .walk = .{ .actor = "Mara", .mark = "LockMark" } },
+        .{ .ticks = 2 },
+        .{ .pour = .{ .from = "CupA", .to = "CupB" } },
+        .{ .cue = .{ .name = "Pours", .actor = "Mara", .a = "CupA", .b = "CupB" } },
+        .{ .ticks = 2 },
+        .{ .pour = .{ .from = "CupB", .to = "CupC" } },
+        .{ .cue = .{ .name = "Pours", .actor = "Mara", .a = "CupB", .b = "CupC" } },
+        .{ .settle = "Mara" },
+        .{ .cue = .{ .name = "Dissolves", .actor = "Mara", .a = "CellLock" } },
+        .{ .ticks = 1 },
+    } },
+};
+
+// =============================================================================
+// Host setup the desktop proofs do in Zig
+// =============================================================================
+
+fn gk3_setup(rt: *WasmRuntime) anyerror!void {
+    try rt.vm.transition_to_scene(try entity(rt, "Hotel Corridor"));
+}
+
+/// The goat waits at its tether; George starts at the courtyard entrance.
+fn goat_setup(rt: *WasmRuntime) anyerror!void {
+    const courtyard = try entity(rt, "Lochmarne Castle Courtyard");
+    try rt.vm.transition_to_scene(courtyard);
+    if (rt.spatial.graph.find_waypoint_in_room(courtyard, "TetherCenter")) |tether| {
+        _ = try rt.spatial.transition_actor(try entity(rt, "BillyGoat"), courtyard, tether);
     }
 }
 
-fn grog_walk_to_mark(rt: *WasmRuntime, entity: bespoke.EntityId, mark: []const u8) !void {
-    const room = rt.world.lookup_entity("Saltglass Stockade") orelse return error.UnknownRoom;
-    const waypoint = rt.spatial.graph.find_waypoint_in_room(room, mark) orelse return error.UnknownMark;
-    try std.testing.expect(try rt.spatial.walk_to(entity, waypoint));
-    var guard: usize = 0;
-    while (rt.spatial.is_moving(entity) and guard < 20) : (guard += 1) _ = try rt.step_tick();
-    try std.testing.expect(!rt.spatial.is_moving(entity));
+/// The opening the desktop proof's host sets: Laverne trapped and guarded, the wine and the
+/// flyer with Bernard, the paint and the battery casing with Hoagie, and the present on stage.
+fn dott_setup(rt: *WasmRuntime) anyerror!void {
+    const facts = [_]Fact{
+        .{ .subject = "Laverne", .relation = "Trapped", .value = 1 },
+        .{ .subject = "Laverne", .relation = "Guarded", .value = 1 },
+        .{ .subject = "Bernard", .relation = "Carries", .object = "VintageWine" },
+        .{ .subject = "Bernard", .relation = "Carries", .object = "TentacleFlyer" },
+        .{ .subject = "Hoagie", .relation = "Carries", .object = "RedPaintBucket" },
+        .{ .subject = "Hoagie", .relation = "Carries", .object = "BatteryCasing" },
+    };
+    for (facts) |f| try rt.world.remember(try entity(rt, f.subject), try relation(rt, f.relation), try fact_object(rt, f), 0);
+    try rt.vm.transition_to_scene(try entity(rt, "Motel Lobby"));
 }
 
-test "P23-03: the browser grog deck pours and dissolves the lock" {
-    var rt = try wasm.WasmRuntime.init(std.testing.allocator, &decks, 6);
-    defer rt.deinit();
-    const mara = rt.world.lookup_entity("Mara").?;
-    const lock = rt.world.lookup_entity("CellLock").?;
+// =============================================================================
+// The Living Village: the engine's society, configured by the script
+// =============================================================================
 
-    // The intended sprint: pour at each gallery before the carried cup gives out.
-    try grog_walk_to_mark(&rt, mara, "GalleryOne");
-    try rt.trigger_catalyst();
-    try grog_walk_to_mark(&rt, mara, "GalleryTwo");
-    try rt.trigger_catalyst();
-    try grog_walk_to_mark(&rt, mara, "LockMark");
-    try rt.trigger_catalyst();
+/// The village's society. The browser runs one runtime at a time, and the deck's setup
+/// re-initialises this on every load. Held `undefined` with a flag, not as an initialised
+/// optional, so the module carries no zero data for it (D-067).
+var village_society: society.Society = undefined;
+var village_ready = false;
+const VILLAGE_HUNGER: usize = 0;
 
-    const dissolved = rt.world.lookup_relation("dissolved").?;
-    try std.testing.expect(rt.world.has_fact(lock, dissolved, 0));
+fn village_setup(rt: *WasmRuntime) anyerror!void {
+    village_ready = false;
+    const program = if (rt.program) |*p| p else return error.NoProgram;
+    if (program.societies.items.len != 1) return error.MissingVillageSociety;
+    village_society = try society.Society.init(&rt.world, program.societies.items[0].config);
+    village_ready = true;
+    rt.set_banner("Living Village: six villagers run their own day. [S] starves the Drifter.");
 }
 
-/// The village deck's own hunger, theft, rumor, and arrest rule, run after every tick.
 fn village_after_tick(rt: *WasmRuntime) anyerror!void {
-    if (rt.world.lookup_entity("Drifter")) |drifter| {
-        const hunger_rel = try rt.world.intern_relation("Hunger", .property);
-        const stolen_rel = try rt.world.intern_relation("StolenFrom", .set);
-        const rumor_rel = try rt.world.intern_relation("KnowsRumor", .set);
-        const arrested_rel = try rt.world.intern_relation("Arrested", .set);
-        const baker = rt.world.lookup_entity("Baker") orelse .none;
-        const sheriff = rt.world.lookup_entity("Sheriff") orelse .none;
+    if (!village_ready) return;
+    try village_society.step(&rt.world, &rt.spatial, &rt.vm);
+}
 
-        if (!rt.world.has_fact(drifter, arrested_rel, null)) {
-            const h = @min(100, (rt.world.get_property(drifter, hunger_rel) orelse 50) + 5);
-            try rt.world.remember(drifter, hunger_rel, h, 0);
-
-            if (h >= 80 and !rt.world.has_fact(drifter, stolen_rel, null)) {
-                try rt.world.remember(drifter, stolen_rel, baker.to_int(), 0);
-                try rt.world.remember(baker, rumor_rel, drifter.to_int(), 0);
-                rt.set_banner("[CRIME] Starving Drifter stole BreadLoaf from Baker!");
-            } else if (rt.world.has_fact(baker, rumor_rel, drifter.to_int()) and
-                !rt.world.has_fact(sheriff, rumor_rel, drifter.to_int()))
-            {
-                try rt.world.remember(sheriff, rumor_rel, drifter.to_int(), 0);
-                rt.set_banner("[RUMOR] Baker & Gossip spread theft rumor to Sheriff!");
-            } else if (rt.world.has_fact(sheriff, rumor_rel, drifter.to_int())) {
-                try rt.world.remember(drifter, arrested_rel, sheriff.to_int(), 0);
-                rt.set_banner("[ARREST] Sheriff apprehended Drifter and restored order!");
-            }
-        }
+/// The desktop proof's desperation catalyst: the Drifter is starving and penniless, and heads
+/// for the bakery. What follows (theft, witnesses, rumour, arrest) is the society's own doing.
+fn village_desperation(rt: *WasmRuntime) anyerror!void {
+    if (!village_ready) return;
+    const r = village_society.rel;
+    const drifter = try entity(rt, "Drifter");
+    _ = rt.world.forget(drifter, r.arrested, null);
+    _ = rt.world.forget(drifter, r.stolen_from, null);
+    try village_society.set_need(&rt.world, drifter, VILLAGE_HUNGER, 88);
+    try village_society.set_gold(&rt.world, drifter, 0);
+    try village_society.set_activity(&rt.world, drifter, .stealing);
+    if (rt.spatial.graph.find_waypoint("Bakery")) |bakery| {
+        _ = try society.Society.walk_to(&rt.world, &rt.spatial, drifter, bakery);
     }
+    rt.set_banner("The Drifter is starving and has no money. Watch the village react.");
+}
+
+// =============================================================================
+// Tests: every deck's solve key reaches its proof's ending
+// =============================================================================
+
+const testing = std.testing;
+
+fn load(index: u8) !*WasmRuntime {
+    const rt = try testing.allocator.create(WasmRuntime);
+    errdefer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, index);
+    return rt;
+}
+
+fn unload(rt: *WasmRuntime) void {
+    rt.deinit();
+    testing.allocator.destroy(rt);
+}
+
+fn solve(rt: *WasmRuntime) !void {
+    for (0..16) |_| try rt.trigger_catalyst();
+}
+
+fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]const u8) bool {
+    const s = rt.world.lookup_entity(subject) orelse return false;
+    const r = rt.world.lookup_relation(rel) orelse return false;
+    const o: ?u32 = if (object) |n| (rt.world.lookup_entity(n) orelse return false).to_int() else null;
+    return rt.world.find_first(s, r, o) != null;
+}
+
+test "P30-05: each deck runs its proof's script with its own player" {
+    const players = [_][]const u8{ "Cat", "Guybrush", "Gabriel", "Player", "George", "Bernard", "Mara" };
+    for (0..decks.len) |i| {
+        const rt = try load(@intCast(i));
+        defer unload(rt);
+        try testing.expect(rt.program != null);
+        try testing.expectEqualStrings(players[i], rt.world.get_entity_name(rt.player_entity).?);
+        for (0..5) |_| try rt.step_tick();
+    }
+}
+
+test "P30-05: the solve key plays each puzzle proof to its ending" {
+    {
+        const rt = try load(0);
+        defer unload(rt);
+        try solve(rt);
+        try testing.expect(holds(rt, "Cat", "Carries", "Cheese"));
+    }
+    {
+        const rt = try load(1);
+        defer unload(rt);
+        try solve(rt);
+        try testing.expect(holds(rt, "Guybrush", "Placed", "FirstPlace"));
+    }
+    {
+        const rt = try load(2);
+        defer unload(rt);
+        try solve(rt);
+        try testing.expect(holds(rt, "Gabriel", "HasBikeKeys", null));
+    }
+    {
+        const rt = try load(4);
+        defer unload(rt);
+        try solve(rt);
+        try testing.expectEqualStrings("Templar Crypt", rt.world.get_entity_name(rt.vm.current_scene.?).?);
+    }
+    {
+        const rt = try load(5);
+        defer unload(rt);
+        try solve(rt);
+        try testing.expect(holds(rt, "Laverne", "FreedFromTree", null));
+        try testing.expect(holds(rt, "Hoagie", "Carries", "SuperBattery"));
+    }
+    {
+        const rt = try load(6);
+        defer unload(rt);
+        try solve(rt);
+        try testing.expect(holds(rt, "CellLock", "dissolved", null));
+        try testing.expectEqualStrings("Solved. Press [R] to rewind and play it yourself.", rt.get_banner());
+    }
+}
+
+test "P30-05: the village's society reacts to the desperation catalyst" {
+    const rt = try load(3);
+    defer unload(rt);
+    try rt.trigger_catalyst();
+    var stole = false;
+    for (0..120) |_| {
+        try rt.step_tick();
+        if (holds(rt, "Drifter", "StolenFrom", null) or holds(rt, "Drifter", "Arrested", null)) stole = true;
+    }
+    try testing.expect(stole);
+}
+
+test "P30-05: a verb on a prop fires the script's cue" {
+    const rt = try load(6);
+    defer unload(rt);
+    rt.active_verb = .look_at;
+    const proj = rt.projection();
+    for (rt.spatial.hotspots.items) |hs| {
+        if (!std.mem.eql(u8, hs.name, "GrogBarrel")) continue;
+        const pt = proj.point(hs.pos.x, hs.pos.y);
+        try testing.expectEqual(wasm.BrowserActionTag.cue_fired, try rt.dispatch_event(.{ .kind = .pointer_down, .x = pt.x, .y = pt.y }));
+    }
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "strong enough to etch iron") != null);
 }

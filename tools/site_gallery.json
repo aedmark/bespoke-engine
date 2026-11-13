@@ -7,7 +7,7 @@
       "tag": "Systemic emergence",
       "blurb": "A patrolling Guard carries the Cheese. The Bard's lute charms him, and the Cat takes the cheese while he is distracted. No cutscene: rules react to facts as they change.",
       "source": "scenarios/tavern_heist.bespoke",
-      "source_note": "This proof builds its stage in Zig; the script shown is the stock CLI version of the same slice, which `bespoke run` plays.",
+      "source_note": "The desktop proof builds this stage in Zig; the browser deck and `bespoke run` both play this script, the stock version of the same slice.",
       "deck": 0,
       "flag": "tavern"
     },

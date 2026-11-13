@@ -71,12 +71,52 @@ pub const Deck = struct {
 /// the browser. The deck ticks through `host.tick`, shows speech in the banner, and answers an
 /// open dialogue with the number keys.
 pub fn script_deck(comptime title: []const u8, comptime program: []const u8) Deck {
+    return script_deck_with(title, program, .{});
+}
+
+/// What a script deck adds to its script (P30-05, D-069). `player` names the actor clicks and
+/// verbs act for, when the script's first routine is not the protagonist. `setup` runs after the
+/// script has started, for host work the desktop proof does in Zig (placing an actor, choosing
+/// the opening scene). `catalyst` answers the `[S]` key; `after_tick` runs after every tick.
+pub const ScriptDeckOptions = struct {
+    player: ?[]const u8 = null,
+    /// The banner shown when the deck loads, unless the script speaks first.
+    intro: ?[]const u8 = null,
+    background: RgbaColor = NO_DECK_BACKGROUND,
+    setup: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
+    catalyst: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
+    after_tick: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
+};
+
+pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8, comptime options: ScriptDeckOptions) Deck {
     const Loader = struct {
         fn load(rt: *WasmRuntime) anyerror!void {
             try rt.load_program(program);
+            if (options.player) |name| rt.player_entity = try rt.world.intern_entity(name);
+            if (options.intro) |text| {
+                if (rt.banner_len == 0) rt.set_banner(text);
+            }
+            if (options.setup) |setup| try setup(rt);
         }
     };
-    return .{ .title = title, .load = Loader.load };
+    return .{
+        .title = title,
+        .background = options.background,
+        .load = Loader.load,
+        .catalyst = options.catalyst,
+        .after_tick = options.after_tick,
+    };
+}
+
+/// The cue a verb fires on a clicked person or prop in a script deck (D-069); WALK fires none.
+pub fn verb_cue(verb: WasmVerb) ?[]const u8 {
+    return switch (verb) {
+        .walk => null,
+        .look_at => "LooksAt",
+        .talk_to => "TalksTo",
+        .pick_up => "Takes",
+        .use_with => "Uses",
+    };
 }
 
 /// Adventure verbs selectable via mouse click, right-click cycle, or touch tap (P19-02, D-008).
@@ -138,6 +178,8 @@ pub const BrowserActionTag = enum(u8) {
     catalyst_triggered,
     /// A number key answered the open dialogue of a script deck (P29-03, D-066).
     dialogue_answered,
+    /// A verb on a person or prop fired the script's cue (P30-05, D-069).
+    cue_fired,
 };
 
 // =============================================================================
@@ -302,6 +344,43 @@ pub fn world_to_canvas(world_x: i32, world_y: i32) struct { x: i32, y: i32 } {
     };
 }
 
+pub const CanvasPoint = struct { x: i32, y: i32 };
+
+/// How the stage is drawn (P30-05, D-069): only the shown room, fitted into the stage box. The
+/// room is the VM's current scene, else the room of the first mark. Marks and props of that
+/// room set the bounds; the scale never exceeds the old fixed 10 by 7 pixels per unit, so small
+/// stages keep their look, and wide or tall ones shrink to fit. Integer arithmetic only.
+pub const Projection = struct {
+    room: ?EntityId = null,
+    /// Twice the bounds' centre, so odd spans need no rounding.
+    centre2_x: i32 = 0,
+    centre2_y: i32 = 0,
+    /// Pixels per world unit, times 100.
+    scale_x: i32 = 1000,
+    scale_y: i32 = 700,
+    fixed: bool = true,
+
+    const STAGE_CENTRE_X: i32 = 320;
+    const STAGE_CENTRE_Y: i32 = 170;
+    const STAGE_HALF_W: i32 = 260;
+    const STAGE_HALF_H: i32 = 90;
+
+    pub fn point(self: Projection, x: i32, y: i32) CanvasPoint {
+        if (self.fixed) {
+            const p = world_to_canvas(x, y);
+            return .{ .x = p.x, .y = p.y };
+        }
+        return .{
+            .x = STAGE_CENTRE_X + @divTrunc((2 * x - self.centre2_x) * self.scale_x, 200),
+            .y = STAGE_CENTRE_Y + @divTrunc((2 * y - self.centre2_y) * self.scale_y, 200),
+        };
+    }
+
+    pub fn shows(self: Projection, room: EntityId) bool {
+        return self.room == null or self.room.? == room;
+    }
+};
+
 // =============================================================================
 // 2. WebAssembly Runtime & Browser Event Bridge (P19-01, P19-02, D-001, D-008)
 // =============================================================================
@@ -420,6 +499,76 @@ pub const WasmRuntime = struct {
         self.show_story();
     }
 
+    /// The room on stage and how to fit it into the canvas (D-069). Decks without marks keep
+    /// the fixed mapping.
+    pub fn projection(self: *const WasmRuntime) Projection {
+        const waypoints = self.spatial.graph.waypoints.items;
+        if (waypoints.len == 0) return .{};
+        var room = waypoints[0].room;
+        if (self.vm.current_scene) |scene| {
+            for (waypoints) |wp| if (wp.room == scene) {
+                room = scene;
+                break;
+            };
+        }
+        var min_x: i32 = std.math.maxInt(i32);
+        var max_x: i32 = std.math.minInt(i32);
+        var min_y: i32 = std.math.maxInt(i32);
+        var max_y: i32 = std.math.minInt(i32);
+        for (waypoints) |wp| if (wp.room == room) {
+            min_x = @min(min_x, wp.pos.x);
+            max_x = @max(max_x, wp.pos.x);
+            min_y = @min(min_y, wp.pos.y);
+            max_y = @max(max_y, wp.pos.y);
+        };
+        for (self.spatial.hotspots.items) |hs| if (hs.room == room) {
+            min_x = @min(min_x, hs.pos.x);
+            max_x = @max(max_x, hs.pos.x);
+            min_y = @min(min_y, hs.pos.y);
+            max_y = @max(max_y, hs.pos.y);
+        };
+        var scale_x: i32 = 1000;
+        if (max_x > min_x) scale_x = @min(scale_x, @divTrunc(Projection.STAGE_HALF_W * 2 * 100, max_x - min_x));
+        var scale_y: i32 = @divTrunc(scale_x * 7, 10);
+        if (max_y > min_y) scale_y = @min(scale_y, @divTrunc(Projection.STAGE_HALF_H * 2 * 100, max_y - min_y));
+        return .{
+            .room = room,
+            .centre2_x = min_x + max_x,
+            .centre2_y = min_y + max_y,
+            .scale_x = scale_x,
+            .scale_y = scale_y,
+            .fixed = false,
+        };
+    }
+
+    /// The room an agent stands in: the room of the mark it last reached.
+    fn agent_room(self: *const WasmRuntime, entity: EntityId) ?EntityId {
+        const wp = self.spatial.get_current_waypoint(entity) orelse return null;
+        return (self.spatial.graph.get_waypoint(wp) orelse return null).room;
+    }
+
+    /// A verb on a person or prop in a script deck fires the script's cue for the player and
+    /// runs the tick that answers it (D-069). Without a handler the banner says so; LOOK at a
+    /// prop then falls back to its examine text.
+    fn act_on(self: *WasmRuntime, target: EntityId, examine: ?[]const u8) !?BrowserActionTag {
+        const program = if (self.program) |*p| p else return null;
+        const cue = verb_cue(self.active_verb) orelse return null;
+        if (self.player_entity == .none) return null;
+        self.bind();
+        if ((try self.vm.fire_cue(program, cue, self.player_entity, target, null)) != null) {
+            try self.step_tick();
+            return .cue_fired;
+        }
+        if (self.active_verb == .look_at) {
+            if (examine) |text| {
+                self.set_banner(text);
+                return .hotspot_inspected;
+            }
+        }
+        self.set_banner("Nothing happens.");
+        return .cue_fired;
+    }
+
     /// Puts this tick's speech, else a newly offered set of choices, in the banner.
     fn show_story(self: *WasmRuntime) void {
         var buf: [256]u8 = undefined;
@@ -469,16 +618,20 @@ pub const WasmRuntime = struct {
     }
 
     /// Steps one discrete simulation tick across the active scenario spine.
-    pub fn step_tick(self: *WasmRuntime) !void {
-        // The runtime is returned by value from `init`, so pointers into it are rebound here.
+    /// Points the VM at this runtime's World, SpatialSystem, and chunk. The runtime is returned
+    /// by value from `init`, so every entry point that reaches the VM calls this first.
+    pub fn bind(self: *WasmRuntime) void {
         self.vm.world = &self.world;
         self.vm.spatial = &self.spatial;
+        self.vm.chunk = if (self.program) |*program| &program.chunk else &self.chunk;
+    }
+
+    pub fn step_tick(self: *WasmRuntime) !void {
+        self.bind();
         if (self.program) |*program| {
-            self.vm.chunk = &program.chunk;
             _ = try host_mod.tick(&self.vm, program);
             self.show_story();
         } else {
-            self.vm.chunk = &self.chunk;
             try self.vm.step_tick();
         }
 
@@ -491,6 +644,7 @@ pub const WasmRuntime = struct {
 
     /// Triggers scenario-specific emergent or puzzle catalysts (`[S]`, `[F]`, `[G]`).
     pub fn trigger_catalyst(self: *WasmRuntime) !void {
+        self.bind();
         const catalyst = if (self.decks.len > 0) self.decks[self.deck_index].catalyst else null;
         if (catalyst) |run| {
             try run(self);
@@ -547,10 +701,13 @@ pub const WasmRuntime = struct {
                     }
                 }
 
+                const proj = self.projection();
+
                 // 3. When active_verb is WALK, prioritize Waypoint navigation first
                 if (self.active_verb == .walk) {
                     for (self.spatial.graph.waypoints.items) |wp| {
-                        const pt = world_to_canvas(wp.pos.x, wp.pos.y);
+                        if (!proj.shows(wp.room)) continue;
+                        const pt = proj.point(wp.pos.x, wp.pos.y);
                         const dx = ev.x - pt.x;
                         const dy = ev.y - pt.y;
                         if (dx * dx + dy * dy <= 18 * 18) {
@@ -569,10 +726,14 @@ pub const WasmRuntime = struct {
                 var it = self.spatial.agents.iterator();
                 while (it.next()) |entry| {
                     const agent = entry.value_ptr;
-                    const pt = world_to_canvas(agent.pos.x, agent.pos.y);
+                    if (self.agent_room(agent.entity)) |room| if (!proj.shows(room)) continue;
+                    const pt = proj.point(agent.pos.x, agent.pos.y);
                     const dx = ev.x - pt.x;
                     const dy = ev.y - pt.y;
                     if (dx * dx + dy * dy <= 16 * 16) {
+                        if (agent.entity != self.player_entity) {
+                            if (try self.act_on(agent.entity, null)) |tag| return tag;
+                        }
                         const name = self.world.get_entity_name(agent.entity) orelse "Actor";
                         var buf: [80]u8 = undefined;
                         const msg = std.fmt.bufPrint(&buf, "[{s}] {s} at ({d}, {d})", .{
@@ -588,10 +749,12 @@ pub const WasmRuntime = struct {
 
                 // 5. Hotspots hit test
                 for (self.spatial.hotspots.items) |hs| {
-                    const pt = world_to_canvas(hs.pos.x, hs.pos.y);
+                    if (!proj.shows(hs.room)) continue;
+                    const pt = proj.point(hs.pos.x, hs.pos.y);
                     const dx = ev.x - pt.x;
                     const dy = ev.y - pt.y;
                     if (dx * dx + dy * dy <= 18 * 18) {
+                        if (try self.act_on(hs.entity, hs.examine_text)) |tag| return tag;
                         self.set_banner(hs.examine_text);
                         return .hotspot_inspected;
                     }
@@ -599,7 +762,8 @@ pub const WasmRuntime = struct {
 
                 // 6. Fallback Waypoints hit test (walk_to motor intent)
                 for (self.spatial.graph.waypoints.items) |wp| {
-                    const pt = world_to_canvas(wp.pos.x, wp.pos.y);
+                    if (!proj.shows(wp.room)) continue;
+                    const pt = proj.point(wp.pos.x, wp.pos.y);
                     const dx = ev.x - pt.x;
                     const dy = ev.y - pt.y;
                     if (dx * dx + dy * dy <= 18 * 18) {
@@ -637,7 +801,7 @@ pub const WasmRuntime = struct {
                         // While a script deck's dialogue is open, the number keys answer it;
                         // a scripted choice ticks at once so its body runs.
                         if (self.program != null and dialogue_mod.view(&self.world) != null) {
-                            self.vm.world = &self.world;
+                            self.bind();
                             const selection = (try self.vm.choose(idx)) orelse return .none;
                             if (selection.is_scripted()) try self.step_tick();
                             return .dialogue_answered;
@@ -665,20 +829,23 @@ pub const WasmRuntime = struct {
         self.canvas.draw_rect_outline(12, 44, CANVAS_WIDTH - 24, 248, RgbaColor.hud_border);
         self.canvas.draw_text(if (deck) |d| d.title else "NO DECK", 22, 52, 1, RgbaColor.gold);
 
+        const proj = self.projection();
+
         // 2. Spatial Edges
         for (self.spatial.graph.edges.items) |e| {
             const wp_a = self.spatial.graph.get_waypoint(e.from);
             const wp_b = self.spatial.graph.get_waypoint(e.to);
-            if (wp_a != null and wp_b != null) {
-                const p1 = world_to_canvas(wp_a.?.pos.x, wp_a.?.pos.y);
-                const p2 = world_to_canvas(wp_b.?.pos.x, wp_b.?.pos.y);
+            if (wp_a != null and wp_b != null and proj.shows(wp_a.?.room) and proj.shows(wp_b.?.room)) {
+                const p1 = proj.point(wp_a.?.pos.x, wp_a.?.pos.y);
+                const p2 = proj.point(wp_b.?.pos.x, wp_b.?.pos.y);
                 self.canvas.draw_line(p1.x, p1.y, p2.x, p2.y, RgbaColor.slate);
             }
         }
 
         // 3. Hotspots
         for (self.spatial.hotspots.items) |hs| {
-            const pt = world_to_canvas(hs.pos.x, hs.pos.y);
+            if (!proj.shows(hs.room)) continue;
+            const pt = proj.point(hs.pos.x, hs.pos.y);
             self.canvas.fill_rect(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.amber);
             self.canvas.draw_rect_outline(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.white);
             self.canvas.draw_text(hs.name, pt.x - 18, pt.y - 20, 1, RgbaColor.gold);
@@ -686,7 +853,8 @@ pub const WasmRuntime = struct {
 
         // 4. Waypoints
         for (self.spatial.graph.waypoints.items) |wp| {
-            const pt = world_to_canvas(wp.pos.x, wp.pos.y);
+            if (!proj.shows(wp.room)) continue;
+            const pt = proj.point(wp.pos.x, wp.pos.y);
             self.canvas.fill_circle(pt.x, pt.y, 9, RgbaColor{ .r = 71, .g = 85, .b = 105 });
             self.canvas.draw_circle_outline(pt.x, pt.y, 9, RgbaColor.white);
             self.canvas.draw_text(wp.name, pt.x - 18, pt.y + 12, 1, RgbaColor.slate);
@@ -697,7 +865,8 @@ pub const WasmRuntime = struct {
         var it = self.spatial.agents.iterator();
         while (it.next()) |entry| {
             const agent = entry.value_ptr;
-            const base = world_to_canvas(agent.pos.x, agent.pos.y);
+            if (self.agent_room(agent.entity)) |room| if (!proj.shows(room)) continue;
+            const base = proj.point(agent.pos.x, agent.pos.y);
             const px = base.x + @mod(rank, 3) * 14 - 14;
             const py = base.y - @divTrunc(rank, 3) * 16;
             rank += 1;
@@ -875,6 +1044,13 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
+        /// 1 while a script deck's dialogue is open, so a page can send number keys to it
+        /// instead of switching decks (D-069).
+        fn wasm_dialogue_open() callconv(.C) u8 {
+            if (runtime()) |rt| return @intFromBool(dialogue_mod.view(&rt.world) != null);
+            return 0;
+        }
+
         fn wasm_get_fact_count() callconv(.C) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.world.fact_count());
@@ -883,6 +1059,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
     };
     @export(Exports.wasm_init, .{ .name = "wasm_init" });
+    @export(Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
     @export(Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
     @export(Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
     @export(Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });

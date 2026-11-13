@@ -936,6 +936,22 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Reusing manual figures: the manual has no diagrams of these flows.
 **Consequences:** The page grew from 200 KB to 360 KB with thirteen scripts. Blurbs are prose in the JSON and are checked only for presence; the scripts, decks, and flags are checked by tests.
 
+## D-069 Browser Decks Run the Proofs' Scripts (2026-11-12, status: accepted)
+**Context:** P30-05 (from D-068) asks that the showcase play the script its viewer shows. The seven browser decks were hand-built Zig stages whose `[S]` catalyst wrote the solved facts directly, and the Living Village faked its society with a Zig rule. Running the real scripts showed four gaps: proof scripts do not name the player, the browser's verbs fired nothing, multi-scene scripts drew every scene's marks on top of each other and wide scenes ran off the canvas, and the village's society needs a host to start it. The maintainer chose (2026-11-12): verbs fire cues and `[S]` plays the desktop proof's solution; a per-deck player option; draw the current scene fitted to the stage; and the real society.
+**Decision:**
+1. **Each proof deck is a script deck.** `wasm.script_deck_with(title, script, options)` compiles the proof's own script in the browser and starts it with `host.start_script`. Options name the `player`, an `intro` banner, a `setup` hook for host work the desktop proof does in Zig (the opening scene, the goat at its tether, DOTT's starting inventory), the `catalyst`, and an `after_tick` rule. The Tavern Heist deck runs `scenarios/tavern_heist.bespoke`, passed in as an anonymous import because the proof builds its stage in Zig.
+2. **Verbs fire cues.** In a script deck, LOOK, TALK, TAKE, and USE on a person or prop fire `LooksAt`, `TalksTo`, `Takes`, or `Uses` for the player and run the tick that answers. Without a handler the banner says "Nothing happens.", and LOOK at a prop falls back to its examine text. WALK still walks.
+3. **`[S]` plays the desktop proof's solution.** Each deck lists beats in `proofs/wasm_deck.zig`; a beat is a short list of actions: a cue, ticks (answering an open dialogue with its first option, as the proofs do), a walk, a scene change, a fact the desktop host sets directly, an item transfer, or a container pour. Progress is the `SolveBeat` property of a `SolveKey` entity, so a rewind rewinds it. The grog sprint is one beat, because the cups fail about nine ticks after the scene opens.
+4. **The Living Village runs the engine society.** Its setup starts `society.Society` from the script's declaration, its after-tick rule steps it, and `[S]` is the desktop proof's desperation catalyst. The fake Zig rule is gone.
+5. **The stage shows one room, fitted.** The room is the VM's current scene, else the first mark's room. Its marks and props set the bounds; the scale is at most the old fixed 10 by 7 pixels per unit. Drawing and click tests use the same `Projection`, and people, props, and marks of other rooms are hidden.
+6. **The VM is re-bound at every entry point.** `WasmRuntime.init` returns by value, so `bind` points the VM at the runtime's World, SpatialSystem, and chunk before a tick, a catalyst, a verb, or a dialogue answer; firing a cue before re-binding read a stale World.
+7. **The page sends number keys to an open dialogue.** `wasm_dialogue_open` is exported; the site sends 1 to 9 to the runtime while a dialogue is open, and switches decks otherwise.
+**Alternatives:**
+- A `player` line in the language: deferred; a deck option needed no language change.
+- Keeping each deck's hand-made layout over the script: rejected; the stage would not match the script's scenes.
+- Running the whole solution on one key press: not chosen; a beat per press lets a visitor watch each step.
+**Consequences:** `bespoke-proofs.wasm` now carries the compiler and grew from 97 KB to 383 KB, under the 1 MiB guard; the page is about 722 KB. Every wasm golden line changed; the desktop transcript and render goldens did not. DOTT's solution is mostly host facts, as on desktop, so its browser beats set those facts rather than fire cues. Typed commands are still desktop only. The engine's own Zig deck also renders through the fitted projection.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

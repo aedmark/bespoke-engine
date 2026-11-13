@@ -143,6 +143,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    proofs_unit_tests.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
 
     // Characterization goldens (P32-07): proofs/golden_test.zig compares each proof's headless
@@ -235,6 +236,8 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseSmall,
     });
     wasm_proofs_exe.root_module.addImport("bespoke", wasm_bespoke);
+    // The Tavern Heist deck runs the stock scenario script (P30-05, D-069).
+    wasm_proofs_exe.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     wasm_proofs_exe.entry = .disabled;
     wasm_proofs_exe.rdynamic = true;
     wasm_proofs_exe.stack_size = WASM_STACK_BYTES;

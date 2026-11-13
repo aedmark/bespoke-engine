@@ -1,6 +1,7 @@
 // Browser wrapper for the standalone showcase site (P30-01, D-042).
 // tools/build_site.py embeds this file and bespoke-proofs.wasm into site/index.html.
-// The seven decks live in proofs/wasm_deck.zig; this wrapper supplies no scenes or facts.
+// The seven decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
+// wrapper supplies no scenes or facts.
 (() => {
   const canvas = document.querySelector('#sim-canvas');
   if (!canvas) return;
@@ -210,7 +211,7 @@
     if (!exp) return;
     exp.wasm_on_key_down(83);
     lastTickTime = performance.now();
-    log('CATALYST', `Deck catalyst dispatched. Facts: ${exp.wasm_get_fact_count()}.`, 'rule');
+    log('SOLVE', `Solution step played. Facts: ${exp.wasm_get_fact_count()}.`, 'rule');
     refresh();
     playBeep(700, 'triangle', 0.12, 0.12);
   }
@@ -344,7 +345,12 @@
 
   window.addEventListener('keydown', (event) => {
     if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-    if (event.key >= '1' && event.key <= '7') {
+    if (event.key >= '1' && event.key <= '9' && exp && exp.wasm_dialogue_open && exp.wasm_dialogue_open()) {
+      // An open dialogue takes the number keys (D-069); otherwise they switch decks.
+      event.preventDefault();
+      exp.wasm_on_key_down(event.key.charCodeAt(0));
+      refresh();
+    } else if (event.key >= '1' && event.key <= '7') {
       event.preventDefault();
       loadDeck(Number(event.key) - 1);
     } else if (event.key === 'n' || event.key === 'N') {
