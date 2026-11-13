@@ -71,7 +71,7 @@
       "tag": "Learning dialogue",
       "blurb": "Every duel teaches insults and their comebacks. Opponents grow tired of repeated questions, and the duel's rounds and moods live in World facts, so a rewind replays them exactly.",
       "source": "proofs/sword_fighting.zig#SWORD_FIGHTING_SCRIPT",
-      "deck": null,
+      "deck": 7,
       "flag": "sword"
     },
     {
@@ -80,7 +80,7 @@
       "tag": "Tangent worlds",
       "blurb": "A copy-on-write tangent universe runs on a countdown. Close the loop before the budget runs out, or the branch collapses.",
       "source": "proofs/darko_puzzle.zig#DARKO_PUZZLE_SCRIPT",
-      "deck": null,
+      "deck": 9,
       "flag": "darko"
     },
     {
@@ -89,7 +89,7 @@
       "tag": "Musical drafts",
       "blurb": "Four-note drafts woven on a distaff change the world. Played backwards, each draft does its opposite.",
       "source": "proofs/loom_puzzle.zig#BELL_TOWER_SCRIPT",
-      "deck": null,
+      "deck": 10,
       "flag": "bell-tower"
     },
     {
@@ -98,7 +98,7 @@
       "tag": "Stageplay paths",
       "blurb": "Wits, Fists, or Team: choosing a path locks rival gates, prunes the dialogue to that approach, and runs only that path's solution.",
       "source": "proofs/atlantis_puzzle.zig#ATLANTIS_PUZZLE_SCRIPT",
-      "deck": null,
+      "deck": 8,
       "flag": "atlantis"
     },
     {

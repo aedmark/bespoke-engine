@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const bin = path.join(__dirname, '..', 'zig-out', 'bin');
-const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 7]];
+const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 11]];
 let failed = false;
 // Each module stays under 1 MiB. The runtime's 1.2 MB of state must stay uninitialised; held
 // as an initialised global it ships as zero bytes in the data section (D-067).
@@ -42,5 +42,21 @@ for (const [file, decks] of modules) {
       failed = true;
     }
   }
+}
+// The engine synthesizer in the browser (D-071): a proof deck plays its soundtrack, which fades
+// in, so several buffers are rendered after loading the Tavern deck.
+{
+  const exp = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(bin, 'bespoke-proofs.wasm'))), {}).exports;
+  exp.wasm_init(0);
+  for (let k = 0; k < 3; k++) exp.wasm_step_tick();
+  let energy = 0;
+  for (let b = 0; b < 6; b++) {
+    const ptr = exp.wasm_audio_render(4096);
+    const samples = new Int16Array(exp.memory.buffer, ptr, 2 * 4096);
+    for (let k = 0; k < samples.length; k += 7) energy += Math.abs(samples[k]);
+  }
+  const ok = energy > 0 && exp.wasm_audio_sample_rate() === 44100;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} bespoke-proofs.wasm audio: energy ${energy}, ${exp.wasm_audio_sample_rate()} Hz`);
+  if (!ok) failed = true;
 }
 process.exit(failed ? 1 : 0);

@@ -1,6 +1,6 @@
 // Browser wrapper for the standalone showcase site (P30-01, D-042).
 // tools/build_site.py embeds this file and bespoke-proofs.wasm into site/index.html.
-// The seven decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
+// The eleven decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
 // wrapper supplies no scenes or facts.
 (() => {
   const canvas = document.querySelector('#sim-canvas');
@@ -52,6 +52,10 @@
     'Lochmarne Goat',
     'Day of the Tentacle Trio',
     'Caustic Grog',
+    'Insult Sword Fighting',
+    'Algiers: Three Paths',
+    'The Middlesex Anomaly',
+    'The Bell Tower',
   ];
   const DECK_BANNERS = [
     'TAVERN HEIST',
@@ -61,6 +65,10 @@
     'LOCHMARNE GOAT',
     'DAY OF THE TENTACLE TRIO',
     'CAUSTIC GROG',
+    'INSULT SWORD FIGHTING',
+    'ALGIERS: THREE PATHS',
+    'THE MIDDLESEX ANOMALY',
+    'THE BELL TOWER',
   ];
   const DECK_COUNT = DECK_NAMES.length;
   const TICK_INTERVAL_MS = 250;
@@ -94,6 +102,38 @@
     } catch (error) {
       // Interface audio is optional; a blocked AudioContext must not stop the simulator.
     }
+  }
+
+  // The engine's own synthesizer (D-071): a ScriptProcessor pulls stereo samples from the module
+  // while audio is on, so scores, scene music, and effects sound as they do on desktop.
+  let engineNode = null;
+
+  function startEngineAudio() {
+    if (!exp || engineNode) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: exp.wasm_audio_sample_rate() });
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      engineNode = audioCtx.createScriptProcessor(4096, 0, 2);
+      engineNode.onaudioprocess = (event) => {
+        const frames = event.outputBuffer.length;
+        const pcm = new Int16Array(exp.memory.buffer, exp.wasm_audio_render(frames), 2 * frames);
+        const left = event.outputBuffer.getChannelData(0);
+        const right = event.outputBuffer.getChannelData(1);
+        for (let i = 0; i < frames; i++) {
+          left[i] = pcm[2 * i] / 32768;
+          right[i] = pcm[2 * i + 1] / 32768;
+        }
+      };
+      engineNode.connect(audioCtx.destination);
+    } catch (error) {
+      engineNode = null;
+    }
+  }
+
+  function stopEngineAudio() {
+    if (!engineNode) return;
+    engineNode.disconnect();
+    engineNode = null;
   }
 
   function decodeBase64(value) {
@@ -341,7 +381,12 @@
     soundEnabled = !soundEnabled;
     toggleSound.textContent = soundEnabled ? 'AUDIO: ON' : 'AUDIO: MUTED';
     toggleSound.classList.toggle('active', soundEnabled);
-    if (soundEnabled) playBeep(880, 'sine', 0.1, 0.2);
+    if (soundEnabled) {
+      startEngineAudio();
+      playBeep(880, 'sine', 0.1, 0.2);
+    } else {
+      stopEngineAudio();
+    }
   });
 
   // The state inspector's named keys (D-070), sent as the DOM keyCodes the runtime expects.
@@ -371,9 +416,14 @@
       event.preventDefault();
       exp.wasm_on_key_down(event.key.charCodeAt(0));
       refresh();
-    } else if (event.key >= '1' && event.key <= '7') {
+    } else if (event.key >= '1' && event.key <= '9') {
       event.preventDefault();
       loadDeck(Number(event.key) - 1);
+    } else if (exp && 'cdefgabCDEFGAB'.includes(event.key) && event.key.length === 1) {
+      // Distaff notes in decks whose script declares drafts (D-071); other decks ignore them.
+      event.preventDefault();
+      exp.wasm_on_key_down(event.key.toUpperCase().charCodeAt(0));
+      refresh();
     } else if (event.key === 'n' || event.key === 'N') {
       event.preventDefault();
       step();
@@ -420,7 +470,7 @@
       ]) {
         if (typeof exp[name] !== 'function') throw new Error(`missing export ${name}`);
       }
-      statusEl.textContent = 'bespoke-proofs.wasm ready. Seven proof decks embedded.';
+      statusEl.textContent = 'bespoke-proofs.wasm ready. Eleven proof decks embedded.';
       log('BOOT', 'Instantiated the embedded proof runtime.', 'cue');
       loadDeck(0);
       lastTickTime = performance.now();

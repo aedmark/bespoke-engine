@@ -965,6 +965,23 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A live inspector that keeps ticking: not chosen; the desktop pauses, and a moving graph is hard to read.
 **Consequences:** Every wasm build, including generated projects' web builds, has the inspector. The canvas is 640 by 360, so long names are clipped. The wasm golden records the overlay for every deck. The proofs module grew to 412 KB.
 
+## D-071 The Last Four Browser Decks: Generated Choices, Notes, Engine Audio, and Tangent Worlds (2026-11-13, status: accepted)
+**Context:** P30-01 left four proofs desktop-only and the browser silent. Each needed something the browser runtime lacked: Insult Sword Fighting and Algiers resolve host-generated dialogue choices; the Bell Tower is played with notes on a distaff; the Middlesex Anomaly runs on the `TemporalHypervisor`. All four scripts compile and run in the browser in under 300 KB. The engine synthesizer (`AudioBridge.render_samples`) uses no SDL. The maintainer chose (2026-11-12): the hypervisor in the runtime, the engine synthesizer streamed to Web Audio, and letter keys C to B for notes.
+**Decision:**
+1. **Generated choices go to the deck.** `WasmRuntime.answer` answers the open dialogue; a scripted choice resumes its fiber, a host-generated one passes its action id to the deck's `on_choice`. Sword Fighting runs the engine `Duel` configured by its script; Algiers reuses its proof's own `configure` and path table.
+2. **Verbs name their cues per deck.** `VerbCues` replaces the fixed verb-to-cue map, so a script that answers `Talk` or `PicksUp` names them.
+3. **Notes play on a distaff.** In a deck whose script declares drafts, C D E F G A B add notes up to the player's `DistaffReach`, and the fourth weaves the phrase on the last person or prop acted on, then ticks twice so in-script weaves dispatch, as on desktop. `[S]` is the only solve key; F and G no longer trigger it. A distaff line on the stage shows the notes, the reach, and the target.
+4. **The engine synthesizer plays in the browser.** The runtime owns an `AudioBridge`, gives it the script's scores (or a deck's `soundtrack`, such as a proof's desktop music), tells it the scene and score after every tick, and sends clicks, dialogue blips, notes, and weave results. `wasm_audio_render` fills a stereo buffer at `wasm_audio_sample_rate` (44.1 kHz); the showcase and `bespoke init` pages play it through a Web Audio ScriptProcessor once the visitor turns sound on. A script deck that never names its opening scene opens in its first mark's room, so music has a scene.
+5. **A deck can own a temporal hypervisor.** `attach_hypervisor` creates it over the primary world. While a branch is live the VM, story, dialogue, inspector, distaff, and audio follow the branch (`active_world`); the deck's after-tick rule steps the hypervisor, as the desktop host does. Snapshots carry the branch world, countdown, and collapse state, and a rewind restores them in place, re-creating a branch a collapse had dropped.
+6. **One clock.** The runtime's clock is the active world's tick; when a branch collapses, the primary world takes up the branch's tick so the timeline never runs backwards.
+7. **A capped general allocator.** The browser heap is `std.heap.wasm_allocator` behind `CappedAllocator` (16 MiB). The fixed 2 MiB bump allocator never reused freed memory, so each branch re-created by a rewind would have leaked 256 KiB; the cap keeps memory bounded.
+**Alternatives:**
+- Splitting the Middlesex deck into its own item: not chosen.
+- Page-only beeps instead of the engine synthesizer: not chosen; scores and effects would differ from desktop.
+- On-screen note buttons: not chosen; letters match the desktop distaff keys.
+- A larger fixed buffer instead of a reusing allocator: rejected; a repeated rewind across a collapse would still exhaust it.
+**Consequences:** `bespoke-proofs.wasm` is 475 KB. Typed commands remain desktop-only, as do The Castle Fire Escape and The Larkspur Observatory. Audio has not been heard by a person; the tests measure non-silent samples. The page's ScriptProcessor is a deprecated API that browsers still ship; an AudioWorklet would need a second file or a Blob URL.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

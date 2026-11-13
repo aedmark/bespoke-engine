@@ -18,6 +18,11 @@ const host_mod = @import("host.zig");
 const package_mod = @import("package.zig");
 const dialogue_mod = @import("dialogue.zig");
 const inspector_mod = @import("wasm_inspector.zig");
+const draft_mod = @import("draft.zig");
+const audio_mod = @import("audio.zig");
+const hypervisor_mod = @import("hypervisor.zig");
+pub const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
+const display_mod = @import("display.zig");
 pub const Inspector = inspector_mod.Inspector;
 pub const InspectorKey = inspector_mod.Key;
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
@@ -35,6 +40,46 @@ pub const CANVAS_WIDTH: i32 = 640;
 pub const CANVAS_HEIGHT: i32 = 360;
 pub const FRAMEBUFFER_BYTES: usize = @intCast(CANVAS_WIDTH * CANVAS_HEIGHT * 4);
 pub const MAX_WASM_SNAPSHOTS: usize = 32;
+/// The ceiling on the browser runtime's heap (D-071). The previous fixed 2 MiB buffer could not
+/// reuse freed memory; a tangent world forked again after a rewind would have leaked 256 KiB.
+pub const WASM_HEAP_LIMIT: usize = 16 * 1024 * 1024;
+
+/// Fails any allocation that would take the heap past `limit`, and otherwise passes it to
+/// `child`. Freed and shrunk memory is counted back, so the ceiling bounds live memory.
+pub const CappedAllocator = struct {
+    child: std.mem.Allocator,
+    limit: usize,
+    used: usize = 0,
+
+    pub fn allocator(self: *CappedAllocator) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &.{ .alloc = alloc, .resize = resize, .free = free } };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+        const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
+        if (len > self.limit - self.used) return null;
+        const ptr = self.child.rawAlloc(len, ptr_align, ret_addr) orelse return null;
+        self.used += len;
+        return ptr;
+    }
+
+    fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+        const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
+        if (new_len > buf.len and new_len - buf.len > self.limit - self.used) return false;
+        if (!self.child.rawResize(buf, buf_align, new_len, ret_addr)) return false;
+        self.used = self.used - buf.len + new_len;
+        return true;
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+        const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
+        self.child.rawFree(buf, buf_align, ret_addr);
+        self.used -= buf.len;
+    }
+};
+
+/// The most stereo frames one `wasm_audio_render` call fills (D-071).
+pub const AUDIO_MAX_FRAMES: usize = 4096;
 pub const SNAPSHOT_SLOT_BYTES: usize = 8192;
 
 pub const RgbaColor = struct {
@@ -67,6 +112,29 @@ pub const Deck = struct {
     load: *const fn (rt: *WasmRuntime) anyerror!void,
     after_tick: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
     catalyst: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
+    /// Resolves a choice from a host-generated dialogue: the selection's action id. Scripted
+    /// choices need no hook; their fiber resumes (D-046, D-071).
+    on_choice: ?*const fn (rt: *WasmRuntime, action: u32) anyerror!void = null,
+    /// The cues the verbs fire; a script that answers `Talk` or `PicksUp` names them (D-071).
+    cues: VerbCues = .{},
+};
+
+/// The cue each verb fires on a person or prop in a script deck (D-069, D-071).
+pub const VerbCues = struct {
+    look: []const u8 = "LooksAt",
+    talk: []const u8 = "TalksTo",
+    take: []const u8 = "Takes",
+    use: []const u8 = "Uses",
+
+    pub fn of(self: VerbCues, verb: WasmVerb) ?[]const u8 {
+        return switch (verb) {
+            .walk => null,
+            .look_at => self.look,
+            .talk_to => self.talk,
+            .pick_up => self.take,
+            .use_with => self.use,
+        };
+    }
 };
 
 /// A deck that runs a game's own script (P29-03, D-066). `program` is a `.bspk` package or
@@ -89,6 +157,10 @@ pub const ScriptDeckOptions = struct {
     setup: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
     catalyst: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
     after_tick: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
+    on_choice: ?*const fn (rt: *WasmRuntime, action: u32) anyerror!void = null,
+    cues: VerbCues = .{},
+    /// Music for a script that declares no scores, such as a proof's desktop soundtrack (D-071).
+    soundtrack: ?*const audio_mod.Soundtrack = null,
 };
 
 pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8, comptime options: ScriptDeckOptions) Deck {
@@ -96,10 +168,15 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
         fn load(rt: *WasmRuntime) anyerror!void {
             try rt.load_program(program);
             if (options.player) |name| rt.player_entity = try rt.world.intern_entity(name);
+            if (options.soundtrack) |music| {
+                const scored = if (rt.script_music) |m| m.has_scores() else false;
+                if (!scored) rt.audio.set_soundtrack(music);
+            }
             if (options.intro) |text| {
                 if (rt.banner_len == 0) rt.set_banner(text);
             }
             if (options.setup) |setup| try setup(rt);
+            rt.sync_audio();
         }
     };
     return .{
@@ -108,18 +185,14 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
         .load = Loader.load,
         .catalyst = options.catalyst,
         .after_tick = options.after_tick,
+        .on_choice = options.on_choice,
+        .cues = options.cues,
     };
 }
 
 /// The cue a verb fires on a clicked person or prop in a script deck (D-069); WALK fires none.
 pub fn verb_cue(verb: WasmVerb) ?[]const u8 {
-    return switch (verb) {
-        .walk => null,
-        .look_at => "LooksAt",
-        .talk_to => "TalksTo",
-        .pick_up => "Takes",
-        .use_with => "Uses",
-    };
+    return (VerbCues{}).of(verb);
 }
 
 /// Adventure verbs selectable via mouse click, right-click cycle, or touch tap (P19-02, D-008).
@@ -185,6 +258,8 @@ pub const BrowserActionTag = enum(u8) {
     cue_fired,
     /// `I` opened or closed the state inspector (P30-04, D-070).
     inspector_toggled,
+    /// A note key added to the distaff, or wove its phrase (D-071).
+    note_played,
     /// A key or click moved the inspector's selection, focus, or filter.
     inspector_navigated,
 };
@@ -409,6 +484,18 @@ pub const WasmRuntime = struct {
     program: ?CompiledProgram = null,
     /// The state inspector overlay (D-070). Its navigation is not World state.
     inspector: Inspector = .{},
+    /// The phrase being played on the distaff, in decks whose script declares drafts (D-071).
+    /// Peripheral input like a half-typed line: never saved or rewound (D-029).
+    distaff: draft_mod.DistaffInput = .{},
+    /// The engine synthesizer (D-071): the page pulls its samples with `wasm_audio_render`.
+    audio: audio_mod.AudioBridge = .{},
+    /// The script's scores as the bridge's soundtrack. Heap-allocated, because the bridge keeps
+    /// a pointer to it and the runtime itself is moved after `init`.
+    script_music: ?*host_mod.ScriptSoundtrack = null,
+    /// A temporal hypervisor a deck attaches (D-071). While a branch is live the VM, the story,
+    /// the inspector, and the audio follow the branch world; the timeline stays on the primary.
+    /// Heap-allocated: it keeps a pointer to the primary World, re-pointed by `bind`.
+    hypervisor: ?*TemporalHypervisor = null,
 
     banner_buf: [96]u8 = [_]u8{0} ** 96,
     banner_len: usize = 0,
@@ -474,6 +561,7 @@ pub const WasmRuntime = struct {
 
         self.deck_index = if (index < self.decks.len) index else 0;
         self.inspector = .{};
+        self.distaff = .{};
         self.active_verb = .walk;
         self.is_paused = false;
         self.max_history_tick = 0;
@@ -485,8 +573,29 @@ pub const WasmRuntime = struct {
     }
 
     fn drop_program(self: *WasmRuntime) void {
+        if (self.hypervisor) |hv| {
+            hv.deinit();
+            self.allocator.destroy(hv);
+            self.hypervisor = null;
+        }
+        if (self.script_music) |music| {
+            self.audio.set_soundtrack(null);
+            music.deinit();
+            self.allocator.destroy(music);
+            self.script_music = null;
+        }
         if (self.program) |*program| program.deinit();
         self.program = null;
+    }
+
+    /// Tells the synthesizer the scene and the script's chosen score, as the desktop frame does
+    /// (D-062); it changes track only when either changes.
+    pub fn sync_audio(self: *WasmRuntime) void {
+        const world = self.active_world();
+        const scene_name = if (self.vm.current_scene) |s| world.get_entity_name(s) orelse "" else "";
+        const score = display_mod.current_score_entity(world, self.vm.current_scene);
+        const score_name = if (score) |id| world.get_entity_name(id) orelse "" else "";
+        self.audio.process_scene_and_cues(scene_name, score_name);
     }
 
     /// Loads a script or package into the freshly reset spine and starts it as the stock hosts
@@ -506,6 +615,17 @@ pub const WasmRuntime = struct {
         try host_mod.initialize_subsystems(&self.world, program);
         try self.vm.load_compiled_rules(program);
         self.player_entity = try host_mod.start_script(&self.world, &self.spatial, &self.vm, program);
+        // A script that never names its opening scene starts in its first mark's room, the room
+        // the stage shows anyway, so music and scene rules have a scene (D-071).
+        if (self.vm.current_scene == null and self.spatial.graph.waypoints.items.len > 0) {
+            try self.vm.transition_to_scene(self.spatial.graph.waypoints.items[0].room);
+        }
+        const music = try self.allocator.create(host_mod.ScriptSoundtrack);
+        errdefer self.allocator.destroy(music);
+        music.* = try host_mod.ScriptSoundtrack.init(self.allocator, program);
+        self.script_music = music;
+        if (music.has_scores()) self.audio.set_soundtrack(&music.soundtrack);
+        self.sync_audio();
         self.show_story();
     }
 
@@ -562,10 +682,14 @@ pub const WasmRuntime = struct {
     /// prop then falls back to its examine text.
     fn act_on(self: *WasmRuntime, target: EntityId, examine: ?[]const u8) !?BrowserActionTag {
         const program = if (self.program) |*p| p else return null;
-        const cue = verb_cue(self.active_verb) orelse return null;
+        const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
+        const cue = cues.of(self.active_verb) orelse return null;
+        // In a deck with drafts, whatever the player acts on becomes the weave target (D-071).
+        self.distaff.target = target;
         if (self.player_entity == .none) return null;
         self.bind();
         if ((try self.vm.fire_cue(program, cue, self.player_entity, target, null)) != null) {
+            self.audio.enqueue_sfx(.click);
             try self.step_tick();
             return .cue_fired;
         }
@@ -579,11 +703,69 @@ pub const WasmRuntime = struct {
         return .cue_fired;
     }
 
+    fn has_drafts(self: *const WasmRuntime) bool {
+        return if (self.program) |*p| p.drafts.items.len > 0 else false;
+    }
+
+    /// A note key in a deck with drafts (D-071): adds the note within the reach the script grants
+    /// (`DistaffReach` on the player, else all seven), and weaves the fourth note's phrase on the
+    /// last person or prop acted on. Two ticks run, so a weave queued by the handler dispatches
+    /// and its own handler speaks, as on desktop (D-029).
+    pub fn play_note(self: *WasmRuntime, key_code: u8) !BrowserActionTag {
+        if (!self.has_drafts() or self.player_entity == .none) return .none;
+        const note: draft_mod.Note = switch (std.ascii.toUpper(key_code)) {
+            'C' => .C,
+            'D' => .D,
+            'E' => .E,
+            'F' => .F,
+            'G' => .G,
+            'A' => .A,
+            'B' => .B,
+            else => return .none,
+        };
+        self.distaff.set_reach_from(self.active_world(), self.player_entity, "DistaffReach", 7);
+        if (!self.distaff.can_play(note)) {
+            self.distaff.clear();
+            self.set_banner("That note is beyond the distaff's reach.");
+            return .note_played;
+        }
+        self.audio.enqueue_note(@intFromEnum(note));
+        const phrase = self.distaff.press(note) orelse return .note_played;
+        if (self.distaff.target == .none) {
+            self.set_banner("Act on something first: it becomes what the draft is woven on.");
+            return .note_played;
+        }
+        self.bind();
+        const program = &self.program.?;
+        const fiber = try self.vm.weave_notes(program, self.player_entity, phrase, self.distaff.target);
+        self.distaff.outcome = if (fiber != null) .woven else .fizzled;
+        self.audio.enqueue_sfx(if (fiber != null) .weave_success else .weave_fizzle);
+        try self.step_tick();
+        try self.step_tick();
+        if (fiber == null) self.set_banner("The draft unravels.");
+        return .note_played;
+    }
+
+    /// Answers the open dialogue with option `index` (D-046): a scripted choice resumes its
+    /// fiber and ticks so the body runs; a host-generated choice goes to the deck's `on_choice`
+    /// with its action id (D-071). An index past the offered options does nothing.
+    pub fn answer(self: *WasmRuntime, index: usize) !void {
+        self.bind();
+        const selection = (try self.vm.choose(index)) orelse return;
+        self.audio.enqueue_sfx(.dialogue_blip);
+        if (selection.is_scripted()) {
+            try self.step_tick();
+        } else if (self.decks.len > 0) {
+            if (self.decks[self.deck_index].on_choice) |resolve| try resolve(self, selection.action);
+            self.record_snapshot();
+        }
+    }
+
     /// Puts this tick's speech, else a newly offered set of choices, in the banner.
     fn show_story(self: *WasmRuntime) void {
         var buf: [256]u8 = undefined;
-        if (host_mod.speech_this_tick(&self.world, &self.vm, &buf)) |line| self.set_banner(line);
-        if (dialogue_mod.view(&self.world)) |open| {
+        if (host_mod.speech_this_tick(self.active_world(), &self.vm, &buf)) |line| self.set_banner(line);
+        if (dialogue_mod.view(self.active_world())) |open| {
             var fbs = std.io.fixedBufferStream(&buf);
             const w = fbs.writer();
             for (0..open.count) |i| w.print("{s}[{d}] {s}", .{ if (i == 0) "" else "  ", i + 1, open.text(i) }) catch break;
@@ -595,14 +777,41 @@ pub const WasmRuntime = struct {
         const slot = self.snapshot_count % MAX_WASM_SNAPSHOTS;
         var fbs = std.io.fixedBufferStream(&self.snapshot_bufs[slot]);
         self.world.save_state(fbs.writer()) catch return;
+        if (self.hypervisor) |hv| write_temporal(hv, fbs.writer()) catch return;
         self.snapshot_lens[slot] = fbs.pos;
-        self.snapshot_ticks[slot] = self.world.current_tick;
+        self.snapshot_ticks[slot] = self.clock();
         if (self.snapshot_count < MAX_WASM_SNAPSHOTS) {
             self.snapshot_count += 1;
         }
-        if (self.world.current_tick > self.max_history_tick) {
-            self.max_history_tick = self.world.current_tick;
+        if (self.clock() > self.max_history_tick) {
+            self.max_history_tick = self.clock();
         }
+    }
+
+    /// The hypervisor's part of a snapshot (D-071): whether a branch is live, its world, and the
+    /// countdown and collapse state. The browser keeps its own compact form, because its slots
+    /// are small and its branch is restored in place rather than re-read into a new World.
+    fn write_temporal(hv: *TemporalHypervisor, writer: anytype) !void {
+        try writer.writeByte(@intFromBool(hv.branch_world != null));
+        if (hv.branch_world) |*branch| try branch.save_state(writer);
+        try writer.writeInt(u64, hv.ticks_elapsed, .little);
+        try writer.writeByte(@intFromEnum(hv.collapse_state));
+    }
+
+    fn read_temporal(self: *WasmRuntime, hv: *TemporalHypervisor, reader: anytype) !void {
+        const had_branch = (try reader.readByte()) != 0;
+        if (had_branch) {
+            // A rewind to before a collapse brings the branch back: clone a world to restore over.
+            if (hv.branch_world == null) hv.branch_world = try self.world.clone(self.allocator);
+            try hv.branch_world.?.restore_state(reader);
+        } else if (hv.branch_world) |*branch| {
+            branch.deinit();
+            hv.branch_world = null;
+        }
+        hv.branch_active = had_branch;
+        hv.tangent_active = had_branch;
+        hv.ticks_elapsed = try reader.readInt(u64, .little);
+        hv.collapse_state = std.meta.intToEnum(hypervisor_mod.BranchCollapseState, try reader.readByte()) catch return error.InvalidSnapshot;
     }
 
     pub fn scrub_to_tick(self: *WasmRuntime, target_tick: u64) void {
@@ -620,34 +829,70 @@ pub const WasmRuntime = struct {
         if (best_slot) |slot| {
             var fbs = std.io.fixedBufferStream(self.snapshot_bufs[slot][0..self.snapshot_lens[slot]]);
             self.world.restore_state(fbs.reader()) catch return;
+            if (self.hypervisor) |hv| self.read_temporal(hv, fbs.reader()) catch {
+                self.set_banner("Could not restore the tangent world here.");
+                return;
+            };
+            self.bind();
             self.is_paused = true;
             var buf: [64]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "Scrubbed timeline to Tick {d}.", .{self.world.current_tick}) catch "Scrubbed timeline.";
+            const msg = std.fmt.bufPrint(&buf, "Scrubbed timeline to Tick {d}.", .{self.clock()}) catch "Scrubbed timeline.";
             self.set_banner(msg);
         }
     }
 
-    /// Steps one discrete simulation tick across the active scenario spine.
-    /// Points the VM at this runtime's World, SpatialSystem, and chunk. The runtime is returned
-    /// by value from `init`, so every entry point that reaches the VM calls this first.
+    /// Creates the deck's temporal hypervisor over the primary world (D-071).
+    pub fn attach_hypervisor(self: *WasmRuntime) !*TemporalHypervisor {
+        if (self.hypervisor) |hv| return hv;
+        const hv = try self.allocator.create(TemporalHypervisor);
+        hv.* = TemporalHypervisor.init(self.allocator, &self.world);
+        self.hypervisor = hv;
+        return hv;
+    }
+
+    /// The runtime's clock, which the timeline, header, and page read: the active world's tick
+    /// (D-071). A branch is forked from the primary with its tick and runs on from it.
+    pub fn clock(self: *WasmRuntime) u64 {
+        return self.active_world().current_tick;
+    }
+
+    /// The world the player is in: the live branch, else the primary world.
+    pub fn active_world(self: *WasmRuntime) *World {
+        if (self.hypervisor) |hv| {
+            hv.primary_world = &self.world;
+            return hv.active_world();
+        }
+        return &self.world;
+    }
+
+    /// Points the VM at this runtime's active World, SpatialSystem, and chunk. The runtime is
+    /// returned by value from `init`, so every entry point that reaches the VM calls this first.
     pub fn bind(self: *WasmRuntime) void {
-        self.vm.world = &self.world;
+        self.vm.world = self.active_world();
         self.vm.spatial = &self.spatial;
         self.vm.chunk = if (self.program) |*program| &program.chunk else &self.chunk;
     }
 
+    /// Steps one discrete simulation tick across the active scenario spine.
     pub fn step_tick(self: *WasmRuntime) !void {
         self.bind();
         if (self.program) |*program| {
             _ = try host_mod.tick(&self.vm, program);
             self.show_story();
+            self.sync_audio();
         } else {
             try self.vm.step_tick();
         }
 
+        const before = self.clock();
         if (self.decks.len > 0) {
             if (self.decks[self.deck_index].after_tick) |rule| try rule(self);
         }
+        // A branch that collapsed this tick hands the clock back to the primary world, which sat
+        // still while the branch ran. The primary takes up the branch's tick so the timeline
+        // never runs backwards (D-071).
+        if (self.clock() < before) self.world.current_tick = before;
+        self.bind();
 
         self.record_snapshot();
     }
@@ -686,7 +931,7 @@ pub const WasmRuntime = struct {
                 // While the inspector is open, the stage belongs to it; the timeline still scrubs.
                 const on_timeline = ev.y >= 22 and ev.y <= 38 and ev.x >= 12 and ev.x <= 628;
                 if (self.inspector.open and !on_timeline) {
-                    self.inspector.capture(&self.world);
+                    self.inspector.capture(self.active_world());
                     return if (self.inspector.click(ev.x, ev.y)) .inspector_navigated else .none;
                 }
 
@@ -803,7 +1048,7 @@ pub const WasmRuntime = struct {
                 // While the inspector is open its keys come first, the timeline keys still work,
                 // and the clock, deck, and solve keys wait until it closes.
                 if (self.inspector.open) {
-                    self.inspector.capture(&self.world);
+                    self.inspector.capture(self.active_world());
                     if (self.inspector.key(ev.key_code)) return .inspector_navigated;
                     if (ev.key_code != 'r' and ev.key_code != 'R') return .none;
                 }
@@ -820,7 +1065,10 @@ pub const WasmRuntime = struct {
                         self.scrub_to_tick(0);
                         return .rewound;
                     },
-                    's', 'S', 'f', 'F', 'g', 'G' => {
+                    'c', 'C', 'd', 'D', 'e', 'E', 'f', 'F', 'g', 'G', 'a', 'A', 'b', 'B' => {
+                        return try self.play_note(ev.key_code);
+                    },
+                    's', 'S' => {
                         try self.trigger_catalyst();
                         return .catalyst_triggered;
                     },
@@ -828,10 +1076,8 @@ pub const WasmRuntime = struct {
                         const idx: u8 = ev.key_code - '1';
                         // While a script deck's dialogue is open, the number keys answer it;
                         // a scripted choice ticks at once so its body runs.
-                        if (self.program != null and dialogue_mod.view(&self.world) != null) {
-                            self.bind();
-                            const selection = (try self.vm.choose(idx)) orelse return .none;
-                            if (selection.is_scripted()) try self.step_tick();
+                        if (self.program != null and dialogue_mod.view(self.active_world()) != null) {
+                            try self.answer(idx);
                             return .dialogue_answered;
                         }
                         if (idx >= self.decks.len) return .none;
@@ -910,18 +1156,30 @@ pub const WasmRuntime = struct {
             self.canvas.draw_text(name, px - 14, py - 20, 1, RgbaColor.white);
         }
 
+        // The distaff in decks with drafts (D-071): the notes played so far, the reach, and the
+        // weave target.
+        if (self.has_drafts()) {
+            self.distaff.set_reach_from(self.active_world(), self.player_entity, "DistaffReach", 7);
+            var line_buf: [96]u8 = undefined;
+            var notes_buf: [8]u8 = "_ _ _ _ ".*;
+            for (self.distaff.played[0..self.distaff.len], 0..) |n, i| notes_buf[i * 2] = "CDEFGAB"[@intFromEnum(n)];
+            const target_name = if (self.distaff.target == .none) "nothing yet" else (self.world.get_entity_name(self.distaff.target) orelse "?");
+            const line = std.fmt.bufPrint(&line_buf, "DISTAFF {s}| REACH {s} | ON {s}", .{ notes_buf[0..], "CDEFGAB"[0..self.distaff.reach], target_name }) catch "DISTAFF";
+            self.canvas.draw_text(line, 22, 276, 1, RgbaColor.sky_blue);
+        }
+
         // The inspector draws over the stage; the HUD, timeline, and verb bar stay visible.
         if (self.inspector.open) {
-            self.inspector.capture(&self.world);
-            self.inspector.draw(&self.canvas, &self.world);
+            self.inspector.capture(self.active_world());
+            self.inspector.draw(&self.canvas, self.active_world());
         }
 
         // 6. Top Status & Timeline Scrubber Bar
         self.canvas.fill_rect(0, 0, CANVAS_WIDTH, 20, RgbaColor.hud_bg);
         var hdr_buf: [80]u8 = undefined;
         const hdr = std.fmt.bufPrint(&hdr_buf, "BeSpoke Wasm32 | Tick: {d:02} | Facts: {d} | {s}", .{
-            self.world.current_tick,
-            self.world.fact_count(),
+            self.clock(),
+            self.active_world().fact_count(),
             if (self.is_paused) "PAUSED" else "RUNNING",
         }) catch "BeSpoke Wasm32";
         self.canvas.draw_text(hdr, 12, 6, 1, RgbaColor.emerald);
@@ -930,7 +1188,7 @@ pub const WasmRuntime = struct {
         self.canvas.fill_rect(12, 22, CANVAS_WIDTH - 24, 16, RgbaColor.hud_bg);
         self.canvas.draw_rect_outline(12, 22, CANVAS_WIDTH - 24, 16, RgbaColor.hud_border);
         if (self.max_history_tick > 0) {
-            const fill_w: i32 = @intCast((self.world.current_tick * 612) / self.max_history_tick);
+            const fill_w: i32 = @intCast((self.clock() * 612) / self.max_history_tick);
             self.canvas.fill_rect(14, 24, fill_w, 12, RgbaColor.sky_blue);
         }
         self.canvas.draw_text("TIMELINE SCRUBBER (Click to Rewind/Scrub)", 20, 26, 1, RgbaColor.white);
@@ -965,8 +1223,10 @@ pub const WasmRuntime = struct {
 /// (`src/wasm_engine.zig`) and the proofs' (`proofs/wasm_main.zig`) differ only in their decks.
 pub fn export_runtime(comptime decks: []const Deck) void {
     const Exports = struct {
-        var global_wasm_heap: [2 * 1024 * 1024]u8 = undefined;
-        var global_fba = std.heap.FixedBufferAllocator.init(&global_wasm_heap);
+        // A general-purpose allocator under a fixed ceiling (D-071): freed memory is reused, so a
+        // tangent world dropped and re-forked across rewinds does not leak, and allocation still
+        // fails at `WASM_HEAP_LIMIT` rather than growing without bound.
+        var global_heap = CappedAllocator{ .child = std.heap.wasm_allocator, .limit = WASM_HEAP_LIMIT };
         // The runtime is about 1.2 MB. Held as `?WasmRuntime = null` it was an initialised
         // global, so the module carried 1.2 MB of zero bytes in its data section; `undefined`
         // plus a flag leaves it uninitialised memory that costs nothing to download (P30-02,
@@ -979,9 +1239,9 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_init(scenario_id: u8) callconv(.C) void {
-            global_fba.reset();
+            if (runtime_ready) global_runtime.deinit();
             runtime_ready = false;
-            global_runtime = WasmRuntime.init(global_fba.allocator(), decks, scenario_id) catch return;
+            global_runtime = WasmRuntime.init(global_heap.allocator(), decks, scenario_id) catch return;
             runtime_ready = true;
         }
 
@@ -1005,10 +1265,9 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_framebuffer_ptr() callconv(.C) [*]const u8 {
-            if (runtime()) |rt| {
-                return &rt.canvas.pixels;
-            }
-            return &global_wasm_heap;
+            // Before a runtime exists this is the uninitialised global's canvas: valid memory of
+            // the right length, so the page can read it without a check.
+            return &global_runtime.canvas.pixels;
         }
 
         fn wasm_framebuffer_len() callconv(.C) usize {
@@ -1073,7 +1332,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         fn wasm_get_tick() callconv(.C) u32 {
             if (runtime()) |rt| {
-                return @intCast(rt.world.current_tick);
+                return @intCast(rt.clock());
             }
             return 0;
         }
@@ -1083,6 +1342,25 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         fn wasm_dialogue_open() callconv(.C) u8 {
             if (runtime()) |rt| return @intFromBool(dialogue_mod.view(&rt.world) != null);
             return 0;
+        }
+
+        var audio_samples: [2 * AUDIO_MAX_FRAMES]i16 = undefined;
+
+        /// Renders `frames` stereo frames (at most 4096) of the engine synthesizer at
+        /// `wasm_audio_sample_rate` into a buffer and returns it; the page plays it through Web
+        /// Audio (D-071). Silence before a runtime exists.
+        fn wasm_audio_render(frames: u32) callconv(.C) [*]const i16 {
+            const n: usize = @min(frames, AUDIO_MAX_FRAMES);
+            if (runtime()) |rt| {
+                rt.audio.render_samples(audio_samples[0 .. 2 * n]);
+            } else {
+                @memset(audio_samples[0 .. 2 * n], 0);
+            }
+            return &audio_samples;
+        }
+
+        fn wasm_audio_sample_rate() callconv(.C) u32 {
+            return audio_mod.SAMPLE_RATE;
         }
 
         /// 1 while the state inspector is open (D-070); the clock is paused then.
@@ -1101,6 +1379,8 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     @export(Exports.wasm_init, .{ .name = "wasm_init" });
     @export(Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
     @export(Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
+    @export(Exports.wasm_audio_render, .{ .name = "wasm_audio_render" });
+    @export(Exports.wasm_audio_sample_rate, .{ .name = "wasm_audio_sample_rate" });
     @export(Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
     @export(Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
     @export(Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });
@@ -1376,4 +1656,17 @@ test "D-070: the inspector pauses, navigates like the desktop's, and draws over 
     try testing.expect(!rt.inspector.open and !rt.is_paused);
     try rt.step_tick();
     try testing.expect(rt.world.current_tick > tick);
+}
+
+test "D-071: the capped allocator refuses past its limit and counts frees back" {
+    const testing = std.testing;
+    var capped = CappedAllocator{ .child = testing.allocator, .limit = 1000 };
+    const a = capped.allocator();
+    const first = try a.alloc(u8, 600);
+    try testing.expectError(error.OutOfMemory, a.alloc(u8, 600));
+    a.free(first);
+    try testing.expectEqual(@as(usize, 0), capped.used);
+    const second = try a.alloc(u8, 900);
+    defer a.free(second);
+    try testing.expectEqual(@as(usize, 900), capped.used);
 }

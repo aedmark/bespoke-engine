@@ -16,7 +16,7 @@ const wasm_deck = @import("wasm_deck.zig");
 
 const GOLDEN_NAME = "wasm.txt";
 const ACTUAL_NAME = "wasm.actual.txt";
-const DECK_COUNT: u8 = 7;
+const DECK_COUNT: u8 = wasm_deck.decks.len;
 
 /// How a deck is loaded. P32-04 changes where decks are defined; only this adapter changes.
 const Decks = struct {
@@ -91,7 +91,7 @@ fn record(allocator: std.mem.Allocator, out: *std.ArrayList(u8), index: u8) !voi
             entry.label,
             std.hash.Wyhash.hash(0, &rt.canvas.pixels),
             rt.world.fact_count(),
-            rt.world.current_tick,
+            rt.clock(),
             rt.get_banner(),
         });
     }

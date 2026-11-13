@@ -58,7 +58,7 @@ pub const ATLANTIS_PUZZLE_SCRIPT =
     \\    say Omar: "Come back when you know what you want."
 ;
 
-const PathSpec = struct {
+pub const PathSpec = struct {
     name: []const u8,
     gate: []const u8,
     blocked: [2][]const u8,
@@ -67,7 +67,7 @@ const PathSpec = struct {
     banner: []const u8,
 };
 
-const paths = [_]PathSpec{
+pub const paths = [_]PathSpec{
     .{
         .name = "Wits",
         .gate = "WitsGate",
@@ -94,7 +94,7 @@ const paths = [_]PathSpec{
     },
 };
 
-const Ids = struct {
+pub const Ids = struct {
     scene: bespoke.EntityId,
     indy: bespoke.EntityId,
     omar: bespoke.EntityId,
@@ -104,7 +104,7 @@ const Ids = struct {
     manuscript_wp: u16,
 };
 
-fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const scene = world.lookup_entity("Algiers Bazaar").?;
     const ids = Ids{
         .scene = scene,

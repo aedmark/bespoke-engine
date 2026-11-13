@@ -12,6 +12,7 @@
 </head>
 <body>
 <canvas id="stage" width="640" height="360"></canvas>
+<p><button id="sound" type="button">Sound: off</button></p>
 <p>Click a mark to walk. Right-click changes the verb. Space pauses, N steps, R rewinds, and the number keys answer a dialogue. I opens the state inspector: arrows select, Enter centres, Backspace goes back, Home resets, F filters.</p>
 <script>
 // Loads {{name}}.wasm (the engine's browser runtime with the game's compiled script) and drives it:
@@ -43,6 +44,28 @@ WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {}).then(({ instance })
     e.preventDefault();
     w.wasm_on_key_down(code);
     draw();
+  });
+  // The engine's own synthesizer: the module renders stereo samples that Web Audio plays.
+  // Browsers start audio only after a click, hence the button.
+  let audio = null;
+  document.getElementById('sound').addEventListener('click', (e) => {
+    if (audio) {
+      audio.close();
+      audio = null;
+      e.target.textContent = 'Sound: off';
+      return;
+    }
+    audio = new AudioContext({ sampleRate: w.wasm_audio_sample_rate() });
+    const node = audio.createScriptProcessor(4096, 0, 2);
+    node.onaudioprocess = (ev) => {
+      const n = ev.outputBuffer.length;
+      const pcm = new Int16Array(w.memory.buffer, w.wasm_audio_render(n), 2 * n);
+      const left = ev.outputBuffer.getChannelData(0);
+      const right = ev.outputBuffer.getChannelData(1);
+      for (let i = 0; i < n; i++) { left[i] = pcm[2 * i] / 32768; right[i] = pcm[2 * i + 1] / 32768; }
+    };
+    node.connect(audio.destination);
+    e.target.textContent = 'Sound: on';
   });
   setInterval(() => { w.wasm_step_tick(); draw(); }, TICK_MS);
   draw();
