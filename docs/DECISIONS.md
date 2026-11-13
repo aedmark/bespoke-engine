@@ -1027,6 +1027,19 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Store quoted lines as text: rejected; it would add another copy of the material.
 **Consequences:** `check_docs.py` fails if a listed term rises in any file. Each P35 item ends by lowering the baseline. The list holds what a review found; a term nobody listed is not counted.
 
+## D-076 A Duel Rotates Through Several Fallback Lines, Picked by a Fumble Count (2026-11-13, status: accepted)
+**Context:** P35-02's approved duel gives the player three lines to stammer when they know no comeback. `duel.Config` held one optional fallback line, and `.bspk` stored it as a 0 or 1 flag. The maintainer chose rotation: one line per fumbled round, in order.
+**Decision:**
+1. A duel declares any number of `fallback "..."` lines, up to `duel.MAX_FALLBACKS` (8); `Config.fallbacks` is the list.
+2. `Duel.replies` offers `fallbacks[fumbles % len]`, where `fumbles` is the fighter's `DuelFumbles` property. `resolve_round` raises it by one when the reply is the fallback (`.none`). The rotation is a fact, so it saves, rewinds, and replays with the world, and each fighter rotates separately.
+3. `DuelFumbles` is a field of `duel.Relations` with a default; the script's `relations` line still names seven relations, so existing scripts compile unchanged.
+4. `.bspk` version 14 reads the old flag byte as a line count. Versions 1 to 13 wrote 0 or 1, which reads the same, so they load unchanged; a count above 1 in a pre-14 package, or above 8 in any, is rejected as `InvalidDuelConfig`.
+**Alternatives:**
+- Offer all three lines as choices at once: rejected by the maintainer in favour of one line per round.
+- Pick by tick or a random draw: rejected; the line would change with timing, and the engine's simulation keeps no unseeded randomness.
+- Add `DuelFumbles` as an eighth name on the `relations` line: rejected; it would break every script that themes the vocabulary.
+**Consequences:** One more property fact per fighter who has fumbled. The relation name is not themeable from a script; a host can still set it in `duel.Relations`.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

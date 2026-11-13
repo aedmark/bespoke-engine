@@ -244,10 +244,15 @@ pub const FatigueStageDecl = struct {
 
 pub const DuelTierDecl = struct { opponent: []const u8, tier: u32 };
 
+/// Fallback lines one duel may declare; `duel.MAX_FALLBACKS` is defined from this so the
+/// parser and the runtime agree without the parser importing the duel module.
+pub const DUEL_MAX_FALLBACKS: usize = 8;
+
 pub const DuelDecl = struct {
     name: []const u8,
     pairs: []const DuelPairDecl,
-    fallback: ?[]const u8,
+    /// Each `fallback` line appends one; the duel rotates through them (D-076).
+    fallbacks: []const []const u8,
     win_at: ?u32,
     relations: [7][]const u8 = .{ "HeardChallenge", "MasteredReply", "Counters", "VariantOf", "DuelTier", "Advantage", "DuelsWon" },
     tiers: []const DuelTierDecl,
@@ -1197,9 +1202,9 @@ pub const Parser = struct {
         var pairs = std.ArrayList(DuelPairDecl).init(self.allocator);
         var tiers = std.ArrayList(DuelTierDecl).init(self.allocator);
         var stages = std.ArrayList(FatigueStageDecl).init(self.allocator);
-        var fallback: ?[]const u8 = null;
+        var fallbacks = std.ArrayList([]const u8).init(self.allocator);
         var win_at: ?u32 = null;
-        var relations = (DuelDecl{ .name = "", .pairs = &.{}, .fallback = null, .win_at = null, .tiers = &.{}, .fatigue_count_relation = "Inquiries", .fatigue_calm_label = "calm", .fatigue_stages = &.{} }).relations;
+        var relations = (DuelDecl{ .name = "", .pairs = &.{}, .fallbacks = &.{}, .win_at = null, .tiers = &.{}, .fatigue_count_relation = "Inquiries", .fatigue_calm_label = "calm", .fatigue_stages = &.{} }).relations;
         var count_relation: []const u8 = "Inquiries";
         var calm_label: []const u8 = "calm";
 
@@ -1226,7 +1231,8 @@ pub const Parser = struct {
                 if (challenge == null or reply == null) return self.set_error("duel pair '{s}' needs challenge and reply", .{pair_name});
                 try pairs.append(.{ .name = pair_name, .challenge = challenge.?, .reply = reply.?, .variants = try variants.toOwnedSlice() });
             } else if (std.mem.eql(u8, directive, "fallback")) {
-                fallback = try self.take_optional_name();
+                if (fallbacks.items.len == DUEL_MAX_FALLBACKS) return self.set_error("duel '{s}' has more than {d} fallback lines", .{ name, DUEL_MAX_FALLBACKS });
+                try fallbacks.append(try self.take_atom());
             } else if (std.mem.eql(u8, directive, "win")) {
                 const value = try self.take_optional_name();
                 win_at = if (value) |v| std.fmt.parseInt(u32, v, 10) catch return self.set_error("invalid duel win value '{s}'", .{v}) else null;
@@ -1248,7 +1254,7 @@ pub const Parser = struct {
         }
         _ = try self.expect(.dedent);
         if (pairs.items.len == 0 or stages.items.len == 0) return self.set_error("duel '{s}' needs at least one pair and fatigue stage", .{name});
-        return .{ .name = name, .pairs = try pairs.toOwnedSlice(), .fallback = fallback, .win_at = win_at, .relations = relations, .tiers = try tiers.toOwnedSlice(), .fatigue_count_relation = count_relation, .fatigue_calm_label = calm_label, .fatigue_stages = try stages.toOwnedSlice() };
+        return .{ .name = name, .pairs = try pairs.toOwnedSlice(), .fallbacks = try fallbacks.toOwnedSlice(), .win_at = win_at, .relations = relations, .tiers = try tiers.toOwnedSlice(), .fatigue_count_relation = count_relation, .fatigue_calm_label = calm_label, .fatigue_stages = try stages.toOwnedSlice() };
     }
 
     /// P23-01 declaration grammar. The ordered stage list defines progression; each vessel
@@ -2279,11 +2285,11 @@ test "P13-01: parser parses conditionally guarded dialogue choice blocks" {
 test "P13-01: parser parses relational where-clause guarded dialogue choices" {
     const testing = std.testing;
     const script =
-        \\routine InsultDuel(Guybrush):
-        \\  choice "How appropriate. You fight like a cow!" where MasteredReply(Guybrush, ReplyCow) and Counters(ReplyCow, InsultFarmer):
-        \\    say Guybrush: "How appropriate. You fight like a cow!"
-        \\  choice "I am shaking, I am shaking!":
-        \\    say Guybrush: "I am shaking, I am shaking!"
+        \\routine BarbDuel(Tamsin):
+        \\  choice "Good, then that means I can still wipe the floor with you." where MasteredReply(Tamsin, ReplyMop) and Counters(ReplyMop, BarbMop):
+        \\    say Tamsin: "Good, then that means I can still wipe the floor with you."
+        \\  choice "Er... is that the time?":
+        \\    say Tamsin: "Er... is that the time?"
     ;
 
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -2301,11 +2307,11 @@ test "P13-01: parser parses relational where-clause guarded dialogue choices" {
     switch (r.body[0]) {
         .choice_block => |choices| {
             try testing.expectEqual(@as(usize, 2), choices.len);
-            try testing.expectEqualStrings("How appropriate. You fight like a cow!", choices[0].text);
+            try testing.expectEqualStrings("Good, then that means I can still wipe the floor with you.", choices[0].text);
             try testing.expectEqual(@as(usize, 2), choices[0].where_patterns.len);
             try testing.expectEqualStrings("MasteredReply", choices[0].where_patterns[0].relation);
             try testing.expectEqualStrings("Counters", choices[0].where_patterns[1].relation);
-            try testing.expectEqualStrings("I am shaking, I am shaking!", choices[1].text);
+            try testing.expectEqualStrings("Er... is that the time?", choices[1].text);
             try testing.expectEqual(@as(usize, 0), choices[1].where_patterns.len);
         },
         else => try testing.expect(false),

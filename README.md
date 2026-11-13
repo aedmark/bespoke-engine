@@ -120,7 +120,7 @@ zig build test-proofs                     # every proof's tests
 | `--tavern` (default) | The Tavern Heist | Facts, a patrolling routine, rules that interrupt it, rewind |
 | `--spitting-contest` | Booty Island Spitting Contest | Rules that fire when a fact stops holding or expires |
 | `--gk3` | Gabriel Knight 3: The Cat Moustache | Several scenes; combining items in the inventory |
-| `--sword-fighting` | Insult Sword Fighting | Replies learned during play; characters tire of repeated questions |
+| `--sword-fighting` | Brackwater Barbs | Comebacks learned by losing; characters tire of repeated questions |
 | `--village` | The Living Village | The society mechanic: six villagers with needs, rumours, and an arrest |
 | `--goat` | Broken Sword: The Lochmarne Goat | A hazard that interrupts the player, timed windows, moving down to a new scene |
 | `--dott` | Day of the Tentacle Trio | Three playable characters, items passed between them, the past changing the future |

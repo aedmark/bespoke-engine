@@ -1950,30 +1950,30 @@ test "P13-02: VM prunes dialogue choices using multi-clause where patterns" {
     var vm = VM.init(testing.allocator, &world, &chunk);
     defer vm.deinit();
 
-    const guybrush = try world.intern_entity("Guybrush");
-    const reply_cow = try world.intern_entity("ReplyCow");
-    const insult_farmer = try world.intern_entity("InsultFarmer");
+    const tamsin = try world.intern_entity("Tamsin");
+    const reply_mop = try world.intern_entity("ReplyMop");
+    const barb_mop = try world.intern_entity("BarbMop");
 
     const mastered_rel = try world.intern_relation("MasteredReply", .set);
     const counters_rel = try world.intern_relation("Counters", .set);
 
     const empty_body: []const parser_mod.Stmt = &[_]parser_mod.Stmt{};
-    const cow_args1 = [_][]const u8{ "Guybrush", "ReplyCow" };
-    const cow_args2 = [_][]const u8{ "ReplyCow", "InsultFarmer" };
-    const where_cow = [_]parser_mod.FactPattern{
-        .{ .relation = "MasteredReply", .args = &cow_args1 },
-        .{ .relation = "Counters", .args = &cow_args2 },
+    const mop_args1 = [_][]const u8{ "Tamsin", "ReplyMop" };
+    const mop_args2 = [_][]const u8{ "ReplyMop", "BarbMop" };
+    const where_mop = [_]parser_mod.FactPattern{
+        .{ .relation = "MasteredReply", .args = &mop_args1 },
+        .{ .relation = "Counters", .args = &mop_args2 },
     };
 
     const candidates = [_]parser_mod.DialogueChoice{
         .{
-            .text = "How appropriate. You fight like a cow!",
+            .text = "Good, then that means I can still wipe the floor with you.",
             .guard = null,
-            .where_patterns = &where_cow,
+            .where_patterns = &where_mop,
             .body = empty_body,
         },
         .{
-            .text = "I am shaking, I am shaking!",
+            .text = "Er... is that the time?",
             .guard = null,
             .where_patterns = &[_]parser_mod.FactPattern{},
             .body = empty_body,
@@ -1982,24 +1982,24 @@ test "P13-02: VM prunes dialogue choices using multi-clause where patterns" {
 
     var pruned: [4]PrunedChoice = undefined;
 
-    // Initially, Guybrush has not mastered the reply, so only fallback appears
+    // Initially, Tamsin has not mastered the comeback, so only the fallback appears
     var count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 1), count);
-    try testing.expectEqualStrings("I am shaking, I am shaking!", pruned[0].text);
+    try testing.expectEqualStrings("Er... is that the time?", pruned[0].text);
 
     // Knowledge base establishes Counters relationship
-    try world.remember(reply_cow, counters_rel, insult_farmer.to_int(), 0);
+    try world.remember(reply_mop, counters_rel, barb_mop.to_int(), 0);
 
-    // Guybrush still hasn't mastered reply -> still 1
+    // Tamsin still hasn't mastered reply -> still 1
     count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 1), count);
 
-    // Guybrush masters the reply -> now both choices are active!
-    try world.remember(guybrush, mastered_rel, reply_cow.to_int(), 0);
+    // Tamsin masters the reply -> now both choices are active!
+    try world.remember(tamsin, mastered_rel, reply_mop.to_int(), 0);
     count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 2), count);
-    try testing.expectEqualStrings("How appropriate. You fight like a cow!", pruned[0].text);
-    try testing.expectEqualStrings("I am shaking, I am shaking!", pruned[1].text);
+    try testing.expectEqualStrings("Good, then that means I can still wipe the floor with you.", pruned[0].text);
+    try testing.expectEqualStrings("Er... is that the time?", pruned[1].text);
 }
 
 test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {

@@ -38,6 +38,8 @@ pub const MAX_PAIRS: usize = 64;
 /// The base tier plus up to three variant tiers.
 pub const MAX_TIERS: usize = 4;
 pub const MAX_STAGES: usize = 8;
+/// Fallback lines one duel may rotate through; the package stores the count in a byte.
+pub const MAX_FALLBACKS: usize = parser_mod.DUEL_MAX_FALLBACKS;
 
 const MAX_CHOICES: usize = MAX_PAIRS * MAX_TIERS;
 const NAME_BUF_LEN: usize = 160;
@@ -68,13 +70,17 @@ pub const Relations = struct {
     tier: []const u8 = "DuelTier",
     advantage: []const u8 = "Advantage",
     wins: []const u8 = "DuelsWon",
+    /// Property counting the fallback lines a fighter has spoken; picks the next one (D-076).
+    fumbles: []const u8 = "DuelFumbles",
 };
 
 /// Slices are borrowed: pair names and texts must outlive the `Duel`.
 pub const Config = struct {
     pairs: []const Pair,
-    /// Offered as the only reply when a fighter has mastered none.
-    fallback: ?[]const u8 = null,
+    /// Lines offered, one at a time, as the only reply when a fighter has mastered none. The
+    /// fighter's fumble count picks the line, so the rotation is a fact: it saves, rewinds, and
+    /// replays like any other state (D-076).
+    fallbacks: []const []const u8 = &.{},
     /// A fighter whose advantage reaches this wins the duel: their win count rises and both
     /// advantages reset. Null leaves winning to the host.
     win_at: ?u32 = null,
@@ -109,12 +115,14 @@ pub const Duel = struct {
     tier_rel: RelationKind,
     advantage_rel: RelationKind,
     wins_rel: RelationKind,
+    fumbles_rel: RelationKind,
 
     pub fn init(world: *World, config: Config) !Duel {
         if (config.pairs.len == 0 or config.pairs.len > MAX_PAIRS) return Error.InvalidDuelConfig;
         if (config.win_at) |w| {
             if (w == 0) return Error.InvalidDuelConfig;
         }
+        if (config.fallbacks.len > MAX_FALLBACKS) return Error.InvalidDuelConfig;
         for (config.pairs) |pair| {
             if (pair.name.len == 0 or pair.variants.len > MAX_TIERS - 1) return Error.InvalidDuelConfig;
         }
@@ -133,6 +141,7 @@ pub const Duel = struct {
             .tier_rel = try world.intern_relation(r.tier, .property),
             .advantage_rel = try world.intern_relation(r.advantage, .property),
             .wins_rel = try world.intern_relation(r.wins, .property),
+            .fumbles_rel = try world.intern_relation(r.fumbles, .property),
         };
         for (&self.challenge_ids) |*row| @memset(row, EntityId.none);
         @memset(&self.reply_ids, EntityId.none);
@@ -202,6 +211,11 @@ pub const Duel = struct {
         return self.world.get_property(fighter, self.wins_rel) orelse 0;
     }
 
+    /// How many fallback lines `fighter` has spoken.
+    pub fn fumbles(self: *const Duel, fighter: EntityId) u32 {
+        return self.world.get_property(fighter, self.fumbles_rel) orelse 0;
+    }
+
     /// Lists the challenges `fighter` may throw at `target`, in table order (base, then
     /// variants). A fighter may throw only what they have heard, and a tier variant only at an
     /// opponent of exactly that tier. Returns the number written to `out`.
@@ -255,7 +269,8 @@ pub const Duel = struct {
     }
 
     /// Lists the replies `fighter` has mastered, in table order, marking the one that counters
-    /// `active_challenge`. With none mastered, offers the configured fallback line.
+    /// `active_challenge`. With none mastered, offers one fallback line, chosen by the fighter's
+    /// fumble count so successive rounds rotate through the list.
     pub fn replies(
         self: *const Duel,
         vm: *VM,
@@ -294,8 +309,9 @@ pub const Duel = struct {
         }
 
         if (kept == 0 and out.len > 0) {
-            if (self.config.fallback) |line| {
-                out[0] = .{ .text = line, .entity = .none };
+            const lines = self.config.fallbacks;
+            if (lines.len > 0) {
+                out[0] = .{ .text = lines[self.fumbles(fighter) % lines.len], .entity = .none };
                 return 1;
             }
         }
@@ -314,6 +330,8 @@ pub const Duel = struct {
         reply_ent: EntityId,
     ) !Round {
         try self.hear(defender, challenge_ent);
+        // A fallback reply advances the defender's rotation to the next line.
+        if (reply_ent == .none) try self.world.remember(defender, self.fumbles_rel, self.fumbles(defender) + 1, 0);
 
         const parried = self.counters(reply_ent, challenge_ent);
         const gainer = if (parried) defender else attacker;
@@ -389,6 +407,7 @@ pub const Declaration = struct {
     pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
         for (self.config.pairs) |pair| allocator.free(pair.variants);
         allocator.free(self.config.pairs);
+        allocator.free(self.config.fallbacks);
         allocator.free(self.fatigue.stages);
         allocator.free(self.tiers);
         self.* = undefined;
@@ -499,7 +518,7 @@ const RIDDLES = [_]Pair{
 
 const RIDDLE_CONFIG = Config{
     .pairs = &RIDDLES,
-    .fallback = "I do not know.",
+    .fallbacks = &.{ "I do not know.", "Ask me another." },
     .win_at = 2,
     .relations = .{ .heard = "HeardRiddle", .mastered = "KnowsAnswer", .tier = "Rank", .wins = "ContestsWon" },
 };
@@ -624,6 +643,46 @@ test "P32-17: failed replies teach, counters shift advantage, and the threshold 
     const second = try duel.resolve_round(elder, pupil, duel.challenge(2, 0), duel.reply(2));
     try testing.expectEqual(pupil, second.winner.?);
     try testing.expectEqual(@as(u32, 1), duel.wins(pupil));
+}
+
+test "D-076: fallback lines rotate per fighter, one per fumbled round" {
+    const testing = std.testing;
+    var bed = try TestBed.init();
+    defer bed.deinit();
+    var vm = VM.init(testing.allocator, &bed.world, &bed.chunk);
+    defer vm.deinit();
+    var duel = try Duel.init(&bed.world, RIDDLE_CONFIG);
+
+    const pupil = try bed.world.intern_entity("Pupil");
+    const novice = try bed.world.intern_entity("Novice");
+    const elder = try bed.world.intern_entity("Elder");
+
+    var out: [4]Candidate = undefined;
+    const expected = [_][]const u8{ "I do not know.", "Ask me another.", "I do not know." };
+    for (expected) |line| {
+        try testing.expectEqual(@as(usize, 1), duel.replies(&vm, pupil, duel.challenge(0, 0), &out));
+        try testing.expectEqualStrings(line, out[0].text);
+        // The novice has fumbled nothing, so its rotation has not moved.
+        try testing.expectEqual(@as(usize, 1), duel.replies(&vm, novice, duel.challenge(0, 0), &out));
+        try testing.expectEqualStrings(expected[0], out[0].text);
+        // A fumble teaches nothing new here: the pupil forgets the answer each round so the
+        // fallback stays the only reply.
+        _ = try duel.resolve_round(elder, pupil, duel.challenge(0, 0), .none);
+        _ = bed.world.forget(pupil, duel.mastered_rel, null);
+    }
+    try testing.expectEqual(@as(u32, 3), duel.fumbles(pupil));
+    try testing.expectEqual(@as(u32, 0), duel.fumbles(novice));
+
+    // A countered round does not advance the rotation.
+    try duel.master(pupil, duel.reply(0));
+    _ = try duel.resolve_round(elder, pupil, duel.challenge(0, 0), duel.reply(0));
+    try testing.expectEqual(@as(u32, 3), duel.fumbles(pupil));
+
+    var too_many: [MAX_FALLBACKS + 1][]const u8 = undefined;
+    @memset(&too_many, "Er...");
+    var config = RIDDLE_CONFIG;
+    config.fallbacks = &too_many;
+    try testing.expectError(Error.InvalidDuelConfig, Duel.init(&bed.world, config));
 }
 
 test "P32-17: duel state is facts, so a snapshot restore rewinds it" {

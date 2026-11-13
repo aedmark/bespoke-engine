@@ -74,7 +74,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--tavern` | none | The Guard patrols, the Bard's lute charms him, the Cat takes the Cheese while he is distracted. Rewind mid-heist and watch it replay identically. |
 | `--spitting-contest` | H horn, G drink, F flags, S spit | Each key's effect shows on stage and in speech; the winning spit needs all three plus the wind. |
 | `--gk3` | H hotel, G garden, B bike shop, 0 scavenge, 1 to 8 steps | Scene changes redraw the room; the disguise combines across three scenes; the motorcycle is rented. |
-| `--sword-fighting` | D duel Bob, C duel Carla, T talk to the barkeep, W wait 50 ticks | Answer insults with 1 to 5. A lost round teaches the comeback; a repeated question tires the opponent. |
+| `--sword-fighting` | D duel Bosun Pike, C duel Mistress Vell, T talk to the barkeep, W wait 50 ticks | Answer barbs with 1 to 5. A lost round teaches the comeback and the next fumble uses the next fallback line; a repeated question tires the barkeep. |
 | `--village` | S theft, F feast, G tip | Six villagers run their own days. After S, a witness talks, rumours spread, and the Sheriff arrests someone, with no key presses in between. |
 | `--goat` | C courtyard, T crypt, 1 to 4 steps | The goat knocks George down on the way to the cellar until the rope is tangled on the plough. |
 | `--dott` | 1 to 4 switch character | Items passed between eras arrive; a change in the past shows in the future. |

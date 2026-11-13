@@ -45,7 +45,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// nobody for them.
 /// Version 13 appends cue handler `where` guards (D-072); versions 1 through 12 load with none,
 /// so every handler runs as it did unguarded.
-pub const PACKAGE_VERSION: u32 = 13;
+/// Version 14 lets a duel declare up to `duel.MAX_FALLBACKS` fallback lines (D-076); earlier
+/// versions wrote 0 or 1, which the same count byte reads unchanged.
+pub const PACKAGE_VERSION: u32 = 14;
 const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
 const MAX_CAST: u32 = 4096;
@@ -200,8 +202,10 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeByte(@intCast(pair.variants.len));
             for (pair.variants) |variant| try write_text_ref(world, writer, variant);
         }
-        try writer.writeByte(@intFromBool(decl.config.fallback != null));
-        if (decl.config.fallback) |fallback| try write_text_ref(world, writer, fallback);
+        // Version 14 reads this byte as a line count; earlier versions wrote 0 or 1 here, which
+        // reads the same, so older packages load unchanged (D-076).
+        try writer.writeByte(@intCast(decl.config.fallbacks.len));
+        for (decl.config.fallbacks) |line| try write_text_ref(world, writer, line);
         try writer.writeInt(i64, if (decl.config.win_at) |value| @intCast(value) else -1, .little);
         const r = decl.config.relations;
         for ([_][]const u8{ r.heard, r.mastered, r.counters, r.variant_of, r.tier, r.advantage, r.wins }) |name| try write_text_ref(world, writer, name);
@@ -584,7 +588,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
     } };
 }
 
-fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !duel_mod.Declaration {
+fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, version: u32) !duel_mod.Declaration {
     const pair_count = try reader.readInt(u32, .little);
     if (pair_count == 0 or pair_count > duel_mod.MAX_PAIRS) return error.InvalidDuelConfig;
     const pairs = try allocator.alloc(duel_mod.Pair, pair_count);
@@ -605,12 +609,12 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
         pair.* = .{ .name = name, .challenge = challenge, .reply = reply, .variants = variants };
         built += 1;
     }
-    const has_fallback = try reader.readByte();
-    const fallback: ?[]const u8 = switch (has_fallback) {
-        0 => null,
-        1 => try read_text_ref(world, reader),
-        else => return error.InvalidDuelConfig,
-    };
+    const fallback_count = try reader.readByte();
+    const fallback_limit: usize = if (version >= 14) duel_mod.MAX_FALLBACKS else 1;
+    if (fallback_count > fallback_limit) return error.InvalidDuelConfig;
+    const fallbacks = try allocator.alloc([]const u8, fallback_count);
+    errdefer allocator.free(fallbacks);
+    for (fallbacks) |*line| line.* = try read_text_ref(world, reader);
     const win_raw = try reader.readInt(i64, .little);
     if (win_raw < -1 or win_raw > std.math.maxInt(u32)) return error.InvalidDuelConfig;
     var relations: [7][]const u8 = undefined;
@@ -629,7 +633,7 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
     return .{
         .config = .{
             .pairs = pairs,
-            .fallback = fallback,
+            .fallbacks = fallbacks,
             .win_at = if (win_raw < 0) null else @intCast(win_raw),
             .relations = .{ .heard = relations[0], .mastered = relations[1], .counters = relations[2], .variant_of = relations[3], .tier = relations[4], .advantage = relations[5], .wins = relations[6] },
         },
@@ -1205,7 +1209,7 @@ pub fn load_package(
         while (si < society_count) : (si += 1) try societies.append(try read_society_declaration(allocator, world, pr, header.waypoint_count));
         const duel_count = try pr.readInt(u32, .little);
         var di: u32 = 0;
-        while (di < duel_count) : (di += 1) try duels.append(try read_duel_declaration(allocator, world, pr));
+        while (di < duel_count) : (di += 1) try duels.append(try read_duel_declaration(allocator, world, pr, header.version));
     }
     if (header.version >= 5) {
         const degradation_count = try pr.readInt(u32, .little);
@@ -2171,6 +2175,7 @@ test "P32-22/P32-24: package version 6 round-trips society and duel declarations
         \\    reply "An echo."
         \\    variant 1 "Voiceless, I answer."
         \\  fallback "I do not know."
+        \\  fallback "Ask me another."
         \\  win 3
         \\  tier Rival 1
         \\  fatigue Inquiries "calm":
@@ -2202,6 +2207,21 @@ test "P32-22/P32-24: package version 6 round-trips society and duel declarations
     try compiled2.duels.items[0].apply_tiers(&duel);
     const rival = world2.lookup_entity("Rival").?;
     try testing.expectEqual(@as(u32, 1), world2.get_property(rival, duel.tier_rel).?);
+    // D-076: version 14 keeps both fallback lines in order.
+    const fallbacks = compiled2.duels.items[0].config.fallbacks;
+    try testing.expectEqual(@as(usize, 2), fallbacks.len);
+    try testing.expectEqualStrings("Ask me another.", fallbacks[1]);
+
+    // A version 13 package could only hold one line, so a count of two is corrupt there.
+    const v13 = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(v13);
+    reseal_for_test(v13, 13);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var spatial3 = SpatialSystem.init(testing.allocator);
+    defer spatial3.deinit();
+    var stream3 = std.io.fixedBufferStream(v13);
+    try testing.expectError(error.InvalidDuelConfig, load_package(testing.allocator, stream3.reader(), &world3, &spatial3));
 }
 
 test "D-065: package version 12 round-trips cast places, rejects a bad mark, and loads version 11" {

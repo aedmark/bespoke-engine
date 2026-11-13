@@ -36,6 +36,9 @@ const Palette = struct {
     // Booty Island Spitting Contest Colors (P10-03, D-012)
     const guybrush_coat = Color{ .r = 30, .g = 64, .b = 175 }; // Pirate Blue
     const guybrush_hair = Color{ .r = 250, .g = 204, .b = 21 }; // Blonde
+    // Brackwater Barbs player (P35-02)
+    const tamsin_coat = Color{ .r = 15, .g = 118, .b = 110 }; // Sea green
+    const tamsin_hair = Color{ .r = 41, .g = 37, .b = 36 }; // Dark brown
     const organiser_coat = Color{ .r = 185, .g = 28, .b = 28 }; // Velvet Red
     const onlookers_color = Color{ .r = 120, .g = 80, .b = 140 }; // Purple Crowd
     const flag_color = Color{ .r = 239, .g = 68, .b = 68 }; // Red flag
@@ -138,10 +141,10 @@ const Scene = struct {
     is_dott_present_scene: bool = false,
     is_garden_scene: bool = false,
     is_goat_courtyard_scene: bool = false,
-    is_high_road_scene: bool = false,
+    is_tidewalk_scene: bool = false,
     is_hotel_scene: bool = false,
-    is_sanctuary_scene: bool = false,
-    is_scumm_bar_scene: bool = false,
+    is_fencing_yard_scene: bool = false,
+    is_lantern_scene: bool = false,
     is_spitting_scene: bool = false,
     is_tavern_scene: bool = false,
     is_templar_crypt_scene: bool = false,
@@ -208,18 +211,12 @@ fn detect(frame: *const RenderFrame) Scene {
             std.mem.indexOf(u8, cur_scene, "Living") != null)
         {
             sc.is_village_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "High Road") != null or
-            std.mem.indexOf(u8, cur_scene, "Road") != null)
-        {
-            sc.is_high_road_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Sanctuary") != null or
-                   std.mem.indexOf(u8, cur_scene, "Sword Master") != null)
-        {
-            sc.is_sanctuary_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Scumm") != null or
-                   std.mem.indexOf(u8, cur_scene, "Scumm Bar") != null)
-        {
-            sc.is_scumm_bar_scene = true;
+        } else if (std.mem.indexOf(u8, cur_scene, "Tidewalk") != null) {
+            sc.is_tidewalk_scene = true;
+        } else if (std.mem.indexOf(u8, cur_scene, "Fencing Yard") != null) {
+            sc.is_fencing_yard_scene = true;
+        } else if (std.mem.indexOf(u8, cur_scene, "Drowned Lantern") != null) {
+            sc.is_lantern_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Spit") != null or
             std.mem.indexOf(u8, cur_scene, "Booty") != null)
         {
@@ -254,7 +251,7 @@ fn detect(frame: *const RenderFrame) Scene {
         !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
         !sc.is_hotel_scene and !sc.is_garden_scene and !sc.is_bike_rental_scene and
-        !sc.is_high_road_scene and !sc.is_sanctuary_scene and !sc.is_scumm_bar_scene and !sc.is_village_scene and
+        !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and !sc.is_village_scene and
         !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
     {
         for (frame.waypoints[0..frame.waypoint_count]) |wp| {
@@ -307,14 +304,16 @@ fn detect(frame: *const RenderFrame) Scene {
             {
                 sc.is_village_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "Road") != null) {
-                sc.is_high_road_scene = true;
+            } else if (std.mem.indexOf(u8, wp.get_name(), "Tidewalk") != null) {
+                sc.is_tidewalk_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "Sanctuary") != null) {
-                sc.is_sanctuary_scene = true;
+            } else if (std.mem.indexOf(u8, wp.get_name(), "YardGate") != null or
+                std.mem.indexOf(u8, wp.get_name(), "YardCircle") != null)
+            {
+                sc.is_fencing_yard_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "BarEntrance") != null) {
-                sc.is_scumm_bar_scene = true;
+            } else if (std.mem.indexOf(u8, wp.get_name(), "LanternDoor") != null) {
+                sc.is_lantern_scene = true;
                 break;
             } else if (std.mem.indexOf(u8, wp.get_name(), "Starting Line") != null or
                 std.mem.indexOf(u8, wp.get_name(), "Offstage") != null)
@@ -344,7 +343,7 @@ fn detect(frame: *const RenderFrame) Scene {
         if (!sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
             !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
             !sc.is_spitting_scene and !sc.is_hotel_scene and !sc.is_garden_scene and !sc.is_bike_rental_scene and
-            !sc.is_high_road_scene and !sc.is_sanctuary_scene and !sc.is_scumm_bar_scene and
+            !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and
             !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
         {
             for (frame.entities[0..frame.entity_count]) |e| {
@@ -372,14 +371,14 @@ fn detect(frame: *const RenderFrame) Scene {
                 {
                     sc.is_goat_courtyard_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "PirateBob") or std.mem.eql(u8, ename, "PiratePegleg")) {
-                    sc.is_high_road_scene = true;
+                } else if (std.mem.eql(u8, ename, "BosunPike") or std.mem.eql(u8, ename, "OldGannet")) {
+                    sc.is_tidewalk_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Carla")) {
-                    sc.is_sanctuary_scene = true;
+                } else if (std.mem.eql(u8, ename, "Vell")) {
+                    sc.is_fencing_yard_scene = true;
                     break;
                 } else if (std.mem.eql(u8, ename, "Barkeep") or std.mem.eql(u8, ename, "Citizen")) {
-                    sc.is_scumm_bar_scene = true;
+                    sc.is_lantern_scene = true;
                     break;
                 } else if (std.mem.eql(u8, ename, "Organiser") or
                            std.mem.eql(u8, ename, "Onlookers"))
@@ -895,8 +894,8 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         // Title
         w.draw_text("RENNES-LE-CHATEAU - BIKE RENTAL SHOP", shop_x + 16, shop_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
         w.draw_text("(VINTAGE MOTORCYCLE * MADAME BUTHANE AT THE DESK)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_high_road_scene) {
-        // Melee Island High Road (P15-02)
+    } else if (sc.is_tidewalk_scene) {
+        // Brackwater Tidewalk (P15-02, P35-02)
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 10, .g = 15, .b = 30 }); // Deep night sky
 
         const road_x: i32 = 40;
@@ -910,7 +909,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_circle(road_x + road_w - 120, road_y + 60, 24, Color{ .r = 254, .g = 240, .b = 138 });
         w.fill_circle(road_x + road_w - 112, road_y + 54, 20, Color{ .r = 10, .g = 15, .b = 30 });
 
-        // Dark cobblestone pirate road
+        // Dark cobblestone harbour walk
         w.fill_rect(road_x, road_y + road_h - 130, road_w, 130, Color{ .r = 30, .g = 35, .b = 45 });
         w.draw_rect_outline(road_x, road_y + road_h - 130, road_w, 130, Color{ .r = 60, .g = 70, .b = 85 });
 
@@ -919,10 +918,10 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_circle(road_x + 83, road_y + road_h - 195, 10, Color{ .r = 245, .g = 158, .b = 11, .a = 220 });
 
         // Header
-        w.draw_text("MELEE ISLAND - THE HIGH ROAD", road_x + 16, road_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
-        w.draw_text("(ROAMING PIRATES * INSULT DUELS * COMBINATORIAL MEMORY)", road_x + 16, road_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_sanctuary_scene) {
-        // Carla's Sword Master Sanctuary
+        w.draw_text("BRACKWATER - THE TIDEWALK", road_x + 16, road_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_text("(PATROLLING FENCERS * BARBED DUELS * LEARNED COMEBACKS)", road_x + 16, road_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_fencing_yard_scene) {
+        // Mistress Vell's fencing yard
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 12, .g = 25, .b = 18 });
 
         const s_x: i32 = 40;
@@ -937,7 +936,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         const center_x = s_x + @divTrunc(s_w, 2);
         w.draw_circle_outline(center_x, s_y + s_h - 80, 70, Color{ .r = 250, .g = 204, .b = 21 });
 
-        // Bamboo fence & gate
+        // Timber fence & gate
         w.fill_rect(s_x + 60, s_y + s_h - 160, 140, 15, Color{ .r = 160, .g = 120, .b = 60 });
 
         // Target dummy
@@ -945,10 +944,10 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(s_x + s_w - 144, s_y + s_h - 104, 8, 30, Color{ .r = 120, .g = 70, .b = 30 });
 
         // Header
-        w.draw_text("CARLA'S SWORD MASTER SANCTUARY", s_x + 16, s_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
-        w.draw_text("(MASTER VARIANTS * ELEVATED RETORTS * TARGET VALIDATION)", s_x + 16, s_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_scumm_bar_scene) {
-        // The Scumm Bar
+        w.draw_text("VELL'S FENCING YARD", s_x + 16, s_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_text("(MASTER VARIANTS * SAME COMEBACKS * TIER CHECKS)", s_x + 16, s_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_lantern_scene) {
+        // The Drowned Lantern
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 30, .g = 18, .b = 12 });
 
         const b_x: i32 = 40;
@@ -962,15 +961,15 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         // Oak bar counter
         w.fill_rect(b_x + 80, b_y + b_h - 140, 260, 60, Color{ .r = 90, .g = 50, .b = 28 });
         w.draw_rect_outline(b_x + 80, b_y + b_h - 140, 260, 60, Color{ .r = 160, .g = 95, .b = 45 });
-        w.draw_text("GROG BAR", b_x + 100, b_y + b_h - 125, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("CIDER BAR", b_x + 100, b_y + b_h - 125, 2, Color{ .r = 254, .g = 240, .b = 138 });
 
-        // Grog Barrel with skull
+        // Cider barrel
         w.fill_circle(b_x + b_w - 160, b_y + b_h - 100, 30, Color{ .r = 40, .g = 25, .b = 18 });
         w.draw_circle_outline(b_x + b_w - 160, b_y + b_h - 100, 30, Color{ .r = 180, .g = 120, .b = 50 });
-        w.draw_text("GROG", b_x + b_w - 180, b_y + b_h - 106, 2, Color{ .r = 239, .g = 68, .b = 68 });
+        w.draw_text("CIDER", b_x + b_w - 180, b_y + b_h - 106, 2, Color{ .r = 239, .g = 68, .b = 68 });
 
         // Header
-        w.draw_text("THE SCUMM BAR - MELEE ISLAND", b_x + 16, b_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_text("THE DROWNED LANTERN - BRACKWATER", b_x + 16, b_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
         w.draw_text("(BARKEEP AT THE TAPS * CONVERSATIONAL REPETITION FATIGUE)", b_x + 16, b_y + 36, 1, Color.hud_subtext);
     } else if (sc.is_village_scene) {
         // The Living Village: Multi-Building Settlement & Social Graph HUD (P18-03, D-021)
@@ -2627,8 +2626,8 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
             ));
         }
-    } else if (std.mem.eql(u8, name, "PirateBob") or std.mem.eql(u8, name, "PiratePegleg")) {
-        // Pirate Bob / Pegleg: Crimson vest, tricorn hat, eye patch
+    } else if (std.mem.eql(u8, name, "BosunPike") or std.mem.eql(u8, name, "OldGannet")) {
+        // Bosun Pike / Old Gannet: crimson vest, tricorn hat, eye patch
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 185, .g = 28, .b = 28 });
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
@@ -2651,7 +2650,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
         layout_resolver.submit(TextLabel.init(
-            "[Swashbuckler]",
+            "[Fencer]",
             pt.x,
             pt.y,
             .below,
@@ -2661,8 +2660,25 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
             .actor_status,
         ));
-    } else if (std.mem.eql(u8, name, "Carla")) {
-        // Carla: Sword Master of Melee Island. Crimson sash, fencing stance
+    } else if (std.mem.eql(u8, name, "Tamsin")) {
+        // Tamsin (player): sea-green coat, dark hair
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.tamsin_coat);
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_circle(pt.x, pt.y - 8, 8, Palette.tamsin_hair);
+
+        layout_resolver.submit(TextLabel.init(
+            "Tamsin",
+            pt.x,
+            pt.y,
+            .above,
+            ACTOR_SCREEN_RADIUS + 2,
+            2,
+            to_layout(Color{ .r = 153, .g = 246, .b = 228 }),
+            .actor_name,
+            .actor_name,
+        ));
+    } else if (std.mem.eql(u8, name, "Vell")) {
+        // Mistress Vell: the fencing mistress of Brackwater. Crimson sash, fencing stance
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 225, .g = 29, .b = 72 });
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 250, .g = 204, .b = 21 });
 
@@ -2671,7 +2687,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Carla",
+            "Vell",
             pt.x,
             pt.y,
             .above,
@@ -2682,7 +2698,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
         layout_resolver.submit(TextLabel.init(
-            "[Sword Master]",
+            "[Fencing Mistress]",
             pt.x,
             pt.y,
             .below,
@@ -2713,7 +2729,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
         layout_resolver.submit(TextLabel.init(
-            "[Scumm Bar]",
+            "[Drowned Lantern]",
             pt.x,
             pt.y,
             .below,
@@ -2724,7 +2740,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
         ));
     } else if (std.mem.eql(u8, name, "Citizen")) {
-        // Citizen of Melee: Green coat
+        // Citizen of Brackwater: green coat
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 16, .g = 120, .b = 70 });
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
@@ -2741,7 +2757,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
         layout_resolver.submit(TextLabel.init(
-            "[Melee Citizen]",
+            "[Citizen]",
             pt.x,
             pt.y,
             .below,
@@ -2944,9 +2960,9 @@ pub const Track = enum(u8) {
     tavern,
     cellar,
     spitting_contest,
-    high_road,
-    sanctuary,
-    scumm_bar,
+    tidewalk,
+    fencing_yard,
+    lantern,
     courtyard,
     bike_shop,
     lochmarne,
@@ -3030,16 +3046,12 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
         std.mem.indexOf(u8, scene_name, "Spit") != null)
     {
         return track(.spitting_contest);
-    } else if (std.mem.indexOf(u8, scene_name, "High Road") != null or
-        std.mem.indexOf(u8, scene_name, "Road") != null)
-    {
-        return track(.high_road);
-    } else if (std.mem.indexOf(u8, scene_name, "Sanctuary") != null or
-        std.mem.indexOf(u8, scene_name, "Sword Master") != null)
-    {
-        return track(.sanctuary);
-    } else if (std.mem.indexOf(u8, scene_name, "Scumm") != null) {
-        return track(.scumm_bar);
+    } else if (std.mem.indexOf(u8, scene_name, "Tidewalk") != null) {
+        return track(.tidewalk);
+    } else if (std.mem.indexOf(u8, scene_name, "Fencing Yard") != null) {
+        return track(.fencing_yard);
+    } else if (std.mem.indexOf(u8, scene_name, "Drowned Lantern") != null) {
+        return track(.lantern);
     } else if (std.mem.indexOf(u8, scene_name, "Cellar") != null) {
         return track(.cellar);
     } else if (std.mem.indexOf(u8, scene_name, "Tavern") != null or
@@ -3150,8 +3162,8 @@ fn track_pattern(comptime which: Track) audio.BgmPattern {
             };
         },
 
-        // Mêlée Island High Road: Adventurous seafaring shanty progression
-        .high_road => {
+        // Brackwater Tidewalk: adventurous seafaring shanty progression
+        .tidewalk => {
             p.bpm = 112;
             p.bass_notes = [audio.BGM_STEPS]u8{
                 45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 40, 0, 0, 0,
@@ -3171,8 +3183,8 @@ fn track_pattern(comptime which: Track) audio.BgmPattern {
             };
         },
 
-        // Carla's Sanctuary: Intense, dramatic sword duel cadence
-        .sanctuary => {
+        // Vell's fencing yard: intense, dramatic duel cadence
+        .fencing_yard => {
             p.bpm = 144;
             p.bass_notes = [audio.BGM_STEPS]u8{
                 38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 43, 43, 45, 45, 43, 41,
@@ -3192,8 +3204,8 @@ fn track_pattern(comptime which: Track) audio.BgmPattern {
             };
         },
 
-        // The Scumm Bar: Rowdy pirate tavern waltz in 3/4 time
-        .scumm_bar => {
+        // The Drowned Lantern: rowdy harbour tavern waltz in 3/4 time
+        .lantern => {
             p.bpm = 138;
             p.bass_notes = [audio.BGM_STEPS]u8{
                 48, 0, 0, 48, 0, 0, 43, 0, 0, 48, 0, 0, 41, 0, 0, 43,
@@ -3882,10 +3894,10 @@ fn thumbnail_backdrop(scene_name: []const u8, x: usize, y: usize) ?u8 {
         return if (y < 6) rgb(110, 30, 40) else rgb(55, 25, 20); // Burgundy wallpaper, wainscot
     } else if (has(scene_name, "Cellar")) {
         return if (y < 6) rgb(25, 35, 55) else rgb(40, 50, 70); // Cellar wall, stone floor
-    } else if (has(scene_name, "Road")) {
-        return if (y < 5) rgb(15, 30, 70) else rgb(40, 75, 50); // Night sky, forest path
-    } else if (has(scene_name, "Sanctuary") or has(scene_name, "Carla")) {
-        return if (y < 5) rgb(70, 20, 35) else rgb(45, 35, 45); // Sanctuary, duel arena
+    } else if (has(scene_name, "Tidewalk")) {
+        return if (y < 5) rgb(15, 30, 70) else rgb(40, 75, 50); // Night sky, harbour walk
+    } else if (has(scene_name, "Fencing Yard")) {
+        return if (y < 5) rgb(70, 20, 35) else rgb(45, 35, 45); // Yard wall, duel circle
     }
     // Tavern warm hearth & timber
     if (x >= 1 and x <= 3 and y >= 3 and y <= 5) return rgb(245, 140, 30); // Hearth fire glow
@@ -3898,8 +3910,8 @@ fn thumbnail_actor(name: []const u8) ?u8 {
             return std.mem.eql(u8, a, b);
         }
     }.f;
-    if (is(name, "Guard") or is(name, "Guybrush") or is(name, "Mosely")) return save.pack_rgb332(50, 130, 245); // Blue
+    if (is(name, "Guard") or is(name, "Guybrush") or is(name, "Tamsin") or is(name, "Mosely")) return save.pack_rgb332(50, 130, 245); // Blue
     if (is(name, "Cat") or is(name, "Gabriel")) return save.pack_rgb332(240, 120, 30); // Orange / Tan
-    if (is(name, "Bard") or is(name, "Carla")) return save.pack_rgb332(180, 70, 240); // Purple
+    if (is(name, "Bard") or is(name, "Vell")) return save.pack_rgb332(180, 70, 240); // Purple
     return null;
 }

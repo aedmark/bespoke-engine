@@ -45,6 +45,7 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "gk3", .proof = .gk3 },
     .{ .name = "cat-moustache", .proof = .gk3 },
     .{ .name = "sword-fighting", .proof = .sword_fighting },
+    .{ .name = "barbs", .proof = .sword_fighting },
     .{ .name = "insults", .proof = .sword_fighting },
     .{ .name = "sword", .proof = .sword_fighting },
     .{ .name = "village", .proof = .village },
@@ -90,7 +91,7 @@ const usage =
     \\  --tavern             The Tavern Heist (relational spine, fibers, interrupts, rewind)
     \\  --spitting-contest   Booty Island Spitting Contest (stageplay DSL, TTL triggers)
     \\  --gk3                Gabriel Knight 3 Cat Moustache (crafting, multi-scene)
-    \\  --sword-fighting     Insult Sword Fighting (epistemic dialogue, mood decay)
+    \\  --sword-fighting     Brackwater Barbs (learned comebacks, mood decay)
     \\  --village            The Living Village (emergent drives, rumors, justice)
     \\  --goat               Broken Sword Lochmarne Goat (threat radius, retreat window)
     \\  --dott               Day of the Tentacle Trio (party, item transfer, causality)

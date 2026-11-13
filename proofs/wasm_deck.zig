@@ -78,9 +78,9 @@ pub const decks = [_]wasm.Deck{
         .background = .{ .r = 20, .g = 42, .b = 40 },
         .catalyst = solver(&GROG_SOLUTION),
     }),
-    wasm.script_deck_with("INSULT SWORD FIGHTING", SWORD_FIGHTING_SCRIPT, .{
-        .player = "Guybrush",
-        .intro = "Insult Sword Fighting: [S] starts a duel; answer insults with the number keys.",
+    wasm.script_deck_with("BRACKWATER BARBS", SWORD_FIGHTING_SCRIPT, .{
+        .player = "Tamsin",
+        .intro = "Brackwater Barbs: [S] starts a duel; answer barbs with the number keys.",
         .soundtrack = &art.soundtrack,
         .background = .{ .r = 30, .g = 36, .b = 52 },
         .setup = sword_setup,
@@ -574,7 +574,7 @@ fn village_desperation(rt: *WasmRuntime) anyerror!void {
 }
 
 // =============================================================================
-// Insult Sword Fighting: the engine duel, configured by the script
+// Brackwater Barbs: the engine duel, configured by the script
 // =============================================================================
 
 /// The duel and its active round. The round is World facts, as on desktop, so a rewind
@@ -602,18 +602,18 @@ fn sword_setup(rt: *WasmRuntime) anyerror!void {
     sword_duel = try duel_mod.Duel.init(&rt.world, decl.config);
     try decl.apply_tiers(&sword_duel);
     sword_ready = true;
-    try rt.vm.transition_to_scene(try entity(rt, "High Road"));
+    try rt.vm.transition_to_scene(try entity(rt, "Tidewalk"));
 }
 
-/// Offers the replies Guybrush has mastered against the active challenge, as the desktop's
+/// Offers the comebacks Tamsin has mastered against the active challenge, as the desktop's
 /// generated choice set; each action id is the reply entity.
 fn sword_open_round(rt: *WasmRuntime) !void {
     _ = sword(rt) orelse return;
-    const guybrush = try entity(rt, "Guybrush");
-    const opponent = rt.world.get_property(guybrush, try sword_relation(rt, "ActiveDuelOpponent")) orelse return;
-    const challenge = rt.world.get_property(guybrush, try sword_relation(rt, "ActiveDuelChallenge")) orelse return;
+    const tamsin = try entity(rt, "Tamsin");
+    const opponent = rt.world.get_property(tamsin, try sword_relation(rt, "ActiveDuelOpponent")) orelse return;
+    const challenge = rt.world.get_property(tamsin, try sword_relation(rt, "ActiveDuelChallenge")) orelse return;
     var candidates: [9]duel_mod.Candidate = undefined;
-    const count = sword_duel.replies(&rt.vm, guybrush, EntityId.from_int(challenge), &candidates);
+    const count = sword_duel.replies(&rt.vm, tamsin, EntityId.from_int(challenge), &candidates);
     if (count == 0) return;
     var choices: [9]bespoke.dialogue.Choice = undefined;
     for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
@@ -623,11 +623,11 @@ fn sword_open_round(rt: *WasmRuntime) !void {
 
 fn sword_start(rt: *WasmRuntime, opponent_name: []const u8, challenge: EntityId) !void {
     _ = sword(rt) orelse return;
-    const guybrush = try entity(rt, "Guybrush");
+    const tamsin = try entity(rt, "Tamsin");
     const opponent = try entity(rt, opponent_name);
-    try rt.world.remember(guybrush, try sword_relation(rt, "ActiveDuelOpponent"), opponent.to_int(), 0);
-    try rt.world.remember(guybrush, try sword_relation(rt, "ActiveDuelChallenge"), challenge.to_int(), 0);
-    try rt.world.remember(guybrush, sword_duel.advantage_rel, 0, 0);
+    try rt.world.remember(tamsin, try sword_relation(rt, "ActiveDuelOpponent"), opponent.to_int(), 0);
+    try rt.world.remember(tamsin, try sword_relation(rt, "ActiveDuelChallenge"), challenge.to_int(), 0);
+    try rt.world.remember(tamsin, sword_duel.advantage_rel, 0, 0);
     try rt.world.remember(opponent, sword_duel.advantage_rel, 0, 0);
     try sword_open_round(rt);
     var buf: [96]u8 = undefined;
@@ -635,18 +635,18 @@ fn sword_start(rt: *WasmRuntime, opponent_name: []const u8, challenge: EntityId)
 }
 
 /// `[S]`: with a round open, answers with the first reply; otherwise starts the desktop
-/// proof's next duel, Pirate Bob on the road and then Carla at the Sword Master's.
+/// proof's next duel, Bosun Pike on the Tidewalk and then Mistress Vell in her fencing yard.
 fn sword_solve(rt: *WasmRuntime) anyerror!void {
     _ = sword(rt) orelse return;
     if (bespoke.dialogue.view(&rt.world) != null) return rt.answer(0);
-    const guybrush = try entity(rt, "Guybrush");
-    if (sword_duel.wins(guybrush) == 0) return sword_start(rt, "PirateBob", sword_duel.challenge(0, 0));
-    if (rt.world.lookup_entity("Carla")) |carla| {
-        if (sword_duel.wins(guybrush) < 2 and sword_duel.wins(carla) == 0) {
-            const sanctuary = try entity(rt, "Sword Master Sanctuary");
-            try rt.vm.transition_to_scene(sanctuary);
-            _ = try rt.spatial.transition_actor(guybrush, sanctuary, rt.spatial.graph.find_waypoint_in_room(sanctuary, "ArenaCenter"));
-            return sword_start(rt, "Carla", sword_duel.challenge(4, 1));
+    const tamsin = try entity(rt, "Tamsin");
+    if (sword_duel.wins(tamsin) == 0) return sword_start(rt, "BosunPike", sword_duel.challenge(0, 0));
+    if (rt.world.lookup_entity("Vell")) |vell| {
+        if (sword_duel.wins(tamsin) < 2 and sword_duel.wins(vell) == 0) {
+            const yard = try entity(rt, "Fencing Yard");
+            try rt.vm.transition_to_scene(yard);
+            _ = try rt.spatial.transition_actor(tamsin, yard, rt.spatial.graph.find_waypoint_in_room(yard, "YardCircle"));
+            return sword_start(rt, "Vell", sword_duel.challenge(4, 1));
         }
     }
     rt.set_banner("Both duels are fought. Press [R] to rewind and duel again.");
@@ -655,27 +655,27 @@ fn sword_solve(rt: *WasmRuntime) anyerror!void {
 /// The desktop's round resolution: a parry gains advantage, a miss teaches the counter.
 fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
     _ = sword(rt) orelse return;
-    const guybrush = try entity(rt, "Guybrush");
+    const tamsin = try entity(rt, "Tamsin");
     const opponent_rel = try sword_relation(rt, "ActiveDuelOpponent");
     const challenge_rel = try sword_relation(rt, "ActiveDuelChallenge");
-    const opponent = EntityId.from_int(rt.world.get_property(guybrush, opponent_rel) orelse return);
-    const challenge = EntityId.from_int(rt.world.get_property(guybrush, challenge_rel) orelse return);
+    const opponent = EntityId.from_int(rt.world.get_property(tamsin, opponent_rel) orelse return);
+    const challenge = EntityId.from_int(rt.world.get_property(tamsin, challenge_rel) orelse return);
     const reply = if (action == 0) EntityId.none else EntityId.from_int(action);
-    const round = try sword_duel.resolve_round(opponent, guybrush, challenge, reply);
+    const round = try sword_duel.resolve_round(opponent, tamsin, challenge, reply);
     const name = rt.world.get_entity_name(opponent) orelse "The opponent";
     var buf: [96]u8 = undefined;
     if (round.winner) |winner| {
-        _ = rt.world.forget(guybrush, opponent_rel, null);
-        _ = rt.world.forget(guybrush, challenge_rel, null);
-        rt.set_banner(if (winner == guybrush)
-            std.fmt.bufPrint(&buf, "Victory! {s} yields. Duels won: {d}.", .{ name, sword_duel.wins(guybrush) }) catch "Victory!"
+        _ = rt.world.forget(tamsin, opponent_rel, null);
+        _ = rt.world.forget(tamsin, challenge_rel, null);
+        rt.set_banner(if (winner == tamsin)
+            std.fmt.bufPrint(&buf, "Victory! {s} yields. Duels won: {d}.", .{ name, sword_duel.wins(tamsin) }) catch "Victory!"
         else
             std.fmt.bufPrint(&buf, "Defeat. {s} wins this duel. [S] to try again.", .{name}) catch "Defeat.");
         return;
     }
-    rt.set_banner(std.fmt.bufPrint(&buf, "{s} Advantage: Guybrush {d}, {s} {d}.", .{
+    rt.set_banner(std.fmt.bufPrint(&buf, "{s} Advantage: Tamsin {d}, {s} {d}.", .{
         if (round.parried) "Parried!" else "Missed! The counter is learned.",
-        sword_duel.advantage(guybrush),
+        sword_duel.advantage(tamsin),
         name,
         sword_duel.advantage(opponent),
     }) catch "Round resolved.");
@@ -784,7 +784,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Guybrush", "Gabriel", "Player", "George", "Bernard", "Mara", "Guybrush", "Indy", "Donnie", "Wren" };
+    const players = [_][]const u8{ "Cat", "Guybrush", "Gabriel", "Player", "George", "Bernard", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -848,7 +848,7 @@ test "P30-01: the sword deck duels with generated replies until someone wins" {
     }
     try testing.expect(decided);
     // A miss teaches the counter, as on desktop.
-    try testing.expect(holds(rt, "Guybrush", "MasteredReply", null) or holds(rt, "Guybrush", "HeardInsult", null));
+    try testing.expect(holds(rt, "Tamsin", "MasteredComeback", null) or holds(rt, "Tamsin", "HeardBarb", null));
 }
 
 test "P30-01: the Bell Tower deck weaves drafts from note keys and tolls the bell" {

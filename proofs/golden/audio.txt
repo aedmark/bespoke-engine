@@ -27,9 +27,9 @@ note/6: 04f1117453f64a1f
 track/tavern: 49e5e9a4664b72a3
 track/cellar: 5f0f20e8ab2f82b9
 track/spitting_contest: 1c4908aa302345f6
-track/high_road: 55f9c76450b88860
-track/sanctuary: 3705b55dc5fde8cd
-track/scumm_bar: 5eaab78d83c9e45f
+track/tidewalk: 55f9c76450b88860
+track/fencing_yard: 3705b55dc5fde8cd
+track/lantern: 5eaab78d83c9e45f
 track/courtyard: 96577175d0aafb0a
 track/bike_shop: 159398360716a16b
 track/lochmarne: c7b1a492b5301089
@@ -44,9 +44,9 @@ scene/Spitting Competition: spitting_contest
 scene/Hotel Corridor: courtyard
 scene/Hotel Garden: courtyard
 scene/Bike Rental Shop: bike_shop
-scene/High Road: high_road
-scene/Sword Master Sanctuary: sanctuary
-scene/Scumm Bar: scumm_bar
+scene/Tidewalk: tidewalk
+scene/Fencing Yard: fencing_yard
+scene/Drowned Lantern: lantern
 scene/Living Village: tavern
 scene/Lochmarne Castle Courtyard: courtyard
 scene/Templar Crypt: lochmarne

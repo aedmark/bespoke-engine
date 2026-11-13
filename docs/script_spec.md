@@ -121,6 +121,8 @@ degradation ReactiveContainers:
   relations Contains Volume ContainerStage ContainerExposure ContainerFailedAt
 ```
 
+A duel may list several `fallback` lines. A fighter who knows no comeback is offered one of them, in order, one per fumbled round; the fighter's `DuelFumbles` count picks it (D-076).
+
 Society `need` and `member` order is significant. It establishes need and roster indexes, including society tick evaluation order. Duel pairs and tier variants preserve source order. A degradation profile's stage order is its progression order; every nonterminal stage has a positive duration and the final stage has duration zero. Each vessel declares capacity, initial volume, and initial stage. `spill N` removes up to N volume per tick while the vessel or its `Carries` holder is moving. The optional `relations` line supplies five distinct names for contents, volume, stage, exposure, and failure location. Compilation rejects invalid capacities, stages, members, providers, activities, and waypoints. Package format version 6 added spill rates to the three declaration tables; version 7 (below) adds grids, and every earlier version remains readable.
 
 ### Grids

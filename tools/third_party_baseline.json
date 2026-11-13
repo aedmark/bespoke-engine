@@ -21,15 +21,14 @@
       "Day of the Tentacle": 59,
       "Donnie Darko": 54,
       "Gabriel Knight 3": 12,
-      "Monkey Island": 12
+      "Monkey Island": 3
     },
     "proofs/atlantis_puzzle.zig": {
       "Indiana Jones and the Fate of Atlantis": 42
     },
     "proofs/audio_golden_test.zig": {
       "Broken Sword": 1,
-      "Donnie Darko": 1,
-      "Monkey Island": 1
+      "Donnie Darko": 1
     },
     "proofs/darko_puzzle.zig": {
       "Donnie Darko": 227
@@ -49,8 +48,7 @@
     },
     "proofs/golden/audio.txt": {
       "Broken Sword": 1,
-      "Donnie Darko": 1,
-      "Monkey Island": 1
+      "Donnie Darko": 1
     },
     "proofs/golden/darko_puzzle.txt": {
       "Donnie Darko": 47
@@ -70,14 +68,10 @@
       "Day of the Tentacle": 22,
       "Donnie Darko": 23,
       "Gabriel Knight 3": 19,
-      "Loom": 13,
-      "Monkey Island": 5
+      "Loom": 13
     },
     "proofs/golden/spitting_contest.txt": {
       "Monkey Island": 6
-    },
-    "proofs/golden/sword_fighting.txt": {
-      "Monkey Island": 60
     },
     "proofs/golden/wasm.txt": {
       "Broken Sword": 8,
@@ -112,10 +106,6 @@
     "proofs/spitting_contest.zig": {
       "Monkey Island": 59
     },
-    "proofs/sword_fighting.zig": {
-      "Indiana Jones and the Fate of Atlantis": 1,
-      "Monkey Island": 140
-    },
     "proofs/wasm_deck.zig": {
       "Broken Sword": 17,
       "Day of the Tentacle": 45,
@@ -123,7 +113,7 @@
       "Gabriel Knight 3": 43,
       "Indiana Jones and the Fate of Atlantis": 22,
       "Loom": 14,
-      "Monkey Island": 22
+      "Monkey Island": 12
     },
     "scheme/bespoke.manual.json": {
       "Broken Sword": 12,
@@ -141,7 +131,7 @@
       "Gabriel Knight 3": 69,
       "Indiana Jones and the Fate of Atlantis": 26,
       "Loom": 2,
-      "Monkey Island": 123
+      "Monkey Island": 31
     },
     "src/compiler/codegen.zig": {
       "Gabriel Knight 3": 7,
@@ -153,7 +143,7 @@
     },
     "src/compiler/parser.zig": {
       "Gabriel Knight 3": 11,
-      "Monkey Island": 17
+      "Monkey Island": 7
     },
     "src/display.zig": {
       "Day of the Tentacle": 12
@@ -186,7 +176,7 @@
       "Day of the Tentacle": 2,
       "Donnie Darko": 7,
       "Gabriel Knight 3": 16,
-      "Monkey Island": 16
+      "Monkey Island": 6
     },
     "src/world.zig": {
       "Day of the Tentacle": 9,
@@ -202,5 +192,5 @@
       "Monkey Island": 2
     }
   },
-  "total": 2699
+  "total": 2360
 }

@@ -1215,7 +1215,7 @@
             "AudioBridge consumes discrete audio cues from simulation ticks via an atomic/mutex-guarded ring buffer without blocking the simulation clock.",
             "Procedural ChiptuneSynth generates variable-duty pulse waves, linear triangles, sawteeth, and LCG noise using 32-bit integer phase accumulators and a precomputed 44.1 kHz MIDI table borrowed from Whimsy Machine.",
             "SfxVoice pool synthesizes 10 action sound effects (footsteps, pickups, combining items, horn blasts, splashes, sword clashes, alert stingers, dialogue chirps, clicks, whistles) with attack/decay envelopes and pitch sweeps.",
-            "A 4-channel step sequencer synthesizes looping 32-step musical accompaniment across 8 narrative scene themes (.tavern, .cellar, .spitting_contest, .high_road, .sanctuary, .scumm_bar, .courtyard, .bike_shop) with automatic crossfades.",
+            "A 4-channel step sequencer synthesizes looping 32-step musical accompaniment across 8 narrative scene themes (.tavern, .cellar, .spitting_contest, .tidewalk, .fencing_yard, .lantern, .courtyard, .bike_shop) with automatic crossfades.",
             "DisplayWindow initializes an SDL2 audio callback feeding 16-bit stereo PCM samples, falling back gracefully to silent offline rendering in headless mode."
           ],
           "why": "Narrative immersion requires rich auditory feedback, but BeSpoke's Engine-as-Spine tenet forbids external asset dependencies, blocking audio threads, or non-deterministic simulation execution. Pure procedural integer synthesis guarantees zero asset bloat, instant loading, and 100% headless testability.",
@@ -1285,13 +1285,14 @@
           "summary": "Challenge/reply contests with learned counters, opponent tiers, fact-guarded candidates, wins, and per-NPC inquiry fatigue.",
           "synopsis": "duel RiddleContest: ... | var duel = try bespoke.duel.Duel.init(&world, compiled.duels.items[0].config); try compiled.duels.items[0].apply_tiers(&duel);",
           "tags": ["dialogue", "duel", "choices", "tiers", "fatigue", "dsl"],
-          "what": "A reusable dialogue-duel mechanic configured by a script-level duel declaration or direct Zig data. Declarations contain challenge/reply pairs, optional tier variants and opponent assignments, a fallback, a win threshold, relation vocabulary, and staged inquiry-fatigue moods.",
+          "what": "A reusable dialogue-duel mechanic configured by a script-level duel declaration or direct Zig data. Declarations contain challenge/reply pairs, optional tier variants and opponent assignments, fallback lines, a win threshold, relation vocabulary, and staged inquiry-fatigue moods.",
           "how": [
             "Duel.init asserts the immutable Counters and VariantOf knowledge base as World facts; what each fighter heard or mastered, opponent tiers, advantage, wins, inquiry counts, and moods are also facts.",
             "Duel.challenges and Duel.replies submit candidates through VM.prune_dialogue_choices, so the ordinary fact-guarded dialogue query path controls what can be offered.",
             "A duel declaration preserves pair, variant, tier, and fatigue-stage source order. The host applies its tier assignments after Duel.init and may initialize InquiryFatigue from the same declaration.",
-            "The Insult Sword Fighting proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, and stores the active opponent and challenge as facts so a rewind restores the round (P32-23, D-046).",
-            ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table."
+            "A fighter with no learned reply is offered one fallback line. The fighter's DuelFumbles count, a fact, picks the line, so successive fumbles rotate through the list and a rewind restores the rotation (D-076).",
+            "The Brackwater Barbs proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, and stores the active opponent and challenge as facts so a rewind restores the round (P32-23, D-046).",
+            ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table. Version 14 stores up to eight fallback lines; earlier packages hold at most one."
           ],
           "why": "Game-facing configuration belongs in distributable .bespoke source. The mechanic remains generic while each game controls its dialogue, tiers, vocabulary, and mood cadence.",
           "why_basis": "recorded",
@@ -1299,7 +1300,8 @@
             {"label": "Architectural Decision D-035", "target": "docs/DECISIONS.md#d-035", "kind": "decision"},
             {"label": "Architectural Decision D-045", "target": "docs/DECISIONS.md#d-045", "kind": "decision"},
             {"label": "Dialogue Duel Module", "target": "src/duel.zig", "kind": "source"},
-            {"label": "Insult Sword Fighting Proof", "target": "proofs/sword_fighting.zig", "kind": "source"}
+            {"label": "Architectural Decision D-076", "target": "docs/DECISIONS.md#d-076", "kind": "decision"},
+            {"label": "Brackwater Barbs Proof", "target": "proofs/sword_fighting.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "living-village-emergent-sandbox", "branching-dialogue-balloons", "persistent-save-load-and-slot-management"]
         },

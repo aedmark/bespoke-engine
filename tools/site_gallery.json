@@ -67,9 +67,9 @@
     },
     {
       "id": "sword",
-      "title": "Insult Sword Fighting",
+      "title": "Brackwater Barbs",
       "tag": "Learning dialogue",
-      "blurb": "Every duel teaches insults and their comebacks. Opponents grow tired of repeated questions, and the duel's rounds and moods live in World facts, so a rewind replays them exactly.",
+      "blurb": "A fencing duel fought with barbs: you learn each comeback by losing to it. Mistress Vell throws her own versions of the barbs, which the same comebacks answer, and the barkeep tires of repeated questions. Rounds and moods are world facts, so a rewind replays them exactly.",
       "source": "proofs/sword_fighting.zig#SWORD_FIGHTING_SCRIPT",
       "deck": 7,
       "flag": "sword"

@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 51 (2026-11-10)
+- **Goal:** Merge P27-01 and implement P27-02, the dialogue branch and next-to-happen inspector.
+- **Work:** Fast-forwarded and pushed P27-01 (`1ad3a49`). Added backward-compatible `offer_choice_inspected` and `reject_choice` opcodes; codegen now records source-order active and pruned branches with the first failed guard as `DialogueBranch*` World facts. Extended `RenderFrame.dialogue`, the State tab, and `state_graph.next_expiring`; legacy and generated sets fall back to all-active branches. Updated the inspector render golden, D-058, roadmap, architecture, testing, changelog, manual, and handoff.
+- **Outcome:** See the Verified table. Mutations removing rejected-branch capture and expiry sorting each failed their P27-02 test. P27-02 is not merged; the State tab was verified offscreen, not hand-played.
+
 ### Session 50 (2026-11-10)
 - **Goal:** Ship P26-03 and start Phase 27 with P27-01.
 - **Work:** Merged P26-03 (`666de69`), closing Phase 26. Recorded D-058. Widened the frame's fact copy to 128 with ids, entity flags, and just-expired copies; added `src/display/state_graph.zig` (default focus, ego layout, bands, beliefs) and the drawer's State tab (drawing, Tab cycling, key and click guards so it never saves or loads); a render golden of the tab over a staged observatory. Moved the browser part of P27-03 to new item P30-04.

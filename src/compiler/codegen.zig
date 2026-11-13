@@ -876,6 +876,9 @@ pub const Codegen = struct {
             };
             built_pairs += 1;
         }
+        const fallbacks = try self.allocator.alloc([]const u8, decl.fallbacks.len);
+        errdefer self.allocator.free(fallbacks);
+        for (decl.fallbacks, 0..) |line, i| fallbacks[i] = try self.intern_program_text(line);
         const stages = try self.allocator.alloc(duel_mod.Stage, decl.fatigue_stages.len);
         errdefer self.allocator.free(stages);
         for (decl.fatigue_stages, 0..) |source, i| stages[i] = .{
@@ -891,7 +894,7 @@ pub const Codegen = struct {
         return .{
             .config = .{
                 .pairs = pairs,
-                .fallback = if (decl.fallback) |fallback| try self.intern_program_text(fallback) else null,
+                .fallbacks = fallbacks,
                 .win_at = decl.win_at,
                 .relations = .{
                     .heard = try self.intern_program_text(r[0]),
