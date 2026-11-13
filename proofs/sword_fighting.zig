@@ -450,7 +450,8 @@ fn open_round(
 
     var choices: [9]bespoke.dialogue.Choice = undefined;
     for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
-    _ = try vm.open_generated_dialogue(opponent, world.get_entity_name(challenge) orelse "", choices[0..count]);
+    // The prompt is the barb itself, so the player reads what they are answering.
+    _ = try vm.open_generated_dialogue(opponent, duel.challenge_text(challenge) orelse "", choices[0..count]);
     try session.record_now();
 }
 
@@ -492,25 +493,26 @@ fn resolve_choice(
     const round = try duel.resolve_round(opponent, fighter, challenge, reply);
     const name = world.get_entity_name(opponent) orelse "The opponent";
 
-    var buf: [192]u8 = undefined;
+    var buf: [320]u8 = undefined;
     if (round.winner) |winner| {
         const msg = if (winner == fighter)
             std.fmt.bufPrint(&buf, "Victory! {s} yields. Duels won: {d}.", .{ name, duel.wins(fighter) }) catch "Victory!"
         else
-            std.fmt.bufPrint(&buf, "Defeat. {s} wins this duel.", .{name}) catch "Defeat.";
+            std.fmt.bufPrint(&buf, "Defeat. {s}: \"{s}\" {s} wins this duel.", .{ name, duel.reply_text(challenge) orelse "", name }) catch "Defeat.";
         clear_active_duel(world, fighter, state);
         try session.record_now();
-        window.set_cue_banner(msg, 180);
+        window.set_cue_banner(msg, 240);
         return;
     }
 
-    const msg = std.fmt.bufPrint(&buf, "{s} Advantage: Tamsin {d}, {s} {d}.", .{
-        if (round.parried) "Parried!" else "Missed! The counter is learned.",
-        duel.advantage(fighter),
-        name,
-        duel.advantage(opponent),
-    }) catch "Round resolved.";
-    window.set_cue_banner(msg, 120);
+    // A lost round shows the comeback that beat the player, which they have now learned.
+    const msg = if (round.parried)
+        std.fmt.bufPrint(&buf, "Parried! Advantage: Tamsin {d}, {s} {d}.", .{ duel.advantage(fighter), name, duel.advantage(opponent) }) catch "Parried!"
+    else
+        std.fmt.bufPrint(&buf, "{s}: \"{s}\" (learned) Advantage: Tamsin {d}, {s} {d}.", .{ name, duel.reply_text(challenge) orelse "", duel.advantage(fighter), name, duel.advantage(opponent) }) catch "Missed! The comeback is learned.";
+    window.set_cue_banner(msg, 240);
+    // The opponent moves to its next barb; repeating one would let one learned reply win.
+    try world.remember(fighter, state.challenge, duel.next_challenge(challenge, opponent).to_int(), 0);
     try open_round(session, vm, world, duel, fighter, state);
 }
 
@@ -545,20 +547,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         .challenge = try world.intern_relation("ActiveDuelChallenge", .property),
     };
 
-    const walk_w = try spatial.graph.add_waypoint(tidewalk_scene, 0, 0, "TidewalkWest");
-    const walk_m = try spatial.graph.add_waypoint(tidewalk_scene, 20, 0, "TidewalkMid");
-    const walk_e = try spatial.graph.add_waypoint(tidewalk_scene, 40, 0, "TidewalkEast");
-
-    const gate_wp = try spatial.graph.add_waypoint(yard_scene, 0, 0, "YardGate");
-    const circle_wp = try spatial.graph.add_waypoint(yard_scene, 20, 0, "YardCircle");
-
-    const door_wp = try spatial.graph.add_waypoint(lantern_scene, 0, 0, "LanternDoor");
-    const counter_wp = try spatial.graph.add_waypoint(lantern_scene, 20, 0, "CounterMark");
-
-    try spatial.graph.connect(walk_w, walk_m, null);
-    try spatial.graph.connect(walk_m, walk_e, null);
-    try spatial.graph.connect(gate_wp, circle_wp, null);
-    try spatial.graph.connect(door_wp, counter_wp, null);
+    // The script's `marks:` lines already created and chained each scene's waypoints; a host
+    // that adds its own copies gets duplicate marks with no path between the two sets.
+    const walk_m = spatial.graph.find_waypoint_in_room(tidewalk_scene, "TidewalkMid") orelse return error.MissingMark;
+    const walk_e = spatial.graph.find_waypoint_in_room(tidewalk_scene, "TidewalkEast") orelse return error.MissingMark;
+    const circle_wp = spatial.graph.find_waypoint_in_room(yard_scene, "YardCircle") orelse return error.MissingMark;
+    const door_wp = spatial.graph.find_waypoint_in_room(lantern_scene, "LanternDoor") orelse return error.MissingMark;
+    const counter_wp = spatial.graph.find_waypoint_in_room(lantern_scene, "CounterMark") orelse return error.MissingMark;
 
     try spatial.register_entity(tamsin, walk_m, 10);
     try spatial.register_entity(bosun_pike, walk_e, 11);
@@ -582,6 +577,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
     try stdout.print("Brackwater Barbs Controls:\n", .{});
+    try stdout.print("   - [Click a mark]:         Walk Tamsin there\n", .{});
     try stdout.print("   - [1] - [5]:              Select Dialogue / Comeback\n", .{});
     try stdout.print("   - [D]:                    Duel Bosun Pike on the Tidewalk\n", .{});
     try stdout.print("   - [C]:                    Challenge Mistress Vell\n", .{});
@@ -608,6 +604,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             is_running = false;
         } else if (!try session.handle_common(action)) {
             switch (action) {
+                .walk_player => |wp_id| {
+                    if (world.get_property(tamsin, duel_state.opponent) != null) {
+                        window.set_cue_banner("Finish the duel first.", 90);
+                    } else if (!try spatial.walk_to(tamsin, wp_id)) {
+                        window.set_cue_banner("Tamsin can't get there from here.", 60);
+                    }
+                },
                 .dialogue_choice => |choice_idx| {
                     try resolve_choice(&session, &vm, &world, &duel, tamsin, duel_state, choice_idx, &window);
                 },

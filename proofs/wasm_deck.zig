@@ -617,7 +617,7 @@ fn sword_open_round(rt: *WasmRuntime) !void {
     if (count == 0) return;
     var choices: [9]bespoke.dialogue.Choice = undefined;
     for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
-    _ = try rt.vm.open_generated_dialogue(EntityId.from_int(opponent), rt.world.get_entity_name(EntityId.from_int(challenge)) orelse "", choices[0..count]);
+    _ = try rt.vm.open_generated_dialogue(EntityId.from_int(opponent), sword_duel.challenge_text(EntityId.from_int(challenge)) orelse "", choices[0..count]);
     rt.render_frame();
 }
 
@@ -663,7 +663,7 @@ fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
     const reply = if (action == 0) EntityId.none else EntityId.from_int(action);
     const round = try sword_duel.resolve_round(opponent, tamsin, challenge, reply);
     const name = rt.world.get_entity_name(opponent) orelse "The opponent";
-    var buf: [96]u8 = undefined;
+    var buf: [320]u8 = undefined;
     if (round.winner) |winner| {
         _ = rt.world.forget(tamsin, opponent_rel, null);
         _ = rt.world.forget(tamsin, challenge_rel, null);
@@ -673,12 +673,13 @@ fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
             std.fmt.bufPrint(&buf, "Defeat. {s} wins this duel. [S] to try again.", .{name}) catch "Defeat.");
         return;
     }
-    rt.set_banner(std.fmt.bufPrint(&buf, "{s} Advantage: Tamsin {d}, {s} {d}.", .{
-        if (round.parried) "Parried!" else "Missed! The counter is learned.",
-        sword_duel.advantage(tamsin),
-        name,
-        sword_duel.advantage(opponent),
-    }) catch "Round resolved.");
+    rt.set_banner(if (round.parried)
+        std.fmt.bufPrint(&buf, "Parried! Advantage: Tamsin {d}, {s} {d}.", .{ sword_duel.advantage(tamsin), name, sword_duel.advantage(opponent) }) catch "Parried!"
+    else
+        // The browser banner holds 96 bytes, so a lost round shows only the retort, now learned.
+        std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ name, sword_duel.reply_text(challenge) orelse "" }) catch "Missed! The comeback is learned.");
+    // The opponent moves to its next barb, as on desktop.
+    try rt.world.remember(tamsin, challenge_rel, sword_duel.next_challenge(challenge, opponent).to_int(), 0);
     try sword_open_round(rt);
 }
 
@@ -840,6 +841,15 @@ test "P30-01: the sword deck duels with generated replies until someone wins" {
     defer unload(rt);
     try rt.trigger_catalyst();
     try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    // The prompt is the barb's line, and after a round the opponent throws the next barb;
+    // repeating one barb let a single learned comeback win every round.
+    try testing.expectEqualStrings(sword_duel.config.pairs[0].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
+    const tamsin = rt.world.lookup_entity("Tamsin").?;
+    const challenge_rel = rt.world.lookup_relation("ActiveDuelChallenge").?;
+    const first = rt.world.get_property(tamsin, challenge_rel).?;
+    try rt.trigger_catalyst();
+    try testing.expect(rt.world.get_property(tamsin, challenge_rel).? != first);
+    try testing.expectEqualStrings(sword_duel.config.pairs[1].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
     var decided = false;
     for (0..60) |_| {
         try rt.trigger_catalyst();

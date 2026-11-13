@@ -177,6 +177,43 @@ pub const Duel = struct {
         return self.reply_ids[pair_index];
     }
 
+    /// The table index of the pair `challenge_ent` belongs to, through its base challenge.
+    pub fn pair_index_of(self: *const Duel, challenge_ent: EntityId) ?usize {
+        const base = self.base_of(challenge_ent);
+        for (0..self.pair_count) |p| {
+            if (self.challenge_ids[p][0] == base) return p;
+        }
+        return null;
+    }
+
+    /// The line a challenge entity speaks: the base challenge or its tier variant.
+    pub fn challenge_text(self: *const Duel, challenge_ent: EntityId) ?[]const u8 {
+        const p = self.pair_index_of(challenge_ent) orelse return null;
+        const pair = self.config.pairs[p];
+        for (0..pair.variants.len + 1) |tier| {
+            if (self.challenge_ids[p][tier] == challenge_ent) return if (tier == 0) pair.challenge else pair.variants[tier - 1];
+        }
+        return null;
+    }
+
+    /// The comeback line that counters `challenge_ent`.
+    pub fn reply_text(self: *const Duel, challenge_ent: EntityId) ?[]const u8 {
+        const p = self.pair_index_of(challenge_ent) orelse return null;
+        return self.config.pairs[p].reply;
+    }
+
+    /// The challenge `opponent` throws after `current`: the next pair in table order, wrapping,
+    /// at the opponent's tier, or the base challenge when that pair has no variant for it. A
+    /// host that stores the result as a fact gets a barb sequence that rewinds with the world;
+    /// without it, a host repeating one challenge lets one learned reply win every round.
+    pub fn next_challenge(self: *const Duel, current: EntityId, opponent: EntityId) EntityId {
+        const p = self.pair_index_of(current) orelse return self.challenge(0, 0);
+        const next = (p + 1) % self.pair_count;
+        const tier = self.world.get_property(opponent, self.tier_rel) orelse 0;
+        const variant = self.challenge(next, tier);
+        return if (variant == .none) self.challenge(next, 0) else variant;
+    }
+
     /// Resolves a tier variant to its base challenge; a base challenge resolves to itself.
     pub fn base_of(self: *const Duel, challenge_ent: EntityId) EntityId {
         if (self.world.find_first(challenge_ent, self.variant_of_rel, null)) |fact| {
@@ -683,6 +720,29 @@ test "D-076: fallback lines rotate per fighter, one per fumbled round" {
     var config = RIDDLE_CONFIG;
     config.fallbacks = &too_many;
     try testing.expectError(Error.InvalidDuelConfig, Duel.init(&bed.world, config));
+}
+
+test "P35-02: an opponent's next challenge advances through the table at its tier" {
+    const testing = std.testing;
+    var bed = try TestBed.init();
+    defer bed.deinit();
+    var duel = try Duel.init(&bed.world, RIDDLE_CONFIG);
+
+    const novice = try bed.world.intern_entity("Novice");
+    const elder = try bed.world.intern_entity("Elder");
+    try duel.set_tier(elder, 1);
+
+    // A tier 0 opponent walks the base challenges and wraps.
+    try testing.expectEqual(duel.challenge(1, 0), duel.next_challenge(duel.challenge(0, 0), novice));
+    try testing.expectEqual(duel.challenge(0, 0), duel.next_challenge(duel.challenge(2, 0), novice));
+    // A tier 1 opponent throws the variant where one exists, else the base challenge.
+    try testing.expectEqual(duel.challenge(1, 1), duel.next_challenge(duel.challenge(0, 1), elder));
+    try testing.expectEqual(duel.challenge(2, 0), duel.next_challenge(duel.challenge(1, 1), elder));
+
+    try testing.expectEqualStrings(RIDDLES[1].variants[0], duel.challenge_text(duel.challenge(1, 1)).?);
+    try testing.expectEqualStrings(RIDDLES[1].challenge, duel.challenge_text(duel.challenge(1, 0)).?);
+    try testing.expectEqualStrings(RIDDLES[1].reply, duel.reply_text(duel.challenge(1, 1)).?);
+    try testing.expectEqual(@as(?[]const u8, null), duel.challenge_text(novice));
 }
 
 test "P32-17: duel state is facts, so a snapshot restore rewinds it" {

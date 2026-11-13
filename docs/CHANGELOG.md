@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Fixed the duel proof in the window and the browser: each round now shows the barb you are answering, a lost round shows the comeback that beat you, and the opponent throws a new barb every round. Before, the opponent repeated one barb, so a single learned comeback won every round. In the window, clicking a mark now walks Tamsin there. `duel.Duel` gains `challenge_text`, `reply_text`, and `next_challenge`.
 - The Insult Sword Fighting proof is now Brackwater Barbs, an original (`P35-02`): Tamsin learns comebacks by losing to barbs on the Tidewalk, matches Mistress Vell's own versions of the barbs in her Fencing Yard, and wears out the Drowned Lantern's barkeep with questions about Harbourmaster Odell. The mechanics, the checks, and the `--sword-fighting` flag are unchanged; the browser deck and the showcase's dialogue samples follow.
 - A duel may now list several `fallback` lines (`D-076`). A fighter who knows no comeback gets one per fumbled round, in order; the count is a fact, so it rewinds with the world. Packages are format version 14; older packages load as before.
 - Added `tools/check_third_party.py` (`P35-01`, `D-075`), run by `check_docs.py`: it counts the commercial titles, characters, places, and lines the proofs borrow, and fails if any count rises. Today's baseline is 2,699 terms in 41 files; Phase 35 brings it to zero.

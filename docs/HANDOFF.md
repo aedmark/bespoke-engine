@@ -95,7 +95,7 @@ Every roadmap phase through 33 is complete; Phase 34 (loose ends and the release
 ### Session 61 (2026-11-13)
 - **Goal:** Commit and push P35-01, then P35-02.
 - **Work:** Pushed `3224209`. Drafted the duel; the maintainer sent their own fifteen pairs and three fallback lines, chose rotation over offering all three, and kept the film-quote fallback as parody (it is not in the lint's term list). Implemented D-076: `duel.Config.fallbacks`, a `DuelFumbles` property per fighter, repeated `fallback` lines in the parser, `.bspk` v14. Rewrote `proofs/sword_fighting.zig` as Brackwater Barbs (Tamsin, Bosun Pike, Old Gannet, Mistress Vell; Tidewalk, Fencing Yard, Drowned Lantern), with art, soundtrack names, the wasm deck, the gallery, the site's dialogue samples, the manual, README, `docs/state.html`, and the hand-test runbook. Replaced the duel lines in the P13-01 parser and P13-02 VM tests. Fixed one typo in the supplied lines: "turned tail and the sight of me" became "turned tail at the sight of me".
-- **Outcome:** See the Verified table. Not committed. Guybrush remains in the Spitting Contest, its art, and older engine tests until P35-03.
+- **Outcome:** See the Verified table. Committed as `83ae200`. The maintainer's hand test then found three window bugs older than the rewrite: no walk handler, duplicate marks, and a duel that repeated one barb and never showed it. Fixed with `Duel.next_challenge`, `challenge_text`, and `reply_text`; `zig build test` 566/566; a mutation that stops the barb advancing failed the deck test. Guybrush remains in the Spitting Contest, its art, and older engine tests until P35-03.
 
 ### Session 60 (2026-11-13)
 - **Goal:** Update `docs/state.html` and the handoff, then P35-01.
