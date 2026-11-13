@@ -92,6 +92,8 @@ zig build run -- run scenarios/tavern_heist.bspk --headless
 cd lighthouse && zig build test && zig build run
 ```
 
+To write your own story, follow the [authoring guide](docs/AUTHORING.md): scenes, dialogue, reactive puzzles, testing, and the host API.
+
 The repository has three layers:
 
 | Path | What it is |
@@ -147,6 +149,7 @@ BeSpoke adopts [The Manifold](docs/README.md) repository memory framework and th
 | :--- | :--- |
 | [`AGENTS.md`](AGENTS.md) | Canonical instructions and standing conventions for coding agents |
 | [`ROADMAP.md`](ROADMAP.md) | Stable-ID engineering phases and implementation tasks (`P1-01` .. `P32-04`) |
+| [`docs/AUTHORING.md`](docs/AUTHORING.md) | Authoring guide: scenes, dialogue, reactive puzzles, testing, and the host API |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Component map, data flows, invariants, and trust boundaries |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Append-only architectural decisions (`D-001` .. `D-031`), held tensions, and resolved questions (`Q-001` .. `Q-003`) |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Current project state, verification tally, and session log |

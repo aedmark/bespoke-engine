@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Added the authoring guide, `docs/AUTHORING.md` (`P29-02`, `D-064`): start a project, the model, walkthroughs for a scene, a dialogue, and a reactive puzzle, testing, the host API, and known limits. `zig build test` compiles every script in it and plays the walkthroughs. The manual gains an Authoring Games section.
+- `bespoke run` (and every `bespoke init` project) is now playable: click a dialogue option or press its number to answer, press Enter to type commands such as `talk to pilot` or `use match on lantern`, and read each spoken line in the banner. The window acts for the actor of the script's first routine. Headless runs now print speech, scene changes, and offered choices with their tick.
 - `bespoke check`, `bespoke compile`, and `bespoke run` now print compile error messages from memory the check result owns. The text was read after the parser that held it had returned, so it could print garbage. `CheckResult.diagnostic` is now a method, and `CheckResult.message()` returns the text.
 - Fixed whole-line comments. A line that starts with `#` or `~` (after any indentation) is now ignored entirely; before, its text was read as code, so a comment mentioning a keyword such as `when`, `score`, or `play` failed to compile.
 - Added `bespoke init <name>` (`P29-01`, `D-063`). It creates a standalone game project: a `build.zig` that depends on this engine checkout, a host that runs `scripts/main.bespoke` in a window or headless, a starter lighthouse story with an agenda, dialogue, and music, and tests you run with `zig build test`. `--engine <dir>` points the project at another checkout.

@@ -105,3 +105,9 @@ fn fail(stdout: anytype, msg: []const u8) !void {
     try stdout.print("error: {s}\n", .{msg});
     std.process.exit(1);
 }
+
+test {
+    // The authoring guide's examples are compiled and played here, where the build records the
+    // engine checkout that holds docs/ (P29-02, D-064).
+    _ = @import("authoring_guide_test.zig");
+}

@@ -174,9 +174,6 @@ fn walk_target(world: *const World, sp: *const SpatialSystem, room: ?EntityId, t
     return sp.graph.find_waypoint(name);
 }
 
-/// Collects `say` lines into one string./// Collects `say` lines into one string. `VM.step_tick` clears `emitted_cues` at the start of
-/// every tick, so speech must be collected after each tick; a cue index taken before a tick is
-/// meaningless after it (the bug this replaces in the old per-proof readers).
 /// A program's script scores as a playable soundtrack (P28-03, D-062): one `Music` per score,
 /// named after it, in declaration order. Register `&soundtrack` with
 /// `AudioBridge.set_soundtrack`; the audio thread then reads this value, so it must not move or
@@ -237,6 +234,9 @@ pub const ScriptSoundtrack = struct {
     }
 };
 
+/// Collects `say` lines into one string. `VM.step_tick` clears `emitted_cues` at the start of
+/// every tick, so speech must be collected after each tick; a cue index taken before a tick is
+/// meaningless after it (the bug this replaces in the old per-proof readers).
 pub const SpeechLog = struct {
     stream: std.io.FixedBufferStream([]u8),
     count: usize = 0,

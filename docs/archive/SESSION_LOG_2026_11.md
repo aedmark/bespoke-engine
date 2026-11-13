@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 47 (2026-11-10)
+- **Goal:** Ship the window feedback fixes and start Phase 26 with P26-01.
+- **Work:** Merged the window fixes (`eeb686f`); the maintainer re-played the observatory with no problems. Recorded D-057 for the whole phase. Added `src/command.zig` (tokenizer, frames and engine defaults, name words, scope, resolution), `command` and `alias` declarations, and `.bspk` version 10. Fixed a dangling-slice bug in name splitting found by the first resolve test (the name-split test had passed by luck), and replaced three hand-patched package-test offsets with one `EMPTY_TAIL_AFTER_V9` constant.
+- **Outcome:** See the Verified table. A mutation removing alias matching failed the noun test. Fast-forwarded to `main` and pushed.
+
 ### Session 46 (2026-11-10)
 - **Goal:** Fix what the maintainer hit hand-playing the observatory: Pell could not be talked to, and keys 1 to 3 showed nothing.
 - **Work:** Found that neither new proof ever drew script speech (the window shows `say` lines only when the host passes them to a banner) and that Pell's routine kept his sprite moving. Moved the observatory's action handling into a testable `Play` struct that shows each tick's speech and also runs the society on action ticks; added hints for keys pressed in the wrong place, a `[4]` confront key with one-mark reach, and replies for every staff member. Added speech display to the fire escape loop.

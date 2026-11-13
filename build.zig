@@ -129,6 +129,9 @@ pub fn build(b: *std.Build) void {
     exe_unit_tests.linkSystemLibrary("SDL2");
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    // The authoring guide's examples are read at test time (P29-02, D-064); declaring the file
+    // makes an edit to the guide re-run the tests instead of reusing a cached pass.
+    run_exe_unit_tests.addFileInput(b.path("docs/AUTHORING.md"));
 
     const proofs_unit_tests = b.addTest(.{
         .root_source_file = b.path("proofs/main.zig"),

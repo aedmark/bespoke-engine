@@ -861,6 +861,22 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Templates as a directory read at run time: rejected; the binary would need to find its own install tree.
 **Consequences:** A generated project builds only beside the engine checkout it names; moving either means editing `.path`. On Windows, an engine on another drive than the project cannot be expressed and `init` refuses. The starter's whole-line comments avoid language keywords until the comment-lexing fix lands. The starter's names (Hero, Keeper, Lighthouse) live in `src/` as template text, not as engine code paths.
 
+## D-064 Authoring Guide: Tested Examples and an Interactive Stock Runner (2026-11-12, status: accepted)
+**Context:** P29-02 asks for an authoring guide that walks through scenes, dialogues, and reactive puzzles. The stock runner (`bespoke run`, and every project `bespoke init` writes) drew dialogue choices but ignored them, had no command bar, and printed no speech headless, so a reader could not play the guide's dialogue or puzzle. The maintainer chose to wire the runner and to compile every guide example in the test suite (2026-11-12).
+**Decision:**
+1. **The guide lives in `docs/AUTHORING.md`.** It teaches in order: start a project, the model, three walkthroughs (a scene, a dialogue, a reactive puzzle), more mechanics, testing, the host API, and known limits. `script_spec.md` stays the syntax reference. The manual gains an "Authoring Games" section that points to it.
+2. **Every `bespoke` block is a whole script and is compiled.** `src/authoring_guide_test.zig`, run with the CLI's tests, reads the guide from the engine checkout the build records and compiles each block in a fresh World. Fragments are fenced as `text`. The walkthroughs carry `<!-- example: scene|dialogue|puzzle -->` markers and are played headless; the test checks the facts, speech, scene, and music the guide describes. `build.zig` declares the guide as an input of the test run, so editing it re-runs the tests.
+3. **The window acts for one player, chosen from the script.** The player is the actor of the first top-level routine in source order (the routine with the lowest entry address, which packages keep); path initializers are skipped. Before, the runner took whichever routine a hash map listed first. With no routine the player is `Player`, as before.
+4. **The window answers dialogue and typed commands.** A click or number key on an offered choice calls `VM.choose`, and a scripted choice ticks at once so its body runs. The command bar is enabled; a submitted line runs through `host.run_command` for the player, shows any reply as a banner, and ticks when a cue fired. Completion words refresh after every tick, and each tick's `say` lines show as the window's banner, because the window draws script speech only from a banner.
+5. **Headless runs print the story.** After each tick the runner prints `say` lines, a change of scene, and each newly offered set of choices, with the tick. Headless runs cannot answer choices.
+**Alternatives:**
+- Documentation only, driving dialogue from tests: not chosen; the program every project starts from would contradict the guide.
+- Scenario files quoted by the guide and checked for equality: not chosen; reference snippets would stay unchecked.
+- A `player` declaration in the language: not chosen now; source order already gives a stable rule without a new keyword.
+- Clicking a person to talk: not chosen in this change; typing `talk to <name>` covers it.
+- Placing cast members that have no routine: out of scope; recorded under Claims vs. code.
+**Consequences:** `bespoke run` output gains `Scene:`, speech, and `Choices for` lines; tools that parse it must allow them. A script whose first routine belongs to a non-player character now gives that character the player's clicks; reorder the routines to choose. The engine tests read a file outside `src/`, so they run from a checkout, as they already do.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

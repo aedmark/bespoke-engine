@@ -1005,6 +1005,60 @@
       ]
     },
     {
+      "id": "authoring-games",
+      "title": "Authoring Games",
+      "description": "Starting a project, writing scenes, dialogue, and reactive puzzles, and driving the engine from a Zig host.",
+      "entries": [
+        {
+          "id": "authoring-guide-walkthroughs",
+          "title": "Authoring Guide: Scenes, Dialogue, and Reactive Puzzles",
+          "summary": "docs/AUTHORING.md teaches a game author the script language through three walkthroughs whose scripts the test suite compiles and plays.",
+          "synopsis": "docs/AUTHORING.md | <!-- example: scene|dialogue|puzzle --> | zig build test",
+          "tags": ["authoring", "guide", "dialogue", "puzzles", "scenes", "dsl"],
+          "what": "The guide starts from bespoke init, explains entities, facts, routines, cues, and rules, then builds a two-scene quay, a conversation whose options depend on facts, and a timed lantern-and-bell puzzle. It ends with testing, the host API, and known limits.",
+          "how": [
+            "Every bespoke-fenced block in the guide is a whole script. src/authoring_guide_test.zig reads the guide, compiles each block in a fresh World, and reports a failure by guide line and script position.",
+            "The three walkthroughs are found by their example markers and played headless: the test types commands with host.run_command, answers choices with VM.choose, and checks the facts, speech, scene, and music the guide describes.",
+            "The build declares docs/AUTHORING.md as an input of the test run, so an edit to the guide re-runs the tests instead of reusing a cached pass.",
+            "The stock runner supports the walkthroughs end to end: the window answers dialogue clicks and number keys and enables the command bar for the first routine's actor; a headless run prints speech, scene changes, and offered choices."
+          ],
+          "why": "Examples drift when nothing runs them. Compiling and playing the guide's own text makes a stale example a test failure, and wiring the stock runner means the guide's instructions work in the program every new project starts from.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-064", "target": "docs/DECISIONS.md#d-064", "kind": "decision"},
+            {"label": "Authoring Guide", "target": "docs/AUTHORING.md", "kind": "document"},
+            {"label": "Guide Example Tests", "target": "src/authoring_guide_test.zig", "kind": "test"},
+            {"label": "Stock Runner", "target": "src/runner.zig", "kind": "source"}
+          ],
+          "related": ["host-kit-api", "standalone-script-runner-and-package-compiler", "branching-dialogue-balloons", "continuous-when-rules"]
+        },
+        {
+          "id": "host-kit-api",
+          "title": "Host Kit API: Driving the Engine from Zig",
+          "summary": "A host compiles a script, ticks it through host.tick, reads speech after each tick, and routes typed commands and dialogue choices to the VM.",
+          "synopsis": "compile_source | host.initialize_subsystems | host.run_initial_statements | host.tick | host.run_command | VM.choose | host.Session",
+          "tags": ["host", "api", "zig", "lifecycle", "authoring"],
+          "what": "The bespoke module exports the calls every game host needs: compilation and checking, package loading, the lifecycle tick, speech collection, typed-command dispatch, dialogue views and answers, path selection, the interactive Session loop, and the script soundtrack.",
+          "how": [
+            "compile_source interns a script's entities and marks into a World and SpatialSystem; host.initialize_subsystems seeds declared grids, agendas, and containers and is safe to repeat.",
+            "host.tick runs one lifecycle tick: the VM, containers, grids, agendas, and queued weaves. Hosts never call VM.step_tick alone, or declared rules do not run.",
+            "Speech is read after every tick with host.speech_this_tick or SpeechLog, because the next tick clears the emitted cues.",
+            "host.run_command interprets a typed line for an actor and fires its cue; dialogue.view and VM.choose present and answer the open set of choices.",
+            "host.Session owns the timeline, rewind, scrub, saves, pause, and single step for a window host."
+          ],
+          "why": "Hosts that copied loop and speech plumbing drifted apart. One documented kit keeps every host on the same lifecycle, and the authoring guide's table gives authors the contract without reading engine source.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-033", "target": "docs/DECISIONS.md#d-033", "kind": "decision"},
+            {"label": "Architectural Decision D-064", "target": "docs/DECISIONS.md#d-064", "kind": "decision"},
+            {"label": "Host Kit", "target": "src/host.zig", "kind": "source"},
+            {"label": "Authoring Guide, Host API", "target": "docs/AUTHORING.md#8-host-api", "kind": "document"}
+          ],
+          "related": ["authoring-guide-walkthroughs", "fiber-scheduler", "typed-commands-vocabulary"]
+        }
+      ]
+    },
+    {
       "id": "developer-diagnostics",
       "title": "Developer Tooling & Diagnostics",
       "description": "Interactive developer inspection HUD, time-travel timeline scrubber, live REPL console, and CLI runners.",

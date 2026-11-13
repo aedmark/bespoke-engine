@@ -166,8 +166,6 @@ pub fn run_file(
     else
         null;
 
-    var player_entity: ?bespoke.EntityId = null;
-
     // 3. Spawn all defined routines for their declared actors
     var r_it = compiled.routine_entries.iterator();
     while (r_it.next()) |entry| {
@@ -175,10 +173,6 @@ pub fn run_file(
         const rpc = entry.value_ptr.*;
         const actor_name = compiled.routine_entities.get(rname) orelse "Player";
         const actor_ent = try world.intern_entity(actor_name);
-
-        if (player_entity == null) {
-            player_entity = actor_ent;
-        }
 
         if (default_wp) |dwp| {
             if (!spatial.agents.contains(actor_ent)) {
@@ -189,9 +183,9 @@ pub fn run_file(
         _ = try vm.spawn_routine(actor_ent, rpc);
     }
 
-    if (player_entity == null) {
-        player_entity = try world.intern_entity("Player");
-    }
+    // The window's clicks and typed commands act for one actor, chosen from the script so the
+    // choice is the same on every run (P29-02, D-064).
+    const player_entity = try world.intern_entity(player_actor(&compiled) orelse "Player");
 
     var display_bridge = DisplayBridge.init();
     var repl_instance = Repl.init(&world, &spatial, &vm);
@@ -224,9 +218,15 @@ pub fn run_file(
             last_score = last_score_buf[0..first.len];
         }
 
+        // Speech, scene changes, and offered choices are printed as they happen, so a script
+        // can be read from a headless run (P29-02, D-064).
+        var story = StoryReport{};
+        try story.report(&world, &vm, stdout);
+
         var tick_count: usize = 0;
         while (tick_count < config.ticks) : (tick_count += 1) {
             _ = try bespoke.host.tick(&vm, &compiled);
+            try story.report(&world, &vm, stdout);
 
             var snap = std.ArrayList(u8).init(allocator);
             try world.save_state(snap.writer());
@@ -283,9 +283,14 @@ pub fn run_file(
         try stdout.print("   - [Tab / ` / C]:         Toggle Live REPL Console Drawer\n", .{});
         try stdout.print("   - [Esc / Close]:         Exit\n\n", .{});
 
+        // Typed commands fire cues for the player (P29-02, D-064); Enter focuses the bar.
+        window.enable_command_bar(true);
+        var interp = bespoke.command.Interpreter{};
+
         display_bridge.capture_frame(&world, &spatial, &vm);
         display_bridge.set_max_history_tick(0);
         display_bridge.swap();
+        bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
 
         var snap0 = std.ArrayList(u8).init(allocator);
         try world.save_state(snap0.writer());
@@ -310,10 +315,20 @@ pub fn run_file(
                     should_step_now = true;
                 },
                 .walk_player => |wp_id| {
-                    if (player_entity) |p_ent| {
-                        _ = spatial.walk_to(p_ent, wp_id) catch {};
-                        window.set_cue_banner("Directing actor to mark", 60);
-                    }
+                    _ = spatial.walk_to(player_entity, wp_id) catch {};
+                    window.set_cue_banner("Directing actor to mark", 60);
+                },
+                // A click or number key answers the open dialogue. A scripted choice resumes its
+                // fiber, so the chosen body runs on the tick that follows at once.
+                .dialogue_choice => |index| {
+                    if (try answer_dialogue(&vm, index)) should_step_now = true;
+                },
+                .typed_command => |typed| {
+                    var reply_buf: [160]u8 = undefined;
+                    const reply = try bespoke.host.run_command(&vm, &compiled, &interp, player_entity, typed.buf[0..typed.len], &reply_buf);
+                    if (reply.text) |text| window.set_cue_banner(text, 180);
+                    if (reply.fired) should_step_now = true;
+                    bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
                 },
                 .examine_hotspot => |hs_idx| {
                     const frame = display_bridge.get_frame();
@@ -379,6 +394,10 @@ pub fn run_file(
 
             if (should_step_now) {
                 _ = try bespoke.host.tick(&vm, &compiled);
+                // The window draws script speech only from a banner, so each tick's `say`
+                // lines are passed to it here (P29-02, D-064).
+                var speech_buf: [256]u8 = undefined;
+                if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |line| window.set_cue_banner(line, 160);
 
                 var snap = std.ArrayList(u8).init(allocator);
                 try world.save_state(snap.writer());
@@ -387,12 +406,69 @@ pub fn run_file(
                 display_bridge.capture_frame(&world, &spatial, &vm);
                 display_bridge.set_max_history_tick(world.current_tick);
                 display_bridge.swap();
+                bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
             }
 
             window.render_frame(display_bridge.get_frame(), is_paused);
             std.time.sleep(16 * std.time.ns_per_ms);
         }
     }
+}
+
+/// Prints what a headless run's story did on the most recent tick: each `say` line, a change of
+/// scene, and a newly offered set of choices. A headless run cannot answer a choice, so the
+/// speaker's fiber stays suspended; tests and hosts answer with `VM.choose`.
+pub const StoryReport = struct {
+    scene: ?bespoke.EntityId = null,
+    dialogue_revision: ?u32 = null,
+
+    pub fn report(self: *StoryReport, world: *const World, vm: *const VM, out: anytype) !void {
+        const tick = world.current_tick;
+        if (vm.current_scene) |scene| if (self.scene == null or self.scene.? != scene) {
+            try out.print("[Tick {d:>3}] Scene: {s}\n", .{ tick, world.get_entity_name(scene) orelse "?" });
+            self.scene = scene;
+        };
+        for (vm.emitted_cues.items) |cue| {
+            if (cue.cue_id != bespoke.host.SAY_CUE_ID or cue.arg_count < 2) continue;
+            const name = world.get_entity_name(bespoke.EntityId.from_int(cue.args[0])) orelse "Someone";
+            const text = world.get_entity_name(bespoke.EntityId.from_int(cue.args[1])) orelse "";
+            try out.print("[Tick {d:>3}] {s}: \"{s}\"\n", .{ tick, name, text });
+        }
+        if (bespoke.dialogue.view(world)) |open| {
+            if (self.dialogue_revision == null or self.dialogue_revision.? != open.revision) {
+                try out.print("[Tick {d:>3}] Choices for {s}:", .{ tick, world.get_entity_name(open.display_speaker) orelse "?" });
+                for (0..open.count) |i| try out.print(" {d}. {s}", .{ i + 1, open.text(i) });
+                try out.writeAll("\n");
+                self.dialogue_revision = open.revision;
+            }
+        } else self.dialogue_revision = null;
+    }
+};
+
+/// The actor the stock window acts for: the actor of the first top-level routine in source
+/// order (P29-02, D-064). Routines compile in source order, so the lowest entry wins; this holds
+/// for packages too, which keep entry addresses. Path initializers are skipped; path routines
+/// compile after every top-level routine, so they are chosen only when no top-level routine
+/// exists. Null when the script declares no routine.
+pub fn player_actor(compiled: *const CompiledProgram) ?[]const u8 {
+    var best_pc: usize = std.math.maxInt(usize);
+    var best: ?[]const u8 = null;
+    var it = compiled.routine_entries.iterator();
+    while (it.next()) |entry| {
+        const name = entry.key_ptr.*;
+        if (std.mem.startsWith(u8, name, bespoke.compiler.codegen.PATH_ROUTINE_PREFIX)) continue;
+        if (entry.value_ptr.* >= best_pc) continue;
+        best_pc = entry.value_ptr.*;
+        best = compiled.routine_entities.get(name);
+    }
+    return best;
+}
+
+/// Answers the open dialogue with option `index`. Returns true when a scripted body must run,
+/// which takes one tick; an index past the offered options changes nothing.
+pub fn answer_dialogue(vm: *VM, index: usize) !bool {
+    const selection = (try vm.choose(index)) orelse return false;
+    return selection.is_scripted();
 }
 
 // =========================================================================
@@ -450,4 +526,63 @@ test "P15-01: runner checks and compiles external scenario file" {
 
     // Test run_file on compiled binary package in headless mode
     try run_file(testing.allocator, tmp_pkg, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
+}
+
+test "P29-02: the window acts for the first routine's actor and answers scripted dialogue" {
+    const testing = std.testing;
+    const source =
+        \\scene Hall:
+        \\  cast: Zed, Amy, Hero
+        \\  marks: Door, Stair
+        \\
+        \\relation Asked(who)
+        \\
+        \\routine Zwander(Zed):
+        \\  wait 1 ticks
+        \\routine Hero(Hero):
+        \\  wait 1 ticks
+        \\routine Amble(Amy):
+        \\  wait 1 ticks
+        \\
+        \\on cue TalksTo(Hero, Amy):
+        \\  choice "Ask the way.":
+        \\    remember Asked(Hero)
+        \\  choice "Leave.":
+        \\    say Amy: "Goodbye."
+    ;
+    var world = try World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, source);
+    defer compiled.deinit();
+    // Hash order would not give Zed reliably; source order does.
+    try testing.expectEqualStrings("Zed", player_actor(&compiled).?);
+
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    const hero = world.lookup_entity("Hero").?;
+    const amy = world.lookup_entity("Amy").?;
+    _ = (try vm.fire_cue(&compiled, "TalksTo", hero, amy, null)).?;
+    _ = try bespoke.host.tick(&vm, &compiled);
+    try testing.expect(bespoke.dialogue.view(&world) != null);
+
+    try testing.expect(!try answer_dialogue(&vm, 5));
+    try testing.expect(try answer_dialogue(&vm, 0));
+    _ = try bespoke.host.tick(&vm, &compiled);
+    try testing.expect(world.find_first(hero, world.lookup_relation("Asked").?, null) != null);
+    try testing.expect(bespoke.dialogue.view(&world) == null);
+}
+
+test "P29-02: a script with no routine has no player actor" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, "entity Lamp\n");
+    defer compiled.deinit();
+    try testing.expect(player_actor(&compiled) == null);
 }
