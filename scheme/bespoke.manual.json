@@ -776,14 +776,15 @@
         {
           "id": "branching-dialogue-balloons",
           "title": "Branching Dialogue Trees & Dynamic Choice Pruning",
-          "summary": "Temporal speech balloons with actor name tags, dialogue lines, and relational fact-guarded branching choices that suspend the script until selection.",
+          "summary": "A wrapped dialogue panel with the speaker's name, the line, and relational fact-guarded choices that suspend the script until selection.",
           "synopsis": "choice \"Rent motorcycle\" if Carries(Gabriel, License): say Buthane: \"Keys.\"",
           "tags": ["dialogue", "speech", "balloons", "choices", "pruning"],
-          "what": "Renders stylized parchment speech balloons anchored above talking actors with automatic text wrapping, speech tails, dynamic height scaling, scrolling, and keyboard hotkey selection (1-9).",
+          "what": "Shows the open dialogue in a parchment panel along the bottom of the stage: the speaker's display name, the line word-wrapped, and numbered choices that wrap and grow the panel upward, with scrolling past six and keyboard hotkeys (1-9). The window and the browser draw the same layout (D-077).",
           "how": [
-            "SpeechBalloon stores speaker coordinates, name, line text, and up to 9 branching choices with dynamic height scaling and scroll offset.",
+            "dialogue_panel.layout wraps the speaker, prompt, and choices into rows for a panel width and font scale, and reports each choice's vertical span; it has no SDL dependency, so the desktop renderer and the wasm canvas share it.",
+            "dialogue_panel.display_name splits CamelCase entity names for display (BosunPike reads Bosun Pike).",
             "Fibers executing choice blocks evaluate relational guards, record the eligible options as World facts, and suspend until a selection resumes the chosen body.",
-            "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks, mouse wheel scrolling, and number keys 1-9 to trigger selections.",
+            "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks on any row of a choice, mouse wheel scrolling, and number keys 1-9; the browser answers clicks and number keys.",
             "The open set lives in World facts, so snapshots and rewinds carry it; RenderFrame.dialogue publishes it to the balloon by revision.",
             "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions."
           ],
@@ -793,6 +794,8 @@
             {"label": "Architectural Decision D-009", "target": "docs/DECISIONS.md#d-009", "kind": "decision"},
             {"label": "Architectural Decision D-015", "target": "docs/DECISIONS.md#d-015", "kind": "decision"},
             {"label": "Architectural Decision D-046", "target": "docs/DECISIONS.md#d-046", "kind": "decision"},
+            {"label": "Architectural Decision D-077", "target": "docs/DECISIONS.md#d-077", "kind": "decision"},
+            {"label": "Dialogue Panel Layout", "target": "src/display/dialogue_panel.zig", "kind": "source"},
             {"label": "Executable Dialogue Lifecycle", "target": "src/dialogue.zig", "kind": "source"},
             {"label": "Dialogue Choice Parser Grammar", "target": "src/compiler/parser.zig", "kind": "source"},
             {"label": "VM Choice Pruning Logic", "target": "src/vm.zig", "kind": "source"},
@@ -1290,8 +1293,9 @@
             "Duel.init asserts the immutable Counters and VariantOf knowledge base as World facts; what each fighter heard or mastered, opponent tiers, advantage, wins, inquiry counts, and moods are also facts.",
             "Duel.challenges and Duel.replies submit candidates through VM.prune_dialogue_choices, so the ordinary fact-guarded dialogue query path controls what can be offered.",
             "A duel declaration preserves pair, variant, tier, and fatigue-stage source order. The host applies its tier assignments after Duel.init and may initialize InquiryFatigue from the same declaration.",
+            "Fighters learn what they hear (D-078): resolve_round teaches the defender the challenge and the attacker the reply it got back, so a lost round teaches the defender nothing more. Duel.answer gives a host-driven opponent's reply: the countering comeback if it knows it, else the fallback.",
             "A fighter with no learned reply is offered one fallback line. The fighter's DuelFumbles count, a fact, picks the line, so successive fumbles rotate through the list and a rewind restores the rotation (D-076).",
-            "The Brackwater Barbs proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, moves the opponent to Duel.next_challenge (the next pair at its tier), and stores the active opponent and challenge as facts so a rewind restores the round (P32-23, D-046).",
+            "The Brackwater Barbs proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, takes turns through the proof's Bout (whoever wins a round attacks next; a master always attacks), moves an attacking opponent to Duel.next_challenge, fires the script's WinsDuel cue for the victory line, and stores the active opponent, barb, and turn as facts so a rewind restores the round (P32-23, D-046).",
             ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table. Version 14 stores up to eight fallback lines; earlier packages hold at most one."
           ],
           "why": "Game-facing configuration belongs in distributable .bespoke source. The mechanic remains generic while each game controls its dialogue, tiers, vocabulary, and mood cadence.",
@@ -1301,6 +1305,7 @@
             {"label": "Architectural Decision D-045", "target": "docs/DECISIONS.md#d-045", "kind": "decision"},
             {"label": "Dialogue Duel Module", "target": "src/duel.zig", "kind": "source"},
             {"label": "Architectural Decision D-076", "target": "docs/DECISIONS.md#d-076", "kind": "decision"},
+            {"label": "Architectural Decision D-078", "target": "docs/DECISIONS.md#d-078", "kind": "decision"},
             {"label": "Brackwater Barbs Proof", "target": "proofs/sword_fighting.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "living-village-emergent-sandbox", "branching-dialogue-balloons", "persistent-save-load-and-slot-management"]

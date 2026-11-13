@@ -12,18 +12,20 @@
       [1] "Er... is that the time?"
    -> Tamsin stammers: "Er... is that the time?"
    -> DuelFumbles(Tamsin, 1): her next fallback line is "I have to return some video tapes."
-   -> Pike lunges and taunts: "Good, then that means I can still wipe the floor with you."
-   -> Relational Learning Triggered:
-      - Remembered HeardBarb(Tamsin, 1): "You wield that sword like a mop handle!"
-      - Remembered MasteredComeback(Tamsin, 1): "Good, then that means I can still wipe the floor with you."
+   -> Pike presses on: "I've sunk ships with less effort than this!"
+   -> Relational Learning: HeardBarb(Tamsin, 1); no comeback learned from a lost round.
 
 [Step 2: Offensive Initiative with Learned Barbs]
    -> Tamsin confronts Old Gannet!
    -> Available Offensive Barbs for Tamsin (1):
       [1] "You wield that sword like a mop handle!"
    -> Tamsin throws Barb 1: "You wield that sword like a mop handle!"
-   -> Gannet fails to counter and retorts with Barb 5: "You'll be feeding the gulls by sundown!"
-   -> Tamsin commits Barb 5 and Comeback 5 to memory!
+   -> Gannet parries: "Good, then that means I can still wipe the floor with you."
+   -> Tamsin heard it: MasteredComeback(Tamsin, 1)
+   -> Gannet attacks with Barb 5: "You'll be feeding the gulls by sundown!"
+   -> Later, Tamsin throws Barb 5 at Bosun Pike.
+   -> Pike parries: "Unfortunately for you, they'll be too busy picking apart your reputation."
+   -> Tamsin commits Comeback 5 to memory!
 
 [Step 3: Relational Query Pruning & Duel Victory]
    -> Bosun Pike challenges Tamsin again!
@@ -62,7 +64,7 @@
 
 [Step 6: Temporal Mood Decay via Master Simulation Ticks]
    -> Simulating 260 ticks on BeSpoke spine...
-   -> Current Tick: 260
+   -> Current Tick: 261
    -> Barkeep Mood after 260 ticks: welcoming
    -> AnnoyedWith and FuriousWith reached their expiry ticks and left the world.
    -> Barkeep: "Back again? The cider's still cold."
@@ -74,7 +76,7 @@
    -> Citizen: "Then you've earned this. The harbour's tide chart, with every sandbar marked!"
 
    [Deterministic Time-Travel Rewind Verification]
-   -> Restored Snapshot 0 (Tick 0).
+   -> Restored Snapshot 0 (Tick 1).
    -> Tamsin HeardBarb Count: 0 (Clean)
    -> Tamsin MasteredComeback Count: 0 (Clean)
    -> Tamsin DuelFumbles: 0

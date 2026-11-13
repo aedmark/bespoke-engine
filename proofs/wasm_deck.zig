@@ -18,7 +18,8 @@ const VILLAGE_SCRIPT = @import("village.zig").VILLAGE_SCRIPT;
 const GOAT_PUZZLE_SCRIPT = @import("goat_puzzle.zig").GOAT_PUZZLE_SCRIPT;
 const DOTT_PUZZLE_SCRIPT = @import("dott_puzzle.zig").DOTT_PUZZLE_SCRIPT;
 const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
-const SWORD_FIGHTING_SCRIPT = @import("sword_fighting.zig").SWORD_FIGHTING_SCRIPT;
+const sword_fighting = @import("sword_fighting.zig");
+const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
 const atlantis = @import("atlantis_puzzle.zig");
 const loom = @import("loom_puzzle.zig");
 const art = @import("art.zig");
@@ -577,21 +578,21 @@ fn village_desperation(rt: *WasmRuntime) anyerror!void {
 // Brackwater Barbs: the engine duel, configured by the script
 // =============================================================================
 
-/// The duel and its active round. The round is World facts, as on desktop, so a rewind
-/// restores it with the generated reply set (D-046); the `Duel` itself holds configuration.
+/// The duel and the bout in progress. The round is World facts, as on desktop, so a rewind
+/// restores it with the generated choice set (D-046); the desktop proof's `Bout` runs the turns
+/// (D-078), so both play the same duel.
 var sword_duel: duel_mod.Duel = undefined;
+var sword_bout: sword_fighting.Bout = undefined;
 var sword_ready = false;
 
-/// The duel, pointed at the live World. `Duel` keeps the World it was initialised with, and the
-/// runtime is moved after setup (`WasmRuntime.bind`), so every use re-points it first.
-fn sword(rt: *WasmRuntime) ?*duel_mod.Duel {
+/// The bout, pointed at the live World. `Duel` and `Bout` keep the World they were initialised
+/// with, and the runtime is moved after setup (`WasmRuntime.bind`), so every use re-points them.
+fn sword(rt: *WasmRuntime) ?*sword_fighting.Bout {
     if (!sword_ready) return null;
     sword_duel.world = &rt.world;
-    return &sword_duel;
-}
-
-fn sword_relation(rt: *WasmRuntime, name: []const u8) !bespoke.RelationKind {
-    return rt.world.intern_relation(name, .property);
+    sword_bout.world = &rt.world;
+    sword_bout.duel = &sword_duel;
+    return &sword_bout;
 }
 
 fn sword_setup(rt: *WasmRuntime) anyerror!void {
@@ -601,41 +602,24 @@ fn sword_setup(rt: *WasmRuntime) anyerror!void {
     const decl = &program.duels.items[0];
     sword_duel = try duel_mod.Duel.init(&rt.world, decl.config);
     try decl.apply_tiers(&sword_duel);
+    sword_bout = try sword_fighting.Bout.init(&rt.world, &sword_duel, try entity(rt, "Tamsin"));
     sword_ready = true;
     try rt.vm.transition_to_scene(try entity(rt, "Tidewalk"));
 }
 
-/// Offers the comebacks Tamsin has mastered against the active challenge, as the desktop's
-/// generated choice set; each action id is the reply entity.
-fn sword_open_round(rt: *WasmRuntime) !void {
-    _ = sword(rt) orelse return;
-    const tamsin = try entity(rt, "Tamsin");
-    const opponent = rt.world.get_property(tamsin, try sword_relation(rt, "ActiveDuelOpponent")) orelse return;
-    const challenge = rt.world.get_property(tamsin, try sword_relation(rt, "ActiveDuelChallenge")) orelse return;
-    var candidates: [9]duel_mod.Candidate = undefined;
-    const count = sword_duel.replies(&rt.vm, tamsin, EntityId.from_int(challenge), &candidates);
-    if (count == 0) return;
-    var choices: [9]bespoke.dialogue.Choice = undefined;
-    for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
-    _ = try rt.vm.open_generated_dialogue(EntityId.from_int(opponent), sword_duel.challenge_text(EntityId.from_int(challenge)) orelse "", choices[0..count]);
+fn sword_start(rt: *WasmRuntime, opponent_name: []const u8, opening: EntityId) !void {
+    const bout = sword(rt) orelse return;
+    try bout.start(&rt.vm, try entity(rt, opponent_name), opening);
+    try bout.open(&rt.vm);
     rt.render_frame();
-}
-
-fn sword_start(rt: *WasmRuntime, opponent_name: []const u8, challenge: EntityId) !void {
-    _ = sword(rt) orelse return;
-    const tamsin = try entity(rt, "Tamsin");
-    const opponent = try entity(rt, opponent_name);
-    try rt.world.remember(tamsin, try sword_relation(rt, "ActiveDuelOpponent"), opponent.to_int(), 0);
-    try rt.world.remember(tamsin, try sword_relation(rt, "ActiveDuelChallenge"), challenge.to_int(), 0);
-    try rt.world.remember(tamsin, sword_duel.advantage_rel, 0, 0);
-    try rt.world.remember(opponent, sword_duel.advantage_rel, 0, 0);
-    try sword_open_round(rt);
+    var name_buf: [48]u8 = undefined;
+    const shown = bespoke.display.dialogue_panel.display_name(opponent_name, &name_buf);
     var buf: [96]u8 = undefined;
-    rt.set_banner(std.fmt.bufPrint(&buf, "{s} draws. Answer with the number keys, or [S].", .{opponent_name}) catch opponent_name);
+    rt.set_banner(std.fmt.bufPrint(&buf, "{s} draws. Answer with the number keys, or [S].", .{shown}) catch opponent_name);
 }
 
-/// `[S]`: with a round open, answers with the first reply; otherwise starts the desktop
-/// proof's next duel, Bosun Pike on the Tidewalk and then Mistress Vell in her fencing yard.
+/// `[S]`: with a round open, plays the first choice; otherwise starts the desktop proof's next
+/// duel, Bosun Pike on the Tidewalk and then Mistress Vell in her fencing yard.
 fn sword_solve(rt: *WasmRuntime) anyerror!void {
     _ = sword(rt) orelse return;
     if (bespoke.dialogue.view(&rt.world) != null) return rt.answer(0);
@@ -652,35 +636,20 @@ fn sword_solve(rt: *WasmRuntime) anyerror!void {
     rt.set_banner("Both duels are fought. Press [R] to rewind and duel again.");
 }
 
-/// The desktop's round resolution: a parry gains advantage, a miss teaches the counter.
+/// Plays the chosen barb or comeback through the desktop's `Bout`. When the duel ends, the
+/// script's `WinsDuel` handler speaks, and the next tick puts the line in the banner.
 fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
-    _ = sword(rt) orelse return;
-    const tamsin = try entity(rt, "Tamsin");
-    const opponent_rel = try sword_relation(rt, "ActiveDuelOpponent");
-    const challenge_rel = try sword_relation(rt, "ActiveDuelChallenge");
-    const opponent = EntityId.from_int(rt.world.get_property(tamsin, opponent_rel) orelse return);
-    const challenge = EntityId.from_int(rt.world.get_property(tamsin, challenge_rel) orelse return);
-    const reply = if (action == 0) EntityId.none else EntityId.from_int(action);
-    const round = try sword_duel.resolve_round(opponent, tamsin, challenge, reply);
-    const name = rt.world.get_entity_name(opponent) orelse "The opponent";
+    const bout = sword(rt) orelse return;
     var buf: [320]u8 = undefined;
-    if (round.winner) |winner| {
-        _ = rt.world.forget(tamsin, opponent_rel, null);
-        _ = rt.world.forget(tamsin, challenge_rel, null);
-        rt.set_banner(if (winner == tamsin)
-            std.fmt.bufPrint(&buf, "Victory! {s} yields. Duels won: {d}.", .{ name, sword_duel.wins(tamsin) }) catch "Victory!"
-        else
-            std.fmt.bufPrint(&buf, "Defeat. {s} wins this duel. [S] to try again.", .{name}) catch "Defeat.");
+    const result = try bout.choose(action, &buf);
+    rt.set_banner(result.banner);
+    if (result.winner) |winner| {
+        const program = if (rt.program) |*p| p else return;
+        _ = try rt.vm.fire_cue(program, "WinsDuel", winner, result.loser, null);
+        try rt.step_tick();
         return;
     }
-    rt.set_banner(if (round.parried)
-        std.fmt.bufPrint(&buf, "Parried! Advantage: Tamsin {d}, {s} {d}.", .{ sword_duel.advantage(tamsin), name, sword_duel.advantage(opponent) }) catch "Parried!"
-    else
-        // The browser banner holds 96 bytes, so a lost round shows only the retort, now learned.
-        std.fmt.bufPrint(&buf, "{s}: \"{s}\"", .{ name, sword_duel.reply_text(challenge) orelse "" }) catch "Missed! The comeback is learned.");
-    // The opponent moves to its next barb, as on desktop.
-    try rt.world.remember(tamsin, challenge_rel, sword_duel.next_challenge(challenge, opponent).to_int(), 0);
-    try sword_open_round(rt);
+    try bout.open(&rt.vm);
 }
 
 // =============================================================================
@@ -841,7 +810,7 @@ test "P30-01: the sword deck duels with generated replies until someone wins" {
     defer unload(rt);
     try rt.trigger_catalyst();
     try testing.expect(bespoke.dialogue.view(&rt.world) != null);
-    // The prompt is the barb's line, and after a round the opponent throws the next barb;
+    // The prompt is the barb's line, and after a lost round Pike presses on with his next barb;
     // repeating one barb let a single learned comeback win every round.
     try testing.expectEqualStrings(sword_duel.config.pairs[0].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
     const tamsin = rt.world.lookup_entity("Tamsin").?;
@@ -850,15 +819,17 @@ test "P30-01: the sword deck duels with generated replies until someone wins" {
     try rt.trigger_catalyst();
     try testing.expect(rt.world.get_property(tamsin, challenge_rel).? != first);
     try testing.expectEqualStrings(sword_duel.config.pairs[1].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
-    var decided = false;
-    for (0..60) |_| {
-        try rt.trigger_catalyst();
-        if (std.mem.startsWith(u8, rt.get_banner(), "Victory!") or std.mem.startsWith(u8, rt.get_banner(), "Defeat.")) decided = true;
-        if (decided) break;
-    }
-    try testing.expect(decided);
-    // A miss teaches the counter, as on desktop.
-    try testing.expect(holds(rt, "Tamsin", "MasteredComeback", null) or holds(rt, "Tamsin", "HeardBarb", null));
+    // The second fumble leaves the duel open; the third ends it, and the script's WinsDuel
+    // handler speaks Pike's line.
+    try rt.trigger_catalyst();
+    try testing.expectEqualStrings(sword_duel.config.pairs[2].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
+    try rt.trigger_catalyst();
+    try testing.expect(bespoke.dialogue.view(&rt.world) == null);
+    try testing.expectEqual(@as(u32, 1), sword_duel.wins(rt.world.lookup_entity("BosunPike").?));
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Go back to your mop") != null);
+    // A lost round teaches only the barb (D-078).
+    try testing.expect(holds(rt, "Tamsin", "HeardBarb", null));
+    try testing.expect(!holds(rt, "Tamsin", "MasteredComeback", null));
 }
 
 test "P30-01: the Bell Tower deck weaves drafts from note keys and tolls the bell" {

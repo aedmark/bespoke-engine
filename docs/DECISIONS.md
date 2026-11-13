@@ -419,7 +419,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Host callbacks for roles and routines: rejected by the maintainer; role behaviour would stay in proof code.
 **Consequences:** The village proof is a client of the module and its golden is byte-identical. Behaviour outside the golden changed in reviewed ways: grudge expiry is now relative (the old code passed an absolute tick as a TTL, doubling it); members return to their idle activity after a meal (the Gossip and Drifter now show Socializing, not Working); an arrest without stolen goods no longer claims to recover bread; the unused `Mood` relation is gone. One enforcer per society. `RenderFrame` villager drives in `src/display.zig` still read `Hunger`, `Energy`, and `Gold` by name (P32-03), and the wasm village deck still runs its own copy (P32-04). D-032 rule 3 (the interim state) no longer applies.
 
-## D-035 Dialogue Duel Module: Host Config, Choices Through the Dialogue Engine, Fatigue per Speaker and NPC (2026-11-09, status: accepted)
+## D-035 Dialogue Duel Module: Host Config, Choices Through the Dialogue Engine, Fatigue per Speaker and NPC (2026-11-09, status: accepted; learning rule superseded by D-078)
 **Context:** The P32-11 audit found `DialogueDuelSystem` trapped in `proofs/sword_fighting.zig`: a challenge/response duel and an inquiry-fatigue mechanic, parameterized only by that proof's names (D-017). It built its candidate lists with its own World queries instead of the engine's fact-guarded choices, stored knowledge on raw entity ids 1 to 16 and 101 to 116 (ids that also belong to interned entities), and counted inquiries per speaker while ignoring its topic argument, so pestering one NPC tired every NPC. The maintainer chose (2026-11-09): host-supplied Zig configuration, candidates through `VM.prune_dialogue_choices`, and fatigue keyed per speaker and NPC.
 **Decision:**
 1. **Module:** `src/duel.zig` provides `Duel` and `InquiryFatigue`, each built from a config whose slices are borrowed. Ids are copied into fixed capacities (64 pairs, 4 tiers, 8 fatigue stages), so neither owns heap memory.
@@ -1039,6 +1039,31 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Pick by tick or a random draw: rejected; the line would change with timing, and the engine's simulation keeps no unseeded randomness.
 - Add `DuelFumbles` as an eighth name on the `relations` line: rejected; it would break every script that themes the vocabulary.
 **Consequences:** One more property fact per fighter who has fumbled. The relation name is not themeable from a script; a host can still set it in `duel.Relations`.
+
+## D-077 Dialogue Shows in a Wrapped Panel Along the Bottom, on Desktop and in the Browser (2026-11-13, status: accepted)
+**Context:** The maintainer's hand test of Brackwater Barbs found the dialogue unreadable. The desktop balloon never wrapped: the speaker's name and line shared one row, the width ignored the name so text ran past the edge, and choices were cut at 80 bytes. The browser had no dialogue view; it wrote the choices into a one-row, 96-byte banner and never showed the prompt. Speaker labels were raw entity names (`BosunPike`).
+**Decision:**
+1. One layout, `src/display/dialogue_panel.zig`, word-wraps the speaker, the prompt, and numbered choices into a panel of fixed width. It is pure (no SDL, no drawing) so the window and the browser draw the same rows, and it reports each choice's vertical span for clicks.
+2. The panel spans the stage along the bottom, above the action sentence and verb bar on desktop (and above the command bar when shown) and above the banner in the browser, and grows upward. It replaces the balloon anchored over the speaker; the `show_dialogue` signature keeps its speaker position so callers are unchanged.
+3. Speaker names are shown through `display_name`, which splits CamelCase (`BosunPike` reads `Bosun Pike`, `NPCGuard` reads `NPC Guard`). Scripts do not change.
+4. The browser answers a click on a choice row, keeps number keys, and wraps its banner (now 256 bytes) over two rows. Choice text holds 160 bytes in `RenderDialogue` and the balloon.
+**Alternatives:**
+- A wrapped balloon over the speaker: rejected by the maintainer; it covers other characters and moves with the speaker.
+- Balloons for speech and a panel for choices: rejected; two layouts to keep in step.
+- A script-declared display name: rejected for now; it is a language and `.bspk` change, and CamelCase covers today's names.
+**Consequences:** A name with an inner capital (`McAllister`) splits wrongly until a script gives it a space. The panel names the dialogue's display speaker, which for a choice in the player's own cue handler is the player. Every browser frame hash and the two desktop renders with dialogue open changed once.
+
+## D-078 Duel Fighters Learn What They Hear, and the Duel Proof Takes Turns (2026-11-13, status: accepted)
+**Context:** D-035's duel taught the defender the correct reply whenever a round was lost, "from the attacker's taunt". The maintainer's hand test showed the result: the opponent answered his own barb, which no fencer would do. An attacker presses on with another barb or claims victory.
+**Decision:**
+1. `Duel.resolve_round` teaches each fighter what it hears: the defender the challenge, the attacker the reply it got back (when the reply is a real one). Losing a round teaches the defender nothing more.
+2. `Duel.answer(fighter, challenge)` gives a host-driven opponent's reply: the countering comeback if the fighter has mastered it, else the fallback.
+3. The duel proof takes turns in a shared `Bout`: whoever wins a round attacks next; an attacking opponent moves to `Duel.next_challenge`. A fencing master (tier 1 or above) always attacks: she knows every comeback, so a parried attack would only trade the lead back and forth and no one would reach three. The player leads a duel when she has a barb to throw at a non-master.
+4. What each opponent knows is game content in the script, as top-level `remember MasteredComeback(...)` lines: Bosun Pike knows comebacks 1 to 8, Old Gannet 1 and 9 to 15, Mistress Vell all fifteen. Victory lines are `on cue WinsDuel(winner, loser):` handlers the host fires when a duel ends.
+**Alternatives:**
+- Keep the engine rule and hide the comeback (silent learning): rejected by the maintainer; the player would learn a line they never heard.
+- Let a master defend too: rejected; with full knowledge she cannot lose a defence, so the duel would never end.
+**Consequences:** The duel needs opponents who know some comebacks; a script that declares none gives the player no way to learn them. The window gains a G key for Old Gannet. The proof transcript, the browser deck, and its tests changed with the rule.
 
 ## Held tensions
 

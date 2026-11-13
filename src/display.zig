@@ -17,6 +17,8 @@ pub const WeaveOutcome = draft_mod.WeaveOutcome;
 
 pub const font = @import("display/font.zig");
 pub const text_layout = @import("display/text_layout.zig");
+/// Word-wrapped dialogue panel layout shared by the window and the browser (D-077).
+pub const dialogue_panel = @import("display/dialogue_panel.zig");
 pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const renderer = @import("display/renderer.zig");
 pub const state_graph = @import("display/state_graph.zig");
@@ -299,7 +301,8 @@ pub const RenderDialogue = struct {
     speaker_name_len: u8 = 0,
     prompt: [160]u8 = undefined,
     prompt_len: u8 = 0,
-    choices: [dialogue_mod.MAX_CHOICES][80]u8 = undefined,
+    /// Room for a long reply; the panel wraps it (D-077).
+    choices: [dialogue_mod.MAX_CHOICES][160]u8 = undefined,
     choice_lens: [dialogue_mod.MAX_CHOICES]u8 = [_]u8{0} ** dialogue_mod.MAX_CHOICES,
     choice_count: u8 = 0,
     /// Source-order active and pruned branches for the paused inspector (P27-02, D-058).
@@ -1093,6 +1096,7 @@ test "P21-01: DisplayBridge captures multi-character party state and active inve
 test {
     _ = renderer;
     _ = font;
+    _ = dialogue_panel;
 }
 
 test "P22-02: DisplayBridge copies the attached distaff phrase into frames" {

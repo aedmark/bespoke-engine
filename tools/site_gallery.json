@@ -69,7 +69,7 @@
       "id": "sword",
       "title": "Brackwater Barbs",
       "tag": "Learning dialogue",
-      "blurb": "A fencing duel fought with barbs: you learn each comeback by losing to it. Mistress Vell throws her own versions of the barbs, which the same comebacks answer, and the barkeep tires of repeated questions. Rounds and moods are world facts, so a rewind replays them exactly.",
+      "blurb": "A fencing duel fought with barbs, taking turns: whoever wins a round attacks next. You learn a comeback by hearing an opponent use it against your barb. Mistress Vell throws her own versions of the barbs, which the same comebacks answer, and the barkeep tires of repeated questions. Rounds and moods are world facts, so a rewind replays them exactly.",
       "source": "proofs/sword_fighting.zig#SWORD_FIGHTING_SCRIPT",
       "deck": 7,
       "flag": "sword"

@@ -27,6 +27,7 @@ pub const Inspector = inspector_mod.Inspector;
 pub const InspectorKey = inspector_mod.Key;
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
 const font = @import("display/font.zig");
+const dialogue_panel = @import("display/dialogue_panel.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -497,8 +498,11 @@ pub const WasmRuntime = struct {
     /// Heap-allocated: it keeps a pointer to the primary World, re-pointed by `bind`.
     hypervisor: ?*TemporalHypervisor = null,
 
-    banner_buf: [96]u8 = [_]u8{0} ** 96,
+    /// Long enough for a spoken line with its speaker; drawn wrapped over two rows (D-077).
+    banner_buf: [256]u8 = [_]u8{0} ** 256,
     banner_len: usize = 0,
+    /// The open dialogue's speaker as a display name; the panel's rows slice into it.
+    panel_name_buf: [48]u8 = undefined,
     max_history_tick: u64 = 0,
 
     // Fixed ring buffer of binary World snapshots for instant browser timeline scrubbing
@@ -761,16 +765,38 @@ pub const WasmRuntime = struct {
         }
     }
 
-    /// Puts this tick's speech, else a newly offered set of choices, in the banner.
+    /// Puts this tick's speech in the banner. Offered choices are drawn in the dialogue panel
+    /// (D-077), so the banner keeps the last line said or the last round's result.
     fn show_story(self: *WasmRuntime) void {
         var buf: [256]u8 = undefined;
         if (host_mod.speech_this_tick(self.active_world(), &self.vm, &buf)) |line| self.set_banner(line);
-        if (dialogue_mod.view(self.active_world())) |open| {
-            var fbs = std.io.fixedBufferStream(&buf);
-            const w = fbs.writer();
-            for (0..open.count) |i| w.print("{s}[{d}] {s}", .{ if (i == 0) "" else "  ", i + 1, open.text(i) }) catch break;
-            self.set_banner(fbs.getWritten());
-        }
+    }
+
+    /// Rows the banner wraps to, at most two, and the banner box's top edge.
+    const BANNER_BOTTOM: i32 = 318;
+    fn banner_rows(self: *const WasmRuntime, out: *[2][]const u8) usize {
+        if (self.banner_len == 0) return 0;
+        const cols: usize = @intCast(@divTrunc(CANVAS_WIDTH - 24 - 12, font.char_width(1)));
+        return dialogue_panel.wrap(self.get_banner(), cols, out);
+    }
+    fn banner_top(self: *const WasmRuntime) i32 {
+        var rows: [2][]const u8 = undefined;
+        const n = self.banner_rows(&rows);
+        if (n == 0) return BANNER_BOTTOM;
+        return BANNER_BOTTOM - 8 - @as(i32, @intCast(n)) * 10;
+    }
+
+    /// The open dialogue's panel: above the banner, spanning the stage, growing upward (D-077).
+    const BrowserPanel = struct { x: i32, y: i32, w: i32, h: i32, layout: dialogue_panel.Layout, open: dialogue_mod.View };
+    fn dialogue_panel_now(self: *WasmRuntime) ?BrowserPanel {
+        const open = dialogue_mod.view(self.active_world()) orelse return null;
+        const raw_name = self.active_world().get_entity_name(open.display_speaker) orelse "";
+        const shown = dialogue_panel.display_name(raw_name, &self.panel_name_buf);
+        const metrics = dialogue_panel.Metrics.browser;
+        const l = dialogue_panel.layout(metrics, shown, open.prompt, open.texts[0..open.count]);
+        const bottom = self.banner_top() - 2;
+        const y = @max(44, bottom - l.height);
+        return .{ .x = 12, .y = y, .w = metrics.width, .h = bottom - y, .layout = l, .open = open };
     }
 
     pub fn record_snapshot(self: *WasmRuntime) void {
@@ -951,6 +977,17 @@ pub const WasmRuntime = struct {
                     }
                 }
 
+                // A click on an offered choice answers it (D-077).
+                if (self.dialogue_panel_now()) |panel| {
+                    if (ev.x >= panel.x and ev.x < panel.x + panel.w and ev.y >= panel.y and ev.y < panel.y + panel.h) {
+                        if (panel.layout.hit(ev.x - panel.x, ev.y - panel.y, panel.w)) |index| {
+                            try self.answer(index);
+                            return .dialogue_answered;
+                        }
+                        return .none;
+                    }
+                }
+
                 // 2. Bottom 5-Verb Bar hit test (y >= 324)
                 if (ev.y >= 324 and ev.y <= 354) {
                     var vi: u8 = 0;
@@ -1092,6 +1129,38 @@ pub const WasmRuntime = struct {
     }
 
     /// Renders the current simulation frame into the 640x360 RGBA8888 `WasmCanvas` framebuffer (P19-01).
+    fn draw_dialogue_panel(self: *WasmRuntime, panel: *const BrowserPanel) void {
+        const parchment = RgbaColor{ .r = 254, .g = 243, .b = 199 };
+        const ink = RgbaColor{ .r = 28, .g = 25, .b = 23 };
+        const accent = RgbaColor{ .r = 180, .g = 83, .b = 9 };
+        const option = RgbaColor{ .r = 120, .g = 53, .b = 15 };
+        self.canvas.fill_rect(panel.x, panel.y, panel.w, panel.h, parchment);
+        self.canvas.draw_rect_outline(panel.x, panel.y, panel.w, panel.h, accent);
+        for (0..panel.layout.choice_count) |i| {
+            const top = panel.y + panel.layout.choice_top[i];
+            const height = panel.layout.choice_bottom[i] - panel.layout.choice_top[i];
+            const hovered = self.hovered_x >= panel.x and self.hovered_x < panel.x + panel.w and
+                self.hovered_y >= top and self.hovered_y < top + height;
+            self.canvas.fill_rect(panel.x + 4, top, panel.w - 8, height, if (hovered) RgbaColor.gold else RgbaColor{ .r = 253, .g = 230, .b = 138 });
+        }
+        for (panel.layout.slice()) |row| {
+            const x = panel.x + row.x;
+            const y = panel.y + row.y;
+            switch (row.kind) {
+                .speaker => self.canvas.draw_text(row.text, x, y, 1, accent),
+                .prompt => self.canvas.draw_text(row.text, x, y, 1, ink),
+                .choice => {
+                    if (row.numbered) {
+                        var num_buf: [8]u8 = undefined;
+                        const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{@as(usize, row.choice) + 1}) catch "[?]";
+                        self.canvas.draw_text(num, x - panel.layout.indent, y, 1, option);
+                    }
+                    self.canvas.draw_text(row.text, x, y, 1, option);
+                },
+            }
+        }
+    }
+
     pub fn render_frame(self: *WasmRuntime) void {
         // 1. Background theme per vertical slice
         const deck: ?Deck = if (self.decks.len > 0) self.decks[self.deck_index] else null;
@@ -1193,11 +1262,18 @@ pub const WasmRuntime = struct {
         }
         self.canvas.draw_text("TIMELINE SCRUBBER (Click to Rewind/Scrub)", 20, 26, 1, RgbaColor.white);
 
-        // 7. Banner & Bottom 5-Verb Bar
-        if (self.banner_len > 0) {
-            self.canvas.fill_rect(12, 296, CANVAS_WIDTH - 24, 22, RgbaColor.hud_bg);
-            self.canvas.draw_rect_outline(12, 296, CANVAS_WIDTH - 24, 22, RgbaColor.gold);
-            self.canvas.draw_text(self.get_banner(), 18, 303, 1, RgbaColor.gold);
+        // 7. Dialogue panel, banner, and bottom 5-verb bar. The panel draws over the stage
+        // above the banner; the inspector covers the stage, so the panel waits until it closes.
+        if (!self.inspector.open) {
+            if (self.dialogue_panel_now()) |panel| self.draw_dialogue_panel(&panel);
+        }
+        var banner_text: [2][]const u8 = undefined;
+        const banner_count = self.banner_rows(&banner_text);
+        if (banner_count > 0) {
+            const top = self.banner_top();
+            self.canvas.fill_rect(12, top, CANVAS_WIDTH - 24, BANNER_BOTTOM - top, RgbaColor.hud_bg);
+            self.canvas.draw_rect_outline(12, top, CANVAS_WIDTH - 24, BANNER_BOTTOM - top, RgbaColor.gold);
+            for (banner_text[0..banner_count], 0..) |row, i| self.canvas.draw_text(row, 18, top + 5 + @as(i32, @intCast(i)) * 10, 1, RgbaColor.gold);
         }
 
         self.canvas.fill_rect(0, 322, CANVAS_WIDTH, 38, RgbaColor.hud_bg);
@@ -1573,10 +1649,27 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     const program = &rt.program.?;
     _ = (try rt.vm.fire_cue(program, "TalksTo", rt.player_entity, rt.world.lookup_entity("Pilot").?, null)).?;
     try rt.step_tick();
-    try testing.expectEqualStrings("[1] Ask the way.  [2] Leave.", rt.get_banner());
+    // The choices are in the dialogue panel, with the speaker's name; the banner keeps the
+    // last line said (D-077).
+    const panel = rt.dialogue_panel_now().?;
+    try testing.expectEqual(@as(usize, 2), panel.layout.choice_count);
+    // The panel names the dialogue's display speaker, as the desktop does; for a choice in the
+    // player's own cue handler that is the player.
+    try testing.expectEqualStrings("Hero", panel.layout.slice()[0].text);
+    try testing.expect(panel.y + panel.h <= rt.banner_top());
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "[1]") == null);
     // An open dialogue takes the number keys from deck switching.
     try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' }));
     try testing.expectEqualStrings("Pilot: \"Over the water.\"", rt.get_banner());
+    try testing.expect(dialogue_mod.view(&rt.world) == null);
+
+    // A click on a choice's row answers it too.
+    _ = (try rt.vm.fire_cue(program, "TalksTo", rt.player_entity, rt.world.lookup_entity("Pilot").?, null)).?;
+    try rt.step_tick();
+    const again = rt.dialogue_panel_now().?;
+    const leave_y = again.y + again.layout.choice_top[1] + 3;
+    try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .pointer_down, .x = again.x + 40, .y = leave_y }));
+    try testing.expectEqualStrings("Pilot: \"Goodbye.\"", rt.get_banner());
     try testing.expect(dialogue_mod.view(&rt.world) == null);
 
     // Reloading the deck releases the program and starts again.

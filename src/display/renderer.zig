@@ -9,6 +9,7 @@ const command_mod = @import("../command.zig");
 const state_graph = @import("state_graph.zig");
 const font = @import("font.zig");
 const text_layout = @import("text_layout.zig");
+const dialogue_panel = @import("dialogue_panel.zig");
 
 pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const TextLabel = text_layout.TextLabel;
@@ -529,12 +530,13 @@ pub fn hit_test_party_portrait(mouse_x: i32, mouse_y: i32, party_count: usize, s
 pub const SpeechBalloon = struct {
     speaker: EntityId,
     speaker_pos: Point,
+    /// The speaker's display name (D-077: `HarbourWarden` is stored as `Harbour Warden`).
     speaker_name: [32]u8,
     speaker_name_len: u8,
     text: [160]u8,
     text_len: u8,
     ticks_remaining: u32,
-    choices: [9][80]u8,
+    choices: [9][160]u8,
     choice_lens: [9]u8,
     choice_count: u8,
     scroll_offset: u8 = 0,
@@ -563,45 +565,38 @@ pub const SpeechBalloon = struct {
     }
 };
 
-/// Computes screen bounding rectangle for speech balloon (P7-04, P13-03, D-015).
-pub fn get_balloon_rect(balloon: *const SpeechBalloon, screen_w: i32) c.SDL_Rect {
-    const text_w = font.text_width(balloon.get_text(), 2);
-    const title_w = font.text_width(balloon.get_speaker_name(), 2) + 40;
-    var max_w = @max(text_w, title_w);
-    var i: usize = 0;
-    while (i < balloon.choice_count) : (i += 1) {
-        max_w = @max(max_w, font.text_width(balloon.get_choice(i), 2) + 54);
-    }
-    const bw = @min(screen_w - 40, @max(280, max_w + 32));
-    const visible_count = balloon.visible_choice_count();
-    const has_scroll = balloon.choice_count > 6;
-    const scroll_h: i32 = if (has_scroll) 18 else 0;
-    const bh: i32 = 48 + @as(i32, @intCast(visible_count)) * 26 + scroll_h;
+/// Where the dialogue panel sits and how its rows fall (D-077). The panel spans the stage's
+/// width above the action sentence and verb bar (and the command bar when it shows), and grows
+/// upward with its wrapped rows; the balloon's speaker position no longer places it.
+pub const DialoguePanel = struct {
+    rect: c.SDL_Rect,
+    layout: dialogue_panel.Layout,
+    /// Height of the scroll hint row under the choices, when more than six are offered.
+    scroll_h: i32,
+};
 
-    const bx = @max(20, @min(screen_w - bw - 20, balloon.speaker_pos.x - @divTrunc(bw, 2)));
-    const by = @max(76, balloon.speaker_pos.y - bh - 24);
-
-    return c.SDL_Rect{ .x = bx, .y = by, .w = bw, .h = bh };
+pub fn get_dialogue_panel(balloon: *const SpeechBalloon, screen_w: i32, screen_h: i32, command_bar: bool) DialoguePanel {
+    var metrics = dialogue_panel.Metrics.desktop;
+    metrics.width = screen_w - 40;
+    var visible: [dialogue_panel.MAX_CHOICES][]const u8 = undefined;
+    const count = balloon.visible_choice_count();
+    for (0..count) |i| visible[i] = balloon.get_choice(balloon.scroll_offset + i);
+    const l = dialogue_panel.layout(metrics, balloon.get_speaker_name(), balloon.get_text(), visible[0..count]);
+    const scroll_h: i32 = if (balloon.choice_count > 6) 16 else 0;
+    const h = l.height + scroll_h;
+    const bottom = screen_h - 110 - (if (command_bar) @as(i32, 28) else 0);
+    return .{
+        .rect = .{ .x = 20, .y = @max(76, bottom - h), .w = metrics.width, .h = h },
+        .layout = l,
+        .scroll_h = scroll_h,
+    };
 }
 
-/// Hit-tests mouse coordinates against dialogue choice options (P7-04, P13-03, D-015).
-pub fn hit_test_balloon_choice(mouse_x: i32, mouse_y: i32, balloon: *const SpeechBalloon, rect: c.SDL_Rect) ?u8 {
+/// The choice under the mouse, as an index into all of the balloon's choices.
+pub fn hit_test_dialogue_panel(mouse_x: i32, mouse_y: i32, balloon: *const SpeechBalloon, panel: *const DialoguePanel) ?u8 {
     if (balloon.choice_count == 0) return null;
-    const choices_start_y = rect.y + 42;
-    const visible_count = balloon.visible_choice_count();
-    var vi: usize = 0;
-    while (vi < visible_count) : (vi += 1) {
-        const actual_idx: u8 = balloon.scroll_offset + @as(u8, @intCast(vi));
-        if (actual_idx >= balloon.choice_count) break;
-
-        const cy = choices_start_y + @as(i32, @intCast(vi)) * 26;
-        if (mouse_x >= rect.x + 12 and mouse_x <= rect.x + rect.w - 12 and
-            mouse_y >= cy and mouse_y <= cy + 22)
-        {
-            return actual_idx;
-        }
-    }
-    return null;
+    const visible = panel.layout.hit(mouse_x - panel.rect.x, mouse_y - panel.rect.y, panel.rect.w) orelse return null;
+    return balloon.scroll_offset + visible;
 }
 
 /// Computes screen bounding rectangle for the Pause & Save/Load Drawer modal (P17-03, D-020).
@@ -1257,8 +1252,10 @@ pub const DisplayWindow = struct {
             .scroll_offset = 0,
         };
 
-        const nlen = @min(speaker_name.len, sb.speaker_name.len);
-        @memcpy(sb.speaker_name[0..nlen], speaker_name[0..nlen]);
+        // The panel shows a display name: `HarbourWarden` reads `Harbour Warden` (D-077).
+        const shown = dialogue_panel.display_name(speaker_name, &sb.speaker_name);
+        const nlen = @min(shown.len, sb.speaker_name.len);
+        if (@intFromPtr(shown.ptr) != @intFromPtr(&sb.speaker_name)) @memcpy(sb.speaker_name[0..nlen], shown[0..nlen]);
         sb.speaker_name_len = @intCast(nlen);
 
         const tlen = @min(text.len, sb.text.len);
@@ -1299,6 +1296,11 @@ pub const DisplayWindow = struct {
             self.dismiss_dialogue();
             self.balloon_from_frame = false;
         }
+    }
+
+    /// The panel geometry for `balloon` in this window, leaving room for the command bar.
+    fn dialogue_panel_for(self: *const DisplayWindow, balloon: *const SpeechBalloon) DialoguePanel {
+        return get_dialogue_panel(balloon, self.width, self.height, self.command_bar_enabled and !self.show_console);
     }
 
     /// Dismisses active speech balloon.
@@ -1647,8 +1649,8 @@ pub const DisplayWindow = struct {
                     }
 
                     if (self.active_balloon) |*b| {
-                        const brect = get_balloon_rect(b, self.width);
-                        self.hovered_choice = hit_test_balloon_choice(event.motion.x, event.motion.y, b, brect);
+                        const panel = self.dialogue_panel_for(b);
+                        self.hovered_choice = hit_test_dialogue_panel(event.motion.x, event.motion.y, b, &panel);
                     } else {
                         self.hovered_choice = null;
                     }
@@ -1733,8 +1735,8 @@ pub const DisplayWindow = struct {
                     }
 
                     if (self.active_balloon) |*b| {
-                        const brect = get_balloon_rect(b, self.width);
-                        if (hit_test_balloon_choice(event.button.x, event.button.y, b, brect)) |ch_idx| {
+                        const panel = self.dialogue_panel_for(b);
+                        if (hit_test_dialogue_panel(event.button.x, event.button.y, b, &panel)) |ch_idx| {
                             self.play_sfx(.dialogue_blip);
                             return .{ .dialogue_choice = ch_idx };
                         } else {
@@ -3005,63 +3007,61 @@ pub const DisplayWindow = struct {
             self.cue_banner_ticks -= 1;
         }
 
-        // 9. Speech Balloon & Branching Dialogue (P7-04, D-009)
+        // 9. Dialogue panel: speaker, wrapped line, and wrapped numbered choices (D-077)
         if (self.active_balloon) |*b| {
-            const brect = get_balloon_rect(b, self.width);
+            const panel = self.dialogue_panel_for(b);
+            const r = panel.rect;
+            const ink = Color{ .r = 28, .g = 25, .b = 23 };
+            const accent = Color{ .r = 180, .g = 83, .b = 9 };
 
-            // Balloon parchment body
-            self.fill_rect(brect.x, brect.y, brect.w, brect.h, Color{ .r = 254, .g = 243, .b = 199 });
-            self.draw_rect_outline(brect.x, brect.y, brect.w, brect.h, Color{ .r = 146, .g = 64, .b = 14 });
-            self.draw_rect_outline(brect.x + 2, brect.y + 2, brect.w - 4, brect.h - 4, Color{ .r = 180, .g = 83, .b = 9 });
+            self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
+            self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
+            self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, accent);
 
-            // Speech tail pointing down to speaker
-            const tail_x = b.speaker_pos.x;
-            self.draw_line(tail_x - 6, brect.y + brect.h, tail_x, brect.y + brect.h + 10, Color{ .r = 146, .g = 64, .b = 14 });
-            self.draw_line(tail_x + 6, brect.y + brect.h, tail_x, brect.y + brect.h + 10, Color{ .r = 146, .g = 64, .b = 14 });
-
-            // Speaker title & dialog text
-            var title_buf: [48]u8 = undefined;
-            const title_text = std.fmt.bufPrint(&title_buf, "{s}:", .{b.get_speaker_name()}) catch "Speaker:";
-            self.draw_text(title_text, brect.x + 14, brect.y + 10, 2, Color{ .r = 180, .g = 83, .b = 9 });
-            const title_offset = font.text_width(title_text, 2) + 12;
-            self.draw_text(b.get_text(), brect.x + 14 + title_offset, brect.y + 10, 2, Color{ .r = 28, .g = 25, .b = 23 });
-
-            // Branching dialogue choices (P13-03, D-015)
-            const choices_start_y = brect.y + 42;
-            const visible_count = b.visible_choice_count();
-            var c_vi: usize = 0;
-            while (c_vi < visible_count) : (c_vi += 1) {
-                const actual_idx: usize = b.scroll_offset + c_vi;
-                if (actual_idx >= b.choice_count) break;
-
-                const cy = choices_start_y + @as(i32, @intCast(c_vi)) * 26;
-                const is_hovered = (self.hovered_choice != null and self.hovered_choice.? == actual_idx);
-                const c_text = b.get_choice(actual_idx);
-
-                var c_buf: [128]u8 = undefined;
-                const numbered_text = std.fmt.bufPrint(&c_buf, "[{d}] {s}", .{ actual_idx + 1, c_text }) catch c_text;
-
+            // Choice backgrounds first, so the rows draw over them.
+            for (0..panel.layout.choice_count) |slot| {
+                const actual_idx = b.scroll_offset + slot;
+                const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
+                const top = r.y + panel.layout.choice_top[slot];
+                const height = panel.layout.choice_bottom[slot] - panel.layout.choice_top[slot];
                 if (is_hovered) {
-                    self.fill_rect(brect.x + 12, cy, brect.w - 24, 22, Color.wp_hover);
-                    self.draw_rect_outline(brect.x + 12, cy, brect.w - 24, 22, Color.white);
-                    self.draw_text(numbered_text, brect.x + 20, cy + 4, 2, Color.black);
+                    self.fill_rect(r.x + 8, top, r.w - 16, height, Color.wp_hover);
+                    self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color.white);
                 } else {
-                    self.fill_rect(brect.x + 12, cy, brect.w - 24, 22, Color{ .r = 253, .g = 230, .b = 138 });
-                    self.draw_rect_outline(brect.x + 12, cy, brect.w - 24, 22, Color{ .r = 217, .g = 119, .b = 6 });
-                    self.draw_text(numbered_text, brect.x + 20, cy + 4, 2, Color{ .r = 120, .g = 53, .b = 15 });
+                    self.fill_rect(r.x + 8, top, r.w - 16, height, Color{ .r = 253, .g = 230, .b = 138 });
+                    self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color{ .r = 217, .g = 119, .b = 6 });
                 }
             }
 
-            // Scroll indicator if choices exceed visible count (P13-03, D-015)
-            if (b.choice_count > 6) {
-                const scroll_y = choices_start_y + @as(i32, @intCast(visible_count)) * 26 + 2;
+            for (panel.layout.slice()) |row| {
+                const x = r.x + row.x;
+                const y = r.y + row.y;
+                switch (row.kind) {
+                    .speaker => self.draw_text(row.text, x, y, 2, accent),
+                    .prompt => self.draw_text(row.text, x, y, 2, ink),
+                    .choice => {
+                        const actual_idx = b.scroll_offset + row.choice;
+                        const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
+                        const col = if (is_hovered) Color.black else Color{ .r = 120, .g = 53, .b = 15 };
+                        if (row.numbered) {
+                            var num_buf: [8]u8 = undefined;
+                            const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{actual_idx + 1}) catch "[?]";
+                            self.draw_text(num, x - panel.layout.indent, y, 2, col);
+                        }
+                        self.draw_text(row.text, x, y, 2, col);
+                    },
+                }
+            }
+
+            // Scroll hint when choices exceed the visible six (P13-03, D-015).
+            if (panel.scroll_h > 0) {
                 var sbuf: [64]u8 = undefined;
                 const scroll_str = std.fmt.bufPrint(&sbuf, "(Scroll: {d}-{d} of {d} | Wheel/Arrows)", .{
                     b.scroll_offset + 1,
-                    @min(b.choice_count, b.scroll_offset + visible_count),
+                    @min(b.choice_count, b.scroll_offset + b.visible_choice_count()),
                     b.choice_count,
                 }) catch "";
-                self.draw_text(scroll_str, brect.x + 16, scroll_y, 1, Color{ .r = 180, .g = 83, .b = 9 });
+                self.draw_text(scroll_str, r.x + 14, r.y + r.h - panel.scroll_h, 1, accent);
             }
         }
 
@@ -3510,7 +3510,7 @@ test "P12-03: display renderer dynamically recognizes scene themes from RenderFr
     win.render_frame(&frame, false);
 }
 
-test "P13-03: display renderer dynamic balloon sizing, scrolling, and choice selection" {
+test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
     const testing = std.testing;
 
     var win = try DisplayWindow.init("Dialogue Test", 960, 600);
@@ -3545,35 +3545,49 @@ test "P13-03: display renderer dynamic balloon sizing, scrolling, and choice sel
     try testing.expectEqual(@as(u8, 2), balloon.max_scroll_offset());
     try testing.expectEqual(@as(u8, 0), balloon.scroll_offset);
 
-    const brect = get_balloon_rect(balloon, 960);
-    // Height: 48 + 6 * 26 + 18 (scroll bar) = 222
-    try testing.expectEqual(@as(i32, 222), brect.h);
-    try testing.expect(brect.y >= 76);
+    // The panel spans the window above the verb bar and holds six visible choices (D-077).
+    const panel = get_dialogue_panel(balloon, 960, 540, false);
+    try testing.expectEqual(@as(i32, 920), panel.rect.w);
+    try testing.expect(panel.rect.y >= 76);
+    try testing.expect(panel.rect.y + panel.rect.h <= 540 - 110);
+    try testing.expectEqual(@as(usize, 6), panel.layout.choice_count);
+    try testing.expectEqual(@as(i32, 16), panel.scroll_h);
+    try testing.expectEqualStrings("Madame Buthane", balloon.get_speaker_name());
+
+    const mid_x = panel.rect.x + 40;
+    const row_y = struct {
+        fn of(p: *const DialoguePanel, slot: usize) i32 {
+            return p.rect.y + p.layout.choice_top[slot] + 4;
+        }
+    }.of;
 
     // 2. Hit-testing at scroll_offset == 0
-    // Slot 0 (first visible choice) -> choice 0 ("Ask about the cat")
-    const hit_slot0 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 10, balloon, brect);
-    try testing.expectEqual(@as(?u8, 0), hit_slot0);
+    try testing.expectEqual(@as(?u8, 0), hit_test_dialogue_panel(mid_x, row_y(&panel, 0), balloon, &panel));
+    try testing.expectEqual(@as(?u8, 1), hit_test_dialogue_panel(mid_x, row_y(&panel, 1), balloon, &panel));
 
-    // Slot 1 (second visible choice) -> choice 1 ("Rent motorcycle")
-    const hit_slot1 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 26 + 10, balloon, brect);
-    try testing.expectEqual(@as(?u8, 1), hit_slot1);
-
-    // 3. Scroll offset == 2
+    // 3. Scroll offset == 2: slot 0 is choice 2 and slot 5 is choice 7.
     win.active_balloon.?.scroll_offset = 2;
     const balloon_scrolled = &win.active_balloon.?;
+    const scrolled = get_dialogue_panel(balloon_scrolled, 960, 540, false);
+    try testing.expectEqual(@as(?u8, 2), hit_test_dialogue_panel(mid_x, row_y(&scrolled, 0), balloon_scrolled, &scrolled));
+    try testing.expectEqual(@as(?u8, 7), hit_test_dialogue_panel(mid_x, row_y(&scrolled, 5), balloon_scrolled, &scrolled));
 
-    // Slot 0 now corresponds to choice 2 ("Inquire about the templar church")
-    const hit_scrolled0 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 10, balloon_scrolled, brect);
-    try testing.expectEqual(@as(?u8, 2), hit_scrolled0);
+    // Miss outside the panel, and on the prompt row above the choices.
+    try testing.expectEqual(@as(?u8, null), hit_test_dialogue_panel(10, 10, balloon_scrolled, &scrolled));
+    try testing.expectEqual(@as(?u8, null), hit_test_dialogue_panel(mid_x, scrolled.rect.y + 4, balloon_scrolled, &scrolled));
 
-    // Slot 5 corresponds to choice 7 ("Say goodbye and leave")
-    const hit_scrolled5 = hit_test_balloon_choice(brect.x + 20, brect.y + 42 + 5 * 26 + 10, balloon_scrolled, brect);
-    try testing.expectEqual(@as(?u8, 7), hit_scrolled5);
-
-    // Miss outside balloon bounds
-    const hit_miss = hit_test_balloon_choice(10, 10, balloon_scrolled, brect);
-    try testing.expectEqual(@as(?u8, null), hit_miss);
+    // A long line wraps inside the panel instead of running past its edge, and the speaker's
+    // entity name is shown as a display name.
+    win.show_dialogue(EntityId.from_int(2), Point{ .x = 0, .y = 0 }, "HarbourWarden", "You wield that sword like a mop handle! " ** 3, &[_][]const u8{"Unfortunately for you, they'll be too busy picking apart your reputation."});
+    const long = &win.active_balloon.?;
+    try testing.expectEqualStrings("Harbour Warden", long.get_speaker_name());
+    const narrow = get_dialogue_panel(long, 640, 540, false);
+    var rows: usize = 0;
+    for (narrow.layout.slice()) |row| {
+        try testing.expect(row.x + font.text_width(row.text, 2) <= narrow.rect.w - 12);
+        rows += 1;
+    }
+    try testing.expect(rows >= 6);
 
     // 4. Dismiss dialogue
     win.dismiss_dialogue();

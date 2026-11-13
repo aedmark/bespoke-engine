@@ -4,7 +4,8 @@
 //!
 //!   1. `Duel`: a challenge/response contest. The host supplies a table of pairs (a challenge
 //!      line, the one reply that counters it, and optional tier variants of the challenge).
-//!      Fighters learn challenges by hearing them and replies by losing to them. Opponents carry
+//!      Fighters learn what they hear (D-078): the defender learns the challenge, the attacker
+//!      the reply it gets back; losing a round teaches nothing more. Opponents carry
 //!      a tier; a tier variant of a challenge is only usable against an opponent of that tier.
 //!      A countered challenge moves advantage to the defender, a failed reply to the attacker.
 //!   2. `InquiryFatigue`: an NPC's patience with one speaker. Each inquiry raises a count kept
@@ -202,6 +203,14 @@ pub const Duel = struct {
         return self.config.pairs[p].reply;
     }
 
+    /// The reply a host-driven `fighter` gives to `challenge_ent`: the comeback that counters
+    /// it if the fighter has mastered it, else `.none` (the fallback). A host uses it for
+    /// opponents the player does not control.
+    pub fn answer(self: *const Duel, fighter: EntityId, challenge_ent: EntityId) EntityId {
+        const correct = self.reply_for(self.base_of(challenge_ent)) orelse return .none;
+        return if (self.world.has_fact(fighter, self.mastered_rel, correct.to_int())) correct else .none;
+    }
+
     /// The challenge `opponent` throws after `current`: the next pair in table order, wrapping,
     /// at the opponent's tier, or the base challenge when that pair has no variant for it. A
     /// host that stores the result as a fact gets a barb sequence that rewinds with the world;
@@ -356,9 +365,11 @@ pub const Duel = struct {
     }
 
     /// Resolves one round: `attacker` throws `challenge_ent`, `defender` answers with
-    /// `reply_ent` (`.none` for the fallback). The defender always learns the challenge. A
+    /// `reply_ent` (`.none` for the fallback). Each fighter learns what they hear (D-078): the
+    /// defender learns the challenge, and the attacker learns the reply, if it was a real one. A
     /// reply that counters moves one point of advantage to the defender; otherwise the
-    /// attacker gains it and the defender learns the correct reply from the attacker's taunt.
+    /// attacker gains it. Losing a round teaches the defender nothing: the attacker presses on
+    /// with a barb, not the answer to the last one.
     pub fn resolve_round(
         self: *Duel,
         attacker: EntityId,
@@ -370,15 +381,11 @@ pub const Duel = struct {
         // A fallback reply advances the defender's rotation to the next line.
         if (reply_ent == .none) try self.world.remember(defender, self.fumbles_rel, self.fumbles(defender) + 1, 0);
 
+        if (reply_ent != .none) try self.master(attacker, reply_ent);
+
         const parried = self.counters(reply_ent, challenge_ent);
         const gainer = if (parried) defender else attacker;
         const loser = if (parried) attacker else defender;
-
-        if (!parried) {
-            if (self.reply_for(self.base_of(challenge_ent))) |correct| {
-                try self.master(defender, correct);
-            }
-        }
 
         const gained = self.advantage(gainer) + 1;
         try self.world.remember(gainer, self.advantage_rel, gained, 0);
@@ -649,14 +656,16 @@ test "P32-17: failed replies teach, counters shift advantage, and the threshold 
     try testing.expectEqualStrings("I do not know.", out[0].text);
     try testing.expectEqual(EntityId.none, out[0].entity);
 
-    // The fallback fails: the pupil hears the riddle, learns its answer, and the elder leads.
+    // The fallback fails: the pupil hears the riddle but learns no answer (D-078), and the
+    // elder leads.
     const lost = try duel.resolve_round(elder, pupil, duel.challenge(1, 1), out[0].entity);
     try testing.expect(!lost.parried);
     try testing.expect(lost.winner == null);
     try testing.expect(bed.world.has_fact(pupil, duel.heard_rel, duel.challenge(1, 1).to_int()));
-    try testing.expect(bed.world.has_fact(pupil, duel.mastered_rel, duel.reply(1).to_int()));
+    try testing.expect(!bed.world.has_fact(pupil, duel.mastered_rel, null));
     try testing.expectEqual(@as(u32, 1), duel.advantage(elder));
 
+    try duel.master(pupil, duel.reply(1));
     try duel.master(pupil, duel.reply(2));
     try testing.expectEqual(@as(usize, 2), duel.replies(&vm, pupil, duel.challenge(1, 1), &out));
     try testing.expectEqual(duel.reply(1), out[0].entity);
@@ -680,6 +689,35 @@ test "P32-17: failed replies teach, counters shift advantage, and the threshold 
     const second = try duel.resolve_round(elder, pupil, duel.challenge(2, 0), duel.reply(2));
     try testing.expectEqual(pupil, second.winner.?);
     try testing.expectEqual(@as(u32, 1), duel.wins(pupil));
+}
+
+test "D-078: fighters learn what they hear, and a host-driven opponent answers what it knows" {
+    const testing = std.testing;
+    var bed = try TestBed.init();
+    defer bed.deinit();
+    var duel = try Duel.init(&bed.world, RIDDLE_CONFIG);
+
+    const pupil = try bed.world.intern_entity("Pupil");
+    const elder = try bed.world.intern_entity("Elder");
+
+    // The elder knows the river's answer and not the echo's.
+    try duel.master(elder, duel.reply(1));
+    try testing.expectEqual(duel.reply(1), duel.answer(elder, duel.challenge(1, 0)));
+    try testing.expectEqual(duel.reply(1), duel.answer(elder, duel.challenge(1, 1)));
+    try testing.expectEqual(EntityId.none, duel.answer(elder, duel.challenge(0, 0)));
+
+    // The pupil attacks with the river riddle; the elder's real answer teaches the pupil.
+    const parried = try duel.resolve_round(pupil, elder, duel.challenge(1, 0), duel.answer(elder, duel.challenge(1, 0)));
+    try testing.expect(parried.parried);
+    try testing.expect(bed.world.has_fact(pupil, duel.mastered_rel, duel.reply(1).to_int()));
+    try testing.expectEqual(@as(u32, 1), duel.advantage(elder));
+
+    // The elder fumbles the echo: nobody learns a reply, and the elder heard the riddle.
+    const fumbled = try duel.resolve_round(pupil, elder, duel.challenge(0, 0), duel.answer(elder, duel.challenge(0, 0)));
+    try testing.expect(!fumbled.parried);
+    try testing.expect(!bed.world.has_fact(pupil, duel.mastered_rel, duel.reply(0).to_int()));
+    try testing.expect(bed.world.has_fact(elder, duel.heard_rel, duel.challenge(0, 0).to_int()));
+    try testing.expectEqual(@as(u32, 1), duel.fumbles(elder));
 }
 
 test "D-076: fallback lines rotate per fighter, one per fumbled round" {
@@ -758,14 +796,17 @@ test "P32-17: duel state is facts, so a snapshot restore rewinds it" {
     defer snapshot.deinit();
     try bed.world.save_state(snapshot.writer());
 
-    _ = try duel.resolve_round(elder, pupil, duel.challenge(0, 0), .none);
-    try testing.expect(bed.world.has_fact(pupil, duel.mastered_rel, null));
+    try duel.master(pupil, duel.reply(1));
+    _ = try duel.resolve_round(elder, pupil, duel.challenge(0, 0), duel.reply(1));
+    try testing.expect(bed.world.has_fact(pupil, duel.heard_rel, null));
+    try testing.expect(bed.world.has_fact(elder, duel.mastered_rel, duel.reply(1).to_int()));
 
     var stream = std.io.fixedBufferStream(snapshot.items);
     try bed.world.restore_state(stream.reader());
 
     try testing.expect(!bed.world.has_fact(pupil, duel.heard_rel, null));
     try testing.expect(!bed.world.has_fact(pupil, duel.mastered_rel, null));
+    try testing.expect(!bed.world.has_fact(elder, duel.mastered_rel, null));
     try testing.expectEqual(@as(u32, 0), duel.advantage(elder));
     // The knowledge base was asserted before the snapshot and survives it.
     try testing.expect(duel.counters(duel.reply(0), duel.challenge(0, 0)));
