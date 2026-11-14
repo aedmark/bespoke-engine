@@ -1187,6 +1187,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - MML scores with parts looping on independent lengths: rejected for now; it would change the tracks' sound and D-061's whole-score loop.
 - Seeded variation of one pattern each pass: rejected; it adds no verses or bridges and can sound aimless.
 **Consequences:** In `proofs/golden/audio.txt` every `track/` line and the tavern-to-cellar fade changed, and eleven `arrangement/` lines were added; no effect, note, scene, or MML line changed. The module grew by about 10 KB. Removing the old pattern comments lowered the third-party lint baseline from 2,612 to 2,604. The maintainer has not yet given the listening pass on speakers.
+**Provenance:** The maintainer orchestrated the design: the form, the pilot-then-rest scope, and the alternatives rejected, with approval by listening. An LLM (Claude, an Anthropic model) wrote the code (`audio.Music` sections and arrangements, `proofs/music.zig`, its notation and checks) and the music: every section's chord progression, melody, bass line, and drum part, and every arrangement. Each track's section A keeps its earlier two-bar loop from `6bfe0ce`, which Claude also wrote in an earlier session (per the maintainer, 2026-11-14; the commit carries no trailer saying so). No generative audio model, recording, or sample is used; `src/audio.zig` synthesizes the notes deterministically. Recorded at the maintainer's request (2026-11-14) so the split stays visible outside commit trailers.
 
 ## Held tensions
 

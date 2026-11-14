@@ -6,6 +6,16 @@
 //! is MIDI 60, `f#3`, `bb2`), a drum (`k` kick, `s` snare, `h` hat), or `-` for a rest. `|`
 //! only marks bars for the reader. Every part of a section must hold the same number of steps,
 //! at most `audio.BGM_STEPS`, which becomes the section's length; a mistake is a compile error.
+//!
+//! Provenance (D-089): the maintainer orchestrated the design, choosing the form (written
+//! sections and an arrangement), the scope, the order of the work, and which tracks to keep,
+//! and approves each track by listening. An LLM (Claude, an Anthropic model) wrote this file:
+//! the notation, the checks, and the music itself, every section's chord progression, melody,
+//! bass line, and drum part, and every arrangement. Each track's section A keeps its earlier
+//! two-bar loop (commit `6bfe0ce`, 2026-11-07), which Claude also wrote, in an earlier session
+//! (per the maintainer, 2026-11-14). No audio model, recording, or sample is
+//! involved; the engine's synthesizer (`src/audio.zig`) renders these notes with integer
+//! arithmetic.
 const std = @import("std");
 const bespoke = @import("bespoke");
 const audio = bespoke.audio;
