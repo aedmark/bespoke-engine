@@ -1091,6 +1091,17 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Script-level syntax for pauses: not needed yet; hosts queue messages, and other proofs keep their banners.
 **Consequences:** The clock keeps running while a message waits. Timed banners remain for short notices. No golden changed.
 
+## D-081 Tamsin Can Answer with a Joke in Every Defence (2026-11-13, status: accepted)
+**Context:** A defending player saw only her known comebacks, or one stammered fallback line when she knew none. The maintainer asked for joke answers she can pick when she lacks the real one, and wrote five (2026-11-13).
+**Decision:**
+1. The script's duel declares eight `fallback` lines: the three stammers from P35-02 and the maintainer's five jokes, as written. Eight is the declaration's limit (`DUEL_MAX_FALLBACKS`).
+2. In every defence the proof's `Bout` offers two of them after the player's known comebacks (maintainer's choice), so their presence never shows whether she knows the answer. The player's fumble count picks the pair, so each defence offers new ones and the rotation rewinds with the world (D-076). A joke always loses the round and is echoed in Tamsin's voice (D-080).
+3. A joke's action id is `Bout.JOKE_ACTION` plus its line index, far above any entity id. The engine is unchanged: `Duel.replies` still offers its single fallback, which the proof replaces with the pair.
+**Alternatives:**
+- Jokes only when no known comeback counters the barb: rejected by the maintainer; seeing jokes would tell the player she lacks the answer.
+- An engine option for how many fallbacks to offer: not needed yet; it would touch the grammar and the package format for one proof.
+**Consequences:** Opponents fumble with the same eight lines. With nine choices at most, a player who knows more than seven comebacks sees the first seven in table order. The browser golden's two deck 7 frames changed (the panel shows two choices; three more text entities).
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

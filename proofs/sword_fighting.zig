@@ -93,6 +93,11 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\  fallback "Er... is that the time?"
     \\  fallback "I have to return some video tapes."
     \\  fallback "I think I left my oven on! Gotta go!"
+    \\  fallback "Is that a sea gull on your head or are you just happy to see me?"
+    \\  fallback "I'd give you an answer but my parrot usually does all the talking..."
+    \\  fallback "Hold that thought! ...I might be getting a nosebleed."
+    \\  fallback "I think I hear my mom calling me for dinner."
+    \\  fallback "I wish I'd thought of that one..."
     \\  win 3
     \\  relations HeardBarb MasteredComeback Counters VellVariant FencingTier Advantage DuelsWon
     \\  tier Vell 1
@@ -606,9 +611,17 @@ pub const Bout = struct {
         _ = self.world.forget(self.player, self.thrown_rel, null);
     }
 
+    /// Action ids at and above this are joke answers: `JOKE_ACTION + i` is fallback line `i`.
+    /// Entity ids stay far below it.
+    pub const JOKE_ACTION: u32 = 0x8000_0000;
+    /// Joke answers offered in every defence, after the player's known comebacks.
+    pub const JOKES_OFFERED: usize = 2;
+
     /// Opens the round's choices as a generated dialogue set: the barbs the player may throw
-    /// while she attacks, else her comebacks to the opponent's barb. Each action id is the
-    /// chosen barb or comeback entity (0 for a fallback line).
+    /// while she attacks, else her comebacks to the opponent's barb followed by two joke
+    /// answers. Jokes show in every defence, not only when she lacks the counter, so their
+    /// presence never gives away what she knows; a joke always loses the round. Each action id
+    /// is the chosen barb or comeback entity, or `JOKE_ACTION` plus the joke's line index.
     pub fn open(self: *Bout, vm: *bespoke.VM) !void {
         const foe = self.opponent() orelse return;
         var candidates: [9]duel_mod.Candidate = undefined;
@@ -620,12 +633,29 @@ pub const Bout = struct {
         } else {
             const raw = self.world.get_property(self.player, self.challenge_rel) orelse return;
             const barb = bespoke.EntityId.from_int(raw);
-            count = self.duel.replies(vm, self.player, barb, &candidates);
+            // Leave room for the jokes; the engine's lone fallback is replaced by them.
+            const known = self.duel.replies(vm, self.player, barb, candidates[0 .. candidates.len - JOKES_OFFERED]);
+            for (candidates[0..known]) |cand| {
+                if (cand.entity == .none) continue;
+                candidates[count] = cand;
+                count += 1;
+            }
             prompt = self.duel.challenge_text(barb) orelse "";
         }
-        if (count == 0) return;
         var choices: [9]bespoke.dialogue.Choice = undefined;
         for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
+        const lines = self.duel.config.fallbacks;
+        if (!self.player_attacks() and lines.len > 0) {
+            // The fumble count rotates the pair, so successive defences offer new jokes and the
+            // rotation rewinds with the world (D-076).
+            const first = self.duel.fumbles(self.player) * JOKES_OFFERED;
+            for (0..@min(JOKES_OFFERED, lines.len)) |k| {
+                const index = (first + k) % lines.len;
+                choices[count] = .{ .text = lines[index], .action = JOKE_ACTION + @as(u32, @intCast(index)) };
+                count += 1;
+            }
+        }
+        if (count == 0) return;
         _ = try vm.open_generated_dialogue(foe, prompt, choices[0..count]);
     }
 
@@ -650,7 +680,11 @@ pub const Bout = struct {
         const foe_name = self.world.get_entity_name(foe) orelse "";
         var name_buf: [48]u8 = undefined;
         const name = bespoke.display.dialogue_panel.display_name(self.world.get_entity_name(foe) orelse "The opponent", &name_buf);
-        const picked = if (action == 0) bespoke.EntityId.none else bespoke.EntityId.from_int(action);
+        const joke: ?[]const u8 = if (action >= JOKE_ACTION and action - JOKE_ACTION < self.duel.config.fallbacks.len)
+            self.duel.config.fallbacks[action - JOKE_ACTION]
+        else
+            null;
+        const picked = if (action == 0 or joke != null) bespoke.EntityId.none else bespoke.EntityId.from_int(action);
         const player_led = self.player_attacks();
 
         var said: []const u8 = "";
@@ -670,7 +704,7 @@ pub const Bout = struct {
             const raw = self.world.get_property(self.player, self.challenge_rel) orelse return .{};
             barb = bespoke.EntityId.from_int(raw);
             round = try self.duel.resolve_round(foe, self.player, barb, picked);
-            player_said = if (picked == .none) self.spoken_fallback(self.player) else self.reply_line(picked);
+            player_said = if (joke) |line| line else if (picked == .none) self.spoken_fallback(self.player) else self.reply_line(picked);
         }
         const player_won_round = if (player_led) !round.parried else round.parried;
 
@@ -918,7 +952,7 @@ test "P15-01: every Brackwater comeback counters its barb and Vell's variant" {
     try compiled.duels.items[0].apply_tiers(&duel);
 
     try testing.expectEqual(@as(usize, 15), duel.config.pairs.len);
-    try testing.expectEqual(@as(usize, 3), duel.config.fallbacks.len);
+    try testing.expectEqual(@as(usize, 8), duel.config.fallbacks.len);
     for (duel.config.pairs, 0..) |_, i| {
         const variant = duel.challenge(i, 1);
         try testing.expect(duel.counters(duel.reply(i), duel.challenge(i, 0)));
@@ -1030,8 +1064,13 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
         try bout.open(&vm);
         const open = vm.dialogue_view().?;
         try testing.expectEqualStrings(duel.config.pairs[round].challenge, open.prompt);
-        try testing.expectEqualStrings(duel.config.fallbacks[round], open.text(0));
-        result = try bout.choose(&vm, 0, &buf);
+        // She knows no comeback, so two jokes are her answers, a new pair each round.
+        try testing.expectEqual(@as(usize, Bout.JOKES_OFFERED), open.count);
+        try testing.expectEqualStrings(duel.config.fallbacks[2 * round], open.text(0));
+        try testing.expectEqualStrings(duel.config.fallbacks[2 * round + 1], open.text(1));
+        result = try bout.choose(&vm, open.actions[1], &buf);
+        try testing.expectEqualStrings(duel.config.fallbacks[2 * round + 1], result.lines[0].text);
+        if (result.winner == null) try testing.expectEqualStrings("Their point.", result.lines[1].text);
         try testing.expect(!world.has_fact(tamsin, duel.mastered_rel, null));
         try testing.expect(!result.says(duel.config.pairs[round].reply));
     }
@@ -1102,8 +1141,14 @@ test "D-079: each barb is thrown once per duel, points add up, and distinct barb
     try testing.expect(!bout.player_attacks());
 
     // Gannet's barb lands; Tamsin keeps the point she scored (D-079). Her fumble is echoed in
-    // her voice, and Gannet says nothing in reply.
+    // her voice, and Gannet says nothing in reply. Knowing a comeback, she still sees two jokes
+    // after it, so the jokes never give away whether she knows the answer.
+    try duel.master(tamsin, duel.reply(0));
     try bout.open(&vm);
+    const defence = vm.dialogue_view().?;
+    try testing.expectEqual(@as(usize, 1 + Bout.JOKES_OFFERED), defence.count);
+    try testing.expectEqualStrings(duel.config.pairs[0].reply, defence.text(0));
+    try testing.expect(defence.actions[1] >= Bout.JOKE_ACTION);
     result = try bout.choose(&vm, 0, &buf);
     try testing.expectEqualStrings("Tamsin", result.lines[0].speaker);
     try testing.expectEqualStrings(duel.config.fallbacks[0], result.lines[0].text);
