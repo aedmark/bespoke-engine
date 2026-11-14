@@ -419,7 +419,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Host callbacks for roles and routines: rejected by the maintainer; role behaviour would stay in proof code.
 **Consequences:** The village proof is a client of the module and its golden is byte-identical. Behaviour outside the golden changed in reviewed ways: grudge expiry is now relative (the old code passed an absolute tick as a TTL, doubling it); members return to their idle activity after a meal (the Gossip and Drifter now show Socializing, not Working); an arrest without stolen goods no longer claims to recover bread; the unused `Mood` relation is gone. One enforcer per society. `RenderFrame` villager drives in `src/display.zig` still read `Hunger`, `Energy`, and `Gold` by name (P32-03), and the wasm village deck still runs its own copy (P32-04). D-032 rule 3 (the interim state) no longer applies.
 
-## D-035 Dialogue Duel Module: Host Config, Choices Through the Dialogue Engine, Fatigue per Speaker and NPC (2026-11-09, status: accepted; learning rule superseded by D-078)
+## D-035 Dialogue Duel Module: Host Config, Choices Through the Dialogue Engine, Fatigue per Speaker and NPC (2026-11-09, status: accepted; learning rule superseded by D-078, scoring by D-079)
 **Context:** The P32-11 audit found `DialogueDuelSystem` trapped in `proofs/sword_fighting.zig`: a challenge/response duel and an inquiry-fatigue mechanic, parameterized only by that proof's names (D-017). It built its candidate lists with its own World queries instead of the engine's fact-guarded choices, stored knowledge on raw entity ids 1 to 16 and 101 to 116 (ids that also belong to interned entities), and counted inquiries per speaker while ignoring its topic argument, so pestering one NPC tired every NPC. The maintainer chose (2026-11-09): host-supplied Zig configuration, candidates through `VM.prune_dialogue_choices`, and fatigue keyed per speaker and NPC.
 **Decision:**
 1. **Module:** `src/duel.zig` provides `Duel` and `InquiryFatigue`, each built from a config whose slices are borrowed. Ids are copied into fixed capacities (64 pairs, 4 tiers, 8 fatigue stages), so neither owns heap memory.
@@ -1064,6 +1064,18 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keep the engine rule and hide the comeback (silent learning): rejected by the maintainer; the player would learn a line they never heard.
 - Let a master defend too: rejected; with full knowledge she cannot lose a defence, so the duel would never end.
 **Consequences:** The duel needs opponents who know some comebacks; a script that declares none gives the player no way to learn them. The window gains a G key for Old Gannet. The proof transcript, the browser deck, and its tests changed with the rule.
+
+## D-079 Duel Rounds Score Points, and Each Barb Is Thrown Once per Duel (2026-11-13, status: accepted)
+**Context:** The maintainer felt the player should win sometimes. A simulation of the Brackwater Barbs duel found Bosun Pike unbeatable and Old Gannet beaten only by repeating one barb he could not answer. D-035's round rule moved a point of advantage: the round's winner gained one and the loser lost one. A defender who parried then had to attack, and against an opponent who knew every barb she had, the next parried barb took the point back, so she could never reach three.
+**Decision:** (maintainer's choice, 2026-11-13)
+1. `Duel.resolve_round` adds a point for the round's winner and takes nothing from the loser. The first fighter to `win_at` points wins; both reset, as before.
+2. The duel proof's `Bout` lets the player throw each barb once per duel (`ThrownThisDuel` facts, cleared when a duel starts or ends). A player who wins a round with no barb left to throw defends instead.
+3. The opponents' knowledge from D-078 is unchanged. Simulated over 40 players who try barbs an opponent failed to answer before, Tamsin beats Gannet from their second duel and Pike from about their sixth; a player who always picks the first barb never wins.
+**Alternatives:**
+- Keep the tug of war: rejected by the maintainer; parries would not count.
+- Allow repeats: rejected by the maintainer; one unanswerable barb would win three rounds.
+- Thin the opponents' knowledge (Pike odd comebacks, Gannet even): simulated and not taken; it made both opponents slower to beat, and the split is approved game content.
+**Consequences:** Every duel built on `src/duel.zig` scores this way. No golden changed. Vell, a master, still always attacks (D-078), so beating her means parrying three of her barbs before she lands three.
 
 ## Held tensions
 

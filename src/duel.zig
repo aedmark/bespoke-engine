@@ -7,7 +7,8 @@
 //!      Fighters learn what they hear (D-078): the defender learns the challenge, the attacker
 //!      the reply it gets back; losing a round teaches nothing more. Opponents carry
 //!      a tier; a tier variant of a challenge is only usable against an opponent of that tier.
-//!      A countered challenge moves advantage to the defender, a failed reply to the attacker.
+//!      A countered challenge scores a point for the defender, a failed reply for the attacker;
+//!      points only add up during a contest, so a parry is never undone (D-079).
 //!   2. `InquiryFatigue`: an NPC's patience with one speaker. Each inquiry raises a count kept
 //!      per (speaker, NPC); configured stages assert mood facts with a TTL, so moods decay with
 //!      the tick clock.
@@ -82,8 +83,8 @@ pub const Config = struct {
     /// fighter's fumble count picks the line, so the rotation is a fact: it saves, rewinds, and
     /// replays like any other state (D-076).
     fallbacks: []const []const u8 = &.{},
-    /// A fighter whose advantage reaches this wins the duel: their win count rises and both
-    /// advantages reset. Null leaves winning to the host.
+    /// The first fighter whose points reach this wins the duel: their win count rises and both
+    /// fighters' points reset. Null leaves winning to the host.
     win_at: ?u32 = null,
     relations: Relations = .{},
 };
@@ -367,8 +368,10 @@ pub const Duel = struct {
     /// Resolves one round: `attacker` throws `challenge_ent`, `defender` answers with
     /// `reply_ent` (`.none` for the fallback). Each fighter learns what they hear (D-078): the
     /// defender learns the challenge, and the attacker learns the reply, if it was a real one. A
-    /// reply that counters moves one point of advantage to the defender; otherwise the
-    /// attacker gains it. Losing a round teaches the defender nothing: the attacker presses on
+    /// reply that counters scores a point for the defender; otherwise the attacker scores it.
+    /// The loser keeps its points (D-079): a fighter that parries has earned something a later
+    /// lost round should not take back, or a defender who parries and must then attack an
+    /// opponent who knows every barb could never pull ahead. Losing a round teaches the defender nothing: the attacker presses on
     /// with a barb, not the answer to the last one.
     pub fn resolve_round(
         self: *Duel,
@@ -389,8 +392,6 @@ pub const Duel = struct {
 
         const gained = self.advantage(gainer) + 1;
         try self.world.remember(gainer, self.advantage_rel, gained, 0);
-        const lost = self.advantage(loser);
-        if (lost > 0) try self.world.remember(loser, self.advantage_rel, lost - 1, 0);
 
         var round = Round{ .parried = parried };
         if (self.config.win_at) |win_at| {
@@ -639,7 +640,7 @@ test "P32-17: a tier variant is offered only against an opponent of that tier" {
     try testing.expectEqual(@as(usize, 1), duel.challenges(&vm, pupil, oracle, out[0..1]));
 }
 
-test "P32-17: failed replies teach, counters shift advantage, and the threshold wins" {
+test "P32-17/D-079: failed replies teach, rounds score points, and the threshold wins" {
     const testing = std.testing;
     var bed = try TestBed.init();
     defer bed.deinit();
@@ -679,12 +680,12 @@ test "P32-17: failed replies teach, counters shift advantage, and the threshold 
     try testing.expectEqual(@as(u32, 1), duel.wins(elder));
     try testing.expectEqual(@as(u32, 0), duel.advantage(elder));
 
-    // Two counters in a row take the next contest, and the loser's lead drains first.
+    // Two counters take the next contest; the elder keeps the point it scored first (D-079).
     _ = try duel.resolve_round(elder, pupil, duel.challenge(2, 0), .none);
     try testing.expectEqual(@as(u32, 1), duel.advantage(elder));
     const first = try duel.resolve_round(elder, pupil, duel.challenge(1, 1), duel.reply(1));
     try testing.expect(first.parried);
-    try testing.expectEqual(@as(u32, 0), duel.advantage(elder));
+    try testing.expectEqual(@as(u32, 1), duel.advantage(elder));
     try testing.expectEqual(@as(u32, 1), duel.advantage(pupil));
     const second = try duel.resolve_round(elder, pupil, duel.challenge(2, 0), duel.reply(2));
     try testing.expectEqual(pupil, second.winner.?);

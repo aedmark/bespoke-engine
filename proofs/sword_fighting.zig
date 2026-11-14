@@ -505,6 +505,9 @@ pub const Bout = struct {
     challenge_rel: bespoke.RelationKind,
     /// 1 while the player attacks; absent while the opponent does.
     attacking_rel: bespoke.RelationKind,
+    /// Barbs the player has thrown in this duel. Each barb is thrown once per duel, so one
+    /// barb the opponent cannot answer does not win three rounds by itself.
+    thrown_rel: bespoke.RelationKind,
 
     pub const Result = struct {
         /// What to show: the opponent's spoken line, the round's outcome, and the advantage.
@@ -522,6 +525,7 @@ pub const Bout = struct {
             .opponent_rel = try world.intern_relation("ActiveDuelOpponent", .property),
             .challenge_rel = try world.intern_relation("ActiveDuelChallenge", .property),
             .attacking_rel = try world.intern_relation("PlayerAttacks", .property),
+            .thrown_rel = try world.intern_relation("ThrownThisDuel", .set),
         };
     }
 
@@ -538,6 +542,22 @@ pub const Bout = struct {
         return (self.world.get_property(who, self.duel.tier_rel) orelse 0) > 0;
     }
 
+    /// The barbs the player may still throw at the current opponent: heard, usable at its
+    /// tier, and not yet thrown in this duel. Table order; capped at the panel's nine.
+    pub fn usable_barbs(self: *const Bout, vm: *bespoke.VM, out: *[9]duel_mod.Candidate) usize {
+        const foe = self.opponent() orelse return 0;
+        var all: [64]duel_mod.Candidate = undefined;
+        const n = self.duel.challenges(vm, self.player, foe, &all);
+        var count: usize = 0;
+        for (all[0..n]) |cand| {
+            if (count == out.len) break;
+            if (self.world.has_fact(self.player, self.thrown_rel, cand.entity.to_int())) continue;
+            out[count] = cand;
+            count += 1;
+        }
+        return count;
+    }
+
     /// Starts a duel. The player leads if she has a barb to throw at this opponent and the
     /// opponent is not a master; otherwise the opponent opens with `opening`.
     pub fn start(self: *Bout, vm: *bespoke.VM, foe: bespoke.EntityId, opening: bespoke.EntityId) !void {
@@ -546,8 +566,8 @@ pub const Bout = struct {
         try self.world.remember(self.player, self.challenge_rel, opening.to_int(), 0);
         try self.world.remember(self.player, self.duel.advantage_rel, 0, 0);
         try self.world.remember(foe, self.duel.advantage_rel, 0, 0);
-        var barbs: [4]duel_mod.Candidate = undefined;
-        if (!self.is_master(foe) and self.duel.challenges(vm, self.player, foe, &barbs) > 0) {
+        var barbs: [9]duel_mod.Candidate = undefined;
+        if (!self.is_master(foe) and self.usable_barbs(vm, &barbs) > 0) {
             try self.world.remember(self.player, self.attacking_rel, 1, 0);
         }
     }
@@ -558,6 +578,7 @@ pub const Bout = struct {
         _ = self.world.forget(self.player, self.opponent_rel, null);
         _ = self.world.forget(self.player, self.challenge_rel, null);
         _ = self.world.forget(self.player, self.attacking_rel, null);
+        _ = self.world.forget(self.player, self.thrown_rel, null);
     }
 
     /// Opens the round's choices as a generated dialogue set: the barbs the player may throw
@@ -569,7 +590,7 @@ pub const Bout = struct {
         var prompt: []const u8 = "";
         var count: usize = 0;
         if (self.player_attacks()) {
-            count = self.duel.challenges(vm, self.player, foe, &candidates);
+            count = self.usable_barbs(vm, &candidates);
             prompt = "Your turn: throw a barb.";
         } else {
             const raw = self.world.get_property(self.player, self.challenge_rel) orelse return;
@@ -591,7 +612,7 @@ pub const Bout = struct {
     }
 
     /// Resolves the player's choice and sets up the next round. `buf` holds the banner text.
-    pub fn choose(self: *Bout, action: u32, buf: []u8) !Result {
+    pub fn choose(self: *Bout, vm: *bespoke.VM, action: u32, buf: []u8) !Result {
         const foe = self.opponent() orelse return .{ .banner = "" };
         var name_buf: [48]u8 = undefined;
         const name = bespoke.display.dialogue_panel.display_name(self.world.get_entity_name(foe) orelse "The opponent", &name_buf);
@@ -605,6 +626,7 @@ pub const Bout = struct {
             // The opponent answers the player's barb with what it knows; a real answer teaches
             // the player that comeback (D-078).
             barb = picked;
+            try self.world.remember(self.player, self.thrown_rel, barb.to_int(), 0);
             const reply = self.duel.answer(foe, barb);
             round = try self.duel.resolve_round(self.player, foe, barb, reply);
             said = if (reply != .none) (self.duel.reply_text(barb) orelse "") else self.spoken_fallback(foe);
@@ -621,9 +643,11 @@ pub const Bout = struct {
             return .{ .banner = text, .winner = winner, .loser = if (winner == self.player) foe else self.player };
         }
 
-        // The round's winner attacks next, except that a master always attacks. An opponent
-        // who attacks presses on with its next barb, never the answer to the last one.
-        if (player_won_round and !self.is_master(foe)) {
+        // The round's winner attacks next, except that a master always attacks and a player
+        // with no barb left to throw must defend. An opponent who attacks presses on with its
+        // next barb, never the answer to the last one.
+        var left: [9]duel_mod.Candidate = undefined;
+        if (player_won_round and !self.is_master(foe) and self.usable_barbs(vm, &left) > 0) {
             try self.world.remember(self.player, self.attacking_rel, 1, 0);
         } else {
             _ = self.world.forget(self.player, self.attacking_rel, null);
@@ -659,7 +683,7 @@ fn play_choice(
 ) !void {
     const selection = (try session.choose_dialogue(index)) orelse return;
     var buf: [320]u8 = undefined;
-    const result = try bout.choose(selection.action, &buf);
+    const result = try bout.choose(vm, selection.action, &buf);
     if (result.winner) |winner| {
         _ = try vm.fire_cue(compiled, "WinsDuel", winner, result.loser, null);
         _ = try session.advance();
@@ -970,7 +994,7 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
         const open = vm.dialogue_view().?;
         try testing.expectEqualStrings(duel.config.pairs[round].challenge, open.prompt);
         try testing.expectEqualStrings(duel.config.fallbacks[round], open.text(0));
-        result = try bout.choose(0, &buf);
+        result = try bout.choose(&vm, 0, &buf);
         try testing.expect(!world.has_fact(tamsin, duel.mastered_rel, null));
         try testing.expect(std.mem.indexOf(u8, result.banner, duel.config.pairs[round].reply) == null);
     }
@@ -989,7 +1013,7 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
     try testing.expect(bout.player_attacks());
     try bout.open(&vm);
     try testing.expectEqual(@as(usize, 3), vm.dialogue_view().?.count);
-    result = try bout.choose(duel.challenge(0, 0).to_int(), &buf);
+    result = try bout.choose(&vm, duel.challenge(0, 0).to_int(), &buf);
     try testing.expect(world.has_fact(tamsin, duel.mastered_rel, duel.reply(0).to_int()));
     try testing.expect(std.mem.indexOf(u8, result.banner, duel.config.pairs[0].reply) != null);
     try testing.expect(!bout.player_attacks());
@@ -999,6 +1023,51 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
     // A master always attacks, even when the player has barbs to throw.
     try bout.start(&vm, vell, duel.challenge(4, 1));
     try testing.expect(!bout.player_attacks());
+}
+
+test "D-079: each barb is thrown once per duel, points add up, and distinct barbs win" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    try compiled.duels.items[0].apply_tiers(&duel);
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+
+    const tamsin = try world.intern_entity("Tamsin");
+    const gannet = try world.intern_entity("OldGannet");
+    var bout = try Bout.init(&world, &duel, tamsin);
+    var buf: [320]u8 = undefined;
+    var barbs: [9]duel_mod.Candidate = undefined;
+
+    // Tamsin has heard one barb Gannet cannot answer. It wins a round, but it cannot be thrown
+    // again, so Gannet attacks next instead of losing to the same line three times.
+    try world.remember(tamsin, duel.heard_rel, duel.challenge(1, 0).to_int(), 0);
+    try bout.start(&vm, gannet, duel.challenge(8, 0));
+    try testing.expect(bout.player_attacks());
+    var result = try bout.choose(&vm, duel.challenge(1, 0).to_int(), &buf);
+    try testing.expect(result.winner == null);
+    try testing.expectEqual(@as(usize, 0), bout.usable_barbs(&vm, &barbs));
+    try testing.expect(!bout.player_attacks());
+
+    // Gannet's barb lands; Tamsin keeps the point she scored (D-079).
+    try bout.open(&vm);
+    result = try bout.choose(&vm, 0, &buf);
+    try testing.expectEqual(@as(u32, 1), duel.advantage(tamsin));
+    try testing.expectEqual(@as(u32, 1), duel.advantage(gannet));
+
+    // A new duel lets every barb be thrown again. Three barbs Gannet cannot answer win it.
+    try world.remember(tamsin, duel.heard_rel, duel.challenge(2, 0).to_int(), 0);
+    try world.remember(tamsin, duel.heard_rel, duel.challenge(3, 0).to_int(), 0);
+    try bout.start(&vm, gannet, duel.challenge(8, 0));
+    try testing.expectEqual(@as(usize, 3), bout.usable_barbs(&vm, &barbs));
+    for (1..4) |p| result = try bout.choose(&vm, duel.challenge(p, 0).to_int(), &buf);
+    try testing.expectEqual(tamsin, result.winner.?);
 }
 
 test "P35-02: the Tidewalk fencers patrol once the script's routines start" {

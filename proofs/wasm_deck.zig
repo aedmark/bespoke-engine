@@ -641,7 +641,7 @@ fn sword_solve(rt: *WasmRuntime) anyerror!void {
 fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
     const bout = sword(rt) orelse return;
     var buf: [320]u8 = undefined;
-    const result = try bout.choose(action, &buf);
+    const result = try bout.choose(&rt.vm, action, &buf);
     rt.set_banner(result.banner);
     if (result.winner) |winner| {
         const program = if (rt.program) |*p| p else return;
