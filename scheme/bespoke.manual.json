@@ -779,7 +779,7 @@
           "summary": "A wrapped dialogue panel with the speaker's name, the line, and relational fact-guarded choices that suspend the script until selection.",
           "synopsis": "choice \"Rent motorcycle\" if Carries(Gabriel, License): say Buthane: \"Keys.\"",
           "tags": ["dialogue", "speech", "balloons", "choices", "pruning"],
-          "what": "Shows the open dialogue in a parchment panel along the bottom of the stage: the speaker's display name, the line word-wrapped, and numbered choices that wrap and grow the panel upward, with scrolling past six and keyboard hotkeys (1-9). The window and the browser draw the same layout (D-077).",
+          "what": "Shows the open dialogue in a parchment panel centred above the bottom of the stage and as wide as its text: the speaker's display name, the line word-wrapped at 60 characters, and numbered choices that wrap and grow the panel upward, with a scroll bar past six and keyboard hotkeys (1-9). The window and the browser draw the same layout (D-077, D-084).",
           "how": [
             "dialogue_panel.layout wraps the speaker, prompt, and choices into rows for a panel width and font scale, and reports each choice's vertical span; it has no SDL dependency, so the desktop renderer and the wasm canvas share it.",
             "dialogue_panel.display_name splits CamelCase entity names for display (BosunPike reads Bosun Pike).",
@@ -797,6 +797,7 @@
             {"label": "Architectural Decision D-046", "target": "docs/DECISIONS.md#d-046", "kind": "decision"},
             {"label": "Architectural Decision D-077", "target": "docs/DECISIONS.md#d-077", "kind": "decision"},
             {"label": "Architectural Decision D-080", "target": "docs/DECISIONS.md#d-080", "kind": "decision"},
+            {"label": "Architectural Decision D-084", "target": "docs/DECISIONS.md#d-084", "kind": "decision"},
             {"label": "Click-Through Messages", "target": "src/display/beats.zig", "kind": "source"},
             {"label": "Dialogue Panel Layout", "target": "src/display/dialogue_panel.zig", "kind": "source"},
             {"label": "Executable Dialogue Lifecycle", "target": "src/dialogue.zig", "kind": "source"},

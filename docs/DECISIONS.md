@@ -1126,6 +1126,17 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Scroll through every barb: the window scrolls past six, but the dialogue still holds nine.
 **Consequences:** Simulated over 40 deals and seeds with a player who tries untested barbs and flubs when nothing new is left, every player won a duel and none stalled; from the seventh duel on Tamsin won roughly 65 to 90 percent. The console run calls the duel directly and is unchanged. The browser golden's deck 7 lines changed.
 
+## D-084 The Dialogue Panel Fits Its Text, Centred, with a 60-Character Line Limit and a Scroll Bar (2026-11-13, status: accepted)
+**Context:** D-077's panel spanned the stage's whole width, so short lines sat in a wide empty box, and past six choices it printed a hint row ("Scroll: 4-9 of 9 | Wheel/Arrows") in small text. The maintainer asked for a panel centred and fitted to its text, with writers held to a line length, and a visual scroll cue in place of the hint.
+**Decision:**
+1. `dialogue_panel.MAX_COLUMNS` is 60: no row holds more, a choice's `[n] ` number included. Longer lines wrap. The script reference asks writers to stay within it.
+2. `Layout.width` is the widest row plus padding, capped at the metrics' width. The window and the browser centre the panel on it; the window sizes it from every choice, not only the six in view, so scrolling never resizes it. Messages (D-080) fit the same way.
+3. Past six choices the window draws a scroll bar along the panel's right edge: a track beside the visible choices and a thumb whose size and place show which choices are in view. The hint row is gone; the wheel and arrow keys still scroll.
+**Alternatives:**
+- A fixed narrower panel: rejected; one-word choices would still sit in a wide box.
+- A lint that fails scripts with long lines: not done; wrapping keeps long lines readable, and the limit is in the reference. A lint can follow if lines creep past it.
+**Consequences:** Lines over 60 characters (one Brackwater comeback is 73) wrap to two rows. The render golden's two inspector lines and the browser golden's deck 7 and deck 8 lines changed.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

@@ -566,15 +566,29 @@ pub const SpeechBalloon = struct {
     }
 };
 
-/// Where the dialogue panel sits and how its rows fall (D-077). The panel spans the stage's
-/// width above the action sentence and verb bar (and the command bar when it shows), and grows
-/// upward with its wrapped rows; the balloon's speaker position no longer places it.
+/// Where the dialogue panel sits and how its rows fall (D-077, D-084). The panel is centred
+/// above the action sentence and verb bar (and the command bar when it shows), as wide as its
+/// widest row, and grows upward with its wrapped rows.
 pub const DialoguePanel = struct {
     rect: c.SDL_Rect,
     layout: dialogue_panel.Layout,
-    /// Height of the scroll hint row under the choices, when more than six are offered.
-    scroll_h: i32,
+    /// Width of the scroll bar along the right edge when more than six choices are offered;
+    /// 0 otherwise.
+    scrollbar_w: i32,
 };
+
+/// The scroll bar's width; its thumb shows which of the choices are in view.
+pub const SCROLLBAR_W: i32 = 14;
+
+fn centred_panel(l: dialogue_panel.Layout, scrollbar_w: i32, screen_w: i32, screen_h: i32, command_bar: bool) DialoguePanel {
+    const w = l.width + scrollbar_w;
+    const bottom = screen_h - 110 - (if (command_bar) @as(i32, 28) else 0);
+    return .{
+        .rect = .{ .x = @divTrunc(screen_w - w, 2), .y = @max(76, bottom - l.height), .w = w, .h = l.height },
+        .layout = l,
+        .scrollbar_w = scrollbar_w,
+    };
+}
 
 pub fn get_dialogue_panel(balloon: *const SpeechBalloon, screen_w: i32, screen_h: i32, command_bar: bool) DialoguePanel {
     var metrics = dialogue_panel.Metrics.desktop;
@@ -582,29 +596,21 @@ pub fn get_dialogue_panel(balloon: *const SpeechBalloon, screen_w: i32, screen_h
     var visible: [dialogue_panel.MAX_CHOICES][]const u8 = undefined;
     const count = balloon.visible_choice_count();
     for (0..count) |i| visible[i] = balloon.get_choice(balloon.scroll_offset + i);
-    const l = dialogue_panel.layout(metrics, balloon.get_speaker_name(), balloon.get_text(), visible[0..count]);
-    const scroll_h: i32 = if (balloon.choice_count > 6) 16 else 0;
-    const h = l.height + scroll_h;
-    const bottom = screen_h - 110 - (if (command_bar) @as(i32, 28) else 0);
-    return .{
-        .rect = .{ .x = 20, .y = @max(76, bottom - h), .w = metrics.width, .h = h },
-        .layout = l,
-        .scroll_h = scroll_h,
-    };
+    var l = dialogue_panel.layout(metrics, balloon.get_speaker_name(), balloon.get_text(), visible[0..count]);
+    // Width from every choice, not only those in view, so scrolling never resizes the panel.
+    var all: [dialogue_panel.MAX_CHOICES][]const u8 = undefined;
+    for (0..balloon.choice_count) |i| all[i] = balloon.get_choice(i);
+    l.width = dialogue_panel.layout(metrics, balloon.get_speaker_name(), balloon.get_text(), all[0..balloon.choice_count]).width;
+    return centred_panel(l, if (balloon.choice_count > 6) SCROLLBAR_W else 0, screen_w, screen_h, command_bar);
 }
 
-/// Where a click-through message sits (D-080): the dialogue panel's place and width, holding
-/// the speaker, the text, and the continue hint.
+/// Where a click-through message sits (D-080): centred like the dialogue panel, holding the
+/// speaker, the text, and the continue hint.
 pub fn get_message_panel(beat: *const beats_mod.Beat, screen_w: i32, screen_h: i32, command_bar: bool) DialoguePanel {
     var metrics = dialogue_panel.Metrics.desktop;
     metrics.width = screen_w - 40;
     const l = dialogue_panel.layout_message(metrics, beat.speaker(), beat.text(), beats_mod.HINT);
-    const bottom = screen_h - 110 - (if (command_bar) @as(i32, 28) else 0);
-    return .{
-        .rect = .{ .x = 20, .y = @max(76, bottom - l.height), .w = metrics.width, .h = l.height },
-        .layout = l,
-        .scroll_h = 0,
-    };
+    return centred_panel(l, 0, screen_w, screen_h, command_bar);
 }
 
 /// The choice under the mouse, as an index into all of the balloon's choices.
@@ -3088,11 +3094,12 @@ pub const DisplayWindow = struct {
                 const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
                 const top = r.y + panel.layout.choice_top[slot];
                 const height = panel.layout.choice_bottom[slot] - panel.layout.choice_top[slot];
+                const row_w = r.w - 16 - panel.scrollbar_w;
                 if (is_hovered) {
-                    self.fill_rect(r.x + 8, top, r.w - 16, height, Color.wp_hover);
-                    self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color.white);
+                    self.fill_rect(r.x + 8, top, row_w, height, Color.wp_hover);
+                    self.draw_rect_outline(r.x + 8, top, row_w, height, Color.white);
                 } else {
-                    self.fill_rect(r.x + 8, top, r.w - 16, height, Color{ .r = 253, .g = 230, .b = 138 });
+                    self.fill_rect(r.x + 8, top, row_w, height, Color{ .r = 253, .g = 230, .b = 138 });
                     self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color{ .r = 217, .g = 119, .b = 6 });
                 }
             }
@@ -3118,15 +3125,21 @@ pub const DisplayWindow = struct {
                 }
             }
 
-            // Scroll hint when choices exceed the visible six (P13-03, D-015).
-            if (panel.scroll_h > 0) {
-                var sbuf: [64]u8 = undefined;
-                const scroll_str = std.fmt.bufPrint(&sbuf, "(Scroll: {d}-{d} of {d} | Wheel/Arrows)", .{
-                    b.scroll_offset + 1,
-                    @min(b.choice_count, b.scroll_offset + b.visible_choice_count()),
-                    b.choice_count,
-                }) catch "";
-                self.draw_text(scroll_str, r.x + 14, r.y + r.h - panel.scroll_h, 1, accent);
+            // A scroll bar along the right edge when choices exceed the visible six (D-084): the
+            // track spans the visible choices, and the thumb's size and place show which of all
+            // the choices are in view. The wheel and arrow keys scroll.
+            if (panel.scrollbar_w > 0 and panel.layout.choice_count > 0) {
+                const last = panel.layout.choice_count - 1;
+                const track_x = r.x + r.w - panel.scrollbar_w - 4;
+                const track_top = r.y + panel.layout.choice_top[0];
+                const track_h = panel.layout.choice_bottom[last] - panel.layout.choice_top[0];
+                const total: i32 = b.choice_count;
+                const shown: i32 = b.visible_choice_count();
+                const thumb_h = @max(12, @divTrunc(track_h * shown, total));
+                const thumb_y = track_top + @divTrunc((track_h - thumb_h) * @as(i32, b.scroll_offset), @max(1, total - shown));
+                self.fill_rect(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 253, .g = 230, .b = 138 });
+                self.draw_rect_outline(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 146, .g = 64, .b = 14 });
+                self.fill_rect(track_x + 2, thumb_y + 2, panel.scrollbar_w - 8, thumb_h - 4, accent);
             }
         }
 
@@ -3610,13 +3623,20 @@ test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
     try testing.expectEqual(@as(u8, 2), balloon.max_scroll_offset());
     try testing.expectEqual(@as(u8, 0), balloon.scroll_offset);
 
-    // The panel spans the window above the verb bar and holds six visible choices (D-077).
+    // The panel is centred above the verb bar, as wide as its rows plus a scroll bar, and
+    // holds six visible choices (D-077, D-084).
     const panel = get_dialogue_panel(balloon, 960, 540, false);
-    try testing.expectEqual(@as(i32, 920), panel.rect.w);
+    try testing.expectEqual(panel.layout.width + SCROLLBAR_W, panel.rect.w);
+    try testing.expect(panel.rect.w < 920);
+    try testing.expectEqual(@divTrunc(960 - panel.rect.w, 2), panel.rect.x);
     try testing.expect(panel.rect.y >= 76);
     try testing.expect(panel.rect.y + panel.rect.h <= 540 - 110);
     try testing.expectEqual(@as(usize, 6), panel.layout.choice_count);
-    try testing.expectEqual(@as(i32, 16), panel.scroll_h);
+    try testing.expectEqual(SCROLLBAR_W, panel.scrollbar_w);
+    // Scrolling never changes the panel's width.
+    balloon.scroll_offset = balloon.max_scroll_offset();
+    try testing.expectEqual(panel.rect.w, get_dialogue_panel(balloon, 960, 540, false).rect.w);
+    balloon.scroll_offset = 0;
     try testing.expectEqualStrings("Madame Buthane", balloon.get_speaker_name());
 
     const mid_x = panel.rect.x + 40;

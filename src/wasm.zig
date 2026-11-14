@@ -793,7 +793,8 @@ pub const WasmRuntime = struct {
         return BANNER_BOTTOM - 8 - @as(i32, @intCast(n)) * 10;
     }
 
-    /// The open dialogue's panel: above the banner, spanning the stage, growing upward (D-077).
+    /// The open dialogue's panel: above the banner, centred and as wide as its rows, growing
+    /// upward (D-077, D-084).
     const BrowserPanel = struct { x: i32, y: i32, w: i32, h: i32, layout: dialogue_panel.Layout };
 
     /// Queues a click-through message (D-080). `speaker` is an entity name or empty.
@@ -808,7 +809,7 @@ pub const WasmRuntime = struct {
         const l = dialogue_panel.layout_message(metrics, beat.speaker(), beat.text(), beats_mod.HINT);
         const bottom = self.banner_top() - 2;
         const y = @max(44, bottom - l.height);
-        return .{ .x = 12, .y = y, .w = metrics.width, .h = bottom - y, .layout = l };
+        return .{ .x = @divTrunc(CANVAS_WIDTH - l.width, 2), .y = y, .w = l.width, .h = bottom - y, .layout = l };
     }
 
     fn dialogue_panel_now(self: *WasmRuntime) ?BrowserPanel {
@@ -819,7 +820,7 @@ pub const WasmRuntime = struct {
         const l = dialogue_panel.layout(metrics, shown, open.prompt, open.texts[0..open.count]);
         const bottom = self.banner_top() - 2;
         const y = @max(44, bottom - l.height);
-        return .{ .x = 12, .y = y, .w = metrics.width, .h = bottom - y, .layout = l };
+        return .{ .x = @divTrunc(CANVAS_WIDTH - l.width, 2), .y = y, .w = l.width, .h = bottom - y, .layout = l };
     }
 
     pub fn record_snapshot(self: *WasmRuntime) void {

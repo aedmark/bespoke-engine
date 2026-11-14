@@ -10,6 +10,10 @@ const font = @import("font.zig");
 pub const MAX_ROWS: usize = 48;
 /// Choices one panel lays out; matches `dialogue.MAX_CHOICES`.
 pub const MAX_CHOICES: usize = 9;
+/// The longest row a panel shows, in characters, a choice's `[n] ` number included. Longer
+/// lines wrap; writers should keep a line within it, since a short panel reads at a glance
+/// (D-084).
+pub const MAX_COLUMNS: usize = 60;
 
 pub const Metrics = struct {
     /// Panel width in pixels, borders included.
@@ -26,9 +30,14 @@ pub const Metrics = struct {
     pub const desktop = Metrics{ .width = 1240, .scale = 2, .pad = 12, .line_h = 18, .gap = 6 };
     pub const browser = Metrics{ .width = 616, .scale = 1, .pad = 6, .line_h = 10, .gap = 3 };
 
+    /// Characters a row holds after `indent` pixels: what fits the width, at most
+    /// `MAX_COLUMNS` counted from the panel's padding.
     fn columns(self: Metrics, indent: i32) usize {
+        const cw = font.char_width(self.scale);
         const usable = self.width - 2 * self.pad - indent;
-        return @intCast(@max(1, @divTrunc(usable, font.char_width(self.scale))));
+        const fits: usize = @intCast(@max(1, @divTrunc(usable, cw)));
+        const indent_cols: usize = @intCast(@divTrunc(indent, cw));
+        return @max(1, @min(fits, MAX_COLUMNS -| indent_cols));
     }
 };
 
@@ -60,8 +69,18 @@ pub const Layout = struct {
     choice_bottom: [MAX_CHOICES]i32 = [_]i32{0} ** MAX_CHOICES,
     choice_count: usize = 0,
     height: i32 = 0,
+    /// The panel's width, borders included: its widest row plus padding, at most
+    /// `Metrics.width` (D-084). Hosts centre the panel on it.
+    width: i32 = 0,
     /// Pixels a choice's text sits right of the panel padding, leaving room for `[n] `.
     indent: i32 = 0,
+
+    /// Sets `width` from the widest row.
+    fn fit(self: *Layout, m: Metrics) void {
+        var widest: i32 = 0;
+        for (self.slice()) |row| widest = @max(widest, row.x + font.text_width(row.text, m.scale));
+        self.width = @min(m.width, widest + m.pad);
+    }
 
     pub fn slice(self: *const Layout) []const Row {
         return self.rows[0..self.row_count];
@@ -175,6 +194,7 @@ pub fn layout(m: Metrics, speaker: []const u8, prompt: []const u8, choices: []co
     }
     out.choice_count = count;
     out.height = y + m.pad - (if (count > 0) m.gap else 0);
+    out.fit(m);
     return out;
 }
 
@@ -186,6 +206,7 @@ pub fn layout_message(m: Metrics, speaker: []const u8, text: []const u8, hint: [
     const y = out.height - m.pad + m.gap;
     out.push(.{ .kind = .hint, .text = hint, .x = m.pad, .y = y });
     out.height = y + m.line_h + m.pad;
+    out.fit(m);
     return out;
 }
 
@@ -200,6 +221,26 @@ test "D-080: a message lays out its text with the hint on the last row" {
     try testing.expect(rows[rows.len - 1].y > rows[rows.len - 2].y + m.line_h - 1);
     try testing.expectEqual(l.height, rows[rows.len - 1].y + m.line_h + m.pad);
     try testing.expectEqual(@as(?u8, null), l.hit(50, rows[1].y, m.width));
+}
+
+test "D-084: a panel fits its widest row and wraps at the line limit" {
+    const testing = std.testing;
+    const m = Metrics.desktop;
+    const short = layout(m, "Harbour Warden", "Well?", &.{ "Yes.", "No." });
+    // Fitted: the widest row is the speaker's name.
+    try testing.expectEqual(m.pad + font.text_width("Harbour Warden", m.scale) + m.pad, short.width);
+    const long_line = "The tide waits for nobody, least of all you, and least of all today, on this dock, at dusk.";
+    const long = layout(m, "Harbour Warden", long_line, &.{long_line});
+    try testing.expect(long.width < m.width);
+    try testing.expect(long.width <= 2 * m.pad + @as(i32, MAX_COLUMNS) * font.char_width(m.scale));
+    for (long.slice()) |row| {
+        const cols = @as(usize, @intCast(@divTrunc(row.x - m.pad, font.char_width(m.scale)))) + row.text.len;
+        try testing.expect(cols <= MAX_COLUMNS);
+        try testing.expect(row.x + font.text_width(row.text, m.scale) <= long.width - m.pad);
+    }
+    // A narrow canvas still caps the width.
+    const narrow = Metrics{ .width = 200, .scale = 1, .pad = 6, .line_h = 10, .gap = 3 };
+    try testing.expect(layout(narrow, "", long_line, &.{}).width <= 200);
 }
 
 test "D-077: wrap breaks at spaces, splits only overlong words, and trims" {
