@@ -1084,7 +1084,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 2. `dialogue_panel.layout_message` lays out a message in the dialogue panel's place and width: the speaker, the wrapped line, and a continue hint on the last row.
 3. While a message waits, it covers the dialogue panel. A left click anywhere, Enter, or Space dismisses it (in the browser, also the solve key). The number keys cannot answer the choices it hides, and the hint and choices stay hidden until the queue is empty. Hosts queue with `DisplayWindow.queue_message` or `WasmRuntime.queue_message`.
 4. `host.speech_lines` gives each `say` line of the most recent tick on its own, so a host can queue them one by one instead of joining them as `SpeechLog` does.
-5. Brackwater Barbs queues each round as up to three messages: the opponent's spoken line, "Your point." or "Their point.", and the points; a duel's end queues the opponent's line and the script's victory line. Points are worded "Points", since "score" is the glossary's word for music.
+5. Brackwater Barbs queues each round as up to four messages, in the order an adventure game shows an exchange (maintainer, 2026-11-13): the line the player chose, echoed in Tamsin's voice; the opponent's reply, when she attacked; "Your point." or "Their point."; and the points; a duel's end queues the opponent's line and the script's victory line. Points are worded "Points", since "score" is the glossary's word for music.
 **Alternatives:**
 - A larger banner that waits for a click: rejected; one box still holds every piece at once.
 - Messages that time out: rejected; the maintainer wants the player to have time to read.

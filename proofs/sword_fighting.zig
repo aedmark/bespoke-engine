@@ -517,8 +517,9 @@ pub const Bout = struct {
     };
 
     pub const Result = struct {
-        /// What happened, in order: the opponent's spoken line, the round's outcome, the points.
-        lines: [3]Line = undefined,
+        /// What happened, in order, as an adventure game shows an exchange: the player's chosen
+        /// line in her own voice, the opponent's reply, the round's outcome, the points.
+        lines: [4]Line = undefined,
         line_count: usize = 0,
         /// Set when the duel ended this round.
         winner: ?bespoke.EntityId = null,
@@ -628,6 +629,14 @@ pub const Bout = struct {
         _ = try vm.open_generated_dialogue(foe, prompt, choices[0..count]);
     }
 
+    /// The text of a comeback, by its entity.
+    fn reply_line(self: *const Bout, reply_ent: bespoke.EntityId) []const u8 {
+        for (self.duel.config.pairs, 0..) |pair, p| {
+            if (self.duel.reply(p) == reply_ent) return pair.reply;
+        }
+        return "";
+    }
+
     /// The fallback line `foe` just spoke: its fumble count was raised by the round.
     fn spoken_fallback(self: *const Bout, foe: bespoke.EntityId) []const u8 {
         const lines = self.duel.config.fallbacks;
@@ -645,12 +654,14 @@ pub const Bout = struct {
         const player_led = self.player_attacks();
 
         var said: []const u8 = "";
+        var player_said: []const u8 = "";
         var barb: bespoke.EntityId = undefined;
         var round: duel_mod.Round = undefined;
         if (player_led) {
             // The opponent answers the player's barb with what it knows; a real answer teaches
             // the player that comeback (D-078).
             barb = picked;
+            player_said = self.duel.challenge_text(barb) orelse "";
             try self.world.remember(self.player, self.thrown_rel, barb.to_int(), 0);
             const reply = self.duel.answer(foe, barb);
             round = try self.duel.resolve_round(self.player, foe, barb, reply);
@@ -659,10 +670,12 @@ pub const Bout = struct {
             const raw = self.world.get_property(self.player, self.challenge_rel) orelse return .{};
             barb = bespoke.EntityId.from_int(raw);
             round = try self.duel.resolve_round(foe, self.player, barb, picked);
+            player_said = if (picked == .none) self.spoken_fallback(self.player) else self.reply_line(picked);
         }
         const player_won_round = if (player_led) !round.parried else round.parried;
 
         var result = Result{};
+        result.add(self.world.get_entity_name(self.player) orelse "", player_said);
         result.add(foe_name, said);
         if (round.winner) |winner| {
             self.clear();
@@ -1076,18 +1089,25 @@ test "D-079: each barb is thrown once per duel, points add up, and distinct barb
     try testing.expect(bout.player_attacks());
     var result = try bout.choose(&vm, duel.challenge(1, 0).to_int(), &buf);
     try testing.expect(result.winner == null);
-    // Three messages, each shown on its own (D-080): Gannet's fallback, the outcome, the points.
-    try testing.expectEqual(@as(usize, 3), result.line_count);
-    try testing.expectEqualStrings("OldGannet", result.lines[0].speaker);
-    try testing.expectEqualStrings(duel.config.fallbacks[0], result.lines[0].text);
-    try testing.expectEqualStrings("Your point.", result.lines[1].text);
-    try testing.expectEqualStrings("Points: you 1, Old Gannet 0.", result.lines[2].text);
+    // Four messages, each shown on its own (D-080): Tamsin's barb in her voice, Gannet's
+    // fallback, the outcome, the points.
+    try testing.expectEqual(@as(usize, 4), result.line_count);
+    try testing.expectEqualStrings("Tamsin", result.lines[0].speaker);
+    try testing.expectEqualStrings(duel.config.pairs[1].challenge, result.lines[0].text);
+    try testing.expectEqualStrings("OldGannet", result.lines[1].speaker);
+    try testing.expectEqualStrings(duel.config.fallbacks[0], result.lines[1].text);
+    try testing.expectEqualStrings("Your point.", result.lines[2].text);
+    try testing.expectEqualStrings("Points: you 1, Old Gannet 0.", result.lines[3].text);
     try testing.expectEqual(@as(usize, 0), bout.usable_barbs(&vm, &barbs));
     try testing.expect(!bout.player_attacks());
 
-    // Gannet's barb lands; Tamsin keeps the point she scored (D-079).
+    // Gannet's barb lands; Tamsin keeps the point she scored (D-079). Her fumble is echoed in
+    // her voice, and Gannet says nothing in reply.
     try bout.open(&vm);
     result = try bout.choose(&vm, 0, &buf);
+    try testing.expectEqualStrings("Tamsin", result.lines[0].speaker);
+    try testing.expectEqualStrings(duel.config.fallbacks[0], result.lines[0].text);
+    try testing.expectEqualStrings("Their point.", result.lines[1].text);
     try testing.expectEqual(@as(u32, 1), duel.advantage(tamsin));
     try testing.expectEqual(@as(u32, 1), duel.advantage(gannet));
 
