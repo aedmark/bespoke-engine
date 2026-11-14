@@ -19,7 +19,7 @@
 
 [Step 4: Tamsin blows the Conch!] *** BWOOOOOOM! ***
    -> JudgeMarrow: "Is that the herring fleet back already?"
-   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 100 ticks)
+   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 45 ticks)
 
 [Step 5: Tamsin tampers with Pegs while crowd is distracted!]
    -> Fact asserted: Pegs are tampered with (moved closer to line)!
@@ -31,7 +31,7 @@
    -> Judge Marrow: "Past the last peg! We have a champion!"
 
 [Step 7: Testing TTL Expiration & Falling-Edge Triggers]
-   -> Distraction TTL expired at Tick 109!
+   -> Distraction TTL expired at Tick 54!
    -> 'when Judge Marrow forgets Distracted' fired: Judge Marrow returned to Chalk Line.
    -> Wind stopped blowing: 'when Wind stops being blowing' falling-edge hook fired.
 

@@ -792,6 +792,17 @@ pub const Theme = struct {
     soundtrack: ?*const audio_mod.Soundtrack = null,
 };
 
+/// How long a banner of `len` characters stays up at least (D-090): two seconds to notice it,
+/// plus 80 ms a character (about 12 characters a second, a relaxed reading pace for game text),
+/// capped at 15 seconds so a long console reply does not linger.
+pub const BANNER_NOTICE_MS: i64 = 2000;
+pub const BANNER_MS_PER_CHAR: i64 = 80;
+pub const BANNER_MAX_READING_MS: i64 = 15_000;
+
+pub fn banner_reading_ms(len: usize) i64 {
+    return @min(BANNER_NOTICE_MS + @as(i64, @intCast(len)) * BANNER_MS_PER_CHAR, BANNER_MAX_READING_MS);
+}
+
 pub const DisplayWindow = struct {
     /// The host's presentation; null draws the engine's neutral defaults. Borrowed: the theme
     /// must outlive the window.
@@ -820,7 +831,8 @@ pub const DisplayWindow = struct {
     audio_device_opened: bool = false,
     cue_banner_text: [256]u8 = undefined,
     cue_banner_len: usize = 0,
-    cue_banner_ticks: u32 = 0,
+    /// Wall-clock time the banner disappears (D-090); 0 shows none.
+    cue_banner_until_ms: i64 = 0,
     // Phase 11 Inventory In-Hand Selection & Combining (P11-03, D-013)
     selected_inventory_item: ?usize = null,
     // Phase 9 Debug, Scrubber & REPL (P9-01, P9-02, P9-03, D-011)
@@ -1210,11 +1222,15 @@ pub const DisplayWindow = struct {
     }
 
     /// Sets an ephemeral on-screen cue announcement banner.
-    pub fn set_cue_banner(self: *DisplayWindow, text: []const u8, duration_ticks: u32) void {
+    /// Shows a banner for `duration_frames` sixtieths of a second, or for its reading time if
+    /// that is longer (D-090). The deadline is wall-clock: the window redraws with vsync, so a
+    /// per-frame countdown ran 2.4 times faster on a 144 Hz display than on a 60 Hz one.
+    pub fn set_cue_banner(self: *DisplayWindow, text: []const u8, duration_frames: u32) void {
         const len = @min(text.len, self.cue_banner_text.len);
         @memcpy(self.cue_banner_text[0..len], text[0..len]);
         self.cue_banner_len = len;
-        self.cue_banner_ticks = duration_ticks;
+        const asked_ms = @divTrunc(@as(i64, duration_frames) * 1000, 60);
+        self.cue_banner_until_ms = std.time.milliTimestamp() + @max(asked_ms, banner_reading_ms(len));
     }
 
     /// Decreases simulation clock speed (increases milliseconds per tick) (D-028).
@@ -3047,7 +3063,7 @@ pub const DisplayWindow = struct {
         }
 
         // 8. Ephemeral Cue Banner
-        if (self.cue_banner_ticks > 0 and self.cue_banner_len > 0) {
+        if (self.cue_banner_len > 0 and std.time.milliTimestamp() < self.cue_banner_until_ms) {
             const banner = self.cue_banner_text[0..self.cue_banner_len];
             const scale: i32 = if (font.text_width(banner, 2) + 40 > self.width) 1 else 2;
             const text_w = font.text_width(banner, scale);
@@ -3059,7 +3075,6 @@ pub const DisplayWindow = struct {
             self.fill_rect(bx, by, bw, bh, Color.hud_bg);
             self.draw_rect_outline(bx, by, bw, bh, Color.cue_alert);
             self.draw_text(banner, bx + 16, text_y, scale, Color.cue_alert);
-            self.cue_banner_ticks -= 1;
         }
 
         // 9. Dialogue panel: a waiting click-through message (D-080) covers the speaker, wrapped
@@ -3686,11 +3701,31 @@ test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes 
     defer win.deinit();
 
     const long_msg = "Room Desk: A wooden desk with a black marker, masking tape, and breakfast syrup.";
+    const before = std.time.milliTimestamp();
     win.set_cue_banner(long_msg, 120);
 
     try testing.expectEqual(long_msg.len, win.cue_banner_len);
     try testing.expectEqualStrings(long_msg, win.cue_banner_text[0..win.cue_banner_len]);
-    try testing.expectEqual(@as(u32, 120), win.cue_banner_ticks);
+    // D-090: the banner outlasts its asked two seconds, because it needs longer to read.
+    try testing.expect(win.cue_banner_until_ms >= before + banner_reading_ms(long_msg.len));
+}
+
+test "D-090: banners last their reading time on the wall clock, whatever the redraw rate" {
+    const testing = std.testing;
+    try testing.expectEqual(@as(i64, 2000), banner_reading_ms(0));
+    try testing.expectEqual(@as(i64, 2000 + 50 * 80), banner_reading_ms(50));
+    try testing.expectEqual(BANNER_MAX_READING_MS, banner_reading_ms(1000));
+
+    var win = try DisplayWindow.init("Banner Timing Test", 1280, 720);
+    defer win.deinit();
+    // A short banner asked to stay ten seconds keeps the longer request.
+    const before = std.time.milliTimestamp();
+    win.set_cue_banner("Hi", 600);
+    try testing.expect(win.cue_banner_until_ms >= before + 10_000);
+    // Rendering many frames does not shorten it; only the clock does.
+    const frame = std.mem.zeroes(RenderFrame);
+    for (0..300) |_| win.render_frame(&frame, false);
+    try testing.expect(std.time.milliTimestamp() < win.cue_banner_until_ms);
 }
 
 test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save_action" {

@@ -13,6 +13,35 @@ const spit_theme = art.with_keys(&.{
     .{ .key = bespoke.display.renderer.c.SDLK_p, .action = @intFromEnum(SpitKey.pegs), .sfx = .{ .stock = .combine } },
 });
 
+/// Judge Marrow's chatter while he works the crowd, said in turn by `EggingCrowd` (D-090).
+/// The window shows exactly these lines as passing banners rather than click-through messages;
+/// a compile-time check below keeps them identical to the script's `say` lines.
+pub const QUIPS = [3][]const u8{
+    "Mind your shoes, front row.",
+    "Last year's winner is still finding pits in his hat.",
+    "No refunds on splashed bonnets!",
+};
+pub const ENCOURAGEMENTS = [3][]const u8{
+    "Next spitter, step up!",
+    "Toe the chalk and mind the wind!",
+    "Past the last peg takes the prize!",
+};
+
+comptime {
+    @setEvalBranchQuota(200_000);
+    for (QUIPS ++ ENCOURAGEMENTS) |line| {
+        if (std.mem.indexOf(u8, SPITTING_CONTEST_SCRIPT, "\"" ++ line ++ "\"") == null)
+            @compileError("chatter line missing from the script: " ++ line);
+    }
+}
+
+fn is_chatter(text: []const u8) bool {
+    for (QUIPS ++ ENCOURAGEMENTS) |line| {
+        if (std.mem.eql(u8, line, text)) return true;
+    }
+    return false;
+}
+
 pub const SPITTING_CONTEST_SCRIPT =
     \\scene: Pip-Spitting Green
     \\cast: Tamsin, JudgeMarrow, Fairgoers
@@ -30,27 +59,43 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\routine EggingCrowd(JudgeMarrow):
     \\  loop:
     \\    walk JudgeMarrow to Fairgoers
-    \\    say JudgeMarrow to Fairgoers: (something at random from list of Pip-Spitting Green Quips)
+    \\    say JudgeMarrow to Fairgoers: "Mind your shoes, front row."
     \\    wait 30 ticks
     \\    walk JudgeMarrow to Chalk Line
     \\    wait 20 ticks
-    \\    say JudgeMarrow to Scene: (something at random from list of Pip-Spitting Green Encouragements)
+    \\    say JudgeMarrow to Scene: "Next spitter, step up!"
+    \\    wait 20 ticks
+    \\    walk JudgeMarrow to Fairgoers
+    \\    say JudgeMarrow to Fairgoers: "Last year's winner is still finding pits in his hat."
+    \\    wait 30 ticks
+    \\    walk JudgeMarrow to Chalk Line
+    \\    wait 20 ticks
+    \\    say JudgeMarrow to Scene: "Toe the chalk and mind the wind!"
+    \\    wait 20 ticks
+    \\    walk JudgeMarrow to Fairgoers
+    \\    say JudgeMarrow to Fairgoers: "No refunds on splashed bonnets!"
+    \\    wait 30 ticks
+    \\    walk JudgeMarrow to Chalk Line
+    \\    wait 20 ticks
+    \\    say JudgeMarrow to Scene: "Past the last peg takes the prize!"
     \\    wait 20 ticks
     \\
     \\routine WindBlowing(Scene):
     \\  loop:
     \\    Wind is not blowing in the scene.
-    \\    wait 150 ticks
+    \\    wait 45 ticks
     \\    Wind is blowing in the scene.
-    \\    wait 50 ticks
+    \\    wait 20 ticks
     \\
     \\when currently Wind is blowing:
     \\  interrupt JudgeMarrow with:
     \\    animate wind-blowing
+    \\    say Narrator to Scene: "A sea breeze picks up off the harbour."
     \\
     \\when Wind stops being blowing:
     \\  interrupt JudgeMarrow with:
     \\    stop animate wind-blowing
+    \\    say Narrator to Scene: "The breeze dies down."
     \\
     \\when TalksTo(Tamsin, JudgeMarrow):
     \\  interrupt JudgeMarrow with:
@@ -59,11 +104,12 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\    resume previous action
     \\
     \\on cue Uses(Tamsin, Conch):
-    \\  remember Distracted[JudgeMarrow, Fairgoers] for 100 ticks
+    \\  remember Distracted[JudgeMarrow, Fairgoers] for 45 ticks
     \\  interrupt JudgeMarrow with:
     \\    walk JudgeMarrow to Harbour Wall
     \\    face Fairgoers toward Harbour Wall
     \\    say JudgeMarrow to Scene: "Is that the herring fleet back already?"
+    \\    wait 45 ticks ~ he keeps watching the harbour until the distraction ends
     \\
     \\when JudgeMarrow forgets Distracted:
     \\  interrupt JudgeMarrow with:
@@ -197,7 +243,25 @@ fn session_action(
 ) !void {
     _ = try vm.fire_cue(compiled, cue, actor, target_a, target_b);
     var remaining = ticks;
-    while (remaining > 0) : (remaining -= 1) _ = try session.advance();
+    while (remaining > 0) : (remaining -= 1) try advance_and_show(session, vm);
+}
+
+/// Advances one tick and queues every line the script said as a click-through message
+/// (D-080), so the judge's and narrator's lines wait to be read instead of flashing past.
+fn advance_and_show(session: *bespoke.host.Session, vm: *bespoke.VM) !void {
+    _ = try session.advance();
+    var lines: [8]bespoke.host.SpeechLine = undefined;
+    const n = bespoke.host.speech_lines(vm.world, vm, &lines);
+    for (lines[0..n]) |line| {
+        if (is_chatter(line.text)) {
+            // Background chatter passes as a banner and never holds the clock.
+            var buf: [160]u8 = undefined;
+            const text = std.fmt.bufPrint(&buf, "Judge Marrow: \"{s}\"", .{line.text}) catch line.text;
+            session.window.set_cue_banner(text, 0);
+        } else {
+            session.window.queue_message(line.speaker, line.text);
+        }
+    }
 }
 
 /// Executes headless simulation of the Pip-Spitting Green vertical slice (P10-03, D-012).
@@ -317,7 +381,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const conch_speech = try script_action_until_speech(&world, &vm, &compiled, "Uses", tamsin, conch_ent, 12, &speech_buf);
     try std.testing.expect(world.has_fact(judge, distracted_rel, fairgoers.to_int()));
     try writer.print("   -> {s}\n", .{conch_speech orelse "Judge Marrow turns toward the harbour."});
-    try writer.print("   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 100 ticks)\n", .{});
+    try writer.print("   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 45 ticks)\n", .{});
 
     for (0..3) |_| {
         try vm.step_tick();
@@ -471,14 +535,14 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
     try stdout.print("Harvest Fair Contest Controls:\n", .{});
     try stdout.print("   - [S]:                   SPIT! (Evaluate spit attempt against active facts)\n", .{});
-    try stdout.print("   - [H]:                   SOUND SHIP'S HORN (Distract crowd for 100 ticks)\n", .{});
-    try stdout.print("   - [G]:                   DRINK GREEN DRINK (Thicken spit)\n", .{});
-    try stdout.print("   - [F]:                   TAMPER WITH FLAGS (Move record line closer)\n", .{});
+    try stdout.print("   - [C]:                   BLOW THE CONCH (Distract the judge for 45 ticks)\n", .{});
+    try stdout.print("   - [D]:                   DRINK TREACLE CIDER (Thicken spit)\n", .{});
+    try stdout.print("   - [P]:                   MOVE THE PEGS (Move the record line closer)\n", .{});
     try stdout.print("   - [Left Click Actor]:    Interact with Tamsin, Judge Marrow, or Fairgoers\n", .{});
     try stdout.print("   - [Left Click Prop]:     Examine or Move Pegs\n", .{});
     try stdout.print("   - [Timeline Scrubber]:   Click or drag timeline bar (or [< / >] arrows)\n", .{});
-    try stdout.print("   - [F1 / D]:              Toggle Debug Relational Fact & Fiber Overlay\n", .{});
-    try stdout.print("   - [Tab / ` / C]:         Toggle Live REPL Console Drawer\n", .{});
+    try stdout.print("   - [F1]:                  Toggle Debug Relational Fact & Fiber Overlay\n", .{});
+    try stdout.print("   - [Tab / `]:             Toggle Live REPL Console Drawer\n", .{});
     try stdout.print("   - [Space]:               Pause / Resume Simulation Clock\n", .{});
     try stdout.print("   - [N]:                   Single-step Simulation Tick\n", .{});
     try stdout.print("   - [R]:                   Instant Time-Travel Rewind\n", .{});
@@ -556,8 +620,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                         if (world.has_fact(pegs, tampered_rel, null)) {
                             window.set_cue_banner("★ You secretly moved the pegs closer while the crowd wasn't looking! ★", 120);
                             window.play_sfx(.combine);
-                        } else {
-                            window.set_cue_banner("Narrator: \"Not while Judge Marrow is watching.\"", 90);
                         }
                     }
                 }
@@ -568,9 +630,9 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     const item_name = frame.inventory[inv_act.item_index].get_name();
                     if (inv_act.verb == .look_at) {
                         if (std.mem.indexOf(u8, item_name, "Conch") != null) {
-                            window.set_cue_banner("Conch: A great spiral shell that booms like a conch.", 120);
-                        } else if (std.mem.indexOf(u8, item_name, "Drink") != null) {
-                            window.set_cue_banner("Green Drink: A thick, sugary syrup from the scumm bar. Thickens saliva.", 120);
+                            window.set_cue_banner("Conch: A great spiral shell that booms like a ship's horn.", 120);
+                        } else if (std.mem.indexOf(u8, item_name, "Cider") != null) {
+                            window.set_cue_banner("Treacle Cider: Dark, sticky, and sweet enough to thicken anyone's spit.", 120);
                         } else {
                             var buf: [128]u8 = undefined;
                             const text = std.fmt.bufPrint(&buf, "{s}: \"An item in Tamsin's inventory.\"", .{item_name}) catch "Item";
@@ -579,9 +641,9 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     } else if (inv_act.verb == .use_with) {
                         if (std.mem.indexOf(u8, item_name, "Conch") != null) {
                             try session_action(&session, &vm, &compiled, "Uses", tamsin, conch_ent, null, 2);
-                            window.set_cue_banner("BWOOOOOM! Judge Marrow: \"Is that the herring fleet back already?\" Crowd distracted!", 120);
+                            window.set_cue_banner("BWOOOOOM! The judge and the crowd turn to the harbour.", 120);
                             window.play_sound(art.sfx(.horn));
-                        } else if (std.mem.indexOf(u8, item_name, "Drink") != null) {
+                        } else if (std.mem.indexOf(u8, item_name, "Cider") != null) {
                             try session_action(&session, &vm, &compiled, "Uses", tamsin, drink_ent, null, 1);
                             window.set_cue_banner("\"Glug glug glug...\" Tamsin's spit is now thick and potent!", 120);
                             window.play_sfx(.pickup);
@@ -592,19 +654,19 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
             .dialogue_choice => |choice_idx| {
                 if (choice_idx == 0) {
                     _ = try vm.fire_cue(&compiled, "Spits", tamsin, null, null);
-                    _ = try session.advance();
+                    try advance_and_show(&session, &vm);
                     const res = placement(&world) orelse return error.SpitNotJudged;
                     switch (res) {
                         .dribble_third => {
-                            window.set_cue_banner("Tamsin: \"Pfft!\" ...Dribbles on her chin! (3rd Place)", 120);
+                            window.set_cue_banner("The spit dribbles down her chin. (3rd place)", 120);
                             window.play_sound(art.sfx(.splash));
                         },
                         .thick_pegs_untouched_third => {
-                            window.set_cue_banner("Tamsin: \"Pfft!\" Thick spit flies, but pegs are untouched! (3rd Place)", 120);
+                            window.set_cue_banner("Thick spit flies, but the pegs are where the judge left them. (3rd place)", 120);
                             window.play_sound(art.sfx(.whistle));
                         },
                         .thick_pegs_moved_no_wind_second => {
-                            window.set_cue_banner("Tamsin: \"Pfft!\" Flies past moved pegs! Second Place! (Need wind!)", 120);
+                            window.set_cue_banner("Past the moved pegs, but it needs a breeze behind it. (2nd place)", 120);
                             window.play_sound(art.sfx(.whistle));
                         },
                         .winner_first => {
@@ -613,7 +675,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                         },
                     }
                 } else if (choice_idx == 1) {
-                    window.set_cue_banner("Judge Marrow: \"Spit past the last peg to win! Thick spit and a sea breeze will do it!\"", 120);
+                    window.queue_message("JudgeMarrow", "Spit past the last peg to win! Thick spit and a sea breeze will do it!");
                 } else {
                     window.set_cue_banner("Tamsin steps back.", 60);
                 }
@@ -622,19 +684,19 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
             .custom => |id| if (std.meta.intToEnum(SpitKey, id)) |key| switch (key) {
                 .spit => {
                     _ = try vm.fire_cue(&compiled, "Spits", tamsin, null, null);
-                    _ = try session.advance();
+                    try advance_and_show(&session, &vm);
                     const res = placement(&world) orelse return error.SpitNotJudged;
                     switch (res) {
                         .dribble_third => {
-                            window.set_cue_banner("Tamsin: \"Pfft!\" ...Dribbles on her chin! (3rd Place)", 120);
+                            window.set_cue_banner("The spit dribbles down her chin. (3rd place)", 120);
                             window.play_sound(art.sfx(.splash));
                         },
                         .thick_pegs_untouched_third => {
-                            window.set_cue_banner("Tamsin: \"Pfft!\" Thick spit flies, but pegs are untouched! (3rd Place)", 120);
+                            window.set_cue_banner("Thick spit flies, but the pegs are where the judge left them. (3rd place)", 120);
                             window.play_sound(art.sfx(.whistle));
                         },
                         .thick_pegs_moved_no_wind_second => {
-                            window.set_cue_banner("Tamsin: \"Pfft!\" Past moved pegs! Second Place! (Need a gust of wind!)", 120);
+                            window.set_cue_banner("Past the moved pegs, but it needs a breeze behind it. (2nd place)", 120);
                             window.play_sound(art.sfx(.whistle));
                         },
                         .winner_first => {
@@ -645,7 +707,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 },
                 .conch => {
                     try session_action(&session, &vm, &compiled, "Uses", tamsin, conch_ent, null, 2);
-                    window.set_cue_banner("BWOOOOOM! Judge Marrow: \"Is that the herring fleet back already?\" Crowd distracted!", 120);
+                    window.set_cue_banner("BWOOOOOM! The judge and the crowd turn to the harbour.", 120);
                     window.play_sound(art.sfx(.horn));
                 },
                 .drink => {
@@ -658,8 +720,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                     if (world.has_fact(pegs, tampered_rel, null)) {
                         window.set_cue_banner("★ Pegs secretly moved closer to the chalk line! ★", 120);
                         window.play_sfx(.combine);
-                    } else {
-                        window.set_cue_banner("Narrator: \"Not while Judge Marrow is watching.\"", 90);
                     }
                 },
             } else |_| {},
@@ -698,7 +758,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                         window.set_cue_banner("\"Glug glug glug...\" Tamsin's spit is now thick and potent!", 120);
                     } else if (std.mem.eql(u8, item_name, "Conch")) {
                         try session_action(&session, &vm, &compiled, "Uses", tamsin, conch_ent, null, 2);
-                        window.set_cue_banner("BWOOOOOM! Judge Marrow: \"Is that the herring fleet back already?\" Crowd distracted!", 120);
+                        window.set_cue_banner("BWOOOOOM! The judge and the crowd turn to the harbour.", 120);
                     } else {
                         var buf: [96]u8 = undefined;
                         const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, actor_name }) catch "No effect";
@@ -715,8 +775,6 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                         try session_action(&session, &vm, &compiled, "Uses", tamsin, pegs, null, 1);
                         if (world.has_fact(pegs, tampered_rel, null)) {
                             window.set_cue_banner("★ Pegs secretly moved closer to the chalk line! ★", 120);
-                        } else {
-                            window.set_cue_banner("Narrator: \"Not while Judge Marrow is watching.\"", 90);
                         }
                     } else {
                         var buf: [96]u8 = undefined;
@@ -728,8 +786,9 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
             else => {},
         }
 
-        if (session.tick_due()) {
-            _ = try session.advance();
+        // The clock waits while a message is open, so reading never costs contest time.
+        if (!window.has_messages() and session.tick_due()) {
+            try advance_and_show(&session, &vm);
         }
 
         session.render();
@@ -830,4 +889,78 @@ test "P10-03: spitting contest puzzle systemic progression and resolution" {
 test "P10-03: headless execution of Spitting Contest scenario" {
     const testing = std.testing;
     try run_headless(testing.allocator, std.io.null_writer);
+}
+
+test "P35-03: the judge watches the harbour for the whole distraction, and the breeze comes every 65 ticks" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    var world = try bespoke.World.init(a, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(a);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(a, &world, &spatial, SPITTING_CONTEST_SCRIPT);
+    defer compiled.deinit();
+    const tamsin = world.lookup_entity("Tamsin").?;
+    const judge = world.lookup_entity("JudgeMarrow").?;
+    const room = world.lookup_entity("Pip-Spitting Green").?;
+    // The window's stage: the chalk line between the fairgoers and the harbour wall.
+    const chalk = spatial.graph.find_waypoint("Chalk Line").?;
+    const wall = spatial.graph.find_waypoint("Harbour Wall").?;
+    const crowd = try spatial.graph.add_waypoint(room, -8, 3, "Fairgoers");
+    spatial.graph.waypoints.items[chalk - 1].pos = .{ .x = 0, .y = 0 };
+    spatial.graph.waypoints.items[wall - 1].pos = .{ .x = 42, .y = 0 };
+    try spatial.graph.connect(crowd, chalk, null);
+    try spatial.graph.connect(chalk, wall, null);
+    try spatial.register_entity(tamsin, chalk, 10);
+    try spatial.register_entity(judge, chalk, 12);
+    try spatial.register_entity(world.lookup_entity("Fairgoers").?, crowd, 15);
+
+    var vm = bespoke.VM.init(a, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    _ = try vm.spawn_routine(judge, compiled.routine_entries.get("EggingCrowd").?);
+    _ = try vm.spawn_routine(room, compiled.routine_entries.get("WindBlowing").?);
+
+    const wind = world.lookup_entity("Wind").?;
+    const distracted = world.lookup_relation("Distracted").?;
+    var first_gust: ?u64 = null;
+    var gust_ends: ?u64 = null;
+    var announced = false;
+    var chatter: usize = 0;
+    var at_wall_while_distracted: usize = 0;
+    var away_while_distracted: usize = 0;
+    var lines: [8]bespoke.host.SpeechLine = undefined;
+    for (0..140) |t| {
+        if (t == 2) _ = try vm.fire_cue(&compiled, "Uses", tamsin, world.lookup_entity("Conch").?, null);
+        _ = try bespoke.host.tick(&vm, &compiled);
+        const n = bespoke.host.speech_lines(&world, &vm, &lines);
+        for (lines[0..n]) |line| {
+            if (std.mem.eql(u8, line.text, "A sea breeze picks up off the harbour.")) announced = true;
+            if (is_chatter(line.text)) chatter += 1;
+            // No placeholder text reaches the player (the routine once said its own stage note).
+            try testing.expect(std.mem.indexOf(u8, line.text, "at random") == null);
+        }
+        const blowing = if (world.lookup_relation("blowing")) |r| world.has_fact(wind, r, null) else false;
+        if (blowing and first_gust == null) first_gust = world.current_tick;
+        if (!blowing and first_gust != null and gust_ends == null) gust_ends = world.current_tick;
+        // Once he has walked there (about 8 ticks), he stays until the distraction ends.
+        if (t >= 14 and world.has_fact(judge, distracted, null)) {
+            if (spatial.agents.get(judge).?.current_wp == wall) at_wall_while_distracted += 1 else away_while_distracted += 1;
+        }
+    }
+    try testing.expect(at_wall_while_distracted >= 30);
+    try testing.expectEqual(@as(usize, 0), away_while_distracted);
+    // After it ends, the expiry rule walks him back to the chalk line.
+    try testing.expect(!world.has_fact(judge, distracted, null));
+    try testing.expectEqual(chalk, spatial.agents.get(judge).?.current_wp);
+    // The breeze comes within 50 ticks, lasts 20, and is announced.
+    try testing.expect(first_gust.? <= 50);
+    try testing.expectEqual(@as(u64, 20), gust_ends.? - first_gust.?);
+    try testing.expect(announced);
+    try testing.expect(chatter >= 2);
+    // Replies to the player are not chatter, so they wait for a click.
+    try testing.expect(is_chatter(ENCOURAGEMENTS[2]));
+    try testing.expect(!is_chatter("Is that the herring fleet back already?"));
 }
