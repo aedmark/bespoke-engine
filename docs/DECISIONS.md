@@ -1102,7 +1102,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - An engine option for how many fallbacks to offer: not needed yet; it would touch the grammar and the package format for one proof.
 **Consequences:** Opponents fumble with the same eight lines. With nine choices at most, a player who knows more than seven comebacks sees the first seven in table order. The browser golden's two deck 7 frames changed (the panel shows two choices; three more text entities).
 
-## D-082 Three Tidewalk Fencers with Dealt Knowledge, and the Player Can Flub an Attack (2026-11-13, status: accepted)
+## D-082 Three Tidewalk Fencers with Dealt Knowledge, and the Player Can Flub an Attack (2026-11-13, status: accepted; attack order superseded by D-083)
 **Context:** The maintainer's hand test found the duel loop stale with two fencers whose knowledge was fixed in the script (D-078: Pike 1 to 8, Gannet 1 and 9 to 15), and an attacking player had no way to hand the turn back to hear a new barb. They asked for at least three fencers, random knowledge with some barbs exclusive to one fencer, and a way to flub. They chose (2026-11-13): a third fencer, Dory Quill, with drafted victory lines; a new deal each launch; and a joke from the existing pool as the flub.
 **Decision:**
 1. Dory Quill joins the Tidewalk cast (key H), with a patrol and two `WinsDuel` lines in the script.
@@ -1114,6 +1114,17 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Separate flub lines: rejected; the joke pool serves, and the pool is at its limit of eight.
 - Fencers who throw every barb (D-078): replaced; a fencer with its own repertoire makes some barbs exclusive and worth hunting.
 **Consequences:** Simulated over 40 deals with a player who tries untested barbs and flubs when nothing new is left, every player won a duel by the twelfth, and from the fourth duel on Tamsin won roughly 40 to 80 percent of them; no duel stalled. The render golden's four Tidewalk lines and the browser golden's deck 7 lines changed (Dory on the Tidewalk; the dealt facts raise deck 7 from 62 to 101 facts).
+
+## D-083 Duel Offers and Attacks Are Drawn at Random Each Turn (2026-11-13, status: accepted)
+**Context:** The maintainer found two dead ends in the duel. The panel holds nine choices, and offers came in table order, so a player who knew more than eight barbs never saw the later ones and could not learn their comebacks. Every fencer, Mistress Vell above all, attacked in the same order every time. They asked that each encounter be randomized, so nobody stays stuck without a barb and comeback pair.
+**Decision:**
+1. `Bout` draws every random pick from a seed and a draw count, both facts on the player (`DuelSeed`, `DuelDraws`), so a rewind replays the same picks. The window seeds it from the launch clock with the knowledge deal (D-082); the browser deck uses its fixed seed; an unseeded `Bout` uses 0.
+2. Each attacking turn offers a fresh random handful of up to eight usable barbs, then the flub. Each defence offers up to seven known comebacks in random order, then two jokes, and a comeback that counters the barb is always among them, at a random place.
+3. An opponent's next barb is a random draw from the barbs it may throw that it has not thrown this duel (`OpponentThrewThisDuel`), or from all of them once it has thrown each. This replaces D-082's table order and covers Vell, whose opening is drawn too.
+**Alternatives:**
+- Raise the engine's nine-choice limit: rejected for now; the number keys stop at nine, and the limit runs through the dialogue facts, the render frame, and the browser.
+- Scroll through every barb: the window scrolls past six, but the dialogue still holds nine.
+**Consequences:** Simulated over 40 deals and seeds with a player who tries untested barbs and flubs when nothing new is left, every player won a duel and none stalled; from the seventh duel on Tamsin won roughly 65 to 90 percent. The console run calls the duel directly and is unchanged. The browser golden's deck 7 lines changed.
 
 ## Held tensions
 

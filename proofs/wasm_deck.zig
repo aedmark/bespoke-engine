@@ -610,6 +610,7 @@ fn sword_setup(rt: *WasmRuntime) anyerror!void {
     var fencers: [sword_fighting.FENCERS.len]EntityId = undefined;
     for (sword_fighting.FENCERS, 0..) |name, i| fencers[i] = try entity(rt, name);
     try sword_fighting.deal_knowledge(&sword_duel, &fencers, DECK_SWORD_SEED);
+    try sword_bout.set_seed(@truncate(DECK_SWORD_SEED));
     sword_ready = true;
     try rt.vm.transition_to_scene(try entity(rt, "Tidewalk"));
 }
@@ -637,7 +638,7 @@ fn sword_solve(rt: *WasmRuntime) anyerror!void {
             const yard = try entity(rt, "Fencing Yard");
             try rt.vm.transition_to_scene(yard);
             _ = try rt.spatial.transition_actor(tamsin, yard, rt.spatial.graph.find_waypoint_in_room(yard, "YardCircle"));
-            return sword_start(rt, "Vell", sword_duel.challenge(4, 1));
+            return sword_start(rt, "Vell", .none);
         }
     }
     rt.set_banner("Both duels are fought. Press [R] to rewind and duel again.");
