@@ -1137,6 +1137,16 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A lint that fails scripts with long lines: not done; wrapping keeps long lines readable, and the limit is in the reference. A lint can follow if lines creep past it.
 **Consequences:** Lines over 60 characters (one Brackwater comeback is 73) wrap to two rows. The render golden's two inspector lines and the browser golden's deck 7 and deck 8 lines changed.
 
+## D-085 Each Tidewalk Fencer Has Its Own Stumped Lines (2026-11-13, status: accepted)
+**Context:** A fencer with no comeback for Tamsin's barb spoke a line from the duel's shared fallback pool, the same jokes Tamsin uses. The maintainer asked for three lines of each fencer's own, and approved drafted lines (2026-11-13).
+**Decision:**
+1. `STUMPED_LINES` in the proof holds three lines per Tidewalk fencer, in `FENCERS` order. `Bout.stumped_line` picks one by the fencer's fumble count, so each fencer rotates through its own three and the rotation rewinds with the world. Anyone without lines falls back to the shared pool; Mistress Vell knows every comeback and never needs one.
+2. The lines live in the proof, not the script: the duel declaration holds one shared fallback pool, already at its limit of eight, and per-fighter lines would need new syntax and a package change.
+**Alternatives:**
+- Script cue handlers that speak the lines: rejected for now; the host would have to fire a cue and tick inside a round to read one line.
+- Per-fighter `fallback` lines in the duel declaration: deferred; a language and `.bspk` change for one proof.
+**Consequences:** Moving the lines into the script later means a grammar change. No golden changed; the console run calls the duel directly.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

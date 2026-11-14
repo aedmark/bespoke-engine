@@ -507,6 +507,27 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 /// The Tidewalk fencers, in key order: D, G, and H start their duels.
 pub const FENCERS = [_][]const u8{ "BosunPike", "OldGannet", "DoryQuill" };
 
+/// What each Tidewalk fencer says when it has no comeback for Tamsin's barb, three lines each
+/// in its own voice, in rotation (D-085; the maintainer approved them 2026-11-13). Mistress
+/// Vell knows every comeback and needs none; Tamsin keeps the duel's shared joke pool.
+pub const STUMPED_LINES = [FENCERS.len][3][]const u8{
+    .{
+        "Belay that! I'll answer when I'm good and ready!",
+        "The wind took my words. Clean overboard.",
+        "Don't rush me, I'm counting the knots in my reply.",
+    },
+    .{
+        "Hmm? Speak up, my ears went out with the tide.",
+        "I had a good one for that. Forty years ago.",
+        "Back in my day, nobody said things like that.",
+    },
+    .{
+        "That one slipped right through my nets.",
+        "Give me a moment, I'm still untangling that.",
+        "I'd throw that one back. Too small to answer.",
+    },
+};
+
 /// Chance, in percent, that a fencer other than a barb's dealt owner also throws it.
 const SHARED_BARB_PERCENT: u8 = 35;
 /// Chance, in percent, that a fencer knows any one comeback.
@@ -809,6 +830,19 @@ pub const Bout = struct {
     }
 
     /// The fallback line `foe` just spoke: its fumble count was raised by the round.
+    /// What `foe` just said with no comeback: its own line from `STUMPED_LINES`, picked by its
+    /// fumble count (raised by the round, so it rewinds with the world), or a line from the
+    /// shared pool for anyone without lines of its own.
+    fn stumped_line(self: *const Bout, foe: bespoke.EntityId) []const u8 {
+        const name = self.world.get_entity_name(foe) orelse return self.spoken_fallback(foe);
+        for (FENCERS, 0..) |fencer, i| {
+            if (!std.mem.eql(u8, fencer, name)) continue;
+            const lines = STUMPED_LINES[i];
+            return lines[(self.duel.fumbles(foe) + lines.len - 1) % lines.len];
+        }
+        return self.spoken_fallback(foe);
+    }
+
     fn spoken_fallback(self: *const Bout, foe: bespoke.EntityId) []const u8 {
         const lines = self.duel.config.fallbacks;
         if (lines.len == 0) return "...";
@@ -845,7 +879,7 @@ pub const Bout = struct {
             try self.world.remember(self.player, self.thrown_rel, barb.to_int(), 0);
             const reply = self.duel.answer(foe, barb);
             round = try self.duel.resolve_round(self.player, foe, barb, reply);
-            said = if (reply != .none) (self.duel.reply_text(barb) orelse "") else self.spoken_fallback(foe);
+            said = if (reply != .none) (self.duel.reply_text(barb) orelse "") else self.stumped_line(foe);
         } else {
             const raw = self.world.get_property(self.player, self.challenge_rel) orelse return .{};
             barb = bespoke.EntityId.from_int(raw);
@@ -1301,13 +1335,13 @@ test "D-079: each barb is thrown once per duel, points add up, and distinct barb
     try testing.expect(bout.player_attacks());
     var result = try bout.choose(&vm, duel.challenge(1, 0).to_int(), &buf);
     try testing.expect(result.winner == null);
-    // Four messages, each shown on its own (D-080): Tamsin's barb in her voice, Gannet's
-    // fallback, the outcome, the points.
+    // Four messages, each shown on its own (D-080): Tamsin's barb in her voice, Gannet's own
+    // stumped line (D-085), the outcome, the points.
     try testing.expectEqual(@as(usize, 4), result.line_count);
     try testing.expectEqualStrings("Tamsin", result.lines[0].speaker);
     try testing.expectEqualStrings(duel.config.pairs[1].challenge, result.lines[0].text);
     try testing.expectEqualStrings("OldGannet", result.lines[1].speaker);
-    try testing.expectEqualStrings(duel.config.fallbacks[0], result.lines[1].text);
+    try testing.expectEqualStrings(STUMPED_LINES[1][0], result.lines[1].text);
     try testing.expectEqualStrings("Your point.", result.lines[2].text);
     try testing.expectEqualStrings("Points: you 1, Old Gannet 0.", result.lines[3].text);
     try testing.expectEqual(@as(usize, 0), bout.usable_barbs(&vm, &barbs));
@@ -1488,6 +1522,44 @@ test "D-083: offers rotate past nine, a known counter is always offered, and pic
     var stream = std.io.fixedBufferStream(snapshot.items);
     try world.restore_state(stream.reader());
     try testing.expectEqual(before, try bout.next_barb(gannet));
+}
+
+test "D-085: each fencer rotates through its own three stumped lines" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    try compiled.duels.items[0].apply_tiers(&duel);
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+
+    const tamsin = try world.intern_entity("Tamsin");
+    var bout = try Bout.init(&world, &duel, tamsin);
+    var buf: [320]u8 = undefined;
+    // Tamsin knows four barbs; no fencer knows a comeback.
+    for (0..4) |p| try duel.hear(tamsin, duel.challenge(p, 0));
+
+    for (FENCERS, 0..) |name, f| {
+        const fencer = try world.intern_entity(name);
+        try bout.start(&vm, fencer, .none);
+        // Three unanswerable barbs win the duel, and the fencer says its three lines in order.
+        for (0..3) |p| {
+            const result = try bout.choose(&vm, duel.challenge(p, 0).to_int(), &buf);
+            try testing.expectEqualStrings(name, result.lines[1].speaker);
+            try testing.expectEqualStrings(STUMPED_LINES[f][p], result.lines[1].text);
+        }
+        try testing.expect(bout.opponent() == null);
+        // The next duel starts the rotation over.
+        try bout.start(&vm, fencer, .none);
+        const again = try bout.choose(&vm, duel.challenge(3, 0).to_int(), &buf);
+        try testing.expectEqualStrings(STUMPED_LINES[f][0], again.lines[1].text);
+        bout.clear();
+    }
 }
 
 test "P35-02: the Tidewalk fencers patrol once the script's routines start" {
