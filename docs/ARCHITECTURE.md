@@ -116,6 +116,7 @@ World Ticks (Discrete Clock) --------------------------------------------->|
 
 Rules that hold everywhere across the engine and runtime:
 
+- **The player acts from beside its target (D-092):** in the window and the browser, an action other than LOOK on a person or prop reaches the host only after the player has walked to the target's mark, or after a two-tick grace if the host never walks it. Enforced by: the D-092 tests in `src/display/renderer.zig` and `src/wasm.zig`.
 - **The VM is the single source of truth:** Downstream renderers never modify game state directly. Enforced by: display bridge read-only pointer semantics (D-001).
 - **Decoupled non-blocking audio peripheral:** Sound synthesis never blocks discrete simulation ticks or alters world state; audio events are consumed asynchronously from a ring buffer by peripheral callbacks or offline test buffers. Enforced by: `AudioBridge` ring buffer and procedural synthesis architecture in `src/audio.zig` (D-001, D-019).
 - **Pointerless relational facts:** All facts are flat integer tuples `(subject, relation, object_or_value, expires_at_tick)`. Enforced by: `Fact` struct definition in `src/world.zig` (D-003, D-007).

@@ -129,6 +129,17 @@ pub const AdventureVerb = enum(u8) {
         };
     }
 
+    /// The verb as it reads in a sentence ("Talk to the Clerk").
+    pub fn word(self: AdventureVerb) []const u8 {
+        return switch (self) {
+            .walk => "Walk to",
+            .look_at => "Look at",
+            .talk_to => "Talk to",
+            .pick_up => "Take",
+            .use_with => "Use",
+        };
+    }
+
     pub fn next(self: AdventureVerb) AdventureVerb {
         const val = @intFromEnum(self);
         return @enumFromInt((val + 1) % 5);
@@ -409,18 +420,50 @@ pub fn hit_test_verb_button(screen_x: i32, screen_y: i32, screen_h: i32) ?Advent
 }
 
 /// Hit-tests screen coordinates against visible inventory tray items (P7-03, D-007).
-pub fn hit_test_inventory_item(screen_x: i32, screen_y: i32, screen_h: i32, inventory: []const RenderInventoryItem) ?usize {
+/// Where the item tray starts on the verb bar row, right of the five verb buttons and "ITEMS:".
+pub const INVENTORY_X: i32 = 480;
+
+/// One item box in the tray: its rectangle, its label, and the text scale it is drawn at.
+pub const InventorySlot = struct { x: i32, w: i32, label: []const u8, scale: i32 };
+
+/// Lays the item tray out to fit between `INVENTORY_X` and the right edge of the window.
+/// Drawing and clicking share this one layout, so a box is clicked where it is drawn. Labels
+/// shrink to scale 1 when the scale 2 row would overflow, then are cut short (the full name
+/// still shows in the action sentence), so every carried item stays on screen and clickable.
+pub fn inventory_layout(screen_w: i32, inventory: []const RenderInventoryItem, out: []InventorySlot) []InventorySlot {
+    const n = @min(inventory.len, out.len);
+    if (n == 0) return out[0..0];
+    const avail = screen_w - INVENTORY_X - 12;
+    const gap: i32 = 6;
+    var scale: i32 = 2;
+    var pad: i32 = 24;
+    var total: i32 = 0;
+    for (inventory[0..n]) |item| total += font.text_width(words(item.get_name()), 2) + pad + gap;
+    if (total > avail) {
+        scale = 1;
+        pad = 20;
+    }
+    // At the smaller scale, cap each label so the whole row fits; the cap never drops below
+    // three characters so a box still names something.
+    const per_box = @divTrunc(avail, @as(i32, @intCast(n))) - pad - gap;
+    const max_chars: usize = @intCast(@max(3, @divTrunc(per_box, font.char_width(scale))));
+    var x: i32 = INVENTORY_X;
+    for (inventory[0..n], 0..) |item, i| {
+        const full = words(item.get_name());
+        const label = if (scale == 1 and full.len > max_chars) full[0..max_chars] else full;
+        const w = font.text_width(label, scale) + pad;
+        out[i] = .{ .x = x, .w = w, .label = label, .scale = scale };
+        x += w + gap;
+    }
+    return out[0..n];
+}
+
+pub fn hit_test_inventory_item(screen_x: i32, screen_y: i32, screen_w: i32, screen_h: i32, inventory: []const RenderInventoryItem) ?usize {
     const bar_y = screen_h - 78;
     if (screen_y < bar_y or screen_y > bar_y + 26) return null;
-
-    var cur_x: i32 = 480;
-    for (inventory, 0..) |item, idx| {
-        const iname = item.get_name();
-        const iw = font.text_width(iname, 2) + 24;
-        if (screen_x >= cur_x and screen_x <= cur_x + iw) {
-            return idx;
-        }
-        cur_x += iw + 8;
+    var slots: [8]InventorySlot = undefined;
+    for (inventory_layout(screen_w, inventory, &slots), 0..) |slot, idx| {
+        if (screen_x >= slot.x and screen_x <= slot.x + slot.w) return idx;
     }
     return null;
 }
@@ -826,6 +869,55 @@ pub fn banner_reading_ms(len: usize) i64 {
     return @min(BANNER_NOTICE_MS + @as(i64, @intCast(len)) * BANNER_MS_PER_CHAR, BANNER_MAX_READING_MS);
 }
 
+/// An action on a person or prop, held while the player walks to `wp` beside it (D-092).
+pub const Approach = struct {
+    action: UserAction,
+    wp: WaypointId,
+    /// The tick the walk was asked for; a host that never moves the player gets the action
+    /// after `APPROACH_GRACE_TICKS`, acted where the player stands.
+    asked_tick: u64,
+    seen_moving: bool = false,
+    /// Set by `approach_then` for the poll that started the walk, so that poll's own
+    /// `walk_player` does not cancel it.
+    fresh: bool = false,
+};
+
+/// Ticks to wait for the player to start walking before acting where it stands. A host
+/// that ignores `walk_player` must not lose the action.
+pub const APPROACH_GRACE_TICKS: u64 = 2;
+
+/// The player's entity on stage in this frame, if the host names one and it is drawn.
+/// A script name as the player reads it (D-093 names, D-077 people): `CargoHold` shows as "Cargo
+/// Hold", `Berth12` as "Berth 12"; a name with a space is shown as written. The window still
+/// matches and reports raw names; only displayed text goes through here. The result lives in
+/// a small ring of buffers, enough for the names in one line of text.
+pub fn words(name: []const u8) []const u8 {
+    const slot = &word_bufs[word_next % word_bufs.len];
+    word_next +%= 1;
+    return dialogue_panel.display_name(name, slot);
+}
+var word_bufs: [8][64]u8 = undefined;
+var word_next: usize = 0;
+
+/// The kind of thing a click under the pointer would act on (D-093).
+pub const HoverKind = enum { none, person, prop, mark };
+
+/// Whether an action replaces a held approach: the player chose to do something else.
+pub fn cancels_approach(action: UserAction) bool {
+    return switch (action) {
+        .walk_player, .examine_hotspot, .interact_actor, .interact_hotspot, .use_inventory_on_actor, .use_inventory_on_hotspot, .combine_inventory_items, .rewind, .scrub_to_tick, .custom, .typed_command => true,
+        else => false,
+    };
+}
+
+pub fn player_on_stage(frame: *const RenderFrame) ?RenderEntity {
+    const pid = frame.player orelse return null;
+    for (frame.entities[0..frame.entity_count]) |e| {
+        if (e.entity.to_int() == pid.to_int()) return e;
+    }
+    return null;
+}
+
 pub const DisplayWindow = struct {
     /// The host's presentation; null draws the engine's neutral defaults. Borrowed: the theme
     /// must outlive the window.
@@ -842,6 +934,8 @@ pub const DisplayWindow = struct {
     hovered_actor: ?usize = null,
     hovered_party_member: ?usize = null,
     target_wp: ?WaypointId = null,
+    /// An action held until the player reaches the mark beside its target (D-092).
+    approach: ?Approach = null,
     active_balloon: ?SpeechBalloon = null,
     /// Click-through messages (D-080). While any waits, it covers the dialogue panel and the
     /// panel's choices can be neither seen nor answered.
@@ -1701,8 +1795,89 @@ pub const DisplayWindow = struct {
     }
 
     /// Polls peripheral input events and returns high-level simulation intents (P6-01, P6-03).
+    /// Whether the mark under the pointer is what a click would act on, so it may say
+    /// "[Walk to ...]": with WALK, marks come first; with another verb, people and props do.
+    pub fn mark_hover_walks(self: *const DisplayWindow) bool {
+        return self.hover_target() == .mark;
+    }
+
+    /// What a click under the pointer would act on, in the order the click handler tries
+    /// (D-093): with WALK and nothing in hand, marks, then props, then people; otherwise
+    /// people, then props, then marks. Only that one is highlighted, so the highlight never
+    /// points at something the click will skip.
+    pub fn hover_target(self: *const DisplayWindow) HoverKind {
+        if (self.active_verb == .walk and self.selected_inventory_item == null) {
+            if (self.hovered_wp != null) return .mark;
+            if (self.hovered_hotspot != null) return .prop;
+            if (self.hovered_actor != null) return .person;
+            return .none;
+        }
+        if (self.hovered_actor != null) return .person;
+        if (self.hovered_hotspot != null) return .prop;
+        if (self.hovered_wp != null) return .mark;
+        return .none;
+    }
+
+    /// Polls input (D-092): first hands over a held action once the player has reached its
+    /// target, then reads new events. An action that changes what the player is doing (a
+    /// walk, another action, a rewind) drops the held one.
     pub fn poll_events(self: *DisplayWindow, frame: *const RenderFrame) UserAction {
         if (self.is_headless) return .none;
+        if (self.approach_ready(frame)) |held| return held;
+        const action = self.poll_input(frame);
+        if (self.approach) |*a| {
+            if (a.fresh) {
+                a.fresh = false;
+            } else if (cancels_approach(action)) {
+                self.approach = null;
+            }
+        }
+        return action;
+    }
+
+    /// An action on a person or prop goes to the host once the player stands at the mark
+    /// beside it (D-092). LOOK, the player itself, a frame with no player on stage, and a
+    /// player already there act at once; otherwise the window walks the player and holds the
+    /// action. `target_wp` is the mark to reach.
+    pub fn approach_then(self: *DisplayWindow, frame: *const RenderFrame, action: UserAction, target_wp: ?WaypointId, target_name: []const u8) UserAction {
+        const wp = target_wp orelse return action;
+        const player = player_on_stage(frame) orelse return action;
+        if (player.current_wp == wp and !player.is_moving) return action;
+        self.approach = .{ .action = action, .wp = wp, .asked_tick = frame.tick, .fresh = true };
+        self.target_wp = wp;
+        var buf: [64]u8 = undefined;
+        const banner = std.fmt.bufPrint(&buf, "Walking to {s}...", .{target_name}) catch "Walking...";
+        self.set_cue_banner(banner, 60);
+        return .{ .walk_player = wp };
+    }
+
+    /// The held action, once the player has arrived; null while it walks. A walk that ends
+    /// somewhere else drops the action with a banner. A host that never starts the walk gets
+    /// the action after `APPROACH_GRACE_TICKS`, so nothing is lost.
+    fn approach_ready(self: *DisplayWindow, frame: *const RenderFrame) ?UserAction {
+        const a = &(self.approach orelse return null);
+        const player = player_on_stage(frame) orelse {
+            const held = a.action;
+            self.approach = null;
+            return held;
+        };
+        if (player.is_moving) {
+            a.seen_moving = true;
+            return null;
+        }
+        if (player.current_wp == a.wp or (!a.seen_moving and frame.tick >= a.asked_tick + APPROACH_GRACE_TICKS)) {
+            const held = a.action;
+            self.approach = null;
+            return held;
+        }
+        if (a.seen_moving) {
+            self.approach = null;
+            self.set_cue_banner("You can't get there from here.", 0);
+        }
+        return null;
+    }
+
+    fn poll_input(self: *DisplayWindow, frame: *const RenderFrame) UserAction {
 
         var event: c.SDL_Event = undefined;
         var action: UserAction = .none;
@@ -1889,8 +2064,8 @@ pub const DisplayWindow = struct {
                                     self.selected_inventory_item = null;
                                     self.play_sfx(.combine);
                                     var buf: [64]u8 = undefined;
-                                    const iname = if (sel_idx < frame.inventory_count) frame.inventory[sel_idx].get_name() else "item";
-                                    const pname = if (p_idx < frame.party_count) frame.party[p_idx].get_name() else "member";
+                                    const iname = if (sel_idx < frame.inventory_count) words(frame.inventory[sel_idx].get_name()) else "item";
+                                    const pname = if (p_idx < frame.party_count) words(frame.party[p_idx].get_name()) else "member";
                                     const banner = std.fmt.bufPrint(&buf, "Giving {s} to {s}...", .{ iname, pname }) catch "Transferring item...";
                                     self.set_cue_banner(banner, 90);
                                     return UserAction{
@@ -1915,7 +2090,7 @@ pub const DisplayWindow = struct {
                         }
 
                         // 3. Check Inventory items (P11-03, D-013)
-                        const clicked_item_idx = hit_test_inventory_item(event.button.x, event.button.y, self.height, frame.inventory[0..frame.inventory_count]);
+                        const clicked_item_idx = hit_test_inventory_item(event.button.x, event.button.y, self.width, self.height, frame.inventory[0..frame.inventory_count]);
                         if (clicked_item_idx) |idx| {
                             if (self.active_verb == .look_at) {
                                 self.play_sfx(.click);
@@ -1937,8 +2112,8 @@ pub const DisplayWindow = struct {
                                     // Combining two distinct inventory items
                                     self.selected_inventory_item = null;
                                     var buf: [64]u8 = undefined;
-                                    const p_name = if (primary_idx < frame.inventory_count) frame.inventory[primary_idx].get_name() else "item";
-                                    const s_name = if (idx < frame.inventory_count) frame.inventory[idx].get_name() else "item";
+                                    const p_name = if (primary_idx < frame.inventory_count) words(frame.inventory[primary_idx].get_name()) else "item";
+                                    const s_name = if (idx < frame.inventory_count) words(frame.inventory[idx].get_name()) else "item";
                                     const banner = std.fmt.bufPrint(&buf, "Using {s} on {s}...", .{ p_name, s_name }) catch "Combining items...";
                                     self.set_cue_banner(banner, 90);
                                     self.play_sfx(.combine);
@@ -1954,7 +2129,7 @@ pub const DisplayWindow = struct {
                                 self.selected_inventory_item = idx;
                                 self.active_verb = .use_with;
                                 var buf: [64]u8 = undefined;
-                                const iname = if (idx < frame.inventory_count) frame.inventory[idx].get_name() else "item";
+                                const iname = if (idx < frame.inventory_count) words(frame.inventory[idx].get_name()) else "item";
                                 const banner = std.fmt.bufPrint(&buf, "Use {s} with...", .{iname}) catch "Use item with...";
                                 self.set_cue_banner(banner, 180);
                                 self.play_sfx(.click);
@@ -1997,7 +2172,7 @@ pub const DisplayWindow = struct {
                                     self.target_wp = wp_id;
                                     self.play_sfx(.footstep);
                                     var buf: [64]u8 = undefined;
-                                    const banner = std.fmt.bufPrint(&buf, "Walking to {s}...", .{hs.get_name()}) catch "Walking...";
+                                    const banner = std.fmt.bufPrint(&buf, "Walking to {s}...", .{words(hs.get_name())}) catch "Walking...";
                                     self.set_cue_banner(banner, 60);
                                     return UserAction{ .walk_player = wp_id };
                                 }
@@ -2018,7 +2193,7 @@ pub const DisplayWindow = struct {
                                     self.target_wp = wp_id;
                                     self.play_sfx(.footstep);
                                     var buf: [64]u8 = undefined;
-                                    const banner = std.fmt.bufPrint(&buf, "Approaching {s}...", .{act_ent.get_name()}) catch "Walking...";
+                                    const banner = std.fmt.bufPrint(&buf, "Approaching {s}...", .{words(act_ent.get_name())}) catch "Walking...";
                                     self.set_cue_banner(banner, 60);
                                     return UserAction{ .walk_player = wp_id };
                                 }
@@ -2044,22 +2219,28 @@ pub const DisplayWindow = struct {
                                 self.height,
                             );
                             if (clicked_actor) |actor_idx| {
+                                // Walk to a person before acting on them (D-092); LOOK and the
+                                // player itself act at once.
+                                const target = frame.entities[actor_idx];
+                                const is_player = if (frame.player) |pid| pid.to_int() == target.entity.to_int() else false;
+                                const reach: ?WaypointId = if (is_player) null else target.current_wp;
                                 if (self.selected_inventory_item) |item_idx| {
                                     self.selected_inventory_item = null;
                                     self.play_sfx(.combine);
-                                    return .{
+                                    return self.approach_then(frame, .{
                                         .use_inventory_on_actor = .{
                                             .item_index = item_idx,
                                             .actor_index = actor_idx,
                                         },
-                                    };
+                                    }, reach, words(target.get_name()));
                                 } else {
                                     switch (self.active_verb) {
                                         .talk_to => self.play_sfx(.dialogue_blip),
                                         .pick_up => self.play_sfx(.pickup),
                                         else => self.play_sfx(.click),
                                     }
-                                    action = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
+                                    const act: UserAction = .{ .interact_actor = .{ .verb = self.active_verb, .actor_index = actor_idx } };
+                                    action = if (self.active_verb == .look_at) act else self.approach_then(frame, act, reach, words(target.get_name()));
                                 }
                             } else {
                                 // 5. Check Hotspots / Props
@@ -2071,15 +2252,19 @@ pub const DisplayWindow = struct {
                                     self.height,
                                 );
                                 if (clicked_hs) |hs_idx| {
+                                    // Walk to the mark nearest a prop before using it (D-092).
+                                    const hs = frame.hotspots[hs_idx];
+                                    const hs_pt = world_to_screen(hs.x, hs.y, self.width, self.height);
+                                    const reach = find_nearest_waypoint(hs_pt.x, hs_pt.y, frame.waypoints[0..frame.waypoint_count], self.width, self.height);
                                     if (self.selected_inventory_item) |item_idx| {
                                         self.selected_inventory_item = null;
                                         self.play_sfx(.combine);
-                                        return .{
+                                        return self.approach_then(frame, .{
                                             .use_inventory_on_hotspot = .{
                                                 .item_index = item_idx,
                                                 .hotspot_index = hs_idx,
                                             },
-                                        };
+                                        }, reach, words(hs.get_name()));
                                     } else if (self.active_verb == .look_at) {
                                         self.play_sfx(.click);
                                         action = .{ .examine_hotspot = hs_idx };
@@ -2089,7 +2274,7 @@ pub const DisplayWindow = struct {
                                             .pick_up => self.play_sfx(.pickup),
                                             else => self.play_sfx(.click),
                                         }
-                                        action = .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } };
+                                        action = self.approach_then(frame, .{ .interact_hotspot = .{ .verb = self.active_verb, .hotspot_index = hs_idx } }, reach, words(hs.get_name()));
                                     }
                                 } else {
                                     // 6. Direct click on Waypoint with non-walk verb:
@@ -2605,8 +2790,8 @@ pub const DisplayWindow = struct {
         // 3. Render Scene Hotspots / Props (P7-01, D-009)
         for (frame.hotspots[0..frame.hotspot_count], 0..) |hs, idx| {
             const pt = world_to_screen(hs.x, hs.y, self.width, self.height);
-            const is_hovered = (self.hovered_hotspot != null and self.hovered_hotspot.? == idx);
-            const name = hs.get_name();
+            const is_hovered = self.hover_target() == .prop and self.hovered_hotspot.? == idx;
+            const name = words(hs.get_name());
 
             const prop_drawn = if (self.theme) |t| (if (t.prop) |draw| draw(self, frame, .{
                 .hotspot = &hs,
@@ -2675,9 +2860,17 @@ pub const DisplayWindow = struct {
         }
 
         // 4. Render Waypoint Nodes
+        // A reached walk target is no longer a target (D-093): its "[Walk to]" prompt went away
+        // only when another walk replaced it.
+        if (self.target_wp) |twp| if (player_on_stage(frame)) |player| {
+            if (player.current_wp == twp and !player.is_moving and self.approach == null) self.target_wp = null;
+        };
+        // A mark under the pointer reads as a walk only when a click there would walk: with
+        // WALK, or with nothing else under the pointer (a click goes to people and props first).
+        const mark_click_walks = self.mark_hover_walks();
         for (frame.waypoints[0..frame.waypoint_count]) |wp| {
             const pt = world_to_screen(wp.x, wp.y, self.width, self.height);
-            const is_hovered = (self.hovered_wp == wp.id);
+            const is_hovered = (self.hovered_wp == wp.id) and mark_click_walks;
             const is_targeted = (self.target_wp == wp.id);
 
             // Register waypoint physical footprint as obstacle
@@ -2704,7 +2897,7 @@ pub const DisplayWindow = struct {
                 self.fill_circle(pt.x, pt.y, 4, Color.white);
 
                 // Waypoint text label
-                const name = wp.get_name();
+                const name = words(wp.get_name());
                 if (is_hovered or is_targeted) {
                     var buf: [64]u8 = undefined;
                     const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
@@ -2737,7 +2930,7 @@ pub const DisplayWindow = struct {
                 if (is_hovered or is_targeted) {
                     self.fill_circle(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.wp_hover);
                     self.draw_circle_outline(pt.x, pt.y, WAYPOINT_SCREEN_RADIUS, Color.white);
-                    const name = wp.get_name();
+                    const name = words(wp.get_name());
                     var buf: [64]u8 = undefined;
                     const prompt = std.fmt.bufPrint(&buf, "[Walk to {s}]", .{name}) catch name;
                     layout_resolver.submit(TextLabel.init(
@@ -2801,7 +2994,7 @@ pub const DisplayWindow = struct {
 
         // 5. Render Actors
         for (frame.entities[0..frame.entity_count], 0..) |e, idx| {
-            const name = e.get_name();
+            const name = words(e.get_name());
             const layout = get_entity_screen_layout(idx, frame.entities[0..frame.entity_count], self.width, self.height);
             const pt = layout.pos;
             layout_resolver.add_obstacle(pt.x - ACTOR_SCREEN_RADIUS, pt.y - ACTOR_SCREEN_RADIUS, ACTOR_SCREEN_RADIUS * 2, ACTOR_SCREEN_RADIUS * 2);
@@ -2827,6 +3020,29 @@ pub const DisplayWindow = struct {
                     to_layout(Color.hud_text),
                     .actor_name,
                     .actor_name,
+                ));
+            }
+
+            // The person a click would act on gets a gold ring and the action it would take
+            // (D-093), as the browser does (D-088); before, only marks and props lit up.
+            if (self.hover_target() == .person and self.hovered_actor.? == idx) {
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 4, Color.wp_target);
+                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 5, Color.wp_target);
+                var hover_buf: [96]u8 = undefined;
+                const prompt = if (self.selected_inventory_item) |sel| (if (sel < frame.inventory_count)
+                    std.fmt.bufPrint(&hover_buf, "[Use {s} on {s}]", .{ words(frame.inventory[sel].get_name()), name }) catch name
+                else
+                    name) else std.fmt.bufPrint(&hover_buf, "[{s} {s}]", .{ self.active_verb.word(), name }) catch name;
+                layout_resolver.submit(TextLabel.init(
+                    prompt,
+                    pt.x,
+                    pt.y,
+                    .below,
+                    ACTOR_SCREEN_RADIUS + 18,
+                    2,
+                    to_layout(Color.wp_hover),
+                    .waypoint_hover,
+                    .hover_tooltip,
                 ));
             }
         }
@@ -2914,7 +3130,7 @@ pub const DisplayWindow = struct {
 
                 // Portrait tag: "[1] <member name>"
                 var pbuf: [32]u8 = undefined;
-                const ptext = std.fmt.bufPrint(&pbuf, "[{d}] {s}", .{ p_idx + 1, member.get_name() }) catch member.get_name();
+                const ptext = std.fmt.bufPrint(&pbuf, "[{d}] {s}", .{ p_idx + 1, words(member.get_name()) }) catch member.get_name();
                 const text_col = if (is_active) Color{ .r = 254, .g = 240, .b = 138 } else Color.hud_text;
                 self.draw_text(ptext, prect.x + 22, prect.y + 8, 1, text_col);
             }
@@ -2961,10 +3177,10 @@ pub const DisplayWindow = struct {
 
         if (self.selected_inventory_item) |sel_idx| {
             if (sel_idx < frame.inventory_count) {
-                const sel_name = frame.inventory[sel_idx].get_name();
+                const sel_name = words(frame.inventory[sel_idx].get_name());
                 if (self.hovered_party_member) |p_idx| {
                     if (p_idx < frame.party_count) {
-                        const target_name = frame.party[p_idx].get_name();
+                        const target_name = words(frame.party[p_idx].get_name());
                         if (p_idx == frame.active_party_index) {
                             action_sentence = std.fmt.bufPrint(&action_sentence_buf, "[IN HAND: {s}] (Current character)", .{sel_name}) catch null;
                         } else {
@@ -2973,16 +3189,16 @@ pub const DisplayWindow = struct {
                     }
                 } else if (self.hovered_actor) |act_idx| {
                     if (act_idx < frame.entity_count) {
-                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, frame.entities[act_idx].get_name() }) catch null;
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, words(frame.entities[act_idx].get_name()) }) catch null;
                     }
                 } else if (self.hovered_hotspot) |hs_idx| {
                     if (hs_idx < frame.hotspot_count) {
-                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, frame.hotspots[hs_idx].get_name() }) catch null;
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, words(frame.hotspots[hs_idx].get_name()) }) catch null;
                     }
                 } else if (self.hovered_wp) |wp_id| {
                     for (frame.waypoints[0..frame.waypoint_count]) |wp| {
                         if (wp.id == wp_id) {
-                            action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, wp.get_name() }) catch null;
+                            action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Use {s} on {s}", .{ sel_name, words(wp.get_name()) }) catch null;
                             break;
                         }
                     }
@@ -3000,7 +3216,7 @@ pub const DisplayWindow = struct {
             };
             if (self.hovered_party_member) |p_idx| {
                 if (p_idx < frame.party_count) {
-                    const target_name = frame.party[p_idx].get_name();
+                    const target_name = words(frame.party[p_idx].get_name());
                     if (p_idx == frame.active_party_index) {
                         action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} (Active Character)", .{target_name}) catch null;
                     } else {
@@ -3009,16 +3225,16 @@ pub const DisplayWindow = struct {
                 }
             } else if (self.hovered_actor) |act_idx| {
                 if (act_idx < frame.entity_count) {
-                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, frame.entities[act_idx].get_name() }) catch null;
+                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, words(frame.entities[act_idx].get_name()) }) catch null;
                 }
             } else if (self.hovered_hotspot) |hs_idx| {
                 if (hs_idx < frame.hotspot_count) {
-                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, frame.hotspots[hs_idx].get_name() }) catch null;
+                    action_sentence = std.fmt.bufPrint(&action_sentence_buf, "{s} {s}", .{ verb_word, words(frame.hotspots[hs_idx].get_name()) }) catch null;
                 }
             } else if (self.hovered_wp) |wp_id| {
                 for (frame.waypoints[0..frame.waypoint_count]) |wp| {
                     if (wp.id == wp_id) {
-                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Walk to {s}", .{wp.get_name()}) catch null;
+                        action_sentence = std.fmt.bufPrint(&action_sentence_buf, "Walk to {s}", .{words(wp.get_name())}) catch null;
                         break;
                     }
                 }
@@ -3057,27 +3273,26 @@ pub const DisplayWindow = struct {
 
         // Inventory Tray (P7-03, P11-03)
         self.draw_text("ITEMS:", 400, bar_y + 6, 2, Color.hud_subtext);
-        var item_x: i32 = 480;
         if (frame.inventory_count == 0) {
-            self.draw_text("(Empty)", item_x, bar_y + 6, 2, Color{ .r = 100, .g = 116, .b = 139 });
+            self.draw_text("(Empty)", INVENTORY_X, bar_y + 6, 2, Color{ .r = 100, .g = 116, .b = 139 });
         } else {
-            for (frame.inventory[0..frame.inventory_count], 0..) |item, idx| {
-                const iname = item.get_name();
-                const iw = font.text_width(iname, 2) + 24;
+            var slots: [8]InventorySlot = undefined;
+            for (inventory_layout(self.width, frame.inventory[0..frame.inventory_count], &slots), 0..) |slot, idx| {
                 const is_selected = (self.selected_inventory_item != null and self.selected_inventory_item.? == idx);
                 const bg_col = if (is_selected) Color{ .r = 85, .g = 65, .b = 25 } else Color{ .r = 45, .g = 35, .b = 20 };
                 const border_col = if (is_selected) Color{ .r = 250, .g = 204, .b = 21 } else Color.item_gold;
                 const text_col = if (is_selected) Color{ .r = 254, .g = 240, .b = 138 } else Color.item_gold;
 
-                self.fill_rect(item_x, bar_y, iw, 26, bg_col);
-                self.draw_rect_outline(item_x, bar_y, iw, 26, border_col);
+                self.fill_rect(slot.x, bar_y, slot.w, 26, bg_col);
+                self.draw_rect_outline(slot.x, bar_y, slot.w, 26, border_col);
                 if (is_selected) {
                     // Double border for glowing selected highlight
-                    self.draw_rect_outline(item_x + 1, bar_y + 1, iw - 2, 24, Color{ .r = 253, .g = 224, .b = 71 });
+                    self.draw_rect_outline(slot.x + 1, bar_y + 1, slot.w - 2, 24, Color{ .r = 253, .g = 224, .b = 71 });
                 }
-                self.fill_circle(item_x + 10, bar_y + 13, 5, border_col);
-                self.draw_text(iname, item_x + 18, bar_y + 6, 2, text_col);
-                item_x += iw + 8;
+                const dot_r: i32 = if (slot.scale == 2) 5 else 3;
+                self.fill_circle(slot.x + 10, bar_y + 13, dot_r, border_col);
+                const text_y = bar_y + 13 - @divTrunc(7 * slot.scale, 2);
+                self.draw_text(slot.label, slot.x + 18, text_y, slot.scale, text_col);
             }
         }
 
@@ -3598,10 +3813,10 @@ test "P11-03: inventory item hit testing and two-operand combining interaction" 
 
     // Hit test item 0 and item 1
     // screen_h = 540, bar_y = 540 - 78 = 462
-    const hit_item0 = hit_test_inventory_item(490, 470, 540, &inv);
+    const hit_item0 = hit_test_inventory_item(490, 470, 960, 540, &inv);
     try testing.expectEqual(@as(?usize, 0), hit_item0);
 
-    const hit_item1 = hit_test_inventory_item(600, 470, 540, &inv);
+    const hit_item1 = hit_test_inventory_item(600, 470, 960, 540, &inv);
     try testing.expectEqual(@as(?usize, 1), hit_item1);
 
     // Test selection and cancellation state in DisplayWindow
@@ -4338,4 +4553,124 @@ test "D-091: bar text fits its bar: footers wrap at a separator, long text ends 
     const cut = fit_with_ellipsis("TIMELINE [Tick 12/34] (Click or [< / >] to Scrub)", 60, 1, &buf);
     try testing.expectEqualStrings("TIMELIN...", cut);
     try testing.expect(font.text_width(cut, 1) <= 60);
+}
+
+test "D-092: an action waits until the player walks to its target, and is never lost" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen(1280, 720);
+    defer win.deinit();
+
+    var frame = std.mem.zeroes(RenderFrame);
+    const player = EntityId.from_int(7);
+    frame.player = player;
+    frame.entity_count = 1;
+    frame.entities[0] = .{ .entity = player, .name = undefined, .name_len = 0, .x = 0, .y = 0, .current_wp = 1, .is_moving = false };
+    const talk: UserAction = .{ .interact_actor = .{ .verb = .talk_to, .actor_index = 0 } };
+
+    // Already at the mark: the action goes at once.
+    try testing.expectEqual(talk, win.approach_then(&frame, talk, 1, "Clerk"));
+    try testing.expect(win.approach == null);
+
+    // Elsewhere: the window walks the player and holds the action until it arrives.
+    try testing.expectEqual(UserAction{ .walk_player = 2 }, win.approach_then(&frame, talk, 2, "Clerk"));
+    try testing.expectEqual(UserAction.none, win.poll_events(&frame));
+    frame.entities[0].is_moving = true;
+    frame.tick = 5;
+    try testing.expectEqual(UserAction.none, win.poll_events(&frame));
+    frame.entities[0].is_moving = false;
+    frame.entities[0].current_wp = 2;
+    try testing.expectEqual(talk, win.poll_events(&frame));
+    try testing.expect(win.approach == null);
+
+    // A walk that stops somewhere else drops the action.
+    frame.entities[0].current_wp = 1;
+    _ = win.approach_then(&frame, talk, 2, "Clerk");
+    _ = win.poll_events(&frame);
+    frame.entities[0].is_moving = true;
+    _ = win.poll_events(&frame);
+    frame.entities[0].is_moving = false;
+    frame.entities[0].current_wp = 3;
+    try testing.expectEqual(UserAction.none, win.poll_events(&frame));
+    try testing.expect(win.approach == null);
+
+    // A host that never walks the player still gets the action, after the grace ticks.
+    frame.entities[0].current_wp = 1;
+    frame.tick = 10;
+    _ = win.approach_then(&frame, talk, 2, "Clerk");
+    _ = win.poll_events(&frame);
+    try testing.expect(win.approach != null);
+    frame.tick = 10 + APPROACH_GRACE_TICKS;
+    try testing.expectEqual(talk, win.poll_events(&frame));
+
+    // No player on stage: act at once.
+    frame.player = null;
+    try testing.expectEqual(talk, win.approach_then(&frame, talk, 2, "Clerk"));
+}
+
+test "D-093: a mark says 'Walk to' only when a click would walk, and a reached target clears" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen(1280, 720);
+    defer win.deinit();
+    win.hovered_wp = 6;
+    win.hovered_actor = 0;
+    win.active_verb = .pick_up;
+    try testing.expect(!win.mark_hover_walks());
+    win.active_verb = .walk;
+    try testing.expect(win.mark_hover_walks());
+    win.active_verb = .use_with;
+    win.hovered_actor = null;
+    try testing.expect(win.mark_hover_walks());
+
+    var frame = std.mem.zeroes(RenderFrame);
+    const player = EntityId.from_int(3);
+    frame.player = player;
+    frame.entity_count = 1;
+    frame.entities[0] = .{ .entity = player, .name = undefined, .name_len = 0, .x = 0, .y = 0, .current_wp = 6, .is_moving = true };
+    win.target_wp = 6;
+    win.render_frame(&frame, false);
+    try testing.expectEqual(@as(?WaypointId, 6), win.target_wp);
+    frame.entities[0].is_moving = false;
+    win.render_frame(&frame, false);
+    try testing.expectEqual(@as(?WaypointId, null), win.target_wp);
+    // The highlight follows the click order: with TAKE a person beats the mark under it,
+    // with WALK the mark wins.
+    win.hovered_wp = 6;
+    win.hovered_hotspot = 1;
+    win.hovered_actor = 0;
+    win.active_verb = .pick_up;
+    try testing.expectEqual(HoverKind.person, win.hover_target());
+    win.active_verb = .walk;
+    try testing.expectEqual(HoverKind.mark, win.hover_target());
+    win.hovered_wp = null;
+    try testing.expectEqual(HoverKind.prop, win.hover_target());
+    win.active_verb = .use_with;
+    win.hovered_actor = null;
+    try testing.expectEqual(HoverKind.prop, win.hover_target());
+    try testing.expectEqualStrings("Cargo Hold", words("CargoHold"));
+    try testing.expectEqualStrings("Berth 12", words("Berth12"));
+    try testing.expectEqualStrings("Tide Clock", words("TideClock"));
+}
+
+test "the item tray fits the window: a full tray shrinks its labels and every box stays clickable" {
+    const testing = std.testing;
+    var inv: [8]RenderInventoryItem = undefined;
+    const names = [_][]const u8{ "SignalLamp", "LedgerPages", "CopperWire", "OilCan", "BrassKey", "RopeCoil", "TideChart", "SpareLantern" };
+    for (names, 0..) |n, i| {
+        inv[i] = std.mem.zeroes(RenderInventoryItem);
+        @memcpy(inv[i].name[0..n.len], n);
+        inv[i].name_len = @intCast(n.len);
+    }
+    var slots: [8]InventorySlot = undefined;
+    const laid = inventory_layout(1280, &inv, &slots);
+    try testing.expectEqual(@as(usize, 8), laid.len);
+    try testing.expectEqual(@as(i32, 1), laid[0].scale);
+    const last = laid[7];
+    try testing.expect(last.x + last.w <= 1280);
+    for (laid, 0..) |slot, i| {
+        try testing.expectEqual(@as(?usize, i), hit_test_inventory_item(slot.x + 2, 720 - 70, 1280, 720, &inv));
+    }
+    // A short tray keeps the full-size labels.
+    const two = inventory_layout(1280, inv[0..2], &slots);
+    try testing.expectEqual(@as(i32, 2), two[0].scale);
+    try testing.expectEqualStrings("Signal Lamp", two[0].label);
 }

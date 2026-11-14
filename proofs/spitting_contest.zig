@@ -771,12 +771,8 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (hs_act.item_index < frame.inventory_count and hs_act.hotspot_index < frame.hotspot_count) {
                     const item_name = frame.inventory[hs_act.item_index].get_name();
                     const hs_name = frame.hotspots[hs_act.hotspot_index].get_name();
-                    if (std.mem.indexOf(u8, hs_name, "Peg") != null) {
-                        try session_action(&session, &vm, &compiled, "Uses", tamsin, pegs, null, 1);
-                        if (world.has_fact(pegs, tampered_rel, null)) {
-                            window.set_cue_banner("★ Pegs secretly moved closer to the chalk line! ★", 120);
-                        }
-                    } else {
+                    {
+                        // Only USE (or the P key) moves the pegs; an item used on them does nothing.
                         var buf: [96]u8 = undefined;
                         const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, hs_name }) catch "No effect";
                         window.set_cue_banner(msg, 90);

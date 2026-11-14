@@ -138,7 +138,9 @@ pub fn display_name(name: []const u8, buf: []u8) []const u8 {
     for (name, 0..) |ch, i| {
         const after_lower = i > 0 and std.ascii.isLower(name[i - 1]);
         const ends_acronym = i > 0 and std.ascii.isUpper(name[i - 1]) and i + 1 < name.len and std.ascii.isLower(name[i + 1]);
-        const split = std.ascii.isUpper(ch) and (after_lower or ends_acronym);
+        // A number after a word starts its own word: `Berth12` reads "Berth 12".
+        const starts_number = i > 0 and std.ascii.isDigit(ch) and std.ascii.isAlphabetic(name[i - 1]);
+        const split = (std.ascii.isUpper(ch) and (after_lower or ends_acronym)) or starts_number;
         if (split) {
             if (n == buf.len) return name;
             buf[n] = ' ';
@@ -271,6 +273,8 @@ test "D-077: display names split CamelCase and keep acronyms and spaced names" {
     try testing.expectEqualStrings("Tamsin", display_name("Tamsin", &buf));
     try testing.expectEqualStrings("NPC Porter", display_name("NPCPorter", &buf));
     try testing.expectEqualStrings("Mira Holt", display_name("Mira Holt", &buf));
+    try testing.expectEqualStrings("Berth 12", display_name("Berth12", &buf));
+    try testing.expectEqualStrings("Signal Lamp 2207", display_name("SignalLamp2207", &buf));
     var tiny: [4]u8 = undefined;
     try testing.expectEqualStrings("HarbourWarden", display_name("HarbourWarden", &tiny));
 }

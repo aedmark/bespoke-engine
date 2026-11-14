@@ -54,7 +54,9 @@ const Palette = struct {
     const rook_coat = Color{ .r = 40, .g = 50, .b = 85 }; // Captain's navy coat
     const purser_vest = Color{ .r = 190, .g = 45, .b = 60 }; // Purser's crimson waistcoat
     const purser_hair = Color{ .r = 180, .g = 70, .b = 30 }; // Auburn hair
-    const bramble_coat = Color{ .r = 130, .g = 130, .b = 135 }; // Shaggy grey dog
+    const bramble_coat = Color{ .r = 88, .g = 86, .b = 92 }; // Shaggy dark grey dog
+    const bramble_ear = Color{ .r = 60, .g = 56, .b = 60 }; // Darker ears
+    const bramble_muzzle = Color{ .r = 205, .g = 200, .b = 190 }; // Pale muzzle
     const bramble_nose = Color{ .r = 30, .g = 25, .b = 25 }; // Black nose
     const hotel_wallpaper = Color{ .r = 95, .g = 25, .b = 32 }; // Burgundy damask
     const hotel_wainscot = Color{ .r = 45, .g = 22, .b = 15 }; // Dark polished mahogany
@@ -2584,18 +2586,22 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
         ));
     } else if (std.mem.eql(u8, name, "Bramble")) {
-        // Bramble: a shaggy grey dog with floppy ears (P14-02, D-016, P35-04)
+        // Bramble: a shaggy grey dog with floppy ears (P14-02, D-016, P35-04). Dark fur with a
+        // dark rim and no white ring, so he never reads as a mark's grey circle.
+        // Tail, drawn first so the body overlaps it
+        w.fill_rect(pt.x + ACTOR_SCREEN_RADIUS - 6, pt.y - 14, 5, 12, Palette.bramble_coat);
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Palette.bramble_coat);
-        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.white);
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Palette.bramble_nose);
 
         // Floppy ears
-        w.fill_rect(pt.x - ACTOR_SCREEN_RADIUS, pt.y - 6, 5, 10, Palette.bramble_coat);
-        w.fill_rect(pt.x + ACTOR_SCREEN_RADIUS - 5, pt.y - 6, 5, 10, Palette.bramble_coat);
+        w.fill_rect(pt.x - ACTOR_SCREEN_RADIUS, pt.y - 8, 6, 12, Palette.bramble_ear);
+        w.fill_rect(pt.x + ACTOR_SCREEN_RADIUS - 6, pt.y - 8, 6, 12, Palette.bramble_ear);
 
-        // Eyes and nose
-        w.fill_rect(pt.x - 5, pt.y - 4, 3, 3, Color.black);
-        w.fill_rect(pt.x + 2, pt.y - 4, 3, 3, Color.black);
-        w.fill_rect(pt.x - 2, pt.y + 1, 4, 3, Palette.bramble_nose);
+        // Pale muzzle, eyes, and nose
+        w.fill_circle(pt.x, pt.y + 4, 7, Palette.bramble_muzzle);
+        w.fill_rect(pt.x - 6, pt.y - 6, 3, 3, Color.black);
+        w.fill_rect(pt.x + 3, pt.y - 6, 3, 3, Color.black);
+        w.fill_rect(pt.x - 2, pt.y + 1, 5, 4, Palette.bramble_nose);
 
         // Label
         layout_resolver.submit(TextLabel.init(

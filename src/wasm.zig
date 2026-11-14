@@ -247,6 +247,16 @@ pub const BrowserInputEvent = struct {
 };
 
 /// Result of dispatching a browser input event against the simulation spine (P19-02).
+/// A verb on a person or prop, held while the player walks to `wp` beside it (D-092).
+pub const Approach = struct {
+    verb: WasmVerb,
+    target: EntityId,
+    examine: ?[]const u8,
+    wp: u16,
+    asked_tick: u64,
+    seen_moving: bool = false,
+};
+
 pub const BrowserActionTag = enum(u8) {
     none = 0,
     hover_updated,
@@ -490,6 +500,8 @@ pub const WasmRuntime = struct {
     hovered_x: i32 = 0,
     hovered_y: i32 = 0,
     player_entity: EntityId = .none,
+    /// A verb held while the player walks to its target (D-092); released by `step_tick`.
+    approach: ?Approach = null,
     /// The compiled script of a script deck; null for decks built in Zig (D-066).
     program: ?CompiledProgram = null,
     /// The state inspector overlay (D-070). Its navigation is not World state.
@@ -563,6 +575,7 @@ pub const WasmRuntime = struct {
     /// Resets the spine and loads deck `index` (the first deck if out of range).
     pub fn load_deck(self: *WasmRuntime, index: u8) !void {
         self.messages.clear();
+        self.approach = null;
         self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
@@ -756,7 +769,74 @@ pub const WasmRuntime = struct {
     /// A verb on a person or prop in a script deck fires the script's cue for the player and
     /// runs the tick that answers it (D-069). Without a handler the banner says so; LOOK at a
     /// prop then falls back to its examine text.
-    fn act_on(self: *WasmRuntime, target: EntityId, examine: ?[]const u8) !?BrowserActionTag {
+    fn act_on(self: *WasmRuntime, target: EntityId, examine: ?[]const u8) anyerror!?BrowserActionTag {
+        if (self.program == null) return null;
+        // Walk to the person or prop first (D-092); LOOK acts from where the player stands.
+        if (self.active_verb != .look_at and self.player_entity != .none and target != self.player_entity) {
+            if (self.reach_mark(target)) |wp| {
+                const at = self.spatial.agents.get(self.player_entity);
+                const there = if (at) |a| a.current_wp == wp and !self.spatial.is_moving(self.player_entity) else true;
+                if (!there and try self.spatial.walk_to(self.player_entity, wp)) {
+                    self.approach = .{ .verb = self.active_verb, .target = target, .examine = examine, .wp = wp, .asked_tick = self.clock() };
+                    var name_buf: [48]u8 = undefined;
+                    const name = dialogue_panel.display_name(self.world.get_entity_name(target) orelse "it", &name_buf);
+                    var buf: [80]u8 = undefined;
+                    self.set_banner(std.fmt.bufPrint(&buf, "Walking to {s}...", .{name}) catch "Walking...");
+                    return .walk_issued;
+                }
+            }
+        }
+        return self.act_now(target, examine, true);
+    }
+
+    /// The mark beside a target: where a person stands, else the mark nearest a prop in its room.
+    fn reach_mark(self: *const WasmRuntime, target: EntityId) ?u16 {
+        if (self.spatial.agents.get(target)) |agent| return agent.current_wp;
+        for (self.spatial.hotspots.items) |hs| {
+            if (hs.entity != target) continue;
+            var best: ?u16 = null;
+            var best_d: i64 = std.math.maxInt(i64);
+            for (self.spatial.graph.waypoints.items) |wp| {
+                if (wp.room != hs.room) continue;
+                const dx: i64 = wp.pos.x - hs.pos.x;
+                const dy: i64 = wp.pos.y - hs.pos.y;
+                if (dx * dx + dy * dy < best_d) {
+                    best_d = dx * dx + dy * dy;
+                    best = wp.id;
+                }
+            }
+            return best;
+        }
+        return null;
+    }
+
+    /// Runs a held action once the player has arrived (D-092): called at the start of a tick,
+    /// so the tick answers the cue. A walk that stopped elsewhere drops it; a player that never
+    /// started walking acts where it stands after a grace of two ticks.
+    fn release_approach(self: *WasmRuntime) anyerror!void {
+        const a = &(self.approach orelse return);
+        const moving = self.spatial.is_moving(self.player_entity);
+        if (moving) {
+            a.seen_moving = true;
+            return;
+        }
+        const wp = if (self.spatial.agents.get(self.player_entity)) |agent| agent.current_wp else a.wp;
+        if (wp == a.wp or (!a.seen_moving and self.clock() >= a.asked_tick + 2)) {
+            const held = a.*;
+            self.approach = null;
+            const verb = self.active_verb;
+            self.active_verb = held.verb;
+            defer self.active_verb = verb;
+            _ = try self.act_now(held.target, held.examine, false);
+        } else if (a.seen_moving) {
+            self.approach = null;
+            self.set_banner("You can't get there from here.");
+        }
+    }
+
+    /// Acts on a target now. `run_tick` runs the tick that answers the cue; a held action
+    /// released inside a tick leaves that to the tick already running.
+    fn act_now(self: *WasmRuntime, target: EntityId, examine: ?[]const u8, run_tick: bool) anyerror!?BrowserActionTag {
         const program = if (self.program) |*p| p else return null;
         if (self.decks.len > 0) if (self.decks[self.deck_index].on_act) |hook| {
             self.bind();
@@ -773,12 +853,15 @@ pub const WasmRuntime = struct {
         self.bind();
         if ((try self.vm.fire_cue(program, cue, self.player_entity, target, null)) != null) {
             self.audio.enqueue_sfx(.click);
-            try self.step_tick();
+            if (run_tick) try self.step_tick();
             return .cue_fired;
         }
         if (self.active_verb == .look_at) {
             if (examine) |text| {
-                self.set_banner(text);
+                // A prop with no description of its own reads as its name, in words.
+                var ex_buf: [48]u8 = undefined;
+                const name = self.world.get_entity_name(target) orelse "";
+                self.set_banner(if (std.mem.eql(u8, text, name)) dialogue_panel.display_name(name, &ex_buf) else text);
                 return .hotspot_inspected;
             }
         }
@@ -949,6 +1032,8 @@ pub const WasmRuntime = struct {
             }
         }
         if (best_slot) |slot| {
+            // A held action belongs to the timeline being left.
+            self.approach = null;
             var fbs = std.io.fixedBufferStream(self.snapshot_bufs[slot][0..self.snapshot_lens[slot]]);
             self.world.restore_state(fbs.reader()) catch return;
             if (self.hypervisor) |hv| self.read_temporal(hv, fbs.reader()) catch {
@@ -996,8 +1081,9 @@ pub const WasmRuntime = struct {
     }
 
     /// Steps one discrete simulation tick across the active scenario spine.
-    pub fn step_tick(self: *WasmRuntime) !void {
+    pub fn step_tick(self: *WasmRuntime) anyerror!void {
         self.bind();
+        try self.release_approach();
         if (self.program) |*program| {
             _ = try host_mod.tick(&self.vm, program);
             self.show_story();
@@ -1110,9 +1196,11 @@ pub const WasmRuntime = struct {
                         const dy = ev.y - pt.y;
                         if (dx * dx + dy * dy <= 18 * 18) {
                             if (self.player_entity != .none) {
+                                self.approach = null;
                                 _ = try self.spatial.walk_to(self.player_entity, wp.id);
                                 var buf: [64]u8 = undefined;
-                                const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{wp.name}) catch "Walking...";
+                                var name_buf: [48]u8 = undefined;
+                                const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
                                 self.set_banner(msg);
                                 return .walk_issued;
                             }
@@ -1141,7 +1229,9 @@ pub const WasmRuntime = struct {
                     const dy = ev.y - pt.y;
                     if (dx * dx + dy * dy <= 18 * 18) {
                         if (try self.act_on(hs.entity, hs.examine_text)) |tag| return tag;
-                        self.set_banner(hs.examine_text);
+                        // A prop with no description of its own reads as its name, in words.
+                        var ex_buf: [48]u8 = undefined;
+                        self.set_banner(if (std.mem.eql(u8, hs.examine_text, hs.name)) dialogue_panel.display_name(hs.name, &ex_buf) else hs.examine_text);
                         return .hotspot_inspected;
                     }
                 }
@@ -1156,7 +1246,8 @@ pub const WasmRuntime = struct {
                         if (self.player_entity != .none) {
                             _ = try self.spatial.walk_to(self.player_entity, wp.id);
                             var buf: [64]u8 = undefined;
-                            const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{wp.name}) catch "Walking...";
+                            var name_buf: [48]u8 = undefined;
+                                const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
                             self.set_banner(msg);
                             return .walk_issued;
                         }
@@ -1289,7 +1380,8 @@ pub const WasmRuntime = struct {
             const pt = proj.point(hs.pos.x, hs.pos.y);
             self.canvas.fill_rect(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.amber);
             self.canvas.draw_rect_outline(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.white);
-            self.canvas.draw_text(hs.name, pt.x - 18, pt.y - 20, 1, RgbaColor.gold);
+            var hs_buf: [48]u8 = undefined;
+            self.canvas.draw_text(dialogue_panel.display_name(hs.name, &hs_buf), pt.x - 18, pt.y - 20, 1, RgbaColor.gold);
         }
 
         // 4. Waypoints
@@ -1298,7 +1390,8 @@ pub const WasmRuntime = struct {
             const pt = proj.point(wp.pos.x, wp.pos.y);
             self.canvas.fill_circle(pt.x, pt.y, 9, RgbaColor{ .r = 71, .g = 85, .b = 105 });
             self.canvas.draw_circle_outline(pt.x, pt.y, 9, RgbaColor.white);
-            self.canvas.draw_text(wp.name, pt.x - 18, pt.y + 12, 1, RgbaColor.slate);
+            var wp_buf: [48]u8 = undefined;
+            self.canvas.draw_text(dialogue_panel.display_name(wp.name, &wp_buf), pt.x - 18, pt.y + 12, 1, RgbaColor.slate);
         }
 
         // 5. Actors, fanned out where they share a spot (D-088). The person under the pointer
@@ -1967,4 +2060,45 @@ test "D-071: the capped allocator refuses past its limit and counts frees back" 
     const second = try a.alloc(u8, 900);
     defer a.free(second);
     try testing.expectEqual(@as(usize, 900), capped.used);
+}
+
+test "D-092: a verb on someone across the room walks the player over first, then acts" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\
+        \\on cue TalksTo(Hero, Pilot):
+        \\  say Pilot: "Ahoy."
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero" })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    rt.bind();
+    const pilot = rt.world.lookup_entity("Pilot").?;
+    const quay = rt.world.lookup_entity("Quay").?;
+    const pier = rt.spatial.graph.find_waypoint_in_room(quay, "Pier").?;
+    _ = try rt.spatial.transition_actor(pilot, quay, pier);
+
+    // TALK from the steps: Hero sets off, and nothing is said yet.
+    rt.active_verb = .talk_to;
+    try testing.expectEqual(BrowserActionTag.walk_issued, (try rt.act_on(pilot, null)).?);
+    try testing.expect(rt.approach != null);
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Ahoy.") == null);
+
+    // Ticks walk him over; on arrival the held TALK fires and the Pilot answers.
+    var guard: usize = 0;
+    while (rt.approach != null and guard < 20) : (guard += 1) try rt.step_tick();
+    try testing.expect(rt.approach == null);
+    try testing.expectEqual(pier, rt.spatial.agents.get(rt.player_entity).?.current_wp);
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Ahoy.") != null);
+
+    // LOOK acts from where the player stands, with no walk.
+    _ = try rt.spatial.transition_actor(rt.player_entity, quay, rt.spatial.graph.find_waypoint_in_room(quay, "Steps").?);
+    rt.active_verb = .look_at;
+    try testing.expect((try rt.act_on(pilot, null)).? != .walk_issued);
+    try testing.expect(rt.approach == null);
 }

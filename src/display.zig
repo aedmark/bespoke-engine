@@ -346,6 +346,9 @@ pub const RenderFrame = struct {
     party: [MAX_PARTY_MEMBERS]RenderPartyMember = [_]RenderPartyMember{.{ .entity = EntityId.from_int(0) }} ** MAX_PARTY_MEMBERS,
     party_count: usize = 0,
     active_party_index: usize = 0,
+    /// The character the player controls, when the host names one (D-092): the window walks it
+    /// to what the player acts on before handing the action to the host.
+    player: ?EntityId = null,
     // Distaff staff HUD for musical drafts (P22-02, D-029)
     distaff: RenderDistaff = .{},
     // Executable dialogue channel (P32-30, D-046)
@@ -762,6 +765,7 @@ pub const DisplayBridge = struct {
         // The host names its player (`set_party` or `set_active_character`); the engine no
         // longer guesses one from a list of proof characters (P32-03b).
         const player_id = self.active_player_character;
+        self.back_buffer.player = player_id;
         if (player_id) |pid| {
             if (world.lookup_relation("InInventory")) |inv_rel| {
                 var it_inv = world.query(pid, inv_rel, null);

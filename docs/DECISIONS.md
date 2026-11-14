@@ -1214,6 +1214,27 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A smaller footer font: rejected for two lines at the readable size.
 **Consequences:** Every window render line in `proofs/golden/render.txt` changed (120 of 143), because every frame draws the timeline; the 23 save thumbnails did not. No other footer was too wide. The contest's harbour label became "HARBOUR"; "BRACKWATER HARBOUR" overflowed its box. Later P35 items lower the larger baseline as before.
 
+## D-092 The Player Walks to What It Acts On Before Acting (2026-11-14, status: accepted)
+**Context:** Playing The Borrowed Beard, the maintainer noticed that in every proof the player acts on a person or prop from anywhere on stage: Tamsin borrows papers across the landing and talks to the purser from the doorway. The maintainer chose to fix this in the engine, for the desktop window and the browser decks, with LOOK still acting from where the player stands (2026-11-14).
+**Decision:**
+1. **The frame names the player.** `RenderFrame.player` is the host's active character (`set_active_character` or the party's active member).
+2. **The window holds the action.** TALK, TAKE, USE, and an item used on a person or prop go through `DisplayWindow.approach_then`: if the player is on stage and not already standing still at the target's mark (a person's current mark, else the mark nearest the prop), the window returns `walk_player` to that mark and keeps the action as `approach`. `poll_events` hands it to the host once the player has stopped there. The host code is unchanged; every proof window already walks the player on `walk_player`.
+3. **Nothing is lost or acted in the wrong place.** A walk that stops at another mark drops the action with "You can't get there from here."; a host that never starts the walk gets the action after `APPROACH_GRACE_TICKS` (two ticks), acted where the player stands. Choosing another walk or action, rewinding, or scrubbing drops the held one. LOOK, acting on the player itself, and a frame with no player on stage act at once.
+4. **The browser does the same.** `WasmRuntime.act_on` walks the player to the target's mark and holds the verb in `approach`; `step_tick` releases it at the start of the tick after arrival, so that tick answers the cue, with the same grace and drop rules. A deck's `on_act` hook also waits for the arrival. Loading a deck or scrubbing drops a held verb.
+**Alternatives:**
+- Each proof walking its player in its own handlers: rejected; the same code in fourteen loops (D-033).
+- LOOK walking over too: rejected by the maintainer; looking works from across the room.
+**Consequences:** A step key or solve key still acts at once, since it fires cues itself. No golden changed: the scripted browser clicks use LOOK or targets the player already stands by. New tests in `src/display/renderer.zig` and `src/wasm.zig`; disabling the browser approach fails its test.
+
+## D-093 Names Read as Words, and a Mark Says "Walk to" Only When a Click Walks (2026-11-14, status: accepted)
+**Context:** In The Borrowed Beard the maintainer could not tell what a click on Bramble would do: with Tamsin and the dog sharing the dog bed's mark, the window drew "[Walk to DogBed]" under the mark whatever verb was selected, and the label stayed after every walk, because the walk target was never cleared. The maintainer also asked why names had no spaces ("DogBed", not "Dog Bed"): script names inside cues such as `Uses(Tamsin, RainBarrel)` are single words, and the window showed them as written; only people's names were spaced (D-077).
+**Decision:**
+1. **"Walk to" means a click walks.** A hovered mark is highlighted and labelled "[Walk to ...]" only with WALK, or when no person or prop is under the pointer (`DisplayWindow.mark_hover_walks`), since a click with another verb goes to people and props first. The walk target clears once the player stands on it.
+2. **Displayed names are words.** The window shows marks, props, items, party members, and action sentences through `renderer.words`, and the browser its mark and prop labels, unnamed props' LOOK banners, and "Walking to" banners through `dialogue_panel.display_name`: `CargoHold` reads "Cargo Hold". A number after a word starts a word (`Berth12` reads "Berth 12"). Names in the World, cues, and host code are unchanged.
+3. **The highlight follows the click.** `DisplayWindow.hover_target` picks the one thing a click would act on, in the click handler's order (with WALK and nothing in hand: marks, props, people; otherwise people, props, marks), and only that is highlighted. A person under the pointer gets a ring and a label such as "[Take Bramble]" or "[Use Watering Can on Bramble]"; before, people had no hover feedback on the desktop at all (the browser has had one since D-088), so only marks and props appeared to respond.
+4. **Bramble no longer looks like a mark.** His token is dark with a pale muzzle and no white ring, where marks are grey circles with a white ring.
+**Consequences:** Every render line with a multi-word mark label changed, and every browser frame whose labels or banners carry such a name; no tick or fact count changed. Tests cover the label rule, the target clearing, and the spaced names.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

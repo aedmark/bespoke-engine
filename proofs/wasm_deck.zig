@@ -141,6 +141,9 @@ const Action = union(enum) {
     ticks: u8,
     /// Ticks until the actor stops walking (at most 40).
     settle: []const u8,
+    /// Ticks until the subject no longer holds the relation (at most 80), as a player waits
+    /// for someone to move off.
+    until_gone: struct { subject: []const u8, relation: []const u8 },
     walk: struct { actor: []const u8, mark: []const u8 },
     scene: struct { scene: []const u8, actor: ?[]const u8 = null, mark: ?[]const u8 = null },
     remember: Fact,
@@ -225,6 +228,12 @@ fn perform(rt: *WasmRuntime, action: Action) !bool {
                 if (!rt.spatial.is_moving(actor)) break;
             }
         },
+        .until_gone => |g| {
+            const subject = try entity(rt, g.subject);
+            const rel = try relation(rt, g.relation);
+            var guard: usize = 0;
+            while (guard < 80 and rt.active_world().has_fact(subject, rel, null)) : (guard += 1) try rt.step_tick();
+        },
         .walk => |w| {
             const actor = try entity(rt, w.actor);
             const mark = mark_in_room(rt, actor, w.mark) orelse return false;
@@ -290,7 +299,11 @@ const SPIT_SOLUTION = [_]Beat{
 
 const BEARD_SOLUTION = [_]Beat{
     .{ .note = "Tamsin searches her washstand.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "WashStand" } }, .{ .ticks = 1 } } },
-    .{ .note = "Tamsin borrows Rook's sailing papers.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "RookDoor" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin waits for Rook to head down the landing, then borrows his sailing papers.", .actions = &.{
+        .{ .until_gone = .{ .subject = "CaptainRook", .relation = "AtHisDoor" } },
+        .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "RookDoor" } },
+        .{ .ticks = 1 },
+    } },
     .{ .note = "Tamsin draws a beard on Rook's portrait.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Charcoal", .b = "RookPapers" } }, .{ .ticks = 1 } } },
     .{ .note = "Tamsin heads into the yard and finds the watering can.", .actions = &.{
         .{ .scene = .{ .scene = "Net Loft Yard", .actor = "Tamsin", .mark = "YardPath" } },

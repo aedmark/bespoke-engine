@@ -17,6 +17,8 @@
    -> Tamsin: "I'll take the charcoal stick, the roll of sail tape, and this pot of honey from my washstand."
 
 [Step 4: Borrow Rook's Sailing Papers from Room 7]
+   -> Tamsin: "Not with Rook standing right there. I'll wait till he's off down the landing."
+   -> Tamsin waits 25 ticks for Rook to head down the landing.
    -> Tamsin: "Rook's sailing papers are poking out of his coat on the door peg. I'll borrow them."
 
 [Step 5: Draw a Beard on Rook's Portrait with Charcoal]
@@ -38,7 +40,7 @@
    -> Tamsin: "I'll peel the tape off. One strip of genuine grey dog fur."
 
 [Step 11: Make a Grey Beard with the Honey]
-   -> Tamsin: "I dab honey on my chin and press the fur firmly in place."
+   -> Bramble: "Wuff..."  Tamsin: "I dab honey on my chin and press the fur firmly in place."
 
 [Step 12: Don the Disguise]
    -> Tamsin: "With Rook's papers and my bristling grey beard, the likeness is uncanny!"

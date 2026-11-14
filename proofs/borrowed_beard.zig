@@ -57,7 +57,9 @@ pub const BORROWED_BEARD_SCRIPT =
     \\routine RookPacing(CaptainRook):
     \\  loop:
     \\    walk CaptainRook to Room7
+    \\    remember AtHisDoor(CaptainRook, true) ~ he guards his coat while he stands here
     \\    wait 30 ticks
+    \\    forget AtHisDoor(CaptainRook)
     \\    walk CaptainRook to Stairs
     \\    wait 30 ticks
     \\
@@ -67,9 +69,12 @@ pub const BORROWED_BEARD_SCRIPT =
     \\    say Bramble: "Wuff..."
     \\
     \\on cue Uses(Tamsin, RookDoor):
-    \\  if not Carries(Tamsin, RookPapers):
-    \\    say Tamsin: "Rook's sailing papers are poking out of his coat on the door peg. I'll borrow them."
-    \\    remember Carries(Tamsin, RookPapers)
+    \\  if AtHisDoor(CaptainRook):
+    \\    say Tamsin: "Not with Rook standing right there. I'll wait till he's off down the landing."
+    \\  if not AtHisDoor(CaptainRook):
+    \\    if not Carries(Tamsin, RookPapers):
+    \\      say Tamsin: "Rook's sailing papers are poking out of his coat on the door peg. I'll borrow them."
+    \\      remember Carries(Tamsin, RookPapers)
     \\
     \\on cue Uses(Tamsin, Charcoal, RookPapers):
     \\  say Tamsin: "Rook's portrait has no beard! A few strokes of charcoal, and now it does."
@@ -98,6 +103,8 @@ pub const BORROWED_BEARD_SCRIPT =
     \\
     \\on cue Uses(Tamsin, DogFur, HoneyPot):
     \\  say Tamsin: "I dab honey on my chin and press the fur firmly in place."
+    \\  forget Carries(Tamsin, DogFur)
+    \\  forget Carries(Tamsin, HoneyPot)
     \\  remember Carries(Tamsin, GreyBeard)
     \\  remember StickyChin(Tamsin, true)
     \\
@@ -140,6 +147,25 @@ pub fn evaluate_puzzle_victory(world: *const bespoke.World) bool {
     const tamsin = world.lookup_entity("Tamsin") orelse return false;
     const rel = world.lookup_relation("HasBerthTicket") orelse return false;
     return world.has_fact(tamsin, rel, null);
+}
+
+/// True while Captain Rook stands at his door, where his routine marks him as guarding his coat.
+pub fn rook_at_door(world: *const bespoke.World) bool {
+    const rook = world.lookup_entity("CaptainRook") orelse return false;
+    const rel = world.lookup_relation("AtHisDoor") orelse return false;
+    return world.has_fact(rook, rel, null);
+}
+
+/// The most ticks Rook stays at his door, plus his walk away; a wait longer than this means
+/// his routine is not running.
+const ROOK_WAIT_LIMIT: usize = 80;
+
+/// The step keys borrow the papers for you, so they first let the clock run until Rook has
+/// gone down the landing, as a player would wait. Returns the ticks waited.
+fn wait_for_rook(session: *bespoke.host.Session, world: *const bespoke.World) !usize {
+    var waited: usize = 0;
+    while (rook_at_door(world) and waited < ROOK_WAIT_LIMIT) : (waited += 1) _ = try session.advance();
+    return waited;
 }
 
 /// Fires one scripted action and advances until its first line of speech or `max_ticks`.
@@ -323,6 +349,15 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 4: Borrow Rook's sailing papers
     try writer.print("[Step 4: Borrow Rook's Sailing Papers from Room 7]\n", .{});
     const papers_ent = try world.intern_entity("RookPapers");
+    // Rook stands at his door first, so the first try is refused and Tamsin waits him out.
+    try std.testing.expect(rook_at_door(&world));
+    const refused_speech = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, rook_door, null, 1, &speech_buf);
+    try writer.print("   -> {s}\n", .{refused_speech orelse "Rook is standing right there."});
+    try std.testing.expect(!world.has_fact(tamsin, carries_rel, papers_ent.to_int()));
+    var waited: usize = 0;
+    while (rook_at_door(&world) and waited < ROOK_WAIT_LIMIT) : (waited += 1) _ = try bespoke.host.tick(&vm, &compiled);
+    try std.testing.expect(!rook_at_door(&world));
+    try writer.print("   -> Tamsin waits {d} ticks for Rook to head down the landing.\n", .{waited});
     const papers_speech = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, rook_door, null, 1, &speech_buf);
     try writer.print("   -> {s}\n\n", .{papers_speech orelse "Tamsin acquired RookPapers."});
     try std.testing.expect(world.has_fact(tamsin, carries_rel, papers_ent.to_int()));
@@ -379,6 +414,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const beard_speech = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, dog_fur_ent, honey, 1, &speech_buf);
     try writer.print("   -> {s}\n\n", .{beard_speech orelse "Tamsin crafted GreyBeard."});
     try std.testing.expect(world.has_fact(tamsin, carries_rel, beard_ent.to_int()));
+    // Making the beard uses up the fur and the honey: they leave the item tray.
+    try std.testing.expect(!world.has_fact(tamsin, carries_rel, dog_fur_ent.to_int()));
+    try std.testing.expect(!world.has_fact(tamsin, carries_rel, honey.to_int()));
     try std.testing.expect(world.has_fact(tamsin, sticky_lip_rel, null));
 
     // Step 12: Put on GreyBeard and disguise as CaptainRook
@@ -703,14 +741,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     if (std.mem.eql(u8, item_name, "SailTape") and std.mem.indexOf(u8, hs_name, "Gap") != null) {
                         try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, sail_tape, gate_gap, 1);
                         window.set_cue_banner("★ Step 3: Stretched sail tape across the gap under the gate! ★", 150);
-                    } else if (std.mem.indexOf(u8, hs_name, "Door") != null) {
-                        if (!world.has_fact(tamsin, carries_rel, papers_ent.to_int())) {
-                            try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, rook_door, null, 1);
-                            window.set_cue_banner("★ Step 1: Borrowed Rook's sailing papers from his coat! ★", 150);
-                        } else {
-                            window.set_cue_banner("Tamsin: \"I already have Rook's papers.\"", 90);
-                        }
                     } else {
+                        // Only TAKE borrows Rook's papers; an item used on his door does nothing.
                         var buf: [96]u8 = undefined;
                         const msg = std.fmt.bufPrint(&buf, "Using {s} on {s} has no effect.", .{ item_name, hs_name }) catch "No effect";
                         window.set_cue_banner(msg, 90);
@@ -855,7 +887,11 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         } else if (std.mem.indexOf(u8, hname, "Door") != null) {
                             if (!world.has_fact(tamsin, carries_rel, papers_ent.to_int())) {
                                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, rook_door, null, 1);
-                                window.set_cue_banner("★ Slipped into Room 7 and borrowed Rook's papers! ★", 150);
+                                if (world.has_fact(tamsin, carries_rel, papers_ent.to_int())) {
+                                    window.set_cue_banner("★ Slipped into Room 7 and borrowed Rook's papers! ★", 150);
+                                } else {
+                                    window.set_cue_banner("Tamsin: \"Not with Rook standing right there. I'll wait till he's off down the landing.\"", 0);
+                                }
                             } else {
                                 window.set_cue_banner("Tamsin: \"I already borrowed Rook's papers.\"", 90);
                             }
@@ -959,6 +995,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             }
             // [1] Borrow the papers
             if (pressed == .step_1) {
+                _ = try wait_for_rook(&session, &world);
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, rook_door, null, 1);
                 window.set_cue_banner("Step 1: Borrowed Rook's sailing papers from Room 7!", 90);
                 hotkey_handled = true;
@@ -966,6 +1003,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             // [2] Draw a beard on the portrait
             if (pressed == .step_2) {
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, wash_stand, null, 1);
+                _ = try wait_for_rook(&session, &world);
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, rook_door, null, 1);
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, charcoal, papers_ent, 1);
                 window.set_cue_banner("Step 2: Drew a beard on Rook's portrait!", 90);
@@ -1013,6 +1051,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             // [7] Don Disguise
             if (pressed == .step_7) {
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, wash_stand, null, 1);
+                _ = try wait_for_rook(&session, &world);
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, rook_door, null, 1);
                 try session_scripted_action(&session, &vm, &compiled, "Uses", tamsin, charcoal, papers_ent, 1);
                 if (!world.has_fact(tamsin, carries_rel, beard_ent.to_int())) {
@@ -1120,4 +1159,47 @@ test "P14-02: verify scene transition capture to the net loft yard" {
 
     const f2 = display_bridge.get_frame();
     try testing.expectEqualStrings("Net Loft Yard", f2.get_current_scene());
+}
+
+test "P35-04: Rook guards his coat while he stands at his door, and the papers wait until he leaves" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, BORROWED_BEARD_SCRIPT);
+    defer compiled.deinit();
+    const inn = world.lookup_entity("Inn Landing").?;
+    const tamsin = world.lookup_entity("Tamsin").?;
+    const rook = world.lookup_entity("CaptainRook").?;
+    const room7 = spatial.graph.find_waypoint_in_room(inn, "Room7").?;
+    const stairs = spatial.graph.find_waypoint_in_room(inn, "Stairs").?;
+    spatial.graph.waypoints.items[room7 - 1].pos = .{ .x = 16, .y = 0 };
+    spatial.graph.waypoints.items[stairs - 1].pos = .{ .x = 32, .y = 0 };
+    try spatial.graph.connect(room7, stairs, null);
+    try spatial.register_entity(rook, room7, 11);
+
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    try vm.transition_to_scene(inn);
+    _ = try vm.spawn_routine(rook, compiled.routine_entries.get("RookPacing").?);
+    // His walk to the door he already stands at completes within a few ticks.
+    var settling: usize = 0;
+    while (!rook_at_door(&world) and settling < 5) : (settling += 1) _ = try bespoke.host.tick(&vm, &compiled);
+    try testing.expect(rook_at_door(&world));
+
+    const papers = try world.intern_entity("RookPapers");
+    const carries = try world.intern_relation("Carries", .set);
+    var buf: [256]u8 = undefined;
+    const refused = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, world.lookup_entity("RookDoor").?, null, 1, &buf);
+    try testing.expect(std.mem.indexOf(u8, refused.?, "Not with Rook standing right there") != null);
+    try testing.expect(!world.has_fact(tamsin, carries, papers.to_int()));
+
+    var waited: usize = 0;
+    while (rook_at_door(&world) and waited < ROOK_WAIT_LIMIT) : (waited += 1) _ = try bespoke.host.tick(&vm, &compiled);
+    try testing.expect(!rook_at_door(&world));
+    _ = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, world.lookup_entity("RookDoor").?, null, 1, &buf);
+    try testing.expect(world.has_fact(tamsin, carries, papers.to_int()));
 }
