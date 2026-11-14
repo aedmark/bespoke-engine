@@ -1166,6 +1166,16 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Accept only the duel deck's count and fix the lint later: rejected by the maintainer; every other file's count would stay low.
 **Consequences:** Phase 35 items now see their real counts. The renderer's P13-03 test names Madame Buthane, a Gabriel Knight 3 name inside the engine; P35-04 should replace it.
 
+## D-088 The Browser Draws, Clicks, and Highlights People in One Place (2026-11-13, status: accepted)
+**Context:** On the Brackwater Barbs page the maintainer could not tell where to click to talk to someone. The browser drew people who shared a spot fanned out by a running count across the whole stage, but the click test used each person's unshifted spot, so clicking the circle you saw often missed or hit someone else. Names drew on top of one another, and neither page sent pointer movement, so nothing showed what a click would do.
+**Decision:**
+1. `WasmRuntime.actor_slots` computes where each person in the shown room is drawn: people within a few pixels of each other fan out 24 pixels apart, ordered by entity id, and their names stack on separate rows. Drawing, clicks (`actor_at`), and hover all use it.
+2. The person under the pointer gets a gold ring, and its name reads as the action a click would take, such as "TALK Old Gannet". Names show as display names (D-077).
+3. The showcase and the Barbs page forward `pointermove` to `wasm_on_pointer_move`.
+**Alternatives:**
+- A larger click radius around the unshifted spot: rejected; the circle you see would still not be what you click.
+**Consequences:** Every browser golden frame hash changed; fact counts, ticks, and banners did not.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

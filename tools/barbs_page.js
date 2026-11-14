@@ -110,6 +110,14 @@
     }
     draw();
   });
+  // Hover highlights the person a click would act on (D-088).
+  canvas.addEventListener('pointermove', (event) => {
+    if (!exp || !exp.wasm_on_pointer_move) return;
+    const [x, y] = canvasCoords(event);
+    exp.wasm_on_pointer_move(x, y);
+    draw();
+  });
+
   canvas.addEventListener('contextmenu', (event) => {
     event.preventDefault();
     if (!exp) return;

@@ -694,6 +694,65 @@ pub const WasmRuntime = struct {
         return (self.spatial.graph.get_waypoint(wp) orelse return null).room;
     }
 
+    /// Where a person on stage is drawn (D-088): `row` stacks names of people who share a spot.
+    pub const ActorSlot = struct { entity: EntityId, x: i32, y: i32, row: i32 };
+    pub const MAX_ACTOR_SLOTS: usize = 32;
+    /// Pixels apart people standing together are fanned out, and the radius a click reaches.
+    const ACTOR_SPACING: i32 = 24;
+    const ACTOR_REACH: i32 = 12;
+
+    /// Every person in the shown room, where it is drawn. People within a few pixels of each
+    /// other fan out side by side, so each circle is visible and clickable on its own; drawing,
+    /// clicks, and hover all use these places, so a click lands where the circle is drawn.
+    /// Ordered by entity id, so the fan keeps its order from frame to frame.
+    pub fn actor_slots(self: *const WasmRuntime, proj: Projection, out: *[MAX_ACTOR_SLOTS]ActorSlot) usize {
+        var n: usize = 0;
+        var it = self.spatial.agents.iterator();
+        while (it.next()) |entry| {
+            if (n == out.len) break;
+            const agent = entry.value_ptr;
+            if (self.agent_room(agent.entity)) |room| if (!proj.shows(room)) continue;
+            const pt = proj.point(agent.pos.x, agent.pos.y);
+            out[n] = .{ .entity = agent.entity, .x = pt.x, .y = pt.y, .row = 0 };
+            n += 1;
+        }
+        std.mem.sort(ActorSlot, out[0..n], {}, struct {
+            fn less(_: void, a: ActorSlot, b: ActorSlot) bool {
+                return a.entity.to_int() < b.entity.to_int();
+            }
+        }.less);
+        var base: [MAX_ACTOR_SLOTS]CanvasPoint = undefined;
+        for (out[0..n], 0..) |slot, i| base[i] = .{ .x = slot.x, .y = slot.y };
+        for (0..n) |i| {
+            var count: i32 = 0;
+            var index: i32 = 0;
+            for (0..n) |j| {
+                if (@abs(base[i].x - base[j].x) > 6 or @abs(base[i].y - base[j].y) > 6) continue;
+                count += 1;
+                if (j < i) index += 1;
+            }
+            out[i].x = base[i].x + @divTrunc((2 * index - (count - 1)) * ACTOR_SPACING, 2);
+            out[i].row = index;
+        }
+        return n;
+    }
+
+    /// The person drawn under a canvas point, if any.
+    pub fn actor_at(self: *const WasmRuntime, proj: Projection, x: i32, y: i32) ?ActorSlot {
+        var slots: [MAX_ACTOR_SLOTS]ActorSlot = undefined;
+        const n = self.actor_slots(proj, &slots);
+        var best: ?ActorSlot = null;
+        var best_d: i32 = ACTOR_REACH * ACTOR_REACH + 1;
+        for (slots[0..n]) |slot| {
+            const d = (x - slot.x) * (x - slot.x) + (y - slot.y) * (y - slot.y);
+            if (d < best_d) {
+                best_d = d;
+                best = slot;
+            }
+        }
+        return best;
+    }
+
     /// A verb on a person or prop in a script deck fires the script's cue for the player and
     /// runs the tick that answers it (D-069). Without a handler the banner says so; LOOK at a
     /// prop then falls back to its examine text.
@@ -1061,29 +1120,17 @@ pub const WasmRuntime = struct {
                     }
                 }
 
-                // 4. Actors hit test
-                var it = self.spatial.agents.iterator();
-                while (it.next()) |entry| {
-                    const agent = entry.value_ptr;
-                    if (self.agent_room(agent.entity)) |room| if (!proj.shows(room)) continue;
-                    const pt = proj.point(agent.pos.x, agent.pos.y);
-                    const dx = ev.x - pt.x;
-                    const dy = ev.y - pt.y;
-                    if (dx * dx + dy * dy <= 16 * 16) {
-                        if (agent.entity != self.player_entity) {
-                            if (try self.act_on(agent.entity, null)) |tag| return tag;
-                        }
-                        const name = self.world.get_entity_name(agent.entity) orelse "Actor";
-                        var buf: [80]u8 = undefined;
-                        const msg = std.fmt.bufPrint(&buf, "[{s}] {s} at ({d}, {d})", .{
-                            self.active_verb.label(),
-                            name,
-                            agent.pos.x,
-                            agent.pos.y,
-                        }) catch name;
-                        self.set_banner(msg);
-                        return .actor_interacted;
+                // 4. Actors hit test, where each person is drawn (D-088)
+                if (self.actor_at(proj, ev.x, ev.y)) |slot| {
+                    if (slot.entity != self.player_entity) {
+                        if (try self.act_on(slot.entity, null)) |tag| return tag;
                     }
+                    var name_buf: [48]u8 = undefined;
+                    const name = dialogue_panel.display_name(self.world.get_entity_name(slot.entity) orelse "Someone", &name_buf);
+                    var buf: [80]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "[{s}] {s}", .{ self.active_verb.label(), name }) catch name;
+                    self.set_banner(msg);
+                    return .actor_interacted;
                 }
 
                 // 5. Hotspots hit test
@@ -1254,26 +1301,30 @@ pub const WasmRuntime = struct {
             self.canvas.draw_text(wp.name, pt.x - 18, pt.y + 12, 1, RgbaColor.slate);
         }
 
-        // 5. Actors
-        var rank: i32 = 0;
-        var it = self.spatial.agents.iterator();
-        while (it.next()) |entry| {
-            const agent = entry.value_ptr;
-            if (self.agent_room(agent.entity)) |room| if (!proj.shows(room)) continue;
-            const base = proj.point(agent.pos.x, agent.pos.y);
-            const px = base.x + @mod(rank, 3) * 14 - 14;
-            const py = base.y - @divTrunc(rank, 3) * 16;
-            rank += 1;
+        // 5. Actors, fanned out where they share a spot (D-088). The person under the pointer
+        // gets a gold ring and its name reads as the action a click would take, such as
+        // "TALK Dory Quill", so it is clear who can be clicked and what will happen.
+        var slots: [MAX_ACTOR_SLOTS]ActorSlot = undefined;
+        const slot_count = self.actor_slots(proj, &slots);
+        const hovered: ?ActorSlot = if (self.inspector.open) null else self.actor_at(proj, self.hovered_x, self.hovered_y);
+        for (slots[0..slot_count]) |slot| {
+            const is_player = slot.entity == self.player_entity;
+            const is_hovered = hovered != null and hovered.?.entity == slot.entity and !is_player;
+            const col = if (is_player) RgbaColor.sky_blue else RgbaColor.emerald;
+            if (is_hovered) self.canvas.fill_circle(slot.x, slot.y, 13, RgbaColor.gold);
+            self.canvas.fill_circle(slot.x, slot.y, 10, col);
+            self.canvas.draw_circle_outline(slot.x, slot.y, 10, RgbaColor.white);
 
-            const name = self.world.get_entity_name(agent.entity) orelse "Actor";
-            const col = if (agent.entity == self.player_entity)
-                RgbaColor.sky_blue
+            var name_buf: [48]u8 = undefined;
+            const name = dialogue_panel.display_name(self.world.get_entity_name(slot.entity) orelse "Someone", &name_buf);
+            var label_buf: [64]u8 = undefined;
+            const label = if (is_hovered)
+                std.fmt.bufPrint(&label_buf, "{s} {s}", .{ self.active_verb.label(), name }) catch name
             else
-                RgbaColor.emerald;
-
-            self.canvas.fill_circle(px, py, 10, col);
-            self.canvas.draw_circle_outline(px, py, 10, RgbaColor.white);
-            self.canvas.draw_text(name, px - 14, py - 20, 1, RgbaColor.white);
+                name;
+            const label_x = slot.x - @divTrunc(font.text_width(label, 1), 2);
+            const label_y = slot.y - 22 - slot.row * 9;
+            self.canvas.draw_text(label, label_x, label_y, 1, if (is_hovered) RgbaColor.gold else RgbaColor.white);
         }
 
         // The distaff in decks with drafts (D-071): the notes played so far, the reach, and the
@@ -1664,6 +1715,50 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
     const scrub_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 14, .y = 28 });
     try testing.expectEqual(BrowserActionTag.timeline_scrubbed, scrub_res);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+}
+
+test "D-088: people sharing a mark fan out, and a click lands on the one drawn there" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot, Bosun
+        \\  marks: Steps, Pier
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+        \\on cue TalksTo(Hero, Pilot):
+        \\  say Pilot: "Ahoy."
+        \\
+        \\on cue TalksTo(Hero, Bosun):
+        \\  say Bosun: "Aye."
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero" })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    const proj = rt.projection();
+    var slots: [WasmRuntime.MAX_ACTOR_SLOTS]WasmRuntime.ActorSlot = undefined;
+    const n = rt.actor_slots(proj, &slots);
+    try testing.expectEqual(@as(usize, 3), n);
+    // All three stand on Steps: each is drawn apart from the others, with its own name row.
+    for (slots[0..n], 0..) |a, i| for (slots[0..n], 0..) |b, j| {
+        if (i == j) continue;
+        try testing.expect(@abs(a.x - b.x) >= 2 * WasmRuntime.ACTOR_REACH);
+        try testing.expect(a.row != b.row);
+    };
+    // A click on each drawn circle finds that person, and TALK on the Bosun runs his line.
+    for (slots[0..n]) |slot| try testing.expectEqual(slot.entity, rt.actor_at(proj, slot.x + 3, slot.y - 2).?.entity);
+    const bosun = rt.world.lookup_entity("Bosun").?;
+    var bosun_slot: WasmRuntime.ActorSlot = undefined;
+    for (slots[0..n]) |slot| {
+        if (slot.entity == bosun) bosun_slot = slot;
+    }
+    rt.active_verb = .talk_to;
+    try testing.expectEqual(BrowserActionTag.cue_fired, try rt.dispatch_event(.{ .kind = .pointer_down, .x = bosun_slot.x, .y = bosun_slot.y }));
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Aye.") != null);
 }
 
 test "D-086: a deck's on_act hook runs before the verb's cue and can take it over" {
