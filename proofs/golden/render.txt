@@ -9,14 +9,14 @@ tavern_heist/CellarRoom: 7333e3b730a056ab
 tavern_heist/CellarRoom +tangent_active: eb3067f7a0010fd5
 tavern_heist/CellarRoom +singularity_collapsed: e6624a85964ef01e
 thumb/spitting_contest/Pip-Spitting Green: 61e816b848e745c1
-spitting_contest/Pip-Spitting Green: 40f522448050120a
-spitting_contest/Pip-Spitting Green +spit_is_thick: cd5dc0256036de3e
-spitting_contest/Pip-Spitting Green +pegs_tampered: bada899f25942d44
-spitting_contest/Pip-Spitting Green +wind_blowing: 6249b01cde430520
-spitting_contest/Pip-Spitting Green +judge_distracted: 97ac2c7d33d91c48
-spitting_contest/Pip-Spitting Green +tangent_active: 9b4fc54896649a64
-spitting_contest/Pip-Spitting Green +singularity_collapsed: 26db2a70d053d5d7
-spitting_contest/Pip-Spitting Green +countdown: 9ea484bde7a6c3c2
+spitting_contest/Pip-Spitting Green: 63232aab65e49173
+spitting_contest/Pip-Spitting Green +spit_is_thick: c826185aa62d9ce7
+spitting_contest/Pip-Spitting Green +pegs_tampered: e61c3f936dbb6c45
+spitting_contest/Pip-Spitting Green +wind_blowing: 3b9c153fcdafc903
+spitting_contest/Pip-Spitting Green +judge_distracted: 77bcadb4962cc6bc
+spitting_contest/Pip-Spitting Green +tangent_active: aad925c89815dbd7
+spitting_contest/Pip-Spitting Green +singularity_collapsed: b8b67c4f0e587c91
+spitting_contest/Pip-Spitting Green +countdown: a4b767b509fac2a0
 thumb/gk3_moustache/Hotel Corridor: 631dad0477c7859e
 gk3_moustache/Hotel Corridor: afc4b1223a142e4e
 gk3_moustache/Hotel Corridor +gabriel_disguised: 5d08fb43c8d30fb7

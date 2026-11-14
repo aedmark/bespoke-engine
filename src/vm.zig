@@ -1796,7 +1796,7 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
 
     // Routine 3: Hero transitions to cellar:
     // emit transition_scene cellar, then wait 10 ticks
-    const guybrush_pc = chunk.count();
+    const hero_pc = chunk.count();
     try chunk.emit_transition_scene(cellar);
     try chunk.emit_wait_ticks(10);
     _ = try chunk.emit_op(.halt);
@@ -1810,7 +1810,7 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
 
     const f_tavern = try vm.spawn_routine(tavern, tavern_pc);
     const f_cellar = try vm.spawn_routine(cellar, cellar_pc);
-    const f_guybrush = try vm.spawn_routine(hero, guybrush_pc);
+    const f_hero = try vm.spawn_routine(hero, hero_pc);
 
     // Manually pause cellar routine since it belongs to inactive cellar
     vm.fibers.items[f_cellar - 1].state = .{ .paused = {} };
@@ -1832,7 +1832,7 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
     try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_cellar - 1].state);
 
     // Hero's fiber transitioned to waiting_ticks(10)
-    switch (vm.fibers.items[f_guybrush - 1].state) {
+    switch (vm.fibers.items[f_hero - 1].state) {
         .waiting_ticks => {},
         else => try testing.expect(false),
     }

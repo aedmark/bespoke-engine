@@ -409,7 +409,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
         try timeline.record(&world);
     }
 
-    try writer.print("   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = GUYBRUSH SPITS!\n", .{});
+    try writer.print("   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = TAMSIN WINS!\n", .{});
     const res4 = try spit(&world, &vm, &compiled);
     try timeline.record(&world);
     try writer.print("   -> FINAL RESULT: {s}!\n", .{@tagName(res4)});

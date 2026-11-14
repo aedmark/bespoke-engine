@@ -464,7 +464,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(field_x, field_y, field_w - 180, field_h, Palette.grass_green);
         w.draw_rect_outline(field_x, field_y, field_w - 180, field_h, Color{ .r = 45, .g = 95, .b = 55 });
 
-        // Caribbean Ocean / Looking Offstage
+        // Harbour water beyond the Harbour Wall
         const ocean_x = field_x + field_w - 180;
         w.fill_rect(ocean_x, field_y, 180, field_h, Palette.ocean_blue);
         w.draw_rect_outline(ocean_x, field_y, 180, field_h, Color{ .r = 56, .g = 189, .b = 248 });
@@ -472,16 +472,16 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(ocean_x - 12, field_y, 12, field_h, Palette.sand_color);
 
         // Ocean label
-        w.draw_text("CARIBBEAN SEA", ocean_x + 16, field_y + 16, 2, Color{ .r = 56, .g = 189, .b = 248 });
-        w.draw_text("(LOOKING OFFSTAGE)", ocean_x + 16, field_y + 36, 1, Color.white);
+        w.draw_text("BRACKWATER HARBOUR", ocean_x + 16, field_y + 16, 2, Color{ .r = 56, .g = 189, .b = 248 });
+        w.draw_text("(HARBOUR WALL)", ocean_x + 16, field_y + 36, 1, Color.white);
 
         // Field Title Header
-        w.draw_text("BOOTY ISLAND - SPITTING COMPETITION", field_x + 16, field_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_text("HARVEST FAIR - PIP-SPITTING GREEN", field_x + 16, field_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
 
         // Ground distance track lines
         // Starting Line at x=200 (world_x = 0)
         w.draw_line(200, field_y + 60, 200, field_y + field_h - 20, Color.white);
-        w.draw_text("START LINE", 165, field_y + field_h - 16, 1, Color.white);
+        w.draw_text("CHALK LINE", 165, field_y + field_h - 16, 1, Color.white);
 
         // 3rd Place Line at x=340 (world_x = 10)
         w.draw_line(340, field_y + 70, 340, field_y + field_h - 30, Color.hud_subtext);
@@ -497,12 +497,12 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
 
         // Wind Indicator
         if (status_of(frame).wind_blowing) {
-            w.draw_text(">>> WIND GUST: STRONG TAILWIND (BLOWING EAST TOWARD TARGET!) >>>", field_x + 16, field_y + 44, 2, Palette.wind_color);
+            w.draw_text(">>> SEA BREEZE: TAILWIND TOWARD THE PEGS! >>>", field_x + 16, field_y + 44, 2, Palette.wind_color);
             w.draw_line(260, field_y + 140, 680, field_y + 140, Palette.wind_color);
             w.draw_line(280, field_y + 190, 710, field_y + 190, Palette.wind_color);
             w.draw_line(250, field_y + 240, 690, field_y + 240, Palette.wind_color);
         } else {
-            w.draw_text("WIND: CALM (Wait for tailwind gust)", field_x + 16, field_y + 44, 2, Color.hud_subtext);
+            w.draw_text("WIND: CALM (Wait for the sea breeze)", field_x + 16, field_y + 44, 2, Color.hud_subtext);
         }
     } else if (sc.is_wine_cellar_scene) {
         // Subterranean Stone Vault Theme (P12-03, D-014)

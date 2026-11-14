@@ -26,7 +26,7 @@
    -> Spit check without wind: thick_pegs_moved_no_wind_second (Second place! Close, but need a tailwind!)
 
 [Step 6: Wind gust cycles in!] Rising edge trigger activates...
-   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = GUYBRUSH SPITS!
+   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = TAMSIN WINS!
    -> FINAL RESULT: winner_first!
    -> Judge Marrow: "Past the last peg! We have a champion!"
 
