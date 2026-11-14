@@ -8,15 +8,15 @@ tavern_heist/Tavern +countdown: 944492853ec36c82
 tavern_heist/CellarRoom: 7333e3b730a056ab
 tavern_heist/CellarRoom +tangent_active: eb3067f7a0010fd5
 tavern_heist/CellarRoom +singularity_collapsed: e6624a85964ef01e
-thumb/spitting_contest/Spitting Competition: 61e816b848e745c1
-spitting_contest/Spitting Competition: c123fb85d1a5f8dd
-spitting_contest/Spitting Competition +spit_is_thick: 185eba74735db444
-spitting_contest/Spitting Competition +flags_tampered: c2363c584b07f898
-spitting_contest/Spitting Competition +wind_blowing: 9142405a9d60ef4e
-spitting_contest/Spitting Competition +organiser_distracted: 3ec8d1f6b7bf1a51
-spitting_contest/Spitting Competition +tangent_active: 6e41ba047a07e350
-spitting_contest/Spitting Competition +singularity_collapsed: fac3af1ff0f52965
-spitting_contest/Spitting Competition +countdown: c2caeb49ca6e6920
+thumb/spitting_contest/Pip-Spitting Green: 61e816b848e745c1
+spitting_contest/Pip-Spitting Green: 40f522448050120a
+spitting_contest/Pip-Spitting Green +spit_is_thick: cd5dc0256036de3e
+spitting_contest/Pip-Spitting Green +pegs_tampered: bada899f25942d44
+spitting_contest/Pip-Spitting Green +wind_blowing: 6249b01cde430520
+spitting_contest/Pip-Spitting Green +judge_distracted: 97ac2c7d33d91c48
+spitting_contest/Pip-Spitting Green +tangent_active: 9b4fc54896649a64
+spitting_contest/Pip-Spitting Green +singularity_collapsed: 26db2a70d053d5d7
+spitting_contest/Pip-Spitting Green +countdown: 9ea484bde7a6c3c2
 thumb/gk3_moustache/Hotel Corridor: 631dad0477c7859e
 gk3_moustache/Hotel Corridor: afc4b1223a142e4e
 gk3_moustache/Hotel Corridor +gabriel_disguised: 5d08fb43c8d30fb7
@@ -87,7 +87,7 @@ dott_puzzle/Motel Lobby +singularity_collapsed: d34e8782d81dd3fa
 dott_puzzle/Motel Lobby +countdown: 3a42be9538aa0adc
 thumb/dott_puzzle/Dystopian Guard Post: 593cbd5023f9e234
 dott_puzzle/Dystopian Guard Post: a11e0b18290dfaf4
-dott_puzzle/Dystopian Guard Post +flags_tampered: 284a4fdb7a8a7368
+dott_puzzle/Dystopian Guard Post +pegs_tampered: 284a4fdb7a8a7368
 dott_puzzle/Dystopian Guard Post +dott_flag_sewn: 85d801d6a7f158ff
 dott_puzzle/Dystopian Guard Post +dott_laverne_disguised: faa95800ba16e084
 dott_puzzle/Dystopian Guard Post +tangent_active: 888f18652a3ca15c

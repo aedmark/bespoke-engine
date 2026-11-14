@@ -1241,7 +1241,7 @@ test "P12-02: spatial graph room partitioning and actor transition between scene
 
     const tavern = EntityId.from_int(10);
     const cellar = EntityId.from_int(20);
-    const guybrush = EntityId.from_int(100);
+    const hero = EntityId.from_int(100);
 
     // Add waypoints in tavern
     const hearth_wp = try spatial.graph.add_waypoint(tavern, 0, 0, "Hearth");
@@ -1269,17 +1269,17 @@ test "P12-02: spatial graph room partitioning and actor transition between scene
     try testing.expect(spatial.find_hotspot_at_in_room(tavern, .{ .x = 120, .y = 45 }) == null);
     try testing.expect(spatial.find_hotspot_at_in_room(cellar, .{ .x = 120, .y = 45 }) != null);
 
-    // Register Guybrush in Tavern at Hearth
-    try spatial.register_entity(guybrush, hearth_wp, 5);
-    try testing.expectEqual(hearth_wp, spatial.get_current_waypoint(guybrush).?);
+    // Register Hero in Tavern at Hearth
+    try spatial.register_entity(hero, hearth_wp, 5);
+    try testing.expectEqual(hearth_wp, spatial.get_current_waypoint(hero).?);
 
-    // Transition Guybrush from Tavern to Cellar
-    const ok = try spatial.transition_actor(guybrush, cellar, null);
+    // Transition Hero from Tavern to Cellar
+    const ok = try spatial.transition_actor(hero, cellar, null);
     try testing.expect(ok);
-    try testing.expectEqual(cellar_entry_wp, spatial.get_current_waypoint(guybrush).?);
-    try testing.expectEqual(@as(i32, 100), spatial.get_position(guybrush).?.x);
-    try testing.expectEqual(@as(i32, 50), spatial.get_position(guybrush).?.y);
-    try testing.expect(spatial.has_arrived(guybrush));
+    try testing.expectEqual(cellar_entry_wp, spatial.get_current_waypoint(hero).?);
+    try testing.expectEqual(@as(i32, 100), spatial.get_position(hero).?.x);
+    try testing.expectEqual(@as(i32, 50), spatial.get_position(hero).?.y);
+    try testing.expect(spatial.has_arrived(hero));
 }
 
 test "P21-01: can_transfer_item respects remote and colocated policies" {

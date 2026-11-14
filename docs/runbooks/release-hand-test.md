@@ -72,7 +72,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | Flag | Proof's own keys | What to check |
 | --- | --- | --- |
 | `--tavern` | none | The Guard patrols, the Bard's lute charms him, the Cat takes the Cheese while he is distracted. Rewind mid-heist and watch it replay identically. |
-| `--spitting-contest` | H horn, G drink, F flags, S spit | Each key's effect shows on stage and in speech; the winning spit needs all three plus the wind. |
+| `--spitting-contest` | C conch, D treacle cider, P pegs, S spit | Each key's effect shows on stage and in speech; the winning spit needs all three plus the wind. In this proof C, D, and P replace the console, debug, and save-drawer keys; `` ` ``, F1, and F2 still open them. |
 | `--gk3` | H hotel, G garden, B bike shop, 0 scavenge, 1 to 8 steps | Scene changes redraw the room; the disguise combines across three scenes; the motorcycle is rented. |
 | `--sword-fighting` | D duel Bosun Pike, G duel Old Gannet, H duel Dory Quill, C duel Mistress Vell, T talk to the barkeep, W wait 50 ticks | Answer barbs or throw your own with 1 to 9; a joke loses the round on purpose, which hands the fencer a new barb to throw. Each launch deals the fencers different barbs and comebacks. Whoever wins a round attacks next; an opponent who parries your barb teaches you that comeback; a lost duel ends with the opponent's victory line; a repeated question tires the barkeep. |
 | `--village` | S theft, F feast, G tip | Six villagers run their own days. After S, a witness talks, rumours spread, and the Sheriff arrests someone, with no key presses in between. |
@@ -104,7 +104,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 Do this on real speakers or headphones, at low volume first.
 
 - [ ] **Music:** every proof plays its own track; scene changes crossfade instead of cutting.
-- [ ] **Effects:** clicks, pickups, the horn (`--spitting-contest`), sword clashes (`--sword-fighting`), and the sizzle (`--grog`, `--grid`) sound once per action, without clipping or crackle.
+- [ ] **Effects:** clicks, pickups, the conch (`--spitting-contest`), sword clashes (`--sword-fighting`), and the sizzle (`--grog`, `--grid`) sound once per action, without clipping or crackle.
 - [ ] **Distaff (`--loom`):** C to B play rising pitches; a woven draft plays its stinger.
 - [ ] **Script scores:** `zig-out/bin/bespoke run scenarios/night_watch.bespoke` moves through Calm, Chase, Calm, Wind, Calm; each change is audible and the loop point is seamless.
 - [ ] **Silence:** pausing stops nothing it should not (music may hold); quitting leaves no hanging note.

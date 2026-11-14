@@ -89,7 +89,7 @@ const usage =
     \\
     \\Proofs (default: --tavern):
     \\  --tavern             The Tavern Heist (relational spine, fibers, interrupts, rewind)
-    \\  --spitting-contest   Booty Island Spitting Contest (stageplay DSL, TTL triggers)
+    \\  --spitting-contest   The Pip-Spitting Green (stageplay DSL, TTL triggers)
     \\  --gk3                Gabriel Knight 3 Cat Moustache (crafting, multi-scene)
     \\  --sword-fighting     Brackwater Barbs (learned comebacks, mood decay)
     \\  --village            The Living Village (emergent drives, rumors, justice)

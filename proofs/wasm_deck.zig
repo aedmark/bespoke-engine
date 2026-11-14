@@ -34,9 +34,9 @@ pub const decks = [_]wasm.Deck{
         .background = .{ .r = 28, .g = 21, .b = 18 },
         .catalyst = solver(&TAVERN_SOLUTION),
     }),
-    wasm.script_deck_with("BOOTY ISLAND SPITTING CONTEST", SPITTING_CONTEST_SCRIPT, .{
-        .player = "Guybrush",
-        .intro = "Spitting Contest: TALK, LOOK, or USE on people and props; [S] plays the solution.",
+    wasm.script_deck_with("THE PIP-SPITTING GREEN", SPITTING_CONTEST_SCRIPT, .{
+        .player = "Tamsin",
+        .intro = "Pip-Spitting Green: TALK, LOOK, or USE on people and props; [S] plays the solution.",
         .soundtrack = &art.soundtrack,
         .background = .{ .r = 16, .g = 42, .b = 58 },
         .catalyst = solver(&SPIT_SOLUTION),
@@ -281,11 +281,11 @@ const TAVERN_SOLUTION = [_]Beat{
 };
 
 const SPIT_SOLUTION = [_]Beat{
-    .{ .note = "Guybrush drinks the green drink.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Guybrush", .a = "GreenDrink" } }, .{ .ticks = 2 } } },
-    .{ .note = "Guybrush sounds the ship's horn.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Guybrush", .a = "Horn" } }, .{ .ticks = 2 } } },
-    .{ .note = "Guybrush moves the flags while nobody watches.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Guybrush", .a = "Flags" } }, .{ .ticks = 2 } } },
-    .{ .note = "The wind picks up.", .actions = &.{ .{ .cue = .{ .name = "Gusts", .actor = "Guybrush" } }, .{ .ticks = 1 } } },
-    .{ .note = "Guybrush spits.", .actions = &.{ .{ .cue = .{ .name = "Spits", .actor = "Guybrush" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin drinks the treacle cider.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "TreacleCider" } }, .{ .ticks = 2 } } },
+    .{ .note = "Tamsin blows the conch.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Conch" } }, .{ .ticks = 2 } } },
+    .{ .note = "Tamsin moves the pegs while nobody watches.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Pegs" } }, .{ .ticks = 2 } } },
+    .{ .note = "The wind picks up.", .actions = &.{ .{ .cue = .{ .name = "Gusts", .actor = "Tamsin" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin spits.", .actions = &.{ .{ .cue = .{ .name = "Spits", .actor = "Tamsin" } }, .{ .ticks = 1 } } },
 };
 
 const GK3_SOLUTION = [_]Beat{
@@ -790,7 +790,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Guybrush", "Gabriel", "Player", "George", "Bernard", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Gabriel", "Player", "George", "Bernard", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -811,7 +811,7 @@ test "P30-05: the solve key plays each puzzle proof to its ending" {
         const rt = try load(1);
         defer unload(rt);
         try solve(rt);
-        try testing.expect(holds(rt, "Guybrush", "Placed", "FirstPlace"));
+        try testing.expect(holds(rt, "Tamsin", "Placed", "FirstPlace"));
     }
     {
         const rt = try load(2);

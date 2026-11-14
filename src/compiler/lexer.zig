@@ -523,7 +523,7 @@ test "P10-01: lexer tokenizes stageplay taxonomy, state keywords, brackets, and 
     const testing = std.testing;
     const src =
         \\scene: Spitting Competition
-        \\cast: Guybrush, Organiser
+        \\cast: Hero, Organiser
         \\props: Flags
         \\marks: Starting Line, Offstage
         \\remember Distracted[Organiser, Onlookers] for 100 ticks ~ inline comment
@@ -542,7 +542,7 @@ test "P10-01: lexer tokenizes stageplay taxonomy, state keywords, brackets, and 
 
     try testing.expectEqual(TokenTag.kw_cast, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.colon, (try lexer.next()).tag);
-    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Guybrush
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Hero
     try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Organiser
     try testing.expectEqual(TokenTag.newline, (try lexer.next()).tag);

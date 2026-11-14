@@ -2065,14 +2065,14 @@ test "P10-01: parser parses stageplay taxonomy, state declarations, and falling-
     const testing = std.testing;
     const script =
         \\scene: Spitting Competition
-        \\cast: Guybrush, Organiser, Onlookers
+        \\cast: Hero, Organiser, Onlookers
         \\props: Flags
         \\marks: Starting Line, Looking Offstage
         \\
         \\Tampered with is a state, which can be tampered with or not tampered with.
         \\Distracted is a state, which can be distracted or not distracted.
         \\
-        \\remember: Carries(Guybrush, Horn) ~ inline comment
+        \\remember: Carries(Hero, Horn) ~ inline comment
         \\now Flags are tampered with
         \\
         \\routine EggingCrowd(Organiser):
@@ -2109,7 +2109,7 @@ test "P10-01: parser parses stageplay taxonomy, state declarations, and falling-
     try testing.expectEqualStrings("Spitting Competition", ast.scenes.items[0]);
 
     try testing.expectEqual(@as(usize, 3), ast.cast.items.len);
-    try testing.expectEqualStrings("Guybrush", ast.cast.items[0]);
+    try testing.expectEqualStrings("Hero", ast.cast.items[0]);
     try testing.expectEqualStrings("Organiser", ast.cast.items[1]);
     try testing.expectEqualStrings("Onlookers", ast.cast.items[2]);
 
@@ -2130,10 +2130,10 @@ test "P12-01: parser parses scene transition statements" {
     const testing = std.testing;
     const script =
         \\scene: Tavern
-        \\cast: Guybrush
+        \\cast: Hero
         \\transition to scene: Wine Cellar
         \\
-        \\routine EnterCellar(Guybrush):
+        \\routine EnterCellar(Hero):
         \\  transition to scene Wine Cellar
         \\  wait 10 ticks
     ;
@@ -2170,7 +2170,7 @@ test "P12-02: parser groups multiple scenes with scoped cast, props, and marks" 
     const testing = std.testing;
     const script =
         \\scene: Tavern
-        \\cast: Guybrush, Barkeep
+        \\cast: Hero, Barkeep
         \\props: Mug
         \\marks: Hearth, Counter
         \\
@@ -2195,7 +2195,7 @@ test "P12-02: parser groups multiple scenes with scoped cast, props, and marks" 
     const s1 = ast.scene_defs.items[0];
     try testing.expectEqualStrings("Tavern", s1.name);
     try testing.expectEqual(@as(usize, 2), s1.cast.items.len);
-    try testing.expectEqualStrings("Guybrush", s1.cast.items[0]);
+    try testing.expectEqualStrings("Hero", s1.cast.items[0]);
     try testing.expectEqualStrings("Barkeep", s1.cast.items[1]);
     try testing.expectEqual(@as(usize, 1), s1.props.items.len);
     try testing.expectEqualStrings("Mug", s1.props.items[0]);

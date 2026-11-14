@@ -1,47 +1,47 @@
 ===================================================================
-   BeSpoke Engine: The Booty Island Spitting Contest Vertical Slice
+   BeSpoke Engine: The Pip-Spitting Green Vertical Slice
   (Natural Stageplay DSL * Relational Spine * Falling Edge & TTL)  
 ===================================================================
 
-[Compiler] Lowering Booty Island stageplay script to bytecode...
+[Compiler] Lowering Pip-Spitting Green stageplay script to bytecode...
 
->>> STARTING BOOTY ISLAND SPITTING CONTEST SIMULATION <<<
+>>> STARTING PIP-SPITTING GREEN SIMULATION <<<
 
-[Step 1: Baseline Attempt] Guybrush steps up to Starting Line and spits...
+[Step 1: Baseline Attempt] Tamsin steps up to Chalk Line and spits...
    -> Result: dribble_third (Dribbles on chin! Third place!)
 
-[Step 2: Guybrush drinks GreenDrink] "Glug glug glug..."
+[Step 2: Tamsin drinks treacle cider] "Glug glug glug..."
    -> Fact asserted: Spit is thick!
-   -> Spit check: thick_flags_untouched_third (Thick spit, but flags untouched! Third place!)
+   -> Spit check: thick_pegs_untouched_third (Thick spit, but pegs untouched! Third place!)
 
-[Step 3: Attempting to move Flags while Organiser watches]...
-   -> Organiser is watching! Narrator: "You better not, he's watching."
+[Step 3: Attempting to move Pegs while Judge Marrow watches]...
+   -> Judge Marrow is watching! Narrator: "Not while Judge Marrow is watching."
 
-[Step 4: Guybrush sounds Ship's Horn!] *** HOOOOOOONK! ***
-   -> Organiser: "About time that damn ship came in."
-   -> Organiser walks to Looking Offstage! (Distracted TTL: 100 ticks)
+[Step 4: Tamsin blows the Conch!] *** BWOOOOOOM! ***
+   -> JudgeMarrow: "Is that the herring fleet back already?"
+   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 100 ticks)
 
-[Step 5: Guybrush tampers with Flags while crowd is distracted!]
-   -> Fact asserted: Flags are tampered with (moved closer to line)!
-   -> Spit check without wind: thick_flags_moved_no_wind_second (Second place! Close, but need a tailwind!)
+[Step 5: Tamsin tampers with Pegs while crowd is distracted!]
+   -> Fact asserted: Pegs are tampered with (moved closer to line)!
+   -> Spit check without wind: thick_pegs_moved_no_wind_second (Second place! Close, but need a tailwind!)
 
 [Step 6: Wind gust cycles in!] Rising edge trigger activates...
-   -> Wind is blowing! Thick Spit + Tampered Flags + Tailwind = GUYBRUSH SPITS!
+   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = GUYBRUSH SPITS!
    -> FINAL RESULT: winner_first!
-   -> Organiser: "OH, we have a winner! First Place!"
+   -> Judge Marrow: "Past the last peg! We have a champion!"
 
 [Step 7: Testing TTL Expiration & Falling-Edge Triggers]
    -> Distraction TTL expired at Tick 109!
-   -> 'when Organiser forgets Distracted' fired: Organiser returned to Starting Line.
+   -> 'when Judge Marrow forgets Distracted' fired: Judge Marrow returned to Chalk Line.
    -> Wind stopped blowing: 'when Wind stops being blowing' falling-edge hook fired.
 
 [Step 8: Time-Travel Rewind Demo]
-   -> Rewinding simulation to Tick 8 (before Horn distraction)...
+   -> Rewinding simulation to Tick 8 (before Conch distraction)...
    -> Rewound Tick: 8
-   -> Organiser Distracted? NO (Restored to false!)
-   -> Flags Tampered?       NO (Restored to false!)
-   -> Rewound Contest Result: thick_flags_untouched_third (Back to 3rd place!)
+   -> Judge Marrow Distracted? NO (Restored to false!)
+   -> Pegs Tampered?       NO (Restored to false!)
+   -> Rewound Contest Result: thick_pegs_untouched_third (Back to 3rd place!)
 
 ===================================================================
-   Booty Island Spitting Contest Vertical Slice Successfully Completed!  
+   Pip-Spitting Green Vertical Slice Successfully Completed!  
 ===================================================================

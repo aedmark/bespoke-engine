@@ -419,7 +419,7 @@
             "Actor names use font scale 2 above tokens; actor status badges use font scale 1 below tokens, cutting width by 50% to establish a clean visual hierarchy.",
             "Contested labels automatically stagger downward across vertical tiers (Tiers 1-3) or flip above, while idle waypoint names yield to preserve legibility without hiding the physical ground mark."
           ],
-          "why": "In theater and adventure scenes (e.g. Guybrush and Organiser at the Starting Line, or George and Billy Goat at Lochmarne), actors frequently gather at proximate marks. Drawing labels at fixed coordinates produces illegible text overlap. Centralized collision resolution guarantees every string a legible, collision-free slot.",
+          "why": "In theater and adventure scenes (e.g. Tamsin and Judge Marrow at the Chalk Line, or George and Billy Goat at Lochmarne), actors frequently gather at proximate marks. Drawing labels at fixed coordinates produces illegible text overlap. Centralized collision resolution guarantees every string a legible, collision-free slot.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-008", "target": "docs/DECISIONS.md#d-008", "kind": "decision"},
@@ -685,7 +685,7 @@
           "id": "stageplay-taxonomy",
           "title": "Declarative Stageplay Syntax & Taxonomy",
           "summary": "Theater-like script headers declaring scenes, cast, props, marks, and natural state assertions.",
-          "synopsis": "scene: Booty Island; cast: Guybrush, Organiser; props: Flags; marks: Starting Line",
+          "synopsis": "scene: Pip-Spitting Green; cast: Tamsin, JudgeMarrow; props: Pegs; marks: Chalk Line",
           "tags": ["dsl", "stageplay", "syntax"],
           "what": "Allows authors to declare game environments using natural stageplay vocabulary (scene, cast, props, marks) and transition states using readable sentences (now Flags are tampered with).",
           "how": [
@@ -698,7 +698,7 @@
           "evidence": [
             {"label": "Architectural Decision D-012", "target": "docs/DECISIONS.md#d-012", "kind": "decision"},
             {"label": "Parser Stageplay Support", "target": "src/compiler/parser.zig", "kind": "source"},
-            {"label": "Booty Island Spitting Contest Script", "target": "proofs/spitting_contest.zig", "kind": "source"}
+            {"label": "Pip-Spitting Green Script", "target": "proofs/spitting_contest.zig", "kind": "source"}
           ],
           "related": ["compiler-pipeline", "relational-facts"]
         },
@@ -1173,7 +1173,7 @@
           "what": "Provides flexible command-line execution modes for CI pipelines, automated integration testing, and interactive human gameplay.",
           "how": [
             "--headless runs the simulation without creating an SDL2 window, printing tick snapshots to standard output.",
-            "--spitting-contest launches the Monkey Island 2 Booty Island Spitting Contest puzzle scenario.",
+            "--spitting-contest launches the Pip-Spitting Green contest puzzle scenario.",
             "--gk3 or --cat-moustache launches the Gabriel Knight 3 Cat Moustache puzzle scenario.",
             "Running without flags launches the interactive graphical Tavern Heist simulation at 60 Hz."
           ],
@@ -1222,7 +1222,7 @@
             "AudioBridge consumes discrete audio cues from simulation ticks via an atomic/mutex-guarded ring buffer without blocking the simulation clock.",
             "Procedural ChiptuneSynth generates variable-duty pulse waves, linear triangles, sawteeth, and LCG noise using 32-bit integer phase accumulators and a precomputed 44.1 kHz MIDI table borrowed from Whimsy Machine.",
             "SfxVoice pool synthesizes 10 action sound effects (footsteps, pickups, combining items, horn blasts, splashes, sword clashes, alert stingers, dialogue chirps, clicks, whistles) with attack/decay envelopes and pitch sweeps.",
-            "A 4-channel step sequencer synthesizes looping 32-step musical accompaniment across 8 narrative scene themes (.tavern, .cellar, .spitting_contest, .tidewalk, .fencing_yard, .lantern, .courtyard, .bike_shop) with automatic crossfades.",
+            "A 4-channel step sequencer plays each host track as arranged two-bar sections, each pass optionally transposed or with parts muted (D-089), so the eleven proof tracks run over two minutes before repeating, with automatic crossfades.",
             "DisplayWindow initializes an SDL2 audio callback feeding 16-bit stereo PCM samples, falling back gracefully to silent offline rendering in headless mode."
           ],
           "why": "Narrative immersion requires rich auditory feedback, but BeSpoke's Engine-as-Spine tenet forbids external asset dependencies, blocking audio threads, or non-deterministic simulation execution. Pure procedural integer synthesis guarantees zero asset bloat, instant loading, and 100% headless testability.",

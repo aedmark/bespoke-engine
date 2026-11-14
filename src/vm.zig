@@ -1777,12 +1777,12 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
 
     const tavern = try world.intern_entity("Tavern");
     const cellar = try world.intern_entity("Wine Cellar");
-    const guybrush = try world.intern_entity("Guybrush");
+    const hero = try world.intern_entity("Hero");
     const horn = try world.intern_entity("Horn");
     const carries = try world.intern_relation("Carries", .set);
 
-    // Initial fact in world: Guybrush carries Horn
-    try world.remember(guybrush, carries, horn.to_int(), 0);
+    // Initial fact in world: Hero carries Horn
+    try world.remember(hero, carries, horn.to_int(), 0);
 
     // Routine 1: TavernAmbience (owner: tavern) -> loop wait 5 ticks
     const tavern_pc = chunk.count();
@@ -1794,7 +1794,7 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
     try chunk.emit_wait_ticks(5);
     _ = try chunk.emit_op(.halt);
 
-    // Routine 3: Guybrush transitions to cellar:
+    // Routine 3: Hero transitions to cellar:
     // emit transition_scene cellar, then wait 10 ticks
     const guybrush_pc = chunk.count();
     try chunk.emit_transition_scene(cellar);
@@ -1810,7 +1810,7 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
 
     const f_tavern = try vm.spawn_routine(tavern, tavern_pc);
     const f_cellar = try vm.spawn_routine(cellar, cellar_pc);
-    const f_guybrush = try vm.spawn_routine(guybrush, guybrush_pc);
+    const f_guybrush = try vm.spawn_routine(hero, guybrush_pc);
 
     // Manually pause cellar routine since it belongs to inactive cellar
     vm.fibers.items[f_cellar - 1].state = .{ .paused = {} };
@@ -1819,7 +1819,7 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
     try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_tavern - 1].state);
     try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[f_cellar - 1].state);
 
-    // Step 1 tick: Guybrush executes transition_scene(cellar)
+    // Step 1 tick: Hero executes transition_scene(cellar)
     try vm.step_tick();
 
     // Current scene should now be cellar!
@@ -1831,14 +1831,14 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
     // Cellar fiber is unpaused and ready!
     try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_cellar - 1].state);
 
-    // Guybrush's fiber transitioned to waiting_ticks(10)
+    // Hero's fiber transitioned to waiting_ticks(10)
     switch (vm.fibers.items[f_guybrush - 1].state) {
         .waiting_ticks => {},
         else => try testing.expect(false),
     }
 
-    // World relational facts (Carries(Guybrush, Horn)) remain fully preserved!
-    try testing.expect(world.has_fact(guybrush, carries, horn.to_int()));
+    // World relational facts (Carries(Hero, Horn)) remain fully preserved!
+    try testing.expect(world.has_fact(hero, carries, horn.to_int()));
 
     // SceneTransition cue was emitted
     var found_transition_cue = false;

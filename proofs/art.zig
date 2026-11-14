@@ -34,9 +34,8 @@ const Palette = struct {
     const cat_color = Color{ .r = 234, .g = 88, .b = 12 }; // Orange
     const guard_color = Color{ .r = 37, .g = 99, .b = 235 }; // Steel Blue
     const bard_color = Color{ .r = 147, .g = 51, .b = 234 }; // Purple
-    // Booty Island Spitting Contest Colors (P10-03, D-012)
-    const guybrush_coat = Color{ .r = 30, .g = 64, .b = 175 }; // Pirate Blue
-    const guybrush_hair = Color{ .r = 250, .g = 204, .b = 21 }; // Blonde
+    // Pip-Spitting Green Colors (P10-03, D-012, P35-03)
+    const judge_feather = Color{ .r = 250, .g = 204, .b = 21 }; // Gold
     // Brackwater Barbs player (P35-02)
     const tamsin_coat = Color{ .r = 15, .g = 118, .b = 110 }; // Sea green
     const tamsin_hair = Color{ .r = 41, .g = 37, .b = 36 }; // Dark brown
@@ -219,7 +218,7 @@ fn detect(frame: *const RenderFrame) Scene {
         } else if (std.mem.indexOf(u8, cur_scene, "Drowned Lantern") != null) {
             sc.is_lantern_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Spit") != null or
-            std.mem.indexOf(u8, cur_scene, "Booty") != null)
+            std.mem.indexOf(u8, cur_scene, "Pip") != null)
         {
             sc.is_spitting_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Cellar") != null) {
@@ -383,8 +382,8 @@ fn detect(frame: *const RenderFrame) Scene {
                 } else if (std.mem.eql(u8, ename, "Barkeep") or std.mem.eql(u8, ename, "Citizen")) {
                     sc.is_lantern_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Organiser") or
-                           std.mem.eql(u8, ename, "Onlookers"))
+                } else if (std.mem.eql(u8, ename, "JudgeMarrow") or
+                           std.mem.eql(u8, ename, "Fairgoers"))
                 {
                     sc.is_spitting_scene = true;
                     break;
@@ -415,7 +414,9 @@ fn detect(frame: *const RenderFrame) Scene {
                 {
                     sc.is_templar_crypt_scene = true;
                     break;
-                } else if (std.mem.indexOf(u8, hs.get_name(), "Flag") != null) {
+                } else if (std.mem.indexOf(u8, hs.get_name(), "Peg") != null or
+                           std.mem.indexOf(u8, hs.get_name(), "Flag") != null)
+                {
                     sc.is_spitting_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, hs.get_name(), "Fence") != null or
@@ -486,7 +487,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_line(340, field_y + 70, 340, field_y + field_h - 30, Color.hud_subtext);
         w.draw_text("3RD PLACE", 315, field_y + field_h - 26, 1, Color.hud_subtext);
 
-        // 2nd Place Line at x=508 (world_x = 22, where Flags stand)
+        // 2nd Place Line at x=508 (world_x = 22, where the Pegs stand)
         w.draw_line(508, field_y + 70, 508, field_y + field_h - 30, Color{ .r = 245, .g = 158, .b = 11 });
         w.draw_text("2ND PLACE", 483, field_y + field_h - 26, 1, Color{ .r = 245, .g = 158, .b = 11 });
 
@@ -1841,19 +1842,25 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
         w.draw_rect_outline(pt.x - 18, pt.y - 22, 36, 44, Color{ .r = 120, .g = 53, .b = 15 });
         w.draw_line(pt.x - 18, pt.y - 10, pt.x + 18, pt.y - 10, Color{ .r = 140, .g = 140, .b = 150 });
         w.draw_line(pt.x - 18, pt.y + 10, pt.x + 18, pt.y + 10, Color{ .r = 140, .g = 140, .b = 150 });
-    } else if (std.mem.indexOf(u8, name, "Flag") != null) {
-        // Spitting Competition Distance Flags (P10-03, D-012)
-        const flag_x = if (status_of(frame).flags_tampered) pt.x - 70 else pt.x;
+    } else if (std.mem.indexOf(u8, name, "Peg") != null or std.mem.indexOf(u8, name, "Flag") != null) {
+        // Pip-Spitting Green distance pegs (P10-03, D-012, P35-03). Any prop named "...Flag..."
+        // still draws this marker too, as it did before the rename: the three-era proof's flag
+        // prop relies on it until P35-06 gives that proof its own art.
+        const flag_x = if (status_of(frame).pegs_tampered) pt.x - 70 else pt.x;
         w.fill_rect(flag_x - 2, pt.y - 32, 4, 40, Color{ .r = 217, .g = 119, .b = 6 });
-        const fcol = if (status_of(frame).flags_tampered) Palette.flag_tampered else Palette.flag_color;
+        const fcol = if (status_of(frame).pegs_tampered) Palette.flag_tampered else Palette.flag_color;
         w.fill_rect(flag_x + 2, pt.y - 32, 28, 18, fcol);
         w.draw_line(flag_x + 2, pt.y - 14, flag_x + 30, pt.y - 32, Color.white);
 
-        if (status_of(frame).flags_tampered) {
+        if (status_of(frame).pegs_tampered) {
             w.draw_rect_outline(pt.x - 1, pt.y - 30, 2, 38, Color.hud_subtext);
             w.draw_text("[MOVED!]", flag_x - 20, pt.y + 14, 2, Palette.flag_tampered);
         } else {
-            w.draw_text("Flags", flag_x - 14, pt.y + 14, 2, Color.hud_text);
+            if (std.mem.indexOf(u8, name, "Peg") != null) {
+                w.draw_text("Pegs", flag_x - 12, pt.y + 14, 2, Color.hud_text);
+            } else {
+                w.draw_text("Flags", flag_x - 14, pt.y + 14, 2, Color.hud_text);
+            }
         }
     } else if (std.mem.indexOf(u8, name, "Fence") != null or std.mem.indexOf(u8, name, "Hole") != null) {
         // Garden Fence Hole (P14-02, D-016)
@@ -2056,23 +2063,23 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
             .actor_name,
         ));
-    } else if (std.mem.eql(u8, name, "Guybrush")) {
-        // Guybrush (Player): Blonde hair, pirate blue coat
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.guybrush_coat);
+    } else if (std.mem.eql(u8, name, "Tamsin") and detect(frame).is_spitting_scene) {
+        // Tamsin at the fair (P35-03): her Brackwater Barbs colours, with the spit status
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.tamsin_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
-        // Blonde hair
-        w.fill_circle(pt.x, pt.y - 8, 8, Palette.guybrush_hair);
+        // Dark hair
+        w.fill_circle(pt.x, pt.y - 8, 8, Palette.tamsin_hair);
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Guybrush",
+            "Tamsin",
             pt.x,
             pt.y,
             .above,
             ACTOR_SCREEN_RADIUS + 2,
             2,
-            to_layout(Palette.guybrush_hair),
+            to_layout(Palette.judge_feather),
             .actor_name,
             .actor_name,
         ));
@@ -2092,18 +2099,18 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
             spit_prio,
         ));
-    } else if (std.mem.eql(u8, name, "Organiser")) {
-        // Organiser: Velvet red coat, fancy hat
+    } else if (std.mem.eql(u8, name, "JudgeMarrow")) {
+        // Judge Marrow: Velvet red coat, fancy hat
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.organiser_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
         // Cocked hat / feather
         w.fill_rect(pt.x - 8, pt.y - ACTOR_SCREEN_RADIUS - 4, 16, 5, Color.black);
-        w.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 8, 4, 6, Palette.guybrush_hair);
+        w.fill_rect(pt.x - 2, pt.y - ACTOR_SCREEN_RADIUS - 8, 4, 6, Palette.judge_feather);
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Organiser",
+            "Judge Marrow",
             pt.x,
             pt.y,
             .above,
@@ -2115,9 +2122,9 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Distracted / watching status
-        const org_str = if (status_of(frame).organiser_distracted) "[DISTRACTED!]" else "[Watching]";
-        const org_col = if (status_of(frame).organiser_distracted) Color.cue_alert else Color.status_running;
-        const org_prio: LabelPriority = if (status_of(frame).organiser_distracted) .actor_alert else .actor_status;
+        const org_str = if (status_of(frame).judge_distracted) "[DISTRACTED!]" else "[Watching]";
+        const org_col = if (status_of(frame).judge_distracted) Color.cue_alert else Color.status_running;
+        const org_prio: LabelPriority = if (status_of(frame).judge_distracted) .actor_alert else .actor_status;
         layout_resolver.submit(TextLabel.init(
             org_str,
             pt.x,
@@ -2129,8 +2136,8 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
             org_prio,
         ));
-    } else if (std.mem.eql(u8, name, "Onlookers")) {
-        // Onlookers: Crowd of spectator circles
+    } else if (std.mem.eql(u8, name, "Fairgoers")) {
+        // Fairgoers: Crowd of spectator circles
         w.fill_circle(pt.x - 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Palette.onlookers_color);
         w.fill_circle(pt.x + 8, pt.y, ACTOR_SCREEN_RADIUS - 2, Palette.onlookers_color);
         w.fill_circle(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 2, Color{ .r = 140, .g = 100, .b = 160 });
@@ -2138,7 +2145,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Onlookers",
+            "Fairgoers",
             pt.x,
             pt.y,
             .above,
@@ -2148,7 +2155,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
             .actor_name,
         ));
-        if (status_of(frame).organiser_distracted) {
+        if (status_of(frame).judge_distracted) {
             layout_resolver.submit(TextLabel.init(
                 "[Looking Offstage]",
                 pt.x,
@@ -2966,7 +2973,7 @@ const HINT_GOLD = Color{ .r = 250, .g = 204, .b = 21 };
 fn footer(frame: *const RenderFrame) ?r.FooterHint {
     const sc = detect(frame);
     if (sc.is_spitting_scene) {
-        return .{ .text = "[S]: Spit! | [H]: Horn | [G]: GreenDrink | [-]/[+]: Speed | [Space]: Pause | [< / >]: Scrub" };
+        return .{ .text = "[S]: Spit! | [C]: Conch | [D]: Treacle Cider | [P]: Pegs | [-]/[+]: Speed | [Space]: Pause | [< / >]: Scrub" };
     } else if (sc.is_dott_past_scene or sc.is_dott_present_scene or sc.is_dott_future_scene) {
         return .{ .text = "[1]: Hoagie | [2]: Bernard | [3]: Laverne | [-]/[+]: Speed | [Space]: Pause | Flush Item to Portrait", .color = HINT_GOLD };
     } else if (sc.is_goat_courtyard_scene or sc.is_templar_crypt_scene) {
@@ -3094,7 +3101,7 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
     if (std.mem.indexOf(u8, scene_name, "Bell Tower") != null) return track(.bell_tower);
 
     if (std.mem.indexOf(u8, scene_name, "Spitting") != null or
-        std.mem.indexOf(u8, scene_name, "Booty") != null or
+        std.mem.indexOf(u8, scene_name, "Pip") != null or
         std.mem.indexOf(u8, scene_name, "Spit") != null)
     {
         return track(.spitting_contest);
@@ -3182,9 +3189,9 @@ pub const Status = struct {
     cheese_holder: bespoke.EntityId = .none,
     charmed_target: bespoke.EntityId = .none,
     spit_is_thick: bool = false,
-    flags_tampered: bool = false,
+    pegs_tampered: bool = false,
     wind_blowing: bool = false,
-    organiser_distracted: bool = false,
+    judge_distracted: bool = false,
     fence_taped: bool = false,
     fence_has_hair: bool = false,
     cat_startled: bool = false,
@@ -3419,17 +3426,17 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
     if (world.lookup_relation("thick")) |rel| {
         st.spit_is_thick = world.has_fact(null, rel, null);
     }
-    st.flags_tampered = false;
+    st.pegs_tampered = false;
     if (world.lookup_relation("tampered")) |rel| {
-        st.flags_tampered = world.has_fact(null, rel, null);
+        st.pegs_tampered = world.has_fact(null, rel, null);
     }
     st.wind_blowing = false;
     if (world.lookup_relation("blowing")) |rel| {
         st.wind_blowing = world.has_fact(null, rel, null);
     }
-    st.organiser_distracted = false;
+    st.judge_distracted = false;
     if (world.lookup_relation("Distracted")) |rel| {
-        st.organiser_distracted = world.has_fact(null, rel, null);
+        st.judge_distracted = world.has_fact(null, rel, null);
     }
 
     // GK3 Cat Moustache scenario status flags (P14-02)
@@ -3684,7 +3691,7 @@ fn thumbnail_backdrop(scene_name: []const u8, x: usize, y: usize) ?u8 {
         }
     }.f;
     const rgb = save.pack_rgb332;
-    if (has(scene_name, "Spit") or has(scene_name, "Booty")) {
+    if (has(scene_name, "Spit") or has(scene_name, "Pip")) {
         if (y < 4) return rgb(25, 45, 95); // Dusk sky
         if (y < 7) return rgb(20, 90, 150); // Ocean
         return if (x < 10) rgb(45, 110, 55) else rgb(190, 170, 110); // Grass & beach
@@ -3714,7 +3721,7 @@ fn thumbnail_actor(name: []const u8) ?u8 {
             return std.mem.eql(u8, a, b);
         }
     }.f;
-    if (is(name, "Guard") or is(name, "Guybrush") or is(name, "Tamsin") or is(name, "Mosely")) return save.pack_rgb332(50, 130, 245); // Blue
+    if (is(name, "Guard") or is(name, "Tamsin") or is(name, "Mosely")) return save.pack_rgb332(50, 130, 245); // Blue
     if (is(name, "Cat") or is(name, "Gabriel")) return save.pack_rgb332(240, 120, 30); // Orange / Tan
     if (is(name, "Bard") or is(name, "Vell")) return save.pack_rgb332(180, 70, 240); // Purple
     return null;

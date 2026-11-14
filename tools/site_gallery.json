@@ -13,9 +13,9 @@
     },
     {
       "id": "spit",
-      "title": "Booty Island Spitting Contest",
+      "title": "The Pip-Spitting Green",
       "tag": "Environmental hooks",
-      "blurb": "Guybrush needs a winning spit. He sounds the ship's horn to distract the crowd, moves the distance flags, drinks something thick and green, and waits for the wind.",
+      "blurb": "Tamsin wants the cherry-pit spitting prize at the Brackwater Harvest Fair. She blows a conch to send the judge looking for the herring fleet, moves the distance pegs, drinks a thick treacle cider, and waits for a sea breeze.",
       "source": "proofs/spitting_contest.zig#SPITTING_CONTEST_SCRIPT",
       "deck": 1,
       "flag": "spit"

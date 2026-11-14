@@ -46,7 +46,7 @@
   const VERBS = ['WALK', 'LOOK', 'TALK', 'TAKE', 'USE'];
   const DECK_NAMES = [
     'Tavern Heist',
-    'Booty Island Spitting Contest',
+    'The Pip-Spitting Green',
     'GK3 Cat Moustache',
     'The Living Village',
     'Lochmarne Goat',

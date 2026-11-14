@@ -75,7 +75,7 @@ fn next_scene(lines: *std.mem.SplitIterator(u8, .scalar)) ?SceneCast {
 /// Proof status a scene's art may react to, by stable name. P32-03 moves this status out of
 /// `RenderFrame`; only `Status.apply` changes with it, never the names.
 const STATUS_VARIANTS = [_][]const u8{
-    "spit_is_thick",          "flags_tampered",         "wind_blowing",         "organiser_distracted",
+    "spit_is_thick",          "pegs_tampered",         "wind_blowing",         "judge_distracted",
     "fence_taped",            "fence_has_hair",         "cat_startled",         "cat_hair_collected",
     "gabriel_disguised",      "bike_rented",            "goat_is_tangled",      "goat_is_charging",
     "goat_is_retreating",     "george_knocked_down",    "plough_moved",         "dott_tree_chopped",

@@ -1662,7 +1662,7 @@ test "P12-01: codegen compiles multi-scene transitions and registers scoped mark
     const testing = std.testing;
     const source =
         \\scene: Tavern
-        \\cast: Guybrush
+        \\cast: Hero
         \\props: HearthProp
         \\marks: Counter, Door
         \\
@@ -1671,7 +1671,7 @@ test "P12-01: codegen compiles multi-scene transitions and registers scoped mark
         \\props: KegProp
         \\marks: KegMark, Hatch
         \\
-        \\routine EnterCellar(Guybrush):
+        \\routine EnterCellar(Hero):
         \\  transition to scene: Wine Cellar
         \\  wait 10 ticks
     ;
@@ -1826,14 +1826,14 @@ test "P32-28: Option C predicate presence for states without synthetic true enti
     const testing = std.testing;
     const vm_mod = @import("../vm.zig");
     const source =
-        \\entity Guybrush, Flags
+        \\entity Hero, Flags
         \\scene: Beach
         \\
         \\Tampered is a state.
         \\
         \\now Flags are Tampered
         \\
-        \\routine Check(Guybrush):
+        \\routine Check(Hero):
         \\  if Flags are Tampered:
         \\    now Flags are not Tampered
     ;
@@ -1860,14 +1860,14 @@ test "P32-28: Option C predicate presence for states without synthetic true enti
 
     const flags = try world.intern_entity("Flags");
     const tampered = try world.intern_relation("Tampered", .set);
-    const guybrush = try world.intern_entity("Guybrush");
+    const hero = try world.intern_entity("Hero");
 
     var vm = vm_mod.VM.init(alloc, &world, &compiled.chunk);
     defer vm.deinit();
 
     // 2. Execute initial declarative statements (`now Flags are Tampered`)
     if (compiled.initial_entry) |init_pc| {
-        _ = try vm.spawn_routine(guybrush, init_pc);
+        _ = try vm.spawn_routine(hero, init_pc);
         _ = try vm.step_tick();
     }
 
@@ -1877,7 +1877,7 @@ test "P32-28: Option C predicate presence for states without synthetic true enti
 
     // 3. Execute routine Check on VM to test `if Flags are Tampered:` and `now Flags are not Tampered`
     const entry_pc = compiled.routine_entries.get("Check").?;
-    _ = try vm.spawn_routine(guybrush, entry_pc);
+    _ = try vm.spawn_routine(hero, entry_pc);
     _ = try vm.step_tick();
 
     // 4. Verify "now Flags are not Tampered" cleared the state
