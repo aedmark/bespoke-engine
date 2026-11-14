@@ -19,6 +19,7 @@ pub const font = @import("display/font.zig");
 pub const text_layout = @import("display/text_layout.zig");
 /// Word-wrapped dialogue panel layout shared by the window and the browser (D-077).
 pub const dialogue_panel = @import("display/dialogue_panel.zig");
+pub const beats = @import("display/beats.zig");
 pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const renderer = @import("display/renderer.zig");
 pub const state_graph = @import("display/state_graph.zig");
@@ -1097,6 +1098,7 @@ test {
     _ = renderer;
     _ = font;
     _ = dialogue_panel;
+    _ = beats;
 }
 
 test "P22-02: DisplayBridge copies the attached distaff phrase into frames" {

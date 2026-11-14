@@ -509,12 +509,36 @@ pub const Bout = struct {
     /// barb the opponent cannot answer does not win three rounds by itself.
     thrown_rel: bespoke.RelationKind,
 
+    /// One message for the host to show on its own (D-080): who said it, if anyone, and what.
+    pub const Line = struct {
+        /// An entity name, or empty for narration such as the round's outcome.
+        speaker: []const u8 = "",
+        text: []const u8,
+    };
+
     pub const Result = struct {
-        /// What to show: the opponent's spoken line, the round's outcome, and the advantage.
-        banner: []const u8,
+        /// What happened, in order: the opponent's spoken line, the round's outcome, the points.
+        lines: [3]Line = undefined,
+        line_count: usize = 0,
         /// Set when the duel ended this round.
         winner: ?bespoke.EntityId = null,
         loser: ?bespoke.EntityId = null,
+
+        pub fn slice(self: *const Result) []const Line {
+            return self.lines[0..self.line_count];
+        }
+
+        /// True when any line contains `needle`.
+        pub fn says(self: *const Result, needle: []const u8) bool {
+            for (self.slice()) |line| if (std.mem.indexOf(u8, line.text, needle) != null) return true;
+            return false;
+        }
+
+        fn add(self: *Result, speaker: []const u8, text: []const u8) void {
+            if (text.len == 0 or self.line_count == self.lines.len) return;
+            self.lines[self.line_count] = .{ .speaker = speaker, .text = text };
+            self.line_count += 1;
+        }
     };
 
     pub fn init(world: *bespoke.World, duel: *duel_mod.Duel, player: bespoke.EntityId) !Bout {
@@ -611,9 +635,10 @@ pub const Bout = struct {
         return lines[(self.duel.fumbles(foe) + lines.len - 1) % lines.len];
     }
 
-    /// Resolves the player's choice and sets up the next round. `buf` holds the banner text.
+    /// Resolves the player's choice and sets up the next round. `buf` holds the points line.
     pub fn choose(self: *Bout, vm: *bespoke.VM, action: u32, buf: []u8) !Result {
-        const foe = self.opponent() orelse return .{ .banner = "" };
+        const foe = self.opponent() orelse return .{};
+        const foe_name = self.world.get_entity_name(foe) orelse "";
         var name_buf: [48]u8 = undefined;
         const name = bespoke.display.dialogue_panel.display_name(self.world.get_entity_name(foe) orelse "The opponent", &name_buf);
         const picked = if (action == 0) bespoke.EntityId.none else bespoke.EntityId.from_int(action);
@@ -631,16 +656,19 @@ pub const Bout = struct {
             round = try self.duel.resolve_round(self.player, foe, barb, reply);
             said = if (reply != .none) (self.duel.reply_text(barb) orelse "") else self.spoken_fallback(foe);
         } else {
-            const raw = self.world.get_property(self.player, self.challenge_rel) orelse return .{ .banner = "" };
+            const raw = self.world.get_property(self.player, self.challenge_rel) orelse return .{};
             barb = bespoke.EntityId.from_int(raw);
             round = try self.duel.resolve_round(foe, self.player, barb, picked);
         }
         const player_won_round = if (player_led) !round.parried else round.parried;
 
+        var result = Result{};
+        result.add(foe_name, said);
         if (round.winner) |winner| {
             self.clear();
-            const text = if (said.len > 0) std.fmt.bufPrint(buf, "{s}: \"{s}\"", .{ name, said }) catch "" else "";
-            return .{ .banner = text, .winner = winner, .loser = if (winner == self.player) foe else self.player };
+            result.winner = winner;
+            result.loser = if (winner == self.player) foe else self.player;
+            return result;
         }
 
         // The round's winner attacks next, except that a master always attacks and a player
@@ -654,14 +682,9 @@ pub const Bout = struct {
             try self.world.remember(self.player, self.challenge_rel, self.duel.next_challenge(barb, foe).to_int(), 0);
         }
 
-        const verdict: []const u8 = if (player_won_round) "Your point." else "Their point.";
-        const adv_p = self.duel.advantage(self.player);
-        const adv_f = self.duel.advantage(foe);
-        const text = if (said.len > 0)
-            std.fmt.bufPrint(buf, "{s}: \"{s}\" {s} Advantage: you {d}, {s} {d}.", .{ name, said, verdict, adv_p, name, adv_f }) catch verdict
-        else
-            std.fmt.bufPrint(buf, "{s} Advantage: you {d}, {s} {d}.", .{ verdict, adv_p, name, adv_f }) catch verdict;
-        return .{ .banner = text };
+        result.add("", if (player_won_round) "Your point." else "Their point.");
+        result.add("", std.fmt.bufPrint(buf, "Points: you {d}, {s} {d}.", .{ self.duel.advantage(self.player), name, self.duel.advantage(foe) }) catch "");
+        return result;
     }
 };
 
@@ -684,16 +707,17 @@ fn play_choice(
     const selection = (try session.choose_dialogue(index)) orelse return;
     var buf: [320]u8 = undefined;
     const result = try bout.choose(vm, selection.action, &buf);
+    // Each line waits for a click (D-080); the next round's choices show once all are read.
+    for (result.slice()) |line| window.queue_message(line.speaker, line.text);
     if (result.winner) |winner| {
         _ = try vm.fire_cue(compiled, "WinsDuel", winner, result.loser, null);
         _ = try session.advance();
-        var speech: [256]u8 = undefined;
-        const line = bespoke.host.speech_this_tick(vm.world, vm, &speech) orelse result.banner;
-        window.set_cue_banner(line, 300);
+        var spoken: [4]bespoke.host.SpeechLine = undefined;
+        const n = bespoke.host.speech_lines(vm.world, vm, &spoken);
+        for (spoken[0..n]) |line| window.queue_message(line.speaker, line.text);
         try session.record_now();
         return;
     }
-    window.set_cue_banner(result.banner, 300);
     try bout.open(vm);
     try session.record_now();
 }
@@ -996,7 +1020,7 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
         try testing.expectEqualStrings(duel.config.fallbacks[round], open.text(0));
         result = try bout.choose(&vm, 0, &buf);
         try testing.expect(!world.has_fact(tamsin, duel.mastered_rel, null));
-        try testing.expect(std.mem.indexOf(u8, result.banner, duel.config.pairs[round].reply) == null);
+        try testing.expect(!result.says(duel.config.pairs[round].reply));
     }
     try testing.expectEqual(pike, result.winner.?);
     try testing.expect(bout.opponent() == null);
@@ -1015,7 +1039,7 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
     try testing.expectEqual(@as(usize, 3), vm.dialogue_view().?.count);
     result = try bout.choose(&vm, duel.challenge(0, 0).to_int(), &buf);
     try testing.expect(world.has_fact(tamsin, duel.mastered_rel, duel.reply(0).to_int()));
-    try testing.expect(std.mem.indexOf(u8, result.banner, duel.config.pairs[0].reply) != null);
+    try testing.expect(result.says(duel.config.pairs[0].reply));
     try testing.expect(!bout.player_attacks());
     try bout.open(&vm);
     try testing.expectEqualStrings(duel.config.pairs[1].challenge, vm.dialogue_view().?.prompt);
@@ -1052,6 +1076,12 @@ test "D-079: each barb is thrown once per duel, points add up, and distinct barb
     try testing.expect(bout.player_attacks());
     var result = try bout.choose(&vm, duel.challenge(1, 0).to_int(), &buf);
     try testing.expect(result.winner == null);
+    // Three messages, each shown on its own (D-080): Gannet's fallback, the outcome, the points.
+    try testing.expectEqual(@as(usize, 3), result.line_count);
+    try testing.expectEqualStrings("OldGannet", result.lines[0].speaker);
+    try testing.expectEqualStrings(duel.config.fallbacks[0], result.lines[0].text);
+    try testing.expectEqualStrings("Your point.", result.lines[1].text);
+    try testing.expectEqualStrings("Points: you 1, Old Gannet 0.", result.lines[2].text);
     try testing.expectEqual(@as(usize, 0), bout.usable_barbs(&vm, &barbs));
     try testing.expect(!bout.player_attacks());
 

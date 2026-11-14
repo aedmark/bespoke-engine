@@ -28,6 +28,7 @@ pub const InspectorKey = inspector_mod.Key;
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
 const font = @import("display/font.zig");
 const dialogue_panel = @import("display/dialogue_panel.zig");
+const beats_mod = @import("display/beats.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -263,6 +264,8 @@ pub const BrowserActionTag = enum(u8) {
     note_played,
     /// A key or click moved the inspector's selection, focus, or filter.
     inspector_navigated,
+    /// A click, Enter, or Space dismissed a click-through message (D-080).
+    message_dismissed,
 };
 
 // =============================================================================
@@ -503,6 +506,9 @@ pub const WasmRuntime = struct {
     banner_len: usize = 0,
     /// The open dialogue's speaker as a display name; the panel's rows slice into it.
     panel_name_buf: [48]u8 = undefined,
+    /// Click-through messages (D-080). While any waits, it covers the dialogue panel and the
+    /// number keys cannot answer the choices beneath it.
+    messages: beats_mod.Beats = .{},
     max_history_tick: u64 = 0,
 
     // Fixed ring buffer of binary World snapshots for instant browser timeline scrubbing
@@ -550,6 +556,7 @@ pub const WasmRuntime = struct {
 
     /// Resets the spine and loads deck `index` (the first deck if out of range).
     pub fn load_deck(self: *WasmRuntime, index: u8) !void {
+        self.messages.clear();
         self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
@@ -787,7 +794,23 @@ pub const WasmRuntime = struct {
     }
 
     /// The open dialogue's panel: above the banner, spanning the stage, growing upward (D-077).
-    const BrowserPanel = struct { x: i32, y: i32, w: i32, h: i32, layout: dialogue_panel.Layout, open: dialogue_mod.View };
+    const BrowserPanel = struct { x: i32, y: i32, w: i32, h: i32, layout: dialogue_panel.Layout };
+
+    /// Queues a click-through message (D-080). `speaker` is an entity name or empty.
+    pub fn queue_message(self: *WasmRuntime, speaker: []const u8, text: []const u8) void {
+        self.messages.push(speaker, text);
+    }
+
+    /// The waiting message's panel, in the dialogue panel's place (D-080).
+    fn message_panel_now(self: *const WasmRuntime) ?BrowserPanel {
+        const beat = self.messages.front() orelse return null;
+        const metrics = dialogue_panel.Metrics.browser;
+        const l = dialogue_panel.layout_message(metrics, beat.speaker(), beat.text(), beats_mod.HINT);
+        const bottom = self.banner_top() - 2;
+        const y = @max(44, bottom - l.height);
+        return .{ .x = 12, .y = y, .w = metrics.width, .h = bottom - y, .layout = l };
+    }
+
     fn dialogue_panel_now(self: *WasmRuntime) ?BrowserPanel {
         const open = dialogue_mod.view(self.active_world()) orelse return null;
         const raw_name = self.active_world().get_entity_name(open.display_speaker) orelse "";
@@ -796,7 +819,7 @@ pub const WasmRuntime = struct {
         const l = dialogue_panel.layout(metrics, shown, open.prompt, open.texts[0..open.count]);
         const bottom = self.banner_top() - 2;
         const y = @max(44, bottom - l.height);
-        return .{ .x = 12, .y = y, .w = metrics.width, .h = bottom - y, .layout = l, .open = open };
+        return .{ .x = 12, .y = y, .w = metrics.width, .h = bottom - y, .layout = l };
     }
 
     pub fn record_snapshot(self: *WasmRuntime) void {
@@ -977,6 +1000,9 @@ pub const WasmRuntime = struct {
                     }
                 }
 
+                // A waiting message takes any other click as "continue" (D-080).
+                if (self.messages.advance()) return .message_dismissed;
+
                 // A click on an offered choice answers it (D-077).
                 if (self.dialogue_panel_now()) |panel| {
                     if (ev.x >= panel.x and ev.x < panel.x + panel.w and ev.y >= panel.y and ev.y < panel.y + panel.h) {
@@ -1089,6 +1115,16 @@ pub const WasmRuntime = struct {
                     if (self.inspector.key(ev.key_code)) return .inspector_navigated;
                     if (ev.key_code != 'r' and ev.key_code != 'R') return .none;
                 }
+                // A waiting message takes Enter, Space, or the solve key as "continue" (D-080);
+                // the number keys cannot answer the choices it hides.
+                if (self.messages.pending()) switch (ev.key_code) {
+                    13, ' ', 's', 'S' => {
+                        _ = self.messages.advance();
+                        return .message_dismissed;
+                    },
+                    '1'...'9' => return .none,
+                    else => {},
+                };
                 switch (ev.key_code) {
                     ' ' => {
                         self.is_paused = !self.is_paused;
@@ -1148,6 +1184,7 @@ pub const WasmRuntime = struct {
             const y = panel.y + row.y;
             switch (row.kind) {
                 .speaker => self.canvas.draw_text(row.text, x, y, 1, accent),
+                .hint => self.canvas.draw_text(row.text, x, y, 1, option),
                 .prompt => self.canvas.draw_text(row.text, x, y, 1, ink),
                 .choice => {
                     if (row.numbered) {
@@ -1265,7 +1302,9 @@ pub const WasmRuntime = struct {
         // 7. Dialogue panel, banner, and bottom 5-verb bar. The panel draws over the stage
         // above the banner; the inspector covers the stage, so the panel waits until it closes.
         if (!self.inspector.open) {
-            if (self.dialogue_panel_now()) |panel| self.draw_dialogue_panel(&panel);
+            if (self.message_panel_now()) |panel| {
+                self.draw_dialogue_panel(&panel);
+            } else if (self.dialogue_panel_now()) |panel| self.draw_dialogue_panel(&panel);
         }
         var banner_text: [2][]const u8 = undefined;
         const banner_count = self.banner_rows(&banner_text);
@@ -1415,6 +1454,11 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         /// 1 while a script deck's dialogue is open, so a page can send number keys to it
         /// instead of switching decks (D-069).
+        fn wasm_message_pending() callconv(.C) u8 {
+            if (runtime()) |rt| return @intFromBool(rt.messages.pending());
+            return 0;
+        }
+
         fn wasm_dialogue_open() callconv(.C) u8 {
             if (runtime()) |rt| return @intFromBool(dialogue_mod.view(&rt.world) != null);
             return 0;
@@ -1454,6 +1498,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     };
     @export(Exports.wasm_init, .{ .name = "wasm_init" });
     @export(Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
+    @export(Exports.wasm_message_pending, .{ .name = "wasm_message_pending" });
     @export(Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
     @export(Exports.wasm_audio_render, .{ .name = "wasm_audio_render" });
     @export(Exports.wasm_audio_sample_rate, .{ .name = "wasm_audio_sample_rate" });
@@ -1658,6 +1703,17 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     try testing.expectEqualStrings("Hero", panel.layout.slice()[0].text);
     try testing.expect(panel.y + panel.h <= rt.banner_top());
     try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "[1]") == null);
+
+    // A waiting message (D-080) covers the panel: number keys wait, a click on a choice's place
+    // dismisses the message instead of answering, and Enter dismisses the next.
+    rt.queue_message("Pilot", "Choose carefully.");
+    rt.queue_message("", "The tide is turning.");
+    try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' }));
+    const choice_y = panel.y + panel.layout.choice_top[0] + 2;
+    try testing.expectEqual(BrowserActionTag.message_dismissed, try rt.dispatch_event(.{ .kind = .pointer_down, .x = panel.x + 40, .y = choice_y }));
+    try testing.expectEqual(BrowserActionTag.message_dismissed, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
+    try testing.expect(!rt.messages.pending());
+    try testing.expect(rt.dialogue_panel_now() != null);
     // An open dialogue takes the number keys from deck switching.
     try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' }));
     try testing.expectEqualStrings("Pilot: \"Over the water.\"", rt.get_banner());

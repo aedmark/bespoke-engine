@@ -642,11 +642,15 @@ fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
     const bout = sword(rt) orelse return;
     var buf: [320]u8 = undefined;
     const result = try bout.choose(&rt.vm, action, &buf);
-    rt.set_banner(result.banner);
+    // Each line waits for a click (D-080); the next round's choices show once all are read.
+    for (result.slice()) |line| rt.queue_message(line.speaker, line.text);
     if (result.winner) |winner| {
         const program = if (rt.program) |*p| p else return;
         _ = try rt.vm.fire_cue(program, "WinsDuel", winner, result.loser, null);
         try rt.step_tick();
+        var spoken: [4]bespoke.host.SpeechLine = undefined;
+        const n = bespoke.host.speech_lines(rt.active_world(), &rt.vm, &spoken);
+        for (spoken[0..n]) |line| rt.queue_message(line.speaker, line.text);
         return;
     }
     try bout.open(&rt.vm);

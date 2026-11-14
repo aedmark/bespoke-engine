@@ -10,6 +10,7 @@ const state_graph = @import("state_graph.zig");
 const font = @import("font.zig");
 const text_layout = @import("text_layout.zig");
 const dialogue_panel = @import("dialogue_panel.zig");
+const beats_mod = @import("beats.zig");
 
 pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const TextLabel = text_layout.TextLabel;
@@ -592,6 +593,20 @@ pub fn get_dialogue_panel(balloon: *const SpeechBalloon, screen_w: i32, screen_h
     };
 }
 
+/// Where a click-through message sits (D-080): the dialogue panel's place and width, holding
+/// the speaker, the text, and the continue hint.
+pub fn get_message_panel(beat: *const beats_mod.Beat, screen_w: i32, screen_h: i32, command_bar: bool) DialoguePanel {
+    var metrics = dialogue_panel.Metrics.desktop;
+    metrics.width = screen_w - 40;
+    const l = dialogue_panel.layout_message(metrics, beat.speaker(), beat.text(), beats_mod.HINT);
+    const bottom = screen_h - 110 - (if (command_bar) @as(i32, 28) else 0);
+    return .{
+        .rect = .{ .x = 20, .y = @max(76, bottom - l.height), .w = metrics.width, .h = l.height },
+        .layout = l,
+        .scroll_h = 0,
+    };
+}
+
 /// The choice under the mouse, as an index into all of the balloon's choices.
 pub fn hit_test_dialogue_panel(mouse_x: i32, mouse_y: i32, balloon: *const SpeechBalloon, panel: *const DialoguePanel) ?u8 {
     if (balloon.choice_count == 0) return null;
@@ -788,6 +803,9 @@ pub const DisplayWindow = struct {
     hovered_party_member: ?usize = null,
     target_wp: ?WaypointId = null,
     active_balloon: ?SpeechBalloon = null,
+    /// Click-through messages (D-080). While any waits, it covers the dialogue panel and the
+    /// panel's choices can be neither seen nor answered.
+    messages: beats_mod.Beats = .{},
     balloon_revision: u32 = 0,
     balloon_from_frame: bool = false,
     hovered_choice: ?u8 = null,
@@ -1303,6 +1321,17 @@ pub const DisplayWindow = struct {
         return get_dialogue_panel(balloon, self.width, self.height, self.command_bar_enabled and !self.show_console);
     }
 
+    /// Queues a click-through message (D-080). `speaker` is an entity name or empty.
+    pub fn queue_message(self: *DisplayWindow, speaker: []const u8, text: []const u8) void {
+        self.messages.push(speaker, text);
+        if (self.messages.pending()) self.hovered_choice = null;
+    }
+
+    /// True while a click-through message waits to be dismissed.
+    pub fn has_messages(self: *const DisplayWindow) bool {
+        return self.messages.pending();
+    }
+
     /// Dismisses active speech balloon.
     pub fn dismiss_dialogue(self: *DisplayWindow) void {
         self.active_balloon = null;
@@ -1648,7 +1677,9 @@ pub const DisplayWindow = struct {
                         self.hovered_save_slot = null;
                     }
 
-                    if (self.active_balloon) |*b| {
+                    if (self.messages.pending()) {
+                        self.hovered_choice = null;
+                    } else if (self.active_balloon) |*b| {
                         const panel = self.dialogue_panel_for(b);
                         self.hovered_choice = hit_test_dialogue_panel(event.motion.x, event.motion.y, b, &panel);
                     } else {
@@ -1731,6 +1762,13 @@ pub const DisplayWindow = struct {
                             self.play_sfx(.click);
                             return .toggle_save_drawer;
                         }
+                        return .none;
+                    }
+
+                    // A waiting message takes any left click as "continue" (D-080).
+                    if (self.messages.pending() and event.button.button == c.SDL_BUTTON_LEFT) {
+                        _ = self.messages.advance();
+                        self.play_sfx(.click);
                         return .none;
                     }
 
@@ -2136,6 +2174,17 @@ pub const DisplayWindow = struct {
                             return .quit;
                         }
                         return .none;
+                    }
+
+                    // A waiting message takes Enter or Space as "continue" (D-080), ahead of the
+                    // command bar and the pause key; number keys cannot answer hidden choices.
+                    if (self.messages.pending()) {
+                        if (sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER or sym == c.SDLK_SPACE) {
+                            _ = self.messages.advance();
+                            self.play_sfx(.click);
+                            return .none;
+                        }
+                        if ((sym >= c.SDLK_1 and sym <= c.SDLK_9) or (sym >= c.SDLK_KP_1 and sym <= c.SDLK_KP_9)) return .none;
                     }
 
                     // Typed-command bar (P26-03): focused, it takes every key; unfocused, Enter
@@ -3007,8 +3056,23 @@ pub const DisplayWindow = struct {
             self.cue_banner_ticks -= 1;
         }
 
-        // 9. Dialogue panel: speaker, wrapped line, and wrapped numbered choices (D-077)
-        if (self.active_balloon) |*b| {
+        // 9. Dialogue panel: a waiting click-through message (D-080) covers the speaker, wrapped
+        // line, and wrapped numbered choices (D-077) until the player dismisses it.
+        if (self.messages.front()) |beat| {
+            const panel = get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console);
+            const r = panel.rect;
+            self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
+            self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
+            self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, Color{ .r = 180, .g = 83, .b = 9 });
+            for (panel.layout.slice()) |row| {
+                const col = switch (row.kind) {
+                    .speaker => Color{ .r = 180, .g = 83, .b = 9 },
+                    .hint => Color{ .r = 120, .g = 53, .b = 15 },
+                    else => Color{ .r = 28, .g = 25, .b = 23 },
+                };
+                self.draw_text(row.text, r.x + row.x, r.y + row.y, 2, col);
+            }
+        } else if (self.active_balloon) |*b| {
             const panel = self.dialogue_panel_for(b);
             const r = panel.rect;
             const ink = Color{ .r = 28, .g = 25, .b = 23 };
@@ -3038,6 +3102,7 @@ pub const DisplayWindow = struct {
                 const y = r.y + row.y;
                 switch (row.kind) {
                     .speaker => self.draw_text(row.text, x, y, 2, accent),
+                    .hint => self.draw_text(row.text, x, y, 2, Color{ .r = 120, .g = 53, .b = 15 }),
                     .prompt => self.draw_text(row.text, x, y, 2, ink),
                     .choice => {
                         const actual_idx = b.scroll_offset + row.choice;
@@ -4107,4 +4172,54 @@ test "P27-03: State tab keys select, recentre, go back, reset, filter, and click
     try testing.expectEqual(@as(?display_mod.EntityId, null), window.inspector_focus);
     try testing.expectEqual(@as(usize, 0), window.inspector_history_len);
     try testing.expectEqual(UserAction.toggle_save_drawer, Press.key(&window, &frame, c.SDLK_ESCAPE));
+}
+
+test "D-080: click-through messages hide the choices until each is dismissed" {
+    const testing = std.testing;
+    if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
+    defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
+    var window = try DisplayWindow.init_offscreen(1280, 720);
+    defer window.deinit();
+    const frame = std.mem.zeroes(RenderFrame);
+    const Input = struct {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_KEYDOWN;
+            ev.key.keysym.sym = sym;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+        fn click(w: *DisplayWindow, f: *const RenderFrame, x: i32, y: i32) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_MOUSEBUTTONDOWN;
+            ev.button.button = c.SDL_BUTTON_LEFT;
+            ev.button.x = x;
+            ev.button.y = y;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+    };
+
+    const choices = [_][]const u8{ "First answer", "Second answer" };
+    window.show_dialogue(.none, .{ .x = 0, .y = 0 }, "HarbourWarden", "A question?", &choices);
+    window.queue_message("HarbourWarden", "A line said aloud.");
+    window.queue_message("", "Their point.");
+    try testing.expect(window.has_messages());
+    try testing.expectEqualStrings("Harbour Warden", window.messages.front().?.speaker());
+
+    // Number keys cannot answer the hidden choices; Enter dismisses one message.
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_1));
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_RETURN));
+    try testing.expectEqualStrings("Their point.", window.messages.front().?.text());
+
+    // A click on the first choice's place dismisses the last message instead of answering.
+    const panel = window.dialogue_panel_for(&window.active_balloon.?);
+    const choice_y = panel.rect.y + panel.layout.choice_top[0] + 4;
+    try testing.expectEqual(UserAction.none, Input.click(&window, &frame, panel.rect.x + 80, choice_y));
+    try testing.expect(!window.has_messages());
+
+    // With every message read, the choices answer again.
+    try testing.expectEqual(UserAction{ .dialogue_choice = 0 }, Input.click(&window, &frame, panel.rect.x + 80, choice_y));
 }

@@ -411,6 +411,19 @@
       }
       if (event.key !== 'r' && event.key !== 'R') return;
     }
+    if (exp && exp.wasm_message_pending && exp.wasm_message_pending()) {
+      // A waiting message (D-080): Enter, Space, or S continues; number keys wait behind it.
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 's' || event.key === 'S') {
+        event.preventDefault();
+        exp.wasm_on_key_down(13);
+        refresh();
+        return;
+      }
+      if (event.key >= '1' && event.key <= '9') {
+        event.preventDefault();
+        return;
+      }
+    }
     if (event.key >= '1' && event.key <= '9' && exp && exp.wasm_dialogue_open && exp.wasm_dialogue_open()) {
       // An open dialogue takes the number keys (D-069); otherwise they switch decks.
       event.preventDefault();

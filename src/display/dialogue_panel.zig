@@ -32,7 +32,13 @@ pub const Metrics = struct {
     }
 };
 
-pub const RowKind = enum { speaker, prompt, choice };
+pub const RowKind = enum {
+    speaker,
+    prompt,
+    choice,
+    /// The continue hint under a click-through message (D-080).
+    hint,
+};
 
 pub const Row = struct {
     kind: RowKind,
@@ -170,6 +176,30 @@ pub fn layout(m: Metrics, speaker: []const u8, prompt: []const u8, choices: []co
     out.choice_count = count;
     out.height = y + m.pad - (if (count > 0) m.gap else 0);
     return out;
+}
+
+/// Lays out a click-through message (D-080): the speaker, the wrapped text, and `hint` on the
+/// panel's last row, set off by a gap. A message has no choices, so `hit` finds none; the host
+/// treats any click as "continue".
+pub fn layout_message(m: Metrics, speaker: []const u8, text: []const u8, hint: []const u8) Layout {
+    var out = layout(m, speaker, text, &.{});
+    const y = out.height - m.pad + m.gap;
+    out.push(.{ .kind = .hint, .text = hint, .x = m.pad, .y = y });
+    out.height = y + m.line_h + m.pad;
+    return out;
+}
+
+test "D-080: a message lays out its text with the hint on the last row" {
+    const testing = std.testing;
+    const m = Metrics{ .width = 300, .scale = 1, .pad = 6, .line_h = 10, .gap = 3 };
+    const l = layout_message(m, "Harbour Warden", "The tide waits for nobody, least of all you, and least of all today.", "Click to continue");
+    try testing.expectEqual(@as(usize, 0), l.choice_count);
+    const rows = l.slice();
+    try testing.expectEqual(RowKind.speaker, rows[0].kind);
+    try testing.expectEqual(RowKind.hint, rows[rows.len - 1].kind);
+    try testing.expect(rows[rows.len - 1].y > rows[rows.len - 2].y + m.line_h - 1);
+    try testing.expectEqual(l.height, rows[rows.len - 1].y + m.line_h + m.pad);
+    try testing.expectEqual(@as(?u8, null), l.hit(50, rows[1].y, m.width));
 }
 
 test "D-077: wrap breaks at spaces, splits only overlong words, and trims" {

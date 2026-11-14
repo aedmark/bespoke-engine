@@ -1077,6 +1077,20 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Thin the opponents' knowledge (Pike odd comebacks, Gannet even): simulated and not taken; it made both opponents slower to beat, and the split is approved game content.
 **Consequences:** Every duel built on `src/duel.zig` scores this way. No golden changed. Vell, a master, still always attacks (D-078), so beating her means parrying three of her barbs before she lands three.
 
+## D-080 Click-Through Messages Show One Piece at a Time (2026-11-13, status: accepted)
+**Context:** After a duel round the desktop showed one banner: the opponent's line, who took the round, and the points. It was too long for the banner's scale-2 font, so the banner fell back to scale 1, which was hard to read, and it disappeared on a timer whether or not the player had read it. The maintainer asked that each piece be its own window, in succession, clicked through before play continues.
+**Decision:**
+1. `src/display/beats.zig` holds a queue of up to eight messages, each a speaker (stored as a display name, D-077) and a line, copied in. It is pure data, shared by the window and the browser.
+2. `dialogue_panel.layout_message` lays out a message in the dialogue panel's place and width: the speaker, the wrapped line, and a continue hint on the last row.
+3. While a message waits, it covers the dialogue panel. A left click anywhere, Enter, or Space dismisses it (in the browser, also the solve key). The number keys cannot answer the choices it hides, and the hint and choices stay hidden until the queue is empty. Hosts queue with `DisplayWindow.queue_message` or `WasmRuntime.queue_message`.
+4. `host.speech_lines` gives each `say` line of the most recent tick on its own, so a host can queue them one by one instead of joining them as `SpeechLog` does.
+5. Brackwater Barbs queues each round as up to three messages: the opponent's spoken line, "Your point." or "Their point.", and the points; a duel's end queues the opponent's line and the script's victory line. Points are worded "Points", since "score" is the glossary's word for music.
+**Alternatives:**
+- A larger banner that waits for a click: rejected; one box still holds every piece at once.
+- Messages that time out: rejected; the maintainer wants the player to have time to read.
+- Script-level syntax for pauses: not needed yet; hosts queue messages, and other proofs keep their banners.
+**Consequences:** The clock keeps running while a message waits. Timed banners remain for short notices. No golden changed.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

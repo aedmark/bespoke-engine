@@ -275,6 +275,26 @@ pub const SpeechLog = struct {
     }
 };
 
+/// One `say` line from the most recent tick: the speaker's entity name and the line.
+pub const SpeechLine = struct { speaker: []const u8, text: []const u8 };
+
+/// The `say` lines of the most recent tick, one entry per line, for hosts that show each line
+/// on its own (D-080) instead of joined like `SpeechLog`. Slices borrow World names. Returns
+/// how many it wrote, stopping when `out` is full.
+pub fn speech_lines(world: *const World, vm: *const VM, out: []SpeechLine) usize {
+    var n: usize = 0;
+    for (vm.emitted_cues.items) |cue| {
+        if (n == out.len) break;
+        if (cue.cue_id != SAY_CUE_ID or cue.arg_count < 2) continue;
+        out[n] = .{
+            .speaker = world.get_entity_name(EntityId.from_int(cue.args[0])) orelse "Someone",
+            .text = world.get_entity_name(EntityId.from_int(cue.args[1])) orelse "",
+        };
+        n += 1;
+    }
+    return n;
+}
+
 /// What the script said during the most recent tick, formatted like `SpeechLog`. Call it right
 /// after a tick; the next tick clears the cues it reads.
 pub fn speech_this_tick(world: *const World, vm: *const VM, buf: []u8) ?[]const u8 {
@@ -755,6 +775,32 @@ test "P32-16: SpeechLog collects every say line of a tick, speaker first" {
     var tiny: [8]u8 = undefined;
     var small = SpeechLog.init(&tiny);
     small.collect(&world, &vm); // overflow is dropped, never an error
+}
+
+test "D-080: speech_lines gives each say line of a tick on its own" {
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const chunk_mod = @import("bytecode.zig");
+    var chunk = chunk_mod.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    const hero = try world.intern_entity("Hero");
+    const other = try world.intern_entity("Other");
+    const a = try world.intern_entity("First line.");
+    const b = try world.intern_entity("Second line.");
+    try vm.emitted_cues.append(.{ .cue_id = SAY_CUE_ID, .args = .{ hero.to_int(), a.to_int(), 0, 0 }, .arg_count = 2 });
+    try vm.emitted_cues.append(.{ .cue_id = 7, .args = .{ 0, 0, 0, 0 }, .arg_count = 0 });
+    try vm.emitted_cues.append(.{ .cue_id = SAY_CUE_ID, .args = .{ other.to_int(), b.to_int(), 0, 0 }, .arg_count = 2 });
+
+    var lines: [4]SpeechLine = undefined;
+    try testing.expectEqual(@as(usize, 2), speech_lines(&world, &vm, &lines));
+    try testing.expectEqualStrings("Hero", lines[0].speaker);
+    try testing.expectEqualStrings("First line.", lines[0].text);
+    try testing.expectEqualStrings("Other", lines[1].speaker);
+    try testing.expectEqualStrings("Second line.", lines[1].text);
+    try testing.expectEqual(@as(usize, 1), speech_lines(&world, &vm, lines[0..1]));
 }
 
 test "P32-16: act fires a cue, ticks, and returns the scripted reply" {

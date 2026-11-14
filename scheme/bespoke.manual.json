@@ -786,7 +786,8 @@
             "Fibers executing choice blocks evaluate relational guards, record the eligible options as World facts, and suspend until a selection resumes the chosen body.",
             "The renderer displays numbered hotkey labels [1] through [9] and supports mouse clicks on any row of a choice, mouse wheel scrolling, and number keys 1-9; the browser answers clicks and number keys.",
             "The open set lives in World facts, so snapshots and rewinds carry it; RenderFrame.dialogue publishes it to the balloon by revision.",
-            "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions."
+            "Dismissing a balloon or choosing an option emits dialogue_choice or dismiss_dialogue user actions.",
+            "A host can queue click-through messages (queue_message, D-080): each shows alone in the panel's place with a continue hint, a click, Enter, or Space dismisses it, and the choices beneath stay hidden and unanswerable until all are read."
           ],
           "why": "Hardcoding dialogue choices in host language ladders causes script fragmentation and breaks time-travel rewinds. Fact-guarded choice trees declared in DSL prune systemically based on active inventory and knowledge facts.",
           "why_basis": "recorded",
@@ -795,6 +796,8 @@
             {"label": "Architectural Decision D-015", "target": "docs/DECISIONS.md#d-015", "kind": "decision"},
             {"label": "Architectural Decision D-046", "target": "docs/DECISIONS.md#d-046", "kind": "decision"},
             {"label": "Architectural Decision D-077", "target": "docs/DECISIONS.md#d-077", "kind": "decision"},
+            {"label": "Architectural Decision D-080", "target": "docs/DECISIONS.md#d-080", "kind": "decision"},
+            {"label": "Click-Through Messages", "target": "src/display/beats.zig", "kind": "source"},
             {"label": "Dialogue Panel Layout", "target": "src/display/dialogue_panel.zig", "kind": "source"},
             {"label": "Executable Dialogue Lifecycle", "target": "src/dialogue.zig", "kind": "source"},
             {"label": "Dialogue Choice Parser Grammar", "target": "src/compiler/parser.zig", "kind": "source"},
