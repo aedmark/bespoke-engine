@@ -160,6 +160,13 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\    walk BosunPike to TidewalkEast
     \\    wait 30 ticks
     \\
+    \\routine PatrolGannet(OldGannet):
+    \\  loop:
+    \\    wait 20 ticks
+    \\    walk OldGannet to TidewalkMid
+    \\    wait 25 ticks
+    \\    walk OldGannet to TidewalkEast
+    \\
     \\routine BarkeepTending(Barkeep):
     \\  loop:
     \\    walk Barkeep to CounterMark
@@ -713,8 +720,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
-    // The script's top-level lines declare what each opponent knows (D-078).
-    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    // The script's top-level lines declare what each opponent knows (D-078); its routines walk
+    // Pike and Gannet along the Tidewalk and the barkeep behind the counter. Actors placed above
+    // keep their marks.
+    _ = try bespoke.host.start_script(&world, &spatial, &vm, &compiled);
     try vm.transition_to_scene(tidewalk_scene);
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Brackwater Barbs", 1280, 720);
@@ -990,6 +999,39 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
     // A master always attacks, even when the player has barbs to throw.
     try bout.start(&vm, vell, duel.challenge(4, 1));
     try testing.expect(!bout.player_attacks());
+}
+
+test "P35-02: the Tidewalk fencers patrol once the script's routines start" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+
+    const tidewalk = try world.intern_entity("Tidewalk");
+    const east = spatial.graph.find_waypoint_in_room(tidewalk, "TidewalkEast").?;
+    const pike = try world.intern_entity("BosunPike");
+    const gannet = try world.intern_entity("OldGannet");
+    try spatial.register_entity(pike, east, 11);
+    try spatial.register_entity(gannet, east, 11);
+
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    _ = try bespoke.host.start_script(&world, &spatial, &vm, &compiled);
+
+    // The desktop window once skipped `start_script`, so both fencers stood on TidewalkEast.
+    var pike_left = false;
+    var gannet_left = false;
+    for (0..60) |_| {
+        _ = try bespoke.host.tick(&vm, &compiled);
+        if (spatial.agents.get(pike).?.current_wp != east) pike_left = true;
+        if (spatial.agents.get(gannet).?.current_wp != east) gannet_left = true;
+    }
+    try testing.expect(pike_left);
+    try testing.expect(gannet_left);
 }
 
 test "P15-04: headless simulation of Brackwater Barbs passes cleanly" {
