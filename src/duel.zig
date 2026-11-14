@@ -389,11 +389,24 @@ pub const Duel = struct {
         const parried = self.counters(reply_ent, challenge_ent);
         const gainer = if (parried) defender else attacker;
         const loser = if (parried) attacker else defender;
+        return self.score(gainer, loser, .{ .parried = parried });
+    }
 
+    /// `fighter` gives up its turn to attack with a fallback line (D-082): `opponent` scores
+    /// the round, and the line advances `fighter`'s fallback rotation, as a fumbled reply
+    /// does. Nobody hears a challenge, so nobody learns anything. The returned round reports
+    /// `parried` as false: no challenge was answered.
+    pub fn concede(self: *Duel, fighter: EntityId, opponent: EntityId) !Round {
+        try self.world.remember(fighter, self.fumbles_rel, self.fumbles(fighter) + 1, 0);
+        return self.score(opponent, fighter, .{ .parried = false });
+    }
+
+    /// Adds a point for `gainer` and, at `win_at`, records the win and resets both fighters.
+    fn score(self: *Duel, gainer: EntityId, loser: EntityId, base: Round) !Round {
         const gained = self.advantage(gainer) + 1;
         try self.world.remember(gainer, self.advantage_rel, gained, 0);
 
-        var round = Round{ .parried = parried };
+        var round = base;
         if (self.config.win_at) |win_at| {
             if (gained >= win_at) {
                 try self.world.remember(gainer, self.wins_rel, self.wins(gainer) + 1, 0);
@@ -690,6 +703,30 @@ test "P32-17/D-079: failed replies teach, rounds score points, and the threshold
     const second = try duel.resolve_round(elder, pupil, duel.challenge(2, 0), duel.reply(2));
     try testing.expectEqual(pupil, second.winner.?);
     try testing.expectEqual(@as(u32, 1), duel.wins(pupil));
+}
+
+test "D-082: conceding scores for the opponent, advances the fallback rotation, and teaches nothing" {
+    const testing = std.testing;
+    var bed = try TestBed.init();
+    defer bed.deinit();
+    var duel = try Duel.init(&bed.world, RIDDLE_CONFIG);
+    const pupil = try bed.world.intern_entity("Pupil");
+    const elder = try bed.world.intern_entity("Elder");
+
+    const first = try duel.concede(pupil, elder);
+    try testing.expect(!first.parried);
+    try testing.expect(first.winner == null);
+    try testing.expectEqual(@as(u32, 1), duel.advantage(elder));
+    try testing.expectEqual(@as(u32, 0), duel.advantage(pupil));
+    try testing.expectEqual(@as(u32, 1), duel.fumbles(pupil));
+    try testing.expect(!bed.world.has_fact(pupil, duel.heard_rel, null));
+    try testing.expect(!bed.world.has_fact(elder, duel.heard_rel, null));
+
+    // RIDDLE_CONFIG wins at two: a second concession ends the contest for the elder.
+    const second = try duel.concede(pupil, elder);
+    try testing.expectEqual(elder, second.winner.?);
+    try testing.expectEqual(@as(u32, 1), duel.wins(elder));
+    try testing.expectEqual(@as(u32, 0), duel.advantage(elder));
 }
 
 test "D-078: fighters learn what they hear, and a host-driven opponent answers what it knows" {

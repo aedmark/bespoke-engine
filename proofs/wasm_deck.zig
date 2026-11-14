@@ -595,6 +595,8 @@ fn sword(rt: *WasmRuntime) ?*sword_fighting.Bout {
     return &sword_bout;
 }
 
+const DECK_SWORD_SEED: u64 = 0x5EA5_1DE;
+
 fn sword_setup(rt: *WasmRuntime) anyerror!void {
     sword_ready = false;
     const program = if (rt.program) |*p| p else return error.NoProgram;
@@ -603,6 +605,11 @@ fn sword_setup(rt: *WasmRuntime) anyerror!void {
     sword_duel = try duel_mod.Duel.init(&rt.world, decl.config);
     try decl.apply_tiers(&sword_duel);
     sword_bout = try sword_fighting.Bout.init(&rt.world, &sword_duel, try entity(rt, "Tamsin"));
+    // The desktop deals the fencers' knowledge afresh each launch; the deck uses one fixed
+    // seed so its golden frames stay stable (D-082).
+    var fencers: [sword_fighting.FENCERS.len]EntityId = undefined;
+    for (sword_fighting.FENCERS, 0..) |name, i| fencers[i] = try entity(rt, name);
+    try sword_fighting.deal_knowledge(&sword_duel, &fencers, DECK_SWORD_SEED);
     sword_ready = true;
     try rt.vm.transition_to_scene(try entity(rt, "Tidewalk"));
 }
@@ -624,7 +631,7 @@ fn sword_solve(rt: *WasmRuntime) anyerror!void {
     _ = sword(rt) orelse return;
     if (bespoke.dialogue.view(&rt.world) != null) return rt.answer(0);
     const tamsin = try entity(rt, "Tamsin");
-    if (sword_duel.wins(tamsin) == 0) return sword_start(rt, "BosunPike", sword_duel.challenge(0, 0));
+    if (sword_duel.wins(tamsin) == 0) return sword_start(rt, "BosunPike", .none);
     if (rt.world.lookup_entity("Vell")) |vell| {
         if (sword_duel.wins(tamsin) < 2 and sword_duel.wins(vell) == 0) {
             const yard = try entity(rt, "Fencing Yard");
@@ -812,24 +819,28 @@ test "P30-05: the solve key plays each puzzle proof to its ending" {
 test "P30-01: the sword deck duels with generated replies until someone wins" {
     const rt = try load(7);
     defer unload(rt);
-    try rt.trigger_catalyst();
-    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
-    // The prompt is the barb's line, and after a lost round Pike presses on with his next barb;
-    // repeating one barb let a single learned comeback win every round.
-    try testing.expectEqualStrings(sword_duel.config.pairs[0].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
     const tamsin = rt.world.lookup_entity("Tamsin").?;
+    const pike = rt.world.lookup_entity("BosunPike").?;
     const challenge_rel = rt.world.lookup_relation("ActiveDuelChallenge").?;
-    const first = rt.world.get_property(tamsin, challenge_rel).?;
+    // Each prompt is a barb from Pike's dealt repertoire (D-082), and after a lost round he
+    // presses on with a different one; repeating one barb let a single learned comeback win
+    // every round.
     try rt.trigger_catalyst();
-    try testing.expect(rt.world.get_property(tamsin, challenge_rel).? != first);
-    try testing.expectEqualStrings(sword_duel.config.pairs[1].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
-    // The second fumble leaves the duel open; the third ends it, and the script's WinsDuel
-    // handler speaks Pike's line.
-    try rt.trigger_catalyst();
-    try testing.expectEqualStrings(sword_duel.config.pairs[2].challenge, bespoke.dialogue.view(&rt.world).?.prompt);
-    try rt.trigger_catalyst();
+    var previous: u32 = 0;
+    for (0..3) |round| {
+        const open = bespoke.dialogue.view(&rt.world).?;
+        const barb = rt.world.get_property(tamsin, challenge_rel).?;
+        try testing.expect(barb != previous);
+        try testing.expect(rt.world.has_fact(pike, sword_duel.heard_rel, barb));
+        try testing.expectEqualStrings(sword_duel.challenge_text(EntityId.from_int(barb)).?, open.prompt);
+        previous = barb;
+        // The first choice is a joke, since she knows no comeback; the third fumble ends the
+        // duel and the script's WinsDuel handler speaks Pike's line.
+        try rt.trigger_catalyst();
+        if (round < 2) try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    }
     try testing.expect(bespoke.dialogue.view(&rt.world) == null);
-    try testing.expectEqual(@as(u32, 1), sword_duel.wins(rt.world.lookup_entity("BosunPike").?));
+    try testing.expectEqual(@as(u32, 1), sword_duel.wins(pike));
     try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Go back to your mop") != null);
     // A lost round teaches only the barb (D-078).
     try testing.expect(holds(rt, "Tamsin", "HeardBarb", null));

@@ -4,7 +4,7 @@ const art = @import("art.zig");
 
 /// Keys this proof binds through its theme (P32-02c); the engine returns them as
 /// `UserAction.custom`.
-const SwordKey = enum(u16) { duel_pike, duel_vell, talk_barkeep, wait_50, duel_gannet };
+const SwordKey = enum(u16) { duel_pike, duel_vell, talk_barkeep, wait_50, duel_gannet, duel_dory };
 
 const sword_theme = art.with_keys(&.{
     .{ .key = bespoke.display.renderer.c.SDLK_d, .action = @intFromEnum(SwordKey.duel_pike), .sfx = art.sfx(.sword_clash) },
@@ -12,13 +12,14 @@ const sword_theme = art.with_keys(&.{
     .{ .key = bespoke.display.renderer.c.SDLK_t, .action = @intFromEnum(SwordKey.talk_barkeep) },
     .{ .key = bespoke.display.renderer.c.SDLK_w, .action = @intFromEnum(SwordKey.wait_50) },
     .{ .key = bespoke.display.renderer.c.SDLK_g, .action = @intFromEnum(SwordKey.duel_gannet), .sfx = art.sfx(.sword_clash) },
+    .{ .key = bespoke.display.renderer.c.SDLK_h, .action = @intFromEnum(SwordKey.duel_dory), .sfx = art.sfx(.sword_clash) },
 });
 
 /// The Brackwater Barbs script: a fencing duel of barbs and comebacks, and a barkeep who
 /// tires of repeated questions (P35-02 replaced the borrowed duel with this original).
 pub const SWORD_FIGHTING_SCRIPT =
     \\scene: Tidewalk
-    \\cast: Tamsin, BosunPike, OldGannet
+    \\cast: Tamsin, BosunPike, OldGannet, DoryQuill
     \\marks: TidewalkWest, TidewalkMid, TidewalkEast
     \\
     \\scene: Fencing Yard
@@ -107,23 +108,9 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\
     \\relation MasteredComeback(fighter, comeback)
     \\
-    \\~ What each opponent knows: an answer it knows parries Tamsin's barb and teaches her it.
-    \\remember MasteredComeback(BosunPike, Barb1Reply)
-    \\remember MasteredComeback(BosunPike, Barb2Reply)
-    \\remember MasteredComeback(BosunPike, Barb3Reply)
-    \\remember MasteredComeback(BosunPike, Barb4Reply)
-    \\remember MasteredComeback(BosunPike, Barb5Reply)
-    \\remember MasteredComeback(BosunPike, Barb6Reply)
-    \\remember MasteredComeback(BosunPike, Barb7Reply)
-    \\remember MasteredComeback(BosunPike, Barb8Reply)
-    \\remember MasteredComeback(OldGannet, Barb1Reply)
-    \\remember MasteredComeback(OldGannet, Barb9Reply)
-    \\remember MasteredComeback(OldGannet, Barb10Reply)
-    \\remember MasteredComeback(OldGannet, Barb11Reply)
-    \\remember MasteredComeback(OldGannet, Barb12Reply)
-    \\remember MasteredComeback(OldGannet, Barb13Reply)
-    \\remember MasteredComeback(OldGannet, Barb14Reply)
-    \\remember MasteredComeback(OldGannet, Barb15Reply)
+    \\~ Mistress Vell knows every comeback. The Tidewalk fencers' barbs and comebacks are dealt
+    \\~ at random when the game starts (D-082); an answer a fencer knows parries Tamsin's barb
+    \\~ and teaches her it.
     \\remember MasteredComeback(Vell, Barb1Reply)
     \\remember MasteredComeback(Vell, Barb2Reply)
     \\remember MasteredComeback(Vell, Barb3Reply)
@@ -152,6 +139,12 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\on cue WinsDuel(Tamsin, OldGannet):
     \\  say OldGannet: "Bah. My knees gave out before my wits did."
     \\
+    \\on cue WinsDuel(DoryQuill, Tamsin):
+    \\  say DoryQuill: "Back to the nets with you, minnow."
+    \\
+    \\on cue WinsDuel(Tamsin, DoryQuill):
+    \\  say DoryQuill: "Hooked and landed. Fair catch."
+    \\
     \\on cue WinsDuel(Vell, Tamsin):
     \\  say Vell: "Come back when your tongue is as sharp as your blade."
     \\
@@ -171,6 +164,13 @@ pub const SWORD_FIGHTING_SCRIPT =
     \\    walk OldGannet to TidewalkMid
     \\    wait 25 ticks
     \\    walk OldGannet to TidewalkEast
+    \\
+    \\routine PatrolDory(DoryQuill):
+    \\  loop:
+    \\    walk DoryQuill to TidewalkMid
+    \\    wait 35 ticks
+    \\    walk DoryQuill to TidewalkWest
+    \\    wait 15 ticks
     \\
     \\routine BarkeepTending(Barkeep):
     \\  loop:
@@ -238,8 +238,10 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
-    // The script's top-level lines declare what each opponent knows (D-078).
+    // The script's top-level lines teach Vell every comeback; the console run walks a known
+    // path, so it uses the fixed deal rather than a random one (D-082).
     try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    try fixed_knowledge(&duel, bosun_pike, old_gannet);
 
     // Snapshot 0: Baseline state
     try timeline.record(&world);
@@ -502,6 +504,52 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 /// the round with its generated choice set (D-046). Turns follow the round (D-078): whoever wins
 /// a round attacks next. A fencing master (tier 1 or above) always attacks, because she knows
 /// every comeback and a parried attack would only hand the lead back and forth.
+/// The Tidewalk fencers, in key order: D, G, and H start their duels.
+pub const FENCERS = [_][]const u8{ "BosunPike", "OldGannet", "DoryQuill" };
+
+/// Chance, in percent, that a fencer other than a barb's dealt owner also throws it.
+const SHARED_BARB_PERCENT: u8 = 35;
+/// Chance, in percent, that a fencer knows any one comeback.
+const COMEBACK_PERCENT: u8 = 45;
+
+/// Deals the Tidewalk fencers' knowledge at random (D-082). Each barb goes to one fencer,
+/// and each other fencer also throws it at `SHARED_BARB_PERCENT`, so some barbs belong to
+/// one fencer alone. Each fencer knows each comeback at `COMEBACK_PERCENT`, and a comeback
+/// no one drew goes to a random fencer. Every barb is thrown and every comeback is known
+/// by someone, so all of them stay learnable. Knowledge is facts: call this before the first
+/// snapshot, and rewind and saves keep the deal.
+pub fn deal_knowledge(duel: *duel_mod.Duel, fencers: []const bespoke.EntityId, seed: u64) !void {
+    var prng = std.Random.DefaultPrng.init(seed);
+    const rnd = prng.random();
+    for (0..duel.config.pairs.len) |p| {
+        const owner = rnd.uintLessThan(usize, fencers.len);
+        for (fencers, 0..) |fencer, i| {
+            if (i == owner or rnd.uintLessThan(u8, 100) < SHARED_BARB_PERCENT) try duel.hear(fencer, duel.challenge(p, 0));
+        }
+        var known = false;
+        for (fencers) |fencer| {
+            if (rnd.uintLessThan(u8, 100) < COMEBACK_PERCENT) {
+                try duel.master(fencer, duel.reply(p));
+                known = true;
+            }
+        }
+        if (!known) try duel.master(fencers[rnd.uintLessThan(usize, fencers.len)], duel.reply(p));
+    }
+}
+
+/// A fixed deal for the console run and the tests that walk a known path: Bosun Pike throws
+/// and answers barbs 1 to 8, Old Gannet barb 1 and 9 to 15 (the split D-078 fixed in the
+/// script before D-082 dealt it at random).
+pub fn fixed_knowledge(duel: *duel_mod.Duel, pike: bespoke.EntityId, gannet: bespoke.EntityId) !void {
+    for (0..duel.config.pairs.len) |p| {
+        const fencer = if (p < 8) pike else gannet;
+        try duel.hear(fencer, duel.challenge(p, 0));
+        try duel.master(fencer, duel.reply(p));
+    }
+    try duel.hear(gannet, duel.challenge(0, 0));
+    try duel.master(gannet, duel.reply(0));
+}
+
 pub const Bout = struct {
     world: *bespoke.World,
     duel: *duel_mod.Duel,
@@ -513,6 +561,9 @@ pub const Bout = struct {
     /// Barbs the player has thrown in this duel. Each barb is thrown once per duel, so one
     /// barb the opponent cannot answer does not win three rounds by itself.
     thrown_rel: bespoke.RelationKind,
+    /// The barb each opponent threw last, so its next attack continues its own repertoire
+    /// across rounds and duels instead of restarting.
+    last_rel: bespoke.RelationKind,
 
     /// One message for the host to show on its own (D-080): who said it, if anyone, and what.
     pub const Line = struct {
@@ -556,6 +607,7 @@ pub const Bout = struct {
             .challenge_rel = try world.intern_relation("ActiveDuelChallenge", .property),
             .attacking_rel = try world.intern_relation("PlayerAttacks", .property),
             .thrown_rel = try world.intern_relation("ThrownThisDuel", .set),
+            .last_rel = try world.intern_relation("LastBarbThrown", .property),
         };
     }
 
@@ -588,17 +640,43 @@ pub const Bout = struct {
         return count;
     }
 
+    /// The barb `foe` throws after its last one (D-082). A Tidewalk fencer throws only barbs it
+    /// knows (has heard), in table order from its last, so each fencer has its own repertoire
+    /// and learns Tamsin's barbs by hearing them. A master throws every barb at its tier
+    /// (`Duel.next_challenge`). A fencer that knows none falls back to the same rule.
+    pub fn next_barb(self: *const Bout, foe: bespoke.EntityId) bespoke.EntityId {
+        const n = self.duel.config.pairs.len;
+        const last: ?bespoke.EntityId = if (self.world.get_property(foe, self.last_rel)) |raw| bespoke.EntityId.from_int(raw) else null;
+        if (!self.is_master(foe)) {
+            const from = if (last) |l| (self.duel.pair_index_of(l) orelse n - 1) + 1 else 0;
+            for (0..n) |k| {
+                const barb = self.duel.challenge((from + k) % n, 0);
+                if (self.world.has_fact(foe, self.duel.heard_rel, barb.to_int())) return barb;
+            }
+        }
+        return self.duel.next_challenge(last orelse self.duel.challenge(n - 1, 0), foe);
+    }
+
+    /// Sets the barb `foe` throws next and records it as its last.
+    fn attack_with(self: *Bout, foe: bespoke.EntityId, barb: bespoke.EntityId) !void {
+        try self.world.remember(self.player, self.challenge_rel, barb.to_int(), 0);
+        try self.world.remember(foe, self.last_rel, barb.to_int(), 0);
+    }
+
     /// Starts a duel. The player leads if she has a barb to throw at this opponent and the
-    /// opponent is not a master; otherwise the opponent opens with `opening`.
+    /// opponent is not a master; otherwise the opponent opens with `opening`, or with its next
+    /// barb (`next_barb`) when `opening` is `.none`.
     pub fn start(self: *Bout, vm: *bespoke.VM, foe: bespoke.EntityId, opening: bespoke.EntityId) !void {
         self.clear();
         try self.world.remember(self.player, self.opponent_rel, foe.to_int(), 0);
-        try self.world.remember(self.player, self.challenge_rel, opening.to_int(), 0);
         try self.world.remember(self.player, self.duel.advantage_rel, 0, 0);
         try self.world.remember(foe, self.duel.advantage_rel, 0, 0);
         var barbs: [9]duel_mod.Candidate = undefined;
         if (!self.is_master(foe) and self.usable_barbs(vm, &barbs) > 0) {
             try self.world.remember(self.player, self.attacking_rel, 1, 0);
+        } else {
+            // Only an opponent who leads throws, so only then does its repertoire move on.
+            try self.attack_with(foe, if (opening == .none) self.next_barb(foe) else opening);
         }
     }
 
@@ -616,6 +694,8 @@ pub const Bout = struct {
     pub const JOKE_ACTION: u32 = 0x8000_0000;
     /// Joke answers offered in every defence, after the player's known comebacks.
     pub const JOKES_OFFERED: usize = 2;
+    /// Jokes offered while the player attacks, after her barbs: picking one concedes the round.
+    pub const FLUBS_OFFERED: usize = 1;
 
     /// Opens the round's choices as a generated dialogue set: the barbs the player may throw
     /// while she attacks, else her comebacks to the opponent's barb followed by two joke
@@ -628,7 +708,8 @@ pub const Bout = struct {
         var prompt: []const u8 = "";
         var count: usize = 0;
         if (self.player_attacks()) {
-            count = self.usable_barbs(vm, &candidates);
+            // Leave a slot for the flub (D-082).
+            count = @min(self.usable_barbs(vm, &candidates), candidates.len - 1);
             prompt = "Your turn: throw a barb.";
         } else {
             const raw = self.world.get_property(self.player, self.challenge_rel) orelse return;
@@ -645,11 +726,13 @@ pub const Bout = struct {
         var choices: [9]bespoke.dialogue.Choice = undefined;
         for (0..count) |i| choices[i] = .{ .text = candidates[i].text, .action = candidates[i].entity.to_int() };
         const lines = self.duel.config.fallbacks;
-        if (!self.player_attacks() and lines.len > 0) {
-            // The fumble count rotates the pair, so successive defences offer new jokes and the
-            // rotation rewinds with the world (D-076).
+        if (lines.len > 0) {
+            // The fumble count rotates the jokes, so successive rounds offer new ones and the
+            // rotation rewinds with the world (D-076). An attacker gets one: a flub that hands
+            // the opponent the round and the next attack, so the player can hear a new barb.
+            const offered: usize = if (self.player_attacks()) FLUBS_OFFERED else JOKES_OFFERED;
             const first = self.duel.fumbles(self.player) * JOKES_OFFERED;
-            for (0..@min(JOKES_OFFERED, lines.len)) |k| {
+            for (0..@min(offered, lines.len)) |k| {
                 const index = (first + k) % lines.len;
                 choices[count] = .{ .text = lines[index], .action = JOKE_ACTION + @as(u32, @intCast(index)) };
                 count += 1;
@@ -691,7 +774,12 @@ pub const Bout = struct {
         var player_said: []const u8 = "";
         var barb: bespoke.EntityId = undefined;
         var round: duel_mod.Round = undefined;
-        if (player_led) {
+        if (player_led and joke != null) {
+            // A flub concedes the round (D-082): the opponent scores and attacks next.
+            barb = .none;
+            player_said = joke.?;
+            round = try self.duel.concede(self.player, foe);
+        } else if (player_led) {
             // The opponent answers the player's barb with what it knows; a real answer teaches
             // the player that comeback (D-078).
             barb = picked;
@@ -706,7 +794,7 @@ pub const Bout = struct {
             round = try self.duel.resolve_round(foe, self.player, barb, picked);
             player_said = if (joke) |line| line else if (picked == .none) self.spoken_fallback(self.player) else self.reply_line(picked);
         }
-        const player_won_round = if (player_led) !round.parried else round.parried;
+        const player_won_round = if (player_led) joke == null and !round.parried else round.parried;
 
         var result = Result{};
         result.add(self.world.get_entity_name(self.player) orelse "", player_said);
@@ -726,7 +814,7 @@ pub const Bout = struct {
             try self.world.remember(self.player, self.attacking_rel, 1, 0);
         } else {
             _ = self.world.forget(self.player, self.attacking_rel, null);
-            try self.world.remember(self.player, self.challenge_rel, self.duel.next_challenge(barb, foe).to_int(), 0);
+            try self.attack_with(foe, self.next_barb(foe));
         }
 
         result.add("", if (player_won_round) "Your point." else "Their point.");
@@ -792,6 +880,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const tamsin = try world.intern_entity("Tamsin");
     const bosun_pike = try world.intern_entity("BosunPike");
     const old_gannet = try world.intern_entity("OldGannet");
+    const dory_quill = try world.intern_entity("DoryQuill");
     const vell = try world.intern_entity("Vell");
     const barkeep = try world.intern_entity("Barkeep");
 
@@ -809,6 +898,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try spatial.register_entity(tamsin, walk_m, 10);
     try spatial.register_entity(bosun_pike, walk_e, 11);
     try spatial.register_entity(old_gannet, walk_e, 11);
+    const walk_w = spatial.graph.find_waypoint_in_room(tidewalk_scene, "TidewalkWest") orelse return error.MissingMark;
+    try spatial.register_entity(dory_quill, walk_w, 11);
     try spatial.register_entity(vell, circle_wp, 12);
     try spatial.register_entity(barkeep, counter_wp, 13);
 
@@ -819,6 +910,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     // Pike and Gannet along the Tidewalk and the barkeep behind the counter. Actors placed above
     // keep their marks.
     _ = try bespoke.host.start_script(&world, &spatial, &vm, &compiled);
+    // A fresh deal of the fencers' barbs and comebacks each launch (D-082), before the first
+    // snapshot, so rewinding keeps it.
+    try deal_knowledge(&duel, &.{ bosun_pike, old_gannet, dory_quill }, @bitCast(std.time.milliTimestamp()));
     try vm.transition_to_scene(tidewalk_scene);
 
     var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Brackwater Barbs", 1280, 720);
@@ -834,9 +928,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
     try stdout.print("Brackwater Barbs Controls:\n", .{});
     try stdout.print("   - [Click a mark]:         Walk Tamsin there\n", .{});
-    try stdout.print("   - [1] - [5]:              Select Dialogue / Comeback\n", .{});
+    try stdout.print("   - [1] - [9]:              Pick a barb, comeback, or joke\n", .{});
     try stdout.print("   - [D]:                    Duel Bosun Pike on the Tidewalk\n", .{});
     try stdout.print("   - [G]:                    Duel Old Gannet on the Tidewalk\n", .{});
+    try stdout.print("   - [H]:                    Duel Dory Quill on the Tidewalk\n", .{});
     try stdout.print("   - [C]:                    Challenge Mistress Vell\n", .{});
     try stdout.print("   - [T]:                    Talk to Barkeep (Repetition Fatigue)\n", .{});
     try stdout.print("   - [W]:                    Wait 50 Simulation Ticks (Cool off mood)\n", .{});
@@ -875,14 +970,20 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     .duel_pike => {
                         try vm.transition_to_scene(tidewalk_scene);
                         _ = try spatial.transition_actor(tamsin, tidewalk_scene, walk_m);
-                        try start_bout(&session, &vm, &bout, bosun_pike, duel.challenge(0, 0));
+                        try start_bout(&session, &vm, &bout, bosun_pike, .none);
                         window.set_cue_banner("Bosun Pike draws a rapier.", 120);
                     },
                     .duel_gannet => {
                         try vm.transition_to_scene(tidewalk_scene);
                         _ = try spatial.transition_actor(tamsin, tidewalk_scene, walk_m);
-                        try start_bout(&session, &vm, &bout, old_gannet, duel.challenge(8, 0));
+                        try start_bout(&session, &vm, &bout, old_gannet, .none);
                         window.set_cue_banner("Old Gannet squares up.", 120);
+                    },
+                    .duel_dory => {
+                        try vm.transition_to_scene(tidewalk_scene);
+                        _ = try spatial.transition_actor(tamsin, tidewalk_scene, walk_m);
+                        try start_bout(&session, &vm, &bout, dory_quill, .none);
+                        window.set_cue_banner("Dory Quill levels her boathook.", 120);
                     },
                     .duel_vell => {
                         try vm.transition_to_scene(yard_scene);
@@ -1048,6 +1149,7 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
     var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
     try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    try fixed_knowledge(&duel, try world.intern_entity("BosunPike"), try world.intern_entity("OldGannet"));
 
     const tamsin = try world.intern_entity("Tamsin");
     const pike = try world.intern_entity("BosunPike");
@@ -1083,18 +1185,20 @@ test "P32-23/D-078: turns follow the round, opponents press on, and hearing teac
     var speech: [256]u8 = undefined;
     try testing.expect(std.mem.indexOf(u8, bespoke.host.speech_this_tick(&world, &vm, &speech).?, "Go back to your mop") != null);
 
-    // Duel 2: she has heard three barbs, so she leads. Pike knows Comeback 1, parries, and
-    // she learns it by hearing it; then Pike attacks with his next barb.
-    try bout.start(&vm, pike, duel.challenge(0, 0));
+    // Duel 2: she has heard three barbs, so she leads, with a flub after them (D-082). Pike
+    // knows Comeback 1, parries, and she learns it by hearing it; then Pike attacks with the
+    // barb after the last one he threw, barb 4, a new one for her.
+    try bout.start(&vm, pike, .none);
     try testing.expect(bout.player_attacks());
     try bout.open(&vm);
-    try testing.expectEqual(@as(usize, 3), vm.dialogue_view().?.count);
+    try testing.expectEqual(@as(usize, 3 + Bout.FLUBS_OFFERED), vm.dialogue_view().?.count);
+    try testing.expect(vm.dialogue_view().?.actions[3] >= Bout.JOKE_ACTION);
     result = try bout.choose(&vm, duel.challenge(0, 0).to_int(), &buf);
     try testing.expect(world.has_fact(tamsin, duel.mastered_rel, duel.reply(0).to_int()));
     try testing.expect(result.says(duel.config.pairs[0].reply));
     try testing.expect(!bout.player_attacks());
     try bout.open(&vm);
-    try testing.expectEqualStrings(duel.config.pairs[1].challenge, vm.dialogue_view().?.prompt);
+    try testing.expectEqualStrings(duel.config.pairs[3].challenge, vm.dialogue_view().?.prompt);
 
     // A master always attacks, even when the player has barbs to throw.
     try bout.start(&vm, vell, duel.challenge(4, 1));
@@ -1114,6 +1218,7 @@ test "D-079: each barb is thrown once per duel, points add up, and distinct barb
     var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
     try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+    try fixed_knowledge(&duel, try world.intern_entity("BosunPike"), try world.intern_entity("OldGannet"));
 
     const tamsin = try world.intern_entity("Tamsin");
     const gannet = try world.intern_entity("OldGannet");
@@ -1156,13 +1261,99 @@ test "D-079: each barb is thrown once per duel, points add up, and distinct barb
     try testing.expectEqual(@as(u32, 1), duel.advantage(tamsin));
     try testing.expectEqual(@as(u32, 1), duel.advantage(gannet));
 
-    // A new duel lets every barb be thrown again. Three barbs Gannet cannot answer win it.
+    // A new duel lets every barb be thrown again: the three she learned plus Gannet's own
+    // barb 10, which she heard him throw. Three barbs Gannet cannot answer win it.
     try world.remember(tamsin, duel.heard_rel, duel.challenge(2, 0).to_int(), 0);
     try world.remember(tamsin, duel.heard_rel, duel.challenge(3, 0).to_int(), 0);
     try bout.start(&vm, gannet, duel.challenge(8, 0));
-    try testing.expectEqual(@as(usize, 3), bout.usable_barbs(&vm, &barbs));
+    try testing.expectEqual(@as(usize, 4), bout.usable_barbs(&vm, &barbs));
     for (1..4) |p| result = try bout.choose(&vm, duel.challenge(p, 0).to_int(), &buf);
     try testing.expectEqual(tamsin, result.winner.?);
+}
+
+test "D-082: the deal leaves every barb thrown and every comeback known, with some exclusive" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    var fencers: [FENCERS.len]bespoke.EntityId = undefined;
+    for (FENCERS, 0..) |name, i| fencers[i] = try world.intern_entity(name);
+
+    var deals: [2]u64 = .{ 0, 0 };
+    for (1..41) |seed| {
+        for (fencers) |f| {
+            _ = world.forget(f, duel.heard_rel, null);
+            _ = world.forget(f, duel.mastered_rel, null);
+        }
+        try deal_knowledge(&duel, &fencers, seed);
+        var exclusive: usize = 0;
+        var shape = std.hash.Wyhash.init(0);
+        for (0..duel.config.pairs.len) |p| {
+            var throwers: usize = 0;
+            var knowers: usize = 0;
+            for (fencers) |f| {
+                if (world.has_fact(f, duel.heard_rel, duel.challenge(p, 0).to_int())) throwers += 1;
+                if (world.has_fact(f, duel.mastered_rel, duel.reply(p).to_int())) knowers += 1;
+                shape.update(&.{ @intFromBool(world.has_fact(f, duel.heard_rel, duel.challenge(p, 0).to_int())), @intFromBool(world.has_fact(f, duel.mastered_rel, duel.reply(p).to_int())) });
+            }
+            try testing.expect(throwers >= 1);
+            try testing.expect(knowers >= 1);
+            if (throwers == 1) exclusive += 1;
+        }
+        try testing.expect(exclusive >= 1);
+        if (seed <= 2) deals[seed - 1] = shape.final();
+    }
+    // Different seeds deal differently.
+    try testing.expect(deals[0] != deals[1]);
+}
+
+test "D-082: a flub hands the fencer the round and a new barb from its own repertoire" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SWORD_FIGHTING_SCRIPT);
+    defer compiled.deinit();
+    var duel = try duel_mod.Duel.init(&world, compiled.duels.items[0].config);
+    try compiled.duels.items[0].apply_tiers(&duel);
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+
+    const tamsin = try world.intern_entity("Tamsin");
+    const dory = try world.intern_entity("DoryQuill");
+    // Dory throws only barbs 4 and 11; Tamsin knows barb 1.
+    try duel.hear(dory, duel.challenge(3, 0));
+    try duel.hear(dory, duel.challenge(10, 0));
+    try duel.hear(tamsin, duel.challenge(0, 0));
+    var bout = try Bout.init(&world, &duel, tamsin);
+    var buf: [320]u8 = undefined;
+
+    try bout.start(&vm, dory, .none);
+    try testing.expect(bout.player_attacks());
+    try bout.open(&vm);
+    const offer = vm.dialogue_view().?;
+    try testing.expectEqual(@as(usize, 2), offer.count);
+    const flub = offer.actions[1];
+    try testing.expect(flub >= Bout.JOKE_ACTION);
+
+    const result = try bout.choose(&vm, flub, &buf);
+    try testing.expectEqualStrings("Tamsin", result.lines[0].speaker);
+    try testing.expectEqualStrings(offer.text(1), result.lines[0].text);
+    try testing.expectEqualStrings("Their point.", result.lines[1].text);
+    try testing.expectEqual(@as(u32, 1), duel.advantage(dory));
+    try testing.expect(!bout.player_attacks());
+    // Dory attacks with the first barb of her own repertoire, then the next one.
+    try bout.open(&vm);
+    try testing.expectEqualStrings(duel.config.pairs[3].challenge, vm.dialogue_view().?.prompt);
+    _ = try bout.choose(&vm, 0, &buf);
+    try bout.open(&vm);
+    try testing.expectEqualStrings(duel.config.pairs[10].challenge, vm.dialogue_view().?.prompt);
 }
 
 test "P35-02: the Tidewalk fencers patrol once the script's routines start" {

@@ -109,10 +109,10 @@
     "proofs/wasm_deck.zig": {
       "Broken Sword": 17,
       "Day of the Tentacle": 45,
-      "Donnie Darko": 46,
+      "Donnie Darko": 45,
       "Gabriel Knight 3": 43,
       "Indiana Jones and the Fate of Atlantis": 22,
-      "Loom": 14,
+      "Loom": 13,
       "Monkey Island": 12
     },
     "scheme/bespoke.manual.json": {
@@ -192,5 +192,5 @@
       "Monkey Island": 2
     }
   },
-  "total": 2360
+  "total": 2358
 }

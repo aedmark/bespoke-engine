@@ -1297,6 +1297,7 @@
             "Duel.challenges and Duel.replies submit candidates through VM.prune_dialogue_choices, so the ordinary fact-guarded dialogue query path controls what can be offered.",
             "A duel declaration preserves pair, variant, tier, and fatigue-stage source order. The host applies its tier assignments after Duel.init and may initialize InquiryFatigue from the same declaration.",
             "Fighters learn what they hear (D-078): resolve_round teaches the defender the challenge and the attacker the reply it got back, so a lost round teaches the defender nothing more. Duel.answer gives a host-driven opponent's reply: the countering comeback if it knows it, else the fallback.",
+            "Duel.concede lets a fighter give up its turn to attack (D-082): the opponent scores, the fighter's fallback rotation advances, and nobody learns anything.",
             "A fighter with no learned reply is offered one fallback line. The fighter's DuelFumbles count, a fact, picks the line, so successive fumbles rotate through the list and a rewind restores the rotation (D-076).",
             "The Brackwater Barbs proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, takes turns through the proof's Bout (whoever wins a round attacks next; a master always attacks), moves an attacking opponent to Duel.next_challenge, fires the script's WinsDuel cue for the victory line, and stores the active opponent, barb, and turn as facts so a rewind restores the round (P32-23, D-046).",
             ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table. Version 14 stores up to eight fallback lines; earlier packages hold at most one."
@@ -1309,6 +1310,7 @@
             {"label": "Dialogue Duel Module", "target": "src/duel.zig", "kind": "source"},
             {"label": "Architectural Decision D-076", "target": "docs/DECISIONS.md#d-076", "kind": "decision"},
             {"label": "Architectural Decision D-078", "target": "docs/DECISIONS.md#d-078", "kind": "decision"},
+            {"label": "Architectural Decision D-082", "target": "docs/DECISIONS.md#d-082", "kind": "decision"},
             {"label": "Brackwater Barbs Proof", "target": "proofs/sword_fighting.zig", "kind": "source"}
           ],
           "related": ["engine-as-spine", "living-village-emergent-sandbox", "branching-dialogue-balloons", "persistent-save-load-and-slot-management"]

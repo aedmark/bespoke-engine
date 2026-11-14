@@ -371,7 +371,9 @@ fn detect(frame: *const RenderFrame) Scene {
                 {
                     sc.is_goat_courtyard_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "BosunPike") or std.mem.eql(u8, ename, "OldGannet")) {
+                } else if (std.mem.eql(u8, ename, "BosunPike") or std.mem.eql(u8, ename, "OldGannet") or
+                    std.mem.eql(u8, ename, "DoryQuill"))
+                {
                     sc.is_tidewalk_scene = true;
                     break;
                 } else if (std.mem.eql(u8, ename, "Vell")) {
@@ -2626,6 +2628,35 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
             ));
         }
+    } else if (std.mem.eql(u8, name, "DoryQuill")) {
+        // Dory Quill: sea-green smock, knotted headscarf, and a boathook over her shoulder
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 13, .g = 148, .b = 136 });
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_rect(pt.x - 9, pt.y - ACTOR_SCREEN_RADIUS - 2, 18, 5, Color{ .r = 250, .g = 204, .b = 21 });
+        w.draw_line(pt.x + 8, pt.y + 10, pt.x + 16, pt.y - 18, Color{ .r = 180, .g = 140, .b = 90 });
+        w.draw_line(pt.x + 16, pt.y - 18, pt.x + 20, pt.y - 14, Color{ .r = 203, .g = 213, .b = 225 });
+        layout_resolver.submit(TextLabel.init(
+            name,
+            pt.x,
+            pt.y,
+            .above,
+            ACTOR_SCREEN_RADIUS + 2,
+            2,
+            to_layout(Color{ .r = 153, .g = 246, .b = 228 }),
+            .actor_name,
+            .actor_name,
+        ));
+        layout_resolver.submit(TextLabel.init(
+            "[Fencer]",
+            pt.x,
+            pt.y,
+            .below,
+            ACTOR_SCREEN_RADIUS + 4,
+            1,
+            to_layout(Color.hud_subtext),
+            .actor_status,
+            .actor_status,
+        ));
     } else if (std.mem.eql(u8, name, "BosunPike") or std.mem.eql(u8, name, "OldGannet")) {
         // Bosun Pike / Old Gannet: crimson vest, tricorn hat, eye patch
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 185, .g = 28, .b = 28 });

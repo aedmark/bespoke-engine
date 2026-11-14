@@ -1053,7 +1053,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A script-declared display name: rejected for now; it is a language and `.bspk` change, and CamelCase covers today's names.
 **Consequences:** A name with an inner capital (`McAllister`) splits wrongly until a script gives it a space. The panel names the dialogue's display speaker, which for a choice in the player's own cue handler is the player. Every browser frame hash and the two desktop renders with dialogue open changed once.
 
-## D-078 Duel Fighters Learn What They Hear, and the Duel Proof Takes Turns (2026-11-13, status: accepted)
+## D-078 Duel Fighters Learn What They Hear, and the Duel Proof Takes Turns (2026-11-13, status: accepted; fixed knowledge split superseded by D-082)
 **Context:** D-035's duel taught the defender the correct reply whenever a round was lost, "from the attacker's taunt". The maintainer's hand test showed the result: the opponent answered his own barb, which no fencer would do. An attacker presses on with another barb or claims victory.
 **Decision:**
 1. `Duel.resolve_round` teaches each fighter what it hears: the defender the challenge, the attacker the reply it got back (when the reply is a real one). Losing a round teaches the defender nothing more.
@@ -1101,6 +1101,19 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Jokes only when no known comeback counters the barb: rejected by the maintainer; seeing jokes would tell the player she lacks the answer.
 - An engine option for how many fallbacks to offer: not needed yet; it would touch the grammar and the package format for one proof.
 **Consequences:** Opponents fumble with the same eight lines. With nine choices at most, a player who knows more than seven comebacks sees the first seven in table order. The browser golden's two deck 7 frames changed (the panel shows two choices; three more text entities).
+
+## D-082 Three Tidewalk Fencers with Dealt Knowledge, and the Player Can Flub an Attack (2026-11-13, status: accepted)
+**Context:** The maintainer's hand test found the duel loop stale with two fencers whose knowledge was fixed in the script (D-078: Pike 1 to 8, Gannet 1 and 9 to 15), and an attacking player had no way to hand the turn back to hear a new barb. They asked for at least three fencers, random knowledge with some barbs exclusive to one fencer, and a way to flub. They chose (2026-11-13): a third fencer, Dory Quill, with drafted victory lines; a new deal each launch; and a joke from the existing pool as the flub.
+**Decision:**
+1. Dory Quill joins the Tidewalk cast (key H), with a patrol and two `WinsDuel` lines in the script.
+2. `deal_knowledge(duel, fencers, seed)` deals each barb to one fencer, shares it with each other fencer at 35 percent, and gives each fencer each comeback at 45 percent; a comeback nobody drew goes to a random fencer. Every barb is thrown and every comeback known by someone. Knowledge is the duel's `HeardBarb` and `MasteredComeback` facts, dealt before the first snapshot. The window seeds it from the clock; the browser deck uses a fixed seed; the console run and older tests use `fixed_knowledge`, D-078's split, so the transcript is unchanged. Mistress Vell still knows every comeback from the script.
+3. A Tidewalk fencer throws only barbs it has heard, in table order after the last one it threw (`Bout.next_barb`, `LastBarbThrown` facts), so each fencer has its own repertoire, continues it across duels, and adds Tamsin's barbs by hearing them. A master still throws every barb at its tier.
+4. While Tamsin attacks, one joke follows her barbs. Picking it calls `Duel.concede`, a new engine call: the fencer scores, the joke advances her fallback rotation, nobody learns anything, and the fencer attacks next.
+**Alternatives:**
+- The same deal every launch: rejected by the maintainer; repeated play would learn one answer key.
+- Separate flub lines: rejected; the joke pool serves, and the pool is at its limit of eight.
+- Fencers who throw every barb (D-078): replaced; a fencer with its own repertoire makes some barbs exclusive and worth hunting.
+**Consequences:** Simulated over 40 deals with a player who tries untested barbs and flubs when nothing new is left, every player won a duel by the twelfth, and from the fourth duel on Tamsin won roughly 40 to 80 percent of them; no duel stalled. The render golden's four Tidewalk lines and the browser golden's deck 7 lines changed (Dory on the Tidewalk; the dealt facts raise deck 7 from 62 to 101 facts).
 
 ## Held tensions
 
