@@ -27,8 +27,8 @@ const SFX_FRAMES: usize = 20_000;
 const SCENES = [_][]const u8{
     "",                           "Nowhere In Particular",
     "Tavern",                     "CellarRoom",
-    "Spitting Competition",       "Hotel Corridor",
-    "Hotel Garden",               "Bike Rental Shop",
+    "Spitting Competition",       "Inn Landing",
+    "Net Loft Yard",               "Harbour Office",
     "Tidewalk",                   "Fencing Yard",
     "Drowned Lantern",            "Living Village",
     "Lochmarne Castle Courtyard", "Templar Crypt",

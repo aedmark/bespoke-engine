@@ -2217,14 +2217,14 @@ test "P12-02: parser groups multiple scenes with scoped cast, props, and marks" 
 test "P13-01: parser parses conditionally guarded dialogue choice blocks" {
     const testing = std.testing;
     const script =
-        \\routine TalkToButhane(Gabriel):
-        \\  choice "I'd like to rent a motorcycle." if Carries(Gabriel, License):
-        \\    say Buthane: "Here are the keys."
-        \\  choice "Do you know whose cat that is?" if not KnowsAboutCat(Gabriel):
-        \\    say Buthane: "It belongs to the rector."
-        \\    remember KnowsAboutCat(Gabriel, true)
+        \\routine TalkToClerk(Hero):
+        \\  choice "I'd like to rent a motorcycle." if Carries(Hero, License):
+        \\    say Clerk: "Here are the keys."
+        \\  choice "Do you know whose cat that is?" if not KnowsAboutCat(Hero):
+        \\    say Clerk: "It belongs to the rector."
+        \\    remember KnowsAboutCat(Hero, true)
         \\  choice "Just browsing, thanks.":
-        \\    say Buthane: "Bonne journée!"
+        \\    say Clerk: "Good day!"
     ;
 
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -2239,35 +2239,35 @@ test "P13-01: parser parses conditionally guarded dialogue choice blocks" {
 
     try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
     const r = ast.routines.items[0];
-    try testing.expectEqualStrings("TalkToButhane", r.name);
+    try testing.expectEqualStrings("TalkToClerk", r.name);
     try testing.expectEqual(@as(usize, 1), r.body.len);
 
     switch (r.body[0]) {
         .choice_block => |choices| {
             try testing.expectEqual(@as(usize, 3), choices.len);
 
-            // Choice 0: Carries(Gabriel, License) guard
+            // Choice 0: Carries(Hero, License) guard
             try testing.expectEqualStrings("I'd like to rent a motorcycle.", choices[0].text);
             try testing.expect(choices[0].guard != null);
             switch (choices[0].guard.?) {
                 .has_fact => |pat| {
                     try testing.expectEqualStrings("Carries", pat.relation);
                     try testing.expectEqual(@as(usize, 2), pat.args.len);
-                    try testing.expectEqualStrings("Gabriel", pat.args[0]);
+                    try testing.expectEqualStrings("Hero", pat.args[0]);
                     try testing.expectEqualStrings("License", pat.args[1]);
                 },
                 else => try testing.expect(false),
             }
             try testing.expectEqual(@as(usize, 1), choices[0].body.len);
 
-            // Choice 1: not KnowsAboutCat(Gabriel) guard
+            // Choice 1: not KnowsAboutCat(Hero) guard
             try testing.expectEqualStrings("Do you know whose cat that is?", choices[1].text);
             try testing.expect(choices[1].guard != null);
             switch (choices[1].guard.?) {
                 .not_fact => |pat| {
                     try testing.expectEqualStrings("KnowsAboutCat", pat.relation);
                     try testing.expectEqual(@as(usize, 1), pat.args.len);
-                    try testing.expectEqualStrings("Gabriel", pat.args[0]);
+                    try testing.expectEqualStrings("Hero", pat.args[0]);
                 },
                 else => try testing.expect(false),
             }

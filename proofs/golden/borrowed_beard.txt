@@ -1,0 +1,68 @@
+===================================================================
+           BeSpoke Engine: The Borrowed Beard Scenario              
+  (Multi-Scene DSL * Crafting * Dynamic Fact-Guarded Dialogue)     
+===================================================================
+
+[Compiler] Lowering The Borrowed Beard narrative script to bytecode...
+[Step 1: Inspect Initial State]
+   -> Current Scene: Inn Landing
+   -> Tamsin Inventory Empty? YES (Empty)
+   -> Tamsin Disguised? NO
+   -> Has the Berth Ticket? NO
+
+[Step 2: Simulate Ambient Routines]
+   -> Advanced to Tick 5: Captain Rook is pacing between Room 7 and the stairs.
+
+[Step 3: Search the Washstand for Supplies]
+   -> Tamsin: "I'll take the charcoal stick, the roll of sail tape, and this pot of honey from my washstand."
+
+[Step 4: Borrow Rook's Sailing Papers from Room 7]
+   -> Tamsin: "Rook's sailing papers are poking out of his coat on the door peg. I'll borrow them."
+
+[Step 5: Draw a Beard on Rook's Portrait with Charcoal]
+   -> Tamsin: "Rook's portrait has no beard! A few strokes of charcoal, and now it does."
+
+[Step 6: Transition Scene to Net Loft Yard]
+   -> Tamsin stepped into the net loft yard.
+
+[Step 7: Take the Watering Can by the Rain Barrel]
+   -> Tamsin: "A watering can, still half full. That could be useful."
+
+[Step 8: Stretch Sail Tape Across the Gate Gap]
+   -> Tamsin: "I've stretched sail tape across the bottom of the gap under the gate."
+
+[Step 9: Soak Bramble with the Watering Can]
+   -> Tamsin: "The soaked dog bolts under the gate, leaving a thick tuft of grey fur on the tape!"
+
+[Step 10: Peel the Dog Fur from the Tape]
+   -> Tamsin: "I'll peel the tape off. One strip of genuine grey dog fur."
+
+[Step 11: Make a Grey Beard with the Honey]
+   -> Tamsin: "I dab honey on my chin and press the fur firmly in place."
+
+[Step 12: Don the Disguise]
+   -> Tamsin: "With Rook's papers and my bristling grey beard, the likeness is uncanny!"
+   -> Tamsin is now DISGUISED as Captain Ansel Rook!
+   -> Evaluate Disguise: VALID DISGUISE
+
+[Step 13: Transition to Harbour Office]
+   -> Tamsin entered the Harbour Office.
+
+[Step 14: Dialogue Choice Pruning with Purser Wick]
+   -> Active Dialogue Choices Presented by Purser Wick (3 available):
+      [1] "I am Captain Ansel Rook. I've come for my berth."
+      [2] "Whose dog is that in the yard?"
+      [3] "Good day."
+   -> Tamsin selects Choice 1!
+   -> PurserWick: "Captain Rook! That's a fine beard you're growing. Here's your berth ticket."
+   -> Has the Berth Ticket? YES! PUZZLE SOLVED!
+
+[Step 15: Time-Travel Rewind Demo]
+   -> Rewinding simulation state back to Step 2 (inn landing, undisguised, empty inventory)...
+   -> Rewound Tamsin Disguised? NO (Restored to false!)
+   -> Rewound Has the Berth Ticket? NO (Restored to false!)
+   -> Rewound Tamsin Has Charcoal? NO (Restored to empty!)
+
+===================================================================
+          The Borrowed Beard Vertical Slice Succeeded!              
+===================================================================

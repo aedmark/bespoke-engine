@@ -16,7 +16,7 @@ const options = @import("golden_options");
 
 const tavern_heist = @import("tavern_heist.zig");
 const spitting_contest = @import("spitting_contest.zig");
-const gk3_moustache = @import("gk3_moustache.zig");
+const borrowed_beard = @import("borrowed_beard.zig");
 const sword_fighting = @import("sword_fighting.zig");
 const village = @import("village.zig");
 const goat_puzzle = @import("goat_puzzle.zig");
@@ -49,7 +49,7 @@ fn bind(comptime f: anytype) RunFn {
 const proofs = [_]struct { name: []const u8, run: RunFn }{
     .{ .name = "tavern_heist", .run = bind(tavern) },
     .{ .name = "spitting_contest", .run = bind(spitting_contest.run_headless) },
-    .{ .name = "gk3_moustache", .run = bind(gk3_moustache.run_headless) },
+    .{ .name = "borrowed_beard", .run = bind(borrowed_beard.run_headless) },
     .{ .name = "sword_fighting", .run = bind(sword_fighting.run_headless) },
     .{ .name = "village", .run = bind(village.run_headless) },
     .{ .name = "goat_puzzle", .run = bind(goat_puzzle.run_headless) },

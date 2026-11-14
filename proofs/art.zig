@@ -49,23 +49,22 @@ const Palette = struct {
     const sand_color = Color{ .r = 180, .g = 160, .b = 110 };
     const ocean_blue = Color{ .r = 14, .g = 70, .b = 110 };
     const sky_dusk = Color{ .r = 16, .g = 24, .b = 48 };
-    // Gabriel Knight 3 Scenario Colors (P14-02, D-016)
-    const gabriel_coat = Color{ .r = 180, .g = 115, .b = 50 }; // Tan leather trench coat
-    const gabriel_hair = Color{ .r = 245, .g = 215, .b = 110 }; // Signature blonde hair
-    const mosely_suit = Color{ .r = 40, .g = 50, .b = 85 }; // Detective navy suit
-    const buthane_vest = Color{ .r = 190, .g = 45, .b = 60 }; // Crimson shopkeeper vest
-    const buthane_hair = Color{ .r = 180, .g = 70, .b = 30 }; // Auburn hair
-    const stray_cat_color = Color{ .r = 25, .g = 25, .b = 30 }; // Black stray cat
-    const cat_eye_color = Color{ .r = 50, .g = 220, .b = 90 }; // Piercing green eyes
+    // The Borrowed Beard Colors (P14-02, D-016, P35-04)
+    const beard_grey = Color{ .r = 170, .g = 170, .b = 175 }; // Borrowed grey dog fur
+    const rook_coat = Color{ .r = 40, .g = 50, .b = 85 }; // Captain's navy coat
+    const purser_vest = Color{ .r = 190, .g = 45, .b = 60 }; // Purser's crimson waistcoat
+    const purser_hair = Color{ .r = 180, .g = 70, .b = 30 }; // Auburn hair
+    const bramble_coat = Color{ .r = 130, .g = 130, .b = 135 }; // Shaggy grey dog
+    const bramble_nose = Color{ .r = 30, .g = 25, .b = 25 }; // Black nose
     const hotel_wallpaper = Color{ .r = 95, .g = 25, .b = 32 }; // Burgundy damask
     const hotel_wainscot = Color{ .r = 45, .g = 22, .b = 15 }; // Dark polished mahogany
-    const hotel_door = Color{ .r = 65, .g = 35, .b = 20 }; // French room door
-    const garden_sky = Color{ .r = 140, .g = 185, .b = 225 }; // Southern French sky
-    const garden_grass = Color{ .r = 55, .g = 115, .b = 50 }; // Courtyard greenery
-    const garden_fence = Color{ .r = 150, .g = 95, .b = 50 }; // Wooden picket fence
-    const rental_wall = Color{ .r = 75, .g = 65, .b = 55 }; // French stone plaster
+    const hotel_door = Color{ .r = 65, .g = 35, .b = 20 }; // Inn room door
+    const garden_sky = Color{ .r = 140, .g = 185, .b = 225 }; // Harbour sky
+    const garden_grass = Color{ .r = 55, .g = 115, .b = 50 }; // Yard grass
+    const garden_fence = Color{ .r = 150, .g = 95, .b = 50 }; // Net-loft fence and gate
+    const rental_wall = Color{ .r = 75, .g = 65, .b = 55 }; // Whitewashed plaster
     const rental_counter = Color{ .r = 160, .g = 100, .b = 45 }; // Pine shop counter
-    const motorcycle_red = Color{ .r = 220, .g = 38, .b = 38 }; // Shiny red motorcycle
+    const boat_red = Color{ .r = 220, .g = 38, .b = 38 }; // Packet boat's red hull
     // Broken Sword Lochmarne Goat Scenario Colors (P20-02, D-023)
     const george_jacket = Color{ .r = 115, .g = 65, .b = 35 }; // Brown leather jacket
     const george_hair = Color{ .r = 238, .g = 205, .b = 95 }; // Blonde hair parted in middle
@@ -132,17 +131,17 @@ const Scene = struct {
     is_gallery_scene: bool = false,
     is_observatory_scene: bool = false,
     is_bell_belfry_scene: bool = false,
-    is_bike_rental_scene: bool = false,
+    is_office_scene: bool = false,
     is_darko_bedroom_scene: bool = false,
     is_darko_school_scene: bool = false,
     is_darko_vortex_scene: bool = false,
     is_dott_future_scene: bool = false,
     is_dott_past_scene: bool = false,
     is_dott_present_scene: bool = false,
-    is_garden_scene: bool = false,
+    is_yard_scene: bool = false,
     is_goat_courtyard_scene: bool = false,
     is_tidewalk_scene: bool = false,
-    is_hotel_scene: bool = false,
+    is_inn_scene: bool = false,
     is_fencing_yard_scene: bool = false,
     is_lantern_scene: bool = false,
     is_spitting_scene: bool = false,
@@ -227,21 +226,21 @@ fn detect(frame: *const RenderFrame) Scene {
                    std.mem.indexOf(u8, cur_scene, "Common") != null)
         {
             sc.is_tavern_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Garden") != null or
+        } else if (std.mem.eql(u8, cur_scene, "Net Loft Yard") or
+                   std.mem.indexOf(u8, cur_scene, "Garden") != null or
                    std.mem.indexOf(u8, cur_scene, "Courtyard") != null)
         {
-            sc.is_garden_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Corridor") != null or
-                   std.mem.eql(u8, cur_scene, "Hotel Corridor"))
+            sc.is_yard_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Inn Landing") or
+                   std.mem.indexOf(u8, cur_scene, "Corridor") != null)
         {
-            sc.is_hotel_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Bike") != null or
-                   std.mem.indexOf(u8, cur_scene, "Rental") != null or
+            sc.is_inn_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Harbour Office") or
                    std.mem.indexOf(u8, cur_scene, "Shop") != null)
         {
-            sc.is_bike_rental_scene = true;
+            sc.is_office_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Hotel") != null) {
-            sc.is_hotel_scene = true;
+            sc.is_inn_scene = true;
         }
     }
 
@@ -250,7 +249,7 @@ fn detect(frame: *const RenderFrame) Scene {
         !sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
         !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
-        !sc.is_hotel_scene and !sc.is_garden_scene and !sc.is_bike_rental_scene and
+        !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene and
         !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and !sc.is_village_scene and
         !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
     {
@@ -320,29 +319,29 @@ fn detect(frame: *const RenderFrame) Scene {
             {
                 sc.is_spitting_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "Fence") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "CatLounge") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "Garden") != null)
+            } else if (std.mem.indexOf(u8, wp.get_name(), "GateMark") != null or
+                       std.mem.indexOf(u8, wp.get_name(), "DogBed") != null or
+                       std.mem.indexOf(u8, wp.get_name(), "YardPath") != null)
             {
-                sc.is_garden_scene = true;
+                sc.is_yard_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "Room25") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "Room33") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "Corridor") != null)
+            } else if (std.mem.eql(u8, wp.get_name(), "Room4") or
+                       std.mem.eql(u8, wp.get_name(), "Room7") or
+                       std.mem.eql(u8, wp.get_name(), "Stairs"))
             {
-                sc.is_hotel_scene = true;
+                sc.is_inn_scene = true;
                 break;
             } else if (std.mem.indexOf(u8, wp.get_name(), "Counter") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "BikeMark") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "ShopEntrance") != null)
+                       std.mem.eql(u8, wp.get_name(), "Quay") or
+                       std.mem.eql(u8, wp.get_name(), "OfficeDoor"))
             {
-                sc.is_bike_rental_scene = true;
+                sc.is_office_scene = true;
                 break;
             }
         }
         if (!sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
             !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
-            !sc.is_spitting_scene and !sc.is_hotel_scene and !sc.is_garden_scene and !sc.is_bike_rental_scene and
+            !sc.is_spitting_scene and !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene and
             !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and
             !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
         {
@@ -367,7 +366,7 @@ fn detect(frame: *const RenderFrame) Scene {
                     sc.is_dott_future_scene = true;
                     break;
                 } else if (std.mem.eql(u8, ename, "BillyGoat") or
-                    (std.mem.eql(u8, ename, "George") and !sc.is_hotel_scene))
+                    (std.mem.eql(u8, ename, "George") and !sc.is_inn_scene))
                 {
                     sc.is_goat_courtyard_scene = true;
                     break;
@@ -387,20 +386,20 @@ fn detect(frame: *const RenderFrame) Scene {
                 {
                     sc.is_spitting_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "StrayCat")) {
-                    sc.is_garden_scene = true;
+                } else if (std.mem.eql(u8, ename, "Bramble")) {
+                    sc.is_yard_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Buthane")) {
-                    sc.is_bike_rental_scene = true;
+                } else if (std.mem.eql(u8, ename, "PurserWick")) {
+                    sc.is_office_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Gabriel") or std.mem.eql(u8, ename, "Mosely")) {
-                    sc.is_hotel_scene = true;
+                } else if (std.mem.eql(u8, ename, "CaptainRook")) {
+                    sc.is_inn_scene = true;
                     break;
                 }
             }
         }
         if (!sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
-            !sc.is_spitting_scene and !sc.is_hotel_scene and !sc.is_garden_scene and !sc.is_bike_rental_scene)
+            !sc.is_spitting_scene and !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene)
         {
             for (frame.hotspots[0..frame.hotspot_count]) |hs| {
                 if (std.mem.indexOf(u8, hs.get_name(), "Plough") != null or
@@ -419,20 +418,20 @@ fn detect(frame: *const RenderFrame) Scene {
                 {
                     sc.is_spitting_scene = true;
                     break;
-                } else if (std.mem.indexOf(u8, hs.get_name(), "Fence") != null or
-                           std.mem.indexOf(u8, hs.get_name(), "Shrub") != null)
+                } else if (std.mem.indexOf(u8, hs.get_name(), "Gate Gap") != null or
+                           std.mem.indexOf(u8, hs.get_name(), "Rain Barrel") != null)
                 {
-                    sc.is_garden_scene = true;
+                    sc.is_yard_scene = true;
                     break;
-                } else if (std.mem.indexOf(u8, hs.get_name(), "Motorcycle") != null or
-                           std.mem.indexOf(u8, hs.get_name(), "Rental") != null)
+                } else if (std.mem.indexOf(u8, hs.get_name(), "Packet Boat") != null or
+                           std.mem.indexOf(u8, hs.get_name(), "Berth") != null)
                 {
-                    sc.is_bike_rental_scene = true;
+                    sc.is_office_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, hs.get_name(), "Door") != null or
-                           std.mem.indexOf(u8, hs.get_name(), "Desk") != null)
+                           std.mem.indexOf(u8, hs.get_name(), "Washstand") != null)
                 {
-                    sc.is_hotel_scene = true;
+                    sc.is_inn_scene = true;
                     break;
                 }
             }
@@ -557,8 +556,8 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         // Title Header
         w.draw_text("TAVERN - COMMON ROOM", tavern_x + 16, tavern_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
         w.draw_text("(WARM FIREPLACE, CLINKING TANKARDS)", tavern_x + 16, tavern_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_hotel_scene) {
-        // Hotel des Couronnes Corridor (P14-02, D-016)
+    } else if (sc.is_inn_scene) {
+        // The Gull and Anchor inn, upper landing (P14-02, D-016, P35-04)
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 20, .g = 12, .b = 15 });
 
         const hotel_x: i32 = 40;
@@ -574,43 +573,43 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(hotel_x, hotel_y + hotel_h - 120, hotel_w, 120, Palette.hotel_wainscot);
         w.draw_line(hotel_x, hotel_y + hotel_h - 120, hotel_x + hotel_w, hotel_y + hotel_h - 120, Color{ .r = 180, .g = 120, .b = 50 });
 
-        // Calculate door positions aligned with world coordinates (Room 25: x=0, Room 33: x=16)
+        // Calculate door positions aligned with world coordinates (Room 4: x=0, Room 7: x=16)
         const pt_r25 = world_to_screen(0, 0, w.width, w.height);
         const pt_r33 = world_to_screen(16, 0, w.width, w.height);
 
-        // Door 25 (Gabriel's room)
+        // Door 4 (Tamsin's room)
         const d25_x = pt_r25.x - 35;
         w.fill_rect(d25_x, hotel_y + hotel_h - 260, 70, 140, Palette.hotel_door);
         w.draw_rect_outline(d25_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
-        w.draw_text("25", d25_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
+        w.draw_text(" 4", d25_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
 
-        // Door 33 (Mosely's room)
+        // Door 7 (Captain Rook's room)
         const d33_x = pt_r33.x - 35;
         w.fill_rect(d33_x, hotel_y + hotel_h - 260, 70, 140, Palette.hotel_door);
         w.draw_rect_outline(d33_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
-        w.draw_text("33", d33_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
+        w.draw_text(" 7", d33_x + 24, hotel_y + hotel_h - 250, 2, Color.wp_hover);
 
-        // Corridor Exit / Garden Archway (aligned with CorridorExit mark world_x = 32)
+        // Stairs down to the yard (aligned with the Stairs mark world_x = 32)
         const pt_exit = world_to_screen(32, 0, w.width, w.height);
         const ex_x = pt_exit.x - 35;
         w.fill_rect(ex_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 45, .g = 25, .b = 15 });
         w.draw_rect_outline(ex_x, hotel_y + hotel_h - 260, 70, 140, Color{ .r = 180, .g = 120, .b = 50 });
         w.fill_circle(ex_x + 35, hotel_y + hotel_h - 260, 35, Color{ .r = 45, .g = 25, .b = 15 });
         w.draw_circle_outline(ex_x + 35, hotel_y + hotel_h - 260, 35, Color{ .r = 180, .g = 120, .b = 50 });
-        // Sunlit daylight pouring in from courtyard garden
+        // Daylight from the yard below
         w.fill_rect(ex_x + 8, hotel_y + hotel_h - 250, 54, 120, Color{ .r = 160, .g = 210, .b = 245, .a = 180 });
-        w.draw_text("GARDEN", ex_x + 10, hotel_y + hotel_h - 280, 1, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("EXIT", ex_x + 18, hotel_y + hotel_h - 268, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("YARD", ex_x + 16, hotel_y + hotel_h - 280, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("STAIRS", ex_x + 10, hotel_y + hotel_h - 268, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
         // Brass sconces
         w.fill_circle(hotel_x + 40, hotel_y + 90, 6, Color.wp_hover);
         w.fill_circle(hotel_x + hotel_w - 40, hotel_y + 90, 6, Color.wp_hover);
 
         // Title
-        w.draw_text("HOTEL DES COURONNES - CORRIDOR", hotel_x + 16, hotel_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(FRENCH DAMASK WALLS * ROOM 25 & ROOM 33)", hotel_x + 16, hotel_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_garden_scene) {
-        // Hotel Courtyard Garden (P14-02, D-016)
+        w.draw_text("THE GULL AND ANCHOR - LANDING", hotel_x + 16, hotel_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("(TIMBER WALLS * ROOM 4 & ROOM 7)", hotel_x + 16, hotel_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_yard_scene) {
+        // The Net Loft Yard behind the inn (P14-02, D-016, P35-04)
         // 1. Sky & Sun
         w.fill_rect(0, 0, w.width, w.height, Palette.garden_sky);
 
@@ -640,7 +639,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_circle(garden_x + 800, garden_y + 45, 20, Color{ .r = 255, .g = 255, .b = 255, .a = 200 });
         w.fill_circle(garden_x + 820, garden_y + 50, 14, Color{ .r = 255, .g = 255, .b = 255, .a = 180 });
 
-        // Distant Pyrenean / Languedoc rolling foothills
+        // Distant headland hills
         w.fill_circle(garden_x + 600, garden_y + 140, 180, Color{ .r = 115, .g = 150, .b = 130 });
         w.fill_circle(garden_x + 850, garden_y + 150, 200, Color{ .r = 100, .g = 140, .b = 120 });
         w.fill_circle(garden_x + 1100, garden_y + 160, 220, Color{ .r = 90, .g = 130, .b = 110 });
@@ -656,9 +655,9 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
             w.fill_circle(hi + 16, garden_y + 122, 14, Color{ .r = 38, .g = 100, .b = 42 });
         }
 
-        // 2. Hotel des Couronnes Exterior Wing (Left side: garden_x to garden_x + 320)
+        // 2. The inn's back wall (Left side: garden_x to garden_x + 320)
         const wing_w: i32 = 320;
-        w.fill_rect(garden_x, garden_y, wing_w, garden_h, Color{ .r = 215, .g = 195, .b = 160 }); // French limestone
+        w.fill_rect(garden_x, garden_y, wing_w, garden_h, Color{ .r = 215, .g = 195, .b = 160 }); // Whitewashed stone
         w.draw_rect_outline(garden_x, garden_y, wing_w, garden_h, Color{ .r = 150, .g = 130, .b = 100 });
 
         // Limestone masonry block seams
@@ -682,7 +681,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_circle(garden_x + 300, garden_y + 110, 18, Color{ .r = 35, .g = 100, .b = 40 });
         w.fill_circle(garden_x + 310, garden_y + 160, 22, Color{ .r = 45, .g = 120, .b = 50 });
 
-        // Upper-floor French window with dark green shutters
+        // Upper-floor window with dark green shutters
         const win_x = garden_x + 110;
         const win_y = garden_y + 40;
         w.fill_rect(win_x, win_y, 80, 100, Color{ .r = 25, .g = 35, .b = 50 }); // Window glass
@@ -717,10 +716,10 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_rect_outline(door_x + 50, door_y + 10, 30, 50, Color{ .r = 180, .g = 130, .b = 70 });
         // Brass handle
         w.fill_circle(door_x + 78, door_y + 75, 4, Color{ .r = 250, .g = 204, .b = 21 });
-        // Hotel Doorway Header
+        // Inn back door header
         w.fill_rect(door_x - 10, door_y - 24, 110, 18, Color{ .r = 30, .g = 20, .b = 15 });
         w.draw_rect_outline(door_x - 10, door_y - 24, 110, 18, Color{ .r = 250, .g = 204, .b = 21 });
-        w.draw_text("HOTEL EXIT", door_x - 2, door_y - 20, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("INN DOOR", door_x + 4, door_y - 20, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
         // 3. Terracotta Patio Terrace (near hotel, left foreground)
         const terrace_w: i32 = 320;
@@ -735,7 +734,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
             w.draw_line(tx, garden_y + garden_h - 100, tx, garden_y + garden_h, Color{ .r = 145, .g = 70, .b = 45 });
         }
 
-        // 4. Centerpiece: Stone Tiered Birdbath / Fountain (between terrace and fence)
+        // 4. Centerpiece: stone trough (between the yard and the gate)
         const fountain_x = garden_x + 400;
         const fountain_y = garden_y + garden_h - 80;
         // Stone base & pillar
@@ -750,7 +749,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_circle(fountain_x, fountain_y - 18, 16, Color{ .r = 175, .g = 165, .b = 155 });
         w.fill_circle(fountain_x, fountain_y - 18, 12, Color{ .r = 56, .g = 189, .b = 248, .a = 210 });
 
-        // 5. Wooden Picket Fence (x = 360 to garden_w)
+        // 5. Net-loft fence (x = 360 to garden_w)
         const fence_start_x = garden_x + 340;
         const fence_w = garden_w - 340;
         const fence_y = garden_y + garden_h - 180;
@@ -774,7 +773,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
             w.draw_rect_outline(p_i, fence_y - 22, 11, 74, Color{ .r = 100, .g = 60, .b = 28 });
         }
 
-        // 6. Fence Hole (Hotspot at world_x = 18, screen x ≈ 604)
+        // 6. Gap under the gate (hotspot at world_x = 18, screen x ≈ 604)
         const pt_fence = world_to_screen(18, 0, w.width, w.height);
         const hole_x = pt_fence.x - 30;
         const hole_y = fence_y + 8;
@@ -789,51 +788,51 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         // The escape opening through to priest's property
         w.fill_rect(hole_x, hole_y, hole_w, hole_h, Color{ .r = 20, .g = 30, .b = 18 });
         w.draw_rect_outline(hole_x, hole_y, hole_w, hole_h, Color{ .r = 120, .g = 70, .b = 30 });
-        w.draw_text("FENCE GAP", hole_x + 4, hole_y - 12, 1, Color{ .r = 250, .g = 204, .b = 21 });
+        w.draw_text("GATE GAP", hole_x + 6, hole_y - 12, 1, Color{ .r = 250, .g = 204, .b = 21 });
 
         // Masking tape indicator if taped
-        if (status_of(frame).fence_taped) {
+        if (status_of(frame).gap_taped) {
             // Wide tape band stretched taut across hole
             w.fill_rect(hole_x - 8, hole_y + 16, hole_w + 16, 12, Color{ .r = 254, .g = 243, .b = 199 });
             w.draw_rect_outline(hole_x - 8, hole_y + 16, hole_w + 16, 12, Color{ .r = 217, .g = 119, .b = 6 });
 
-            if (status_of(frame).fence_has_hair) {
-                // Thick tuft of black cat hair stuck to the tape!
-                w.fill_rect(hole_x + 14, hole_y + 13, 32, 18, Color.black);
+            if (status_of(frame).gap_has_fur) {
+                // Thick tuft of grey dog fur stuck to the tape!
+                w.fill_rect(hole_x + 14, hole_y + 13, 32, 18, Palette.beard_grey);
                 w.draw_rect_outline(hole_x + 14, hole_y + 13, 32, 18, Color{ .r = 250, .g = 204, .b = 21 });
-                w.draw_text("★ BLACK CAT FUR STUCK TO TAPE ★", hole_x - 45, hole_y - 28, 1, Color{ .r = 250, .g = 204, .b = 21 });
+                w.draw_text("★ GREY DOG FUR STUCK TO TAPE ★", hole_x - 45, hole_y - 28, 1, Color{ .r = 250, .g = 204, .b = 21 });
             } else {
-                w.draw_text("[STICKY MASKING TAPE READY]", hole_x - 30, hole_y - 28, 1, Color.wp_hover);
+                w.draw_text("[SAIL TAPE STRETCHED]", hole_x - 30, hole_y - 28, 1, Color.wp_hover);
             }
         }
 
-        // 7. Lavender Shrub & Stray Cat Lounge (world_x = 34, screen x ≈ 892)
+        // 7. Rain barrel and Bramble's bed (world_x = 34, screen x ≈ 892)
         const pt_cat = world_to_screen(34, 0, w.width, w.height);
         const shrub_x = pt_cat.x;
         const shrub_y = pt_cat.y - 48;
 
-        // Wooden Potting Bench with garden supplies
+        // Wooden bench beside the barrel
         w.fill_rect(shrub_x - 70, shrub_y + 20, 60, 24, Color{ .r = 115, .g = 75, .b = 40 });
         w.draw_rect_outline(shrub_x - 70, shrub_y + 20, 60, 24, Color{ .r = 75, .g = 45, .b = 22 });
         w.fill_rect(shrub_x - 68, shrub_y + 44, 8, 30, Color{ .r = 85, .g = 50, .b = 25 });
         w.fill_rect(shrub_x - 22, shrub_y + 44, 8, 30, Color{ .r = 85, .g = 50, .b = 25 });
         // Terracotta pot on bench
         w.fill_rect(shrub_x - 62, shrub_y + 8, 16, 12, Color{ .r = 190, .g = 90, .b = 55 });
-        // Garden spray bottle sitting on bench
+        // Watering can on the bench
         w.fill_rect(shrub_x - 40, shrub_y + 4, 12, 16, Color{ .r = 56, .g = 189, .b = 248 });
         w.fill_rect(shrub_x - 38, shrub_y - 2, 8, 6, Color.white);
 
-        // Fragrant blooming lavender bush clusters
-        w.fill_circle(shrub_x + 10, shrub_y - 5, 26, Color{ .r = 40, .g = 135, .b = 60 });
-        w.fill_circle(shrub_x + 35, shrub_y + 5, 24, Color{ .r = 30, .g = 115, .b = 48 });
-        w.fill_circle(shrub_x - 5, shrub_y + 10, 22, Color{ .r = 50, .g = 150, .b = 70 });
-        // Purple lavender flower specks
-        w.fill_circle(shrub_x + 10, shrub_y - 18, 10, Color{ .r = 168, .g = 85, .b = 247 });
-        w.fill_circle(shrub_x + 28, shrub_y - 8, 12, Color{ .r = 192, .g = 132, .b = 252 });
-        w.fill_circle(shrub_x - 2, shrub_y - 4, 11, Color{ .r = 168, .g = 85, .b = 247 });
-        w.fill_circle(shrub_x + 20, shrub_y + 12, 10, Color{ .r = 147, .g = 51, .b = 234 });
+        // Net pile and rope coils
+        w.fill_circle(shrub_x + 10, shrub_y - 5, 26, Color{ .r = 105, .g = 100, .b = 90 });
+        w.fill_circle(shrub_x + 35, shrub_y + 5, 24, Color{ .r = 90, .g = 85, .b = 78 });
+        w.fill_circle(shrub_x - 5, shrub_y + 10, 22, Color{ .r = 120, .g = 112, .b = 100 });
+        // Cork floats on the nets
+        w.fill_circle(shrub_x + 10, shrub_y - 18, 6, Color{ .r = 234, .g = 140, .b = 50 });
+        w.fill_circle(shrub_x + 28, shrub_y - 8, 6, Color{ .r = 234, .g = 140, .b = 50 });
+        w.fill_circle(shrub_x - 2, shrub_y - 4, 6, Color{ .r = 234, .g = 140, .b = 50 });
+        w.fill_circle(shrub_x + 20, shrub_y + 12, 6, Color{ .r = 234, .g = 140, .b = 50 });
 
-        // 8. Far Right: Stone Arch / Village Gate (leading toward Bike Shop)
+        // 8. Far right: archway toward the harbour office
         const gate_x = garden_x + garden_w - 75;
         const gate_y = garden_y + garden_h - 220;
         w.fill_rect(gate_x, gate_y, 65, 140, Color{ .r = 140, .g = 130, .b = 115 });
@@ -844,14 +843,14 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.draw_line(gate_x + 20, gate_y, gate_x + 20, gate_y + 130, Color{ .r = 80, .g = 90, .b = 100 });
         w.draw_line(gate_x + 32, gate_y, gate_x + 32, gate_y + 130, Color{ .r = 80, .g = 90, .b = 100 });
         w.draw_line(gate_x + 44, gate_y, gate_x + 44, gate_y + 130, Color{ .r = 80, .g = 90, .b = 100 });
-        w.draw_text("VILLAGE", gate_x + 6, gate_y - 18, 1, Color{ .r = 250, .g = 204, .b = 21 });
-        w.draw_text("-> SHOP", gate_x + 6, gate_y - 6, 1, Color{ .r = 250, .g = 204, .b = 21 });
+        w.draw_text("HARBOUR", gate_x + 2, gate_y - 18, 1, Color{ .r = 250, .g = 204, .b = 21 });
+        w.draw_text("-> OFFICE", gate_x + 2, gate_y - 6, 1, Color{ .r = 250, .g = 204, .b = 21 });
 
         // 9. Scene Title & Header
-        w.draw_text("HOTEL COURTYARD - GARDEN FENCE", garden_x + 16, garden_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
-        w.draw_text("(SUNNY PROVENCAL COURTYARD * WOODEN PICKET FENCE * ESCAPE GAP)", garden_x + 16, garden_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_bike_rental_scene) {
-        // Madame Buthane's Bike Rental Shop (P14-02, D-016)
+        w.draw_text("THE GULL AND ANCHOR - NET LOFT YARD", garden_x + 16, garden_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_text("(NET PILES * RAIN BARREL * A GAP UNDER THE GATE)", garden_x + 16, garden_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_office_scene) {
+        // The Harbour Office, where Purser Wick keeps the berths (P14-02, D-016, P35-04)
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 25, .g = 20, .b = 20 });
 
         const shop_x: i32 = 40;
@@ -865,39 +864,39 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         // Stone floor
         w.fill_rect(shop_x, shop_y + shop_h - 100, shop_w, 100, Color{ .r = 45, .g = 40, .b = 38 });
 
-        // Road touring map of Languedoc on the wall
+        // Tide table on the wall
         const map_x = shop_x + 60;
         w.fill_rect(map_x, shop_y + 55, 140, 90, Color{ .r = 254, .g = 243, .b = 199 });
         w.draw_rect_outline(map_x, shop_y + 55, 140, 90, Color{ .r = 180, .g = 83, .b = 9 });
-        w.draw_text("MAP OF LANGUEDOC", map_x + 8, shop_y + 65, 1, Color{ .r = 120, .g = 53, .b = 15 });
-        w.draw_text("RENNES-LE-CHATEAU", map_x + 8, shop_y + 80, 1, Color{ .r = 180, .g = 83, .b = 9 });
+        w.draw_text("TIDE TABLE", map_x + 8, shop_y + 65, 1, Color{ .r = 120, .g = 53, .b = 15 });
+        w.draw_text("TO GREYHAVEN", map_x + 8, shop_y + 80, 1, Color{ .r = 180, .g = 83, .b = 9 });
 
-        // Pine rental counter (aligned with CounterMark world_x = 16)
+        // Berth counter (aligned with CounterMark world_x = 16)
         const pt_counter = world_to_screen(16, 0, w.width, w.height);
         const cnt_x = pt_counter.x - 110;
         w.fill_rect(cnt_x, shop_y + shop_h - 180, 220, 80, Palette.rental_counter);
         w.draw_rect_outline(cnt_x, shop_y + shop_h - 180, 220, 80, Color{ .r = 217, .g = 119, .b = 6 });
-        w.draw_text("RENTAL COUNTER", cnt_x + 20, shop_y + shop_h - 165, 2, Color{ .r = 60, .g = 35, .b = 15 });
+        w.draw_text("BERTH COUNTER", cnt_x + 20, shop_y + shop_h - 165, 2, Color{ .r = 60, .g = 35, .b = 15 });
 
-        // Red Motorcycle display (aligned with BikeMark world_x = 32)
-        const pt_bike = world_to_screen(32, 0, w.width, w.height);
-        const mc_x = pt_bike.x - 65;
-        w.fill_circle(mc_x + 25, shop_y + shop_h - 110, 20, Color.black);
-        w.fill_circle(mc_x + 105, shop_y + shop_h - 110, 20, Color.black);
-        w.draw_circle_outline(mc_x + 25, shop_y + shop_h - 110, 20, Color{ .r = 200, .g = 200, .b = 200 });
-        w.draw_circle_outline(mc_x + 105, shop_y + shop_h - 110, 20, Color{ .r = 200, .g = 200, .b = 200 });
-        w.fill_rect(mc_x + 25, shop_y + shop_h - 140, 80, 25, Palette.motorcycle_red);
-        w.draw_line(mc_x + 35, shop_y + shop_h - 155, mc_x + 60, shop_y + shop_h - 140, Color.white);
+        // The packet boat seen through the window (aligned with the Quay mark world_x = 32)
+        const pt_quay = world_to_screen(32, 0, w.width, w.height);
+        const mc_x = pt_quay.x - 65;
+        // Hull, mast, and sail
+        w.fill_rect(mc_x + 10, shop_y + shop_h - 120, 110, 22, Palette.boat_red);
+        w.fill_rect(mc_x + 22, shop_y + shop_h - 98, 86, 8, Color{ .r = 120, .g = 30, .b = 30 });
+        w.fill_rect(mc_x + 62, shop_y + shop_h - 190, 4, 70, Color{ .r = 120, .g = 80, .b = 50 });
+        w.fill_rect(mc_x + 68, shop_y + shop_h - 182, 40, 52, Color{ .r = 240, .g = 235, .b = 220 });
+        w.draw_line(mc_x + 10, shop_y + shop_h - 90, mc_x + 120, shop_y + shop_h - 90, Color{ .r = 56, .g = 189, .b = 248 });
 
-        if (status_of(frame).bike_rented) {
-            w.draw_text("[RENTED TO MOSELY!]", mc_x + 10, shop_y + shop_h - 170, 2, Color.status_running);
+        if (status_of(frame).berth_taken) {
+            w.draw_text("[BERTH: TAMSIN!]", mc_x - 10, shop_y + shop_h - 210, 2, Color.status_running);
         } else {
-            w.draw_text("[RESERVED: MOSELY]", mc_x + 10, shop_y + shop_h - 170, 2, Color.cue_alert);
+            w.draw_text("[BERTH: ROOK]", mc_x - 10, shop_y + shop_h - 210, 2, Color.cue_alert);
         }
 
         // Title
-        w.draw_text("RENNES-LE-CHATEAU - BIKE RENTAL SHOP", shop_x + 16, shop_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
-        w.draw_text("(VINTAGE MOTORCYCLE * MADAME BUTHANE AT THE DESK)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
+        w.draw_text("BRACKWATER - HARBOUR OFFICE", shop_x + 16, shop_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_text("(THE PACKET BOAT TO GREYHAVEN * PURSER WICK AT THE COUNTER)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
     } else if (sc.is_tidewalk_scene) {
         // Brackwater Tidewalk (P15-02, P35-02)
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 10, .g = 15, .b = 30 }); // Deep night sky
@@ -1862,32 +1861,37 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
                 w.draw_text("Flags", flag_x - 14, pt.y + 14, 2, Color.hud_text);
             }
         }
-    } else if (std.mem.indexOf(u8, name, "Fence") != null or std.mem.indexOf(u8, name, "Hole") != null) {
-        // Garden Fence Hole (P14-02, D-016)
+    } else if (std.mem.indexOf(u8, name, "Fence") != null or std.mem.indexOf(u8, name, "Hole") != null or
+        std.mem.indexOf(u8, name, "Gap") != null)
+    {
+        // The gap under the net-loft gate (P14-02, D-016, P35-04)
         w.fill_rect(pt.x - 20, pt.y - 16, 40, 32, Palette.garden_fence);
         w.fill_rect(pt.x - 12, pt.y - 4, 24, 20, Color.black);
-        if (status_of(frame).fence_taped) {
+        if (status_of(frame).gap_taped) {
             w.fill_rect(pt.x - 14, pt.y + 4, 28, 6, Color{ .r = 254, .g = 243, .b = 199 });
         }
     } else if (std.mem.indexOf(u8, name, "Door") != null) {
-        // Mosely's Door (P14-02, D-016)
+        // Captain Rook's door (P14-02, D-016, P35-04)
         w.fill_rect(pt.x - 16, pt.y - 24, 32, 48, Palette.hotel_door);
         w.draw_rect_outline(pt.x - 16, pt.y - 24, 32, 48, Color{ .r = 180, .g = 120, .b = 50 });
-    } else if (std.mem.indexOf(u8, name, "Desk") != null) {
-        // Hotel Room Desk (P14-02, D-016)
+    } else if (std.mem.indexOf(u8, name, "Desk") != null or std.mem.indexOf(u8, name, "Wash") != null) {
+        // Tamsin's washstand (P14-02, D-016, P35-04)
         w.fill_rect(pt.x - 22, pt.y - 12, 44, 24, Palette.hotel_wainscot);
         w.draw_rect_outline(pt.x - 22, pt.y - 12, 44, 24, Color{ .r = 140, .g = 80, .b = 40 });
-    } else if (std.mem.indexOf(u8, name, "Shrub") != null or std.mem.indexOf(u8, name, "Bench") != null) {
-        // Garden Lavender Shrub & Potting Bench (P14-02, D-016)
-        w.fill_circle(pt.x - 8, pt.y - 4, 14, Color{ .r = 34, .g = 197, .b = 94 });
-        w.fill_circle(pt.x + 8, pt.y - 6, 12, Color{ .r = 74, .g = 222, .b = 128 });
-        w.fill_circle(pt.x, pt.y - 12, 10, Color{ .r = 168, .g = 85, .b = 247 }); // Lavender blossom
-        w.fill_rect(pt.x - 18, pt.y + 6, 36, 10, Color{ .r = 120, .g = 80, .b = 50 }); // Potting bench
-    } else if (std.mem.indexOf(u8, name, "Motorcycle") != null) {
-        // Motorcycle prop (P14-02, D-016)
-        w.fill_rect(pt.x - 20, pt.y - 12, 40, 24, Palette.motorcycle_red);
-        w.fill_circle(pt.x - 14, pt.y + 12, 8, Color.black);
-        w.fill_circle(pt.x + 14, pt.y + 12, 8, Color.black);
+    } else if (std.mem.indexOf(u8, name, "Barrel") != null or std.mem.indexOf(u8, name, "Shrub") != null or
+        std.mem.indexOf(u8, name, "Bench") != null)
+    {
+        // Rain barrel on its bench (P14-02, D-016, P35-04)
+        w.fill_rect(pt.x - 12, pt.y - 18, 24, 26, Color{ .r = 120, .g = 80, .b = 50 }); // Staves
+        w.fill_rect(pt.x - 12, pt.y - 12, 24, 3, Color{ .r = 70, .g = 70, .b = 75 }); // Iron hoop
+        w.fill_rect(pt.x - 12, pt.y, 24, 3, Color{ .r = 70, .g = 70, .b = 75 });
+        w.fill_rect(pt.x - 10, pt.y - 18, 20, 3, Color{ .r = 56, .g = 189, .b = 248 }); // Water
+        w.fill_rect(pt.x - 18, pt.y + 8, 36, 8, Color{ .r = 120, .g = 80, .b = 50 }); // Bench
+    } else if (std.mem.indexOf(u8, name, "Packet") != null) {
+        // The packet boat (P14-02, D-016, P35-04)
+        w.fill_rect(pt.x - 22, pt.y, 44, 12, Palette.boat_red);
+        w.fill_rect(pt.x - 1, pt.y - 26, 3, 26, Color{ .r = 120, .g = 80, .b = 50 });
+        w.fill_rect(pt.x + 3, pt.y - 22, 14, 18, Color{ .r = 240, .g = 235, .b = 220 });
     } else if (std.mem.indexOf(u8, name, "Plough") != null) {
         // Broken Sword Farm Plough (P20-02, D-023)
         const px = if (status_of(frame).plough_moved) pt.x + 25 else pt.x;
@@ -2466,40 +2470,34 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
 
         layout_resolver.submit(TextLabel.init("Roberta Sparrow", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
         layout_resolver.submit(TextLabel.init("['Grandma Death']", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color.hud_subtext), .actor_status, .actor_status));
-    } else if (std.mem.eql(u8, name, "Gabriel")) {
-        // Gabriel Knight: Leather trench coat, signature blonde hair, dark shades (P14-02, D-016)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.gabriel_coat);
+    } else if (std.mem.eql(u8, name, "Tamsin") and (detect(frame).is_inn_scene or detect(frame).is_yard_scene or detect(frame).is_office_scene)) {
+        // Tamsin on the trail of a berth (P35-04): her Brackwater Barbs colours, and the
+        // borrowed grey beard once she wears it
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.tamsin_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-
-        // Blonde hair
-        w.fill_circle(pt.x, pt.y - 8, 8, Palette.gabriel_hair);
-
-        // Dark sunglasses
-        w.fill_rect(pt.x - 7, pt.y - 4, 14, 4, Color.black);
-
-        // Cat-hair moustache if disguised
-        if (status_of(frame).gabriel_disguised) {
-            w.fill_rect(pt.x - 6, pt.y + 2, 12, 4, Color.black);
-            w.draw_rect_outline(pt.x - 6, pt.y + 2, 12, 4, Color{ .r = 250, .g = 204, .b = 21 });
+        w.fill_circle(pt.x, pt.y - 8, 8, Palette.tamsin_hair);
+        if (status_of(frame).tamsin_disguised) {
+            w.fill_rect(pt.x - 7, pt.y + 2, 14, 7, Palette.beard_grey);
+            w.draw_rect_outline(pt.x - 7, pt.y + 2, 14, 7, Color{ .r = 250, .g = 204, .b = 21 });
         }
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Gabriel",
+            "Tamsin",
             pt.x,
             pt.y,
             .above,
             ACTOR_SCREEN_RADIUS + 2,
             2,
-            to_layout(Palette.gabriel_hair),
+            to_layout(Color{ .r = 250, .g = 204, .b = 21 }),
             .actor_name,
             .actor_name,
         ));
 
         // Status
-        if (status_of(frame).gabriel_disguised) {
+        if (status_of(frame).tamsin_disguised) {
             layout_resolver.submit(TextLabel.init(
-                "[DISGUISED AS MOSELY!]",
+                "[DISGUISED AS ROOK!]",
                 pt.x,
                 pt.y,
                 .below,
@@ -2522,18 +2520,18 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
             ));
         }
-    } else if (std.mem.eql(u8, name, "Mosely")) {
-        // Detective Franklin Mosely: Navy suit, genuine moustache (P14-02, D-016)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.mosely_suit);
+    } else if (std.mem.eql(u8, name, "CaptainRook")) {
+        // Captain Ansel Rook: navy coat, a real grey beard (P14-02, D-016, P35-04)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.rook_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
-        // Brown hair & real moustache
-        w.fill_circle(pt.x, pt.y - 8, 8, Color{ .r = 90, .g = 55, .b = 30 });
-        w.fill_rect(pt.x - 6, pt.y + 2, 12, 4, Color.black);
+        // Grey hair and beard
+        w.fill_circle(pt.x, pt.y - 8, 8, Palette.beard_grey);
+        w.fill_rect(pt.x - 7, pt.y + 2, 14, 7, Palette.beard_grey);
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Mosely",
+            "Captain Rook",
             pt.x,
             pt.y,
             .above,
@@ -2544,7 +2542,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
         layout_resolver.submit(TextLabel.init(
-            "[Detective]",
+            "[Captain]",
             pt.x,
             pt.y,
             .below,
@@ -2554,17 +2552,17 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
             .actor_status,
         ));
-    } else if (std.mem.eql(u8, name, "Buthane")) {
-        // Madame Buthane: Crimson vest, auburn hair (P14-02, D-016)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.buthane_vest);
+    } else if (std.mem.eql(u8, name, "PurserWick")) {
+        // Purser Wick: crimson waistcoat, auburn hair (P14-02, D-016, P35-04)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.purser_vest);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
         // Auburn hair
-        w.fill_circle(pt.x, pt.y - 8, 8, Palette.buthane_hair);
+        w.fill_circle(pt.x, pt.y - 8, 8, Palette.purser_hair);
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Madame Buthane",
+            "Purser Wick",
             pt.x,
             pt.y,
             .above,
@@ -2575,7 +2573,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
         layout_resolver.submit(TextLabel.init(
-            "[Rental Desk]",
+            "[Berth Counter]",
             pt.x,
             pt.y,
             .below,
@@ -2585,22 +2583,23 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
             .actor_status,
         ));
-    } else if (std.mem.eql(u8, name, "StrayCat")) {
-        // Stray Cat: Black cat token with green eyes & ears (P14-02, D-016)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Palette.stray_cat_color);
+    } else if (std.mem.eql(u8, name, "Bramble")) {
+        // Bramble: a shaggy grey dog with floppy ears (P14-02, D-016, P35-04)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Palette.bramble_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS - 2, Color.white);
 
-        // Ears
-        w.fill_rect(pt.x - 8, pt.y - ACTOR_SCREEN_RADIUS - 4, 4, 6, Palette.stray_cat_color);
-        w.fill_rect(pt.x + 4, pt.y - ACTOR_SCREEN_RADIUS - 4, 4, 6, Palette.stray_cat_color);
+        // Floppy ears
+        w.fill_rect(pt.x - ACTOR_SCREEN_RADIUS, pt.y - 6, 5, 10, Palette.bramble_coat);
+        w.fill_rect(pt.x + ACTOR_SCREEN_RADIUS - 5, pt.y - 6, 5, 10, Palette.bramble_coat);
 
-        // Green eyes
-        w.fill_rect(pt.x - 5, pt.y - 3, 3, 3, Palette.cat_eye_color);
-        w.fill_rect(pt.x + 2, pt.y - 3, 3, 3, Palette.cat_eye_color);
+        // Eyes and nose
+        w.fill_rect(pt.x - 5, pt.y - 4, 3, 3, Color.black);
+        w.fill_rect(pt.x + 2, pt.y - 4, 3, 3, Color.black);
+        w.fill_rect(pt.x - 2, pt.y + 1, 4, 3, Palette.bramble_nose);
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Stray Cat",
+            "Bramble",
             pt.x,
             pt.y,
             .above,
@@ -2611,7 +2610,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_name,
         ));
 
-        if (status_of(frame).cat_startled) {
+        if (status_of(frame).dog_startled) {
             layout_resolver.submit(TextLabel.init(
                 "[STARTLED!]",
                 pt.x,
@@ -2953,7 +2952,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
 }
 
 fn walkway(w: *DisplayWindow, frame: *const RenderFrame, p1: r.Point, p2: r.Point) bool {
-    if (!detect(frame).is_garden_scene) return false;
+    if (!detect(frame).is_yard_scene) return false;
     // In Garden: Stone flagstone garden path
     w.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color{ .r = 135, .g = 120, .b = 100 });
     w.draw_line(p1.x, p1.y - 1, p2.x, p2.y - 1, Color{ .r = 195, .g = 180, .b = 155 });
@@ -2978,8 +2977,8 @@ fn footer(frame: *const RenderFrame) ?r.FooterHint {
         return .{ .text = "[1]: Hoagie | [2]: Bernard | [3]: Laverne | [-]/[+]: Speed | [Space]: Pause | Flush Item to Portrait", .color = HINT_GOLD };
     } else if (sc.is_goat_courtyard_scene or sc.is_templar_crypt_scene) {
         return .{ .text = "[C]: Courtyard | [T]: Crypt | [1]: Dig | [2]: Plough | [-]/[+]: Speed | [Space]: Pause", .color = HINT_GOLD };
-    } else if (sc.is_hotel_scene or sc.is_garden_scene or sc.is_bike_rental_scene) {
-        return .{ .text = "[H]: Hotel | [G]: Garden | [B]: Bike Shop | [-]/[+]: Speed | [Space]: Pause | [0-8]: Steps", .color = HINT_GOLD };
+    } else if (sc.is_inn_scene or sc.is_yard_scene or sc.is_office_scene) {
+        return .{ .text = "[I]: Inn | [Y]: Yard | [O]: Office | [-]/[+]: Speed | [Space]: Pause | [0-8]: Steps", .color = HINT_GOLD };
     } else if (sc.is_village_scene) {
         return .{ .text = "[S]: Theft | [F]: Feast | [G]: Tip | [-]/[+]: Speed | [Space/N]: Pause/Step | [< / >]: Scrub", .color = HINT_GOLD };
     } else if (sc.is_darko_bedroom_scene or sc.is_darko_school_scene or sc.is_darko_vortex_scene or status_of(frame).tangent_active) {
@@ -3002,8 +3001,8 @@ pub const Track = enum(u8) {
     tidewalk,
     fencing_yard,
     lantern,
-    courtyard,
-    bike_shop,
+    net_loft,
+    harbour_office,
     lochmarne,
     tentacle,
     bell_tower,
@@ -3057,8 +3056,8 @@ fn arranged(which: Track) music.Arranged {
         .tidewalk => music.tidewalk,
         .fencing_yard => music.fencing_yard,
         .lantern => music.lantern,
-        .courtyard => music.courtyard,
-        .bike_shop => music.bike_shop,
+        .net_loft => music.net_loft,
+        .harbour_office => music.harbour_office,
         .lochmarne => music.lochmarne,
         .tentacle => music.tentacle,
         .bell_tower => music.bell_tower,
@@ -3117,15 +3116,15 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
         std.mem.indexOf(u8, scene_name, "Common") != null)
     {
         return track(.tavern);
-    } else if (std.mem.indexOf(u8, scene_name, "Garden") != null or
+    } else if (std.mem.eql(u8, scene_name, "Inn Landing") or
+        std.mem.eql(u8, scene_name, "Net Loft Yard") or
+        std.mem.indexOf(u8, scene_name, "Garden") != null or
         std.mem.indexOf(u8, scene_name, "Courtyard") != null or
         std.mem.indexOf(u8, scene_name, "Corridor") != null)
     {
-        return track(.courtyard);
-    } else if (std.mem.indexOf(u8, scene_name, "Bike") != null or
-        std.mem.indexOf(u8, scene_name, "Rental") != null)
-    {
-        return track(.bike_shop);
+        return track(.net_loft);
+    } else if (std.mem.eql(u8, scene_name, "Harbour Office")) {
+        return track(.harbour_office);
     } else if (std.mem.indexOf(u8, scene_name, "Lochmarne") != null or
         std.mem.indexOf(u8, scene_name, "Goat") != null or
         std.mem.indexOf(u8, scene_name, "Crypt") != null or
@@ -3192,12 +3191,12 @@ pub const Status = struct {
     pegs_tampered: bool = false,
     wind_blowing: bool = false,
     judge_distracted: bool = false,
-    fence_taped: bool = false,
-    fence_has_hair: bool = false,
-    cat_startled: bool = false,
-    cat_hair_collected: bool = false,
-    gabriel_disguised: bool = false,
-    bike_rented: bool = false,
+    gap_taped: bool = false,
+    gap_has_fur: bool = false,
+    dog_startled: bool = false,
+    dog_fur_collected: bool = false,
+    tamsin_disguised: bool = false,
+    berth_taken: bool = false,
     goat_is_tangled: bool = false,
     goat_is_charging: bool = false,
     goat_is_retreating: bool = false,
@@ -3439,32 +3438,32 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
         st.judge_distracted = world.has_fact(null, rel, null);
     }
 
-    // GK3 Cat Moustache scenario status flags (P14-02)
-    st.fence_taped = false;
+    // The Borrowed Beard status flags (P14-02, P35-04)
+    st.gap_taped = false;
     if (world.lookup_relation("taped") orelse world.lookup_relation("Taped")) |rel| {
-        st.fence_taped = world.has_fact(null, rel, null);
+        st.gap_taped = world.has_fact(null, rel, null);
     }
-    st.fence_has_hair = false;
-    if (world.lookup_relation("FenceHasHair")) |rel| {
-        st.fence_has_hair = world.has_fact(null, rel, null);
+    st.gap_has_fur = false;
+    if (world.lookup_relation("GapHasFur")) |rel| {
+        st.gap_has_fur = world.has_fact(null, rel, null);
     }
-    st.cat_startled = false;
+    st.dog_startled = false;
     if (world.lookup_relation("startled") orelse world.lookup_relation("Startled")) |rel| {
-        st.cat_startled = world.has_fact(null, rel, null);
+        st.dog_startled = world.has_fact(null, rel, null);
     }
-    st.cat_hair_collected = false;
+    st.dog_fur_collected = false;
     if (world.lookup_relation("Carries")) |c_rel| {
-        if (world.lookup_entity("CatHair")) |ch_id| {
-            st.cat_hair_collected = world.has_fact(null, c_rel, ch_id.to_int());
+        if (world.lookup_entity("DogFur")) |ch_id| {
+            st.dog_fur_collected = world.has_fact(null, c_rel, ch_id.to_int());
         }
     }
-    st.gabriel_disguised = false;
+    st.tamsin_disguised = false;
     if (world.lookup_relation("disguised") orelse world.lookup_relation("Disguised")) |rel| {
-        st.gabriel_disguised = world.has_fact(null, rel, null);
+        st.tamsin_disguised = world.has_fact(null, rel, null);
     }
-    st.bike_rented = false;
-    if (world.lookup_relation("HasBikeKeys") orelse world.lookup_relation("BikeRented")) |rel| {
-        st.bike_rented = world.has_fact(null, rel, null);
+    st.berth_taken = false;
+    if (world.lookup_relation("HasBerthTicket")) |rel| {
+        st.berth_taken = world.has_fact(null, rel, null);
     }
 
     // 5c. Capture Living Village drives & social graph relations (P18-01..P18-03, D-021)
@@ -3695,14 +3694,14 @@ fn thumbnail_backdrop(scene_name: []const u8, x: usize, y: usize) ?u8 {
         if (y < 4) return rgb(25, 45, 95); // Dusk sky
         if (y < 7) return rgb(20, 90, 150); // Ocean
         return if (x < 10) rgb(45, 110, 55) else rgb(190, 170, 110); // Grass & beach
-    } else if (has(scene_name, "Garden") or has(scene_name, "Courtyard")) {
-        if (y < 4) return rgb(135, 185, 230); // French sky
-        if (y < 7) return rgb(160, 110, 60); // Courtyard fence & stone
-        return rgb(55, 125, 50); // Courtyard lawn
-    } else if (has(scene_name, "Bike") or has(scene_name, "Shop")) {
-        return if (y < 6) rgb(85, 75, 65) else rgb(150, 95, 45); // Shop wall, floor & counter
-    } else if (has(scene_name, "Hotel") or has(scene_name, "Corridor")) {
-        return if (y < 6) rgb(110, 30, 40) else rgb(55, 25, 20); // Burgundy wallpaper, wainscot
+    } else if (has(scene_name, "Net Loft") or has(scene_name, "Garden") or has(scene_name, "Courtyard")) {
+        if (y < 4) return rgb(135, 185, 230); // Harbour sky
+        if (y < 7) return rgb(160, 110, 60); // Fence & stone
+        return rgb(55, 125, 50); // Yard grass
+    } else if (has(scene_name, "Harbour Office") or has(scene_name, "Shop")) {
+        return if (y < 6) rgb(85, 75, 65) else rgb(150, 95, 45); // Office wall, floor & counter
+    } else if (has(scene_name, "Inn Landing") or has(scene_name, "Corridor")) {
+        return if (y < 6) rgb(110, 30, 40) else rgb(55, 25, 20); // Landing walls, wainscot
     } else if (has(scene_name, "Cellar")) {
         return if (y < 6) rgb(25, 35, 55) else rgb(40, 50, 70); // Cellar wall, stone floor
     } else if (has(scene_name, "Tidewalk")) {
@@ -3721,8 +3720,8 @@ fn thumbnail_actor(name: []const u8) ?u8 {
             return std.mem.eql(u8, a, b);
         }
     }.f;
-    if (is(name, "Guard") or is(name, "Tamsin") or is(name, "Mosely")) return save.pack_rgb332(50, 130, 245); // Blue
-    if (is(name, "Cat") or is(name, "Gabriel")) return save.pack_rgb332(240, 120, 30); // Orange / Tan
+    if (is(name, "Guard") or is(name, "Tamsin") or is(name, "CaptainRook")) return save.pack_rgb332(50, 130, 245); // Blue
+    if (is(name, "Cat")) return save.pack_rgb332(240, 120, 30); // Orange / Tan
     if (is(name, "Bard") or is(name, "Vell")) return save.pack_rgb332(180, 70, 240); // Purple
     return null;
 }

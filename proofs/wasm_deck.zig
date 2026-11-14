@@ -13,7 +13,7 @@ const EntityId = bespoke.EntityId;
 
 const TAVERN_SCRIPT = @embedFile("tavern_script");
 const SPITTING_CONTEST_SCRIPT = @import("spitting_contest.zig").SPITTING_CONTEST_SCRIPT;
-const GK3_MOUSTACHE_SCRIPT = @import("gk3_moustache.zig").GK3_MOUSTACHE_SCRIPT;
+const BORROWED_BEARD_SCRIPT = @import("borrowed_beard.zig").BORROWED_BEARD_SCRIPT;
 const VILLAGE_SCRIPT = @import("village.zig").VILLAGE_SCRIPT;
 const GOAT_PUZZLE_SCRIPT = @import("goat_puzzle.zig").GOAT_PUZZLE_SCRIPT;
 const DOTT_PUZZLE_SCRIPT = @import("dott_puzzle.zig").DOTT_PUZZLE_SCRIPT;
@@ -41,13 +41,13 @@ pub const decks = [_]wasm.Deck{
         .background = .{ .r = 16, .g = 42, .b = 58 },
         .catalyst = solver(&SPIT_SOLUTION),
     }),
-    wasm.script_deck_with("GK3: CAT MOUSTACHE PUZZLE", GK3_MOUSTACHE_SCRIPT, .{
-        .player = "Gabriel",
-        .intro = "GK3: Gabriel needs a disguise. Use the verbs, or [S] for the next step.",
+    wasm.script_deck_with("THE BORROWED BEARD", BORROWED_BEARD_SCRIPT, .{
+        .player = "Tamsin",
+        .intro = "The Borrowed Beard: Tamsin needs a disguise. Use the verbs, or [S] for the next step.",
         .soundtrack = &art.soundtrack,
         .background = .{ .r = 32, .g = 52, .b = 34 },
-        .setup = gk3_setup,
-        .catalyst = solver(&GK3_SOLUTION),
+        .setup = beard_setup,
+        .catalyst = solver(&BEARD_SOLUTION),
     }),
     wasm.script_deck_with("THE LIVING VILLAGE (EMERGENCE)", VILLAGE_SCRIPT, .{
         .soundtrack = &art.soundtrack,
@@ -288,23 +288,23 @@ const SPIT_SOLUTION = [_]Beat{
     .{ .note = "Tamsin spits.", .actions = &.{ .{ .cue = .{ .name = "Spits", .actor = "Tamsin" } }, .{ .ticks = 1 } } },
 };
 
-const GK3_SOLUTION = [_]Beat{
-    .{ .note = "Gabriel searches his desk.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "RoomDesk" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel takes Mosely's passport.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "MoselyDoor" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel draws a moustache on the passport.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "Marker", .b = "MoselyPassport" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel heads into the garden and finds the spray bottle.", .actions = &.{
-        .{ .scene = .{ .scene = "Hotel Garden", .actor = "Gabriel", .mark = "GardenPath" } },
-        .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "GardenShrub" } },
+const BEARD_SOLUTION = [_]Beat{
+    .{ .note = "Tamsin searches her washstand.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "WashStand" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin borrows Rook's sailing papers.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "RookDoor" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin draws a beard on Rook's portrait.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Charcoal", .b = "RookPapers" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin heads into the yard and finds the watering can.", .actions = &.{
+        .{ .scene = .{ .scene = "Net Loft Yard", .actor = "Tamsin", .mark = "YardPath" } },
+        .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "RainBarrel" } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "Gabriel tapes the hole in the fence.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "MaskingTape", .b = "FenceHole" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel sprays the cat through the fence.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "SprayBottle", .b = "StrayCat" } }, .{ .ticks = 8 } } },
-    .{ .note = "Gabriel collects the cat hair from the tape.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "FenceHole" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel makes a moustache with the syrup.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "CatHair", .b = "Syrup" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel puts on the moustache.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Gabriel", .a = "CatMoustache", .b = "Gabriel" } }, .{ .ticks = 1 } } },
-    .{ .note = "Gabriel asks Madame Buthane for Mosely's motorcycle.", .actions = &.{
-        .{ .scene = .{ .scene = "Bike Rental Shop", .actor = "Gabriel", .mark = "ShopEntrance" } },
-        .{ .cue = .{ .name = "TalksTo", .actor = "Gabriel", .a = "Buthane" } },
+    .{ .note = "Tamsin tapes the gap under the gate.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "SailTape", .b = "GateGap" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin soaks the dog with the watering can.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "WateringCan", .b = "Bramble" } }, .{ .ticks = 8 } } },
+    .{ .note = "Tamsin peels the dog fur off the tape.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "GateGap" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin makes a beard with the honey.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "DogFur", .b = "HoneyPot" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin puts on the beard.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "GreyBeard", .b = "Tamsin" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin asks Purser Wick for Rook's berth.", .actions = &.{
+        .{ .scene = .{ .scene = "Harbour Office", .actor = "Tamsin", .mark = "OfficeDoor" } },
+        .{ .cue = .{ .name = "TalksTo", .actor = "Tamsin", .a = "PurserWick" } },
         .{ .ticks = 4 },
     } },
 };
@@ -505,8 +505,8 @@ fn loom_follow_scene(rt: *WasmRuntime) anyerror!void {
     _ = try rt.spatial.transition_actor(wren, now, rt.spatial.graph.find_waypoint_in_room(now, mark));
 }
 
-fn gk3_setup(rt: *WasmRuntime) anyerror!void {
-    try rt.vm.transition_to_scene(try entity(rt, "Hotel Corridor"));
+fn beard_setup(rt: *WasmRuntime) anyerror!void {
+    try rt.vm.transition_to_scene(try entity(rt, "Inn Landing"));
 }
 
 /// The goat waits at its tether; George starts at the courtyard entrance.
@@ -790,7 +790,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Gabriel", "Player", "George", "Bernard", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "George", "Bernard", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -817,7 +817,7 @@ test "P30-05: the solve key plays each puzzle proof to its ending" {
         const rt = try load(2);
         defer unload(rt);
         try solve(rt);
-        try testing.expect(holds(rt, "Gabriel", "HasBikeKeys", null));
+        try testing.expect(holds(rt, "Tamsin", "HasBerthTicket", null));
     }
     {
         const rt = try load(4);

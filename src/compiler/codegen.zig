@@ -1620,11 +1620,11 @@ test "P8-02: codegen compiles multi-clause when rules into reactive rules execut
 test "P11-01 / P11-02: codegen compiles 3-parameter item-combining cues with commutative matching" {
     const testing = std.testing;
     const source =
-        \\entity Gabriel, MapleSyrup, CatHairTape, CatMoustache
+        \\entity Hero, Honey, FurTape, FakeBeard
         \\relation Carries(holder, item)
         \\
-        \\on cue Uses(Gabriel, MapleSyrup, CatHairTape):
-        \\  remember Carries(Gabriel, CatMoustache)
+        \\on cue Uses(Hero, Honey, FurTape):
+        \\  remember Carries(Hero, FakeBeard)
     ;
 
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -1645,17 +1645,17 @@ test "P11-01 / P11-02: codegen compiles 3-parameter item-combining cues with com
     defer compiled.deinit();
 
     // 1. Both permutations match the exact same handler PC (D-013)
-    const pc1 = compiled.find_cue_handler("Uses", "Gabriel", "MapleSyrup", "CatHairTape");
-    const pc2 = compiled.find_cue_handler("Uses", "Gabriel", "CatHairTape", "MapleSyrup");
+    const pc1 = compiled.find_cue_handler("Uses", "Hero", "Honey", "FurTape");
+    const pc2 = compiled.find_cue_handler("Uses", "Hero", "FurTape", "Honey");
     try testing.expect(pc1 != null);
     try testing.expect(pc2 != null);
     try testing.expectEqual(pc1.?, pc2.?);
 
     // 2. Non-matching pair returns fallback or null
-    const pc3 = compiled.find_cue_handler("Uses", "Gabriel", "MapleSyrup", "NonExistent");
+    const pc3 = compiled.find_cue_handler("Uses", "Hero", "Honey", "NonExistent");
     _ = pc3;
     // Since fallback "Uses" is registered for base cue name, check specific signature
-    try testing.expect(compiled.cue_handler_entries.get("Uses:Gabriel:MapleSyrup:NonExistent") == null);
+    try testing.expect(compiled.cue_handler_entries.get("Uses:Hero:Honey:NonExistent") == null);
 }
 
 test "P12-01: codegen compiles multi-scene transitions and registers scoped marks" {

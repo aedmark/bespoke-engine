@@ -21,13 +21,13 @@
       "flag": "spit"
     },
     {
-      "id": "gk3",
-      "title": "The Cat Moustache",
+      "id": "beard",
+      "title": "The Borrowed Beard",
       "tag": "Multi-scene crafting",
-      "blurb": "Gabriel must pass as Mosely to rent a motorcycle. Tape, a marker, syrup, a passport, and some cat hair combine across three scenes into a convincing disguise.",
-      "source": "proofs/gk3_moustache.zig#GK3_MOUSTACHE_SCRIPT",
+      "blurb": "Tamsin must pass as Captain Rook to claim the last berth on the packet boat. Charcoal, sail tape, honey, his sailing papers, and some dog fur combine across three scenes into a convincing disguise.",
+      "source": "proofs/borrowed_beard.zig#BORROWED_BEARD_SCRIPT",
       "deck": 2,
-      "flag": "gk3"
+      "flag": "borrowed-beard"
     },
     {
       "id": "village",

@@ -777,7 +777,7 @@
           "id": "branching-dialogue-balloons",
           "title": "Branching Dialogue Trees & Dynamic Choice Pruning",
           "summary": "A wrapped dialogue panel with the speaker's name, the line, and relational fact-guarded choices that suspend the script until selection.",
-          "synopsis": "choice \"Rent motorcycle\" if Carries(Gabriel, License): say Buthane: \"Keys.\"",
+          "synopsis": "choice \"Book a berth\" if Carries(Tamsin, Papers): say PurserWick: \"Ticket.\"",
           "tags": ["dialogue", "speech", "balloons", "choices", "pruning"],
           "what": "Shows the open dialogue in a parchment panel centred above the bottom of the stage and as wide as its text: the speaker's display name, the line word-wrapped at 60 characters, and numbered choices that wrap and grow the panel upward, with a scroll bar past six and keyboard hotkeys (1-9). The window and the browser draw the same layout (D-077, D-084).",
           "how": [
@@ -821,7 +821,7 @@
             "Clicking an actor emits use_inventory_on_actor; clicking a hotspot emits use_inventory_on_hotspot.",
             "Right-click cancels in-hand mode with an 'Action cancelled' banner."
           ],
-          "why": "Classic multi-step puzzles (like the GK3 Cat Moustache) require crafting composite items before using them in the world. Visual in-hand indicators make the player's intent crystal clear.",
+          "why": "Classic multi-step puzzles (like The Borrowed Beard) require crafting composite items before using them in the world. Visual in-hand indicators make the player's intent crystal clear.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-013", "target": "docs/DECISIONS.md#d-013", "kind": "decision"},
@@ -831,24 +831,24 @@
           "related": ["commutative-item-combining", "classic-adventure-verbs"]
         },
         {
-          "id": "gabriel-knight-cat-moustache-scenario",
-          "title": "The Gabriel Knight 3 Cat Moustache Scenario",
+          "id": "borrowed-beard-scenario",
+          "title": "The Borrowed Beard Scenario",
           "summary": "Multi-scene vertical slice demonstrating ambient routines, in-hand crafting, fact-guarded dialogue pruning, and disguise evaluation.",
-          "synopsis": "zig build run-proof -- --gk3 [--headless]",
-          "tags": ["gk3", "scenario", "crafting", "multi-scene", "dialogue"],
-          "what": "Implements the classic multi-step disguise puzzle across three partitioned scenes (Hotel Corridor, Courtyard Garden, Bike Rental Desk), combining stolen passport, tape fence traps, spray bottles, syrup adhesive, and fact-guarded dialogue choice validation.",
+          "synopsis": "zig build run-proof -- --borrowed-beard [--headless]",
+          "tags": ["beard", "scenario", "crafting", "multi-scene", "dialogue"],
+          "what": "Implements the classic multi-step disguise puzzle across three partitioned scenes (Inn Landing, Net Loft Yard, Harbour Office), combining borrowed sailing papers, a taped gate gap, a watering can, honey adhesive, and fact-guarded dialogue choice validation.",
           "how": [
             "Declares three partitioned scenes with distinct waypoints, marks, hotspots, and ambient actor routines.",
-            "Uses two-operand inventory combining (Uses(Gabriel, Syrup, CatHair)) to craft composite items.",
-            "Evaluates composite disguise validity via relational fact conjunctions (passport, hair, syrup, marker).",
-            "Runs dialogue choice pruning when interacting with Madame Buthane, granting motorcycle keys only when the disguise condition holds."
+            "Uses two-operand inventory combining (Uses(Tamsin, DogFur, HoneyPot)) to craft composite items.",
+            "Evaluates composite disguise validity via relational fact conjunctions (papers, fur, honey, charcoal).",
+            "Runs dialogue choice pruning when talking to Purser Wick, granting the berth ticket only when the disguise condition holds."
           ],
           "why": "Proves that BeSpoke's engine spine effortlessly coordinates complex adventure game logic across multiple scenes, ambient actor schedules, dynamic fact guards, and time-travel snapshot state without custom ad-hoc engine extensions.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-016", "target": "docs/DECISIONS.md#d-016", "kind": "decision"},
-            {"label": "GK3 Cat Moustache Scenario Script", "target": "proofs/gk3_moustache.zig", "kind": "source"},
-            {"label": "GK3 Scene Renderer & Actor Tokens", "target": "src/display/renderer.zig", "kind": "source"}
+            {"label": "The Borrowed Beard Script", "target": "proofs/borrowed_beard.zig", "kind": "source"},
+            {"label": "Scene Renderer & Actor Tokens", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["stageplay-taxonomy", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
         },
@@ -1168,13 +1168,13 @@
           "id": "headless-and-interactive-cli",
           "title": "Dual Interactive & Headless CLI Modes",
           "summary": "Command-line flags supporting headless deterministic simulation runs and interactive graphics mode.",
-          "synopsis": "zig build run -- [--headless] [--spitting-contest] [--gk3] [--help]",
+          "synopsis": "zig build run -- [--headless] [--spitting-contest] [--borrowed-beard] [--help]",
           "tags": ["cli", "headless", "runner"],
           "what": "Provides flexible command-line execution modes for CI pipelines, automated integration testing, and interactive human gameplay.",
           "how": [
             "--headless runs the simulation without creating an SDL2 window, printing tick snapshots to standard output.",
             "--spitting-contest launches the Pip-Spitting Green contest puzzle scenario.",
-            "--gk3 or --cat-moustache launches the Gabriel Knight 3 Cat Moustache puzzle scenario.",
+            "--borrowed-beard launches The Borrowed Beard puzzle scenario.",
             "Running without flags launches the interactive graphical Tavern Heist simulation at 60 Hz."
           ],
           "why": "Continuous integration servers and developer workstations without display servers must be able to run and verify entire multi-scene simulation scenarios with zero GUI dependencies.",
@@ -1182,7 +1182,7 @@
           "evidence": [
             {"label": "Architectural Decision D-001", "target": "docs/DECISIONS.md#d-001", "kind": "decision"},
             {"label": "Main CLI Argument Parsing", "target": "src/main.zig", "kind": "source"},
-            {"label": "GK3 Cat Moustache Scenario Script", "target": "proofs/gk3_moustache.zig", "kind": "source"},
+            {"label": "The Borrowed Beard Script", "target": "proofs/borrowed_beard.zig", "kind": "source"},
             {"label": "Testing Strategy & Recipes", "target": "docs/TESTING.md", "kind": "document"}
           ],
           "related": ["zero-external-dependencies", "test-verification-hierarchy"]

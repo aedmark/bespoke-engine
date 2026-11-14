@@ -17,25 +17,25 @@ spitting_contest/Pip-Spitting Green +judge_distracted: dca59e541a420f02
 spitting_contest/Pip-Spitting Green +tangent_active: 4ce58826e4c337dc
 spitting_contest/Pip-Spitting Green +singularity_collapsed: 9f1a7de44a28f54a
 spitting_contest/Pip-Spitting Green +countdown: eae43c547ccc8a70
-thumb/gk3_moustache/Hotel Corridor: 631dad0477c7859e
-gk3_moustache/Hotel Corridor: 889f5462ffd6053b
-gk3_moustache/Hotel Corridor +gabriel_disguised: e69ae200bb2ccd85
-gk3_moustache/Hotel Corridor +tangent_active: 500e81486a2f787c
-gk3_moustache/Hotel Corridor +singularity_collapsed: 1257fa65a82dbf4e
-gk3_moustache/Hotel Corridor +countdown: 078459103df41275
-thumb/gk3_moustache/Hotel Garden: 54a8c33a1aa4a7d7
-gk3_moustache/Hotel Garden: 152582d5066b08bc
-gk3_moustache/Hotel Garden +fence_taped: 269f0648d532a4d2
-gk3_moustache/Hotel Garden +cat_startled: c8ce1aef82614e8d
-gk3_moustache/Hotel Garden +tangent_active: f61a085c0ad01335
-gk3_moustache/Hotel Garden +singularity_collapsed: 34e536063288444b
-gk3_moustache/Hotel Garden +countdown: c5cda45d9f525ce8
-thumb/gk3_moustache/Bike Rental Shop: 5917a507bb207f30
-gk3_moustache/Bike Rental Shop: 6738bde2e4afc359
-gk3_moustache/Bike Rental Shop +bike_rented: 4811564ddd513a77
-gk3_moustache/Bike Rental Shop +tangent_active: 462bac5bf542c07f
-gk3_moustache/Bike Rental Shop +singularity_collapsed: 96ffc9731b7b30ba
-gk3_moustache/Bike Rental Shop +countdown: 344b193b18dfc592
+thumb/borrowed_beard/Inn Landing: c7278207f45bb4ed
+borrowed_beard/Inn Landing: e86a569f57788f15
+borrowed_beard/Inn Landing +tamsin_disguised: b45cb942f749e9eb
+borrowed_beard/Inn Landing +tangent_active: 71f97a426fe27be7
+borrowed_beard/Inn Landing +singularity_collapsed: 614b6aeac20bb745
+borrowed_beard/Inn Landing +countdown: 12dd505e5449f800
+thumb/borrowed_beard/Net Loft Yard: 28f9c66b758896d4
+borrowed_beard/Net Loft Yard: cb4bcf4d4e29bb50
+borrowed_beard/Net Loft Yard +gap_taped: 65ad9c3b156df6c0
+borrowed_beard/Net Loft Yard +dog_startled: 57a7270aae9b007c
+borrowed_beard/Net Loft Yard +tangent_active: cb9596a8eb2f5e75
+borrowed_beard/Net Loft Yard +singularity_collapsed: 6f646db7d95cda81
+borrowed_beard/Net Loft Yard +countdown: a736033735b5844c
+thumb/borrowed_beard/Harbour Office: 27baf7f3090affb8
+borrowed_beard/Harbour Office: a4b848322d691f8c
+borrowed_beard/Harbour Office +berth_taken: 740a1f05ee308662
+borrowed_beard/Harbour Office +tangent_active: 90dc622ac35aa95d
+borrowed_beard/Harbour Office +singularity_collapsed: e80e6bf8e6664f54
+borrowed_beard/Harbour Office +countdown: 33d3e65e6f25e4c2
 thumb/sword_fighting/Tidewalk: e0185a13b7445c31
 sword_fighting/Tidewalk: e03b2b3787f99d0a
 sword_fighting/Tidewalk +tangent_active: f8b79be37471b683

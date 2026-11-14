@@ -47,7 +47,7 @@
   const DECK_NAMES = [
     'Tavern Heist',
     'The Pip-Spitting Green',
-    'GK3 Cat Moustache',
+    'The Borrowed Beard',
     'The Living Village',
     'Lochmarne Goat',
     'Day of the Tentacle Trio',
@@ -60,7 +60,7 @@
   const DECK_BANNERS = [
     'TAVERN HEIST',
     'THE PIP-SPITTING GREEN',
-    'GK3 CAT MOUSTACHE',
+    'THE BORROWED BEARD',
     'THE LIVING VILLAGE',
     'LOCHMARNE GOAT',
     'DAY OF THE TENTACLE TRIO',

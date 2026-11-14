@@ -621,7 +621,7 @@ test "P12-01: lexer tokenizes scene transition keywords" {
 test "P13-01: lexer tokenizes dialogue choice keywords" {
     const testing = std.testing;
     const script =
-        \\choice "Rent motorcycle" if Carries(Gabriel, License):
+        \\choice "Rent motorcycle" if Carries(Hero, License):
         \\choice "Leave shop":
     ;
 
@@ -635,7 +635,7 @@ test "P13-01: lexer tokenizes dialogue choice keywords" {
     try testing.expectEqual(TokenTag.kw_if, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Carries
     try testing.expectEqual(TokenTag.lparen, (try lexer.next()).tag);
-    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Gabriel
+    try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // Hero
     try testing.expectEqual(TokenTag.comma, (try lexer.next()).tag);
     try testing.expectEqual(TokenTag.identifier, (try lexer.next()).tag); // License
     try testing.expectEqual(TokenTag.rparen, (try lexer.next()).tag);

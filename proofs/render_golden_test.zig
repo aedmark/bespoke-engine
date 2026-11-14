@@ -21,7 +21,7 @@ const options = @import("golden_options");
 const art = @import("art.zig");
 
 const spitting_contest = @import("spitting_contest.zig");
-const gk3_moustache = @import("gk3_moustache.zig");
+const borrowed_beard = @import("borrowed_beard.zig");
 const sword_fighting = @import("sword_fighting.zig");
 const village = @import("village.zig");
 const goat_puzzle = @import("goat_puzzle.zig");
@@ -39,7 +39,7 @@ const ACTUAL_NAME = "render.actual.txt";
 
 const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "spitting_contest", .script = spitting_contest.SPITTING_CONTEST_SCRIPT },
-    .{ .name = "gk3_moustache", .script = gk3_moustache.GK3_MOUSTACHE_SCRIPT },
+    .{ .name = "borrowed_beard", .script = borrowed_beard.BORROWED_BEARD_SCRIPT },
     .{ .name = "sword_fighting", .script = sword_fighting.SWORD_FIGHTING_SCRIPT },
     .{ .name = "village", .script = village.VILLAGE_SCRIPT },
     .{ .name = "goat_puzzle", .script = goat_puzzle.GOAT_PUZZLE_SCRIPT },
@@ -76,8 +76,8 @@ fn next_scene(lines: *std.mem.SplitIterator(u8, .scalar)) ?SceneCast {
 /// `RenderFrame`; only `Status.apply` changes with it, never the names.
 const STATUS_VARIANTS = [_][]const u8{
     "spit_is_thick",          "pegs_tampered",         "wind_blowing",         "judge_distracted",
-    "fence_taped",            "fence_has_hair",         "cat_startled",         "cat_hair_collected",
-    "gabriel_disguised",      "bike_rented",            "goat_is_tangled",      "goat_is_charging",
+    "gap_taped",            "gap_has_fur",         "dog_startled",         "dog_fur_collected",
+    "tamsin_disguised",      "berth_taken",            "goat_is_tangled",      "goat_is_charging",
     "goat_is_retreating",     "george_knocked_down",    "plough_moved",         "dott_tree_chopped",
     "dott_wine_aged",         "dott_battery_charged",   "dott_flag_sewn",       "dott_laverne_freed",
     "dott_laverne_disguised", "dott_puzzle_solved",     "tangent_active",       "singularity_collapsed",

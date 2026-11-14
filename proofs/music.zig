@@ -724,7 +724,7 @@ const SPITTING_ARRANGEMENT = order(
 pub const spitting_contest = Arranged{ .sections = &SPITTING_SECTIONS, .arrangement = &SPITTING_ARRANGEMENT };
 
 // ---------------------------------------------------------------------------
-// The courtyard garden: a gentle stroll in F major, 104 bpm. B wanders through B flat and
+// The inn and its net loft yard: a gentle stroll in F major, 104 bpm. B wanders through B flat and
 // A minor, C is a fountain of high arpeggios over held bass, D strolls with a walking bass.
 // One B pass sits a whole step up and ends on G, a step above the theme's F.
 // ---------------------------------------------------------------------------
@@ -819,11 +819,11 @@ const COURTYARD_ARRANGEMENT = order(
     \\c/l c2 a a2/lc
 );
 
-pub const courtyard = Arranged{ .sections = &COURTYARD_SECTIONS, .arrangement = &COURTYARD_ARRANGEMENT };
+pub const net_loft = Arranged{ .sections = &COURTYARD_SECTIONS, .arrangement = &COURTYARD_ARRANGEMENT };
 
 // ---------------------------------------------------------------------------
-// The bike shop: a breezy cafe cadence in G minor, 118 bpm. B swings into B flat, C is a
-// musette with neighbour-note trills, D bounces like a bicycle bell. One B pass sits a fourth
+// The harbour office: a breezy cadence in G minor, 118 bpm. B swings into B flat, C is a
+// musette with neighbour-note trills, D bounces like a ship's bell. One B pass sits a fourth
 // up and ends on C minor, the home key's fourth.
 // ---------------------------------------------------------------------------
 
@@ -890,7 +890,7 @@ const BIKE_SHOP_SECTIONS = [_]audio.BgmPattern{
     ,
         \\k - h - - - h - k - h - - - h - | k - h - s - h - s - s - s s s s
     ),
-    // D: a bicycle-bell bounce
+    // D: a ship's-bell bounce
     section(BIKE_BPM,
         \\g2 - - g2 d3 - - d3 c3 - - c3 g2 - - g2 | d3 - - d3 a2 - - a2 g2 - d3 - g2 - - -
     ,
@@ -917,7 +917,7 @@ const BIKE_SHOP_ARRANGEMENT = order(
     \\c/l c2 d d2 a a2/lc
 );
 
-pub const bike_shop = Arranged{ .sections = &BIKE_SHOP_SECTIONS, .arrangement = &BIKE_SHOP_ARRANGEMENT };
+pub const harbour_office = Arranged{ .sections = &BIKE_SHOP_SECTIONS, .arrangement = &BIKE_SHOP_ARRANGEMENT };
 
 // ---------------------------------------------------------------------------
 // The castle and crypt: a whistle jig in G mixolydian, 126 bpm, six steps to a bar of 6/8, so
@@ -1253,7 +1253,7 @@ pub fn seconds_before_repeat(allocator: std.mem.Allocator, a: Arranged) !f64 {
 }
 
 /// Every arranged track, for the length check.
-pub const ALL = [_]Arranged{ tavern, cellar, spitting_contest, tidewalk, fencing_yard, lantern, courtyard, bike_shop, lochmarne, tentacle, bell_tower };
+pub const ALL = [_]Arranged{ tavern, cellar, spitting_contest, tidewalk, fencing_yard, lantern, net_loft, harbour_office, lochmarne, tentacle, bell_tower };
 
 test "P34-08: every proof track plays at least two minutes before it repeats" {
     for (ALL) |a| {

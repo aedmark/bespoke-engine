@@ -119,7 +119,7 @@ zig build test-proofs                     # every proof's tests
 | --- | --- | --- |
 | `--tavern` (default) | The Tavern Heist | Facts, a patrolling routine, rules that interrupt it, rewind |
 | `--spitting-contest` | The Pip-Spitting Green | Rules that fire when a fact stops holding or expires |
-| `--gk3` | Gabriel Knight 3: The Cat Moustache | Several scenes; combining items in the inventory |
+| `--borrowed-beard` | The Borrowed Beard | Several scenes; combining items in the inventory |
 | `--sword-fighting` | Brackwater Barbs | Turn-taking duels where you learn comebacks by hearing them; characters tire of repeated questions |
 | `--village` | The Living Village | The society mechanic: six villagers with needs, rumours, and an arrest |
 | `--goat` | Broken Sword: The Lochmarne Goat | A hazard that interrupts the player, timed windows, moving down to a new scene |

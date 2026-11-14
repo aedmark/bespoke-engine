@@ -7,7 +7,7 @@ const std = @import("std");
 
 pub const tavern_heist = @import("tavern_heist.zig");
 pub const spitting_contest = @import("spitting_contest.zig");
-pub const gk3_moustache = @import("gk3_moustache.zig");
+pub const borrowed_beard = @import("borrowed_beard.zig");
 pub const sword_fighting = @import("sword_fighting.zig");
 pub const village = @import("village.zig");
 pub const goat_puzzle = @import("goat_puzzle.zig");
@@ -22,7 +22,7 @@ pub const observatory_puzzle = @import("observatory_puzzle.zig");
 const Proof = enum {
     tavern,
     spitting_contest,
-    gk3,
+    borrowed_beard,
     sword_fighting,
     village,
     goat,
@@ -42,8 +42,10 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "tavern-heist", .proof = .tavern },
     .{ .name = "spitting-contest", .proof = .spitting_contest },
     .{ .name = "spit", .proof = .spitting_contest },
-    .{ .name = "gk3", .proof = .gk3 },
-    .{ .name = "cat-moustache", .proof = .gk3 },
+    .{ .name = "borrowed-beard", .proof = .borrowed_beard },
+    .{ .name = "beard", .proof = .borrowed_beard },
+    .{ .name = "gk3", .proof = .borrowed_beard },
+    .{ .name = "cat-moustache", .proof = .borrowed_beard },
     .{ .name = "sword-fighting", .proof = .sword_fighting },
     .{ .name = "barbs", .proof = .sword_fighting },
     .{ .name = "insults", .proof = .sword_fighting },
@@ -90,7 +92,7 @@ const usage =
     \\Proofs (default: --tavern):
     \\  --tavern             The Tavern Heist (relational spine, fibers, interrupts, rewind)
     \\  --spitting-contest   The Pip-Spitting Green (stageplay DSL, TTL triggers)
-    \\  --gk3                Gabriel Knight 3 Cat Moustache (crafting, multi-scene)
+    \\  --borrowed-beard     The Borrowed Beard (crafting, multi-scene)
     \\  --sword-fighting     Brackwater Barbs (learned comebacks, mood decay)
     \\  --village            The Living Village (emergent drives, rumors, justice)
     \\  --goat               Broken Sword Lochmarne Goat (threat radius, retreat window)
@@ -142,7 +144,7 @@ pub fn main() !void {
     switch (proof) {
         .tavern => try tavern_heist.run(allocator, stdout, headless),
         .spitting_contest => if (headless) try spitting_contest.run_headless(allocator, stdout) else try spitting_contest.run_gui(allocator, stdout),
-        .gk3 => if (headless) try gk3_moustache.run_headless(allocator, stdout) else try gk3_moustache.run_interactive(allocator, stdout),
+        .borrowed_beard => if (headless) try borrowed_beard.run_headless(allocator, stdout) else try borrowed_beard.run_interactive(allocator, stdout),
         .sword_fighting => if (headless) try sword_fighting.run_headless(allocator, stdout) else try sword_fighting.run_interactive(allocator, stdout),
         .village => if (headless) try village.run_headless(allocator, stdout) else try village.run_interactive(allocator, stdout),
         .goat => if (headless) try goat_puzzle.run_headless(allocator, stdout) else try goat_puzzle.run_interactive(allocator, stdout),
@@ -159,7 +161,7 @@ pub fn main() !void {
 test "proofs: every proof module compiles and its tests run" {
     _ = tavern_heist;
     _ = spitting_contest;
-    _ = gk3_moustache;
+    _ = borrowed_beard;
     _ = sword_fighting;
     _ = village;
     _ = goat_puzzle;

@@ -3657,7 +3657,7 @@ test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
         "Ask about the cat",
         "Rent motorcycle",
         "Inquire about the templar church",
-        "Ask about Rennes-le-Château",
+        "Ask about the harbour",
         "Buy bottled spring water",
         "Examine tourist postcards",
         "Ask about the rector",
@@ -3668,7 +3668,7 @@ test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
     win.show_dialogue(
         EntityId.from_int(1),
         Point{ .x = 400, .y = 350 },
-        "Madame Buthane",
+        "Harbour Clerk",
         "Bonjour! Can I help you with something?",
         &choices,
     );
@@ -3696,7 +3696,7 @@ test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
     balloon.scroll_offset = balloon.max_scroll_offset();
     try testing.expectEqual(panel.rect.w, get_dialogue_panel(balloon, 960, 540, false).rect.w);
     balloon.scroll_offset = 0;
-    try testing.expectEqualStrings("Madame Buthane", balloon.get_speaker_name());
+    try testing.expectEqualStrings("Harbour Clerk", balloon.get_speaker_name());
 
     const mid_x = panel.rect.x + 40;
     const row_y = struct {

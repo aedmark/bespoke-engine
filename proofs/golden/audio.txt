@@ -30,8 +30,8 @@ track/spitting_contest: 35f8dd220f6a3ed6
 track/tidewalk: 9361e324ad9bc14e
 track/fencing_yard: 9487cf331c804733
 track/lantern: dce3da4ebf939f64
-track/courtyard: 47042ddbb7104943
-track/bike_shop: a76c64e06da5d0e7
+track/net_loft: 47042ddbb7104943
+track/harbour_office: a76c64e06da5d0e7
 track/lochmarne: 9cfd35880ce7ace9
 track/tentacle: 9d60719f47982f97
 track/bell_tower: 3e74db3a3e222c1b
@@ -41,8 +41,8 @@ arrangement/spitting_contest: 33 passes, 125.7s before repeat, 3d1f1fb4c01c643a
 arrangement/tidewalk: 32 passes, 137.1s before repeat, a60f50de00f02030
 arrangement/fencing_yard: 38 passes, 126.7s before repeat, 16b08aca3acaad20
 arrangement/lantern: 48 passes, 125.2s before repeat, 40e6e14f3977a1b0
-arrangement/courtyard: 29 passes, 133.8s before repeat, 7e9c081742746670
-arrangement/bike_shop: 31 passes, 126.1s before repeat, 48f9f16b11a96c8c
+arrangement/net_loft: 29 passes, 133.8s before repeat, 7e9c081742746670
+arrangement/harbour_office: 31 passes, 126.1s before repeat, 48f9f16b11a96c8c
 arrangement/lochmarne: 45 passes, 128.6s before repeat, 2854d8dbd925f77c
 arrangement/tentacle: 35 passes, 127.3s before repeat, 30c201e8cf36a15c
 arrangement/bell_tower: 22 passes, 146.7s before repeat, e9a0a1202d3eb298
@@ -52,14 +52,14 @@ scene/Nowhere In Particular: tavern
 scene/Tavern: tavern
 scene/CellarRoom: cellar
 scene/Spitting Competition: spitting_contest
-scene/Hotel Corridor: courtyard
-scene/Hotel Garden: courtyard
-scene/Bike Rental Shop: bike_shop
+scene/Inn Landing: net_loft
+scene/Net Loft Yard: net_loft
+scene/Harbour Office: harbour_office
 scene/Tidewalk: tidewalk
 scene/Fencing Yard: fencing_yard
 scene/Drowned Lantern: lantern
 scene/Living Village: tavern
-scene/Lochmarne Castle Courtyard: courtyard
+scene/Lochmarne Castle Courtyard: net_loft
 scene/Templar Crypt: lochmarne
 scene/Colonial Workshop: tentacle
 scene/Motel Lobby: tentacle

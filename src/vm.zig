@@ -1690,29 +1690,29 @@ test "P11-02: VM.fire_cue executes 3-argument item combining cue with commutativ
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    const gabriel = try world.intern_entity("Gabriel");
-    const syrup = try world.intern_entity("MapleSyrup");
-    const tape = try world.intern_entity("CatHairTape");
-    const moustache = try world.intern_entity("CatMoustache");
+    const hero = try world.intern_entity("Hero");
+    const syrup = try world.intern_entity("Honey");
+    const tape = try world.intern_entity("FurTape");
+    const beard = try world.intern_entity("FakeBeard");
     const carries = try world.intern_relation("Carries", .set);
 
     var chunk = BytecodeChunk.init(testing.allocator);
     defer chunk.deinit();
 
-    // Cue Handler for Uses(Gabriel, MapleSyrup, CatHairTape):
-    // push Gabriel, push Carries, push CatMoustache, remember 0, halt
+    // Cue Handler for Uses(Hero, Honey, FurTape):
+    // push Hero, push Carries, push FakeBeard, remember 0, halt
     const handler_pc = chunk.count();
-    try chunk.emit_push_entity(gabriel);
+    try chunk.emit_push_entity(hero);
     try chunk.emit_push_relation(carries);
-    try chunk.emit_push_const(moustache.to_int());
+    try chunk.emit_push_const(beard.to_int());
     try chunk.emit_remember(0);
     _ = try chunk.emit_op(.halt);
 
     // Mock compiled program with commutative signatures
     var cue_map = std.StringHashMap(usize).init(testing.allocator);
     defer cue_map.deinit();
-    try cue_map.put("Uses:Gabriel:MapleSyrup:CatHairTape", handler_pc);
-    try cue_map.put("Uses:Gabriel:CatHairTape:MapleSyrup", handler_pc);
+    try cue_map.put("Uses:Hero:Honey:FurTape", handler_pc);
+    try cue_map.put("Uses:Hero:FurTape:Honey", handler_pc);
 
     const MockProgram = struct {
         cue_handler_entries: std.StringHashMap(usize),
@@ -1757,14 +1757,14 @@ test "P11-02: VM.fire_cue executes 3-argument item combining cue with commutativ
     defer vm.deinit();
 
     // Fire cue with commutative argument order: Tape on Syrup!
-    const fib_id = try vm.fire_cue(&mock_prog, "Uses", gabriel, tape, syrup);
+    const fib_id = try vm.fire_cue(&mock_prog, "Uses", hero, tape, syrup);
     try testing.expect(fib_id != null);
     try testing.expectEqual(@as(usize, 1), vm.emitted_cues.items.len);
     try testing.expectEqual(@as(u8, 3), vm.emitted_cues.items[0].arg_count);
 
-    // Step tick executes handler -> Gabriel carries CatMoustache!
+    // Step tick executes handler -> Hero carries FakeBeard!
     try vm.step_tick();
-    try testing.expect(world.has_fact(gabriel, carries, moustache.to_int()));
+    try testing.expect(world.has_fact(hero, carries, beard.to_int()));
 }
 
 test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new scene fibers, and preserves world facts" {
@@ -1866,19 +1866,19 @@ test "P13-02: VM dynamically evaluates and prunes dialogue choices based on rela
     var vm = VM.init(testing.allocator, &world, &chunk);
     defer vm.deinit();
 
-    const gabriel = try world.intern_entity("Gabriel");
+    const hero = try world.intern_entity("Hero");
     const license = try world.intern_entity("License");
     const cat = try world.intern_entity("Cat");
-    _ = try world.intern_entity("Buthane");
+    _ = try world.intern_entity("Clerk");
 
     _ = try world.intern_relation("Carries", .set);
     _ = try world.intern_relation("KnowsAboutCat", .property);
 
     const empty_body: []const parser_mod.Stmt = &[_]parser_mod.Stmt{};
 
-    const args_carries_license = [_][]const u8{ "Gabriel", "License" };
-    const args_knows_cat = [_][]const u8{"Gabriel"};
-    const args_carries_cat = [_][]const u8{ "Gabriel", "Cat" };
+    const args_carries_license = [_][]const u8{ "Hero", "License" };
+    const args_knows_cat = [_][]const u8{"Hero"};
+    const args_carries_cat = [_][]const u8{ "Hero", "Cat" };
 
     const candidates = [_]parser_mod.DialogueChoice{
         .{
@@ -1892,7 +1892,7 @@ test "P13-02: VM dynamically evaluates and prunes dialogue choices based on rela
             .body = empty_body,
         },
         .{
-            .text = "Offer the cat to Buthane",
+            .text = "Offer the cat to Clerk",
             .guard = .{ .has_fact = .{ .relation = "Carries", .args = &args_carries_cat } },
             .body = empty_body,
         },
@@ -1905,7 +1905,7 @@ test "P13-02: VM dynamically evaluates and prunes dialogue choices based on rela
 
     var pruned: [8]PrunedChoice = undefined;
 
-    // --- State 1: Gabriel has no license, does NOT know about cat, has no cat ---
+    // --- State 1: Hero has no license, does NOT know about cat, has no cat ---
     var count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 2), count);
     try testing.expectEqual(@as(usize, 1), pruned[0].original_index);
@@ -1913,11 +1913,11 @@ test "P13-02: VM dynamically evaluates and prunes dialogue choices based on rela
     try testing.expectEqual(@as(usize, 3), pruned[1].original_index);
     try testing.expectEqualStrings("Leave shop", pruned[1].text);
 
-    // --- State 2: Gabriel gets license and learns about cat ---
+    // --- State 2: Hero gets license and learns about cat ---
     const carries_rel = world.lookup_relation("Carries").?;
     const knows_rel = world.lookup_relation("KnowsAboutCat").?;
-    try world.remember(gabriel, carries_rel, license.to_int(), 0);
-    try world.remember(gabriel, knows_rel, 1, 0);
+    try world.remember(hero, carries_rel, license.to_int(), 0);
+    try world.remember(hero, knows_rel, 1, 0);
 
     count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 2), count);
@@ -1926,15 +1926,15 @@ test "P13-02: VM dynamically evaluates and prunes dialogue choices based on rela
     try testing.expectEqual(@as(usize, 3), pruned[1].original_index);
     try testing.expectEqualStrings("Leave shop", pruned[1].text);
 
-    // --- State 3: Gabriel also acquires cat ---
-    try world.remember(gabriel, carries_rel, cat.to_int(), 0);
+    // --- State 3: Hero also acquires cat ---
+    try world.remember(hero, carries_rel, cat.to_int(), 0);
 
     count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 3), count);
     try testing.expectEqual(@as(usize, 0), pruned[0].original_index);
     try testing.expectEqualStrings("Rent motorcycle", pruned[0].text);
     try testing.expectEqual(@as(usize, 2), pruned[1].original_index);
-    try testing.expectEqualStrings("Offer the cat to Buthane", pruned[1].text);
+    try testing.expectEqualStrings("Offer the cat to Clerk", pruned[1].text);
     try testing.expectEqual(@as(usize, 3), pruned[2].original_index);
     try testing.expectEqualStrings("Leave shop", pruned[2].text);
 }

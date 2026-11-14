@@ -73,7 +73,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | --- | --- | --- |
 | `--tavern` | none | The Guard patrols, the Bard's lute charms him, the Cat takes the Cheese while he is distracted. Rewind mid-heist and watch it replay identically. |
 | `--spitting-contest` | C conch, D treacle cider, P pegs, S spit | Each key's effect shows on stage and in speech; the winning spit needs all three plus the wind. In this proof C, D, and P replace the console, debug, and save-drawer keys; `` ` ``, F1, and F2 still open them. |
-| `--gk3` | H hotel, G garden, B bike shop, 0 scavenge, 1 to 8 steps | Scene changes redraw the room; the disguise combines across three scenes; the motorcycle is rented. |
+| `--borrowed-beard` | I inn, Y yard, O office, 0 gather, 1 to 8 steps | Scene changes redraw the room; the disguise combines across three scenes; Purser Wick hands over the berth ticket. |
 | `--sword-fighting` | D duel Bosun Pike, G duel Old Gannet, H duel Dory Quill, C duel Mistress Vell, T talk to the barkeep, W wait 50 ticks | Answer barbs or throw your own with 1 to 9; a joke loses the round on purpose, which hands the fencer a new barb to throw. Each launch deals the fencers different barbs and comebacks. Whoever wins a round attacks next; an opponent who parries your barb teaches you that comeback; a lost duel ends with the opponent's victory line; a repeated question tires the barkeep. |
 | `--village` | S theft, F feast, G tip | Six villagers run their own days. After S, a witness talks, rumours spread, and the Sheriff arrests someone, with no key presses in between. |
 | `--goat` | C courtyard, T crypt, 1 to 4 steps | The goat knocks George down on the way to the cellar until the rope is tangled on the plough. |
@@ -154,7 +154,7 @@ zig build web && node web/smoke.js
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
 - [ ] The playground loads with no console errors (open the developer tools).
-- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, GK3, Village, Goat, DOTT, Grog, Insult Sword Fighting, Algiers, Middlesex, Bell Tower.
+- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Goat, DOTT, Grog, Insult Sword Fighting, Algiers, Middlesex, Bell Tower.
 - [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
 - [ ] Algiers: choosing a path with 1, 2, or 3 locks the others.
 - [ ] Middlesex: the tick counter never runs backwards; a rewind across the collapse brings the branch back.
