@@ -1,5 +1,5 @@
 {
-  "about": "Third-party titles, characters, places, and lines that Phase 35 removes (Q-005, P35-01). Names match case-sensitively as whole words; a name may be followed by a capital, digit-free CamelCase part or an underscore, so `BillyGoat` and `darko_puzzle` count. Quoted lines are stored only as SHA-256 digests of the lowercased, whitespace-collapsed text, so this file does not reproduce them. Add a term when a review finds one; each P35 item removes its source's terms from the code, not from this list.",
+  "about": "Third-party titles, characters, places, and lines that Phase 35 removes (Q-005, P35-01). Names match case-sensitively as whole words, and also written in capitals (D-091); a name may be followed by a capital, digit-free CamelCase part or an underscore, so `BillyGoat` and `darko_puzzle` count. Quoted lines are stored only as SHA-256 digests of the lowercased, whitespace-collapsed text, so this file does not reproduce them. Add a term when a review finds one; each P35 item removes its source's terms from the code, not from this list.",
   "sources": {
     "Monkey Island": {
       "names": [

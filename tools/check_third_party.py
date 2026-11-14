@@ -60,10 +60,17 @@ def load_terms(root):
     return data["sources"]
 
 
-def name_pattern(name):
+def name_pattern(name, also_upper=True):
     # Not inside a longer word on the left; on the right, a lowercase letter or digit would
     # continue the word, while a capital (CamelCase) or underscore starts the next part.
-    return re.compile(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![a-z0-9])")
+    # The name also counts written in capitals (`BOOTY ISLAND`), where any letter or digit
+    # continues the word (D-091); other case changes do not count, so ordinary words such as
+    # "melee" or "frank" stay out.
+    exact = re.escape(name) + r"(?![a-z0-9])"
+    upper = name.upper()
+    if not also_upper or upper == name:
+        return re.compile(r"(?<![A-Za-z0-9])" + exact)
+    return re.compile(r"(?<![A-Za-z0-9])(?:" + exact + "|" + re.escape(upper) + r"(?![A-Za-z0-9]))")
 
 
 def normalise_line(text):
@@ -102,7 +109,9 @@ def scan_targets(root):
 def scan(root):
     """Returns (counts, hits): counts[file][source] = n, hits = [(file, line, source, term)]."""
     sources = load_terms(root)
-    names = [(s, n, name_pattern(n)) for s, spec in sources.items() for n in spec.get("names", [])]
+    listed = {n for spec in sources.values() for n in spec.get("names", [])}
+    # A name whose capitals are listed on their own (`dott`, `DOTT`) is not counted twice.
+    names = [(s, n, name_pattern(n, n.upper() not in listed)) for s, spec in sources.items() for n in spec.get("names", [])]
     digests = {h: s for s, spec in sources.items() for h in spec.get("lines_sha256", [])}
     counts = defaultdict(lambda: defaultdict(int))
     hits = []

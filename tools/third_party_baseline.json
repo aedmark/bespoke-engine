@@ -15,20 +15,20 @@
       "Donnie Darko": 1
     },
     "proofs/art.zig": {
-      "Broken Sword": 19,
-      "Day of the Tentacle": 79,
-      "Donnie Darko": 76,
-      "Gabriel Knight 3": 22
+      "Broken Sword": 23,
+      "Day of the Tentacle": 87,
+      "Donnie Darko": 85,
+      "Gabriel Knight 3": 26
     },
     "proofs/atlantis_puzzle.zig": {
-      "Indiana Jones and the Fate of Atlantis": 47
+      "Indiana Jones and the Fate of Atlantis": 55
     },
     "proofs/audio_golden_test.zig": {
       "Broken Sword": 1,
       "Donnie Darko": 1
     },
     "proofs/darko_puzzle.zig": {
-      "Donnie Darko": 242
+      "Donnie Darko": 250
     },
     "proofs/dott_puzzle.zig": {
       "Broken Sword": 8,
@@ -91,17 +91,17 @@
     },
     "proofs/render_golden_test.zig": {
       "Day of the Tentacle": 12,
-      "Donnie Darko": 9,
+      "Donnie Darko": 11,
       "Gabriel Knight 3": 5,
       "Loom": 4
     },
     "proofs/wasm_deck.zig": {
-      "Broken Sword": 17,
-      "Day of the Tentacle": 45,
-      "Donnie Darko": 46,
+      "Broken Sword": 19,
+      "Day of the Tentacle": 47,
+      "Donnie Darko": 53,
       "Gabriel Knight 3": 43,
-      "Indiana Jones and the Fate of Atlantis": 29,
-      "Loom": 14
+      "Indiana Jones and the Fate of Atlantis": 35,
+      "Loom": 18
     },
     "scheme/bespoke.manual.json": {
       "Broken Sword": 12,
@@ -114,9 +114,9 @@
     "site/index.html": {
       "Broken Sword": 61,
       "Day of the Tentacle": 158,
-      "Donnie Darko": 106,
+      "Donnie Darko": 108,
       "Gabriel Knight 3": 69,
-      "Indiana Jones and the Fate of Atlantis": 26,
+      "Indiana Jones and the Fate of Atlantis": 28,
       "Loom": 2
     },
     "src/compiler/codegen.zig": {
@@ -135,7 +135,7 @@
       "Gabriel Knight 3": 2
     },
     "src/display/text_layout.zig": {
-      "Broken Sword": 15
+      "Broken Sword": 16
     },
     "src/host.zig": {
       "Donnie Darko": 1
@@ -169,11 +169,11 @@
     "tools/site_gallery.json": {
       "Broken Sword": 2,
       "Day of the Tentacle": 6,
-      "Donnie Darko": 4,
+      "Donnie Darko": 6,
       "Gabriel Knight 3": 6,
-      "Indiana Jones and the Fate of Atlantis": 3,
+      "Indiana Jones and the Fate of Atlantis": 5,
       "Loom": 2
     }
   },
-  "total": 2444
+  "total": 2517
 }

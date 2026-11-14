@@ -1015,7 +1015,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keep upload as an option: rejected; it put a credential path in the repository that nobody uses.
 **Consequences:** Publishing is a manual step outside the repository. The release hand-test checks the live site after the maintainer's upload. The page links the manual at `docs/manual.html`, the path the maintainer uploads it to (Q-007); the export does not copy the manual, so it is uploaded separately.
 
-## D-075 Third-Party Name Lint: Counted Terms, Digested Lines, a Shrink-Only Baseline (2026-11-13, status: accepted; tag stripping corrected by D-087)
+## D-075 Third-Party Name Lint: Counted Terms, Digested Lines, a Shrink-Only Baseline (2026-11-13, status: accepted; tag stripping corrected by D-087; all-caps names added by D-091)
 **Context:** Phase 35 (Q-005) rewrites the proofs that borrow from commercial games and a film. Without a count, a rename can miss a file, and a later change can bring a name back.
 **Decision:**
 1. `tools/third_party_terms.json` lists names per source; `tools/check_third_party.py` counts them in `src/`, `proofs/` (goldens included), `scenarios/`, `scheme/`, the site, the gallery data, `README.md`, and `docs/state.html`, and compares with `tools/third_party_baseline.json`, which only shrinks (the separation lint's pattern, D-031).
@@ -1202,6 +1202,17 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keeping the 100-tick distraction or a 30-tick one: rejected for 45, long enough to move the pegs and wait a little for the breeze.
 - A seeded random-line form (`say X: one of ...`) for the chatter, or dropping it: not chosen; fixed lines needed no engine change. A random-line form remains possible later.
 **Consequences:** In `proofs/golden/spitting_contest.txt`, two lines changed: the distraction is 45 ticks and expires at tick 54. No render or wasm line changed. A new test holds the judge at the wall for the whole distraction and the breeze to its schedule; restoring the old interrupt body fails it. Using the treacle cider from the inventory now works; the window looked for "Drink" in its name.
+
+## D-091 Bar Text Fits Its Bar; the Third-Party Lint Counts Names Written in Capitals (2026-11-14, status: accepted)
+**Context:** Hand-testing The Pip-Spitting Green, the maintainer found the footer hint cut off at the right edge, the timeline text hidden, and the stage still titled "BOOTY ISLAND - SPITTING COMPETITION" after P35-03. The footer drew one line at scale 2 whatever its length, and the contest's 106-character hint needs 1,284 pixels. Banners were drawn at y=60, on top of the timeline bar (y=50 to 72), so the judge's chatter banners (D-090) hid it. The title survived because the third-party lint matches names case-sensitively (D-075), so all-caps copies passed both the lint and the rename's search. The maintainer asked for both fixes (2026-11-14).
+**Decision:**
+1. **Bar text fits.** `DisplayWindow.draw_text_fit` draws text at its scale if it fits, else one size smaller, else cut with "...". `draw_footer_text` draws a footer hint on one line at scale 2 when it fits, else on two lines split at the " | " nearest the middle. The timeline label is centred in its bar at scale 2 (it sat 1 px under the fill's top edge at scale 1 and read as cut off), fitted with `draw_text_fit`, and its last tick is never below the current one (it showed "29/28"). Banners start at y=80, below the timeline bar.
+2. **Names in capitals count.** Each listed name also matches written in capitals (`BOOTY ISLAND`), with any letter or digit after it continuing the word. Other case changes still do not count, so ordinary words such as "melee" and "frank" stay out. A name whose capitals are listed on their own (`dott` and `DOTT`) is counted once.
+3. **The baseline records the true count.** The capitals rule found 73 more terms, all genuine leftovers such as "DONNIE * FRANK THE DEMONIC RABBIT" on a stage label. At the maintainer's request the baseline rose from 2,444 to 2,517 with `--accept-increase`, as D-087 did.
+**Alternatives:**
+- Fully case-insensitive matching: rejected; listed names that are ordinary words in lower case would count.
+- A smaller footer font: rejected for two lines at the readable size.
+**Consequences:** Every window render line in `proofs/golden/render.txt` changed (120 of 143), because every frame draws the timeline; the 23 save thumbnails did not. No other footer was too wide. The contest's harbour label became "HARBOUR"; "BRACKWATER HARBOUR" overflowed its box. Later P35 items lower the larger baseline as before.
 
 ## Held tensions
 

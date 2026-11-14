@@ -799,6 +799,29 @@ pub const BANNER_NOTICE_MS: i64 = 2000;
 pub const BANNER_MS_PER_CHAR: i64 = 80;
 pub const BANNER_MAX_READING_MS: i64 = 15_000;
 
+/// The " | " separator nearest the middle of a footer hint, or null when it has none.
+pub fn footer_split(text: []const u8) ?usize {
+    var best: ?usize = null;
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, text, i, " | ")) |at| : (i = at + 1) {
+        const dist = if (at > text.len / 2) at - text.len / 2 else text.len / 2 - at;
+        if (best == null or dist < (if (best.? > text.len / 2) best.? - text.len / 2 else text.len / 2 - best.?)) best = at;
+    }
+    return best;
+}
+
+/// `text` cut to fit `max_w` pixels at `scale`, ending in "..." (D-091).
+pub fn fit_with_ellipsis(text: []const u8, max_w: i32, scale: i32, buf: []u8) []const u8 {
+    const per = font.char_width(scale);
+    const room: usize = @intCast(@max(0, @divTrunc(max_w, per)));
+    if (text.len <= room) return text;
+    if (room <= 3) return "..."[0..room];
+    const keep = @min(room - 3, buf.len - 3);
+    @memcpy(buf[0..keep], text[0..keep]);
+    @memcpy(buf[keep .. keep + 3], "...");
+    return buf[0 .. keep + 3];
+}
+
 pub fn banner_reading_ms(len: usize) i64 {
     return @min(BANNER_NOTICE_MS + @as(i64, @intCast(len)) * BANNER_MS_PER_CHAR, BANNER_MAX_READING_MS);
 }
@@ -2515,6 +2538,26 @@ pub const DisplayWindow = struct {
         }
     }
 
+    /// Draws `text` within `max_w` pixels (D-091): at `scale` if it fits, else one size smaller,
+    /// else cut with "..." so it never runs past its bar.
+    pub fn draw_text_fit(self: *DisplayWindow, text: []const u8, x: i32, y: i32, max_w: i32, scale: i32, col: Color) void {
+        var sc = scale;
+        while (sc > 1 and font.text_width(text, sc) > max_w) sc -= 1;
+        if (font.text_width(text, sc) <= max_w) return self.draw_text(text, x, y, sc, col);
+        var buf: [256]u8 = undefined;
+        self.draw_text(fit_with_ellipsis(text, max_w, sc, &buf), x, y, sc, col);
+    }
+
+    /// Draws a footer hint in the bottom bar (D-091): one line at scale 2 if it fits, else two
+    /// lines split at the " | " nearest the middle, each fitted to the bar.
+    pub fn draw_footer_text(self: *DisplayWindow, text: []const u8, col: Color) void {
+        const max_w = self.width - 40;
+        if (font.text_width(text, 2) <= max_w) return self.draw_text(text, 20, self.height - 28, 2, col);
+        const split = footer_split(text) orelse return self.draw_text_fit(text, 20, self.height - 26, max_w, 2, col);
+        self.draw_text_fit(text[0..split], 20, self.height - 40, max_w, 2, col);
+        self.draw_text_fit(text[split + 3 ..], 20, self.height - 21, max_w, 2, col);
+    }
+
     pub fn draw_text(self: *DisplayWindow, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
         if (self.renderer == null) return;
         var cur_x = start_x;
@@ -2901,8 +2944,14 @@ pub const DisplayWindow = struct {
         }
 
         var tb_text_buf: [80]u8 = undefined;
-        const tb_text = std.fmt.bufPrint(&tb_text_buf, "TIMELINE [Tick {d:02}/{d:02}] (Click or [< / >] to Scrub | Space: Pause)", .{ frame.tick, frame.max_history_tick }) catch "TIMELINE";
-        self.draw_text(tb_text, tb_x + 8, tb_y + 4, 1, Color.hud_text);
+        // The newest tick can run one ahead of the last snapshot; the label never reads 29/28.
+        const tb_last = @max(frame.tick, frame.max_history_tick);
+        const tb_text = std.fmt.bufPrint(&tb_text_buf, "TIMELINE [Tick {d:02}/{d:02}] (Click or [< / >] to Scrub | Space: Pause)", .{ frame.tick, tb_last }) catch "TIMELINE";
+        // Centred in the bar at the readable size (D-091); it was drawn 1 px under the fill's
+        // top edge at scale 1 and read as cut off.
+        const tb_scale: i32 = if (font.text_width(tb_text, 2) <= tb_w - 16) 2 else 1;
+        const tb_text_y = tb_y + @divTrunc(tb_h - font.FONT_HEIGHT * tb_scale, 2);
+        self.draw_text_fit(tb_text, tb_x + 8, tb_text_y, tb_w - 16, tb_scale, Color.hud_text);
 
         const bar_y = self.height - 80;
 
@@ -3043,21 +3092,15 @@ pub const DisplayWindow = struct {
         const theme_footer: ?FooterHint = if (self.theme) |t| (if (t.footer) |ask| ask(frame) else null) else null;
         if (frame.distaff.enabled) {
             // Letter keys play notes in this mode, so advertise the shortcuts that still work
-            self.draw_text(
+            self.draw_footer_text(
                 "[C D E F G A B]: Notes | [Bksp]: Clear | [F1]: Debug | [`]: REPL | [Space]: Pause",
-                20,
-                self.height - 28,
-                2,
                 Color{ .r = 250, .g = 204, .b = 21 },
             );
         } else if (theme_footer) |hint| {
-            self.draw_text(hint.text, 20, self.height - 28, 2, hint.color);
+            self.draw_footer_text(hint.text, hint.color);
         } else {
-            self.draw_text(
+            self.draw_footer_text(
                 "[Click]: Act | [Right-Click]: Verb | [-]/[+]: Speed | [Space]: Pause | [P]: Save | [C]: REPL",
-                20,
-                self.height - 28,
-                2,
                 Color.hud_subtext,
             );
         }
@@ -3069,7 +3112,8 @@ pub const DisplayWindow = struct {
             const text_w = font.text_width(banner, scale);
             const bw = @min(text_w + 32, self.width - 20);
             const bx = @max(10, @divTrunc(self.width - bw, 2));
-            const by: i32 = 60;
+            // Below the timeline bar (y 50 to 72), which a banner used to cover (D-091).
+            const by: i32 = 80;
             const bh: i32 = if (scale == 2) 36 else 28;
             const text_y = by + @divTrunc(bh - font.FONT_HEIGHT * scale, 2);
             self.fill_rect(bx, by, bw, bh, Color.hud_bg);
@@ -4277,4 +4321,21 @@ test "D-080: click-through messages hide the choices until each is dismissed" {
 
     // With every message read, the choices answer again.
     try testing.expectEqual(UserAction{ .dialogue_choice = 0 }, Input.click(&window, &frame, panel.rect.x + 80, choice_y));
+}
+
+test "D-091: bar text fits its bar: footers wrap at a separator, long text ends in an ellipsis" {
+    const testing = std.testing;
+    const hint = "[S]: Spit! | [C]: Conch | [D]: Treacle Cider | [P]: Pegs | [-]/[+]: Speed | [Space]: Pause | [< / >]: Scrub";
+    const split = footer_split(hint).?;
+    try testing.expectEqualStrings(" | ", hint[split .. split + 3]);
+    // Both halves fit a 1280-pixel window's footer at scale 2.
+    try testing.expect(font.text_width(hint[0..split], 2) <= 1240);
+    try testing.expect(font.text_width(hint[split + 3 ..], 2) <= 1240);
+    try testing.expectEqual(@as(?usize, null), footer_split("no separators here"));
+
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("short", fit_with_ellipsis("short", 600, 1, &buf));
+    const cut = fit_with_ellipsis("TIMELINE [Tick 12/34] (Click or [< / >] to Scrub)", 60, 1, &buf);
+    try testing.expectEqualStrings("TIMELIN...", cut);
+    try testing.expect(font.text_width(cut, 1) <= 60);
 }

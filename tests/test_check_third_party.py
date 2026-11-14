@@ -45,6 +45,12 @@ class ThirdPartyLintTests(unittest.TestCase):
         # Zorbin, ZorbinHat, zorb_puzzle, --zorb, Quill Harbour; not Zorbins, Zorbinx, zorbing.
         self.assertEqual({"src/a.zig": {"Example Saga": 5}}, self.counts(root))
 
+    def test_names_written_in_capitals_count_but_other_case_changes_do_not(self):
+        # D-091: an all-caps stage title once kept a name past the case-sensitive match.
+        root = self.make_repo({"src/a.zig": 'draw("QUILL HARBOUR - ZORBIN CUP")\nZORBIN_FLAG ZORBINS quill harbour Quill harbour\n'})
+        # QUILL HARBOUR, ZORBIN, ZORBIN_FLAG; not ZORBINS, nor lower- or mixed-case Quill Harbour.
+        self.assertEqual({"src/a.zig": {"Example Saga": 3}}, self.counts(root))
+
     def test_quoted_lines_match_by_digest_even_inside_highlighted_html_json(self):
         page = (
             '<script type="application/json">{"html": "<span class=\\"code-str\\">\\"The kettle '

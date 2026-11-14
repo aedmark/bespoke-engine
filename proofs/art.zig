@@ -472,7 +472,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
         w.fill_rect(ocean_x - 12, field_y, 12, field_h, Palette.sand_color);
 
         // Ocean label
-        w.draw_text("BRACKWATER HARBOUR", ocean_x + 16, field_y + 16, 2, Color{ .r = 56, .g = 189, .b = 248 });
+        w.draw_text("HARBOUR", ocean_x + 16, field_y + 16, 2, Color{ .r = 56, .g = 189, .b = 248 });
         w.draw_text("(HARBOUR WALL)", ocean_x + 16, field_y + 36, 1, Color.white);
 
         // Field Title Header
