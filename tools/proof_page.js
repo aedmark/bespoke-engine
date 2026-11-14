@@ -1,22 +1,27 @@
-// Browser wrapper for the standalone Brackwater Barbs page (D-086).
-// tools/build_site.py embeds this file and bespoke-proofs.wasm into site/barbs.html. The page
-// plays one deck, the duel proof; the deck itself (proofs/wasm_deck.zig) runs the proof's own
-// script and duel, so this wrapper holds no game content.
+// Browser wrapper for the standalone proof pages (D-086, D-094): site/barbs.html,
+// site/pips.html, and site/beard.html. tools/build_site.py embeds this file and
+// bespoke-proofs.wasm into each. A page plays one deck, named by its canvas's data-deck
+// attribute; the deck itself (proofs/wasm_deck.zig) runs the proof's own script, so this
+// wrapper holds no game content.
 (() => {
-  const canvas = document.querySelector('#barbs-canvas');
+  const canvas = document.querySelector('#game-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const statusEl = document.querySelector('#barbs-status');
-  const btnDuel = document.querySelector('#btn-duel');
+  const statusEl = document.querySelector('#game-status');
+  const btnNext = document.querySelector('#btn-next');
   const btnRestart = document.querySelector('#btn-restart');
   const btnSound = document.querySelector('#btn-sound');
   const verbButtons = [...document.querySelectorAll('[data-verb]')];
+  // A page's own buttons for its deck's one-off actions (D-095), such as Spit: data-action is
+  // the deck's number for it, data-key an optional key that presses it.
+  const actionButtons = [...document.querySelectorAll('[data-action]')];
 
-  // The duel proof's index in the proof module's deck table (proofs/wasm_deck.zig).
-  const BARBS_DECK = 7;
+  // The deck's index in the proof module's deck table (proofs/wasm_deck.zig), and the verb
+  // selected at start (WALK 0 to USE 4).
+  const DECK = Number(canvas.dataset.deck);
+  const START_VERB = Number(canvas.dataset.startVerb || 0);
   const TICK_INTERVAL_MS = 1000;
-  const VERBS = ['WALK', 'LOOK', 'TALK', 'TAKE', 'USE'];
   const WASM_BASE64 = '__BESPOKE_PROOFS_WASM_BASE64__';
 
   let exp = null;
@@ -32,27 +37,32 @@
     return bytes;
   }
 
+  // The verb bar in the canvas and the buttons under it select the same verb. The canvas
+  // keeps the truth (taking an item in hand selects USE), so the buttons follow it each frame.
+  function syncVerbButtons() {
+    const active = exp.wasm_active_verb ? exp.wasm_active_verb() : -1;
+    verbButtons.forEach((b, i) => b.classList.toggle('active', i === active));
+  }
+
   function draw() {
     if (!exp) return;
     exp.wasm_render_frame();
     const pixels = new Uint8ClampedArray(exp.memory.buffer, exp.wasm_framebuffer_ptr(), exp.wasm_framebuffer_len());
     ctx.putImageData(new ImageData(pixels, 640, 360), 0, 0);
+    syncVerbButtons();
   }
 
-  // The verb bar in the canvas and the buttons under it select the same verb; the canvas
-  // keeps the truth, so a click on either sends the click to the runtime.
   function selectVerb(index) {
     if (!exp) return;
     exp.wasm_on_pointer_down(12 + index * 58 + 26, 338);
-    verbButtons.forEach((b, i) => b.classList.toggle('active', i === index));
     draw();
   }
 
   function restart() {
     if (!exp) return;
-    exp.wasm_init(BARBS_DECK);
+    exp.wasm_init(DECK);
     lastTickTime = performance.now();
-    selectVerb(2);
+    selectVerb(START_VERB);
   }
 
   function key(code) {
@@ -102,12 +112,6 @@
     if (!exp) return;
     const [x, y] = canvasCoords(event);
     exp.wasm_on_pointer_down(x, y);
-    if (y >= 324 && y <= 354) {
-      VERBS.forEach((_, i) => {
-        const left = 12 + i * 58;
-        if (x >= left && x <= left + 52) verbButtons.forEach((b, j) => b.classList.toggle('active', j === i));
-      });
-    }
     draw();
   });
   // Hover highlights the person a click would act on (D-088).
@@ -125,20 +129,34 @@
     draw();
   });
 
+  function deckAction(button) {
+    if (!exp || !exp.wasm_deck_action) return;
+    exp.wasm_deck_action(Number(button.dataset.action));
+    lastTickTime = performance.now();
+    draw();
+  }
+
   window.addEventListener('keydown', (event) => {
     if (!exp) return;
+    const action = actionButtons.find((b) => b.dataset.key && b.dataset.key === event.key.toLowerCase());
+    if (action) {
+      event.preventDefault();
+      deckAction(action);
+      return;
+    }
     const pending = exp.wasm_message_pending && exp.wasm_message_pending();
     const open = exp.wasm_dialogue_open && exp.wasm_dialogue_open();
     if (pending && (event.key === 'Enter' || event.key === ' ' || event.key === 's' || event.key === 'S')) {
       event.preventDefault();
       key(13);
     } else if (event.key >= '1' && event.key <= '9') {
-      // The number keys answer the duel; with no duel open they do nothing here, since this
-      // page holds one deck.
+      // The number keys answer an open dialogue; with none open they do nothing here, since
+      // in the runtime they would switch decks and this page holds one.
       event.preventDefault();
       if (open && !pending) key(event.key.charCodeAt(0));
     } else if (event.key === 's' || event.key === 'S') {
-      // [S] would answer an open duel with its first line; here it only starts the next duel.
+      // [S] would answer an open dialogue with its first line; here it only plays the next
+      // step (or, in the duel, starts the next duel).
       event.preventDefault();
       if (!open) key(83);
     } else if (event.key === 'Enter' || event.key === ' ') {
@@ -146,7 +164,7 @@
     }
   });
 
-  btnDuel.addEventListener('click', () => {
+  btnNext.addEventListener('click', () => {
     if (exp && !(exp.wasm_dialogue_open && exp.wasm_dialogue_open()) && !(exp.wasm_message_pending && exp.wasm_message_pending())) key(83);
   });
   btnRestart.addEventListener('click', restart);
@@ -157,6 +175,7 @@
     if (soundOn) startSound(); else stopSound();
   });
   verbButtons.forEach((button, index) => button.addEventListener('click', () => selectVerb(index)));
+  actionButtons.forEach((button) => button.addEventListener('click', () => deckAction(button)));
 
   function loop(now) {
     if (exp && now - lastTickTime >= TICK_INTERVAL_MS) {

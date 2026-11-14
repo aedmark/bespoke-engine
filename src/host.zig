@@ -344,6 +344,9 @@ pub fn place_cast(spatial: *SpatialSystem, compiled: *const CompiledProgram) !vo
     }
 }
 
+/// The name a script uses for the whole stage rather than a person (D-094).
+pub const STAGE_ACTOR = "Scene";
+
 /// Walking speed for cast members placed by `place_cast`; the same speed the stock runner
 /// gives routine actors.
 pub const CAST_SPEED: u32 = 10;
@@ -377,9 +380,12 @@ pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *
     const first_mark: ?spatial_mod.WaypointId = if (spatial.graph.waypoints.items.len > 0) spatial.graph.waypoints.items[0].id else null;
     var it = compiled.routine_entries.iterator();
     while (it.next()) |entry| {
-        const actor = try world.intern_entity(compiled.routine_entities.get(entry.key_ptr.*) orelse "Player");
+        const actor_name = compiled.routine_entities.get(entry.key_ptr.*) orelse "Player";
+        const actor = try world.intern_entity(actor_name);
+        // `Scene` names the whole stage (`say ... to Scene`, scene-wide `animate`); a routine
+        // on it, such as the weather, runs without a body on a mark, so no one is drawn there.
         if (first_mark) |mark| {
-            if (!spatial.agents.contains(actor)) try spatial.register_entity(actor, mark, CAST_SPEED);
+            if (!std.mem.eql(u8, actor_name, STAGE_ACTOR) and !spatial.agents.contains(actor)) try spatial.register_entity(actor, mark, CAST_SPEED);
         }
         _ = try vm.spawn_routine(actor, entry.value_ptr.*);
     }
@@ -1218,4 +1224,32 @@ test "D-065: place_cast puts each cast member on its own scene's first mark" {
     try testing.expectEqual(stair, spatial.get_current_waypoint(porter).?);
     try testing.expect(!spatial.agents.contains(world.lookup_entity("Ghost").?));
     try testing.expectEqual(@as(usize, 3), spatial.agents.count());
+}
+
+test "D-094: a routine on the Scene runs, but the Scene gets no body on a mark" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene Green:
+        \\  cast: Hero
+        \\  marks: Line, Wall
+        \\
+        \\routine Weather(Scene):
+        \\  loop:
+        \\    remember Breezy(Scene, true)
+        \\    wait 5 ticks
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    _ = try start_script(&world, &spatial, &vm, &compiled);
+    _ = try tick(&vm, &compiled);
+    const scene = world.lookup_entity(STAGE_ACTOR).?;
+    try testing.expect(!spatial.agents.contains(scene));
+    try testing.expect(world.has_fact(scene, world.lookup_relation("Breezy").?, null));
 }

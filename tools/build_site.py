@@ -24,9 +24,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 HTML_PATH = ROOT / "site" / "index.html"
 SIMULATOR_JS_PATH = Path(__file__).with_name("site_simulator.js")
-# The standalone Brackwater Barbs page (D-086): one deck, its own wrapper, the same module.
-BARBS_HTML_PATH = ROOT / "site" / "barbs.html"
-BARBS_JS_PATH = Path(__file__).with_name("barbs_page.js")
+# The standalone proof pages (D-086, D-094): one deck each, a shared wrapper, the same module.
+PROOF_PAGE_PATHS = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html"))
+PROOF_PAGE_JS_PATH = Path(__file__).with_name("proof_page.js")
 WASM_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-proofs.wasm"
 START_MARKER = "<!-- SITE_SIMULATOR_START -->"
 END_MARKER = "<!-- SITE_SIMULATOR_END -->"
@@ -180,9 +180,9 @@ def render_site(html: str, root: Path = ROOT) -> str:
     return replace_region(page, GALLERY_START, GALLERY_END, block, "gallery")
 
 
-def render_barbs(html: str) -> str:
-    """The standalone Brackwater Barbs page rendered from the current module (D-086)."""
-    return render_page(html, BARBS_JS_PATH.read_text(encoding="utf-8"), load_wasm(), BARBS_JS_PATH)
+def render_proof_page(html: str) -> str:
+    """A standalone proof page rendered from the current module (D-086, D-094)."""
+    return render_page(html, PROOF_PAGE_JS_PATH.read_text(encoding="utf-8"), load_wasm(), PROOF_PAGE_JS_PATH)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -192,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = load_wasm()
     pages = []
-    for path, render in ((HTML_PATH, render_site), (BARBS_HTML_PATH, render_barbs)):
+    for path, render in ((HTML_PATH, render_site),) + tuple((p, render_proof_page) for p in PROOF_PAGE_PATHS):
         html = path.read_text(encoding="utf-8")
         pages.append((path, html, render(html)))
 

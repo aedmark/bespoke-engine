@@ -123,6 +123,21 @@ pub const Deck = struct {
     on_act: ?*const fn (rt: *WasmRuntime, verb: WasmVerb, target: EntityId) anyerror!bool = null,
     /// The cues the verbs fire; a script that answers `Talk` or `PicksUp` names them (D-071).
     cues: VerbCues = .{},
+    /// Marks that lead to another scene: arriving on one moves the player there (D-094).
+    exits: []const Exit = &.{},
+    /// A page's own button for a deck's one-off action, such as spitting (D-095); `id` is the
+    /// page's number for it. Runs between ticks, like `[S]`.
+    on_action: ?*const fn (rt: *WasmRuntime, id: u8) anyerror!void = null,
+};
+
+/// A mark that leads out of its scene (D-094). When the player's walk ends on `mark` while
+/// `scene` is on stage, the stage changes to `to_scene` and the player stands on `to_mark`.
+/// Only a walk that ends there counts, so a player placed on an exit mark stays put.
+pub const Exit = struct {
+    scene: []const u8,
+    mark: []const u8,
+    to_scene: []const u8,
+    to_mark: []const u8,
 };
 
 /// The cue each verb fires on a person or prop in a script deck (D-069, D-071).
@@ -166,6 +181,8 @@ pub const ScriptDeckOptions = struct {
     on_choice: ?*const fn (rt: *WasmRuntime, action: u32) anyerror!void = null,
     on_act: ?*const fn (rt: *WasmRuntime, verb: WasmVerb, target: EntityId) anyerror!bool = null,
     cues: VerbCues = .{},
+    exits: []const Exit = &.{},
+    on_action: ?*const fn (rt: *WasmRuntime, id: u8) anyerror!void = null,
     /// Music for a script that declares no scores, such as a proof's desktop soundtrack (D-071).
     soundtrack: ?*const audio_mod.Soundtrack = null,
 };
@@ -195,6 +212,8 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
         .on_choice = options.on_choice,
         .on_act = options.on_act,
         .cues = options.cues,
+        .exits = options.exits,
+        .on_action = options.on_action,
     };
 }
 
@@ -255,6 +274,8 @@ pub const Approach = struct {
     wp: u16,
     asked_tick: u64,
     seen_moving: bool = false,
+    /// The item in hand when the verb was given, used on the target on arrival (D-094).
+    item: EntityId = .none,
 };
 
 pub const BrowserActionTag = enum(u8) {
@@ -282,6 +303,8 @@ pub const BrowserActionTag = enum(u8) {
     inspector_navigated,
     /// A click, Enter, or Space dismissed a click-through message (D-080).
     message_dismissed,
+    /// A click on the item tray took an item in hand, or put it away (D-094).
+    item_selected,
 };
 
 // =============================================================================
@@ -502,6 +525,10 @@ pub const WasmRuntime = struct {
     player_entity: EntityId = .none,
     /// A verb held while the player walks to its target (D-092); released by `step_tick`.
     approach: ?Approach = null,
+    /// The item in hand from the tray (D-094): the next USE click uses it on what is clicked.
+    /// Peripheral input like the active verb, so it is never saved or rewound; it drops when
+    /// the player no longer carries the item.
+    selected_item: EntityId = .none,
     /// The compiled script of a script deck; null for decks built in Zig (D-066).
     program: ?CompiledProgram = null,
     /// The state inspector overlay (D-070). Its navigation is not World state.
@@ -576,6 +603,7 @@ pub const WasmRuntime = struct {
     pub fn load_deck(self: *WasmRuntime, index: u8) !void {
         self.messages.clear();
         self.approach = null;
+        self.selected_item = .none;
         self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
@@ -771,13 +799,16 @@ pub const WasmRuntime = struct {
     /// prop then falls back to its examine text.
     fn act_on(self: *WasmRuntime, target: EntityId, examine: ?[]const u8) anyerror!?BrowserActionTag {
         if (self.program == null) return null;
+        // An item in hand goes with a USE click, and leaves the hand once given (D-094).
+        const item: EntityId = if (self.active_verb == .use_with) self.selected_item else .none;
+        self.selected_item = .none;
         // Walk to the person or prop first (D-092); LOOK acts from where the player stands.
         if (self.active_verb != .look_at and self.player_entity != .none and target != self.player_entity) {
             if (self.reach_mark(target)) |wp| {
                 const at = self.spatial.agents.get(self.player_entity);
                 const there = if (at) |a| a.current_wp == wp and !self.spatial.is_moving(self.player_entity) else true;
                 if (!there and try self.spatial.walk_to(self.player_entity, wp)) {
-                    self.approach = .{ .verb = self.active_verb, .target = target, .examine = examine, .wp = wp, .asked_tick = self.clock() };
+                    self.approach = .{ .verb = self.active_verb, .target = target, .examine = examine, .wp = wp, .asked_tick = self.clock(), .item = item };
                     var name_buf: [48]u8 = undefined;
                     const name = dialogue_panel.display_name(self.world.get_entity_name(target) orelse "it", &name_buf);
                     var buf: [80]u8 = undefined;
@@ -786,7 +817,7 @@ pub const WasmRuntime = struct {
                 }
             }
         }
-        return self.act_now(target, examine, true);
+        return self.act_now(target, examine, item, true);
     }
 
     /// The mark beside a target: where a person stands, else the mark nearest a prop in its room.
@@ -827,7 +858,7 @@ pub const WasmRuntime = struct {
             const verb = self.active_verb;
             self.active_verb = held.verb;
             defer self.active_verb = verb;
-            _ = try self.act_now(held.target, held.examine, false);
+            _ = try self.act_now(held.target, held.examine, held.item, false);
         } else if (a.seen_moving) {
             self.approach = null;
             self.set_banner("You can't get there from here.");
@@ -836,8 +867,22 @@ pub const WasmRuntime = struct {
 
     /// Acts on a target now. `run_tick` runs the tick that answers the cue; a held action
     /// released inside a tick leaves that to the tick already running.
-    fn act_now(self: *WasmRuntime, target: EntityId, examine: ?[]const u8, run_tick: bool) anyerror!?BrowserActionTag {
+    fn act_now(self: *WasmRuntime, target: EntityId, examine: ?[]const u8, item: EntityId, run_tick: bool) anyerror!?BrowserActionTag {
         const program = if (self.program) |*p| p else return null;
+        if (item != .none) {
+            // An item used on a person or prop: `Uses(player, item, target)` (D-094).
+            const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
+            if (self.player_entity == .none) return null;
+            self.bind();
+            if ((try self.vm.fire_cue(program, cues.use, self.player_entity, item, target)) != null) {
+                self.narrate(.use_with, item, target);
+                self.audio.enqueue_sfx(.click);
+                if (run_tick) try self.step_tick();
+                return .cue_fired;
+            }
+            self.set_banner("Nothing happens.");
+            return .cue_fired;
+        }
         if (self.decks.len > 0) if (self.decks[self.deck_index].on_act) |hook| {
             self.bind();
             if (try hook(self, self.active_verb, target)) {
@@ -852,6 +897,7 @@ pub const WasmRuntime = struct {
         if (self.player_entity == .none) return null;
         self.bind();
         if ((try self.vm.fire_cue(program, cue, self.player_entity, target, null)) != null) {
+            self.narrate(self.active_verb, .none, target);
             self.audio.enqueue_sfx(.click);
             if (run_tick) try self.step_tick();
             return .cue_fired;
@@ -867,6 +913,193 @@ pub const WasmRuntime = struct {
         }
         self.set_banner("Nothing happens.");
         return .cue_fired;
+    }
+
+    /// The item tray (D-094): right of the verb bar, one box per item the player carries
+    /// (`Carries` or `InInventory`, as the desktop frame reads them, D-007).
+    pub const TRAY_X: i32 = 310;
+    const TRAY_RIGHT: i32 = CANVAS_WIDTH - 12;
+    const TRAY_Y: i32 = 326;
+    const TRAY_H: i32 = 24;
+    const MAX_TRAY: usize = 8;
+    pub const TraySlot = struct { item: EntityId, x: i32, y: i32, w: i32, h: i32, label_buf: [32]u8 = undefined, label_len: usize = 0 };
+
+    /// What the player carries, at most eight, in the order the items were first named, so
+    /// the tray keeps its order when facts are forgotten and the arena reorders.
+    pub fn carried(self: *WasmRuntime, out: *[MAX_TRAY]EntityId) usize {
+        if (self.player_entity == .none) return 0;
+        const world = self.active_world();
+        var n: usize = 0;
+        for ([_][]const u8{ "InInventory", "Carries" }) |rel_name| {
+            const rel = world.lookup_relation(rel_name) orelse continue;
+            var it = world.query(self.player_entity, rel, null);
+            while (it.next()) |f| {
+                if (n >= MAX_TRAY) break;
+                out[n] = EntityId.from_int(f.object_or_value);
+                n += 1;
+            }
+        }
+        std.mem.sort(EntityId, out[0..n], {}, struct {
+            fn less(_: void, a: EntityId, b: EntityId) bool {
+                return a.to_int() < b.to_int();
+            }
+        }.less);
+        return n;
+    }
+
+    /// The tray's boxes, fitted between `TRAY_X` and the right edge. One row when every full
+    /// name fits; otherwise two half-height rows, and a name longer than its box is cut (the
+    /// full name shows when the pointer is over it), so every carried item stays clickable.
+    pub fn tray_slots(self: *WasmRuntime, out: *[MAX_TRAY]TraySlot) []TraySlot {
+        var items: [MAX_TRAY]EntityId = undefined;
+        const n = self.carried(&items);
+        if (n == 0) return out[0..0];
+        const gap: i32 = 4;
+        const pad: i32 = 8;
+        var names: [MAX_TRAY][48]u8 = undefined;
+        var full: [MAX_TRAY][]const u8 = undefined;
+        var total: i32 = -gap;
+        for (items[0..n], 0..) |item, i| {
+            full[i] = dialogue_panel.display_name(self.world.get_entity_name(item) orelse "?", &names[i]);
+            total += font.text_width(full[i], 1) + pad + gap;
+        }
+        const rows: usize = if (total <= TRAY_RIGHT - TRAY_X) 1 else 2;
+        const per_row = (n + rows - 1) / rows;
+        const h: i32 = if (rows == 1) TRAY_H else @divTrunc(TRAY_H - 2, 2);
+        const share = @divTrunc(TRAY_RIGHT - TRAY_X + gap, @as(i32, @intCast(per_row))) - gap;
+        const max_chars: usize = @intCast(@max(2, @divTrunc(share - pad, font.char_width(1))));
+        for (items[0..n], 0..) |item, i| {
+            const row: i32 = @intCast(i / per_row);
+            const col: i32 = @intCast(i % per_row);
+            const len = @min(@min(full[i].len, max_chars), 32);
+            const w = if (rows == 1) font.text_width(full[i][0..len], 1) + pad else share;
+            const x = if (rows == 1 and i > 0) out[i - 1].x + out[i - 1].w + gap else TRAY_X + col * (share + gap);
+            out[i] = .{ .item = item, .x = x, .y = TRAY_Y + row * (h + 2), .w = w, .h = h };
+            @memcpy(out[i].label_buf[0..len], full[i][0..len]);
+            out[i].label_len = len;
+        }
+        return out[0..n];
+    }
+
+    fn tray_hit(self: *WasmRuntime, x: i32, y: i32) ?EntityId {
+        var slots: [MAX_TRAY]TraySlot = undefined;
+        for (self.tray_slots(&slots)) |slot| {
+            if (x >= slot.x and x < slot.x + slot.w and y >= slot.y and y < slot.y + slot.h) return slot.item;
+        }
+        return null;
+    }
+
+    /// Says what the player just did, such as "Hero uses Rope on Mooring Post.", before the
+    /// cue's tick runs; a line the script says that tick replaces it. Without it, a handler that
+    /// only changes state or animates gives no sign the click did anything (D-094).
+    fn narrate(self: *WasmRuntime, verb: WasmVerb, item: EntityId, target: EntityId) void {
+        var names: [3][48]u8 = undefined;
+        const who = dialogue_panel.display_name(self.world.get_entity_name(self.player_entity) orelse "You", &names[0]);
+        const what = if (item != .none) dialogue_panel.display_name(self.world.get_entity_name(item) orelse "it", &names[1]) else "";
+        const on = if (target != .none) dialogue_panel.display_name(self.world.get_entity_name(target) orelse "it", &names[2]) else "";
+        const doing = switch (verb) {
+            .walk => "walks to",
+            .look_at => "looks at",
+            .talk_to => "talks to",
+            .pick_up => "takes",
+            .use_with => "uses",
+        };
+        var buf: [160]u8 = undefined;
+        const line = if (item != .none and target != .none)
+            std.fmt.bufPrint(&buf, "{s} uses {s} on {s}.", .{ who, what, on })
+        else if (item != .none)
+            std.fmt.bufPrint(&buf, "{s} {s} {s}.", .{ who, doing, what })
+        else
+            std.fmt.bufPrint(&buf, "{s} {s} {s}.", .{ who, doing, on });
+        self.set_banner(line catch return);
+    }
+
+    /// Text drawn at `x` (centred on it when `centred`) moved inside the stage's edges.
+    fn clamp_label(text: []const u8, x: i32, centred: bool) i32 {
+        const w = font.text_width(text, 1);
+        const left = if (centred) x - @divTrunc(w, 2) else x;
+        return std.math.clamp(left, 14, CANVAS_WIDTH - 14 - w);
+    }
+
+    /// A click on a carried item (D-094). LOOK fires the look cue on it, or reads its name.
+    /// Any other verb uses it: an item the script answers on its own (`Uses(player, item)`)
+    /// is used at once; any other is taken in hand for the next click. With an item already in
+    /// hand, a second item is combined with it (`Uses(player, held, clicked)`, then the other
+    /// order, since a script names the pair one way round), and the same item is put away.
+    fn click_item(self: *WasmRuntime, item: EntityId) anyerror!BrowserActionTag {
+        const program = if (self.program) |*p| p else return .none;
+        const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
+        var name_buf: [48]u8 = undefined;
+        const name = dialogue_panel.display_name(self.world.get_entity_name(item) orelse "it", &name_buf);
+        var buf: [96]u8 = undefined;
+        self.bind();
+        if (self.active_verb == .look_at) {
+            if ((try self.vm.fire_cue(program, cues.look, self.player_entity, item, null)) != null) {
+                self.narrate(.look_at, .none, item);
+                try self.step_tick();
+                return .cue_fired;
+            }
+            self.set_banner(std.fmt.bufPrint(&buf, "It's the {s}.", .{name}) catch name);
+            return .hotspot_inspected;
+        }
+        const held = self.selected_item;
+        if (held == item) {
+            self.selected_item = .none;
+            self.set_banner(std.fmt.bufPrint(&buf, "Put the {s} away.", .{name}) catch "Put away.");
+            return .item_selected;
+        }
+        if (held != .none) {
+            self.selected_item = .none;
+            const fired = (try self.vm.fire_cue(program, cues.use, self.player_entity, held, item)) != null or
+                (try self.vm.fire_cue(program, cues.use, self.player_entity, item, held)) != null;
+            if (fired) {
+                self.narrate(.use_with, held, item);
+                self.audio.enqueue_sfx(.click);
+                try self.step_tick();
+            } else self.set_banner("Those don't go together.");
+            return .cue_fired;
+        }
+        if ((try self.vm.fire_cue(program, cues.use, self.player_entity, item, null)) != null) {
+            self.narrate(.use_with, item, .none);
+            self.audio.enqueue_sfx(.click);
+            try self.step_tick();
+            return .cue_fired;
+        }
+        self.selected_item = item;
+        self.active_verb = .use_with;
+        self.set_banner(std.fmt.bufPrint(&buf, "Use the {s} on what? Right-click to put it away.", .{name}) catch "Use it on what?");
+        return .item_selected;
+    }
+
+    /// Moves the player through an exit whose mark its walk ended on this tick (D-094).
+    /// `walking_before` is whether the player was walking when the tick began. A walk to act
+    /// on something (D-092) never exits, though the mark beside a prop may be an exit mark:
+    /// the player went there for the prop, not to leave.
+    fn take_exit(self: *WasmRuntime, walking_before: bool) !void {
+        if (self.player_entity == .none or self.decks.len == 0) return;
+        if (!walking_before or self.approach != null or self.spatial.is_moving(self.player_entity)) return;
+        _ = try self.exit_here();
+    }
+
+    /// Takes the exit on the mark the player stands on, if there is one; true if it did.
+    fn exit_here(self: *WasmRuntime) !bool {
+        if (self.player_entity == .none or self.decks.len == 0) return false;
+        const scene = self.vm.current_scene orelse return false;
+        const agent = self.spatial.agents.get(self.player_entity) orelse return false;
+        const here = self.spatial.graph.get_waypoint(agent.current_wp) orelse return false;
+        const scene_name = self.world.get_entity_name(scene) orelse return false;
+        for (self.decks[self.deck_index].exits) |exit| {
+            if (!std.mem.eql(u8, exit.scene, scene_name) or !std.mem.eql(u8, exit.mark, here.name)) continue;
+            const to = self.world.lookup_entity(exit.to_scene) orelse return false;
+            try self.vm.transition_to_scene(to);
+            _ = try self.spatial.transition_actor(self.player_entity, to, self.spatial.graph.find_waypoint_in_room(to, exit.to_mark));
+            self.approach = null;
+            var name_buf: [48]u8 = undefined;
+            var buf: [80]u8 = undefined;
+            self.set_banner(std.fmt.bufPrint(&buf, "{s}.", .{dialogue_panel.display_name(exit.to_scene, &name_buf)}) catch exit.to_scene);
+            return true;
+        }
+        return false;
     }
 
     fn has_drafts(self: *const WasmRuntime) bool {
@@ -1085,8 +1318,10 @@ pub const WasmRuntime = struct {
         self.bind();
         try self.release_approach();
         if (self.program) |*program| {
+            const walking_before = self.player_entity != .none and self.spatial.is_moving(self.player_entity);
             _ = try host_mod.tick(&self.vm, program);
             self.show_story();
+            try self.take_exit(walking_before);
             self.sync_audio();
         } else {
             try self.vm.step_tick();
@@ -1102,6 +1337,15 @@ pub const WasmRuntime = struct {
         if (self.clock() < before) self.world.current_tick = before;
         self.bind();
 
+        self.record_snapshot();
+    }
+
+    /// Runs the deck's page action `id` (D-095); a deck without one ignores it.
+    pub fn deck_action(self: *WasmRuntime, id: u8) !void {
+        if (self.decks.len == 0) return;
+        const run = self.decks[self.deck_index].on_action orelse return;
+        self.bind();
+        try run(self, id);
         self.record_snapshot();
     }
 
@@ -1126,6 +1370,12 @@ pub const WasmRuntime = struct {
                 return .hover_updated;
             },
             .right_click => {
+                // A right-click puts an item in hand away before it cycles the verb (D-094).
+                if (self.selected_item != .none) {
+                    self.selected_item = .none;
+                    self.set_banner("Put it away.");
+                    return .item_selected;
+                }
                 self.active_verb = self.active_verb.next();
                 var buf: [48]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "Active verb: {s}", .{self.active_verb.label()}) catch "Verb changed";
@@ -1180,9 +1430,11 @@ pub const WasmRuntime = struct {
                         const bx: i32 = 12 + @as(i32, vi) * 58;
                         if (ev.x >= bx and ev.x <= bx + 52) {
                             self.active_verb = @enumFromInt(vi);
+                            self.selected_item = .none;
                             return .verb_changed;
                         }
                     }
+                    if (self.tray_hit(ev.x, ev.y)) |item| return try self.click_item(item);
                 }
 
                 const proj = self.projection();
@@ -1198,6 +1450,11 @@ pub const WasmRuntime = struct {
                             if (self.player_entity != .none) {
                                 self.approach = null;
                                 _ = try self.spatial.walk_to(self.player_entity, wp.id);
+                                // Already standing on an exit mark: a click on it leaves (D-094).
+                                if (!self.spatial.is_moving(self.player_entity) and try self.exit_here()) {
+                                    self.record_snapshot();
+                                    return .walk_issued;
+                                }
                                 var buf: [64]u8 = undefined;
                                 var name_buf: [48]u8 = undefined;
                                 const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
@@ -1210,7 +1467,9 @@ pub const WasmRuntime = struct {
 
                 // 4. Actors hit test, where each person is drawn (D-088)
                 if (self.actor_at(proj, ev.x, ev.y)) |slot| {
-                    if (slot.entity != self.player_entity) {
+                    // The player can be clicked to use an item in hand on themself (D-094).
+                    const on_self = slot.entity == self.player_entity and self.selected_item != .none and self.active_verb == .use_with;
+                    if (slot.entity != self.player_entity or on_self) {
                         if (try self.act_on(slot.entity, null)) |tag| return tag;
                     }
                     var name_buf: [48]u8 = undefined;
@@ -1381,7 +1640,8 @@ pub const WasmRuntime = struct {
             self.canvas.fill_rect(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.amber);
             self.canvas.draw_rect_outline(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.white);
             var hs_buf: [48]u8 = undefined;
-            self.canvas.draw_text(dialogue_panel.display_name(hs.name, &hs_buf), pt.x - 18, pt.y - 20, 1, RgbaColor.gold);
+            const hs_label = dialogue_panel.display_name(hs.name, &hs_buf);
+            self.canvas.draw_text(hs_label, clamp_label(hs_label, pt.x - 18, false), pt.y - 20, 1, RgbaColor.gold);
         }
 
         // 4. Waypoints
@@ -1391,7 +1651,8 @@ pub const WasmRuntime = struct {
             self.canvas.fill_circle(pt.x, pt.y, 9, RgbaColor{ .r = 71, .g = 85, .b = 105 });
             self.canvas.draw_circle_outline(pt.x, pt.y, 9, RgbaColor.white);
             var wp_buf: [48]u8 = undefined;
-            self.canvas.draw_text(dialogue_panel.display_name(wp.name, &wp_buf), pt.x - 18, pt.y + 12, 1, RgbaColor.slate);
+            const wp_label = dialogue_panel.display_name(wp.name, &wp_buf);
+            self.canvas.draw_text(wp_label, clamp_label(wp_label, pt.x - 18, false), pt.y + 12, 1, RgbaColor.slate);
         }
 
         // 5. Actors, fanned out where they share a spot (D-088). The person under the pointer
@@ -1402,7 +1663,8 @@ pub const WasmRuntime = struct {
         const hovered: ?ActorSlot = if (self.inspector.open) null else self.actor_at(proj, self.hovered_x, self.hovered_y);
         for (slots[0..slot_count]) |slot| {
             const is_player = slot.entity == self.player_entity;
-            const is_hovered = hovered != null and hovered.?.entity == slot.entity and !is_player;
+            const holding = self.selected_item != .none and self.active_verb == .use_with;
+            const is_hovered = hovered != null and hovered.?.entity == slot.entity and (!is_player or holding);
             const col = if (is_player) RgbaColor.sky_blue else RgbaColor.emerald;
             if (is_hovered) self.canvas.fill_circle(slot.x, slot.y, 13, RgbaColor.gold);
             self.canvas.fill_circle(slot.x, slot.y, 10, col);
@@ -1410,12 +1672,15 @@ pub const WasmRuntime = struct {
 
             var name_buf: [48]u8 = undefined;
             const name = dialogue_panel.display_name(self.world.get_entity_name(slot.entity) orelse "Someone", &name_buf);
-            var label_buf: [64]u8 = undefined;
-            const label = if (is_hovered)
+            var label_buf: [96]u8 = undefined;
+            var item_buf: [48]u8 = undefined;
+            const label = if (is_hovered and holding)
+                std.fmt.bufPrint(&label_buf, "USE {s} ON {s}", .{ dialogue_panel.display_name(self.world.get_entity_name(self.selected_item) orelse "?", &item_buf), name }) catch name
+            else if (is_hovered)
                 std.fmt.bufPrint(&label_buf, "{s} {s}", .{ self.active_verb.label(), name }) catch name
             else
                 name;
-            const label_x = slot.x - @divTrunc(font.text_width(label, 1), 2);
+            const label_x = clamp_label(label, slot.x, true);
             const label_y = slot.y - 22 - slot.row * 9;
             self.canvas.draw_text(label, label_x, label_y, 1, if (is_hovered) RgbaColor.gold else RgbaColor.white);
         }
@@ -1483,7 +1748,35 @@ pub const WasmRuntime = struct {
             self.canvas.draw_rect_outline(bx, 326, 52, 24, RgbaColor.white);
             self.canvas.draw_text(v.label(), bx + 12, 334, 1, if (is_sel) RgbaColor.black else RgbaColor.white);
         }
-        self.canvas.draw_text("[S]:Solve [I]:Inspect [Spc]:Pause [R]:Rewind", 310, 334, 1, RgbaColor.slate);
+        // The item tray when the player carries anything, else the key hints (D-094). An item in
+        // hand that is no longer carried (given away, or rewound out of the hand) drops here.
+        var tray: [MAX_TRAY]TraySlot = undefined;
+        const slots_now = self.tray_slots(&tray);
+        var still_held = false;
+        for (slots_now) |slot| {
+            if (slot.item == self.selected_item) still_held = true;
+        }
+        if (!still_held) self.selected_item = .none;
+        if (slots_now.len == 0) {
+            self.canvas.draw_text("[S]:Solve [I]:Inspect [Spc]:Pause [R]:Rewind", TRAY_X, 334, 1, RgbaColor.slate);
+        } else for (slots_now) |*slot| {
+            const held = slot.item == self.selected_item;
+            const over = self.hovered_x >= slot.x and self.hovered_x < slot.x + slot.w and
+                self.hovered_y >= slot.y and self.hovered_y < slot.y + slot.h;
+            self.canvas.fill_rect(slot.x, slot.y, slot.w, slot.h, if (held) RgbaColor.gold else RgbaColor{ .r = 45, .g = 35, .b = 20 });
+            self.canvas.draw_rect_outline(slot.x, slot.y, slot.w, slot.h, if (over) RgbaColor.white else RgbaColor.gold);
+            self.canvas.draw_text(slot.label_buf[0..slot.label_len], slot.x + 4, slot.y + @divTrunc(slot.h - 7, 2), 1, if (held) RgbaColor.black else RgbaColor.gold);
+        }
+        // The item under the pointer, named in full above the tray.
+        for (slots_now) |*slot| {
+            if (self.hovered_x < slot.x or self.hovered_x >= slot.x + slot.w or self.hovered_y < slot.y or self.hovered_y >= slot.y + slot.h) continue;
+            var name_buf: [48]u8 = undefined;
+            const name = dialogue_panel.display_name(self.world.get_entity_name(slot.item) orelse "?", &name_buf);
+            const lx = clamp_label(name, slot.x + @divTrunc(slot.w, 2), true);
+            self.canvas.fill_rect(lx - 3, 312, font.text_width(name, 1) + 6, 11, RgbaColor.hud_bg);
+            self.canvas.draw_rect_outline(lx - 3, 312, font.text_width(name, 1) + 6, 11, RgbaColor.gold);
+            self.canvas.draw_text(name, lx, 314, 1, RgbaColor.gold);
+        }
     }
 };
 
@@ -1647,6 +1940,21 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
+        /// Runs the deck's page action `id`, for a page's own button (D-095).
+        fn wasm_deck_action(id: u8) callconv(.C) void {
+            if (runtime()) |rt| {
+                rt.deck_action(id) catch {};
+                rt.render_frame();
+            }
+        }
+
+        /// The active verb's index (WALK 0 to USE 4), so a page's own verb buttons can follow
+        /// the canvas, which changes the verb when an item is taken in hand (D-094).
+        fn wasm_active_verb() callconv(.C) u8 {
+            if (runtime()) |rt| return @intFromEnum(rt.active_verb);
+            return 0;
+        }
+
         fn wasm_get_fact_count() callconv(.C) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.world.fact_count());
@@ -1658,6 +1966,8 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     @export(Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
     @export(Exports.wasm_message_pending, .{ .name = "wasm_message_pending" });
     @export(Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
+    @export(Exports.wasm_active_verb, .{ .name = "wasm_active_verb" });
+    @export(Exports.wasm_deck_action, .{ .name = "wasm_deck_action" });
     @export(Exports.wasm_audio_render, .{ .name = "wasm_audio_render" });
     @export(Exports.wasm_audio_sample_rate, .{ .name = "wasm_audio_sample_rate" });
     @export(Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
@@ -2101,4 +2411,84 @@ test "D-092: a verb on someone across the room walks the player over first, then
     rt.active_verb = .look_at;
     try testing.expect((try rt.act_on(pilot, null)).? != .walk_issued);
     try testing.expect(rt.approach == null);
+}
+
+test "D-094: the item tray keeps its order, fits the canvas, and uses items alone, in hand, and in pairs" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\
+        \\remember: Carries(Hero, Lantern)
+        \\remember: Carries(Hero, Rope)
+        \\remember: Carries(Hero, Hook)
+        \\
+        \\on cue Uses(Hero, Lantern):
+        \\  say Hero: "Light."
+        \\
+        \\on cue Uses(Hero, Hook, Rope):
+        \\  forget Carries(Hero, Hook)
+        \\  forget Carries(Hero, Rope)
+        \\  remember Carries(Hero, Grapnel)
+        \\
+        \\on cue Uses(Hero, Grapnel, Pilot):
+        \\  say Pilot: "Mind my hat."
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero" })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    rt.bind();
+    const name = struct {
+        fn of(r: *WasmRuntime, slot: WasmRuntime.TraySlot) []const u8 {
+            return r.world.get_entity_name(slot.item).?;
+        }
+    }.of;
+
+    var slots: [WasmRuntime.MAX_TRAY]WasmRuntime.TraySlot = undefined;
+    var laid = rt.tray_slots(&slots);
+    try testing.expectEqual(@as(usize, 3), laid.len);
+    try testing.expectEqualStrings("Lantern", name(rt, laid[0]));
+
+    // An item the script answers on its own is used at once.
+    try testing.expectEqual(BrowserActionTag.cue_fired, try rt.click_item(laid[0].item));
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Light.") != null);
+
+    // An item with no use alone goes in hand; a second item combines with it in either order.
+    const rope = laid[1].item;
+    const hook = laid[2].item;
+    try testing.expectEqual(BrowserActionTag.item_selected, try rt.click_item(rope));
+    try testing.expectEqual(rope, rt.selected_item);
+    try testing.expectEqual(WasmVerb.use_with, rt.active_verb);
+    try testing.expectEqual(BrowserActionTag.cue_fired, try rt.click_item(hook));
+    try testing.expectEqual(EntityId.none, rt.selected_item);
+    laid = rt.tray_slots(&slots);
+    try testing.expectEqual(@as(usize, 2), laid.len);
+    // Lantern stays first: the order is the order items were named, not the fact arena's.
+    try testing.expectEqualStrings("Lantern", name(rt, laid[0]));
+    try testing.expectEqualStrings("Grapnel", name(rt, laid[1]));
+
+    // An item in hand used on a person fires Uses(player, item, person).
+    try testing.expectEqual(BrowserActionTag.item_selected, try rt.click_item(laid[1].item));
+    rt.active_verb = .use_with;
+    const pilot = rt.world.lookup_entity("Pilot").?;
+    _ = try rt.act_now(pilot, null, rt.selected_item, true);
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Mind my hat.") != null);
+
+    // A full tray of long names takes two rows, inside the canvas, every box clickable.
+    const carries = rt.world.lookup_relation("Carries").?;
+    const hero = rt.world.lookup_entity("Hero").?;
+    for ([_][]const u8{ "SignalLamp", "LedgerPages", "CopperWire", "BrassKeyRing", "TideChartRoll", "SpareLantern" }) |n| {
+        try rt.world.remember(hero, carries, (try rt.world.intern_entity(n)).to_int(), 0);
+    }
+    laid = rt.tray_slots(&slots);
+    try testing.expectEqual(@as(usize, 8), laid.len);
+    try testing.expect(laid[0].y != laid[7].y);
+    for (laid) |slot| {
+        try testing.expect(slot.x >= WasmRuntime.TRAY_X and slot.x + slot.w <= CANVAS_WIDTH - 12);
+        try testing.expect(slot.y >= WasmRuntime.TRAY_Y and slot.y + slot.h <= WasmRuntime.TRAY_Y + WasmRuntime.TRAY_H);
+        try testing.expectEqual(slot.item, rt.tray_hit(slot.x + 1, slot.y + 1).?);
+    }
 }

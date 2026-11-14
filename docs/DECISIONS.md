@@ -1235,6 +1235,26 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 4. **Bramble no longer looks like a mark.** His token is dark with a pale muzzle and no white ring, where marks are grey circles with a white ring.
 **Consequences:** Every render line with a multi-word mark label changed, and every browser frame whose labels or banners carry such a name; no tick or fact count changed. Tests cover the label rule, the target clearing, and the spaced names.
 
+## D-094 Standalone Pages for the Pip-Spitting Green and the Borrowed Beard, and the Browser Plays Items and Exits (2026-11-14, status: accepted)
+**Context:** The maintainer asked for working standalone pages for the Pip-Spitting Green and the Borrowed Beard, like `site/barbs.html` (D-086). The browser runtime had no item tray: USE fired only `Uses(player, target)`, and the Beard needs item cues such as `Uses(Tamsin, SailTape, GateGap)` and `Uses(Tamsin, DogFur, HoneyPot)`, so both decks could be finished only with `[S]`. The Beard's rooms were reached by keys on desktop, and the browser had none free. Spitting itself was a desktop dialogue. A routine on `Scene` (the Green's weather) was drawn as a person on the first mark.
+**Decision:**
+1. **An item tray in the browser.** The runtime draws what the player carries (`Carries` or `InInventory`, as the desktop frame reads them) right of the verb bar, in the order the items were first named, on one row or two, with the full name over the item under the pointer. A click with LOOK fires the look cue on the item or reads its name. Any other verb uses it: an item the script answers alone (`Uses(player, item)`) is used at once, and any other goes in hand (the verb becomes USE). With an item in hand, a click on a person or prop fires `Uses(player, item, target)` after the walk (D-092), a click on the player fires `Uses(player, item, player)`, and a click on another item fires `Uses(player, held, clicked)`, then the reverse order, since a script names a pair one way round. A right-click or a verb button puts the item away. The item in hand is peripheral input, never saved or rewound.
+2. **Exits.** A deck may list `Exit`s: when a plain walk ends on an exit mark, the stage changes scene and the player stands on the exit's arrival mark. A walk to act on something never exits, and a WALK click on the exit mark underfoot leaves at once. The Beard deck adds a "To Harbour Office" mark to the yard and lists the stairs, the yard path, that mark, and the office door.
+3. **Narration.** When a verb or item fires a cue, the banner first says what the player did ("Tamsin uses Treacle Cider."); a line the script speaks that tick replaces it.
+4. **The Scene has no body.** `host.start_script` does not place a routine's actor named `Scene` (`host.STAGE_ACTOR`) on a mark.
+5. **Pages.** `site/pips.html` (deck 1) and `site/beard.html` (deck 2) join `site/barbs.html`; all three use one wrapper, `tools/proof_page.js` (formerly `barbs_page.js`), which reads the deck and starting verb from the canvas and follows the runtime's verb through a new `wasm_active_verb` export. `build_site.py`, `deploy_site.py export`, and the third-party lint cover all three. On the Green, TALK on Judge Marrow offers the spit, the rules, or leaving, as on desktop. The Beard's `[S]` beat for the papers counts only once Tamsin carries them, so a press before Rook first reaches his door is retried.
+**Alternatives:**
+- Pages driven by `[S]` alone: rejected; the maintainer asked for working pages, and a puzzle played only by a key is not one.
+- Scene changes on page buttons: rejected; walking onto a door is how the desktop window already moves between the Beard's rooms.
+- Adding the office mark to the script: not done; it would move the desktop window's yard layout and goldens for a browser-only need.
+**Consequences:** Every browser deck whose player carries something shows the tray instead of the key hints. Browser golden: frame hashes for decks 1, 2, 5, and 6, and deck 2's walk lines, since the golden's walk across every mark now passes through the Stairs and Yard Path exits; no fact count changed. Tests in `proofs/wasm_deck.zig` play both puzzles to their endings with clicks alone.
+
+## D-095 A Page Button for a Deck's One-Off Action: Spit (2026-11-14, status: accepted)
+**Context:** The maintainer asked for a spit button on `site/pips.html`. Spitting was reachable only by walking to Judge Marrow and choosing a line (D-094), which uses up most of the 20-second breeze; the desktop window spits with a key.
+**Decision:** A deck may define `on_action(rt, id)`, run by a new `wasm_deck_action(id)` export. `tools/proof_page.js` sends it from any page button with `data-action`, and from that button's `data-key`. The Green's action 1 spits from where Tamsin stands, closing the judge's offer if it is open; the page has a Spit button on `P`. The judge's dialogue still offers the spit.
+**Alternatives:** Binding a runtime key: rejected; the runtime's letter keys play distaff notes (D-071) and the showcase shares them.
+**Consequences:** No golden changed. A test opens the judge's offer, spits through the action, and expects the offer closed and a placement.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

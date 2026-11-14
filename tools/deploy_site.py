@@ -21,8 +21,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE_HTML = ROOT / "site" / "index.html"
-# The standalone duel page (D-086), copied beside index.html; it carries its own sharing tags.
-BARBS_HTML = ROOT / "site" / "barbs.html"
+# The standalone proof pages (D-086, D-094), copied beside index.html; each carries its own
+# sharing tags.
+PROOF_PAGES = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html"))
 DEFAULT_OUT = ROOT / "dist" / "site"
 HEAD_MARKER = "<!-- DEPLOY_METADATA -->"
 BODY_MARKER = "<!-- DEPLOY_SERVICE_WORKER -->"
@@ -163,11 +164,14 @@ def export(out_dir: Path, site_url: str | None, page_path: Path = SITE_HTML, che
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     files = [("index.html", index), ("sw.js", worker)]
-    if page_path == SITE_HTML and BARBS_HTML.exists():
-        barbs = BARBS_HTML.read_text(encoding="utf-8")
-        if check_current and load_build_site().render_barbs(barbs) != barbs:
-            raise DeployError("site/barbs.html is stale; run `zig build wasm-proofs` and `python3 tools/build_site.py`")
-        files.append(("barbs.html", barbs))
+    if page_path == SITE_HTML:
+        for proof_page in PROOF_PAGES:
+            if not proof_page.exists():
+                continue
+            text = proof_page.read_text(encoding="utf-8")
+            if check_current and load_build_site().render_proof_page(text) != text:
+                raise DeployError(f"site/{proof_page.name} is stale; run `zig build wasm-proofs` and `python3 tools/build_site.py`")
+            files.append((proof_page.name, text))
     for name, text in files:
         path = out_dir / name
         path.write_text(text, encoding="utf-8")

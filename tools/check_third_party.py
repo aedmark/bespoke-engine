@@ -9,7 +9,7 @@ compares the counts with a committed baseline, tools/third_party_baseline.json:
   * A count below baseline is a note: lower the baseline with --update-baseline.
   * The baseline only shrinks. Raising it needs --accept-increase, a deliberate, reviewed act.
 
-Scanned: src/, proofs/ (goldens included), scenarios/, site/index.html and site/barbs.html
+Scanned: src/, proofs/ (goldens included), scenarios/, site/index.html and the proof pages
 (without the embedded WebAssembly region), tools/site_gallery.json, scheme/, README.md, and docs/state.html.
 Append-only history (DECISIONS, CHANGELOG, the archive, finished roadmap items) is not
 scanned: it records what was true. docs/manual.html is built from scheme/, so it is not
@@ -41,7 +41,7 @@ TERMS_NAME = "tools/third_party_terms.json"
 BASELINE_NAME = "tools/third_party_baseline.json"
 
 SCAN_DIRS = ("src", "proofs", "scenarios", "scheme")
-SCAN_FILES = ("site/index.html", "site/barbs.html", "tools/site_gallery.json", "README.md", "docs/state.html")
+SCAN_FILES = ("site/index.html", "site/barbs.html", "site/pips.html", "site/beard.html", "tools/site_gallery.json", "README.md", "docs/state.html")
 SCAN_SUFFIXES = {".zig", ".tmpl", ".bespoke", ".txt", ".json", ".html", ".md"}
 # The site embeds the proofs' WebAssembly as base64; random letters must not count.
 EMBED_START = "<!-- SITE_SIMULATOR_START -->"

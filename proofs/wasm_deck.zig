@@ -40,6 +40,9 @@ pub const decks = [_]wasm.Deck{
         .soundtrack = &art.soundtrack,
         .background = .{ .r = 16, .g = 42, .b = 58 },
         .catalyst = solver(&SPIT_SOLUTION),
+        .on_act = spit_act,
+        .on_choice = spit_choice,
+        .on_action = spit_action,
     }),
     wasm.script_deck_with("THE BORROWED BEARD", BORROWED_BEARD_SCRIPT, .{
         .player = "Tamsin",
@@ -48,6 +51,7 @@ pub const decks = [_]wasm.Deck{
         .background = .{ .r = 32, .g = 52, .b = 34 },
         .setup = beard_setup,
         .catalyst = solver(&BEARD_SOLUTION),
+        .exits = &BEARD_EXITS,
     }),
     wasm.script_deck_with("THE LIVING VILLAGE (EMERGENCE)", VILLAGE_SCRIPT, .{
         .soundtrack = &art.soundtrack,
@@ -155,6 +159,9 @@ const Action = union(enum) {
     place: struct { actor: []const u8, scene: []const u8, mark: []const u8 },
     /// Plays a four-note phrase on the distaff at `target`, through the same path as the keys.
     weave: struct { notes: *const [4]u8, target: []const u8 },
+    /// The beat counts only if this fact holds by now; otherwise the next `[S]` tries it again,
+    /// as a player would after being refused (D-094).
+    require: Fact,
 };
 
 const Beat = struct {
@@ -219,6 +226,13 @@ fn perform(rt: *WasmRuntime, action: Action) !bool {
         .ticks => |n| for (0..n) |_| {
             try rt.step_tick();
             if (bespoke.dialogue.view(&rt.world) != null) try rt.answer(0);
+        },
+        .require => |f| {
+            const world = rt.active_world();
+            const subject = world.lookup_entity(f.subject) orelse return false;
+            const rel = world.lookup_relation(f.relation) orelse return false;
+            const object: ?u32 = if (f.object) |n| (world.lookup_entity(n) orelse return false).to_int() else null;
+            if (world.find_first(subject, rel, object) == null) return false;
         },
         .settle => |name| {
             const actor = try entity(rt, name);
@@ -303,6 +317,9 @@ const BEARD_SOLUTION = [_]Beat{
         .{ .until_gone = .{ .subject = "CaptainRook", .relation = "AtHisDoor" } },
         .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "RookDoor" } },
         .{ .ticks = 1 },
+        // At the start Rook has not reached his door yet, so the wait passes at once and he
+        // can arrive in the same tick; the door then refuses, and the beat waits for him again.
+        .{ .require = .{ .subject = "Tamsin", .relation = "Carries", .object = "RookPapers" } },
     } },
     .{ .note = "Tamsin draws a beard on Rook's portrait.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Charcoal", .b = "RookPapers" } }, .{ .ticks = 1 } } },
     .{ .note = "Tamsin heads into the yard and finds the watering can.", .actions = &.{
@@ -520,6 +537,73 @@ fn loom_follow_scene(rt: *WasmRuntime) anyerror!void {
 
 fn beard_setup(rt: *WasmRuntime) anyerror!void {
     try rt.vm.transition_to_scene(try entity(rt, "Inn Landing"));
+    // The desktop window reaches the Harbour Office with a key; the browser has no free key
+    // for it, so the yard gains a mark at its far side that leads there (D-094).
+    const yard = try entity(rt, "Net Loft Yard");
+    var right: ?bespoke.spatial.Waypoint = null;
+    var left_x: i32 = std.math.maxInt(i32);
+    for (rt.spatial.graph.waypoints.items) |wp| {
+        if (wp.room != yard) continue;
+        left_x = @min(left_x, wp.pos.x);
+        if (right == null or wp.pos.x > right.?.pos.x) right = wp;
+    }
+    const edge = right orelse return;
+    const step = @max(16, @divTrunc(edge.pos.x - left_x, 2));
+    const lane = try rt.spatial.graph.add_waypoint(yard, edge.pos.x + step, edge.pos.y, BEARD_OFFICE_LANE);
+    try rt.spatial.graph.connect(edge.id, lane, null);
+}
+
+const BEARD_OFFICE_LANE = "ToHarbourOffice";
+
+/// Walking onto these marks changes rooms, as the desktop host does for the stairs, the yard
+/// path, and the office door (D-094).
+const BEARD_EXITS = [_]wasm.Exit{
+    .{ .scene = "Inn Landing", .mark = "Stairs", .to_scene = "Net Loft Yard", .to_mark = "YardPath" },
+    .{ .scene = "Net Loft Yard", .mark = "YardPath", .to_scene = "Inn Landing", .to_mark = "Stairs" },
+    .{ .scene = "Net Loft Yard", .mark = BEARD_OFFICE_LANE, .to_scene = "Harbour Office", .to_mark = "OfficeDoor" },
+    .{ .scene = "Harbour Office", .mark = "OfficeDoor", .to_scene = "Net Loft Yard", .to_mark = BEARD_OFFICE_LANE },
+};
+
+// The Pip-Spitting Green: talking to Judge Marrow offers the spit, as the desktop window does.
+const SPIT_NOW: u32 = 1;
+const SPIT_RULES: u32 = 2;
+const SPIT_LEAVE: u32 = 3;
+const SPIT_CHOICES = [_]bespoke.dialogue.Choice{
+    .{ .text = "I'm ready to spit!", .action = SPIT_NOW },
+    .{ .text = "What are the rules again?", .action = SPIT_RULES },
+    .{ .text = "Never mind.", .action = SPIT_LEAVE },
+};
+
+fn spit_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    if (verb != .talk_to or bespoke.dialogue.view(&rt.world) != null) return false;
+    const name = rt.world.get_entity_name(target) orelse return false;
+    if (!std.mem.eql(u8, name, "JudgeMarrow")) return false;
+    _ = try rt.vm.open_generated_dialogue(target, "Toe the chalk, love, and mind my boots.", &SPIT_CHOICES);
+    return true;
+}
+
+fn spit_choice(rt: *WasmRuntime, action: u32) anyerror!void {
+    switch (action) {
+        SPIT_NOW => try spit_now(rt),
+        SPIT_RULES => rt.queue_message("JudgeMarrow", "Spit past the last peg to win! Thick spit and a sea breeze will do it!"),
+        else => rt.set_banner("Tamsin steps back."),
+    }
+}
+
+/// Tamsin spits from where she stands; the script's `Spits` handler judges it that tick.
+fn spit_now(rt: *WasmRuntime) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    _ = try rt.vm.fire_cue(program, "Spits", try entity(rt, "Tamsin"), null, null);
+    try rt.step_tick();
+}
+
+/// The page's Spit button (D-095), as the desktop window's spit key: spits at once, closing the
+/// judge's offer if it is open, so the breeze is not lost to a walk and a dialogue.
+const SPIT_ACTION: u8 = 1;
+fn spit_action(rt: *WasmRuntime, id: u8) anyerror!void {
+    if (id != SPIT_ACTION) return;
+    if (bespoke.dialogue.view(&rt.world)) |open| try bespoke.dialogue.clear_open(&rt.world, open.speaker);
+    try spit_now(rt);
 }
 
 /// The goat waits at its tether; George starts at the courtyard entrance.
@@ -1031,4 +1115,204 @@ test "P30-01: decks play the engine synthesizer: the proof soundtrack and distaf
         _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'C' });
         try testing.expect(energy_over(rt, 3) > quiet);
     }
+}
+
+// =============================================================================
+// Tests: the Pip-Spitting Green and the Borrowed Beard play by hand, with clicks only (D-094)
+// =============================================================================
+
+fn press(rt: *WasmRuntime, x: i32, y: i32) !wasm.BrowserActionTag {
+    return rt.dispatch_event(.{ .kind = .pointer_down, .x = x, .y = y });
+}
+
+fn pick_verb(rt: *WasmRuntime, verb: wasm.WasmVerb) !void {
+    _ = try press(rt, 12 + @as(i32, @intFromEnum(verb)) * 58 + 20, 338);
+    try testing.expectEqual(verb, rt.active_verb);
+}
+
+/// Clicks where a person, prop, or mark named `name` is drawn on the stage.
+fn click_on(rt: *WasmRuntime, name: []const u8) !wasm.BrowserActionTag {
+    const proj = rt.projection();
+    var slots: [WasmRuntime.MAX_ACTOR_SLOTS]WasmRuntime.ActorSlot = undefined;
+    for (slots[0..rt.actor_slots(proj, &slots)]) |slot| {
+        if (std.mem.eql(u8, rt.world.get_entity_name(slot.entity) orelse "", name)) return press(rt, slot.x, slot.y);
+    }
+    for (rt.spatial.hotspots.items) |hs| {
+        if (!proj.shows(hs.room) or !std.mem.eql(u8, rt.world.get_entity_name(hs.entity) orelse "", name)) continue;
+        const pt = proj.point(hs.pos.x, hs.pos.y);
+        return press(rt, pt.x, pt.y);
+    }
+    for (rt.spatial.graph.waypoints.items) |wp| {
+        if (!proj.shows(wp.room) or !std.mem.eql(u8, wp.name, name)) continue;
+        const pt = proj.point(wp.pos.x, wp.pos.y);
+        return press(rt, pt.x, pt.y);
+    }
+    std.debug.print("nothing named {s} is on stage; people drawn:", .{name});
+    for (slots[0..rt.actor_slots(proj, &slots)]) |slot| std.debug.print(" {s}", .{rt.world.get_entity_name(slot.entity) orelse "?"});
+    std.debug.print("\n", .{});
+    return error.NotOnStage;
+}
+
+/// Clicks the item named `name` in the tray.
+fn click_item(rt: *WasmRuntime, name: []const u8) !wasm.BrowserActionTag {
+    var slots: [8]WasmRuntime.TraySlot = undefined;
+    for (rt.tray_slots(&slots)) |slot| {
+        if (std.mem.eql(u8, rt.world.get_entity_name(slot.item) orelse "", name)) return press(rt, slot.x + 2, slot.y + 2);
+    }
+    std.debug.print("{s} is not in the tray\n", .{name});
+    return error.NotCarried;
+}
+
+/// Ticks until the fact holds, at most `limit` ticks, as a player waits for something to happen.
+fn tick_until(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]const u8, limit: usize) !void {
+    var n: usize = 0;
+    while (!holds(rt, subject, rel, object)) : (n += 1) {
+        if (n >= limit) {
+            std.debug.print("{s} {s} {?s} never held; banner: {s}\n", .{ subject, rel, object, rt.get_banner() });
+            return error.NeverHappened;
+        }
+        try rt.step_tick();
+    }
+}
+
+fn tick_until_scene(rt: *WasmRuntime, scene: []const u8, limit: usize) !void {
+    for (0..limit) |_| {
+        if (std.mem.eql(u8, rt.world.get_entity_name(rt.vm.current_scene.?) orelse "", scene)) return;
+        try rt.step_tick();
+    }
+    std.debug.print("never reached {s}; banner: {s}\n", .{ scene, rt.get_banner() });
+    return error.NeverArrived;
+}
+
+test "D-094: the Borrowed Beard plays to the berth ticket with clicks alone" {
+    const rt = try load(2);
+    defer unload(rt);
+
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "WashStand");
+    try tick_until(rt, "Tamsin", "Carries", "HoneyPot", 30);
+
+    // Wait for Rook to leave his door, then borrow the papers.
+    for (0..90) |_| {
+        if (!holds(rt, "CaptainRook", "AtHisDoor", null)) break;
+        try rt.step_tick();
+    }
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "RookDoor");
+    try tick_until(rt, "Tamsin", "Carries", "RookPapers", 30);
+
+    // Charcoal has no use on its own, so a click takes it in hand; a click on the papers draws.
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "Charcoal"));
+    try testing.expectEqual(wasm.WasmVerb.use_with, rt.active_verb);
+    _ = try click_item(rt, "RookPapers");
+    try tick_until(rt, "Tamsin", "PapersMarked", null, 3);
+
+    // Down the stairs into the yard.
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "Stairs");
+    try tick_until_scene(rt, "Net Loft Yard", 40);
+
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "RainBarrel");
+    try tick_until(rt, "Tamsin", "Carries", "WateringCan", 30);
+
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "SailTape"));
+    _ = try click_on(rt, "GateGap");
+    for (0..30) |_| {
+        if (rt.approach == null) break;
+        try rt.step_tick();
+    }
+    try rt.step_tick();
+
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "WateringCan"));
+    _ = try click_on(rt, "Bramble");
+    try tick_until(rt, "GateGap", "GapHasFur", null, 30);
+
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "GateGap");
+    try tick_until(rt, "Tamsin", "Carries", "DogFur", 30);
+
+    // The fur and the honey make the beard and leave the tray, in whichever order they are clicked.
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "HoneyPot"));
+    _ = try click_item(rt, "DogFur");
+    try tick_until(rt, "Tamsin", "Carries", "GreyBeard", 3);
+    try testing.expect(!holds(rt, "Tamsin", "Carries", "DogFur"));
+    try testing.expect(!holds(rt, "Tamsin", "Carries", "HoneyPot"));
+
+    // The beard goes on Tamsin herself.
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "GreyBeard"));
+    _ = try click_on(rt, "Tamsin");
+    try tick_until(rt, "Tamsin", "Disguised", null, 3);
+
+    // Out across the yard to the Harbour Office.
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, BEARD_OFFICE_LANE);
+    try tick_until_scene(rt, "Harbour Office", 60);
+
+    try pick_verb(rt, .talk_to);
+    _ = try click_on(rt, "PurserWick");
+    for (0..30) |_| {
+        if (bespoke.dialogue.view(&rt.world) != null) break;
+        try rt.step_tick();
+    }
+    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    // Disguised, the first offered line is the claim to Rook's berth.
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
+    try tick_until(rt, "Tamsin", "HasBerthTicket", null, 5);
+
+    // And back out of the office into the yard.
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "OfficeDoor");
+    try tick_until_scene(rt, "Net Loft Yard", 60);
+}
+
+test "D-094: the Pip-Spitting Green wins first place with clicks alone" {
+    const rt = try load(1);
+    defer unload(rt);
+
+    // The cider and the conch each have a use of their own, so one click uses them.
+    try testing.expectEqual(wasm.BrowserActionTag.cue_fired, try click_item(rt, "TreacleCider"));
+    try testing.expectEqual(wasm.BrowserActionTag.cue_fired, try click_item(rt, "Conch"));
+    try tick_until(rt, "JudgeMarrow", "Distracted", null, 3);
+
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "Pegs");
+    for (0..30) |_| {
+        if (rt.approach == null) break;
+        try rt.step_tick();
+    }
+    try rt.step_tick();
+
+    // Wait for the breeze, then talk to the judge and spit.
+    try tick_until(rt, "Wind", "blowing", null, 80);
+    try pick_verb(rt, .talk_to);
+    _ = try click_on(rt, "JudgeMarrow");
+    for (0..30) |_| {
+        if (bespoke.dialogue.view(&rt.world) != null) break;
+        try rt.step_tick();
+    }
+    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
+    try tick_until(rt, "Tamsin", "Placed", "FirstPlace", 3);
+}
+
+test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {
+    const rt = try load(2);
+    defer unload(rt);
+    try rt.trigger_catalyst(); // the wash stand
+    var presses: usize = 0;
+    while (!holds(rt, "Tamsin", "Carries", "RookPapers") and presses < 4) : (presses += 1) try rt.trigger_catalyst();
+    try testing.expect(holds(rt, "Tamsin", "Carries", "RookPapers"));
+}
+
+test "D-095: the Pip-Spitting Green's spit action spits at once and closes the judge's offer" {
+    const rt = try load(1);
+    defer unload(rt);
+    rt.bind();
+    try testing.expect(try spit_act(rt, .talk_to, rt.world.lookup_entity("JudgeMarrow").?));
+    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    try rt.deck_action(SPIT_ACTION);
+    try testing.expect(bespoke.dialogue.view(&rt.world) == null);
+    // Plain spit: a dribble.
+    try testing.expect(holds(rt, "Tamsin", "Placed", "Dribble"));
 }

@@ -21,16 +21,22 @@ PAYLOAD = b"\0asm\x01\0\0\0"
 
 
 class SiteBuildTests(unittest.TestCase):
-    def test_the_barbs_page_plays_the_duel_deck_and_is_current(self):
-        # D-086: the standalone page's deck index names the duel proof in the deck table.
-        wrapper = (ROOT / "tools" / "barbs_page.js").read_text(encoding="utf-8")
-        index = int(re.search(r"const BARBS_DECK = (\d+);", wrapper).group(1))
-        names = re.search(r"const DECK_NAMES = \[(.*?)\];", (ROOT / "tools" / "site_simulator.js").read_text(encoding="utf-8"), re.S).group(1)
-        self.assertEqual("Brackwater Barbs", re.findall(r"'([^']*)'", names)[index])
+    def test_each_proof_page_plays_its_own_deck_and_is_current(self):
+        # D-086, D-094: each standalone page's data-deck names its proof in the deck table.
+        wrapper = (ROOT / "tools" / "proof_page.js").read_text(encoding="utf-8")
         self.assertIn(build_site.PLACEHOLDER, wrapper)
-        page = (ROOT / "site" / "barbs.html").read_text(encoding="utf-8")
-        if build_site.WASM_ARTIFACT.exists():
-            self.assertEqual(page, build_site.render_barbs(page))
+        names = re.search(r"const DECK_NAMES = \[(.*?)\];", (ROOT / "tools" / "site_simulator.js").read_text(encoding="utf-8"), re.S).group(1)
+        names = re.findall(r"'([^']*)'", names)
+        expected = {"barbs.html": "Brackwater Barbs", "pips.html": "The Pip-Spitting Green", "beard.html": "The Borrowed Beard"}
+        self.assertEqual(sorted(expected), sorted(p.name for p in build_site.PROOF_PAGE_PATHS))
+        for path in build_site.PROOF_PAGE_PATHS:
+            page = path.read_text(encoding="utf-8")
+            index = int(re.search(r'id="game-canvas"[^>]*data-deck="(\d+)"', page).group(1))
+            self.assertEqual(expected[path.name], names[index], path.name)
+            for element in ("game-status", "btn-next", "btn-sound", "btn-restart"):
+                self.assertIn(f'id="{element}"', page, path.name)
+            if build_site.WASM_ARTIFACT.exists():
+                self.assertEqual(page, build_site.render_proof_page(page), path.name)
 
     def test_render_embeds_payload_and_wrapper(self):
         html = "before\n<!-- SITE_SIMULATOR_START -->\n<!-- SITE_SIMULATOR_END -->\nafter\n"
