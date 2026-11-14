@@ -89,7 +89,7 @@ deck/6/inspector: fbd81819e2561313 facts=12 tick=1 banner="Scrubbed timeline to 
 deck/6/inspector-next: 19bf71289d57936f facts=12 tick=1 banner="Scrubbed timeline to Tick 1."
 deck/6/inspector-closed: b603f675074c2974 facts=12 tick=1 banner="Scrubbed timeline to Tick 1."
 deck/6/two-finger: 5bc2d55d270cba73 facts=12 tick=1 banner="Scrubbed timeline to Tick 1."
-deck/7/loaded: c04c9b5cce617acb facts=102 tick=1 banner="Brackwater Barbs: [S] starts a duel; answer barbs with the number keys."
+deck/7/loaded: 9b11c70c9d8e3c45 facts=102 tick=1 banner="Brackwater Barbs: TALK to a fencer, or press [S], to duel. Answer with the number keys."
 deck/7/walked: 14288ff77c27f066 facts=102 tick=13 banner="Walking to TidewalkEast..."
 deck/7/verb: 261135cc7a8972ef facts=102 tick=13 banner="Active verb: LOOK"
 deck/7/props: 261135cc7a8972ef facts=102 tick=13 banner="Active verb: LOOK"

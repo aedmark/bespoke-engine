@@ -182,7 +182,7 @@ python3 -m http.server -d dist/site 8000
 
 ## 8. Neocities Release
 
-Upload `dist/site/index.html` and `dist/site/sw.js` from section 7 to your site by hand (D-074).
+Upload `dist/site/index.html`, `dist/site/sw.js`, and `dist/site/barbs.html` from section 7 to your site by hand (D-074, D-086).
 
 - [ ] Open the live site in a private window. The playground runs, audio plays after a click, and the service worker activates.
 - [ ] The Manual link in the page header opens the manual. Upload `docs/manual.html` to `docs/manual.html` on the site: the export does not include it (Q-007).

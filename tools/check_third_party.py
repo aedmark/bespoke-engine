@@ -9,8 +9,8 @@ compares the counts with a committed baseline, tools/third_party_baseline.json:
   * A count below baseline is a note: lower the baseline with --update-baseline.
   * The baseline only shrinks. Raising it needs --accept-increase, a deliberate, reviewed act.
 
-Scanned: src/, proofs/ (goldens included), scenarios/, site/index.html (without the embedded
-WebAssembly region), tools/site_gallery.json, scheme/, README.md, and docs/state.html.
+Scanned: src/, proofs/ (goldens included), scenarios/, site/index.html and site/barbs.html
+(without the embedded WebAssembly region), tools/site_gallery.json, scheme/, README.md, and docs/state.html.
 Append-only history (DECISIONS, CHANGELOG, the archive, finished roadmap items) is not
 scanned: it records what was true. docs/manual.html is built from scheme/, so it is not
 counted twice.
@@ -41,7 +41,7 @@ TERMS_NAME = "tools/third_party_terms.json"
 BASELINE_NAME = "tools/third_party_baseline.json"
 
 SCAN_DIRS = ("src", "proofs", "scenarios", "scheme")
-SCAN_FILES = ("site/index.html", "tools/site_gallery.json", "README.md", "docs/state.html")
+SCAN_FILES = ("site/index.html", "site/barbs.html", "tools/site_gallery.json", "README.md", "docs/state.html")
 SCAN_SUFFIXES = {".zig", ".tmpl", ".bespoke", ".txt", ".json", ".html", ".md"}
 # The site embeds the proofs' WebAssembly as base64; random letters must not count.
 EMBED_START = "<!-- SITE_SIMULATOR_START -->"
@@ -49,7 +49,10 @@ EMBED_END = "<!-- SITE_SIMULATOR_END -->"
 
 MIN_LINE_LENGTH = 12
 QUOTED_RE = re.compile(r'"([^"\n]{%d,})"' % MIN_LINE_LENGTH)
-TAG_RE = re.compile(r"<[^>]+>")
+# A markup tag within one line. Tags are stripped only from markup files: in code, `a < b`
+# and a later `>` would otherwise swallow every line between them (D-087).
+TAG_RE = re.compile(r"<[^>\n]+>")
+MARKUP_SUFFIXES = {".html", ".json"}
 
 
 def load_terms(root):
@@ -71,14 +74,17 @@ def line_digest(text):
     return hashlib.sha256(normalise_line(text).encode("utf-8")).hexdigest()
 
 
-def plain_text(text):
-    """Text as a reader sees it: no wasm embed, no tags, no JSON or HTML escapes."""
+def plain_text(text, markup=True):
+    """Text as a reader sees it: no wasm embed, no tags, no JSON or HTML escapes. Tags and
+    entities are removed only when `markup` is true (HTML and JSON files)."""
     if EMBED_START in text and EMBED_END in text:
         start = text.index(EMBED_START)
         end = text.index(EMBED_END, start)
         # Keep the line count, so --report line numbers stay true.
         text = text[:start] + "\n" * text.count("\n", start, end) + text[end:]
     text = text.replace('\\"', '"').replace("\\/", "/")
+    if not markup:
+        return text
     text = TAG_RE.sub("", text)
     return html.unescape(text)
 
@@ -105,7 +111,7 @@ def scan(root):
         if f.resolve() == terms_path:
             continue
         rel = f.relative_to(root).as_posix()
-        text = plain_text(f.read_text(encoding="utf-8", errors="replace"))
+        text = plain_text(f.read_text(encoding="utf-8", errors="replace"), f.suffix in MARKUP_SUFFIXES)
         for lineno, line in enumerate(text.splitlines(), 1):
             for source, name, pat in names:
                 n = len(pat.findall(line))

@@ -81,12 +81,13 @@ pub const decks = [_]wasm.Deck{
     }),
     wasm.script_deck_with("BRACKWATER BARBS", SWORD_FIGHTING_SCRIPT, .{
         .player = "Tamsin",
-        .intro = "Brackwater Barbs: [S] starts a duel; answer barbs with the number keys.",
+        .intro = "Brackwater Barbs: TALK to a fencer, or press [S], to duel. Answer with the number keys.",
         .soundtrack = &art.soundtrack,
         .background = .{ .r = 30, .g = 36, .b = 52 },
         .setup = sword_setup,
         .catalyst = sword_solve,
         .on_choice = sword_choice,
+        .on_act = sword_act,
     }),
     wasm.script_deck_with("ALGIERS: THREE PATHS", atlantis.ATLANTIS_PUZZLE_SCRIPT, .{
         .player = "Indy",
@@ -626,22 +627,45 @@ fn sword_start(rt: *WasmRuntime, opponent_name: []const u8, opening: EntityId) !
     rt.set_banner(std.fmt.bufPrint(&buf, "{s} draws. Answer with the number keys, or [S].", .{shown}) catch opponent_name);
 }
 
-/// `[S]`: with a round open, plays the first choice; otherwise starts the desktop proof's next
-/// duel, Bosun Pike on the Tidewalk and then Mistress Vell in her fencing yard.
+/// Every fencer in the order `[S]` duels them: the three on the Tidewalk, then Mistress Vell.
+const SWORD_ROTATION = sword_fighting.FENCERS ++ [_][]const u8{"Vell"};
+
+/// Starts a duel with `name`, walking Tamsin into the fencer's scene first: Vell's yard, or
+/// the Tidewalk for the others.
+fn sword_duel_with(rt: *WasmRuntime, name: []const u8) !void {
+    const tamsin = try entity(rt, "Tamsin");
+    const vell = std.mem.eql(u8, name, "Vell");
+    const scene = try entity(rt, if (vell) "Fencing Yard" else "Tidewalk");
+    if (rt.vm.current_scene == null or rt.vm.current_scene.? != scene) {
+        try rt.vm.transition_to_scene(scene);
+        const mark = rt.spatial.graph.find_waypoint_in_room(scene, if (vell) "YardCircle" else "TidewalkMid");
+        _ = try rt.spatial.transition_actor(tamsin, scene, mark);
+    }
+    return sword_start(rt, name, .none);
+}
+
+/// `[S]`: with a round open, plays the first choice; otherwise duels the next fencer in
+/// `SWORD_ROTATION`, counted by the duels already decided.
 fn sword_solve(rt: *WasmRuntime) anyerror!void {
     _ = sword(rt) orelse return;
     if (bespoke.dialogue.view(&rt.world) != null) return rt.answer(0);
-    const tamsin = try entity(rt, "Tamsin");
-    if (sword_duel.wins(tamsin) == 0) return sword_start(rt, "BosunPike", .none);
-    if (rt.world.lookup_entity("Vell")) |vell| {
-        if (sword_duel.wins(tamsin) < 2 and sword_duel.wins(vell) == 0) {
-            const yard = try entity(rt, "Fencing Yard");
-            try rt.vm.transition_to_scene(yard);
-            _ = try rt.spatial.transition_actor(tamsin, yard, rt.spatial.graph.find_waypoint_in_room(yard, "YardCircle"));
-            return sword_start(rt, "Vell", .none);
+    var decided: u32 = sword_duel.wins(try entity(rt, "Tamsin"));
+    for (SWORD_ROTATION) |name| decided += sword_duel.wins(try entity(rt, name));
+    return sword_duel_with(rt, SWORD_ROTATION[decided % SWORD_ROTATION.len]);
+}
+
+/// TALK on a fencer starts a duel with it (D-086); anything else falls through to the script.
+fn sword_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    _ = sword(rt) orelse return false;
+    if (verb != .talk_to or bespoke.dialogue.view(&rt.world) != null) return false;
+    const name = rt.world.get_entity_name(target) orelse return false;
+    for (SWORD_ROTATION) |fencer| {
+        if (std.mem.eql(u8, fencer, name)) {
+            try sword_duel_with(rt, fencer);
+            return true;
         }
     }
-    rt.set_banner("Both duels are fought. Press [R] to rewind and duel again.");
+    return false;
 }
 
 /// Plays the chosen barb or comeback through the desktop's `Bout`. When the duel ends, the
@@ -846,6 +870,32 @@ test "P30-01: the sword deck duels with generated replies until someone wins" {
     // A lost round teaches only the barb (D-078).
     try testing.expect(holds(rt, "Tamsin", "HeardBarb", null));
     try testing.expect(!holds(rt, "Tamsin", "MasteredComeback", null));
+}
+
+test "D-086: talking to a fencer duels it, and [S] rotates through all four" {
+    const rt = try load(7);
+    defer unload(rt);
+    // The hooks are called directly here, so point the VM at this runtime's world first, as
+    // the runtime does before it calls them.
+    rt.bind();
+    const dory = rt.world.lookup_entity("DoryQuill").?;
+    try testing.expect(try sword_act(rt, .talk_to, dory));
+    try testing.expectEqual(dory, sword_bout.opponent().?);
+    // Other verbs, and talking mid-duel, fall through.
+    try testing.expect(!(try sword_act(rt, .look_at, dory)));
+    try testing.expect(!(try sword_act(rt, .talk_to, rt.world.lookup_entity("BosunPike").?)));
+    sword_bout.clear();
+
+    // With no duel decided, [S] duels Pike; each decided duel moves the rotation on, ending in
+    // Vell's yard.
+    for (SWORD_ROTATION, 0..) |name, i| {
+        try sword_solve(rt);
+        try testing.expectEqual(rt.world.lookup_entity(name).?, sword_bout.opponent().?);
+        sword_bout.clear();
+        try rt.world.remember(rt.world.lookup_entity(name).?, sword_duel.wins_rel, @intCast(1), 0);
+        _ = i;
+    }
+    try testing.expectEqualStrings("Fencing Yard", rt.world.get_entity_name(rt.vm.current_scene.?).?);
 }
 
 test "P30-01: the Bell Tower deck weaves drafts from note keys and tolls the bell" {

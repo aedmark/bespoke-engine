@@ -53,6 +53,13 @@ class ThirdPartyLintTests(unittest.TestCase):
         root = self.make_repo({"site/index.html": page, "proofs/p.zig": '    \\\\  say A: "the  KETTLE sings at midnight."\n'})
         self.assertEqual({"site/index.html": {"Example Saga": 1}, "proofs/p.zig": {"Example Saga": 1}}, self.counts(root))
 
+    def test_comparisons_in_code_never_hide_names_as_if_they_were_tags(self):
+        # D-087: `<` and a later `>` in Zig once read as one tag and swallowed the lines between.
+        code = "if (a < 2) {\n    Zorbin();\n}\nconst b = c > 1;\n"
+        page = "<p>Zorbin</p>\n<span\nclass='x'>text</span>\n"
+        root = self.make_repo({"src/a.zig": code, "site/index.html": page})
+        self.assertEqual({"src/a.zig": {"Example Saga": 1}, "site/index.html": {"Example Saga": 1}}, self.counts(root))
+
     def test_the_embedded_wasm_region_and_history_are_not_scanned(self):
         page = "<!-- SITE_SIMULATOR_START -->\nZorbin Zorbin\n<!-- SITE_SIMULATOR_END -->\nZorbin\n"
         root = self.make_repo({"site/index.html": page, "docs/DECISIONS.md": "Zorbin\n", "docs/archive/x.md": "Zorbin\n"})

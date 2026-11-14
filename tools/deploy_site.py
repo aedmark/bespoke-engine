@@ -21,6 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE_HTML = ROOT / "site" / "index.html"
+# The standalone duel page (D-086), copied beside index.html; it carries its own sharing tags.
+BARBS_HTML = ROOT / "site" / "barbs.html"
 DEFAULT_OUT = ROOT / "dist" / "site"
 HEAD_MARKER = "<!-- DEPLOY_METADATA -->"
 BODY_MARKER = "<!-- DEPLOY_SERVICE_WORKER -->"
@@ -160,7 +162,13 @@ def export(out_dir: Path, site_url: str | None, page_path: Path = SITE_HTML, che
     index, worker = render_export(page, normalise_site_url(site_url))
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
-    for name, text in (("index.html", index), ("sw.js", worker)):
+    files = [("index.html", index), ("sw.js", worker)]
+    if page_path == SITE_HTML and BARBS_HTML.exists():
+        barbs = BARBS_HTML.read_text(encoding="utf-8")
+        if check_current and load_build_site().render_barbs(barbs) != barbs:
+            raise DeployError("site/barbs.html is stale; run `zig build wasm-proofs` and `python3 tools/build_site.py`")
+        files.append(("barbs.html", barbs))
+    for name, text in files:
         path = out_dir / name
         path.write_text(text, encoding="utf-8")
         written.append(path)

@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import tempfile
 import importlib.util
 import unittest
@@ -20,6 +21,17 @@ PAYLOAD = b"\0asm\x01\0\0\0"
 
 
 class SiteBuildTests(unittest.TestCase):
+    def test_the_barbs_page_plays_the_duel_deck_and_is_current(self):
+        # D-086: the standalone page's deck index names the duel proof in the deck table.
+        wrapper = (ROOT / "tools" / "barbs_page.js").read_text(encoding="utf-8")
+        index = int(re.search(r"const BARBS_DECK = (\d+);", wrapper).group(1))
+        names = re.search(r"const DECK_NAMES = \[(.*?)\];", (ROOT / "tools" / "site_simulator.js").read_text(encoding="utf-8"), re.S).group(1)
+        self.assertEqual("Brackwater Barbs", re.findall(r"'([^']*)'", names)[index])
+        self.assertIn(build_site.PLACEHOLDER, wrapper)
+        page = (ROOT / "site" / "barbs.html").read_text(encoding="utf-8")
+        if build_site.WASM_ARTIFACT.exists():
+            self.assertEqual(page, build_site.render_barbs(page))
+
     def test_render_embeds_payload_and_wrapper(self):
         html = "before\n<!-- SITE_SIMULATOR_START -->\n<!-- SITE_SIMULATOR_END -->\nafter\n"
         rendered = build_site.render_page(html, WRAPPER, PAYLOAD)

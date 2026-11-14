@@ -1015,7 +1015,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Keep upload as an option: rejected; it put a credential path in the repository that nobody uses.
 **Consequences:** Publishing is a manual step outside the repository. The release hand-test checks the live site after the maintainer's upload. The page links the manual at `docs/manual.html`, the path the maintainer uploads it to (Q-007); the export does not copy the manual, so it is uploaded separately.
 
-## D-075 Third-Party Name Lint: Counted Terms, Digested Lines, a Shrink-Only Baseline (2026-11-13, status: accepted)
+## D-075 Third-Party Name Lint: Counted Terms, Digested Lines, a Shrink-Only Baseline (2026-11-13, status: accepted; tag stripping corrected by D-087)
 **Context:** Phase 35 (Q-005) rewrites the proofs that borrow from commercial games and a film. Without a count, a rename can miss a file, and a later change can bring a name back.
 **Decision:**
 1. `tools/third_party_terms.json` lists names per source; `tools/check_third_party.py` counts them in `src/`, `proofs/` (goldens included), `scenarios/`, `scheme/`, the site, the gallery data, `README.md`, and `docs/state.html`, and compares with `tools/third_party_baseline.json`, which only shrinks (the separation lint's pattern, D-031).
@@ -1146,6 +1146,25 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Script cue handlers that speak the lines: rejected for now; the host would have to fire a cue and tick inside a round to read one line.
 - Per-fighter `fallback` lines in the duel declaration: deferred; a language and `.bspk` change for one proof.
 **Consequences:** Moving the lines into the script later means a grammar change. No golden changed; the console run calls the duel directly.
+
+## D-086 A Standalone Brackwater Barbs Page, and Decks Can Answer a Verb on a Person (2026-11-13, status: accepted)
+**Context:** The maintainer asked for a static page of the duel proof alone, to share on the project's Discord. The browser deck could only duel Bosun Pike and then Mistress Vell through `[S]`; the three Tidewalk fencers of D-082 were out of reach, and a deck had no way to run host code when a person was clicked.
+**Decision:**
+1. `site/barbs.html` is a checked-in page with the showcase's generated-region markers. `tools/build_site.py` fills it from `tools/barbs_page.js` and the same `bespoke-proofs.wasm`, and `--check` covers both pages. The page plays deck 7 only: no deck switching, Talk selected at start, a Next duel button, Sound, and Restart. `tools/deploy_site.py export` copies it beside `index.html`; the page carries its own sharing tags.
+2. A deck's `on_act(rt, verb, target)` hook runs before a verb's cue and may take it over. The duel deck uses it: TALK on any fencer starts a duel with it, walking Tamsin into Vell's yard when needed. `[S]` with no duel open duels the next fencer in turn (Pike, Gannet, Dory, Vell), counted by duels decided.
+3. The page's wrapper never sends `[S]` while a duel is open, since in the deck `[S]` answers with the first line.
+**Alternatives:**
+- A link into the full showcase: rejected; the maintainer wanted the duel alone.
+- The desktop's D, G, H, and C keys in the browser: rejected; the browser already binds C, D, G, and the other note names to the distaff.
+- Publishing as a claude.ai artifact: not done; the page belongs with the release export.
+**Consequences:** Discord does not run an attached HTML file; the page works when hosted (the export) or opened locally after download. The deck's opening banner changed, so one browser golden line changed.
+
+## D-087 The Third-Party Lint Strips Tags Only from Markup, and Its Baseline Is Corrected (2026-11-13, status: accepted)
+**Context:** D-075's lint removed anything matching `<[^>]+>` from every scanned file, so in Zig code a comparison such as `wins(tamsin) < 2` and a later `>` read as one tag and hid every line between them. Rewriting the duel deck removed one such `<`, and seven Atlantis names that had always been there became visible, which the shrink-only baseline reported as an increase. Measured across the repository the lint had missed about 250 names (2,365 counted, 2,612 present), two of them in `src/display/renderer.zig`.
+**Decision:** (maintainer's choice, 2026-11-13) Tags and entities are removed only from `.html` and `.json` files, and a tag must close on its own line. The baseline was raised once, with `--accept-increase`, to the true count of 2,612, so the shrink-only rule starts from honest numbers. `site/barbs.html` is scanned too. A test puts a name between a code `<` and `>` and expects it counted.
+**Alternatives:**
+- Accept only the duel deck's count and fix the lint later: rejected by the maintainer; every other file's count would stay low.
+**Consequences:** Phase 35 items now see their real counts. The renderer's P13-03 test names Madame Buthane, a Gabriel Knight 3 name inside the engine; P35-04 should replace it.
 
 ## Held tensions
 

@@ -117,6 +117,10 @@ pub const Deck = struct {
     /// Resolves a choice from a host-generated dialogue: the selection's action id. Scripted
     /// choices need no hook; their fiber resumes (D-046, D-071).
     on_choice: ?*const fn (rt: *WasmRuntime, action: u32) anyerror!void = null,
+    /// Runs first when a verb is used on a person or prop; returning true means the deck
+    /// handled it and no cue fires (D-086). A deck uses it for host-run mechanics, such as a
+    /// duel started by talking to a fencer.
+    on_act: ?*const fn (rt: *WasmRuntime, verb: WasmVerb, target: EntityId) anyerror!bool = null,
     /// The cues the verbs fire; a script that answers `Talk` or `PicksUp` names them (D-071).
     cues: VerbCues = .{},
 };
@@ -160,6 +164,7 @@ pub const ScriptDeckOptions = struct {
     catalyst: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
     after_tick: ?*const fn (rt: *WasmRuntime) anyerror!void = null,
     on_choice: ?*const fn (rt: *WasmRuntime, action: u32) anyerror!void = null,
+    on_act: ?*const fn (rt: *WasmRuntime, verb: WasmVerb, target: EntityId) anyerror!bool = null,
     cues: VerbCues = .{},
     /// Music for a script that declares no scores, such as a proof's desktop soundtrack (D-071).
     soundtrack: ?*const audio_mod.Soundtrack = null,
@@ -188,6 +193,7 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
         .catalyst = options.catalyst,
         .after_tick = options.after_tick,
         .on_choice = options.on_choice,
+        .on_act = options.on_act,
         .cues = options.cues,
     };
 }
@@ -693,6 +699,13 @@ pub const WasmRuntime = struct {
     /// prop then falls back to its examine text.
     fn act_on(self: *WasmRuntime, target: EntityId, examine: ?[]const u8) !?BrowserActionTag {
         const program = if (self.program) |*p| p else return null;
+        if (self.decks.len > 0) if (self.decks[self.deck_index].on_act) |hook| {
+            self.bind();
+            if (try hook(self, self.active_verb, target)) {
+                self.record_snapshot();
+                return .actor_interacted;
+            }
+        };
         const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
         const cue = cues.of(self.active_verb) orelse return null;
         // In a deck with drafts, whatever the player acts on becomes the weave target (D-071).
@@ -1651,6 +1664,46 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
     const scrub_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 14, .y = 28 });
     try testing.expectEqual(BrowserActionTag.timeline_scrubbed, scrub_res);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+}
+
+test "D-086: a deck's on_act hook runs before the verb's cue and can take it over" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+        \\on cue TalksTo(Hero, Pilot):
+        \\  say Pilot: "Ahoy."
+    ;
+    const Hook = struct {
+        var calls: usize = 0;
+        fn act(rt: *WasmRuntime, verb: WasmVerb, target: EntityId) anyerror!bool {
+            _ = rt;
+            _ = target;
+            calls += 1;
+            return verb == .talk_to;
+        }
+    };
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero", .on_act = Hook.act })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    const pilot = rt.world.lookup_entity("Pilot").?;
+
+    // TALK: the hook takes it, so the script's cue never fires.
+    rt.active_verb = .talk_to;
+    try testing.expectEqual(BrowserActionTag.actor_interacted, (try rt.act_on(pilot, null)).?);
+    try testing.expectEqual(@as(usize, 1), Hook.calls);
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Ahoy.") == null);
+    // LOOK: the hook declines, and the verb's cue runs as before (no handler, so nothing happens).
+    rt.active_verb = .look_at;
+    try testing.expectEqual(BrowserActionTag.cue_fired, (try rt.act_on(pilot, null)).?);
+    try testing.expectEqual(@as(usize, 2), Hook.calls);
 }
 
 test "D-066: a script deck compiles its script, speaks in the banner, and answers with number keys" {
