@@ -11,6 +11,7 @@
 //! required by the boundary. `proofs/golden/render.txt` pins every scene's pixels.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const music = @import("music.zig");
 const r = bespoke.display.renderer;
 
 const DisplayWindow = r.DisplayWindow;
@@ -3033,9 +3034,29 @@ const TRACKS = blk: {
     @setEvalBranchQuota(20_000);
     const tags = std.meta.tags(Track);
     var t: [tags.len]audio.Music = undefined;
-    for (tags, 0..) |tag, i| t[i] = .{ .name = @tagName(tag), .pattern = track_pattern(tag) };
+    for (tags, 0..) |tag, i| {
+        // Every proof track is arranged sections (P34-08, D-089), written in `music.zig`.
+        const a = arranged(tag);
+        t[i] = .{ .name = @tagName(tag), .sections = a.sections, .arrangement = a.arrangement };
+    }
     break :blk t;
 };
+
+fn arranged(which: Track) music.Arranged {
+    return switch (which) {
+        .tavern => music.tavern,
+        .cellar => music.cellar,
+        .spitting_contest => music.spitting_contest,
+        .tidewalk => music.tidewalk,
+        .fencing_yard => music.fencing_yard,
+        .lantern => music.lantern,
+        .courtyard => music.courtyard,
+        .bike_shop => music.bike_shop,
+        .lochmarne => music.lochmarne,
+        .tentacle => music.tentacle,
+        .bell_tower => music.bell_tower,
+    };
+}
 
 fn wave(source: anytype, shape: audio.Wave, weight: i32) audio.Term {
     return .{ .source = source, .shape = shape, .weight = weight };
@@ -3115,254 +3136,6 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
     }
 
     return track(.tavern);
-}
-
-
-fn track_pattern(comptime which: Track) audio.BgmPattern {
-    var p = audio.BgmPattern{
-        .bpm = 120,
-        .step_count = 32,
-        .bass_notes = [_]u8{0} ** audio.BGM_STEPS,
-        .lead_notes = [_]u8{0} ** audio.BGM_STEPS,
-        .chord_notes = [_]u8{0} ** audio.BGM_STEPS,
-        .drum_pattern = [_]u8{0} ** audio.BGM_STEPS,
-    };
-
-    switch (which) {
-
-        // The Tavern Heist: Lively G-Dorian pipe & lute jig
-        .tavern => {
-            p.bpm = 132;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                43, 0, 43, 0, 38, 0, 43, 0, 41, 0, 41, 0, 36, 0, 38, 0,
-                43, 0, 43, 0, 38, 0, 43, 0, 41, 0, 41, 0, 38, 0, 43, 0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                67, 0, 70, 72, 74, 0, 72, 70, 69, 0, 65, 69, 67, 0, 0,  0,
-                67, 69, 70, 72, 74, 77, 74, 72, 70, 69, 67, 65, 67, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 53, 0, 57, 0,
-                55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 55, 0, 58, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 3, 3,
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
-            };
-        },
-
-        // The Wine Cellar: Moody subterranean minor bassline and dripping echoes
-        .cellar => {
-            p.bpm = 92;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                36, 0, 0, 0, 39, 0, 0, 0, 43, 0, 0, 0, 44, 0, 43, 0,
-                36, 0, 0, 0, 39, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0,  0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                60, 0, 63, 0, 67, 0, 68, 67, 63, 0, 62, 0, 60, 0, 0,  0,
-                60, 0, 63, 0, 67, 0, 70, 68, 67, 0, 65, 0, 63, 62, 60, 0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                48, 0, 0, 0, 51, 0, 0, 0, 55, 0, 0, 0, 56, 0, 55, 0,
-                48, 0, 0, 0, 51, 0, 0, 0, 53, 0, 0, 0, 55, 0, 0,  0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
-                1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 0,
-            };
-        },
-
-        // Booty Island Spitting Contest: Jaunty Caribbean pirate regatta march
-        .spitting_contest => {
-            p.bpm = 126;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                48, 0, 43, 0, 48, 0, 43, 0, 41, 0, 48, 0, 43, 0, 50, 0,
-                48, 0, 43, 0, 48, 0, 43, 0, 41, 0, 43, 0, 48, 0, 0,  0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                76, 0, 79, 0, 76, 74, 72, 0, 74, 0, 76, 77, 79, 0, 0,  0,
-                81, 0, 79, 76, 72, 0, 74, 0, 76, 74, 72, 0, 72, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                0, 60, 0, 60, 0, 60, 0, 60, 0, 57, 0, 57, 0, 55, 0, 55,
-                0, 60, 0, 60, 0, 60, 0, 60, 0, 57, 0, 55, 0, 60, 0, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 2, 3, 3,
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
-            };
-        },
-
-        // Brackwater Tidewalk: adventurous seafaring shanty progression
-        .tidewalk => {
-            p.bpm = 112;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 40, 0, 0, 0,
-                45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0, 45, 0, 0, 0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                64, 69, 72, 71, 69, 0, 67, 0, 69, 72, 74, 0, 76, 0, 0,  0,
-                76, 74, 72, 71, 69, 0, 67, 64, 65, 67, 69, 0, 69, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                57, 0, 60, 0, 53, 0, 57, 0, 55, 0, 59, 0, 52, 0, 55, 0,
-                57, 0, 60, 0, 53, 0, 57, 0, 55, 0, 59, 0, 57, 0, 60, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 0, 3, 0, 2, 0, 1, 0, 1, 0, 3, 0, 2, 0, 3, 0,
-                1, 0, 3, 0, 2, 0, 1, 0, 1, 0, 3, 0, 2, 3, 1, 2,
-            };
-        },
-
-        // Vell's fencing yard: intense, dramatic duel cadence
-        .fencing_yard => {
-            p.bpm = 144;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 43, 43, 45, 45, 43, 41,
-                38, 38, 38, 38, 41, 41, 41, 41, 43, 43, 45, 45, 38, 38, 0,  0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                74, 0, 77, 0, 81, 0, 79, 77, 76, 0, 77, 79, 81, 0, 0,  0,
-                86, 0, 81, 0, 77, 0, 74, 0, 76, 77, 76, 73, 74, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                50, 0, 53, 0, 53, 0, 57, 0, 55, 0, 58, 0, 57, 0, 61, 0,
-                50, 0, 53, 0, 53, 0, 57, 0, 55, 0, 57, 0, 50, 0, 53, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 1, 3, 2, 3, 1, 3, 1, 3, 1, 3, 2, 3, 1, 2,
-                1, 3, 1, 3, 2, 3, 1, 3, 1, 3, 1, 3, 2, 2, 1, 2,
-            };
-        },
-
-        // The Drowned Lantern: rowdy harbour tavern waltz in 3/4 time
-        .lantern => {
-            p.bpm = 138;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                48, 0, 0, 48, 0, 0, 43, 0, 0, 48, 0, 0, 41, 0, 0, 43,
-                48, 0, 0, 48, 0, 0, 45, 0, 0, 43, 0, 0, 48, 0, 0, 0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                72, 0, 74, 76, 0, 79, 81, 0, 79, 76, 0, 0, 72, 0, 76, 74,
-                72, 0, 74, 76, 0, 79, 81, 0, 79, 76, 74, 0, 72, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                0, 60, 60, 0, 60, 60, 0, 55, 55, 0, 60, 60, 0, 57, 57, 0,
-                0, 60, 60, 0, 60, 60, 0, 57, 57, 0, 55, 55, 0, 60, 60, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2,
-                1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2,
-            };
-        },
-
-        // Gabriel Knight 3 Hotel Courtyard Garden: Peaceful French provincial waltz
-        .courtyard => {
-            p.bpm = 104;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                41, 0, 48, 0, 41, 0, 48, 0, 46, 0, 41, 0, 48, 0, 43, 0,
-                41, 0, 48, 0, 41, 0, 48, 0, 46, 0, 48, 0, 41, 0, 0,  0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                69, 0, 72, 0, 77, 0, 76, 74, 72, 0, 70, 0, 69, 0, 67, 0,
-                69, 0, 72, 0, 77, 0, 79, 77, 76, 0, 74, 0, 72, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                53, 0, 57, 0, 53, 0, 57, 0, 58, 0, 53, 0, 57, 0, 55, 0,
-                53, 0, 57, 0, 53, 0, 57, 0, 58, 0, 57, 0, 53, 0, 0,  0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 0, 3, 0, 0, 0, 3, 0, 1, 0, 3, 0, 0, 0, 3, 0,
-                1, 0, 3, 0, 0, 0, 3, 0, 1, 0, 3, 0, 0, 0, 1, 0,
-            };
-        },
-
-        // Gabriel Knight 3 Bike Rental Shop: Breezy French café accordion cadence
-        .bike_shop => {
-            p.bpm = 118;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                43, 0, 50, 0, 43, 0, 50, 0, 41, 0, 48, 0, 43, 0, 50, 0,
-                43, 0, 50, 0, 43, 0, 50, 0, 41, 0, 45, 0, 43, 0, 0,  0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                67, 70, 74, 73, 74, 0, 70, 0, 67, 69, 70, 72, 69, 0, 0,  0,
-                67, 70, 74, 73, 74, 77, 74, 70, 69, 70, 69, 66, 67, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                0, 55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 57, 0, 55, 0, 58,
-                0, 55, 0, 58, 0, 55, 0, 58, 0, 53, 0, 54, 0, 55, 0, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 3, 3,
-                1, 3, 3, 3, 2, 3, 1, 3, 1, 3, 3, 3, 2, 3, 1, 2,
-            };
-        },
-
-        // Lochmarne Castle & Templar Crypt: Lively Celtic whistle jig in 6/8 time (P20-03, D-023)
-        .lochmarne => {
-            p.bpm = 126;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                43, 0, 50, 43, 0, 50, 41, 0, 48, 43, 0, 50, 43, 0, 50, 41,
-                43, 0, 50, 43, 0, 50, 45, 0, 52, 43, 0, 50, 43, 0, 0,  0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                71, 74, 76, 79, 76, 74, 76, 74, 71, 69, 71, 74, 71, 0, 0,  0,
-                71, 74, 76, 79, 81, 79, 76, 74, 76, 74, 71, 69, 71, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                0, 55, 59, 0, 55, 59, 0, 53, 57, 0, 55, 59, 0, 55, 59, 0,
-                0, 55, 59, 0, 55, 59, 0, 57, 60, 0, 55, 59, 0, 55, 59, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 3, 3,
-                1, 3, 3, 2, 3, 3, 1, 3, 1, 3, 3, 2, 3, 3, 1, 2,
-            };
-        },
-
-        // Day of the Tentacle Trio: Quirky cartoon march with bouncy bass and syncopated lead (P21-03, D-025)
-        .tentacle => {
-            p.bpm = 132;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                36, 0, 48, 0, 39, 0, 51, 0, 41, 0, 53, 0, 43, 0, 55, 0,
-                36, 0, 48, 0, 39, 0, 51, 0, 44, 0, 56, 0, 43, 0, 41, 0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                60, 63, 67, 72, 70, 67, 63, 60, 65, 68, 72, 75, 72, 0, 0, 0,
-                60, 63, 67, 72, 75, 74, 72, 70, 72, 70, 67, 63, 60, 0, 0, 0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                0, 48, 51, 0, 48, 51, 0, 51, 55, 0, 53, 56, 0, 55, 58, 0,
-                0, 48, 51, 0, 48, 51, 0, 56, 60, 0, 55, 58, 0, 53, 56, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 1, 2, 2,
-                1, 3, 2, 3, 1, 3, 2, 3, 1, 3, 2, 3, 1, 2, 3, 1,
-            };
-        },
-
-        // The Bell Tower: slow modal hymn; the lead quotes the Kindle and Toll drafts (P22-03)
-        .bell_tower => {
-            p.bpm = 72;
-            p.bass_notes = [audio.BGM_STEPS]u8{
-                38, 0, 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0,
-                41, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 38, 0, 0, 0,
-            };
-            p.lead_notes = [audio.BGM_STEPS]u8{
-                72, 0, 74, 0, 76, 0, 72, 0, 0,  0, 0, 0, 69, 0, 0,  0,
-                67, 0, 69, 0, 71, 0, 67, 0, 0,  0, 0, 0, 62, 0, 0,  0,
-            };
-            p.chord_notes = [audio.BGM_STEPS]u8{
-                50, 0, 0, 0, 57, 0, 0, 0, 48, 0, 0, 0, 55, 0, 0, 0,
-                53, 0, 0, 0, 57, 0, 0, 0, 55, 0, 0, 0, 50, 0, 0, 0,
-            };
-            p.drum_pattern = [audio.BGM_STEPS]u8{
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
-            };
-        },
-    }
-
-    return p;
 }
 
 // ---------------------------------------------------------------------------

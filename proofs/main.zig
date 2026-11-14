@@ -180,6 +180,7 @@ test {
     _ = @import("render_golden_test.zig");
     _ = @import("audio_golden_test.zig");
     _ = @import("wasm_golden_test.zig");
+    _ = @import("music.zig");
 }
 
 test "proofs: legacy flag spellings resolve to the same proofs" {

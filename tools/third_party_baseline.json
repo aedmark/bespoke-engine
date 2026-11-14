@@ -17,11 +17,11 @@
       "Monkey Island": 1
     },
     "proofs/art.zig": {
-      "Broken Sword": 20,
-      "Day of the Tentacle": 81,
+      "Broken Sword": 19,
+      "Day of the Tentacle": 79,
       "Donnie Darko": 76,
-      "Gabriel Knight 3": 26,
-      "Monkey Island": 6
+      "Gabriel Knight 3": 22,
+      "Monkey Island": 5
     },
     "proofs/atlantis_puzzle.zig": {
       "Indiana Jones and the Fate of Atlantis": 47
@@ -195,5 +195,5 @@
       "Monkey Island": 2
     }
   },
-  "total": 2612
+  "total": 2604
 }

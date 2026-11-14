@@ -1176,6 +1176,18 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - A larger click radius around the unshifted spot: rejected; the circle you see would still not be what you click.
 **Consequences:** Every browser golden frame hash changed; fact counts, ticks, and banners did not.
 
+## D-089 Longer Music: Grid Tracks Play Arranged Sections (2026-11-14, status: accepted)
+**Context:** P34-08. Each proof track was one two-bar, 32-step grid pattern (3 to 5 seconds) that repeated for as long as a scene lasted; the maintainer found the loops catchy but wearing. The maintainer chose the form (2026-11-14): written sections and an arrangement, piloted on the three Brackwater Barbs tracks, then the other eight the same day.
+**Decision:**
+1. **Sections and an order.** `audio.Music` gains `sections` (grid patterns) and `arrangement` (`SectionPlay` entries). A non-empty arrangement plays one section per entry, in order, and starts over after the last; `pattern` is then unused. A track without one plays its pattern as before, so no other track changes.
+2. **Passes vary their section.** A `SectionPlay` may transpose the pitched parts by semitones and mute any of bass, lead, chords, and drums (`PartMask`). A few written sections then give minutes of material: a theme with its lead dropped is an intro, a bridge without drums is a breakdown, and a chorus up a fourth is a key change. `audio.arranged_pattern` builds the pass; a section index past the list plays silence and a note shifted outside MIDI 1 to 127 rests.
+3. **The synth swaps at the section boundary.** When the step counter wraps, `ChiptuneSynth` loads the next entry before triggering its first step, so sections join without a gap, and a section's own `bpm` and `step_count` apply (the Drowned Lantern's waltz sections are 24 steps). A new track or a crossfade starts at the first entry.
+4. **Proof music lives in `proofs/music.zig`,** written as note names, drums, and rests per step, and arrangements as a line of passes (`a/ld` mutes lead and drums, `b+5` is up a fourth); both are checked at compile time. Every proof track has eight sections named `a`, `a2`, `b`, `b2`, `c`, `c2`, `d`, `d2`, the original pattern kept as `a`, and runs 125 s to 147 s before its first exact repeat. A test computes the shortest period of each track's full step stream and requires two minutes. `art.zig` no longer holds single-pattern tracks.
+**Alternatives:**
+- MML scores with parts looping on independent lengths: rejected for now; it would change the tracks' sound and D-061's whole-score loop.
+- Seeded variation of one pattern each pass: rejected; it adds no verses or bridges and can sound aimless.
+**Consequences:** In `proofs/golden/audio.txt` every `track/` line and the tavern-to-cellar fade changed, and eleven `arrangement/` lines were added; no effect, note, scene, or MML line changed. The module grew by about 10 KB. Removing the old pattern comments lowered the third-party lint baseline from 2,612 to 2,604. The maintainer has not yet given the listening pass on speakers.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

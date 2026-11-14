@@ -24,18 +24,29 @@ note/3: b77aa0b7983354a8
 note/4: c60f695feff61f6f
 note/5: 039ecc1e6454a52f
 note/6: 04f1117453f64a1f
-track/tavern: 49e5e9a4664b72a3
-track/cellar: 5f0f20e8ab2f82b9
-track/spitting_contest: 1c4908aa302345f6
-track/tidewalk: 55f9c76450b88860
-track/fencing_yard: 3705b55dc5fde8cd
-track/lantern: 5eaab78d83c9e45f
-track/courtyard: 96577175d0aafb0a
-track/bike_shop: 159398360716a16b
-track/lochmarne: c7b1a492b5301089
-track/tentacle: b7520b564c6e68a2
-track/bell_tower: 1a2ea87e550ec513
-fade/tavern->cellar: 446de137fc3fc6f1 f88865b66f37492d
+track/tavern: c535f39c0f8322aa
+track/cellar: a7f579ff36bcf56f
+track/spitting_contest: 35f8dd220f6a3ed6
+track/tidewalk: 9361e324ad9bc14e
+track/fencing_yard: 9487cf331c804733
+track/lantern: dce3da4ebf939f64
+track/courtyard: 47042ddbb7104943
+track/bike_shop: a76c64e06da5d0e7
+track/lochmarne: 9cfd35880ce7ace9
+track/tentacle: 9d60719f47982f97
+track/bell_tower: 3e74db3a3e222c1b
+arrangement/tavern: 35 passes, 127.3s before repeat, cd4e65546d801303
+arrangement/cellar: 27 passes, 140.9s before repeat, 1385d5c21ec6a651
+arrangement/spitting_contest: 33 passes, 125.7s before repeat, 3d1f1fb4c01c643a
+arrangement/tidewalk: 32 passes, 137.1s before repeat, a60f50de00f02030
+arrangement/fencing_yard: 38 passes, 126.7s before repeat, 16b08aca3acaad20
+arrangement/lantern: 48 passes, 125.2s before repeat, 40e6e14f3977a1b0
+arrangement/courtyard: 29 passes, 133.8s before repeat, 7e9c081742746670
+arrangement/bike_shop: 31 passes, 126.1s before repeat, 48f9f16b11a96c8c
+arrangement/lochmarne: 45 passes, 128.6s before repeat, 2854d8dbd925f77c
+arrangement/tentacle: 35 passes, 127.3s before repeat, 30c201e8cf36a15c
+arrangement/bell_tower: 22 passes, 146.7s before repeat, e9a0a1202d3eb298
+fade/tavern->cellar: 220c462f0d1045c0 9a0490163f14b986
 scene/: none
 scene/Nowhere In Particular: tavern
 scene/Tavern: tavern

@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 52 (2026-11-10)
+- **Goal:** Implement P27-03, inspector navigation and relation filters, with the maintainer-approved defaults.
+- **Work:** Found P27-02 already on `main` (the handoff still called it unmerged) and branched `feature/p27-navigation`. Added `state_graph.Filter`, `next_filter`, `mentions`, and `Layout.hit_ring`, with `build` and `default_focus` taking the filter. `DisplayWindow` gained selection, an eight-step history, and the filter; State tab keys (arrows, Enter, Backspace, Home, F) and ring clicks; a selection outline and a footer naming the filter. Recorded D-059 and updated roadmap, architecture, testing, changelog, manual, and handoff.
+- **Outcome:** See the Verified table. Mutations breaking ring stepping and ignoring the filter in `build` each failed a P27-03 test. Both inspector render images were viewed before accepting the golden. Not hand-played; not merged.
+
 ### Session 51 (2026-11-10)
 - **Goal:** Merge P27-01 and implement P27-02, the dialogue branch and next-to-happen inspector.
 - **Work:** Fast-forwarded and pushed P27-01 (`1ad3a49`). Added backward-compatible `offer_choice_inspected` and `reject_choice` opcodes; codegen now records source-order active and pruned branches with the first failed guard as `DialogueBranch*` World facts. Extended `RenderFrame.dialogue`, the State tab, and `state_graph.next_expiring`; legacy and generated sets fall back to all-active branches. Updated the inspector render golden, D-058, roadmap, architecture, testing, changelog, manual, and handoff.

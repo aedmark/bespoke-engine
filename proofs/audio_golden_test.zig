@@ -143,6 +143,21 @@ fn record_all(allocator: std.mem.Allocator) !std.ArrayList(u8) {
         try w.print("track/{s}: {x:0>16}\n", .{ music.name, try render(allocator, &s, frames) });
     }
 
+    // Arranged tracks (P34-08, D-089): the length before the first exact repeat, and the
+    // first three passes, so a section change and its transposes and mutes are heard.
+    for (Sounds.track_names()) |music| {
+        if (music.arrangement.len == 0) continue;
+        const seconds = try @import("music.zig").seconds_before_repeat(allocator, .{ .sections = music.sections, .arrangement = music.arrangement });
+        var s = Sounds.synth();
+        Sounds.play(&s, music.name);
+        var frames: usize = 0;
+        for (music.arrangement[0..3]) |pass| {
+            const p = audio.arranged_pattern(&music, pass);
+            frames += @as(usize, s.samples_per_step) * p.step_count;
+        }
+        try w.print("arrangement/{s}: {d} passes, {d:.1}s before repeat, {x:0>16}\n", .{ music.name, music.arrangement.len, seconds, try render(allocator, &s, frames + 2_000) });
+    }
+
     {
         // A scene change while music plays: the old track fades out, the new one fades in.
         var s = Sounds.synth();

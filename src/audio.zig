@@ -161,13 +161,56 @@ pub const SfxPatch = struct {
     loop: bool = false,
 };
 
-/// A named music track for a soundtrack: a grid pattern, or an MML score (P28-02, D-061).
-/// When `score` is set it plays and `pattern` is ignored.
+/// A named music track for a soundtrack: a grid pattern, an arranged set of grid sections
+/// (P34-08, D-089), or an MML score (P28-02, D-061). When `score` is set it plays and the grid
+/// fields are ignored; otherwise a non-empty `arrangement` plays and `pattern` is ignored.
 pub const Music = struct {
     name: []const u8,
     pattern: BgmPattern = SILENT_PATTERN,
     score: ?*const MmlScore = null,
+    /// The track's grid sections, referred to by index from `arrangement`.
+    sections: []const BgmPattern = &.{},
+    /// The order the sections play in, one pass each; after the last entry it starts over.
+    arrangement: []const SectionPlay = &.{},
 };
+
+/// The grid parts an arrangement pass can silence.
+pub const PartMask = struct {
+    bass: bool = false,
+    lead: bool = false,
+    chords: bool = false,
+    drums: bool = false,
+};
+
+/// One pass of a section in an arrangement (P34-08, D-089). A few written sections replayed
+/// in a new key or with parts dropped give a track minutes of material before it repeats.
+pub const SectionPlay = struct {
+    section: u8,
+    /// Semitones added to every bass, lead, and chord note; drums are unpitched.
+    transpose: i8 = 0,
+    mute: PartMask = .{},
+};
+
+/// The pattern one arrangement pass plays: the section with its notes transposed and its
+/// muted parts emptied. An index past `sections` plays silence rather than reading out of
+/// bounds; a note shifted outside MIDI 1 to 127 rests, since 0 already means rest.
+pub fn arranged_pattern(music: *const Music, pass: SectionPlay) BgmPattern {
+    if (pass.section >= music.sections.len) return SILENT_PATTERN;
+    var p = music.sections[pass.section];
+    for (0..BGM_STEPS) |i| {
+        p.bass_notes[i] = if (pass.mute.bass) 0 else shift_note(p.bass_notes[i], pass.transpose);
+        p.lead_notes[i] = if (pass.mute.lead) 0 else shift_note(p.lead_notes[i], pass.transpose);
+        p.chord_notes[i] = if (pass.mute.chords) 0 else shift_note(p.chord_notes[i], pass.transpose);
+        if (pass.mute.drums) p.drum_pattern[i] = 0;
+    }
+    return p;
+}
+
+fn shift_note(note: u8, semitones: i8) u8 {
+    if (note == 0) return 0;
+    const shifted = @as(i16, note) + semitones;
+    return if (shifted < 1 or shifted > 127) 0 else @intCast(shifted);
+}
 
 /// A game's sounds, registered with `AudioBridge.set_soundtrack` (or a display `Theme`).
 /// Tracks and effects are referred to by index. Borrowed: the soundtrack must outlive the
@@ -376,6 +419,8 @@ pub const ChiptuneSynth = struct {
     target_track: ?u8 = null,
     active_pattern: BgmPattern = std.mem.zeroes(BgmPattern),
     current_step: usize = 0,
+    /// The arrangement entry playing, for a track with sections (D-089).
+    arrangement_pos: usize = 0,
     samples_per_step: u32 = 5512,
     step_sample_counter: u32 = 0,
 
@@ -424,17 +469,9 @@ pub const ChiptuneSynth = struct {
             // Immediate start
             self.current_track = track;
             self.target_track = track;
-            self.active_pattern = self.pattern_of(track);
-            self.start_mml(track);
-            self.current_step = 0;
-            self.step_sample_counter = 0;
+            self.start_track(track);
             self.fade_level = 32767;
             self.is_fading_out = false;
-            if (self.active_pattern.bpm > 0) {
-                // 1 step = 1 sixteenth note = (60 / bpm / 4) seconds
-                const step_sec = (60.0 / @as(f64, @floatFromInt(self.active_pattern.bpm))) / 4.0;
-                self.samples_per_step = @intFromFloat(step_sec * @as(f64, @floatFromInt(self.sample_rate)));
-            }
         } else {
             // Begin fast crossfade
             self.target_track = track;
@@ -442,10 +479,39 @@ pub const ChiptuneSynth = struct {
         }
     }
 
-    /// The pattern of a soundtrack track; an unknown index or null is silence at 120 bpm.
+    /// Starts a track from its first step and, when it is arranged, its first section.
+    fn start_track(self: *ChiptuneSynth, track: ?u8) void {
+        self.arrangement_pos = 0;
+        self.load_pattern(self.pattern_of(track));
+        self.start_mml(track);
+        self.current_step = 0;
+        self.step_sample_counter = 0;
+    }
+
+    fn load_pattern(self: *ChiptuneSynth, pattern: BgmPattern) void {
+        self.active_pattern = pattern;
+        if (pattern.bpm > 0) {
+            // 1 step = 1 sixteenth note = (60 / bpm / 4) seconds
+            const step_sec = (60.0 / @as(f64, @floatFromInt(pattern.bpm))) / 4.0;
+            self.samples_per_step = @intFromFloat(step_sec * @as(f64, @floatFromInt(self.sample_rate)));
+        }
+    }
+
+    /// The pattern a track plays now: its arrangement entry at `arrangement_pos`, else its one
+    /// pattern; an unknown index or null is silence at 120 bpm.
     fn pattern_of(self: *const ChiptuneSynth, track: ?u8) BgmPattern {
         const music = self.music_of(track) orelse return SILENT_PATTERN;
-        return music.pattern;
+        if (music.arrangement.len == 0) return music.pattern;
+        return arranged_pattern(music, music.arrangement[self.arrangement_pos % music.arrangement.len]);
+    }
+
+    /// At the end of a section, moves an arranged track to its next entry, wrapping after the
+    /// last. A track with one pattern replays it.
+    fn next_section(self: *ChiptuneSynth) void {
+        const music = self.music_of(self.current_track) orelse return;
+        if (music.arrangement.len == 0) return;
+        self.arrangement_pos = (self.arrangement_pos + 1) % music.arrangement.len;
+        self.load_pattern(self.pattern_of(self.current_track));
     }
 
     fn music_of(self: *const ChiptuneSynth, track: ?u8) ?*const Music {
@@ -737,6 +803,7 @@ pub const ChiptuneSynth = struct {
                 if (self.step_sample_counter >= self.samples_per_step) {
                     self.step_sample_counter = 0;
                     self.current_step = (self.current_step + 1) % self.active_pattern.step_count;
+                    if (self.current_step == 0) self.next_section();
 
                     // Trigger new step notes
                     const step = self.current_step;
@@ -781,14 +848,7 @@ pub const ChiptuneSynth = struct {
                     self.fade_level = 0;
                     self.is_fading_out = false;
                     self.current_track = self.target_track;
-                    self.active_pattern = self.pattern_of(self.target_track);
-                    self.start_mml(self.target_track);
-                    self.current_step = 0;
-                    self.step_sample_counter = 0;
-                    if (self.active_pattern.bpm > 0) {
-                        const step_sec = (60.0 / @as(f64, @floatFromInt(self.active_pattern.bpm))) / 4.0;
-                        self.samples_per_step = @intFromFloat(step_sec * @as(f64, @floatFromInt(self.sample_rate)));
-                    }
+                    self.start_track(self.target_track);
                 }
             } else if (self.fade_level < 32767) {
                 self.fade_level += 32;
@@ -1661,4 +1721,53 @@ test "P28-02: grid and MML tracks crossfade into each other" {
     render_frames(&s, 4_000);
     try testing.expectEqual(@as(?*const MmlScore, null), s.mml.score);
     try testing.expectEqual(@as(u16, 140), s.active_pattern.bpm);
+}
+
+test "P34-08: an arranged track plays its sections in order, transposed and muted per pass, then starts over" {
+    const sections = [_]BgmPattern{ test_pattern(140, 40), test_pattern(140, 45) };
+    const order = [_]SectionPlay{
+        .{ .section = 0 },
+        .{ .section = 1, .transpose = 2, .mute = .{ .drums = true } },
+        .{ .section = 0, .mute = .{ .lead = true } },
+    };
+    const tracks = [_]Music{.{ .name = "arranged", .sections = &sections, .arrangement = &order }};
+    const st = Soundtrack{ .tracks = &tracks };
+    var s = ChiptuneSynth.init();
+    s.soundtrack = &st;
+    s.set_track(0);
+    try testing.expectEqual(@as(usize, 0), s.arrangement_pos);
+    try testing.expectEqual(@as(u8, 40), s.active_pattern.bass_notes[0]);
+
+    // One pass of an 8-step section, and the next entry plays: section 1, two semitones up,
+    // drums silent.
+    const pass = @as(usize, s.samples_per_step) * 8;
+    render_frames(&s, pass);
+    try testing.expectEqual(@as(usize, 1), s.arrangement_pos);
+    try testing.expectEqual(@as(u8, 47), s.active_pattern.bass_notes[0]);
+    try testing.expectEqual(@as(u8, 45 + 24 + 2), s.active_pattern.lead_notes[0]);
+    for (s.active_pattern.drum_pattern) |d| try testing.expectEqual(@as(u8, 0), d);
+
+    render_frames(&s, pass);
+    try testing.expectEqual(@as(usize, 2), s.arrangement_pos);
+    for (s.active_pattern.lead_notes) |n| try testing.expectEqual(@as(u8, 0), n);
+    try testing.expectEqual(@as(u8, 40), s.active_pattern.bass_notes[0]);
+
+    // After the last entry the arrangement starts over, and a new track starts at its top.
+    render_frames(&s, pass);
+    try testing.expectEqual(@as(usize, 0), s.arrangement_pos);
+    try testing.expectEqual(@as(u8, 40 + 24), s.active_pattern.lead_notes[0]);
+}
+
+test "P34-08: an arrangement pass never reads past its sections or out of MIDI range" {
+    var high = test_pattern(120, 40);
+    high.lead_notes[0] = 127;
+    const sections = [_]BgmPattern{high};
+    const music = Music{ .name = "edge", .sections = &sections };
+    const missing = arranged_pattern(&music, .{ .section = 3 });
+    try testing.expectEqualSlices(u8, &SILENT_PATTERN.lead_notes, &missing.lead_notes);
+    const up = arranged_pattern(&music, .{ .section = 0, .transpose = 1 });
+    try testing.expectEqual(@as(u8, 0), up.lead_notes[0]);
+    try testing.expectEqual(@as(u8, 41), up.bass_notes[0]);
+    const down = arranged_pattern(&music, .{ .section = 0, .transpose = -40 });
+    try testing.expectEqual(@as(u8, 0), down.bass_notes[0]);
 }
