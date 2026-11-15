@@ -1943,18 +1943,7 @@ fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
         w.fill_rect(pt.x + 10, pt.y - 14, 4, 28, Color{ .r = 70, .g = 70, .b = 75 });
     } else if (std.mem.eql(u8, name, "WeathercockProp") or std.mem.eql(u8, name, "Weathercock")) {
         // The copper weathercock, fallen 28 days early: the branch's keystone (P35-07)
-        const copper = Color{ .r = 184, .g = 115, .b = 51 };
-        const verdigris = Color{ .r = 72, .g = 160, .b = 130 };
-        w.draw_line(pt.x, pt.y + 18, pt.x, pt.y - 6, Color{ .r = 90, .g = 80, .b = 70 });
-        w.draw_line(pt.x - 16, pt.y + 12, pt.x + 16, pt.y + 12, Color{ .r = 90, .g = 80, .b = 70 });
-        w.fill_circle(pt.x - 2, pt.y - 10, 10, copper);
-        w.fill_circle(pt.x + 10, pt.y - 18, 5, copper);
-        w.fill_rect(pt.x - 20, pt.y - 20, 8, 14, verdigris);
-        w.draw_line(pt.x + 14, pt.y - 18, pt.x + 20, pt.y - 16, Color{ .r = 250, .g = 204, .b = 21 });
-        w.draw_circle_outline(pt.x - 2, pt.y - 10, 10, Color{ .r = 230, .g = 170, .b = 110 });
-        if (status_of(frame).branch_active) {
-            w.draw_circle_outline(pt.x, pt.y - 6, 26, Palette.branch_glow);
-        }
+        draw_weathercock(w, frame, pt);
     } else if (std.mem.eql(u8, name, "SluiceProp") or std.mem.eql(u8, name, "Sluice")) {
         // The Customs House sluice gate (P35-07)
         w.fill_rect(pt.x - 12, pt.y - 22, 24, 40, Color{ .r = 60, .g = 66, .b = 74 });
@@ -1990,6 +1979,23 @@ fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
         return false;
     }
     return true;
+}
+
+/// The copper weathercock (P35-07): drawn as the attic prop, and at the fog whirl once Wren
+/// carries it there.
+fn draw_weathercock(w: *Canvas, frame: *const RenderFrame, pt: anytype) void {
+    const copper = Color{ .r = 184, .g = 115, .b = 51 };
+    const verdigris = Color{ .r = 72, .g = 160, .b = 130 };
+    w.draw_line(pt.x, pt.y + 18, pt.x, pt.y - 6, Color{ .r = 90, .g = 80, .b = 70 });
+    w.draw_line(pt.x - 16, pt.y + 12, pt.x + 16, pt.y + 12, Color{ .r = 90, .g = 80, .b = 70 });
+    w.fill_circle(pt.x - 2, pt.y - 10, 10, copper);
+    w.fill_circle(pt.x + 10, pt.y - 18, 5, copper);
+    w.fill_rect(pt.x - 20, pt.y - 20, 8, 14, verdigris);
+    w.draw_line(pt.x + 14, pt.y - 18, pt.x + 20, pt.y - 16, Color{ .r = 250, .g = 204, .b = 21 });
+    w.draw_circle_outline(pt.x - 2, pt.y - 10, 10, Color{ .r = 230, .g = 170, .b = 110 });
+    if (status_of(frame).branch_active) {
+        w.draw_circle_outline(pt.x, pt.y - 6, 26, Palette.branch_glow);
+    }
 }
 
 fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
@@ -2405,6 +2411,10 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
         w.fill_rect(pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 3, 24, 2, Color{ .r = 250, .g = 204, .b = 21 });
 
         layout_resolver.submit(TextLabel.init("Admiral Squall", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 6, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "WeathercockProp")) {
+        // The keystone is a moving entity so loop closure can check where it stands. In the
+        // attic its prop art shows it; on the hill it is drawn where it was put, in the whirl.
+        if (detect(frame).is_weathercock_hill_scene) draw_weathercock(w, frame, pt);
     } else if (std.mem.eql(u8, name, "Wren") and (detect(frame).is_weathercock_attic_scene or detect(frame).is_weathercock_customs_scene or detect(frame).is_weathercock_hill_scene)) {
         // Wren Halloway (the grid proof has its own Wren; this art is scoped to these scenes): apprentice clerk in a grey coat, ink-stained cuffs (P35-07)
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 88, .g = 92, .b = 104 });
@@ -2974,7 +2984,7 @@ fn footer(frame: *const RenderFrame) ?r.FooterHint {
     } else if (sc.is_village_scene) {
         return .{ .text = "[S]: Theft | [F]: Feast | [G]: Tip | [-]/[+]: Speed | [Space/N]: Pause/Step | [< / >]: Scrub", .color = HINT_GOLD };
     } else if (sc.is_weathercock_attic_scene or sc.is_weathercock_customs_scene or sc.is_weathercock_hill_scene or status_of(frame).branch_active) {
-        return .{ .text = "[1]: Attic | [2]: Customs House | [3]: Beacon Hill | [V]: Current | [-]/[+]: Speed | [Space]: Pause", .color = Color{ .r = 168, .g = 85, .b = 247 } };
+        return .{ .text = "[V]: Follow the current | [-]/[+]: Speed | [Space]: Pause", .color = Color{ .r = 168, .g = 85, .b = 247 } };
     }
     return null;
 }
@@ -3243,6 +3253,21 @@ pub fn set_countdown(bridge: *bespoke.DisplayBridge, text: []const u8) void {
 pub fn set_collapsed(bridge: *bespoke.DisplayBridge, collapsed: bool) void {
     bridge.back_buffer.host_status_mut(Status).branch_collapsed = collapsed;
     bridge.front_buffer.host_status_mut(Status).branch_collapsed = collapsed;
+}
+
+/// Shows a branch world's countdown and expiry on both frame buffers (P35-07), so neither
+/// buffer drops it on the next swap; the window and the browser deck share it.
+pub fn show_branch(bridge: *bespoke.DisplayBridge, hypervisor: *const bespoke.TemporalHypervisor) void {
+    var buf: [16]u8 = undefined;
+    const text = bespoke.format_countdown(hypervisor.ticks_remaining(), &buf);
+    for ([_]*bespoke.RenderFrame{ &bridge.back_buffer, &bridge.front_buffer }) |frame| {
+        const st = frame.host_status_mut(Status);
+        const len = @min(text.len, st.branch_countdown.len);
+        @memcpy(st.branch_countdown[0..len], text[0..len]);
+        st.branch_countdown_len = @intCast(len);
+        st.branch_active = hypervisor.branch_active;
+        st.branch_collapsed = hypervisor.collapse_state == .budget_expired;
+    }
 }
 
 /// Reads the gallery grid's cell facts by the names its script uses (P25-03).
@@ -3635,7 +3660,7 @@ fn hud(w: *Canvas, frame: *const RenderFrame) void {
         w.draw_rect_outline(bx + 1, by + 1, bw - 2, bh - 2, Color.vortex_purple);
 
         var t_buf: [64]u8 = undefined;
-        const t_text = std.fmt.bufPrint(&t_buf, "BORROWED MONTH ENDS IN: {s}", .{count_str}) catch "BORROWED MONTH";
+        const t_text = std.fmt.bufPrint(&t_buf, "MONTH ENDS IN: {s}", .{count_str}) catch "MONTH ENDS";
         w.draw_text(t_text, bx + 12, by + 9, 2, Color{ .r = 254, .g = 202, .b = 202 });
     }
 }

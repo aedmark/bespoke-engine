@@ -136,6 +136,7 @@ pub const decks = [_]wasm.Deck{
         .status_hook = art.capture_status,
         .background = .{ .r = 26, .g = 18, .b = 40 },
         .setup = weathercock_setup,
+        .exits = &weathercock.EXITS,
         .catalyst = solver(&WEATHERCOCK_SOLUTION),
         .after_tick = weathercock_after_tick,
     }),
@@ -505,6 +506,7 @@ fn weathercock_setup(rt: *WasmRuntime) anyerror!void {
         if (previous) |p| try g.connect(p, wp, null);
         previous = wp;
     }
+    try bespoke.host.add_exit_marks(&rt.world, &rt.spatial, &weathercock.EXITS);
     const places = [_]struct { who: []const u8, room: EntityId, mark: []const u8 }{
         .{ .who = "Wren", .room = attic, .mark = "CotMark" },
         .{ .who = "PilotAshe", .room = attic, .mark = "DeskMark" },
@@ -519,6 +521,7 @@ fn weathercock_setup(rt: *WasmRuntime) anyerror!void {
     _ = try hv.fork_branch(280, try entity(rt, "Wren"), try entity(rt, "WeathercockProp"));
     hv.set_convergence_target(g.find_waypoint_in_room(hill, "WhirlMark").?);
     try hv.add_dream_residue(.{ .subject = try entity(rt, "Wren"), .relation = try relation(rt, "MemoryCarried"), .object_or_value = 1 });
+    art.show_branch(rt.frame_bridge, hv);
     rt.bind();
 }
 
@@ -526,6 +529,7 @@ fn weathercock_setup(rt: *WasmRuntime) anyerror!void {
 /// the flood and the note into the primary world before the branch is gone.
 fn weathercock_after_tick(rt: *WasmRuntime) anyerror!void {
     const hv = rt.hypervisor orelse return;
+    defer art.show_branch(rt.frame_bridge, hv);
     if (!hv.branch_active) return;
     const branch = rt.active_world();
     const wren = try entity(rt, "Wren");
@@ -533,6 +537,15 @@ fn weathercock_after_tick(rt: *WasmRuntime) anyerror!void {
     const note = try relation(rt, "NoteDelivered");
     const flooded = branch.has_fact(wren, flood, null);
     const delivered = branch.has_fact(wren, note, null);
+    // A script cannot move a prop, so the host carries the weathercock to the whirl once the
+    // script says it went in; loop closure checks where the keystone stands.
+    const keystone = try entity(rt, "WeathercockProp");
+    if (branch.has_fact(wren, try relation(rt, "KeystoneAtConvergence"), keystone.to_int())) {
+        const hill = try entity(rt, "Beacon Hill");
+        const whirl = rt.spatial.graph.find_waypoint_in_room(hill, "WhirlMark") orelse return error.UnknownMark;
+        const here = if (rt.spatial.agents.get(keystone)) |a| a.current_wp else null;
+        if (here != whirl) _ = try rt.spatial.transition_actor(keystone, hill, whirl);
+    }
     switch (try hv.step_tick(&rt.spatial)) {
         .loop_resolved => {
             if (flooded) try rt.world.remember(wren, flood, 1, 0);
@@ -944,11 +957,13 @@ fn solve(rt: *WasmRuntime) !void {
     for (0..16) |_| try rt.trigger_catalyst();
 }
 
+/// Whether the fact holds in the world the player acts in: the branch while one is live.
 fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]const u8) bool {
-    const s = rt.world.lookup_entity(subject) orelse return false;
-    const r = rt.world.lookup_relation(rel) orelse return false;
-    const o: ?u32 = if (object) |n| (rt.world.lookup_entity(n) orelse return false).to_int() else null;
-    return rt.world.find_first(s, r, o) != null;
+    const w = rt.active_world();
+    const s = w.lookup_entity(subject) orelse return false;
+    const r = w.lookup_relation(rel) orelse return false;
+    const o: ?u32 = if (object) |n| (w.lookup_entity(n) orelse return false).to_int() else null;
+    return w.find_first(s, r, o) != null;
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
@@ -1318,10 +1333,10 @@ test "D-094: the Borrowed Beard plays to the berth ticket with clicks alone" {
     try pick_verb(rt, .talk_to);
     _ = try click_on(rt, "PurserWick");
     for (0..30) |_| {
-        if (bespoke.dialogue.view(&rt.world) != null) break;
+        if (bespoke.dialogue.view(rt.active_world()) != null) break;
         try rt.step_tick();
     }
-    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    try testing.expect(bespoke.dialogue.view(rt.active_world()) != null);
     // Disguised, the first offered line is the claim to Rook's berth.
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
     try tick_until(rt, "Tamsin", "HasBerthTicket", null, 5);
@@ -1354,10 +1369,10 @@ test "D-094: the Pip-Spitting Green wins first place with clicks alone" {
     try pick_verb(rt, .talk_to);
     _ = try click_on(rt, "JudgeMarrow");
     for (0..30) |_| {
-        if (bespoke.dialogue.view(&rt.world) != null) break;
+        if (bespoke.dialogue.view(rt.active_world()) != null) break;
         try rt.step_tick();
     }
-    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    try testing.expect(bespoke.dialogue.view(rt.active_world()) != null);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
     try tick_until(rt, "Tamsin", "Placed", "FirstPlace", 3);
 }
@@ -1423,10 +1438,10 @@ fn talk_and_choose_first(rt: *WasmRuntime, who: []const u8) !void {
     try pick_verb(rt, .talk_to);
     _ = try click_on(rt, who);
     for (0..40) |_| {
-        if (bespoke.dialogue.view(&rt.world) != null) break;
+        if (bespoke.dialogue.view(rt.active_world()) != null) break;
         try rt.step_tick();
     }
-    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    try testing.expect(bespoke.dialogue.view(rt.active_world()) != null);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
     try rt.step_tick();
 }
@@ -1486,6 +1501,53 @@ test "D-094: the Well of Three Tides plays to the end with clicks and the party 
     _ = try click_on(rt, "Juno");
     try tick_until(rt, "Juno", "TidesSolved", null, 5);
     try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "VICTORY") != null);
+}
+
+test "D-094: The Copper Weathercock plays to the end with clicks alone, through its doorways" {
+    const rt = try load(9);
+    defer unload(rt);
+    try testing.expectEqualStrings("Wren", rt.world.get_entity_name(rt.player_entity).?);
+
+    // The attic: take the weathercock, then down the stairs to the Customs House.
+    try pick_verb(rt, .pick_up);
+    _ = try click_on(rt, "WeathercockProp");
+    try tick_until(rt, "Wren", "Carries", "Weathercock", 40);
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "AtticStairs");
+    try tick_until_scene(rt, "The Customs House", 40);
+
+    // The Customs House: take the crank and open the sluice.
+    try pick_verb(rt, .pick_up);
+    _ = try click_on(rt, "CrankProp");
+    try tick_until(rt, "Wren", "Carries", "Crank", 40);
+    try use_item_on(rt, "Crank", "SluiceProp");
+    try tick_until(rt, "Wren", "CustomsFlooded", null, 5);
+
+    // Up the hill road to Beacon Hill. Offering the note before taking it delivers nothing.
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "HillRoad");
+    try tick_until_scene(rt, "Beacon Hill", 40);
+    try talk_and_choose_first(rt, "HesterQuill");
+    for (0..3) |_| try rt.step_tick();
+    try testing.expect(!holds(rt, "Wren", "NoteDelivered", "HesterQuill"));
+
+    // With the note from the post box in hand, Hester Quill takes it.
+    try pick_verb(rt, .pick_up);
+    _ = try click_on(rt, "NoteProp");
+    try tick_until(rt, "Wren", "Carries", "Note", 40);
+    try talk_and_choose_first(rt, "HesterQuill");
+    try tick_until(rt, "Wren", "NoteDelivered", "HesterQuill", 5);
+    try testing.expect(!holds(rt, "Wren", "Carries", "Note"));
+
+    // The weathercock goes into the whirl, and the borrowed month folds back.
+    try use_item_on(rt, "Weathercock", "FogWhirlProp");
+    for (0..5) |_| {
+        if (!rt.hypervisor.?.branch_active) break;
+        try rt.step_tick();
+    }
+    try testing.expect(!rt.hypervisor.?.branch_active);
+    try testing.expect(weathercock.evaluate_weathercock_solved(&rt.world));
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "folds back cleanly") != null);
 }
 
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {

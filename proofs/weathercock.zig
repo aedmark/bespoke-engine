@@ -108,9 +108,13 @@ pub const WEATHERCOCK_SCRIPT =
     \\
     \\on cue TalksTo(Wren, HesterQuill):
     \\  choice "I have a note for you, Miss Quill. It says 'Fair weather, falling glass.'":
-    \\    say HesterQuill: "Fair weather, falling glass. I wrote that in the almanac forty years ago, and nobody ever read it back to me."
-    \\    say HesterQuill: "Take what fell to the whirl at the crest before the month closes, child."
-    \\    remember NoteDelivered(Wren, HesterQuill)
+    \\    if not Carries(Wren, Note):
+    \\      say Wren: "I left it in the post box."
+    \\    if Carries(Wren, Note):
+    \\      forget Carries(Wren, Note)
+    \\      say HesterQuill: "Fair weather, falling glass. I wrote that in the almanac forty years ago, and nobody ever read it back to me."
+    \\      say HesterQuill: "Take what fell to the whirl at the crest before the month closes, child."
+    \\      remember NoteDelivered(Wren, HesterQuill)
     \\  choice "What happens when the borrowed month ends?":
     \\    say HesterQuill: "It folds back into the real one, or it tears. The loop must close."
     \\
@@ -131,9 +135,63 @@ pub const WEATHERCOCK_SCRIPT =
     \\on cue LooksAt(Wren, FogWhirl):
     \\  say Wren: "A whirl of grey fog turning slowly over the crest. Ashe says what fell must go back in here."
     \\
+    \\on cue Takes(Wren, CrankProp):
+    \\  if not Carries(Wren, Crank):
+    \\    remember Carries(Wren, Crank)
+    \\    say Wren: "I'll take the crank."
+    \\
+    \\on cue Uses(Wren, CrankProp):
+    \\  if not Carries(Wren, Crank):
+    \\    remember Carries(Wren, Crank)
+    \\    say Wren: "I'll take the crank."
+    \\
+    \\on cue Takes(Wren, NoteProp):
+    \\  if not Carries(Wren, Note):
+    \\    remember Carries(Wren, Note)
+    \\    say Wren: "A note for Hester Quill. I'll take it up the hill."
+    \\
+    \\on cue Uses(Wren, NoteProp):
+    \\  if not Carries(Wren, Note):
+    \\    remember Carries(Wren, Note)
+    \\    say Wren: "A note for Hester Quill. I'll take it up the hill."
+    \\
+    \\on cue Takes(Wren, WeathercockProp):
+    \\  if not Carries(Wren, Weathercock):
+    \\    remember Carries(Wren, Weathercock)
+    \\    say Wren: "Heavy, and colder than copper should be. It has to go back."
+    \\
+    \\on cue Uses(Wren, WeathercockProp):
+    \\  if not Carries(Wren, Weathercock):
+    \\    remember Carries(Wren, Weathercock)
+    \\    say Wren: "Heavy, and colder than copper should be. It has to go back."
+    \\
+    \\on cue Uses(Wren, Crank, SluiceProp):
+    \\  remember SluiceOpened(Wren, SluiceProp)
+    \\  remember CustomsFlooded(Wren, 1)
+    \\
+    \\on cue Uses(Wren, Note, HesterQuill):
+    \\  forget Carries(Wren, Note)
+    \\  say HesterQuill: "Fair weather, falling glass. I wrote that in the almanac forty years ago, and nobody ever read it back to me."
+    \\  say HesterQuill: "Take what fell to the whirl at the crest before the month closes, child."
+    \\  remember NoteDelivered(Wren, HesterQuill)
+    \\
+    \\on cue Uses(Wren, Weathercock, FogWhirlProp):
+    \\  forget Carries(Wren, Weathercock)
+    \\  remember KeystoneAtConvergence(Wren, WeathercockProp)
+    \\  remember ConvergenceReady(Wren, 1)
+    \\
     \\on cue LooksAt(Wren):
     \\  say Wren: "Nothing unusual to see here."
 ;
+
+/// The doorways between the three scenes (D-094, D-100): the attic stairs come down at the
+/// Customs House street door, and the hill road at its far end climbs to the crest of Beacon Hill.
+pub const EXITS = [_]bespoke.host.Exit{
+    .{ .scene = "Wren's Attic", .mark = "AtticStairs", .to_scene = "The Customs House", .to_mark = "StreetDoor" },
+    .{ .scene = "The Customs House", .mark = "StreetDoor", .to_scene = "Wren's Attic", .to_mark = "AtticStairs", .add_at = .{ .x = -8, .y = 0 } },
+    .{ .scene = "The Customs House", .mark = "HillRoad", .to_scene = "Beacon Hill", .to_mark = "HillCrest", .add_at = .{ .x = 48, .y = 0 } },
+    .{ .scene = "Beacon Hill", .mark = "HillCrest", .to_scene = "The Customs House", .to_mark = "HillRoad" },
+};
 
 /// The Copper Weathercock is solved when the keystone came back, the Customs House flooded,
 /// the note reached Hester Quill, and Wren carried the memory out of the branch (P31-03, D-027).
@@ -234,6 +292,7 @@ const Layout = struct {
         try spatial.graph.connect(l.sluice_wp, l.crest_wp, null);
         try spatial.graph.connect(l.crest_wp, l.postbox_wp, null);
         try spatial.graph.connect(l.postbox_wp, l.whirl_wp, null);
+        try bespoke.host.add_exit_marks(world, spatial, &EXITS);
 
         try spatial.register_entity(l.wren, l.cot_wp, 8);
         try spatial.register_entity(l.ashe, l.desk_wp, 8);
@@ -442,13 +501,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
 /// Mirrors the hypervisor's countdown and expiry into the art status every frame.
 fn sync_temporal_hud(display_bridge: *bespoke.DisplayBridge, hypervisor: *const bespoke.TemporalHypervisor) void {
-    var count_buf: [16]u8 = undefined;
-    const remaining_ticks = if (hypervisor.collapse_budget_ticks > hypervisor.ticks_elapsed)
-        hypervisor.collapse_budget_ticks - hypervisor.ticks_elapsed
-    else
-        0;
-    art.set_countdown(display_bridge, bespoke.format_countdown(remaining_ticks, &count_buf));
-    art.set_collapsed(display_bridge, hypervisor.collapse_state == .budget_expired);
+    art.show_branch(display_bridge, hypervisor);
 }
 
 const VICTORY_BANNER = "The borrowed month folds back cleanly. The loop is closed.";
@@ -487,13 +540,9 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
     var display_bridge = bespoke.display.DisplayBridge.init();
     display_bridge.set_status_hook(art.capture_status);
-    const btn_attic = try world.intern_entity("Attic");
-    const btn_customs = try world.intern_entity("Customs");
-    const btn_hill = try world.intern_entity("Hill");
-    const scene_buttons = [_]bespoke.EntityId{ btn_attic, btn_customs, btn_hill };
-    display_bridge.set_party(&scene_buttons);
+    const party = [_]bespoke.EntityId{wren};
+    display_bridge.set_party(&party);
     display_bridge.set_active_character(wren);
-    display_bridge.set_active_party_index(0);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -512,10 +561,12 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
         .object_or_value = 1,
     });
     sync_temporal_hud(&display_bridge, &hypervisor);
-    win.set_cue_banner("The Copper Weathercock: [1] Attic, [2] Customs House, [3] Beacon Hill switch scenes. [V] follows the current.", 180);
+    win.set_cue_banner("The Copper Weathercock: walk the attic stairs and the hill road between scenes. [V] follows the current.", 180);
 
     var session = try bespoke.host.Session.initWithHypervisor(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &win, &hypervisor);
     defer session.deinit();
+    session.exits = &EXITS;
+    session.player = wren;
 
     while (true) {
         session.refresh();
@@ -538,12 +589,10 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         if (vm.current_scene == l.attic) {
                             try vm.transition_to_scene(l.customs);
                             _ = try spatial.transition_actor(wren, l.customs, l.sluice_wp);
-                            display_bridge.set_active_party_index(1);
                             win.set_cue_banner("Wren follows the current to The Customs House.", 120);
                         } else if (vm.current_scene == l.customs) {
                             try vm.transition_to_scene(l.hill);
                             _ = try spatial.transition_actor(wren, l.hill, l.whirl_wp);
-                            display_bridge.set_active_party_index(2);
                             win.set_cue_banner("Wren follows the current up Beacon Hill.", 120);
                         } else {
                             win.set_cue_banner("Wren follows the current.", 90);
@@ -552,32 +601,9 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     }
                 },
             } else |_| {},
-            .switch_party_member => |p_idx| {
-                const target: ?struct { scene: bespoke.EntityId, wp: bespoke.WaypointId, name: []const u8 } = switch (p_idx) {
-                    0 => .{ .scene = l.attic, .wp = l.cot_wp, .name = "Wren's Attic" },
-                    1 => .{ .scene = l.customs, .wp = l.ledger_wp, .name = "The Customs House" },
-                    2 => .{ .scene = l.hill, .wp = l.crest_wp, .name = "Beacon Hill" },
-                    else => null,
-                };
-                if (target) |t| {
-                    try vm.transition_to_scene(t.scene);
-                    _ = try spatial.transition_actor(wren, t.scene, t.wp);
-                    display_bridge.set_active_character(wren);
-                    display_bridge.set_active_party_index(p_idx);
-                    win.set_cue_banner(t.name, 90);
-                }
-                action_taken = true;
-            },
             .walk_player => |wp_id| {
-                const active_char = display_bridge.active_player_character orelse wren;
-                _ = try spatial.walk_to(active_char, wp_id);
-                var w_buf: [64]u8 = undefined;
-                if (spatial.graph.get_waypoint(wp_id)) |wp| {
-                    const text = std.fmt.bufPrint(&w_buf, "Wren walks to {s}...", .{wp.name}) catch "Walking...";
-                    win.set_cue_banner(text, 60);
-                } else {
-                    win.set_cue_banner("Walking...", 60);
-                }
+                // Walking onto a doorway changes scenes when the walk ends (D-100).
+                _ = try session.walk_player(wp_id);
                 action_taken = true;
             },
             .examine_hotspot => |hs_idx| {
@@ -703,7 +729,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     const item_ent = frame.inventory[u_act.item_index].entity;
                     const act_ent = frame.entities[u_act.actor_index].entity;
                     if (item_ent == note_item and act_ent == l.hester) {
-                        try deliver_note(session.active_world(), &display_bridge, &win, wren, l.hester, note_rel);
+                        try deliver_note(session.active_world(), &display_bridge, &win, wren, l.hester, note_rel, carries_rel, note_item);
                     }
                     action_taken = true;
                 }
@@ -711,7 +737,9 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             .dialogue_choice => |choice_idx| {
                 if (vm.current_scene == l.hill) {
                     if (choice_idx == 0) {
-                        try deliver_note(session.active_world(), &display_bridge, &win, wren, l.hester, note_rel);
+                        if (session.active_world().has_fact(wren, carries_rel, note_item.to_int())) {
+                            try deliver_note(session.active_world(), &display_bridge, &win, wren, l.hester, note_rel, carries_rel, note_item);
+                        } else win.set_cue_banner("Wren: \"I left it in the post box.\"", 180);
                     } else if (choice_idx == 1) {
                         win.set_cue_banner("Hester Quill: \"It folds back into the real one, or it tears. The loop must close.\"", 180);
                     }
@@ -736,7 +764,16 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
         }
 
         if (session.tick_due()) {
+            // The hypervisor steps after the VM in this loop, so the doorway check that
+            // `Session.advance` makes is made here: a plain walk that ends on a doorway leaves
+            // through it (D-100).
+            const walking_before = spatial.is_moving(wren);
             _ = try bespoke.host.tick(&vm, &compiled);
+            if (walking_before and win.approach == null and !spatial.is_moving(wren)) {
+                if (try bespoke.host.take_exit_here(session.active_world(), &spatial, &vm, &EXITS, wren)) |exit| {
+                    win.set_cue_banner(exit.to_scene, 120);
+                }
+            }
             const branch_world = session.active_world();
             const branch_flooded = branch_world.has_fact(wren, flood_rel, null);
             const branch_note_delivered = branch_world.has_fact(wren, note_rel, null);
@@ -799,7 +836,10 @@ fn deliver_note(
     wren: bespoke.EntityId,
     hester: bespoke.EntityId,
     note_rel: bespoke.RelationKind,
+    carries_rel: bespoke.RelationKind,
+    note_item: bespoke.EntityId,
 ) !void {
+    _ = action_world.forget(wren, carries_rel, note_item.to_int());
     _ = try action_world.remember(wren, note_rel, hester.to_int(), 0);
     display_bridge.back_buffer.host_status_mut(art.Status).weathercock_note_delivered = true;
     win.play_sfx(.combine);

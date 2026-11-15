@@ -78,7 +78,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--village` | S theft, F feast, G tip | Six villagers run their own days. After S, a witness talks, rumours spread, and the Sheriff arrests someone, with no key presses in between. |
 | `--lamp-point` | L Lamp Point, W Wreckers Cellar, 1 to 4 steps | Cudgel shoves Tamsin down on the way to the hatch until his rope is caught on the anchor. |
 | `--three-tides` | 1 to 4 switch character | Items sent down the Tide Well arrive in the other era; felling the tree in 1712 frees Juno in 2112. |
-| `--weathercock` | V follow the current | The borrowed month's countdown runs; closing the loop merges the branch back; letting it run out tears the month away. |
+| `--weathercock` | V follow the current; walk the attic stairs and the hill road | The borrowed month's countdown runs; the note must be taken from the post box before Hester Quill takes it; closing the loop merges the branch back; letting it run out tears the month away. |
 | `--loom` | C D E F G A B notes, Backspace clears | Notes sound and show on the distaff; a four-note draft weaves its effect; played backwards it does the opposite. |
 | `--grog` | 1 pour A to B, 2 pour B to C, L unlock | Cups visibly degrade; a late pour spills; enough grog at the lock dissolves it. |
 | `--atlantis` | 1 Wits, 2 Fists, 3 Team, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
