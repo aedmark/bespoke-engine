@@ -1577,8 +1577,13 @@ test "P15-02: package file save and load roundtrip" {
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
 
-    const tmp_path = "/tmp/test_scenario.bspk";
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    // A private directory per run: two test binaries run this test at the same time.
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(dir_path);
+    const tmp_path = try std.fs.path.join(testing.allocator, &.{ dir_path, "test_scenario.bspk" });
+    defer testing.allocator.free(tmp_path);
 
     try save_package_file(testing.allocator, tmp_path, &compiled1, &world1, null);
 

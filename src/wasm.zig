@@ -146,15 +146,8 @@ pub const Deck = struct {
     status_hook: ?display_mod.StatusHook = null,
 };
 
-/// A mark that leads out of its scene (D-094). When the player's walk ends on `mark` while
-/// `scene` is on stage, the stage changes to `to_scene` and the player stands on `to_mark`.
-/// Only a walk that ends there counts, so a player placed on an exit mark stays put.
-pub const Exit = struct {
-    scene: []const u8,
-    mark: []const u8,
-    to_scene: []const u8,
-    to_mark: []const u8,
-};
+/// A doorway between scenes, shared with desktop hosts (D-094, D-100).
+pub const Exit = host_mod.Exit;
 
 /// The cue each verb fires on a person or prop in a script deck (D-069, D-071).
 pub const VerbCues = struct {
@@ -218,6 +211,7 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
                 if (rt.banner_len == 0) rt.set_banner(text);
             }
             if (options.setup) |setup| try setup(rt);
+            try host_mod.add_exit_marks(&rt.world, &rt.spatial, options.exits);
             rt.sync_audio();
         }
     };
@@ -472,10 +466,13 @@ pub const WasmRuntime = struct {
         self.world.deinit();
     }
 
+    /// Shows a line: the newest in the window's message log under the stage (D-099), and the
+    /// runtime's own copy, which tests and the golden read.
     pub fn set_banner(self: *WasmRuntime, msg: []const u8) void {
         const len = @min(msg.len, self.banner_buf.len);
         @memcpy(self.banner_buf[0..len], msg[0..len]);
         self.banner_len = len;
+        self.window.set_cue_banner(msg[0..len], 0);
     }
 
     pub fn get_banner(self: *const WasmRuntime) []const u8 {
@@ -485,6 +482,8 @@ pub const WasmRuntime = struct {
     /// Resets the spine and loads deck `index` (the first deck if out of range).
     pub fn load_deck(self: *WasmRuntime, index: u8) !void {
         self.messages.clear();
+        self.window.clear_log();
+        self.banner_len = 0;
         self.approach = null;
         self.selected_item = .none;
         self.drop_program();
@@ -870,22 +869,12 @@ pub const WasmRuntime = struct {
     /// Takes the exit on the mark the player stands on, if there is one; true if it did.
     fn exit_here(self: *WasmRuntime) !bool {
         if (self.player_entity == .none or self.decks.len == 0) return false;
-        const scene = self.vm.current_scene orelse return false;
-        const agent = self.spatial.agents.get(self.player_entity) orelse return false;
-        const here = self.spatial.graph.get_waypoint(agent.current_wp) orelse return false;
-        const scene_name = self.world.get_entity_name(scene) orelse return false;
-        for (self.decks[self.deck_index].exits) |exit| {
-            if (!std.mem.eql(u8, exit.scene, scene_name) or !std.mem.eql(u8, exit.mark, here.name)) continue;
-            const to = self.world.lookup_entity(exit.to_scene) orelse return false;
-            try self.vm.transition_to_scene(to);
-            _ = try self.spatial.transition_actor(self.player_entity, to, self.spatial.graph.find_waypoint_in_room(to, exit.to_mark));
-            self.approach = null;
-            var name_buf: [48]u8 = undefined;
-            var buf: [80]u8 = undefined;
-            self.set_banner(std.fmt.bufPrint(&buf, "{s}.", .{dialogue_panel.display_name(exit.to_scene, &name_buf)}) catch exit.to_scene);
-            return true;
-        }
-        return false;
+        const exit = (try host_mod.take_exit_here(&self.world, &self.spatial, &self.vm, self.decks[self.deck_index].exits, self.player_entity)) orelse return false;
+        self.approach = null;
+        var name_buf: [48]u8 = undefined;
+        var buf: [80]u8 = undefined;
+        self.set_banner(std.fmt.bufPrint(&buf, "{s}.", .{dialogue_panel.display_name(exit.to_scene, &name_buf)}) catch exit.to_scene);
+        return true;
     }
 
     fn has_drafts(self: *const WasmRuntime) bool {
@@ -1384,12 +1373,6 @@ pub const WasmRuntime = struct {
             w.hovered_party_member = null;
         } else w.update_hover(frame, self.hovered_x, self.hovered_y);
 
-        // The browser's banner stays until the next one replaces it.
-        const banner = self.get_banner();
-        const len = @min(banner.len, w.cue_banner_text.len);
-        @memcpy(w.cue_banner_text[0..len], banner[0..len]);
-        w.cue_banner_len = len;
-        w.cue_banner_until_ms = std.math.maxInt(i64);
         return w;
     }
 

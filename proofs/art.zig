@@ -2650,7 +2650,7 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
         w.draw_line(pt.x + 8, pt.y + 10, pt.x + 16, pt.y - 18, Color{ .r = 180, .g = 140, .b = 90 });
         w.draw_line(pt.x + 16, pt.y - 18, pt.x + 20, pt.y - 14, Color{ .r = 203, .g = 213, .b = 225 });
         layout_resolver.submit(TextLabel.init(
-            name,
+            r.words(name),
             pt.x,
             pt.y,
             .above,
@@ -2684,7 +2684,7 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            name,
+            r.words(name),
             pt.x,
             pt.y,
             .above,

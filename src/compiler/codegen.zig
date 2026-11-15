@@ -379,7 +379,7 @@ pub const Codegen = struct {
                     var prev_wp: ?u16 = null;
                     var first_wp: ?u16 = null;
                     for (sc_def.marks.items, 0..) |mname, idx| {
-                        const wx: i32 = @as(i32, @intCast(idx)) * 20;
+                        const wx: i32 = stage_x(idx, sc_def.marks.items.len);
                         var found = false;
                         for (sp.graph.waypoints.items) |wp| {
                             if (std.mem.eql(u8, wp.name, mname)) {
@@ -400,7 +400,7 @@ pub const Codegen = struct {
 
                     for (sc_def.props.items, 0..) |pname, idx| {
                         const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
-                        const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
+                        const px: i32 = 10 + stage_x(idx, sc_def.props.items.len);
                         sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
                     }
 
@@ -424,7 +424,7 @@ pub const Codegen = struct {
 
                 var prev_wp: ?u16 = null;
                 for (ast.marks.items, 0..) |mname, idx| {
-                    const wx: i32 = @as(i32, @intCast(idx)) * 20;
+                    const wx: i32 = stage_x(idx, ast.marks.items.len);
                     var found = false;
                     for (sp.graph.waypoints.items) |wp| {
                         if (std.mem.eql(u8, wp.name, mname)) {
@@ -444,7 +444,7 @@ pub const Codegen = struct {
 
                 for (ast.props.items, 0..) |pname, idx| {
                     const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
-                    const px: i32 = 10 + @as(i32, @intCast(idx)) * 20;
+                    const px: i32 = 10 + stage_x(idx, ast.props.items.len);
                     sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
                 }
             }
@@ -1479,6 +1479,25 @@ pub const Codegen = struct {
         return 1; // default to first waypoint if spatial not configured
     }
 };
+
+
+/// Where the `idx`th of `count` marks (or props, offset by 10) sits along a scene: 20 units
+/// apart from 0, which keeps three within the 1280x720 stage. More than three are spread over
+/// the same 40 units instead, since a fourth at 60 would fall off the right edge (D-100).
+pub fn stage_x(idx: usize, count: usize) i32 {
+    const i: i32 = @intCast(idx);
+    if (count <= 3) return i * 20;
+    return @divTrunc(i * 40, @as(i32, @intCast(count - 1)));
+}
+
+test "D-100: marks and props stay on the stage however many a scene lists" {
+    try std.testing.expectEqual(@as(i32, 40), stage_x(2, 3));
+    try std.testing.expectEqual(@as(i32, 40), stage_x(4, 5));
+    try std.testing.expectEqual(@as(i32, 20), stage_x(2, 5));
+    for (4..12) |n| {
+        for (0..n) |k| try std.testing.expect(stage_x(k, n) <= 40);
+    }
+}
 
 test "P4-03: end-to-end compilation from source text to bytecode chunk" {
     const testing = std.testing;

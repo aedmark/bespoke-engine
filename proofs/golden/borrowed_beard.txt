@@ -56,7 +56,7 @@
       [2] "Whose dog is that in the yard?"
       [3] "Good day."
    -> Tamsin selects Choice 1!
-   -> PurserWick: "Captain Rook! That's a fine beard you're growing. Here's your berth ticket."
+   -> Purser Wick: "Captain Rook! That's a fine beard you're growing. Here's your berth ticket."
    -> Has the Berth Ticket? YES! PUZZLE SOLVED!
 
 [Step 15: Time-Travel Rewind Demo]

@@ -118,6 +118,82 @@ const DRIFTER = 5;
 const HUNGER = 0;
 const ENERGY = 1;
 
+/// The settlement's marks, as `lay_out_settlement` placed them.
+pub const SettlementMarks = struct {
+    bakery: bespoke.WaypointId,
+    farm: bespoke.WaypointId,
+    town_square: bespoke.WaypointId,
+    cottages: bespoke.WaypointId,
+    tavern: bespoke.WaypointId,
+    sheriffs_post: bespoke.WaypointId,
+};
+
+/// Places the six buildings' marks, their paths, and their props, the desktop window and the
+/// browser deck alike (D-100).
+pub fn lay_out_settlement(world: *bespoke.World, spatial: *bespoke.SpatialSystem, village_scene: bespoke.EntityId) !SettlementMarks {
+    // Six-building settlement laid out beside the left and right HUD panels at 1280x720:
+    // left column (x=2) Bakery and Farm, centre (x=15) TownSquare and Cottages,
+    // right (x=28) Tavern and SheriffsPost.
+    const bakery_wp = spatial.graph.find_waypoint("Bakery") orelse return error.MissingVillageMark;
+    const farm_wp = spatial.graph.find_waypoint("Farm") orelse return error.MissingVillageMark;
+    const town_square_wp = spatial.graph.find_waypoint("TownSquare") orelse return error.MissingVillageMark;
+    const cottages_wp = spatial.graph.find_waypoint("Cottages") orelse return error.MissingVillageMark;
+    const tavern_wp = spatial.graph.find_waypoint("Tavern") orelse return error.MissingVillageMark;
+    const sheriffs_post_wp = spatial.graph.find_waypoint("SheriffsPost") orelse return error.MissingVillageMark;
+
+    spatial.graph.waypoints.items[bakery_wp - 1].pos = .{ .x = 2, .y = -10 };
+    spatial.graph.waypoints.items[farm_wp - 1].pos = .{ .x = 2, .y = 6 };
+    spatial.graph.waypoints.items[town_square_wp - 1].pos = .{ .x = 15, .y = -2 };
+    spatial.graph.waypoints.items[cottages_wp - 1].pos = .{ .x = 15, .y = 9 };
+    spatial.graph.waypoints.items[tavern_wp - 1].pos = .{ .x = 28, .y = -10 };
+    spatial.graph.waypoints.items[sheriffs_post_wp - 1].pos = .{ .x = 28, .y = 6 };
+    spatial.graph.edges.clearRetainingCapacity();
+
+    try spatial.graph.connect(bakery_wp, town_square_wp, null);
+    try spatial.graph.connect(farm_wp, town_square_wp, null);
+    try spatial.graph.connect(bakery_wp, farm_wp, null);
+    try spatial.graph.connect(town_square_wp, cottages_wp, null);
+    try spatial.graph.connect(town_square_wp, tavern_wp, null);
+    try spatial.graph.connect(town_square_wp, sheriffs_post_wp, null);
+    try spatial.graph.connect(tavern_wp, sheriffs_post_wp, null);
+    try spatial.graph.connect(cottages_wp, farm_wp, null);
+    try spatial.graph.connect(cottages_wp, sheriffs_post_wp, null);
+
+    spatial.clear_hotspots();
+    const oven_ent = try world.intern_entity("BakeryOven");
+    const fountain_ent = try world.intern_entity("TownFountain");
+    const jail_ent = try world.intern_entity("SheriffJail");
+    const granary_ent = try world.intern_entity("FarmGranary");
+    const hearth_ent = try world.intern_entity("TavernHearth");
+    const beds_ent = try world.intern_entity("VillageCottages");
+
+    try spatial.add_hotspot(oven_ent, village_scene, .{ .x = 2, .y = -13 }, 6, "BakeryOven", "Warm brick bakery oven stacked with golden sourdough loaves.");
+    try spatial.add_hotspot(granary_ent, village_scene, .{ .x = 2, .y = 9 }, 6, "FarmGranary", "Timber granary storing harvested bundles of village wheat.");
+    try spatial.add_hotspot(fountain_ent, village_scene, .{ .x = 15, .y = -5 }, 6, "TownFountain", "The cobblestone town square fountain where villagers exchange gossip.");
+    try spatial.add_hotspot(beds_ent, village_scene, .{ .x = 15, .y = 12 }, 6, "VillageCottages", "Cozy thatched cottages where tired villagers rest to restore Energy.");
+    try spatial.add_hotspot(hearth_ent, village_scene, .{ .x = 28, .y = -13 }, 6, "TavernHearth", "Crackling stone hearth inside the village tavern.");
+    try spatial.add_hotspot(jail_ent, village_scene, .{ .x = 28, .y = 9 }, 6, "SheriffJail", "Iron-barred holding cell inside the Sheriff's Post.");
+    return .{
+        .bakery = bakery_wp,
+        .farm = farm_wp,
+        .town_square = town_square_wp,
+        .cottages = cottages_wp,
+        .tavern = tavern_wp,
+        .sheriffs_post = sheriffs_post_wp,
+    };
+}
+
+/// Where each villager starts, by mark, for the browser deck, which `start_script` has already
+/// placed (the desktop registers them in `VillageSimulation.init`).
+pub const STARTS = [_]struct { who: []const u8, mark: []const u8 }{
+    .{ .who = "Sheriff", .mark = "SheriffsPost" },
+    .{ .who = "Baker", .mark = "Bakery" },
+    .{ .who = "Farmer", .mark = "Farm" },
+    .{ .who = "Innkeeper", .mark = "Tavern" },
+    .{ .who = "Gossip", .mark = "TownSquare" },
+    .{ .who = "Drifter", .mark = "Cottages" },
+};
+
 /// "The Living Village": six villagers, six buildings, and their goods, run by the engine's
 /// emergent society module. This struct holds the proof's content (names, map, roster
 /// tuning) and its interactive catalysts; the drives, witness, rumor, and justice systems are
@@ -158,48 +234,13 @@ pub const VillageSimulation = struct {
         const wheat_bundle = try world.intern_entity("WheatBundle");
         const ale_mug = try world.intern_entity("AleMug");
 
-        // Six-building settlement laid out beside the left and right HUD panels at 1280x720:
-        // left column (x=2) Bakery and Farm, centre (x=15) TownSquare and Cottages,
-        // right (x=28) Tavern and SheriffsPost.
-        const bakery_wp = spatial.graph.find_waypoint("Bakery") orelse return error.MissingVillageMark;
-        const farm_wp = spatial.graph.find_waypoint("Farm") orelse return error.MissingVillageMark;
-        const town_square_wp = spatial.graph.find_waypoint("TownSquare") orelse return error.MissingVillageMark;
-        const cottages_wp = spatial.graph.find_waypoint("Cottages") orelse return error.MissingVillageMark;
-        const tavern_wp = spatial.graph.find_waypoint("Tavern") orelse return error.MissingVillageMark;
-        const sheriffs_post_wp = spatial.graph.find_waypoint("SheriffsPost") orelse return error.MissingVillageMark;
-
-        spatial.graph.waypoints.items[bakery_wp - 1].pos = .{ .x = 2, .y = -10 };
-        spatial.graph.waypoints.items[farm_wp - 1].pos = .{ .x = 2, .y = 6 };
-        spatial.graph.waypoints.items[town_square_wp - 1].pos = .{ .x = 15, .y = -2 };
-        spatial.graph.waypoints.items[cottages_wp - 1].pos = .{ .x = 15, .y = 9 };
-        spatial.graph.waypoints.items[tavern_wp - 1].pos = .{ .x = 28, .y = -10 };
-        spatial.graph.waypoints.items[sheriffs_post_wp - 1].pos = .{ .x = 28, .y = 6 };
-        spatial.graph.edges.clearRetainingCapacity();
-
-        try spatial.graph.connect(bakery_wp, town_square_wp, null);
-        try spatial.graph.connect(farm_wp, town_square_wp, null);
-        try spatial.graph.connect(bakery_wp, farm_wp, null);
-        try spatial.graph.connect(town_square_wp, cottages_wp, null);
-        try spatial.graph.connect(town_square_wp, tavern_wp, null);
-        try spatial.graph.connect(town_square_wp, sheriffs_post_wp, null);
-        try spatial.graph.connect(tavern_wp, sheriffs_post_wp, null);
-        try spatial.graph.connect(cottages_wp, farm_wp, null);
-        try spatial.graph.connect(cottages_wp, sheriffs_post_wp, null);
-
-        spatial.clear_hotspots();
-        const oven_ent = try world.intern_entity("BakeryOven");
-        const fountain_ent = try world.intern_entity("TownFountain");
-        const jail_ent = try world.intern_entity("SheriffJail");
-        const granary_ent = try world.intern_entity("FarmGranary");
-        const hearth_ent = try world.intern_entity("TavernHearth");
-        const beds_ent = try world.intern_entity("VillageCottages");
-
-        try spatial.add_hotspot(oven_ent, village_scene, .{ .x = 2, .y = -13 }, 6, "BakeryOven", "Warm brick bakery oven stacked with golden sourdough loaves.");
-        try spatial.add_hotspot(granary_ent, village_scene, .{ .x = 2, .y = 9 }, 6, "FarmGranary", "Timber granary storing harvested bundles of village wheat.");
-        try spatial.add_hotspot(fountain_ent, village_scene, .{ .x = 15, .y = -5 }, 6, "TownFountain", "The cobblestone town square fountain where villagers exchange gossip.");
-        try spatial.add_hotspot(beds_ent, village_scene, .{ .x = 15, .y = 12 }, 6, "VillageCottages", "Cozy thatched cottages where tired villagers rest to restore Energy.");
-        try spatial.add_hotspot(hearth_ent, village_scene, .{ .x = 28, .y = -13 }, 6, "TavernHearth", "Crackling stone hearth inside the village tavern.");
-        try spatial.add_hotspot(jail_ent, village_scene, .{ .x = 28, .y = 9 }, 6, "SheriffJail", "Iron-barred holding cell inside the Sheriff's Post.");
+        const marks = try lay_out_settlement(world, spatial, village_scene);
+        const bakery_wp = marks.bakery;
+        const farm_wp = marks.farm;
+        const town_square_wp = marks.town_square;
+        const cottages_wp = marks.cottages;
+        const tavern_wp = marks.tavern;
+        const sheriffs_post_wp = marks.sheriffs_post;
 
         try spatial.register_entity(sheriff, sheriffs_post_wp, 12);
         try spatial.register_entity(baker, bakery_wp, 10);

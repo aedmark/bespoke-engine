@@ -507,6 +507,43 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 /// The Tidewalk fencers, in key order: D, G, and H start their duels.
 pub const FENCERS = [_][]const u8{ "BosunPike", "OldGannet", "DoryQuill" };
 
+/// Where the cast starts, the desktop host and the browser deck alike: Tamsin mid-Tidewalk,
+/// the fencers spread along it, Vell in her yard, the barkeep at his counter. `start_script`
+/// alone would stand everyone on each scene's first mark.
+pub const Start = struct { who: []const u8, scene: []const u8, mark: []const u8, speed: u32 };
+pub const STARTS = [_]Start{
+    .{ .who = "Tamsin", .scene = "Tidewalk", .mark = "TidewalkMid", .speed = 10 },
+    .{ .who = "BosunPike", .scene = "Tidewalk", .mark = "TidewalkEast", .speed = 11 },
+    .{ .who = "OldGannet", .scene = "Tidewalk", .mark = "TidewalkEast", .speed = 11 },
+    .{ .who = "DoryQuill", .scene = "Tidewalk", .mark = "TidewalkWest", .speed = 11 },
+    .{ .who = "Vell", .scene = "Fencing Yard", .mark = "YardCircle", .speed = 12 },
+    .{ .who = "Barkeep", .scene = "Drowned Lantern", .mark = "CounterMark", .speed = 13 },
+};
+
+/// The doorways off the Tidewalk (D-100), the desktop window and the browser alike: a lane at
+/// its east end to Vell's Fencing Yard, one at its west end to the Drowned Lantern, and each
+/// room's door back.
+pub const EXITS = [_]bespoke.host.Exit{
+    .{ .scene = "Tidewalk", .mark = "ToFencingYard", .to_scene = "Fencing Yard", .to_mark = "YardGate", .add_at = .{ .x = 50, .y = 0 } },
+    .{ .scene = "Fencing Yard", .mark = "YardGate", .to_scene = "Tidewalk", .to_mark = "ToFencingYard" },
+    .{ .scene = "Tidewalk", .mark = "ToDrownedLantern", .to_scene = "Drowned Lantern", .to_mark = "LanternDoor", .add_at = .{ .x = -10, .y = 0 } },
+    .{ .scene = "Drowned Lantern", .mark = "LanternDoor", .to_scene = "Tidewalk", .to_mark = "ToDrownedLantern" },
+};
+
+/// Puts the cast on their starting marks: registered before `start_script` on desktop, moved
+/// after it in the browser, where the deck's script has already placed them.
+pub fn place_cast(world: *bespoke.World, spatial: *bespoke.SpatialSystem, registered: bool) !void {
+    try bespoke.host.add_exit_marks(world, spatial, &EXITS);
+    for (STARTS) |start| {
+        const scene = try world.intern_entity(start.scene);
+        const wp = spatial.graph.find_waypoint_in_room(scene, start.mark) orelse return error.MissingMark;
+        const who = try world.intern_entity(start.who);
+        if (registered) {
+            _ = try spatial.transition_actor(who, scene, wp);
+        } else try spatial.register_entity(who, wp, start.speed);
+    }
+}
+
 /// What each Tidewalk fencer says when it has no comeback for Tamsin's barb, three lines each
 /// in its own voice, in rotation (D-085; the maintainer approved them 2026-11-13). Mistress
 /// Vell knows every comeback and needs none; Tamsin keeps the duel's shared joke pool.
@@ -982,18 +1019,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     // The script's `marks:` lines already created and chained each scene's waypoints; a host
     // that adds its own copies gets duplicate marks with no path between the two sets.
     const walk_m = spatial.graph.find_waypoint_in_room(tidewalk_scene, "TidewalkMid") orelse return error.MissingMark;
-    const walk_e = spatial.graph.find_waypoint_in_room(tidewalk_scene, "TidewalkEast") orelse return error.MissingMark;
     const circle_wp = spatial.graph.find_waypoint_in_room(yard_scene, "YardCircle") orelse return error.MissingMark;
     const door_wp = spatial.graph.find_waypoint_in_room(lantern_scene, "LanternDoor") orelse return error.MissingMark;
-    const counter_wp = spatial.graph.find_waypoint_in_room(lantern_scene, "CounterMark") orelse return error.MissingMark;
 
-    try spatial.register_entity(tamsin, walk_m, 10);
-    try spatial.register_entity(bosun_pike, walk_e, 11);
-    try spatial.register_entity(old_gannet, walk_e, 11);
-    const walk_w = spatial.graph.find_waypoint_in_room(tidewalk_scene, "TidewalkWest") orelse return error.MissingMark;
-    try spatial.register_entity(dory_quill, walk_w, 11);
-    try spatial.register_entity(vell, circle_wp, 12);
-    try spatial.register_entity(barkeep, counter_wp, 13);
+    try place_cast(&world, &spatial, false);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -1040,6 +1069,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     display_bridge.attach_audio_bridge(window.audio_bridge);
     // The clock now runs at the shared tick interval (D-028) instead of once per display frame.
     var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    session.exits = &EXITS;
+    session.player = tamsin;
     defer session.deinit();
 
     window.set_cue_banner("Brackwater: draw your blade and trade barbs!", 180);
@@ -1054,7 +1085,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 .walk_player => |wp_id| {
                     if (bout.opponent() != null) {
                         window.set_cue_banner("Finish the duel first.", 90);
-                    } else if (!try spatial.walk_to(tamsin, wp_id)) {
+                    } else if (!try session.walk_player(wp_id)) {
                         window.set_cue_banner("Tamsin can't get there from here.", 60);
                     }
                 },

@@ -208,6 +208,64 @@ fn session_scripted_action(
 }
 
 /// Executes headless simulation of The Borrowed Beard vertical slice (P14-01, P14-03, D-016, P35-04).
+/// Where the Borrowed Beard's marks sit, calibrated for the 1280x720 frame (the script's
+/// default spacing is 20 units).
+const MARK_X = [_]struct { scene: []const u8, mark: []const u8, x: i32 }{
+    .{ .scene = "Inn Landing", .mark = "Room4", .x = 0 },
+    .{ .scene = "Inn Landing", .mark = "Room7", .x = 16 },
+    .{ .scene = "Inn Landing", .mark = "Stairs", .x = 32 },
+    .{ .scene = "Net Loft Yard", .mark = "YardPath", .x = 0 },
+    .{ .scene = "Net Loft Yard", .mark = "GateMark", .x = 18 },
+    .{ .scene = "Net Loft Yard", .mark = "DogBed", .x = 34 },
+    .{ .scene = "Harbour Office", .mark = "OfficeDoor", .x = 0 },
+    .{ .scene = "Harbour Office", .mark = "CounterMark", .x = 16 },
+    .{ .scene = "Harbour Office", .mark = "Quay", .x = 32 },
+};
+
+/// Where the cast starts: Tamsin at her room, Rook at his, Bramble on his bed, Wick at the
+/// counter.
+const STARTS = [_]struct { who: []const u8, scene: []const u8, mark: []const u8, speed: u32 }{
+    .{ .who = "Tamsin", .scene = "Inn Landing", .mark = "Room4", .speed = 10 },
+    .{ .who = "CaptainRook", .scene = "Inn Landing", .mark = "Room7", .speed = 11 },
+    .{ .who = "Bramble", .scene = "Net Loft Yard", .mark = "DogBed", .speed = 12 },
+    .{ .who = "PurserWick", .scene = "Harbour Office", .mark = "CounterMark", .speed = 13 },
+};
+
+/// The mark at the yard's far side that leads to the Harbour Office.
+pub const OFFICE_LANE = "ToHarbourOffice";
+
+/// The doorways between the three rooms (D-094, D-100), the desktop window and the browser
+/// alike: the stairs and the yard path join the landing and the yard, and a lane at the yard's
+/// far side leads to the office door.
+pub const EXITS = [_]bespoke.host.Exit{
+    .{ .scene = "Inn Landing", .mark = "Stairs", .to_scene = "Net Loft Yard", .to_mark = "YardPath" },
+    .{ .scene = "Net Loft Yard", .mark = "YardPath", .to_scene = "Inn Landing", .to_mark = "Stairs" },
+    .{ .scene = "Net Loft Yard", .mark = OFFICE_LANE, .to_scene = "Harbour Office", .to_mark = "OfficeDoor", .add_at = .{ .x = 46, .y = 0 } },
+    .{ .scene = "Harbour Office", .mark = "OfficeDoor", .to_scene = "Net Loft Yard", .to_mark = OFFICE_LANE },
+};
+
+/// Lays out the marks, chains each room's marks, adds the office lane, and puts the cast on
+/// their marks: registered before `start_script` on desktop (`registered` false), moved after
+/// it in the browser, where the script has already placed them.
+pub fn stage(world: *bespoke.World, spatial: *bespoke.SpatialSystem, registered: bool) !void {
+    for (MARK_X) |m| {
+        const scene = try world.intern_entity(m.scene);
+        const id = spatial.graph.find_waypoint_in_room(scene, m.mark) orelse try spatial.graph.add_waypoint(scene, m.x, 0, m.mark);
+        for (spatial.graph.waypoints.items) |*wp| {
+            if (wp.id == id) wp.pos = .{ .x = m.x, .y = 0 };
+        }
+    }
+    try bespoke.host.add_exit_marks(world, spatial, &EXITS);
+    for (STARTS) |start| {
+        const scene = try world.intern_entity(start.scene);
+        const wp = spatial.graph.find_waypoint_in_room(scene, start.mark) orelse return error.MissingMark;
+        const who = try world.intern_entity(start.who);
+        if (registered) {
+            _ = try spatial.transition_actor(who, scene, wp);
+        } else try spatial.register_entity(who, wp, start.speed);
+    }
+}
+
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("===================================================================\n", .{});
     try writer.print("           BeSpoke Engine: The Borrowed Beard Scenario              \n", .{});
@@ -235,51 +293,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const bramble = world.lookup_entity("Bramble").?;
     const purser = world.lookup_entity("PurserWick").?;
 
-    // Spatial Marks
-    const room4_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Room4") orelse 1;
-    const room7_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Room7") orelse 2;
-    const stairs_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Stairs") orelse
-        try spatial.graph.add_waypoint(inn_scene, 32, 0, "Stairs");
-
-    const yard_path_wp = spatial.graph.find_waypoint_in_room(yard_scene, "YardPath") orelse
-        try spatial.graph.add_waypoint(yard_scene, 0, 0, "YardPath");
-    const gate_wp = spatial.graph.find_waypoint_in_room(yard_scene, "GateMark") orelse
-        try spatial.graph.add_waypoint(yard_scene, 18, 0, "GateMark");
-    const dog_wp = spatial.graph.find_waypoint_in_room(yard_scene, "DogBed") orelse
-        try spatial.graph.add_waypoint(yard_scene, 34, 0, "DogBed");
-
-    const office_door_wp = spatial.graph.find_waypoint_in_room(office_scene, "OfficeDoor") orelse
-        try spatial.graph.add_waypoint(office_scene, 0, 0, "OfficeDoor");
-    const counter_wp = spatial.graph.find_waypoint_in_room(office_scene, "CounterMark") orelse
-        try spatial.graph.add_waypoint(office_scene, 16, 0, "CounterMark");
-    const quay_wp = spatial.graph.find_waypoint_in_room(office_scene, "Quay") orelse
-        try spatial.graph.add_waypoint(office_scene, 32, 0, "Quay");
-
-    // Position waypoints (calibrated for 1280x720 standardized layout)
-    if (spatial.graph.get_waypoint(room4_wp)) |_| spatial.graph.waypoints.items[room4_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(room7_wp)) |_| spatial.graph.waypoints.items[room7_wp - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(stairs_wp)) |_| spatial.graph.waypoints.items[stairs_wp - 1].pos = .{ .x = 32, .y = 0 };
-
-    if (spatial.graph.get_waypoint(yard_path_wp)) |_| spatial.graph.waypoints.items[yard_path_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(gate_wp)) |_| spatial.graph.waypoints.items[gate_wp - 1].pos = .{ .x = 18, .y = 0 };
-    if (spatial.graph.get_waypoint(dog_wp)) |_| spatial.graph.waypoints.items[dog_wp - 1].pos = .{ .x = 34, .y = 0 };
-
-    if (spatial.graph.get_waypoint(office_door_wp)) |_| spatial.graph.waypoints.items[office_door_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(counter_wp)) |_| spatial.graph.waypoints.items[counter_wp - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(quay_wp)) |_| spatial.graph.waypoints.items[quay_wp - 1].pos = .{ .x = 32, .y = 0 };
-
-    try spatial.graph.connect(room4_wp, room7_wp, null);
-    try spatial.graph.connect(room7_wp, stairs_wp, null);
-    try spatial.graph.connect(yard_path_wp, gate_wp, null);
-    try spatial.graph.connect(gate_wp, dog_wp, null);
-    try spatial.graph.connect(office_door_wp, counter_wp, null);
-    try spatial.graph.connect(counter_wp, quay_wp, null);
-
-    // Register actors
-    try spatial.register_entity(tamsin, room4_wp, 10);
-    try spatial.register_entity(rook, room7_wp, 11);
-    try spatial.register_entity(bramble, dog_wp, 12);
-    try spatial.register_entity(purser, counter_wp, 13);
+    try stage(&world, &spatial, false);
+    const yard_path_wp = spatial.graph.find_waypoint_in_room(yard_scene, "YardPath").?;
+    const office_door_wp = spatial.graph.find_waypoint_in_room(office_scene, "OfficeDoor").?;
 
     // Initial item entities (Tamsin starts with EMPTY inventory!)
     const carries_rel = try world.intern_relation("Carries", .set);
@@ -522,49 +538,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const bramble = world.lookup_entity("Bramble").?;
     const purser = world.lookup_entity("PurserWick").?;
 
-    const room4_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Room4") orelse 1;
-    const room7_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Room7") orelse 2;
-    const stairs_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Stairs") orelse
-        try spatial.graph.add_waypoint(inn_scene, 32, 0, "Stairs");
-
-    const yard_path_wp = spatial.graph.find_waypoint_in_room(yard_scene, "YardPath") orelse
-        try spatial.graph.add_waypoint(yard_scene, 0, 0, "YardPath");
-    const gate_wp = spatial.graph.find_waypoint_in_room(yard_scene, "GateMark") orelse
-        try spatial.graph.add_waypoint(yard_scene, 18, 0, "GateMark");
-    const dog_wp = spatial.graph.find_waypoint_in_room(yard_scene, "DogBed") orelse
-        try spatial.graph.add_waypoint(yard_scene, 34, 0, "DogBed");
-
-    const office_door_wp = spatial.graph.find_waypoint_in_room(office_scene, "OfficeDoor") orelse
-        try spatial.graph.add_waypoint(office_scene, 0, 0, "OfficeDoor");
-    const counter_wp = spatial.graph.find_waypoint_in_room(office_scene, "CounterMark") orelse
-        try spatial.graph.add_waypoint(office_scene, 16, 0, "CounterMark");
-    const quay_wp = spatial.graph.find_waypoint_in_room(office_scene, "Quay") orelse
-        try spatial.graph.add_waypoint(office_scene, 32, 0, "Quay");
-
-    // Position waypoints (calibrated for 1280x720 standardized layout)
-    if (spatial.graph.get_waypoint(room4_wp)) |_| spatial.graph.waypoints.items[room4_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(room7_wp)) |_| spatial.graph.waypoints.items[room7_wp - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(stairs_wp)) |_| spatial.graph.waypoints.items[stairs_wp - 1].pos = .{ .x = 32, .y = 0 };
-
-    if (spatial.graph.get_waypoint(yard_path_wp)) |_| spatial.graph.waypoints.items[yard_path_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(gate_wp)) |_| spatial.graph.waypoints.items[gate_wp - 1].pos = .{ .x = 18, .y = 0 };
-    if (spatial.graph.get_waypoint(dog_wp)) |_| spatial.graph.waypoints.items[dog_wp - 1].pos = .{ .x = 34, .y = 0 };
-
-    if (spatial.graph.get_waypoint(office_door_wp)) |_| spatial.graph.waypoints.items[office_door_wp - 1].pos = .{ .x = 0, .y = 0 };
-    if (spatial.graph.get_waypoint(counter_wp)) |_| spatial.graph.waypoints.items[counter_wp - 1].pos = .{ .x = 16, .y = 0 };
-    if (spatial.graph.get_waypoint(quay_wp)) |_| spatial.graph.waypoints.items[quay_wp - 1].pos = .{ .x = 32, .y = 0 };
-
-    try spatial.graph.connect(room4_wp, room7_wp, null);
-    try spatial.graph.connect(room7_wp, stairs_wp, null);
-    try spatial.graph.connect(yard_path_wp, gate_wp, null);
-    try spatial.graph.connect(gate_wp, dog_wp, null);
-    try spatial.graph.connect(office_door_wp, counter_wp, null);
-    try spatial.graph.connect(counter_wp, quay_wp, null);
-
-    try spatial.register_entity(tamsin, room4_wp, 10);
-    try spatial.register_entity(rook, room7_wp, 11);
-    try spatial.register_entity(bramble, dog_wp, 12);
-    try spatial.register_entity(purser, counter_wp, 13);
+    try stage(&world, &spatial, false);
+    const room4_wp = spatial.graph.find_waypoint_in_room(inn_scene, "Room4").?;
+    const yard_path_wp = spatial.graph.find_waypoint_in_room(yard_scene, "YardPath").?;
+    const office_door_wp = spatial.graph.find_waypoint_in_room(office_scene, "OfficeDoor").?;
 
     // Initial inventory for Tamsin (starts empty; gather from the washstand and rain barrel)
     const carries_rel = try world.intern_relation("Carries", .set);
@@ -640,6 +617,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 
     display_bridge.attach_audio_bridge(window.audio_bridge);
     var session = try bespoke.host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
+    session.exits = &EXITS;
+    session.player = tamsin;
     defer session.deinit();
 
     window.set_cue_banner("Brackwater: Search the washstand & rain barrel for items! [I/Y/O] Scenes [0-8] Steps", 180);
@@ -657,30 +636,8 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         if (try session.handle_common(action)) {} else switch (action) {
             .quit => break,
             .walk_player => |wp_id| {
-                _ = try spatial.walk_to(tamsin, wp_id);
-                if (wp_id == stairs_wp and vm.current_scene == inn_scene) {
-                    try vm.transition_to_scene(yard_scene);
-                    _ = try spatial.transition_actor(tamsin, yard_scene, yard_path_wp);
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                    window.set_cue_banner("Stepped outside into the Net Loft Yard. [I] Inn [O] Office", 120);
-                } else if (wp_id == yard_path_wp and vm.current_scene == yard_scene) {
-                    try vm.transition_to_scene(inn_scene);
-                    _ = try spatial.transition_actor(tamsin, inn_scene, stairs_wp);
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                    window.set_cue_banner("Returned inside to the Inn Landing. [Y] Yard [O] Office", 120);
-                } else if (wp_id == office_door_wp and vm.current_scene == office_scene) {
-                    try vm.transition_to_scene(yard_scene);
-                    _ = try spatial.transition_actor(tamsin, yard_scene, gate_wp);
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                    window.set_cue_banner("Stepped back into the Net Loft Yard. [I] Inn [O] Office", 120);
-                } else {
-                    display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.swap();
-                    window.set_cue_banner("Directing Tamsin to waypoint.", 60);
-                }
+                // Walking onto a doorway changes rooms when the walk ends (D-100).
+                _ = try session.walk_player(wp_id);
             },
             .combine_inventory_items => |comb| {
                 const frame = display_bridge.get_frame();

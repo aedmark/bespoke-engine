@@ -327,42 +327,26 @@ pub const TextLayoutResolver = struct {
             },
 
             .actor_name => {
-                // Stagger upward (Tiers 1, 2)
+                // People who stand close share the space above them: try rows upward, each
+                // first in place, then shifted half a label left and right, so two names never
+                // print over each other and read as one ("TamsinMarrow"). Names may cover the
+                // stage's other tokens but not each other.
                 const row_step = lbl.height + 4;
-                var tier: i32 = 1;
-                while (tier <= 2) : (tier += 1) {
-                    const test_y = cand_y - tier * row_step;
-                    const test_rect = LabelRect{
-                        .x = cand_x,
-                        .y = test_y,
-                        .w = lbl.width,
-                        .h = lbl.height,
-                    };
-                    if (!self.has_collision(test_rect, placed_indices, false)) {
-                        lbl.placed_x = cand_x;
-                        lbl.placed_y = test_y;
-                        lbl.visible = true;
-                        return;
+                const shift = @divTrunc(lbl.width, 2) + 8;
+                const shifts = [_]i32{ 0, -shift, shift, -2 * shift, 2 * shift };
+                var tier: i32 = 0;
+                while (tier <= 4) : (tier += 1) {
+                    for (shifts) |dx| {
+                        if (tier == 0 and dx == 0) continue;
+                        const test_x = std.math.clamp(cand_x + dx, 10, self.screen_w - lbl.width - 10);
+                        const test_rect = LabelRect{ .x = test_x, .y = cand_y - tier * row_step, .w = lbl.width, .h = lbl.height };
+                        if (!self.has_collision(test_rect, placed_indices, tier > 0)) {
+                            lbl.placed_x = test_x;
+                            lbl.placed_y = test_rect.y;
+                            lbl.visible = true;
+                            return;
+                        }
                     }
-                }
-
-                // Try horizontal nudge left or right
-                const nudge_left = std.math.clamp(cand_x - 30, 10, self.screen_w - lbl.width - 10);
-                const rect_l = LabelRect{ .x = nudge_left, .y = cand_y, .w = lbl.width, .h = lbl.height };
-                if (!self.has_collision(rect_l, placed_indices, false)) {
-                    lbl.placed_x = nudge_left;
-                    lbl.placed_y = cand_y;
-                    lbl.visible = true;
-                    return;
-                }
-
-                const nudge_right = std.math.clamp(cand_x + 30, 10, self.screen_w - lbl.width - 10);
-                const rect_r = LabelRect{ .x = nudge_right, .y = cand_y, .w = lbl.width, .h = lbl.height };
-                if (!self.has_collision(rect_r, placed_indices, false)) {
-                    lbl.placed_x = nudge_right;
-                    lbl.placed_y = cand_y;
-                    lbl.visible = true;
-                    return;
                 }
 
                 lbl.placed_x = cand_x;

@@ -19,7 +19,7 @@
       "Donnie Darko": 85
     },
     "proofs/atlantis_puzzle.zig": {
-      "Indiana Jones and the Fate of Atlantis": 55
+      "Indiana Jones and the Fate of Atlantis": 53
     },
     "proofs/audio_golden_test.zig": {
       "Broken Sword": 1,
@@ -61,8 +61,7 @@
     "proofs/golden/wasm.txt": {
       "Broken Sword": 8,
       "Day of the Tentacle": 5,
-      "Donnie Darko": 5,
-      "Indiana Jones and the Fate of Atlantis": 4
+      "Donnie Darko": 5
     },
     "proofs/golden_test.zig": {
       "Day of the Tentacle": 4,
@@ -146,5 +145,5 @@
       "Loom": 2
     }
   },
-  "total": 2015
+  "total": 2009
 }

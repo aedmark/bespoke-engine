@@ -456,12 +456,16 @@ test "P15-01: runner checks and compiles external scenario file" {
         \\  walk Guard to Gate
     ;
 
-    const tmp_script = "/tmp/test_runner_script.bespoke";
-    const tmp_pkg = "/tmp/test_runner_script.bspk";
-    defer {
-        std.fs.cwd().deleteFile(tmp_script) catch {};
-        std.fs.cwd().deleteFile(tmp_pkg) catch {};
-    }
+    // A private directory per run: the library and CLI test binaries run this test at the same
+    // time, and with fixed /tmp paths one deleted the other's files mid-test.
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(dir_path);
+    const tmp_script = try std.fs.path.join(testing.allocator, &.{ dir_path, "test_runner_script.bespoke" });
+    defer testing.allocator.free(tmp_script);
+    const tmp_pkg = try std.fs.path.join(testing.allocator, &.{ dir_path, "test_runner_script.bspk" });
+    defer testing.allocator.free(tmp_pkg);
 
     // Write source file
     {

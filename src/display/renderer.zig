@@ -643,6 +643,18 @@ pub const DialoguePanel = struct {
 /// The scroll bar's width; its thumb shows which of the choices are in view.
 pub const SCROLLBAR_W: i32 = 14;
 
+/// The message log's size (D-099): three lines, each a scale-2 row.
+pub const LOG_LINES: usize = 3;
+pub const LOG_ROW: i32 = 18;
+
+/// A panel moved up by `reserve` pixels, so it stays clear of the message log, but never above
+/// the timeline.
+fn lift_panel(panel: DialoguePanel, reserve: i32) DialoguePanel {
+    var p = panel;
+    p.rect.y = @max(76, p.rect.y - reserve);
+    return p;
+}
+
 fn centred_panel(l: dialogue_panel.Layout, scrollbar_w: i32, screen_w: i32, screen_h: i32, command_bar: bool) DialoguePanel {
     const w = l.width + scrollbar_w;
     const bottom = screen_h - 110 - (if (command_bar) @as(i32, 28) else 0);
@@ -855,13 +867,6 @@ pub const Theme = struct {
     soundtrack: ?*const audio_mod.Soundtrack = null,
 };
 
-/// How long a banner of `len` characters stays up at least (D-090): two seconds to notice it,
-/// plus 80 ms a character (about 12 characters a second, a relaxed reading pace for game text),
-/// capped at 15 seconds so a long console reply does not linger.
-pub const BANNER_NOTICE_MS: i64 = 2000;
-pub const BANNER_MS_PER_CHAR: i64 = 80;
-pub const BANNER_MAX_READING_MS: i64 = 15_000;
-
 /// The " | " separator nearest the middle of a footer hint, or null when it has none.
 pub fn footer_split(text: []const u8) ?usize {
     var best: ?usize = null;
@@ -885,9 +890,6 @@ pub fn fit_with_ellipsis(text: []const u8, max_w: i32, scale: i32, buf: []u8) []
     return buf[0 .. keep + 3];
 }
 
-pub fn banner_reading_ms(len: usize) i64 {
-    return @min(BANNER_NOTICE_MS + @as(i64, @intCast(len)) * BANNER_MS_PER_CHAR, BANNER_MAX_READING_MS);
-}
 
 /// An action on a person or prop, held while the player walks to `wp` beside it (D-092).
 pub const Approach = struct {
@@ -973,10 +975,15 @@ pub const DisplayWindow = struct {
     is_headless: bool = false,
     audio_bridge: *audio_mod.AudioBridge,
     audio_device_opened: bool = false,
+    /// The newest line said or shown, as `set_cue_banner` gave it.
     cue_banner_text: [256]u8 = undefined,
     cue_banner_len: usize = 0,
-    /// Wall-clock time the banner disappears (D-090); 0 shows none.
-    cue_banner_until_ms: i64 = 0,
+    /// The message log under the stage (D-099): the last `LOG_LINES` lines, oldest first. Lines
+    /// do not time out; a new one pushes the oldest off, so nothing hangs forever or vanishes
+    /// before it is read.
+    log_text: [LOG_LINES][256]u8 = undefined,
+    log_len: [LOG_LINES]usize = [_]usize{0} ** LOG_LINES,
+    log_count: usize = 0,
     // Phase 11 Inventory In-Hand Selection & Combining (P11-03, D-013)
     selected_inventory_item: ?usize = null,
     // Phase 9 Debug, Scrubber & REPL (P9-01, P9-02, P9-03, D-011)
@@ -1018,9 +1025,6 @@ pub const DisplayWindow = struct {
     save_manager: *save_mod.SaveManager,
     // Phase 26/D-028 Master Simulation Clock Pacing & Speed Scaling
     current_tick_interval_ms: i64 = vm_mod.DEFAULT_TICK_INTERVAL_MS,
-    /// The wall clock for a build with no operating system (the browser), set by its host
-    /// before each frame; banners time out against it (D-090, D-097).
-    wall_ms: i64 = 0,
     /// The footer a host shows in place of the theme's (D-097): the browser names its own keys,
     /// which differ from the desktop proof's.
     footer_text: ?[]const u8 = null,
@@ -1165,13 +1169,6 @@ pub const DisplayWindow = struct {
             .save_manager = sm,
             .current_tick_interval_ms = vm_mod.DEFAULT_TICK_INTERVAL_MS,
         };
-    }
-
-    /// Milliseconds on the wall clock: the system's on desktop, the host's in the browser,
-    /// which has no clock of its own to read.
-    pub fn now_ms(self: *const DisplayWindow) i64 {
-        if (comptime builtin.os.tag == .freestanding) return self.wall_ms;
-        return std.time.milliTimestamp();
     }
 
     /// A window that draws into `pixels` and owns nothing else (D-097): no SDL, no audio device,
@@ -1406,12 +1403,50 @@ pub const DisplayWindow = struct {
     /// Shows a banner for `duration_frames` sixtieths of a second, or for its reading time if
     /// that is longer (D-090). The deadline is wall-clock: the window redraws with vsync, so a
     /// per-frame countdown ran 2.4 times faster on a 144 Hz display than on a 60 Hz one.
+    /// Shows `text` as the newest line of the message log (D-099). `duration_frames` is kept
+    /// for callers but no longer used: lines stay until newer ones push them off. A line equal
+    /// to the newest is not repeated, so a host may set the same banner every frame.
     pub fn set_cue_banner(self: *DisplayWindow, text: []const u8, duration_frames: u32) void {
+        _ = duration_frames;
         const len = @min(text.len, self.cue_banner_text.len);
         @memcpy(self.cue_banner_text[0..len], text[0..len]);
         self.cue_banner_len = len;
-        const asked_ms = @divTrunc(@as(i64, duration_frames) * 1000, 60);
-        self.cue_banner_until_ms = self.now_ms() + @max(asked_ms, banner_reading_ms(len));
+        if (len == 0) return;
+        if (self.log_count > 0 and std.mem.eql(u8, self.log_line(self.log_count - 1), text[0..len])) return;
+        if (self.log_count == LOG_LINES) {
+            for (1..LOG_LINES) |i| {
+                self.log_text[i - 1] = self.log_text[i];
+                self.log_len[i - 1] = self.log_len[i];
+            }
+            self.log_count -= 1;
+        }
+        @memcpy(self.log_text[self.log_count][0..len], text[0..len]);
+        self.log_len[self.log_count] = len;
+        self.log_count += 1;
+    }
+
+    /// Line `i` of the message log, oldest first.
+    pub fn log_line(self: *const DisplayWindow, i: usize) []const u8 {
+        return self.log_text[i][0..self.log_len[i]];
+    }
+
+    /// Empties the message log, as when a browser deck is reloaded.
+    pub fn clear_log(self: *DisplayWindow) void {
+        self.log_count = 0;
+        self.cue_banner_len = 0;
+    }
+
+    /// The bottom edge of the message log: above the action sentence, and above the typed
+    /// command bar when it shows.
+    fn log_bottom(self: *const DisplayWindow) i32 {
+        const command_bar = self.command_bar_enabled and !self.show_console;
+        return self.height - 80 - 30 - (if (command_bar) @as(i32, 28) else 0);
+    }
+
+    /// Height the log takes above `log_bottom`, which the dialogue panel stays clear of.
+    fn log_reserve(self: *const DisplayWindow) i32 {
+        if (self.log_count == 0) return 0;
+        return @as(i32, @intCast(self.log_count)) * LOG_ROW + 6;
     }
 
     /// Decreases simulation clock speed (increases milliseconds per tick) (D-028).
@@ -1521,7 +1556,7 @@ pub const DisplayWindow = struct {
 
     /// The panel geometry for `balloon` in this window, leaving room for the command bar.
     pub fn dialogue_panel_for(self: *const DisplayWindow, balloon: *const SpeechBalloon) DialoguePanel {
-        return get_dialogue_panel(balloon, self.width, self.height, self.command_bar_enabled and !self.show_console);
+        return lift_panel(get_dialogue_panel(balloon, self.width, self.height, self.command_bar_enabled and !self.show_console), self.log_reserve());
     }
 
     /// Queues a click-through message (D-080). `speaker` is an entity name or empty.
@@ -3305,26 +3340,24 @@ pub const DisplayWindow = struct {
             );
         }
 
-        // 8. Ephemeral Cue Banner
-        if (self.cue_banner_len > 0 and self.now_ms() < self.cue_banner_until_ms) {
-            const banner = self.cue_banner_text[0..self.cue_banner_len];
-            const scale: i32 = if (font.text_width(banner, 2) + 40 > self.width) 1 else 2;
-            const text_w = font.text_width(banner, scale);
-            const bw = @min(text_w + 32, self.width - 20);
-            const bx = @max(10, @divTrunc(self.width - bw, 2));
-            // Below the timeline bar (y 50 to 72), which a banner used to cover (D-091).
-            const by: i32 = 80;
-            const bh: i32 = if (scale == 2) 36 else 28;
-            const text_y = by + @divTrunc(bh - font.FONT_HEIGHT * scale, 2);
-            self.fill_rect(bx, by, bw, bh, Color.hud_bg);
-            self.draw_rect_outline(bx, by, bw, bh, Color.cue_alert);
-            self.draw_text(banner, bx + 16, text_y, scale, Color.cue_alert);
+        // 8. The message log under the stage (D-099): the newest line brightest at the bottom,
+        // older lines dimmer above it, on a dark band so they read over any backdrop.
+        if (self.log_count > 0) {
+            const bottom = self.log_bottom();
+            const top = bottom - self.log_reserve();
+            self.fill_rect(16, top, self.width - 32, bottom - top, Color.hud_bg);
+            const shades = [_]Color{ Color{ .r = 100, .g = 116, .b = 139 }, Color.hud_subtext, Color.hud_text };
+            for (0..self.log_count) |i| {
+                const age = self.log_count - 1 - i;
+                const y = bottom - 3 - @as(i32, @intCast(age + 1)) * LOG_ROW + 2;
+                self.draw_text_fit(self.log_line(i), 24, y, self.width - 48, 2, shades[shades.len - 1 - @min(age, shades.len - 1)]);
+            }
         }
 
         // 9. Dialogue panel: a waiting click-through message (D-080) covers the speaker, wrapped
         // line, and wrapped numbered choices (D-077) until the player dismisses it.
         if (self.messages.front()) |beat| {
-            const panel = get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console);
+            const panel = lift_panel(get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console), self.log_reserve());
             const r = panel.rect;
             self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
             self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
@@ -3955,31 +3988,38 @@ test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes 
     defer win.deinit();
 
     const long_msg = "Room Desk: A wooden desk with a black marker, masking tape, and breakfast syrup.";
-    const before = std.time.milliTimestamp();
     win.set_cue_banner(long_msg, 120);
 
     try testing.expectEqual(long_msg.len, win.cue_banner_len);
     try testing.expectEqualStrings(long_msg, win.cue_banner_text[0..win.cue_banner_len]);
-    // D-090: the banner outlasts its asked two seconds, because it needs longer to read.
-    try testing.expect(win.cue_banner_until_ms >= before + banner_reading_ms(long_msg.len));
+    try testing.expectEqualStrings(long_msg, win.log_line(0));
 }
 
-test "D-090: banners last their reading time on the wall clock, whatever the redraw rate" {
+test "D-099: the message log keeps the three newest lines under the stage, and the panel stays clear of it" {
     const testing = std.testing;
-    try testing.expectEqual(@as(i64, 2000), banner_reading_ms(0));
-    try testing.expectEqual(@as(i64, 2000 + 50 * 80), banner_reading_ms(50));
-    try testing.expectEqual(BANNER_MAX_READING_MS, banner_reading_ms(1000));
-
-    var win = try DisplayWindow.init("Banner Timing Test", 1280, 720);
+    var win = try DisplayWindow.init_offscreen(1280, 720);
     defer win.deinit();
-    // A short banner asked to stay ten seconds keeps the longer request.
-    const before = std.time.milliTimestamp();
-    win.set_cue_banner("Hi", 600);
-    try testing.expect(win.cue_banner_until_ms >= before + 10_000);
-    // Rendering many frames does not shorten it; only the clock does.
+    win.set_cue_banner("One.", 0);
+    win.set_cue_banner("Two.", 0);
+    // The same line again, as a host setting its banner every frame, is not repeated.
+    win.set_cue_banner("Two.", 0);
+    win.set_cue_banner("Three.", 0);
+    win.set_cue_banner("Four.", 0);
+    try testing.expectEqual(@as(usize, 3), win.log_count);
+    try testing.expectEqualStrings("Two.", win.log_line(0));
+    try testing.expectEqualStrings("Four.", win.log_line(2));
+
+    // Lines do not time out: hundreds of frames later the log is unchanged.
     const frame = std.mem.zeroes(RenderFrame);
-    for (0..300) |_| win.render_frame(&frame, false);
-    try testing.expect(std.time.milliTimestamp() < win.cue_banner_until_ms);
+    for (0..200) |_| win.render_frame(&frame, false);
+    try testing.expectEqual(@as(usize, 3), win.log_count);
+    // It is drawn above the action sentence: its band sits there.
+    try testing.expectEqual(Color.hud_bg.r, @min(Color.hud_bg.r, win.canvas.?.get_pixel(20, win.log_bottom() - 2).r));
+
+    // An open dialogue panel ends above the log.
+    win.show_dialogue(EntityId.from_int(1), .{ .x = 600, .y = 300 }, "Pilot", "Which way?", &.{ "North", "South" });
+    const panel = win.dialogue_panel_for(&win.active_balloon.?);
+    try testing.expect(panel.rect.y + panel.rect.h <= win.log_bottom() - win.log_reserve());
 }
 
 test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save_action" {

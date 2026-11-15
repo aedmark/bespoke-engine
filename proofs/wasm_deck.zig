@@ -13,8 +13,10 @@ const EntityId = bespoke.EntityId;
 
 const TAVERN_SCRIPT = @embedFile("tavern_script");
 const SPITTING_CONTEST_SCRIPT = @import("spitting_contest.zig").SPITTING_CONTEST_SCRIPT;
-const BORROWED_BEARD_SCRIPT = @import("borrowed_beard.zig").BORROWED_BEARD_SCRIPT;
-const VILLAGE_SCRIPT = @import("village.zig").VILLAGE_SCRIPT;
+const borrowed_beard = @import("borrowed_beard.zig");
+const BORROWED_BEARD_SCRIPT = borrowed_beard.BORROWED_BEARD_SCRIPT;
+const village = @import("village.zig");
+const VILLAGE_SCRIPT = village.VILLAGE_SCRIPT;
 const GOAT_PUZZLE_SCRIPT = @import("goat_puzzle.zig").GOAT_PUZZLE_SCRIPT;
 const DOTT_PUZZLE_SCRIPT = @import("dott_puzzle.zig").DOTT_PUZZLE_SCRIPT;
 const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
@@ -57,7 +59,7 @@ pub const decks = [_]wasm.Deck{
         .background = .{ .r = 32, .g = 52, .b = 34 },
         .setup = beard_setup,
         .catalyst = solver(&BEARD_SOLUTION),
-        .exits = &BEARD_EXITS,
+        .exits = &borrowed_beard.EXITS,
     }),
     wasm.script_deck_with("THE LIVING VILLAGE (EMERGENCE)", VILLAGE_SCRIPT, .{
         .soundtrack = &art.soundtrack,
@@ -105,6 +107,7 @@ pub const decks = [_]wasm.Deck{
         .status_hook = art.capture_status,
         .background = .{ .r = 30, .g = 36, .b = 52 },
         .setup = sword_setup,
+        .exits = &sword_fighting.EXITS,
         .catalyst = sword_solve,
         .on_choice = sword_choice,
         .on_act = sword_act,
@@ -557,33 +560,11 @@ fn loom_follow_scene(rt: *WasmRuntime) anyerror!void {
 }
 
 fn beard_setup(rt: *WasmRuntime) anyerror!void {
+    // The desktop's mark layout, cast places, and office lane (D-100).
+    try borrowed_beard.stage(&rt.world, &rt.spatial, true);
     try rt.vm.transition_to_scene(try entity(rt, "Inn Landing"));
-    // The desktop window reaches the Harbour Office with a key; the browser has no free key
-    // for it, so the yard gains a mark at its far side that leads there (D-094).
-    const yard = try entity(rt, "Net Loft Yard");
-    var right: ?bespoke.spatial.Waypoint = null;
-    var left_x: i32 = std.math.maxInt(i32);
-    for (rt.spatial.graph.waypoints.items) |wp| {
-        if (wp.room != yard) continue;
-        left_x = @min(left_x, wp.pos.x);
-        if (right == null or wp.pos.x > right.?.pos.x) right = wp;
-    }
-    const edge = right orelse return;
-    const step = @max(16, @divTrunc(edge.pos.x - left_x, 2));
-    const lane = try rt.spatial.graph.add_waypoint(yard, edge.pos.x + step, edge.pos.y, BEARD_OFFICE_LANE);
-    try rt.spatial.graph.connect(edge.id, lane, null);
 }
 
-const BEARD_OFFICE_LANE = "ToHarbourOffice";
-
-/// Walking onto these marks changes rooms, as the desktop host does for the stairs, the yard
-/// path, and the office door (D-094).
-const BEARD_EXITS = [_]wasm.Exit{
-    .{ .scene = "Inn Landing", .mark = "Stairs", .to_scene = "Net Loft Yard", .to_mark = "YardPath" },
-    .{ .scene = "Net Loft Yard", .mark = "YardPath", .to_scene = "Inn Landing", .to_mark = "Stairs" },
-    .{ .scene = "Net Loft Yard", .mark = BEARD_OFFICE_LANE, .to_scene = "Harbour Office", .to_mark = "OfficeDoor" },
-    .{ .scene = "Harbour Office", .mark = "OfficeDoor", .to_scene = "Net Loft Yard", .to_mark = BEARD_OFFICE_LANE },
-};
 
 // The Pip-Spitting Green: talking to Judge Marrow offers the spit, as the desktop window does.
 const SPIT_NOW: u32 = 1;
@@ -667,6 +648,13 @@ fn village_setup(rt: *WasmRuntime) anyerror!void {
     const program = if (rt.program) |*p| p else return error.NoProgram;
     if (program.societies.items.len != 1) return error.MissingVillageSociety;
     village_society = try society.Society.init(&rt.world, program.societies.items[0].config);
+    // The desktop's settlement layout and starting places (D-100).
+    const village_scene = try entity(rt, "Living Village");
+    _ = try village.lay_out_settlement(&rt.world, &rt.spatial, village_scene);
+    for (village.STARTS) |start| {
+        const wp = rt.spatial.graph.find_waypoint_in_room(village_scene, start.mark) orelse return error.MissingVillageMark;
+        _ = try rt.spatial.transition_actor(try entity(rt, start.who), village_scene, wp);
+    }
     village_ready = true;
     rt.set_banner("Living Village: six villagers run their own day. [S] starves the Drifter.");
 }
@@ -731,6 +719,7 @@ fn sword_setup(rt: *WasmRuntime) anyerror!void {
     try sword_fighting.deal_knowledge(&sword_duel, &fencers, DECK_SWORD_SEED);
     try sword_bout.set_seed(@truncate(DECK_SWORD_SEED));
     sword_ready = true;
+    try sword_fighting.place_cast(&rt.world, &rt.spatial, true);
     try rt.vm.transition_to_scene(try entity(rt, "Tidewalk"));
 }
 
@@ -1268,7 +1257,7 @@ test "D-094: the Borrowed Beard plays to the berth ticket with clicks alone" {
 
     // Out across the yard to the Harbour Office.
     try pick_verb(rt, .walk);
-    _ = try click_on(rt, BEARD_OFFICE_LANE);
+    _ = try click_on(rt, borrowed_beard.OFFICE_LANE);
     try tick_until_scene(rt, "Harbour Office", 60);
 
     try pick_verb(rt, .talk_to);
@@ -1374,11 +1363,47 @@ test "P36-05: every browser deck draws the frame the desktop window draws for th
         desk.messages = shown.messages;
         desk.cue_banner_text = shown.cue_banner_text;
         desk.cue_banner_len = shown.cue_banner_len;
-        desk.cue_banner_until_ms = shown.cue_banner_until_ms;
+        desk.log_text = shown.log_text;
+        desk.log_len = shown.log_len;
+        desk.log_count = shown.log_count;
         desk.render_frame(frame, rt.is_paused);
         if (desk.frame_hash().? != browser) {
             std.debug.print("deck {d} draws differently in the browser\n", .{i});
             return error.FramesDiffer;
+        }
+    }
+}
+
+test "D-100: Brackwater Barbs walks to Vell's yard and the Drowned Lantern through their doorways" {
+    const rt = try load(7);
+    defer unload(rt);
+    // The fencers start spread along the Tidewalk, as on desktop, not all on one mark.
+    const tamsin_wp = rt.spatial.agents.get(try entity(rt, "Tamsin")).?.current_wp;
+    try testing.expect(rt.spatial.agents.get(try entity(rt, "DoryQuill")).?.current_wp != tamsin_wp);
+    try testing.expect(rt.spatial.agents.get(try entity(rt, "BosunPike")).?.current_wp != tamsin_wp);
+
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "ToFencingYard");
+    try tick_until_scene(rt, "Fencing Yard", 60);
+    // The yard gate leads back.
+    _ = try click_on(rt, "YardGate");
+    try tick_until_scene(rt, "Tidewalk", 60);
+    _ = try click_on(rt, "ToDrownedLantern");
+    try tick_until_scene(rt, "Drowned Lantern", 60);
+}
+
+test "D-100: every mark of every deck is drawn on the stage, where a click can reach it" {
+    var off: usize = 0;
+    defer testing.expect(off == 0) catch @panic("marks off the stage");
+    for (0..decks.len) |i| {
+        const rt = try load(@intCast(i));
+        defer unload(rt);
+        for (rt.spatial.graph.waypoints.items) |wp| {
+            const pt = rt.projection().point(wp.pos.x, wp.pos.y);
+            if (pt.x < 20 or pt.x > wasm.CANVAS_WIDTH - 20) {
+                std.debug.print("deck {d}: mark {s} is off the stage at x {d}\n", .{ i, wp.name, pt.x });
+                off += 1;
+            }
         }
     }
 }

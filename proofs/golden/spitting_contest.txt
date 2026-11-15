@@ -18,7 +18,7 @@
    -> Judge Marrow is watching! Narrator: "Not while Judge Marrow is watching."
 
 [Step 4: Tamsin blows the Conch!] *** BWOOOOOOM! ***
-   -> JudgeMarrow: "Is that the herring fleet back already?"
+   -> Judge Marrow: "Is that the herring fleet back already?"
    -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 45 ticks)
 
 [Step 5: Tamsin tampers with Pegs while crowd is distracted!]

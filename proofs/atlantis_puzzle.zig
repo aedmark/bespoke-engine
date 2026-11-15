@@ -136,7 +136,7 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     try spatial.graph.connect(team_gate, ids.manuscript_wp, null);
 
     spatial.clear_hotspots();
-    try spatial.add_hotspot(ids.manuscript, scene, .{ .x = 40, .y = -4 }, 6, "Lost Manuscript", "A folio of Atlantis dialogue hidden behind Omar's invoices.");
+    try spatial.add_hotspot(ids.manuscript, scene, .{ .x = 40, .y = -4 }, 6, "Lost Manuscript", "A folio of lost dialogue hidden behind the merchant's invoices.");
     try spatial.register_entity(ids.indy, ids.entrance_wp, 10);
     try spatial.register_entity(ids.omar, ids.stall_wp, 1);
     return ids;

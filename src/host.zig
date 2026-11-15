@@ -259,7 +259,10 @@ pub const SpeechLog = struct {
         for (vm.emitted_cues.items) |cue| {
             if (cue.cue_id != SAY_CUE_ID or cue.arg_count < 2) continue;
             if (speaker) |only| if (cue.args[0] != only.to_int()) continue;
-            const name = world.get_entity_name(EntityId.from_int(cue.args[0])) orelse "Someone";
+            // The speaker reads as words, as names do everywhere on screen (D-093): `HarbourClerk`
+            // speaks as "Harbour Clerk".
+            var name_buf: [48]u8 = undefined;
+            const name = @import("display/dialogue_panel.zig").display_name(world.get_entity_name(EntityId.from_int(cue.args[0])) orelse "Someone", &name_buf);
             const text = world.get_entity_name(EntityId.from_int(cue.args[1])) orelse "";
             const w = self.stream.writer();
             if (self.count > 0) w.writeAll("  ") catch return;
@@ -531,6 +534,61 @@ pub const Timeline = struct {
 ///
 /// `cursor` is the timeline index the world currently shows. Advancing from a past cursor
 /// discards the newer snapshots first.
+/// A doorway between scenes (D-094, D-100): when the player's walk ends on `mark` while
+/// `scene` is on stage, the stage changes to `to_scene` and the player stands on `to_mark`. A
+/// player placed on an exit mark stays put; only a walk that ends there, or a walk asked for
+/// while already standing there, leaves. Desktop hosts and browser decks share one list per
+/// game.
+pub const Exit = struct {
+    scene: []const u8,
+    mark: []const u8,
+    to_scene: []const u8,
+    to_mark: []const u8,
+    /// Where to add `mark` when the script declares no such mark: world coordinates in `scene`,
+    /// joined to the nearest mark there. Script marks are spaced 20 units apart from 0, so a
+    /// doorway past the last one would fall off the stage; this places it on screen.
+    add_at: ?struct { x: i32, y: i32 } = null,
+};
+
+/// Adds the doorway marks `exits` ask for that the script did not declare.
+pub fn add_exit_marks(world: *World, spatial: *SpatialSystem, exits: []const Exit) !void {
+    for (exits) |exit| {
+        const at = exit.add_at orelse continue;
+        const scene = world.lookup_entity(exit.scene) orelse return error.UnknownScene;
+        if (spatial.graph.find_waypoint_in_room(scene, exit.mark) != null) continue;
+        var nearest: ?u16 = null;
+        var best: i64 = std.math.maxInt(i64);
+        for (spatial.graph.waypoints.items) |wp| {
+            if (wp.room != scene) continue;
+            const dx: i64 = wp.pos.x - at.x;
+            const dy: i64 = wp.pos.y - at.y;
+            if (dx * dx + dy * dy < best) {
+                best = dx * dx + dy * dy;
+                nearest = wp.id;
+            }
+        }
+        const id = try spatial.graph.add_waypoint(scene, at.x, at.y, exit.mark);
+        if (nearest) |n| try spatial.graph.connect(n, id, null);
+    }
+}
+
+/// Takes the exit on the mark `player` stands on, if one leads out of the scene on stage.
+/// Returns the exit taken.
+pub fn take_exit_here(world: *const World, spatial: *SpatialSystem, vm: *VM, exits: []const Exit, player: EntityId) !?Exit {
+    const scene = vm.current_scene orelse return null;
+    const agent = spatial.agents.get(player) orelse return null;
+    const here = spatial.graph.get_waypoint(agent.current_wp) orelse return null;
+    const scene_name = world.get_entity_name(scene) orelse return null;
+    for (exits) |exit| {
+        if (!std.mem.eql(u8, exit.scene, scene_name) or !std.mem.eql(u8, exit.mark, here.name)) continue;
+        const to = world.lookup_entity(exit.to_scene) orelse return null;
+        try vm.transition_to_scene(to);
+        _ = try spatial.transition_actor(player, to, spatial.graph.find_waypoint_in_room(to, exit.to_mark));
+        return exit;
+    }
+    return null;
+}
+
 pub const Session = struct {
     world: *World,
     spatial: *SpatialSystem,
@@ -544,6 +602,9 @@ pub const Session = struct {
     is_paused: bool = false,
     step_requested: bool = false,
     last_tick_ms: i64,
+    /// The game's doorways and who walks through them (D-100); empty, none are taken.
+    exits: []const Exit = &.{},
+    player: ?EntityId = null,
 
     /// Records the initial state as snapshot 0 and publishes the first frame.
     pub fn init(
@@ -711,11 +772,43 @@ pub const Session = struct {
     pub fn advance(self: *Session) !usize {
         self.timeline.discard_after(self.cursor);
         self.sync_active_world();
+        const walking_before = if (self.player) |p| self.spatial.is_moving(p) else false;
         const dispatched = try tick(self.vm, self.compiled);
+        // A plain walk that ended on a doorway this tick leaves through it; a walk to act on
+        // something (D-092) does not, though the mark beside a prop may be a doorway.
+        if (walking_before and self.window.approach == null) {
+            if (self.player) |p| if (!self.spatial.is_moving(p)) {
+                _ = try self.leave_through(p);
+            };
+        }
         try self.record_snapshot();
         self.cursor = self.timeline.last_index();
         self.refresh();
         return dispatched;
+    }
+
+    /// Walks the player to `wp`, as a WALK click asks. Already standing on a doorway mark, the
+    /// player leaves through it at once. Returns false when there is no way there.
+    pub fn walk_player(self: *Session, wp: u16) !bool {
+        const p = self.player orelse return false;
+        // `walk_to` reports false for a walk to the mark the player already stands on, which
+        // is how a click on a doorway underfoot asks to leave.
+        const ok = try self.spatial.walk_to(p, wp);
+        if (!self.spatial.is_moving(p) and try self.leave_through(p)) {
+            try self.record_now();
+            return true;
+        }
+        return ok;
+    }
+
+    fn leave_through(self: *Session, p: EntityId) !bool {
+        const exit = (try take_exit_here(self.active_world(), self.spatial, self.vm, self.exits, p)) orelse return false;
+        var name_buf: [48]u8 = undefined;
+        var buf: [80]u8 = undefined;
+        const name = @import("display/dialogue_panel.zig").display_name(exit.to_scene, &name_buf);
+        self.window.set_cue_banner(std.fmt.bufPrint(&buf, "{s}.", .{name}) catch exit.to_scene, 0);
+        self.refresh();
+        return true;
     }
 
     /// Records the current state as a new snapshot without ticking, for host actions that change
@@ -1252,4 +1345,63 @@ test "D-094: a routine on the Scene runs, but the Scene gets no body on a mark" 
     const scene = world.lookup_entity(STAGE_ACTOR).?;
     try testing.expect(!spatial.agents.contains(scene));
     try testing.expect(world.has_fact(scene, world.lookup_relation("Breezy").?, null));
+}
+
+test "D-100: a doorway mark is added on stage, and a walk ending on it, or asked for on it, changes rooms" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Quay
+        \\cast: Hero
+        \\marks: Steps, Pier
+        \\
+        \\scene: Hold
+        \\marks: Hatch, Bilge
+    );
+    defer compiled.deinit();
+    const exits = [_]Exit{
+        .{ .scene = "Quay", .mark = "Gangway", .to_scene = "Hold", .to_mark = "Hatch", .add_at = .{ .x = 30, .y = 0 } },
+        .{ .scene = "Hold", .mark = "Hatch", .to_scene = "Quay", .to_mark = "Gangway" },
+    };
+    try add_exit_marks(&world, &spatial, &exits);
+    // Adding twice adds nothing new.
+    const count = spatial.graph.waypoints.items.len;
+    try add_exit_marks(&world, &spatial, &exits);
+    try testing.expectEqual(count, spatial.graph.waypoints.items.len);
+    const quay = world.lookup_entity("Quay").?;
+    const hold = world.lookup_entity("Hold").?;
+    const gangway = spatial.graph.find_waypoint_in_room(quay, "Gangway").?;
+
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    _ = try start_script(&world, &spatial, &vm, &compiled);
+    const hero = world.lookup_entity("Hero").?;
+    try vm.transition_to_scene(quay);
+
+    var bridge = display_mod.DisplayBridge.init();
+    var window = try display_mod.DisplayWindow.init_offscreen(320, 180);
+    defer window.deinit();
+    var session = try Session.init(testing.allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
+    defer session.deinit();
+    session.exits = &exits;
+    session.player = hero;
+
+    // A walk that ends on the gangway takes the player into the hold, onto the hatch.
+    try testing.expect(try session.walk_player(gangway));
+    var ticks: usize = 0;
+    while (vm.current_scene.? != hold and ticks < 40) : (ticks += 1) _ = try session.advance();
+    try testing.expectEqual(hold, vm.current_scene.?);
+    const hatch = spatial.graph.find_waypoint_in_room(hold, "Hatch").?;
+    try testing.expectEqual(hatch, spatial.agents.get(hero).?.current_wp);
+    // Placed on the hatch, the player stays: only a walk leaves.
+    _ = try session.advance();
+    try testing.expectEqual(hold, vm.current_scene.?);
+    // A walk asked for while standing on the hatch leaves at once.
+    try testing.expect(try session.walk_player(hatch));
+    try testing.expectEqual(quay, vm.current_scene.?);
+    try testing.expectEqual(gangway, spatial.agents.get(hero).?.current_wp);
 }

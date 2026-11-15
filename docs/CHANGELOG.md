@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Story lines and hints show in a three-line log under the playfield, newest brightest, on desktop and in the browser; lines no longer hang forever or vanish before they are read (`D-099`). Speakers read as words ("Judge Marrow:").
+- Walking onto a doorway changes rooms on desktop and in the browser alike (`D-100`): Brackwater Barbs gains doorways from the Tidewalk to Vell's Fencing Yard and the Drowned Lantern, and the Borrowed Beard's office lane is on screen. The Barbs fencers start spread along the Tidewalk, names no longer print over each other, and scenes with more than three marks or props keep them all on the stage.
 - The browser's state inspector (`I`) is now the desktop State tab, drawn in the drawer's place, and the standalone pages forward its keys (`D-098`).
 - The browser and the desktop window now draw the same frame (`D-097`): the standalone pages and the showcase show each proof's desktop scenery, verb bar, item tray, dialogue panel, and banners at 1280x720, and the desktop draws through the same canvas. The browser keeps its own keys, item rules, exits, page buttons, and state inspector.
 - The Pip-Spitting Green in the browser shows the wind: "WIND: CALM" under the title, and a tailwind line with arrows across the field while the breeze blows (`D-096`).
