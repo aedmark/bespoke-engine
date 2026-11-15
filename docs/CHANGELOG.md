@@ -4,6 +4,11 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Scripts may quote a name to use characters a word cannot hold, such as `scene: "Brine's Boarding House"` (`D-101`).
+- The Tentacle Trio is now The Well of Three Tides (`--three-tides`, P35-06): Ossie in 1712, Nell in 1912, and Juno in 2112 pass things through Doctor Brine's Tide Wells, age port into vinegar in a cornerstone box, and free Juno from a tree that Founder Gale fells two centuries earlier. `--dott` still works.
+- A long line in the message log wraps onto the next row instead of shrinking to tiny text and being cut off (`D-099`), on desktop and in the browser. In The Donkey of Lamp Point, catching Cudgel's rope no longer also says the "too early" line.
+- `site/donkey.html` plays The Donkey of Lamp Point on its own page, with how to play and a hidden walkthrough. In the browser, the room change now moves Tamsin into the cellar and back, and one click on the hatch gets her shoved once, not twice.
+- The Lochmarne Goat is now The Donkey of Lamp Point (`--lamp-point`, P35-05): Tamsin gets past Cudgel, the lighthouse keeper's donkey, to the wreckers' cellar by hauling an old anchor into his rope line while he ambles back to his post. Keys L and W change scenes. `--goat` still works.
 - Story lines and hints show in a three-line log under the playfield, newest brightest, on desktop and in the browser; lines no longer hang forever or vanish before they are read (`D-099`). Speakers read as words ("Judge Marrow:").
 - Walking onto a doorway changes rooms on desktop and in the browser alike (`D-100`): Brackwater Barbs gains doorways from the Tidewalk to Vell's Fencing Yard and the Drowned Lantern, and the Borrowed Beard's office lane is on screen. The Barbs fencers start spread along the Tidewalk, names no longer print over each other, and scenes with more than three marks or props keep them all on the stage.
 - The browser's state inspector (`I`) is now the desktop State tab, drawn in the drawer's place, and the standalone pages forward its keys (`D-098`).

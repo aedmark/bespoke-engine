@@ -60,39 +60,40 @@ village/Living Village +village_warrant_active: bbb866145e729063
 village/Living Village +village_arrest_made: 1c94001b56ff0c44
 village/Living Village +countdown: 9109f922e32da3cc
 village/Living Village +villagers: ab7cde1893210bd6
-thumb/goat_puzzle/Lochmarne Castle Courtyard: e328a5e9a9cdd54f
-goat_puzzle/Lochmarne Castle Courtyard: 76062a334b212617
-goat_puzzle/Lochmarne Castle Courtyard +goat_is_tangled: 01bd82b29f1f4d44
-goat_puzzle/Lochmarne Castle Courtyard +goat_is_charging: 52fdc7e6bdd499f1
-goat_puzzle/Lochmarne Castle Courtyard +goat_is_retreating: b297c79875662490
-goat_puzzle/Lochmarne Castle Courtyard +george_knocked_down: 49014b985d0127d8
-goat_puzzle/Lochmarne Castle Courtyard +plough_moved: f811e94f8defdf4b
-goat_puzzle/Lochmarne Castle Courtyard +tangent_active: b73e7241b940e73b
-goat_puzzle/Lochmarne Castle Courtyard +singularity_collapsed: b73421a1271773ef
-goat_puzzle/Lochmarne Castle Courtyard +countdown: aca8a772a0eb5cd4
-thumb/goat_puzzle/Templar Crypt: 41c47f4d606e932b
-goat_puzzle/Templar Crypt: 989c16e914006980
-goat_puzzle/Templar Crypt +tangent_active: 7131a0fd74a6b8f8
-goat_puzzle/Templar Crypt +singularity_collapsed: b7858720dfb766df
-thumb/dott_puzzle/Colonial Workshop: dcd036eeab4188e3
-dott_puzzle/Colonial Workshop: d92b2c31ec61af1c
-dott_puzzle/Colonial Workshop +dott_tree_chopped: 4b399650a2554ef7
-dott_puzzle/Colonial Workshop +tangent_active: 19730f883517ca4f
-dott_puzzle/Colonial Workshop +singularity_collapsed: 24182e780400959b
-dott_puzzle/Colonial Workshop +countdown: c559f17bc274343e
-thumb/dott_puzzle/Motel Lobby: dcd036eeab4188e3
-dott_puzzle/Motel Lobby: c43fd08e3e995680
-dott_puzzle/Motel Lobby +tangent_active: 2dc3fcc99c8fa6bd
-dott_puzzle/Motel Lobby +singularity_collapsed: b4460f51c9587df9
-dott_puzzle/Motel Lobby +countdown: b428a13b84f6ee3b
-thumb/dott_puzzle/Dystopian Guard Post: dcd036eeab4188e3
-dott_puzzle/Dystopian Guard Post: 83f57e809e1420c5
-dott_puzzle/Dystopian Guard Post +pegs_tampered: f986f972d301a79b
-dott_puzzle/Dystopian Guard Post +dott_flag_sewn: d88e5738a9fa024d
-dott_puzzle/Dystopian Guard Post +dott_laverne_disguised: 51d70dcf15e18224
-dott_puzzle/Dystopian Guard Post +tangent_active: 25174eae9ee3d8ab
-dott_puzzle/Dystopian Guard Post +singularity_collapsed: 42a0f140c84a5d9b
-dott_puzzle/Dystopian Guard Post +countdown: 7af415aecbe6d1bf
+thumb/lamp_point/Lamp Point: d89c93d57615097a
+lamp_point/Lamp Point: 9547be4a99c9ada9
+lamp_point/Lamp Point +donkey_tangled: 7e754386e4c244f9
+lamp_point/Lamp Point +donkey_charging: ab93a469a53afdbe
+lamp_point/Lamp Point +donkey_retreating: f620afa82587fa74
+lamp_point/Lamp Point +tamsin_knocked_down: 4e36d9051d3c1348
+lamp_point/Lamp Point +anchor_moved: a253be51096bc614
+lamp_point/Lamp Point +tangent_active: 56fe3fef6dc7bd1a
+lamp_point/Lamp Point +singularity_collapsed: 24a5f5463235ccec
+lamp_point/Lamp Point +countdown: 22ce8bb8c232244f
+thumb/lamp_point/Wreckers Cellar: a3c754100f847826
+lamp_point/Wreckers Cellar: ed697daec37c741e
+lamp_point/Wreckers Cellar +tangent_active: 6e7d6e776bf2280f
+lamp_point/Wreckers Cellar +singularity_collapsed: a03f956a28c43c55
+thumb/three_tides/Charter Yard: dcd036eeab4188e3
+three_tides/Charter Yard: 433d07e63dc17714
+three_tides/Charter Yard +tides_tree_felled: fc9757b042cf35a4
+three_tides/Charter Yard +tides_well_charged: e393347ba979d6ac
+three_tides/Charter Yard +tangent_active: e5a6ee4d578ccf52
+three_tides/Charter Yard +singularity_collapsed: 0c846d7f7867d5a3
+three_tides/Charter Yard +countdown: b09a65125a57065b
+thumb/three_tides/Brine's Boarding House: dcd036eeab4188e3
+three_tides/Brine's Boarding House: 8de6f5257df8766e
+three_tides/Brine's Boarding House +tangent_active: acbe0157e358ba41
+three_tides/Brine's Boarding House +singularity_collapsed: 4eb5c3fc243782e0
+three_tides/Brine's Boarding House +countdown: ba91ce6d69524f90
+thumb/three_tides/Gull Roost: dcd036eeab4188e3
+three_tides/Gull Roost: bc7b732a25600ec9
+three_tides/Gull Roost +tides_tree_felled: 055c2e99022f15d5
+three_tides/Gull Roost +tides_banner_sewn: b625521e6b92ab9b
+three_tides/Gull Roost +tides_juno_disguised: 425a790b968a9fcd
+three_tides/Gull Roost +tangent_active: e04fcdaa4ac385bc
+three_tides/Gull Roost +singularity_collapsed: 6ce97c975d1a0224
+three_tides/Gull Roost +countdown: af89943579f66749
 thumb/darko_puzzle/Suburban Bedroom: 913799b2e824834d
 darko_puzzle/Suburban Bedroom: d5e4a971adef7660
 darko_puzzle/Suburban Bedroom +tangent_active: becac8af145a28cb

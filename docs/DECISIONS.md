@@ -1288,6 +1288,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 **Decision:** `set_cue_banner` adds a line to a log of the last three lines, drawn above the action sentence on a dark band: the newest bright, older ones dimmer. Lines do not time out; a newer line pushes the oldest off, and a line equal to the newest is not repeated. The dialogue and message panels sit above the log. The browser's `set_banner` feeds the same log. Speech lines name their speaker as words (`Judge Marrow:`).
 **Alternatives:** One line in the same band, fading after its reading time: offered; the maintainer chose the log so a line is never missed.
 **Consequences:** D-090's reading-time rule, `BANNER_*`, `banner_reading_ms`, `wall_ms`, and `now_ms` are gone; `duration_frames` is kept for callers and ignored. The D-090 test is replaced by a D-099 test. Two transcripts changed only in a speaker's name.
+**Update, 2026-11-15 (P35-05 page):** A line longer than the band shrank to scale 1 and was cut short, so the anchor and chart lines of the Donkey of Lamp Point were hard to read; the maintainer chose wrapping. Log lines now wrap at spaces into at most four scale-2 rows (`LOG_ROWS`): the newest line always shows (cut with "..." on its last row only if it needs more than four rows, which a 512-byte line does only in a narrow window), and an older line shows only if all its rows fit, so no line shows in part. The band grows to the rows drawn, and the dialogue panel stays above it. Lines are kept up to 512 bytes (was 256) in the window and the browser. Frames changed for the Beard, Lamp Point, Tentacle Trio, and Middlesex decks where a long line now wraps; no fact or tick changed.
 
 ## D-100 Doorways on Both Surfaces, Casts Placed Alike, and Every Mark on the Stage (2026-11-15, status: accepted)
 **Context:** The maintainer found the Beard's office lane off screen in the browser, the Barbs fencers bunched on Tamsin's mark (two looked frozen), no way to walk to Vell, and names printed over each other. Causes: the lane and exits were browser-only (D-094) and placed by a rule written for the old browser stage; the browser decks never placed casts or laid out marks as the desktop hosts did; script marks sit 20 units apart, so a fourth falls off the 1280x720 stage (on desktop too, in the Goat, Tentacle Trio, and Grog scenes); and the label solver let a crowded name print over another. The maintainer chose (2026-11-15) exits that work on both surfaces.
@@ -1323,6 +1324,12 @@ Format:
 *(None held currently. When two true claims cannot yet be reconciled, record them here as `T-NNN` with owner, claims, cost, and review trigger rather than forcing a premature compromise.)*
 
 ---
+
+## D-101 Quoted Names in Scripts (2026-11-15, status: accepted)
+**Context:** The approved draft of The Well of Three Tides (P35-06) names a scene "Brine's Boarding House". The parser builds a name from identifier words, so the apostrophe ended it and the scene was never created; the proof shipped first as `Boarding House`. The maintainer chose (2026-11-15) to let a name be quoted.
+**Decision:** Wherever the parser reads a name (`parse_name`: scene, cast, props, marks, `transition to scene:`, and the other places that take a name), a double-quoted string is taken whole as the name, without its quotes. Unquoted names are unchanged: words joined by single spaces.
+**Alternatives:** Allowing an apostrophe between letters inside an unquoted word: lighter to write, but it changes what a word is everywhere in the language. Keeping `Boarding House`: offered; the maintainer chose quoting.
+**Consequences:** Names may now hold any character but a double quote. The package format is unchanged, since names were always stored as strings. The render golden test reads scene headers from script text, so it strips the quotes, and it now fails when a declared scene was not compiled instead of skipping it, which is how the unquoted apostrophe had gone unnoticed. Enforced by: the D-101 parser test.
 
 ## Open questions
 

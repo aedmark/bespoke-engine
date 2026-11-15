@@ -643,9 +643,16 @@ pub const DialoguePanel = struct {
 /// The scroll bar's width; its thumb shows which of the choices are in view.
 pub const SCROLLBAR_W: i32 = 14;
 
-/// The message log's size (D-099): three lines, each a scale-2 row.
+/// The message log's size (D-099): the three newest lines, wrapped into at most four scale-2
+/// rows. A long line wraps instead of shrinking; the newest line always shows, and an older
+/// one shows only if all its rows still fit.
 pub const LOG_LINES: usize = 3;
+pub const LOG_ROWS: usize = 4;
 pub const LOG_ROW: i32 = 18;
+
+/// One drawn row of the message log: its text and the age of the line it belongs to (0 for
+/// the newest), which sets its shade.
+const LogRow = struct { text: []const u8, age: usize };
 
 /// A panel moved up by `reserve` pixels, so it stays clear of the message log, but never above
 /// the timeline.
@@ -976,12 +983,12 @@ pub const DisplayWindow = struct {
     audio_bridge: *audio_mod.AudioBridge,
     audio_device_opened: bool = false,
     /// The newest line said or shown, as `set_cue_banner` gave it.
-    cue_banner_text: [256]u8 = undefined,
+    cue_banner_text: [512]u8 = undefined,
     cue_banner_len: usize = 0,
     /// The message log under the stage (D-099): the last `LOG_LINES` lines, oldest first. Lines
     /// do not time out; a new one pushes the oldest off, so nothing hangs forever or vanishes
     /// before it is read.
-    log_text: [LOG_LINES][256]u8 = undefined,
+    log_text: [LOG_LINES][512]u8 = undefined,
     log_len: [LOG_LINES]usize = [_]usize{0} ** LOG_LINES,
     log_count: usize = 0,
     // Phase 11 Inventory In-Hand Selection & Combining (P11-03, D-013)
@@ -1445,8 +1452,40 @@ pub const DisplayWindow = struct {
 
     /// Height the log takes above `log_bottom`, which the dialogue panel stays clear of.
     fn log_reserve(self: *const DisplayWindow) i32 {
-        if (self.log_count == 0) return 0;
-        return @as(i32, @intCast(self.log_count)) * LOG_ROW + 6;
+        var rows: [LOG_ROWS]LogRow = undefined;
+        const n = self.log_rows(&rows);
+        if (n == 0) return 0;
+        return @as(i32, @intCast(n)) * LOG_ROW + 6;
+    }
+
+    /// The log's rows, top to bottom. Lines are wrapped at spaces to the band's width. The
+    /// newest line takes up to `LOG_ROWS` rows (its last row cut with "..." if it needs more);
+    /// older lines follow above it while every row of theirs fits, so no line shows in part.
+    fn log_rows(self: *const DisplayWindow, out: *[LOG_ROWS]LogRow) usize {
+        const columns: usize = @intCast(@max(1, @divTrunc(self.width - 48, font.char_width(2))));
+        // Filled bottom-up into `stack`, then reversed into `out`.
+        var stack: [LOG_ROWS]LogRow = undefined;
+        var used: usize = 0;
+        var age: usize = 0;
+        while (age < self.log_count) : (age += 1) {
+            const line = self.log_line(self.log_count - 1 - age);
+            var wrapped: [LOG_ROWS + 1][]const u8 = undefined;
+            var n = dialogue_panel.wrap(line, columns, &wrapped);
+            if (age == 0 and n > LOG_ROWS) {
+                // The last row keeps the rest of the line, which drawing cuts with "...".
+                const start = @intFromPtr(wrapped[LOG_ROWS - 1].ptr) - @intFromPtr(line.ptr);
+                wrapped[LOG_ROWS - 1] = line[start..];
+                n = LOG_ROWS;
+            }
+            if (used + n > LOG_ROWS) break;
+            var r = n;
+            while (r > 0) : (r -= 1) {
+                stack[used] = .{ .text = wrapped[r - 1], .age = age };
+                used += 1;
+            }
+        }
+        for (0..used) |i| out[i] = stack[used - 1 - i];
+        return used;
     }
 
     /// Decreases simulation clock speed (increases milliseconds per tick) (D-028).
@@ -3341,16 +3380,18 @@ pub const DisplayWindow = struct {
         }
 
         // 8. The message log under the stage (D-099): the newest line brightest at the bottom,
-        // older lines dimmer above it, on a dark band so they read over any backdrop.
-        if (self.log_count > 0) {
+        // older lines dimmer above it, each wrapped to the band, on a dark band so they read
+        // over any backdrop.
+        var log: [LOG_ROWS]LogRow = undefined;
+        const log_n = self.log_rows(&log);
+        if (log_n > 0) {
             const bottom = self.log_bottom();
             const top = bottom - self.log_reserve();
             self.fill_rect(16, top, self.width - 32, bottom - top, Color.hud_bg);
             const shades = [_]Color{ Color{ .r = 100, .g = 116, .b = 139 }, Color.hud_subtext, Color.hud_text };
-            for (0..self.log_count) |i| {
-                const age = self.log_count - 1 - i;
-                const y = bottom - 3 - @as(i32, @intCast(age + 1)) * LOG_ROW + 2;
-                self.draw_text_fit(self.log_line(i), 24, y, self.width - 48, 2, shades[shades.len - 1 - @min(age, shades.len - 1)]);
+            for (log[0..log_n], 0..) |row, i| {
+                const y = top + 3 + @as(i32, @intCast(i)) * LOG_ROW + 2;
+                self.draw_text_fit(row.text, 24, y, self.width - 48, 2, shades[shades.len - 1 - @min(row.age, shades.len - 1)]);
             }
         }
 
@@ -4020,6 +4061,38 @@ test "D-099: the message log keeps the three newest lines under the stage, and t
     win.show_dialogue(EntityId.from_int(1), .{ .x = 600, .y = 300 }, "Pilot", "Which way?", &.{ "North", "South" });
     const panel = win.dialogue_panel_for(&win.active_balloon.?);
     try testing.expect(panel.rect.y + panel.rect.h <= win.log_bottom() - win.log_reserve());
+}
+
+test "D-099: a long log line wraps into rows at the band's width instead of shrinking" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen(1280, 720);
+    defer win.deinit();
+    const max_w = win.width - 48;
+    win.set_cue_banner("An older line.", 0);
+    const long_line = "Hero: \"He's heading back to his post. Now, while his back's turned! I heave the weight into the line of his rope.\"  Mule: \"Hronk!\"  Hero: \"Caught.\"";
+    win.set_cue_banner(long_line, 0);
+    var rows: [LOG_ROWS]LogRow = undefined;
+    const n = win.log_rows(&rows);
+    // Two rows for the long line, one above for the older line, each at scale 2 within the band.
+    try testing.expectEqual(@as(usize, 3), n);
+    try testing.expectEqualStrings("An older line.", rows[0].text);
+    try testing.expectEqual(@as(usize, 1), rows[0].age);
+    for (rows[0..n]) |row| try testing.expect(font.text_width(row.text, 2) <= max_w);
+    try testing.expect(std.mem.startsWith(u8, rows[1].text, "Hero:"));
+    try testing.expect(std.mem.endsWith(u8, rows[2].text, "\"Caught.\""));
+    try testing.expectEqual(win.log_bottom() - win.log_reserve(), win.log_bottom() - (3 * LOG_ROW + 6));
+
+    // In a narrow window, a newest line too long for every row keeps its start and is cut on
+    // the last row; the older lines give way to it.
+    var narrow = try DisplayWindow.init_offscreen(640, 360);
+    defer narrow.deinit();
+    narrow.set_cue_banner("An older line.", 0);
+    var huge: [250]u8 = undefined;
+    for (&huge, 0..) |*ch, i| ch.* = if (i % 9 == 8) ' ' else 'a';
+    narrow.set_cue_banner(&huge, 0);
+    try testing.expectEqual(LOG_ROWS, narrow.log_rows(&rows));
+    for (rows) |row| try testing.expectEqual(@as(usize, 0), row.age);
+    try testing.expect(font.text_width(rows[LOG_ROWS - 1].text, 2) > narrow.width - 48);
 }
 
 test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save_action" {

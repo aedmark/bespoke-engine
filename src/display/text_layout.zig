@@ -412,9 +412,9 @@ pub const TextLayoutResolver = struct {
 test "TextLayoutResolver resolves non-overlapping positions" {
     var resolver = TextLayoutResolver.init(1280, 720);
 
-    // George at x=352
+    // Hero at x=352
     resolver.submit(TextLabel.init(
-        "George",
+        "Hero",
         352,
         300,
         .above,
@@ -436,9 +436,9 @@ test "TextLayoutResolver resolves non-overlapping positions" {
         .actor_status,
     ));
 
-    // Billy Goat at x=568
+    // Goat at x=568
     resolver.submit(TextLabel.init(
-        "Billy Goat",
+        "Goat",
         568,
         300,
         .above,
@@ -460,7 +460,7 @@ test "TextLayoutResolver resolves non-overlapping positions" {
         .actor_status,
     ));
 
-    // FallMark waypoint at x=424 (between George and Billy Goat)
+    // FallMark waypoint at x=424 (between Hero and Goat)
     resolver.submit(TextLabel.init(
         "FallMark",
         424,
@@ -504,7 +504,7 @@ test "TextLayoutResolver staggers colliding actor statuses vertically" {
         .actor_alert,
     ));
     resolver.submit(TextLabel.init(
-        "[CHARGING! RAMMING GEORGE!]",
+        "[CHARGING! RAMMING THE HERO!]",
         424,
         300,
         .below,
@@ -565,32 +565,32 @@ test "TextLayoutResolver suppresses idle waypoint if congested" {
     try std.testing.expect(!labels[1].visible); // idle waypoint suppressed to avoid collision
 }
 
-test "D-024: Lochmarne courtyard layout resolves George, Billy Goat, and FallMark without collisions" {
+test "D-024: Tethered-animal layout resolves Hero, Goat, and FallMark without collisions" {
     // Screen dimensions 960 x 540 (default BeSpoke engine resolution)
     var resolver = TextLayoutResolver.init(960, 540);
 
-    // George at world (4, 0) -> screen approx (352, 300)
-    // Billy Goat at world (16, 0) -> screen approx (568, 300)
+    // Hero at world (4, 0) -> screen approx (352, 300)
+    // Goat at world (16, 0) -> screen approx (568, 300)
     // FallMark waypoint at world (8, 0) -> screen approx (424, 300)
-    const george_x: i32 = 352;
-    const george_y: i32 = 300;
-    const goat_x: i32 = 568;
-    const goat_y: i32 = 300;
+    const hero_x: i32 = 352;
+    const hero_y: i32 = 300;
+    const animal_x: i32 = 568;
+    const animal_y: i32 = 300;
     const fallmark_x: i32 = 424;
     const fallmark_y: i32 = 300;
     const actor_radius: i32 = 16;
     const wp_radius: i32 = 12;
 
     // 1. Add physical body obstacles
-    resolver.add_obstacle(george_x - actor_radius, george_y - actor_radius, actor_radius * 2, actor_radius * 2);
-    resolver.add_obstacle(goat_x - actor_radius, goat_y - actor_radius, actor_radius * 2, actor_radius * 2);
+    resolver.add_obstacle(hero_x - actor_radius, hero_y - actor_radius, actor_radius * 2, actor_radius * 2);
+    resolver.add_obstacle(animal_x - actor_radius, animal_y - actor_radius, actor_radius * 2, actor_radius * 2);
     resolver.add_obstacle(fallmark_x - wp_radius, fallmark_y - wp_radius, wp_radius * 2, wp_radius * 2);
 
-    // 2. Submit George labels (Name scale 2 above, Status scale 1 below)
+    // 2. Submit Hero labels (Name scale 2 above, Status scale 1 below)
     resolver.submit(TextLabel.init(
-        "George",
-        george_x,
-        george_y,
+        "Hero",
+        hero_x,
+        hero_y,
         .above,
         actor_radius + 2,
         2,
@@ -600,8 +600,8 @@ test "D-024: Lochmarne courtyard layout resolves George, Billy Goat, and FallMar
     ));
     resolver.submit(TextLabel.init(
         "[Standing]",
-        george_x,
-        george_y,
+        hero_x,
+        hero_y,
         .below,
         actor_radius + 4,
         1,
@@ -610,11 +610,11 @@ test "D-024: Lochmarne courtyard layout resolves George, Billy Goat, and FallMar
         .actor_status,
     ));
 
-    // 3. Submit Billy Goat labels (Name scale 2 above, Status scale 1 below)
+    // 3. Submit Goat labels (Name scale 2 above, Status scale 1 below)
     resolver.submit(TextLabel.init(
-        "Billy Goat",
-        goat_x,
-        goat_y,
+        "Goat",
+        animal_x,
+        animal_y,
         .above,
         actor_radius + 2,
         2,
@@ -624,8 +624,8 @@ test "D-024: Lochmarne courtyard layout resolves George, Billy Goat, and FallMar
     ));
     resolver.submit(TextLabel.init(
         "[Guarding Dig Entrance]",
-        goat_x,
-        goat_y,
+        animal_x,
+        animal_y,
         .below,
         actor_radius + 4,
         1,

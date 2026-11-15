@@ -1011,26 +1011,26 @@ test "P21-01: transfer_item atomic relational swap and conservation of matter" {
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
 
-    const hoagie = try world.intern_entity("Hoagie");
-    const bernard = try world.intern_entity("Bernard");
-    const wine = try world.intern_entity("VintageWine");
+    const past_hero = try world.intern_entity("PastHero");
+    const present_hero = try world.intern_entity("PresentHero");
+    const wine = try world.intern_entity("Wine");
     const carries = try world.intern_relation("Carries", .set);
 
-    // Initially, Bernard possesses the wine
-    _ = try world.remember(bernard, carries, wine.to_int(), 0);
-    try testing.expect(world.has_fact(bernard, carries, wine.to_int()));
-    try testing.expect(!world.has_fact(hoagie, carries, wine.to_int()));
+    // Initially, PresentHero possesses the wine
+    _ = try world.remember(present_hero, carries, wine.to_int(), 0);
+    try testing.expect(world.has_fact(present_hero, carries, wine.to_int()));
+    try testing.expect(!world.has_fact(past_hero, carries, wine.to_int()));
 
-    // Transfer wine from Bernard to Hoagie
-    const ok = try world.transfer_item(wine, bernard, hoagie);
+    // Transfer wine from PresentHero to PastHero
+    const ok = try world.transfer_item(wine, present_hero, past_hero);
     try testing.expect(ok);
 
-    // Bernard no longer carries wine; Hoagie now carries wine
-    try testing.expect(!world.has_fact(bernard, carries, wine.to_int()));
-    try testing.expect(world.has_fact(hoagie, carries, wine.to_int()));
+    // PresentHero no longer carries wine; PastHero now carries wine
+    try testing.expect(!world.has_fact(present_hero, carries, wine.to_int()));
+    try testing.expect(world.has_fact(past_hero, carries, wine.to_int()));
 
-    // Attempting to transfer wine from Bernard again fails because Bernard does not possess it
-    const ok2 = try world.transfer_item(wine, bernard, hoagie);
+    // Attempting to transfer wine from PresentHero again fails because PresentHero does not possess it
+    const ok2 = try world.transfer_item(wine, present_hero, past_hero);
     try testing.expect(!ok2);
 }
 

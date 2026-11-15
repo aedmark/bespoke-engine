@@ -122,8 +122,8 @@ zig build test-proofs                     # every proof's tests
 | `--borrowed-beard` | The Borrowed Beard | Several scenes; combining items in the inventory |
 | `--sword-fighting` | Brackwater Barbs | Turn-taking duels where you learn comebacks by hearing them; characters tire of repeated questions |
 | `--village` | The Living Village | The society mechanic: six villagers with needs, rumours, and an arrest |
-| `--goat` | Broken Sword: The Lochmarne Goat | A hazard that interrupts the player, timed windows, moving down to a new scene |
-| `--dott` | Day of the Tentacle Trio | Three playable characters, items passed between them, the past changing the future |
+| `--lamp-point` | The Donkey of Lamp Point | A hazard that interrupts the player, timed windows, moving down to a new scene |
+| `--three-tides` | The Well of Three Tides | Three playable characters, items passed between them, the past changing the future |
 | `--darko` | The Middlesex Anomaly | A temporary copy of the world on a countdown that merges back or collapses |
 | `--loom` | The Bell Tower | Four-note tunes (drafts) that act as spells, forwards or reversed |
 | `--grog` | Caustic Grog | Containers that wear out, pouring between them, spilling while carried |

@@ -1,0 +1,68 @@
+===================================================================
+    BeSpoke Engine: The Well of Three Tides Milestone Scenario    
+ (Multi-Character Party * Remote Item Swaps * Temporal Epistemology)
+===================================================================
+
+[Compiler] Compiling Three Tides three-era script...
+[Step 0] Initial state: Nell in 1912, Ossie in 1712, Juno in 2112.
+         Nell carries: CheapPort, GullHandbill
+         Ossie carries:  RedLeadPaint, VoltaicJar
+         Juno trapped in 2112 tree branches.
+         [D-026 Invariant] Portal Gating Verified: Juno trapped in tree -> Tide Well transfer rejected!
+         [D-026 Invariant] Portal Anchoring Verified: Nell to Ossie operational across eras.
+
+[Step 0b] Three-Era Environmental Inspection (LooksAt cues):
+         [1912] Nell looks at PortBottle -> Nell: "A dusty bottle of cheap port on the front desk. Bottled this year, and it tastes like it."
+         [1912] Nell looks at GullHandbillProp -> Nell: "A handbill pasted by the door, with a huge gull's profile. 'Vote Squall. The Harbour Belongs to the Birds!'"
+         [1912] Nell looks at TideWell1912 -> Nell: "Doctor Brine's Tide Well. Drop something down the shaft and it comes up in another century's bucket."
+         [1912] Nell looks at CornerstoneBox1912 -> Nell: "The town's cornerstone box, set into the wall in 1712 and never opened since."
+         [1912] Nell looks at DoctorBrine -> Nell: "Doctor Augustin Brine, muttering about tide tables and the end of the world."
+         [1912] Nell inspects CheapPort -> Nell: "A bottle of cheap port. Two hundred years in a cellar might improve it. Might."
+         [1912] Nell inspects GullHandbill -> Nell: "Admiral Squall's handbill: 'A herring in every beak!'"
+         [1712] Ossie looks at OrangeTree -> Ossie: "A stunted little orange tree. Founder Gale keeps eyeing it and fingering his axe."
+         [1712] Ossie looks at TideWell1712 -> Ossie: "My Tide Well, in 1712. Its brass pump has no charge, so nothing will go back up the shaft."
+         [1712] Ossie looks at CornerstoneBox1712 -> Ossie: "The cornerstone box for the new town hall. Whatever goes in stays sealed until 1912."
+         [1712] Ossie looks at FounderGale -> Ossie: "Founder Harrow Gale, who swore to fell any tree that shows the red blight. He's itching to use that axe."
+         [1712] Ossie looks at WidowFenn -> Ossie: "Widow Fenn, sewing the town's first banner. She'd take a pattern from anyone."
+         [1712] Ossie inspects RedLeadPaint -> Ossie: "A pot of red lead, for ships' hulls. It'd turn anything a nasty shade of red."
+         [1712] Ossie inspects VoltaicJar -> Ossie: "An empty voltaic jar, copper and zinc inside. It wants something sharp and sour to fill it."
+         [2112] Juno looks at AdmiralSquall -> Juno: "Admiral Squall, a gull the size of a rowing boat, guarding the checkpoint. No humans past him without a gull disguise."
+         [2112] Juno looks at GiantOrangeTree -> Juno: "An orange tree two hundred years old, tall as the roost. I'm caught in its branches!"
+         [2112] Juno looks at GullBannerProp -> Juno: "The banner on the roost roof: a great white gull, beak open. The flag of the flock."
+         [2112] Juno looks at StormTerminal -> Juno: "A brass storm terminal on the roof, wired into the Tide Well."
+         [2112] Juno looks at TideWell2112 -> Juno: "The Tide Well in 2112. With power at the other end, it'll join the three of us up."
+
+[Step 1] Nell sends Cheap Port down the Tide Well to Ossie...
+         Matter conserved: Nell loses the port, Ossie receives it.
+[Step 2] Ossie seals the port in the 1712 Cornerstone Box...
+         Forward Temporal Cascade: 200 years pass; the port turns into 200-year-old vinegar.
+         [D-026 Invariant] Passive Incubation: No cutscene emitted; 200-year transformation discovered organically upon retrieval.
+[Step 3] Nell in 1912 opens Cornerstone Box and retrieves 200-year-old vinegar...
+[Step 4] Nell sends the 200-year-old vinegar down the well to Ossie in 1712...
+[Step 5] Ossie fills the voltaic jar with the vinegar: a Charged Jar!
+         Ossie inspects ChargedJar -> Ossie: "The voltaic jar, full of two-hundred-year-old vinegar and humming with charge!"
+         Ossie wires the Charged Jar to the Tide Well 1712 pump -> POWER ONLINE!
+[Step 6] Nell sends the Gull Handbill down the well to Ossie...
+[Step 7] Epistemic Persuasion: Ossie presents Gull Handbill to Widow Fenn...
+         Widow Fenn adopts belief and stitches the town's Gull Banner!
+         [Cutscene Telegraph] Juno: "Look at the roost roof! Widow Fenn's gull is flying as the flag of the flock!"
+[Step 8] Epistemic Belief & Axe: Ossie daubs the orange tree with red lead and talks to Founder Gale...
+         Founder Gale: 'Not in my town!' *THWACK!* Tree felled in 1712!
+         [Cutscene Telegraph] Juno: "Whoa! The tree's gone from under me! *THUD!* I'm on the ground!"
+[Step 9] Forward Temporal Cascade: Tree ceased to exist centuries ago in 2112...
+         Juno drops safely from absent tree to ground level!
+         [D-026 Invariant] Portal Access Gating: Juno on ground but guarded -> Tide Well transfer rejected!
+[Step 9b] Security Permission: Juno: 'I need to go and feed the gulls!' -> Squall permits yard access...
+         [D-026 Invariant] Portal Access Gating: Juno feeding the gulls in the yard -> Tide Well transfer online!
+[Step 10] Juno climbs to roof, dons Gull Banner disguise, reaches the storm terminal...
+         Juno inspects GullBanner -> Juno: "Widow Fenn's banner from 1712. Draped over me, I'd pass for a gull."
+         [D-026 Invariant] Portal Access Gating: Juno wearing gull disguise -> permanent Tide Well access granted!
+
+>>> VICTORY ACHIEVED! The Well of Three Tides Puzzle completely solved! <<<
+    - Ossie: Well powered by 200-year-aged vinegar Charged Jar.
+    - Widow Fenn: Epistemically convinced to sew Gull Banner.
+    - Founder Gale: Epistemically convinced to fell the blighted orange tree.
+    - Juno: Freed in 2112 via temporal causality, disguised in Gull Banner.
+
+[Time-Travel] Verifying deterministic rewind back to tick 0...
+SUCCESS: 100% deterministic time-travel and multi-character coordination verified.

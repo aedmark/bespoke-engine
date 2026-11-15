@@ -518,6 +518,9 @@ pub const Parser = struct {
     }
 
     fn parse_name(self: *Parser) ![]const u8 {
+        // A quoted name is taken whole, so it may hold characters a word cannot, such as the
+        // apostrophe in "Keeper's Lodge" (D-101). Unquoted names are unchanged.
+        if (self.current.tag == .string_literal) return (try self.expect(.string_literal)).slice;
         const first_tok = try self.expect(.identifier);
         const first = first_tok.slice;
         const line = first_tok.line;
@@ -2462,5 +2465,41 @@ test "P24-01: parser parses path declarations with locked facts and path-owned r
     switch (ast.paths.items[1].facts[0]) {
         .remember => |r| try testing.expectEqualStrings("ChosenFists", r.relation),
         else => try testing.expect(false),
+    }
+}
+
+test "D-101: a quoted name keeps characters a word cannot, in scene, cast, props, marks, and transitions" {
+    const testing = std.testing;
+    const source =
+        \\scene: "Keeper's Lodge"
+        \\cast: Hero, "Old Keeper's Dog"
+        \\props: "Hero's Ledger"
+        \\marks: LodgeDoor, "Keeper's Corner"
+        \\
+        \\scene: Upper Yard
+        \\cast: Mate
+        \\
+        \\on cue Uses(Hero, LodgeDoor):
+        \\  transition to scene: "Keeper's Lodge"
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var lexer = Lexer.init(arena.allocator(), source);
+    defer lexer.deinit();
+    var parser = try Parser.init(arena.allocator(), &lexer);
+    const ast = try parser.parse_program();
+    try testing.expectEqualStrings("Keeper's Lodge", ast.scenes.items[0]);
+    // An unquoted name of several words still joins its words with single spaces.
+    try testing.expectEqualStrings("Upper Yard", ast.scenes.items[1]);
+    try testing.expectEqualStrings("Old Keeper's Dog", ast.cast.items[1]);
+    try testing.expectEqualStrings("Hero's Ledger", ast.props.items[0]);
+    var found_mark = false;
+    for (ast.scene_defs.items[0].marks.items) |m| {
+        if (std.mem.eql(u8, m, "Keeper's Corner")) found_mark = true;
+    }
+    try testing.expect(found_mark);
+    switch (ast.cue_handlers.items[0].body[0]) {
+        .transition_scene => |ts| try testing.expectEqualStrings("Keeper's Lodge", ts.target_scene),
+        else => return error.TestUnexpectedResult,
     }
 }

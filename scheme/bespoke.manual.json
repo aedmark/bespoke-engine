@@ -419,7 +419,7 @@
             "Actor names use font scale 2 above tokens; actor status badges use font scale 1 below tokens, cutting width by 50% to establish a clean visual hierarchy.",
             "Contested labels automatically stagger downward across vertical tiers (Tiers 1-3) or flip above, while idle waypoint names yield to preserve legibility without hiding the physical ground mark."
           ],
-          "why": "In theater and adventure scenes (e.g. Tamsin and Judge Marrow at the Chalk Line, or George and Billy Goat at Lochmarne), actors frequently gather at proximate marks. Drawing labels at fixed coordinates produces illegible text overlap. Centralized collision resolution guarantees every string a legible, collision-free slot.",
+          "why": "In theater and adventure scenes (e.g. Tamsin and Judge Marrow at the Chalk Line, or Tamsin and Cudgel on Lamp Point), actors frequently gather at proximate marks. Drawing labels at fixed coordinates produces illegible text overlap. Centralized collision resolution guarantees every string a legible, collision-free slot.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-008", "target": "docs/DECISIONS.md#d-008", "kind": "decision"},
@@ -554,7 +554,7 @@
           "id": "arrival-rules",
           "title": "Arrival Rules (when arrives at)",
           "summary": "Fires a reactive routine when an actor completes a walk at a named mark.",
-          "synopsis": "when George arrives at DigOpening: transition to scene: Templar Crypt",
+          "synopsis": "when Tamsin arrives at HatchMark: transition to scene: Wreckers Cellar",
           "tags": ["arrival", "marks", "walking", "hooks"],
           "what": "Lets a script react to an actor reaching a mark, so rules such as a guard animal charging whoever reaches a doorway live in the script and not in host code. The rule fires once per completed walk. Resting on the mark, walking through it toward another mark, and being placed there by the host do not fire it.",
           "how": [
@@ -570,7 +570,7 @@
             {"label": "Arrival pass in the reactive rule engine", "target": "src/vm.zig", "kind": "source"},
             {"label": "Motor arrival flag", "target": "src/spatial.zig", "kind": "source"},
             {"label": "Arrival rule tests", "target": "src/compiler.zig", "kind": "source"},
-            {"label": "Lochmarne Goat script", "target": "proofs/goat_puzzle.zig", "kind": "source"}
+            {"label": "Donkey of Lamp Point script", "target": "proofs/lamp_point.zig", "kind": "source"}
           ],
           "related": ["edge-triggered-rules", "ttl-expiration-triggers"]
         },
@@ -853,40 +853,39 @@
           "related": ["stageplay-taxonomy", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
         },
         {
-          "id": "broken-sword-goat-puzzle-scenario",
-          "title": "The Broken Sword Lochmarne Goat Scenario",
-          "summary": "Authentic 1996 threat-radius reactive interrupt, 30-tick retreat recovery window, plough obstacle dragging, and subterranean crypt multi-scene transition.",
-          "synopsis": "zig build run-proof -- --goat [--headless]",
-          "tags": ["goat", "broken-sword", "threat-radius", "timing-window", "multi-scene"],
-          "what": "Implements the famous 1996 Lochmarne Castle courtyard puzzle, modeling goat proximity charging, knockback interrupts, dynamic 30-tick retreat recovery windows, plough dragging to trap the tether rope, and subterranean Templar excavation crypt transitions.",
+          "id": "lamp-point-donkey-scenario",
+          "title": "The Donkey of Lamp Point Scenario",
+          "summary": "A threat-radius interrupt, a 30-tick retreat window, hauling an obstacle into a rope line, and a move down to a lower scene, each step an arrival rule.",
+          "synopsis": "zig build run-proof -- --lamp-point [--headless]",
+          "tags": ["donkey", "lamp-point", "threat-radius", "timing-window", "multi-scene"],
+          "what": "Tamsin must reach the wreckers' cellar under the ruined lighthouse on Lamp Point, past Cudgel, the keeper's donkey, who is tied to a mooring post by a long rope. The proof models a guard animal that charges, a knockback interrupt, a 30-tick retreat window, hauling an old anchor into the rope line to tangle it, and the move down into the cellar.",
           "how": [
-            "Approaching Peagram's cellar pit triggers the goat's proximity charge cue, knocking George back and asserting a 30-tick GoatRetreating fact.",
-            "Interacting with the heavy farm plough during the retreat window hauls it into the rope line, tangling the goat and clearing the pit.",
-            "Descending the excavation ladder transitions simulation state from the Lochmarne Castle ruins courtyard into the subterranean Templar crypt.",
-            "Renders authentic Irish courtyard ruins with dynamic rope lines, Celtic whistle audio, and Templar altar reliefs."
+            "Arriving at the hatch while Cudgel's rope is free fires the arrival rule: Cudgel shoves Tamsin back to FallMark and the script remembers DonkeyRetreating for 30 ticks.",
+            "Arriving at the anchor while that fact holds tangles the rope around the anchor; arriving without it only explains that Cudgel would kick first.",
+            "Arriving at the hatch with the rope caught transitions to the Wreckers Cellar; walking back to CellarSteps climbs out.",
+            "The art draws the rope from the post to Cudgel, or wrapped round the anchor once it is caught."
           ],
-          "why": "Demonstrates that BeSpoke's relational fact engine and fiber scheduler solve notoriously frustrating timing puzzles deterministically with discrete ticks, eliminating real-time frame rate dependencies while preserving authentic narrative pacing.",
+          "why": "Demonstrates that BeSpoke's relational facts and discrete ticks express a timing puzzle deterministically: the window is a fact with an expiry tick, not a frame-rate timer, so the headless run and the window agree on every step.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-023", "target": "docs/DECISIONS.md#d-023", "kind": "decision"},
-            {"label": "Broken Sword Goat Scenario Script", "target": "proofs/goat_puzzle.zig", "kind": "source"},
-            {"label": "Lochmarne Courtyard & Crypt Renderer", "target": "src/display/renderer.zig", "kind": "source"},
-            {"label": "Celtic Whistle Audio Synthesis", "target": "src/audio.zig", "kind": "source"}
+            {"label": "Donkey of Lamp Point Script", "target": "proofs/lamp_point.zig", "kind": "source"},
+            {"label": "Lamp Point and Wreckers Cellar Art", "target": "proofs/art.zig", "kind": "source"}
           ],
           "related": ["cue-dispatch-and-interruption", "ttl-expiration-triggers", "multi-scene-transitions-spatial-partitioning", "peripheral-audio-and-procedural-synthesizer"]
         },
         {
-          "id": "day-of-the-tentacle-scenario",
-          "title": "Day of the Tentacle Multi-Character Temporal Scenario",
+          "id": "three-tides-scenario",
+          "title": "The Well of Three Tides: Three Players in Three Eras",
           "summary": "Multi-character party switching, generalized inventory transfers across actors, epistemic dialogue belief pruning, and DAG temporal causality cascades across 400 years.",
-          "synopsis": "zig build run-proof -- --dott [--headless]",
-          "tags": ["dott", "multi-party", "item-transfer", "epistemic-dialogue", "temporal-causality", "time-travel"],
-          "what": "Implements the three-era Day of the Tentacle puzzle milestone across 1790 Colonial, 1993 Motel, and 2193 Future scenes with three coordinated protagonists (Hoagie, Bernard, Laverne).",
+          "synopsis": "zig build run-proof -- --three-tides [--headless]",
+          "tags": ["three-tides", "multi-party", "item-transfer", "epistemic-dialogue", "temporal-causality", "time-travel"],
+          "what": "Ossie in 1712, Nell in 1912, and Juno in 2112 pass items through Doctor Brine's Tide Wells across the Charter Yard, the Boarding House, and the Gull Roost: port sealed in a cornerstone box comes out two centuries later as vinegar, and a tree felled in 1712 is gone in 2112.",
           "how": [
             "Tracks party coordination via party array and active_character, rendering top HUD character portrait buttons for instant protagonist switching.",
             "Executes generalized inventory item transfer (World.transfer_item) via atomic relational swaps, enforcing matter conservation without pointer manipulation.",
             "Evaluates NPC dialogue options through epistemic belief facts (Believes, Knows, Rejects), pruning Persuade choices dynamically until supporting evidence is established.",
-            "Enforces strict past-to-future DAG causality cascades where past physical modifications (painting trees, sealing wine in time capsules, altering flag designs) instantaneously project forward across present and future eras."
+            "Enforces strict past-to-future DAG causality cascades where past physical modifications (painting a tree, sealing port in a cornerstone box, sewing a banner) instantaneously project forward across present and future eras."
           ],
           "why": "Demonstrates that BeSpoke's relational fact engine, fiber scheduler, and discrete tick clock natively support non-linear multi-protagonist agency and historical causality without paradoxical state duplication or ad-hoc temporal flags.",
           "why_basis": "recorded",
@@ -895,7 +894,7 @@
             {"label": "World Item Transfer", "target": "src/world.zig", "kind": "source"},
             {"label": "Epistemic Dialogue Belief Resolver", "target": "src/vm.zig", "kind": "source"},
             {"label": "Spatial Transfer Policy", "target": "src/spatial.zig", "kind": "source"},
-            {"label": "Day of the Tentacle Puzzle Scenario", "target": "proofs/dott_puzzle.zig", "kind": "source"},
+            {"label": "The Well of Three Tides Script", "target": "proofs/three_tides.zig", "kind": "source"},
             {"label": "Display Party Portraits & Backdrops", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["snapshot-time-travel", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
@@ -924,7 +923,7 @@
             {"label": "The Middlesex Anomaly Proof", "target": "proofs/darko_puzzle.zig", "kind": "source"},
             {"label": "Conduit and Countdown Rendering", "target": "src/display/renderer.zig", "kind": "source"}
           ],
-          "related": ["snapshot-time-travel", "asynchronous-motor-intents", "day-of-the-tentacle-scenario", "multi-scene-transitions-spatial-partitioning"]
+          "related": ["snapshot-time-travel", "asynchronous-motor-intents", "three-tides-scenario", "multi-scene-transitions-spatial-partitioning"]
         },
         {
           "id": "musical-drafts-and-the-bell-tower",

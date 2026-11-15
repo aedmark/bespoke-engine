@@ -7,7 +7,7 @@
 //!
 //! Each scene is staged from the proof's own script: its marks and props as compiled, and its
 //! cast spread over the scene's marks. That is the default state of the scene. Art that
-//! depends on puzzle progress (a moved plough, a tampered flag) is not covered.
+//! depends on puzzle progress (a moved anchor, a tampered flag) is not covered.
 //!
 //! The hashes come from SDL's software rasterizer and are stable for one SDL build. If an SDL
 //! upgrade changes every hash at once with no change here, regenerate and say so in review.
@@ -24,8 +24,8 @@ const spitting_contest = @import("spitting_contest.zig");
 const borrowed_beard = @import("borrowed_beard.zig");
 const sword_fighting = @import("sword_fighting.zig");
 const village = @import("village.zig");
-const goat_puzzle = @import("goat_puzzle.zig");
-const dott_puzzle = @import("dott_puzzle.zig");
+const lamp_point = @import("lamp_point.zig");
+const three_tides = @import("three_tides.zig");
 const darko_puzzle = @import("darko_puzzle.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
@@ -42,8 +42,8 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "borrowed_beard", .script = borrowed_beard.BORROWED_BEARD_SCRIPT },
     .{ .name = "sword_fighting", .script = sword_fighting.SWORD_FIGHTING_SCRIPT },
     .{ .name = "village", .script = village.VILLAGE_SCRIPT },
-    .{ .name = "goat_puzzle", .script = goat_puzzle.GOAT_PUZZLE_SCRIPT },
-    .{ .name = "dott_puzzle", .script = dott_puzzle.DOTT_PUZZLE_SCRIPT },
+    .{ .name = "lamp_point", .script = lamp_point.LAMP_POINT_SCRIPT },
+    .{ .name = "three_tides", .script = three_tides.THREE_TIDES_SCRIPT },
     .{ .name = "darko_puzzle", .script = darko_puzzle.DARKO_PUZZLE_SCRIPT },
     .{ .name = "loom_puzzle", .script = loom_puzzle.BELL_TOWER_SCRIPT },
     .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
@@ -59,7 +59,8 @@ fn next_scene(lines: *std.mem.SplitIterator(u8, .scalar)) ?SceneCast {
     while (lines.next()) |raw| {
         const line = std.mem.trim(u8, raw, " \t\r");
         if (!std.mem.startsWith(u8, line, "scene:")) continue;
-        var found = SceneCast{ .scene = std.mem.trim(u8, line["scene:".len..], " "), .cast = "" };
+        // A quoted name (D-101) is the name without its quotes, as the compiler reads it.
+        var found = SceneCast{ .scene = std.mem.trim(u8, line["scene:".len..], " \""), .cast = "" };
         // The cast line, if any, follows directly; a blank line ends the scene header.
         while (lines.peek()) |peek_raw| {
             const peek = std.mem.trim(u8, peek_raw, " \t\r");
@@ -77,10 +78,10 @@ fn next_scene(lines: *std.mem.SplitIterator(u8, .scalar)) ?SceneCast {
 const STATUS_VARIANTS = [_][]const u8{
     "spit_is_thick",          "pegs_tampered",         "wind_blowing",         "judge_distracted",
     "gap_taped",            "gap_has_fur",         "dog_startled",         "dog_fur_collected",
-    "tamsin_disguised",      "berth_taken",            "goat_is_tangled",      "goat_is_charging",
-    "goat_is_retreating",     "george_knocked_down",    "plough_moved",         "dott_tree_chopped",
-    "dott_wine_aged",         "dott_battery_charged",   "dott_flag_sewn",       "dott_laverne_freed",
-    "dott_laverne_disguised", "dott_puzzle_solved",     "tangent_active",       "singularity_collapsed",
+    "tamsin_disguised",      "berth_taken",            "donkey_tangled",      "donkey_charging",
+    "donkey_retreating",     "tamsin_knocked_down",    "anchor_moved",         "tides_tree_felled",
+    "tides_port_aged",         "tides_well_charged",   "tides_banner_sewn",       "tides_juno_freed",
+    "tides_juno_disguised", "tides_puzzle_solved",     "tangent_active",       "singularity_collapsed",
     "darko_water_flooded",    "darko_letter_delivered", "darko_vortex_reached", "darko_artifact_returned",
     "darko_puzzle_solved",    "bell_brazier_lit",       "bell_chain_loosed",    "bell_fork_taken",
     "bell_ringing",           "bell_beacon_lit",        "village_crime_active", "village_warrant_active",
@@ -236,7 +237,9 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     // Stage every scene's cast on that scene's marks, one mark apart.
     var lines = std.mem.splitScalar(u8, script, '\n');
     while (next_scene(&lines)) |sc| {
-        const room = world.lookup_entity(sc.scene) orelse continue;
+        // Every scene the script declares is drawn; one the compiler did not create is a test
+        // failure, not a silently missing golden line.
+        const room = world.lookup_entity(sc.scene) orelse return error.SceneNotCompiled;
         var marks = std.ArrayList(bespoke.WaypointId).init(allocator);
         defer marks.deinit();
         for (spatial.graph.waypoints.items) |wp| {
@@ -255,7 +258,9 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
 
     lines = std.mem.splitScalar(u8, script, '\n');
     while (next_scene(&lines)) |sc| {
-        const room = world.lookup_entity(sc.scene) orelse continue;
+        // Every scene the script declares is drawn; one the compiler did not create is a test
+        // failure, not a silently missing golden line.
+        const room = world.lookup_entity(sc.scene) orelse return error.SceneNotCompiled;
         try vm.transition_to_scene(room);
         try rec.thumbnail(name, sc.scene, &world, &spatial);
         var label_buf: [128]u8 = undefined;

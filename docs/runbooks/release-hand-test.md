@@ -76,8 +76,8 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--borrowed-beard` | I inn, Y yard, O office, 0 gather, 1 to 8 steps | Scene changes redraw the room; the disguise combines across three scenes; Purser Wick hands over the berth ticket. |
 | `--sword-fighting` | D duel Bosun Pike, G duel Old Gannet, H duel Dory Quill, C duel Mistress Vell, T talk to the barkeep, W wait 50 ticks | Answer barbs or throw your own with 1 to 9; a joke loses the round on purpose, which hands the fencer a new barb to throw. Each launch deals the fencers different barbs and comebacks. Whoever wins a round attacks next; an opponent who parries your barb teaches you that comeback; a lost duel ends with the opponent's victory line; a repeated question tires the barkeep. |
 | `--village` | S theft, F feast, G tip | Six villagers run their own days. After S, a witness talks, rumours spread, and the Sheriff arrests someone, with no key presses in between. |
-| `--goat` | C courtyard, T crypt, 1 to 4 steps | The goat knocks George down on the way to the cellar until the rope is tangled on the plough. |
-| `--dott` | 1 to 4 switch character | Items passed between eras arrive; a change in the past shows in the future. |
+| `--lamp-point` | L Lamp Point, W Wreckers Cellar, 1 to 4 steps | Cudgel shoves Tamsin down on the way to the hatch until his rope is caught on the anchor. |
+| `--three-tides` | 1 to 4 switch character | Items sent down the Tide Well arrive in the other era; felling the tree in 1712 frees Juno in 2112. |
 | `--darko` | V follow the conduit | The tangent countdown runs; closing the loop collapses the branch safely; letting it run out ends in the singularity. |
 | `--loom` | C D E F G A B notes, Backspace clears | Notes sound and show on the distaff; a four-note draft weaves its effect; played backwards it does the opposite. |
 | `--grog` | 1 pour A to B, 2 pour B to C, L unlock | Cups visibly degrade; a late pour spills; enough grog at the lock dissolves it. |
@@ -97,7 +97,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 - [ ] **Temporal save (`--darko`):** save while the tangent branch is live, play on past the collapse, load. The countdown, branch facts, and primary facts agree with the moment of the save.
 - [ ] **State inspector:** P, then Tab or click STATE. Arrows select, Enter centres, Backspace goes back, Home resets, F cycles the relation filter. Closing the drawer resumes play; the inspector never saves or loads.
 - [ ] **Console (`--tavern`, `--spitting-contest`, `--village`, and `bespoke run`):** `` ` `` opens it; `help` lists the commands; `facts` lists the live world; `remember Carries(Cat, Cheese)` changes the stage on the next tick; `forget` undoes it.
-- [ ] **Party HUD (`--dott`):** portraits show, and 1 to 4 switch the active character.
+- [ ] **Party HUD (`--three-tides`):** portraits show, and 1 to 4 switch the active character.
 
 ## 3. Listening Pass
 
@@ -154,7 +154,7 @@ zig build web && node web/smoke.js
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
 - [ ] The playground loads with no console errors (open the developer tools).
-- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Goat, DOTT, Grog, Insult Sword Fighting, Algiers, Middlesex, Bell Tower.
+- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Algiers, Middlesex, Bell Tower.
 - [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
 - [ ] Algiers: choosing a path with 1, 2, or 3 locks the others.
 - [ ] Middlesex: the tick counter never runs backwards; a rewind across the collapse brings the branch back.

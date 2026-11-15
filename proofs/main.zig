@@ -10,8 +10,8 @@ pub const spitting_contest = @import("spitting_contest.zig");
 pub const borrowed_beard = @import("borrowed_beard.zig");
 pub const sword_fighting = @import("sword_fighting.zig");
 pub const village = @import("village.zig");
-pub const goat_puzzle = @import("goat_puzzle.zig");
-pub const dott_puzzle = @import("dott_puzzle.zig");
+pub const lamp_point = @import("lamp_point.zig");
+pub const three_tides = @import("three_tides.zig");
 pub const darko_puzzle = @import("darko_puzzle.zig");
 pub const loom_puzzle = @import("loom_puzzle.zig");
 pub const grog_puzzle = @import("grog_puzzle.zig");
@@ -25,8 +25,8 @@ const Proof = enum {
     borrowed_beard,
     sword_fighting,
     village,
-    goat,
-    dott,
+    lamp_point,
+    three_tides,
     darko,
     loom,
     grog,
@@ -52,12 +52,16 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "sword", .proof = .sword_fighting },
     .{ .name = "village", .proof = .village },
     .{ .name = "living-village", .proof = .village },
-    .{ .name = "goat", .proof = .goat },
-    .{ .name = "goat-puzzle", .proof = .goat },
-    .{ .name = "broken-sword", .proof = .goat },
-    .{ .name = "dott", .proof = .dott },
-    .{ .name = "tentacle", .proof = .dott },
-    .{ .name = "chrono-mansion", .proof = .dott },
+    .{ .name = "lamp-point", .proof = .lamp_point },
+    .{ .name = "donkey", .proof = .lamp_point },
+    .{ .name = "goat", .proof = .lamp_point },
+    .{ .name = "goat-puzzle", .proof = .lamp_point },
+    .{ .name = "broken-sword", .proof = .lamp_point },
+    .{ .name = "three-tides", .proof = .three_tides },
+    .{ .name = "tides", .proof = .three_tides },
+    .{ .name = "dott", .proof = .three_tides },
+    .{ .name = "tentacle", .proof = .three_tides },
+    .{ .name = "chrono-mansion", .proof = .three_tides },
     .{ .name = "darko", .proof = .darko },
     .{ .name = "donnie-darko", .proof = .darko },
     .{ .name = "middlesex", .proof = .darko },
@@ -95,8 +99,8 @@ const usage =
     \\  --borrowed-beard     The Borrowed Beard (crafting, multi-scene)
     \\  --sword-fighting     Brackwater Barbs (learned comebacks, mood decay)
     \\  --village            The Living Village (emergent drives, rumors, justice)
-    \\  --goat               Broken Sword Lochmarne Goat (threat radius, retreat window)
-    \\  --dott               Day of the Tentacle Trio (party, item transfer, causality)
+    \\  --lamp-point         The Donkey of Lamp Point (threat radius, retreat window)
+    \\  --three-tides        The Well of Three Tides (party, item transfer, causality)
     \\  --darko              The Middlesex Anomaly (temporal hypervisor, conduits)
     \\  --loom               The Bell Tower (musical drafts, distaff)
     \\  --grog               Caustic Grog (container degradation, pours, spill)
@@ -147,8 +151,8 @@ pub fn main() !void {
         .borrowed_beard => if (headless) try borrowed_beard.run_headless(allocator, stdout) else try borrowed_beard.run_interactive(allocator, stdout),
         .sword_fighting => if (headless) try sword_fighting.run_headless(allocator, stdout) else try sword_fighting.run_interactive(allocator, stdout),
         .village => if (headless) try village.run_headless(allocator, stdout) else try village.run_interactive(allocator, stdout),
-        .goat => if (headless) try goat_puzzle.run_headless(allocator, stdout) else try goat_puzzle.run_interactive(allocator, stdout),
-        .dott => if (headless) try dott_puzzle.run_headless(allocator, stdout) else try dott_puzzle.run_interactive(allocator),
+        .lamp_point => if (headless) try lamp_point.run_headless(allocator, stdout) else try lamp_point.run_interactive(allocator, stdout),
+        .three_tides => if (headless) try three_tides.run_headless(allocator, stdout) else try three_tides.run_interactive(allocator),
         .darko => if (headless) try darko_puzzle.run_headless(allocator, stdout) else try darko_puzzle.run_interactive(allocator),
         .loom => if (headless) try loom_puzzle.run_headless(allocator, stdout) else try loom_puzzle.run_interactive(allocator, stdout),
         .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
@@ -164,8 +168,8 @@ test "proofs: every proof module compiles and its tests run" {
     _ = borrowed_beard;
     _ = sword_fighting;
     _ = village;
-    _ = goat_puzzle;
-    _ = dott_puzzle;
+    _ = lamp_point;
+    _ = three_tides;
     _ = darko_puzzle;
     _ = loom_puzzle;
     _ = grog_puzzle;
@@ -186,8 +190,10 @@ test {
 }
 
 test "proofs: legacy flag spellings resolve to the same proofs" {
-    try std.testing.expectEqual(Proof.dott, lookup("tentacle").?);
+    try std.testing.expectEqual(Proof.three_tides, lookup("tentacle").?);
+    try std.testing.expectEqual(Proof.three_tides, lookup("dott").?);
     try std.testing.expectEqual(Proof.loom, lookup("bell-tower").?);
-    try std.testing.expectEqual(Proof.goat, lookup("broken-sword").?);
+    try std.testing.expectEqual(Proof.lamp_point, lookup("broken-sword").?);
+    try std.testing.expectEqual(Proof.lamp_point, lookup("goat").?);
     try std.testing.expect(lookup("headless") == null);
 }

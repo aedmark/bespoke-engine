@@ -387,7 +387,7 @@ pub const WasmRuntime = struct {
     hypervisor: ?*TemporalHypervisor = null,
 
     /// Long enough for a spoken line with its speaker; drawn wrapped over two rows (D-077).
-    banner_buf: [256]u8 = [_]u8{0} ** 256,
+    banner_buf: [512]u8 = [_]u8{0} ** 512,
     banner_len: usize = 0,
     /// The open dialogue's speaker as a display name; the panel's rows slice into it.
     panel_name_buf: [48]u8 = undefined,
@@ -938,7 +938,7 @@ pub const WasmRuntime = struct {
     /// Puts this tick's speech in the banner. Offered choices are drawn in the dialogue panel
     /// (D-077), so the banner keeps the last line said or the last round's result.
     fn show_story(self: *WasmRuntime) void {
-        var buf: [256]u8 = undefined;
+        var buf: [512]u8 = undefined;
         if (host_mod.speech_this_tick(self.active_world(), &self.vm, &buf)) |line| self.set_banner(line);
     }
 

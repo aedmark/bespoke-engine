@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HTML_PATH = ROOT / "site" / "index.html"
 SIMULATOR_JS_PATH = Path(__file__).with_name("site_simulator.js")
 # The standalone proof pages (D-086, D-094): one deck each, a shared wrapper, the same module.
-PROOF_PAGE_PATHS = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html"))
+PROOF_PAGE_PATHS = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html", "donkey.html"))
 PROOF_PAGE_JS_PATH = Path(__file__).with_name("proof_page.js")
 WASM_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-proofs.wasm"
 START_MARKER = "<!-- SITE_SIMULATOR_START -->"

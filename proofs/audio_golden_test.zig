@@ -31,9 +31,9 @@ const SCENES = [_][]const u8{
     "Net Loft Yard",               "Harbour Office",
     "Tidewalk",                   "Fencing Yard",
     "Drowned Lantern",            "Living Village",
-    "Lochmarne Castle Courtyard", "Templar Crypt",
-    "Colonial Workshop",          "Motel Lobby",
-    "Dystopian Guard Post",       "Suburban Bedroom",
+    "Lamp Point",                 "Wreckers Cellar",
+    "Charter Yard",          "Brine's Boarding House",
+    "Gull Roost",       "Suburban Bedroom",
     "Middlesex High School",      "Tangent Vortex Ridge",
     "Bell Tower Base",            "Bell Tower Belfry",
     "Saltglass Stockade",
@@ -46,8 +46,8 @@ const Sounds = struct {
     const sfx_names = [_][]const u8{
         "footstep",      "pickup",       "combine",    "horn",
         "splash",        "sword_clash",  "alert",      "dialogue_blip",
-        "click",         "whistle",      "goat_bleat", "thud",
-        "toilet_flush",  "snip_shears",  "wood_chop",  "distaff_note",
+        "click",         "whistle",      "bray",       "thud",
+        "well_splash", "snip_shears",  "wood_chop",  "distaff_note",
         "weave_success", "weave_fizzle", "sizzle",
     };
 

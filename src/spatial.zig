@@ -427,7 +427,7 @@ pub const SpatialSystem = struct {
         self.hotspots.clearRetainingCapacity();
     }
 
-    /// Registers a transit portal (e.g. Chron-o-John or teleport pad) located at a waypoint (D-026).
+    /// Registers a transit portal (a time portal or teleport pad) located at a waypoint (D-026).
     pub fn register_portal(self: *SpatialSystem, entity: EntityId, room: EntityId, waypoint: u16) !void {
         for (self.portals.items) |*p| {
             if (p.entity == entity) {
@@ -779,7 +779,7 @@ pub const SpatialSystem = struct {
 
                 if (wp_from.room == wp_to.room) return true;
 
-                // Both sender and recipient must be able to physically access their respective Chron-o-John portals (D-026)
+                // Both sender and recipient must be able to physically access their respective portals (D-026)
                 return self.can_access_portal(world_opt, from) and self.can_access_portal(world_opt, to);
             },
         }
@@ -1290,27 +1290,27 @@ test "P21-01: can_transfer_item respects remote and colocated policies" {
     const room_past = EntityId.from_int(10);
     const room_present = EntityId.from_int(20);
 
-    const wp_hoagie = try spatial.graph.add_waypoint(room_past, 0, 0, "ColonialDesk");
-    const wp_bernard = try spatial.graph.add_waypoint(room_present, 100, 0, "MotelDesk");
+    const wp_past_hero = try spatial.graph.add_waypoint(room_past, 0, 0, "ColonialDesk");
+    const wp_present_hero = try spatial.graph.add_waypoint(room_present, 100, 0, "MotelDesk");
     const wp_clerk = try spatial.graph.add_waypoint(room_present, 110, 0, "MotelLobby");
 
-    const hoagie = EntityId.from_int(1);
-    const bernard = EntityId.from_int(2);
+    const past_hero = EntityId.from_int(1);
+    const present_hero = EntityId.from_int(2);
     const clerk = EntityId.from_int(3);
 
-    try spatial.register_entity(hoagie, wp_hoagie, 2);
-    try spatial.register_entity(bernard, wp_bernard, 2);
+    try spatial.register_entity(past_hero, wp_past_hero, 2);
+    try spatial.register_entity(present_hero, wp_present_hero, 2);
     try spatial.register_entity(clerk, wp_clerk, 2);
 
-    // Remote policy: can transfer across different rooms/eras (e.g. Chron-o-John)
-    try testing.expect(spatial.can_transfer_item(hoagie, bernard, .remote));
-    try testing.expect(spatial.can_transfer_item(bernard, hoagie, .remote));
+    // Remote policy: can transfer across different rooms/eras (through a portal)
+    try testing.expect(spatial.can_transfer_item(past_hero, present_hero, .remote));
+    try testing.expect(spatial.can_transfer_item(present_hero, past_hero, .remote));
 
-    // Colocated policy: hoagie and bernard are in different rooms -> fails
-    try testing.expect(!spatial.can_transfer_item(hoagie, bernard, .colocated));
+    // Colocated policy: past_hero and present_hero are in different rooms -> fails
+    try testing.expect(!spatial.can_transfer_item(past_hero, present_hero, .colocated));
 
-    // Colocated policy: bernard and clerk are both in room_present -> succeeds
-    try testing.expect(spatial.can_transfer_item(bernard, clerk, .colocated));
+    // Colocated policy: present_hero and clerk are both in room_present -> succeeds
+    try testing.expect(spatial.can_transfer_item(present_hero, clerk, .colocated));
 }
 
 test "D-026: can_transfer_item respects portal_anchored policy and relational constraints" {

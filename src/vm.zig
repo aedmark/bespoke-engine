@@ -2013,40 +2013,40 @@ test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {
     var vm = VM.init(testing.allocator, &world, &chunk);
     defer vm.deinit();
 
-    const washington = try world.intern_entity("Washington");
+    const woodcutter = try world.intern_entity("Woodcutter");
     const cherry_prop = try world.intern_entity("CherryTree");
 
-    // 1. Initial epistemic state: Washington does not hold the belief
-    try testing.expect(!vm.evaluates_belief(washington, cherry_prop));
+    // 1. Initial epistemic state: Woodcutter does not hold the belief
+    try testing.expect(!vm.evaluates_belief(woodcutter, cherry_prop));
 
-    // 2. Explicit rejection: Washington rejects the proposition
-    try vm.reject_belief(washington, cherry_prop);
-    try testing.expect(!vm.evaluates_belief(washington, cherry_prop));
+    // 2. Explicit rejection: Woodcutter rejects the proposition
+    try vm.reject_belief(woodcutter, cherry_prop);
+    try testing.expect(!vm.evaluates_belief(woodcutter, cherry_prop));
 
     // 3. Persuasion assertion: After painting kumquats red, belief is established
-    try vm.assert_belief(washington, cherry_prop);
-    try testing.expect(vm.evaluates_belief(washington, cherry_prop));
+    try vm.assert_belief(woodcutter, cherry_prop);
+    try testing.expect(vm.evaluates_belief(woodcutter, cherry_prop));
 
     // Verify rejection fact was forgotten
     const rej_rel = world.lookup_relation("Rejects").?;
-    try testing.expect(!world.has_fact(washington, rej_rel, cherry_prop.to_int()));
+    try testing.expect(!world.has_fact(woodcutter, rej_rel, cherry_prop.to_int()));
 
     // 4. Dialogue choice pruning based on epistemic belief guard
     const empty_body: []const parser_mod.Stmt = &[_]parser_mod.Stmt{};
-    const chop_args = [_][]const u8{ "Washington", "CherryTree" };
+    const chop_args = [_][]const u8{ "Woodcutter", "CherryTree" };
     const where_chop = [_]parser_mod.FactPattern{
         .{ .relation = "Believes", .args = &chop_args },
     };
 
     const candidates = [_]parser_mod.DialogueChoice{
         .{
-            .text = "I bet you cannot chop down that cherry tree, George!",
+            .text = "I bet you cannot chop down that cherry tree!",
             .guard = null,
             .where_patterns = &where_chop,
             .body = empty_body,
         },
         .{
-            .text = "Nice weather today, Mr. President.",
+            .text = "Nice weather today.",
             .guard = null,
             .where_patterns = &[_]parser_mod.FactPattern{},
             .body = empty_body,
@@ -2058,18 +2058,18 @@ test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {
     // With belief asserted, both dialogue choices are available
     var count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 2), count);
-    try testing.expectEqualStrings("I bet you cannot chop down that cherry tree, George!", pruned[0].text);
+    try testing.expectEqualStrings("I bet you cannot chop down that cherry tree!", pruned[0].text);
 
-    // If Washington rejects the belief, the persuasion choice is pruned
-    try vm.reject_belief(washington, cherry_prop);
+    // If Woodcutter rejects the belief, the persuasion choice is pruned
+    try vm.reject_belief(woodcutter, cherry_prop);
     count = vm.prune_dialogue_choices(&candidates, &pruned);
     try testing.expectEqual(@as(usize, 1), count);
-    try testing.expectEqualStrings("Nice weather today, Mr. President.", pruned[0].text);
+    try testing.expectEqualStrings("Nice weather today.", pruned[0].text);
 
     // 5. Forward-propagating temporal causality cascade (DAG Past -> Future)
     const tree_chopped = try world.intern_relation("TreeChoppedDown", .set);
     const tree_absent = try world.intern_relation("TreeAbsentInFuture", .set);
-    const laverne = try world.intern_entity("Laverne");
+    const future_hero = try world.intern_entity("FutureHero");
     const past_flag = try world.intern_entity("Past1790");
     const future_flag = try world.intern_entity("Future2193");
 
@@ -2089,7 +2089,7 @@ test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {
     // Before past mutation: Future tree is intact
     try testing.expect(!world.has_fact(future_flag, tree_absent, cherry_prop.to_int()));
 
-    // Hoagie triggers tree chop in 1790
+    // PastHero triggers tree chop in 1790
     _ = try world.remember(past_flag, tree_chopped, cherry_prop.to_int(), 0);
 
     // Evaluate reactive rules (simulating step_tick)
@@ -2098,10 +2098,10 @@ test "P21-02: epistemic dialogue belief evaluation and temporal causality DAG" {
 
     // Assert downstream future effect of the temporal cascade
     _ = try world.remember(future_flag, tree_absent, cherry_prop.to_int(), 0);
-    _ = try world.remember(laverne, try world.intern_relation("FreedFromTree", .set), 1, 0);
+    _ = try world.remember(future_hero, try world.intern_relation("FreedFromTree", .set), 1, 0);
 
     try testing.expect(world.has_fact(future_flag, tree_absent, cherry_prop.to_int()));
-    try testing.expect(world.has_fact(laverne, world.lookup_relation("FreedFromTree").?, 1));
+    try testing.expect(world.has_fact(future_hero, world.lookup_relation("FreedFromTree").?, 1));
 }
 
 test "P31-01: hyper-temporal fiber execution and priority preemption" {

@@ -39,22 +39,22 @@
       "flag": "village"
     },
     {
-      "id": "goat",
-      "title": "The Lochmarne Goat",
+      "id": "lamp-point",
+      "title": "The Donkey of Lamp Point",
       "tag": "Arrival rules",
-      "blurb": "A tethered goat knocks George down whenever he heads for the cellar. Move the plough, tangle the goat's rope around it, and the way down to the crypt is clear. Each step is an arrival rule in the script.",
-      "source": "proofs/goat_puzzle.zig#GOAT_PUZZLE_SCRIPT",
+      "blurb": "Cudgel the donkey shoves Tamsin down whenever she heads for the cellar hatch. While he ambles back to his post, haul the old anchor into his rope line, and the way down to the wreckers' cellar is clear. Each step is an arrival rule in the script.",
+      "source": "proofs/lamp_point.zig#LAMP_POINT_SCRIPT",
       "deck": 4,
-      "flag": "goat"
+      "flag": "lamp-point"
     },
     {
-      "id": "dott",
-      "title": "Day of the Tentacle Trio",
+      "id": "three-tides",
+      "title": "The Well of Three Tides",
       "tag": "Three eras, one world",
-      "blurb": "Three characters in three eras pass items through time. A change in the past is a fact the future reads, so each era's puzzles depend on the others.",
-      "source": "proofs/dott_puzzle.zig#DOTT_PUZZLE_SCRIPT",
+      "blurb": "Ossie in 1712, Nell in 1912, and Juno in 2112 pass items through Doctor Brine's Tide Wells. A change in the past is a fact the future reads, so each era's puzzles depend on the others.",
+      "source": "proofs/three_tides.zig#THREE_TIDES_SCRIPT",
       "deck": 5,
-      "flag": "dott"
+      "flag": "three-tides"
     },
     {
       "id": "grog",

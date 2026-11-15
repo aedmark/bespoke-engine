@@ -1039,22 +1039,22 @@ test "P21-01: DisplayBridge captures multi-character party state and active inve
     var spatial = SpatialSystem.init(testing.allocator);
     defer spatial.deinit();
 
-    const room = try world.intern_entity("ColonialWorkshop");
+    const room = try world.intern_entity("Workshop");
     const wp = try spatial.graph.add_waypoint(room, 0, 0, "WP1");
 
-    const hoagie = try world.intern_entity("Hoagie");
-    const bernard = try world.intern_entity("Bernard");
-    const laverne = try world.intern_entity("Laverne");
-    const battery = try world.intern_entity("SuperBattery");
-    const flyer = try world.intern_entity("TentacleFlyer");
+    const past_hero = try world.intern_entity("PastHero");
+    const present_hero = try world.intern_entity("PresentHero");
+    const future_hero = try world.intern_entity("FutureHero");
+    const battery = try world.intern_entity("Battery");
+    const flyer = try world.intern_entity("Flyer");
 
-    try spatial.register_entity(hoagie, wp, 4);
-    try spatial.register_entity(bernard, wp, 4);
-    try spatial.register_entity(laverne, wp, 4);
+    try spatial.register_entity(past_hero, wp, 4);
+    try spatial.register_entity(present_hero, wp, 4);
+    try spatial.register_entity(future_hero, wp, 4);
 
     const carries = try world.intern_relation("Carries", .set);
-    _ = try world.remember(hoagie, carries, battery.to_int(), 0);
-    _ = try world.remember(bernard, carries, flyer.to_int(), 0);
+    _ = try world.remember(past_hero, carries, battery.to_int(), 0);
+    _ = try world.remember(present_hero, carries, flyer.to_int(), 0);
 
     var chunk = vm_mod.BytecodeChunk.init(testing.allocator);
     defer chunk.deinit();
@@ -1063,9 +1063,9 @@ test "P21-01: DisplayBridge captures multi-character party state and active inve
     defer vm.deinit();
 
     var bridge = DisplayBridge.init();
-    const party_members = [_]EntityId{ hoagie, bernard, laverne };
+    const party_members = [_]EntityId{ past_hero, present_hero, future_hero };
     bridge.set_party(&party_members);
-    bridge.set_active_character(hoagie);
+    bridge.set_active_character(past_hero);
 
     bridge.capture_frame(&world, &spatial, &vm);
     bridge.swap();
@@ -1073,19 +1073,19 @@ test "P21-01: DisplayBridge captures multi-character party state and active inve
     const frame1 = bridge.get_frame();
     try testing.expectEqual(@as(usize, 3), frame1.party_count);
     try testing.expectEqual(@as(usize, 0), frame1.active_party_index);
-    try testing.expectEqualStrings("Hoagie", frame1.party[0].get_name());
+    try testing.expectEqualStrings("PastHero", frame1.party[0].get_name());
     try testing.expect(frame1.party[0].is_active);
-    try testing.expectEqualStrings("Bernard", frame1.party[1].get_name());
+    try testing.expectEqualStrings("PresentHero", frame1.party[1].get_name());
     try testing.expect(!frame1.party[1].is_active);
-    try testing.expectEqualStrings("Laverne", frame1.party[2].get_name());
+    try testing.expectEqualStrings("FutureHero", frame1.party[2].get_name());
     try testing.expect(!frame1.party[2].is_active);
 
-    // Hoagie has SuperBattery in inventory
+    // PastHero has Battery in inventory
     try testing.expectEqual(@as(usize, 1), frame1.inventory_count);
-    try testing.expectEqualStrings("SuperBattery", frame1.inventory[0].get_name());
+    try testing.expectEqualStrings("Battery", frame1.inventory[0].get_name());
 
-    // Switch active protagonist to Bernard
-    bridge.set_active_character(bernard);
+    // Switch active protagonist to PresentHero
+    bridge.set_active_character(present_hero);
     bridge.capture_frame(&world, &spatial, &vm);
     bridge.swap();
 
@@ -1094,9 +1094,9 @@ test "P21-01: DisplayBridge captures multi-character party state and active inve
     try testing.expect(!frame2.party[0].is_active);
     try testing.expect(frame2.party[1].is_active);
 
-    // Bernard has TentacleFlyer in inventory
+    // PresentHero has Flyer in inventory
     try testing.expectEqual(@as(usize, 1), frame2.inventory_count);
-    try testing.expectEqualStrings("TentacleFlyer", frame2.inventory[0].get_name());
+    try testing.expectEqualStrings("Flyer", frame2.inventory[0].get_name());
 }
 
 test {

@@ -59,7 +59,7 @@ pub fn main() !void {
             subcommand = .run;
             target_file = arg;
         } else {
-            // Former scenario flags (--dott, --loom, ...) now belong to bespoke-proofs (D-031).
+            // Former scenario flags (--tavern, --loom, ...) now belong to bespoke-proofs (D-031).
             try stdout.print("error: unknown argument '{s}'. Proofs of concept moved to `bespoke-proofs {s}`.\n\n", .{ arg, arg });
             try stdout.writeAll(usage);
             std.process.exit(1);

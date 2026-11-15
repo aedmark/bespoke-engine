@@ -34,6 +34,7 @@ on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):
 1. **`remember` / `forget`:** Declarative database mutations. `remember ... for N ticks` automatically attaches an expiration tick to the relation row, handling temporary buffs and debuffs natively.
 2. **`interrupt ... with`:** Pauses an active routine (like `Patrol`), executes the interruption behavior, and automatically restores the instruction pointer once the condition resolves.
 3. **Cues & Commands:** External inputs arrive as events (`on cue`), and physical actions (`walk`, `face`) emit lightweight bytecode instructions back to the host display layer.
+4. **Names:** A name in `scene:`, `cast:`, `props:`, `marks:`, or `transition to scene:` is one or more words joined by single spaces (`scene: Charter Yard`). A name that needs a character a word cannot hold, such as an apostrophe, is written in double quotes and taken whole: `scene: "Brine's Boarding House"`, `transition to scene: "Brine's Boarding House"` (D-101).
 
 ## Dialogue Choices
 

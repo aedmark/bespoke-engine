@@ -41,7 +41,7 @@ TERMS_NAME = "tools/third_party_terms.json"
 BASELINE_NAME = "tools/third_party_baseline.json"
 
 SCAN_DIRS = ("src", "proofs", "scenarios", "scheme")
-SCAN_FILES = ("site/index.html", "site/barbs.html", "site/pips.html", "site/beard.html", "tools/site_gallery.json", "README.md", "docs/state.html")
+SCAN_FILES = ("site/index.html", "site/barbs.html", "site/pips.html", "site/beard.html", "site/donkey.html", "tools/site_gallery.json", "README.md", "docs/state.html")
 SCAN_SUFFIXES = {".zig", ".tmpl", ".bespoke", ".txt", ".json", ".html", ".md"}
 # The site embeds the proofs' WebAssembly as base64; random letters must not count.
 EMBED_START = "<!-- SITE_SIMULATOR_START -->"

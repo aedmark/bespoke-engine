@@ -1016,7 +1016,7 @@ const CASTLE_ARRANGEMENT = order(
     \\a a2 d d2 b b2 c/l c2 a a2/d d d2 b b2 c c2 a a2/lc
 );
 
-pub const lochmarne = Arranged{ .sections = &CASTLE_SECTIONS, .arrangement = &CASTLE_ARRANGEMENT };
+pub const wreckers_cellar = Arranged{ .sections = &CASTLE_SECTIONS, .arrangement = &CASTLE_ARRANGEMENT };
 
 // ---------------------------------------------------------------------------
 // The three eras: a bouncy cartoon march in C minor, 132 bpm. B is a goofy turn to E flat
@@ -1114,7 +1114,7 @@ const ERAS_ARRANGEMENT = order(
     \\d d2 c/l c2 a a2 b b2 a/d a2/lc
 );
 
-pub const tentacle = Arranged{ .sections = &ERAS_SECTIONS, .arrangement = &ERAS_ARRANGEMENT };
+pub const three_tides = Arranged{ .sections = &ERAS_SECTIONS, .arrangement = &ERAS_ARRANGEMENT };
 
 // ---------------------------------------------------------------------------
 // The bell tower: a slow modal hymn in D dorian, 72 bpm. The theme quotes the Kindle and Toll
@@ -1253,7 +1253,7 @@ pub fn seconds_before_repeat(allocator: std.mem.Allocator, a: Arranged) !f64 {
 }
 
 /// Every arranged track, for the length check.
-pub const ALL = [_]Arranged{ tavern, cellar, spitting_contest, tidewalk, fencing_yard, lantern, net_loft, harbour_office, lochmarne, tentacle, bell_tower };
+pub const ALL = [_]Arranged{ tavern, cellar, spitting_contest, tidewalk, fencing_yard, lantern, net_loft, harbour_office, wreckers_cellar, three_tides, bell_tower };
 
 test "P34-08: every proof track plays at least two minutes before it repeats" {
     for (ALL) |a| {

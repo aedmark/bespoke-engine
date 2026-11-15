@@ -1,0 +1,29 @@
+===================================================================
+          BeSpoke Engine: The Donkey of Lamp Point Scenario          
+     (Threat-Radius Timing * Anchor Hauling * Wreckers Cellar)      
+===================================================================
+
+[Compiler] Compiling Lamp Point narrative script to bytecode...
+
+[Step 1] Initial Inspection: Tamsin arrives at Lamp Point.
+  -> Fact count: 1, Tamsin at PointPath, Cudgel at TetherCenter
+
+[Step 2] Threat Radius Exploration: Tamsin approaches CellarHatch.
+  -> Cudgel charges! Tamsin knocked down to FallMark.
+  -> Donkey retreating window active: true (30 ticks remaining)
+
+[Step 3] Seizing the Window: Tamsin hauls OldAnchor while Cudgel retreats!
+  -> Anchor hauled into rope path! Donkey tangled status: true
+
+[Step 4] Into the Cellar: Tamsin goes down through CellarHatch.
+  -> Multi-scene transition to Wreckers Cellar successful: true
+
+[Step 5] The Chart: Tamsin examines the WreckersChart.
+
+[Step 6] Time-Travel Rewind Verification: Restoring pristine Lamp Point state.
+  -> Restored tick 0 snapshot. Donkey tangled status: false (Expected: false)
+
+===================================================================
+  VERIFICATION COMPLETE: Donkey of Lamp Point 100% Deterministic!   
+===================================================================
+

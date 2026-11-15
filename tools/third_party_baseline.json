@@ -2,112 +2,71 @@
   "about": "Third-party terms allowed today. Only shrinks; see tools/check_third_party.py (P35-01).",
   "counts": {
     "README.md": {
-      "Broken Sword": 2,
-      "Day of the Tentacle": 3,
       "Donnie Darko": 2,
       "Indiana Jones and the Fate of Atlantis": 3,
       "Loom": 3
     },
     "docs/state.html": {
-      "Broken Sword": 1,
-      "Day of the Tentacle": 2,
       "Donnie Darko": 1
     },
     "proofs/art.zig": {
-      "Broken Sword": 23,
-      "Day of the Tentacle": 87,
       "Donnie Darko": 85
     },
     "proofs/atlantis_puzzle.zig": {
       "Indiana Jones and the Fate of Atlantis": 53
     },
     "proofs/audio_golden_test.zig": {
-      "Broken Sword": 1,
       "Donnie Darko": 1
     },
     "proofs/darko_puzzle.zig": {
       "Donnie Darko": 250
     },
-    "proofs/dott_puzzle.zig": {
-      "Broken Sword": 8,
-      "Day of the Tentacle": 359
-    },
-    "proofs/goat_puzzle.zig": {
-      "Broken Sword": 110
-    },
     "proofs/golden/atlantis_puzzle.txt": {
       "Indiana Jones and the Fate of Atlantis": 11
     },
     "proofs/golden/audio.txt": {
-      "Broken Sword": 1,
       "Donnie Darko": 1
     },
     "proofs/golden/darko_puzzle.txt": {
       "Donnie Darko": 47
     },
-    "proofs/golden/dott_puzzle.txt": {
-      "Broken Sword": 2,
-      "Day of the Tentacle": 99
-    },
-    "proofs/golden/goat_puzzle.txt": {
-      "Broken Sword": 12
-    },
     "proofs/golden/render.txt": {
-      "Broken Sword": 10,
-      "Day of the Tentacle": 22,
       "Donnie Darko": 23,
       "Loom": 13
     },
     "proofs/golden/wasm.txt": {
-      "Broken Sword": 8,
-      "Day of the Tentacle": 5,
       "Donnie Darko": 5
     },
     "proofs/golden_test.zig": {
-      "Day of the Tentacle": 4,
       "Donnie Darko": 4,
       "Indiana Jones and the Fate of Atlantis": 4,
       "Loom": 4
     },
     "proofs/main.zig": {
-      "Broken Sword": 2,
-      "Day of the Tentacle": 15,
+      "Day of the Tentacle": 2,
       "Donnie Darko": 14,
       "Gabriel Knight 3": 1,
       "Indiana Jones and the Fate of Atlantis": 15,
       "Loom": 13
     },
     "proofs/render_golden_test.zig": {
-      "Day of the Tentacle": 12,
       "Donnie Darko": 11,
       "Loom": 4
     },
     "proofs/wasm_deck.zig": {
-      "Broken Sword": 19,
-      "Day of the Tentacle": 47,
       "Donnie Darko": 53,
       "Indiana Jones and the Fate of Atlantis": 28,
       "Loom": 18
     },
     "scheme/bespoke.manual.json": {
-      "Broken Sword": 12,
-      "Day of the Tentacle": 12,
       "Donnie Darko": 5,
       "Indiana Jones and the Fate of Atlantis": 8,
       "Loom": 2
     },
     "site/index.html": {
-      "Broken Sword": 61,
-      "Day of the Tentacle": 158,
       "Donnie Darko": 108,
       "Indiana Jones and the Fate of Atlantis": 28,
       "Loom": 2
-    },
-    "src/display.zig": {
-      "Day of the Tentacle": 12
-    },
-    "src/display/text_layout.zig": {
-      "Broken Sword": 16
     },
     "src/host.zig": {
       "Donnie Darko": 1
@@ -116,7 +75,6 @@
       "Donnie Darko": 10
     },
     "src/main.zig": {
-      "Day of the Tentacle": 1,
       "Loom": 1
     },
     "src/save.zig": {
@@ -129,21 +87,16 @@
       "Donnie Darko": 2
     },
     "src/vm.zig": {
-      "Broken Sword": 2,
-      "Day of the Tentacle": 2,
       "Donnie Darko": 7
     },
     "src/world.zig": {
-      "Day of the Tentacle": 9,
       "Donnie Darko": 4
     },
     "tools/site_gallery.json": {
-      "Broken Sword": 2,
-      "Day of the Tentacle": 6,
       "Donnie Darko": 6,
       "Indiana Jones and the Fate of Atlantis": 5,
       "Loom": 2
     }
   },
-  "total": 2009
+  "total": 864
 }

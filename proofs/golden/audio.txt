@@ -8,9 +8,9 @@ sfx/alert: 7534e49298eacf1c
 sfx/dialogue_blip: f2ee8c2f3f8d33fa
 sfx/click: 6d2f53f2770ba061
 sfx/whistle: 5355cd5940881774
-sfx/goat_bleat: 3aeb71474094546e
+sfx/bray: 3aeb71474094546e
 sfx/thud: 2bdc19320fb4dde2
-sfx/toilet_flush: 10434ef6fa488cda
+sfx/well_splash: 10434ef6fa488cda
 sfx/snip_shears: 33434346ca1524af
 sfx/wood_chop: 9f17da4eda8a1fd5
 sfx/distaff_note: fc7259092b8e721a
@@ -32,8 +32,8 @@ track/fencing_yard: 9487cf331c804733
 track/lantern: dce3da4ebf939f64
 track/net_loft: 47042ddbb7104943
 track/harbour_office: a76c64e06da5d0e7
-track/lochmarne: 9cfd35880ce7ace9
-track/tentacle: 9d60719f47982f97
+track/wreckers_cellar: 9cfd35880ce7ace9
+track/three_tides: 9d60719f47982f97
 track/bell_tower: 3e74db3a3e222c1b
 arrangement/tavern: 35 passes, 127.3s before repeat, cd4e65546d801303
 arrangement/cellar: 27 passes, 140.9s before repeat, 1385d5c21ec6a651
@@ -43,8 +43,8 @@ arrangement/fencing_yard: 38 passes, 126.7s before repeat, 16b08aca3acaad20
 arrangement/lantern: 48 passes, 125.2s before repeat, 40e6e14f3977a1b0
 arrangement/net_loft: 29 passes, 133.8s before repeat, 7e9c081742746670
 arrangement/harbour_office: 31 passes, 126.1s before repeat, 48f9f16b11a96c8c
-arrangement/lochmarne: 45 passes, 128.6s before repeat, 2854d8dbd925f77c
-arrangement/tentacle: 35 passes, 127.3s before repeat, 30c201e8cf36a15c
+arrangement/wreckers_cellar: 45 passes, 128.6s before repeat, 2854d8dbd925f77c
+arrangement/three_tides: 35 passes, 127.3s before repeat, 30c201e8cf36a15c
 arrangement/bell_tower: 22 passes, 146.7s before repeat, e9a0a1202d3eb298
 fade/tavern->cellar: 220c462f0d1045c0 9a0490163f14b986
 scene/: none
@@ -59,11 +59,11 @@ scene/Tidewalk: tidewalk
 scene/Fencing Yard: fencing_yard
 scene/Drowned Lantern: lantern
 scene/Living Village: tavern
-scene/Lochmarne Castle Courtyard: net_loft
-scene/Templar Crypt: lochmarne
-scene/Colonial Workshop: tentacle
-scene/Motel Lobby: tentacle
-scene/Dystopian Guard Post: tentacle
+scene/Lamp Point: net_loft
+scene/Wreckers Cellar: wreckers_cellar
+scene/Charter Yard: three_tides
+scene/Brine's Boarding House: three_tides
+scene/Gull Roost: three_tides
 scene/Suburban Bedroom: tavern
 scene/Middlesex High School: tavern
 scene/Tangent Vortex Ridge: tavern

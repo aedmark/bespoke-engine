@@ -17,8 +17,9 @@ const borrowed_beard = @import("borrowed_beard.zig");
 const BORROWED_BEARD_SCRIPT = borrowed_beard.BORROWED_BEARD_SCRIPT;
 const village = @import("village.zig");
 const VILLAGE_SCRIPT = village.VILLAGE_SCRIPT;
-const GOAT_PUZZLE_SCRIPT = @import("goat_puzzle.zig").GOAT_PUZZLE_SCRIPT;
-const DOTT_PUZZLE_SCRIPT = @import("dott_puzzle.zig").DOTT_PUZZLE_SCRIPT;
+const lamp_point = @import("lamp_point.zig");
+const LAMP_POINT_SCRIPT = lamp_point.LAMP_POINT_SCRIPT;
+const THREE_TIDES_SCRIPT = @import("three_tides.zig").THREE_TIDES_SCRIPT;
 const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
 const sword_fighting = @import("sword_fighting.zig");
 const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
@@ -70,25 +71,27 @@ pub const decks = [_]wasm.Deck{
         .catalyst = village_desperation,
         .after_tick = village_after_tick,
     }),
-    wasm.script_deck_with("BROKEN SWORD: LOCHMARNE GOAT", GOAT_PUZZLE_SCRIPT, .{
-        .player = "George",
-        .intro = "Lochmarne: get past the goat into the cellar. [S] plays the next step.",
+    wasm.script_deck_with("THE DONKEY OF LAMP POINT", LAMP_POINT_SCRIPT, .{
+        .player = "Tamsin",
+        .intro = "Lamp Point: get past Cudgel the donkey to the wreckers' cellar. [S] plays the next step.",
         .soundtrack = &art.soundtrack,
         .theme = &art.theme,
         .status_hook = art.capture_status,
         .background = .{ .r = 38, .g = 48, .b = 40 },
-        .setup = goat_setup,
-        .catalyst = solver(&GOAT_SOLUTION),
+        .setup = lamp_point_setup,
+        .after_tick = lamp_point_after_tick,
+        .on_act = lamp_point_on_act,
+        .catalyst = solver(&LAMP_POINT_SOLUTION),
     }),
-    wasm.script_deck_with("DAY OF THE TENTACLE TRIO", DOTT_PUZZLE_SCRIPT, .{
-        .player = "Bernard",
-        .intro = "DOTT: three eras, one toilet. [S] plays the next step of the solution.",
+    wasm.script_deck_with("THE WELL OF THREE TIDES", THREE_TIDES_SCRIPT, .{
+        .player = "Nell",
+        .intro = "Three Tides: three centuries, one well. [S] plays the next step of the solution.",
         .soundtrack = &art.soundtrack,
         .theme = &art.theme,
         .status_hook = art.capture_status,
         .background = .{ .r = 42, .g = 24, .b = 48 },
-        .setup = dott_setup,
-        .catalyst = solver(&DOTT_SOLUTION),
+        .setup = tides_setup,
+        .catalyst = solver(&TIDES_SOLUTION),
     }),
     wasm.script_deck_with("CAUSTIC GROG (CONTAINER DEGRADATION)", GROG_PUZZLE_SCRIPT, .{
         .player = "Mara",
@@ -363,51 +366,51 @@ const BEARD_SOLUTION = [_]Beat{
     } },
 };
 
-const GOAT_SOLUTION = [_]Beat{
-    .{ .note = "George heads for the cellar.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "George", .a = "CellarEntrance" } }, .{ .settle = "George" }, .{ .ticks = 1 } } },
-    .{ .note = "George hauls the plough into the goat's path.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "George", .a = "FarmPlough" } }, .{ .settle = "George" }, .{ .ticks = 1 } } },
-    .{ .note = "George tries the cellar again.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "George", .a = "CellarEntrance" } }, .{ .settle = "George" }, .{ .ticks = 1 } } },
-    .{ .note = "George studies the mural in the crypt.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "George", .a = "CarvedMural" } }, .{ .ticks = 1 } } },
+const LAMP_POINT_SOLUTION = [_]Beat{
+    .{ .note = "Tamsin heads for the cellar hatch.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "CellarHatch" } }, .{ .settle = "Tamsin" }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin hauls the anchor into Cudgel's rope line.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "OldAnchor" } }, .{ .settle = "Tamsin" }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin tries the hatch again.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "CellarHatch" } }, .{ .settle = "Tamsin" }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin studies the wreckers' chart in the cellar.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "Tamsin", .a = "WreckersChart" } }, .{ .ticks = 1 } } },
 };
 
-// The Day of the Tentacle proof's host passes items through the Chron-o-Johns and sets the
+// The Three Tides proof's host passes items through the Tide Wells and sets the
 // facts each era's rules react to; the rules' interruptions are the script's.
-const DOTT_SOLUTION = [_]Beat{
-    .{ .note = "Bernard flushes the vintage wine back to 1790.", .actions = &.{
-        .{ .transfer = .{ .item = "VintageWine", .from = "Bernard", .to = "Hoagie" } },
-        .{ .scene = .{ .scene = "Colonial Workshop" } },
+const TIDES_SOLUTION = [_]Beat{
+    .{ .note = "Nell sends the cheap port down the well to 1712.", .actions = &.{
+        .{ .transfer = .{ .item = "CheapPort", .from = "Nell", .to = "Ossie" } },
+        .{ .scene = .{ .scene = "Charter Yard" } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "Hoagie seals the wine in the time capsule; two centuries turn it to vinegar.", .actions = &.{
-        .{ .forget = .{ .subject = "Hoagie", .relation = "Carries", .object = "VintageWine" } },
-        .{ .remember = .{ .subject = "VintageWine", .relation = "SealedInCapsule", .value = 1 } },
-        .{ .remember = .{ .subject = "VintageWine", .relation = "WineAgedIntoVinegar", .value = 1 } },
-        .{ .scene = .{ .scene = "Motel Lobby" } },
-        .{ .remember = .{ .subject = "Bernard", .relation = "Carries", .object = "Vinegar200Years" } },
+    .{ .note = "Ossie seals the port in the cornerstone box; two centuries turn it to vinegar.", .actions = &.{
+        .{ .forget = .{ .subject = "Ossie", .relation = "Carries", .object = "CheapPort" } },
+        .{ .remember = .{ .subject = "CheapPort", .relation = "SealedInBox", .value = 1 } },
+        .{ .remember = .{ .subject = "CheapPort", .relation = "PortAgedIntoVinegar", .value = 1 } },
+        .{ .scene = .{ .scene = "Brine's Boarding House" } },
+        .{ .remember = .{ .subject = "Nell", .relation = "Carries", .object = "AgedVinegar" } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "The vinegar goes back to Hoagie, who builds a super battery for the toilet.", .actions = &.{
-        .{ .transfer = .{ .item = "Vinegar200Years", .from = "Bernard", .to = "Hoagie" } },
-        .{ .forget = .{ .subject = "Hoagie", .relation = "Carries", .object = "Vinegar200Years" } },
-        .{ .forget = .{ .subject = "Hoagie", .relation = "Carries", .object = "BatteryCasing" } },
-        .{ .remember = .{ .subject = "Hoagie", .relation = "Carries", .object = "SuperBattery" } },
-        .{ .remember = .{ .subject = "Hoagie", .relation = "ToiletPowered", .value = 1 } },
-        .{ .scene = .{ .scene = "Colonial Workshop" } },
+    .{ .note = "The vinegar goes back to Ossie, who fills the voltaic jar and charges his well.", .actions = &.{
+        .{ .transfer = .{ .item = "AgedVinegar", .from = "Nell", .to = "Ossie" } },
+        .{ .forget = .{ .subject = "Ossie", .relation = "Carries", .object = "AgedVinegar" } },
+        .{ .forget = .{ .subject = "Ossie", .relation = "Carries", .object = "VoltaicJar" } },
+        .{ .remember = .{ .subject = "Ossie", .relation = "Carries", .object = "ChargedJar" } },
+        .{ .remember = .{ .subject = "Ossie", .relation = "WellPowered", .value = 1 } },
+        .{ .scene = .{ .scene = "Charter Yard" } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "Betsy Ross sews a flag from the tentacle flyer.", .actions = &.{
-        .{ .transfer = .{ .item = "TentacleFlyer", .from = "Bernard", .to = "Hoagie" } },
-        .{ .remember = .{ .subject = "BetsyRoss", .relation = "TentacleFlagSewn", .value = 1 } },
+    .{ .note = "Widow Fenn sews a banner from the gull handbill.", .actions = &.{
+        .{ .transfer = .{ .item = "GullHandbill", .from = "Nell", .to = "Ossie" } },
+        .{ .remember = .{ .subject = "WidowFenn", .relation = "BannerSewn", .value = 1 } },
         .{ .ticks = 2 },
     } },
-    .{ .note = "Washington chops down the painted kumquat tree.", .actions = &.{
-        .{ .remember = .{ .subject = "Washington", .relation = "TreeChoppedDown", .object = "KumquatTree" } },
+    .{ .note = "Founder Gale fells the orange tree for the red blight.", .actions = &.{
+        .{ .remember = .{ .subject = "FounderGale", .relation = "TreeFelled", .object = "OrangeTree" } },
         .{ .ticks = 2 },
     } },
-    .{ .note = "In 2193 the tree is gone, and Laverne is free.", .actions = &.{
-        .{ .scene = .{ .scene = "Dystopian Guard Post" } },
-        .{ .remember = .{ .subject = "Laverne", .relation = "FreedFromTree", .value = 1 } },
-        .{ .forget = .{ .subject = "Laverne", .relation = "Trapped", .value = 1 } },
+    .{ .note = "In 2112 the tree is gone, and Juno is free.", .actions = &.{
+        .{ .scene = .{ .scene = "Gull Roost" } },
+        .{ .remember = .{ .subject = "Juno", .relation = "FreedFromTree", .value = 1 } },
+        .{ .forget = .{ .subject = "Juno", .relation = "Trapped", .value = 1 } },
         .{ .ticks = 1 },
     } },
 };
@@ -608,28 +611,43 @@ fn spit_action(rt: *WasmRuntime, id: u8) anyerror!void {
     try spit_now(rt);
 }
 
-/// The goat waits at its tether; George starts at the courtyard entrance.
-fn goat_setup(rt: *WasmRuntime) anyerror!void {
-    const courtyard = try entity(rt, "Lochmarne Castle Courtyard");
-    try rt.vm.transition_to_scene(courtyard);
-    if (rt.spatial.graph.find_waypoint_in_room(courtyard, "TetherCenter")) |tether| {
-        _ = try rt.spatial.transition_actor(try entity(rt, "BillyGoat"), courtyard, tether);
-    }
+/// The desktop's layout, hotspots, and cast places (D-100): Cudgel waits at his post, and
+/// Tamsin starts on the path up the Point.
+fn lamp_point_setup(rt: *WasmRuntime) anyerror!void {
+    const stage = try lamp_point.Stage.init(&rt.world, &rt.spatial, true);
+    try rt.vm.transition_to_scene(stage.point_scene);
 }
 
-/// The opening the desktop proof's host sets: Laverne trapped and guarded, the wine and the
-/// flyer with Bernard, the paint and the battery casing with Hoagie, and the present on stage.
-fn dott_setup(rt: *WasmRuntime) anyerror!void {
+/// USE on the hatch or the anchor is a walk to its mark, as in the desktop window: the walk
+/// that brings Tamsin over (D-092) ends on the mark, and the script's arrival rule does the
+/// rest. Firing the script's `Uses` cue after that walk would walk her there a second time and
+/// fire the arrival rule twice (Cudgel shoved her twice on one click).
+fn lamp_point_on_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: bespoke.EntityId) anyerror!bool {
+    if (verb != .use_with) return false;
+    const name = rt.world.get_entity_name(target) orelse return false;
+    return std.mem.eql(u8, name, "CellarHatch") or std.mem.eql(u8, name, "OldAnchor");
+}
+
+/// The script's room changes move Tamsin with them, as in the desktop window. The walk that
+/// took her there is over, so its held action goes too; otherwise the page would report that
+/// she never reached the hatch she just went down through.
+fn lamp_point_after_tick(rt: *WasmRuntime) anyerror!void {
+    if (try lamp_point.follow_into_scene(&rt.world, &rt.spatial, &rt.vm)) rt.approach = null;
+}
+
+/// The opening the desktop proof's host sets: Juno trapped and guarded, the port and the
+/// handbill with Nell, the red lead and the voltaic jar with Ossie, and 1912 on stage.
+fn tides_setup(rt: *WasmRuntime) anyerror!void {
     const facts = [_]Fact{
-        .{ .subject = "Laverne", .relation = "Trapped", .value = 1 },
-        .{ .subject = "Laverne", .relation = "Guarded", .value = 1 },
-        .{ .subject = "Bernard", .relation = "Carries", .object = "VintageWine" },
-        .{ .subject = "Bernard", .relation = "Carries", .object = "TentacleFlyer" },
-        .{ .subject = "Hoagie", .relation = "Carries", .object = "RedPaintBucket" },
-        .{ .subject = "Hoagie", .relation = "Carries", .object = "BatteryCasing" },
+        .{ .subject = "Juno", .relation = "Trapped", .value = 1 },
+        .{ .subject = "Juno", .relation = "Guarded", .value = 1 },
+        .{ .subject = "Nell", .relation = "Carries", .object = "CheapPort" },
+        .{ .subject = "Nell", .relation = "Carries", .object = "GullHandbill" },
+        .{ .subject = "Ossie", .relation = "Carries", .object = "RedLeadPaint" },
+        .{ .subject = "Ossie", .relation = "Carries", .object = "VoltaicJar" },
     };
     for (facts) |f| try rt.world.remember(try entity(rt, f.subject), try relation(rt, f.relation), try fact_object(rt, f), 0);
-    try rt.vm.transition_to_scene(try entity(rt, "Motel Lobby"));
+    try rt.vm.transition_to_scene(try entity(rt, "Brine's Boarding House"));
 }
 
 // =============================================================================
@@ -897,7 +915,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "George", "Bernard", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -930,14 +948,14 @@ test "P30-05: the solve key plays each puzzle proof to its ending" {
         const rt = try load(4);
         defer unload(rt);
         try solve(rt);
-        try testing.expectEqualStrings("Templar Crypt", rt.world.get_entity_name(rt.vm.current_scene.?).?);
+        try testing.expectEqualStrings("Wreckers Cellar", rt.world.get_entity_name(rt.vm.current_scene.?).?);
     }
     {
         const rt = try load(5);
         defer unload(rt);
         try solve(rt);
-        try testing.expect(holds(rt, "Laverne", "FreedFromTree", null));
-        try testing.expect(holds(rt, "Hoagie", "Carries", "SuperBattery"));
+        try testing.expect(holds(rt, "Juno", "FreedFromTree", null));
+        try testing.expect(holds(rt, "Ossie", "Carries", "ChargedJar"));
     }
     {
         const rt = try load(6);
@@ -1305,6 +1323,50 @@ test "D-094: the Pip-Spitting Green wins first place with clicks alone" {
     try testing.expect(bespoke.dialogue.view(&rt.world) != null);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
     try tick_until(rt, "Tamsin", "Placed", "FirstPlace", 3);
+}
+
+test "D-094: the Donkey of Lamp Point reaches the wreckers' chart with clicks alone" {
+    const rt = try load(4);
+    defer unload(rt);
+
+    // Heading for the hatch while Cudgel's rope is free gets Tamsin shoved, and opens the window.
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "CellarHatch");
+    try tick_until(rt, "Cudgel", "DonkeyRetreating", null, 40);
+    const retreating = rt.world.lookup_relation("DonkeyRetreating").?;
+    const first_window = rt.world.find_first(try entity(rt, "Cudgel"), retreating, null).?.expires_at_tick;
+    // The shove lands her on FallMark; a click before then is overridden by the shove.
+    const fall = rt.spatial.graph.find_waypoint_in_room(try entity(rt, "Lamp Point"), "FallMark").?;
+    for (0..20) |_| {
+        if (rt.spatial.agents.get(rt.player_entity).?.current_wp == fall and !rt.spatial.is_moving(rt.player_entity)) break;
+        try rt.step_tick();
+    }
+
+    // One click, one shove: the retreat window is still the first one, not renewed by a second.
+    try testing.expectEqual(first_window, rt.world.find_first(try entity(rt, "Cudgel"), retreating, null).?.expires_at_tick);
+
+    // While he ambles back to his post, haul the anchor into his rope line.
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "OldAnchor");
+    try tick_until(rt, "Cudgel", "TangledWith", "OldAnchor", 40);
+
+    // With the rope caught, the hatch leads down to the cellar.
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "CellarHatch");
+    try tick_until_scene(rt, "Wreckers Cellar", 40);
+    for (0..3) |_| try rt.step_tick();
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "can't get there") == null);
+
+    // Tamsin stands in the cellar as soon as the room changes, so a LOOK straight away answers.
+    try testing.expect(rt.spatial.graph.get_waypoint(rt.spatial.agents.get(rt.player_entity).?.current_wp).?.room == rt.vm.current_scene.?);
+    try pick_verb(rt, .look_at);
+    _ = try click_on(rt, "WreckersChart");
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "every reef on the Point") != null);
+
+    // And back up the steps.
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "CellarSteps");
+    try tick_until_scene(rt, "Lamp Point", 40);
 }
 
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {

@@ -68,31 +68,31 @@ const Palette = struct {
     const rental_wall = Color{ .r = 75, .g = 65, .b = 55 }; // Whitewashed plaster
     const rental_counter = Color{ .r = 160, .g = 100, .b = 45 }; // Pine shop counter
     const boat_red = Color{ .r = 220, .g = 38, .b = 38 }; // Packet boat's red hull
-    // Broken Sword Lochmarne Goat Scenario Colors (P20-02, D-023)
-    const george_jacket = Color{ .r = 115, .g = 65, .b = 35 }; // Brown leather jacket
-    const george_hair = Color{ .r = 238, .g = 205, .b = 95 }; // Blonde hair parted in middle
-    const goat_body = Color{ .r = 235, .g = 232, .b = 220 }; // Off-white Irish goat fleece
-    const goat_horns = Color{ .r = 55, .g = 48, .b = 40 }; // Dark ridged horns
-    const goat_collar = Color{ .r = 180, .g = 40, .b = 40 }; // Red collar
-    const lochmarne_sky = Color{ .r = 120, .g = 145, .b = 170 }; // Overcast Irish sky
-    const lochmarne_grass = Color{ .r = 45, .g = 115, .b = 52 }; // Rich emerald Irish turf
-    const lochmarne_ruins = Color{ .r = 95, .g = 90, .b = 85 }; // Weathered castle stone
-    const crypt_wall = Color{ .r = 35, .g = 32, .b = 30 }; // Ancient subterranean crypt stone
-    const templar_red = Color{ .r = 195, .g = 30, .b = 30 }; // Vivid Templar cross red
+    // The Donkey of Lamp Point (P20-02, D-023, P35-05)
+    const donkey_coat = Color{ .r = 130, .g = 120, .b = 110 }; // Dusty grey-brown coat
+    const donkey_ears = Color{ .r = 70, .g = 60, .b = 55 }; // Dark-tipped long ears
+    const donkey_halter = Color{ .r = 180, .g = 40, .b = 40 }; // Red rope halter
+    const point_sky = Color{ .r = 120, .g = 145, .b = 170 }; // Overcast sea sky
+    const point_sea = Color{ .r = 52, .g = 92, .b = 120 }; // Grey-green swell beyond the cliff
+    const point_turf = Color{ .r = 72, .g = 118, .b = 64 }; // Salt-burnt headland turf
+    const lighthouse_stone = Color{ .r = 150, .g = 144, .b = 134 }; // Weathered whitewash
+    const cellar_wall = Color{ .r = 35, .g = 32, .b = 30 }; // Damp cellar stone
+    const chart_ink = Color{ .r = 195, .g = 30, .b = 30 }; // Reef marks on the wreckers' chart
     const rope_color = Color{ .r = 205, .g = 175, .b = 125 }; // Hemp tether rope
-    // Day of the Tentacle Colors (P21-03, D-025)
-    const tentacle_purple = Color{ .r = 138, .g = 43, .b = 226 };
-    const tentacle_sucker = Color{ .r = 250, .g = 204, .b = 21 };
-    const hoagie_cap = Color{ .r = 220, .g = 38, .b = 38 };
-    const bernard_shirt = Color{ .r = 59, .g = 130, .b = 246 };
-    const laverne_hair = Color{ .r = 253, .g = 224, .b = 71 };
-    const laverne_dress = Color{ .r = 6, .g = 182, .b = 212 };
-    const washington_coat = Color{ .r = 30, .g = 58, .b = 138 };
-    const betsy_dress = Color{ .r = 159, .g = 18, .b = 57 };
-    const colonial_wood = Color{ .r = 92, .g = 64, .b = 51 };
-    const colonial_hearth = Color{ .r = 160, .g = 82, .b = 45 };
-    const motel_teal = Color{ .r = 13, .g = 148, .b = 136 };
-    const dystopia_metal = Color{ .r = 30, .g = 35, .b = 45 };
+    // Three Tides Colors (P21-03, D-025)
+    const flock_blue = Color{ .r = 37, .g = 99, .b = 235 }; // The flock's banner
+    const gull_white = Color{ .r = 241, .g = 245, .b = 249 }; // Gulls and their mark
+    const ossie_cap = Color{ .r = 185, .g = 28, .b = 28 }; // Knitted cap
+    const ossie_jersey = Color{ .r = 30, .g = 58, .b = 138 }; // Striped deckhand's jersey
+    const nell_shirt = Color{ .r = 21, .g = 128, .b = 61 }; // Green shirtwaist
+    const juno_hair = Color{ .r = 194, .g = 65, .b = 12 }; // Red hair
+    const juno_coat = Color{ .r = 202, .g = 138, .b = 4 }; // Oilskin coat
+    const gale_coat = Color{ .r = 68, .g = 52, .b = 40 }; // Tarred coat
+    const fenn_dress = Color{ .r = 30, .g = 30, .b = 36 }; // Widow's weeds
+    const charter_timber = Color{ .r = 92, .g = 64, .b = 51 }; // The charter house frame
+    const charter_brick = Color{ .r = 160, .g = 82, .b = 45 }; // Its hearth
+    const boarding_wallpaper = Color{ .r = 22, .g = 78, .b = 62 }; // Brine's front hall
+    const roost_slate = Color{ .r = 51, .g = 65, .b = 85 }; // Roofs of drowned Brackwater
     // Donnie Darko / Roberta Sparrow Cinematic Colors (P31-01..P31-03, D-027)
     const tangent_glow = Color{ .r = 56, .g = 189, .b = 248, .a = 180 }; // Translucent water-like fluid blue
     const tangent_core = Color{ .r = 224, .g = 242, .b = 254, .a = 230 }; // Bright white-blue conduit core
@@ -138,21 +138,88 @@ const Scene = struct {
     is_darko_bedroom_scene: bool = false,
     is_darko_school_scene: bool = false,
     is_darko_vortex_scene: bool = false,
-    is_dott_future_scene: bool = false,
-    is_dott_past_scene: bool = false,
-    is_dott_present_scene: bool = false,
+    is_tides_future_scene: bool = false,
+    is_tides_past_scene: bool = false,
+    is_tides_present_scene: bool = false,
     is_yard_scene: bool = false,
-    is_goat_courtyard_scene: bool = false,
+    is_lamp_point_scene: bool = false,
     is_tidewalk_scene: bool = false,
     is_inn_scene: bool = false,
     is_fencing_yard_scene: bool = false,
     is_lantern_scene: bool = false,
     is_spitting_scene: bool = false,
     is_tavern_scene: bool = false,
-    is_templar_crypt_scene: bool = false,
+    is_wreckers_cellar_scene: bool = false,
     is_village_scene: bool = false,
     is_wine_cellar_scene: bool = false,
 };
+
+/// A Tide Well head (P35-06): a stone ring with a windlass and Doctor Brine's brass pump, centred
+/// on `x` with its rim at `y`. All three eras draw the same well, in their own stone.
+fn draw_tide_well(w: *Canvas, x: i32, y: i32, stone: Color) void {
+    w.fill_rect(x - 36, y, 72, 40, stone);
+    w.draw_rect_outline(x - 36, y, 72, 40, Color{ .r = 60, .g = 56, .b = 50 });
+    w.fill_rect(x - 30, y - 6, 60, 8, Color{ .r = 20, .g = 24, .b = 30 });
+    w.fill_rect(x - 32, y - 50, 5, 50, Color{ .r = 100, .g = 65, .b = 35 });
+    w.fill_rect(x + 27, y - 50, 5, 50, Color{ .r = 100, .g = 65, .b = 35 });
+    w.fill_rect(x - 32, y - 52, 64, 5, Color{ .r = 100, .g = 65, .b = 35 });
+    w.draw_line(x, y - 47, x, y - 10, Color{ .r = 205, .g = 175, .b = 125 });
+    w.fill_rect(x + 34, y + 6, 10, 26, Color{ .r = 200, .g = 160, .b = 60 });
+    w.fill_circle(x + 39, y + 6, 6, Color{ .r = 250, .g = 204, .b = 21 });
+}
+
+/// The flock's mark (P35-06): a white gull in flight, wings out from `x, y`.
+fn draw_gull_mark(w: *Canvas, x: i32, y: i32) void {
+    w.draw_line(x - 14, y - 4, x, y + 2, Palette.gull_white);
+    w.draw_line(x, y + 2, x + 14, y - 4, Palette.gull_white);
+    w.draw_line(x - 14, y - 3, x, y + 3, Palette.gull_white);
+    w.draw_line(x, y + 3, x + 14, y - 3, Palette.gull_white);
+}
+
+/// The Well of Three Tides' props (P35-06), drawn where their hotspots are, so what a player
+/// clicks is what they see. Returns false for a prop it does not draw.
+fn tides_prop(w: *Canvas, frame: *const RenderFrame, name: []const u8, pt: Point) bool {
+    const starts = std.mem.startsWith;
+    if (starts(u8, name, "TideWell")) {
+        draw_tide_well(w, pt.x, pt.y, Color{ .r = 140, .g = 130, .b = 115 });
+        if (std.mem.endsWith(u8, name, "1712") and status_of(frame).tides_well_charged) {
+            w.draw_text("[CHARGED]", pt.x - 26, pt.y - 66, 1, Color.status_running);
+        }
+    } else if (starts(u8, name, "CornerstoneBox")) {
+        w.fill_rect(pt.x - 16, pt.y - 12, 32, 24, Color{ .r = 170, .g = 160, .b = 145 });
+        w.draw_rect_outline(pt.x - 16, pt.y - 12, 32, 24, Color{ .r = 90, .g = 85, .b = 75 });
+        w.fill_rect(pt.x - 6, pt.y - 4, 12, 8, Color{ .r = 180, .g = 140, .b = 60 });
+    } else if (std.mem.eql(u8, name, "OrangeTree") or std.mem.eql(u8, name, "GiantOrangeTree")) {
+        const giant = name.len > "OrangeTree".len;
+        if (status_of(frame).tides_tree_felled) {
+            // Felled in 1712: a stump then, and nothing at all by 2112.
+            if (giant) return true;
+            w.fill_rect(pt.x - 8, pt.y - 4, 16, 14, Color{ .r = 120, .g = 75, .b = 35 });
+            w.fill_circle(pt.x, pt.y - 4, 8, Color{ .r = 160, .g = 105, .b = 55 });
+            return true;
+        }
+        const radius: i32 = if (giant) 34 else 20;
+        w.fill_rect(pt.x - 4, pt.y - radius, 8, radius + 12, Color{ .r = 100, .g = 60, .b = 25 });
+        w.fill_circle(pt.x, pt.y - radius - 6, radius, Color{ .r = 22, .g = 101, .b = 52 });
+        w.fill_circle(pt.x - @divTrunc(radius, 2), pt.y - radius - 10, 4, Color{ .r = 249, .g = 115, .b = 22 });
+        w.fill_circle(pt.x + @divTrunc(radius, 2), pt.y - radius - 2, 4, Color{ .r = 249, .g = 115, .b = 22 });
+        w.fill_circle(pt.x, pt.y - radius + 4, 4, Color{ .r = 249, .g = 115, .b = 22 });
+    } else if (std.mem.eql(u8, name, "RedLeadPaint")) {
+        w.fill_rect(pt.x - 9, pt.y - 10, 18, 20, Color{ .r = 120, .g = 120, .b = 125 });
+        w.fill_rect(pt.x - 9, pt.y - 10, 18, 5, Color{ .r = 200, .g = 50, .b = 30 });
+    } else if (std.mem.eql(u8, name, "PortBottle")) {
+        w.fill_rect(pt.x - 5, pt.y - 8, 10, 20, Color{ .r = 90, .g = 20, .b = 40 });
+        w.fill_rect(pt.x - 2, pt.y - 16, 4, 8, Color{ .r = 90, .g = 20, .b = 40 });
+    } else if (std.mem.eql(u8, name, "GullHandbillProp") or std.mem.eql(u8, name, "GullBannerProp")) {
+        w.fill_rect(pt.x - 14, pt.y - 18, 28, 36, Palette.flock_blue);
+        w.draw_rect_outline(pt.x - 14, pt.y - 18, 28, 36, Palette.gull_white);
+        draw_gull_mark(w, pt.x, pt.y - 4);
+    } else if (std.mem.eql(u8, name, "StormTerminal")) {
+        w.fill_rect(pt.x - 3, pt.y - 20, 6, 32, Color{ .r = 200, .g = 160, .b = 60 });
+        w.fill_circle(pt.x, pt.y - 22, 6, Color{ .r = 250, .g = 204, .b = 21 });
+    } else return false;
+    return true;
+}
 
 fn detect(frame: *const RenderFrame) Scene {
     var sc = Scene{};
@@ -171,21 +238,12 @@ fn detect(frame: *const RenderFrame) Scene {
             } else {
                 sc.is_bell_base_scene = true;
             }
-        } else if (std.mem.indexOf(u8, cur_scene, "Colonial") != null or
-            std.mem.indexOf(u8, cur_scene, "Workshop") != null or
-            std.mem.indexOf(u8, cur_scene, "1790") != null)
-        {
-            sc.is_dott_past_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Motel") != null or
-            std.mem.indexOf(u8, cur_scene, "Lobby") != null or
-            std.mem.indexOf(u8, cur_scene, "1993") != null)
-        {
-            sc.is_dott_present_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Dystopian") != null or
-            std.mem.indexOf(u8, cur_scene, "Guard Post") != null or
-            std.mem.indexOf(u8, cur_scene, "2193") != null)
-        {
-            sc.is_dott_future_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Charter Yard")) {
+            sc.is_tides_past_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Brine's Boarding House")) {
+            sc.is_tides_present_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Gull Roost")) {
+            sc.is_tides_future_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Bedroom") != null or
                    std.mem.indexOf(u8, cur_scene, "Darko") != null or
                    std.mem.indexOf(u8, cur_scene, "Donnie") != null)
@@ -201,14 +259,11 @@ fn detect(frame: *const RenderFrame) Scene {
                    std.mem.indexOf(u8, cur_scene, "Tangent") != null)
         {
             sc.is_darko_vortex_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Lochmarne") != null or
-            (std.mem.indexOf(u8, cur_scene, "Courtyard") != null and std.mem.indexOf(u8, cur_scene, "Castle") != null))
-        {
-            sc.is_goat_courtyard_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Crypt") != null or
-                   std.mem.indexOf(u8, cur_scene, "Templar") != null)
-        {
-            sc.is_templar_crypt_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Lamp Point")) {
+            sc.is_lamp_point_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Wreckers Cellar")) {
+            // Before the wine cellar's "Cellar" match below.
+            sc.is_wreckers_cellar_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Village") != null or
             std.mem.indexOf(u8, cur_scene, "Living") != null)
         {
@@ -249,29 +304,29 @@ fn detect(frame: *const RenderFrame) Scene {
 
     // Fallback detection if current_scene wasn't explicitly set
     if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and !sc.is_observatory_scene and
-        !sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
-        !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
+        !sc.is_tides_past_scene and !sc.is_tides_present_scene and !sc.is_tides_future_scene and
+        !sc.is_lamp_point_scene and !sc.is_wreckers_cellar_scene and
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
         !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene and
         !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and !sc.is_village_scene and
         !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
     {
         for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-            if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark1790") != null or
-                std.mem.indexOf(u8, wp.get_name(), "KumquatLawn") != null)
+            if (std.mem.indexOf(u8, wp.get_name(), "WellMark1712") != null or
+                std.mem.indexOf(u8, wp.get_name(), "OrchardLawn") != null)
             {
-                sc.is_dott_past_scene = true;
+                sc.is_tides_past_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark1993") != null or
-                std.mem.indexOf(u8, wp.get_name(), "LobbyDesk") != null)
+            } else if (std.mem.indexOf(u8, wp.get_name(), "WellMark1912") != null or
+                std.mem.indexOf(u8, wp.get_name(), "FrontDesk") != null)
             {
-                sc.is_dott_present_scene = true;
+                sc.is_tides_present_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "ToiletMark2193") != null or
-                std.mem.indexOf(u8, wp.get_name(), "GuardPost") != null or
-                std.mem.indexOf(u8, wp.get_name(), "TreeBranch2193") != null)
+            } else if (std.mem.indexOf(u8, wp.get_name(), "WellMark2112") != null or
+                std.mem.indexOf(u8, wp.get_name(), "Checkpoint") != null or
+                std.mem.indexOf(u8, wp.get_name(), "TreeBranch2112") != null)
             {
-                sc.is_dott_future_scene = true;
+                sc.is_tides_future_scene = true;
                 break;
             } else if (std.mem.indexOf(u8, wp.get_name(), "BedMark") != null or
                 std.mem.indexOf(u8, wp.get_name(), "Bedroom") != null)
@@ -289,16 +344,16 @@ fn detect(frame: *const RenderFrame) Scene {
                 sc.is_darko_vortex_scene = true;
                 break;
             } else if (std.mem.indexOf(u8, wp.get_name(), "TetherCenter") != null or
-                std.mem.indexOf(u8, wp.get_name(), "DigOpening") != null or
-                std.mem.indexOf(u8, wp.get_name(), "CourtyardEntrance") != null or
-                std.mem.indexOf(u8, wp.get_name(), "PloughMark") != null)
+                std.mem.indexOf(u8, wp.get_name(), "HatchMark") != null or
+                std.mem.indexOf(u8, wp.get_name(), "PointPath") != null or
+                std.mem.indexOf(u8, wp.get_name(), "AnchorMark") != null)
             {
-                sc.is_goat_courtyard_scene = true;
+                sc.is_lamp_point_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "CryptLadder") != null or
-                       std.mem.indexOf(u8, wp.get_name(), "AltarMark") != null)
+            } else if (std.mem.indexOf(u8, wp.get_name(), "CellarSteps") != null or
+                       std.mem.indexOf(u8, wp.get_name(), "ChestMark") != null)
             {
-                sc.is_templar_crypt_scene = true;
+                sc.is_wreckers_cellar_scene = true;
                 break;
             } else if (std.mem.indexOf(u8, wp.get_name(), "TownSquare") != null or
                 std.mem.indexOf(u8, wp.get_name(), "SheriffsPost") != null or
@@ -342,8 +397,8 @@ fn detect(frame: *const RenderFrame) Scene {
                 break;
             }
         }
-        if (!sc.is_dott_past_scene and !sc.is_dott_present_scene and !sc.is_dott_future_scene and
-            !sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
+        if (!sc.is_tides_past_scene and !sc.is_tides_present_scene and !sc.is_tides_future_scene and
+            !sc.is_lamp_point_scene and !sc.is_wreckers_cellar_scene and
             !sc.is_spitting_scene and !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene and
             !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and
             !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
@@ -359,19 +414,17 @@ fn detect(frame: *const RenderFrame) Scene {
                 } else if (std.mem.eql(u8, ename, "RobertaSparrow")) {
                     sc.is_darko_vortex_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Hoagie") or std.mem.eql(u8, ename, "BetsyRoss") or std.mem.eql(u8, ename, "Washington")) {
-                    sc.is_dott_past_scene = true;
+                } else if (std.mem.eql(u8, ename, "Ossie") or std.mem.eql(u8, ename, "WidowFenn") or std.mem.eql(u8, ename, "FounderGale")) {
+                    sc.is_tides_past_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Bernard") or std.mem.eql(u8, ename, "DrFred")) {
-                    sc.is_dott_present_scene = true;
+                } else if (std.mem.eql(u8, ename, "Nell") or std.mem.eql(u8, ename, "DoctorBrine")) {
+                    sc.is_tides_present_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Laverne") or std.mem.eql(u8, ename, "PurpleTentacle")) {
-                    sc.is_dott_future_scene = true;
+                } else if (std.mem.eql(u8, ename, "Juno") or std.mem.eql(u8, ename, "AdmiralSquall")) {
+                    sc.is_tides_future_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "BillyGoat") or
-                    (std.mem.eql(u8, ename, "George") and !sc.is_inn_scene))
-                {
-                    sc.is_goat_courtyard_scene = true;
+                } else if (std.mem.eql(u8, ename, "Cudgel")) {
+                    sc.is_lamp_point_scene = true;
                     break;
                 } else if (std.mem.eql(u8, ename, "BosunPike") or std.mem.eql(u8, ename, "OldGannet") or
                     std.mem.eql(u8, ename, "DoryQuill"))
@@ -401,20 +454,19 @@ fn detect(frame: *const RenderFrame) Scene {
                 }
             }
         }
-        if (!sc.is_goat_courtyard_scene and !sc.is_templar_crypt_scene and
+        if (!sc.is_lamp_point_scene and !sc.is_wreckers_cellar_scene and
             !sc.is_spitting_scene and !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene)
         {
             for (frame.hotspots[0..frame.hotspot_count]) |hs| {
-                if (std.mem.indexOf(u8, hs.get_name(), "Plough") != null or
-                    std.mem.indexOf(u8, hs.get_name(), "Tether") != null)
+                if (std.mem.indexOf(u8, hs.get_name(), "Old Anchor") != null or
+                    std.mem.indexOf(u8, hs.get_name(), "Mooring Post") != null)
                 {
-                    sc.is_goat_courtyard_scene = true;
+                    sc.is_lamp_point_scene = true;
                     break;
-                } else if (std.mem.indexOf(u8, hs.get_name(), "Mural") != null or
-                           std.mem.indexOf(u8, hs.get_name(), "Crypt") != null or
-                           std.mem.indexOf(u8, hs.get_name(), "Altar") != null)
+                } else if (std.mem.indexOf(u8, hs.get_name(), "Wreckers Chart") != null or
+                           std.mem.indexOf(u8, hs.get_name(), "Sea Chest") != null)
                 {
-                    sc.is_templar_crypt_scene = true;
+                    sc.is_wreckers_cellar_scene = true;
                     break;
                 } else if (std.mem.indexOf(u8, hs.get_name(), "Peg") != null or
                            std.mem.indexOf(u8, hs.get_name(), "Flag") != null)
@@ -1145,357 +1197,305 @@ fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
             w.draw_text(estr, rp_x + 10, ry_cursor, 1, ecol);
             ry_cursor += 13;
         }
-    } else if (sc.is_goat_courtyard_scene) {
-        // Lochmarne Castle Courtyard (P20-02, D-023)
-        // 1. Sky & Atmosphere
-        w.fill_rect(0, 0, w.width, w.height, Palette.lochmarne_sky);
+    } else if (sc.is_lamp_point_scene) {
+        // Lamp Point, the headland under the ruined lighthouse (P20-02, D-023, P35-05)
+        // 1. Sky, and the sea beyond the cliff edge
+        w.fill_rect(0, 0, w.width, w.height, Palette.point_sky);
 
         const yard_x: i32 = 40;
         const yard_y: i32 = 110;
         const yard_w: i32 = w.width - 80;
         const yard_h: i32 = w.height - 210;
 
-        // Rolling Irish emerald hills in background
-        w.fill_circle(yard_x + 300, yard_y + 160, 220, Color{ .r = 40, .g = 95, .b = 45 });
-        w.fill_circle(yard_x + 650, yard_y + 170, 240, Color{ .r = 35, .g = 85, .b = 40 });
-        w.fill_circle(yard_x + 980, yard_y + 150, 200, Color{ .r = 42, .g = 100, .b = 48 });
-
-        // Weathered castle stone walls & ivy (Left tower and rear battlements)
-        const wall_top = yard_y + 60;
-        w.fill_rect(yard_x, wall_top, yard_w, 70, Palette.lochmarne_ruins);
-        w.draw_rect_outline(yard_x, wall_top, yard_w, 70, Color{ .r = 65, .g = 60, .b = 55 });
-
-        // Castle tower ruins on the left
-        const tower_w: i32 = 180;
-        w.fill_rect(yard_x, yard_y, tower_w, yard_h, Palette.lochmarne_ruins);
-        w.draw_rect_outline(yard_x, yard_y, tower_w, yard_h, Color{ .r = 60, .g = 55, .b = 50 });
-
-        // Tower battlements (crenellations)
-        var cr_x: i32 = yard_x;
-        while (cr_x < yard_x + tower_w - 20) : (cr_x += 36) {
-            w.fill_rect(cr_x, yard_y - 18, 20, 18, Palette.lochmarne_ruins);
-            w.draw_rect_outline(cr_x, yard_y - 18, 20, 18, Color{ .r = 60, .g = 55, .b = 50 });
+        w.fill_rect(yard_x, yard_y + 60, yard_w, 90, Palette.point_sea);
+        var wave_x: i32 = yard_x + 220;
+        while (wave_x + 90 < yard_x + yard_w) : (wave_x += 130) {
+            w.draw_line(wave_x, yard_y + 90, wave_x + 40, yard_y + 90, Color{ .r = 200, .g = 215, .b = 225 });
+            w.draw_line(wave_x + 60, yard_y + 120, wave_x + 90, yard_y + 120, Color{ .r = 170, .g = 195, .b = 210 });
         }
 
-        // Arched arrow-slit window in tower
-        w.fill_rect(yard_x + 75, yard_y + 70, 26, 60, Color{ .r = 25, .g = 22, .b = 20 });
-        w.fill_circle(yard_x + 88, yard_y + 70, 13, Color{ .r = 25, .g = 22, .b = 20 });
+        // 2. Headland turf, with thrift tufts
+        w.fill_rect(yard_x, yard_y + 150, yard_w, yard_h - 150, Palette.point_turf);
+        var tuft_x: i32 = yard_x + 200;
+        while (tuft_x < yard_x + yard_w - 30) : (tuft_x += 97) {
+            w.fill_circle(tuft_x, yard_y + yard_h - 30, 5, Color{ .r = 214, .g = 120, .b = 170 });
+            w.fill_circle(tuft_x + 40, yard_y + 175, 4, Color{ .r = 214, .g = 120, .b = 170 });
+        }
 
-        // Ivy vines crawling up the ruins
-        w.fill_circle(yard_x + 20, yard_y + 120, 18, Color{ .r = 30, .g = 75, .b = 35 });
-        w.fill_circle(yard_x + 35, yard_y + 160, 22, Color{ .r = 38, .g = 90, .b = 42 });
-        w.fill_circle(yard_x + 25, yard_y + 210, 20, Color{ .r = 32, .g = 80, .b = 36 });
-        w.fill_circle(yard_x + 160, yard_y + 100, 16, Color{ .r = 35, .g = 85, .b = 40 });
-        w.fill_circle(yard_x + 170, yard_y + 140, 20, Color{ .r = 40, .g = 95, .b = 45 });
-
-        // Courtyard emerald grass lawn
-        w.fill_rect(yard_x + tower_w, yard_y + 120, yard_w - tower_w, yard_h - 120, Palette.lochmarne_grass);
+        // 3. The ruined lighthouse on the left: whitewashed tower, a red band, the lamp room
+        //    open to the sky
+        const tower_x: i32 = yard_x + 40;
+        const tower_w: i32 = 100;
+        const tower_top: i32 = yard_y - 30;
+        const tower_h: i32 = yard_h - 60;
+        w.fill_rect(tower_x, tower_top, tower_w, tower_h, Palette.lighthouse_stone);
+        w.draw_rect_outline(tower_x, tower_top, tower_w, tower_h, Color{ .r = 95, .g = 90, .b = 85 });
+        w.fill_rect(tower_x, tower_top + 90, tower_w, 24, Color{ .r = 170, .g = 50, .b = 45 });
+        w.fill_rect(tower_x + 38, tower_top + tower_h - 60, 24, 60, Color{ .r = 40, .g = 34, .b = 30 });
+        w.fill_rect(tower_x - 10, tower_top - 10, tower_w + 20, 10, Color{ .r = 60, .g = 58, .b = 56 });
+        w.draw_line(tower_x + 10, tower_top - 10, tower_x + 30, tower_top - 40, Color{ .r = 60, .g = 58, .b = 56 });
+        w.draw_line(tower_x + 90, tower_top - 10, tower_x + 70, tower_top - 34, Color{ .r = 60, .g = 58, .b = 56 });
         w.draw_rect_outline(yard_x, yard_y, yard_w, yard_h, Color{ .r = 40, .g = 55, .b = 40 });
 
-        // Cellar Pit / Peagram's Excavation Entrance (aligned with DigOpening)
-        const pt_dig = world_to_screen(28, 0, w.width, w.height);
-        const pit_x = pt_dig.x - 45;
-        const pit_y = yard_y + yard_h - 150;
-        w.fill_rect(pit_x, pit_y, 90, 60, Color{ .r = 20, .g = 18, .b = 16 });
-        w.draw_rect_outline(pit_x, pit_y, 90, 60, Color{ .r = 100, .g = 65, .b = 30 });
-        // Wooden ladder rungs descending into pit
-        w.fill_rect(pit_x + 30, pit_y - 12, 6, 72, Color{ .r = 140, .g = 90, .b = 45 });
-        w.fill_rect(pit_x + 54, pit_y - 12, 6, 72, Color{ .r = 140, .g = 90, .b = 45 });
-        var rung_y: i32 = pit_y - 6;
-        while (rung_y < pit_y + 54) : (rung_y += 12) {
-            w.fill_rect(pit_x + 30, rung_y, 30, 4, Color{ .r = 170, .g = 115, .b = 60 });
+        // 4. The cellar hatch, propped open (at HatchMark)
+        const pt_hatch = world_to_screen(28, 0, w.width, w.height);
+        const hatch_x = pt_hatch.x - 45;
+        const hatch_y = yard_y + yard_h - 150;
+        w.fill_rect(hatch_x, hatch_y, 90, 60, Color{ .r = 20, .g = 18, .b = 16 });
+        w.draw_rect_outline(hatch_x, hatch_y, 90, 60, Color{ .r = 100, .g = 65, .b = 30 });
+        var step_y: i32 = hatch_y + 10;
+        while (step_y < hatch_y + 56) : (step_y += 12) {
+            w.fill_rect(hatch_x + 14, step_y, 62, 4, Color{ .r = 70, .g = 60, .b = 52 });
         }
+        // The trapdoor leaf, standing up behind the opening
+        w.fill_rect(hatch_x, hatch_y - 44, 90, 44, Color{ .r = 120, .g = 80, .b = 42 });
+        w.draw_rect_outline(hatch_x, hatch_y - 44, 90, 44, Color{ .r = 75, .g = 50, .b = 25 });
+        w.draw_line(hatch_x + 30, hatch_y - 44, hatch_x + 30, hatch_y, Color{ .r = 75, .g = 50, .b = 25 });
+        w.draw_line(hatch_x + 60, hatch_y - 44, hatch_x + 60, hatch_y, Color{ .r = 75, .g = 50, .b = 25 });
 
-        // Tether Stake (at TetherCenter)
+        // 5. Mooring post (at TetherCenter)
         const pt_tether = world_to_screen(16, 0, w.width, w.height);
-        w.fill_rect(pt_tether.x - 5, pt_tether.y - 18, 10, 36, Color{ .r = 110, .g = 70, .b = 35 });
-        w.draw_rect_outline(pt_tether.x - 5, pt_tether.y - 18, 10, 36, Color{ .r = 75, .g = 45, .b = 20 });
+        w.fill_rect(pt_tether.x - 7, pt_tether.y - 20, 14, 38, Color{ .r = 95, .g = 75, .b = 55 });
+        w.draw_rect_outline(pt_tether.x - 7, pt_tether.y - 20, 14, 38, Color{ .r = 60, .g = 45, .b = 30 });
         w.draw_circle_outline(pt_tether.x, pt_tether.y - 14, 6, Color{ .r = 180, .g = 180, .b = 190 }); // Iron ring
 
-        // Farm Plough (at PloughMark)
-        const pt_plough = world_to_screen(10, 8, w.width, w.height);
-        const plough_draw_x = if (status_of(frame).plough_moved) pt_plough.x + 30 else pt_plough.x;
-        // Heavy iron beam & share
-        w.fill_rect(plough_draw_x - 30, pt_plough.y - 8, 60, 16, Color{ .r = 65, .g = 55, .b = 50 });
-        w.draw_rect_outline(plough_draw_x - 30, pt_plough.y - 8, 60, 16, Color{ .r = 95, .g = 85, .b = 80 });
-        // Iron blade point
-        w.fill_rect(plough_draw_x + 20, pt_plough.y + 4, 16, 14, Color{ .r = 45, .g = 40, .b = 38 });
-        // Wooden handles
-        w.draw_line(plough_draw_x - 24, pt_plough.y - 8, plough_draw_x - 45, pt_plough.y - 32, Color{ .r = 130, .g = 85, .b = 45 });
-        w.draw_line(plough_draw_x - 18, pt_plough.y - 8, plough_draw_x - 39, pt_plough.y - 32, Color{ .r = 130, .g = 85, .b = 45 });
+        // 6. Old anchor (at AnchorMark): ring, stock, shank, and arms; it moves into the rope
+        //    line once hauled
+        const pt_anchor = world_to_screen(10, 8, w.width, w.height);
+        const anchor_draw_x = if (status_of(frame).anchor_moved) pt_anchor.x + 30 else pt_anchor.x;
+        const iron = Color{ .r = 95, .g = 70, .b = 55 };
+        w.draw_circle_outline(anchor_draw_x, pt_anchor.y - 30, 6, iron);
+        w.fill_rect(anchor_draw_x - 22, pt_anchor.y - 22, 44, 5, iron);
+        w.fill_rect(anchor_draw_x - 3, pt_anchor.y - 24, 6, 36, iron);
+        w.draw_line(anchor_draw_x, pt_anchor.y + 12, anchor_draw_x - 22, pt_anchor.y - 2, iron);
+        w.draw_line(anchor_draw_x, pt_anchor.y + 12, anchor_draw_x + 22, pt_anchor.y - 2, iron);
+        w.fill_circle(anchor_draw_x - 22, pt_anchor.y - 2, 4, iron);
+        w.fill_circle(anchor_draw_x + 22, pt_anchor.y - 2, 4, iron);
 
-        // Dynamic Rope Drawing between Stake, Plough, and BillyGoat
-        var goat_pt: ?Point = null;
+        // 7. Cudgel's rope: straight from the post, or wrapped round the anchor once caught
+        var donkey_pt: ?Point = null;
         for (frame.entities[0..frame.entity_count]) |e| {
-            if (std.mem.eql(u8, e.get_name(), "BillyGoat")) {
-                goat_pt = world_to_screen(e.x, e.y, w.width, w.height);
+            if (std.mem.eql(u8, e.get_name(), "Cudgel")) {
+                donkey_pt = world_to_screen(e.x, e.y, w.width, w.height);
                 break;
             }
         }
-        if (goat_pt) |gpt| {
-            if (status_of(frame).goat_is_tangled) {
-                // Rope loops around the farm plough then connects to goat
-                w.draw_line(pt_tether.x, pt_tether.y - 14, plough_draw_x, pt_plough.y, Palette.rope_color);
-                w.draw_circle_outline(plough_draw_x, pt_plough.y, 14, Palette.rope_color);
-                w.draw_circle_outline(plough_draw_x, pt_plough.y, 18, Palette.rope_color);
-                w.draw_line(plough_draw_x, pt_plough.y, gpt.x, gpt.y, Palette.rope_color);
-                w.draw_text("[ROPE TANGLED ON PLOUGH!]", plough_draw_x - 60, pt_plough.y - 48, 1, Color.status_running);
+        if (donkey_pt) |dpt| {
+            if (status_of(frame).donkey_tangled) {
+                w.draw_line(pt_tether.x, pt_tether.y - 14, anchor_draw_x, pt_anchor.y, Palette.rope_color);
+                w.draw_circle_outline(anchor_draw_x, pt_anchor.y, 14, Palette.rope_color);
+                w.draw_circle_outline(anchor_draw_x, pt_anchor.y, 18, Palette.rope_color);
+                w.draw_line(anchor_draw_x, pt_anchor.y, dpt.x, dpt.y, Palette.rope_color);
+                w.draw_text("[ROPE CAUGHT ON ANCHOR!]", anchor_draw_x - 60, pt_anchor.y - 52, 1, Color.status_running);
             } else {
-                // Direct rope from stake to goat
-                w.draw_line(pt_tether.x, pt_tether.y - 14, gpt.x, gpt.y, Palette.rope_color);
+                w.draw_line(pt_tether.x, pt_tether.y - 14, dpt.x, dpt.y, Palette.rope_color);
             }
         }
 
         // Title
-        w.draw_text("LOCHMARNE CASTLE COURTYARD - IRELAND", yard_x + 16, yard_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(PEAGRAM'S EXCAVATION PIT * TETHERED BILLY GOAT * IRON PLOUGH)", yard_x + 16, yard_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_templar_crypt_scene) {
-        // Subterranean Templar Dig Crypt (P20-02, D-023)
-        w.fill_rect(0, 0, w.width, w.height, Palette.crypt_wall);
+        w.draw_text("LAMP POINT - BRACKWATER HEADLAND", yard_x + 160, yard_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("(THE KEEPER'S DONKEY * CELLAR HATCH * OLD ANCHOR)", yard_x + 160, yard_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_wreckers_cellar_scene) {
+        // The Wreckers Cellar under Lamp Point (P20-02, D-023, P35-05)
+        w.fill_rect(0, 0, w.width, w.height, Palette.cellar_wall);
 
-        const crypt_x: i32 = 40;
-        const crypt_y: i32 = 110;
-        const crypt_w: i32 = w.width - 80;
-        const crypt_h: i32 = w.height - 210;
+        const room_x: i32 = 40;
+        const room_y: i32 = 110;
+        const room_w: i32 = w.width - 80;
+        const room_h: i32 = w.height - 210;
 
-        w.fill_rect(crypt_x, crypt_y, crypt_w, crypt_h, Color{ .r = 28, .g = 25, .b = 24 });
-        w.draw_rect_outline(crypt_x, crypt_y, crypt_w, crypt_h, Color{ .r = 68, .g = 64, .b = 60 });
+        w.fill_rect(room_x, room_y, room_w, room_h, Color{ .r = 28, .g = 25, .b = 24 });
+        w.draw_rect_outline(room_x, room_y, room_w, room_h, Color{ .r = 68, .g = 64, .b = 60 });
 
-        // Flagstone crypt floor
-        w.fill_rect(crypt_x, crypt_y + crypt_h - 110, crypt_w, 110, Color{ .r = 44, .g = 40, .b = 38 });
-        var fx: i32 = crypt_x;
-        while (fx < crypt_x + crypt_w) : (fx += 80) {
-            w.draw_line(fx, crypt_y + crypt_h - 110, fx, crypt_y + crypt_h, Color{ .r = 30, .g = 28, .b = 26 });
+        // Flagstone floor, gritty with sand
+        w.fill_rect(room_x, room_y + room_h - 110, room_w, 110, Color{ .r = 60, .g = 54, .b = 44 });
+        var fx: i32 = room_x;
+        while (fx < room_x + room_w) : (fx += 80) {
+            w.draw_line(fx, room_y + room_h - 110, fx, room_y + room_h, Color{ .r = 40, .g = 36, .b = 30 });
         }
 
-        // Gothic vaulted ceiling arches
-        var ax: i32 = crypt_x + 160;
-        while (ax < crypt_x + crypt_w - 100) : (ax += 240) {
-            w.fill_rect(ax - 10, crypt_y + 40, 20, crypt_h - 150, Color{ .r = 50, .g = 46, .b = 44 });
-            w.draw_circle_outline(ax, crypt_y + 70, 70, Color{ .r = 75, .g = 70, .b = 66 });
+        // Brick vaults
+        var ax: i32 = room_x + 160;
+        while (ax < room_x + room_w - 100) : (ax += 240) {
+            w.fill_rect(ax - 10, room_y + 40, 20, room_h - 150, Color{ .r = 50, .g = 46, .b = 44 });
+            w.draw_circle_outline(ax, room_y + 70, 70, Color{ .r = 75, .g = 70, .b = 66 });
         }
 
-        // Flaming torch sconces on walls casting amber glow
-        const torch_l_x = crypt_x + 100;
-        const torch_r_x = crypt_x + crypt_w - 140;
-        const torch_y = crypt_y + 90;
-        // Left torch
-        w.fill_circle(torch_l_x, torch_y, 22, Color{ .r = 245, .g = 158, .b = 11, .a = 70 });
-        w.fill_circle(torch_l_x, torch_y, 12, Color{ .r = 251, .g = 191, .b = 36 });
-        w.fill_circle(torch_l_x, torch_y - 4, 7, Color{ .r = 239, .g = 68, .b = 68 });
-        w.fill_rect(torch_l_x - 3, torch_y + 6, 6, 24, Color.black);
-        // Right torch
-        w.fill_circle(torch_r_x, torch_y, 22, Color{ .r = 245, .g = 158, .b = 11, .a = 70 });
-        w.fill_circle(torch_r_x, torch_y, 12, Color{ .r = 251, .g = 191, .b = 36 });
-        w.fill_circle(torch_r_x, torch_y - 4, 7, Color{ .r = 239, .g = 68, .b = 68 });
-        w.fill_rect(torch_r_x - 3, torch_y + 6, 6, 24, Color.black);
+        // Two storm lanterns on hooks
+        const lamp_l_x = room_x + 100;
+        const lamp_r_x = room_x + room_w - 60;
+        const lamp_y = room_y + 90;
+        w.fill_circle(lamp_l_x, lamp_y, 22, Color{ .r = 245, .g = 158, .b = 11, .a = 70 });
+        w.fill_circle(lamp_l_x, lamp_y, 10, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_rect_outline(lamp_l_x - 8, lamp_y - 12, 16, 24, Color.black);
+        w.fill_circle(lamp_r_x, lamp_y, 22, Color{ .r = 245, .g = 158, .b = 11, .a = 70 });
+        w.fill_circle(lamp_r_x, lamp_y, 10, Color{ .r = 251, .g = 191, .b = 36 });
+        w.draw_rect_outline(lamp_r_x - 8, lamp_y - 12, 16, 24, Color.black);
 
-        // Carved Templar Mural on rear stone wall (depicting Knight & Cross)
-        const mural_x = crypt_x + crypt_w - 320;
-        const mural_y = crypt_y + 50;
-        w.fill_rect(mural_x, mural_y, 180, 140, Color{ .r = 55, .g = 50, .b = 48 });
-        w.draw_rect_outline(mural_x, mural_y, 180, 140, Color{ .r = 120, .g = 115, .b = 110 });
-        // Templar Cross pattée (Crimson)
-        const cx_m = mural_x + 90;
-        const cy_m = mural_y + 60;
-        w.fill_rect(cx_m - 8, cy_m - 28, 16, 56, Palette.templar_red);
-        w.fill_rect(cx_m - 28, cy_m - 8, 56, 16, Palette.templar_red);
-        w.fill_circle(cx_m, cy_m, 14, Palette.templar_red);
-        w.draw_text("TEMPLAR MURAL", mural_x + 20, mural_y + 115, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        // The wreckers' chart scratched on the rear wall: a coastline and its reefs
+        const chart_x = room_x + room_w - 320;
+        const chart_y = room_y + 50;
+        w.fill_rect(chart_x, chart_y, 180, 140, Color{ .r = 70, .g = 64, .b = 58 });
+        w.draw_rect_outline(chart_x, chart_y, 180, 140, Color{ .r = 130, .g = 120, .b = 110 });
+        w.draw_line(chart_x + 20, chart_y + 30, chart_x + 70, chart_y + 55, Color{ .r = 200, .g = 190, .b = 170 });
+        w.draw_line(chart_x + 70, chart_y + 55, chart_x + 110, chart_y + 40, Color{ .r = 200, .g = 190, .b = 170 });
+        w.draw_line(chart_x + 110, chart_y + 40, chart_x + 160, chart_y + 70, Color{ .r = 200, .g = 190, .b = 170 });
+        w.fill_circle(chart_x + 50, chart_y + 80, 4, Palette.chart_ink);
+        w.fill_circle(chart_x + 92, chart_y + 72, 4, Palette.chart_ink);
+        w.fill_circle(chart_x + 120, chart_y + 95, 4, Palette.chart_ink);
+        w.fill_circle(chart_x + 145, chart_y + 88, 4, Palette.chart_ink);
+        w.draw_text("WRECKERS' CHART", chart_x + 20, chart_y + 115, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
-        // Stone Altar in crypt center (at AltarMark world_x = 20)
-        const pt_altar = world_to_screen(20, 0, w.width, w.height);
-        const altar_x = pt_altar.x - 70;
-        const altar_y = crypt_y + crypt_h - 180;
-        w.fill_rect(altar_x, altar_y, 140, 70, Color{ .r = 90, .g = 85, .b = 82 });
-        w.draw_rect_outline(altar_x, altar_y, 140, 70, Color{ .r = 140, .g = 135, .b = 130 });
-        w.fill_rect(altar_x - 10, altar_y - 10, 160, 14, Color{ .r = 110, .g = 105, .b = 102 });
-        w.draw_rect_outline(altar_x - 10, altar_y - 10, 160, 14, Color{ .r = 160, .g = 155, .b = 150 });
-        // Holy chalice relief on altar
-        w.fill_circle(pt_altar.x, altar_y + 24, 8, Color{ .r = 251, .g = 191, .b = 36 });
-        w.fill_rect(pt_altar.x - 2, altar_y + 28, 4, 14, Color{ .r = 251, .g = 191, .b = 36 });
-        w.draw_text("TEMPLAR ALTAR", altar_x + 16, altar_y + 48, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        // The sea chest (at ChestMark world_x = 20), its lid rotted through
+        const pt_chest = world_to_screen(20, 0, w.width, w.height);
+        const chest_x = pt_chest.x - 60;
+        const chest_y = room_y + room_h - 170;
+        w.fill_rect(chest_x, chest_y, 120, 60, Color{ .r = 105, .g = 70, .b = 40 });
+        w.draw_rect_outline(chest_x, chest_y, 120, 60, Color{ .r = 70, .g = 45, .b = 25 });
+        w.fill_rect(chest_x - 4, chest_y - 12, 128, 14, Color{ .r = 85, .g = 58, .b = 34 });
+        w.fill_rect(chest_x + 40, chest_y - 12, 30, 8, Color{ .r = 28, .g = 25, .b = 24 });
+        w.fill_rect(chest_x + 20, chest_y - 12, 6, 72, Color{ .r = 70, .g = 70, .b = 75 });
+        w.fill_rect(chest_x + 94, chest_y - 12, 6, 72, Color{ .r = 70, .g = 70, .b = 75 });
+        w.draw_text("SEA CHEST", chest_x + 24, chest_y + 40, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
-        // Excavation ladder on the left (at CryptLadder world_x = 4)
-        const pt_ladder = world_to_screen(4, 0, w.width, w.height);
-        const lad_x = pt_ladder.x - 20;
-        w.fill_rect(lad_x, crypt_y, 8, crypt_h - 50, Color{ .r = 130, .g = 80, .b = 40 });
-        w.fill_rect(lad_x + 32, crypt_y, 8, crypt_h - 50, Color{ .r = 130, .g = 80, .b = 40 });
-        var ly: i32 = crypt_y + 10;
-        while (ly < crypt_y + crypt_h - 50) : (ly += 16) {
-            w.fill_rect(lad_x, ly, 40, 4, Color{ .r = 160, .g = 105, .b = 55 });
+        // Stone steps up to the hatch on the left (at CellarSteps world_x = 4)
+        const pt_steps = world_to_screen(4, 0, w.width, w.height);
+        const steps_x = pt_steps.x - 30;
+        var si: i32 = 0;
+        while (si < 6) : (si += 1) {
+            const sy = room_y + 60 + si * 36;
+            w.fill_rect(steps_x, sy, 60 - si * 4, 14, Color{ .r = 80, .g = 75, .b = 70 });
+            w.draw_rect_outline(steps_x, sy, 60 - si * 4, 14, Color{ .r = 110, .g = 105, .b = 100 });
         }
-        w.draw_text("LADDER UP", lad_x - 10, crypt_y + crypt_h - 40, 1, Color.wp_hover);
+        // Daylight from the open hatch above the top step
+        w.fill_rect(steps_x, room_y + 46, 60, 6, Color{ .r = 200, .g = 210, .b = 220 });
+        w.draw_text("STEPS UP", steps_x - 4, room_y + room_h - 40, 1, Color.wp_hover);
 
         // Title
-        w.draw_text("SUBTERRANEAN TEMPLAR DIG CRYPT", crypt_x + 16, crypt_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(MEDIEVAL KNIGHTS TEMPLAR MURAL * CHALICE ALTAR * EXCAVATION LADDER)", crypt_x + 16, crypt_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_dott_past_scene) {
-        // 1790 Colonial Workshop (P21-03, D-025)
-        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 45, .g = 30, .b = 20 });
+        w.draw_text("WRECKERS CELLAR - UNDER LAMP POINT", room_x + 16, room_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("(REEF CHART ON THE WALL * ROTTED SEA CHEST * STEPS UP TO THE HATCH)", room_x + 16, room_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_tides_past_scene) {
+        // The Charter Yard, 1712 (P21-03, D-025, P35-06): the half-built charter house, its
+        // hearth, the orange tree on the orchard lawn, and the first Tide Well
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 120, .g = 160, .b = 200 });
 
-        const shop_x: i32 = 40;
-        const shop_y: i32 = 110;
-        const shop_w: i32 = w.width - 80;
-        const shop_h: i32 = w.height - 210;
+        const yard_x: i32 = 40;
+        const yard_y: i32 = 110;
+        const yard_w: i32 = w.width - 80;
+        const yard_h: i32 = w.height - 210;
 
-        // Wood panel workshop room
-        w.fill_rect(shop_x, shop_y, shop_w, shop_h, Palette.colonial_wood);
-        w.draw_rect_outline(shop_x, shop_y, shop_w, shop_h, Color{ .r = 139, .g = 90, .b = 43 });
+        // Sky over the new town, then the trodden yard
+        w.fill_rect(yard_x, yard_y, yard_w, yard_h, Color{ .r = 150, .g = 190, .b = 225 });
+        w.fill_rect(yard_x, yard_y + yard_h - 140, yard_w, 140, Color{ .r = 120, .g = 96, .b = 64 });
+        w.draw_rect_outline(yard_x, yard_y, yard_w, yard_h, Color{ .r = 139, .g = 90, .b = 43 });
 
-        // Hardwood floorboards
-        w.fill_rect(shop_x, shop_y + shop_h - 100, shop_w, 100, Color{ .r = 74, .g = 48, .b = 32 });
-        var plank_x: i32 = shop_x;
-        while (plank_x < shop_x + shop_w) : (plank_x += 70) {
-            w.draw_line(plank_x, shop_y + shop_h - 100, plank_x, shop_y + shop_h, Color{ .r = 50, .g = 32, .b = 20 });
-        }
-
-        // Brick fireplace hearth on left
-        w.fill_rect(shop_x + 30, shop_y + 40, 140, shop_h - 140, Palette.colonial_hearth);
-        w.draw_rect_outline(shop_x + 30, shop_y + 40, 140, shop_h - 140, Color{ .r = 100, .g = 40, .b = 20 });
-        w.fill_rect(shop_x + 50, shop_y + shop_h - 180, 100, 80, Color.black);
-        // Glowing fire embers
-        w.fill_circle(shop_x + 100, shop_y + shop_h - 130, 20, Color{ .r = 245, .g = 158, .b = 11 });
-        w.fill_circle(shop_x + 100, shop_y + shop_h - 135, 12, Color{ .r = 239, .g = 68, .b = 68 });
-        w.fill_circle(shop_x + 100, shop_y + shop_h - 140, 6, Color{ .r = 250, .g = 204, .b = 21 });
-
-        // Colonial window looking out to Kumquat/Cherry tree lawn
-        const win_x = shop_x + shop_w - 280;
-        const win_y = shop_y + 30;
-        w.fill_rect(win_x, win_y, 220, 150, Color{ .r = 125, .g = 185, .b = 240 }); // Sky
-        w.fill_rect(win_x, win_y + 90, 220, 60, Color{ .r = 34, .g = 120, .b = 40 }); // Green lawn
-        w.draw_rect_outline(win_x, win_y, 220, 150, Color.white);
-        w.draw_line(win_x + 110, win_y, win_x + 110, win_y + 150, Color.white);
-        w.draw_line(win_x, win_y + 75, win_x + 220, win_y + 75, Color.white);
-
-        // Tree seen through window
-        if (status_of(frame).dott_tree_chopped) {
-            w.fill_rect(win_x + 100, win_y + 115, 20, 25, Color{ .r = 120, .g = 75, .b = 35 });
-            w.fill_circle(win_x + 110, win_y + 115, 10, Color{ .r = 160, .g = 105, .b = 55 });
-            w.draw_text("[TREE CHOPPED!]", win_x + 30, win_y + 20, 1, Color{ .r = 250, .g = 204, .b = 21 });
-        } else {
-            w.fill_rect(win_x + 105, win_y + 70, 10, 50, Color{ .r = 100, .g = 60, .b = 25 });
-            w.fill_circle(win_x + 110, win_y + 55, 30, Color{ .r = 22, .g = 101, .b = 52 });
-            w.fill_circle(win_x + 95, win_y + 45, 4, Color{ .r = 220, .g = 38, .b = 38 });
-            w.fill_circle(win_x + 120, win_y + 50, 4, Color{ .r = 220, .g = 38, .b = 38 });
-            w.fill_circle(win_x + 105, win_y + 65, 4, Color{ .r = 220, .g = 38, .b = 38 });
-        }
-
-        // Chrono-Toilet 1790 (Wooden outhouse booth)
-        const pt_toilet = world_to_screen(80, 0, w.width, w.height);
-        const t_x = pt_toilet.x - 30;
-        const t_y = shop_y + shop_h - 180;
-        w.fill_rect(t_x, t_y, 60, 90, Color{ .r = 105, .g = 65, .b = 35 });
-        w.draw_rect_outline(t_x, t_y, 60, 90, Color{ .r = 150, .g = 100, .b = 50 });
-        w.fill_circle(t_x + 30, t_y + 25, 8, Color{ .r = 250, .g = 204, .b = 21 });
-        w.fill_circle(t_x + 34, t_y + 25, 6, Color{ .r = 105, .g = 65, .b = 35 });
-        if (status_of(frame).dott_battery_charged) {
-            w.draw_text("[POWERED]", t_x - 4, t_y - 16, 1, Color.status_running);
-        }
+        // The charter house frame on the left, with its brick hearth and cornerstone
+        w.fill_rect(yard_x + 20, yard_y + 50, 200, yard_h - 190, Palette.charter_timber);
+        w.draw_rect_outline(yard_x + 20, yard_y + 50, 200, yard_h - 190, Color{ .r = 60, .g = 40, .b = 25 });
+        w.draw_line(yard_x + 20, yard_y + 50, yard_x + 120, yard_y + 10, Palette.charter_timber);
+        w.draw_line(yard_x + 220, yard_y + 50, yard_x + 120, yard_y + 10, Palette.charter_timber);
+        w.fill_rect(yard_x + 40, yard_y + yard_h - 260, 90, 120, Palette.charter_brick);
+        w.fill_rect(yard_x + 60, yard_y + yard_h - 200, 50, 60, Color.black);
+        w.fill_circle(yard_x + 85, yard_y + yard_h - 160, 12, Color{ .r = 245, .g = 158, .b = 11 });
+        w.fill_rect(yard_x + 150, yard_y + yard_h - 190, 50, 40, Color{ .r = 170, .g = 160, .b = 145 });
+        w.draw_text("1712", yard_x + 158, yard_y + yard_h - 176, 1, Color.black);
 
         // Title
-        w.draw_text("COLONIAL WORKSHOP - 1790", shop_x + 16, shop_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(HOAGIE * GEORGE WASHINGTON * BETSY ROSS * TIME CAPSULE)", shop_x + 16, shop_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_dott_present_scene) {
-        // 1993 Motel Lobby (P21-03, D-025)
+        w.draw_text("THE CHARTER YARD - 1712", yard_x + 240, yard_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("(OSSIE * FOUNDER GALE * WIDOW FENN * CORNERSTONE BOX)", yard_x + 240, yard_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_tides_present_scene) {
+        // Brine's Boarding House, 1912 (P21-03, D-025, P35-06): the front hall, its desk, the
+        // handbill by the door, and the Tide Well set into the floor
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 20, .g = 30, .b = 40 });
 
-        const motel_x: i32 = 40;
-        const motel_y: i32 = 110;
-        const motel_w: i32 = w.width - 80;
-        const motel_h: i32 = w.height - 210;
+        const hall_x: i32 = 40;
+        const hall_y: i32 = 110;
+        const hall_w: i32 = w.width - 80;
+        const hall_h: i32 = w.height - 210;
 
-        // 90s motel wallpaper & carpet
-        w.fill_rect(motel_x, motel_y, motel_w, motel_h, Palette.motel_teal);
-        w.draw_rect_outline(motel_x, motel_y, motel_w, motel_h, Color{ .r = 45, .g = 212, .b = 191 });
-
-        // Geometric 90s wallpaper stripes
-        var stripe_x: i32 = motel_x;
-        while (stripe_x < motel_x + motel_w) : (stripe_x += 60) {
-            w.draw_line(stripe_x, motel_y, stripe_x + 30, motel_y + motel_h - 100, Color{ .r = 15, .g = 118, .b = 110 });
+        // Striped wallpaper over a wainscot, and a boarded floor
+        w.fill_rect(hall_x, hall_y, hall_w, hall_h, Palette.boarding_wallpaper);
+        w.draw_rect_outline(hall_x, hall_y, hall_w, hall_h, Color{ .r = 120, .g = 90, .b = 60 });
+        var stripe_x: i32 = hall_x;
+        while (stripe_x < hall_x + hall_w) : (stripe_x += 36) {
+            w.draw_line(stripe_x, hall_y, stripe_x, hall_y + hall_h - 100, Color{ .r = 34, .g = 98, .b = 80 });
+        }
+        w.fill_rect(hall_x, hall_y + hall_h - 160, hall_w, 60, Color{ .r = 92, .g = 58, .b = 38 });
+        w.fill_rect(hall_x, hall_y + hall_h - 100, hall_w, 100, Color{ .r = 110, .g = 75, .b = 45 });
+        var board_x: i32 = hall_x;
+        while (board_x < hall_x + hall_w) : (board_x += 70) {
+            w.draw_line(board_x, hall_y + hall_h - 100, board_x, hall_y + hall_h, Color{ .r = 80, .g = 52, .b = 30 });
         }
 
-        // Motel carpet floor (magenta & blue pattern)
-        w.fill_rect(motel_x, motel_y + motel_h - 100, motel_w, 100, Color{ .r = 112, .g = 26, .b = 117 });
-        var carpet_x: i32 = motel_x;
-        while (carpet_x < motel_x + motel_w) : (carpet_x += 40) {
-            w.fill_rect(carpet_x, motel_y + motel_h - 60, 20, 20, Color{ .r = 134, .g = 25, .b = 143 });
-        }
-
-        // Reception Desk with counter bell
-        const desk_x = motel_x + 80;
-        const desk_y = motel_y + motel_h - 160;
+        // The front desk with its bell and ledger
+        const desk_x = hall_x + 80;
+        const desk_y = hall_y + hall_h - 160;
         w.fill_rect(desk_x, desk_y, 160, 70, Color{ .r = 120, .g = 53, .b = 15 });
         w.draw_rect_outline(desk_x, desk_y, 160, 70, Color{ .r = 180, .g = 83, .b = 9 });
-        w.fill_circle(desk_x + 40, desk_y - 6, 6, Color{ .r = 250, .g = 204, .b = 21 }); // Brass bell
-        w.draw_text("REGISTRATION", desk_x + 20, desk_y + 25, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        w.fill_circle(desk_x + 40, desk_y - 6, 6, Color{ .r = 250, .g = 204, .b = 21 });
+        w.fill_rect(desk_x + 80, desk_y - 8, 40, 8, Color{ .r = 230, .g = 220, .b = 200 });
+        w.draw_text("FRONT DESK", desk_x + 30, desk_y + 25, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
-        // Flyer rack
-        w.fill_rect(desk_x + 180, desk_y - 20, 40, 90, Color{ .r = 75, .g = 85, .b = 99 });
-        w.fill_rect(desk_x + 185, desk_y - 10, 30, 20, Palette.tentacle_purple);
-        w.draw_text("FLYERS", desk_x + 182, desk_y + 35, 1, Color.white);
-
-        // Chrono-Toilet 1993 (Public stall)
-        const pt_toilet = world_to_screen(60, 0, w.width, w.height);
-        const ct_x = pt_toilet.x - 30;
-        const ct_y = motel_y + motel_h - 180;
-        w.fill_rect(ct_x, ct_y, 60, 90, Color{ .r = 226, .g = 232, .b = 240 });
-        w.draw_rect_outline(ct_x, ct_y, 60, 90, Color{ .r = 148, .g = 163, .b = 184 });
-        w.fill_rect(ct_x + 20, ct_y + 10, 20, 30, Color{ .r = 203, .g = 213, .b = 225 });
+        // Admiral Squall's handbill by the door: a white gull on blue
+        const bill_x = desk_x + 200;
+        const bill_y = hall_y + 60;
+        w.fill_rect(bill_x, bill_y, 60, 80, Palette.flock_blue);
+        w.draw_rect_outline(bill_x, bill_y, 60, 80, Palette.gull_white);
+        draw_gull_mark(w, bill_x + 30, bill_y + 34);
+        w.draw_text("VOTE SQUALL", bill_x - 4, bill_y + 66, 1, Palette.gull_white);
 
         // Title
-        w.draw_text("EDISON MOTEL LOBBY - 1993", motel_x + 16, motel_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(BERNARD * DR. FRED * CHRONO-TOILET * TIME CAPSULE)", motel_x + 16, motel_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_dott_future_scene) {
-        // 2193 Dystopian Guard Post (P21-03, D-025)
-        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 15, .g = 10, .b = 25 });
+        w.draw_text("BRINE'S BOARDING HOUSE - 1912", hall_x + 16, hall_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("(NELL * DOCTOR BRINE * TIDE WELL * CORNERSTONE BOX)", hall_x + 16, hall_y + 36, 1, Color.hud_subtext);
+    } else if (sc.is_tides_future_scene) {
+        // The Gull Roost, 2112 (P21-03, D-025, P35-06): drowned Brackwater's rooftops, the
+        // flock's checkpoint, the giant orange tree, and the last Tide Well
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 15, .g = 20, .b = 30 });
 
-        const post_x: i32 = 40;
-        const post_y: i32 = 110;
-        const post_w: i32 = w.width - 80;
-        const post_h: i32 = w.height - 210;
+        const roost_x: i32 = 40;
+        const roost_y: i32 = 110;
+        const roost_w: i32 = w.width - 80;
+        const roost_h: i32 = w.height - 210;
 
-        // Dystopian metal bunker walls
-        w.fill_rect(post_x, post_y, post_w, post_h, Palette.dystopia_metal);
-        w.draw_rect_outline(post_x, post_y, post_w, post_h, Color{ .r = 88, .g = 28, .b = 135 });
-
-        // Glowing neon purple conduit lines
-        w.draw_line(post_x, post_y + 60, post_x + post_w, post_y + 60, Palette.tentacle_purple);
-        w.draw_line(post_x, post_y + post_h - 110, post_x + post_w, post_y + post_h - 110, Palette.tentacle_purple);
-
-        // Giant Tentacle Banner hanging from ceiling
-        const banner_x = post_x + post_w - 240;
-        w.fill_rect(banner_x, post_y, 140, post_h - 100, Palette.tentacle_purple);
-        w.draw_rect_outline(banner_x, post_y, 140, post_h - 100, Color{ .r = 216, .g = 180, .b = 254 });
-        w.fill_circle(banner_x + 70, post_y + 50, 16, Palette.tentacle_sucker);
-        w.fill_circle(banner_x + 70, post_y + 100, 14, Palette.tentacle_sucker);
-        w.fill_circle(banner_x + 70, post_y + 150, 12, Palette.tentacle_sucker);
-        w.draw_text("PURPLE EMPIRE", banner_x + 16, post_y + post_h - 130, 1, Color{ .r = 254, .g = 240, .b = 138 });
-
-        // Security Laser Barrier
-        w.draw_line(post_x + 180, post_y + 40, post_x + 180, post_y + post_h - 40, Color{ .r = 244, .g = 63, .b = 94 });
-
-        // Roof gutter & flagpole
-        w.fill_rect(post_x + 20, post_y + 10, 120, 12, Color{ .r = 71, .g = 85, .b = 105 });
-        w.draw_line(post_x + 80, post_y + 10, post_x + 80, post_y - 30, Color.white);
-        if (status_of(frame).dott_flag_sewn) {
-            w.fill_rect(post_x + 80, post_y - 30, 40, 24, Palette.tentacle_purple);
-            w.fill_circle(post_x + 100, post_y - 18, 5, Palette.tentacle_sucker);
-            w.draw_text("[TENTACLE FLAG FLYING]", post_x + 30, post_y - 45, 1, Palette.tentacle_sucker);
+        // Grey sky over the flooded town, then slate roofs
+        w.fill_rect(roost_x, roost_y, roost_w, roost_h, Color{ .r = 120, .g = 130, .b = 140 });
+        w.fill_rect(roost_x, roost_y + roost_h - 200, roost_w, 60, Color{ .r = 52, .g = 92, .b = 120 });
+        w.fill_rect(roost_x, roost_y + roost_h - 140, roost_w, 140, Palette.roost_slate);
+        w.draw_rect_outline(roost_x, roost_y, roost_w, roost_h, Color{ .r = 71, .g = 85, .b = 105 });
+        var gx: i32 = roost_x + 260;
+        while (gx < roost_x + roost_w - 60) : (gx += 150) {
+            draw_gull_mark(w, gx, roost_y + 80 + @mod(gx, 40));
         }
 
-        // Chrono-Toilet 2193 (Futuristic teleport booth)
-        const pt_toilet_fut = world_to_screen(60, 0, w.width, w.height);
-        const ft_x = pt_toilet_fut.x - 30;
-        const ft_y = post_y + post_h - 180;
-        w.fill_rect(ft_x, ft_y, 60, 90, Color{ .r = 40, .g = 35, .b = 60 });
-        w.draw_rect_outline(ft_x, ft_y, 60, 90, Palette.tentacle_purple);
-        w.fill_rect(ft_x + 15, ft_y + 15, 30, 40, Color{ .r = 168, .g = 85, .b = 247 });
-        w.draw_text("CHRONO-2193", ft_x - 6, ft_y - 16, 1, Color{ .r = 216, .g = 180, .b = 254 });
+        // The flock's banner on the roost wall
+        const banner_x = roost_x + roost_w - 240;
+        w.fill_rect(banner_x, roost_y + 60, 120, roost_h - 210, Palette.flock_blue);
+        w.draw_rect_outline(banner_x, roost_y + 60, 120, roost_h - 210, Palette.gull_white);
+        draw_gull_mark(w, banner_x + 60, roost_y + 120);
+        w.draw_text("THE FLOCK", banner_x + 26, roost_y + roost_h - 170, 1, Palette.gull_white);
+
+        // The checkpoint: a striped barrier pole
+        var bar_x: i32 = roost_x + 170;
+        var stripe: usize = 0;
+        while (bar_x < roost_x + 330) : ({
+            bar_x += 20;
+            stripe += 1;
+        }) {
+            w.fill_rect(bar_x, roost_y + roost_h - 170, 20, 10, if (stripe % 2 == 0) Color{ .r = 244, .g = 63, .b = 94 } else Palette.gull_white);
+        }
+
+        // Roof gutter and flagpole, clear of the title; Widow Fenn's banner flies once sewn
+        w.fill_rect(roost_x + 380, roost_y + 70, 120, 10, Color{ .r = 180, .g = 110, .b = 60 });
+        w.draw_line(roost_x + 440, roost_y + 70, roost_x + 440, roost_y + 20, Color.white);
+        if (status_of(frame).tides_banner_sewn) {
+            w.fill_rect(roost_x + 440, roost_y + 20, 40, 24, Palette.flock_blue);
+            draw_gull_mark(w, roost_x + 460, roost_y + 32);
+            w.draw_text("[GULL BANNER FLYING]", roost_x + 400, roost_y + 6, 1, Palette.gull_white);
+        }
 
         // Title
-        w.draw_text("DYSTOPIAN TENTACLE GUARD POST - 2193", post_x + 16, post_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(LAVERNE * PURPLE TENTACLE GUARD * SECURITY CHECKPOINT)", post_x + 16, post_y + 36, 1, Color.hud_subtext);
+        w.draw_text("THE GULL ROOST - 2112", roost_x + 16, roost_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        w.draw_text("(JUNO * ADMIRAL SQUALL * THE FLOCK'S CHECKPOINT)", roost_x + 16, roost_y + 36, 1, Color.hud_subtext);
     } else if (sc.is_darko_bedroom_scene) {
         // Suburban Bedroom - October 1988 (P31-01, D-027)
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 15, .g = 18, .b = 28 });
@@ -1826,6 +1826,9 @@ fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
     // The gallery backdrop draws its trough, torch, tapestry, and door from grid state; its
     // hotspots stay clickable but get no separate art.
     if (sc.is_gallery_scene) return true;
+    if (sc.is_tides_past_scene or sc.is_tides_present_scene or sc.is_tides_future_scene) {
+        if (tides_prop(w, frame, name, pt)) return true;
+    }
     if (std.mem.indexOf(u8, name, "Fire") != null or std.mem.indexOf(u8, name, "Hearth") != null) {
         // Stone fireplace & fire glow
         w.fill_rect(pt.x - 22, pt.y - 24, 44, 48, Color{ .r = 55, .g = 45, .b = 40 });
@@ -1895,34 +1898,39 @@ fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
         w.fill_rect(pt.x - 22, pt.y, 44, 12, Palette.boat_red);
         w.fill_rect(pt.x - 1, pt.y - 26, 3, 26, Color{ .r = 120, .g = 80, .b = 50 });
         w.fill_rect(pt.x + 3, pt.y - 22, 14, 18, Color{ .r = 240, .g = 235, .b = 220 });
-    } else if (std.mem.indexOf(u8, name, "Plough") != null) {
-        // Broken Sword Farm Plough (P20-02, D-023)
-        const px = if (status_of(frame).plough_moved) pt.x + 25 else pt.x;
-        w.fill_rect(px - 18, pt.y - 8, 36, 14, Color{ .r = 65, .g = 55, .b = 50 });
-        w.draw_rect_outline(px - 18, pt.y - 8, 36, 14, Color{ .r = 110, .g = 100, .b = 95 });
-        w.draw_line(px - 14, pt.y - 8, px - 28, pt.y - 24, Color{ .r = 130, .g = 85, .b = 45 });
-        w.draw_line(px - 10, pt.y - 8, px - 24, pt.y - 24, Color{ .r = 130, .g = 85, .b = 45 });
-    } else if (std.mem.indexOf(u8, name, "Tether") != null or std.mem.indexOf(u8, name, "Stake") != null) {
-        // Tether Stake (P20-02, D-023)
+    } else if (std.mem.indexOf(u8, name, "Anchor") != null) {
+        // Old anchor (P20-02, D-023, P35-05)
+        const px = if (status_of(frame).anchor_moved) pt.x + 25 else pt.x;
+        const iron = Color{ .r = 95, .g = 70, .b = 55 };
+        w.fill_rect(px - 14, pt.y - 16, 28, 4, iron);
+        w.fill_rect(px - 2, pt.y - 18, 4, 26, iron);
+        w.draw_line(px, pt.y + 8, px - 14, pt.y - 2, iron);
+        w.draw_line(px, pt.y + 8, px + 14, pt.y - 2, iron);
+    } else if (std.mem.indexOf(u8, name, "Tether") != null or std.mem.indexOf(u8, name, "Stake") != null or
+        std.mem.indexOf(u8, name, "Mooring") != null)
+    {
+        // Tether or mooring post (P20-02, D-023)
         w.fill_rect(pt.x - 4, pt.y - 14, 8, 28, Color{ .r = 110, .g = 70, .b = 35 });
         w.draw_circle_outline(pt.x, pt.y - 10, 5, Color{ .r = 180, .g = 180, .b = 190 });
     } else if (std.mem.indexOf(u8, name, "Cellar") != null or std.mem.indexOf(u8, name, "Opening") != null) {
-        // Cellar Pit opening (P20-02, D-023)
+        // Cellar hatch or pit opening (P20-02, D-023)
         w.fill_rect(pt.x - 22, pt.y - 14, 44, 28, Color{ .r = 20, .g = 18, .b = 16 });
         w.draw_rect_outline(pt.x - 22, pt.y - 14, 44, 28, Color{ .r = 100, .g = 65, .b = 30 });
         w.fill_rect(pt.x - 8, pt.y - 16, 4, 30, Color{ .r = 140, .g = 90, .b = 45 });
         w.fill_rect(pt.x + 4, pt.y - 16, 4, 30, Color{ .r = 140, .g = 90, .b = 45 });
-    } else if (std.mem.indexOf(u8, name, "Mural") != null) {
-        // Carved Mural (P20-02, D-023)
-        w.fill_rect(pt.x - 24, pt.y - 20, 48, 40, Color{ .r = 60, .g = 55, .b = 52 });
-        w.draw_rect_outline(pt.x - 24, pt.y - 20, 48, 40, Color{ .r = 120, .g = 115, .b = 110 });
-        w.fill_rect(pt.x - 3, pt.y - 12, 6, 24, Palette.templar_red);
-        w.fill_rect(pt.x - 12, pt.y - 3, 24, 6, Palette.templar_red);
-    } else if (std.mem.indexOf(u8, name, "Altar") != null) {
-        // Crypt Altar (P20-02, D-023)
-        w.fill_rect(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 85, .g = 80, .b = 78 });
-        w.draw_rect_outline(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 140, .g = 135, .b = 130 });
-        w.fill_circle(pt.x, pt.y, 5, Color{ .r = 251, .g = 191, .b = 36 });
+    } else if (std.mem.indexOf(u8, name, "WreckersChart") != null or std.mem.indexOf(u8, name, "Wreckers Chart") != null) {
+        // Wreckers' chart (P20-02, D-023, P35-05)
+        w.fill_rect(pt.x - 24, pt.y - 20, 48, 40, Color{ .r = 70, .g = 64, .b = 58 });
+        w.draw_rect_outline(pt.x - 24, pt.y - 20, 48, 40, Color{ .r = 130, .g = 120, .b = 110 });
+        w.draw_line(pt.x - 18, pt.y - 8, pt.x + 18, pt.y + 2, Color{ .r = 200, .g = 190, .b = 170 });
+        w.fill_circle(pt.x - 8, pt.y + 8, 3, Palette.chart_ink);
+        w.fill_circle(pt.x + 10, pt.y + 10, 3, Palette.chart_ink);
+    } else if (std.mem.indexOf(u8, name, "SeaChest") != null or std.mem.indexOf(u8, name, "Sea Chest") != null) {
+        // Sea chest (P20-02, D-023, P35-05)
+        w.fill_rect(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 105, .g = 70, .b = 40 });
+        w.draw_rect_outline(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 70, .g = 45, .b = 25 });
+        w.fill_rect(pt.x - 14, pt.y - 14, 4, 28, Color{ .r = 70, .g = 70, .b = 75 });
+        w.fill_rect(pt.x + 10, pt.y - 14, 4, 28, Color{ .r = 70, .g = 70, .b = 75 });
     } else if (std.mem.indexOf(u8, name, "JetEngine") != null or std.mem.indexOf(u8, name, "Engine") != null) {
         // Artifact of Metal: Jet Engine Cowling (P31-01, P31-03, D-027)
         w.fill_circle(pt.x, pt.y, 22, Color{ .r = 100, .g = 110, .b = 125 });
@@ -2175,19 +2183,15 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_alert,
             ));
         }
-    } else if (std.mem.eql(u8, name, "George")) {
-        // George Stobbart: Leather jacket, middle-parted blonde hair, blue jeans (P20-02, D-023)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.george_jacket);
+    } else if (std.mem.eql(u8, name, "Tamsin") and (detect(frame).is_lamp_point_scene or detect(frame).is_wreckers_cellar_scene)) {
+        // Tamsin on Lamp Point (P20-02, D-023, P35-05): her Brackwater Barbs colours, with
+        // stars while Cudgel has her down
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.tamsin_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-
-        // Blonde hair parted in the middle
-        w.fill_circle(pt.x - 4, pt.y - 8, 6, Palette.george_hair);
-        w.fill_circle(pt.x + 4, pt.y - 8, 6, Palette.george_hair);
-        // Blue shirt collar
-        w.fill_rect(pt.x - 5, pt.y + 4, 10, 4, Color{ .r = 70, .g = 130, .b = 200 });
+        w.fill_circle(pt.x, pt.y - 8, 8, Palette.tamsin_hair);
 
         // Dizzy stars if knocked down
-        if (status_of(frame).george_knocked_down) {
+        if (status_of(frame).tamsin_knocked_down) {
             w.fill_circle(pt.x - 12, pt.y - 16, 3, Color{ .r = 250, .g = 204, .b = 21 });
             w.fill_circle(pt.x, pt.y - 20, 4, Color{ .r = 254, .g = 240, .b = 138 });
             w.fill_circle(pt.x + 12, pt.y - 16, 3, Color{ .r = 250, .g = 204, .b = 21 });
@@ -2195,19 +2199,19 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "George",
+            "Tamsin",
             pt.x,
             pt.y,
             .above,
             ACTOR_SCREEN_RADIUS + 2,
             2,
-            to_layout(Palette.george_hair),
+            to_layout(Color{ .r = 250, .g = 204, .b = 21 }),
             .actor_name,
             .actor_name,
         ));
 
         // Status
-        if (status_of(frame).george_knocked_down) {
+        if (status_of(frame).tamsin_knocked_down) {
             layout_resolver.submit(TextLabel.init(
                 "[KNOCKED DOWN!]",
                 pt.x,
@@ -2232,26 +2236,25 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
             ));
         }
-    } else if (std.mem.eql(u8, name, "BillyGoat")) {
-        // Billy Goat: Off-white fleece, curved dark horns, goatee beard (P20-02, D-023)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.goat_body);
+    } else if (std.mem.eql(u8, name, "Cudgel")) {
+        // Cudgel, the lighthouse keeper's donkey (P20-02, D-023, P35-05): grey-brown coat,
+        // long dark-tipped ears, pale muzzle, red rope halter
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.donkey_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
 
-        // Dark horns
-        w.draw_line(pt.x - 6, pt.y - 8, pt.x - 12, pt.y - 18, Palette.goat_horns);
-        w.draw_line(pt.x - 12, pt.y - 18, pt.x - 16, pt.y - 14, Palette.goat_horns);
-        w.draw_line(pt.x + 6, pt.y - 8, pt.x + 12, pt.y - 18, Palette.goat_horns);
-        w.draw_line(pt.x + 12, pt.y - 18, pt.x + 16, pt.y - 14, Palette.goat_horns);
+        // Long ears
+        w.fill_rect(pt.x - 9, pt.y - 24, 5, 16, Palette.donkey_coat);
+        w.fill_rect(pt.x + 4, pt.y - 24, 5, 16, Palette.donkey_coat);
+        w.fill_rect(pt.x - 9, pt.y - 24, 5, 5, Palette.donkey_ears);
+        w.fill_rect(pt.x + 4, pt.y - 24, 5, 5, Palette.donkey_ears);
 
-        // Red collar & ring
-        w.fill_rect(pt.x - 8, pt.y - 2, 16, 4, Palette.goat_collar);
+        // Pale muzzle and the halter's ring
+        w.fill_circle(pt.x, pt.y + 6, 6, Color{ .r = 215, .g = 208, .b = 195 });
+        w.fill_rect(pt.x - 8, pt.y - 2, 16, 3, Palette.donkey_halter);
         w.fill_circle(pt.x, pt.y + 2, 3, Color{ .r = 180, .g = 180, .b = 190 });
 
-        // Chin goatee beard
-        w.fill_rect(pt.x - 2, pt.y + ACTOR_SCREEN_RADIUS - 2, 4, 6, Color{ .r = 210, .g = 205, .b = 195 });
-
         // Tangled coils if tangled
-        if (status_of(frame).goat_is_tangled) {
+        if (status_of(frame).donkey_tangled) {
             w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 3, Palette.rope_color);
             w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 6, Palette.rope_color);
             w.fill_circle(pt.x - 10, pt.y - 18, 3, Color{ .r = 250, .g = 204, .b = 21 });
@@ -2260,7 +2263,7 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
 
         // Label
         layout_resolver.submit(TextLabel.init(
-            "Billy Goat",
+            "Cudgel",
             pt.x,
             pt.y,
             .above,
@@ -2272,7 +2275,7 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
         ));
 
         // Status
-        if (status_of(frame).goat_is_tangled) {
+        if (status_of(frame).donkey_tangled) {
             layout_resolver.submit(TextLabel.init(
                 "[TANGLED IN ROPE!]",
                 pt.x,
@@ -2284,9 +2287,9 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
                 .actor_alert,
             ));
-        } else if (status_of(frame).goat_is_retreating) {
+        } else if (status_of(frame).donkey_retreating) {
             layout_resolver.submit(TextLabel.init(
-                "[RETREATING TO STAKE!]",
+                "[AMBLING BACK TO HIS POST]",
                 pt.x,
                 pt.y,
                 .below,
@@ -2296,9 +2299,9 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
                 .actor_alert,
             ));
-        } else if (status_of(frame).goat_is_charging) {
+        } else if (status_of(frame).donkey_charging) {
             layout_resolver.submit(TextLabel.init(
-                "[CHARGING! RAMMING GEORGE!]",
+                "[CHARGING!]",
                 pt.x,
                 pt.y,
                 .below,
@@ -2310,7 +2313,7 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
             ));
         } else {
             layout_resolver.submit(TextLabel.init(
-                "[Guarding Dig Entrance]",
+                "[Guarding the Hatch]",
                 pt.x,
                 pt.y,
                 .below,
@@ -2321,97 +2324,77 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
                 .actor_status,
             ));
         }
-    } else if (std.mem.eql(u8, name, "Hoagie")) {
-        // Hoagie: Heavy build, black vest, red backwards cap, long hair (P21-03, D-025)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color{ .r = 40, .g = 40, .b = 45 });
-        w.fill_circle(pt.x, pt.y - 6, ACTOR_SCREEN_RADIUS - 4, Color{ .r = 240, .g = 180, .b = 140 });
-        // Red backwards baseball cap
-        w.fill_rect(pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 4, 24, 8, Palette.hoagie_cap);
-        w.fill_rect(pt.x + 8, pt.y - ACTOR_SCREEN_RADIUS, 8, 4, Palette.hoagie_cap);
-        // Long brown hair
-        w.fill_rect(pt.x - 14, pt.y - 2, 4, 16, Color{ .r = 80, .g = 50, .b = 25 });
-        w.fill_rect(pt.x + 10, pt.y - 2, 4, 16, Color{ .r = 80, .g = 50, .b = 25 });
-        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.white);
-
-        layout_resolver.submit(TextLabel.init("Hoagie", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-    } else if (std.mem.eql(u8, name, "Bernard")) {
-        // Bernard: White collared shirt, black tie, glasses (P21-03, D-025)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+    } else if (std.mem.eql(u8, name, "Ossie")) {
+        // Ossie, deckhand of 1712 (P21-03, D-025, P35-06): striped jersey, knitted cap
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.ossie_jersey);
+        w.fill_rect(pt.x - 12, pt.y - 2, 24, 3, Palette.gull_white);
+        w.fill_rect(pt.x - 12, pt.y + 6, 24, 3, Palette.gull_white);
+        w.fill_circle(pt.x, pt.y - 12, 9, Color{ .r = 230, .g = 175, .b = 135 });
+        w.fill_rect(pt.x - 10, pt.y - 22, 20, 7, Palette.ossie_cap);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // Blue suspenders & black tie
-        w.fill_rect(pt.x - 2, pt.y - 4, 4, 16, Color.black);
-        w.fill_rect(pt.x - 8, pt.y + 2, 2, 14, Palette.bernard_shirt);
-        w.fill_rect(pt.x + 6, pt.y + 2, 2, 14, Palette.bernard_shirt);
-        // Thick black horn-rimmed glasses
-        w.draw_rect_outline(pt.x - 10, pt.y - 10, 8, 7, Color.black);
-        w.draw_rect_outline(pt.x + 2, pt.y - 10, 8, 7, Color.black);
-        w.draw_line(pt.x - 2, pt.y - 7, pt.x + 2, pt.y - 7, Color.black);
 
-        layout_resolver.submit(TextLabel.init("Bernard", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 2, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-    } else if (std.mem.eql(u8, name, "Laverne")) {
-        // Laverne: Spiky blonde hair, cyan dress, wide eyes (P21-03, D-025)
-        const dress_col = if (status_of(frame).dott_laverne_disguised) Palette.tentacle_purple else Palette.laverne_dress;
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, dress_col);
+        layout_resolver.submit(TextLabel.init("Ossie", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "Nell")) {
+        // Nell of Brine's Boarding House, 1912 (P21-03, D-025, P35-06): green shirtwaist,
+        // spectacles, hair in a bun
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.nell_shirt);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // Spiky blonde hair
-        w.fill_circle(pt.x, pt.y - 14, 10, Palette.laverne_hair);
-        w.fill_rect(pt.x - 14, pt.y - 18, 6, 8, Palette.laverne_hair);
-        w.fill_rect(pt.x + 8, pt.y - 18, 6, 8, Palette.laverne_hair);
-        // Wide expressive eyes
-        w.fill_circle(pt.x - 4, pt.y - 4, 4, Color.white);
-        w.fill_circle(pt.x + 4, pt.y - 4, 4, Color.white);
-        w.fill_circle(pt.x - 4, pt.y - 4, 2, Color.black);
-        w.fill_circle(pt.x + 4, pt.y - 4, 2, Color.black);
+        w.fill_circle(pt.x, pt.y - 10, 9, Color{ .r = 240, .g = 200, .b = 170 });
+        w.fill_circle(pt.x, pt.y - 20, 5, Color{ .r = 110, .g = 70, .b = 40 });
+        w.draw_circle_outline(pt.x - 4, pt.y - 10, 3, Color.black);
+        w.draw_circle_outline(pt.x + 4, pt.y - 10, 3, Color.black);
 
-        layout_resolver.submit(TextLabel.init("Laverne", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-        if (status_of(frame).dott_laverne_disguised) {
-            layout_resolver.submit(TextLabel.init("[DISGUISED AS TENTACLE]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.tentacle_purple), .actor_status, .actor_status));
+        layout_resolver.submit(TextLabel.init("Nell", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 2, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "Juno")) {
+        // Juno, navigator of 2112 (P21-03, D-025, P35-06): oilskin coat, red hair; white and
+        // blue once Widow Fenn's banner is her disguise
+        const coat = if (status_of(frame).tides_juno_disguised) Palette.gull_white else Palette.juno_coat;
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, coat);
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_circle(pt.x, pt.y - 12, 9, Color{ .r = 235, .g = 190, .b = 160 });
+        w.fill_rect(pt.x - 11, pt.y - 20, 22, 6, Palette.juno_hair);
+        if (status_of(frame).tides_juno_disguised) {
+            draw_gull_mark(w, pt.x, pt.y + 6);
         }
-    } else if (std.mem.eql(u8, name, "Washington") or std.mem.eql(u8, name, "GeorgeWashington")) {
-        // George Washington: Powdered wig, continental blue coat, axe (P21-03, D-025)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.washington_coat);
+
+        layout_resolver.submit(TextLabel.init("Juno", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+        if (status_of(frame).tides_juno_disguised) {
+            layout_resolver.submit(TextLabel.init("[DISGUISED AS A GULL]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.flock_blue), .actor_status, .actor_status));
+        }
+    } else if (std.mem.eql(u8, name, "FounderGale")) {
+        // Founder Harrow Gale (P21-03, D-025, P35-06): tarred coat, grey beard, felling axe
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.gale_coat);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // Powdered white wig with side rolls
-        w.fill_circle(pt.x, pt.y - 12, 11, Color{ .r = 240, .g = 240, .b = 245 });
-        w.fill_circle(pt.x - 12, pt.y - 8, 6, Color{ .r = 230, .g = 230, .b = 235 });
-        w.fill_circle(pt.x + 12, pt.y - 8, 6, Color{ .r = 230, .g = 230, .b = 235 });
-        // Gold epaulettes
-        w.fill_rect(pt.x - 14, pt.y - 2, 6, 4, Color{ .r = 250, .g = 204, .b = 21 });
-        w.fill_rect(pt.x + 8, pt.y - 2, 6, 4, Color{ .r = 250, .g = 204, .b = 21 });
-        // Hatchet / Axe in hand
+        w.fill_circle(pt.x, pt.y - 12, 9, Color{ .r = 220, .g = 170, .b = 130 });
+        w.fill_rect(pt.x - 7, pt.y - 8, 14, 8, Color{ .r = 170, .g = 170, .b = 175 });
+        w.fill_rect(pt.x - 10, pt.y - 23, 20, 5, Color{ .r = 40, .g = 35, .b = 30 });
         w.draw_line(pt.x + 12, pt.y + 4, pt.x + 20, pt.y - 10, Color{ .r = 130, .g = 85, .b = 45 });
         w.fill_rect(pt.x + 16, pt.y - 14, 8, 6, Color{ .r = 180, .g = 185, .b = 195 });
 
-        layout_resolver.submit(TextLabel.init("G. Washington", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-    } else if (std.mem.eql(u8, name, "BetsyRoss") or std.mem.eql(u8, name, "Betsy")) {
-        // Betsy Ross: White bonnet, maroon gown, apron (P21-03, D-025)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.betsy_dress);
+        layout_resolver.submit(TextLabel.init("Founder Gale", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "WidowFenn")) {
+        // Widow Fenn (P21-03, D-025, P35-06): black weeds, white cap, needle and thread
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Palette.fenn_dress);
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // White ruffled mob cap / bonnet
-        w.fill_circle(pt.x, pt.y - 12, 10, Color.white);
-        w.draw_circle_outline(pt.x, pt.y - 12, 10, Color{ .r = 210, .g = 215, .b = 225 });
-        // White apron
-        w.fill_rect(pt.x - 7, pt.y + 2, 14, 12, Color.white);
-        // Tailor shears
-        w.draw_line(pt.x + 10, pt.y + 6, pt.x + 18, pt.y + 2, Color{ .r = 200, .g = 205, .b = 215 });
-        w.draw_line(pt.x + 10, pt.y + 2, pt.x + 18, pt.y + 6, Color{ .r = 200, .g = 205, .b = 215 });
+        w.fill_circle(pt.x, pt.y - 12, 9, Color{ .r = 235, .g = 200, .b = 175 });
+        w.fill_rect(pt.x - 10, pt.y - 22, 20, 6, Color.white);
+        w.draw_line(pt.x + 10, pt.y + 6, pt.x + 18, pt.y - 2, Color{ .r = 200, .g = 205, .b = 215 });
+        w.draw_line(pt.x + 18, pt.y - 2, pt.x + 20, pt.y + 8, Color{ .r = 220, .g = 38, .b = 38 });
 
-        layout_resolver.submit(TextLabel.init("Betsy Ross", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-    } else if (std.mem.eql(u8, name, "PurpleTentacle") or std.mem.eql(u8, name, "TentacleGuard")) {
-        // Purple Tentacle: Conical purple stalk, suction cups, angry brows (P21-03, D-025)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Palette.tentacle_purple);
-        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.white);
-        // Suction cups
-        w.fill_circle(pt.x, pt.y + 8, 4, Palette.tentacle_sucker);
-        w.fill_circle(pt.x - 6, pt.y + 2, 3, Palette.tentacle_sucker);
-        w.fill_circle(pt.x + 6, pt.y + 2, 3, Palette.tentacle_sucker);
-        // Angry red eyes & slant brows
-        w.fill_circle(pt.x - 5, pt.y - 4, 3, Color{ .r = 239, .g = 68, .b = 68 });
-        w.fill_circle(pt.x + 5, pt.y - 4, 3, Color{ .r = 239, .g = 68, .b = 68 });
-        w.draw_line(pt.x - 9, pt.y - 9, pt.x - 2, pt.y - 7, Color.black);
-        w.draw_line(pt.x + 9, pt.y - 9, pt.x + 2, pt.y - 7, Color.black);
+        layout_resolver.submit(TextLabel.init("Widow Fenn", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "AdmiralSquall")) {
+        // Admiral Squall (P21-03, D-025, P35-06): a gull the size of a rowing boat, in a
+        // gold-braided bicorne
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 4, Palette.gull_white);
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 4, Color{ .r = 148, .g = 163, .b = 184 });
+        w.fill_rect(pt.x - ACTOR_SCREEN_RADIUS - 6, pt.y - 2, 10, 14, Color{ .r = 148, .g = 163, .b = 184 });
+        w.fill_rect(pt.x + ACTOR_SCREEN_RADIUS - 4, pt.y - 2, 10, 14, Color{ .r = 148, .g = 163, .b = 184 });
+        w.fill_rect(pt.x + 6, pt.y - 6, 14, 5, Color{ .r = 250, .g = 204, .b = 21 });
+        w.fill_circle(pt.x + 2, pt.y - 9, 2, Color.black);
+        w.fill_rect(pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 8, 24, 6, Color{ .r = 30, .g = 41, .b = 59 });
+        w.fill_rect(pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 3, 24, 2, Color{ .r = 250, .g = 204, .b = 21 });
 
-        layout_resolver.submit(TextLabel.init("Purple Tentacle", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+        layout_resolver.submit(TextLabel.init("Admiral Squall", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 6, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
     } else if (std.mem.eql(u8, name, "Donnie")) {
         // Donnie Darko: Dark disheveled hair, dark grey jacket, chest vector worm anchor node (P31-01, P31-03, D-027)
         w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 55, .g = 60, .b = 75 });
@@ -2980,10 +2963,10 @@ fn footer(frame: *const RenderFrame) ?r.FooterHint {
     const sc = detect(frame);
     if (sc.is_spitting_scene) {
         return .{ .text = "[S]: Spit! | [C]: Conch | [D]: Treacle Cider | [P]: Pegs | [-]/[+]: Speed | [Space]: Pause | [< / >]: Scrub" };
-    } else if (sc.is_dott_past_scene or sc.is_dott_present_scene or sc.is_dott_future_scene) {
-        return .{ .text = "[1]: Hoagie | [2]: Bernard | [3]: Laverne | [-]/[+]: Speed | [Space]: Pause | Flush Item to Portrait", .color = HINT_GOLD };
-    } else if (sc.is_goat_courtyard_scene or sc.is_templar_crypt_scene) {
-        return .{ .text = "[C]: Courtyard | [T]: Crypt | [1]: Dig | [2]: Plough | [-]/[+]: Speed | [Space]: Pause", .color = HINT_GOLD };
+    } else if (sc.is_tides_past_scene or sc.is_tides_present_scene or sc.is_tides_future_scene) {
+        return .{ .text = "[1]: Ossie | [2]: Nell | [3]: Juno | [-]/[+]: Speed | [Space]: Pause | Send Item to Portrait", .color = HINT_GOLD };
+    } else if (sc.is_lamp_point_scene or sc.is_wreckers_cellar_scene) {
+        return .{ .text = "[L]: Lamp Point | [W]: Cellar | [1]: Hatch | [2]: Anchor | [-]/[+]: Speed | [Space]: Pause", .color = HINT_GOLD };
     } else if (sc.is_inn_scene or sc.is_yard_scene or sc.is_office_scene) {
         return .{ .text = "[I]: Inn | [Y]: Yard | [O]: Office | [-]/[+]: Speed | [Space]: Pause | [0-8]: Steps", .color = HINT_GOLD };
     } else if (sc.is_village_scene) {
@@ -3010,8 +2993,8 @@ pub const Track = enum(u8) {
     lantern,
     net_loft,
     harbour_office,
-    lochmarne,
-    tentacle,
+    wreckers_cellar,
+    three_tides,
     bell_tower,
 };
 
@@ -3021,9 +3004,9 @@ pub const Sfx = enum(u8) {
     splash,
     sword_clash,
     whistle,
-    goat_bleat,
+    bray,
     thud,
-    toilet_flush,
+    well_splash,
     snip_shears,
     wood_chop,
     sizzle,
@@ -3065,8 +3048,8 @@ fn arranged(which: Track) music.Arranged {
         .lantern => music.lantern,
         .net_loft => music.net_loft,
         .harbour_office => music.harbour_office,
-        .lochmarne => music.lochmarne,
-        .tentacle => music.tentacle,
+        .wreckers_cellar => music.wreckers_cellar,
+        .three_tides => music.three_tides,
         .bell_tower => music.bell_tower,
     };
 }
@@ -3085,12 +3068,12 @@ const SFX = blk: {
     t[@intFromEnum(Sfx.sword_clash)] = .{ .note1 = 84, .note2 = 90, .env = 32000, .decay = 6, .samples = 5500, .terms = &.{ .{ .source = .ring }, .{ .source = .noise } }, .mix = .{ .shift = 1 } };
     // Rising slide whistle
     t[@intFromEnum(Sfx.whistle)] = .{ .note1 = 60, .sweep = 3500, .env = 22000, .decay = 2, .samples = 11000, .terms = &.{wave(.osc1, .triangle, 1)} };
-    // Dual saw/pulse bleat alternating C4 and Eb4 (P20-03, D-023)
-    t[@intFromEnum(Sfx.goat_bleat)] = .{ .note1 = 60, .note2 = 63, .duty = 0x60000000, .sweep = 150, .env = 30000, .decay = 3, .samples = 9000, .step_samples = 1200, .steps = &.{ .{ .note = 63, .samples = 1200 }, .{ .note = 60, .samples = 1200 } }, .loop = true, .terms = &.{ wave(.osc1, .saw, 1), wave(.osc2, .pulse, 1) }, .mix = .{ .shift = 1 } };
+    // Dual saw/pulse bray alternating C4 and Eb4 (P20-03, D-023)
+    t[@intFromEnum(Sfx.bray)] = .{ .note1 = 60, .note2 = 63, .duty = 0x60000000, .sweep = 150, .env = 30000, .decay = 3, .samples = 9000, .step_samples = 1200, .steps = &.{ .{ .note = 63, .samples = 1200 }, .{ .note = 60, .samples = 1200 } }, .loop = true, .terms = &.{ wave(.osc1, .saw, 1), wave(.osc2, .pulse, 1) }, .mix = .{ .shift = 1 } };
     // Heavy headbutt impact with a fast pitch drop (P20-03, D-023)
     t[@intFromEnum(Sfx.thud)] = .{ .note1 = 40, .sweep = -1800, .env = 32000, .decay = 20, .samples = 1600, .terms = &.{ .{ .source = .noise }, wave(.osc1, .triangle, 3) }, .mix = .{ .shift = 2 } };
     // Downward swirling flush (P21-03, D-025)
-    t[@intFromEnum(Sfx.toilet_flush)] = .{ .note1 = 64, .sweep = -120, .env = 28000, .decay = 2, .samples = 18000, .terms = &.{ .{ .source = .noise }, wave(.osc1, .saw, 1) }, .mix = .{ .shift = 1 } };
+    t[@intFromEnum(Sfx.well_splash)] = .{ .note1 = 64, .sweep = -120, .env = 28000, .decay = 2, .samples = 18000, .terms = &.{ .{ .source = .noise }, wave(.osc1, .saw, 1) }, .mix = .{ .shift = 1 } };
     // Sharp metallic snip (P21-03, D-025)
     t[@intFromEnum(Sfx.snip_shears)] = .{ .note1 = 84, .duty = 0x40000000, .sweep = -1200, .env = 26000, .decay = 18, .samples = 2200, .terms = &.{ wave(.osc1, .pulse, 1), .{ .source = .noise } }, .mix = .{ .shift = 1 } };
     // Axe on timber (P21-03, D-025)
@@ -3117,6 +3100,8 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
         return track(.fencing_yard);
     } else if (std.mem.indexOf(u8, scene_name, "Drowned Lantern") != null) {
         return track(.lantern);
+    } else if (std.mem.eql(u8, scene_name, "Wreckers Cellar")) {
+        return track(.wreckers_cellar);
     } else if (std.mem.indexOf(u8, scene_name, "Cellar") != null) {
         return track(.cellar);
     } else if (std.mem.indexOf(u8, scene_name, "Tavern") != null or
@@ -3126,26 +3111,18 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
     } else if (std.mem.eql(u8, scene_name, "Inn Landing") or
         std.mem.eql(u8, scene_name, "Net Loft Yard") or
         std.mem.indexOf(u8, scene_name, "Garden") != null or
+        std.mem.eql(u8, scene_name, "Lamp Point") or
         std.mem.indexOf(u8, scene_name, "Courtyard") != null or
         std.mem.indexOf(u8, scene_name, "Corridor") != null)
     {
         return track(.net_loft);
     } else if (std.mem.eql(u8, scene_name, "Harbour Office")) {
         return track(.harbour_office);
-    } else if (std.mem.indexOf(u8, scene_name, "Lochmarne") != null or
-        std.mem.indexOf(u8, scene_name, "Goat") != null or
-        std.mem.indexOf(u8, scene_name, "Crypt") != null or
-        std.mem.indexOf(u8, scene_name, "Templar") != null)
+    } else if (std.mem.eql(u8, scene_name, "Charter Yard") or
+        std.mem.eql(u8, scene_name, "Brine's Boarding House") or
+        std.mem.eql(u8, scene_name, "Gull Roost"))
     {
-        return track(.lochmarne);
-    } else if (std.mem.indexOf(u8, scene_name, "Colonial") != null or
-        std.mem.indexOf(u8, scene_name, "Motel") != null or
-        std.mem.indexOf(u8, scene_name, "Dystopia") != null or
-        std.mem.indexOf(u8, scene_name, "Tentacle") != null or
-        std.mem.indexOf(u8, scene_name, "Dott") != null or
-        std.mem.indexOf(u8, scene_name, "Chrono") != null)
-    {
-        return track(.tentacle);
+        return track(.three_tides);
     }
 
     return track(.tavern);
@@ -3204,18 +3181,18 @@ pub const Status = struct {
     dog_fur_collected: bool = false,
     tamsin_disguised: bool = false,
     berth_taken: bool = false,
-    goat_is_tangled: bool = false,
-    goat_is_charging: bool = false,
-    goat_is_retreating: bool = false,
-    george_knocked_down: bool = false,
-    plough_moved: bool = false,
-    dott_tree_chopped: bool = false,
-    dott_wine_aged: bool = false,
-    dott_battery_charged: bool = false,
-    dott_flag_sewn: bool = false,
-    dott_laverne_freed: bool = false,
-    dott_laverne_disguised: bool = false,
-    dott_puzzle_solved: bool = false,
+    donkey_tangled: bool = false,
+    donkey_charging: bool = false,
+    donkey_retreating: bool = false,
+    tamsin_knocked_down: bool = false,
+    anchor_moved: bool = false,
+    tides_tree_felled: bool = false,
+    tides_port_aged: bool = false,
+    tides_well_charged: bool = false,
+    tides_banner_sewn: bool = false,
+    tides_juno_freed: bool = false,
+    tides_juno_disguised: bool = false,
+    tides_puzzle_solved: bool = false,
     tangent_active: bool = false,
     singularity_collapsed: bool = false,
     darko_water_flooded: bool = false,
@@ -3567,52 +3544,52 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
         }
     }
 
-    // 5d. Capture Broken Sword Goat Puzzle status flags (P20-01..P20-03, D-023)
-    st.goat_is_tangled = false;
+    // 5d. Capture the Donkey of Lamp Point status flags (P20-01..P20-03, D-023, P35-05)
+    st.donkey_tangled = false;
     if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
-        st.goat_is_tangled = world.has_fact(null, rel, null);
+        st.donkey_tangled = world.has_fact(null, rel, null);
     }
-    st.goat_is_retreating = false;
-    if (world.lookup_relation("GoatRetreating") orelse world.lookup_relation("retreating")) |rel| {
-        st.goat_is_retreating = world.has_fact(null, rel, null);
+    st.donkey_retreating = false;
+    if (world.lookup_relation("DonkeyRetreating") orelse world.lookup_relation("retreating")) |rel| {
+        st.donkey_retreating = world.has_fact(null, rel, null);
     }
-    st.george_knocked_down = false;
+    st.tamsin_knocked_down = false;
     if (world.lookup_relation("KnockedDown") orelse world.lookup_relation("knocked_down")) |rel| {
-        st.george_knocked_down = world.has_fact(null, rel, null);
+        st.tamsin_knocked_down = world.has_fact(null, rel, null);
     }
-    st.plough_moved = false;
-    if (world.lookup_relation("PloughMoved") orelse world.lookup_relation("plough_moved")) |rel| {
-        st.plough_moved = world.has_fact(null, rel, null);
+    st.anchor_moved = false;
+    if (world.lookup_relation("AnchorMoved") orelse world.lookup_relation("anchor_moved")) |rel| {
+        st.anchor_moved = world.has_fact(null, rel, null);
     }
 
-    // 5f. Capture Day of the Tentacle puzzle status flags (P21-03, D-025)
-    st.dott_tree_chopped = false;
-    if (world.lookup_relation("TreeChoppedDown")) |rel| {
-        st.dott_tree_chopped = world.has_fact(null, rel, null);
+    // 5f. Capture Three Tides puzzle status flags (P21-03, D-025)
+    st.tides_tree_felled = false;
+    if (world.lookup_relation("TreeFelled")) |rel| {
+        st.tides_tree_felled = world.has_fact(null, rel, null);
     }
-    st.dott_wine_aged = false;
-    if (world.lookup_relation("WineAgedIntoVinegar")) |rel| {
-        st.dott_wine_aged = world.has_fact(null, rel, null);
+    st.tides_port_aged = false;
+    if (world.lookup_relation("PortAgedIntoVinegar")) |rel| {
+        st.tides_port_aged = world.has_fact(null, rel, null);
     }
-    st.dott_battery_charged = false;
-    if (world.lookup_relation("ToiletPowered")) |rel| {
-        st.dott_battery_charged = world.has_fact(null, rel, null);
+    st.tides_well_charged = false;
+    if (world.lookup_relation("WellPowered")) |rel| {
+        st.tides_well_charged = world.has_fact(null, rel, null);
     }
-    st.dott_flag_sewn = false;
-    if (world.lookup_relation("TentacleFlagSewn")) |rel| {
-        st.dott_flag_sewn = world.has_fact(null, rel, null);
+    st.tides_banner_sewn = false;
+    if (world.lookup_relation("BannerSewn")) |rel| {
+        st.tides_banner_sewn = world.has_fact(null, rel, null);
     }
-    st.dott_laverne_freed = false;
+    st.tides_juno_freed = false;
     if (world.lookup_relation("FreedFromTree")) |rel| {
-        st.dott_laverne_freed = world.has_fact(null, rel, null);
+        st.tides_juno_freed = world.has_fact(null, rel, null);
     }
-    st.dott_laverne_disguised = false;
-    if (world.lookup_relation("TentacleDisguiseActive")) |rel| {
-        st.dott_laverne_disguised = world.has_fact(null, rel, null);
+    st.tides_juno_disguised = false;
+    if (world.lookup_relation("GullDisguiseActive")) |rel| {
+        st.tides_juno_disguised = world.has_fact(null, rel, null);
     }
-    st.dott_puzzle_solved = false;
-    if (world.lookup_relation("DottSolved")) |rel| {
-        st.dott_puzzle_solved = world.has_fact(null, rel, null);
+    st.tides_puzzle_solved = false;
+    if (world.lookup_relation("TidesSolved")) |rel| {
+        st.tides_puzzle_solved = world.has_fact(null, rel, null);
     }
 
     // 5g. Capture Donnie Darko / Roberta Sparrow status flags (P31-01..P31-03, D-027)
