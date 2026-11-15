@@ -571,6 +571,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 **Alternatives:**
 - Full breaking purge without aliases: rejected because maintaining backwards-compatible aliases preserves existing proof callers and characterization goldens.
 **Consequences:** Hypervisor API is completely generic and decoupled from narrative film vocabulary. All nine proof goldens remain unchanged.
+**Update, 2026-11-15 (P35-07):** The Copper Weathercock and its browser deck call only the neutral names, so nothing in the repo uses the aliases (`fork_tangent`, `set_vortex_target`, `collapse_tangent`, `.tangent`, `.collapsed_singularity`, `.singularity_collapse`, `tangent_active`, `artifact_entity`, `vortex_waypoint`, `living_receiver`) except the engine's own tests of them. The maintainer kept them; removing them is a later choice and would change the engine API.
 
 ## D-045 Society and Duel Configuration as Script-Owned Program Data (2026-11-10, status: accepted)
 **Context:** D-034 and D-035 extracted reusable society and dialogue-duel mechanics, but every game still needed Zig arrays to configure them. P32-22 and P32-24 require those tables in the language and distributable package. The maintainer accepted complete script authority over both proof configurations while retaining the direct Zig APIs for engine embedding and tests.

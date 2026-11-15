@@ -27,7 +27,7 @@ const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
 const algiers = @import("atlantis_puzzle.zig");
 const loom = @import("loom_puzzle.zig");
 const art = @import("art.zig");
-const darko = @import("darko_puzzle.zig");
+const weathercock = @import("weathercock.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -128,16 +128,16 @@ pub const decks = [_]wasm.Deck{
         .on_choice = atlantis_choice,
         .cues = .{ .talk = "Talk" },
     }),
-    wasm.script_deck_with("THE MIDDLESEX ANOMALY (TANGENT WORLDS)", darko.DARKO_PUZZLE_SCRIPT, .{
-        .player = "Donnie",
-        .intro = "Middlesex: a tangent universe collapses in 280 ticks. [S] plays the next step; I inspects the branch.",
+    wasm.script_deck_with("THE COPPER WEATHERCOCK (BRANCH WORLDS)", weathercock.WEATHERCOCK_SCRIPT, .{
+        .player = "Wren",
+        .intro = "Brackwater: a borrowed month folds away in 280 ticks. [S] plays the next step; I inspects the branch.",
         .soundtrack = &art.soundtrack,
         .theme = &art.theme,
         .status_hook = art.capture_status,
         .background = .{ .r = 26, .g = 18, .b = 40 },
-        .setup = darko_setup,
-        .catalyst = solver(&DARKO_SOLUTION),
-        .after_tick = darko_after_tick,
+        .setup = weathercock_setup,
+        .catalyst = solver(&WEATHERCOCK_SOLUTION),
+        .after_tick = weathercock_after_tick,
     }),
     wasm.script_deck_with("THE BELL TOWER (MUSICAL DRAFTS)", loom.BELL_TOWER_SCRIPT, .{
         .player = "Wren",
@@ -291,7 +291,7 @@ fn perform(rt: *WasmRuntime, action: Action) !bool {
                 _ = try rt.spatial.transition_actor(try entity(rt, name), scene, mark);
             }
         },
-        // Facts go to the active world: the tangent branch while one is live, as the desktop
+        // Facts go to the active world: the branch while one is live, as the desktop
         // host writes to `Session.active_world` (D-049, D-071).
         .remember => |f| try rt.active_world().remember(try entity(rt, f.subject), try relation(rt, f.relation), try fact_object(rt, f), f.ttl),
         .forget => |f| _ = rt.active_world().forget(try entity(rt, f.subject), try relation(rt, f.relation), if (f.object != null or f.value != 0) try fact_object(rt, f) else null),
@@ -435,32 +435,32 @@ const GROG_SOLUTION = [_]Beat{
     } },
 };
 
-// The Middlesex Anomaly's desktop solution, inside the tangent universe: follow the conduit to
-// the school, take the axe and flood it, follow it to the ridge, deliver the letter, and guide
-// the jet engine into the vortex. The hypervisor closes the loop on the next tick.
-const DARKO_SOLUTION = [_]Beat{
-    .{ .note = "Frank: follow the vector conduits.", .actions = &.{ .{ .cue = .{ .name = "TalksTo", .actor = "Donnie", .a = "Frank" } }, .{ .ticks = 1 } } },
-    .{ .note = "Donnie follows the conduit to the high school and takes the fire axe.", .actions = &.{
-        .{ .scene = .{ .scene = "Middlesex High School", .actor = "Donnie", .mark = "WaterPipeMark" } },
-        .{ .remember = .{ .subject = "Donnie", .relation = "Carries", .object = "Axe" } },
+// The Copper Weathercock's desktop solution, inside the borrowed month: follow the current to
+// the Customs House, take the crank and open the sluice, follow it up Beacon Hill, deliver the
+// note, and carry the weathercock into the fog whirl. The hypervisor closes the loop next tick.
+const WEATHERCOCK_SOLUTION = [_]Beat{
+    .{ .note = "Pilot Ashe: follow the current.", .actions = &.{ .{ .cue = .{ .name = "TalksTo", .actor = "Wren", .a = "PilotAshe" } }, .{ .ticks = 1 } } },
+    .{ .note = "Wren follows the current to the Customs House and takes the sluice crank.", .actions = &.{
+        .{ .scene = .{ .scene = "The Customs House", .actor = "Wren", .mark = "SluiceMark" } },
+        .{ .remember = .{ .subject = "Wren", .relation = "Carries", .object = "Crank" } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "One swing ruptures the water main; the school floods.", .actions = &.{
-        .{ .remember = .{ .subject = "Donnie", .relation = "WaterPipeRuptured", .object = "WaterPipeProp" } },
-        .{ .remember = .{ .subject = "Donnie", .relation = "SchoolFlooded", .value = 1 } },
+    .{ .note = "One turn of the crank opens the sluice; the Customs House floods.", .actions = &.{
+        .{ .remember = .{ .subject = "Wren", .relation = "SluiceOpened", .object = "SluiceProp" } },
+        .{ .remember = .{ .subject = "Wren", .relation = "CustomsFlooded", .value = 1 } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "The conduit leads to the ridge; Donnie delivers 'Cellar Door' to Roberta Sparrow.", .actions = &.{
-        .{ .scene = .{ .scene = "Tangent Vortex Ridge", .actor = "Donnie", .mark = "VortexMark" } },
-        .{ .remember = .{ .subject = "Donnie", .relation = "Carries", .object = "Envelope" } },
-        .{ .remember = .{ .subject = "Donnie", .relation = "LetterDelivered", .object = "RobertaSparrow" } },
+    .{ .note = "The current leads up Beacon Hill; Wren gives the sealed note to Hester Quill.", .actions = &.{
+        .{ .scene = .{ .scene = "Beacon Hill", .actor = "Wren", .mark = "WhirlMark" } },
+        .{ .remember = .{ .subject = "Wren", .relation = "Carries", .object = "Note" } },
+        .{ .remember = .{ .subject = "Wren", .relation = "NoteDelivered", .object = "HesterQuill" } },
         .{ .ticks = 1 },
     } },
-    .{ .note = "Donnie guides the jet engine into the vortex. The loop closes.", .actions = &.{
-        .{ .remember = .{ .subject = "Donnie", .relation = "Carries", .object = "JetEngineProp" } },
-        .{ .place = .{ .actor = "JetEngineProp", .scene = "Tangent Vortex Ridge", .mark = "VortexMark" } },
-        .{ .remember = .{ .subject = "Donnie", .relation = "ArtifactAtVortex", .object = "JetEngineProp" } },
-        .{ .remember = .{ .subject = "Donnie", .relation = "LoopClosed", .value = 1 } },
+    .{ .note = "Wren carries the weathercock into the fog whirl. The loop closes.", .actions = &.{
+        .{ .remember = .{ .subject = "Wren", .relation = "Carries", .object = "WeathercockProp" } },
+        .{ .place = .{ .actor = "WeathercockProp", .scene = "Beacon Hill", .mark = "WhirlMark" } },
+        .{ .remember = .{ .subject = "Wren", .relation = "KeystoneAtConvergence", .object = "WeathercockProp" } },
+        .{ .remember = .{ .subject = "Wren", .relation = "ConvergenceReady", .value = 1 } },
         .{ .ticks = 1 },
     } },
 };
@@ -481,23 +481,23 @@ const LOOM_SOLUTION = [_]Beat{
 // =============================================================================
 
 /// The desktop proof's opening: the three scenes joined into one route, everyone at their
-/// marks, and a 280-tick tangent universe forked with the jet engine as its artifact. Every name
-/// the solution writes is interned first, so the primary and branch worlds share their ids.
-fn darko_setup(rt: *WasmRuntime) anyerror!void {
-    for ([_][]const u8{ "Axe", "Envelope" }) |name| _ = try entity(rt, name);
-    for ([_][]const u8{ "Carries", "WaterPipeRuptured", "SchoolFlooded", "LetterDelivered", "ArtifactAtVortex", "LoopClosed", "DreamResidueTransferred", "ArtifactMaterialized" }) |name| {
+/// marks, and a 280-tick branch forked with the weathercock as its keystone. Every name the
+/// solution writes is interned first, so the primary and branch worlds share their ids.
+fn weathercock_setup(rt: *WasmRuntime) anyerror!void {
+    for ([_][]const u8{ "Crank", "Note" }) |name| _ = try entity(rt, name);
+    for ([_][]const u8{ "Carries", "SluiceOpened", "CustomsFlooded", "NoteDelivered", "KeystoneAtConvergence", "ConvergenceReady", "MemoryCarried", "KeystoneMaterialized" }) |name| {
         _ = try rt.world.intern_relation(name, .set);
     }
-    const bedroom = try entity(rt, "Suburban Bedroom");
-    const school = try entity(rt, "Middlesex High School");
-    const ridge = try entity(rt, "Tangent Vortex Ridge");
+    const attic = try entity(rt, "Wren's Attic");
+    const customs = try entity(rt, "The Customs House");
+    const hill = try entity(rt, "Beacon Hill");
     const g = &rt.spatial.graph;
     const route = [_]struct { room: EntityId, mark: []const u8 }{
-        .{ .room = bedroom, .mark = "BedMark" },     .{ .room = bedroom, .mark = "DeskMark" },
-        .{ .room = bedroom, .mark = "BedroomDoor" }, .{ .room = school, .mark = "LockersMark" },
-        .{ .room = school, .mark = "HallwayCenter" }, .{ .room = school, .mark = "WaterPipeMark" },
-        .{ .room = ridge, .mark = "RidgePeak" },     .{ .room = ridge, .mark = "MailboxMark" },
-        .{ .room = ridge, .mark = "VortexMark" },
+        .{ .room = attic, .mark = "CotMark" },        .{ .room = attic, .mark = "DeskMark" },
+        .{ .room = attic, .mark = "AtticStairs" },    .{ .room = customs, .mark = "LedgerMark" },
+        .{ .room = customs, .mark = "CountingFloor" }, .{ .room = customs, .mark = "SluiceMark" },
+        .{ .room = hill, .mark = "HillCrest" },       .{ .room = hill, .mark = "PostBoxMark" },
+        .{ .room = hill, .mark = "WhirlMark" },
     };
     var previous: ?bespoke.WaypointId = null;
     for (route) |stop| {
@@ -506,40 +506,40 @@ fn darko_setup(rt: *WasmRuntime) anyerror!void {
         previous = wp;
     }
     const places = [_]struct { who: []const u8, room: EntityId, mark: []const u8 }{
-        .{ .who = "Donnie", .room = bedroom, .mark = "BedMark" },
-        .{ .who = "Frank", .room = bedroom, .mark = "DeskMark" },
-        .{ .who = "Gretchen", .room = school, .mark = "LockersMark" },
-        .{ .who = "RobertaSparrow", .room = ridge, .mark = "MailboxMark" },
-        .{ .who = "JetEngineProp", .room = bedroom, .mark = "BedMark" },
+        .{ .who = "Wren", .room = attic, .mark = "CotMark" },
+        .{ .who = "PilotAshe", .room = attic, .mark = "DeskMark" },
+        .{ .who = "Pell", .room = customs, .mark = "LedgerMark" },
+        .{ .who = "HesterQuill", .room = hill, .mark = "PostBoxMark" },
+        .{ .who = "WeathercockProp", .room = attic, .mark = "CotMark" },
     };
     for (places) |pl| try rt.spatial.register_entity(try entity(rt, pl.who), g.find_waypoint_in_room(pl.room, pl.mark).?, 8);
-    try rt.vm.transition_to_scene(bedroom);
+    try rt.vm.transition_to_scene(attic);
 
     const hv = try rt.attach_hypervisor();
-    _ = try hv.fork_tangent(280, try entity(rt, "Donnie"), try entity(rt, "JetEngineProp"));
-    hv.set_vortex_target(g.find_waypoint_in_room(ridge, "VortexMark").?);
-    try hv.add_dream_residue(.{ .subject = try entity(rt, "Donnie"), .relation = try relation(rt, "DreamResidueTransferred"), .object_or_value = 1 });
+    _ = try hv.fork_branch(280, try entity(rt, "Wren"), try entity(rt, "WeathercockProp"));
+    hv.set_convergence_target(g.find_waypoint_in_room(hill, "WhirlMark").?);
+    try hv.add_dream_residue(.{ .subject = try entity(rt, "Wren"), .relation = try relation(rt, "MemoryCarried"), .object_or_value = 1 });
     rt.bind();
 }
 
 /// The desktop proof's tick: step the hypervisor after the VM, and when the loop resolves carry
-/// the flood and the letter into the primary world before the branch is gone.
-fn darko_after_tick(rt: *WasmRuntime) anyerror!void {
+/// the flood and the note into the primary world before the branch is gone.
+fn weathercock_after_tick(rt: *WasmRuntime) anyerror!void {
     const hv = rt.hypervisor orelse return;
     if (!hv.branch_active) return;
     const branch = rt.active_world();
-    const donnie = try entity(rt, "Donnie");
-    const flood = try relation(rt, "SchoolFlooded");
-    const letter = try relation(rt, "LetterDelivered");
-    const flooded = branch.has_fact(donnie, flood, null);
-    const delivered = branch.has_fact(donnie, letter, null);
+    const wren = try entity(rt, "Wren");
+    const flood = try relation(rt, "CustomsFlooded");
+    const note = try relation(rt, "NoteDelivered");
+    const flooded = branch.has_fact(wren, flood, null);
+    const delivered = branch.has_fact(wren, note, null);
     switch (try hv.step_tick(&rt.spatial)) {
         .loop_resolved => {
-            if (flooded) try rt.world.remember(donnie, flood, 1, 0);
-            if (delivered) try rt.world.remember(donnie, letter, (try entity(rt, "RobertaSparrow")).to_int(), 0);
-            rt.set_banner(if (darko.evaluate_darko_solved(&rt.world)) "The tangent universe collapses safely. The loop is closed." else "The tangent universe collapses.");
+            if (flooded) try rt.world.remember(wren, flood, 1, 0);
+            if (delivered) try rt.world.remember(wren, note, (try entity(rt, "HesterQuill")).to_int(), 0);
+            rt.set_banner(if (weathercock.evaluate_weathercock_solved(&rt.world)) "The borrowed month folds back cleanly. The loop is closed." else "The borrowed month folds back.");
         },
-        .budget_expired => rt.set_banner("The countdown ran out and the tangent universe collapsed. Press [R] to rewind."),
+        .budget_expired => rt.set_banner("The borrowed month tears away. Press [R] to rewind."),
         else => {},
     }
     rt.bind();
@@ -952,7 +952,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Indy", "Donnie", "Wren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Indy", "Wren", "Wren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1073,7 +1073,7 @@ test "P30-01: the Bell Tower deck weaves drafts from note keys and tolls the bel
     try testing.expectEqualStrings(loom.BELFRY_SCENE, rt.world.get_entity_name(rt.vm.current_scene.?).?);
 }
 
-test "P30-01: the Middlesex deck runs a tangent universe and closes its loop" {
+test "P30-01: the Copper Weathercock deck runs a branch world and closes its loop" {
     const rt = try load(9);
     defer unload(rt);
     const hv = rt.hypervisor.?;
@@ -1090,11 +1090,11 @@ test "P30-01: the Middlesex deck runs a tangent universe and closes its loop" {
     }
     try testing.expect(!hv.branch_active);
     try testing.expectEqual(bespoke.hypervisor.BranchCollapseState.resolved_and_merged, hv.collapse_state);
-    try testing.expect(darko.evaluate_darko_solved(&rt.world));
+    try testing.expect(weathercock.evaluate_weathercock_solved(&rt.world));
     try testing.expect(rt.vm.world == &rt.world);
 }
 
-test "P30-01: a rewind restores the tangent branch the timeline recorded" {
+test "P30-01: a rewind restores the branch the timeline recorded" {
     const rt = try load(9);
     defer unload(rt);
     for (0..3) |_| try rt.step_tick();
@@ -1108,7 +1108,7 @@ test "P30-01: a rewind restores the tangent branch the timeline recorded" {
     try testing.expect(rt.active_world() != &rt.world);
     try testing.expect(rt.active_world().current_tick <= branch_tick);
     try testing.expect(hv.ticks_remaining() > 0);
-    try testing.expect(!darko.evaluate_darko_solved(&rt.world));
+    try testing.expect(!weathercock.evaluate_weathercock_solved(&rt.world));
 }
 
 test "P30-01: the Algiers deck picks a path from the selector and takes the manuscript" {

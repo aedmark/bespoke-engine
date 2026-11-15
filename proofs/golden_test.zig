@@ -21,7 +21,7 @@ const sword_fighting = @import("sword_fighting.zig");
 const village = @import("village.zig");
 const lamp_point = @import("lamp_point.zig");
 const three_tides = @import("three_tides.zig");
-const darko_puzzle = @import("darko_puzzle.zig");
+const weathercock = @import("weathercock.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
 const atlantis_puzzle = @import("atlantis_puzzle.zig");
@@ -54,7 +54,7 @@ const proofs = [_]struct { name: []const u8, run: RunFn }{
     .{ .name = "village", .run = bind(village.run_headless) },
     .{ .name = "lamp_point", .run = bind(lamp_point.run_headless) },
     .{ .name = "three_tides", .run = bind(three_tides.run_headless) },
-    .{ .name = "darko_puzzle", .run = bind(darko_puzzle.run_headless) },
+    .{ .name = "weathercock", .run = bind(weathercock.run_headless) },
     .{ .name = "loom_puzzle", .run = bind(loom_puzzle.run_headless) },
     .{ .name = "grog_puzzle", .run = bind(grog_puzzle.run_headless) },
     .{ .name = "atlantis_puzzle", .run = bind(atlantis_puzzle.run_headless) },

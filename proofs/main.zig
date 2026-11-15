@@ -12,7 +12,7 @@ pub const sword_fighting = @import("sword_fighting.zig");
 pub const village = @import("village.zig");
 pub const lamp_point = @import("lamp_point.zig");
 pub const three_tides = @import("three_tides.zig");
-pub const darko_puzzle = @import("darko_puzzle.zig");
+pub const weathercock = @import("weathercock.zig");
 pub const loom_puzzle = @import("loom_puzzle.zig");
 pub const grog_puzzle = @import("grog_puzzle.zig");
 pub const atlantis_puzzle = @import("atlantis_puzzle.zig");
@@ -27,7 +27,7 @@ const Proof = enum {
     village,
     lamp_point,
     three_tides,
-    darko,
+    weathercock,
     loom,
     grog,
     atlantis,
@@ -62,9 +62,8 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "dott", .proof = .three_tides },
     .{ .name = "tentacle", .proof = .three_tides },
     .{ .name = "chrono-mansion", .proof = .three_tides },
-    .{ .name = "darko", .proof = .darko },
-    .{ .name = "donnie-darko", .proof = .darko },
-    .{ .name = "middlesex", .proof = .darko },
+    .{ .name = "weathercock", .proof = .weathercock },
+    .{ .name = "darko", .proof = .weathercock },
     .{ .name = "loom", .proof = .loom },
     .{ .name = "bell-tower", .proof = .loom },
     .{ .name = "drafts", .proof = .loom },
@@ -101,7 +100,7 @@ const usage =
     \\  --village            The Living Village (emergent drives, rumors, justice)
     \\  --lamp-point         The Donkey of Lamp Point (threat radius, retreat window)
     \\  --three-tides        The Well of Three Tides (party, item transfer, causality)
-    \\  --darko              The Middlesex Anomaly (temporal hypervisor, conduits)
+    \\  --weathercock        The Copper Weathercock (temporal hypervisor, conduits)
     \\  --loom               The Bell Tower (musical drafts, distaff)
     \\  --grog               Caustic Grog (container degradation, pours, spill)
     \\  --atlantis           The Fate of Atlantis: Algiers (three paths, route locks)
@@ -153,7 +152,7 @@ pub fn main() !void {
         .village => if (headless) try village.run_headless(allocator, stdout) else try village.run_interactive(allocator, stdout),
         .lamp_point => if (headless) try lamp_point.run_headless(allocator, stdout) else try lamp_point.run_interactive(allocator, stdout),
         .three_tides => if (headless) try three_tides.run_headless(allocator, stdout) else try three_tides.run_interactive(allocator),
-        .darko => if (headless) try darko_puzzle.run_headless(allocator, stdout) else try darko_puzzle.run_interactive(allocator),
+        .weathercock => if (headless) try weathercock.run_headless(allocator, stdout) else try weathercock.run_interactive(allocator),
         .loom => if (headless) try loom_puzzle.run_headless(allocator, stdout) else try loom_puzzle.run_interactive(allocator, stdout),
         .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
         .atlantis => if (headless) try atlantis_puzzle.run_headless(allocator, stdout) else try atlantis_puzzle.run_interactive(allocator, stdout),
@@ -170,7 +169,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = village;
     _ = lamp_point;
     _ = three_tides;
-    _ = darko_puzzle;
+    _ = weathercock;
     _ = loom_puzzle;
     _ = grog_puzzle;
     _ = atlantis_puzzle;

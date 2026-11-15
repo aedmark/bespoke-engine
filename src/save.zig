@@ -1393,15 +1393,15 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     const testing = std.testing;
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
-    const donnie = try world.intern_entity("Donnie");
+    const hero = try world.intern_entity("Hero");
     const engine = try world.intern_entity("Engine");
     const room = try world.intern_entity("Room");
     const in_room = try world.intern_relation("InRoom", .property);
-    _ = try world.remember(donnie, in_room, room.to_int(), 0);
+    _ = try world.remember(hero, in_room, room.to_int(), 0);
 
     var hypervisor = TemporalHypervisor.init(testing.allocator, &world);
     defer hypervisor.deinit();
-    _ = try hypervisor.fork_branch(10, donnie, engine);
+    _ = try hypervisor.fork_branch(10, hero, engine);
     _ = try hypervisor.step_tick(null);
 
     var buffer = std.ArrayList(u8).init(testing.allocator);
@@ -1418,7 +1418,7 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     try testing.expectEqual(@as(u32, 2), meta.version);
 
     // Move both the primary world and the branch past the saved state.
-    _ = try world.remember(donnie, in_room, engine.to_int(), 0);
+    _ = try world.remember(hero, in_room, engine.to_int(), 0);
     _ = try hypervisor.step_tick(null);
 
     var loaded_world = try World.init(testing.allocator, 1024 * 1024);
@@ -1435,9 +1435,9 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
         &loaded_hypervisor,
     );
     try testing.expectEqual(@as(u32, 2), loaded_meta.version);
-    try testing.expect(loaded_world.has_fact(donnie, in_room, room.to_int()));
+    try testing.expect(loaded_world.has_fact(hero, in_room, room.to_int()));
     try testing.expectEqual(@as(u64, 1), loaded_hypervisor.ticks_elapsed);
-    try testing.expect(loaded_hypervisor.branch_world.?.has_fact(donnie, in_room, room.to_int()));
+    try testing.expect(loaded_hypervisor.branch_world.?.has_fact(hero, in_room, room.to_int()));
     try testing.expectEqual(@as(u64, 1), loaded_hypervisor.branch_world.?.current_tick);
 
     // A non-temporal reader skips the envelope and still restores the primary world.
@@ -1446,7 +1446,7 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     var plain_stream = std.io.fixedBufferStream(buffer.items);
     const plain_meta = try read_save_state(testing.allocator, plain_stream.reader(), &plain_world, null, null);
     try testing.expectEqual(@as(u32, 2), plain_meta.version);
-    try testing.expect(plain_world.has_fact(donnie, in_room, room.to_int()));
+    try testing.expect(plain_world.has_fact(hero, in_room, room.to_int()));
 
     // Version 1 saves remain readable, but cannot satisfy a temporal restore.
     var legacy = std.ArrayList(u8).init(testing.allocator);

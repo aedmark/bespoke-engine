@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Middlesex Anomaly is now The Copper Weathercock (`--weathercock`, P35-07): the Customs House weathercock falls through Wren's attic 28 days early and the world splits into a borrowed month. Wren opens the Customs House sluice, gets a note to Hester Quill on Beacon Hill, and carries the weathercock into the fog whirl before the countdown runs out; if it runs out, the month tears away and she rewinds. `--darko` still works.
 - The Well of Three Tides plays the same in the desktop window as in the browser: the window sends every verb, item, and dialogue choice to the script, its props sit on the stage where they can be clicked, and dropping something down a Tide Well says it comes up in Ossie's bucket in 1712.
 - `site/tides.html` plays The Well of Three Tides on its own page: buttons under the stage switch between Ossie, Nell, and Juno, and items dropped down a Tide Well come up in another century. The whole puzzle can now be played by hand in the browser.
 - Scripts may quote a name to use characters a word cannot hold, such as `scene: "Brine's Boarding House"` (`D-101`).

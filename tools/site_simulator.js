@@ -54,7 +54,7 @@
     'Caustic Grog',
     'Brackwater Barbs',
     'Algiers: Three Paths',
-    'The Middlesex Anomaly',
+    'The Copper Weathercock',
     'The Bell Tower',
   ];
   const DECK_BANNERS = [
@@ -67,7 +67,7 @@
     'CAUSTIC GROG',
     'BRACKWATER BARBS',
     'ALGIERS: THREE PATHS',
-    'THE MIDDLESEX ANOMALY',
+    'THE COPPER WEATHERCOCK',
     'THE BELL TOWER',
   ];
   const DECK_COUNT = DECK_NAMES.length;

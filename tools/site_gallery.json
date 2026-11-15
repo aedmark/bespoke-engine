@@ -84,13 +84,13 @@
       "flag": "atlantis"
     },
     {
-      "id": "darko",
-      "title": "The Middlesex Anomaly",
+      "id": "weathercock",
+      "title": "The Copper Weathercock",
       "tag": "Branch worlds",
-      "blurb": "The world splits into a temporary copy with a countdown. Carry one object to the right place before time runs out and the copy merges back; miss it and the copy collapses, so you rewind and try again.",
-      "source": "proofs/darko_puzzle.zig#DARKO_PUZZLE_SCRIPT",
+      "blurb": "A weathercock falls through Wren's attic roof 28 days early, and the world splits into a borrowed month with a countdown. Flood the Customs House, get a note to Hester Quill, and carry the weathercock into the fog whirl before time runs out, and the month merges back; miss it and the month tears away, so you rewind and try again.",
+      "source": "proofs/weathercock.zig#WEATHERCOCK_SCRIPT",
       "deck": 9,
-      "flag": "darko"
+      "flag": "weathercock"
     },
     {
       "id": "loom",

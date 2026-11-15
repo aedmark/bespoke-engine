@@ -124,7 +124,7 @@ zig build test-proofs                     # every proof's tests
 | `--village` | The Living Village | The society mechanic: six villagers with needs, rumours, and an arrest |
 | `--lamp-point` | The Donkey of Lamp Point | A hazard that interrupts the player, timed windows, moving down to a new scene |
 | `--three-tides` | The Well of Three Tides | Three playable characters, items passed between them, the past changing the future |
-| `--darko` | The Middlesex Anomaly | A temporary copy of the world on a countdown that merges back or collapses |
+| `--weathercock` | The Copper Weathercock | A temporary copy of the world on a countdown that merges back or is thrown away |
 | `--loom` | The Bell Tower | Four-note tunes (drafts) that act as spells, forwards or reversed |
 | `--grog` | Caustic Grog | Containers that wear out, pouring between them, spilling while carried |
 | `--atlantis` | The Fate of Atlantis: Algiers | Three routes through one puzzle; choosing one locks the others and limits the dialogue |

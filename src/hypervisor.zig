@@ -334,7 +334,7 @@ pub const TemporalHypervisor = struct {
     }
 };
 
-/// Freestanding formatter converting discrete ticks into Roberta Sparrow's DD:HH:MM:SS countdown format (P31-01, D-027).
+/// Freestanding formatter converting discrete ticks into DD:HH:MM:SS countdown format (P31-01, D-027).
 pub fn format_countdown_ticks(rem: u64, buf: []u8) []const u8 {
     const total_seconds = rem * 60;
     const days = total_seconds / 86400;
@@ -354,22 +354,22 @@ pub const format_countdown = format_countdown_ticks;
 
 // --- Unit Tests (P31-01, D-027) ---
 
-test "P31-01: TemporalHypervisor forks Tangent Universe, counts ticks, and triggers singularity on budget expiration" {
+test "P31-01: TemporalHypervisor forks branch world, counts ticks, and triggers singularity on budget expiration" {
     const testing = std.testing;
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
 
-    const donnie = try primary.intern_entity("Donnie");
-    const jet_engine = try primary.intern_entity("JetEngine");
+    const hero = try primary.intern_entity("Hero");
+    const keystone = try primary.intern_entity("Keystone");
     const bedroom = try primary.intern_entity("Bedroom");
     const in_room = try primary.intern_relation("InRoom", .property);
-    _ = try primary.remember(donnie, in_room, bedroom.to_int(), 0);
+    _ = try primary.remember(hero, in_room, bedroom.to_int(), 0);
 
     var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
     defer hypervisor.deinit();
 
-    // 1. Fork Tangent Universe with 10-tick collapse countdown budget
-    const tangent = try hypervisor.fork_tangent(10, donnie, jet_engine);
+    // 1. Fork a branch world with a 10-tick collapse countdown budget
+    const tangent = try hypervisor.fork_tangent(10, hero, keystone);
     try testing.expect(hypervisor.tangent_active);
     try testing.expectEqual(@as(u64, 10), hypervisor.ticks_remaining());
 
@@ -377,9 +377,9 @@ test "P31-01: TemporalHypervisor forks Tangent Universe, counts ticks, and trigg
     const initial_str = hypervisor.format_countdown(&count_buf);
     try testing.expect(initial_str.len > 0);
 
-    // Donnie wanders to Golf Course in Tangent Universe
-    const golf_course = try tangent.intern_entity("GolfCourse");
-    _ = try tangent.remember(donnie, in_room, golf_course.to_int(), 0);
+    // The hero wanders elsewhere in the branch
+    const elsewhere = try tangent.intern_entity("Elsewhere");
+    _ = try tangent.remember(hero, in_room, elsewhere.to_int(), 0);
 
     // Step 9 ticks -> still running
     for (0..9) |_| {
@@ -394,8 +394,8 @@ test "P31-01: TemporalHypervisor forks Tangent Universe, counts ticks, and trigg
     try testing.expect(hypervisor.collapse_state == .budget_expired or hypervisor.collapse_state == .collapsed_singularity);
     try testing.expect(!hypervisor.tangent_active);
 
-    // Primary world is unharmed and Donnie is still in Bedroom
-    try testing.expect(primary.has_fact(donnie, in_room, bedroom.to_int()));
+    // The primary world is unharmed and the hero is still in the bedroom
+    try testing.expect(primary.has_fact(hero, in_room, bedroom.to_int()));
 }
 
 test "P31-05: active world follows the branch lifecycle" {
@@ -428,25 +428,25 @@ test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dre
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
 
-    const donnie = try primary.intern_entity("Donnie");
-    const jet_engine = try primary.intern_entity("JetEngine");
+    const hero = try primary.intern_entity("Hero");
+    const keystone = try primary.intern_entity("Keystone");
     const vortex_rel = try primary.intern_relation("LoopClosed", .set);
     const dream_rel = try primary.intern_relation("DreamPrecognition", .set);
 
     var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
     defer hypervisor.deinit();
 
-    const tangent = try hypervisor.fork_tangent(50, donnie, jet_engine);
+    const tangent = try hypervisor.fork_tangent(50, hero, keystone);
 
     // Record dream residue fact that will survive loop resolution
     try hypervisor.add_dream_residue(.{
-        .subject = donnie,
+        .subject = hero,
         .relation = dream_rel,
         .object_or_value = 1,
     });
 
-    // In Tangent Universe, Donnie completes teleological tasks and opens the vortex
-    _ = try tangent.remember(jet_engine, vortex_rel, 1, 0);
+    // In the branch, the hero completes the goals and closes the loop
+    _ = try tangent.remember(keystone, vortex_rel, 1, 0);
 
     // Step tick detects loop closure
     const res = try hypervisor.step_tick(null);
@@ -456,8 +456,8 @@ test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dre
 
     // Artifact and dream residue successfully committed to Primary Universe!
     const artifact_mat_rel = primary.lookup_relation("ArtifactMaterialized").?;
-    try testing.expect(primary.has_fact(jet_engine, artifact_mat_rel, 1));
-    try testing.expect(primary.has_fact(donnie, dream_rel, 1));
+    try testing.expect(primary.has_fact(keystone, artifact_mat_rel, 1));
+    try testing.expect(primary.has_fact(hero, dream_rel, 1));
 }
 
 test "P31-01: backward-chaining teleological Horn clause solver verifies prerequisite chains" {

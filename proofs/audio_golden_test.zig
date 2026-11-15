@@ -33,8 +33,8 @@ const SCENES = [_][]const u8{
     "Drowned Lantern",            "Living Village",
     "Lamp Point",                 "Wreckers Cellar",
     "Charter Yard",          "Brine's Boarding House",
-    "Gull Roost",       "Suburban Bedroom",
-    "Middlesex High School",      "Tangent Vortex Ridge",
+    "Gull Roost",       "Wren's Attic",
+    "The Customs House",      "Beacon Hill",
     "Bell Tower Base",            "Bell Tower Belfry",
     "Saltglass Stockade",
 };

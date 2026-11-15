@@ -2,101 +2,51 @@
   "about": "Third-party terms allowed today. Only shrinks; see tools/check_third_party.py (P35-01).",
   "counts": {
     "README.md": {
-      "Donnie Darko": 2,
       "Indiana Jones and the Fate of Atlantis": 3,
       "Loom": 3
-    },
-    "docs/state.html": {
-      "Donnie Darko": 1
-    },
-    "proofs/art.zig": {
-      "Donnie Darko": 85
     },
     "proofs/atlantis_puzzle.zig": {
       "Indiana Jones and the Fate of Atlantis": 53
     },
-    "proofs/audio_golden_test.zig": {
-      "Donnie Darko": 1
-    },
-    "proofs/darko_puzzle.zig": {
-      "Donnie Darko": 250
-    },
     "proofs/golden/atlantis_puzzle.txt": {
       "Indiana Jones and the Fate of Atlantis": 11
     },
-    "proofs/golden/audio.txt": {
-      "Donnie Darko": 1
-    },
-    "proofs/golden/darko_puzzle.txt": {
-      "Donnie Darko": 47
-    },
     "proofs/golden/render.txt": {
-      "Donnie Darko": 23,
       "Loom": 13
     },
-    "proofs/golden/wasm.txt": {
-      "Donnie Darko": 5
-    },
     "proofs/golden_test.zig": {
-      "Donnie Darko": 4,
       "Indiana Jones and the Fate of Atlantis": 4,
       "Loom": 4
     },
     "proofs/main.zig": {
       "Day of the Tentacle": 2,
-      "Donnie Darko": 14,
+      "Donnie Darko": 1,
       "Gabriel Knight 3": 1,
       "Indiana Jones and the Fate of Atlantis": 15,
       "Loom": 13
     },
     "proofs/render_golden_test.zig": {
-      "Donnie Darko": 11,
       "Loom": 4
     },
     "proofs/wasm_deck.zig": {
-      "Donnie Darko": 53,
       "Indiana Jones and the Fate of Atlantis": 28,
       "Loom": 18
     },
     "scheme/bespoke.manual.json": {
-      "Donnie Darko": 5,
       "Indiana Jones and the Fate of Atlantis": 8,
       "Loom": 2
     },
     "site/index.html": {
-      "Donnie Darko": 108,
       "Indiana Jones and the Fate of Atlantis": 28,
       "Loom": 2
-    },
-    "src/host.zig": {
-      "Donnie Darko": 1
-    },
-    "src/hypervisor.zig": {
-      "Donnie Darko": 10
     },
     "src/main.zig": {
       "Loom": 1
     },
-    "src/save.zig": {
-      "Donnie Darko": 1
-    },
-    "src/spatial.zig": {
-      "Donnie Darko": 3
-    },
-    "src/temporal_snapshot.zig": {
-      "Donnie Darko": 2
-    },
-    "src/vm.zig": {
-      "Donnie Darko": 7
-    },
-    "src/world.zig": {
-      "Donnie Darko": 4
-    },
     "tools/site_gallery.json": {
-      "Donnie Darko": 6,
       "Indiana Jones and the Fate of Atlantis": 5,
       "Loom": 2
     }
   },
-  "total": 864
+  "total": 221
 }

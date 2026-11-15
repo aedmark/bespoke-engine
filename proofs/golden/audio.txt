@@ -64,9 +64,9 @@ scene/Wreckers Cellar: wreckers_cellar
 scene/Charter Yard: three_tides
 scene/Brine's Boarding House: three_tides
 scene/Gull Roost: three_tides
-scene/Suburban Bedroom: tavern
-scene/Middlesex High School: tavern
-scene/Tangent Vortex Ridge: tavern
+scene/Wren's Attic: tavern
+scene/The Customs House: tavern
+scene/Beacon Hill: tavern
 scene/Bell Tower Base: bell_tower
 scene/Bell Tower Belfry: bell_tower
 scene/Saltglass Stockade: tavern

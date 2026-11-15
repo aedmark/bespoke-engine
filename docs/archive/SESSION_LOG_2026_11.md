@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 53 (2026-11-11)
+- **Goal:** Ship P27-03, then start Phase 28 with P28-01.
+- **Work:** Committed P27-03 (`afe2a32`), fast-forwarded `main`, and pushed it with P27-02, closing Phase 27. The maintainer chose the MML defaults (core command set with repeats, coexistence with grid patterns, drum letters, parser-only scope). Added `src/mml.zig` and its tests, recorded D-060, and updated roadmap, architecture, testing, security, changelog, and handoff. The manual waits for P28-03, when scripts can use scores.
+- **Outcome:** See the Verified table. Mutations that copied instead of re-reading repeat bodies and dropped the odd-dot check each failed a P28-01 test. Not merged.
+
 ### Session 52 (2026-11-10)
 - **Goal:** Implement P27-03, inspector navigation and relation filters, with the maintainer-approved defaults.
 - **Work:** Found P27-02 already on `main` (the handoff still called it unmerged) and branched `feature/p27-navigation`. Added `state_graph.Filter`, `next_filter`, `mentions`, and `Layout.hit_ring`, with `build` and `default_focus` taking the filter. `DisplayWindow` gained selection, an eight-step history, and the filter; State tab keys (arrows, Enter, Backspace, Home, F) and ring clicks; a selection outline and a footer naming the filter. Recorded D-059 and updated roadmap, architecture, testing, changelog, manual, and handoff.

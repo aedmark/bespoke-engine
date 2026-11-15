@@ -1412,33 +1412,33 @@ test "P31-02: pre-cognitive vector conduits project ahead-of-time deterministic 
     const wp_bedroom = try spatial.graph.add_waypoint(room, 50, 50, "Bedroom");
     const wp_hallway = try spatial.graph.add_waypoint(room, 100, 50, "Hallway");
     const wp_street = try spatial.graph.add_waypoint(room, 150, 100, "Street");
-    const wp_golf = try spatial.graph.add_waypoint(room, 200, 150, "GolfCourse");
+    const wp_far = try spatial.graph.add_waypoint(room, 200, 150, "Elsewhere");
 
     try spatial.graph.connect(wp_bedroom, wp_hallway, null);
     try spatial.graph.connect(wp_hallway, wp_street, null);
-    try spatial.graph.connect(wp_street, wp_golf, null);
+    try spatial.graph.connect(wp_street, wp_far, null);
 
-    const donnie = EntityId.from_int(10);
-    const gretchen = EntityId.from_int(11);
-    try spatial.register_entity(donnie, wp_bedroom, 4);
-    try spatial.register_entity(gretchen, wp_bedroom, 4);
+    const hero = EntityId.from_int(10);
+    const friend = EntityId.from_int(11);
+    try spatial.register_entity(hero, wp_bedroom, 4);
+    try spatial.register_entity(friend, wp_bedroom, 4);
 
     // 1. Compute pre-cognitive vector conduit from Bedroom to Golf Course
-    const conduit = (try spatial.compute_vector_conduit(donnie, wp_golf)).?;
-    try testing.expectEqual(donnie, conduit.entity);
-    try testing.expectEqual(wp_golf, conduit.terminal_waypoint);
+    const conduit = (try spatial.compute_vector_conduit(hero, wp_far)).?;
+    try testing.expectEqual(hero, conduit.entity);
+    try testing.expectEqual(wp_far, conduit.terminal_waypoint);
     try testing.expect(conduit.point_count >= 4);
 
-    // 2. Donnie starts walking -> active agent vector conduit is exposed
-    _ = try spatial.walk_to(donnie, wp_golf);
-    const active_conduit = spatial.get_agent_vector_conduit(donnie).?;
-    try testing.expectEqual(wp_golf, active_conduit.terminal_waypoint);
+    // 2. The hero starts walking -> active agent vector conduit is exposed
+    _ = try spatial.walk_to(hero, wp_far);
+    const active_conduit = spatial.get_agent_vector_conduit(hero).?;
+    try testing.expectEqual(wp_far, active_conduit.terminal_waypoint);
 
-    // 3. Gretchen follows Donnie's vector conduit
-    const followed = try spatial.follow_conduit(gretchen, conduit);
+    // 3. A friend follows the hero's vector conduit
+    const followed = try spatial.follow_conduit(friend, conduit);
     try testing.expect(followed);
-    const gretchen_agent = spatial.agents.get(gretchen).?;
-    try testing.expect(gretchen_agent.is_moving);
+    const friend_agent = spatial.agents.get(friend).?;
+    try testing.expect(friend_agent.is_moving);
 }
 
 test "P31-02: bitemporal transceiver synchronizes physical prop mutations in real time" {

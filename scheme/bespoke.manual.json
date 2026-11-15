@@ -900,15 +900,15 @@
           "related": ["snapshot-time-travel", "branching-dialogue-balloons", "in-hand-inventory-crafting", "multi-scene-transitions-spatial-partitioning"]
         },
         {
-          "id": "roberta-sparrow-temporal-hypervisor-and-vector-conduits",
+          "id": "temporal-hypervisor-and-vector-conduits",
           "title": "Branch Worlds (Temporal Hypervisor) & Path Previews",
           "summary": "A temporary copy of the world that runs on a countdown and either merges back or is discarded, plus precomputed path lines drawn ahead of an actor.",
-          "synopsis": "zig build run-proof -- --darko [--headless]",
-          "tags": ["darko", "hypervisor", "branch-world", "vector-conduits", "time-travel"],
-          "what": "TemporalHypervisor forks the primary World into a temporary branch world with a countdown. The branch merges back when its closure condition holds, or is discarded when the countdown runs out. The Middlesex Anomaly proof uses it for a time-loop puzzle.",
+          "synopsis": "zig build run-proof -- --weathercock [--headless]",
+          "tags": ["weathercock", "hypervisor", "branch-world", "vector-conduits", "time-travel"],
+          "what": "TemporalHypervisor forks the primary World into a temporary branch world with a countdown. The branch merges back when its closure condition holds, or is discarded when the countdown runs out. The Copper Weathercock proof uses it for a time-loop puzzle.",
           "how": [
             "fork_branch copies the primary World with World.clone() and starts a countdown of collapse_budget_ticks.",
-            "Each step_tick advances the branch one tick and runs check_loop_closure: the keystone entity must stand on the convergence waypoint and a ConvergenceReady, VortexReady, or LoopClosed fact must hold.",
+            "Each step_tick advances the branch one tick and runs check_loop_closure: the keystone entity must stand on the convergence waypoint and a ConvergenceReady or LoopClosed fact must hold (D-073).",
             "On closure, collapse_branch commits the keystone and any recorded residue facts to the primary World (resolved_and_merged). If the countdown runs out first, the branch is discarded (budget_expired) and the player rewinds.",
             "SpatialSystem.get_agent_vector_conduit precomputes an actor's A* route as a polyline that the renderer draws as a preview line.",
             "VM.spawn_hyper_temporal_routine starts a routine at priority 255 so a guide character's lines cannot be preempted.",
@@ -920,7 +920,7 @@
             {"label": "Architectural Decision D-027", "target": "docs/DECISIONS.md#d-027", "kind": "decision"},
             {"label": "Temporal Hypervisor", "target": "src/hypervisor.zig", "kind": "source"},
             {"label": "Vector Conduits", "target": "src/spatial.zig", "kind": "source"},
-            {"label": "The Middlesex Anomaly Proof", "target": "proofs/darko_puzzle.zig", "kind": "source"},
+            {"label": "The Copper Weathercock Proof", "target": "proofs/weathercock.zig", "kind": "source"},
             {"label": "Conduit and Countdown Rendering", "target": "src/display/renderer.zig", "kind": "source"}
           ],
           "related": ["snapshot-time-travel", "asynchronous-motor-intents", "three-tides-scenario", "multi-scene-transitions-spatial-partitioning"]

@@ -982,11 +982,11 @@ test "P32-16: Timeline scrubs without losing the future and discards it only on 
 test "P31-04: Timeline restores the hypervisor branch and countdown with the world" {
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
-    const donnie = try world.intern_entity("Donnie");
+    const hero = try world.intern_entity("Hero");
     const engine = try world.intern_entity("Engine");
     var hypervisor = TemporalHypervisor.init(testing.allocator, &world);
     defer hypervisor.deinit();
-    _ = try hypervisor.fork_branch(10, donnie, engine);
+    _ = try hypervisor.fork_branch(10, hero, engine);
 
     var timeline = Timeline.init(testing.allocator);
     defer timeline.deinit();

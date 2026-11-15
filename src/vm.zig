@@ -2112,12 +2112,12 @@ test "P31-01: hyper-temporal fiber execution and priority preemption" {
     var chunk = BytecodeChunk.init(testing.allocator);
     defer chunk.deinit();
 
-    // Bytecode: emit cue 2 (say) with 2 args (Frank, countdown_text), then halt
-    const frank = try world.intern_entity("Frank");
-    const donnie = try world.intern_entity("Donnie");
+    // Bytecode: emit cue 2 (say) with 2 args (Echo, countdown_text), then halt
+    const echo = try world.intern_entity("Echo");
+    const hero = try world.intern_entity("Hero");
     const msg = try world.intern_entity("28:06:42:12");
 
-    try chunk.emit_push_entity(frank);
+    try chunk.emit_push_entity(echo);
     try chunk.emit_push_entity(msg);
     _ = try chunk.emit_op(.emit_cue);
     try chunk.emit_u16(2); // say cue
@@ -2127,25 +2127,25 @@ test "P31-01: hyper-temporal fiber execution and priority preemption" {
     var vm = VM.init(testing.allocator, &world, &chunk);
     defer vm.deinit();
 
-    // Spawn a standard fiber for Donnie
-    const fid_donnie = try vm.spawn_routine(donnie, 0);
-    try testing.expectEqual(@as(FiberId, 1), fid_donnie);
+    // Spawn a standard fiber for the hero
+    const fid_hero = try vm.spawn_routine(hero, 0);
+    try testing.expectEqual(@as(FiberId, 1), fid_hero);
     try testing.expect(!vm.fibers.items[0].is_hyper_temporal);
     try testing.expectEqual(@as(u16, 0), vm.fibers.items[0].active_priority);
 
-    // Spawn a hyper-temporal fiber for Frank (The Manipulated Dead)
-    const fid_frank = try vm.spawn_hyper_temporal_routine(frank, 0);
-    try testing.expectEqual(@as(FiberId, 2), fid_frank);
+    // Spawn a hyper-temporal fiber for the echo
+    const fid_echo = try vm.spawn_hyper_temporal_routine(echo, 0);
+    try testing.expectEqual(@as(FiberId, 2), fid_echo);
     try testing.expect(vm.fibers.items[1].is_hyper_temporal);
     try testing.expectEqual(@as(u16, 255), vm.fibers.items[1].active_priority);
 
     // Step VM tick to execute hyper-temporal fiber
     try vm.step_tick();
 
-    // Verify Frank emitted the temporal countdown cue
+    // Verify the echo emitted the temporal countdown cue
     try testing.expect(vm.emitted_cues.items.len > 0);
     const cue = vm.emitted_cues.items[0];
     try testing.expectEqual(@as(u16, 2), cue.cue_id);
-    try testing.expectEqual(frank.to_int(), cue.args[0]);
+    try testing.expectEqual(echo.to_int(), cue.args[0]);
     try testing.expectEqual(msg.to_int(), cue.args[1]);
 }

@@ -93,10 +93,10 @@ const Palette = struct {
     const charter_brick = Color{ .r = 160, .g = 82, .b = 45 }; // Its hearth
     const boarding_wallpaper = Color{ .r = 22, .g = 78, .b = 62 }; // Brine's front hall
     const roost_slate = Color{ .r = 51, .g = 65, .b = 85 }; // Roofs of drowned Brackwater
-    // Donnie Darko / Roberta Sparrow Cinematic Colors (P31-01..P31-03, D-027)
-    const tangent_glow = Color{ .r = 56, .g = 189, .b = 248, .a = 180 }; // Translucent water-like fluid blue
-    const tangent_core = Color{ .r = 224, .g = 242, .b = 254, .a = 230 }; // Bright white-blue conduit core
-    const frank_silver = Color{ .r = 148, .g = 163, .b = 184 }; // Monstrous silver rabbit
+    // The Copper Weathercock: the branch glow and the echo's oilskins (P31-01..P31-03, D-027, P35-07)
+    const branch_glow = Color{ .r = 56, .g = 189, .b = 248, .a = 180 }; // Translucent sea-green branch glow
+    const branch_core = Color{ .r = 224, .g = 242, .b = 254, .a = 230 }; // Bright white-blue conduit core
+    const ashe_oilskin = Color{ .r = 148, .g = 163, .b = 184 }; // Wet oilskins
 };
 
 
@@ -135,9 +135,9 @@ const Scene = struct {
     is_observatory_scene: bool = false,
     is_bell_belfry_scene: bool = false,
     is_office_scene: bool = false,
-    is_darko_bedroom_scene: bool = false,
-    is_darko_school_scene: bool = false,
-    is_darko_vortex_scene: bool = false,
+    is_weathercock_attic_scene: bool = false,
+    is_weathercock_customs_scene: bool = false,
+    is_weathercock_hill_scene: bool = false,
     is_tides_future_scene: bool = false,
     is_tides_past_scene: bool = false,
     is_tides_present_scene: bool = false,
@@ -244,21 +244,12 @@ fn detect(frame: *const RenderFrame) Scene {
             sc.is_tides_present_scene = true;
         } else if (std.mem.eql(u8, cur_scene, "Gull Roost")) {
             sc.is_tides_future_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Bedroom") != null or
-                   std.mem.indexOf(u8, cur_scene, "Darko") != null or
-                   std.mem.indexOf(u8, cur_scene, "Donnie") != null)
-        {
-            sc.is_darko_bedroom_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "School") != null or
-                   std.mem.indexOf(u8, cur_scene, "High School") != null or
-                   std.mem.indexOf(u8, cur_scene, "Middlesex High") != null)
-        {
-            sc.is_darko_school_scene = true;
-        } else if (std.mem.indexOf(u8, cur_scene, "Vortex") != null or
-                   std.mem.indexOf(u8, cur_scene, "Ridge") != null or
-                   std.mem.indexOf(u8, cur_scene, "Tangent") != null)
-        {
-            sc.is_darko_vortex_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Wren's Attic")) {
+            sc.is_weathercock_attic_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "The Customs House")) {
+            sc.is_weathercock_customs_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Beacon Hill")) {
+            sc.is_weathercock_hill_scene = true;
         } else if (std.mem.eql(u8, cur_scene, "Lamp Point")) {
             sc.is_lamp_point_scene = true;
         } else if (std.mem.eql(u8, cur_scene, "Wreckers Cellar")) {
@@ -309,7 +300,7 @@ fn detect(frame: *const RenderFrame) Scene {
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
         !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene and
         !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and !sc.is_village_scene and
-        !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
+        !sc.is_weathercock_attic_scene and !sc.is_weathercock_customs_scene and !sc.is_weathercock_hill_scene)
     {
         for (frame.waypoints[0..frame.waypoint_count]) |wp| {
             if (std.mem.indexOf(u8, wp.get_name(), "WellMark1712") != null or
@@ -328,20 +319,20 @@ fn detect(frame: *const RenderFrame) Scene {
             {
                 sc.is_tides_future_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "BedMark") != null or
-                std.mem.indexOf(u8, wp.get_name(), "Bedroom") != null)
+            } else if (std.mem.eql(u8, wp.get_name(), "CotMark") or
+                std.mem.eql(u8, wp.get_name(), "AtticStairs"))
             {
-                sc.is_darko_bedroom_scene = true;
+                sc.is_weathercock_attic_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "LockersMark") != null or
-                std.mem.indexOf(u8, wp.get_name(), "Hallway") != null)
+            } else if (std.mem.eql(u8, wp.get_name(), "LedgerMark") or
+                std.mem.eql(u8, wp.get_name(), "SluiceMark"))
             {
-                sc.is_darko_school_scene = true;
+                sc.is_weathercock_customs_scene = true;
                 break;
-            } else if (std.mem.indexOf(u8, wp.get_name(), "RidgeMark") != null or
-                std.mem.indexOf(u8, wp.get_name(), "VortexMark") != null)
+            } else if (std.mem.eql(u8, wp.get_name(), "HillCrest") or
+                std.mem.eql(u8, wp.get_name(), "WhirlMark"))
             {
-                sc.is_darko_vortex_scene = true;
+                sc.is_weathercock_hill_scene = true;
                 break;
             } else if (std.mem.indexOf(u8, wp.get_name(), "TetherCenter") != null or
                 std.mem.indexOf(u8, wp.get_name(), "HatchMark") != null or
@@ -401,18 +392,15 @@ fn detect(frame: *const RenderFrame) Scene {
             !sc.is_lamp_point_scene and !sc.is_wreckers_cellar_scene and
             !sc.is_spitting_scene and !sc.is_inn_scene and !sc.is_yard_scene and !sc.is_office_scene and
             !sc.is_tidewalk_scene and !sc.is_fencing_yard_scene and !sc.is_lantern_scene and
-            !sc.is_darko_bedroom_scene and !sc.is_darko_school_scene and !sc.is_darko_vortex_scene)
+            !sc.is_weathercock_attic_scene and !sc.is_weathercock_customs_scene and !sc.is_weathercock_hill_scene)
         {
             for (frame.entities[0..frame.entity_count]) |e| {
                 const ename = e.get_name();
-                if (std.mem.eql(u8, ename, "Donnie") or std.mem.eql(u8, ename, "Frank")) {
-                    sc.is_darko_bedroom_scene = true;
+                if (std.mem.eql(u8, ename, "PilotAshe")) {
+                    sc.is_weathercock_attic_scene = true;
                     break;
-                } else if (std.mem.eql(u8, ename, "Gretchen")) {
-                    sc.is_darko_school_scene = true;
-                    break;
-                } else if (std.mem.eql(u8, ename, "RobertaSparrow")) {
-                    sc.is_darko_vortex_scene = true;
+                } else if (std.mem.eql(u8, ename, "HesterQuill")) {
+                    sc.is_weathercock_hill_scene = true;
                     break;
                 } else if (std.mem.eql(u8, ename, "Ossie") or std.mem.eql(u8, ename, "WidowFenn") or std.mem.eql(u8, ename, "FounderGale")) {
                     sc.is_tides_past_scene = true;
@@ -1496,139 +1484,161 @@ fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
         // Title
         w.draw_text("THE GULL ROOST - 2112", roost_x + 16, roost_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
         w.draw_text("(JUNO * ADMIRAL SQUALL * THE FLOCK'S CHECKPOINT)", roost_x + 16, roost_y + 36, 1, Color.hud_subtext);
-    } else if (sc.is_darko_bedroom_scene) {
-        // Suburban Bedroom - October 1988 (P31-01, D-027)
-        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 15, .g = 18, .b = 28 });
+    } else if (sc.is_weathercock_attic_scene) {
+        // Wren's Attic under the eaves, the night the weathercock falls (P35-07)
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 14, .g = 16, .b = 24 });
 
-        const bedr_x: i32 = 40;
-        const bedr_y: i32 = 110;
-        const bedr_w: i32 = w.width - 80;
-        const bedr_h: i32 = w.height - 210;
+        const at_x: i32 = 40;
+        const at_y: i32 = 110;
+        const at_w: i32 = w.width - 80;
+        const at_h: i32 = w.height - 210;
+        const roof_c = Color{ .r = 70, .g = 50, .b = 36 };
 
-        // Room walls
-        w.fill_rect(bedr_x, bedr_y, bedr_w, bedr_h, Color{ .r = 25, .g = 30, .b = 45 });
-        w.draw_rect_outline(bedr_x, bedr_y, bedr_w, bedr_h, Color{ .r = 50, .g = 60, .b = 85 });
-
-        // Hardwood floor
-        w.fill_rect(bedr_x, bedr_y + bedr_h - 110, bedr_w, 110, Color{ .r = 45, .g = 35, .b = 30 });
-        var plank_x: i32 = bedr_x;
-        while (plank_x < bedr_x + bedr_w) : (plank_x += 60) {
-            w.draw_line(plank_x, bedr_y + bedr_h - 110, plank_x, bedr_y + bedr_h, Color{ .r = 30, .g = 22, .b = 18 });
+        // Lime-washed walls under a pitched roof
+        w.fill_rect(at_x, at_y, at_w, at_h, Color{ .r = 52, .g = 50, .b = 48 });
+        w.draw_rect_outline(at_x, at_y, at_w, at_h, Color{ .r = 90, .g = 80, .b = 70 });
+        const ridge_x = at_x + @divTrunc(at_w, 2);
+        w.draw_line(at_x, at_y + 120, ridge_x, at_y, roof_c);
+        w.draw_line(ridge_x, at_y, at_x + at_w, at_y + 120, roof_c);
+        var rafter: i32 = 1;
+        while (rafter < 6) : (rafter += 1) {
+            const rx = at_x + @divTrunc(at_w * rafter, 6);
+            w.draw_line(rx, at_y, rx, at_y + 120, roof_c);
         }
 
-        // Window with moonlight
-        const win_x = bedr_x + bedr_w - 260;
-        const win_y = bedr_y + 30;
-        w.fill_rect(win_x, win_y, 200, 140, Color{ .r = 20, .g = 30, .b = 55 });
-        w.draw_rect_outline(win_x, win_y, 200, 140, Color{ .r = 140, .g = 160, .b = 200 });
-        w.draw_line(win_x + 100, win_y, win_x + 100, win_y + 140, Color{ .r = 140, .g = 160, .b = 200 });
-        w.draw_line(win_x, win_y + 70, win_x + 200, win_y + 70, Color{ .r = 140, .g = 160, .b = 200 });
-        // Full moon
-        w.fill_circle(win_x + 140, win_y + 40, 18, Color{ .r = 230, .g = 240, .b = 255 });
-
-        // Bed with tangled sheets
-        w.fill_rect(bedr_x + 30, bedr_y + bedr_h - 170, 150, 80, Color{ .r = 60, .g = 50, .b = 45 });
-        w.fill_rect(bedr_x + 35, bedr_y + bedr_h - 160, 140, 60, Color{ .r = 40, .g = 70, .b = 110 });
-        w.fill_rect(bedr_x + 40, bedr_y + bedr_h - 180, 50, 25, Color{ .r = 220, .g = 225, .b = 235 });
-
-        // Smashed ceiling hole from falling Jet Engine if anomaly active
-        if (status_of(frame).tangent_active) {
-            w.fill_circle(bedr_x + @divTrunc(bedr_w, 2), bedr_y + 10, 50, Color{ .r = 10, .g = 12, .b = 20 });
-            w.draw_circle_outline(bedr_x + @divTrunc(bedr_w, 2), bedr_y + 10, 52, Palette.tangent_glow);
-            w.draw_line(bedr_x + @divTrunc(bedr_w, 2) - 40, bedr_y + 10, bedr_x + @divTrunc(bedr_w, 2) + 40, bedr_y + 35, Color{ .r = 90, .g = 60, .b = 30 });
+        // Floorboards
+        w.fill_rect(at_x, at_y + at_h - 110, at_w, 110, Color{ .r = 58, .g = 42, .b = 30 });
+        var plank_x: i32 = at_x;
+        while (plank_x < at_x + at_w) : (plank_x += 60) {
+            w.draw_line(plank_x, at_y + at_h - 110, plank_x, at_y + at_h, Color{ .r = 36, .g = 26, .b = 18 });
         }
 
-        // Title
-        w.draw_text("MIDDLESEX SUBURBAN BEDROOM - OCTOBER 1988", bedr_x + 16, bedr_y + 16, 2, Color{ .r = 224, .g = 242, .b = 254 });
-        w.draw_text("(DONNIE * FRANK THE DEMONIC RABBIT * BEDROOM DESK * JET ENGINE IMPACT)", bedr_x + 16, bedr_y + 36, 1, Palette.tangent_glow);
-    } else if (sc.is_darko_school_scene) {
-        // Middlesex High School (P31-01, D-027)
-        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 20, .g = 24, .b = 28 });
+        // Dormer window onto the harbour lights
+        const dw_x = at_x + at_w - 240;
+        const dw_y = at_y + 140;
+        w.fill_rect(dw_x, dw_y, 140, 100, Color{ .r = 18, .g = 28, .b = 48 });
+        w.draw_rect_outline(dw_x, dw_y, 140, 100, Color{ .r = 150, .g = 140, .b = 120 });
+        w.draw_line(dw_x + 70, dw_y, dw_x + 70, dw_y + 100, Color{ .r = 150, .g = 140, .b = 120 });
+        w.fill_circle(dw_x + 30, dw_y + 70, 3, Color{ .r = 250, .g = 204, .b = 21 });
+        w.fill_circle(dw_x + 110, dw_y + 76, 3, Color{ .r = 250, .g = 204, .b = 21 });
 
-        const sch_x: i32 = 40;
-        const sch_y: i32 = 110;
-        const sch_w: i32 = w.width - 80;
-        const sch_h: i32 = w.height - 210;
+        // Wren's cot
+        w.fill_rect(at_x + 30, at_y + at_h - 160, 150, 60, Color{ .r = 64, .g = 48, .b = 36 });
+        w.fill_rect(at_x + 36, at_y + at_h - 152, 138, 40, Color{ .r = 120, .g = 104, .b = 80 });
+        w.fill_rect(at_x + 40, at_y + at_h - 168, 46, 20, Color{ .r = 214, .g = 208, .b = 194 });
 
-        // Hallway walls
-        w.fill_rect(sch_x, sch_y, sch_w, sch_h, Color{ .r = 40, .g = 45, .b = 55 });
-        w.draw_rect_outline(sch_x, sch_y, sch_w, sch_h, Color{ .r = 70, .g = 80, .b = 95 });
-
-        // Checkered linoleum hallway floor
-        w.fill_rect(sch_x, sch_y + sch_h - 110, sch_w, 110, Color{ .r = 50, .g = 55, .b = 65 });
-        var tile_x: i32 = sch_x;
-        var tile_col_idx: usize = 0;
-        while (tile_x < sch_x + sch_w) : (tile_x += 40) {
-            const is_dark_tile = (tile_col_idx % 2 == 0);
-            const tile_color = if (is_dark_tile) Color{ .r = 35, .g = 40, .b = 48 } else Color{ .r = 65, .g = 70, .b = 80 };
-            w.fill_rect(tile_x, sch_y + sch_h - 110, 40, 110, tile_color);
-            tile_col_idx += 1;
+        // Broken roof where the weathercock came through, while the borrowed month lasts
+        if (status_of(frame).branch_active) {
+            const hole_x = at_x + 210;
+            w.fill_circle(hole_x, at_y + 70, 40, Color{ .r = 8, .g = 10, .b = 18 });
+            w.draw_circle_outline(hole_x, at_y + 70, 42, Palette.branch_glow);
+            w.draw_line(hole_x - 36, at_y + 60, hole_x + 30, at_y + 92, roof_c);
+            w.draw_line(hole_x - 20, at_y + 40, hole_x + 38, at_y + 58, roof_c);
         }
 
-        // Green metal lockers along back wall
-        var locker_x: i32 = sch_x + 30;
-        while (locker_x < sch_x + sch_w - 60) : (locker_x += 35) {
-            w.fill_rect(locker_x, sch_y + 40, 30, sch_h - 160, Color{ .r = 30, .g = 65, .b = 50 });
-            w.draw_rect_outline(locker_x, sch_y + 40, 30, sch_h - 160, Color{ .r = 20, .g = 45, .b = 35 });
-            // Vents and handle
-            w.draw_line(locker_x + 5, sch_y + 55, locker_x + 25, sch_y + 55, Color{ .r = 20, .g = 45, .b = 35 });
-            w.draw_line(locker_x + 5, sch_y + 60, locker_x + 25, sch_y + 60, Color{ .r = 20, .g = 45, .b = 35 });
-            w.fill_circle(locker_x + 22, sch_y + 110, 2, Color{ .r = 180, .g = 190, .b = 200 });
+        w.draw_text("WREN'S ATTIC - THE NIGHT THE WEATHERCOCK FELL", at_x + 16, at_y + 16, 2, Color{ .r = 236, .g = 228, .b = 210 });
+        w.draw_text("(WREN * PILOT ASHE'S ECHO * WRITING DESK * THE FALLEN WEATHERCOCK)", at_x + 16, at_y + 36, 1, Palette.branch_glow);
+    } else if (sc.is_weathercock_customs_scene) {
+        // The Customs House counting floor and its sluice (P35-07)
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 18, .g = 20, .b = 24 });
+
+        const ch_x: i32 = 40;
+        const ch_y: i32 = 110;
+        const ch_w: i32 = w.width - 80;
+        const ch_h: i32 = w.height - 210;
+
+        // Panelled walls
+        w.fill_rect(ch_x, ch_y, ch_w, ch_h, Color{ .r = 64, .g = 52, .b = 40 });
+        w.draw_rect_outline(ch_x, ch_y, ch_w, ch_h, Color{ .r = 110, .g = 90, .b = 64 });
+
+        // Flagstone counting floor
+        w.fill_rect(ch_x, ch_y + ch_h - 110, ch_w, 110, Color{ .r = 72, .g = 74, .b = 78 });
+        var flag_x: i32 = ch_x;
+        while (flag_x < ch_x + ch_w) : (flag_x += 80) {
+            w.draw_line(flag_x, ch_y + ch_h - 110, flag_x, ch_y + ch_h, Color{ .r = 50, .g = 52, .b = 56 });
+        }
+        w.draw_line(ch_x, ch_y + ch_h - 55, ch_x + ch_w, ch_y + ch_h - 55, Color{ .r = 50, .g = 52, .b = 56 });
+
+        // Ledger shelves along the back wall
+        var shelf_x: i32 = ch_x + 30;
+        while (shelf_x < ch_x + 330) : (shelf_x += 100) {
+            w.fill_rect(shelf_x, ch_y + 60, 90, ch_h - 180, Color{ .r = 44, .g = 32, .b = 22 });
+            var row: i32 = 0;
+            while (row < 4) : (row += 1) {
+                const ry = ch_y + 70 + row * 34;
+                w.draw_line(shelf_x, ry + 26, shelf_x + 90, ry + 26, Color{ .r = 90, .g = 70, .b = 46 });
+                var spine: i32 = 0;
+                while (spine < 6) : (spine += 1) {
+                    const tone: u8 = @intCast(80 + @mod(spine * 37 + row * 23, 90));
+                    w.fill_rect(shelf_x + 4 + spine * 14, ry + 4, 11, 22, Color{ .r = tone, .g = 40, .b = 30 });
+                }
+            }
         }
 
-        // School Banner
-        const ban_w: i32 = 320;
-        const ban_x = sch_x + @divTrunc(sch_w - ban_w, 2);
-        w.fill_rect(ban_x, sch_y + 10, ban_w, 26, Color{ .r = 15, .g = 75, .b = 40 });
-        w.draw_rect_outline(ban_x, sch_y + 10, ban_w, 26, Color{ .r = 250, .g = 204, .b = 21 });
-        w.draw_text("MIDDLESEX HIGH - HOME OF THE CAROUSEL BRONCOS", ban_x + 12, sch_y + 16, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        // The sluice: a wheel on an iron gate in the low corner
+        const sl_x = ch_x + ch_w - 180;
+        const sl_y = ch_y + ch_h - 200;
+        w.fill_rect(sl_x, sl_y, 110, 90, Color{ .r = 52, .g = 58, .b = 64 });
+        w.draw_rect_outline(sl_x, sl_y, 110, 90, Color{ .r = 120, .g = 130, .b = 140 });
+        w.draw_circle_outline(sl_x + 55, sl_y + 40, 26, Color{ .r = 160, .g = 110, .b = 60 });
+        w.draw_line(sl_x + 29, sl_y + 40, sl_x + 81, sl_y + 40, Color{ .r = 160, .g = 110, .b = 60 });
+        w.draw_line(sl_x + 55, sl_y + 14, sl_x + 55, sl_y + 66, Color{ .r = 160, .g = 110, .b = 60 });
 
-        // Water flooding if pipe broken
-        if (status_of(frame).darko_water_flooded) {
-            w.fill_rect(sch_x, sch_y + sch_h - 40, sch_w, 40, Color{ .r = 56, .g = 189, .b = 248, .a = 150 });
-            w.draw_line(sch_x, sch_y + sch_h - 40, sch_x + sch_w, sch_y + sch_h - 40, Color{ .r = 224, .g = 242, .b = 254 });
-            w.draw_text("[WATER MAIN BURST - HIGH SCHOOL FLOODED!]", sch_x + 30, sch_y + sch_h - 28, 1, Color.white);
+        // A brass sign over the counting floor
+        const sign_w: i32 = 300;
+        const sign_x = ch_x + @divTrunc(ch_w - sign_w, 2);
+        w.fill_rect(sign_x, ch_y + 10, sign_w, 26, Color{ .r = 40, .g = 30, .b = 20 });
+        w.draw_rect_outline(sign_x, ch_y + 10, sign_w, 26, Color{ .r = 214, .g = 170, .b = 80 });
+        w.draw_text("BRACKWATER CUSTOMS - ALL DUTY PAYABLE HERE", sign_x + 12, ch_y + 18, 1, Color{ .r = 240, .g = 214, .b = 140 });
+
+        // The tide across the floor once the sluice opens
+        if (status_of(frame).weathercock_flooded) {
+            w.fill_rect(ch_x, ch_y + ch_h - 40, ch_w, 40, Color{ .r = 56, .g = 120, .b = 140, .a = 160 });
+            w.draw_line(ch_x, ch_y + ch_h - 40, ch_x + ch_w, ch_y + ch_h - 40, Color{ .r = 200, .g = 230, .b = 236 });
+            w.draw_text("[SLUICE OPEN - THE CUSTOMS HOUSE IS FLOODED]", ch_x + 30, ch_y + ch_h - 28, 1, Color.white);
         }
 
-        // Title
-        w.draw_text("MIDDLESEX HIGH SCHOOL - MAIN CORRIDOR", sch_x + 16, sch_y + 16, 2, Color{ .r = 224, .g = 242, .b = 254 });
-        w.draw_text("(DONNIE * GRETCHEN * LOCKERS * WATER MAIN PIPE * BRONCO STATUE)", sch_x + 16, sch_y + 36, 1, Palette.tangent_glow);
-    } else if (sc.is_darko_vortex_scene) {
-        // Tangent Vortex Overlook Ridge (P31-01, D-027)
-        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 10, .g = 6, .b = 20 });
+        w.draw_text("THE CUSTOMS HOUSE - COUNTING FLOOR", ch_x + 16, ch_y + 16, 2, Color{ .r = 236, .g = 228, .b = 210 });
+        w.draw_text("(WREN * PELL * LEDGERS * THE SLUICE AND ITS CRANK)", ch_x + 16, ch_y + 36, 1, Palette.branch_glow);
+    } else if (sc.is_weathercock_hill_scene) {
+        // Beacon Hill above Brackwater, with the fog whirl at the crest (P35-07)
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 12, .g = 14, .b = 20 });
 
-        const vr_x: i32 = 40;
-        const vr_y: i32 = 110;
-        const vr_w: i32 = w.width - 80;
-        const vr_h: i32 = w.height - 210;
+        const bh_x: i32 = 40;
+        const bh_y: i32 = 110;
+        const bh_w: i32 = w.width - 80;
+        const bh_h: i32 = w.height - 210;
 
-        // Night mountain landscape
-        w.fill_rect(vr_x, vr_y, vr_w, vr_h, Color{ .r = 18, .g = 12, .b = 35 });
-        w.draw_rect_outline(vr_x, vr_y, vr_w, vr_h, Color.vortex_purple);
+        // Night sky and the hill
+        w.fill_rect(bh_x, bh_y, bh_w, bh_h, Color{ .r = 26, .g = 30, .b = 42 });
+        w.draw_rect_outline(bh_x, bh_y, bh_w, bh_h, Color{ .r = 80, .g = 90, .b = 110 });
+        w.fill_rect(bh_x, bh_y + bh_h - 90, bh_w, 90, Color{ .r = 34, .g = 46, .b = 34 });
 
-        // Grassy ridge hill
-        w.fill_rect(vr_x, vr_y + vr_h - 90, vr_w, 90, Color{ .r = 25, .g = 40, .b = 30 });
+        // Brackwater's roofs and lights far below
+        var roof_x: i32 = bh_x + 20;
+        while (roof_x < bh_x + bh_w - 40) : (roof_x += 70) {
+            w.fill_rect(roof_x, bh_y + bh_h - 110, 50, 20, Color{ .r = 40, .g = 44, .b = 56 });
+            w.fill_circle(roof_x + 25, bh_y + bh_h - 100, 2, Color{ .r = 250, .g = 204, .b = 21 });
+        }
 
-        // Swirling Tangent Vortex in night sky
-        const vortex_cx = vr_x + @divTrunc(vr_w, 2);
-        const vortex_cy = vr_y + 80;
-        w.fill_circle(vortex_cx, vortex_cy, 65, Color{ .r = 50, .g = 15, .b = 85 });
-        w.fill_circle(vortex_cx, vortex_cy, 45, Color{ .r = 88, .g = 28, .b = 135 });
-        w.fill_circle(vortex_cx, vortex_cy, 25, Color.vortex_purple);
-        w.fill_circle(vortex_cx, vortex_cy, 12, Color{ .r = 224, .g = 242, .b = 254 });
-        w.draw_circle_outline(vortex_cx, vortex_cy, 75, Palette.tangent_glow);
-        w.draw_circle_outline(vortex_cx, vortex_cy, 95, Color{ .r = 168, .g = 85, .b = 247 });
+        // The fog whirl over the crest: grey rings turning on themselves
+        const fw_cx = bh_x + @divTrunc(bh_w, 2);
+        const fw_cy = bh_y + 90;
+        w.fill_circle(fw_cx, fw_cy, 64, Color{ .r = 70, .g = 76, .b = 88, .a = 170 });
+        w.fill_circle(fw_cx, fw_cy, 44, Color{ .r = 110, .g = 116, .b = 128, .a = 190 });
+        w.fill_circle(fw_cx, fw_cy, 24, Color{ .r = 160, .g = 166, .b = 176, .a = 210 });
+        w.fill_circle(fw_cx, fw_cy, 10, Palette.branch_core);
+        w.draw_circle_outline(fw_cx, fw_cy, 76, Palette.branch_glow);
+        w.draw_circle_outline(fw_cx, fw_cy, 92, Color{ .r = 120, .g = 130, .b = 150 });
 
-        // Telephone poles on ridge
-        w.draw_line(vr_x + 80, vr_y + vr_h - 140, vr_x + 80, vr_y + vr_h - 40, Color{ .r = 45, .g = 35, .b = 30 });
-        w.draw_line(vr_x + 65, vr_y + vr_h - 130, vr_x + 95, vr_y + vr_h - 130, Color{ .r = 45, .g = 35, .b = 30 });
-        w.draw_line(vr_x + vr_w - 100, vr_y + vr_h - 140, vr_x + vr_w - 100, vr_y + vr_h - 40, Color{ .r = 45, .g = 35, .b = 30 });
-        w.draw_line(vr_x + vr_w - 115, vr_y + vr_h - 130, vr_x + vr_w - 85, vr_y + vr_h - 130, Color{ .r = 45, .g = 35, .b = 30 });
-        w.draw_line(vr_x + 80, vr_y + vr_h - 130, vr_x + vr_w - 100, vr_y + vr_h - 130, Color{ .r = 60, .g = 50, .b = 45 });
+        // The weather station's mast with its cups
+        w.draw_line(bh_x + 90, bh_y + bh_h - 170, bh_x + 90, bh_y + bh_h - 40, Color{ .r = 90, .g = 84, .b = 76 });
+        w.draw_line(bh_x + 70, bh_y + bh_h - 170, bh_x + 110, bh_y + bh_h - 170, Color{ .r = 90, .g = 84, .b = 76 });
+        w.fill_circle(bh_x + 70, bh_y + bh_h - 170, 5, Color{ .r = 170, .g = 120, .b = 70 });
+        w.fill_circle(bh_x + 110, bh_y + bh_h - 170, 5, Color{ .r = 170, .g = 120, .b = 70 });
 
-        // Title
-        w.draw_text("TANGENT VORTEX OVERLOOK RIDGE - MIDNIGHT", vr_x + 16, vr_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });
-        w.draw_text("(ROBERTA SPARROW * MAILBOX 'CELLAR DOOR' * ATMOSPHERIC TIME PORTAL)", vr_x + 16, vr_y + 36, 1, Palette.tangent_glow);
+        w.draw_text("BEACON HILL - ABOVE BRACKWATER, MIDNIGHT", bh_x + 16, bh_y + 16, 2, Color{ .r = 236, .g = 228, .b = 210 });
+        w.draw_text("(HESTER QUILL * THE POST BOX * THE FOG WHIRL AT THE CREST)", bh_x + 16, bh_y + 36, 1, Palette.branch_glow);
     } else {
         // 1. Clear background
         w.fill_rect(0, 0, w.width, w.height, Palette.tavern_bg);
@@ -1931,49 +1941,49 @@ fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
         w.draw_rect_outline(pt.x - 24, pt.y - 14, 48, 28, Color{ .r = 70, .g = 45, .b = 25 });
         w.fill_rect(pt.x - 14, pt.y - 14, 4, 28, Color{ .r = 70, .g = 70, .b = 75 });
         w.fill_rect(pt.x + 10, pt.y - 14, 4, 28, Color{ .r = 70, .g = 70, .b = 75 });
-    } else if (std.mem.indexOf(u8, name, "JetEngine") != null or std.mem.indexOf(u8, name, "Engine") != null) {
-        // Artifact of Metal: Jet Engine Cowling (P31-01, P31-03, D-027)
-        w.fill_circle(pt.x, pt.y, 22, Color{ .r = 100, .g = 110, .b = 125 });
-        w.fill_circle(pt.x, pt.y, 16, Color{ .r = 40, .g = 45, .b = 55 });
-        w.fill_circle(pt.x, pt.y, 6, Color{ .r = 160, .g = 170, .b = 185 });
-        w.draw_circle_outline(pt.x, pt.y, 22, Color{ .r = 180, .g = 190, .b = 210 });
-        // Turbine blades
-        w.draw_line(pt.x - 14, pt.y - 14, pt.x + 14, pt.y + 14, Color{ .r = 140, .g = 150, .b = 165 });
-        w.draw_line(pt.x + 14, pt.y - 14, pt.x - 14, pt.y + 14, Color{ .r = 140, .g = 150, .b = 165 });
-        w.draw_line(pt.x, pt.y - 16, pt.x, pt.y + 16, Color{ .r = 140, .g = 150, .b = 165 });
-        w.draw_line(pt.x - 16, pt.y, pt.x + 16, pt.y, Color{ .r = 140, .g = 150, .b = 165 });
-        if (status_of(frame).tangent_active) {
-            w.draw_circle_outline(pt.x, pt.y, 26, Palette.tangent_glow);
+    } else if (std.mem.eql(u8, name, "WeathercockProp") or std.mem.eql(u8, name, "Weathercock")) {
+        // The copper weathercock, fallen 28 days early: the branch's keystone (P35-07)
+        const copper = Color{ .r = 184, .g = 115, .b = 51 };
+        const verdigris = Color{ .r = 72, .g = 160, .b = 130 };
+        w.draw_line(pt.x, pt.y + 18, pt.x, pt.y - 6, Color{ .r = 90, .g = 80, .b = 70 });
+        w.draw_line(pt.x - 16, pt.y + 12, pt.x + 16, pt.y + 12, Color{ .r = 90, .g = 80, .b = 70 });
+        w.fill_circle(pt.x - 2, pt.y - 10, 10, copper);
+        w.fill_circle(pt.x + 10, pt.y - 18, 5, copper);
+        w.fill_rect(pt.x - 20, pt.y - 20, 8, 14, verdigris);
+        w.draw_line(pt.x + 14, pt.y - 18, pt.x + 20, pt.y - 16, Color{ .r = 250, .g = 204, .b = 21 });
+        w.draw_circle_outline(pt.x - 2, pt.y - 10, 10, Color{ .r = 230, .g = 170, .b = 110 });
+        if (status_of(frame).branch_active) {
+            w.draw_circle_outline(pt.x, pt.y - 6, 26, Palette.branch_glow);
         }
-    } else if (std.mem.indexOf(u8, name, "WaterPipe") != null or std.mem.indexOf(u8, name, "Pipe") != null) {
-        // High School Water Pipe (P31-03, D-027)
-        w.fill_rect(pt.x - 6, pt.y - 20, 12, 40, Color{ .r = 110, .g = 120, .b = 135 });
-        w.draw_rect_outline(pt.x - 6, pt.y - 20, 12, 40, Color{ .r = 160, .g = 170, .b = 185 });
-        w.fill_rect(pt.x - 10, pt.y - 8, 20, 16, Color{ .r = 90, .g = 100, .b = 115 });
-        if (status_of(frame).darko_water_flooded) {
-            w.fill_circle(pt.x, pt.y - 14, 8, Palette.tangent_glow);
-            w.draw_line(pt.x, pt.y - 14, pt.x - 18, pt.y + 16, Palette.tangent_core);
-            w.draw_line(pt.x, pt.y - 14, pt.x + 18, pt.y + 16, Palette.tangent_core);
+    } else if (std.mem.eql(u8, name, "SluiceProp") or std.mem.eql(u8, name, "Sluice")) {
+        // The Customs House sluice gate (P35-07)
+        w.fill_rect(pt.x - 12, pt.y - 22, 24, 40, Color{ .r = 60, .g = 66, .b = 74 });
+        w.draw_rect_outline(pt.x - 12, pt.y - 22, 24, 40, Color{ .r = 140, .g = 150, .b = 160 });
+        w.draw_circle_outline(pt.x, pt.y - 6, 9, Color{ .r = 160, .g = 110, .b = 60 });
+        if (status_of(frame).weathercock_flooded) {
+            w.fill_circle(pt.x, pt.y + 14, 8, Palette.branch_glow);
+            w.draw_line(pt.x, pt.y + 10, pt.x - 18, pt.y + 20, Palette.branch_core);
+            w.draw_line(pt.x, pt.y + 10, pt.x + 18, pt.y + 20, Palette.branch_core);
         }
-    } else if (std.mem.indexOf(u8, name, "Axe") != null) {
-        // Fire Axe (P31-03, D-027)
-        w.draw_line(pt.x - 12, pt.y + 16, pt.x + 12, pt.y - 16, Color{ .r = 140, .g = 95, .b = 50 });
-        w.fill_rect(pt.x + 4, pt.y - 20, 12, 10, Color{ .r = 220, .g = 38, .b = 38 });
-        w.draw_rect_outline(pt.x + 4, pt.y - 20, 12, 10, Color.white);
-    } else if (std.mem.indexOf(u8, name, "Vortex") != null or std.mem.indexOf(u8, name, "Anomaly") != null) {
-        // Time Vortex threshold (P31-01, P31-03, D-027)
-        w.fill_circle(pt.x, pt.y, 22, Color.vortex_purple);
-        w.fill_circle(pt.x, pt.y, 14, Palette.tangent_glow);
-        w.fill_circle(pt.x, pt.y, 6, Palette.tangent_core);
-        w.draw_circle_outline(pt.x, pt.y, 24, Palette.tangent_core);
-    } else if (std.mem.indexOf(u8, name, "Mailbox") != null or std.mem.indexOf(u8, name, "Envelope") != null) {
-        // Roberta Sparrow's Mailbox (P31-03, D-027)
-        w.fill_rect(pt.x - 4, pt.y - 6, 8, 26, Color{ .r = 75, .g = 85, .b = 95 });
-        w.fill_rect(pt.x - 14, pt.y - 22, 28, 16, Color{ .r = 160, .g = 170, .b = 180 });
-        w.draw_rect_outline(pt.x - 14, pt.y - 22, 28, 16, Color.white);
-        // Red flag
-        w.draw_line(pt.x + 12, pt.y - 18, pt.x + 12, pt.y - 28, Color{ .r = 220, .g = 38, .b = 38 });
-        w.fill_rect(pt.x + 12, pt.y - 28, 6, 4, Color{ .r = 220, .g = 38, .b = 38 });
+    } else if (std.mem.eql(u8, name, "CrankProp") or std.mem.eql(u8, name, "Crank")) {
+        // The sluice crank on its hook (P35-07)
+        w.draw_line(pt.x - 10, pt.y + 14, pt.x + 8, pt.y - 12, Color{ .r = 120, .g = 124, .b = 130 });
+        w.draw_line(pt.x + 8, pt.y - 12, pt.x + 18, pt.y - 12, Color{ .r = 120, .g = 124, .b = 130 });
+        w.fill_rect(pt.x + 16, pt.y - 18, 6, 12, Color{ .r = 140, .g = 95, .b = 50 });
+        w.draw_circle_outline(pt.x - 10, pt.y + 14, 4, Color.white);
+    } else if (std.mem.eql(u8, name, "FogWhirlProp") or std.mem.eql(u8, name, "FogWhirl")) {
+        // The fog whirl, the branch's convergence point (P35-07)
+        w.fill_circle(pt.x, pt.y, 22, Color{ .r = 100, .g = 106, .b = 118, .a = 190 });
+        w.fill_circle(pt.x, pt.y, 14, Palette.branch_glow);
+        w.fill_circle(pt.x, pt.y, 6, Palette.branch_core);
+        w.draw_circle_outline(pt.x, pt.y, 24, Palette.branch_core);
+    } else if (std.mem.eql(u8, name, "NoteProp") or std.mem.eql(u8, name, "Note")) {
+        // Hester Quill's post box with the sealed note (P35-07)
+        w.fill_rect(pt.x - 3, pt.y - 6, 6, 26, Color{ .r = 70, .g = 56, .b = 44 });
+        w.fill_rect(pt.x - 14, pt.y - 22, 28, 16, Color{ .r = 140, .g = 60, .b = 40 });
+        w.draw_rect_outline(pt.x - 14, pt.y - 22, 28, 16, Color{ .r = 200, .g = 170, .b = 140 });
+        w.fill_rect(pt.x - 8, pt.y - 18, 16, 8, Color{ .r = 236, .g = 228, .b = 210 });
+        w.fill_circle(pt.x, pt.y - 14, 2, Color{ .r = 180, .g = 30, .b = 30 });
     } else if (sc.is_bell_base_scene or sc.is_bell_belfry_scene) {
         // The Bell Tower draws its props in its backdrop (D-030).
     } else {
@@ -2395,67 +2405,59 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
         w.fill_rect(pt.x - 12, pt.y - ACTOR_SCREEN_RADIUS - 3, 24, 2, Color{ .r = 250, .g = 204, .b = 21 });
 
         layout_resolver.submit(TextLabel.init("Admiral Squall", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 6, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-    } else if (std.mem.eql(u8, name, "Donnie")) {
-        // Donnie Darko: Dark disheveled hair, dark grey jacket, chest vector worm anchor node (P31-01, P31-03, D-027)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 55, .g = 60, .b = 75 });
+    } else if (std.mem.eql(u8, name, "Wren") and (detect(frame).is_weathercock_attic_scene or detect(frame).is_weathercock_customs_scene or detect(frame).is_weathercock_hill_scene)) {
+        // Wren Halloway (the grid proof has its own Wren; this art is scoped to these scenes): apprentice clerk in a grey coat, ink-stained cuffs (P35-07)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 88, .g = 92, .b = 104 });
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // Disheveled dark hair
-        w.fill_circle(pt.x, pt.y - 10, 10, Color{ .r = 30, .g = 25, .b = 20 });
-        w.fill_rect(pt.x - 12, pt.y - 14, 6, 8, Color{ .r = 30, .g = 25, .b = 20 });
-        w.fill_rect(pt.x + 6, pt.y - 14, 6, 8, Color{ .r = 30, .g = 25, .b = 20 });
-        // Chest vector worm anchor node
-        w.fill_circle(pt.x, pt.y + 2, 4, Palette.tangent_core);
-        w.draw_circle_outline(pt.x, pt.y + 2, 6, Palette.tangent_glow);
+        // Brown hair pinned up
+        w.fill_circle(pt.x, pt.y - 10, 9, Color{ .r = 96, .g = 60, .b = 34 });
+        w.fill_circle(pt.x + 8, pt.y - 16, 4, Color{ .r = 96, .g = 60, .b = 34 });
+        // The current she follows, at her chest while the branch lives
+        w.fill_circle(pt.x, pt.y + 2, 4, Palette.branch_core);
+        w.draw_circle_outline(pt.x, pt.y + 2, 6, Palette.branch_glow);
 
-        layout_resolver.submit(TextLabel.init("Donnie", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-        if (status_of(frame).tangent_active) {
-            layout_resolver.submit(TextLabel.init("[LIVING RECEIVER]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.tangent_glow), .actor_status, .actor_status));
+        layout_resolver.submit(TextLabel.init("Wren", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+        if (status_of(frame).branch_active) {
+            layout_resolver.submit(TextLabel.init("[RECEIVER]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.branch_glow), .actor_status, .actor_status));
         }
-    } else if (std.mem.eql(u8, name, "Frank")) {
-        // Frank: Demonic silver rabbit suit, sinister skull mask, tall ears (P31-01, P31-03, D-027)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Palette.frank_silver);
-        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color.white);
-        // Tall pointed metallic rabbit ears
-        w.fill_rect(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Palette.frank_silver);
-        w.fill_rect(pt.x + 4, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Palette.frank_silver);
-        w.draw_rect_outline(pt.x - 10, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Color.white);
-        w.draw_rect_outline(pt.x + 4, pt.y - ACTOR_SCREEN_RADIUS - 16, 6, 18, Color.white);
-        // Sinister dark hollow eyes
-        w.fill_circle(pt.x - 5, pt.y - 4, 4, Color.black);
-        w.fill_circle(pt.x + 5, pt.y - 4, 4, Color.black);
-        // Silver skull grin
-        w.draw_line(pt.x - 8, pt.y + 8, pt.x + 8, pt.y + 8, Color.black);
-        w.draw_line(pt.x - 6, pt.y + 6, pt.x - 6, pt.y + 10, Color.black);
-        w.draw_line(pt.x - 2, pt.y + 6, pt.x - 2, pt.y + 10, Color.black);
-        w.draw_line(pt.x + 2, pt.y + 6, pt.x + 2, pt.y + 10, Color.black);
-        w.draw_line(pt.x + 6, pt.y + 6, pt.x + 6, pt.y + 10, Color.black);
+    } else if (std.mem.eql(u8, name, "PilotAshe")) {
+        // Pilot Ashe's echo: wet oilskins, sou'wester, weed in his beard (P35-07)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Palette.ashe_oilskin);
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 2, Color{ .r = 200, .g = 230, .b = 236 });
+        // Sou'wester brim
+        w.fill_rect(pt.x - 16, pt.y - ACTOR_SCREEN_RADIUS - 2, 32, 5, Palette.ashe_oilskin);
+        w.fill_circle(pt.x, pt.y - ACTOR_SCREEN_RADIUS - 4, 8, Palette.ashe_oilskin);
+        // Pale eyes and a weedy beard
+        w.fill_circle(pt.x - 5, pt.y - 4, 2, Color{ .r = 200, .g = 230, .b = 236 });
+        w.fill_circle(pt.x + 5, pt.y - 4, 2, Color{ .r = 200, .g = 230, .b = 236 });
+        w.fill_rect(pt.x - 8, pt.y + 4, 16, 8, Color{ .r = 60, .g = 96, .b = 60 });
+        // Dripping water
+        w.draw_line(pt.x - 10, pt.y + 14, pt.x - 10, pt.y + 20, Palette.branch_glow);
+        w.draw_line(pt.x + 10, pt.y + 14, pt.x + 10, pt.y + 22, Palette.branch_glow);
 
-        layout_resolver.submit(TextLabel.init("Frank", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-        layout_resolver.submit(TextLabel.init("[MANIPULATED DEAD]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color{ .r = 239, .g = 68, .b = 68 }), .actor_status, .actor_status));
-    } else if (std.mem.eql(u8, name, "Gretchen")) {
-        // Gretchen Ross: Red knit sweater, brunette hair (P31-03, D-027)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 185, .g = 28, .b = 28 });
+        layout_resolver.submit(TextLabel.init("Pilot Ashe", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+        layout_resolver.submit(TextLabel.init("[ECHO]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Palette.branch_glow), .actor_status, .actor_status));
+    } else if (std.mem.eql(u8, name, "Pell") and (detect(frame).is_weathercock_attic_scene or detect(frame).is_weathercock_customs_scene or detect(frame).is_weathercock_hill_scene)) {
+        // Pell, junior tide-waiter: blue Customs coat, quill behind the ear (P35-07)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 36, .g = 60, .b = 120 });
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // Long brown hair
-        w.fill_circle(pt.x, pt.y - 10, 9, Color{ .r = 80, .g = 50, .b = 30 });
-        w.fill_rect(pt.x - 12, pt.y - 6, 4, 14, Color{ .r = 80, .g = 50, .b = 30 });
-        w.fill_rect(pt.x + 8, pt.y - 6, 4, 14, Color{ .r = 80, .g = 50, .b = 30 });
+        w.fill_circle(pt.x, pt.y - 10, 8, Color{ .r = 200, .g = 150, .b = 70 });
+        w.draw_line(pt.x + 8, pt.y - 14, pt.x + 16, pt.y - 24, Color{ .r = 236, .g = 228, .b = 210 });
+        w.fill_rect(pt.x - 6, pt.y + 2, 12, 3, Color{ .r = 214, .g = 170, .b = 80 });
 
-        layout_resolver.submit(TextLabel.init("Gretchen", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-    } else if (std.mem.eql(u8, name, "RobertaSparrow") or std.mem.eql(u8, name, "Roberta")) {
-        // Roberta Sparrow (Grandma Death): Floral dress, frazzled hair, letter (P31-01, P31-03, D-027)
-        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 120, .g = 100, .b = 135 });
+        layout_resolver.submit(TextLabel.init("Pell", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "HesterQuill")) {
+        // Hester Quill, keeper of the storm almanac: shawl, white hair, the almanac (P35-07)
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 96, .g = 70, .b = 96 });
         w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
-        // Frazzled white curls
-        w.fill_circle(pt.x, pt.y - 12, 10, Color{ .r = 235, .g = 235, .b = 240 });
-        w.fill_circle(pt.x - 10, pt.y - 8, 5, Color{ .r = 225, .g = 225, .b = 230 });
-        w.fill_circle(pt.x + 10, pt.y - 8, 5, Color{ .r = 225, .g = 225, .b = 230 });
-        // Envelope in hand
-        w.fill_rect(pt.x + 8, pt.y + 4, 10, 7, Color.white);
-        w.draw_rect_outline(pt.x + 8, pt.y + 4, 10, 7, Color{ .r = 100, .g = 100, .b = 100 });
+        w.fill_circle(pt.x, pt.y - 12, 10, Color{ .r = 232, .g = 232, .b = 236 });
+        w.fill_rect(pt.x - 14, pt.y + 2, 28, 6, Color{ .r = 70, .g = 96, .b = 80 });
+        // The almanac under her arm
+        w.fill_rect(pt.x + 8, pt.y + 4, 11, 9, Color{ .r = 110, .g = 40, .b = 30 });
+        w.draw_rect_outline(pt.x + 8, pt.y + 4, 11, 9, Color{ .r = 214, .g = 170, .b = 80 });
 
-        layout_resolver.submit(TextLabel.init("Roberta Sparrow", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
-        layout_resolver.submit(TextLabel.init("['Grandma Death']", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color.hud_subtext), .actor_status, .actor_status));
+        layout_resolver.submit(TextLabel.init("Hester Quill", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.hud_text), .actor_name, .actor_name));
+        layout_resolver.submit(TextLabel.init("[ALMANAC KEEPER]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color.hud_subtext), .actor_status, .actor_status));
     } else if (std.mem.eql(u8, name, "Tamsin") and (detect(frame).is_inn_scene or detect(frame).is_yard_scene or detect(frame).is_office_scene)) {
         // Tamsin on the trail of a berth (P35-04): her Brackwater Barbs colours, and the
         // borrowed grey beard once she wears it
@@ -2971,8 +2973,8 @@ fn footer(frame: *const RenderFrame) ?r.FooterHint {
         return .{ .text = "[I]: Inn | [Y]: Yard | [O]: Office | [-]/[+]: Speed | [Space]: Pause | [0-8]: Steps", .color = HINT_GOLD };
     } else if (sc.is_village_scene) {
         return .{ .text = "[S]: Theft | [F]: Feast | [G]: Tip | [-]/[+]: Speed | [Space/N]: Pause/Step | [< / >]: Scrub", .color = HINT_GOLD };
-    } else if (sc.is_darko_bedroom_scene or sc.is_darko_school_scene or sc.is_darko_vortex_scene or status_of(frame).tangent_active) {
-        return .{ .text = "[1]: Bedroom | [2]: High School | [3]: Ridge | [V]: Conduit | [-]/[+]: Speed | [Space]: Pause", .color = Color{ .r = 168, .g = 85, .b = 247 } };
+    } else if (sc.is_weathercock_attic_scene or sc.is_weathercock_customs_scene or sc.is_weathercock_hill_scene or status_of(frame).branch_active) {
+        return .{ .text = "[1]: Attic | [2]: Customs House | [3]: Beacon Hill | [V]: Current | [-]/[+]: Speed | [Space]: Pause", .color = Color{ .r = 168, .g = 85, .b = 247 } };
     }
     return null;
 }
@@ -3193,13 +3195,13 @@ pub const Status = struct {
     tides_juno_freed: bool = false,
     tides_juno_disguised: bool = false,
     tides_puzzle_solved: bool = false,
-    tangent_active: bool = false,
-    singularity_collapsed: bool = false,
-    darko_water_flooded: bool = false,
-    darko_letter_delivered: bool = false,
-    darko_vortex_reached: bool = false,
-    darko_artifact_returned: bool = false,
-    darko_puzzle_solved: bool = false,
+    branch_active: bool = false,
+    branch_collapsed: bool = false,
+    weathercock_flooded: bool = false,
+    weathercock_note_delivered: bool = false,
+    keystone_converged: bool = false,
+    keystone_returned: bool = false,
+    weathercock_solved: bool = false,
     bell_brazier_lit: bool = false,
     bell_chain_loosed: bool = false,
     bell_fork_taken: bool = false,
@@ -3208,8 +3210,8 @@ pub const Status = struct {
     village_crime_active: bool = false,
     village_warrant_active: bool = false,
     village_arrest_made: bool = false,
-    tangent_countdown: [16]u8 = [_]u8{0} ** 16,
-    tangent_countdown_len: u8 = 0,
+    branch_countdown: [16]u8 = [_]u8{0} ** 16,
+    branch_countdown_len: u8 = 0,
     /// Castle Fire Escape (P25-03): one attribute mask per gallery cell, bit n set when
     /// `grid.Attribute` n holds, and whether the hidden door has been found.
     gallery_cells: [GALLERY_CELLS]u8 = [_]u8{0} ** GALLERY_CELLS,
@@ -3220,7 +3222,7 @@ pub const Status = struct {
     social_edge_count: usize = 0,
 
     pub fn countdown(self: *const Status) []const u8 {
-        return self.tangent_countdown[0..self.tangent_countdown_len];
+        return self.branch_countdown[0..self.branch_countdown_len];
     }
 };
 
@@ -3228,19 +3230,19 @@ pub fn status_of(frame: *const RenderFrame) *const Status {
     return frame.host_status(Status);
 }
 
-/// Shows the branch-world collapse countdown (the Middlesex Anomaly sets it every tick).
+/// Shows the branch-world collapse countdown (The Copper Weathercock sets it every tick).
 pub fn set_countdown(bridge: *bespoke.DisplayBridge, text: []const u8) void {
     const status = bridge.back_buffer.host_status_mut(Status);
-    const len = @min(text.len, status.tangent_countdown.len);
-    @memcpy(status.tangent_countdown[0..len], text[0..len]);
-    status.tangent_countdown_len = @intCast(len);
-    status.tangent_active = true;
+    const len = @min(text.len, status.branch_countdown.len);
+    @memcpy(status.branch_countdown[0..len], text[0..len]);
+    status.branch_countdown_len = @intCast(len);
+    status.branch_active = true;
 }
 
 /// Sets the collapse fail-state on both buffers, so it shows before the next capture.
 pub fn set_collapsed(bridge: *bespoke.DisplayBridge, collapsed: bool) void {
-    bridge.back_buffer.host_status_mut(Status).singularity_collapsed = collapsed;
-    bridge.front_buffer.host_status_mut(Status).singularity_collapsed = collapsed;
+    bridge.back_buffer.host_status_mut(Status).branch_collapsed = collapsed;
+    bridge.front_buffer.host_status_mut(Status).branch_collapsed = collapsed;
 }
 
 /// Reads the gallery grid's cell facts by the names its script uses (P25-03).
@@ -3592,32 +3594,32 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
         st.tides_puzzle_solved = world.has_fact(null, rel, null);
     }
 
-    // 5g. Capture Donnie Darko / Roberta Sparrow status flags (P31-01..P31-03, D-027)
-    st.darko_water_flooded = false;
-    if (world.lookup_relation("SchoolFlooded")) |rel| {
-        st.darko_water_flooded = world.has_fact(null, rel, null);
+    // 5g. The Copper Weathercock's flags (P31-01..P31-03, D-027, P35-07)
+    st.weathercock_flooded = false;
+    if (world.lookup_relation("CustomsFlooded")) |rel| {
+        st.weathercock_flooded = world.has_fact(null, rel, null);
     }
-    st.darko_letter_delivered = false;
-    if (world.lookup_relation("LetterDelivered")) |rel| {
-        st.darko_letter_delivered = world.has_fact(null, rel, null);
+    st.weathercock_note_delivered = false;
+    if (world.lookup_relation("NoteDelivered")) |rel| {
+        st.weathercock_note_delivered = world.has_fact(null, rel, null);
     }
-    st.darko_vortex_reached = false;
-    if (world.lookup_relation("VortexReady")) |rel| {
-        st.darko_vortex_reached = world.has_fact(null, rel, null);
+    st.keystone_converged = false;
+    if (world.lookup_relation("KeystoneAtConvergence")) |rel| {
+        st.keystone_converged = world.has_fact(null, rel, null);
     }
-    st.darko_artifact_returned = false;
-    if (world.lookup_relation("ArtifactMaterialized")) |rel| {
-        st.darko_artifact_returned = world.has_fact(null, rel, null);
+    st.keystone_returned = false;
+    if (world.lookup_relation("KeystoneMaterialized")) |rel| {
+        st.keystone_returned = world.has_fact(null, rel, null);
     }
-    st.darko_puzzle_solved = false;
-    if (world.lookup_relation("DarkoSolved")) |rel| {
-        st.darko_puzzle_solved = world.has_fact(null, rel, null);
+    st.weathercock_solved = false;
+    if (world.lookup_relation("WeathercockSolved")) |rel| {
+        st.weathercock_solved = world.has_fact(null, rel, null);
     }
 }
 
 fn hud(w: *Canvas, frame: *const RenderFrame) void {
-    // 6-tangent. Branch-world collapse countdown HUD (P31-01, P31-02, D-027)
-    if (status_of(frame).tangent_active) {
+    // 6-branch. Branch-world collapse countdown HUD (P31-01, P31-02, D-027)
+    if (status_of(frame).branch_active) {
         const count_str = status_of(frame).countdown();
         const bw: i32 = 360;
         const bh: i32 = 34;
@@ -3633,14 +3635,14 @@ fn hud(w: *Canvas, frame: *const RenderFrame) void {
         w.draw_rect_outline(bx + 1, by + 1, bw - 2, bh - 2, Color.vortex_purple);
 
         var t_buf: [64]u8 = undefined;
-        const t_text = std.fmt.bufPrint(&t_buf, "TANGENT COLLAPSE: {s}", .{count_str}) catch "TANGENT COLLAPSE";
+        const t_text = std.fmt.bufPrint(&t_buf, "BORROWED MONTH ENDS IN: {s}", .{count_str}) catch "BORROWED MONTH";
         w.draw_text(t_text, bx + 12, by + 9, 2, Color{ .r = 254, .g = 202, .b = 202 });
     }
 }
 
 fn overlay(w: *Canvas, frame: *const RenderFrame) void {
-    // 12b. Black Hole Singularity Catastrophic Fail-State Modal (P31-01, D-027)
-    if (status_of(frame).singularity_collapsed) {
+    // 12b. Branch expiry fail-state modal (P31-01, D-027)
+    if (status_of(frame).branch_collapsed) {
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 0, .g = 0, .b = 0, .a = 230 });
         const mw: i32 = 640;
         const mh: i32 = 120;
@@ -3649,8 +3651,8 @@ fn overlay(w: *Canvas, frame: *const RenderFrame) void {
         w.fill_rect(mx, my, mw, mh, Color{ .r = 15, .g = 8, .b = 20, .a = 250 });
         w.draw_rect_outline(mx, my, mw, mh, Color.countdown_warn);
         w.draw_rect_outline(mx + 2, my + 2, mw - 4, mh - 4, Color.vortex_purple);
-        w.draw_text("BLACK HOLE SINGULARITY COLLAPSE", mx + 36, my + 24, 2, Color.countdown_warn);
-        w.draw_text("The Tangent Universe collapsed without loop closure. Rewind [R] required.", mx + 24, my + 66, 1, Color{ .r = 224, .g = 242, .b = 254 });
+        w.draw_text("THE BORROWED MONTH TEARS AWAY", mx + 36, my + 24, 2, Color.countdown_warn);
+        w.draw_text("The branch expired before the loop closed. Rewind [R] required.", mx + 24, my + 66, 1, Color{ .r = 224, .g = 242, .b = 254 });
     }
 }
 

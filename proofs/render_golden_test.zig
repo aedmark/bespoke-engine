@@ -26,7 +26,7 @@ const sword_fighting = @import("sword_fighting.zig");
 const village = @import("village.zig");
 const lamp_point = @import("lamp_point.zig");
 const three_tides = @import("three_tides.zig");
-const darko_puzzle = @import("darko_puzzle.zig");
+const weathercock = @import("weathercock.zig");
 const loom_puzzle = @import("loom_puzzle.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
@@ -44,7 +44,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "village", .script = village.VILLAGE_SCRIPT },
     .{ .name = "lamp_point", .script = lamp_point.LAMP_POINT_SCRIPT },
     .{ .name = "three_tides", .script = three_tides.THREE_TIDES_SCRIPT },
-    .{ .name = "darko_puzzle", .script = darko_puzzle.DARKO_PUZZLE_SCRIPT },
+    .{ .name = "weathercock", .script = weathercock.WEATHERCOCK_SCRIPT },
     .{ .name = "loom_puzzle", .script = loom_puzzle.BELL_TOWER_SCRIPT },
     .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
     .{ .name = "grid_puzzle", .script = grid_puzzle.GRID_PUZZLE_SCRIPT },
@@ -81,9 +81,9 @@ const STATUS_VARIANTS = [_][]const u8{
     "tamsin_disguised",      "berth_taken",            "donkey_tangled",      "donkey_charging",
     "donkey_retreating",     "tamsin_knocked_down",    "anchor_moved",         "tides_tree_felled",
     "tides_port_aged",         "tides_well_charged",   "tides_banner_sewn",       "tides_juno_freed",
-    "tides_juno_disguised", "tides_puzzle_solved",     "tangent_active",       "singularity_collapsed",
-    "darko_water_flooded",    "darko_letter_delivered", "darko_vortex_reached", "darko_artifact_returned",
-    "darko_puzzle_solved",    "bell_brazier_lit",       "bell_chain_loosed",    "bell_fork_taken",
+    "tides_juno_disguised", "tides_puzzle_solved",     "branch_active",       "branch_collapsed",
+    "weathercock_flooded",    "weathercock_note_delivered", "keystone_converged", "keystone_returned",
+    "weathercock_solved",    "bell_brazier_lit",       "bell_chain_loosed",    "bell_fork_taken",
     "bell_ringing",           "bell_beacon_lit",        "village_crime_active", "village_warrant_active",
     "village_arrest_made",    "cheese_holder",          "charmed_target",       "countdown",
     "villagers",              "gallery_door_revealed",  "gallery_fire",
@@ -107,9 +107,9 @@ const Status = struct {
             st.charmed_target = first;
         } else if (std.mem.eql(u8, variant, "countdown")) {
             const text = "00:00:12:34";
-            @memcpy(st.tangent_countdown[0..text.len], text);
-            st.tangent_countdown_len = text.len;
-            st.tangent_active = true;
+            @memcpy(st.branch_countdown[0..text.len], text);
+            st.branch_countdown_len = text.len;
+            st.branch_active = true;
         } else if (std.mem.eql(u8, variant, "gallery_fire")) {
             // Mid-escape: a spent smoking cell, two fires, and water on the door.
             const A = bespoke.grid.Attribute;

@@ -278,11 +278,11 @@ test "P31-04: temporal snapshot round-trips branch world, countdown, teleology, 
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
 
-    const donnie = try primary.intern_entity("Donnie");
+    const hero = try primary.intern_entity("Hero");
     const engine = try primary.intern_entity("Engine");
     const vortex = try primary.intern_entity("Vortex");
     const in_room = try primary.intern_relation("InRoom", .property);
-    _ = try primary.remember(donnie, in_room, vortex.to_int(), 0);
+    _ = try primary.remember(hero, in_room, vortex.to_int(), 0);
 
     const pipe = try primary.intern_relation("Pipe", .set);
     const flood = try primary.intern_relation("Flood", .set);
@@ -290,10 +290,10 @@ test "P31-04: temporal snapshot round-trips branch world, countdown, teleology, 
     var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
     defer hypervisor.deinit();
 
-    _ = try hypervisor.fork_branch(10, donnie, engine);
+    _ = try hypervisor.fork_branch(10, hero, engine);
     hypervisor.set_convergence_target(42);
     try hypervisor.register_teleological_dependency(pipe, flood);
-    try hypervisor.add_dream_residue(.{ .subject = donnie, .relation = flood, .object_or_value = 1 });
+    try hypervisor.add_dream_residue(.{ .subject = hero, .relation = flood, .object_or_value = 1 });
     _ = try hypervisor.step_tick(null);
     _ = try hypervisor.step_tick(null);
 
@@ -320,19 +320,19 @@ test "P31-04: temporal snapshot round-trips branch world, countdown, teleology, 
     try testing.expectEqual(@as(?WaypointId, 42), restored.convergence_waypoint);
     try testing.expectEqual(@as(usize, 1), restored.teleological_dependencies.items.len);
     try testing.expectEqual(@as(usize, 1), restored.dream_residue_facts.items.len);
-    try testing.expect(restored.branch_world.?.has_fact(donnie, in_room, vortex.to_int()));
+    try testing.expect(restored.branch_world.?.has_fact(hero, in_room, vortex.to_int()));
 }
 
 test "P31-04: temporal snapshot preserves a resolved branch without a branch world" {
     const testing = std.testing;
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
-    const donnie = try primary.intern_entity("Donnie");
+    const hero = try primary.intern_entity("Hero");
     const engine = try primary.intern_entity("Engine");
 
     var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
     defer hypervisor.deinit();
-    _ = try hypervisor.fork_branch(5, donnie, engine);
+    _ = try hypervisor.fork_branch(5, hero, engine);
     try hypervisor.collapse_branch(false);
     hypervisor.collapse_state = .budget_expired;
 

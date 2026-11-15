@@ -1,0 +1,55 @@
+===================================================================
+     BeSpoke Engine: The Copper Weathercock                        
+     (Branch Worlds * Conduits * Loop Closure)                     
+===================================================================
+
+[Compiler] Compiling The Copper Weathercock three-scene script...
+[Step 0] Primary world baseline: Wren in the attic at tick 0.
+         The Customs House still has its weathercock; no second one exists.
+         Wren inspects desk -> Wren: "My writing desk. Hester Quill's storm almanac lies open at a page I haven't read yet."
+
+[Step 1] Midnight: fork_branch(280 ticks) opens the borrowed month.
+         Branch world active! Budget: 280 ticks (28 days).
+         Receiver: Wren | Keystone: Weathercock | Convergence waypoint: 8
+         [D-027 Teleology] Backward-chaining Horn clause solver verified:
+           SluiceOpened -> CustomsFlooded -> ConvergenceReady (JUSTIFIED)
+
+[Step 2] Pilot Ashe's echo gives the countdown from a hyper-temporal routine:
+         Ashe says: Pilot Ashe: "Twenty-eight days, six hours, forty-two minutes, twelve seconds. Then the gale comes and this month goes with it."  "Follow the current, Wren. Put back what fell, before the month runs out."
+         Formatted countdown remaining: 00:04:39:00
+
+[Step 3] Wren sees the current and follows it:
+         Conduit calculated: 6 points from CotMark to SluiceMark.
+         Wren arrives at The Customs House.
+
+[Step 4] Wren opens the Customs House sluice with the crank:
+         Wren inspects Crank -> Wren: "The sluice crank, hung on its hook by the door. Ashe says the sluice must be opened."
+         Wren inspects Sluice -> Wren: "The Customs House sluice. One turn of the crank and the tide comes in across the counting floor."
+         The sluice gives way! Facts asserted in the branch:
+           SluiceOpened(Wren, SluiceProp)
+           CustomsFlooded(Wren, 1)
+
+[Step 5] Wren delivers the sealed note to Hester Quill on Beacon Hill:
+         Wren looks at Hester Quill -> Wren: "Hester Quill, who keeps the storm almanac. She was the harbour's tide-reckoner once, and now she watches an empty post box."
+         Note delivered! Fact asserted in the branch:
+           NoteDelivered(Wren, HesterQuill)
+
+[Step 6] Wren carries the weathercock (the keystone) to the fog whirl:
+         Weathercock placed at convergence waypoint 8!
+         Fact ConvergenceReady(Wren, 1) asserted.
+
+[Step 7] Loop closure check and merge into the primary world:
+         hypervisor.check_loop_closure() -> TRUE! Every goal is met.
+         hypervisor.step_tick() -> .loop_resolved!
+         The borrowed month folds back cleanly; only one weathercock remains.
+         The keystone is committed into the primary world at tick 0.
+         Wren wakes remembering the borrowed month.
+         [D-027 Invariant] evaluate_weathercock_solved(&primary_world) -> TRUE!
+
+         [D-027 Invariant] Novikov self-consistency check verified: Consistent causal loop.
+
+[Step 8] Deterministic rewind verification:
+         Rewind scrubber active; verified back to tick 0 without state corruption.
+===================================================================
+     VICTORY ACHIEVED: The borrowed month folds back cleanly!      
+===================================================================

@@ -78,7 +78,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--village` | S theft, F feast, G tip | Six villagers run their own days. After S, a witness talks, rumours spread, and the Sheriff arrests someone, with no key presses in between. |
 | `--lamp-point` | L Lamp Point, W Wreckers Cellar, 1 to 4 steps | Cudgel shoves Tamsin down on the way to the hatch until his rope is caught on the anchor. |
 | `--three-tides` | 1 to 4 switch character | Items sent down the Tide Well arrive in the other era; felling the tree in 1712 frees Juno in 2112. |
-| `--darko` | V follow the conduit | The tangent countdown runs; closing the loop collapses the branch safely; letting it run out ends in the singularity. |
+| `--weathercock` | V follow the current | The borrowed month's countdown runs; closing the loop merges the branch back; letting it run out tears the month away. |
 | `--loom` | C D E F G A B notes, Backspace clears | Notes sound and show on the distaff; a four-note draft weaves its effect; played backwards it does the opposite. |
 | `--grog` | 1 pour A to B, 2 pour B to C, L unlock | Cups visibly degrade; a late pour spills; enough grog at the lock dissolves it. |
 | `--atlantis` | 1 Wits, 2 Fists, 3 Team, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
@@ -94,7 +94,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 - [ ] **Scrub:** pause, scrub back ten ticks with Left, then forward with Right. The stage replays exactly. Scrub back, then act: the future timeline is truncated and a new one starts.
 - [ ] **Rewind:** R rewinds and the run replays the same way.
 - [ ] **Saves:** F2, save to a slot; the slot shows a small colour thumbnail of the stage. Play on, then F3 and load it: the stage returns to the saved moment. Repeat with F5 and F9.
-- [ ] **Temporal save (`--darko`):** save while the tangent branch is live, play on past the collapse, load. The countdown, branch facts, and primary facts agree with the moment of the save.
+- [ ] **Temporal save (`--weathercock`):** save while the branch is live, play on past the collapse, load. The countdown, branch facts, and primary facts agree with the moment of the save.
 - [ ] **State inspector:** P, then Tab or click STATE. Arrows select, Enter centres, Backspace goes back, Home resets, F cycles the relation filter. Closing the drawer resumes play; the inspector never saves or loads.
 - [ ] **Console (`--tavern`, `--spitting-contest`, `--village`, and `bespoke run`):** `` ` `` opens it; `help` lists the commands; `facts` lists the live world; `remember Carries(Cat, Cheese)` changes the stage on the next tick; `forget` undoes it.
 - [ ] **Party HUD (`--three-tides`):** portraits show, and 1 to 4 switch the active character.
@@ -154,10 +154,10 @@ zig build web && node web/smoke.js
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
 - [ ] The playground loads with no console errors (open the developer tools).
-- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Algiers, Middlesex, Bell Tower.
+- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Algiers, Copper Weathercock, Bell Tower.
 - [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
 - [ ] Algiers: choosing a path with 1, 2, or 3 locks the others.
-- [ ] Middlesex: the tick counter never runs backwards; a rewind across the collapse brings the branch back.
+- [ ] Copper Weathercock: the tick counter never runs backwards; a rewind across the collapse brings the branch back.
 - [ ] Bell Tower: act on something, then C to B notes; the DISTAFF line shows notes, reach, and target, and the tower rings.
 - [ ] Pause, step, rewind, scrub, and reset each work on the page.
 - [ ] I opens the inspector over the stage, paused; its keys match the desktop's; closing resumes.
