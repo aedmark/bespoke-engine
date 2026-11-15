@@ -191,6 +191,60 @@ pub const THREE_TIDES_SCRIPT =
     \\on cue LooksAt(Juno, Ossie):
     \\  say Juno: "Ossie is in 1712 with the founders of the town."
     \\
+    \\on cue Uses(Nell, CheapPort, TideWell1912):
+    \\  forget Carries(Nell, CheapPort)
+    \\  remember Carries(Ossie, CheapPort)
+    \\
+    \\on cue Uses(Nell, AgedVinegar, TideWell1912):
+    \\  forget Carries(Nell, AgedVinegar)
+    \\  remember Carries(Ossie, AgedVinegar)
+    \\
+    \\on cue Uses(Nell, GullHandbill, TideWell1912):
+    \\  forget Carries(Nell, GullHandbill)
+    \\  remember Carries(Ossie, GullHandbill)
+    \\
+    \\on cue Uses(Ossie, CheapPort, CornerstoneBox1712):
+    \\  forget Carries(Ossie, CheapPort)
+    \\  remember SealedInBox(CheapPort, 1)
+    \\  remember PortAgedIntoVinegar(CheapPort, 1)
+    \\
+    \\on cue Uses(Nell, CornerstoneBox1912):
+    \\  if PortAgedIntoVinegar(CheapPort):
+    \\    if not VinegarTaken(Nell):
+    \\      remember Carries(Nell, AgedVinegar)
+    \\      remember VinegarTaken(Nell, 1)
+    \\  if not PortAgedIntoVinegar(CheapPort):
+    \\    say Nell: "The town's cornerstone box, set into the wall in 1712 and never opened since."
+    \\
+    \\on cue Uses(Ossie, AgedVinegar, VoltaicJar):
+    \\  forget Carries(Ossie, AgedVinegar)
+    \\  forget Carries(Ossie, VoltaicJar)
+    \\  remember Carries(Ossie, ChargedJar)
+    \\
+    \\on cue Uses(Ossie, ChargedJar, TideWell1712):
+    \\  forget Carries(Ossie, ChargedJar)
+    \\  remember WellPowered(Ossie, 1)
+    \\
+    \\on cue Uses(Ossie, RedLeadPaint, OrangeTree):
+    \\  remember Believes(FounderGale, RedBlight)
+    \\
+    \\on cue Uses(Ossie, GullHandbill, WidowFenn):
+    \\  remember Believes(WidowFenn, GullBannerDesign)
+    \\
+    \\on cue Uses(Juno, GullBannerProp):
+    \\  if not FreedFromTree(Juno):
+    \\    say Juno: "An orange tree two hundred years old, tall as the roost. I'm caught in its branches!"
+    \\  if FreedFromTree(Juno):
+    \\    if not BannerSewn(WidowFenn):
+    \\      say Juno: "The banner on the roost roof: a great white gull, beak open. The flag of the flock."
+    \\    if BannerSewn(WidowFenn):
+    \\      if not Carries(Juno, GullBanner):
+    \\        remember Carries(Juno, GullBanner)
+    \\
+    \\on cue Uses(Juno, GullBanner, Juno):
+    \\  remember GullDisguiseActive(Juno, 1)
+    \\  remember PassesGuard(Juno, 1)
+    \\
     \\when TreeFelled(FounderGale, OrangeTree):
     \\  interrupt Juno with:
     \\    say Juno: "Whoa! The tree's gone from under me! *THUD!* I'm on the ground!"

@@ -27,7 +27,7 @@ class SiteBuildTests(unittest.TestCase):
         self.assertIn(build_site.PLACEHOLDER, wrapper)
         names = re.search(r"const DECK_NAMES = \[(.*?)\];", (ROOT / "tools" / "site_simulator.js").read_text(encoding="utf-8"), re.S).group(1)
         names = re.findall(r"'([^']*)'", names)
-        expected = {"barbs.html": "Brackwater Barbs", "pips.html": "The Pip-Spitting Green", "beard.html": "The Borrowed Beard", "donkey.html": "The Donkey of Lamp Point"}
+        expected = {"barbs.html": "Brackwater Barbs", "pips.html": "The Pip-Spitting Green", "beard.html": "The Borrowed Beard", "donkey.html": "The Donkey of Lamp Point", "tides.html": "The Well of Three Tides"}
         self.assertEqual(sorted(expected), sorted(p.name for p in build_site.PROOF_PAGE_PATHS))
         for path in build_site.PROOF_PAGE_PATHS:
             page = path.read_text(encoding="utf-8")

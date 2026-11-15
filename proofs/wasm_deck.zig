@@ -19,7 +19,8 @@ const village = @import("village.zig");
 const VILLAGE_SCRIPT = village.VILLAGE_SCRIPT;
 const lamp_point = @import("lamp_point.zig");
 const LAMP_POINT_SCRIPT = lamp_point.LAMP_POINT_SCRIPT;
-const THREE_TIDES_SCRIPT = @import("three_tides.zig").THREE_TIDES_SCRIPT;
+const three_tides = @import("three_tides.zig");
+const THREE_TIDES_SCRIPT = three_tides.THREE_TIDES_SCRIPT;
 const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
 const sword_fighting = @import("sword_fighting.zig");
 const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
@@ -91,6 +92,8 @@ pub const decks = [_]wasm.Deck{
         .status_hook = art.capture_status,
         .background = .{ .r = 42, .g = 24, .b = 48 },
         .setup = tides_setup,
+        .after_tick = tides_after_tick,
+        .on_action = tides_action,
         .catalyst = solver(&TIDES_SOLUTION),
     }),
     wasm.script_deck_with("CAUSTIC GROG (CONTAINER DEGRADATION)", GROG_PUZZLE_SCRIPT, .{
@@ -648,6 +651,45 @@ fn tides_setup(rt: *WasmRuntime) anyerror!void {
     };
     for (facts) |f| try rt.world.remember(try entity(rt, f.subject), try relation(rt, f.relation), try fact_object(rt, f), 0);
     try rt.vm.transition_to_scene(try entity(rt, "Brine's Boarding House"));
+}
+
+/// The page's party buttons (D-095): each makes one of the three the player, in their own era.
+pub const TIDES_OSSIE: u8 = 1;
+pub const TIDES_NELL: u8 = 2;
+pub const TIDES_JUNO: u8 = 3;
+const TidesMember = struct { who: []const u8, scene: []const u8 };
+const TIDES_PARTY = [_]TidesMember{
+    .{ .who = "Ossie", .scene = "Charter Yard" },
+    .{ .who = "Nell", .scene = "Brine's Boarding House" },
+    .{ .who = "Juno", .scene = "Gull Roost" },
+};
+
+fn tides_action(rt: *WasmRuntime, id: u8) anyerror!void {
+    if (id < TIDES_OSSIE or id > TIDES_JUNO) return;
+    const member = TIDES_PARTY[id - 1];
+    // A held item or a walk belongs to the player who was playing.
+    rt.selected_item = .none;
+    rt.approach = null;
+    rt.player_entity = try entity(rt, member.who);
+    try rt.vm.transition_to_scene(try entity(rt, member.scene));
+    var buf: [64]u8 = undefined;
+    rt.set_banner(std.fmt.bufPrint(&buf, "Playing {s}.", .{member.who}) catch member.who);
+}
+
+/// The host's half of the cascade, as in the desktop proof: once the tree is felled in 1712,
+/// Juno is no longer trapped in 2112 and stands on the roof; when every piece is in place,
+/// the page says the puzzle is solved.
+fn tides_after_tick(rt: *WasmRuntime) anyerror!void {
+    if (holds(rt, "Juno", "FreedFromTree", null) and holds(rt, "Juno", "Trapped", null)) {
+        const juno = try entity(rt, "Juno");
+        _ = rt.world.forget(juno, try relation(rt, "Trapped"), 1);
+        const roost = try entity(rt, "Gull Roost");
+        if (rt.spatial.graph.find_waypoint_in_room(roost, "RoofGutter")) |wp| _ = try rt.spatial.transition_actor(juno, roost, wp);
+    }
+    if (three_tides.evaluate_tides_solved(&rt.world) and !holds(rt, "Juno", "TidesSolved", null)) {
+        try rt.world.remember(try entity(rt, "Juno"), try relation(rt, "TidesSolved"), 1, 0);
+        rt.set_banner("VICTORY ACHIEVED! The Well of Three Tides temporal puzzle solved!");
+    }
 }
 
 // =============================================================================
@@ -1367,6 +1409,86 @@ test "D-094: the Donkey of Lamp Point reaches the wreckers' chart with clicks al
     try pick_verb(rt, .walk);
     _ = try click_on(rt, "CellarSteps");
     try tick_until_scene(rt, "Lamp Point", 40);
+}
+
+/// Uses carried `item` on `target`, the way a player does: a click on the item takes it in
+/// hand, a click on the target walks over and uses it.
+fn use_item_on(rt: *WasmRuntime, item: []const u8, target: []const u8) !void {
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, item));
+    _ = try click_on(rt, target);
+    for (0..40) |_| {
+        if (rt.approach == null) break;
+        try rt.step_tick();
+    }
+    try rt.step_tick();
+}
+
+/// Talks to `who` and takes the first line offered, as a player picks it with the 1 key.
+fn talk_and_choose_first(rt: *WasmRuntime, who: []const u8) !void {
+    try pick_verb(rt, .talk_to);
+    _ = try click_on(rt, who);
+    for (0..40) |_| {
+        if (bespoke.dialogue.view(&rt.world) != null) break;
+        try rt.step_tick();
+    }
+    try testing.expect(bespoke.dialogue.view(&rt.world) != null);
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
+    try rt.step_tick();
+}
+
+test "D-094: the Well of Three Tides plays to the end with clicks and the party buttons alone" {
+    const rt = try load(5);
+    defer unload(rt);
+    try testing.expectEqualStrings("Nell", rt.world.get_entity_name(rt.player_entity).?);
+
+    // 1912: the port goes down the well to Ossie.
+    try use_item_on(rt, "CheapPort", "TideWell1912");
+    try testing.expect(holds(rt, "Ossie", "Carries", "CheapPort"));
+
+    // 1712: Ossie seals it in the cornerstone box.
+    try rt.deck_action(TIDES_OSSIE);
+    try testing.expectEqualStrings("Charter Yard", rt.world.get_entity_name(rt.vm.current_scene.?).?);
+    try use_item_on(rt, "CheapPort", "CornerstoneBox1712");
+    try testing.expect(holds(rt, "CheapPort", "PortAgedIntoVinegar", null));
+
+    // 1912: two centuries later the box gives up vinegar; it and the handbill go down the well.
+    try rt.deck_action(TIDES_NELL);
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "CornerstoneBox1912");
+    try tick_until(rt, "Nell", "Carries", "AgedVinegar", 40);
+    try use_item_on(rt, "AgedVinegar", "TideWell1912");
+    try use_item_on(rt, "GullHandbill", "TideWell1912");
+    try testing.expect(holds(rt, "Ossie", "Carries", "AgedVinegar"));
+    try testing.expect(holds(rt, "Ossie", "Carries", "GullHandbill"));
+
+    // 1712: charge the well, persuade Widow Fenn and Founder Gale.
+    try rt.deck_action(TIDES_OSSIE);
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "AgedVinegar"));
+    _ = try click_item(rt, "VoltaicJar");
+    try tick_until(rt, "Ossie", "Carries", "ChargedJar", 3);
+    try use_item_on(rt, "ChargedJar", "TideWell1712");
+    try testing.expect(holds(rt, "Ossie", "WellPowered", null));
+    try use_item_on(rt, "GullHandbill", "WidowFenn");
+    try talk_and_choose_first(rt, "WidowFenn");
+    try tick_until(rt, "WidowFenn", "BannerSewn", null, 5);
+    try use_item_on(rt, "RedLeadPaint", "OrangeTree");
+    try talk_and_choose_first(rt, "FounderGale");
+    try tick_until(rt, "FounderGale", "TreeFelled", "OrangeTree", 5);
+
+    // 2112: Juno is down from the tree; she gets leave to feed the gulls, takes the banner,
+    // and wears it.
+    try rt.deck_action(TIDES_JUNO);
+    try tick_until(rt, "Juno", "FreedFromTree", null, 3);
+    try testing.expect(!holds(rt, "Juno", "Trapped", null));
+    try talk_and_choose_first(rt, "AdmiralSquall");
+    try tick_until(rt, "Juno", "InYard", null, 5);
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "GullBannerProp");
+    try tick_until(rt, "Juno", "Carries", "GullBanner", 40);
+    try testing.expectEqual(wasm.BrowserActionTag.item_selected, try click_item(rt, "GullBanner"));
+    _ = try click_on(rt, "Juno");
+    try tick_until(rt, "Juno", "TidesSolved", null, 5);
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "VICTORY") != null);
 }
 
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {

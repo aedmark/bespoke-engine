@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- `site/tides.html` plays The Well of Three Tides on its own page: buttons under the stage switch between Ossie, Nell, and Juno, and items dropped down a Tide Well come up in another century. The whole puzzle can now be played by hand in the browser.
 - Scripts may quote a name to use characters a word cannot hold, such as `scene: "Brine's Boarding House"` (`D-101`).
 - The Tentacle Trio is now The Well of Three Tides (`--three-tides`, P35-06): Ossie in 1712, Nell in 1912, and Juno in 2112 pass things through Doctor Brine's Tide Wells, age port into vinegar in a cornerstone box, and free Juno from a tree that Founder Gale fells two centuries earlier. `--dott` still works.
 - A long line in the message log wraps onto the next row instead of shrinking to tiny text and being cut off (`D-099`), on desktop and in the browser. In The Donkey of Lamp Point, catching Cudgel's rope no longer also says the "too early" line.
