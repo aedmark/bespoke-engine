@@ -676,16 +676,11 @@ fn tides_action(rt: *WasmRuntime, id: u8) anyerror!void {
     rt.set_banner(std.fmt.bufPrint(&buf, "Playing {s}.", .{member.who}) catch member.who);
 }
 
-/// The host's half of the cascade, as in the desktop proof: once the tree is felled in 1712,
-/// Juno is no longer trapped in 2112 and stands on the roof; when every piece is in place,
-/// the page says the puzzle is solved.
+/// The host's half of the cascade, shared with the desktop window (D-100): once the tree is
+/// felled in 1712, Juno is no longer trapped in 2112 and stands on the roof; when every piece
+/// is in place, the page says the puzzle is solved.
 fn tides_after_tick(rt: *WasmRuntime) anyerror!void {
-    if (holds(rt, "Juno", "FreedFromTree", null) and holds(rt, "Juno", "Trapped", null)) {
-        const juno = try entity(rt, "Juno");
-        _ = rt.world.forget(juno, try relation(rt, "Trapped"), 1);
-        const roost = try entity(rt, "Gull Roost");
-        if (rt.spatial.graph.find_waypoint_in_room(roost, "RoofGutter")) |wp| _ = try rt.spatial.transition_actor(juno, roost, wp);
-    }
+    _ = try three_tides.free_juno_if_felled(&rt.world, &rt.spatial);
     if (three_tides.evaluate_tides_solved(&rt.world) and !holds(rt, "Juno", "TidesSolved", null)) {
         try rt.world.remember(try entity(rt, "Juno"), try relation(rt, "TidesSolved"), 1, 0);
         rt.set_banner("VICTORY ACHIEVED! The Well of Three Tides temporal puzzle solved!");
@@ -1441,9 +1436,11 @@ test "D-094: the Well of Three Tides plays to the end with clicks and the party 
     defer unload(rt);
     try testing.expectEqualStrings("Nell", rt.world.get_entity_name(rt.player_entity).?);
 
-    // 1912: the port goes down the well to Ossie.
+    // 1912: the port goes down the well to Ossie, and the page says where it went.
     try use_item_on(rt, "CheapPort", "TideWell1912");
     try testing.expect(holds(rt, "Ossie", "Carries", "CheapPort"));
+    try testing.expect(std.mem.indexOf(u8, rt.window.log_line(rt.window.log_count - 1), "Ossie's bucket in 1712") != null or
+        std.mem.indexOf(u8, rt.window.log_line(rt.window.log_count - 2), "Ossie's bucket in 1712") != null);
 
     // 1712: Ossie seals it in the cornerstone box.
     try rt.deck_action(TIDES_OSSIE);

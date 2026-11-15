@@ -194,14 +194,17 @@ pub const THREE_TIDES_SCRIPT =
     \\on cue Uses(Nell, CheapPort, TideWell1912):
     \\  forget Carries(Nell, CheapPort)
     \\  remember Carries(Ossie, CheapPort)
+    \\  say Nell: "Down the shaft it goes. It'll come up in Ossie's bucket in 1712."
     \\
     \\on cue Uses(Nell, AgedVinegar, TideWell1912):
     \\  forget Carries(Nell, AgedVinegar)
     \\  remember Carries(Ossie, AgedVinegar)
+    \\  say Nell: "Down the shaft it goes. It'll come up in Ossie's bucket in 1712."
     \\
     \\on cue Uses(Nell, GullHandbill, TideWell1912):
     \\  forget Carries(Nell, GullHandbill)
     \\  remember Carries(Ossie, GullHandbill)
+    \\  say Nell: "Down the shaft it goes. It'll come up in Ossie's bucket in 1712."
     \\
     \\on cue Uses(Ossie, CheapPort, CornerstoneBox1712):
     \\  forget Carries(Ossie, CheapPort)
@@ -291,7 +294,48 @@ pub fn execute_look_at(
     return (try bespoke.host.act(world, vm, compiled, "LooksAt", speaker, target, buf)) orelse error.LookNotScripted;
 }
 
-/// Executes headless simulation of the The Well of Three Tides scenario (P21-03, D-025).
+/// Once Founder Gale has felled the tree in 1712, Juno is no longer trapped in 2112 and stands
+/// on the roost roof. The script remembers `FreedFromTree`; where Juno stands is layout, so
+/// the host does it (D-026). The desktop window and the browser deck share it (D-100); true
+/// when it freed her this call.
+pub fn free_juno_if_felled(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !bool {
+    const juno = world.lookup_entity("Juno") orelse return false;
+    const freed = world.lookup_relation("FreedFromTree") orelse return false;
+    const trapped = world.lookup_relation("Trapped") orelse return false;
+    if (!world.has_fact(juno, freed, null) or !world.has_fact(juno, trapped, null)) return false;
+    _ = world.forget(juno, trapped, 1);
+    const roost = world.lookup_entity("Gull Roost") orelse return true;
+    if (spatial.graph.find_waypoint_in_room(roost, "RoofGutter")) |wp| _ = try spatial.transition_actor(juno, roost, wp);
+    return true;
+}
+
+/// Fires a script cue for the window's player, runs the tick that answers it, and shows what
+/// was said, or "Nothing happens." when the script has no handler.
+fn scripted(
+    session: *bespoke.host.Session,
+    world: *bespoke.World,
+    vm: *bespoke.VM,
+    compiled: *const bespoke.CompiledProgram,
+    win: *bespoke.display.DisplayWindow,
+    cue: []const u8,
+    actor: bespoke.EntityId,
+    a: bespoke.EntityId,
+    b: ?bespoke.EntityId,
+) !void {
+    if ((try vm.fire_cue(compiled, cue, actor, a, b)) == null) {
+        win.set_cue_banner("Nothing happens.", 90);
+        return;
+    }
+    _ = try session.advance();
+    show_speech(world, vm, win);
+}
+
+fn show_speech(world: *bespoke.World, vm: *bespoke.VM, win: *bespoke.display.DisplayWindow) void {
+    var buf: [512]u8 = undefined;
+    if (bespoke.host.speech_this_tick(world, vm, &buf)) |speech| win.set_cue_banner(speech, 180);
+}
+
+/// Executes headless simulation of the Well of Three Tides scenario (P21-03, D-025).
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("===================================================================\n", .{});
     try writer.print("    BeSpoke Engine: The Well of Three Tides Milestone Scenario    \n", .{});
@@ -729,47 +773,13 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     const guarded_rel = try world.intern_relation("Guarded", .set);
     _ = try world.remember(juno, guarded_rel, 1, 0);
 
+    // The compiler places every prop's hotspot on the stage, as the browser deck has them;
+    // the hotspots this host used to add stood at world x 60 to 80, off the right edge.
     const carries_rel = try world.intern_relation("Carries", .set);
     const wine = try world.intern_entity("CheapPort");
     const flyer = try world.intern_entity("GullHandbill");
     const paint = try world.intern_entity("RedLeadPaint");
     const casing = try world.intern_entity("VoltaicJar");
-    const vinegar = try world.intern_entity("AgedVinegar");
-    const battery = try world.intern_entity("ChargedJar");
-    const flag = try world.intern_entity("GullBanner");
-    const tree_prop = world.lookup_entity("OrangeTree").?;
-    const capsule_1712 = world.lookup_entity("CornerstoneBox1712").?;
-    const capsule_1912 = world.lookup_entity("CornerstoneBox1912").?;
-    const wine_prop = world.lookup_entity("PortBottle").?;
-    const flyer_prop = world.lookup_entity("GullHandbillProp").?;
-    const flag_prop = world.lookup_entity("GullBannerProp").?;
-    const socket_prop = world.lookup_entity("StormTerminal").?;
-    const future_tree = world.lookup_entity("GiantOrangeTree").?;
-
-    // Explicit hotspot locations aligned with scene waypoints across all 3 eras
-    try spatial.add_hotspot(well_1712_ent, past_scene, .{ .x = 80, .y = -6 }, 10, "TideWell1712", "The 1712 Tide Well. Its brass pump has no charge, so nothing will go back up the shaft.");
-    try spatial.add_hotspot(capsule_1712, past_scene, .{ .x = 60, .y = -6 }, 8, "CornerstoneBox1712", "The cornerstone box for the new town hall. Whatever goes in stays sealed until 1912.");
-    try spatial.add_hotspot(tree_prop, past_scene, .{ .x = 40, .y = -6 }, 10, "OrangeTree", "A stunted little orange tree. Founder Gale keeps eyeing it and fingering his axe.");
-    try spatial.add_hotspot(paint, past_scene, .{ .x = 20, .y = -6 }, 8, "RedLeadPaint", "A pot of red lead, for ships' hulls. It'd turn anything a nasty shade of red.");
-
-    try spatial.add_hotspot(well_1912_ent, present_scene, .{ .x = 60, .y = -6 }, 10, "TideWell1912", "Doctor Brine's Tide Well. Drop something down the shaft and it comes up in another century's bucket.");
-    try spatial.add_hotspot(capsule_1912, present_scene, .{ .x = 40, .y = -6 }, 8, "CornerstoneBox1912", "The town's cornerstone box, set into the wall in 1712 and never opened since.");
-    try spatial.add_hotspot(wine_prop, present_scene, .{ .x = 0, .y = -6 }, 8, "PortBottle", "A dusty bottle of cheap port on the front desk.");
-    try spatial.add_hotspot(flyer_prop, present_scene, .{ .x = 5, .y = -6 }, 8, "GullHandbillProp", "A handbill pasted by the door, with a huge gull's profile.");
-
-    try spatial.add_hotspot(well_2112_ent, future_scene, .{ .x = 60, .y = -6 }, 10, "TideWell2112", "The Tide Well in 2112. With power at the other end, it'll join the three of us up.");
-    try spatial.add_hotspot(future_tree, future_scene, .{ .x = 40, .y = -6 }, 10, "GiantOrangeTree", "An orange tree two hundred years old, tall as the roost. Juno is caught in its branches.");
-    try spatial.add_hotspot(flag_prop, future_scene, .{ .x = 20, .y = -6 }, 8, "GullBannerProp", "The banner on the roost roof: a great white gull, beak open. The flag of the flock.");
-    try spatial.add_hotspot(socket_prop, future_scene, .{ .x = 25, .y = -6 }, 8, "StormTerminal", "A brass storm terminal on the roof, wired into the Tide Well.");
-
-    const belief_rel = try world.intern_relation("Believes", .set);
-    const well_powered_rel = try world.intern_relation("WellPowered", .set);
-    const flag_design_rel = try world.intern_relation("GullBannerDesign", .set);
-    const flag_sewn_rel = try world.intern_relation("BannerSewn", .set);
-    const chop_rel = try world.intern_relation("TreeFelled", .set);
-    const free_rel = try world.intern_relation("FreedFromTree", .set);
-    const feeding_rel = try world.intern_relation("InYard", .set);
-    const disg_rel = try world.intern_relation("GullDisguiseActive", .set);
 
     _ = try world.remember(nell, carries_rel, wine.to_int(), 0);
     _ = try world.remember(nell, carries_rel, flyer.to_int(), 0);
@@ -834,14 +844,12 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                     action_taken = true;
                 }
             },
+            // Every verb, item, and choice goes to the script, as in the browser page: the
+            // puzzle's rules are the script's `Uses`, `TalksTo`, and choice handlers (P35-06).
             .examine_hotspot => |hs_idx| {
                 if (hs_idx < frame.hotspot_count) {
-                    const hs = frame.hotspots[hs_idx];
                     const active_char = display_bridge.active_player_character orelse nell;
-                    var look_buf: [256]u8 = undefined;
-                    const speech = try execute_look_at(&world, &vm, &compiled, active_char, hs.entity, &look_buf);
-                    win.set_cue_banner(speech, 180);
-                    std.debug.print("\n[Tides Look] {s}\n", .{speech});
+                    try scripted(&session, &world, &vm, &compiled, &win, "LooksAt", active_char, frame.hotspots[hs_idx].entity, null);
                     action_taken = true;
                 }
             },
@@ -849,172 +857,70 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                 if (hs_act.hotspot_index < frame.hotspot_count) {
                     const hs = frame.hotspots[hs_act.hotspot_index];
                     const active_char = display_bridge.active_player_character orelse nell;
-                    if (hs_act.verb == .look_at) {
-                        var look_buf: [256]u8 = undefined;
-                        const speech = try execute_look_at(&world, &vm, &compiled, active_char, hs.entity, &look_buf);
-                        win.set_cue_banner(speech, 180);
-                        std.debug.print("\n[Tides Look] {s}\n", .{speech});
-                    } else if (hs_act.verb == .walk) {
+                    if (hs_act.verb == .walk) {
                         const pt = bespoke.display.renderer.world_to_screen(hs.x, hs.y, win.width, win.height);
                         if (bespoke.display.renderer.find_nearest_waypoint(pt.x, pt.y, frame.waypoints[0..frame.waypoint_count], win.width, win.height)) |wp_id| {
                             _ = try spatial.walk_to(active_char, wp_id);
-                            win.set_cue_banner("Approaching prop...", 60);
-                        }
-                    } else if (hs_act.verb == .pick_up or hs_act.verb == .use_with) {
-                        const aged_rel = try world.intern_relation("PortAgedIntoVinegar", .set);
-                        if (hs.entity == capsule_1912 or hs.entity == capsule_1712) {
-                            if (world.has_fact(wine, aged_rel, 1)) {
-                                if (!world.has_fact(null, carries_rel, vinegar.to_int())) {
-                                    _ = try world.remember(active_char, carries_rel, vinegar.to_int(), 0);
-                                    win.play_sfx(.pickup);
-                                    win.set_cue_banner("Nell opens the 1912 cornerstone box and retrieves the 200-year-aged vinegar!", 180);
-                                } else {
-                                    win.set_cue_banner("The cornerstone box is now empty.", 120);
-                                }
-                            } else {
-                                win.set_cue_banner("The cornerstone box is empty. Nothing has been sealed in it yet.", 120);
-                            }
-                        } else if (hs.entity == flag_prop) {
-                            if (world.has_fact(fenn, flag_sewn_rel, 1)) {
-                                if (!world.has_fact(null, carries_rel, flag.to_int())) {
-                                    _ = try world.remember(active_char, carries_rel, flag.to_int(), 0);
-                                    win.play_sfx(.pickup);
-                                    win.set_cue_banner("Juno takes down the Gull Banner disguise from the roof flagpole!", 180);
-                                } else {
-                                    win.set_cue_banner("The flagpole is empty.", 90);
-                                }
-                            } else {
-                                win.set_cue_banner("The gull banner has not been sewn yet.", 120);
-                            }
-                        } else {
-                            _ = try vm.fire_cue(&compiled, "Uses", active_char, hs.entity, null);
-                            try vm.step_tick();
                         }
                     } else {
-                        _ = try vm.fire_cue(&compiled, "Uses", active_char, hs.entity, null);
-                        try vm.step_tick();
+                        const cue: []const u8 = if (hs_act.verb == .look_at) "LooksAt" else "Uses";
+                        try scripted(&session, &world, &vm, &compiled, &win, cue, active_char, hs.entity, null);
                     }
                     action_taken = true;
                 }
             },
             .interact_actor => |act| {
                 if (act.actor_index < frame.entity_count) {
-                    const target_entity = frame.entities[act.actor_index];
+                    const target = frame.entities[act.actor_index].entity;
                     const active_char = display_bridge.active_player_character orelse nell;
-                    if (act.verb == .talk_to) {
-                        _ = try vm.fire_cue(&compiled, "TalksTo", active_char, target_entity.entity, null);
-                        try vm.step_tick();
-                        var say_buf: [256]u8 = undefined;
-                        if (bespoke.host.speech_this_tick(&world, &vm, &say_buf)) |speech| {
-                            win.set_cue_banner(speech, 180);
-                            std.debug.print("\n[Tides Talk] {s}\n", .{speech});
-                        }
-                    } else if (act.verb == .look_at) {
-                        var look_buf: [256]u8 = undefined;
-                        const speech = try execute_look_at(&world, &vm, &compiled, active_char, target_entity.entity, &look_buf);
-                        win.set_cue_banner(speech, 180);
-                        std.debug.print("\n[Tides Look] {s}\n", .{speech});
-                    } else if (act.verb == .walk) {
-                        const layout = bespoke.display.renderer.get_entity_screen_layout(act.actor_index, frame.entities[0..frame.entity_count], win.width, win.height);
-                        if (bespoke.display.renderer.find_nearest_waypoint(layout.pos.x, layout.pos.y, frame.waypoints[0..frame.waypoint_count], win.width, win.height)) |wp_id| {
-                            _ = try spatial.walk_to(active_char, wp_id);
-                            win.set_cue_banner("Approaching character...", 60);
-                        }
-                    }
+                    const cue: []const u8 = switch (act.verb) {
+                        .talk_to => "TalksTo",
+                        .look_at => "LooksAt",
+                        else => "Uses",
+                    };
+                    try scripted(&session, &world, &vm, &compiled, &win, cue, active_char, target, null);
                     action_taken = true;
                 }
             },
             .interact_inventory => |inv_act| {
                 if (inv_act.item_index < frame.inventory_count) {
-                    const inv_item = frame.inventory[inv_act.item_index];
                     const active_char = display_bridge.active_player_character orelse nell;
-                    if (inv_act.verb == .look_at) {
-                        var look_buf: [256]u8 = undefined;
-                        const speech = try execute_look_at(&world, &vm, &compiled, active_char, inv_item.entity, &look_buf);
-                        win.set_cue_banner(speech, 180);
-                        std.debug.print("\n[Tides Look] {s}\n", .{speech});
-                    }
+                    const cue: []const u8 = if (inv_act.verb == .look_at) "LooksAt" else "Uses";
+                    try scripted(&session, &world, &vm, &compiled, &win, cue, active_char, frame.inventory[inv_act.item_index].entity, null);
                     action_taken = true;
                 }
             },
             .use_inventory_on_hotspot => |u_hs| {
                 if (u_hs.item_index < frame.inventory_count and u_hs.hotspot_index < frame.hotspot_count) {
-                    const item_ent = frame.inventory[u_hs.item_index].entity;
-                    const hs_ent = frame.hotspots[u_hs.hotspot_index].entity;
                     const active_char = display_bridge.active_player_character orelse nell;
-
-                    if (item_ent == paint and hs_ent == tree_prop) {
-                        _ = try world.remember(gale, belief_rel, 1, 0);
-                        win.play_sfx(.combine);
-                        win.set_cue_banner("Ossie daubs the orange tree with red lead! Founder Gale now believes it has the red blight!", 180);
-                    } else if (item_ent == wine and (hs_ent == capsule_1712 or hs_ent == capsule_1912)) {
-                        _ = try world.transfer_item(wine, active_char, hs_ent);
-                        const aged_rel = try world.intern_relation("PortAgedIntoVinegar", .set);
-                        _ = try world.remember(wine, aged_rel, 1, 0);
-                        win.play_sfx(.pickup);
-                        win.set_cue_banner("Cheap Port sealed into the cornerstone box for two centuries of aging.", 180);
-                    } else if (item_ent == battery and hs_ent == well_1712_ent) {
-                        _ = try world.remember(ossie, well_powered_rel, 1, 0);
-                        win.play_sfx(.combine);
-                        win.set_cue_banner("Charged Jar plugged in! The 1712 Tide Well hums with temporal power!", 180);
-                    } else {
-                        _ = try vm.fire_cue(&compiled, "Uses", active_char, hs_ent, null);
-                        try vm.step_tick();
-                    }
+                    try scripted(&session, &world, &vm, &compiled, &win, "Uses", active_char, frame.inventory[u_hs.item_index].entity, frame.hotspots[u_hs.hotspot_index].entity);
                     action_taken = true;
                 }
             },
             .use_inventory_on_actor => |u_act| {
                 if (u_act.item_index < frame.inventory_count and u_act.actor_index < frame.entity_count) {
-                    const item_ent = frame.inventory[u_act.item_index].entity;
-                    const act_ent = frame.entities[u_act.actor_index].entity;
-
-                    if (item_ent == flyer and act_ent == fenn) {
-                        _ = try world.remember(fenn, flag_design_rel, 1, 0);
-                        _ = try world.remember(fenn, flag_sewn_rel, 1, 0);
-                        _ = try world.remember(juno, carries_rel, flag.to_int(), 0);
-                        win.play_sfx(.combine);
-                        win.set_cue_banner("Widow Fenn: 'A great white bird with its beak open? Bold. I'll sew it this minute!' Banner done!", 180);
-                    } else if (item_ent == flag and (act_ent == juno or act_ent == squall)) {
-                        _ = try world.remember(juno, disg_rel, 1, 0);
-                        // The disguise gets her past the guard.
-                        _ = try world.remember(juno, try world.intern_relation("PassesGuard", .set), 1, 0);
-                        win.play_sfx(.pickup);
-                        win.set_cue_banner("Juno dons the Gull Banner disguise! Security checkpoint access granted!", 180);
-                    }
+                    const active_char = display_bridge.active_player_character orelse nell;
+                    try scripted(&session, &world, &vm, &compiled, &win, "Uses", active_char, frame.inventory[u_act.item_index].entity, frame.entities[u_act.actor_index].entity);
                     action_taken = true;
                 }
             },
             .combine_inventory_items => |comb| {
                 if (comb.primary_index < frame.inventory_count and comb.secondary_index < frame.inventory_count) {
-                    const item1 = frame.inventory[comb.primary_index].entity;
-                    const item2 = frame.inventory[comb.secondary_index].entity;
                     const active_char = display_bridge.active_player_character orelse ossie;
-
-                    if ((item1 == vinegar and item2 == casing) or (item1 == casing and item2 == vinegar)) {
-                        _ = world.forget(active_char, carries_rel, vinegar.to_int());
-                        _ = world.forget(active_char, carries_rel, casing.to_int());
-                        _ = try world.remember(active_char, carries_rel, battery.to_int(), 0);
-                        win.play_sfx(.combine);
-                        win.set_cue_banner("Ossie combines 200-year vinegar with voltaic jar! Charged Jar created!", 180);
-                    }
+                    const first = frame.inventory[comb.primary_index].entity;
+                    const second = frame.inventory[comb.secondary_index].entity;
+                    // A script names the pair one way round; try both, as the browser does.
+                    if ((try vm.fire_cue(&compiled, "Uses", active_char, second, first)) != null) {
+                        _ = try session.advance();
+                        show_speech(&world, &vm, &win);
+                    } else try scripted(&session, &world, &vm, &compiled, &win, "Uses", active_char, first, second);
                     action_taken = true;
                 }
             },
             .dialogue_choice => |choice_idx| {
-                const active_char = display_bridge.active_player_character orelse nell;
-                if (active_char == ossie and choice_idx == 0) {
-                    if (world.has_fact(gale, belief_rel, 1)) {
-                        _ = try world.remember(gale, chop_rel, tree_prop.to_int(), 0);
-                        _ = try world.remember(juno, free_rel, 1, 0);
-                        _ = world.forget(juno, trapped_rel, 1);
-                        win.play_sfx(.combine);
-                        win.set_cue_banner("Founder Gale: 'The red blight?! Not in my town!' *THWACK!* Juno freed from the tree!", 180);
-                    }
-                } else if (active_char == juno and choice_idx == 0) {
-                    _ = try world.remember(juno, feeding_rel, 1, 0);
-                    win.set_cue_banner("Admiral Squall: 'Feeding the flock is permitted. In the yard. Be quick, featherless one.'", 180);
-                }
+                if (try session.choose_dialogue(choice_idx)) |_| {
+                    show_speech(&world, &vm, &win);
+                } else win.dismiss_dialogue();
                 action_taken = true;
             },
             .transfer_inventory_item => |trans| {
@@ -1048,6 +954,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
         // Stepping simulation clock
         if (session.tick_due()) {
             _ = try session.advance();
+            _ = try free_juno_if_felled(&world, &spatial);
             var cutscene_buf: [256]u8 = undefined;
             if (bespoke.host.speech_this_tick(&world, &vm, &cutscene_buf)) |cutscene_msg| {
                 win.set_cue_banner(cutscene_msg, 180);
