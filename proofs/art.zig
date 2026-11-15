@@ -14,7 +14,8 @@ const bespoke = @import("bespoke");
 const music = @import("music.zig");
 const r = bespoke.display.renderer;
 
-const DisplayWindow = r.DisplayWindow;
+/// Theme hooks draw on the shared canvas (P36-04, D-097), so the browser draws this art too.
+const Canvas = r.Canvas;
 const RenderFrame = bespoke.RenderFrame;
 const ACTOR_SCREEN_RADIUS = r.ACTOR_SCREEN_RADIUS;
 const Color = r.Color;
@@ -443,7 +444,7 @@ fn detect(frame: *const RenderFrame) Scene {
     return sc;
 }
 
-fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
+fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
     const sc = detect(frame);
     if (sc.is_gallery_scene) {
         render_gallery(w, frame);
@@ -1652,7 +1653,7 @@ fn backdrop(w: *DisplayWindow, frame: *const RenderFrame) bool {
     return true;
 }
 
-fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool) void {
+fn render_bell_tower(w: *Canvas, frame: *const RenderFrame, belfry: bool) void {
         const stone = Color{ .r = 52, .g = 50, .b = 60 };
         const stone_dark = Color{ .r = 34, .g = 33, .b = 42 };
         const mortar = Color{ .r = 70, .g = 68, .b = 78 };
@@ -1817,7 +1818,7 @@ fn render_bell_tower(w: *DisplayWindow, frame: *const RenderFrame, belfry: bool)
         }
 }
 
-fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
+fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
     const sc = detect(frame);
     const hs = view.hotspot;
     const pt = view.pos;
@@ -1973,7 +1974,7 @@ fn prop(w: *DisplayWindow, frame: *const RenderFrame, view: r.PropView) bool {
     return true;
 }
 
-fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
+fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
     const e = view.entity;
     const name = e.get_name();
     const layout = view.layout;
@@ -2957,7 +2958,7 @@ fn actor(w: *DisplayWindow, frame: *const RenderFrame, view: r.ActorView) bool {
     return true;
 }
 
-fn walkway(w: *DisplayWindow, frame: *const RenderFrame, p1: r.Point, p2: r.Point) bool {
+fn walkway(w: *Canvas, frame: *const RenderFrame, p1: r.Point, p2: r.Point) bool {
     if (!detect(frame).is_yard_scene) return false;
     // In Garden: Stone flagstone garden path
     w.draw_line(p1.x, p1.y - 2, p2.x, p2.y - 2, Color{ .r = 135, .g = 120, .b = 100 });
@@ -3289,7 +3290,7 @@ fn gallery_has(st: *const Status, i: usize, attribute: bespoke.grid.Attribute) b
 
 /// The Larkspur Observatory (P33-03): a night sky with the dome, over two floors whose rows
 /// match the proof's mark layout (public floor above, working floor below).
-fn render_observatory(w: *DisplayWindow) void {
+fn render_observatory(w: *Canvas) void {
     w.fill_rect(0, 0, w.width, w.height, Color{ .r = 8, .g = 12, .b = 30 });
     var star: i32 = 0;
     while (star < 40) : (star += 1) {
@@ -3316,7 +3317,7 @@ fn render_observatory(w: *DisplayWindow) void {
 
 /// Hollin Keep's long gallery (P25-03): a wall band with the tapestry, door, trough, and
 /// torch above a one-row floor whose cells show the grid's state.
-fn render_gallery(w: *DisplayWindow, frame: *const RenderFrame) void {
+fn render_gallery(w: *Canvas, frame: *const RenderFrame) void {
     const st = status_of(frame);
     const stone = Color{ .r = 52, .g = 48, .b = 46 };
     const mortar = Color{ .r = 34, .g = 31, .b = 30 };
@@ -3637,7 +3638,7 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
     }
 }
 
-fn hud(w: *DisplayWindow, frame: *const RenderFrame) void {
+fn hud(w: *Canvas, frame: *const RenderFrame) void {
     // 6-tangent. Branch-world collapse countdown HUD (P31-01, P31-02, D-027)
     if (status_of(frame).tangent_active) {
         const count_str = status_of(frame).countdown();
@@ -3660,7 +3661,7 @@ fn hud(w: *DisplayWindow, frame: *const RenderFrame) void {
     }
 }
 
-fn overlay(w: *DisplayWindow, frame: *const RenderFrame) void {
+fn overlay(w: *Canvas, frame: *const RenderFrame) void {
     // 12b. Black Hole Singularity Catastrophic Fail-State Modal (P31-01, D-027)
     if (status_of(frame).singularity_collapsed) {
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 0, .g = 0, .b = 0, .a = 230 });

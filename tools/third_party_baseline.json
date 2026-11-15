@@ -87,7 +87,7 @@
       "Broken Sword": 19,
       "Day of the Tentacle": 47,
       "Donnie Darko": 53,
-      "Indiana Jones and the Fate of Atlantis": 35,
+      "Indiana Jones and the Fate of Atlantis": 28,
       "Loom": 18
     },
     "scheme/bespoke.manual.json": {
@@ -146,5 +146,5 @@
       "Loom": 2
     }
   },
-  "total": 2022
+  "total": 2015
 }

@@ -1,143 +1,143 @@
 thumb/tavern_heist/Tavern: ff21bac37e51254a
 thumb/tavern_heist/: ff21bac37e51254a
-tavern_heist/Tavern: 3aa2413ac8ac36ab
-tavern_heist/Tavern +tangent_active: 93655e5711dc1172
-tavern_heist/Tavern +singularity_collapsed: 3c56c4b0d6dc615a
-tavern_heist/Tavern +cheese_holder: 58d19fa858578488
-tavern_heist/Tavern +countdown: da0db2715a172af4
-tavern_heist/CellarRoom: 847ca922b78ebe37
-tavern_heist/CellarRoom +tangent_active: de5a907f4719ec48
-tavern_heist/CellarRoom +singularity_collapsed: 0cf8a7da2135e4c7
+tavern_heist/Tavern: bea71eb0fcc99e6f
+tavern_heist/Tavern +tangent_active: 170feeda48f156e4
+tavern_heist/Tavern +singularity_collapsed: f5a1a36e4c335fca
+tavern_heist/Tavern +cheese_holder: 67db59ef14b86d29
+tavern_heist/Tavern +countdown: 232dc987e1054e7b
+tavern_heist/CellarRoom: dff6cfe60149aca3
+tavern_heist/CellarRoom +tangent_active: e8d6e4a2f9ef253a
+tavern_heist/CellarRoom +singularity_collapsed: ff117a5032efd881
 thumb/spitting_contest/Pip-Spitting Green: 61e816b848e745c1
-spitting_contest/Pip-Spitting Green: 35abcb987e396e52
-spitting_contest/Pip-Spitting Green +spit_is_thick: dae2536bd20b2966
-spitting_contest/Pip-Spitting Green +pegs_tampered: b559ff636b6e30dd
-spitting_contest/Pip-Spitting Green +wind_blowing: 56e5d28bf4339527
-spitting_contest/Pip-Spitting Green +judge_distracted: dca59e541a420f02
-spitting_contest/Pip-Spitting Green +tangent_active: 4ce58826e4c337dc
-spitting_contest/Pip-Spitting Green +singularity_collapsed: 9f1a7de44a28f54a
-spitting_contest/Pip-Spitting Green +countdown: eae43c547ccc8a70
+spitting_contest/Pip-Spitting Green: 7130b13c8e7f555f
+spitting_contest/Pip-Spitting Green +spit_is_thick: 8a8165717a0cc805
+spitting_contest/Pip-Spitting Green +pegs_tampered: 26794b5b9dd1797a
+spitting_contest/Pip-Spitting Green +wind_blowing: 3a3d7d6b22fbf321
+spitting_contest/Pip-Spitting Green +judge_distracted: 87d9cf006fbe74bd
+spitting_contest/Pip-Spitting Green +tangent_active: 77f74d4db1545ea0
+spitting_contest/Pip-Spitting Green +singularity_collapsed: 8a1c748588589cc3
+spitting_contest/Pip-Spitting Green +countdown: 865f9d68a6706d1b
 thumb/borrowed_beard/Inn Landing: c7278207f45bb4ed
-borrowed_beard/Inn Landing: e86a569f57788f15
-borrowed_beard/Inn Landing +tamsin_disguised: b45cb942f749e9eb
-borrowed_beard/Inn Landing +tangent_active: 71f97a426fe27be7
-borrowed_beard/Inn Landing +singularity_collapsed: 614b6aeac20bb745
-borrowed_beard/Inn Landing +countdown: 12dd505e5449f800
+borrowed_beard/Inn Landing: c65dee31dca7bf05
+borrowed_beard/Inn Landing +tamsin_disguised: 3651ecab07f6d1e5
+borrowed_beard/Inn Landing +tangent_active: 772f30a31ae6dae0
+borrowed_beard/Inn Landing +singularity_collapsed: d298db4483361758
+borrowed_beard/Inn Landing +countdown: 096d38089ca724aa
 thumb/borrowed_beard/Net Loft Yard: 28f9c66b758896d4
-borrowed_beard/Net Loft Yard: 83c05a7448f55113
-borrowed_beard/Net Loft Yard +gap_taped: 137f9d80060c3b03
-borrowed_beard/Net Loft Yard +dog_startled: 114934c95e91fb08
-borrowed_beard/Net Loft Yard +tangent_active: 05d1072e0a2fa69f
-borrowed_beard/Net Loft Yard +singularity_collapsed: d4ac7a9d49b64834
-borrowed_beard/Net Loft Yard +countdown: abce14e2c1278e64
+borrowed_beard/Net Loft Yard: 6f3e20f78bc7820d
+borrowed_beard/Net Loft Yard +gap_taped: c4ee8d8ac0cf89e2
+borrowed_beard/Net Loft Yard +dog_startled: ab02b6539fcc77d6
+borrowed_beard/Net Loft Yard +tangent_active: 69f5af7190116074
+borrowed_beard/Net Loft Yard +singularity_collapsed: 7e5a5a0d0d9552e9
+borrowed_beard/Net Loft Yard +countdown: 317b294e4e20401b
 thumb/borrowed_beard/Harbour Office: 27baf7f3090affb8
-borrowed_beard/Harbour Office: 52ecc190480de1b2
-borrowed_beard/Harbour Office +berth_taken: 16a724b218354030
-borrowed_beard/Harbour Office +tangent_active: ce110ed058a0500d
-borrowed_beard/Harbour Office +singularity_collapsed: e80e6bf8e6664f54
-borrowed_beard/Harbour Office +countdown: aaa802eb595244a3
+borrowed_beard/Harbour Office: f5045110338e11d6
+borrowed_beard/Harbour Office +berth_taken: ca342bd9d601056e
+borrowed_beard/Harbour Office +tangent_active: faafbf5d5d6af82e
+borrowed_beard/Harbour Office +singularity_collapsed: ded02c5f533ad285
+borrowed_beard/Harbour Office +countdown: 80b7becd618cc401
 thumb/sword_fighting/Tidewalk: e0185a13b7445c31
-sword_fighting/Tidewalk: e03b2b3787f99d0a
-sword_fighting/Tidewalk +tangent_active: f8b79be37471b683
-sword_fighting/Tidewalk +singularity_collapsed: fdad83a56b4743f6
-sword_fighting/Tidewalk +countdown: 79d59ec82759609c
+sword_fighting/Tidewalk: c3ac379ad22d9855
+sword_fighting/Tidewalk +tangent_active: 89762daff11e0856
+sword_fighting/Tidewalk +singularity_collapsed: d7c13bfe70035888
+sword_fighting/Tidewalk +countdown: 1c79547ee1d83fb7
 thumb/sword_fighting/Fencing Yard: b18e109f2e745aab
-sword_fighting/Fencing Yard: 8d84abf73f0455ab
-sword_fighting/Fencing Yard +tangent_active: bf7ce7d7ef33a0ef
-sword_fighting/Fencing Yard +singularity_collapsed: 37341e32804dbf3a
-sword_fighting/Fencing Yard +countdown: ca1fdc6cd34b2f4f
+sword_fighting/Fencing Yard: 5a03f7a1b9e60f0d
+sword_fighting/Fencing Yard +tangent_active: 5bf10281ee655a10
+sword_fighting/Fencing Yard +singularity_collapsed: de557ccaf099b277
+sword_fighting/Fencing Yard +countdown: b2ddeffdd5d7f7a4
 thumb/sword_fighting/Drowned Lantern: 593cbd5023f9e234
-sword_fighting/Drowned Lantern: fd067474e4bc1d1f
-sword_fighting/Drowned Lantern +tangent_active: 64d59c0e6454356c
-sword_fighting/Drowned Lantern +singularity_collapsed: 99da5c8290cbdcca
-sword_fighting/Drowned Lantern +countdown: 361832f00d2911a7
+sword_fighting/Drowned Lantern: 135e59f2c4ea112f
+sword_fighting/Drowned Lantern +tangent_active: f61433d5acd1b0b2
+sword_fighting/Drowned Lantern +singularity_collapsed: 371f32a5e11cbcc2
+sword_fighting/Drowned Lantern +countdown: 4ab674d81c80c48b
 thumb/village/Living Village: b727fac90e9da417
-village/Living Village: 61be05c12c883b3e
-village/Living Village +tangent_active: 719a6cab9d5af1db
-village/Living Village +singularity_collapsed: e159b7d7242f7bd3
-village/Living Village +village_crime_active: 4999c32505afbbf7
-village/Living Village +village_warrant_active: f8c8a75c660f86de
-village/Living Village +village_arrest_made: 8c36d56ca9d909e2
-village/Living Village +countdown: 866c148516013441
-village/Living Village +villagers: a0d03d53b4b66519
+village/Living Village: a4f2aae4ed789713
+village/Living Village +tangent_active: 03b82d5bc87240e7
+village/Living Village +singularity_collapsed: 418f8a6885a211dc
+village/Living Village +village_crime_active: c25ab3929edf5729
+village/Living Village +village_warrant_active: 7783c817cf6fe13a
+village/Living Village +village_arrest_made: b6b0657eb9e49431
+village/Living Village +countdown: a48576cd1153d0b7
+village/Living Village +villagers: 3b2bf98475ccaed5
 thumb/goat_puzzle/Lochmarne Castle Courtyard: 7cb7e88b391b0d94
-goat_puzzle/Lochmarne Castle Courtyard: c2177af6bca3b55c
-goat_puzzle/Lochmarne Castle Courtyard +goat_is_tangled: 195ffbd7118d2371
-goat_puzzle/Lochmarne Castle Courtyard +goat_is_charging: 0cf087eafe80f28e
-goat_puzzle/Lochmarne Castle Courtyard +goat_is_retreating: dd0b2b8b5452ba34
-goat_puzzle/Lochmarne Castle Courtyard +george_knocked_down: ac1e948c9ddd71db
-goat_puzzle/Lochmarne Castle Courtyard +plough_moved: e28a4d4a7fa80406
-goat_puzzle/Lochmarne Castle Courtyard +tangent_active: 05fa6d61e6a5498b
-goat_puzzle/Lochmarne Castle Courtyard +singularity_collapsed: b1ab69ebc629c9d4
-goat_puzzle/Lochmarne Castle Courtyard +countdown: 7cf99ce58b1ff10a
+goat_puzzle/Lochmarne Castle Courtyard: db2a630654f42337
+goat_puzzle/Lochmarne Castle Courtyard +goat_is_tangled: 7e08839cf737c416
+goat_puzzle/Lochmarne Castle Courtyard +goat_is_charging: 89282ceaf2ef1237
+goat_puzzle/Lochmarne Castle Courtyard +goat_is_retreating: 8ba300d3c3668956
+goat_puzzle/Lochmarne Castle Courtyard +george_knocked_down: 25ec29d46a4cc7c2
+goat_puzzle/Lochmarne Castle Courtyard +plough_moved: 37f8cfb082c4cf40
+goat_puzzle/Lochmarne Castle Courtyard +tangent_active: 5af8d8b982832d09
+goat_puzzle/Lochmarne Castle Courtyard +singularity_collapsed: 533f943f9792e8fd
+goat_puzzle/Lochmarne Castle Courtyard +countdown: 94d9c784fa46a576
 thumb/goat_puzzle/Templar Crypt: 913799b2e824834d
-goat_puzzle/Templar Crypt: d75cdfa81711d8b5
-goat_puzzle/Templar Crypt +tangent_active: c61aa30a6de3aa63
-goat_puzzle/Templar Crypt +singularity_collapsed: ab7b5ca62db05e43
+goat_puzzle/Templar Crypt: 989c16e914006980
+goat_puzzle/Templar Crypt +tangent_active: 7131a0fd74a6b8f8
+goat_puzzle/Templar Crypt +singularity_collapsed: b7858720dfb766df
 thumb/dott_puzzle/Colonial Workshop: 593cbd5023f9e234
-dott_puzzle/Colonial Workshop: a41fd5134b9a4227
-dott_puzzle/Colonial Workshop +dott_tree_chopped: 6f74ba3e74ae6de6
-dott_puzzle/Colonial Workshop +tangent_active: c332e61759cc6832
-dott_puzzle/Colonial Workshop +singularity_collapsed: c0f6221e586dd444
-dott_puzzle/Colonial Workshop +countdown: 5262d10a1f38f29f
+dott_puzzle/Colonial Workshop: bdffe5fee5733b1a
+dott_puzzle/Colonial Workshop +dott_tree_chopped: 8c9cc847bb2452aa
+dott_puzzle/Colonial Workshop +tangent_active: 68408752801489d8
+dott_puzzle/Colonial Workshop +singularity_collapsed: c22ee5b4b60faa44
+dott_puzzle/Colonial Workshop +countdown: 0fb40fc0c8913961
 thumb/dott_puzzle/Motel Lobby: 593cbd5023f9e234
-dott_puzzle/Motel Lobby: 435ad56c111a10b2
-dott_puzzle/Motel Lobby +tangent_active: 340acda1263f0034
-dott_puzzle/Motel Lobby +singularity_collapsed: 665fb5999d8449f0
-dott_puzzle/Motel Lobby +countdown: 889c67cebfff2025
+dott_puzzle/Motel Lobby: db07b290ad57816c
+dott_puzzle/Motel Lobby +tangent_active: 5e9d5230ef236390
+dott_puzzle/Motel Lobby +singularity_collapsed: ca03253d68cbe79d
+dott_puzzle/Motel Lobby +countdown: f832ea316aea5aca
 thumb/dott_puzzle/Dystopian Guard Post: 593cbd5023f9e234
-dott_puzzle/Dystopian Guard Post: 6544922219dec34a
-dott_puzzle/Dystopian Guard Post +pegs_tampered: 59723ea4ace90792
-dott_puzzle/Dystopian Guard Post +dott_flag_sewn: 579aa498d336e63a
-dott_puzzle/Dystopian Guard Post +dott_laverne_disguised: 662c79387b8353c2
-dott_puzzle/Dystopian Guard Post +tangent_active: fd2e83c546cb5783
-dott_puzzle/Dystopian Guard Post +singularity_collapsed: b1bb5e736a4e54a5
-dott_puzzle/Dystopian Guard Post +countdown: 60294b9b797cabc9
+dott_puzzle/Dystopian Guard Post: aa7ecfc6276fbb31
+dott_puzzle/Dystopian Guard Post +pegs_tampered: c4bd1bf5bc16040d
+dott_puzzle/Dystopian Guard Post +dott_flag_sewn: 286bd12d2a682572
+dott_puzzle/Dystopian Guard Post +dott_laverne_disguised: 00918eecbf495d82
+dott_puzzle/Dystopian Guard Post +tangent_active: b96f3f46a95b41b3
+dott_puzzle/Dystopian Guard Post +singularity_collapsed: 600e17ad545e946c
+dott_puzzle/Dystopian Guard Post +countdown: 8e06a09d09061ca3
 thumb/darko_puzzle/Suburban Bedroom: 913799b2e824834d
-darko_puzzle/Suburban Bedroom: 0b713a8ae72d6ab7
-darko_puzzle/Suburban Bedroom +tangent_active: 2f92970b17b508b6
-darko_puzzle/Suburban Bedroom +singularity_collapsed: 6d78575fdf0b967d
-darko_puzzle/Suburban Bedroom +countdown: 735b5158ca348030
+darko_puzzle/Suburban Bedroom: d5e4a971adef7660
+darko_puzzle/Suburban Bedroom +tangent_active: becac8af145a28cb
+darko_puzzle/Suburban Bedroom +singularity_collapsed: 5f88deaff949c6db
+darko_puzzle/Suburban Bedroom +countdown: 0abff4db11219ad1
 thumb/darko_puzzle/Middlesex High School: 913799b2e824834d
-darko_puzzle/Middlesex High School: cf6c1ea732d1a9a6
-darko_puzzle/Middlesex High School +tangent_active: 24e887dca7a31e1e
-darko_puzzle/Middlesex High School +singularity_collapsed: ddbf49fbeb156ca6
-darko_puzzle/Middlesex High School +darko_water_flooded: a00ec9e56371c02b
-darko_puzzle/Middlesex High School +countdown: 6b280b62c60174d4
+darko_puzzle/Middlesex High School: a294ac503f636973
+darko_puzzle/Middlesex High School +tangent_active: 9a9c8d147b6e1481
+darko_puzzle/Middlesex High School +singularity_collapsed: 2f297c30ea91bc4d
+darko_puzzle/Middlesex High School +darko_water_flooded: 50bb43b20d8d8d8e
+darko_puzzle/Middlesex High School +countdown: 751de5f4d6ec4a41
 thumb/darko_puzzle/Tangent Vortex Ridge: 913799b2e824834d
-darko_puzzle/Tangent Vortex Ridge: adfde9a1e6870294
-darko_puzzle/Tangent Vortex Ridge +tangent_active: cc98ad2667dac928
-darko_puzzle/Tangent Vortex Ridge +singularity_collapsed: 579269c4daaf3eea
-darko_puzzle/Tangent Vortex Ridge +countdown: ba927048bedd75bd
+darko_puzzle/Tangent Vortex Ridge: d3774fe493a27904
+darko_puzzle/Tangent Vortex Ridge +tangent_active: f568d26583a0efe7
+darko_puzzle/Tangent Vortex Ridge +singularity_collapsed: f3a5e98235f0b221
+darko_puzzle/Tangent Vortex Ridge +countdown: f8b522ecfe14761f
 thumb/loom_puzzle/Bell Tower Base: de2e85e4d9574afc
-loom_puzzle/Bell Tower Base: 764f7b7a9077b433
-loom_puzzle/Bell Tower Base +tangent_active: d2cb383f20ce11bf
-loom_puzzle/Bell Tower Base +singularity_collapsed: 003b6a970ea4521c
-loom_puzzle/Bell Tower Base +bell_brazier_lit: fc15243465c6cce3
-loom_puzzle/Bell Tower Base +countdown: 6ec7f5a69455312a
+loom_puzzle/Bell Tower Base: b593d9cbe1656343
+loom_puzzle/Bell Tower Base +tangent_active: f2e5ad86d4623e88
+loom_puzzle/Bell Tower Base +singularity_collapsed: 65eb86fb962b6953
+loom_puzzle/Bell Tower Base +bell_brazier_lit: e2f30f97a544f8f6
+loom_puzzle/Bell Tower Base +countdown: 7cce7c11f6e573db
 thumb/loom_puzzle/Bell Tower Belfry: de2e85e4d9574afc
-loom_puzzle/Bell Tower Belfry: 159d250dcb936cd1
-loom_puzzle/Bell Tower Belfry +tangent_active: 8001b24fdbbd99c3
-loom_puzzle/Bell Tower Belfry +singularity_collapsed: fa20e33d1954e112
-loom_puzzle/Bell Tower Belfry +bell_chain_loosed: d1e4aa8c0692acb4
-loom_puzzle/Bell Tower Belfry +bell_ringing: 65aa082142048b10
-loom_puzzle/Bell Tower Belfry +bell_beacon_lit: 5acc639c33138f89
+loom_puzzle/Bell Tower Belfry: 90ae0e2ea0ba4c7f
+loom_puzzle/Bell Tower Belfry +tangent_active: aa7fb1ce2c65ce9b
+loom_puzzle/Bell Tower Belfry +singularity_collapsed: 333ec92b64e30d53
+loom_puzzle/Bell Tower Belfry +bell_chain_loosed: 98d1583d61cc5f6b
+loom_puzzle/Bell Tower Belfry +bell_ringing: e80c99661424603b
+loom_puzzle/Bell Tower Belfry +bell_beacon_lit: 7ecad4684c6c3aa7
 thumb/grog_puzzle/Saltglass Stockade: 913799b2e824834d
-grog_puzzle/Saltglass Stockade: 482df1f233191e93
-grog_puzzle/Saltglass Stockade +tangent_active: c349d663c852cb5b
-grog_puzzle/Saltglass Stockade +singularity_collapsed: 0c93e4dcdaf5fbd9
-grog_puzzle/Saltglass Stockade +countdown: 2d50f7aa455a6f10
+grog_puzzle/Saltglass Stockade: 8edaa6ae0dab44a0
+grog_puzzle/Saltglass Stockade +tangent_active: 4fd936b3a964c046
+grog_puzzle/Saltglass Stockade +singularity_collapsed: b89d289f8aaeca05
+grog_puzzle/Saltglass Stockade +countdown: ed8dc9d97cc6e738
 thumb/grid_puzzle/Hollin Keep Gallery: 85b839fa0992cedc
-grid_puzzle/Hollin Keep Gallery: f84ce1504696b31e
-grid_puzzle/Hollin Keep Gallery +tangent_active: 5ad7842458049bd3
-grid_puzzle/Hollin Keep Gallery +singularity_collapsed: 298498b28c14351e
-grid_puzzle/Hollin Keep Gallery +countdown: 1d23301aef29672f
-grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: cd0f40dc489627cf
-grid_puzzle/Hollin Keep Gallery +gallery_fire: 67befd0e6c341e36
+grid_puzzle/Hollin Keep Gallery: d2614c41e5fdceda
+grid_puzzle/Hollin Keep Gallery +tangent_active: 2cf7db4a1df9df01
+grid_puzzle/Hollin Keep Gallery +singularity_collapsed: eab6091c92bd03ff
+grid_puzzle/Hollin Keep Gallery +countdown: 24e944f31629dd9b
+grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: 09a5d3f0b48797bc
+grid_puzzle/Hollin Keep Gallery +gallery_fire: da7da7cea328be1e
 thumb/observatory_puzzle/Larkspur Observatory: cb00ba92a3345d46
-observatory_puzzle/Larkspur Observatory: 494c6aca481a150f
-observatory_puzzle/Larkspur Observatory +tangent_active: a8832d31b9013358
-observatory_puzzle/Larkspur Observatory +singularity_collapsed: 6b4745ee5b17bb6a
-observatory_puzzle/Larkspur Observatory +countdown: fedf96a7ae61d317
-inspector/Larkspur Observatory: a533491477c2c55e
-inspector-filtered/Larkspur Observatory: 68e0da4292c9da42
+observatory_puzzle/Larkspur Observatory: 104c08e0b50aadb5
+observatory_puzzle/Larkspur Observatory +tangent_active: 7f1aa921c8939d41
+observatory_puzzle/Larkspur Observatory +singularity_collapsed: c9b7ca94de5e8e61
+observatory_puzzle/Larkspur Observatory +countdown: 0080fd781a00dd81
+inspector/Larkspur Observatory: a75327bf02f5e0c7
+inspector-filtered/Larkspur Observatory: e0d32239496d124c

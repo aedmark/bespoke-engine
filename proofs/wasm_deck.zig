@@ -20,7 +20,7 @@ const DOTT_PUZZLE_SCRIPT = @import("dott_puzzle.zig").DOTT_PUZZLE_SCRIPT;
 const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
 const sword_fighting = @import("sword_fighting.zig");
 const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
-const atlantis = @import("atlantis_puzzle.zig");
+const algiers = @import("atlantis_puzzle.zig");
 const loom = @import("loom_puzzle.zig");
 const art = @import("art.zig");
 const darko = @import("darko_puzzle.zig");
@@ -31,6 +31,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Cat",
         .intro = "Tavern Heist: you are the Cat. Click a mark to walk; [S] plays the solution.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 28, .g = 21, .b = 18 },
         .catalyst = solver(&TAVERN_SOLUTION),
     }),
@@ -38,6 +40,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Tamsin",
         .intro = "Pip-Spitting Green: TALK, LOOK, or USE on people and props; [S] plays the solution.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 16, .g = 42, .b = 58 },
         .catalyst = solver(&SPIT_SOLUTION),
         .on_act = spit_act,
@@ -48,6 +52,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Tamsin",
         .intro = "The Borrowed Beard: Tamsin needs a disguise. Use the verbs, or [S] for the next step.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 32, .g = 52, .b = 34 },
         .setup = beard_setup,
         .catalyst = solver(&BEARD_SOLUTION),
@@ -55,6 +61,8 @@ pub const decks = [_]wasm.Deck{
     }),
     wasm.script_deck_with("THE LIVING VILLAGE (EMERGENCE)", VILLAGE_SCRIPT, .{
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 22, .g = 44, .b = 28 },
         .setup = village_setup,
         .catalyst = village_desperation,
@@ -64,6 +72,8 @@ pub const decks = [_]wasm.Deck{
         .player = "George",
         .intro = "Lochmarne: get past the goat into the cellar. [S] plays the next step.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 38, .g = 48, .b = 40 },
         .setup = goat_setup,
         .catalyst = solver(&GOAT_SOLUTION),
@@ -72,6 +82,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Bernard",
         .intro = "DOTT: three eras, one toilet. [S] plays the next step of the solution.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 42, .g = 24, .b = 48 },
         .setup = dott_setup,
         .catalyst = solver(&DOTT_SOLUTION),
@@ -80,6 +92,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Mara",
         .intro = "Caustic Grog: press [S] now to run for the lock before the cups fail.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 20, .g = 42, .b = 40 },
         .catalyst = solver(&GROG_SOLUTION),
     }),
@@ -87,15 +101,18 @@ pub const decks = [_]wasm.Deck{
         .player = "Tamsin",
         .intro = "Brackwater Barbs: TALK to a fencer, or press [S], to duel. Answer with the number keys.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 30, .g = 36, .b = 52 },
         .setup = sword_setup,
         .catalyst = sword_solve,
         .on_choice = sword_choice,
         .on_act = sword_act,
     }),
-    wasm.script_deck_with("ALGIERS: THREE PATHS", atlantis.ATLANTIS_PUZZLE_SCRIPT, .{
+    wasm.script_deck_with("ALGIERS: THREE PATHS", algiers.ATLANTIS_PUZZLE_SCRIPT, .{
         .player = "Indy",
         .soundtrack = &art.soundtrack,
+        .theme = &algiers.theme,
         .background = .{ .r = 52, .g = 38, .b = 22 },
         .setup = atlantis_setup,
         .catalyst = atlantis_solve,
@@ -106,6 +123,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Donnie",
         .intro = "Middlesex: a tangent universe collapses in 280 ticks. [S] plays the next step; I inspects the branch.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 26, .g = 18, .b = 40 },
         .setup = darko_setup,
         .catalyst = solver(&DARKO_SOLUTION),
@@ -115,6 +134,8 @@ pub const decks = [_]wasm.Deck{
         .player = "Wren",
         .intro = "Bell Tower: act on something, then play four notes with C D E F G A B. [S] for the next step.",
         .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
         .background = .{ .r = 24, .g = 28, .b = 46 },
         .setup = loom_setup,
         .catalyst = solver(&LOOM_SOLUTION),
@@ -797,15 +818,15 @@ const ATLANTIS_SELECTOR = [_]bespoke.dialogue.Choice{
 
 /// The desktop proof's own bazaar layout and gates, then the path selector.
 fn atlantis_setup(rt: *WasmRuntime) anyerror!void {
-    const ids = try atlantis.configure(&rt.world, &rt.spatial);
+    const ids = try algiers.configure(&rt.world, &rt.spatial);
     try rt.vm.transition_to_scene(ids.scene);
     _ = try rt.vm.open_generated_dialogue(ids.omar, "Choose your approach, Indy.", &ATLANTIS_SELECTOR);
     rt.set_banner("Algiers: choose [1] Wits, [2] Fists, or [3] Team. [S] plays the next step.");
 }
 
-fn atlantis_active(rt: *WasmRuntime) ?atlantis.PathSpec {
+fn atlantis_active(rt: *WasmRuntime) ?algiers.PathSpec {
     const active = rt.world.lookup_relation("PathActive") orelse return null;
-    for (atlantis.paths) |spec| {
+    for (algiers.paths) |spec| {
         const route = rt.world.lookup_entity(spec.name) orelse continue;
         if (rt.world.has_fact(route, active, null)) return spec;
     }
@@ -813,8 +834,8 @@ fn atlantis_active(rt: *WasmRuntime) ?atlantis.PathSpec {
 }
 
 fn atlantis_choice(rt: *WasmRuntime, action: u32) anyerror!void {
-    if (action == 0 or action > atlantis.paths.len) return;
-    const spec = atlantis.paths[action - 1];
+    if (action == 0 or action > algiers.paths.len) return;
+    const spec = algiers.paths[action - 1];
     const program = if (rt.program) |*p| p else return;
     _ = (try rt.vm.select_path(program, spec.name)) orelse return;
     try rt.step_tick();
@@ -1126,7 +1147,8 @@ fn press(rt: *WasmRuntime, x: i32, y: i32) !wasm.BrowserActionTag {
 }
 
 fn pick_verb(rt: *WasmRuntime, verb: wasm.WasmVerb) !void {
-    _ = try press(rt, 12 + @as(i32, @intFromEnum(verb)) * 58 + 20, 338);
+    // The desktop verb bar (D-097): buttons 68 wide, 74 apart, on the row 78 above the bottom.
+    _ = try press(rt, 20 + @as(i32, @intFromEnum(verb)) * 74 + 30, wasm.CANVAS_HEIGHT - 68);
     try testing.expectEqual(verb, rt.active_verb);
 }
 
@@ -1315,4 +1337,48 @@ test "D-095: the Pip-Spitting Green's spit action spits at once and closes the j
     try testing.expect(bespoke.dialogue.view(&rt.world) == null);
     // Plain spit: a dribble.
     try testing.expect(holds(rt, "Tamsin", "Placed", "Dribble"));
+}
+
+test "D-096: the Pip-Spitting Green draws its wind sign, calm and blowing" {
+    const rt = try load(1);
+    defer unload(rt);
+    rt.bind();
+    // The desktop theme's sign (D-097): a streak across the field while the breeze blows.
+    const streak = .{ 300, 250 };
+    rt.render_frame();
+    try testing.expect(!std.meta.eql(rt.pixel(streak[0], streak[1]), wasm.RgbaColor.sky_blue));
+    try tick_until(rt, "Wind", "blowing", null, 80);
+    rt.render_frame();
+    try testing.expect(std.meta.eql(rt.pixel(streak[0], streak[1]), wasm.RgbaColor.sky_blue));
+}
+
+test "P36-05: every browser deck draws the frame the desktop window draws for the same state" {
+    for (0..decks.len) |i| {
+        const rt = try load(@intCast(i));
+        defer unload(rt);
+        try rt.step_tick();
+        try rt.step_tick();
+        rt.render_frame();
+        const browser = std.hash.Wyhash.hash(0, rt.framebuffer);
+
+        // A desktop window drawing offscreen, given the deck's theme and the browser's view
+        // state, must produce the same pixels from the same captured frame.
+        var desk = try bespoke.display.DisplayWindow.init_offscreen(wasm.CANVAS_WIDTH, wasm.CANVAS_HEIGHT);
+        defer desk.deinit();
+        const frame = rt.capture();
+        const shown = rt.screen(frame);
+        desk.theme = shown.theme;
+        desk.footer_text = shown.footer_text;
+        desk.backdrop_color = shown.backdrop_color;
+        desk.active_verb = shown.active_verb;
+        desk.messages = shown.messages;
+        desk.cue_banner_text = shown.cue_banner_text;
+        desk.cue_banner_len = shown.cue_banner_len;
+        desk.cue_banner_until_ms = shown.cue_banner_until_ms;
+        desk.render_frame(frame, rt.is_paused);
+        if (desk.frame_hash().? != browser) {
+            std.debug.print("deck {d} draws differently in the browser\n", .{i});
+            return error.FramesDiffer;
+        }
+    }
 }

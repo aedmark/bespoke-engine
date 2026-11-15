@@ -39,7 +39,7 @@ const SCRIPT = [_]struct { label: []const u8, step: Step }{
     .{ .label = "props", .step = .hotspots },
     .{ .label = "catalyst", .step = .{ .event = .{ .kind = .key_down, .key_code = 'S' } } },
     .{ .label = "ticked", .step = .{ .ticks = 3 } },
-    .{ .label = "scrubbed", .step = .{ .event = .{ .kind = .pointer_down, .x = 320, .y = 30 } } },
+    .{ .label = "scrubbed", .step = .{ .event = .{ .kind = .pointer_down, .x = 640, .y = 60 } } },
     .{ .label = "rewound", .step = .{ .event = .{ .kind = .key_down, .key_code = 'R' } } },
     .{ .label = "paused", .step = .{ .event = .{ .kind = .key_down, .key_code = ' ' } } },
     // The state inspector (P30-04, D-070): open it, move the selection, and close it.
@@ -89,7 +89,7 @@ fn record(allocator: std.mem.Allocator, out: *std.ArrayList(u8), index: u8) !voi
         try out.writer().print("deck/{d}/{s}: {x:0>16} facts={d} tick={d} banner=\"{s}\"\n", .{
             index,
             entry.label,
-            std.hash.Wyhash.hash(0, &rt.canvas.pixels),
+            std.hash.Wyhash.hash(0, rt.framebuffer),
             rt.world.fact_count(),
             rt.clock(),
             rt.get_banner(),

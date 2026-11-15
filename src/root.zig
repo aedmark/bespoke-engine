@@ -103,6 +103,7 @@ test "root test imports all modules" {
     _ = @import("grid.zig");
     _ = @import("agency.zig");
     _ = @import("command.zig");
+    _ = @import("display/canvas.zig");
     _ = @import("display/state_graph.zig");
     _ = @import("dialogue.zig");
     _ = @import("spatial.zig");

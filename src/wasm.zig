@@ -1,8 +1,8 @@
 //! BeSpoke Engine: WebAssembly (wasm32-freestanding) Runtime Harness & Browser Event Bridge (Phase 19, D-001, D-008, D-022)
 //!
 //! Compiles the pure Zig simulation spine (World, SpatialSystem, VM, Compiler, Repl)
-//! to `wasm32-freestanding` with zero libc or external dependencies, rendering directly
-//! into a 640x360 RGBA8888 linear-memory framebuffer (`WasmCanvas`) for HTML5 Canvas
+//! to `wasm32-freestanding` with zero libc or external dependencies, drawing the desktop
+//! window's frame (D-097) into a 1280x720 RGBA8888 linear-memory framebuffer for HTML5 Canvas
 //! `ImageData` blitting and bridging DOM mouse, keyboard, and touch events to BeSpoke intents.
 //! What is on the stage comes from the host's `Deck` table (P32-04, D-042).
 
@@ -27,7 +27,10 @@ pub const Inspector = inspector_mod.Inspector;
 pub const InspectorKey = inspector_mod.Key;
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
 const font = @import("display/font.zig");
+const canvas_mod = @import("display/canvas.zig");
 const dialogue_panel = @import("display/dialogue_panel.zig");
+const renderer = @import("display/renderer.zig");
+const save_mod = @import("save.zig");
 const beats_mod = @import("display/beats.zig");
 
 pub const World = world_mod.World;
@@ -38,9 +41,18 @@ pub const WaypointId = spatial_mod.WaypointId;
 pub const VM = vm_mod.VM;
 pub const Repl = repl_mod.Repl;
 
-pub const CANVAS_WIDTH: i32 = 640;
-pub const CANVAS_HEIGHT: i32 = 360;
+/// The browser draws the desktop window's frame at the desktop's size (D-097); the page scales
+/// the canvas element to fit.
+pub const CANVAS_WIDTH: i32 = 1280;
+pub const CANVAS_HEIGHT: i32 = 720;
 pub const FRAMEBUFFER_BYTES: usize = @intCast(CANVAS_WIDTH * CANVAS_HEIGHT * 4);
+/// The state inspector (D-070) still lays itself out for 640x360; it is drawn at that size
+/// into `WasmRuntime.overlay` and doubled onto the frame.
+pub const OVERLAY_WIDTH: i32 = 640;
+pub const OVERLAY_HEIGHT: i32 = 360;
+pub const OVERLAY_BYTES: usize = @intCast(OVERLAY_WIDTH * OVERLAY_HEIGHT * 4);
+/// The footer the browser shows in place of a proof's desktop keys (D-097).
+pub const BROWSER_FOOTER = "[Click]: Act | [Right-Click]: Verb | [S]: Solve | [I]: Inspect | [Space]: Pause | [N]: Step | [R]: Rewind";
 pub const MAX_WASM_SNAPSHOTS: usize = 32;
 /// The ceiling on the browser runtime's heap (D-071). The previous fixed 2 MiB buffer could not
 /// reuse freed memory; a tangent world forked again after a rewind would have leaked 256 KiB.
@@ -84,23 +96,9 @@ pub const CappedAllocator = struct {
 pub const AUDIO_MAX_FRAMES: usize = 4096;
 pub const SNAPSHOT_SLOT_BYTES: usize = 8192;
 
-pub const RgbaColor = struct {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8 = 255,
-
-    pub const white = RgbaColor{ .r = 255, .g = 255, .b = 255 };
-    pub const black = RgbaColor{ .r = 0, .g = 0, .b = 0 };
-    pub const hud_bg = RgbaColor{ .r = 15, .g = 23, .b = 42 };
-    pub const hud_border = RgbaColor{ .r = 71, .g = 85, .b = 105 };
-    pub const gold = RgbaColor{ .r = 250, .g = 204, .b = 21 };
-    pub const sky_blue = RgbaColor{ .r = 56, .g = 189, .b = 248 };
-    pub const emerald = RgbaColor{ .r = 34, .g = 197, .b = 94 };
-    pub const crimson = RgbaColor{ .r = 244, .g = 63, .b = 94 };
-    pub const amber = RgbaColor{ .r = 245, .g = 158, .b = 11 };
-    pub const slate = RgbaColor{ .r = 148, .g = 163, .b = 184 };
-};
+/// The shared canvas colour (P36-02); the browser's former names live on it.
+pub const RgbaColor = canvas_mod.Color;
+pub const Canvas = canvas_mod.Canvas;
 
 /// One playable scene of the browser runtime, supplied by the host (P32-04, D-042). `load`
 /// builds the stage on a freshly reset world, spatial graph, and VM; `after_tick` runs after
@@ -128,6 +126,11 @@ pub const Deck = struct {
     /// A page's own button for a deck's one-off action, such as spitting (D-095); `id` is the
     /// page's number for it. Runs between ticks, like `[S]`.
     on_action: ?*const fn (rt: *WasmRuntime, id: u8) anyerror!void = null,
+    /// The proof's desktop theme (D-097): its scenery, props, people, and HUD, drawn on the
+    /// browser frame as on the desktop. Null draws the engine's neutral stage.
+    theme: ?*const renderer.Theme = null,
+    /// The proof's status capture, which the theme reads from each frame (D-041).
+    status_hook: ?display_mod.StatusHook = null,
 };
 
 /// A mark that leads out of its scene (D-094). When the player's walk ends on `mark` while
@@ -183,6 +186,8 @@ pub const ScriptDeckOptions = struct {
     cues: VerbCues = .{},
     exits: []const Exit = &.{},
     on_action: ?*const fn (rt: *WasmRuntime, id: u8) anyerror!void = null,
+    theme: ?*const renderer.Theme = null,
+    status_hook: ?display_mod.StatusHook = null,
     /// Music for a script that declares no scores, such as a proof's desktop soundtrack (D-071).
     soundtrack: ?*const audio_mod.Soundtrack = null,
 };
@@ -214,6 +219,8 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
         .cues = options.cues,
         .exits = options.exits,
         .on_action = options.on_action,
+        .theme = options.theme,
+        .status_hook = options.status_hook,
     };
 }
 
@@ -311,194 +318,73 @@ pub const BrowserActionTag = enum(u8) {
 // 1. Pure Zig RGBA8888 Canvas Framebuffer Renderer (P19-01, D-001, D-022)
 // =============================================================================
 
+/// A 640x360 scratch canvas for the state inspector overlay (D-070, D-097), drawn through the
+/// shared engine canvas (`display/canvas.zig`). The buffer lives inline in the runtime, so a
+/// canvas view is made per call rather than stored: the runtime is returned by value and a
+/// stored pointer into it would dangle.
 pub const WasmCanvas = struct {
-    pixels: [FRAMEBUFFER_BYTES]u8 = [_]u8{0} ** FRAMEBUFFER_BYTES,
+    pixels: [OVERLAY_BYTES]u8 = [_]u8{0} ** OVERLAY_BYTES,
 
-    pub fn clear(self: *WasmCanvas, col: RgbaColor) void {
-        var i: usize = 0;
-        while (i < FRAMEBUFFER_BYTES) : (i += 4) {
-            self.pixels[i] = col.r;
-            self.pixels[i + 1] = col.g;
-            self.pixels[i + 2] = col.b;
-            self.pixels[i + 3] = col.a;
-        }
+    pub fn view(self: *WasmCanvas) Canvas {
+        return Canvas.init(&self.pixels, OVERLAY_WIDTH, OVERLAY_HEIGHT);
     }
 
-    pub inline fn set_pixel(self: *WasmCanvas, x: i32, y: i32, col: RgbaColor) void {
-        if (x < 0 or x >= CANVAS_WIDTH or y < 0 or y >= CANVAS_HEIGHT) return;
-        const idx: usize = @intCast((y * CANVAS_WIDTH + x) * 4);
-        self.pixels[idx] = col.r;
-        self.pixels[idx + 1] = col.g;
-        self.pixels[idx + 2] = col.b;
-        self.pixels[idx + 3] = col.a;
+    pub fn clear(self: *WasmCanvas, col: RgbaColor) void {
+        var v = self.view();
+        v.clear(col);
+    }
+
+    pub fn set_pixel(self: *WasmCanvas, x: i32, y: i32, col: RgbaColor) void {
+        var v = self.view();
+        v.set_pixel(x, y, col);
     }
 
     pub fn get_pixel(self: *const WasmCanvas, x: i32, y: i32) RgbaColor {
-        if (x < 0 or x >= CANVAS_WIDTH or y < 0 or y >= CANVAS_HEIGHT) return RgbaColor.black;
-        const idx: usize = @intCast((y * CANVAS_WIDTH + x) * 4);
-        return .{
-            .r = self.pixels[idx],
-            .g = self.pixels[idx + 1],
-            .b = self.pixels[idx + 2],
-            .a = self.pixels[idx + 3],
-        };
+        const v = Canvas.init(@constCast(&self.pixels), OVERLAY_WIDTH, OVERLAY_HEIGHT);
+        return v.get_pixel(x, y);
     }
 
     pub fn fill_rect(self: *WasmCanvas, x: i32, y: i32, w: i32, h: i32, col: RgbaColor) void {
-        const x0 = @max(0, x);
-        const y0 = @max(0, y);
-        const x1 = @min(CANVAS_WIDTH, x + w);
-        const y1 = @min(CANVAS_HEIGHT, y + h);
-        if (x0 >= x1 or y0 >= y1) return;
-
-        var py = y0;
-        while (py < y1) : (py += 1) {
-            var px = x0;
-            while (px < x1) : (px += 1) {
-                self.set_pixel(px, py, col);
-            }
-        }
+        var v = self.view();
+        v.fill_rect(x, y, w, h, col);
     }
 
     pub fn draw_rect_outline(self: *WasmCanvas, x: i32, y: i32, w: i32, h: i32, col: RgbaColor) void {
-        if (w <= 0 or h <= 0) return;
-        self.draw_line(x, y, x + w - 1, y, col);
-        self.draw_line(x, y + h - 1, x + w - 1, y + h - 1, col);
-        self.draw_line(x, y, x, y + h - 1, col);
-        self.draw_line(x + w - 1, y, x + w - 1, y + h - 1, col);
+        var v = self.view();
+        v.draw_rect_outline(x, y, w, h, col);
     }
 
-    pub fn draw_line(self: *WasmCanvas, x0_in: i32, y0_in: i32, x1_in: i32, y1_in: i32, col: RgbaColor) void {
-        var x0 = x0_in;
-        var y0 = y0_in;
-        const x1 = x1_in;
-        const y1 = y1_in;
-
-        const dx: i32 = @intCast(@abs(x1 - x0));
-        const sx: i32 = if (x0 < x1) 1 else -1;
-        const dy: i32 = -@as(i32, @intCast(@abs(y1 - y0)));
-        const sy: i32 = if (y0 < y1) 1 else -1;
-        var err: i32 = dx + dy;
-
-        while (true) {
-            self.set_pixel(x0, y0, col);
-            if (x0 == x1 and y0 == y1) break;
-            const e2 = 2 * err;
-            if (e2 >= dy) {
-                err += dy;
-                x0 += sx;
-            }
-            if (e2 <= dx) {
-                err += dx;
-                y0 += sy;
-            }
-        }
+    pub fn draw_line(self: *WasmCanvas, x0: i32, y0: i32, x1: i32, y1: i32, col: RgbaColor) void {
+        var v = self.view();
+        v.draw_line(x0, y0, x1, y1, col);
     }
 
     pub fn fill_circle(self: *WasmCanvas, cx: i32, cy: i32, radius: i32, col: RgbaColor) void {
-        if (radius <= 0) return;
-        var dy: i32 = -radius;
-        while (dy <= radius) : (dy += 1) {
-            const dx: i32 = @intCast(std.math.sqrt(@as(u64, @intCast(@max(0, radius * radius - dy * dy)))));
-            var px = cx - dx;
-            while (px <= cx + dx) : (px += 1) {
-                self.set_pixel(px, cy + dy, col);
-            }
-        }
+        var v = self.view();
+        v.fill_circle(cx, cy, radius, col);
     }
 
     pub fn draw_circle_outline(self: *WasmCanvas, cx: i32, cy: i32, radius: i32, col: RgbaColor) void {
-        if (radius <= 0) return;
-        var x: i32 = radius;
-        var y: i32 = 0;
-        var err: i32 = 0;
-
-        while (x >= y) {
-            self.set_pixel(cx + x, cy + y, col);
-            self.set_pixel(cx + y, cy + x, col);
-            self.set_pixel(cx - y, cy + x, col);
-            self.set_pixel(cx - x, cy + y, col);
-            self.set_pixel(cx - x, cy - y, col);
-            self.set_pixel(cx - y, cy - x, col);
-            self.set_pixel(cx + y, cy - x, col);
-            self.set_pixel(cx + x, cy - y, col);
-
-            if (err <= 0) {
-                y += 1;
-                err += 2 * y + 1;
-            }
-            if (err > 0) {
-                x -= 1;
-                err -= 2 * x + 1;
-            }
-        }
+        var v = self.view();
+        v.draw_circle_outline(cx, cy, radius, col);
     }
 
-    pub fn draw_text(self: *WasmCanvas, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: RgbaColor) void {
-        var cur_x = start_x;
-        for (text) |ch| {
-            if (ch < 32 or ch > 126) {
-                cur_x += font.char_width(scale);
-                continue;
-            }
-            const glyph = font.FONT5X7[ch - 32];
-            for (glyph, 0..) |col_byte, col_idx| {
-                var row: usize = 0;
-                while (row < 7) : (row += 1) {
-                    if ((col_byte >> @intCast(row)) & 1 != 0) {
-                        self.fill_rect(
-                            cur_x + @as(i32, @intCast(col_idx)) * scale,
-                            start_y + @as(i32, @intCast(row)) * scale,
-                            scale,
-                            scale,
-                            col,
-                        );
-                    }
-                }
-            }
-            cur_x += font.char_width(scale);
-        }
+    pub fn draw_text(self: *WasmCanvas, text: []const u8, x: i32, y: i32, scale: i32, col: RgbaColor) void {
+        var v = self.view();
+        v.draw_text(text, x, y, scale, col);
     }
 };
 
-/// Maps discrete world coordinates `(-5..45, -15..15)` into `640x360` canvas coordinates.
-pub fn world_to_canvas(world_x: i32, world_y: i32) struct { x: i32, y: i32 } {
-    return .{
-        .x = 120 + world_x * 10,
-        .y = 185 + world_y * 7,
-    };
-}
-
 pub const CanvasPoint = struct { x: i32, y: i32 };
 
-/// How the stage is drawn (P30-05, D-069): only the shown room, fitted into the stage box. The
-/// room is the VM's current scene, else the room of the first mark. Marks and props of that
-/// room set the bounds; the scale never exceeds the old fixed 10 by 7 pixels per unit, so small
-/// stages keep their look, and wide or tall ones shrink to fit. Integer arithmetic only.
+/// Where the stage is drawn (D-097): the desktop window's mapping (`renderer.world_to_screen`)
+/// and only the current scene, as the desktop frame captures it.
 pub const Projection = struct {
     room: ?EntityId = null,
-    /// Twice the bounds' centre, so odd spans need no rounding.
-    centre2_x: i32 = 0,
-    centre2_y: i32 = 0,
-    /// Pixels per world unit, times 100.
-    scale_x: i32 = 1000,
-    scale_y: i32 = 700,
-    fixed: bool = true,
 
-    const STAGE_CENTRE_X: i32 = 320;
-    const STAGE_CENTRE_Y: i32 = 170;
-    const STAGE_HALF_W: i32 = 260;
-    const STAGE_HALF_H: i32 = 90;
-
-    pub fn point(self: Projection, x: i32, y: i32) CanvasPoint {
-        if (self.fixed) {
-            const p = world_to_canvas(x, y);
-            return .{ .x = p.x, .y = p.y };
-        }
-        return .{
-            .x = STAGE_CENTRE_X + @divTrunc((2 * x - self.centre2_x) * self.scale_x, 200),
-            .y = STAGE_CENTRE_Y + @divTrunc((2 * y - self.centre2_y) * self.scale_y, 200),
-        };
+    pub fn point(_: Projection, x: i32, y: i32) CanvasPoint {
+        const p = renderer.world_to_screen(x, y, CANVAS_WIDTH, CANVAS_HEIGHT);
+        return .{ .x = p.x, .y = p.y };
     }
 
     pub fn shows(self: Projection, room: EntityId) bool {
@@ -562,10 +448,40 @@ pub const WasmRuntime = struct {
     snapshot_ticks: [MAX_WASM_SNAPSHOTS]u64 = [_]u64{0} ** MAX_WASM_SNAPSHOTS,
     snapshot_count: usize = 0,
 
-    canvas: WasmCanvas = .{},
+    /// The inspector's 640x360 scratch canvas, doubled onto the frame while it is open.
+    overlay: WasmCanvas = .{},
+    /// The frame the page shows: 1280x720 RGBA8888 (D-097). Borrowed from the host in the
+    /// browser build; allocated by `init` otherwise.
+    framebuffer: []u8 = &.{},
+    owns_framebuffer: bool = false,
+    /// The desktop frame capture, the window that draws it, and the window's (empty) save
+    /// list. Heap-allocated, because the runtime is moved after `init`; the window's pointers
+    /// into the runtime are re-pointed before each use (`screen`).
+    frame_bridge: *display_mod.DisplayBridge = undefined,
+    window: *renderer.DisplayWindow = undefined,
+    saves: *save_mod.SaveManager = undefined,
 
     /// Starts on deck `initial` of `decks`; an index past the end starts on the first deck.
     pub fn init(allocator: std.mem.Allocator, decks: []const Deck, initial: u8) !WasmRuntime {
+        const pixels = try allocator.alloc(u8, FRAMEBUFFER_BYTES);
+        errdefer allocator.free(pixels);
+        var rt = try init_with_framebuffer(allocator, decks, initial, pixels);
+        rt.owns_framebuffer = true;
+        return rt;
+    }
+
+    /// As `init`, drawing into `pixels` (at least `FRAMEBUFFER_BYTES`), which the caller keeps.
+    pub fn init_with_framebuffer(allocator: std.mem.Allocator, decks: []const Deck, initial: u8, pixels: []u8) !WasmRuntime {
+        const bridge = try allocator.create(display_mod.DisplayBridge);
+        errdefer allocator.destroy(bridge);
+        bridge.* = display_mod.DisplayBridge.init();
+        const saves = try allocator.create(save_mod.SaveManager);
+        errdefer allocator.destroy(saves);
+        // A save list with no directory: the browser never opens the save drawer.
+        saves.* = .{ .allocator = allocator, .save_dir = "", .slots = undefined, .session_start_ms = 0, .accumulated_playtime_secs = 0 };
+        for (0..save_mod.MAX_SLOTS + 1) |i| saves.slots[i] = .{ .slot_id = @intCast(i) };
+        const window = try allocator.create(renderer.DisplayWindow);
+        errdefer allocator.destroy(window);
         var rt = WasmRuntime{
             .allocator = allocator,
             .world = try World.init(allocator, 256 * 1024),
@@ -573,7 +489,12 @@ pub const WasmRuntime = struct {
             .chunk = bytecode_mod.BytecodeChunk.init(allocator),
             .vm = undefined,
             .decks = decks,
+            .framebuffer = pixels[0..FRAMEBUFFER_BYTES],
+            .frame_bridge = bridge,
+            .saves = saves,
+            .window = window,
         };
+        window.* = renderer.DisplayWindow.init_canvas(rt.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT, &rt.audio, saves);
         rt.vm = VM.init(allocator, &rt.world, &rt.chunk);
         rt.vm.spatial = &rt.spatial;
         try rt.load_deck(initial);
@@ -581,6 +502,10 @@ pub const WasmRuntime = struct {
     }
 
     pub fn deinit(self: *WasmRuntime) void {
+        self.allocator.destroy(self.window);
+        self.allocator.destroy(self.saves);
+        self.allocator.destroy(self.frame_bridge);
+        if (self.owns_framebuffer) self.allocator.free(self.framebuffer);
         // Declarations borrow World text, so the program goes before the World.
         self.drop_program();
         self.vm.deinit();
@@ -687,46 +612,10 @@ pub const WasmRuntime = struct {
         self.show_story();
     }
 
-    /// The room on stage and how to fit it into the canvas (D-069). Decks without marks keep
-    /// the fixed mapping.
+    /// The room on stage (D-069): the VM's current scene, as the desktop frame captures it.
+    /// Without a scene every room shows, as on the desktop.
     pub fn projection(self: *const WasmRuntime) Projection {
-        const waypoints = self.spatial.graph.waypoints.items;
-        if (waypoints.len == 0) return .{};
-        var room = waypoints[0].room;
-        if (self.vm.current_scene) |scene| {
-            for (waypoints) |wp| if (wp.room == scene) {
-                room = scene;
-                break;
-            };
-        }
-        var min_x: i32 = std.math.maxInt(i32);
-        var max_x: i32 = std.math.minInt(i32);
-        var min_y: i32 = std.math.maxInt(i32);
-        var max_y: i32 = std.math.minInt(i32);
-        for (waypoints) |wp| if (wp.room == room) {
-            min_x = @min(min_x, wp.pos.x);
-            max_x = @max(max_x, wp.pos.x);
-            min_y = @min(min_y, wp.pos.y);
-            max_y = @max(max_y, wp.pos.y);
-        };
-        for (self.spatial.hotspots.items) |hs| if (hs.room == room) {
-            min_x = @min(min_x, hs.pos.x);
-            max_x = @max(max_x, hs.pos.x);
-            min_y = @min(min_y, hs.pos.y);
-            max_y = @max(max_y, hs.pos.y);
-        };
-        var scale_x: i32 = 1000;
-        if (max_x > min_x) scale_x = @min(scale_x, @divTrunc(Projection.STAGE_HALF_W * 2 * 100, max_x - min_x));
-        var scale_y: i32 = @divTrunc(scale_x * 7, 10);
-        if (max_y > min_y) scale_y = @min(scale_y, @divTrunc(Projection.STAGE_HALF_H * 2 * 100, max_y - min_y));
-        return .{
-            .room = room,
-            .centre2_x = min_x + max_x,
-            .centre2_y = min_y + max_y,
-            .scale_x = scale_x,
-            .scale_y = scale_y,
-            .fixed = false,
-        };
+        return .{ .room = self.vm.current_scene };
     }
 
     /// The room an agent stands in: the room of the mark it last reached.
@@ -735,63 +624,31 @@ pub const WasmRuntime = struct {
         return (self.spatial.graph.get_waypoint(wp) orelse return null).room;
     }
 
-    /// Where a person on stage is drawn (D-088): `row` stacks names of people who share a spot.
-    pub const ActorSlot = struct { entity: EntityId, x: i32, y: i32, row: i32 };
-    pub const MAX_ACTOR_SLOTS: usize = 32;
-    /// Pixels apart people standing together are fanned out, and the radius a click reaches.
-    const ACTOR_SPACING: i32 = 24;
-    const ACTOR_REACH: i32 = 12;
+    /// Where a person on stage is drawn: the desktop's place for it (D-097), which fans out
+    /// people who share a spot as the browser's own layout did (D-088).
+    pub const ActorSlot = struct { entity: EntityId, x: i32, y: i32 };
+    pub const MAX_ACTOR_SLOTS: usize = 64;
 
-    /// Every person in the shown room, where it is drawn. People within a few pixels of each
-    /// other fan out side by side, so each circle is visible and clickable on its own; drawing,
-    /// clicks, and hover all use these places, so a click lands where the circle is drawn.
-    /// Ordered by entity id, so the fan keeps its order from frame to frame.
-    pub fn actor_slots(self: *const WasmRuntime, proj: Projection, out: *[MAX_ACTOR_SLOTS]ActorSlot) usize {
-        var n: usize = 0;
-        var it = self.spatial.agents.iterator();
-        while (it.next()) |entry| {
-            if (n == out.len) break;
-            const agent = entry.value_ptr;
-            if (self.agent_room(agent.entity)) |room| if (!proj.shows(room)) continue;
-            const pt = proj.point(agent.pos.x, agent.pos.y);
-            out[n] = .{ .entity = agent.entity, .x = pt.x, .y = pt.y, .row = 0 };
-            n += 1;
+    /// Every person in the desktop frame, where the desktop draws them.
+    pub fn actor_slots(self: *WasmRuntime, proj: Projection, out: *[MAX_ACTOR_SLOTS]ActorSlot) usize {
+        _ = proj;
+        const frame = self.capture();
+        const people = frame.entities[0..frame.entity_count];
+        for (people, 0..) |e, i| {
+            const pt = renderer.get_entity_screen_pos(i, people, CANVAS_WIDTH, CANVAS_HEIGHT);
+            out[i] = .{ .entity = e.entity, .x = pt.x, .y = pt.y };
         }
-        std.mem.sort(ActorSlot, out[0..n], {}, struct {
-            fn less(_: void, a: ActorSlot, b: ActorSlot) bool {
-                return a.entity.to_int() < b.entity.to_int();
-            }
-        }.less);
-        var base: [MAX_ACTOR_SLOTS]CanvasPoint = undefined;
-        for (out[0..n], 0..) |slot, i| base[i] = .{ .x = slot.x, .y = slot.y };
-        for (0..n) |i| {
-            var count: i32 = 0;
-            var index: i32 = 0;
-            for (0..n) |j| {
-                if (@abs(base[i].x - base[j].x) > 6 or @abs(base[i].y - base[j].y) > 6) continue;
-                count += 1;
-                if (j < i) index += 1;
-            }
-            out[i].x = base[i].x + @divTrunc((2 * index - (count - 1)) * ACTOR_SPACING, 2);
-            out[i].row = index;
-        }
-        return n;
+        return people.len;
     }
 
-    /// The person drawn under a canvas point, if any.
-    pub fn actor_at(self: *const WasmRuntime, proj: Projection, x: i32, y: i32) ?ActorSlot {
-        var slots: [MAX_ACTOR_SLOTS]ActorSlot = undefined;
-        const n = self.actor_slots(proj, &slots);
-        var best: ?ActorSlot = null;
-        var best_d: i32 = ACTOR_REACH * ACTOR_REACH + 1;
-        for (slots[0..n]) |slot| {
-            const d = (x - slot.x) * (x - slot.x) + (y - slot.y) * (y - slot.y);
-            if (d < best_d) {
-                best_d = d;
-                best = slot;
-            }
-        }
-        return best;
+    /// The person drawn under a canvas point, by the desktop's hit test.
+    pub fn actor_at(self: *WasmRuntime, proj: Projection, x: i32, y: i32) ?ActorSlot {
+        _ = proj;
+        const frame = self.capture();
+        const people = frame.entities[0..frame.entity_count];
+        const i = renderer.hit_test_actor(x, y, people, CANVAS_WIDTH, CANVAS_HEIGHT) orelse return null;
+        const pt = renderer.get_entity_screen_pos(i, people, CANVAS_WIDTH, CANVAS_HEIGHT);
+        return .{ .entity = people[i].entity, .x = pt.x, .y = pt.y };
     }
 
     /// A verb on a person or prop in a script deck fires the script's cue for the player and
@@ -915,13 +772,9 @@ pub const WasmRuntime = struct {
         return .cue_fired;
     }
 
-    /// The item tray (D-094): right of the verb bar, one box per item the player carries
-    /// (`Carries` or `InInventory`, as the desktop frame reads them, D-007).
-    pub const TRAY_X: i32 = 310;
-    const TRAY_RIGHT: i32 = CANVAS_WIDTH - 12;
-    const TRAY_Y: i32 = 326;
-    const TRAY_H: i32 = 24;
-    const MAX_TRAY: usize = 8;
+    /// The item tray (D-094): one box per item the player carries (`Carries` or `InInventory`,
+    /// D-007), laid out and drawn by the desktop window (D-097).
+    pub const MAX_TRAY: usize = 8;
     pub const TraySlot = struct { item: EntityId, x: i32, y: i32, w: i32, h: i32, label_buf: [32]u8 = undefined, label_len: usize = 0 };
 
     /// What the player carries, at most eight, in the order the items were first named, so
@@ -947,46 +800,25 @@ pub const WasmRuntime = struct {
         return n;
     }
 
-    /// The tray's boxes, fitted between `TRAY_X` and the right edge. One row when every full
-    /// name fits; otherwise two half-height rows, and a name longer than its box is cut (the
-    /// full name shows when the pointer is over it), so every carried item stays clickable.
+    /// The tray's boxes where the desktop draws them (`renderer.inventory_layout`).
     pub fn tray_slots(self: *WasmRuntime, out: *[MAX_TRAY]TraySlot) []TraySlot {
-        var items: [MAX_TRAY]EntityId = undefined;
-        const n = self.carried(&items);
-        if (n == 0) return out[0..0];
-        const gap: i32 = 4;
-        const pad: i32 = 8;
-        var names: [MAX_TRAY][48]u8 = undefined;
-        var full: [MAX_TRAY][]const u8 = undefined;
-        var total: i32 = -gap;
-        for (items[0..n], 0..) |item, i| {
-            full[i] = dialogue_panel.display_name(self.world.get_entity_name(item) orelse "?", &names[i]);
-            total += font.text_width(full[i], 1) + pad + gap;
-        }
-        const rows: usize = if (total <= TRAY_RIGHT - TRAY_X) 1 else 2;
-        const per_row = (n + rows - 1) / rows;
-        const h: i32 = if (rows == 1) TRAY_H else @divTrunc(TRAY_H - 2, 2);
-        const share = @divTrunc(TRAY_RIGHT - TRAY_X + gap, @as(i32, @intCast(per_row))) - gap;
-        const max_chars: usize = @intCast(@max(2, @divTrunc(share - pad, font.char_width(1))));
-        for (items[0..n], 0..) |item, i| {
-            const row: i32 = @intCast(i / per_row);
-            const col: i32 = @intCast(i % per_row);
-            const len = @min(@min(full[i].len, max_chars), 32);
-            const w = if (rows == 1) font.text_width(full[i][0..len], 1) + pad else share;
-            const x = if (rows == 1 and i > 0) out[i - 1].x + out[i - 1].w + gap else TRAY_X + col * (share + gap);
-            out[i] = .{ .item = item, .x = x, .y = TRAY_Y + row * (h + 2), .w = w, .h = h };
-            @memcpy(out[i].label_buf[0..len], full[i][0..len]);
+        const frame = self.capture();
+        var boxes: [MAX_TRAY]renderer.InventorySlot = undefined;
+        const laid = renderer.inventory_layout(CANVAS_WIDTH, frame.inventory[0..frame.inventory_count], &boxes);
+        for (laid, 0..) |box, i| {
+            // The tray's clickable band (`renderer.hit_test_inventory_item`).
+            out[i] = .{ .item = frame.inventory[i].entity, .x = box.x, .y = CANVAS_HEIGHT - 78, .w = box.w, .h = 26 };
+            const len = @min(box.label.len, out[i].label_buf.len);
+            @memcpy(out[i].label_buf[0..len], box.label[0..len]);
             out[i].label_len = len;
         }
-        return out[0..n];
+        return out[0..laid.len];
     }
 
     fn tray_hit(self: *WasmRuntime, x: i32, y: i32) ?EntityId {
-        var slots: [MAX_TRAY]TraySlot = undefined;
-        for (self.tray_slots(&slots)) |slot| {
-            if (x >= slot.x and x < slot.x + slot.w and y >= slot.y and y < slot.y + slot.h) return slot.item;
-        }
-        return null;
+        const frame = self.capture();
+        const i = renderer.hit_test_inventory_item(x, y, CANVAS_WIDTH, CANVAS_HEIGHT, frame.inventory[0..frame.inventory_count]) orelse return null;
+        return frame.inventory[i].entity;
     }
 
     /// Says what the player just did, such as "Hero uses Rope on Mooring Post.", before the
@@ -1012,13 +844,6 @@ pub const WasmRuntime = struct {
         else
             std.fmt.bufPrint(&buf, "{s} {s} {s}.", .{ who, doing, on });
         self.set_banner(line catch return);
-    }
-
-    /// Text drawn at `x` (centred on it when `centred`) moved inside the stage's edges.
-    fn clamp_label(text: []const u8, x: i32, centred: bool) i32 {
-        const w = font.text_width(text, 1);
-        const left = if (centred) x - @divTrunc(w, 2) else x;
-        return std.math.clamp(left, 14, CANVAS_WIDTH - 14 - w);
     }
 
     /// A click on a carried item (D-094). LOOK fires the look cue on it, or reads its name.
@@ -1167,48 +992,9 @@ pub const WasmRuntime = struct {
         if (host_mod.speech_this_tick(self.active_world(), &self.vm, &buf)) |line| self.set_banner(line);
     }
 
-    /// Rows the banner wraps to, at most two, and the banner box's top edge.
-    const BANNER_BOTTOM: i32 = 318;
-    fn banner_rows(self: *const WasmRuntime, out: *[2][]const u8) usize {
-        if (self.banner_len == 0) return 0;
-        const cols: usize = @intCast(@divTrunc(CANVAS_WIDTH - 24 - 12, font.char_width(1)));
-        return dialogue_panel.wrap(self.get_banner(), cols, out);
-    }
-    fn banner_top(self: *const WasmRuntime) i32 {
-        var rows: [2][]const u8 = undefined;
-        const n = self.banner_rows(&rows);
-        if (n == 0) return BANNER_BOTTOM;
-        return BANNER_BOTTOM - 8 - @as(i32, @intCast(n)) * 10;
-    }
-
-    /// The open dialogue's panel: above the banner, centred and as wide as its rows, growing
-    /// upward (D-077, D-084).
-    const BrowserPanel = struct { x: i32, y: i32, w: i32, h: i32, layout: dialogue_panel.Layout };
-
     /// Queues a click-through message (D-080). `speaker` is an entity name or empty.
     pub fn queue_message(self: *WasmRuntime, speaker: []const u8, text: []const u8) void {
         self.messages.push(speaker, text);
-    }
-
-    /// The waiting message's panel, in the dialogue panel's place (D-080).
-    fn message_panel_now(self: *const WasmRuntime) ?BrowserPanel {
-        const beat = self.messages.front() orelse return null;
-        const metrics = dialogue_panel.Metrics.browser;
-        const l = dialogue_panel.layout_message(metrics, beat.speaker(), beat.text(), beats_mod.HINT);
-        const bottom = self.banner_top() - 2;
-        const y = @max(44, bottom - l.height);
-        return .{ .x = @divTrunc(CANVAS_WIDTH - l.width, 2), .y = y, .w = l.width, .h = bottom - y, .layout = l };
-    }
-
-    fn dialogue_panel_now(self: *WasmRuntime) ?BrowserPanel {
-        const open = dialogue_mod.view(self.active_world()) orelse return null;
-        const raw_name = self.active_world().get_entity_name(open.display_speaker) orelse "";
-        const shown = dialogue_panel.display_name(raw_name, &self.panel_name_buf);
-        const metrics = dialogue_panel.Metrics.browser;
-        const l = dialogue_panel.layout(metrics, shown, open.prompt, open.texts[0..open.count]);
-        const bottom = self.banner_top() - 2;
-        const y = @max(44, bottom - l.height);
-        return .{ .x = @divTrunc(CANVAS_WIDTH - l.width, 2), .y = y, .w = l.width, .h = bottom - y, .layout = l };
     }
 
     pub fn record_snapshot(self: *WasmRuntime) void {
@@ -1385,12 +1171,18 @@ pub const WasmRuntime = struct {
             .touch_start, .pointer_down => {
                 self.hovered_x = ev.x;
                 self.hovered_y = ev.y;
+                // Every place below is where the desktop window draws it (D-097).
+                const frame = self.capture();
+                const w = self.screen(frame);
 
                 // While the inspector is open, the stage belongs to it; the timeline still scrubs.
-                const on_timeline = ev.y >= 22 and ev.y <= 38 and ev.x >= 12 and ev.x <= 628;
+                // The inspector is laid out at half size (`OVERLAY_WIDTH`), so clicks are halved.
+                const tb_x: i32 = 20;
+                const tb_w: i32 = CANVAS_WIDTH - 40;
+                const on_timeline = ev.y >= 50 and ev.y <= 74 and ev.x >= tb_x and ev.x <= tb_x + tb_w;
                 if (self.inspector.open and !on_timeline) {
                     self.inspector.capture(self.active_world());
-                    return if (self.inspector.click(ev.x, ev.y)) .inspector_navigated else .none;
+                    return if (self.inspector.click(@divTrunc(ev.x, 2), @divTrunc(ev.y, 2))) .inspector_navigated else .none;
                 }
 
                 // Two-finger touch tap cycles the active adventure verb
@@ -1399,94 +1191,87 @@ pub const WasmRuntime = struct {
                     return .verb_changed;
                 }
 
-                // 1. Timeline Scrubber Bar hit test (y in 22..38, x in 12..628)
-                if (ev.y >= 22 and ev.y <= 38 and ev.x >= 12 and ev.x <= 628) {
-                    if (self.max_history_tick > 0) {
-                        const rel_x: u64 = @intCast(@max(0, ev.x - 12));
-                        const target_tick = (rel_x * self.max_history_tick) / 616;
-                        self.scrub_to_tick(target_tick);
-                        return .timeline_scrubbed;
-                    }
+                // 1. The timeline bar scrubs.
+                if (on_timeline and self.max_history_tick > 0) {
+                    const rel_x: u64 = @intCast(@max(0, ev.x - tb_x));
+                    self.scrub_to_tick(@min(self.max_history_tick, (rel_x * self.max_history_tick) / @as(u64, @intCast(tb_w))));
+                    return .timeline_scrubbed;
                 }
 
                 // A waiting message takes any other click as "continue" (D-080).
                 if (self.messages.advance()) return .message_dismissed;
 
-                // A click on an offered choice answers it (D-077).
-                if (self.dialogue_panel_now()) |panel| {
-                    if (ev.x >= panel.x and ev.x < panel.x + panel.w and ev.y >= panel.y and ev.y < panel.y + panel.h) {
-                        if (panel.layout.hit(ev.x - panel.x, ev.y - panel.y, panel.w)) |index| {
-                            try self.answer(index);
-                            return .dialogue_answered;
+                // A click on an offered choice answers it (D-077); elsewhere on the panel does
+                // nothing.
+                if (w.active_balloon) |*b| {
+                    const panel = w.dialogue_panel_for(b);
+                    if (renderer.hit_test_dialogue_panel(ev.x, ev.y, b, &panel)) |index| {
+                        try self.answer(index);
+                        return .dialogue_answered;
+                    }
+                    if (panel.rect.contains(ev.x, ev.y)) return .none;
+                }
+
+                // The distaff's note buttons (D-071) take clicks before the world below them.
+                if (frame.distaff.enabled) {
+                    const dpanel = renderer.get_distaff_panel_rect(CANVAS_WIDTH, CANVAS_HEIGHT);
+                    if (dpanel.contains(ev.x, ev.y)) {
+                        if (renderer.hit_test_distaff_note(ev.x, ev.y, CANVAS_WIDTH, CANVAS_HEIGHT, frame.distaff.reach)) |deg| {
+                            return try self.play_note("CDEFGAB"[deg]);
                         }
                         return .none;
                     }
                 }
 
-                // 2. Bottom 5-Verb Bar hit test (y >= 324)
-                if (ev.y >= 324 and ev.y <= 354) {
-                    var vi: u8 = 0;
-                    while (vi < 5) : (vi += 1) {
-                        const bx: i32 = 12 + @as(i32, vi) * 58;
-                        if (ev.x >= bx and ev.x <= bx + 52) {
-                            self.active_verb = @enumFromInt(vi);
-                            self.selected_item = .none;
-                            return .verb_changed;
-                        }
-                    }
-                    if (self.tray_hit(ev.x, ev.y)) |item| return try self.click_item(item);
+                // 2. The verb bar, then the item tray.
+                if (renderer.hit_test_verb_button(ev.x, ev.y, CANVAS_HEIGHT)) |verb| {
+                    self.active_verb = @enumFromInt(@intFromEnum(verb));
+                    self.selected_item = .none;
+                    return .verb_changed;
                 }
+                if (self.tray_hit(ev.x, ev.y)) |item| return try self.click_item(item);
 
-                const proj = self.projection();
+                const marks = frame.waypoints[0..frame.waypoint_count];
 
-                // 3. When active_verb is WALK, prioritize Waypoint navigation first
+                // 3. With WALK, marks come first.
                 if (self.active_verb == .walk) {
-                    for (self.spatial.graph.waypoints.items) |wp| {
-                        if (!proj.shows(wp.room)) continue;
-                        const pt = proj.point(wp.pos.x, wp.pos.y);
-                        const dx = ev.x - pt.x;
-                        const dy = ev.y - pt.y;
-                        if (dx * dx + dy * dy <= 18 * 18) {
-                            if (self.player_entity != .none) {
-                                self.approach = null;
-                                _ = try self.spatial.walk_to(self.player_entity, wp.id);
-                                // Already standing on an exit mark: a click on it leaves (D-094).
-                                if (!self.spatial.is_moving(self.player_entity) and try self.exit_here()) {
-                                    self.record_snapshot();
-                                    return .walk_issued;
-                                }
-                                var buf: [64]u8 = undefined;
-                                var name_buf: [48]u8 = undefined;
-                                const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
-                                self.set_banner(msg);
+                    if (renderer.hit_test_waypoint(ev.x, ev.y, marks, CANVAS_WIDTH, CANVAS_HEIGHT)) |wp_id| {
+                        if (self.player_entity != .none) {
+                            self.approach = null;
+                            _ = try self.spatial.walk_to(self.player_entity, wp_id);
+                            // Already standing on an exit mark: a click on it leaves (D-094).
+                            if (!self.spatial.is_moving(self.player_entity) and try self.exit_here()) {
+                                self.record_snapshot();
                                 return .walk_issued;
                             }
+                            self.walk_banner(wp_id);
+                            return .walk_issued;
                         }
                     }
                 }
 
-                // 4. Actors hit test, where each person is drawn (D-088)
-                if (self.actor_at(proj, ev.x, ev.y)) |slot| {
+                // 4. People, where the desktop draws them (D-088, D-097).
+                const people = frame.entities[0..frame.entity_count];
+                if (renderer.hit_test_actor(ev.x, ev.y, people, CANVAS_WIDTH, CANVAS_HEIGHT)) |i| {
+                    const who = people[i].entity;
                     // The player can be clicked to use an item in hand on themself (D-094).
-                    const on_self = slot.entity == self.player_entity and self.selected_item != .none and self.active_verb == .use_with;
-                    if (slot.entity != self.player_entity or on_self) {
-                        if (try self.act_on(slot.entity, null)) |tag| return tag;
+                    const on_self = who == self.player_entity and self.selected_item != .none and self.active_verb == .use_with;
+                    if (who != self.player_entity or on_self) {
+                        if (try self.act_on(who, null)) |tag| return tag;
                     }
                     var name_buf: [48]u8 = undefined;
-                    const name = dialogue_panel.display_name(self.world.get_entity_name(slot.entity) orelse "Someone", &name_buf);
+                    const name = dialogue_panel.display_name(self.world.get_entity_name(who) orelse "Someone", &name_buf);
                     var buf: [80]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "[{s}] {s}", .{ self.active_verb.label(), name }) catch name;
                     self.set_banner(msg);
                     return .actor_interacted;
                 }
 
-                // 5. Hotspots hit test
-                for (self.spatial.hotspots.items) |hs| {
-                    if (!proj.shows(hs.room)) continue;
-                    const pt = proj.point(hs.pos.x, hs.pos.y);
-                    const dx = ev.x - pt.x;
-                    const dy = ev.y - pt.y;
-                    if (dx * dx + dy * dy <= 18 * 18) {
+                // 5. Props.
+                if (renderer.hit_test_hotspot(ev.x, ev.y, frame.hotspots[0..frame.hotspot_count], CANVAS_WIDTH, CANVAS_HEIGHT)) |i| {
+                    const target = frame.hotspots[i].entity;
+                    for (self.spatial.hotspots.items) |hs| {
+                        if (hs.entity != target) continue;
                         if (try self.act_on(hs.entity, hs.examine_text)) |tag| return tag;
                         // A prop with no description of its own reads as its name, in words.
                         var ex_buf: [48]u8 = undefined;
@@ -1495,21 +1280,12 @@ pub const WasmRuntime = struct {
                     }
                 }
 
-                // 6. Fallback Waypoints hit test (walk_to motor intent)
-                for (self.spatial.graph.waypoints.items) |wp| {
-                    if (!proj.shows(wp.room)) continue;
-                    const pt = proj.point(wp.pos.x, wp.pos.y);
-                    const dx = ev.x - pt.x;
-                    const dy = ev.y - pt.y;
-                    if (dx * dx + dy * dy <= 18 * 18) {
-                        if (self.player_entity != .none) {
-                            _ = try self.spatial.walk_to(self.player_entity, wp.id);
-                            var buf: [64]u8 = undefined;
-                            var name_buf: [48]u8 = undefined;
-                                const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
-                            self.set_banner(msg);
-                            return .walk_issued;
-                        }
+                // 6. Marks with any other verb: a walk.
+                if (renderer.hit_test_waypoint(ev.x, ev.y, marks, CANVAS_WIDTH, CANVAS_HEIGHT)) |wp_id| {
+                    if (self.player_entity != .none) {
+                        _ = try self.spatial.walk_to(self.player_entity, wp_id);
+                        self.walk_banner(wp_id);
+                        return .walk_issued;
                     }
                 }
                 return .none;
@@ -1575,209 +1351,137 @@ pub const WasmRuntime = struct {
         }
     }
 
-    /// Renders the current simulation frame into the 640x360 RGBA8888 `WasmCanvas` framebuffer (P19-01).
-    fn draw_dialogue_panel(self: *WasmRuntime, panel: *const BrowserPanel) void {
-        const parchment = RgbaColor{ .r = 254, .g = 243, .b = 199 };
-        const ink = RgbaColor{ .r = 28, .g = 25, .b = 23 };
-        const accent = RgbaColor{ .r = 180, .g = 83, .b = 9 };
-        const option = RgbaColor{ .r = 120, .g = 53, .b = 15 };
-        self.canvas.fill_rect(panel.x, panel.y, panel.w, panel.h, parchment);
-        self.canvas.draw_rect_outline(panel.x, panel.y, panel.w, panel.h, accent);
-        for (0..panel.layout.choice_count) |i| {
-            const top = panel.y + panel.layout.choice_top[i];
-            const height = panel.layout.choice_bottom[i] - panel.layout.choice_top[i];
-            const hovered = self.hovered_x >= panel.x and self.hovered_x < panel.x + panel.w and
-                self.hovered_y >= top and self.hovered_y < top + height;
-            self.canvas.fill_rect(panel.x + 4, top, panel.w - 8, height, if (hovered) RgbaColor.gold else RgbaColor{ .r = 253, .g = 230, .b = 138 });
-        }
-        for (panel.layout.slice()) |row| {
-            const x = panel.x + row.x;
-            const y = panel.y + row.y;
-            switch (row.kind) {
-                .speaker => self.canvas.draw_text(row.text, x, y, 1, accent),
-                .hint => self.canvas.draw_text(row.text, x, y, 1, option),
-                .prompt => self.canvas.draw_text(row.text, x, y, 1, ink),
-                .choice => {
-                    if (row.numbered) {
-                        var num_buf: [8]u8 = undefined;
-                        const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{@as(usize, row.choice) + 1}) catch "[?]";
-                        self.canvas.draw_text(num, x - panel.layout.indent, y, 1, option);
-                    }
-                    self.canvas.draw_text(row.text, x, y, 1, option);
-                },
-            }
-        }
+    /// "Walking to <mark>...", and the mark's ring as the walk's target (D-093).
+    fn walk_banner(self: *WasmRuntime, wp_id: WaypointId) void {
+        self.window.target_wp = wp_id;
+        const wp = self.spatial.graph.get_waypoint(wp_id) orelse return;
+        var buf: [64]u8 = undefined;
+        var name_buf: [48]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
+        self.set_banner(msg);
     }
 
-    pub fn render_frame(self: *WasmRuntime) void {
-        // 1. Background theme per vertical slice
-        const deck: ?Deck = if (self.decks.len > 0) self.decks[self.deck_index] else null;
-        const bg_col = if (deck) |d| d.background else NO_DECK_BACKGROUND;
-        self.canvas.clear(bg_col);
+    /// The desktop frame for the current state (D-097), captured as the desktop hosts capture
+    /// it, with the deck's status hook, the browser's timeline, and the tray in the browser's
+    /// order (D-094). The pointer is valid until the next capture.
+    pub fn capture(self: *WasmRuntime) *const display_mod.RenderFrame {
+        const b = self.frame_bridge;
+        b.set_status_hook(if (self.decks.len > 0) self.decks[self.deck_index].status_hook else null);
+        b.active_player_character = if (self.player_entity != .none) self.player_entity else null;
+        b.distaff = if (self.has_drafts()) &self.distaff else null;
+        self.bind();
+        b.capture_frame(self.active_world(), &self.spatial, &self.vm);
+        b.back_buffer.tick = self.clock();
+        b.back_buffer.max_history_tick = self.max_history_tick;
+        var items: [MAX_TRAY]EntityId = undefined;
+        const n = self.carried(&items);
+        for (items[0..n], 0..) |item, i| {
+            var slot = &b.back_buffer.inventory[i];
+            slot.entity = item;
+            const name = self.active_world().get_entity_name(item) orelse "?";
+            const len = @min(name.len, slot.name.len);
+            @memcpy(slot.name[0..len], name[0..len]);
+            slot.name_len = @intCast(len);
+        }
+        b.back_buffer.inventory_count = n;
+        b.swap();
+        return b.get_frame();
+    }
 
-        // Stage Arena Box
-        self.canvas.fill_rect(12, 44, CANVAS_WIDTH - 24, 248, RgbaColor{ .r = 36, .g = 44, .b = 56 });
-        self.canvas.draw_rect_outline(12, 44, CANVAS_WIDTH - 24, 248, RgbaColor.hud_border);
-        self.canvas.draw_text(if (deck) |d| d.title else "NO DECK", 22, 52, 1, RgbaColor.gold);
-
-        const proj = self.projection();
-
-        // 2. Spatial Edges
-        for (self.spatial.graph.edges.items) |e| {
-            const wp_a = self.spatial.graph.get_waypoint(e.from);
-            const wp_b = self.spatial.graph.get_waypoint(e.to);
-            if (wp_a != null and wp_b != null and proj.shows(wp_a.?.room) and proj.shows(wp_b.?.room)) {
-                const p1 = proj.point(wp_a.?.pos.x, wp_a.?.pos.y);
-                const p2 = proj.point(wp_b.?.pos.x, wp_b.?.pos.y);
-                self.canvas.draw_line(p1.x, p1.y, p2.x, p2.y, RgbaColor.slate);
+    /// The desktop window that draws the browser's frame, with the browser's state put into it:
+    /// the verb, the item in hand, waiting messages, the open dialogue, what is under the pointer,
+    /// and the banner. The window is re-pointed at the runtime first, which moves after `init`.
+    pub fn screen(self: *WasmRuntime, frame: *const display_mod.RenderFrame) *renderer.DisplayWindow {
+        const w = self.window;
+        w.audio_bridge = &self.audio;
+        w.canvas = renderer.Canvas.init(self.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT);
+        w.theme = if (self.decks.len > 0) self.decks[self.deck_index].theme else null;
+        w.backdrop_color = if (self.decks.len > 0) self.decks[self.deck_index].background else NO_DECK_BACKGROUND;
+        w.footer_text = BROWSER_FOOTER;
+        w.active_verb = @enumFromInt(@intFromEnum(self.active_verb));
+        w.selected_inventory_item = null;
+        if (self.selected_item != .none) {
+            for (frame.inventory[0..frame.inventory_count], 0..) |item, i| {
+                if (item.entity == self.selected_item) w.selected_inventory_item = i;
             }
         }
+        w.messages = self.messages;
+        w.sync_dialogue_balloon(frame);
 
-        // 3. Hotspots
-        for (self.spatial.hotspots.items) |hs| {
-            if (!proj.shows(hs.room)) continue;
-            const pt = proj.point(hs.pos.x, hs.pos.y);
-            self.canvas.fill_rect(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.amber);
-            self.canvas.draw_rect_outline(pt.x - 10, pt.y - 10, 20, 20, RgbaColor.white);
-            var hs_buf: [48]u8 = undefined;
-            const hs_label = dialogue_panel.display_name(hs.name, &hs_buf);
-            self.canvas.draw_text(hs_label, clamp_label(hs_label, pt.x - 18, false), pt.y - 20, 1, RgbaColor.gold);
+        const x = self.hovered_x;
+        const y = self.hovered_y;
+        w.hovered_party_member = null;
+        if (self.inspector.open) {
+            w.hovered_choice = null;
+            w.hovered_wp = null;
+            w.hovered_hotspot = null;
+            w.hovered_actor = null;
+        } else {
+            w.hovered_choice = null;
+            if (!w.messages.pending()) if (w.active_balloon) |*b| {
+                const panel = w.dialogue_panel_for(b);
+                w.hovered_choice = renderer.hit_test_dialogue_panel(x, y, b, &panel);
+            };
+            w.hovered_wp = renderer.hit_test_waypoint(x, y, frame.waypoints[0..frame.waypoint_count], CANVAS_WIDTH, CANVAS_HEIGHT);
+            w.hovered_hotspot = renderer.hit_test_hotspot(x, y, frame.hotspots[0..frame.hotspot_count], CANVAS_WIDTH, CANVAS_HEIGHT);
+            w.hovered_actor = renderer.hit_test_actor(x, y, frame.entities[0..frame.entity_count], CANVAS_WIDTH, CANVAS_HEIGHT);
         }
 
-        // 4. Waypoints
-        for (self.spatial.graph.waypoints.items) |wp| {
-            if (!proj.shows(wp.room)) continue;
-            const pt = proj.point(wp.pos.x, wp.pos.y);
-            self.canvas.fill_circle(pt.x, pt.y, 9, RgbaColor{ .r = 71, .g = 85, .b = 105 });
-            self.canvas.draw_circle_outline(pt.x, pt.y, 9, RgbaColor.white);
-            var wp_buf: [48]u8 = undefined;
-            const wp_label = dialogue_panel.display_name(wp.name, &wp_buf);
-            self.canvas.draw_text(wp_label, clamp_label(wp_label, pt.x - 18, false), pt.y + 12, 1, RgbaColor.slate);
-        }
+        // The browser's banner stays until the next one replaces it.
+        const banner = self.get_banner();
+        const len = @min(banner.len, w.cue_banner_text.len);
+        @memcpy(w.cue_banner_text[0..len], banner[0..len]);
+        w.cue_banner_len = len;
+        w.cue_banner_until_ms = std.math.maxInt(i64);
+        return w;
+    }
 
-        // 5. Actors, fanned out where they share a spot (D-088). The person under the pointer
-        // gets a gold ring and its name reads as the action a click would take, such as
-        // "TALK Dory Quill", so it is clear who can be clicked and what will happen.
-        var slots: [MAX_ACTOR_SLOTS]ActorSlot = undefined;
-        const slot_count = self.actor_slots(proj, &slots);
-        const hovered: ?ActorSlot = if (self.inspector.open) null else self.actor_at(proj, self.hovered_x, self.hovered_y);
-        for (slots[0..slot_count]) |slot| {
-            const is_player = slot.entity == self.player_entity;
-            const holding = self.selected_item != .none and self.active_verb == .use_with;
-            const is_hovered = hovered != null and hovered.?.entity == slot.entity and (!is_player or holding);
-            const col = if (is_player) RgbaColor.sky_blue else RgbaColor.emerald;
-            if (is_hovered) self.canvas.fill_circle(slot.x, slot.y, 13, RgbaColor.gold);
-            self.canvas.fill_circle(slot.x, slot.y, 10, col);
-            self.canvas.draw_circle_outline(slot.x, slot.y, 10, RgbaColor.white);
-
-            var name_buf: [48]u8 = undefined;
-            const name = dialogue_panel.display_name(self.world.get_entity_name(slot.entity) orelse "Someone", &name_buf);
-            var label_buf: [96]u8 = undefined;
-            var item_buf: [48]u8 = undefined;
-            const label = if (is_hovered and holding)
-                std.fmt.bufPrint(&label_buf, "USE {s} ON {s}", .{ dialogue_panel.display_name(self.world.get_entity_name(self.selected_item) orelse "?", &item_buf), name }) catch name
-            else if (is_hovered)
-                std.fmt.bufPrint(&label_buf, "{s} {s}", .{ self.active_verb.label(), name }) catch name
-            else
-                name;
-            const label_x = clamp_label(label, slot.x, true);
-            const label_y = slot.y - 22 - slot.row * 9;
-            self.canvas.draw_text(label, label_x, label_y, 1, if (is_hovered) RgbaColor.gold else RgbaColor.white);
-        }
-
-        // The distaff in decks with drafts (D-071): the notes played so far, the reach, and the
-        // weave target.
-        if (self.has_drafts()) {
-            self.distaff.set_reach_from(self.active_world(), self.player_entity, "DistaffReach", 7);
-            var line_buf: [96]u8 = undefined;
-            var notes_buf: [8]u8 = "_ _ _ _ ".*;
-            for (self.distaff.played[0..self.distaff.len], 0..) |n, i| notes_buf[i * 2] = "CDEFGAB"[@intFromEnum(n)];
-            const target_name = if (self.distaff.target == .none) "nothing yet" else (self.world.get_entity_name(self.distaff.target) orelse "?");
-            const line = std.fmt.bufPrint(&line_buf, "DISTAFF {s}| REACH {s} | ON {s}", .{ notes_buf[0..], "CDEFGAB"[0..self.distaff.reach], target_name }) catch "DISTAFF";
-            self.canvas.draw_text(line, 22, 276, 1, RgbaColor.sky_blue);
-        }
-
-        // The inspector draws over the stage; the HUD, timeline, and verb bar stay visible.
+    /// Draws the desktop window's frame into the framebuffer (D-097), and the state inspector
+    /// over its stage while it is open (D-070).
+    pub fn render_frame(self: *WasmRuntime) void {
+        if (self.has_drafts()) self.distaff.set_reach_from(self.active_world(), self.player_entity, "DistaffReach", 7);
+        const frame = self.capture();
+        const w = self.screen(frame);
+        w.render_frame(frame, self.is_paused);
         if (self.inspector.open) {
             self.inspector.capture(self.active_world());
-            self.inspector.draw(&self.canvas, self.active_world());
-        }
-
-        // 6. Top Status & Timeline Scrubber Bar
-        self.canvas.fill_rect(0, 0, CANVAS_WIDTH, 20, RgbaColor.hud_bg);
-        var hdr_buf: [80]u8 = undefined;
-        const hdr = std.fmt.bufPrint(&hdr_buf, "BeSpoke Wasm32 | Tick: {d:02} | Facts: {d} | {s}", .{
-            self.clock(),
-            self.active_world().fact_count(),
-            if (self.is_paused) "PAUSED" else "RUNNING",
-        }) catch "BeSpoke Wasm32";
-        self.canvas.draw_text(hdr, 12, 6, 1, RgbaColor.emerald);
-
-        // Timeline Scrubber (y = 22..38)
-        self.canvas.fill_rect(12, 22, CANVAS_WIDTH - 24, 16, RgbaColor.hud_bg);
-        self.canvas.draw_rect_outline(12, 22, CANVAS_WIDTH - 24, 16, RgbaColor.hud_border);
-        if (self.max_history_tick > 0) {
-            const fill_w: i32 = @intCast((self.clock() * 612) / self.max_history_tick);
-            self.canvas.fill_rect(14, 24, fill_w, 12, RgbaColor.sky_blue);
-        }
-        self.canvas.draw_text("TIMELINE SCRUBBER (Click to Rewind/Scrub)", 20, 26, 1, RgbaColor.white);
-
-        // 7. Dialogue panel, banner, and bottom 5-verb bar. The panel draws over the stage
-        // above the banner; the inspector covers the stage, so the panel waits until it closes.
-        if (!self.inspector.open) {
-            if (self.message_panel_now()) |panel| {
-                self.draw_dialogue_panel(&panel);
-            } else if (self.dialogue_panel_now()) |panel| self.draw_dialogue_panel(&panel);
-        }
-        var banner_text: [2][]const u8 = undefined;
-        const banner_count = self.banner_rows(&banner_text);
-        if (banner_count > 0) {
-            const top = self.banner_top();
-            self.canvas.fill_rect(12, top, CANVAS_WIDTH - 24, BANNER_BOTTOM - top, RgbaColor.hud_bg);
-            self.canvas.draw_rect_outline(12, top, CANVAS_WIDTH - 24, BANNER_BOTTOM - top, RgbaColor.gold);
-            for (banner_text[0..banner_count], 0..) |row, i| self.canvas.draw_text(row, 18, top + 5 + @as(i32, @intCast(i)) * 10, 1, RgbaColor.gold);
-        }
-
-        self.canvas.fill_rect(0, 322, CANVAS_WIDTH, 38, RgbaColor.hud_bg);
-        var vi: u8 = 0;
-        while (vi < 5) : (vi += 1) {
-            const v: WasmVerb = @enumFromInt(vi);
-            const bx: i32 = 12 + @as(i32, vi) * 58;
-            const is_sel = (self.active_verb == v);
-            self.canvas.fill_rect(bx, 326, 52, 24, if (is_sel) RgbaColor.gold else RgbaColor{ .r = 30, .g = 41, .b = 59 });
-            self.canvas.draw_rect_outline(bx, 326, 52, 24, RgbaColor.white);
-            self.canvas.draw_text(v.label(), bx + 12, 334, 1, if (is_sel) RgbaColor.black else RgbaColor.white);
-        }
-        // The item tray when the player carries anything, else the key hints (D-094). An item in
-        // hand that is no longer carried (given away, or rewound out of the hand) drops here.
-        var tray: [MAX_TRAY]TraySlot = undefined;
-        const slots_now = self.tray_slots(&tray);
-        var still_held = false;
-        for (slots_now) |slot| {
-            if (slot.item == self.selected_item) still_held = true;
-        }
-        if (!still_held) self.selected_item = .none;
-        if (slots_now.len == 0) {
-            self.canvas.draw_text("[S]:Solve [I]:Inspect [Spc]:Pause [R]:Rewind", TRAY_X, 334, 1, RgbaColor.slate);
-        } else for (slots_now) |*slot| {
-            const held = slot.item == self.selected_item;
-            const over = self.hovered_x >= slot.x and self.hovered_x < slot.x + slot.w and
-                self.hovered_y >= slot.y and self.hovered_y < slot.y + slot.h;
-            self.canvas.fill_rect(slot.x, slot.y, slot.w, slot.h, if (held) RgbaColor.gold else RgbaColor{ .r = 45, .g = 35, .b = 20 });
-            self.canvas.draw_rect_outline(slot.x, slot.y, slot.w, slot.h, if (over) RgbaColor.white else RgbaColor.gold);
-            self.canvas.draw_text(slot.label_buf[0..slot.label_len], slot.x + 4, slot.y + @divTrunc(slot.h - 7, 2), 1, if (held) RgbaColor.black else RgbaColor.gold);
-        }
-        // The item under the pointer, named in full above the tray.
-        for (slots_now) |*slot| {
-            if (self.hovered_x < slot.x or self.hovered_x >= slot.x + slot.w or self.hovered_y < slot.y or self.hovered_y >= slot.y + slot.h) continue;
-            var name_buf: [48]u8 = undefined;
-            const name = dialogue_panel.display_name(self.world.get_entity_name(slot.item) orelse "?", &name_buf);
-            const lx = clamp_label(name, slot.x + @divTrunc(slot.w, 2), true);
-            self.canvas.fill_rect(lx - 3, 312, font.text_width(name, 1) + 6, 11, RgbaColor.hud_bg);
-            self.canvas.draw_rect_outline(lx - 3, 312, font.text_width(name, 1) + 6, 11, RgbaColor.gold);
-            self.canvas.draw_text(name, lx, 314, 1, RgbaColor.gold);
+            self.inspector.draw(&self.overlay, self.active_world());
+            self.blit_overlay(inspector_mod.STAGE_Y, inspector_mod.STAGE_H);
         }
     }
+
+    /// A pixel of the last frame drawn.
+    pub fn pixel(self: *const WasmRuntime, x: i32, y: i32) RgbaColor {
+        const v = renderer.Canvas.init(self.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT);
+        return v.get_pixel(x, y);
+    }
+
+    /// The open dialogue's panel where the desktop draws it, or null.
+    pub fn dialogue_panel_now(self: *WasmRuntime) ?renderer.DialoguePanel {
+        const w = self.screen(self.capture());
+        const b = &(w.active_balloon orelse return null);
+        return w.dialogue_panel_for(b);
+    }
+
+    /// Copies overlay rows `top..top + rows` onto the frame at twice the size.
+    fn blit_overlay(self: *WasmRuntime, top: i32, rows: i32) void {
+        const ow: usize = @intCast(OVERLAY_WIDTH);
+        const fw: usize = @intCast(CANVAS_WIDTH);
+        var oy: usize = @intCast(top);
+        const end: usize = @intCast(top + rows);
+        while (oy < end) : (oy += 1) {
+            const src = self.overlay.pixels[oy * ow * 4 ..][0 .. ow * 4];
+            for (0..2) |dy| {
+                const dst = self.framebuffer[(oy * 2 + dy) * fw * 4 ..][0 .. fw * 4];
+                for (0..ow) |ox| {
+                    const px = src[ox * 4 ..][0..4];
+                    dst[ox * 8 ..][0..4].* = px.*;
+                    dst[ox * 8 + 4 ..][0..4].* = px.*;
+                }
+            }
+        }
+    }
+
 };
 
 // =============================================================================
@@ -1799,6 +1503,8 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         // D-067).
         var global_runtime: WasmRuntime = undefined;
         var runtime_ready: bool = false;
+        // The 1280x720 frame (D-097), uninitialised like the runtime so it costs no download.
+        var framebuffer: [FRAMEBUFFER_BYTES]u8 = undefined;
 
         fn runtime() ?*WasmRuntime {
             return if (runtime_ready) &global_runtime else null;
@@ -1807,7 +1513,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         fn wasm_init(scenario_id: u8) callconv(.C) void {
             if (runtime_ready) global_runtime.deinit();
             runtime_ready = false;
-            global_runtime = WasmRuntime.init(global_heap.allocator(), decks, scenario_id) catch return;
+            global_runtime = WasmRuntime.init_with_framebuffer(global_heap.allocator(), decks, scenario_id, &framebuffer) catch return;
             runtime_ready = true;
         }
 
@@ -1831,9 +1537,9 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_framebuffer_ptr() callconv(.C) [*]const u8 {
-            // Before a runtime exists this is the uninitialised global's canvas: valid memory of
-            // the right length, so the page can read it without a check.
-            return &global_runtime.canvas.pixels;
+            // Valid memory of the right length before a runtime exists, so the page can read it
+            // without a check.
+            return &framebuffer;
         }
 
         fn wasm_framebuffer_len() callconv(.C) usize {
@@ -1955,6 +1661,17 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
+        /// Selects verb `index` (WALK 0 to USE 4) and puts away an item in hand, as a click on
+        /// the canvas verb bar does, so a page's own buttons need not know where that bar is.
+        fn wasm_set_verb(index: u8) callconv(.C) void {
+            if (runtime()) |rt| {
+                if (index > 4) return;
+                rt.active_verb = @enumFromInt(index);
+                rt.selected_item = .none;
+                rt.render_frame();
+            }
+        }
+
         fn wasm_get_fact_count() callconv(.C) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.world.fact_count());
@@ -1967,6 +1684,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     @export(Exports.wasm_message_pending, .{ .name = "wasm_message_pending" });
     @export(Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
     @export(Exports.wasm_active_verb, .{ .name = "wasm_active_verb" });
+    @export(Exports.wasm_set_verb, .{ .name = "wasm_set_verb" });
     @export(Exports.wasm_deck_action, .{ .name = "wasm_deck_action" });
     @export(Exports.wasm_audio_render, .{ .name = "wasm_audio_render" });
     @export(Exports.wasm_audio_sample_rate, .{ .name = "wasm_audio_sample_rate" });
@@ -1992,12 +1710,12 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 test "P19-01: WasmCanvas RGBA8888 framebuffer drawing primitives and bitmap font" {
     const testing = std.testing;
     var canvas = WasmCanvas{};
-    canvas.clear(RgbaColor.hud_bg);
+    canvas.clear(RgbaColor.hud_bg_solid);
 
     const p0 = canvas.get_pixel(10, 10);
-    try testing.expectEqual(RgbaColor.hud_bg.r, p0.r);
-    try testing.expectEqual(RgbaColor.hud_bg.g, p0.g);
-    try testing.expectEqual(RgbaColor.hud_bg.b, p0.b);
+    try testing.expectEqual(RgbaColor.hud_bg_solid.r, p0.r);
+    try testing.expectEqual(RgbaColor.hud_bg_solid.g, p0.g);
+    try testing.expectEqual(RgbaColor.hud_bg_solid.b, p0.b);
 
     canvas.fill_rect(20, 20, 40, 30, RgbaColor.gold);
     const p1 = canvas.get_pixel(30, 30);
@@ -2065,7 +1783,7 @@ test "P32-04: the runtime loads, ticks, and switches host decks and runs their r
 
     // The deck's background and title reach the canvas.
     rt.render_frame();
-    const bg = rt.canvas.get_pixel(4, 300);
+    const bg = rt.pixel(4, 300);
     try testing.expectEqual(@as(u8, 60), bg.g);
 
     // Key [2] switches deck; a deck without a catalyst says so; keys past the table do nothing.
@@ -2089,8 +1807,8 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
     rt.* = try WasmRuntime.init(testing.allocator, &TestDecks.decks, 0);
     defer rt.deinit();
 
-    // 1. Click verb button 1 (LOOK) on bottom verb bar (x=75, y=335)
-    const verb_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 75, .y = 335 });
+    // 1. Click verb button 1 (LOOK) on the desktop verb bar (D-097)
+    const verb_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 104, .y = CANVAS_HEIGHT - 68 });
     try testing.expectEqual(BrowserActionTag.verb_changed, verb_res);
     try testing.expectEqual(WasmVerb.look_at, rt.active_verb);
 
@@ -2104,8 +1822,9 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
     try testing.expectEqual(BrowserActionTag.verb_changed, touch_res);
     try testing.expectEqual(WasmVerb.pick_up, rt.active_verb);
 
-    // 4. Click the Well waypoint at world (40, 0) -> canvas (520, 185) issues walk_to motor intent
-    const walk_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 520, .y = 185 });
+    // 4. Click the Well waypoint at world (40, 0), where the desktop draws it: a walk
+    const well = rt.projection().point(40, 0);
+    const walk_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = well.x, .y = well.y });
     try testing.expectEqual(BrowserActionTag.walk_issued, walk_res);
 
     // 5. Keyboard 'n' steps tick, 's' triggers catalyst, and timeline click scrubs back to Tick 0
@@ -2115,7 +1834,7 @@ test "P19-02: Browser event bridge maps mouse, keyboard, and touch events to BeS
     const cat_res = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 's' });
     try testing.expectEqual(BrowserActionTag.catalyst_triggered, cat_res);
 
-    const scrub_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 14, .y = 28 });
+    const scrub_res = try rt.dispatch_event(.{ .kind = .pointer_down, .x = 22, .y = 60 });
     try testing.expectEqual(BrowserActionTag.timeline_scrubbed, scrub_res);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
 }
@@ -2146,11 +1865,10 @@ test "D-088: people sharing a mark fan out, and a click lands on the one drawn t
     var slots: [WasmRuntime.MAX_ACTOR_SLOTS]WasmRuntime.ActorSlot = undefined;
     const n = rt.actor_slots(proj, &slots);
     try testing.expectEqual(@as(usize, 3), n);
-    // All three stand on Steps: each is drawn apart from the others, with its own name row.
+    // All three stand on Steps: each is drawn apart from the others.
     for (slots[0..n], 0..) |a, i| for (slots[0..n], 0..) |b, j| {
         if (i == j) continue;
-        try testing.expect(@abs(a.x - b.x) >= 2 * WasmRuntime.ACTOR_REACH);
-        try testing.expect(a.row != b.row);
+        try testing.expect(a.x != b.x);
     };
     // A click on each drawn circle finds that person, and TALK on the Bosun runs his line.
     for (slots[0..n]) |slot| try testing.expectEqual(slot.entity, rt.actor_at(proj, slot.x + 3, slot.y - 2).?.entity);
@@ -2253,7 +1971,7 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     // The panel names the dialogue's display speaker, as the desktop does; for a choice in the
     // player's own cue handler that is the player.
     try testing.expectEqualStrings("Hero", panel.layout.slice()[0].text);
-    try testing.expect(panel.y + panel.h <= rt.banner_top());
+    try testing.expect(panel.rect.y + panel.rect.h <= CANVAS_HEIGHT - 80);
     try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "[1]") == null);
 
     // A waiting message (D-080) covers the panel: number keys wait, a click on a choice's place
@@ -2261,8 +1979,8 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     rt.queue_message("Pilot", "Choose carefully.");
     rt.queue_message("", "The tide is turning.");
     try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' }));
-    const choice_y = panel.y + panel.layout.choice_top[0] + 2;
-    try testing.expectEqual(BrowserActionTag.message_dismissed, try rt.dispatch_event(.{ .kind = .pointer_down, .x = panel.x + 40, .y = choice_y }));
+    const choice_y = panel.rect.y + panel.layout.choice_top[0] + 2;
+    try testing.expectEqual(BrowserActionTag.message_dismissed, try rt.dispatch_event(.{ .kind = .pointer_down, .x = panel.rect.x + 40, .y = choice_y }));
     try testing.expectEqual(BrowserActionTag.message_dismissed, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
     try testing.expect(!rt.messages.pending());
     try testing.expect(rt.dialogue_panel_now() != null);
@@ -2275,8 +1993,8 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     _ = (try rt.vm.fire_cue(program, "TalksTo", rt.player_entity, rt.world.lookup_entity("Pilot").?, null)).?;
     try rt.step_tick();
     const again = rt.dialogue_panel_now().?;
-    const leave_y = again.y + again.layout.choice_top[1] + 3;
-    try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .pointer_down, .x = again.x + 40, .y = leave_y }));
+    const leave_y = again.rect.y + again.layout.choice_top[1] + 3;
+    try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .pointer_down, .x = again.rect.x + 40, .y = leave_y }));
     try testing.expectEqualStrings("Pilot: \"Goodbye.\"", rt.get_banner());
     try testing.expect(dialogue_mod.view(&rt.world) == null);
 
@@ -2339,7 +2057,8 @@ test "D-070: the inspector pauses, navigates like the desktop's, and draws over 
 
     // A click on a ring node recentres on it, as on desktop.
     const ring0 = rt.inspector.layout().?.ring[0];
-    try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .pointer_down, .x = ring0.x, .y = ring0.y }));
+    // The inspector is drawn at twice its layout size (D-097).
+    try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .pointer_down, .x = ring0.x * 2, .y = ring0.y * 2 }));
     try testing.expectEqual(ring0.entity, rt.inspector.focus.?);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.home });
     try testing.expect(rt.inspector.focus == null);
@@ -2348,9 +2067,9 @@ test "D-070: the inspector pauses, navigates like the desktop's, and draws over 
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'F' });
     try testing.expectEqualStrings("BELIEFS", rt.inspector.filter.label());
 
-    // The overlay replaces the stage: its panel colour fills the stage box.
+    // The overlay replaces the stage: its panel colour fills the stage box, at twice its size.
     rt.render_frame();
-    const px = rt.canvas.get_pixel(300, 100);
+    const px = rt.pixel(600, 200);
     try testing.expectEqual(@as(u8, 9), px.r);
 
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'i' });
@@ -2477,7 +2196,7 @@ test "D-094: the item tray keeps its order, fits the canvas, and uses items alon
     _ = try rt.act_now(pilot, null, rt.selected_item, true);
     try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Mind my hat.") != null);
 
-    // A full tray of long names takes two rows, inside the canvas, every box clickable.
+    // A full tray of long names fits the desktop's tray (D-097), every box clickable.
     const carries = rt.world.lookup_relation("Carries").?;
     const hero = rt.world.lookup_entity("Hero").?;
     for ([_][]const u8{ "SignalLamp", "LedgerPages", "CopperWire", "BrassKeyRing", "TideChartRoll", "SpareLantern" }) |n| {
@@ -2485,10 +2204,9 @@ test "D-094: the item tray keeps its order, fits the canvas, and uses items alon
     }
     laid = rt.tray_slots(&slots);
     try testing.expectEqual(@as(usize, 8), laid.len);
-    try testing.expect(laid[0].y != laid[7].y);
     for (laid) |slot| {
-        try testing.expect(slot.x >= WasmRuntime.TRAY_X and slot.x + slot.w <= CANVAS_WIDTH - 12);
-        try testing.expect(slot.y >= WasmRuntime.TRAY_Y and slot.y + slot.h <= WasmRuntime.TRAY_Y + WasmRuntime.TRAY_H);
+        try testing.expect(slot.x >= renderer.INVENTORY_X and slot.x + slot.w <= CANVAS_WIDTH);
         try testing.expectEqual(slot.item, rt.tray_hit(slot.x + 1, slot.y + 1).?);
     }
 }
+

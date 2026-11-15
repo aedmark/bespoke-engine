@@ -255,14 +255,14 @@ const action_talk: u16 = 4;
 const action_solve: u16 = 5;
 
 const keys = [_]r.KeyBinding{
-    .{ .key = r.c.SDLK_1, .action = action_wits },
-    .{ .key = r.c.SDLK_2, .action = action_fists },
-    .{ .key = r.c.SDLK_3, .action = action_team },
-    .{ .key = r.c.SDLK_t, .action = action_talk },
-    .{ .key = r.c.SDLK_s, .action = action_solve },
+    .{ .key = r.key('1'), .action = action_wits },
+    .{ .key = r.key('2'), .action = action_fists },
+    .{ .key = r.key('3'), .action = action_team },
+    .{ .key = r.key('t'), .action = action_talk },
+    .{ .key = r.key('s'), .action = action_solve },
 };
 
-fn bazaar_backdrop(w: *r.DisplayWindow, frame: *const bespoke.RenderFrame) bool {
+fn bazaar_backdrop(w: *r.Canvas, frame: *const bespoke.RenderFrame) bool {
     _ = frame;
     w.fill_rect(0, 0, w.width, w.height, r.Color{ .r = 58, .g = 38, .b = 24 });
     w.fill_rect(0, w.height - 150, w.width, 150, r.Color{ .r = 158, .g = 122, .b = 70 });
@@ -271,7 +271,7 @@ fn bazaar_backdrop(w: *r.DisplayWindow, frame: *const bespoke.RenderFrame) bool 
     return true;
 }
 
-const theme = r.Theme{
+pub const theme = r.Theme{
     .backdrop = bazaar_backdrop,
     .keys = &keys,
 };

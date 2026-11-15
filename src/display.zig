@@ -16,6 +16,7 @@ const mml_mod = @import("mml.zig");
 pub const WeaveOutcome = draft_mod.WeaveOutcome;
 
 pub const font = @import("display/font.zig");
+pub const canvas = @import("display/canvas.zig");
 pub const text_layout = @import("display/text_layout.zig");
 /// Word-wrapped dialogue panel layout shared by the window and the browser (D-077).
 pub const dialogue_panel = @import("display/dialogue_panel.zig");

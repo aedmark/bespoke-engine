@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The browser and the desktop window now draw the same frame (`D-097`): the standalone pages and the showcase show each proof's desktop scenery, verb bar, item tray, dialogue panel, and banners at 1280x720, and the desktop draws through the same canvas. The browser keeps its own keys, item rules, exits, page buttons, and state inspector.
+- The Pip-Spitting Green in the browser shows the wind: "WIND: CALM" under the title, and a tailwind line with arrows across the field while the breeze blows (`D-096`).
 - `site/pips.html` has a Spit button (`P`) that spits from where Tamsin stands (`D-095`), so a breeze is not lost to the walk over to the judge.
 - Two more standalone pages to share (`D-094`): `site/pips.html` plays The Pip-Spitting Green and `site/beard.html` plays The Borrowed Beard, each with how to play and a hidden walkthrough. The browser now has an item tray: click an item to use it, or to take it in hand and use it on a person, a prop, another item, or yourself. Walking onto the Beard's stairs, yard path, or doors changes rooms; talking to Judge Marrow offers the spit. A silent action now says what happened, and the Green's weather no longer stands on the chalk line as a person.
 - The item tray fits the window: when carried items would run off the right edge, their labels shrink, then are cut short, and every item stays clickable where it is drawn. In The Borrowed Beard, making the grey beard uses up the dog fur and the honey, so they leave the tray.

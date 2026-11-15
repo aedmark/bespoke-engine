@@ -48,13 +48,13 @@
     if (!exp) return;
     exp.wasm_render_frame();
     const pixels = new Uint8ClampedArray(exp.memory.buffer, exp.wasm_framebuffer_ptr(), exp.wasm_framebuffer_len());
-    ctx.putImageData(new ImageData(pixels, 640, 360), 0, 0);
+    ctx.putImageData(new ImageData(pixels, 1280, 720), 0, 0);
     syncVerbButtons();
   }
 
   function selectVerb(index) {
     if (!exp) return;
-    exp.wasm_on_pointer_down(12 + index * 58 + 26, 338);
+    exp.wasm_set_verb(index);
     draw();
   }
 
@@ -103,8 +103,8 @@
   function canvasCoords(event) {
     const box = canvas.getBoundingClientRect();
     return [
-      Math.round(((event.clientX - box.left) / box.width) * 640),
-      Math.round(((event.clientY - box.top) / box.height) * 360),
+      Math.round(((event.clientX - box.left) / box.width) * 1280),
+      Math.round(((event.clientY - box.top) / box.height) * 720),
     ];
   }
 

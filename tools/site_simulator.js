@@ -176,9 +176,9 @@
     exp.wasm_render_frame();
     const pointer = exp.wasm_framebuffer_ptr();
     const length = exp.wasm_framebuffer_len();
-    if (length !== 640 * 360 * 4) throw new Error(`unexpected framebuffer length ${length}`);
+    if (length !== 1280 * 720 * 4) throw new Error(`unexpected framebuffer length ${length}`);
     const pixels = new Uint8ClampedArray(exp.memory.buffer, pointer, length);
-    ctx.putImageData(new ImageData(pixels, 640, 360), 0, 0);
+    ctx.putImageData(new ImageData(pixels, 1280, 720), 0, 0);
   }
 
   function showScript(id) {
@@ -285,7 +285,7 @@
     if (!exp || index < 0 || index >= VERBS.length) return;
     verb = VERBS[index];
     syncVerbs();
-    exp.wasm_on_pointer_down(12 + index * 58 + 26, 338);
+    exp.wasm_set_verb(index);
     refresh();
     playBeep(520, 'sine', 0.04);
   }
@@ -293,8 +293,8 @@
   function canvasCoords(event) {
     const box = canvas.getBoundingClientRect();
     return [
-      Math.round(((event.clientX - box.left) / box.width) * 640),
-      Math.round(((event.clientY - box.top) / box.height) * 360),
+      Math.round(((event.clientX - box.left) / box.width) * 1280),
+      Math.round(((event.clientY - box.top) / box.height) * 720),
     ];
   }
 
@@ -339,13 +339,9 @@
     if (!exp) return;
     const [x, y] = canvasCoords(event);
     exp.wasm_on_pointer_down(x, y);
-    if (y >= 324 && y <= 354) {
-      VERBS.forEach((name, index) => {
-        const left = 12 + index * 58;
-        if (x >= left && x <= left + 52) verb = name;
-      });
-      syncVerbs();
-    }
+    // The canvas may change the verb (its verb bar, or an item taken in hand).
+    verb = VERBS[exp.wasm_active_verb()] || verb;
+    syncVerbs();
     refresh();
   });
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const display_mod = @import("../display.zig");
 const audio_mod = @import("../audio.zig");
 const save_mod = @import("../save.zig");
@@ -8,6 +9,7 @@ const dialogue_mod = @import("../dialogue.zig");
 const command_mod = @import("../command.zig");
 const state_graph = @import("state_graph.zig");
 const font = @import("font.zig");
+const canvas_mod = @import("canvas.zig");
 const text_layout = @import("text_layout.zig");
 const dialogue_panel = @import("dialogue_panel.zig");
 const beats_mod = @import("beats.zig");
@@ -62,7 +64,20 @@ const RenderInventoryItem = display_mod.RenderInventoryItem;
 const WaypointId = display_mod.WaypointId;
 const EntityId = display_mod.EntityId;
 
-pub const c = @cImport({
+/// A key code, as SDL numbers keys (`SDL_Keycode` is a 32-bit signed integer). Named here so
+/// key bindings and the browser build need no SDL (D-097).
+pub const Keycode = i32;
+
+/// The key code of a letter or digit key, which SDL numbers by its lowercase ASCII value. Lets
+/// a theme's bindings compile in the browser build, which has no SDL (D-097).
+pub fn key(comptime ch: u8) Keycode {
+    comptime std.debug.assert(std.ascii.isLower(ch) or std.ascii.isDigit(ch));
+    return ch;
+}
+
+/// SDL, for the desktop build. The browser build has no SDL headers; it gets an empty
+/// namespace, so a drawing path that reached for SDL fails to compile there by name (D-097).
+pub const c = if (builtin.os.tag == .freestanding) struct {} else @cImport({
     @cInclude("SDL2/SDL.h");
 });
 
@@ -74,37 +89,9 @@ fn sdl_audio_callback(userdata: ?*anyopaque, stream: [*c]u8, len: c_int) callcon
     bridge.render_samples(samples);
 }
 
-pub const Color = struct {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8 = 255,
-
-    pub const white = Color{ .r = 255, .g = 255, .b = 255 };
-    pub const stage_bg = Color{ .r = 18, .g = 20, .b = 26 };
-    pub const stage_floor = Color{ .r = 34, .g = 38, .b = 48 };
-    pub const stage_border = Color{ .r = 61, .g = 46, .b = 39 };
-    pub const black = Color{ .r = 0, .g = 0, .b = 0 };
-    pub const panel_border = Color{ .r = 61, .g = 46, .b = 39 };
-    pub const path_corridor = Color{ .r = 55, .g = 48, .b = 43 };
-    pub const path_edge = Color{ .r = 75, .g = 68, .b = 60 };
-
-    pub const wp_normal = Color{ .r = 100, .g = 116, .b = 139 };
-    pub const wp_hover = Color{ .r = 251, .g = 191, .b = 36 };
-    pub const wp_target = Color{ .r = 56, .g = 189, .b = 248 };
-
-    pub const item_gold = Color{ .r = 250, .g = 204, .b = 21 }; // Gold
-
-    pub const vortex_purple = Color{ .r = 147, .g = 51, .b = 234 }; // Tangent vortex swirling purple
-    pub const countdown_warn = Color{ .r = 239, .g = 68, .b = 68 }; // Emergency red countdown
-
-    pub const hud_bg = Color{ .r = 15, .g = 23, .b = 42, .a = 230 };
-    pub const hud_text = Color{ .r = 248, .g = 250, .b = 252 };
-    pub const hud_subtext = Color{ .r = 148, .g = 163, .b = 184 };
-    pub const status_running = Color{ .r = 34, .g = 197, .b = 94 };
-    pub const status_paused = Color{ .r = 245, .g = 158, .b = 11 };
-    pub const cue_alert = Color{ .r = 244, .g = 63, .b = 94 };
-};
+/// The shared canvas colour (P36-02, D-097).
+pub const Color = canvas_mod.Color;
+pub const Canvas = canvas_mod.Canvas;
 
 pub const Point = struct {
     x: i32,
@@ -534,7 +521,7 @@ pub fn hit_test_distaff_note(mouse_x: i32, mouse_y: i32, screen_w: i32, screen_h
 /// Maps the letter keys C D E F G A B to note degrees while the distaff is active.
 /// These letters shadow the global d (debug) and c (console) shortcuts only in that mode;
 /// F1 and the backquote remain available for both.
-pub fn distaff_key_to_degree(sym: c.SDL_Keycode) ?u8 {
+pub fn distaff_key_to_degree(sym: Keycode) ?u8 {
     return switch (sym) {
         c.SDLK_c => 0,
         c.SDLK_d => 1,
@@ -613,7 +600,7 @@ pub const SpeechBalloon = struct {
 /// above the action sentence and verb bar (and the command bar when it shows), as wide as its
 /// widest row, and grows upward with its wrapped rows.
 pub const DialoguePanel = struct {
-    rect: c.SDL_Rect,
+    rect: Rect,
     layout: dialogue_panel.Layout,
     /// Width of the scroll bar along the right edge when more than six choices are offered;
     /// 0 otherwise.
@@ -664,10 +651,10 @@ pub fn hit_test_dialogue_panel(mouse_x: i32, mouse_y: i32, balloon: *const Speec
 }
 
 /// Computes screen bounding rectangle for the Pause & Save/Load Drawer modal (P17-03, D-020).
-pub fn get_save_drawer_rect(screen_w: i32, screen_h: i32) c.SDL_Rect {
+pub fn get_save_drawer_rect(screen_w: i32, screen_h: i32) Rect {
     const w = @min(760, screen_w - 40);
     const h = @min(500, screen_h - 60);
-    return c.SDL_Rect{
+    return Rect{
         .x = @divTrunc(screen_w - w, 2),
         .y = @divTrunc(screen_h - h, 2),
         .w = w,
@@ -676,9 +663,9 @@ pub fn get_save_drawer_rect(screen_w: i32, screen_h: i32) c.SDL_Rect {
 }
 
 /// Computes screen bounding rectangle for a specific save slot card (0..8) inside the drawer (P17-03, D-020).
-pub fn get_save_slot_rect(slot_id: u8, drawer_rect: c.SDL_Rect) c.SDL_Rect {
+pub fn get_save_slot_rect(slot_id: u8, drawer_rect: Rect) Rect {
     if (slot_id == 0) {
-        return c.SDL_Rect{
+        return Rect{
             .x = drawer_rect.x + 20,
             .y = drawer_rect.y + 82,
             .w = drawer_rect.w - 40,
@@ -690,7 +677,7 @@ pub fn get_save_slot_rect(slot_id: u8, drawer_rect: c.SDL_Rect) c.SDL_Rect {
     const row: i32 = @intCast(idx / 2);
     const card_w = @divTrunc(drawer_rect.w - 52, 2);
     const card_h: i32 = 72;
-    return c.SDL_Rect{
+    return Rect{
         .x = drawer_rect.x + 20 + col * (card_w + 12),
         .y = drawer_rect.y + 154 + row * (card_h + 8),
         .w = card_w,
@@ -699,7 +686,7 @@ pub fn get_save_slot_rect(slot_id: u8, drawer_rect: c.SDL_Rect) c.SDL_Rect {
 }
 
 /// Hit-tests mouse coordinates against all 9 save slot cards (Slot 0 Quick-Save and Slots 1..8) (P17-03).
-pub fn hit_test_save_slot(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_Rect) ?u8 {
+pub fn hit_test_save_slot(mouse_x: i32, mouse_y: i32, drawer_rect: Rect) ?u8 {
     var slot_id: u8 = 0;
     while (slot_id <= save_mod.MAX_SLOTS) : (slot_id += 1) {
         const srect = get_save_slot_rect(slot_id, drawer_rect);
@@ -713,7 +700,7 @@ pub fn hit_test_save_slot(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_Rect) ?
 }
 
 /// Hit-tests mouse coordinates against the top tab buttons inside the Save/Load drawer (P17-03).
-pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: c.SDL_Rect) ?SaveDrawerTab {
+pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: Rect) ?SaveDrawerTab {
     const tab_y = drawer_rect.y + 42;
     const tab_h: i32 = 28;
     if (mouse_y < tab_y or mouse_y > tab_y + tab_h) return null;
@@ -743,7 +730,7 @@ const InspectorGeometry = struct {
     ry: i32,
 };
 
-fn inspector_geometry(drect: c.SDL_Rect) InspectorGeometry {
+fn inspector_geometry(drect: Rect) InspectorGeometry {
     const top = drect.y + 82;
     const area_x = drect.x + 16;
     const area_w = drect.w - 32;
@@ -798,7 +785,7 @@ pub const ActorView = struct {
 /// A key a host binds (P32-02c). Pressing it returns `UserAction{ .custom = action }` from
 /// `poll_events`, after playing `sfx` if set. Keys are SDL keycodes (`c.SDLK_*`).
 pub const KeyBinding = struct {
-    key: c.SDL_Keycode,
+    key: Keycode,
     action: u16,
     sfx: ?audio_mod.Sound = null,
 };
@@ -815,18 +802,18 @@ pub const FooterHint = struct {
 /// actor, a corridor line for a walkway). The engine names no scene, prop, or character:
 /// a game's look lives entirely behind this struct.
 pub const Theme = struct {
-    backdrop: ?*const fn (*DisplayWindow, *const RenderFrame) bool = null,
-    prop: ?*const fn (*DisplayWindow, *const RenderFrame, PropView) bool = null,
-    actor: ?*const fn (*DisplayWindow, *const RenderFrame, ActorView) bool = null,
+    backdrop: ?*const fn (*Canvas, *const RenderFrame) bool = null,
+    prop: ?*const fn (*Canvas, *const RenderFrame, PropView) bool = null,
+    actor: ?*const fn (*Canvas, *const RenderFrame, ActorView) bool = null,
     /// Draws the stretch of walkway between two connected marks.
-    walkway: ?*const fn (*DisplayWindow, *const RenderFrame, Point, Point) bool = null,
+    walkway: ?*const fn (*Canvas, *const RenderFrame, Point, Point) bool = null,
     /// False hides walkways and mark discs for the frame (a scene without visible paths).
     shows_walkways: ?*const fn (*const RenderFrame) bool = null,
     footer: ?*const fn (*const RenderFrame) ?FooterHint = null,
     /// Draws the host's HUD elements after the top status bar (P32-03b).
-    hud: ?*const fn (*DisplayWindow, *const RenderFrame) void = null,
+    hud: ?*const fn (*Canvas, *const RenderFrame) void = null,
     /// Draws full-window overlays last, above the save drawer (P32-03b).
-    overlay: ?*const fn (*DisplayWindow, *const RenderFrame) void = null,
+    overlay: ?*const fn (*Canvas, *const RenderFrame) void = null,
     /// Colours for save-slot thumbnails, given to the window's save manager with the theme.
     thumbnails: ?*const save_mod.ThumbnailPainter = null,
     /// Keys the host handles itself, checked before the engine's own keys.
@@ -922,10 +909,17 @@ pub const DisplayWindow = struct {
     /// The host's presentation; null draws the engine's neutral defaults. Borrowed: the theme
     /// must outlive the window.
     theme: ?*const Theme = null,
-    window: ?*c.SDL_Window,
-    renderer: ?*c.SDL_Renderer,
-    /// Set only by `init_offscreen`: the memory surface the software renderer draws into.
-    offscreen_surface: ?*c.SDL_Surface = null,
+    /// SDL's window, renderer, and streaming texture, held untyped so the struct and its drawing
+    /// compile without SDL for the browser (D-097). Only `init`, `deinit`, and the present step
+    /// at the end of `render_frame` cast them back.
+    window: ?*anyopaque,
+    renderer: ?*anyopaque,
+    texture: ?*anyopaque = null,
+    /// Every frame is drawn here (P36-03); SDL only shows it. Null for a headless window, which
+    /// draws nothing.
+    canvas: ?Canvas = null,
+    /// The canvas's pixels when this window allocated them (`init`, `init_offscreen`).
+    owned_pixels: ?[]u8 = null,
     width: i32,
     height: i32,
     active_verb: AdventureVerb = .walk,
@@ -991,6 +985,15 @@ pub const DisplayWindow = struct {
     save_manager: *save_mod.SaveManager,
     // Phase 26/D-028 Master Simulation Clock Pacing & Speed Scaling
     current_tick_interval_ms: i64 = vm_mod.DEFAULT_TICK_INTERVAL_MS,
+    /// The wall clock for a build with no operating system (the browser), set by its host
+    /// before each frame; banners time out against it (D-090, D-097).
+    wall_ms: i64 = 0,
+    /// The footer a host shows in place of the theme's (D-097): the browser names its own keys,
+    /// which differ from the desktop proof's.
+    footer_text: ?[]const u8 = null,
+    /// The colour behind the neutral stage when no theme draws a backdrop; a browser deck
+    /// keeps its own (D-097).
+    backdrop_color: Color = Color.stage_bg,
 
     pub fn init(title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
         const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
@@ -1059,7 +1062,13 @@ pub const DisplayWindow = struct {
             };
         };
 
-        _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_BLEND);
+        const texture = c.SDL_CreateTexture(renderer, c.SDL_PIXELFORMAT_RGBA32, c.SDL_TEXTUREACCESS_STREAMING, width, height) orelse {
+            c.SDL_DestroyRenderer(renderer);
+            c.SDL_DestroyWindow(window);
+            c.SDL_Quit();
+            return error.TextureFailed;
+        };
+        const pixels = try alloc_pixels(width, height);
 
         var audio_opened = false;
         var desired = std.mem.zeroes(c.SDL_AudioSpec);
@@ -1080,6 +1089,9 @@ pub const DisplayWindow = struct {
         return DisplayWindow{
             .window = window,
             .renderer = renderer,
+            .texture = texture,
+            .canvas = Canvas.init(pixels, width, height),
+            .owned_pixels = pixels,
             .width = width,
             .height = height,
             .is_headless = false,
@@ -1091,9 +1103,9 @@ pub const DisplayWindow = struct {
         };
     }
 
-    /// Creates a window that draws into memory with SDL's software rasterizer (P32-02a). It
-    /// needs no display server and opens no audio device, and the same frame always produces
-    /// the same pixels, which is what lets tests compare `frame_hash` with a committed value.
+    /// Creates a window that draws only into its canvas (P32-02a, P36-03). It needs no display
+    /// server, opens no audio device, and calls no SDL, and the same frame always produces the
+    /// same pixels, which is what lets tests compare `frame_hash` with a committed value.
     pub fn init_offscreen(width: i32, height: i32) !DisplayWindow {
         const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
         errdefer std.heap.c_allocator.destroy(bridge);
@@ -1104,16 +1116,13 @@ pub const DisplayWindow = struct {
         sm.* = try save_mod.SaveManager.init(std.heap.c_allocator, "saves");
         errdefer sm.deinit();
 
-        const surface = c.SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, c.SDL_PIXELFORMAT_ARGB8888) orelse
-            return error.OffscreenSurfaceFailed;
-        errdefer c.SDL_FreeSurface(surface);
-        const renderer = c.SDL_CreateSoftwareRenderer(surface) orelse return error.OffscreenRendererFailed;
-        _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_BLEND);
+        const pixels = try alloc_pixels(width, height);
 
         return DisplayWindow{
             .window = null,
-            .renderer = renderer,
-            .offscreen_surface = surface,
+            .renderer = null,
+            .canvas = Canvas.init(pixels, width, height),
+            .owned_pixels = pixels,
             .width = width,
             .height = height,
             .is_headless = false,
@@ -1125,24 +1134,46 @@ pub const DisplayWindow = struct {
         };
     }
 
-    /// Hash of the pixels last drawn by `render_frame`, for an offscreen window; null otherwise.
-    /// Rows are hashed without their padding, so the value depends only on what was drawn.
-    pub fn frame_hash(self: *const DisplayWindow) ?u64 {
-        const surface = self.offscreen_surface orelse return null;
-        const pixels: [*]const u8 = @ptrCast(surface.*.pixels orelse return null);
-        const pitch: usize = @intCast(surface.*.pitch);
-        const row_bytes: usize = @as(usize, @intCast(self.width)) * 4;
-        var hasher = std.hash.Wyhash.init(0);
-        var y: usize = 0;
-        while (y < @as(usize, @intCast(self.height))) : (y += 1) {
-            hasher.update(pixels[y * pitch ..][0..row_bytes]);
-        }
-        return hasher.final();
+    /// Milliseconds on the wall clock: the system's on desktop, the host's in the browser,
+    /// which has no clock of its own to read.
+    pub fn now_ms(self: *const DisplayWindow) i64 {
+        if (comptime builtin.os.tag == .freestanding) return self.wall_ms;
+        return std.time.milliTimestamp();
     }
 
-    /// Writes the last offscreen frame as a BMP, for looking at a frame whose hash changed.
+    /// A window that draws into `pixels` and owns nothing else (D-097): no SDL, no audio device,
+    /// no save directory. The browser runtime keeps one and draws the desktop frame with it. It
+    /// borrows everything it is given, so it must never be passed to `deinit`.
+    pub fn init_canvas(pixels: []u8, width: i32, height: i32, bridge: *audio_mod.AudioBridge, saves: *save_mod.SaveManager) DisplayWindow {
+        return DisplayWindow{
+            .window = null,
+            .renderer = null,
+            .canvas = Canvas.init(pixels, width, height),
+            .width = width,
+            .height = height,
+            .audio_bridge = bridge,
+            .owned_save_manager = saves,
+            .save_manager = saves,
+        };
+    }
+
+    fn alloc_pixels(width: i32, height: i32) ![]u8 {
+        return std.heap.c_allocator.alloc(u8, @intCast(width * height * 4));
+    }
+
+    /// Hash of the pixels last drawn by `render_frame`; null for a headless window, which draws
+    /// nothing.
+    pub fn frame_hash(self: *const DisplayWindow) ?u64 {
+        const cv = self.canvas orelse return null;
+        return cv.hash();
+    }
+
+    /// Writes the last frame as a BMP, for looking at a frame whose hash changed.
     pub fn save_frame_bmp(self: *const DisplayWindow, path: [:0]const u8) !void {
-        const surface = self.offscreen_surface orelse return error.NotOffscreen;
+        const cv = self.canvas orelse return error.NoCanvas;
+        const surface = c.SDL_CreateRGBSurfaceWithFormatFrom(cv.pixels.ptr, cv.width, cv.height, 32, cv.width * 4, c.SDL_PIXELFORMAT_RGBA32) orelse
+            return error.BmpSurfaceFailed;
+        defer c.SDL_FreeSurface(surface);
         const rw = c.SDL_RWFromFile(path.ptr, "wb") orelse return error.BmpOpenFailed;
         if (c.SDL_SaveBMP_RW(surface, rw, 1) != 0) return error.BmpWriteFailed;
     }
@@ -1156,14 +1187,14 @@ pub const DisplayWindow = struct {
         self.owned_save_manager.deinit();
         std.heap.c_allocator.destroy(self.owned_save_manager);
 
-        if (!self.is_headless) {
-            if (self.renderer) |r| c.SDL_DestroyRenderer(r);
-            if (self.offscreen_surface) |surface| {
-                // An offscreen window never called SDL_Init, so there is nothing to quit.
-                c.SDL_FreeSurface(surface);
-                return;
-            }
-            if (self.window) |w| c.SDL_DestroyWindow(w);
+        if (self.owned_pixels) |px| std.heap.c_allocator.free(px);
+        self.owned_pixels = null;
+        self.canvas = null;
+        // An offscreen window never called SDL_Init, so there is nothing to destroy or quit.
+        if (!self.is_headless and self.window != null) {
+            if (self.texture) |t| c.SDL_DestroyTexture(@ptrCast(t));
+            if (self.renderer) |r| c.SDL_DestroyRenderer(@ptrCast(r));
+            if (self.window) |w| c.SDL_DestroyWindow(@ptrCast(w));
             c.SDL_Quit();
         }
     }
@@ -1177,7 +1208,7 @@ pub const DisplayWindow = struct {
     /// The stage drawn when no theme draws a backdrop: a cleared background and one framed
     /// floor area titled with the scene's name.
     fn render_default_backdrop(self: *DisplayWindow, frame: *const RenderFrame) void {
-        self.fill_rect(0, 0, self.width, self.height, Color.stage_bg);
+        self.fill_rect(0, 0, self.width, self.height, self.backdrop_color);
         const x: i32 = 100;
         const y: i32 = 120;
         const w: i32 = self.width - 200;
@@ -1347,7 +1378,7 @@ pub const DisplayWindow = struct {
         @memcpy(self.cue_banner_text[0..len], text[0..len]);
         self.cue_banner_len = len;
         const asked_ms = @divTrunc(@as(i64, duration_frames) * 1000, 60);
-        self.cue_banner_until_ms = std.time.milliTimestamp() + @max(asked_ms, banner_reading_ms(len));
+        self.cue_banner_until_ms = self.now_ms() + @max(asked_ms, banner_reading_ms(len));
     }
 
     /// Decreases simulation clock speed (increases milliseconds per tick) (D-028).
@@ -1432,7 +1463,7 @@ pub const DisplayWindow = struct {
 
     /// Mirrors the frame's dialogue channel into the balloon overlay (P32-30, D-046). A new
     /// revision replaces the balloon; a closed set dismisses only a balloon this opened.
-    fn sync_dialogue_balloon(self: *DisplayWindow, frame: *const RenderFrame) void {
+    pub fn sync_dialogue_balloon(self: *DisplayWindow, frame: *const RenderFrame) void {
         if (frame.dialogue.active) {
             if (!self.balloon_from_frame or self.balloon_revision != frame.dialogue.revision) {
                 var choices: [dialogue_mod.MAX_CHOICES][]const u8 = undefined;
@@ -1456,7 +1487,7 @@ pub const DisplayWindow = struct {
     }
 
     /// The panel geometry for `balloon` in this window, leaving room for the command bar.
-    fn dialogue_panel_for(self: *const DisplayWindow, balloon: *const SpeechBalloon) DialoguePanel {
+    pub fn dialogue_panel_for(self: *const DisplayWindow, balloon: *const SpeechBalloon) DialoguePanel {
         return get_dialogue_panel(balloon, self.width, self.height, self.command_bar_enabled and !self.show_console);
     }
 
@@ -1522,7 +1553,7 @@ pub const DisplayWindow = struct {
     }
 
     /// State tab keys (P27-03, D-059). Returns true when the key was a navigation key.
-    fn inspector_key(self: *DisplayWindow, frame: *const RenderFrame, sym: c.SDL_Keycode) bool {
+    fn inspector_key(self: *DisplayWindow, frame: *const RenderFrame, sym: Keycode) bool {
         const facts = frame.debug_facts[0..frame.debug_fact_count];
         const layout = self.inspector_layout(frame);
         const ring_len = if (layout) |l| l.ring_len else 0;
@@ -1569,7 +1600,7 @@ pub const DisplayWindow = struct {
         return true;
     }
 
-    fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: c.SDL_Rect) void {
+    fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: Rect) void {
         const facts = frame.debug_facts[0..frame.debug_fact_count];
         const g = inspector_geometry(drect);
         const area_x = g.area_x;
@@ -1738,7 +1769,7 @@ pub const DisplayWindow = struct {
 
     /// Keys while the command bar is focused. Every key is consumed: text arrives separately
     /// as SDL_TEXTINPUT, and a key that also has a binding must not trigger it.
-    fn command_bar_key(self: *DisplayWindow, sym: c.SDL_Keycode) UserAction {
+    fn command_bar_key(self: *DisplayWindow, sym: Keycode) UserAction {
         if (sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER) {
             if (self.command_len == 0) return .none;
             const line = self.command_input[0..self.command_len];
@@ -2653,79 +2684,31 @@ pub const DisplayWindow = struct {
     }
 
     // --- Drawing Primitives ---
+    // Every call draws into the canvas (P36-03); a headless window has none and draws nothing.
 
-    pub fn set_color(self: *DisplayWindow, col: Color) void {
-        if (self.renderer) |r| {
-            _ = c.SDL_SetRenderDrawColor(r, col.r, col.g, col.b, col.a);
-        }
+    fn fill_rect(self: *DisplayWindow, x: i32, y: i32, w: i32, h: i32, col: Color) void {
+        if (self.canvas) |*cv| cv.fill_rect(x, y, w, h, col);
     }
 
-    pub fn fill_rect(self: *DisplayWindow, x: i32, y: i32, w: i32, h: i32, col: Color) void {
-        if (self.renderer) |r| {
-            self.set_color(col);
-            const rect = c.SDL_Rect{ .x = x, .y = y, .w = w, .h = h };
-            _ = c.SDL_RenderFillRect(r, &rect);
-        }
+    fn draw_rect_outline(self: *DisplayWindow, x: i32, y: i32, w: i32, h: i32, col: Color) void {
+        if (self.canvas) |*cv| cv.draw_rect_outline(x, y, w, h, col);
     }
 
-    pub fn draw_rect_outline(self: *DisplayWindow, x: i32, y: i32, w: i32, h: i32, col: Color) void {
-        if (self.renderer) |r| {
-            self.set_color(col);
-            const rect = c.SDL_Rect{ .x = x, .y = y, .w = w, .h = h };
-            _ = c.SDL_RenderDrawRect(r, &rect);
-        }
+    fn draw_line(self: *DisplayWindow, x1: i32, y1: i32, x2: i32, y2: i32, col: Color) void {
+        if (self.canvas) |*cv| cv.draw_line(x1, y1, x2, y2, col);
     }
 
-    pub fn draw_line(self: *DisplayWindow, x1: i32, y1: i32, x2: i32, y2: i32, col: Color) void {
-        if (self.renderer) |r| {
-            self.set_color(col);
-            _ = c.SDL_RenderDrawLine(r, x1, y1, x2, y2);
-        }
+    fn fill_circle(self: *DisplayWindow, cx: i32, cy: i32, radius: i32, col: Color) void {
+        if (self.canvas) |*cv| cv.fill_circle(cx, cy, radius, col);
     }
 
-    pub fn fill_circle(self: *DisplayWindow, cx: i32, cy: i32, radius: i32, col: Color) void {
-        if (self.renderer) |r| {
-            self.set_color(col);
-            var dy: i32 = -radius;
-            while (dy <= radius) : (dy += 1) {
-                const dx: i32 = @intCast(std.math.sqrt(@as(u64, @intCast(@max(0, radius * radius - dy * dy)))));
-                _ = c.SDL_RenderDrawLine(r, cx - dx, cy + dy, cx + dx, cy + dy);
-            }
-        }
-    }
-
-    pub fn draw_circle_outline(self: *DisplayWindow, cx: i32, cy: i32, radius: i32, col: Color) void {
-        if (self.renderer) |r| {
-            self.set_color(col);
-            var x: i32 = radius;
-            var y: i32 = 0;
-            var err: i32 = 0;
-
-            while (x >= y) {
-                _ = c.SDL_RenderDrawPoint(r, cx + x, cy + y);
-                _ = c.SDL_RenderDrawPoint(r, cx + y, cy + x);
-                _ = c.SDL_RenderDrawPoint(r, cx - y, cy + x);
-                _ = c.SDL_RenderDrawPoint(r, cx - x, cy + y);
-                _ = c.SDL_RenderDrawPoint(r, cx - x, cy - y);
-                _ = c.SDL_RenderDrawPoint(r, cx - y, cy - x);
-                _ = c.SDL_RenderDrawPoint(r, cx + y, cy - x);
-                _ = c.SDL_RenderDrawPoint(r, cx + x, cy - y);
-
-                if (err <= 0) {
-                    y += 1;
-                    err += 2 * y + 1;
-                }
-                if (err > 0) {
-                    x -= 1;
-                    err -= 2 * x + 1;
-                }
-            }
-        }
+    fn draw_circle_outline(self: *DisplayWindow, cx: i32, cy: i32, radius: i32, col: Color) void {
+        if (self.canvas) |*cv| cv.draw_circle_outline(cx, cy, radius, col);
     }
 
     /// Draws `text` within `max_w` pixels (D-091): at `scale` if it fits, else one size smaller,
     /// else cut with "..." so it never runs past its bar.
-    pub fn draw_text_fit(self: *DisplayWindow, text: []const u8, x: i32, y: i32, max_w: i32, scale: i32, col: Color) void {
+    fn draw_text_fit(self: *DisplayWindow, text: []const u8, x: i32, y: i32, max_w: i32, scale: i32, col: Color) void {
         var sc = scale;
         while (sc > 1 and font.text_width(text, sc) > max_w) sc -= 1;
         if (font.text_width(text, sc) <= max_w) return self.draw_text(text, x, y, sc, col);
@@ -2735,7 +2718,7 @@ pub const DisplayWindow = struct {
 
     /// Draws a footer hint in the bottom bar (D-091): one line at scale 2 if it fits, else two
     /// lines split at the " | " nearest the middle, each fitted to the bar.
-    pub fn draw_footer_text(self: *DisplayWindow, text: []const u8, col: Color) void {
+    fn draw_footer_text(self: *DisplayWindow, text: []const u8, col: Color) void {
         const max_w = self.width - 40;
         if (font.text_width(text, 2) <= max_w) return self.draw_text(text, 20, self.height - 28, 2, col);
         const split = footer_split(text) orelse return self.draw_text_fit(text, 20, self.height - 26, max_w, 2, col);
@@ -2743,44 +2726,21 @@ pub const DisplayWindow = struct {
         self.draw_text_fit(text[split + 3 ..], 20, self.height - 21, max_w, 2, col);
     }
 
-    pub fn draw_text(self: *DisplayWindow, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
-        if (self.renderer == null) return;
-        var cur_x = start_x;
-        for (text) |ch| {
-            if (ch < 32 or ch > 126) {
-                cur_x += font.char_width(scale);
-                continue;
-            }
-            const glyph = font.FONT5X7[ch - 32];
-            for (glyph, 0..) |col_byte, col_idx| {
-                var row: usize = 0;
-                while (row < 7) : (row += 1) {
-                    if ((col_byte >> @intCast(row)) & 1 != 0) {
-                        self.fill_rect(
-                            cur_x + @as(i32, @intCast(col_idx)) * scale,
-                            start_y + @as(i32, @intCast(row)) * scale,
-                            scale,
-                            scale,
-                            col,
-                        );
-                    }
-                }
-            }
-            cur_x += font.char_width(scale);
-        }
+    fn draw_text(self: *DisplayWindow, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
+        if (self.canvas) |*cv| cv.draw_text(text, start_x, start_y, scale, col);
     }
 
     // --- High-Level 2D Scene Rendering (P6-02, P6-04) ---
 
     pub fn render_frame(self: *DisplayWindow, frame: *const RenderFrame, is_paused: bool) void {
-        if (self.is_headless or self.renderer == null) return;
+        if (self.is_headless or self.canvas == null) return;
         self.sync_dialogue_balloon(frame);
 
         // Trigger procedural music and cue audio reactions (P16-01, P16-03, D-019)
         self.audio_bridge.process_scene_and_cues(frame.get_current_scene(), frame.get_current_score());
 
         // 1. Backdrop: the host's theme draws its scene; without one, a neutral stage (D-039)
-        const backdrop_drawn = if (self.theme) |t| (if (t.backdrop) |draw| draw(self, frame) else false) else false;
+        const backdrop_drawn = if (self.theme) |t| (if (t.backdrop) |draw| draw(&self.canvas.?, frame) else false) else false;
         if (!backdrop_drawn) self.render_default_backdrop(frame);
         const walkways_shown = if (self.theme) |t| (if (t.shows_walkways) |ask| ask(frame) else true) else true;
 
@@ -2793,7 +2753,7 @@ pub const DisplayWindow = struct {
             const is_hovered = self.hover_target() == .prop and self.hovered_hotspot.? == idx;
             const name = words(hs.get_name());
 
-            const prop_drawn = if (self.theme) |t| (if (t.prop) |draw| draw(self, frame, .{
+            const prop_drawn = if (self.theme) |t| (if (t.prop) |draw| draw(&self.canvas.?, frame, .{
                 .hotspot = &hs,
                 .index = idx,
                 .pos = pt,
@@ -2844,7 +2804,7 @@ pub const DisplayWindow = struct {
                     const p1 = world_to_screen(wp_a.?.x, wp_a.?.y, self.width, self.height);
                     const p2 = world_to_screen(wp_b.?.x, wp_b.?.y, self.width, self.height);
 
-                    const walkway_drawn = if (self.theme) |t| (if (t.walkway) |draw| draw(self, frame, p1, p2) else false) else false;
+                    const walkway_drawn = if (self.theme) |t| (if (t.walkway) |draw| draw(&self.canvas.?, frame, p1, p2) else false) else false;
                     if (walkway_drawn) {
                         // The theme drew this stretch in its own style.
                     } else {
@@ -2999,7 +2959,7 @@ pub const DisplayWindow = struct {
             const pt = layout.pos;
             layout_resolver.add_obstacle(pt.x - ACTOR_SCREEN_RADIUS, pt.y - ACTOR_SCREEN_RADIUS, ACTOR_SCREEN_RADIUS * 2, ACTOR_SCREEN_RADIUS * 2);
 
-            const token_drawn = if (self.theme) |t| (if (t.actor) |draw| draw(self, frame, .{
+            const token_drawn = if (self.theme) |t| (if (t.actor) |draw| draw(&self.canvas.?, frame, .{
                 .entity = &e,
                 .index = idx,
                 .layout = layout,
@@ -3096,7 +3056,7 @@ pub const DisplayWindow = struct {
         self.draw_text(top_text, 20, 16, 2, status_col);
 
         // 6-host. The theme's own HUD elements, above the status bar (D-041)
-        if (self.theme) |t| if (t.hud) |draw| draw(self, frame);
+        if (self.theme) |t| if (t.hud) |draw| draw(&self.canvas.?, frame);
 
         // 6a. Multi-Character Party Member Portraits (P21-01, D-025)
         if (frame.party_count > 1) {
@@ -3311,6 +3271,8 @@ pub const DisplayWindow = struct {
                 "[C D E F G A B]: Notes | [Bksp]: Clear | [F1]: Debug | [`]: REPL | [Space]: Pause",
                 Color{ .r = 250, .g = 204, .b = 21 },
             );
+        } else if (self.footer_text) |text| {
+            self.draw_footer_text(text, Color.hud_subtext);
         } else if (theme_footer) |hint| {
             self.draw_footer_text(hint.text, hint.color);
         } else {
@@ -3321,7 +3283,7 @@ pub const DisplayWindow = struct {
         }
 
         // 8. Ephemeral Cue Banner
-        if (self.cue_banner_len > 0 and std.time.milliTimestamp() < self.cue_banner_until_ms) {
+        if (self.cue_banner_len > 0 and self.now_ms() < self.cue_banner_until_ms) {
             const banner = self.cue_banner_text[0..self.cue_banner_len];
             const scale: i32 = if (font.text_width(banner, 2) + 40 > self.width) 1 else 2;
             const text_w = font.text_width(banner, scale);
@@ -3679,12 +3641,22 @@ pub const DisplayWindow = struct {
         }
 
         // 12b. The theme's overlays, above everything else (D-041)
-        if (self.theme) |t| if (t.overlay) |draw| draw(self, frame);
+        if (self.theme) |t| if (t.overlay) |draw| draw(&self.canvas.?, frame);
 
-        // 13. Present Frame
-        if (self.renderer) |r| {
-            c.SDL_RenderPresent(r);
+        // 13. Present: a window on screen shows the canvas through its texture.
+        // The browser has no SDL; its host copies the canvas itself.
+        if (comptime builtin.os.tag != .freestanding) {
+            if (self.renderer != null) self.present();
         }
+    }
+
+    fn present(self: *DisplayWindow) void {
+        const r: *c.SDL_Renderer = @ptrCast(self.renderer.?);
+        const t: *c.SDL_Texture = @ptrCast(self.texture orelse return);
+        const cv = self.canvas orelse return;
+        _ = c.SDL_UpdateTexture(t, null, cv.pixels.ptr, cv.width * 4);
+        _ = c.SDL_RenderCopy(r, t, null, null);
+        c.SDL_RenderPresent(r);
     }
 };
 
@@ -4165,22 +4137,22 @@ const ThemeProbe = struct {
         actors = 0;
         walkways = 0;
     }
-    fn decline_backdrop(_: *DisplayWindow, _: *const RenderFrame) bool {
+    fn decline_backdrop(_: *Canvas, _: *const RenderFrame) bool {
         return false;
     }
-    fn paint_backdrop(w: *DisplayWindow, _: *const RenderFrame) bool {
+    fn paint_backdrop(w: *Canvas, _: *const RenderFrame) bool {
         w.fill_rect(0, 0, w.width, w.height, Color{ .r = 10, .g = 90, .b = 60 });
         return true;
     }
-    fn count_prop(_: *DisplayWindow, _: *const RenderFrame, view: PropView) bool {
+    fn count_prop(_: *Canvas, _: *const RenderFrame, view: PropView) bool {
         props += 1;
         return view.index == 0; // draws nothing for the first prop, declines the second
     }
-    fn count_actor(_: *DisplayWindow, _: *const RenderFrame, _: ActorView) bool {
+    fn count_actor(_: *Canvas, _: *const RenderFrame, _: ActorView) bool {
         actors += 1;
         return false;
     }
-    fn count_walkway(_: *DisplayWindow, _: *const RenderFrame, _: Point, _: Point) bool {
+    fn count_walkway(_: *Canvas, _: *const RenderFrame, _: Point, _: Point) bool {
         walkways += 1;
         return false;
     }
@@ -4259,7 +4231,7 @@ test "P32-02c: a host key binding returns its action before the engine's own key
     const frame = std.mem.zeroes(RenderFrame);
 
     const Press = struct {
-        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: Keycode) UserAction {
             // A poll that returned early leaves SDL's poll sentinel queued, and the next poll
             // would stop at it before reaching this key (the key would arrive a frame later).
             c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
@@ -4300,7 +4272,7 @@ test "P26-03: the command bar takes every key while focused and submits typed li
     window.set_theme(&theme);
 
     const Input = struct {
-        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: Keycode) UserAction {
             c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
             var ev = std.mem.zeroes(c.SDL_Event);
             ev.type = c.SDL_KEYDOWN;
@@ -4361,7 +4333,7 @@ test "P27-01: the State tab cycles in with Tab and never saves or loads" {
     defer window.deinit();
     const frame = std.mem.zeroes(RenderFrame);
     const Press = struct {
-        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: Keycode) UserAction {
             c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
             var ev = std.mem.zeroes(c.SDL_Event);
             ev.type = c.SDL_KEYDOWN;
@@ -4417,7 +4389,7 @@ test "P27-03: State tab keys select, recentre, go back, reset, filter, and click
     @memcpy(frame.debug_facts[0..facts.len], &facts);
     frame.debug_fact_count = facts.len;
     const Press = struct {
-        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: Keycode) UserAction {
             c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
             var ev = std.mem.zeroes(c.SDL_Event);
             ev.type = c.SDL_KEYDOWN;
@@ -4496,7 +4468,7 @@ test "D-080: click-through messages hide the choices until each is dismissed" {
     defer window.deinit();
     const frame = std.mem.zeroes(RenderFrame);
     const Input = struct {
-        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: c.SDL_Keycode) UserAction {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: Keycode) UserAction {
             c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
             var ev = std.mem.zeroes(c.SDL_Event);
             ev.type = c.SDL_KEYDOWN;
@@ -4673,4 +4645,11 @@ test "the item tray fits the window: a full tray shrinks its labels and every bo
     const two = inventory_layout(1280, inv[0..2], &slots);
     try testing.expectEqual(@as(i32, 2), two[0].scale);
     try testing.expectEqualStrings("Signal Lamp", two[0].label);
+}
+
+test "D-097: the window's key type is SDL's, so bindings need no SDL to declare" {
+    try std.testing.expect(Keycode == c.SDL_Keycode);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_a), key('a'));
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_z), key('z'));
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_1), key('1'));
 }

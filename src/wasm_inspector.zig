@@ -32,9 +32,9 @@ pub const Key = struct {
 /// The overlay's layout inside the 640x360 canvas: the graph on the left of the stage box, the
 /// lists on the right, a key line along the bottom of the stage.
 const STAGE_X: i32 = 12;
-const STAGE_Y: i32 = 44;
+pub const STAGE_Y: i32 = 44;
 const STAGE_W: i32 = 616;
-const STAGE_H: i32 = 248;
+pub const STAGE_H: i32 = 248;
 const GRAPH_CX: i32 = 196;
 const GRAPH_CY: i32 = 160;
 const GRAPH_RX: i32 = 150;
@@ -155,7 +155,7 @@ pub const Inspector = struct {
         const facts = self.captured();
         // The panel spans the canvas width, so stage labels that run past the stage box do not
         // show through at its edges.
-        canvas.fill_rect(0, STAGE_Y, wasm.CANVAS_WIDTH, STAGE_H, PANEL);
+        canvas.fill_rect(0, STAGE_Y, wasm.OVERLAY_WIDTH, STAGE_H, PANEL);
         canvas.draw_rect_outline(STAGE_X, STAGE_Y, STAGE_W, STAGE_H, RgbaColor.sky_blue);
         var title_buf: [96]u8 = undefined;
         const title = std.fmt.bufPrint(&title_buf, "STATE INSPECTOR | TICK {d} | {d} FACTS | FILTER {s}", .{ now, facts.len, self.filter.label() }) catch "STATE INSPECTOR";
