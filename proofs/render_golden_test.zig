@@ -27,7 +27,7 @@ const village = @import("village.zig");
 const lamp_point = @import("lamp_point.zig");
 const three_tides = @import("three_tides.zig");
 const weathercock = @import("weathercock.zig");
-const loom_puzzle = @import("loom_puzzle.zig");
+const bell_tower = @import("bell_tower.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory_puzzle = @import("observatory_puzzle.zig");
@@ -45,7 +45,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "lamp_point", .script = lamp_point.LAMP_POINT_SCRIPT },
     .{ .name = "three_tides", .script = three_tides.THREE_TIDES_SCRIPT },
     .{ .name = "weathercock", .script = weathercock.WEATHERCOCK_SCRIPT },
-    .{ .name = "loom_puzzle", .script = loom_puzzle.BELL_TOWER_SCRIPT },
+    .{ .name = "bell_tower", .script = bell_tower.BELL_TOWER_SCRIPT },
     .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
     .{ .name = "grid_puzzle", .script = grid_puzzle.GRID_PUZZLE_SCRIPT },
     .{ .name = "observatory_puzzle", .script = observatory_puzzle.OBSERVATORY_SCRIPT },

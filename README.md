@@ -110,8 +110,8 @@ The repository has three layers:
 Each proof is a small playable scene that shows an engine feature working end to end. It runs headless (no window) and checks its own outcome, and it opens in the SDL2 window for play. Twelve of the thirteen also rewind and check that the world matches; Algiers does not yet. Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
 
 ```bash
-zig build run-proof -- --loom             # interactive
-zig build run-proof -- --loom --headless  # scripted verification
+zig build run-proof -- --bell-tower       # interactive
+zig build run-proof -- --bell-tower --headless  # scripted verification
 zig build test-proofs                     # every proof's tests
 ```
 
@@ -125,7 +125,7 @@ zig build test-proofs                     # every proof's tests
 | `--lamp-point` | The Donkey of Lamp Point | A hazard that interrupts the player, timed windows, moving down to a new scene |
 | `--three-tides` | The Well of Three Tides | Three playable characters, items passed between them, the past changing the future |
 | `--weathercock` | The Copper Weathercock | A temporary copy of the world on a countdown that merges back or is thrown away |
-| `--loom` | The Bell Tower | Four-note tunes (drafts) that act as spells, forwards or reversed |
+| `--bell-tower` | The Bell Tower | Four-note tunes (drafts) that act as spells, forwards or reversed |
 | `--grog` | Caustic Grog | Containers that wear out, pouring between them, spilling while carried |
 | `--atlantis` | The Fate of Atlantis: Algiers | Three routes through one puzzle; choosing one locks the others and limits the dialogue |
 | `--grid` | The Castle Fire Escape | Fire, smoke, and water spreading across a grid of cells |

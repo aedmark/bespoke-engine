@@ -13,7 +13,7 @@ pub const village = @import("village.zig");
 pub const lamp_point = @import("lamp_point.zig");
 pub const three_tides = @import("three_tides.zig");
 pub const weathercock = @import("weathercock.zig");
-pub const loom_puzzle = @import("loom_puzzle.zig");
+pub const bell_tower = @import("bell_tower.zig");
 pub const grog_puzzle = @import("grog_puzzle.zig");
 pub const atlantis_puzzle = @import("atlantis_puzzle.zig");
 pub const grid_puzzle = @import("grid_puzzle.zig");
@@ -28,7 +28,7 @@ const Proof = enum {
     lamp_point,
     three_tides,
     weathercock,
-    loom,
+    bell_tower,
     grog,
     atlantis,
     grid,
@@ -64,9 +64,9 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "chrono-mansion", .proof = .three_tides },
     .{ .name = "weathercock", .proof = .weathercock },
     .{ .name = "darko", .proof = .weathercock },
-    .{ .name = "loom", .proof = .loom },
-    .{ .name = "bell-tower", .proof = .loom },
-    .{ .name = "drafts", .proof = .loom },
+    .{ .name = "bell-tower", .proof = .bell_tower },
+    .{ .name = "loom", .proof = .bell_tower },
+    .{ .name = "drafts", .proof = .bell_tower },
     .{ .name = "grog", .proof = .grog },
     .{ .name = "caustic-grog", .proof = .grog },
     .{ .name = "atlantis", .proof = .atlantis },
@@ -101,7 +101,7 @@ const usage =
     \\  --lamp-point         The Donkey of Lamp Point (threat radius, retreat window)
     \\  --three-tides        The Well of Three Tides (party, item transfer, causality)
     \\  --weathercock        The Copper Weathercock (temporal hypervisor, conduits)
-    \\  --loom               The Bell Tower (musical drafts, distaff)
+    \\  --bell-tower         The Bell Tower (musical drafts, distaff)
     \\  --grog               Caustic Grog (container degradation, pours, spill)
     \\  --atlantis           The Fate of Atlantis: Algiers (three paths, route locks)
     \\  --grid               The Castle Fire Escape (grid fire, smoke, water, hazards)
@@ -153,7 +153,7 @@ pub fn main() !void {
         .lamp_point => if (headless) try lamp_point.run_headless(allocator, stdout) else try lamp_point.run_interactive(allocator, stdout),
         .three_tides => if (headless) try three_tides.run_headless(allocator, stdout) else try three_tides.run_interactive(allocator),
         .weathercock => if (headless) try weathercock.run_headless(allocator, stdout) else try weathercock.run_interactive(allocator),
-        .loom => if (headless) try loom_puzzle.run_headless(allocator, stdout) else try loom_puzzle.run_interactive(allocator, stdout),
+        .bell_tower => if (headless) try bell_tower.run_headless(allocator, stdout) else try bell_tower.run_interactive(allocator, stdout),
         .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
         .atlantis => if (headless) try atlantis_puzzle.run_headless(allocator, stdout) else try atlantis_puzzle.run_interactive(allocator, stdout),
         .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, stdout),
@@ -170,7 +170,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = lamp_point;
     _ = three_tides;
     _ = weathercock;
-    _ = loom_puzzle;
+    _ = bell_tower;
     _ = grog_puzzle;
     _ = atlantis_puzzle;
     _ = grid_puzzle;
@@ -191,7 +191,7 @@ test {
 test "proofs: legacy flag spellings resolve to the same proofs" {
     try std.testing.expectEqual(Proof.three_tides, lookup("tentacle").?);
     try std.testing.expectEqual(Proof.three_tides, lookup("dott").?);
-    try std.testing.expectEqual(Proof.loom, lookup("bell-tower").?);
+    try std.testing.expectEqual(Proof.bell_tower, lookup("loom").?);
     try std.testing.expectEqual(Proof.lamp_point, lookup("broken-sword").?);
     try std.testing.expectEqual(Proof.lamp_point, lookup("goat").?);
     try std.testing.expect(lookup("headless") == null);

@@ -79,7 +79,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--lamp-point` | L Lamp Point, W Wreckers Cellar, 1 to 4 steps | Cudgel shoves Tamsin down on the way to the hatch until his rope is caught on the anchor. |
 | `--three-tides` | 1 to 4 switch character | Items sent down the Tide Well arrive in the other era; felling the tree in 1712 frees Juno in 2112. |
 | `--weathercock` | V follow the current; walk the attic stairs and the hill road | The borrowed month's countdown runs; the note must be taken from the post box before Hester Quill takes it; closing the loop merges the branch back; letting it run out tears the month away. |
-| `--loom` | C D E F G A B notes, Backspace clears | Notes sound and show on the distaff; a four-note draft weaves its effect; played backwards it does the opposite. |
+| `--bell-tower` | C D E F G A B notes, Backspace clears | Notes sound and show on the distaff; a four-note draft weaves its effect; played backwards it does the opposite. |
 | `--grog` | 1 pour A to B, 2 pour B to C, L unlock | Cups visibly degrade; a late pour spills; enough grog at the lock dissolves it. |
 | `--atlantis` | 1 Wits, 2 Fists, 3 Team, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
 | `--grid` | 1 fill, 2 torch, 3 throw | Fire spreads on the grid, smoke follows, and water flows back down the corridor and puts it out. |
@@ -105,7 +105,7 @@ Do this on real speakers or headphones, at low volume first.
 
 - [ ] **Music:** every proof plays its own track; scene changes crossfade instead of cutting.
 - [ ] **Effects:** clicks, pickups, the conch (`--spitting-contest`), sword clashes (`--sword-fighting`), and the sizzle (`--grog`, `--grid`) sound once per action, without clipping or crackle.
-- [ ] **Distaff (`--loom`):** C to B play rising pitches; a woven draft plays its stinger.
+- [ ] **Distaff (`--bell-tower`):** C to B play rising pitches; a woven draft plays its stinger.
 - [ ] **Script scores:** `zig-out/bin/bespoke run scenarios/night_watch.bespoke` moves through Calm, Chase, Calm, Wind, Calm; each change is audible and the loop point is seamless.
 - [ ] **Silence:** pausing stops nothing it should not (music may hold); quitting leaves no hanging note.
 - [ ] Write down anything harsh, too loud, or out of tune, with the proof and tick.

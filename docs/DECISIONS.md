@@ -1332,6 +1332,12 @@ Format:
 **Alternatives:** Allowing an apostrophe between letters inside an unquoted word: lighter to write, but it changes what a word is everywhere in the language. Keeping `Boarding House`: offered; the maintainer chose quoting.
 **Consequences:** Names may now hold any character but a double quote. The package format is unchanged, since names were always stored as strings. The render golden test reads scene headers from script text, so it strips the quotes, and it now fails when a declared scene was not compiled instead of skipping it, which is how the unquoted apostrophe had gone unnoticed. Enforced by: the D-101 parser test.
 
+## D-102 The Draft, Weave, and Distaff Keywords Stay (2026-11-15, status: accepted)
+**Context:** P35-08 asked whether the language's musical-draft vocabulary, which comes from the same idea as Loom's (D-029, D-030), should be renamed with the Bell Tower proof. The third-party lint counts "Loom", "loom", and "Bobbin"; none of its hits were the keywords.
+**Decision:** `draft`, `reverse`, `weave`, `Weave`, and the distaff keep their names in the parser, codegen, VM, renderer, browser runtime, `src/draft.zig`, and `.bspk`. Only proof-side names change (P35-08).
+**Alternatives:** Rename the keywords (for example to tune and play): rejected by the maintainer, because they are ordinary words for weaving and music, not a title, character, or place, and renaming them would change the script language and the package format, so old packages would need a version check.
+**Consequences:** The script language and `.bspk` are unchanged. The lint does not list the keywords, and should not.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

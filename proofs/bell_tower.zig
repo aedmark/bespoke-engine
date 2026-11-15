@@ -1,10 +1,10 @@
 //! BeSpoke Engine: The Bell Tower, a musical draft vertical slice (P22-03, D-029, D-030).
 //!
-//! An original scenario built to exercise pitch-based spellcraft end to end. Wren, an
+//! An original scenario built to exercise pitch-based spellcraft end to end. Maren, an
 //! apprentice bell-keeper, learns drafts by observing the tower (a guttering lantern, coiling
 //! ivy, a humming tuning fork), weaves them on the distaff, and must discover one draft that is
 //! never taught: `Loose`, the reverse of `Bind`. The distaff starts with four notes (C to F) and
-//! reaches all seven once Wren holds the tuning fork, which gates `Toll`. Tolling the bell weaves
+//! reaches all seven once Maren holds the tuning fork, which gates `Toll`. Tolling the bell weaves
 //! `Kindle` on the beacon from inside the handler, which exercises host re-dispatch (D-029).
 const std = @import("std");
 const bespoke = @import("bespoke");
@@ -17,12 +17,12 @@ const host = bespoke.host;
 
 pub const BELL_TOWER_SCRIPT =
     \\scene: Bell Tower Base
-    \\cast: Wren
+    \\cast: Maren
     \\props: Lantern, Brazier, Ivy, Stairwell
     \\marks: Doorway, BrazierMark, IvyMark, StairFoot
     \\
     \\scene: Bell Tower Belfry
-    \\cast: Wren
+    \\cast: Maren
     \\props: IronChain, TuningFork, GreatBell, Beacon
     \\marks: StairTop, ChainMark, BellMark, BeaconMark
     \\
@@ -34,117 +34,117 @@ pub const BELL_TOWER_SCRIPT =
     \\draft Bind(F, E, D, F) reverse Loose
     \\draft Toll(G, A, B, G) reverse Hush
     \\
-    \\remember DistaffReach(Wren, 4)
+    \\remember DistaffReach(Maren, 4)
     \\
-    \\on cue LooksAt(Wren, Lantern):
-    \\  say Wren: "The lantern flame gutters and flares: C, D, E, C. It sounds like kindling catching."
-    \\  remember Knows(Wren, Kindle)
+    \\on cue LooksAt(Maren, Lantern):
+    \\  say Maren: "The lantern flame gutters and flares: C, D, E, C. It sounds like kindling catching."
+    \\  remember Knows(Maren, Kindle)
     \\
-    \\on cue LooksAt(Wren, Brazier):
+    \\on cue LooksAt(Maren, Brazier):
     \\  if Brazier is lit:
-    \\    say Wren: "The brazier burns steadily. Its light reaches up the stairwell."
+    \\    say Maren: "The brazier burns steadily. Its light reaches up the stairwell."
     \\  if Brazier is not lit:
-    \\    say Wren: "A cold iron brazier heaped with old coals."
+    \\    say Maren: "A cold iron brazier heaped with old coals."
     \\
-    \\on cue LooksAt(Wren, Ivy):
-    \\  say Wren: "The ivy creaks as it coils around the gate: F, E, D, F. A binding sound."
-    \\  remember Knows(Wren, Bind)
+    \\on cue LooksAt(Maren, Ivy):
+    \\  say Maren: "The ivy creaks as it coils around the gate: F, E, D, F. A binding sound."
+    \\  remember Knows(Maren, Bind)
     \\
-    \\on cue LooksAt(Wren, Stairwell):
+    \\on cue LooksAt(Maren, Stairwell):
     \\  if Brazier is lit:
-    \\    say Wren: "Firelight shows the worn steps up to the belfry."
+    \\    say Maren: "Firelight shows the worn steps up to the belfry."
     \\  if Brazier is not lit:
-    \\    say Wren: "The stairwell is pitch black. I would break my neck."
+    \\    say Maren: "The stairwell is pitch black. I would break my neck."
     \\
-    \\on cue Uses(Wren, Stairwell):
+    \\on cue Uses(Maren, Stairwell):
     \\  if Brazier is not lit:
-    \\    say Wren: "It is too dark to climb."
+    \\    say Maren: "It is too dark to climb."
     \\  if Brazier is lit:
-    \\    say Wren: "I climb toward the bells by firelight."
+    \\    say Maren: "I climb toward the bells by firelight."
     \\    transition to scene: Bell Tower Belfry
     \\
-    \\on cue Weave(Wren, Kindle, Brazier):
+    \\on cue Weave(Maren, Kindle, Brazier):
     \\  if Brazier is lit:
-    \\    say Wren: "The coals are already burning."
+    \\    say Maren: "The coals are already burning."
     \\  if Brazier is not lit:
     \\    Brazier is lit
-    \\    say Wren: "The coals catch. Firelight climbs the stairwell."
+    \\    say Maren: "The coals catch. Firelight climbs the stairwell."
     \\
-    \\on cue Weave(Wren, Douse, Brazier):
+    \\on cue Weave(Maren, Douse, Brazier):
     \\  if Brazier is not lit:
-    \\    say Wren: "There is no fire here to douse."
+    \\    say Maren: "There is no fire here to douse."
     \\  if Brazier is lit:
     \\    Brazier is not lit
-    \\    say Wren: "The flames shrink to nothing. The stairwell goes dark."
+    \\    say Maren: "The flames shrink to nothing. The stairwell goes dark."
     \\
-    \\on cue LooksAt(Wren, IronChain):
+    \\on cue LooksAt(Maren, IronChain):
     \\  if IronChain is loosed:
-    \\    say Wren: "The chain lies slack on the boards."
+    \\    say Maren: "The chain lies slack on the boards."
     \\  if IronChain is not loosed:
-    \\    say Wren: "A heavy chain binds the bell's clapper, wound tight like the ivy below."
+    \\    say Maren: "A heavy chain binds the bell's clapper, wound tight like the ivy below."
     \\
-    \\on cue Weave(Wren, Bind, IronChain):
-    \\  say Wren: "The links pull tighter around the clapper. That was the wrong way round."
+    \\on cue Weave(Maren, Bind, IronChain):
+    \\  say Maren: "The links pull tighter around the clapper. That was the wrong way round."
     \\
-    \\on cue Weave(Wren, Loose, IronChain):
+    \\on cue Weave(Maren, Loose, IronChain):
     \\  if IronChain is loosed:
-    \\    say Wren: "The chain already lies on the floor."
+    \\    say Maren: "The chain already lies on the floor."
     \\  if IronChain is not loosed:
     \\    IronChain is loosed
-    \\    say Wren: "The links slacken and slide away. Something glints where the chain lay."
+    \\    say Maren: "The links slacken and slide away. Something glints where the chain lay."
     \\
-    \\on cue LooksAt(Wren, TuningFork):
+    \\on cue LooksAt(Maren, TuningFork):
     \\  if IronChain is not loosed:
-    \\    say Wren: "Something glints under the chain, out of reach."
+    \\    say Maren: "Something glints under the chain, out of reach."
     \\  if IronChain is loosed:
-    \\    say Wren: "A bronze tuning fork, green with age."
+    \\    say Maren: "A bronze tuning fork, green with age."
     \\
-    \\on cue PicksUp(Wren, TuningFork):
+    \\on cue PicksUp(Maren, TuningFork):
     \\  if IronChain is not loosed:
-    \\    say Wren: "The chain is in the way."
+    \\    say Maren: "The chain is in the way."
     \\  if IronChain is loosed:
-    \\    if not Carries(Wren, TuningFork):
-    \\      remember Carries(Wren, TuningFork)
-    \\      remember DistaffReach(Wren, 7)
-    \\      remember Knows(Wren, Toll)
-    \\      say Wren: "The fork hums G, A, B, G as I lift it. My distaff reaches the high notes now."
+    \\    if not Carries(Maren, TuningFork):
+    \\      remember Carries(Maren, TuningFork)
+    \\      remember DistaffReach(Maren, 7)
+    \\      remember Knows(Maren, Toll)
+    \\      say Maren: "The fork hums G, A, B, G as I lift it. My distaff reaches the high notes now."
     \\
-    \\on cue LooksAt(Wren, GreatBell):
+    \\on cue LooksAt(Maren, GreatBell):
     \\  if GreatBell is ringing:
-    \\    say Wren: "The great bell rolls its voice across the valley."
+    \\    say Maren: "The great bell rolls its voice across the valley."
     \\  if GreatBell is not ringing:
-    \\    say Wren: "The great bell hangs silent. Nobody below has heard it in years."
+    \\    say Maren: "The great bell hangs silent. Nobody below has heard it in years."
     \\
-    \\on cue Weave(Wren, Toll, GreatBell):
+    \\on cue Weave(Maren, Toll, GreatBell):
     \\  if IronChain is not loosed:
-    \\    say Wren: "The bell strains against its chain and stays silent."
+    \\    say Maren: "The bell strains against its chain and stays silent."
     \\  if IronChain is loosed:
     \\    GreatBell is ringing
-    \\    say Wren: "The great bell swings and tolls across the valley."
+    \\    say Maren: "The great bell swings and tolls across the valley."
     \\    weave Kindle on Beacon
     \\
-    \\on cue Weave(Wren, Hush, GreatBell):
+    \\on cue Weave(Maren, Hush, GreatBell):
     \\  if GreatBell is not ringing:
-    \\    say Wren: "The bell is already still."
+    \\    say Maren: "The bell is already still."
     \\  if GreatBell is ringing:
     \\    GreatBell is not ringing
-    \\    say Wren: "The bell's voice settles into silence."
+    \\    say Maren: "The bell's voice settles into silence."
     \\
-    \\on cue LooksAt(Wren, Beacon):
+    \\on cue LooksAt(Maren, Beacon):
     \\  if Beacon is lit:
-    \\    say Wren: "The beacon blazes. Every village in the valley can see it."
+    \\    say Maren: "The beacon blazes. Every village in the valley can see it."
     \\  if Beacon is not lit:
-    \\    say Wren: "A beacon basket on the parapet, cold for years."
+    \\    say Maren: "A beacon basket on the parapet, cold for years."
     \\
-    \\on cue Weave(Wren, Kindle, Beacon):
+    \\on cue Weave(Maren, Kindle, Beacon):
     \\  if Beacon is not lit:
     \\    Beacon is lit
-    \\    say Wren: "The bell's tone kindles the beacon. Its light reaches every village below."
+    \\    say Maren: "The bell's tone kindles the beacon. Its light reaches every village below."
     \\
-    \\on cue Weave(Wren, Douse, Beacon):
+    \\on cue Weave(Maren, Douse, Beacon):
     \\  if Beacon is lit:
     \\    Beacon is not lit
-    \\    say Wren: "The beacon gutters out."
+    \\    say Maren: "The beacon gutters out."
 ;
 
 pub const BASE_SCENE = "Bell Tower Base";
@@ -154,7 +154,7 @@ pub const BELFRY_SCENE = "Bell Tower Belfry";
 pub const Ids = struct {
     base: EntityId,
     belfry: EntityId,
-    wren: EntityId,
+    maren: EntityId,
     lantern: EntityId,
     brazier: EntityId,
     ivy: EntityId,
@@ -174,7 +174,7 @@ pub const Ids = struct {
     beacon_wp: u16,
 };
 
-/// Lays out both scenes after compilation: waypoint positions, corridors, hotspots, and Wren.
+/// Lays out both scenes after compilation: waypoint positions, corridors, hotspots, and Maren.
 /// Shared by the headless and interactive runs so both exercise one topology.
 pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const base = world.lookup_entity(BASE_SCENE).?;
@@ -182,7 +182,7 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const ids = Ids{
         .base = base,
         .belfry = belfry,
-        .wren = world.lookup_entity("Wren").?,
+        .maren = world.lookup_entity("Maren").?,
         .lantern = world.lookup_entity("Lantern").?,
         .brazier = world.lookup_entity("Brazier").?,
         .ivy = world.lookup_entity("Ivy").?,
@@ -228,19 +228,19 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     try spatial.add_hotspot(ids.bell, belfry, .{ .x = 21, .y = -10 }, 9, "Great Bell", "The great bronze bell of the tower.");
     try spatial.add_hotspot(ids.beacon, belfry, .{ .x = 36, .y = -8 }, 7, "Beacon", "A beacon basket on the parapet.");
 
-    try spatial.register_entity(ids.wren, ids.doorway_wp, 10);
+    try spatial.register_entity(ids.maren, ids.doorway_wp, 10);
     return ids;
 }
 
-/// Copies the script's `DistaffReach(Wren, n)` fact into the host-side phrase buffer (D-030).
+/// Copies the script's `DistaffReach(Maren, n)` fact into the host-side phrase buffer (D-030).
 pub fn sync_reach(world: *const bespoke.World, ids: Ids, input: *draft.DistaffInput) void {
-    input.set_reach_from(world, ids.wren, "DistaffReach", 4);
+    input.set_reach_from(world, ids.maren, "DistaffReach", 4);
 }
 
 pub fn knows(world: *const bespoke.World, ids: Ids, draft_name: []const u8) bool {
     const rel = world.lookup_relation("Knows") orelse return false;
     const d = world.lookup_entity(draft_name) orelse return false;
-    return world.has_fact(ids.wren, rel, d.to_int());
+    return world.has_fact(ids.maren, rel, d.to_int());
 }
 
 pub fn is_solved(world: *const bespoke.World, ids: Ids) bool {
@@ -291,7 +291,7 @@ pub fn weave_phrase(
     buf: []u8,
 ) !PhraseResult {
     var log = host.SpeechLog.init(buf);
-    const fiber = try vm.weave_notes(compiled, ids.wren, phrase, target);
+    const fiber = try vm.weave_notes(compiled, ids.maren, phrase, target);
     input.outcome = if (fiber != null) .woven else .fizzled;
     var redispatched = try host.tick(vm, compiled); // handler runs; in-script weaves dispatch after it
     log.collect(world, vm);
@@ -339,14 +339,14 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     defer snapshot_0.deinit();
     try world.save_state(snapshot_0.writer());
 
-    try writer.print("\n[Step 1] Observation: Wren watches the lantern.\n", .{});
-    if (try host.act(&world, &vm, &compiled, "LooksAt", ids.wren, ids.lantern, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    try writer.print("\n[Step 1] Observation: Maren watches the lantern.\n", .{});
+    if (try host.act(&world, &vm, &compiled, "LooksAt", ids.maren, ids.lantern, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(knows(&world, ids, "Kindle"), error.KindleNotLearned);
     try writer.print("  -> Distaff reach: {d} notes (C to F)\n", .{input.reach});
     try expect_true(input.reach == 4, error.WrongStartingReach);
 
     try writer.print("\n[Step 2] The stairwell is dark.\n", .{});
-    if (try host.act(&world, &vm, &compiled, "Uses", ids.wren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "Uses", ids.maren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(vm.current_scene.? == ids.base, error.ClimbedInTheDark);
 
     try writer.print("\n[Step 3] A misplayed phrase fizzles (C, C, D, D).\n", .{});
@@ -368,13 +368,13 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(host.has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
 
     try writer.print("\n[Step 6] Observation: the ivy teaches Bind (F, E, D, F).\n", .{});
-    if (try host.act(&world, &vm, &compiled, "LooksAt", ids.wren, ids.ivy, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "LooksAt", ids.maren, ids.ivy, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(knows(&world, ids, "Bind"), error.BindNotLearned);
 
     try writer.print("\n[Step 7] Climb to the belfry by firelight.\n", .{});
-    if (try host.act(&world, &vm, &compiled, "Uses", ids.wren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "Uses", ids.maren, ids.stairwell, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     try expect_true(vm.current_scene.? == ids.belfry, error.ClimbFailed);
-    _ = try spatial.transition_actor(ids.wren, ids.belfry, ids.stair_top_wp);
+    _ = try spatial.transition_actor(ids.maren, ids.belfry, ids.stair_top_wp);
 
     try writer.print("\n[Step 8] Toll is out of reach: the B note is refused at reach 4.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .G, .A, .B, .G }, ids.bell, &buf);
@@ -393,7 +393,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(host.has_state(&world, ids.chain, "loosed"), error.ChainNotLoosed);
 
     try writer.print("\n[Step 11] Take the tuning fork: the distaff reaches all seven notes.\n", .{});
-    if (try host.act(&world, &vm, &compiled, "PicksUp", ids.wren, ids.fork, &buf)) |m| try writer.print("  -> {s}\n", .{m});
+    if (try host.act(&world, &vm, &compiled, "PicksUp", ids.maren, ids.fork, &buf)) |m| try writer.print("  -> {s}\n", .{m});
     sync_reach(&world, ids, &input);
     try writer.print("  -> Distaff reach: {d} notes\n", .{input.reach});
     try expect_true(input.reach == 7 and knows(&world, ids, "Toll"), error.ForkDidNotExtendReach);
@@ -409,7 +409,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var stream = std.io.fixedBufferStream(snapshot_0.items);
     try world.restore_state(stream.reader());
     vm.current_scene = ids.base;
-    _ = try spatial.transition_actor(ids.wren, ids.base, ids.doorway_wp);
+    _ = try spatial.transition_actor(ids.maren, ids.base, ids.doorway_wp);
     sync_reach(&world, ids, &input);
     try writer.print("  -> Bell ringing: {any}, brazier lit: {any}, reach: {d} (expected false, false, 4)\n", .{
         host.has_state(&world, ids.bell, "ringing"),
@@ -423,7 +423,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("===================================================================\n\n", .{});
 }
 
-/// Waypoint Wren walks to when interacting with a hotspot, so actions read as diegetic.
+/// Waypoint Maren walks to when interacting with a hotspot, so actions read as diegetic.
 fn approach_wp(ids: Ids, entity: EntityId) ?u16 {
     if (entity == ids.lantern) return ids.doorway_wp;
     if (entity == ids.brazier) return ids.brazier_wp;
@@ -435,14 +435,14 @@ fn approach_wp(ids: Ids, entity: EntityId) ?u16 {
     return null;
 }
 
-/// Moves Wren's body when a cue handler changed scene (the stairwell climb).
+/// Moves Maren's body when a cue handler changed scene (the stairwell climb).
 fn follow_scene(vm: *const bespoke.VM, spatial: *bespoke.SpatialSystem, ids: Ids, before: ?EntityId) !void {
     const now = vm.current_scene orelse return;
     if (before != null and before.? == now) return;
     if (now == ids.belfry) {
-        _ = try spatial.transition_actor(ids.wren, ids.belfry, ids.stair_top_wp);
+        _ = try spatial.transition_actor(ids.maren, ids.belfry, ids.stair_top_wp);
     } else if (now == ids.base) {
-        _ = try spatial.transition_actor(ids.wren, ids.base, ids.stair_foot_wp);
+        _ = try spatial.transition_actor(ids.maren, ids.base, ids.stair_foot_wp);
     }
 }
 
@@ -489,7 +489,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     display_bridge.set_status_hook(art.capture_status);
     display_bridge.attach_audio_bridge(window.audio_bridge);
     display_bridge.attach_distaff(&input);
-    display_bridge.set_active_character(ids.wren); // inventory tray shows Wren's Carries facts
+    display_bridge.set_active_character(ids.maren); // inventory tray shows Maren's Carries facts
     var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &display_bridge, &window);
     defer session.deinit();
 
@@ -511,10 +511,10 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             }
         } else switch (action) {
             .walk_player => |wp_id| {
-                _ = try spatial.walk_to(ids.wren, wp_id);
+                _ = try spatial.walk_to(ids.maren, wp_id);
                 if (vm.current_scene == ids.belfry and wp_id == ids.stair_top_wp) {
                     try vm.transition_to_scene(ids.base);
-                    window.set_cue_banner("Wren climbs back down to the tower base.", 90);
+                    window.set_cue_banner("Maren climbs back down to the tower base.", 90);
                 }
             },
             .examine_hotspot, .interact_hotspot => {
@@ -527,7 +527,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (idx < frame.hotspot_count) {
                     const target = frame.hotspots[idx].entity;
                     input.target = target;
-                    if (approach_wp(ids, target)) |wp| _ = try spatial.walk_to(ids.wren, wp);
+                    if (approach_wp(ids, target)) |wp| _ = try spatial.walk_to(ids.maren, wp);
                     const cue_name: ?[]const u8 = switch (verb) {
                         .look_at => "LooksAt",
                         .use_with => "Uses",
@@ -535,19 +535,19 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         else => null,
                     };
                     if (cue_name) |cn| {
-                        if (try host.act(&world, &vm, &compiled, cn, ids.wren, target, &buf)) |msg| {
+                        if (try host.act(&world, &vm, &compiled, cn, ids.maren, target, &buf)) |msg| {
                             window.set_cue_banner(msg, 200);
                         } else {
                             window.set_cue_banner("Nothing happens.", 60);
                         }
                         sync_reach(&world, ids, &input);
                     } else {
-                        window.set_cue_banner("Wren turns toward it. Play a draft to weave on it.", 90);
+                        window.set_cue_banner("Maren turns toward it. Play a draft to weave on it.", 90);
                     }
                 }
             },
             .interact_actor => {
-                window.set_cue_banner("Wren: \"Apprentice bell-keeper. The distaff was my teacher's.\"", 120);
+                window.set_cue_banner("Maren: \"Apprentice bell-keeper. The distaff was my teacher's.\"", 120);
             },
             .play_note => |deg| {
                 if (Note.from_int(deg)) |note| {
@@ -626,7 +626,7 @@ test "P22-03: drafts weave only where the script allows" {
     try std.testing.expect(!host.has_state(&world, ids.beacon, "lit"));
 
     // The fork cannot be taken while the chain lies on it.
-    _ = try host.act(&world, &vm, &compiled, "PicksUp", ids.wren, ids.fork, &buf);
+    _ = try host.act(&world, &vm, &compiled, "PicksUp", ids.maren, ids.fork, &buf);
     sync_reach(&world, ids, &input);
     try std.testing.expectEqual(@as(u8, 4), input.reach);
 }

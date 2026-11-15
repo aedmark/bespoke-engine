@@ -110,19 +110,19 @@ weathercock/Beacon Hill: 855c7b71d9657b0d
 weathercock/Beacon Hill +branch_active: 75a033f1df746e7f
 weathercock/Beacon Hill +branch_collapsed: c15617b3462448a0
 weathercock/Beacon Hill +countdown: 6ff977204b3b4a86
-thumb/loom_puzzle/Bell Tower Base: de2e85e4d9574afc
-loom_puzzle/Bell Tower Base: fdfb1acb4f2d6800
-loom_puzzle/Bell Tower Base +branch_active: 06d5135f9dbae316
-loom_puzzle/Bell Tower Base +branch_collapsed: cb3cd9709f2e5e79
-loom_puzzle/Bell Tower Base +bell_brazier_lit: 22129e992669e095
-loom_puzzle/Bell Tower Base +countdown: 0c6234b132f8e6d4
-thumb/loom_puzzle/Bell Tower Belfry: de2e85e4d9574afc
-loom_puzzle/Bell Tower Belfry: 82ddc1963d721979
-loom_puzzle/Bell Tower Belfry +branch_active: 6f301084a08e3c1c
-loom_puzzle/Bell Tower Belfry +branch_collapsed: c16856937bd40be4
-loom_puzzle/Bell Tower Belfry +bell_chain_loosed: ede5811adc4fc0b5
-loom_puzzle/Bell Tower Belfry +bell_ringing: 5adb06386c692c7c
-loom_puzzle/Bell Tower Belfry +bell_beacon_lit: adb7a036a45fb55c
+thumb/bell_tower/Bell Tower Base: de2e85e4d9574afc
+bell_tower/Bell Tower Base: 26bdd1b975ffd62f
+bell_tower/Bell Tower Base +branch_active: c9cae9c006814b33
+bell_tower/Bell Tower Base +branch_collapsed: 2a80b69c009bdf4d
+bell_tower/Bell Tower Base +bell_brazier_lit: 21c5025ff9029a5a
+bell_tower/Bell Tower Base +countdown: b00910c2fd1e8ed4
+thumb/bell_tower/Bell Tower Belfry: de2e85e4d9574afc
+bell_tower/Bell Tower Belfry: 82ddc1963d721979
+bell_tower/Bell Tower Belfry +branch_active: 6f301084a08e3c1c
+bell_tower/Bell Tower Belfry +branch_collapsed: c16856937bd40be4
+bell_tower/Bell Tower Belfry +bell_chain_loosed: ede5811adc4fc0b5
+bell_tower/Bell Tower Belfry +bell_ringing: 5adb06386c692c7c
+bell_tower/Bell Tower Belfry +bell_beacon_lit: adb7a036a45fb55c
 thumb/grog_puzzle/Saltglass Stockade: 262933539195addc
 grog_puzzle/Saltglass Stockade: fc3ff7869b588634
 grog_puzzle/Saltglass Stockade +branch_active: 3825fc5184f26369

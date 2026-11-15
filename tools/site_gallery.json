@@ -93,11 +93,11 @@
       "flag": "weathercock"
     },
     {
-      "id": "loom",
+      "id": "bell-tower",
       "title": "The Bell Tower",
       "tag": "Musical drafts",
       "blurb": "Play four-note tunes (drafts) on a musical staff to change the world. Played backwards, each tune does its opposite.",
-      "source": "proofs/loom_puzzle.zig#BELL_TOWER_SCRIPT",
+      "source": "proofs/bell_tower.zig#BELL_TOWER_SCRIPT",
       "deck": 10,
       "flag": "bell-tower"
     },

@@ -25,7 +25,7 @@ const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
 const sword_fighting = @import("sword_fighting.zig");
 const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
 const algiers = @import("atlantis_puzzle.zig");
-const loom = @import("loom_puzzle.zig");
+const bell_tower = @import("bell_tower.zig");
 const art = @import("art.zig");
 const weathercock = @import("weathercock.zig");
 const duel_mod = bespoke.duel;
@@ -140,16 +140,16 @@ pub const decks = [_]wasm.Deck{
         .catalyst = solver(&WEATHERCOCK_SOLUTION),
         .after_tick = weathercock_after_tick,
     }),
-    wasm.script_deck_with("THE BELL TOWER (MUSICAL DRAFTS)", loom.BELL_TOWER_SCRIPT, .{
-        .player = "Wren",
+    wasm.script_deck_with("THE BELL TOWER (MUSICAL DRAFTS)", bell_tower.BELL_TOWER_SCRIPT, .{
+        .player = "Maren",
         .intro = "Bell Tower: act on something, then play four notes with C D E F G A B. [S] for the next step.",
         .soundtrack = &art.soundtrack,
         .theme = &art.theme,
         .status_hook = art.capture_status,
         .background = .{ .r = 24, .g = 28, .b = 46 },
-        .setup = loom_setup,
-        .catalyst = solver(&LOOM_SOLUTION),
-        .after_tick = loom_follow_scene,
+        .setup = bell_tower_setup,
+        .catalyst = solver(&BELL_TOWER_SOLUTION),
+        .after_tick = bell_tower_follow_scene,
         .cues = .{ .take = "PicksUp" },
     }),
 };
@@ -467,14 +467,14 @@ const WEATHERCOCK_SOLUTION = [_]Beat{
 };
 
 // The Bell Tower's desktop solution: watch, kindle, learn, climb, loosen, take the fork, toll.
-const LOOM_SOLUTION = [_]Beat{
-    .{ .note = "Wren watches the lantern.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "Wren", .a = "Lantern" } }, .{ .ticks = 1 } } },
-    .{ .note = "Wren weaves Kindle (C D E C) on the brazier.", .actions = &.{.{ .weave = .{ .notes = "CDEC", .target = "Brazier" } }} },
-    .{ .note = "The ivy teaches Bind.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "Wren", .a = "Ivy" } }, .{ .ticks = 1 } } },
-    .{ .note = "Wren climbs to the belfry by firelight.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Wren", .a = "Stairwell" } }, .{ .ticks = 2 } } },
+const BELL_TOWER_SOLUTION = [_]Beat{
+    .{ .note = "Maren watches the lantern.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "Maren", .a = "Lantern" } }, .{ .ticks = 1 } } },
+    .{ .note = "Maren weaves Kindle (C D E C) on the brazier.", .actions = &.{.{ .weave = .{ .notes = "CDEC", .target = "Brazier" } }} },
+    .{ .note = "The ivy teaches Bind.", .actions = &.{ .{ .cue = .{ .name = "LooksAt", .actor = "Maren", .a = "Ivy" } }, .{ .ticks = 1 } } },
+    .{ .note = "Maren climbs to the belfry by firelight.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Maren", .a = "Stairwell" } }, .{ .ticks = 2 } } },
     .{ .note = "Bind played backwards: Loose (F D E F) frees the chain.", .actions = &.{.{ .weave = .{ .notes = "FDEF", .target = "IronChain" } }} },
-    .{ .note = "Wren takes the tuning fork; the distaff reaches all seven notes.", .actions = &.{ .{ .cue = .{ .name = "PicksUp", .actor = "Wren", .a = "TuningFork" } }, .{ .ticks = 1 } } },
-    .{ .note = "Wren weaves Toll (G A B G) on the great bell.", .actions = &.{.{ .weave = .{ .notes = "GABG", .target = "GreatBell" } }} },
+    .{ .note = "Maren takes the tuning fork; the distaff reaches all seven notes.", .actions = &.{ .{ .cue = .{ .name = "PicksUp", .actor = "Maren", .a = "TuningFork" } }, .{ .ticks = 1 } } },
+    .{ .note = "Maren weaves Toll (G A B G) on the great bell.", .actions = &.{.{ .weave = .{ .notes = "GABG", .target = "GreatBell" } }} },
 };
 
 // =============================================================================
@@ -558,24 +558,24 @@ fn weathercock_after_tick(rt: *WasmRuntime) anyerror!void {
     rt.bind();
 }
 
-/// The desktop proof's tower layout, with Wren at the doorway of the base.
-fn loom_setup(rt: *WasmRuntime) anyerror!void {
-    const ids = try loom.configure(&rt.world, &rt.spatial);
+/// The desktop proof's tower layout, with Maren at the doorway of the base.
+fn bell_tower_setup(rt: *WasmRuntime) anyerror!void {
+    const ids = try bell_tower.configure(&rt.world, &rt.spatial);
     try rt.vm.transition_to_scene(ids.base);
-    loom_scene = ids.base;
+    bell_tower_scene = ids.base;
 }
 
 /// The scene the Bell Tower deck last showed. The script changes scenes itself; as on desktop,
-/// Wren follows to the stair at the other end.
-var loom_scene: EntityId = .none;
+/// Maren follows to the stair at the other end.
+var bell_tower_scene: EntityId = .none;
 
-fn loom_follow_scene(rt: *WasmRuntime) anyerror!void {
+fn bell_tower_follow_scene(rt: *WasmRuntime) anyerror!void {
     const now = rt.vm.current_scene orelse return;
-    if (now == loom_scene) return;
-    loom_scene = now;
-    const wren = try entity(rt, "Wren");
-    const mark = if (std.mem.eql(u8, rt.world.get_entity_name(now) orelse "", loom.BELFRY_SCENE)) "StairTop" else "StairFoot";
-    _ = try rt.spatial.transition_actor(wren, now, rt.spatial.graph.find_waypoint_in_room(now, mark));
+    if (now == bell_tower_scene) return;
+    bell_tower_scene = now;
+    const maren = try entity(rt, "Maren");
+    const mark = if (std.mem.eql(u8, rt.world.get_entity_name(now) orelse "", bell_tower.BELFRY_SCENE)) "StairTop" else "StairFoot";
+    _ = try rt.spatial.transition_actor(maren, now, rt.spatial.graph.find_waypoint_in_room(now, mark));
 }
 
 fn beard_setup(rt: *WasmRuntime) anyerror!void {
@@ -967,7 +967,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Indy", "Wren", "Wren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Indy", "Wren", "Maren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1085,7 +1085,7 @@ test "P30-01: the Bell Tower deck weaves drafts from note keys and tolls the bel
     try solve(rt);
     try testing.expect(bespoke.host.has_state(&rt.world, rt.world.lookup_entity("GreatBell").?, "ringing"));
     try testing.expect(bespoke.host.has_state(&rt.world, rt.world.lookup_entity("Beacon").?, "lit"));
-    try testing.expectEqualStrings(loom.BELFRY_SCENE, rt.world.get_entity_name(rt.vm.current_scene.?).?);
+    try testing.expectEqualStrings(bell_tower.BELFRY_SCENE, rt.world.get_entity_name(rt.vm.current_scene.?).?);
 }
 
 test "P30-01: the Copper Weathercock deck runs a branch world and closes its loop" {

@@ -22,7 +22,7 @@ const village = @import("village.zig");
 const lamp_point = @import("lamp_point.zig");
 const three_tides = @import("three_tides.zig");
 const weathercock = @import("weathercock.zig");
-const loom_puzzle = @import("loom_puzzle.zig");
+const bell_tower = @import("bell_tower.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
 const atlantis_puzzle = @import("atlantis_puzzle.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
@@ -55,7 +55,7 @@ const proofs = [_]struct { name: []const u8, run: RunFn }{
     .{ .name = "lamp_point", .run = bind(lamp_point.run_headless) },
     .{ .name = "three_tides", .run = bind(three_tides.run_headless) },
     .{ .name = "weathercock", .run = bind(weathercock.run_headless) },
-    .{ .name = "loom_puzzle", .run = bind(loom_puzzle.run_headless) },
+    .{ .name = "bell_tower", .run = bind(bell_tower.run_headless) },
     .{ .name = "grog_puzzle", .run = bind(grog_puzzle.run_headless) },
     .{ .name = "atlantis_puzzle", .run = bind(atlantis_puzzle.run_headless) },
     .{ .name = "grid_puzzle", .run = bind(grid_puzzle.run_headless) },

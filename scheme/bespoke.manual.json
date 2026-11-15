@@ -929,7 +929,7 @@
           "id": "musical-drafts-and-the-bell-tower",
           "title": "Musical Drafts and The Bell Tower Scenario",
           "summary": "Four-note pitch drafts declared in the DSL, played on a distaff, reversed for complementary effects, and dispatched through Weave cues.",
-          "synopsis": "draft Kindle(C, D, E, C) reverse Douse  |  weave Kindle on Beacon  |  zig build run-proof -- --loom [--headless]",
+          "synopsis": "draft Kindle(C, D, E, C) reverse Douse  |  weave Kindle on Beacon  |  zig build run-proof -- --bell-tower [--headless]",
           "tags": ["drafts", "distaff", "audio", "reversal", "cues", "bell-tower"],
           "what": "Adds pitch-based spellcraft: `draft` declarations name four-note sequences over C to B, `weave` statements and player note input cast them on targets, and the original Bell Tower slice teaches drafts by observation and gates the high notes behind the distaff's reach.",
           "how": [
@@ -945,7 +945,7 @@
             {"label": "Architectural Decision D-030", "target": "docs/DECISIONS.md#d-030", "kind": "decision"},
             {"label": "Draft Primitives & Distaff Input", "target": "src/draft.zig", "kind": "source"},
             {"label": "Weave Dispatch", "target": "src/vm.zig", "kind": "source"},
-            {"label": "Bell Tower Scenario", "target": "proofs/loom_puzzle.zig", "kind": "source"},
+            {"label": "Bell Tower Scenario", "target": "proofs/bell_tower.zig", "kind": "source"},
             {"label": "Distaff Note Synthesis", "target": "src/audio.zig", "kind": "source"}
           ],
           "related": [
