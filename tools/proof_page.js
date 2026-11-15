@@ -144,6 +144,21 @@
       deckAction(action);
       return;
     }
+    // I opens the state inspector, which pauses the game; while it is open the arrows, Enter,
+    // Backspace, Home, and F move around it (D-070) and the game's keys wait.
+    if (event.key === 'i' || event.key === 'I') {
+      event.preventDefault();
+      key(73);
+      return;
+    }
+    if (exp.wasm_inspector_open && exp.wasm_inspector_open()) {
+      const named = { ArrowLeft: 37, ArrowRight: 39, Enter: 13, Backspace: 8, Home: 36, f: 70, F: 70 }[event.key];
+      if (named) {
+        event.preventDefault();
+        key(named);
+      }
+      return;
+    }
     const pending = exp.wasm_message_pending && exp.wasm_message_pending();
     const open = exp.wasm_dialogue_open && exp.wasm_dialogue_open();
     if (pending && (event.key === 'Enter' || event.key === ' ' || event.key === 's' || event.key === 'S')) {

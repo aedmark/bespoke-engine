@@ -1275,6 +1275,14 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Porting SDL2 to the browser with Emscripten: rejected in D-022 and still rejected (an external toolchain).
 **Consequences:** Every render golden and every browser golden changes once. The browser framebuffer grows from 0.9 MB to 3.7 MB of wasm memory, and the module grows by the renderer and the proof art. Browser click coordinates change with the canvas size.
 
+## D-098 One Inspector, One Hover, One Timeline; Browser-Only Paths That Stay (2026-11-14, status: accepted)
+**Context:** P36-06 asks that where the browser and the desktop did the same thing, one implementation remain. After D-097 the browser drew the desktop frame but kept its own state inspector (`src/wasm_inspector.zig`: focus, selection, history, filter, keys, clicks, and drawing at 640x360, doubled onto the frame), its own timeline hit test, and its own hover update.
+**Decision:**
+1. **The browser's inspector is the desktop State tab.** Its navigation state lives on the window (D-059); the page's key codes map to the window's keys (`InspectorKey.desktop`, `renderer.Keys`); clicks go to `inspector_click`; `render_state_overlay` draws it in the save drawer's place without the save tabs. `I` still pauses and restores the clock. `src/wasm_inspector.zig` and the 640x360 scratch canvas are gone. The standalone pages now forward `I` and the inspector keys, which the shared footer names.
+2. **Shared hit tests.** `renderer.hit_test_timeline` (integer arithmetic), `update_hover`, and the verb bar's click band (`bar_band_top`, `BAR_BAND_H`) serve both surfaces.
+3. **What stays apart, and why.** The approach walk (D-092): the desktop hands a held `UserAction` to each proof's host loop, while the browser fires cues itself, so each keeps its own holder. Item use (D-094): the browser uses an item alone when the script answers that, a rule the desktop proofs do not have. Exits (D-094) and page actions (D-095) exist only in the browser, where room keys and proof keys are not bound. `Deck.background` is the neutral stage's colour for decks without a theme.
+**Consequences:** The browser golden changed only its 22 inspector frames. The browser inspector test now checks that page keys and clicks reach the desktop navigation and that the overlay draws in the drawer's place; the navigation itself is tested once, by the desktop's P27-03 test. The old canvas primitive test is covered by `canvas.zig`.
+
 ## Held tensions
 
 A tension is two claims that are true and do not fit together yet. It is not an open question. An open question has

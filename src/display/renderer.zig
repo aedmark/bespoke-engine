@@ -68,6 +68,17 @@ const EntityId = display_mod.EntityId;
 /// key bindings and the browser build need no SDL (D-097).
 pub const Keycode = i32;
 
+/// SDL's codes for the named keys the state inspector reads (D-059), so its key handling
+/// compiles in the browser build too (D-097). A test checks each against SDL.
+pub const Keys = struct {
+    pub const right: Keycode = 0x4000004F;
+    pub const left: Keycode = 0x40000050;
+    pub const home: Keycode = 0x4000004A;
+    pub const enter: Keycode = 13;
+    pub const kp_enter: Keycode = 0x40000058;
+    pub const backspace: Keycode = 8;
+};
+
 /// The key code of a letter or digit key, which SDL numbers by its lowercase ASCII value. Lets
 /// a theme's bindings compile in the browser build, which has no SDL (D-097).
 pub fn key(comptime ch: u8) Keycode {
@@ -388,9 +399,24 @@ pub fn hit_test_hotspot(
 }
 
 /// Hit-tests screen coordinates against the 5 classic adventure verb buttons (P7-02).
+/// The timeline bar along the top (P9-02, D-011): from x 20 to 20 pixels short of the right
+/// edge, y 50 to 74.
+pub fn on_timeline(screen_x: i32, screen_y: i32, screen_w: i32) bool {
+    return screen_y >= 50 and screen_y <= 74 and screen_x >= 20 and screen_x <= screen_w - 20;
+}
+
+/// The tick a click on the timeline bar scrubs to, or null off the bar or with no history.
+/// Integer arithmetic: the tick is the click's share of the bar, rounded down.
+pub fn hit_test_timeline(screen_x: i32, screen_y: i32, screen_w: i32, max_tick: u64) ?u64 {
+    if (max_tick == 0 or !on_timeline(screen_x, screen_y, screen_w)) return null;
+    const rel: u64 = @intCast(screen_x - 20);
+    const width: u64 = @intCast(screen_w - 40);
+    return @min(max_tick, rel * max_tick / width);
+}
+
 pub fn hit_test_verb_button(screen_x: i32, screen_y: i32, screen_h: i32) ?AdventureVerb {
-    const y_start = screen_h - 78;
-    const btn_h = 26;
+    const y_start = bar_band_top(screen_h);
+    const btn_h = BAR_BAND_H;
     const btn_w = 68;
     const spacing = 6;
 
@@ -445,9 +471,16 @@ pub fn inventory_layout(screen_w: i32, inventory: []const RenderInventoryItem, o
     return out[0..n];
 }
 
+/// The band of the verb bar row that takes clicks on verbs and items: from 78 above the
+/// bottom, `BAR_BAND_H` tall.
+pub const BAR_BAND_H: i32 = 26;
+pub fn bar_band_top(screen_h: i32) i32 {
+    return screen_h - 78;
+}
+
 pub fn hit_test_inventory_item(screen_x: i32, screen_y: i32, screen_w: i32, screen_h: i32, inventory: []const RenderInventoryItem) ?usize {
-    const bar_y = screen_h - 78;
-    if (screen_y < bar_y or screen_y > bar_y + 26) return null;
+    const bar_y = bar_band_top(screen_h);
+    if (screen_y < bar_y or screen_y > bar_y + BAR_BAND_H) return null;
     var slots: [8]InventorySlot = undefined;
     for (inventory_layout(screen_w, inventory, &slots), 0..) |slot, idx| {
         if (screen_x >= slot.x and screen_x <= slot.x + slot.w) return idx;
@@ -1530,7 +1563,7 @@ pub const DisplayWindow = struct {
         return self.inspector_focus orelse state_graph.default_focus(facts, self.inspector_filter) orelse state_graph.default_focus(facts, .{});
     }
 
-    fn inspector_layout(self: *DisplayWindow, frame: *const RenderFrame) ?state_graph.Layout {
+    pub fn inspector_layout(self: *DisplayWindow, frame: *const RenderFrame) ?state_graph.Layout {
         const facts = frame.debug_facts[0..frame.debug_fact_count];
         self.inspector_sync(facts);
         const focus = self.inspector_resolved_focus(facts) orelse return null;
@@ -1553,35 +1586,35 @@ pub const DisplayWindow = struct {
     }
 
     /// State tab keys (P27-03, D-059). Returns true when the key was a navigation key.
-    fn inspector_key(self: *DisplayWindow, frame: *const RenderFrame, sym: Keycode) bool {
+    pub fn inspector_key(self: *DisplayWindow, frame: *const RenderFrame, sym: Keycode) bool {
         const facts = frame.debug_facts[0..frame.debug_fact_count];
         const layout = self.inspector_layout(frame);
         const ring_len = if (layout) |l| l.ring_len else 0;
         switch (sym) {
-            c.SDLK_RIGHT, c.SDLK_LEFT => {
+            Keys.right, Keys.left => {
                 if (ring_len == 0) return true;
-                self.inspector_selected = if (sym == c.SDLK_RIGHT)
+                self.inspector_selected = if (sym == Keys.right)
                     (self.inspector_selected + 1) % ring_len
                 else
                     (self.inspector_selected + ring_len - 1) % ring_len;
             },
-            c.SDLK_RETURN, c.SDLK_KP_ENTER => {
+            Keys.enter, Keys.kp_enter => {
                 const l = layout orelse return true;
                 if (ring_len == 0) return true;
                 self.inspector_recentre(l.center.entity, l.ring[self.inspector_selected].entity);
             },
-            c.SDLK_BACKSPACE => {
+            Keys.backspace => {
                 if (self.inspector_history_len == 0) return true;
                 self.inspector_history_len -= 1;
                 self.inspector_focus = self.inspector_history[self.inspector_history_len];
                 self.inspector_selected = 0;
             },
-            c.SDLK_HOME => {
+            Keys.home => {
                 self.inspector_focus = null;
                 self.inspector_history_len = 0;
                 self.inspector_selected = 0;
             },
-            c.SDLK_f => {
+            key('f') => {
                 self.inspector_filter = state_graph.next_filter(facts, self.inspector_filter);
                 self.inspector_selected = 0;
             },
@@ -1592,7 +1625,7 @@ pub const DisplayWindow = struct {
     }
 
     /// A click on a ring node recentres on it, as Enter does on the selection.
-    fn inspector_click(self: *DisplayWindow, frame: *const RenderFrame, x: i32, y: i32) bool {
+    pub fn inspector_click(self: *DisplayWindow, frame: *const RenderFrame, x: i32, y: i32) bool {
         const layout = self.inspector_layout(frame) orelse return false;
         const ring = layout.hit_ring(x, y, 14) orelse return false;
         self.inspector_recentre(layout.center.entity, layout.ring[ring].entity);
@@ -1600,7 +1633,7 @@ pub const DisplayWindow = struct {
         return true;
     }
 
-    fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: Rect) void {
+    pub fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: Rect) void {
         const facts = frame.debug_facts[0..frame.debug_fact_count];
         const g = inspector_geometry(drect);
         const area_x = g.area_x;
@@ -1852,6 +1885,41 @@ pub const DisplayWindow = struct {
     /// Polls input (D-092): first hands over a held action once the player has reached its
     /// target, then reads new events. An action that changes what the player is doing (a
     /// walk, another action, a rewind) drops the held one.
+    /// What lies under the pointer at `(x, y)`: a dialogue choice, a mark, a prop, a person, a
+    /// party portrait. Desktop and browser both call it (D-097), so hover reads the same.
+    pub fn update_hover(self: *DisplayWindow, frame: *const RenderFrame, x: i32, y: i32) void {
+        self.hovered_choice = null;
+        if (!self.messages.pending()) if (self.active_balloon) |*b| {
+            const panel = self.dialogue_panel_for(b);
+            self.hovered_choice = hit_test_dialogue_panel(x, y, b, &panel);
+        };
+        self.hovered_wp = hit_test_waypoint(x, y, frame.waypoints[0..frame.waypoint_count], self.width, self.height);
+        self.hovered_hotspot = hit_test_hotspot(x, y, frame.hotspots[0..frame.hotspot_count], self.width, self.height);
+        self.hovered_actor = hit_test_actor(x, y, frame.entities[0..frame.entity_count], self.width, self.height);
+        self.hovered_party_member = hit_test_party_portrait(x, y, frame.party_count, self.width);
+    }
+
+    /// Draws the state inspector over the frame without the save drawer's tabs (D-070, D-097):
+    /// the browser's `I` overlay, in the drawer's place and geometry, so its graph is laid out
+    /// as the desktop State tab lays it out.
+    pub fn render_state_overlay(self: *DisplayWindow, frame: *const RenderFrame) void {
+        if (self.canvas == null) return;
+        self.fill_rect(0, 0, self.width, self.height, Color{ .r = 5, .g = 8, .b = 18, .a = 195 });
+        const drect = get_save_drawer_rect(self.width, self.height);
+        self.fill_rect(drect.x, drect.y, drect.w, drect.h, Color{ .r = 12, .g = 19, .b = 34, .a = 250 });
+        self.draw_rect_outline(drect.x, drect.y, drect.w, drect.h, INSPECTOR_ACCENT);
+        self.fill_rect(drect.x + 4, drect.y + 4, drect.w - 8, 30, Color{ .r = 22, .g = 32, .b = 54 });
+        self.draw_text_fit(
+            "=== STATE INSPECTOR ([I]: Close | Left/Right: Select | Enter: Centre | Backspace: Back | Home: Reset | F: Filter) ===",
+            drect.x + 16,
+            drect.y + 14,
+            drect.w - 32,
+            1,
+            INSPECTOR_ACCENT,
+        );
+        self.draw_state_inspector(frame, drect);
+    }
+
     pub fn poll_events(self: *DisplayWindow, frame: *const RenderFrame) UserAction {
         if (self.is_headless) return .none;
         if (self.approach_ready(frame)) |held| return held;
@@ -1928,42 +1996,7 @@ pub const DisplayWindow = struct {
                         self.hovered_save_slot = null;
                     }
 
-                    if (self.messages.pending()) {
-                        self.hovered_choice = null;
-                    } else if (self.active_balloon) |*b| {
-                        const panel = self.dialogue_panel_for(b);
-                        self.hovered_choice = hit_test_dialogue_panel(event.motion.x, event.motion.y, b, &panel);
-                    } else {
-                        self.hovered_choice = null;
-                    }
-
-                    self.hovered_wp = hit_test_waypoint(
-                        event.motion.x,
-                        event.motion.y,
-                        frame.waypoints[0..frame.waypoint_count],
-                        self.width,
-                        self.height,
-                    );
-                    self.hovered_hotspot = hit_test_hotspot(
-                        event.motion.x,
-                        event.motion.y,
-                        frame.hotspots[0..frame.hotspot_count],
-                        self.width,
-                        self.height,
-                    );
-                    self.hovered_actor = hit_test_actor(
-                        event.motion.x,
-                        event.motion.y,
-                        frame.entities[0..frame.entity_count],
-                        self.width,
-                        self.height,
-                    );
-                    self.hovered_party_member = hit_test_party_portrait(
-                        event.motion.x,
-                        event.motion.y,
-                        frame.party_count,
-                        self.width,
-                    );
+                    self.update_hover(frame, event.motion.x, event.motion.y);
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     if (self.show_save_drawer) {
@@ -2060,19 +2093,9 @@ pub const DisplayWindow = struct {
                         self.play_sfx(.click);
                     } else if (event.button.button == c.SDL_BUTTON_LEFT) {
                         // 1. Check Timeline Scrubber (P9-02, D-011)
-                        const tb_x: i32 = 20;
-                        const tb_w: i32 = self.width - 40;
-                        if (event.button.y >= 50 and event.button.y <= 74 and
-                            event.button.x >= tb_x and event.button.x <= tb_x + tb_w)
-                        {
-                            if (frame.max_history_tick > 0) {
-                                const rel_x: f32 = @as(f32, @floatFromInt(event.button.x - tb_x));
-                                const ratio: f32 = rel_x / @as(f32, @floatFromInt(tb_w));
-                                const max_t: f32 = @as(f32, @floatFromInt(frame.max_history_tick));
-                                const target_tick: u64 = @min(frame.max_history_tick, @as(u64, @intFromFloat(ratio * max_t)));
-                                self.play_sfx(.click);
-                                return .{ .scrub_to_tick = target_tick };
-                            }
+                        if (hit_test_timeline(event.button.x, event.button.y, self.width, frame.max_history_tick)) |target_tick| {
+                            self.play_sfx(.click);
+                            return .{ .scrub_to_tick = target_tick };
                         }
 
                         // 2. Check Verb Bar buttons
@@ -4652,4 +4675,10 @@ test "D-097: the window's key type is SDL's, so bindings need no SDL to declare"
     try std.testing.expectEqual(@as(Keycode, c.SDLK_a), key('a'));
     try std.testing.expectEqual(@as(Keycode, c.SDLK_z), key('z'));
     try std.testing.expectEqual(@as(Keycode, c.SDLK_1), key('1'));
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_RIGHT), Keys.right);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_LEFT), Keys.left);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_HOME), Keys.home);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_RETURN), Keys.enter);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_KP_ENTER), Keys.kp_enter);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_BACKSPACE), Keys.backspace);
 }

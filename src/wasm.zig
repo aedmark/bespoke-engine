@@ -17,16 +17,34 @@ const repl_mod = @import("repl.zig");
 const host_mod = @import("host.zig");
 const package_mod = @import("package.zig");
 const dialogue_mod = @import("dialogue.zig");
-const inspector_mod = @import("wasm_inspector.zig");
 const draft_mod = @import("draft.zig");
 const audio_mod = @import("audio.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 pub const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
 const display_mod = @import("display.zig");
-pub const Inspector = inspector_mod.Inspector;
-pub const InspectorKey = inspector_mod.Key;
+/// Key codes the page sends for the state inspector's named keys: the DOM's own `keyCode`
+/// values, since the runtime's key event carries one byte (D-070). Letters arrive as ASCII.
+pub const InspectorKey = struct {
+    pub const backspace: u8 = 8;
+    pub const enter: u8 = 13;
+    pub const home: u8 = 36;
+    pub const left: u8 = 37;
+    pub const right: u8 = 39;
+
+    /// The desktop key a page key stands for, or null for a key the inspector does not read.
+    pub fn desktop(code: u8) ?renderer.Keycode {
+        return switch (code) {
+            backspace => renderer.Keys.backspace,
+            enter => renderer.Keys.enter,
+            home => renderer.Keys.home,
+            left => renderer.Keys.left,
+            right => renderer.Keys.right,
+            'f', 'F' => renderer.key('f'),
+            else => null,
+        };
+    }
+};
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
-const font = @import("display/font.zig");
 const canvas_mod = @import("display/canvas.zig");
 const dialogue_panel = @import("display/dialogue_panel.zig");
 const renderer = @import("display/renderer.zig");
@@ -46,11 +64,6 @@ pub const Repl = repl_mod.Repl;
 pub const CANVAS_WIDTH: i32 = 1280;
 pub const CANVAS_HEIGHT: i32 = 720;
 pub const FRAMEBUFFER_BYTES: usize = @intCast(CANVAS_WIDTH * CANVAS_HEIGHT * 4);
-/// The state inspector (D-070) still lays itself out for 640x360; it is drawn at that size
-/// into `WasmRuntime.overlay` and doubled onto the frame.
-pub const OVERLAY_WIDTH: i32 = 640;
-pub const OVERLAY_HEIGHT: i32 = 360;
-pub const OVERLAY_BYTES: usize = @intCast(OVERLAY_WIDTH * OVERLAY_HEIGHT * 4);
 /// The footer the browser shows in place of a proof's desktop keys (D-097).
 pub const BROWSER_FOOTER = "[Click]: Act | [Right-Click]: Verb | [S]: Solve | [I]: Inspect | [Space]: Pause | [N]: Step | [R]: Rewind";
 pub const MAX_WASM_SNAPSHOTS: usize = 32;
@@ -318,63 +331,6 @@ pub const BrowserActionTag = enum(u8) {
 // 1. Pure Zig RGBA8888 Canvas Framebuffer Renderer (P19-01, D-001, D-022)
 // =============================================================================
 
-/// A 640x360 scratch canvas for the state inspector overlay (D-070, D-097), drawn through the
-/// shared engine canvas (`display/canvas.zig`). The buffer lives inline in the runtime, so a
-/// canvas view is made per call rather than stored: the runtime is returned by value and a
-/// stored pointer into it would dangle.
-pub const WasmCanvas = struct {
-    pixels: [OVERLAY_BYTES]u8 = [_]u8{0} ** OVERLAY_BYTES,
-
-    pub fn view(self: *WasmCanvas) Canvas {
-        return Canvas.init(&self.pixels, OVERLAY_WIDTH, OVERLAY_HEIGHT);
-    }
-
-    pub fn clear(self: *WasmCanvas, col: RgbaColor) void {
-        var v = self.view();
-        v.clear(col);
-    }
-
-    pub fn set_pixel(self: *WasmCanvas, x: i32, y: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.set_pixel(x, y, col);
-    }
-
-    pub fn get_pixel(self: *const WasmCanvas, x: i32, y: i32) RgbaColor {
-        const v = Canvas.init(@constCast(&self.pixels), OVERLAY_WIDTH, OVERLAY_HEIGHT);
-        return v.get_pixel(x, y);
-    }
-
-    pub fn fill_rect(self: *WasmCanvas, x: i32, y: i32, w: i32, h: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.fill_rect(x, y, w, h, col);
-    }
-
-    pub fn draw_rect_outline(self: *WasmCanvas, x: i32, y: i32, w: i32, h: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.draw_rect_outline(x, y, w, h, col);
-    }
-
-    pub fn draw_line(self: *WasmCanvas, x0: i32, y0: i32, x1: i32, y1: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.draw_line(x0, y0, x1, y1, col);
-    }
-
-    pub fn fill_circle(self: *WasmCanvas, cx: i32, cy: i32, radius: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.fill_circle(cx, cy, radius, col);
-    }
-
-    pub fn draw_circle_outline(self: *WasmCanvas, cx: i32, cy: i32, radius: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.draw_circle_outline(cx, cy, radius, col);
-    }
-
-    pub fn draw_text(self: *WasmCanvas, text: []const u8, x: i32, y: i32, scale: i32, col: RgbaColor) void {
-        var v = self.view();
-        v.draw_text(text, x, y, scale, col);
-    }
-};
-
 pub const CanvasPoint = struct { x: i32, y: i32 };
 
 /// Where the stage is drawn (D-097): the desktop window's mapping (`renderer.world_to_screen`)
@@ -418,7 +374,11 @@ pub const WasmRuntime = struct {
     /// The compiled script of a script deck; null for decks built in Zig (D-066).
     program: ?CompiledProgram = null,
     /// The state inspector overlay (D-070). Its navigation is not World state.
-    inspector: Inspector = .{},
+    /// The state inspector overlay is open (D-070). Its focus, selection, history, and filter
+    /// live on the window, as the desktop State tab's do (D-059, D-097): never World state.
+    inspector_open: bool = false,
+    /// The run state to restore when the inspector closes.
+    inspector_was_paused: bool = false,
     /// The phrase being played on the distaff, in decks whose script declares drafts (D-071).
     /// Peripheral input like a half-typed line: never saved or rewound (D-029).
     distaff: draft_mod.DistaffInput = .{},
@@ -448,8 +408,6 @@ pub const WasmRuntime = struct {
     snapshot_ticks: [MAX_WASM_SNAPSHOTS]u64 = [_]u64{0} ** MAX_WASM_SNAPSHOTS,
     snapshot_count: usize = 0,
 
-    /// The inspector's 640x360 scratch canvas, doubled onto the frame while it is open.
-    overlay: WasmCanvas = .{},
     /// The frame the page shows: 1280x720 RGBA8888 (D-097). Borrowed from the host in the
     /// browser build; allocated by `init` otherwise.
     framebuffer: []u8 = &.{},
@@ -543,7 +501,11 @@ pub const WasmRuntime = struct {
         self.vm.spatial = &self.spatial;
 
         self.deck_index = if (index < self.decks.len) index else 0;
-        self.inspector = .{};
+        self.inspector_open = false;
+        self.window.inspector_focus = null;
+        self.window.inspector_history_len = 0;
+        self.window.inspector_selected = 0;
+        self.window.inspector_filter = .{};
         self.distaff = .{};
         self.active_verb = .walk;
         self.is_paused = false;
@@ -806,8 +768,7 @@ pub const WasmRuntime = struct {
         var boxes: [MAX_TRAY]renderer.InventorySlot = undefined;
         const laid = renderer.inventory_layout(CANVAS_WIDTH, frame.inventory[0..frame.inventory_count], &boxes);
         for (laid, 0..) |box, i| {
-            // The tray's clickable band (`renderer.hit_test_inventory_item`).
-            out[i] = .{ .item = frame.inventory[i].entity, .x = box.x, .y = CANVAS_HEIGHT - 78, .w = box.w, .h = 26 };
+            out[i] = .{ .item = frame.inventory[i].entity, .x = box.x, .y = renderer.bar_band_top(CANVAS_HEIGHT), .w = box.w, .h = renderer.BAR_BAND_H };
             const len = @min(box.label.len, out[i].label_buf.len);
             @memcpy(out[i].label_buf[0..len], box.label[0..len]);
             out[i].label_len = len;
@@ -1176,13 +1137,9 @@ pub const WasmRuntime = struct {
                 const w = self.screen(frame);
 
                 // While the inspector is open, the stage belongs to it; the timeline still scrubs.
-                // The inspector is laid out at half size (`OVERLAY_WIDTH`), so clicks are halved.
-                const tb_x: i32 = 20;
-                const tb_w: i32 = CANVAS_WIDTH - 40;
-                const on_timeline = ev.y >= 50 and ev.y <= 74 and ev.x >= tb_x and ev.x <= tb_x + tb_w;
-                if (self.inspector.open and !on_timeline) {
-                    self.inspector.capture(self.active_world());
-                    return if (self.inspector.click(@divTrunc(ev.x, 2), @divTrunc(ev.y, 2))) .inspector_navigated else .none;
+                const on_timeline = renderer.on_timeline(ev.x, ev.y, CANVAS_WIDTH);
+                if (self.inspector_open and !on_timeline) {
+                    return if (w.inspector_click(frame, ev.x, ev.y)) .inspector_navigated else .none;
                 }
 
                 // Two-finger touch tap cycles the active adventure verb
@@ -1192,9 +1149,8 @@ pub const WasmRuntime = struct {
                 }
 
                 // 1. The timeline bar scrubs.
-                if (on_timeline and self.max_history_tick > 0) {
-                    const rel_x: u64 = @intCast(@max(0, ev.x - tb_x));
-                    self.scrub_to_tick(@min(self.max_history_tick, (rel_x * self.max_history_tick) / @as(u64, @intCast(tb_w))));
+                if (renderer.hit_test_timeline(ev.x, ev.y, CANVAS_WIDTH, self.max_history_tick)) |target_tick| {
+                    self.scrub_to_tick(target_tick);
                     return .timeline_scrubbed;
                 }
 
@@ -1291,15 +1247,27 @@ pub const WasmRuntime = struct {
                 return .none;
             },
             .key_down => {
+                // Opening the inspector pauses the clock so the state holds still; closing
+                // restores the earlier run state.
                 if (ev.key_code == 'i' or ev.key_code == 'I') {
-                    self.inspector.toggle(&self.is_paused);
+                    if (self.inspector_open) {
+                        self.inspector_open = false;
+                        self.is_paused = self.inspector_was_paused;
+                    } else {
+                        self.inspector_open = true;
+                        self.inspector_was_paused = self.is_paused;
+                        self.is_paused = true;
+                    }
                     return .inspector_toggled;
                 }
                 // While the inspector is open its keys come first, the timeline keys still work,
-                // and the clock, deck, and solve keys wait until it closes.
-                if (self.inspector.open) {
-                    self.inspector.capture(self.active_world());
-                    if (self.inspector.key(ev.key_code)) return .inspector_navigated;
+                // and the clock, deck, and solve keys wait until it closes. The keys are the
+                // desktop State tab's (D-059), handled by the same window code.
+                if (self.inspector_open) {
+                    if (InspectorKey.desktop(ev.key_code)) |code| {
+                        const frame = self.capture();
+                        if (self.screen(frame).inspector_key(frame, code)) return .inspector_navigated;
+                    }
                     if (ev.key_code != 'r' and ev.key_code != 'R') return .none;
                 }
                 // A waiting message takes Enter, Space, or the solve key as "continue" (D-080);
@@ -1408,24 +1376,13 @@ pub const WasmRuntime = struct {
         w.messages = self.messages;
         w.sync_dialogue_balloon(frame);
 
-        const x = self.hovered_x;
-        const y = self.hovered_y;
-        w.hovered_party_member = null;
-        if (self.inspector.open) {
+        if (self.inspector_open) {
             w.hovered_choice = null;
             w.hovered_wp = null;
             w.hovered_hotspot = null;
             w.hovered_actor = null;
-        } else {
-            w.hovered_choice = null;
-            if (!w.messages.pending()) if (w.active_balloon) |*b| {
-                const panel = w.dialogue_panel_for(b);
-                w.hovered_choice = renderer.hit_test_dialogue_panel(x, y, b, &panel);
-            };
-            w.hovered_wp = renderer.hit_test_waypoint(x, y, frame.waypoints[0..frame.waypoint_count], CANVAS_WIDTH, CANVAS_HEIGHT);
-            w.hovered_hotspot = renderer.hit_test_hotspot(x, y, frame.hotspots[0..frame.hotspot_count], CANVAS_WIDTH, CANVAS_HEIGHT);
-            w.hovered_actor = renderer.hit_test_actor(x, y, frame.entities[0..frame.entity_count], CANVAS_WIDTH, CANVAS_HEIGHT);
-        }
+            w.hovered_party_member = null;
+        } else w.update_hover(frame, self.hovered_x, self.hovered_y);
 
         // The browser's banner stays until the next one replaces it.
         const banner = self.get_banner();
@@ -1437,17 +1394,13 @@ pub const WasmRuntime = struct {
     }
 
     /// Draws the desktop window's frame into the framebuffer (D-097), and the state inspector
-    /// over its stage while it is open (D-070).
+    /// over it while it is open (D-070), both by the window.
     pub fn render_frame(self: *WasmRuntime) void {
         if (self.has_drafts()) self.distaff.set_reach_from(self.active_world(), self.player_entity, "DistaffReach", 7);
         const frame = self.capture();
         const w = self.screen(frame);
         w.render_frame(frame, self.is_paused);
-        if (self.inspector.open) {
-            self.inspector.capture(self.active_world());
-            self.inspector.draw(&self.overlay, self.active_world());
-            self.blit_overlay(inspector_mod.STAGE_Y, inspector_mod.STAGE_H);
-        }
+        if (self.inspector_open) w.render_state_overlay(frame);
     }
 
     /// A pixel of the last frame drawn.
@@ -1462,26 +1415,6 @@ pub const WasmRuntime = struct {
         const b = &(w.active_balloon orelse return null);
         return w.dialogue_panel_for(b);
     }
-
-    /// Copies overlay rows `top..top + rows` onto the frame at twice the size.
-    fn blit_overlay(self: *WasmRuntime, top: i32, rows: i32) void {
-        const ow: usize = @intCast(OVERLAY_WIDTH);
-        const fw: usize = @intCast(CANVAS_WIDTH);
-        var oy: usize = @intCast(top);
-        const end: usize = @intCast(top + rows);
-        while (oy < end) : (oy += 1) {
-            const src = self.overlay.pixels[oy * ow * 4 ..][0 .. ow * 4];
-            for (0..2) |dy| {
-                const dst = self.framebuffer[(oy * 2 + dy) * fw * 4 ..][0 .. fw * 4];
-                for (0..ow) |ox| {
-                    const px = src[ox * 4 ..][0..4];
-                    dst[ox * 8 ..][0..4].* = px.*;
-                    dst[ox * 8 + 4 ..][0..4].* = px.*;
-                }
-            }
-        }
-    }
-
 };
 
 // =============================================================================
@@ -1642,7 +1575,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         /// 1 while the state inspector is open (D-070); the clock is paused then.
         fn wasm_inspector_open() callconv(.C) u8 {
-            if (runtime()) |rt| return @intFromBool(rt.inspector.open);
+            if (runtime()) |rt| return @intFromBool(rt.inspector_open);
             return 0;
         }
 
@@ -1706,28 +1639,6 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 // =============================================================================
 // 4. Unit Tests (Phase 19: P19-01, P19-02, D-022)
 // =============================================================================
-
-test "P19-01: WasmCanvas RGBA8888 framebuffer drawing primitives and bitmap font" {
-    const testing = std.testing;
-    var canvas = WasmCanvas{};
-    canvas.clear(RgbaColor.hud_bg_solid);
-
-    const p0 = canvas.get_pixel(10, 10);
-    try testing.expectEqual(RgbaColor.hud_bg_solid.r, p0.r);
-    try testing.expectEqual(RgbaColor.hud_bg_solid.g, p0.g);
-    try testing.expectEqual(RgbaColor.hud_bg_solid.b, p0.b);
-
-    canvas.fill_rect(20, 20, 40, 30, RgbaColor.gold);
-    const p1 = canvas.get_pixel(30, 30);
-    try testing.expectEqual(RgbaColor.gold.r, p1.r);
-    try testing.expectEqual(RgbaColor.gold.g, p1.g);
-
-    canvas.fill_circle(100, 100, 12, RgbaColor.emerald);
-    const p2 = canvas.get_pixel(100, 100);
-    try testing.expectEqual(RgbaColor.emerald.r, p2.r);
-
-    canvas.draw_text("BESPOKE", 50, 50, 2, RgbaColor.white);
-}
 
 /// Two decks for these tests, unrelated to any proof.
 const TestDecks = struct {
@@ -2003,7 +1914,7 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
 }
 
-test "D-070: the inspector pauses, navigates like the desktop's, and draws over the stage" {
+test "D-070: the inspector pauses, takes the desktop State tab's keys and clicks, and draws in the drawer's place" {
     const testing = std.testing;
     const script =
         \\scene Quay:
@@ -2031,49 +1942,47 @@ test "D-070: the inspector pauses, navigates like the desktop's, and draws over 
 
     // Opening pauses the clock, and closing restores the run state it found.
     try testing.expectEqual(BrowserActionTag.inspector_toggled, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'I' }));
-    try testing.expect(rt.inspector.open and rt.is_paused);
+    try testing.expect(rt.inspector_open and rt.is_paused);
     const tick = rt.world.current_tick;
     // Clock and deck keys wait while it is open.
     try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'N' }));
     try testing.expectEqual(tick, rt.world.current_tick);
 
     // The capture is the desktop's: the same function, the same facts.
-    rt.render_frame();
     const display = @import("display.zig");
     var desktop: [display.MAX_DEBUG_FACTS]display.RenderDebugFact = undefined;
-    try testing.expectEqual(display.capture_debug_facts(&rt.world, &desktop), rt.inspector.fact_count);
+    try testing.expectEqual(display.capture_debug_facts(&rt.world, &desktop), rt.capture().debug_fact_count);
 
-    // Hero has the most edges, so it is the default focus; Right then Enter recentres.
+    // The page's keys reach the desktop State tab's navigation (D-059, D-097), which its own
+    // tests cover in full: Hero has the most edges, so it is the default focus; Right selects,
+    // Enter recentres, Backspace goes back.
+    const w = rt.window;
     const hero = rt.world.lookup_entity("Hero").?;
-    const first = rt.inspector.layout().?;
+    const first = w.inspector_layout(rt.capture()).?;
     try testing.expectEqual(hero, first.center.entity);
-    try testing.expectEqual(@as(usize, 2), first.ring_len);
     try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.right }));
-    try testing.expectEqual(@as(usize, 1), rt.inspector.selected);
+    try testing.expectEqual(@as(usize, 1), w.inspector_selected);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.enter });
-    try testing.expectEqual(first.ring[1].entity, rt.inspector.focus.?);
+    try testing.expectEqual(first.ring[1].entity, w.inspector_focus.?);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.backspace });
-    try testing.expectEqual(hero, rt.inspector.focus.?);
+    try testing.expectEqual(hero, w.inspector_focus.?);
 
-    // A click on a ring node recentres on it, as on desktop.
-    const ring0 = rt.inspector.layout().?.ring[0];
-    // The inspector is drawn at twice its layout size (D-097).
-    try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .pointer_down, .x = ring0.x * 2, .y = ring0.y * 2 }));
-    try testing.expectEqual(ring0.entity, rt.inspector.focus.?);
+    // A click on a ring node recentres on it, where the desktop draws it.
+    const ring0 = w.inspector_layout(rt.capture()).?.ring[0];
+    try testing.expectEqual(BrowserActionTag.inspector_navigated, try rt.dispatch_event(.{ .kind = .pointer_down, .x = ring0.x, .y = ring0.y }));
+    try testing.expectEqual(ring0.entity, w.inspector_focus.?);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = InspectorKey.home });
-    try testing.expect(rt.inspector.focus == null);
-
-    // F cycles the filter: all, beliefs (Knows), then each relation.
+    try testing.expect(w.inspector_focus == null);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'F' });
-    try testing.expectEqualStrings("BELIEFS", rt.inspector.filter.label());
+    try testing.expectEqualStrings("BELIEFS", w.inspector_filter.label());
 
-    // The overlay replaces the stage: its panel colour fills the stage box, at twice its size.
+    // The overlay is drawn in the save drawer's place: its header bar fills the drawer's top.
     rt.render_frame();
-    const px = rt.pixel(600, 200);
-    try testing.expectEqual(@as(u8, 9), px.r);
+    const drect = renderer.get_save_drawer_rect(CANVAS_WIDTH, CANVAS_HEIGHT);
+    try testing.expectEqual(RgbaColor{ .r = 22, .g = 32, .b = 54 }, rt.pixel(drect.x + 6, drect.y + 6));
 
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'i' });
-    try testing.expect(!rt.inspector.open and !rt.is_paused);
+    try testing.expect(!rt.inspector_open and !rt.is_paused);
     try rt.step_tick();
     try testing.expect(rt.world.current_tick > tick);
 }
