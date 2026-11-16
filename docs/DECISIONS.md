@@ -1342,6 +1342,12 @@ Format:
 **Alternatives:** Rename the keywords (for example to tune and play): rejected by the maintainer, because they are ordinary words for weaving and music, not a title, character, or place, and renaming them would change the script language and the package format, so old packages would need a version check.
 **Consequences:** The script language and `.bspk` are unchanged. The lint does not list the keywords, and should not.
 
+## D-103 A Chosen Path Is Final (2026-11-15, status: accepted)
+**Context:** P34-02 asked whether `VM.select_path` should let a player switch to another path once one is chosen (D-052 refused it and deferred the question). Switching would have to unlock the old path's gates, restore its pruned dialogue, halt its routines, and record the change in `.bspk`.
+**Decision:** A chosen path stays chosen. `select_path` keeps refusing a different path with `error.PathAlreadyChosen`, and choosing the same path again changes nothing; a test holds both.
+**Alternatives:** Allow a switch that undoes the old path's facts and routines: rejected by the maintainer. The Saltmarket is built around a choice that sticks, and rewind already lets a player go back before the choice and take another way, with every effect undone by the snapshot rather than by new undo rules.
+**Consequences:** No `.bspk` change and no undo logic in the VM. A game that wants a change of heart offers it as its own path design (for example a later choice that opens a new path's facts), not as a switch.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

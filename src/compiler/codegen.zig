@@ -2316,7 +2316,10 @@ test "P24-01: selecting a path asserts its facts and mutes inactive routines" {
     try testing.expect(world.has_fact(hero, wits_solved, null));
     try testing.expect(!world.has_fact(hero, fists_solved, null));
 
+    // Paths are final (D-103): another path is refused, the same one again is a no-op.
     try testing.expectError(error.PathAlreadyChosen, vm.select_path(&compiled, "Fists"));
+    try testing.expect((try vm.select_path(&compiled, "Wits")) == null);
+    try testing.expect(!world.has_fact(world.lookup_entity("Fists").?, path_active, null));
 }
 
 test "P24-02: active path mutates obstacle facts and prunes rival dialogue choices" {
