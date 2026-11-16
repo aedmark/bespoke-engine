@@ -39,6 +39,16 @@ WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {}).then(({ instance })
   // Named keys reach the state inspector as their DOM keyCodes; other keys as characters.
   const NAMED = { ArrowLeft: 37, ArrowRight: 39, Enter: 13, Backspace: 8, Home: 36 };
   window.addEventListener('keydown', (e) => {
+    // A typed-command bar, if the game has one, takes every key while it has the keyboard:
+    // editing keys by code, the rest as characters.
+    if (w.wasm_command_bar_focused && w.wasm_command_bar_focused()) {
+      e.preventDefault();
+      const edit = { Enter: 13, Backspace: 8, Escape: 27, Tab: 9, ArrowUp: 38, ArrowDown: 40 }[e.key];
+      if (edit) w.wasm_on_key_down(edit);
+      else if (e.key.length === 1) w.wasm_on_char(e.key.charCodeAt(0));
+      draw();
+      return;
+    }
     const code = NAMED[e.key] || (e.key.length === 1 ? e.key.charCodeAt(0) : 0);
     if (!code) return;
     e.preventDefault();

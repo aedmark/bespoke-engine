@@ -154,7 +154,7 @@ zig build web && node web/smoke.js
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
 - [ ] The playground loads with no console errors (open the developer tools).
-- [ ] Number keys 1 to 9 and the tabs switch decks; all twelve decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape.
+- [ ] Number keys 1 to 9 and the tabs switch decks; all thirteen decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar).
 - [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
 - [ ] Saltmarket: choosing a way in with 1, 2, or 3 locks the others.
 - [ ] Copper Weathercock: the tick counter never runs backwards; a rewind across the collapse brings the branch back.

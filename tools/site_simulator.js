@@ -1,6 +1,6 @@
 // Browser wrapper for the standalone showcase site (P30-01, D-042).
 // tools/build_site.py embeds this file and bespoke-proofs.wasm into site/index.html.
-// The twelve decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
+// The thirteen decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
 // wrapper supplies no scenes or facts.
 (() => {
   const canvas = document.querySelector('#sim-canvas');
@@ -57,6 +57,7 @@
     'The Copper Weathercock',
     'The Bell Tower',
     'The Castle Fire Escape',
+    'The Larkspur Observatory',
   ];
   const DECK_BANNERS = [
     'TAVERN HEIST',
@@ -71,6 +72,7 @@
     'THE COPPER WEATHERCOCK',
     'THE BELL TOWER',
     'THE CASTLE FIRE ESCAPE',
+    'THE LARKSPUR OBSERVATORY',
   ];
   const DECK_COUNT = DECK_NAMES.length;
   const TICK_INTERVAL_MS = 250;
@@ -384,6 +386,18 @@
 
   window.addEventListener('keydown', (event) => {
     if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
+    if (exp) {
+      // The typed-command bar (P34-04): while it has the keyboard every key goes to it, editing
+      // keys by code and the rest as characters, and none of this page's shortcuts fire.
+      if (exp.wasm_command_bar_focused && exp.wasm_command_bar_focused()) {
+        event.preventDefault();
+        const edit = { Enter: 13, Backspace: 8, Escape: 27, Tab: 9, ArrowUp: 38, ArrowDown: 40 }[event.key];
+        if (edit) exp.wasm_on_key_down(edit);
+        else if (event.key.length === 1) exp.wasm_on_char(event.key.charCodeAt(0));
+        refresh();
+        return;
+      }
+    }
     if (exp && (event.key === 'i' || event.key === 'I')) {
       event.preventDefault();
       exp.wasm_on_key_down(73);
@@ -442,6 +456,11 @@
     } else if (event.key === ',' || event.key === 'ArrowLeft') {
       event.preventDefault();
       rewindTo(currentTick() - 1);
+    } else if (event.key === 'Enter' && exp && !(exp.wasm_dialogue_open && exp.wasm_dialogue_open())) {
+      // Enter opens a deck's command bar, if it has one (P34-04).
+      event.preventDefault();
+      exp.wasm_on_key_down(13);
+      refresh();
     }
   });
 
@@ -473,7 +492,7 @@
       ]) {
         if (typeof exp[name] !== 'function') throw new Error(`missing export ${name}`);
       }
-      statusEl.textContent = 'bespoke-proofs.wasm ready. Twelve proof decks embedded.';
+      statusEl.textContent = 'bespoke-proofs.wasm ready. Thirteen proof decks embedded.';
       log('BOOT', 'Instantiated the embedded proof runtime.', 'cue');
       loadDeck(0);
       lastTickTime = performance.now();

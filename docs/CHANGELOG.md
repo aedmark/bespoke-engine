@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Typed commands work in the browser (`P34-04`): The Larkspur Observatory plays on the showcase, where Enter opens the command bar and a line such as "go to the archive" walks Ines there, and the page made by `bespoke init` has the bar too. No proof is desktop-only any more.
 - The Castle Fire Escape plays in the browser (`P34-03`): the showcase has a Fire Escape tab, where USE on the trough fills the bucket, USE on the torch lights the tapestry, and `[S]` plays the next step.
 - Sound on the showcase, the proof pages, and the page `bespoke init` makes now plays through an AudioWorklet instead of the deprecated ScriptProcessorNode (`P34-05`), opened from a file or a server alike.
 - `site/saltmarket.html` plays The Saltmarket on its own page. In the browser the three ways in now work as on desktop: no gate is locked until you choose, Tamsin walks only through the open gate, a click on a locked one says "That way is blocked.", and taking the logbook runs the way you chose (`D-052`, `D-053`).

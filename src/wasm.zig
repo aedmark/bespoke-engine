@@ -17,6 +17,7 @@ const repl_mod = @import("repl.zig");
 const host_mod = @import("host.zig");
 const package_mod = @import("package.zig");
 const dialogue_mod = @import("dialogue.zig");
+const command_mod = @import("command.zig");
 const draft_mod = @import("draft.zig");
 const audio_mod = @import("audio.zig");
 const hypervisor_mod = @import("hypervisor.zig");
@@ -144,6 +145,10 @@ pub const Deck = struct {
     theme: ?*const renderer.Theme = null,
     /// The proof's status capture, which the theme reads from each frame (D-041).
     status_hook: ?display_mod.StatusHook = null,
+    /// The desktop's typed-command bar (P26-03, P34-04): Enter focuses it, forwarded
+    /// characters fill it, and a submitted line goes to `on_typed`.
+    command_bar: bool = false,
+    on_typed: ?*const fn (rt: *WasmRuntime, line: []const u8) anyerror!void = null,
 };
 
 /// A doorway between scenes, shared with desktop hosts (D-094, D-100).
@@ -194,6 +199,8 @@ pub const ScriptDeckOptions = struct {
     on_action: ?*const fn (rt: *WasmRuntime, id: u8) anyerror!void = null,
     theme: ?*const renderer.Theme = null,
     status_hook: ?display_mod.StatusHook = null,
+    command_bar: bool = false,
+    on_typed: ?*const fn (rt: *WasmRuntime, line: []const u8) anyerror!void = null,
     /// Music for a script that declares no scores, such as a proof's desktop soundtrack (D-071).
     soundtrack: ?*const audio_mod.Soundtrack = null,
 };
@@ -228,6 +235,8 @@ pub fn script_deck_with(comptime title: []const u8, comptime program: []const u8
         .on_action = options.on_action,
         .theme = options.theme,
         .status_hook = options.status_hook,
+        .command_bar = options.command_bar,
+        .on_typed = options.on_typed,
     };
 }
 
@@ -268,6 +277,8 @@ pub const BrowserEventKind = enum(u8) {
     touch_start = 4,
     touch_move = 5,
     touch_end = 6,
+    /// A typed character, for the command bar (P34-04); `key_code` holds it.
+    char = 7,
 };
 
 /// Normalized browser input event passed from HTML5 Canvas JS listeners into Zig (P19-02).
@@ -319,6 +330,10 @@ pub const BrowserActionTag = enum(u8) {
     message_dismissed,
     /// A click on the item tray took an item in hand, or put it away (D-094).
     item_selected,
+    /// Enter focused the command bar, or a key or character edited it (P34-04).
+    command_edited,
+    /// The command bar submitted a line to the deck (P34-04).
+    command_typed,
 };
 
 // =============================================================================
@@ -410,6 +425,8 @@ pub const WasmRuntime = struct {
     /// list. Heap-allocated, because the runtime is moved after `init`; the window's pointers
     /// into the runtime are re-pointed before each use (`screen`).
     frame_bridge: *display_mod.DisplayBridge = undefined,
+    /// Typed-command state for decks whose bar has no handler of their own (P34-04).
+    command_interp: command_mod.Interpreter = .{},
     window: *renderer.DisplayWindow = undefined,
     saves: *save_mod.SaveManager = undefined,
 
@@ -500,6 +517,9 @@ pub const WasmRuntime = struct {
         self.vm.spatial = &self.spatial;
 
         self.deck_index = if (index < self.decks.len) index else 0;
+        self.window.enable_command_bar(self.decks.len > 0 and self.decks[self.deck_index].command_bar);
+        self.window.command_len = 0;
+        self.command_interp = .{};
         self.inspector_open = false;
         self.window.inspector_focus = null;
         self.window.inspector_history_len = 0;
@@ -643,6 +663,57 @@ pub const WasmRuntime = struct {
     /// a plain walk. Plans in the active world, the branch while one is live.
     fn plan_walk(self: *WasmRuntime, wp: u16) !bool {
         return self.spatial.walk_to_with_world(self.active_world(), self.player_entity, wp);
+    }
+
+    /// A typed line for a deck with no handler of its own: the script's commands, read for the
+    /// player as the stock hosts read them (D-057), the reply on the banner, and the tick that
+    /// answers a fired cue.
+    fn default_typed(self: *WasmRuntime, line: []const u8) !void {
+        const program = if (self.program) |*p| p else return;
+        if (self.player_entity == .none) return;
+        var buf: [160]u8 = undefined;
+        switch (host_mod.interpret_command(&self.vm, program, &self.command_interp, self.player_entity, line, &buf)) {
+            .reply => |text| if (text) |t| self.set_banner(t),
+            .command => |command| {
+                const reply = try host_mod.dispatch_command(&self.vm, program, self.player_entity, command);
+                if (reply.text) |text| self.set_banner(text);
+                if (reply.fired) try self.step_tick();
+            },
+        }
+    }
+
+    fn command_bar_on(self: *const WasmRuntime) bool {
+        return self.decks.len > 0 and self.decks[self.deck_index].command_bar;
+    }
+
+    fn choices_open(self: *WasmRuntime) bool {
+        const view = dialogue_mod.view(self.active_world()) orelse return false;
+        return view.count > 0;
+    }
+
+    /// A key while the command bar is focused, with the page's key code turned into the window's
+    /// (the DOM numbers arrows 38 and 40). A submitted line goes to the deck's `on_typed`.
+    fn command_key(self: *WasmRuntime, code: u8) !BrowserActionTag {
+        const sym: renderer.Keycode = switch (code) {
+            13 => renderer.Keys.enter,
+            8 => renderer.Keys.backspace,
+            27 => renderer.Keys.escape,
+            9 => renderer.Keys.tab,
+            38 => renderer.Keys.up,
+            40 => renderer.Keys.down,
+            else => return .command_edited,
+        };
+        switch (self.window.command_bar_key(sym)) {
+            .typed_command => |t| {
+                self.bind();
+                if (self.decks[self.deck_index].on_typed) |hook| {
+                    try hook(self, t.buf[0..t.len]);
+                } else try self.default_typed(t.buf[0..t.len]);
+                self.record_snapshot();
+                return .command_typed;
+            },
+            else => return .command_edited,
+        }
     }
 
     /// The mark beside a target: where a person stands, else the mark nearest a prop in its room.
@@ -1242,6 +1313,16 @@ pub const WasmRuntime = struct {
                 return .none;
             },
             .key_down => {
+                // The command bar comes first (P34-04): focused, it takes every key, so no
+                // shortcut fires while typing; unfocused, Enter focuses it unless a message or a
+                // choice is waiting, as on desktop.
+                if (self.command_bar_on()) {
+                    if (self.window.command_bar_focused) return try self.command_key(ev.key_code);
+                    if (ev.key_code == 13 and !self.messages.pending() and !self.choices_open()) {
+                        self.window.command_bar_focused = true;
+                        return .command_edited;
+                    }
+                }
                 // Opening the inspector pauses the clock so the state holds still; closing
                 // restores the earlier run state.
                 if (ev.key_code == 'i' or ev.key_code == 'I') {
@@ -1311,6 +1392,14 @@ pub const WasmRuntime = struct {
                 }
             },
             .touch_end => return .none,
+            .char => {
+                // Printable characters fill the focused command bar (P34-04); otherwise a page's
+                // key_down for the same key has already done whatever the key does.
+                if (!self.command_bar_on() or !self.window.command_bar_focused) return .none;
+                if (ev.key_code < 32 or ev.key_code > 126) return .none;
+                self.window.command_bar_text(&[_]u8{ev.key_code});
+                return .command_edited;
+            },
         }
     }
 
@@ -1503,6 +1592,23 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
+        /// A typed character (the page sends `event.key` when it is one character), for the
+        /// command bar of a deck that has one (P34-04).
+        fn wasm_on_char(code: u8) callconv(.C) u8 {
+            if (runtime()) |rt| {
+                const tag = rt.dispatch_event(.{ .kind = .char, .key_code = code }) catch .none;
+                rt.render_frame();
+                return @intFromEnum(tag);
+            }
+            return 0;
+        }
+
+        /// True while a command bar has the keyboard, so a page holds back its own shortcuts.
+        fn wasm_command_bar_focused() callconv(.C) u8 {
+            if (runtime()) |rt| return @intFromBool(rt.command_bar_on() and rt.window.command_bar_focused);
+            return 0;
+        }
+
         fn wasm_on_touch(kind_id: u8, x: i32, y: i32, points: u8) callconv(.C) u8 {
             if (runtime()) |rt| {
                 const kind: BrowserEventKind = switch (kind_id) {
@@ -1619,6 +1725,8 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     @export(Exports.wasm_on_pointer_move, .{ .name = "wasm_on_pointer_move" });
     @export(Exports.wasm_on_right_click, .{ .name = "wasm_on_right_click" });
     @export(Exports.wasm_on_key_down, .{ .name = "wasm_on_key_down" });
+    @export(Exports.wasm_on_char, .{ .name = "wasm_on_char" });
+    @export(Exports.wasm_command_bar_focused, .{ .name = "wasm_command_bar_focused" });
     @export(Exports.wasm_on_touch, .{ .name = "wasm_on_touch" });
     @export(Exports.wasm_scrub_to_tick, .{ .name = "wasm_scrub_to_tick" });
     @export(Exports.wasm_get_tick, .{ .name = "wasm_get_tick" });
@@ -1820,6 +1928,51 @@ test "D-086: a deck's on_act hook runs before the verb's cue and can take it ove
     rt.active_verb = .look_at;
     try testing.expectEqual(BrowserActionTag.cue_fired, (try rt.act_on(pilot, null)).?);
     try testing.expectEqual(@as(usize, 2), Hook.calls);
+}
+
+test "P34-04: a deck's command bar takes typed characters, keeps shortcuts quiet, and runs the line" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero
+        \\  props: Rope
+        \\  marks: Steps, Pier
+        \\
+        \\command Takes: "take <thing>"
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+        \\on cue Takes(Hero, Rope):
+        \\  remember Carries(Hero, Rope)
+        \\  say Hero: "Got the rope."
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero", .command_bar = true })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    // Characters do nothing until Enter focuses the bar.
+    try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .char, .key_code = 'x' }));
+    try testing.expectEqual(BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
+    for ("take the rope") |ch| {
+        // The key itself is swallowed: space would pause and N would step if it reached them.
+        try testing.expectEqual(BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .key_down, .key_code = std.ascii.toUpper(ch) }));
+        try testing.expectEqual(BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .char, .key_code = ch }));
+    }
+    try testing.expect(!rt.is_paused);
+    try testing.expectEqualStrings("take the rope", rt.window.command_input[0..rt.window.command_len]);
+    // Backspace edits; Enter submits to the script's commands for the player.
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 8 });
+    _ = try rt.dispatch_event(.{ .kind = .char, .key_code = 'e' });
+    try testing.expectEqual(BrowserActionTag.command_typed, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
+    const hero = rt.world.lookup_entity("Hero").?;
+    const rope = rt.world.lookup_entity("Rope").?;
+    try testing.expect(rt.world.has_fact(hero, rt.world.lookup_relation("Carries").?, rope.to_int()));
+    // Escape leaves the bar; a deck without one never focuses it.
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 27 });
+    try testing.expect(!rt.window.command_bar_focused);
 }
 
 test "D-066: a script deck compiles its script, speaks in the banner, and answers with number keys" {

@@ -150,7 +150,7 @@ pub const OBSERVATORY_SCRIPT =
     \\    say Pell: "What slip? I have no idea what you mean."
 ;
 
-const Ids = struct {
+pub const Ids = struct {
     scene: bespoke.EntityId,
     ines: bespoke.EntityId,
     halloran: bespoke.EntityId,
@@ -177,7 +177,7 @@ const Layout = struct {
     const links = [_][2][]const u8{ .{ "CablePlatform", "Library" }, .{ "MessHall", "TelescopeFloor" } };
 };
 
-fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const scene = world.lookup_entity("Larkspur Observatory").?;
     const find = struct {
         fn wp(sp: *bespoke.SpatialSystem, room: bespoke.EntityId, name: []const u8) !u16 {
@@ -215,7 +215,7 @@ fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     return ids;
 }
 
-fn staff(world: *bespoke.World, compiled: *const bespoke.CompiledProgram) !society.Society {
+pub fn staff(world: *bespoke.World, compiled: *const bespoke.CompiledProgram) !society.Society {
     if (compiled.societies.items.len != 1) return error.MissingStaffSociety;
     return society.Society.init(world, compiled.societies.items[0].config);
 }
@@ -244,7 +244,7 @@ fn refusal(spatial: *const bespoke.SpatialSystem, ids: Ids, command: bespoke.com
 pub const Typed = struct { text: ?[]const u8 = null, fired: bool = false, walking: bool = false };
 
 /// One typed line for Ines: interpret, check where she stands, then dispatch.
-fn type_line(vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, interp: *bespoke.command.Interpreter, spatial: *const bespoke.SpatialSystem, ids: Ids, line: []const u8, buf: []u8) !Typed {
+pub fn type_line(vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, interp: *bespoke.command.Interpreter, spatial: *const bespoke.SpatialSystem, ids: Ids, line: []const u8, buf: []u8) !Typed {
     switch (host.interpret_command(vm, compiled, interp, ids.ines, line, buf)) {
         .reply => |text| return .{ .text = text },
         .command => |command| {
@@ -473,7 +473,7 @@ const theme = art.with_keys(&keys);
 
 /// True when two actors stand on the same mark or on marks joined by an edge, close enough to
 /// talk without chasing a walking actor's sprite with the mouse.
-fn within_reach(spatial: *const bespoke.SpatialSystem, a: bespoke.EntityId, b: bespoke.EntityId) bool {
+pub fn within_reach(spatial: *const bespoke.SpatialSystem, a: bespoke.EntityId, b: bespoke.EntityId) bool {
     const wa = spatial.get_current_waypoint(a) orelse return false;
     const wb = spatial.get_current_waypoint(b) orelse return false;
     if (wa == wb) return true;

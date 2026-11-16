@@ -766,6 +766,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Typing into the REPL console: rejected; the REPL evaluates engine commands for developers and must not run game commands.
 - Resolving nouns against the whole World: rejected; typed commands would reach entities the player cannot see.
 **Consequences:** Typed and clicked actions meet at the same cue handlers. Matching is word-subset, not fuzzy, so misspellings fail with "I don't know the word". A noun such as "key" is ambiguous whenever two keys are in scope, by design.
+**Update, 2026-11-15 (P34-04):** The browser runtime has the same bar. A deck opts in with `command_bar` and may supply `on_typed`; without one, the line goes to `host.interpret_command` and `host.dispatch_command` for the player. Pages forward characters with `wasm_on_char` and read `wasm_command_bar_focused` to keep their own shortcuts quiet while it has the keyboard. The window's key handler reads the browser-safe `Keys` table, so both surfaces share it.
 
 ## D-058 State Inspector: a Drawer Tab, 128 Captured Facts, a Fixed Ego Layout, and a Next-to-Happen List (2026-11-10, status: accepted)
 **Context:** Phase 27 adds a live view of world state. The `D` overlay lists 10 of the 32 facts each frame copies, as text; the `P` drawer holds save and load. The maintainer accepted the defaults below.

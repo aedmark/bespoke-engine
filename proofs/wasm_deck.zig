@@ -29,6 +29,7 @@ const bell_tower = @import("bell_tower.zig");
 const art = @import("art.zig");
 const weathercock = @import("weathercock.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
+const observatory = @import("observatory_puzzle.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -166,6 +167,19 @@ pub const decks = [_]wasm.Deck{
         .after_tick = keep_after_tick,
         .on_act = keep_act,
         .on_action = keep_action,
+    }),
+    wasm.script_deck_with("THE LARKSPUR OBSERVATORY (AGENDAS, TYPED COMMANDS)", observatory.OBSERVATORY_SCRIPT, .{
+        .player = "Ines",
+        .intro = "Larkspur: press Enter and type, such as \"go to the archive\" or \"take the slip\". [S] types the next step.",
+        .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 16, .g = 20, .b = 34 },
+        .setup = larkspur_setup,
+        .catalyst = larkspur_solve,
+        .after_tick = larkspur_after_tick,
+        .command_bar = true,
+        .on_typed = larkspur_typed,
     }),
 };
 
@@ -1096,6 +1110,70 @@ fn perform_settle(rt: *WasmRuntime) !void {
 }
 
 // =============================================================================
+// The Larkspur Observatory: the staff society steps after each tick, and typed lines go
+// through the desktop proof's own interpreter and where-Ines-stands rules (P34-04).
+// =============================================================================
+
+var larkspur_ids: ?observatory.Ids = null;
+var larkspur_staff: bespoke.society.Society = undefined;
+var larkspur_interp: bespoke.command.Interpreter = .{};
+
+fn larkspur_setup(rt: *WasmRuntime) anyerror!void {
+    const program = if (rt.program) |*p| p else return error.NoProgram;
+    larkspur_ids = try observatory.configure(&rt.world, &rt.spatial);
+    larkspur_staff = try observatory.staff(&rt.world, program);
+    larkspur_interp = .{};
+    try rt.vm.transition_to_scene(larkspur_ids.?.scene);
+    rt.bind();
+    larkspur_words(rt);
+}
+
+fn larkspur_after_tick(rt: *WasmRuntime) anyerror!void {
+    if (larkspur_ids == null) return;
+    try larkspur_staff.step(&rt.world, &rt.spatial, &rt.vm);
+    larkspur_words(rt);
+}
+
+/// The words Tab completes, from what Ines can name now, as the desktop refreshes them.
+fn larkspur_words(rt: *WasmRuntime) void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = larkspur_ids orelse return;
+    bespoke.host.command_words(&rt.vm, program, ids.ines, &rt.window.command_words);
+}
+
+/// A typed line: the reply on the banner, and the tick that answers a fired cue.
+fn larkspur_typed(rt: *WasmRuntime, line: []const u8) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = larkspur_ids orelse return;
+    var buf: [160]u8 = undefined;
+    const result = try observatory.type_line(&rt.vm, program, &larkspur_interp, &rt.spatial, ids, line, &buf);
+    if (result.text) |text| rt.set_banner(text);
+    if (result.fired) try rt.step_tick();
+}
+
+/// `[S]`: the desktop proof's typed playthrough, one line per press: go to the archive, take
+/// the slip, wait for Pell, and confront him with it.
+fn larkspur_solve(rt: *WasmRuntime) anyerror!void {
+    const ids = larkspur_ids orelse return;
+    if (rt.spatial.is_moving(ids.ines)) return rt.step_tick();
+    if (bespoke.host.has_state(&rt.world, ids.pell, "cornered")) return;
+    const slip = rt.world.has_fact(ids.ines, try relation(rt, "Carries"), ids.slip.to_int());
+    if (!slip) {
+        if (rt.spatial.get_current_waypoint(ids.ines) != ids.archive_wp) return larkspur_typed(rt, "go to the archive");
+        return larkspur_typed(rt, "pick up the exposure slip");
+    }
+    if (!observatory.within_reach(&rt.spatial, ids.ines, ids.pell)) {
+        rt.set_banner("Ines waits for Pell to come within reach.");
+        for (0..10) |_| {
+            if (observatory.within_reach(&rt.spatial, ids.ines, ids.pell)) break;
+            try rt.step_tick();
+        }
+        return;
+    }
+    return larkspur_typed(rt, "ask the rival about the slip");
+}
+
+// =============================================================================
 // Tests: every deck's solve key reaches its proof's ending
 // =============================================================================
 
@@ -1127,7 +1205,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1799,6 +1877,69 @@ test "P34-03: the Castle Fire Escape plays by verbs and the page's buttons" {
     try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "burned"));
 }
 
+/// Types a line into the runtime the way a visitor does: Enter focuses the bar, each character
+/// arrives as the page forwards it (after the key itself), and Enter submits; Escape then
+/// leaves the bar, so the next line starts with Enter, as on desktop.
+fn type_into(rt: *WasmRuntime, line: []const u8) !void {
+    try testing.expectEqual(wasm.BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
+    for (line) |ch| {
+        _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = std.ascii.toUpper(ch) });
+        try testing.expectEqual(wasm.BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .char, .key_code = ch }));
+    }
+    try testing.expectEqual(wasm.BrowserActionTag.command_typed, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
+    try testing.expectEqual(@as(usize, 0), rt.window.command_len);
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 27 });
+    try testing.expect(!rt.window.command_bar_focused);
+}
+
+fn larkspur_settle(rt: *WasmRuntime) !void {
+    for (0..60) |_| {
+        if (!rt.spatial.is_moving(rt.player_entity)) break;
+        try rt.step_tick();
+    }
+}
+
+test "P34-04: the Larkspur Observatory reaches its ending from typed commands" {
+    const rt = try load(12);
+    defer unload(rt);
+    try testing.expectEqualStrings("Ines", rt.world.get_entity_name(rt.player_entity).?);
+    const pell = try entity(rt, "Pell");
+    const tick_before = rt.clock();
+
+    // An ambiguous noun asks which; the answer is typed too.
+    try type_into(rt, "examine the telescope");
+    try testing.expect(std.mem.startsWith(u8, rt.get_banner(), "Which do you mean"));
+    try type_into(rt, "log");
+    // Taking the slip from afar is refused by where Ines stands.
+    try type_into(rt, "take the slip");
+    try testing.expectEqualStrings("The slip is in the Archive.", rt.get_banner());
+    // The letters typed never reached the shortcuts: "s" did not solve, "n" did not step, and
+    // space did not pause, so only the answered "log" moved the clock.
+    try testing.expect(!rt.is_paused);
+    try testing.expect(rt.clock() <= tick_before + 2);
+
+    try type_into(rt, "go to the archive");
+    try larkspur_settle(rt);
+    try type_into(rt, "pick up the exposure slip");
+    for (0..80) |_| {
+        if (!rt.spatial.is_moving(rt.player_entity) and observatory.within_reach(&rt.spatial, rt.player_entity, pell)) break;
+        try rt.step_tick();
+    }
+    try type_into(rt, "ask the rival about the slip");
+    for (0..3) |_| try rt.step_tick();
+    try testing.expect(bespoke.host.has_state(&rt.world, pell, "cornered"));
+}
+
+test "P34-04: the Larkspur Observatory's [S] types the playthrough to the end" {
+    const rt = try load(12);
+    defer unload(rt);
+    const pell = try entity(rt, "Pell");
+    var presses: usize = 0;
+    while (!bespoke.host.has_state(&rt.world, pell, "cornered") and presses < 60) : (presses += 1) try rt.trigger_catalyst();
+    for (0..3) |_| try rt.step_tick();
+    try testing.expect(bespoke.host.has_state(&rt.world, pell, "cornered"));
+}
+
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {
     const rt = try load(2);
     defer unload(rt);
@@ -1858,6 +1999,10 @@ test "P36-05: every browser deck draws the frame the desktop window draws for th
         desk.log_text = shown.log_text;
         desk.log_len = shown.log_len;
         desk.log_count = shown.log_count;
+        desk.command_bar_enabled = shown.command_bar_enabled;
+        desk.command_bar_focused = shown.command_bar_focused;
+        desk.command_input = shown.command_input;
+        desk.command_len = shown.command_len;
         desk.render_frame(frame, rt.is_paused);
         if (desk.frame_hash().? != browser) {
             std.debug.print("deck {d} draws differently in the browser\n", .{i});

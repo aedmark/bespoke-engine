@@ -125,6 +125,16 @@
 
   window.addEventListener('keydown', (event) => {
     if (!exp) return;
+    // The typed-command bar (P34-04): while it has the keyboard every key goes to it, editing
+    // keys by code and the rest as characters, and none of this page's shortcuts fire.
+    if (exp.wasm_command_bar_focused && exp.wasm_command_bar_focused()) {
+      event.preventDefault();
+      const edit = { Enter: 13, Backspace: 8, Escape: 27, Tab: 9, ArrowUp: 38, ArrowDown: 40 }[event.key];
+      if (edit) exp.wasm_on_key_down(edit);
+      else if (event.key.length === 1) exp.wasm_on_char(event.key.charCodeAt(0));
+      draw();
+      return;
+    }
     const action = actionButtons.find((b) => b.dataset.key && b.dataset.key === event.key.toLowerCase());
     if (action) {
       event.preventDefault();
@@ -161,7 +171,11 @@
       // step (or, in the duel, starts the next duel).
       event.preventDefault();
       if (!open) key(83);
-    } else if (event.key === 'Enter' || event.key === ' ') {
+    } else if (event.key === 'Enter') {
+      // Enter opens a deck's command bar, if it has one (P34-04).
+      event.preventDefault();
+      if (!open) key(13);
+    } else if (event.key === ' ') {
       event.preventDefault();
     }
   });

@@ -4,6 +4,7 @@ const bespoke = @import("bespoke");
 
 comptime {
     bespoke.wasm.export_runtime(&[_]bespoke.wasm.Deck{
-        bespoke.wasm.script_deck("{{name}}", @embedFile("game_package")),
+        // The typed-command bar (D-057, P34-04): Enter, then type a line such as "take the key".
+        bespoke.wasm.script_deck_with("{{name}}", @embedFile("game_package"), .{ .command_bar = true }),
     });
 }

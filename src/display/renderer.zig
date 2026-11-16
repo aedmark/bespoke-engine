@@ -77,6 +77,10 @@ pub const Keys = struct {
     pub const enter: Keycode = 13;
     pub const kp_enter: Keycode = 0x40000058;
     pub const backspace: Keycode = 8;
+    pub const tab: Keycode = 9;
+    pub const escape: Keycode = 27;
+    pub const up: Keycode = 0x40000052;
+    pub const down: Keycode = 0x40000051;
 };
 
 /// The key code of a letter or digit key, which SDL numbers by its lowercase ASCII value. Lets
@@ -1858,8 +1862,9 @@ pub const DisplayWindow = struct {
         self.command_history_count += 1;
     }
 
-    /// Appends typed text to the focused command bar; editing ends any history browsing.
-    fn command_bar_text(self: *DisplayWindow, text: []const u8) void {
+    /// Appends typed text to the focused command bar; editing ends any history browsing. The
+    /// browser runtime calls it with the characters a page forwards (P34-04).
+    pub fn command_bar_text(self: *DisplayWindow, text: []const u8) void {
         for (text) |ch| {
             if (self.command_len == self.command_input.len) break;
             self.command_input[self.command_len] = ch;
@@ -1875,9 +1880,10 @@ pub const DisplayWindow = struct {
     }
 
     /// Keys while the command bar is focused. Every key is consumed: text arrives separately
-    /// as SDL_TEXTINPUT, and a key that also has a binding must not trigger it.
-    fn command_bar_key(self: *DisplayWindow, sym: Keycode) UserAction {
-        if (sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER) {
+    /// (SDL_TEXTINPUT on desktop, forwarded characters in the browser), and a key that also has
+    /// a binding must not trigger it. Uses `Keys`, so the browser runtime shares it (P34-04).
+    pub fn command_bar_key(self: *DisplayWindow, sym: Keycode) UserAction {
+        if (sym == Keys.enter or sym == Keys.kp_enter) {
             if (self.command_len == 0) return .none;
             const line = self.command_input[0..self.command_len];
             self.add_command_history(line);
@@ -1885,19 +1891,19 @@ pub const DisplayWindow = struct {
             self.command_len = 0;
             self.command_history_cursor = null;
             return act;
-        } else if (sym == c.SDLK_ESCAPE) {
+        } else if (sym == Keys.escape) {
             self.command_bar_focused = false;
             self.command_history_cursor = null;
-        } else if (sym == c.SDLK_BACKSPACE) {
+        } else if (sym == Keys.backspace) {
             if (self.command_len > 0) self.command_len -= 1;
-        } else if (sym == c.SDLK_UP) {
+        } else if (sym == Keys.up) {
             if (self.command_history_count > 0) {
                 const cur = self.command_history_cursor orelse self.command_history_count;
                 const next = if (cur > 0) cur - 1 else 0;
                 self.command_history_cursor = next;
                 self.recall_command(next);
             }
-        } else if (sym == c.SDLK_DOWN) {
+        } else if (sym == Keys.down) {
             if (self.command_history_cursor) |cur| {
                 if (cur + 1 < self.command_history_count) {
                     self.command_history_cursor = cur + 1;
@@ -1907,7 +1913,7 @@ pub const DisplayWindow = struct {
                     self.command_len = 0;
                 }
             }
-        } else if (sym == c.SDLK_TAB) {
+        } else if (sym == Keys.tab) {
             self.command_len = self.command_words.complete(&self.command_input, self.command_len);
         }
         return .none;
@@ -4794,4 +4800,8 @@ test "D-097: the window's key type is SDL's, so bindings need no SDL to declare"
     try std.testing.expectEqual(@as(Keycode, c.SDLK_RETURN), Keys.enter);
     try std.testing.expectEqual(@as(Keycode, c.SDLK_KP_ENTER), Keys.kp_enter);
     try std.testing.expectEqual(@as(Keycode, c.SDLK_BACKSPACE), Keys.backspace);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_TAB), Keys.tab);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_ESCAPE), Keys.escape);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_UP), Keys.up);
+    try std.testing.expectEqual(@as(Keycode, c.SDLK_DOWN), Keys.down);
 }

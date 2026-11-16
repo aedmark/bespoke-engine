@@ -116,7 +116,7 @@
       "tag": "Agendas and typed commands",
       "blurb": "Investigate a missing comet plate while the staff go about their night. Each of them has an agenda and intercepts you when your evidence threatens it. Type your commands.",
       "source": "proofs/observatory_puzzle.zig#OBSERVATORY_SCRIPT",
-      "deck": null,
+      "deck": 12,
       "flag": "observatory"
     }
   ]
