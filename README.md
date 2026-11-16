@@ -137,7 +137,7 @@ zig build test-proofs                     # every proof's tests
 
 - Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
-- The Bell Tower, Caustic Grog, and Saltmarket windows have not been hand-played on a desktop, and the Castle Fire Escape has not been replayed since its speech fix; macOS and Windows builds have never run (the template's CI workflow is untested). See [Phase 34](ROADMAP.md) and the [release hand-test](docs/runbooks/release-hand-test.md).
+- Every proof has been played by hand on Linux (2026-11-15). macOS and Windows builds have never run (the template's CI workflow is untested), and the [release hand-test](docs/runbooks/release-hand-test.md)'s stock-runner, offline-cache, and uploaded-site checks are still unrun.
 - The showcase site embeds `bespoke-proofs.wasm`, so its thirteen decks run their proofs' scripts in the real browser runtime from `file://`, with the engine's own audio; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`.
 
 ---
