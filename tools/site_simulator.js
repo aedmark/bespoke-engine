@@ -1,6 +1,6 @@
 // Browser wrapper for the standalone showcase site (P30-01, D-042).
 // tools/build_site.py embeds this file and bespoke-proofs.wasm into site/index.html.
-// The eleven decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
+// The twelve decks live in proofs/wasm_deck.zig and run the proofs' own scripts (D-069); this
 // wrapper supplies no scenes or facts.
 (() => {
   const canvas = document.querySelector('#sim-canvas');
@@ -56,6 +56,7 @@
     'The Saltmarket: Three Ways In',
     'The Copper Weathercock',
     'The Bell Tower',
+    'The Castle Fire Escape',
   ];
   const DECK_BANNERS = [
     'TAVERN HEIST',
@@ -69,6 +70,7 @@
     'THE SALTMARKET: THREE WAYS IN',
     'THE COPPER WEATHERCOCK',
     'THE BELL TOWER',
+    'THE CASTLE FIRE ESCAPE',
   ];
   const DECK_COUNT = DECK_NAMES.length;
   const TICK_INTERVAL_MS = 250;
@@ -471,7 +473,7 @@
       ]) {
         if (typeof exp[name] !== 'function') throw new Error(`missing export ${name}`);
       }
-      statusEl.textContent = 'bespoke-proofs.wasm ready. Eleven proof decks embedded.';
+      statusEl.textContent = 'bespoke-proofs.wasm ready. Twelve proof decks embedded.';
       log('BOOT', 'Instantiated the embedded proof runtime.', 'cue');
       loadDeck(0);
       lastTickTime = performance.now();

@@ -86,7 +86,7 @@ pub const TAPESTRY_FIRST_CELL: u16 = 2;
 pub const TAPESTRY_EAST_CELL: u16 = 4;
 pub const DOOR_CELL: u16 = 5;
 
-const Ids = struct {
+pub const Ids = struct {
     scene: bespoke.EntityId,
     wren: bespoke.EntityId,
     trough: bespoke.EntityId,
@@ -100,7 +100,7 @@ const Ids = struct {
     door_wp: u16,
 };
 
-fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const scene = world.lookup_entity("Hollin Keep Gallery").?;
     const ids = Ids{
         .scene = scene,
@@ -146,7 +146,7 @@ fn fires_burning(world: *const bespoke.World, decl: grid.Declaration) bool {
 /// The host's two door rules, run after every tick. The door is found when the tapestry cell
 /// beside it ignites (it stops being flammable); it is lost if its own cell burns, which turns
 /// the cell blocking so no walk can reach the mark.
-fn after_tick(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, ids: Ids) !void {
+pub fn after_tick(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, ids: Ids) !void {
     const decl = try declaration(compiled);
     if (host.has_state(world, ids.door, "burned")) return;
     if (has(world, decl, DOOR_CELL, .burning)) {
@@ -161,6 +161,32 @@ fn after_tick(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.C
     if (world.has_fact(door_mark, relation, null) and !has(world, decl, TAPESTRY_EAST_CELL, .flammable)) {
         _ = try vm.fire_cue(compiled, "Reveals", ids.wren, ids.door, null);
     }
+}
+
+/// Wren's three actions, shared by the window's keys and the browser deck's buttons (D-100).
+pub const Act = enum { fill, light, throw };
+
+/// Starts one of Wren's actions: fires its cue (the caller runs the tick that answers it) and
+/// returns null, or returns why it cannot happen now and changes nothing.
+pub fn act(world: *bespoke.World, spatial: *const bespoke.SpatialSystem, vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, ids: Ids, which: Act) !?[]const u8 {
+    const decl = try declaration(compiled);
+    switch (which) {
+        .fill => {
+            if (spatial.get_current_waypoint(ids.wren) != ids.trough_wp) return "Wren must stand at the trough.";
+            _ = try vm.fire_cue(compiled, "Fills", ids.wren, ids.bucket, null);
+        },
+        .light => {
+            if (spatial.get_current_waypoint(ids.wren) != ids.torch_wp) return "Wren must stand at the torch.";
+            if (!(try grid.ignite(world, decl, cell(TAPESTRY_FIRST_CELL)))) return "The tapestry will not catch.";
+            _ = try vm.fire_cue(compiled, "Ignites", ids.wren, ids.tapestry, null);
+        },
+        .throw => {
+            if (!host.has_state(world, ids.bucket, "full")) return "The bucket is empty.";
+            try grid.set_attribute(world, decl.grid, cell(DOOR_CELL), .liquid, true);
+            _ = try vm.fire_cue(compiled, "Throws", ids.wren, ids.bucket, null);
+        },
+    }
+    return null;
 }
 
 const Stage = struct {
@@ -398,29 +424,16 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (!(try spatial.walk_to_with_world(&world, ids.wren, waypoint))) window.set_cue_banner("That way is blocked.", 90);
             },
             .custom => |which| {
-                const decl = try declaration(&compiled);
-                if (which == action_fill) {
-                    if (spatial.get_current_waypoint(ids.wren) != ids.trough_wp) {
-                        window.set_cue_banner("Wren must stand at the trough.", 90);
+                const which_act: ?Act = switch (which) {
+                    action_fill => .fill,
+                    action_torch => .light,
+                    action_throw => .throw,
+                    else => null,
+                };
+                if (which_act) |w| {
+                    if (try act(&world, &spatial, &vm, &compiled, ids, w)) |refusal| {
+                        window.set_cue_banner(refusal, 90);
                     } else {
-                        _ = try vm.fire_cue(&compiled, "Fills", ids.wren, ids.bucket, null);
-                        _ = try session.advance();
-                        show_speech(&window, &world, &vm);
-                    }
-                } else if (which == action_torch) {
-                    if (spatial.get_current_waypoint(ids.wren) != ids.torch_wp) {
-                        window.set_cue_banner("Wren must stand at the torch.", 90);
-                    } else if (try grid.ignite(&world, decl, cell(TAPESTRY_FIRST_CELL))) {
-                        _ = try vm.fire_cue(&compiled, "Ignites", ids.wren, ids.tapestry, null);
-                        _ = try session.advance();
-                        show_speech(&window, &world, &vm);
-                    } else window.set_cue_banner("The tapestry will not catch.", 90);
-                } else if (which == action_throw) {
-                    if (!host.has_state(&world, ids.bucket, "full")) {
-                        window.set_cue_banner("The bucket is empty.", 90);
-                    } else {
-                        try grid.set_attribute(&world, decl.grid, cell(DOOR_CELL), .liquid, true);
-                        _ = try vm.fire_cue(&compiled, "Throws", ids.wren, ids.bucket, null);
                         _ = try session.advance();
                         show_speech(&window, &world, &vm);
                     }

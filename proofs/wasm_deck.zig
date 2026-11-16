@@ -28,6 +28,7 @@ const saltmarket = @import("saltmarket.zig");
 const bell_tower = @import("bell_tower.zig");
 const art = @import("art.zig");
 const weathercock = @import("weathercock.zig");
+const grid_puzzle = @import("grid_puzzle.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -152,6 +153,19 @@ pub const decks = [_]wasm.Deck{
         .catalyst = solver(&BELL_TOWER_SOLUTION),
         .after_tick = bell_tower_follow_scene,
         .cues = .{ .take = "PicksUp" },
+    }),
+    wasm.script_deck_with("THE CASTLE FIRE ESCAPE (FIRE, SMOKE, WATER)", grid_puzzle.GRID_PUZZLE_SCRIPT, .{
+        .player = "Wren",
+        .intro = "Hollin Keep: fill the bucket at the trough, light the tapestry at the torch, and save the door. [S] plays the next step.",
+        .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 20, .g = 16, .b = 14 },
+        .setup = keep_setup,
+        .catalyst = keep_solve,
+        .after_tick = keep_after_tick,
+        .on_act = keep_act,
+        .on_action = keep_action,
     }),
 };
 
@@ -957,6 +971,131 @@ fn saltmarket_solve(rt: *WasmRuntime) anyerror!void {
 }
 
 // =============================================================================
+// The Castle Fire Escape: the grid steps in `host.tick`; the deck adds the proof's door rules
+// after each tick and its three actions (P34-03).
+// =============================================================================
+
+/// The proof's handles, kept for the after-tick rules and the actions. One deck, one copy.
+var keep_ids: ?grid_puzzle.Ids = null;
+
+/// Page buttons for Wren's actions (D-095), numbered as the desktop keys 1, 2, 3.
+pub const KEEP_FILL: u8 = 1;
+pub const KEEP_LIGHT: u8 = 2;
+pub const KEEP_THROW: u8 = 3;
+
+fn keep_setup(rt: *WasmRuntime) anyerror!void {
+    keep_ids = try grid_puzzle.configure(&rt.world, &rt.spatial);
+    try rt.vm.transition_to_scene(keep_ids.?.scene);
+    rt.bind();
+}
+
+fn keep_after_tick(rt: *WasmRuntime) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    try grid_puzzle.after_tick(&rt.world, &rt.vm, program, keep_ids orelse return);
+}
+
+/// Runs one of Wren's actions and the tick that answers it, or says why it cannot happen.
+fn keep_do(rt: *WasmRuntime, which: grid_puzzle.Act) !void {
+    const program = if (rt.program) |*p| p else return;
+    if (try grid_puzzle.act(&rt.world, &rt.spatial, &rt.vm, program, keep_ids orelse return, which)) |refusal| {
+        rt.set_banner(refusal);
+        return;
+    }
+    try rt.step_tick();
+}
+
+/// USE on the trough fills the bucket and USE on the torch or the tapestry lights it, once
+/// Wren has walked over (D-092).
+fn keep_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    if (verb != .use_with) return false;
+    const ids = keep_ids orelse return false;
+    if (target == ids.trough) {
+        try keep_do(rt, .fill);
+        return true;
+    }
+    if (target == ids.torch or target == ids.tapestry) {
+        // Lighting is done from the torch, wherever the click was.
+        if (rt.spatial.get_current_waypoint(ids.wren) != ids.torch_wp) {
+            _ = try rt.spatial.walk_to_with_world(rt.active_world(), ids.wren, ids.torch_wp);
+            rt.set_banner("Wren heads for the torch. Use it again when she gets there.");
+            return true;
+        }
+        try keep_do(rt, .light);
+        return true;
+    }
+    return false;
+}
+
+fn keep_action(rt: *WasmRuntime, id: u8) anyerror!void {
+    switch (id) {
+        KEEP_FILL => try keep_do(rt, .fill),
+        KEEP_LIGHT => try keep_do(rt, .light),
+        KEEP_THROW => try keep_do(rt, .throw),
+        else => {},
+    }
+}
+
+/// `[S]`: the desktop proof's solution, one step per press: fill the bucket at the trough,
+/// light the tapestry from the torch, wait for the door, throw the water on it, wait for the
+/// fire to die, and walk out.
+fn keep_solve(rt: *WasmRuntime) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = keep_ids orelse return;
+    const decl = program.grids.items[0];
+    const wren = ids.wren;
+    const here = rt.spatial.get_current_waypoint(wren);
+    const moving = rt.spatial.is_moving(wren);
+    const cell = struct {
+        fn at(i: u16) bespoke.grid.Cell {
+            return .{ .x = i, .y = 0 };
+        }
+    }.at;
+    const tapestry_lit = !bespoke.grid.has_attribute(&rt.world, decl.grid, cell(grid_puzzle.TAPESTRY_EAST_CELL), .flammable) or
+        bespoke.grid.has_attribute(&rt.world, decl.grid, cell(grid_puzzle.TAPESTRY_FIRST_CELL), .burning);
+    const door_wet = bespoke.grid.has_attribute(&rt.world, decl.grid, cell(grid_puzzle.DOOR_CELL), .liquid);
+    if (moving) return rt.step_tick();
+    if (!bespoke.host.has_state(&rt.world, ids.bucket, "full") and !door_wet) {
+        if (here != ids.trough_wp) {
+            _ = try rt.spatial.walk_to_with_world(&rt.world, wren, ids.trough_wp);
+            return perform_settle(rt);
+        }
+        return keep_do(rt, .fill);
+    }
+    if (!tapestry_lit) {
+        if (here != ids.torch_wp) {
+            _ = try rt.spatial.walk_to_with_world(&rt.world, wren, ids.torch_wp);
+            return perform_settle(rt);
+        }
+        return keep_do(rt, .light);
+    }
+    const door_mark = try entity(rt, "DoorMark");
+    if (rt.world.has_fact(door_mark, try relation(rt, "WaypointBlocked"), null)) {
+        // Wait for the fire to reach the end of the tapestry and show the door.
+        for (0..12) |_| {
+            if (!rt.world.has_fact(door_mark, try relation(rt, "WaypointBlocked"), null)) break;
+            try rt.step_tick();
+        }
+        return;
+    }
+    if (!door_wet) return keep_do(rt, .throw);
+    var burning = false;
+    var i: u16 = 0;
+    while (i < decl.grid.width) : (i += 1) burning = burning or bespoke.grid.has_attribute(&rt.world, decl.grid, cell(i), .burning);
+    if (burning) {
+        for (0..12) |_| try rt.step_tick();
+        return;
+    }
+    if (here != ids.door_wp) {
+        _ = try rt.spatial.walk_to_with_world(&rt.world, wren, ids.door_wp);
+        return perform_settle(rt);
+    }
+}
+
+fn perform_settle(rt: *WasmRuntime) !void {
+    _ = try perform(rt, .{ .settle = "Wren" });
+}
+
+// =============================================================================
 // Tests: every deck's solve key reaches its proof's ending
 // =============================================================================
 
@@ -988,7 +1127,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1602,6 +1741,62 @@ test "D-094: The Saltmarket plays by clicks, walking only through the chosen gat
     try pick_verb(rt, .walk);
     _ = try click_on(rt, "CunningGate");
     try testing.expectEqualStrings("That way is blocked.", rt.get_banner());
+}
+
+test "P34-03: the Castle Fire Escape deck burns the tapestry, saves the door, and gets Wren out with [S]" {
+    const rt = try load(11);
+    defer unload(rt);
+    try testing.expectEqualStrings("Wren", rt.world.get_entity_name(rt.player_entity).?);
+    const wren = rt.player_entity;
+    var presses: usize = 0;
+    while (!bespoke.host.has_state(&rt.world, wren, "escaped") and presses < 40) : (presses += 1) try rt.trigger_catalyst();
+    for (0..20) |_| {
+        if (bespoke.host.has_state(&rt.world, wren, "escaped")) break;
+        try rt.step_tick();
+    }
+    try testing.expect(bespoke.host.has_state(&rt.world, wren, "escaped"));
+    try testing.expect(!bespoke.host.has_state(&rt.world, wren, "scorched"));
+    try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "burned"));
+}
+
+test "P34-03: the Castle Fire Escape plays by verbs and the page's buttons" {
+    const rt = try load(11);
+    defer unload(rt);
+    const wren = rt.player_entity;
+    // USE on the trough walks Wren there and fills the bucket.
+    try pick_verb(rt, .use_with);
+    _ = try click_on(rt, "Trough");
+    for (0..20) |_| {
+        if (bespoke.host.has_state(&rt.world, try entity(rt, "Bucket"), "full")) break;
+        try rt.step_tick();
+    }
+    try testing.expect(bespoke.host.has_state(&rt.world, try entity(rt, "Bucket"), "full"));
+    // The light button refuses away from the torch and says why.
+    try rt.deck_action(KEEP_LIGHT);
+    try testing.expectEqualStrings("Wren must stand at the torch.", rt.get_banner());
+    // USE on the torch walks there; a second USE lights the tapestry.
+    _ = try click_on(rt, "WallTorch");
+    for (0..20) |_| {
+        if (!rt.spatial.is_moving(wren)) break;
+        try rt.step_tick();
+    }
+    _ = try click_on(rt, "WallTorch");
+    for (0..20) |_| {
+        if (!holds(rt, "DoorMark", "WaypointBlocked", null)) break;
+        try rt.step_tick();
+    }
+    try testing.expect(!holds(rt, "DoorMark", "WaypointBlocked", null));
+    // Throw the water on the door, let the fire die, and walk out.
+    try rt.deck_action(KEEP_THROW);
+    for (0..20) |_| try rt.step_tick();
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "DoorMark");
+    for (0..30) |_| {
+        if (bespoke.host.has_state(&rt.world, wren, "escaped")) break;
+        try rt.step_tick();
+    }
+    try testing.expect(bespoke.host.has_state(&rt.world, wren, "escaped"));
+    try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "burned"));
 }
 
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {

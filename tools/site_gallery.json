@@ -107,7 +107,7 @@
       "tag": "Fire, smoke, and water",
       "blurb": "Burn a tapestry to find the hidden door, then soak the door before the fire reaches it. Water floods back through the corridor and puts the fire out.",
       "source": "proofs/grid_puzzle.zig#GRID_PUZZLE_SCRIPT",
-      "deck": null,
+      "deck": 11,
       "flag": "grid"
     },
     {
