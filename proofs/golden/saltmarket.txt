@@ -11,6 +11,7 @@ Path Cunning:
   solve: Solved(Tamsin, Cunning); Acquired(Tamsin, Logbook)
   rival path routines: muted
 
+final facts: 8, digest 6e21e7d272013006
 Path Muscle:
   locks: CunningGate, CrewGate
   route: Entrance -> MuscleGate -> LogbookMark
@@ -19,6 +20,7 @@ Path Muscle:
   solve: Solved(Tamsin, Muscle); Acquired(Tamsin, Logbook)
   rival path routines: muted
 
+final facts: 8, digest 42dc7529a84c86e8
 Path Crew:
   locks: CunningGate, MuscleGate
   route: Entrance -> CrewGate -> LogbookMark
@@ -27,6 +29,7 @@ Path Crew:
   solve: Solved(Tamsin, Crew); Acquired(Tamsin, Logbook)
   rival path routines: muted
 
+final facts: 8, digest bbc828d07698b19e
 ===================================================================
   VERIFICATION COMPLETE: all three approaches reach the logbook.
 ===================================================================

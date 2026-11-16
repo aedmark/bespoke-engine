@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 /// Keys this proof binds through its theme (P32-02c); the engine returns them as
@@ -441,6 +442,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n===================================================================\n", .{});
     try writer.print("   Pip-Spitting Green Vertical Slice Successfully Completed!  \n", .{});
     try writer.print("===================================================================\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// Launches the full graphical 2D adventure display window for the Spitting Contest (P10-03, D-001, D-008, D-012).

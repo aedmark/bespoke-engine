@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 /// Keys this proof binds through its theme (P32-02c); the engine returns them as
@@ -457,6 +458,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try std.testing.expect(!world.has_fact(sim.drifter, sim.rel().arrested, null));
 
     try writer.print("\n>>> ALL LIVING VILLAGE EMERGENT SIMULATION CHECKS PASSED! <<<\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// Runs the interactive 60 Hz SDL2 graphical sandbox for "The Living Village" (P18-03, D-021).

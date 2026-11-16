@@ -8,6 +8,7 @@
 //! revealed when the tapestry beside it catches, and it collapses if it burns.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 const host = bespoke.host;
 const grid = bespoke.grid;
@@ -336,6 +337,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("\n===================================================================\n");
     try writer.writeAll("  VERIFICATION COMPLETE: Wren is out. The keep burned as written.  \n");
     try writer.writeAll("===================================================================\n\n");
+    try golden.final_facts(allocator, writer, &world);
 }
 
 const action_fill: u16 = 1;

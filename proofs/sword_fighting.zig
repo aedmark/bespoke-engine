@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 /// Keys this proof binds through its theme (P32-02c); the engine returns them as
@@ -497,6 +498,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try std.testing.expectEqual(@as(u32, 0), duel.fumbles(tamsin));
 
     try writer.print("\n>>> ALL BRACKWATER BARBS DUEL & REPETITION TESTS PASSED! <<<\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// One duel in progress, shared by the desktop window, the browser deck, and the tests. The

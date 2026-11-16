@@ -3,6 +3,7 @@
 //! when Cudgel charges, and hauling the anchor into his rope line closes the way to the hatch.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 /// Keys this proof binds through its theme (P32-02c); the engine returns them as
@@ -369,6 +370,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n===================================================================\n", .{});
     try writer.print("  VERIFICATION COMPLETE: Donkey of Lamp Point 100% Deterministic!   \n", .{});
     try writer.print("===================================================================\n\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// Executes interactive 60 Hz simulation with graphical display (P20-03, D-023).

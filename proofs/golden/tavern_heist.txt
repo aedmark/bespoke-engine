@@ -196,3 +196,4 @@ Rewound State Verification:
    - Guard carries Cheese?      YES (Restored!)
    - Cat carries Cheese?        NO (Undone!)
 ===================================================================
+final facts: 2, digest 3ede9d40c612631c

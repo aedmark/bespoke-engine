@@ -66,3 +66,4 @@
 
 [Time-Travel] Verifying deterministic rewind back to tick 0...
 SUCCESS: 100% deterministic time-travel and multi-character coordination verified.
+final facts: 17, digest 8f6797098277a629

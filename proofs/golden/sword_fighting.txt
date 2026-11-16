@@ -82,3 +82,4 @@
    -> Tamsin DuelFumbles: 0
 
 >>> ALL BRACKWATER BARBS DUEL & REPETITION TESTS PASSED! <<<
+final facts: 78, digest 47e4c0296976bae9

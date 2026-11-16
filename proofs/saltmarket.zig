@@ -6,6 +6,7 @@
 //! The script owns the paths, facts, routines, and dialogue; this proof owns staging and input.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const host = bespoke.host;
 const r = bespoke.display.renderer;
 
@@ -230,6 +231,7 @@ fn run_path(allocator: std.mem.Allocator, writer: anytype, spec: PathSpec) !void
 
     try writer.print("  solve: Solved(Tamsin, {s}); Acquired(Tamsin, Logbook)\n", .{spec.name});
     try writer.writeAll("  rival path routines: muted\n\n");
+    try golden.final_facts(allocator, writer, &world);
 }
 
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {

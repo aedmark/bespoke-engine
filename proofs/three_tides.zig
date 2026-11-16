@@ -3,6 +3,7 @@
 //! them (D-026); a change in 1712 carries forward to 2112 through the script's rules.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 pub const THREE_TIDES_SCRIPT =
@@ -707,6 +708,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     std.debug.assert(final_frame.tides_juno_disguised);
 
     try writer.print("SUCCESS: 100% deterministic time-travel and multi-character coordination verified.\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// Executes interactive SDL2 simulation with party switching and retro audio (P21-03, D-025).

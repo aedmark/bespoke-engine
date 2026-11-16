@@ -8,6 +8,7 @@
 //! rebuttals all live in the script; this host owns staging, input, and the society tick.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 const host = bespoke.host;
 const agency = bespoke.agency;
@@ -455,6 +456,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("\n===================================================================\n");
     try writer.writeAll("  VERIFICATION COMPLETE: plate 41 is in Halloran's office.         \n");
     try writer.writeAll("===================================================================\n\n");
+    try golden.final_facts(allocator, writer, &world);
 }
 
 const action_search: u16 = 1;

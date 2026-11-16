@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 /// Keys this proof binds through its theme (P32-02c); the engine returns them as
@@ -497,6 +498,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("===================================================================\n", .{});
     try writer.print("     VICTORY ACHIEVED: The borrowed month folds back cleanly!      \n", .{});
     try writer.print("===================================================================\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// Mirrors the hypervisor's countdown and expiry into the art status every frame.

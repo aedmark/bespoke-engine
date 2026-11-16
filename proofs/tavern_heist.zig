@@ -1,5 +1,6 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 
 /// The Tavern Heist: the original Engine-as-Spine vertical slice (P5, P6, P9), moved out of
@@ -169,6 +170,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
         try stdout.print("   - Guard carries Cheese?      {s} (Restored!)\n", .{if (world.has_fact(guard, carries, cheese.to_int())) "YES" else "NO"});
         try stdout.print("   - Cat carries Cheese?        {s} (Undone!)\n", .{if (world.has_fact(cat, carries, cheese.to_int())) "YES" else "NO"});
         try stdout.print("===================================================================\n", .{});
+        try golden.final_facts(allocator, stdout, &world);
     } else {
         const window = &window_storage.?;
         try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});

@@ -52,3 +52,4 @@
   VERIFICATION COMPLETE: The Bell Tower rings. 100% deterministic.  
 ===================================================================
 
+final facts: 1, digest 9e1af93c5adaaa72

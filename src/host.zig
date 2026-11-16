@@ -336,6 +336,30 @@ pub fn run_initial_statements(world: *World, vm: *VM, compiled: *const CompiledP
     }
 }
 
+/// A stable 64-bit digest of the World's fact table (P34-01). Each fact contributes its
+/// subject's name, its relation's name, its object or value, and its expiry tick, so the digest
+/// does not depend on interning order; the per-fact hashes are sorted before they are combined,
+/// so it does not depend on table order either. A golden that records it changes whenever any
+/// fact does, including one no transcript line prints.
+pub fn fact_digest(allocator: std.mem.Allocator, world: *const World) !u64 {
+    const slice = world.facts.slice();
+    const rows = try allocator.alloc(u64, world.facts.len);
+    defer allocator.free(rows);
+    for (rows, 0..) |*row, i| {
+        var h = std.hash.Wyhash.init(0);
+        h.update(world.get_entity_name(slice.items(.subject)[i]) orelse "");
+        h.update(&[_]u8{0});
+        const meta = world.get_relation_meta(slice.items(.relation)[i]);
+        h.update(if (meta) |m| m.name else "");
+        h.update(&[_]u8{0});
+        h.update(std.mem.asBytes(&slice.items(.object_or_value)[i]));
+        h.update(std.mem.asBytes(&slice.items(.expires_at_tick)[i]));
+        row.* = h.final();
+    }
+    std.mem.sort(u64, rows, {}, std.sort.asc(u64));
+    return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(rows));
+}
+
 /// Puts each cast member on the first mark of its scene (D-065), so a person the script lists
 /// can be seen, named, and talked to before any routine moves them. An actor the host already
 /// placed keeps its place, so call this after placing actors by hand and before starting
@@ -1356,6 +1380,37 @@ test "D-094: a routine on the Scene runs, but the Scene gets no body on a mark" 
     const scene = world.lookup_entity(STAGE_ACTOR).?;
     try testing.expect(!spatial.agents.contains(scene));
     try testing.expect(world.has_fact(scene, world.lookup_relation("Breezy").?, null));
+}
+
+test "P34-01: the fact digest ignores table and interning order and catches any changed fact" {
+    var a = try World.init(testing.allocator, 256 * 1024);
+    defer a.deinit();
+    var b = try World.init(testing.allocator, 256 * 1024);
+    defer b.deinit();
+    // The same facts, interned and remembered in a different order.
+    const a_hero = try a.intern_entity("Hero");
+    const a_key = try a.intern_entity("Key");
+    const a_has = try a.intern_relation("Has", .set);
+    const a_at = try a.intern_relation("At", .property);
+    _ = try a.remember(a_hero, a_has, a_key.to_int(), 0);
+    _ = try a.remember(a_hero, a_at, 3, 0);
+    const b_at = try b.intern_relation("At", .property);
+    const b_has = try b.intern_relation("Has", .set);
+    const b_hero = try b.intern_entity("Hero");
+    const b_key = try b.intern_entity("Key");
+    _ = try b.remember(b_hero, b_at, 3, 0);
+    _ = try b.remember(b_hero, b_has, b_key.to_int(), 0);
+    // Objects are raw ids, so give both worlds the same id for Key before comparing.
+    try testing.expectEqual(a_key.to_int(), b_key.to_int());
+    try testing.expectEqual(try fact_digest(testing.allocator, &a), try fact_digest(testing.allocator, &b));
+
+    // A changed value, an extra fact, or a different expiry each change the digest.
+    const before = try fact_digest(testing.allocator, &a);
+    _ = try a.remember(a_hero, a_at, 4, 0);
+    try testing.expect(before != try fact_digest(testing.allocator, &a));
+    const after_move = try fact_digest(testing.allocator, &a);
+    _ = try a.remember(a_key, a_at, 1, 5);
+    try testing.expect(after_move != try fact_digest(testing.allocator, &a));
 }
 
 test "D-052: start_script leaves path initializers and path routines to the host" {

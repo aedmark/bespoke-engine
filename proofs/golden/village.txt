@@ -35,3 +35,4 @@
    -> Arrested(Drifter, Sheriff) active? false (Clean)
 
 >>> ALL LIVING VILLAGE EMERGENT SIMULATION CHECKS PASSED! <<<
+final facts: 40, digest 7a4e6286bfdc9d55

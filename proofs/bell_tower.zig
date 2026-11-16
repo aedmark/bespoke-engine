@@ -8,6 +8,7 @@
 //! `Kindle` on the beacon from inside the handler, which exercises host re-dispatch (D-029).
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 const draft = bespoke.draft;
 const Note = draft.Note;
@@ -421,6 +422,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n===================================================================\n", .{});
     try writer.print("  VERIFICATION COMPLETE: The Bell Tower rings. 100% deterministic.  \n", .{});
     try writer.print("===================================================================\n\n", .{});
+    try golden.final_facts(allocator, writer, &world);
 }
 
 /// Waypoint Maren walks to when interacting with a hotspot, so actions read as diegetic.

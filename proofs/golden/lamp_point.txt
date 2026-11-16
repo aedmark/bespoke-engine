@@ -27,3 +27,4 @@
   VERIFICATION COMPLETE: Donkey of Lamp Point 100% Deterministic!   
 ===================================================================
 
+final facts: 1, digest cc11ea333b7a2ff0

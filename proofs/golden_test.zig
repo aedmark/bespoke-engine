@@ -27,6 +27,8 @@ const grog_puzzle = @import("grog_puzzle.zig");
 const saltmarket = @import("saltmarket.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory_puzzle = @import("observatory_puzzle.zig");
+const golden_digest = @import("golden_digest.zig");
+const bespoke = @import("bespoke");
 
 const Writer = std.ArrayList(u8).Writer;
 
@@ -126,4 +128,34 @@ test "P32-07: the golden comparison reports the first differing line" {
     try std.testing.expectEqualStrings("b", d.want);
     try std.testing.expectEqualStrings("x", d.got);
     try std.testing.expectEqualStrings("<end of output>", first_difference("a\nb", "a").got);
+}
+
+/// Changes one final fact: a scalar no transcript line prints.
+fn tamper_one_fact(world: *bespoke.World) anyerror!void {
+    const rel = try world.intern_relation("GoldenTamper", .property);
+    _ = try world.remember(try world.intern_entity("GoldenTamper"), rel, 1, 0);
+}
+
+test "P34-01: one altered final fact fails a proof's golden on its digest line alone" {
+    if (options.update_goldens) return;
+    const allocator = std.testing.allocator;
+    var dir = try std.fs.cwd().openDir(options.golden_dir, .{});
+    defer dir.close();
+    for (proofs) |p| {
+        var name_buf: [64]u8 = undefined;
+        const expected = try dir.readFileAlloc(allocator, try std.fmt.bufPrint(&name_buf, "{s}.txt", .{p.name}), 1 << 22);
+        defer allocator.free(expected);
+
+        golden_digest.tamper = tamper_one_fact;
+        defer golden_digest.tamper = null;
+        var out = std.ArrayList(u8).init(allocator);
+        defer out.deinit();
+        try p.run(allocator, out.writer());
+
+        // The transcript differs, and only on a "final facts" line.
+        try std.testing.expect(!std.mem.eql(u8, expected, out.items));
+        const d = first_difference(expected, out.items);
+        try std.testing.expect(std.mem.startsWith(u8, d.want, "final facts: "));
+        try std.testing.expect(std.mem.startsWith(u8, d.got, "final facts: "));
+    }
 }

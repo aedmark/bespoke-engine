@@ -6,6 +6,7 @@
 //! stages, capacities, and spill tuning live in the script; this proof owns only staging and input.
 const std = @import("std");
 const bespoke = @import("bespoke");
+const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
 const host = bespoke.host;
 const container = bespoke.container;
@@ -218,6 +219,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("\n===================================================================\n");
     try writer.writeAll("  VERIFICATION COMPLETE: Ivo is free. Volume and history agree.    \n");
     try writer.writeAll("===================================================================\n\n");
+    try golden.final_facts(allocator, writer, &world);
 }
 
 const action_pour_ab: u16 = 1;
