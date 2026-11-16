@@ -970,7 +970,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
 
 test "P21-03: Three Tides full puzzle DAG compilation, cross-era transfers, and temporal victory" {
     const testing = std.testing;
-    var buf = std.ArrayList(u8).init(testing.allocator);
+    var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
     try run_headless(testing.allocator, buf.writer());

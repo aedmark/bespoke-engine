@@ -1198,7 +1198,7 @@ test "P32-05: second roster runs the full theft, witness, rumor, and arrest casc
 test "P32-05: society state lives in facts, so a snapshot restore rewinds it" {
     var o = try make_outpost(testing.allocator);
     defer o.deinit();
-    var snap = std.ArrayList(u8).init(testing.allocator);
+    var snap = std.array_list.Managed(u8).init(testing.allocator);
     defer snap.deinit();
     try o.world.save_state(snap.writer());
     const stamina = o.society.need_index("Stamina").?;

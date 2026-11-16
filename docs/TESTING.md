@@ -95,7 +95,7 @@ One technique the runbook does not cover:
 ## Before Any Run
 
 1. Ensure Python 3.9+ is available for documentation checks.
-2. Ensure the Zig compiler (0.14.1+) is installed and accessible in `PATH`.
+2. Ensure the Zig compiler (0.15.2+) is installed and accessible in `PATH`.
 3. Verify that memory arenas tested for serialization do not allocate external heap memory outside their assigned arena buffer.
 
 ## Known Pitfalls

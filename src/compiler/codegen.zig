@@ -60,27 +60,27 @@ pub const CompiledProgram = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
     routine_entities: std.StringHashMap([]const u8),
-    when_rule_entries: std.ArrayList(usize),
+    when_rule_entries: std.array_list.Managed(usize),
     cue_handler_entries: std.StringHashMap(usize),
-    allocated_cue_keys: std.ArrayList([]const u8),
-    reactive_rules: std.ArrayList(CompiledWhenRule),
+    allocated_cue_keys: std.array_list.Managed([]const u8),
+    reactive_rules: std.array_list.Managed(CompiledWhenRule),
     initial_entry: ?usize = null,
     /// Draft note table (P22-01, D-029). Program data, not world state: never saved in `.sav`.
-    drafts: std.ArrayList(CompiledDraft),
+    drafts: std.array_list.Managed(CompiledDraft),
     /// Script-declared reusable subsystem configuration (P32-22, P32-24).
-    societies: std.ArrayList(society_mod.Declaration),
-    duels: std.ArrayList(duel_mod.Declaration),
-    degradations: std.ArrayList(container_mod.Declaration),
+    societies: std.array_list.Managed(society_mod.Declaration),
+    duels: std.array_list.Managed(duel_mod.Declaration),
+    degradations: std.array_list.Managed(container_mod.Declaration),
     /// Grid overlays with their initial cell layouts (P25-01, D-054). Geometry is also
     /// registered in the SpatialSystem the program was compiled or loaded into.
-    grids: std.ArrayList(grid_mod.Declaration),
+    grids: std.array_list.Managed(grid_mod.Declaration),
     /// Agendas in declaration order, which breaks contention ties (P33-01, D-056).
-    agendas: std.ArrayList(agency_mod.Declaration),
+    agendas: std.array_list.Managed(agency_mod.Declaration),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
-    commands: std.ArrayList(command_mod.CommandDecl),
-    aliases: std.ArrayList(command_mod.AliasDecl),
+    commands: std.array_list.Managed(command_mod.CommandDecl),
+    aliases: std.array_list.Managed(command_mod.AliasDecl),
     /// Script music in declaration order, as validated MML text (P28-03, D-062).
-    scores: std.ArrayList(mml.ScoreDecl),
+    scores: std.array_list.Managed(mml.ScoreDecl),
     /// Each cast member's starting mark, in source order (D-065). Empty without a SpatialSystem.
     cast: std.ArrayListUnmanaged(CastPlace) = .{},
     /// `where` guards of cue handlers, in source order (D-072). Handlers without one are absent.
@@ -311,18 +311,18 @@ pub const Codegen = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
     routine_entities: std.StringHashMap([]const u8),
-    when_rule_entries: std.ArrayList(usize),
+    when_rule_entries: std.array_list.Managed(usize),
     cue_handler_entries: std.StringHashMap(usize),
-    allocated_cue_keys: std.ArrayList([]const u8),
-    reactive_rules: std.ArrayList(CompiledWhenRule),
-    societies: std.ArrayList(society_mod.Declaration),
-    duels: std.ArrayList(duel_mod.Declaration),
-    degradations: std.ArrayList(container_mod.Declaration),
-    grids: std.ArrayList(grid_mod.Declaration),
-    agendas: std.ArrayList(agency_mod.Declaration),
-    commands: std.ArrayList(command_mod.CommandDecl),
-    aliases: std.ArrayList(command_mod.AliasDecl),
-    scores: std.ArrayList(mml.ScoreDecl),
+    allocated_cue_keys: std.array_list.Managed([]const u8),
+    reactive_rules: std.array_list.Managed(CompiledWhenRule),
+    societies: std.array_list.Managed(society_mod.Declaration),
+    duels: std.array_list.Managed(duel_mod.Declaration),
+    degradations: std.array_list.Managed(container_mod.Declaration),
+    grids: std.array_list.Managed(grid_mod.Declaration),
+    agendas: std.array_list.Managed(agency_mod.Declaration),
+    commands: std.array_list.Managed(command_mod.CommandDecl),
+    aliases: std.array_list.Managed(command_mod.AliasDecl),
+    scores: std.array_list.Managed(mml.ScoreDecl),
     cast: std.ArrayListUnmanaged(CastPlace) = .{},
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .{},
 
@@ -334,18 +334,18 @@ pub const Codegen = struct {
             .chunk = BytecodeChunk.init(allocator),
             .routine_entries = std.StringHashMap(usize).init(allocator),
             .routine_entities = std.StringHashMap([]const u8).init(allocator),
-            .when_rule_entries = std.ArrayList(usize).init(allocator),
+            .when_rule_entries = std.array_list.Managed(usize).init(allocator),
             .cue_handler_entries = std.StringHashMap(usize).init(allocator),
-            .allocated_cue_keys = std.ArrayList([]const u8).init(allocator),
-            .reactive_rules = std.ArrayList(CompiledWhenRule).init(allocator),
-            .societies = std.ArrayList(society_mod.Declaration).init(allocator),
-            .duels = std.ArrayList(duel_mod.Declaration).init(allocator),
-            .degradations = std.ArrayList(container_mod.Declaration).init(allocator),
-            .grids = std.ArrayList(grid_mod.Declaration).init(allocator),
-            .agendas = std.ArrayList(agency_mod.Declaration).init(allocator),
-            .commands = std.ArrayList(command_mod.CommandDecl).init(allocator),
-            .aliases = std.ArrayList(command_mod.AliasDecl).init(allocator),
-            .scores = std.ArrayList(mml.ScoreDecl).init(allocator),
+            .allocated_cue_keys = std.array_list.Managed([]const u8).init(allocator),
+            .reactive_rules = std.array_list.Managed(CompiledWhenRule).init(allocator),
+            .societies = std.array_list.Managed(society_mod.Declaration).init(allocator),
+            .duels = std.array_list.Managed(duel_mod.Declaration).init(allocator),
+            .degradations = std.array_list.Managed(container_mod.Declaration).init(allocator),
+            .grids = std.array_list.Managed(grid_mod.Declaration).init(allocator),
+            .agendas = std.array_list.Managed(agency_mod.Declaration).init(allocator),
+            .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
+            .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
+            .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
         };
     }
 
@@ -485,7 +485,7 @@ pub const Codegen = struct {
         }
 
         // 2b. Build the draft note table; a declared reverse becomes its own entry (D-029)
-        var drafts = std.ArrayList(CompiledDraft).init(mut_self.allocator);
+        var drafts = std.array_list.Managed(CompiledDraft).init(mut_self.allocator);
         errdefer drafts.deinit();
         for (ast.drafts.items) |d| {
             const ent = try mut_self.world.intern_entity(d.name);
@@ -572,7 +572,7 @@ pub const Codegen = struct {
             defer var_map.deinit();
             var next_var: u8 = 0;
 
-            var clauses = std.ArrayList(world_mod.PatternClause).init(mut_self.allocator);
+            var clauses = std.array_list.Managed(world_mod.PatternClause).init(mut_self.allocator);
             for (rule.trigger_patterns) |pat| {
                 const rel = try mut_self.resolve_relation(pat.relation);
                 if (rule.edge == .on_arrive) {
@@ -929,7 +929,7 @@ pub const Codegen = struct {
             .origin_x = decl.origin_x,
             .origin_y = decl.origin_y,
         };
-        var cells = std.ArrayList(grid_mod.InitialCell).init(self.allocator);
+        var cells = std.array_list.Managed(grid_mod.InitialCell).init(self.allocator);
         errdefer cells.deinit();
         for (decl.rects) |rect| {
             const attribute = grid_mod.Attribute.from_name(rect.attribute) orelse return error.UnknownGridAttribute;
@@ -1233,11 +1233,11 @@ pub const Codegen = struct {
                 // A choice set emits a pruned option table first, then one body per eligible
                 // choice. The VM stores the table as World facts and suspends; selection
                 // resumes the fiber at the chosen body. Bodies jump past the whole set.
-                var offer_pcs = std.ArrayList(usize).init(self.allocator);
+                var offer_pcs = std.array_list.Managed(usize).init(self.allocator);
                 defer offer_pcs.deinit();
-                var body_pcs = std.ArrayList(usize).init(self.allocator);
+                var body_pcs = std.array_list.Managed(usize).init(self.allocator);
                 defer body_pcs.deinit();
-                var body_jumps = std.ArrayList(usize).init(self.allocator);
+                var body_jumps = std.array_list.Managed(usize).init(self.allocator);
                 defer body_jumps.deinit();
 
                 _ = try self.chunk.emit_op(.choices_begin);
@@ -1247,7 +1247,7 @@ pub const Codegen = struct {
                     const source_index_u8: u8 = @intCast(source_index);
                     const text_id = try self.world.intern_entity(choice.text);
                     const FailureJump = struct { jump_pc: usize, failure_text: EntityId };
-                    var failures = std.ArrayList(FailureJump).init(self.allocator);
+                    var failures = std.array_list.Managed(FailureJump).init(self.allocator);
                     defer failures.deinit();
 
                     if (choice.guard) |guard| {
@@ -1268,7 +1268,7 @@ pub const Codegen = struct {
                     const success_jump = try self.chunk.emit_op(.jump);
                     try self.chunk.emit_i16(0);
 
-                    var rejection_exits = std.ArrayList(usize).init(self.allocator);
+                    var rejection_exits = std.array_list.Managed(usize).init(self.allocator);
                     defer rejection_exits.deinit();
                     for (failures.items) |failure| {
                         const reject_pc = self.chunk.count();
@@ -1833,7 +1833,7 @@ test "P22-01: saving with undispatched weaves is refused" {
     const p = try world.intern_entity("Player");
     try vm.pending_weaves.append(.{ .caster = p, .draft = p, .target = p });
 
-    var buf = std.ArrayList(u8).init(testing.allocator);
+    var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
     try testing.expectError(
         error.PendingWeavesNotDispatched,
@@ -1986,7 +1986,7 @@ test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen 
     try testing.expect(!with_coin.branch(2).active);
     try testing.expectEqualStrings("blocked by Carries(Actor, Coin)", with_coin.branch(2).failure);
 
-    var snap = std.ArrayList(u8).init(alloc);
+    var snap = std.array_list.Managed(u8).init(alloc);
     defer snap.deinit();
     try world.save_state(snap.writer());
     var stream = std.io.fixedBufferStream(snap.items);
@@ -2435,9 +2435,9 @@ test "P28-03: score declarations compile, seed scene facts, and play and stop by
 
     const warden = try world.intern_entity("Warden");
     _ = try vm.spawn_routine(warden, compiled.routine_entries.get("Watch").?);
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
-    var seen = std.ArrayList(?EntityId).init(testing.allocator);
+    var seen = std.array_list.Managed(?EntityId).init(testing.allocator);
     defer seen.deinit();
     for (0..12) |t| {
         _ = try host.tick(&vm, &compiled);

@@ -28,7 +28,7 @@ pub fn main() !void {
             return error.UnknownArgument;
         }
     }
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     if (game_options.bundled) {
         try bespoke.run_bytes(allocator, "{{name}}", @embedFile("game_package"), config, stdout);
     } else {

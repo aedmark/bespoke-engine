@@ -163,7 +163,7 @@ const Thumbs = struct {
 const Recorder = struct {
     allocator: std.mem.Allocator,
     window: *bespoke.display.DisplayWindow,
-    out: std.ArrayList(u8),
+    out: std.array_list.Managed(u8),
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
@@ -240,7 +240,7 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
         // Every scene the script declares is drawn; one the compiler did not create is a test
         // failure, not a silently missing golden line.
         const room = world.lookup_entity(sc.scene) orelse return error.SceneNotCompiled;
-        var marks = std.ArrayList(bespoke.WaypointId).init(allocator);
+        var marks = std.array_list.Managed(bespoke.WaypointId).init(allocator);
         defer marks.deinit();
         for (spatial.graph.waypoints.items) |wp| {
             if (wp.room == room) try marks.append(wp.id);
@@ -374,8 +374,8 @@ fn record_inspector(rec: *Recorder) !void {
     try rec.draw_frame("inspector-filtered/Larkspur Observatory", bridge.get_frame());
 }
 
-fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.ArrayList(u8) {
-    var rec = Recorder{ .allocator = allocator, .window = window, .out = std.ArrayList(u8).init(allocator), .dump_against = dump_against, .variants = variants };
+fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.array_list.Managed(u8) {
+    var rec = Recorder{ .allocator = allocator, .window = window, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);

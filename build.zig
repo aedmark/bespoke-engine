@@ -20,13 +20,17 @@ pub fn build(b: *std.Build) void {
 
     // Named apart from the `bespoke` CLI so a game's build can fetch the CLI by artifact name
     // to compile its script (P29-03, D-066); Zig refuses a name two installed artifacts share.
-    const lib = b.addStaticLibrary(.{
+    const lib = b.addLibrary(.{
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
+        .linkage = .static,
         .name = "bespoke-core",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     // This declares intent for the library to be installed into the standard
@@ -35,10 +39,15 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(lib);
 
     const exe = b.addExecutable(.{
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
         .name = "bespoke",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
@@ -91,10 +100,15 @@ pub fn build(b: *std.Build) void {
     if (!is_wasm) bespoke_mod.linkSystemLibrary("SDL2", .{});
 
     const proofs_exe = b.addExecutable(.{
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
         .name = "bespoke-proofs",
-        .root_source_file = b.path("proofs/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("proofs/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     proofs_exe.root_module.addImport("bespoke", bespoke_mod);
     proofs_exe.linkLibC();
@@ -115,9 +129,14 @@ pub fn build(b: *std.Build) void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     lib_unit_tests.linkLibC();
     lib_unit_tests.linkSystemLibrary("SDL2");
@@ -125,9 +144,14 @@ pub fn build(b: *std.Build) void {
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     exe_unit_tests.root_module.addOptions("build_options", build_opts);
     exe_unit_tests.linkLibC();
@@ -139,9 +163,14 @@ pub fn build(b: *std.Build) void {
     run_exe_unit_tests.addFileInput(b.path("docs/AUTHORING.md"));
 
     const proofs_unit_tests = b.addTest(.{
-        .root_source_file = b.path("proofs/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("proofs/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     proofs_unit_tests.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
@@ -207,10 +236,15 @@ pub fn build(b: *std.Build) void {
         .os_tag = .freestanding,
     });
     const wasm_exe = b.addExecutable(.{
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
         .name = "bespoke",
-        .root_source_file = b.path("src/wasm_engine.zig"),
-        .target = wasm_target,
-        .optimize = .ReleaseSmall,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wasm_engine.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseSmall,
+        }),
     });
     wasm_exe.entry = .disabled;
     wasm_exe.rdynamic = true;
@@ -230,10 +264,15 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseSmall,
     });
     const wasm_proofs_exe = b.addExecutable(.{
+        // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
+        // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
+        .use_llvm = true,
         .name = "bespoke-proofs",
-        .root_source_file = b.path("proofs/wasm_main.zig"),
-        .target = wasm_target,
-        .optimize = .ReleaseSmall,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("proofs/wasm_main.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseSmall,
+        }),
     });
     wasm_proofs_exe.root_module.addImport("bespoke", wasm_bespoke);
     // The Tavern Heist deck runs the stock scenario script (P30-05, D-069).

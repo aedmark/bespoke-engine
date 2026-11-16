@@ -366,7 +366,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try vm.transition_to_scene(sim.village_scene);
 
     // Save baseline snapshot at Tick 0 for time-travel verification
-    var snap0 = std.ArrayList(u8).init(allocator);
+    var snap0 = std.array_list.Managed(u8).init(allocator);
     defer snap0.deinit();
     try world.save_state(snap0.writer());
 
@@ -595,7 +595,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         session.render();
-        std.time.sleep(16 * std.time.ns_per_ms);
+        std.Thread.sleep(16 * std.time.ns_per_ms);
     }
 }
 
@@ -748,7 +748,7 @@ test "P18-02: Emergent cascade — desperation theft, witness detection, rumor p
 
 test "P18-03: Village spatial topology, hotspots, and headless runner verification" {
     const testing = std.testing;
-    var buf = std.ArrayList(u8).init(testing.allocator);
+    var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
     try run_headless(testing.allocator, buf.writer());

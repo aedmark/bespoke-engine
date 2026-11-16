@@ -463,7 +463,7 @@ test "P25-01: cell attributes are sparse World facts seeded once and rewound wit
     try testing.expect(!has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .flammable));
     try testing.expect(!has_attribute(&world, grid, .{ .x = 9, .y = 9 }, .flammable));
 
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
     try world.save_state(snapshot.writer());
 
@@ -513,7 +513,7 @@ test "P25-02: fire spreads along flammable cells, burns out, and leaves dissipat
     // A burning cell is not relit; its lifetime keeps running.
     try testing.expect(!(try ignite(&world, declaration, .{ .x = 0, .y = 0 })));
 
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
     var at_tick_three: [16]u8 = undefined;
     var tick: u32 = 1;

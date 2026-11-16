@@ -372,7 +372,7 @@ fn write_save_state_versioned(
     var meta = build_metadata(world, spatial, vm, options);
     meta.version = version;
 
-    var payload = std.ArrayList(u8).init(allocator);
+    var payload = std.array_list.Managed(u8).init(allocator);
     defer payload.deinit();
     const pw = payload.writer();
 
@@ -383,7 +383,7 @@ fn write_save_state_versioned(
     // decode and validate the branch before mutating the primary state.
     if (version >= 2) {
         if (temporal) |hypervisor| {
-            var temporal_bytes = std.ArrayList(u8).init(allocator);
+            var temporal_bytes = std.array_list.Managed(u8).init(allocator);
             defer temporal_bytes.deinit();
             try temporal_mod.TemporalSnapshot.write(hypervisor, temporal_bytes.writer());
             try pw.writeByte(1);
@@ -821,7 +821,7 @@ pub const SaveManager = struct {
     fn inspect_file(self: *const SaveManager, path: []const u8) !SaveMetadata {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
-        return try inspect_save_stream(self.allocator, file.reader());
+        return try inspect_save_stream(self.allocator, file.deprecatedReader());
     }
 
     /// Scans the save directory and refreshes slot occupancy, metadata, and corruption/backup flags (P17-02).
@@ -929,9 +929,9 @@ pub const SaveManager = struct {
             .description = description,
         };
         const meta = if (temporal) |hypervisor|
-            try write_save_state_with_temporal(self.allocator, file.writer(), world, spatial, vm, hypervisor, options)
+            try write_save_state_with_temporal(self.allocator, file.deprecatedWriter(), world, spatial, vm, hypervisor, options)
         else
-            try write_save_state(self.allocator, file.writer(), world, spatial, vm, options);
+            try write_save_state(self.allocator, file.deprecatedWriter(), world, spatial, vm, options);
 
         const has_bak = (self.inspect_file(bak_path) catch null) != null;
         self.slots[slot_id] = SaveSlotInfo{
@@ -989,9 +989,9 @@ pub const SaveManager = struct {
         if (std.fs.cwd().openFile(slot_path, .{})) |file| {
             defer file.close();
             const loaded = if (temporal) |hypervisor|
-                read_save_state_with_temporal(self.allocator, file.reader(), world, spatial, vm, hypervisor)
+                read_save_state_with_temporal(self.allocator, file.deprecatedReader(), world, spatial, vm, hypervisor)
             else
-                read_save_state(self.allocator, file.reader(), world, spatial, vm);
+                read_save_state(self.allocator, file.deprecatedReader(), world, spatial, vm);
             if (loaded) |meta| {
                 self.accumulated_playtime_secs = meta.playtime_secs;
                 self.session_start_ms = std.time.milliTimestamp();
@@ -1022,11 +1022,11 @@ pub const SaveManager = struct {
         defer bak_file.close();
 
         const recovered_meta = if (temporal) |hypervisor|
-            read_save_state_with_temporal(self.allocator, bak_file.reader(), world, spatial, vm, hypervisor) catch {
+            read_save_state_with_temporal(self.allocator, bak_file.deprecatedReader(), world, spatial, vm, hypervisor) catch {
                 return SaveError.CorruptedSaveUnrecoverable;
             }
         else
-            read_save_state(self.allocator, bak_file.reader(), world, spatial, vm) catch {
+            read_save_state(self.allocator, bak_file.deprecatedReader(), world, spatial, vm) catch {
                 return SaveError.CorruptedSaveUnrecoverable;
             };
 
@@ -1178,7 +1178,7 @@ test "P17-01: .sav stream serialization, metadata headers, and World/Spatial/VM 
     _ = fid;
 
     // Serialize to memory buffer
-    var save_buf = std.ArrayList(u8).init(testing.allocator);
+    var save_buf = std.array_list.Managed(u8).init(testing.allocator);
     defer save_buf.deinit();
 
     const written_meta = try write_save_state(
@@ -1243,7 +1243,7 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
     var world = try World.init(testing.allocator, 256 * 1024);
     defer world.deinit();
 
-    var save_buf = std.ArrayList(u8).init(testing.allocator);
+    var save_buf = std.array_list.Managed(u8).init(testing.allocator);
     defer save_buf.deinit();
     _ = try write_save_state(testing.allocator, save_buf.writer(), &world, null, null, .{});
 
@@ -1322,7 +1322,7 @@ test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .b
         const f = try std.fs.cwd().openFile(slot1_path, .{ .mode = .read_write });
         defer f.close();
         try f.seekTo(20);
-        try f.writer().writeAll("CORRUPTED_BYTES!");
+        try f.deprecatedWriter().writeAll("CORRUPTED_BYTES!");
     }
 
     sm.refresh_slots();
@@ -1404,7 +1404,7 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     _ = try hypervisor.fork_branch(10, hero, engine);
     _ = try hypervisor.step_tick(null);
 
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     const meta = try write_save_state_with_temporal(
         testing.allocator,
@@ -1449,7 +1449,7 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     try testing.expect(plain_world.has_fact(hero, in_room, room.to_int()));
 
     // Version 1 saves remain readable, but cannot satisfy a temporal restore.
-    var legacy = std.ArrayList(u8).init(testing.allocator);
+    var legacy = std.array_list.Managed(u8).init(testing.allocator);
     defer legacy.deinit();
     const legacy_meta = try write_save_state(testing.allocator, legacy.writer(), &world, null, null, .{});
     try testing.expectEqual(@as(u32, 1), legacy_meta.version);

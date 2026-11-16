@@ -107,12 +107,12 @@ pub const Lexer = struct {
     pos: usize,
     line: u32,
     col: u32,
-    indent_stack: std.ArrayList(u32),
+    indent_stack: std.array_list.Managed(u32),
     pending_dedents: u32,
     at_line_start: bool,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) Lexer {
-        var stack = std.ArrayList(u32).init(allocator);
+        var stack = std.array_list.Managed(u32).init(allocator);
         stack.append(0) catch {}; // base level
 
         return Lexer{

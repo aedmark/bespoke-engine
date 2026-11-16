@@ -86,7 +86,7 @@ pub const ParseError = error{ InvalidScore, OutOfMemory };
 /// Parses one track. Octave changes, lengths, and other state inside `[ ]n` apply on every pass,
 /// as in an MML player, so `[c >]2` plays two different octaves.
 pub fn parse(allocator: std.mem.Allocator, text: []const u8, kind: TrackKind, diag: *Diagnostic) ParseError!Score {
-    var p = Parser{ .text = text, .kind = kind, .diag = diag, .events = std.ArrayList(Event).init(allocator) };
+    var p = Parser{ .text = text, .kind = kind, .diag = diag, .events = std.array_list.Managed(Event).init(allocator) };
     errdefer p.events.deinit();
     try p.run();
     var total: u64 = 0;
@@ -178,7 +178,7 @@ const Parser = struct {
     text: []const u8,
     kind: TrackKind,
     diag: *Diagnostic,
-    events: std.ArrayList(Event),
+    events: std.array_list.Managed(Event),
     pos: usize = 0,
     work: usize = 0,
     octave: u8 = DEFAULT_OCTAVE,

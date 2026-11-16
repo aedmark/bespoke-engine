@@ -1158,7 +1158,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         if (session.tick_due()) _ = try session.advance();
 
         session.render();
-        std.time.sleep(16 * std.time.ns_per_ms);
+        std.Thread.sleep(16 * std.time.ns_per_ms);
     }
 }
 
@@ -1548,7 +1548,7 @@ test "D-083: offers rotate past nine, a known counter is always offered, and pic
     }
 
     // The picks come from facts, so restoring a snapshot replays them.
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
     try world.save_state(snapshot.writer());
     const before = try bout.next_barb(gannet);
@@ -1630,7 +1630,7 @@ test "P35-02: the Tidewalk fencers patrol once the script's routines start" {
 
 test "P15-04: headless simulation of Brackwater Barbs passes cleanly" {
     const testing = std.testing;
-    var buf = std.ArrayList(u8).init(testing.allocator);
+    var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
     try run_headless(testing.allocator, buf.writer());

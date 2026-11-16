@@ -557,7 +557,7 @@ pub const World = struct {
         clauses: []const PatternClause,
         clause_idx: usize,
         bindings: VariableBindings,
-        results: *std.ArrayList(VariableBindings),
+        results: *std.array_list.Managed(VariableBindings),
     ) !void {
         if (clause_idx >= clauses.len) {
             try results.append(bindings);
@@ -599,7 +599,7 @@ pub const World = struct {
         alloc: std.mem.Allocator,
         clauses: []const PatternClause,
     ) ![]VariableBindings {
-        var results = std.ArrayList(VariableBindings).init(alloc);
+        var results = std.array_list.Managed(VariableBindings).init(alloc);
         if (clauses.len == 0) return results.toOwnedSlice();
         try self.collect_multi_matches(clauses, 0, VariableBindings{}, &results);
         return results.toOwnedSlice();
@@ -736,7 +736,7 @@ pub const World = struct {
         var cloned = try World.init(backing_allocator, self.arena_buffer.len);
         errdefer cloned.deinit();
 
-        var stream_buf = std.ArrayList(u8).init(backing_allocator);
+        var stream_buf = std.array_list.Managed(u8).init(backing_allocator);
         defer stream_buf.deinit();
 
         try self.save_state(stream_buf.writer());
@@ -872,7 +872,7 @@ test "P1-04: deterministic save_state and restore_state" {
     try testing.expectEqual(@as(u64, 12), world.current_tick);
 
     // Save state to buffer
-    var save_stream = std.ArrayList(u8).init(testing.allocator);
+    var save_stream = std.array_list.Managed(u8).init(testing.allocator);
     defer save_stream.deinit();
     try world.save_state(save_stream.writer());
 

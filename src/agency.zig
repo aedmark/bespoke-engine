@@ -368,7 +368,7 @@ test "P33-01: pursuit starts, abandons, resolves with cooldown, and rewinds with
     try step(&fx.world, null, testing.allocator, &decls);
     try testing.expectEqual(Stage.pursuing, stage_of(&fx.world, agenda.entity).?);
 
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
     try fx.world.save_state(snapshot.writer());
 

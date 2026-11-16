@@ -843,7 +843,7 @@ pub fn save_package(
     world: *const World,
     spatial: ?*const SpatialSystem,
 ) !void {
-    var payload = std.ArrayList(u8).init(allocator);
+    var payload = std.array_list.Managed(u8).init(allocator);
     defer payload.deinit();
     const pw = payload.writer();
 
@@ -1090,7 +1090,7 @@ pub fn load_package(
     errdefer routine_entries.deinit();
     var routine_entities = std.StringHashMap([]const u8).init(allocator);
     errdefer routine_entities.deinit();
-    var allocated_cue_keys = std.ArrayList([]const u8).init(allocator);
+    var allocated_cue_keys = std.array_list.Managed([]const u8).init(allocator);
     errdefer {
         for (allocated_cue_keys.items) |k| allocator.free(k);
         allocated_cue_keys.deinit();
@@ -1108,7 +1108,7 @@ pub fn load_package(
     }
 
     // 6. When rule entries
-    var when_rule_entries = std.ArrayList(usize).init(allocator);
+    var when_rule_entries = std.array_list.Managed(usize).init(allocator);
     errdefer when_rule_entries.deinit();
     var wr_idx: u32 = 0;
     while (wr_idx < header.when_rule_count) : (wr_idx += 1) {
@@ -1128,7 +1128,7 @@ pub fn load_package(
     }
 
     // 8. Reactive simulation rules
-    var reactive_rules = std.ArrayList(CompiledWhenRule).init(allocator);
+    var reactive_rules = std.array_list.Managed(CompiledWhenRule).init(allocator);
     errdefer {
         for (reactive_rules.items) |r| allocator.free(r.clauses);
         reactive_rules.deinit();
@@ -1163,7 +1163,7 @@ pub fn load_package(
 
     // 9. Draft note table (version 2+). Untrusted input: note bytes and entity ids are checked
     // against the note range and the entity table loaded above before entering the program.
-    var drafts = std.ArrayList(draft_mod.CompiledDraft).init(allocator);
+    var drafts = std.array_list.Managed(draft_mod.CompiledDraft).init(allocator);
     errdefer drafts.deinit();
     if (header.version >= 2) {
         const draft_count = try pr.readInt(u32, .little);
@@ -1188,17 +1188,17 @@ pub fn load_package(
         }
     }
 
-    var societies = std.ArrayList(society_mod.Declaration).init(allocator);
+    var societies = std.array_list.Managed(society_mod.Declaration).init(allocator);
     errdefer {
         for (societies.items) |*decl| decl.deinit_owned(allocator);
         societies.deinit();
     }
-    var duels = std.ArrayList(duel_mod.Declaration).init(allocator);
+    var duels = std.array_list.Managed(duel_mod.Declaration).init(allocator);
     errdefer {
         for (duels.items) |*decl| decl.deinit_owned(allocator);
         duels.deinit();
     }
-    var degradations = std.ArrayList(container_mod.Declaration).init(allocator);
+    var degradations = std.array_list.Managed(container_mod.Declaration).init(allocator);
     errdefer {
         for (degradations.items) |*decl| decl.deinit_owned(allocator);
         degradations.deinit();
@@ -1216,7 +1216,7 @@ pub fn load_package(
         var ci: u32 = 0;
         while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr, header.version >= 6));
     }
-    var grids = std.ArrayList(grid_mod.Declaration).init(allocator);
+    var grids = std.array_list.Managed(grid_mod.Declaration).init(allocator);
     errdefer {
         for (grids.items) |*decl| decl.deinit_owned(allocator);
         grids.deinit();
@@ -1234,7 +1234,7 @@ pub fn load_package(
             if (spatial) |sp| sp.add_grid(decl.grid) catch return error.InvalidGridConfig;
         }
     }
-    var agendas = std.ArrayList(agency_mod.Declaration).init(allocator);
+    var agendas = std.array_list.Managed(agency_mod.Declaration).init(allocator);
     errdefer {
         for (agendas.items) |*decl| decl.deinit_owned(allocator);
         agendas.deinit();
@@ -1252,12 +1252,12 @@ pub fn load_package(
         }
         agency_mod.validate_all(agendas.items) catch return error.InvalidAgendaConfig;
     }
-    var commands = std.ArrayList(command_mod.CommandDecl).init(allocator);
+    var commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator);
     errdefer {
         for (commands.items) |*decl| decl.deinit_owned(allocator);
         commands.deinit();
     }
-    var aliases = std.ArrayList(command_mod.AliasDecl).init(allocator);
+    var aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator);
     errdefer {
         for (aliases.items) |*decl| decl.deinit_owned(allocator);
         aliases.deinit();
@@ -1285,7 +1285,7 @@ pub fn load_package(
         }
     }
 
-    var scores = std.ArrayList(mml.ScoreDecl).init(allocator);
+    var scores = std.array_list.Managed(mml.ScoreDecl).init(allocator);
     errdefer {
         for (scores.items) |*decl| decl.deinit_owned(allocator);
         scores.deinit();
@@ -1385,9 +1385,7 @@ pub fn save_package_file(
 ) !void {
     const file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
-    var buf_writer = std.io.bufferedWriter(file.writer());
-    try save_package(allocator, buf_writer.writer(), compiled, world, spatial);
-    try buf_writer.flush();
+    try save_package(allocator, file.deprecatedWriter(), compiled, world, spatial);
 }
 
 /// Loads a compiled program package directly from a file on disk (P15-02).
@@ -1399,8 +1397,7 @@ pub fn load_package_file(
 ) !CompiledProgram {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
-    var buf_reader = std.io.bufferedReader(file.reader());
-    return try load_package(allocator, buf_reader.reader(), world, spatial);
+    return try load_package(allocator, file.deprecatedReader(), world, spatial);
 }
 
 // =========================================================================
@@ -1443,7 +1440,7 @@ test "P15-02: package serializes and deserializes CompiledProgram with CRC32 int
     defer compiled1.deinit();
 
     // Serialize to in-memory buffer
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
 
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
@@ -1525,7 +1522,7 @@ test "P15-02: package loader rejects corrupted payload with checksum mismatch" {
     var compiled = try compiler.compile_source(testing.allocator, &world, null, script);
     defer compiled.deinit();
 
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
 
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
@@ -1634,7 +1631,7 @@ test "P22-01: package round-trips the draft table including declared reverses" {
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
 
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 
@@ -1660,7 +1657,7 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
     var compiled = try compiler.compile_source(testing.allocator, &world, null, script);
     defer compiled.deinit();
 
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
 
@@ -1723,7 +1720,7 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
     defer world1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 
@@ -1748,7 +1745,7 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
     const grid_count_len = 4 + 4 + EMPTY_TAIL_AFTER_V9;
     const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4 + grid_count_len;
     const spill_offset = buffer.items.len - bytes_after_spill - 4;
-    var v5 = std.ArrayList(u8).init(testing.allocator);
+    var v5 = std.array_list.Managed(u8).init(testing.allocator);
     defer v5.deinit();
     try v5.appendSlice(buffer.items[0..spill_offset]);
     try v5.appendSlice(buffer.items[spill_offset + 4 .. buffer.items.len - grid_count_len]);
@@ -1786,7 +1783,7 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
     defer spatial1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
 
@@ -1890,7 +1887,7 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
     defer world1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 
@@ -1947,7 +1944,7 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
     defer world1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 
@@ -2002,7 +1999,7 @@ test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads 
     defer world1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 
@@ -2072,7 +2069,7 @@ test "P24-01: package round-trips path initializers and guarded routines" {
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
 
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 
@@ -2119,7 +2116,7 @@ test "P32-18: package round-trips an arrival rule and version 2 rejects its edge
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
     defer compiled1.deinit();
 
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
 
@@ -2192,7 +2189,7 @@ test "P32-22/P32-24: package version 6 round-trips society and duel declarations
     defer spatial1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
 
@@ -2246,7 +2243,7 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
     defer spatial1.deinit();
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
     defer compiled1.deinit();
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
 
@@ -2300,7 +2297,7 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
     var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
     defer compiled1.deinit();
     try testing.expectEqual(@as(usize, 1), compiled1.cue_guards.items.len);
-    var buffer = std.ArrayList(u8).init(testing.allocator);
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
 

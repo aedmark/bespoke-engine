@@ -105,7 +105,7 @@ pub const Fiber = struct {
     state: FiberState,
     active_priority: u16 = 0,
     is_hyper_temporal: bool = false,
-    interrupt_stack: std.ArrayList(InterruptFrame),
+    interrupt_stack: std.array_list.Managed(InterruptFrame),
 
     pub fn init(allocator: std.mem.Allocator, id: FiberId, owner: EntityId, entry_pc: usize) Fiber {
         return Fiber{
@@ -117,7 +117,7 @@ pub const Fiber = struct {
             .state = .{ .ready = {} },
             .active_priority = 0,
             .is_hyper_temporal = false,
-            .interrupt_stack = std.ArrayList(InterruptFrame).init(allocator),
+            .interrupt_stack = std.array_list.Managed(InterruptFrame).init(allocator),
         };
     }
 
@@ -148,16 +148,16 @@ pub const VM = struct {
     world: *World,
     chunk: *const BytecodeChunk,
     spatial: ?*SpatialSystem,
-    fibers: std.ArrayList(Fiber),
+    fibers: std.array_list.Managed(Fiber),
     next_fiber_id: FiberId,
-    emitted_cues: std.ArrayList(EmittedCue),
-    reactive_rules: std.ArrayList(ReactiveRule),
+    emitted_cues: std.array_list.Managed(EmittedCue),
+    reactive_rules: std.array_list.Managed(ReactiveRule),
     current_scene: ?EntityId = null,
     prng: std.Random.DefaultPrng,
     /// Weaves queued by the `weave` opcode, awaiting `dispatch_pending_weaves` (D-029).
     /// Transient between `step_tick` and the host's dispatch call; `save.zig` refuses to
     /// snapshot while non-empty so a weave can never be silently dropped by save/restore.
-    pending_weaves: std.ArrayList(PendingWeave),
+    pending_weaves: std.array_list.Managed(PendingWeave),
 
     pub fn init(allocator: std.mem.Allocator, world: *World, chunk: *const BytecodeChunk) VM {
         return VM{
@@ -165,13 +165,13 @@ pub const VM = struct {
             .world = world,
             .chunk = chunk,
             .spatial = null,
-            .fibers = std.ArrayList(Fiber).init(allocator),
+            .fibers = std.array_list.Managed(Fiber).init(allocator),
             .next_fiber_id = 1,
-            .emitted_cues = std.ArrayList(EmittedCue).init(allocator),
-            .reactive_rules = std.ArrayList(ReactiveRule).init(allocator),
+            .emitted_cues = std.array_list.Managed(EmittedCue).init(allocator),
+            .reactive_rules = std.array_list.Managed(ReactiveRule).init(allocator),
             .current_scene = null,
             .prng = std.Random.DefaultPrng.init(42),
-            .pending_weaves = std.ArrayList(PendingWeave).init(allocator),
+            .pending_weaves = std.array_list.Managed(PendingWeave).init(allocator),
         };
     }
 

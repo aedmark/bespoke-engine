@@ -35,14 +35,14 @@ pub const Edge = struct {
 
 pub const SpatialGraph = struct {
     allocator: std.mem.Allocator,
-    waypoints: std.ArrayList(Waypoint),
-    edges: std.ArrayList(Edge),
+    waypoints: std.array_list.Managed(Waypoint),
+    edges: std.array_list.Managed(Edge),
 
     pub fn init(allocator: std.mem.Allocator) SpatialGraph {
         return SpatialGraph{
             .allocator = allocator,
-            .waypoints = std.ArrayList(Waypoint).init(allocator),
-            .edges = std.ArrayList(Edge).init(allocator),
+            .waypoints = std.array_list.Managed(Waypoint).init(allocator),
+            .edges = std.array_list.Managed(Edge).init(allocator),
         };
     }
 
@@ -192,7 +192,7 @@ pub const SpatialGraph = struct {
 
             if (current == goal) {
                 // Reconstruct path
-                var path_list = std.ArrayList(WaypointId).init(allocator);
+                var path_list = std.array_list.Managed(WaypointId).init(allocator);
                 defer path_list.deinit();
                 var curr: ?WaypointId = goal;
                 while (curr) |c| {
@@ -347,20 +347,20 @@ pub const SpatialSystem = struct {
     allocator: std.mem.Allocator,
     graph: SpatialGraph,
     agents: std.AutoHashMap(EntityId, MotorAgent),
-    hotspots: std.ArrayList(Hotspot),
-    portals: std.ArrayList(Portal),
+    hotspots: std.array_list.Managed(Hotspot),
+    portals: std.array_list.Managed(Portal),
     /// Discrete grid overlays, at most one per room (P25-01, D-054). Geometry only: cell
     /// attributes live in World facts, so this list is program data and is never saved.
-    grids: std.ArrayList(Grid),
+    grids: std.array_list.Managed(Grid),
 
     pub fn init(allocator: std.mem.Allocator) SpatialSystem {
         return SpatialSystem{
             .allocator = allocator,
             .graph = SpatialGraph.init(allocator),
             .agents = std.AutoHashMap(EntityId, MotorAgent).init(allocator),
-            .hotspots = std.ArrayList(Hotspot).init(allocator),
-            .portals = std.ArrayList(Portal).init(allocator),
-            .grids = std.ArrayList(Grid).init(allocator),
+            .hotspots = std.array_list.Managed(Hotspot).init(allocator),
+            .portals = std.array_list.Managed(Portal).init(allocator),
+            .grids = std.array_list.Managed(Grid).init(allocator),
         };
     }
 
@@ -621,7 +621,7 @@ pub const SpatialSystem = struct {
             return true;
         }
 
-        var blocked = std.ArrayList(WaypointId).init(self.allocator);
+        var blocked = std.array_list.Managed(WaypointId).init(self.allocator);
         defer blocked.deinit();
         if (world_opt) |world| try self.collect_blocked_waypoints(world, &blocked);
 
@@ -649,7 +649,7 @@ pub const SpatialSystem = struct {
     fn collect_blocked_waypoints(
         self: *const SpatialSystem,
         world: *const World,
-        out: *std.ArrayList(WaypointId),
+        out: *std.array_list.Managed(WaypointId),
     ) !void {
         for (self.graph.waypoints.items) |wp| {
             if (self.waypoint_blocked(world, wp.id)) try out.append(wp.id);
@@ -920,13 +920,13 @@ pub const SynchronizedPropPair = struct {
 pub const BitemporalTransceiver = struct {
     past_scene: EntityId,
     future_scene: EntityId,
-    pairs: std.ArrayList(SynchronizedPropPair),
+    pairs: std.array_list.Managed(SynchronizedPropPair),
 
     pub fn init(allocator: std.mem.Allocator, past_scene: EntityId, future_scene: EntityId) BitemporalTransceiver {
         return BitemporalTransceiver{
             .past_scene = past_scene,
             .future_scene = future_scene,
-            .pairs = std.ArrayList(SynchronizedPropPair).init(allocator),
+            .pairs = std.array_list.Managed(SynchronizedPropPair).init(allocator),
         };
     }
 

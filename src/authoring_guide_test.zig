@@ -43,7 +43,7 @@ const Play = struct {
     vm: bespoke.VM,
     interp: bespoke.command.Interpreter = .{},
     hero: bespoke.EntityId,
-    said: std.ArrayList(u8),
+    said: std.array_list.Managed(u8),
     reply_buf: [160]u8 = undefined,
 
     fn init(self: *Play, source: []const u8) !void {
@@ -55,7 +55,7 @@ const Play = struct {
         self.vm.spatial = &self.spatial;
         try self.vm.load_compiled_rules(&self.compiled);
         self.interp = .{};
-        self.said = std.ArrayList(u8).init(testing.allocator);
+        self.said = std.array_list.Managed(u8).init(testing.allocator);
         self.hero = try bespoke.host.start_script(&self.world, &self.spatial, &self.vm, &self.compiled);
     }
 

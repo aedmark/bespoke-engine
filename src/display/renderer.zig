@@ -96,7 +96,7 @@ pub const c = if (builtin.os.tag == .freestanding) struct {} else @cImport({
     @cInclude("SDL2/SDL.h");
 });
 
-fn sdl_audio_callback(userdata: ?*anyopaque, stream: [*c]u8, len: c_int) callconv(.C) void {
+fn sdl_audio_callback(userdata: ?*anyopaque, stream: [*c]u8, len: c_int) callconv(.c) void {
     const bridge: *audio_mod.AudioBridge = @ptrCast(@alignCast(userdata orelse return));
     if (len <= 0) return;
     const sample_count = @divExact(@as(usize, @intCast(len)), @sizeOf(i16));

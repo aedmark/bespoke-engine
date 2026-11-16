@@ -53,7 +53,7 @@ fn tick(rt: *wasm.WasmRuntime, n: u8) !void {
     for (0..n) |_| _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'N' });
 }
 
-fn record(allocator: std.mem.Allocator, out: *std.ArrayList(u8), index: u8) !void {
+fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index: u8) !void {
     const rt = try allocator.create(wasm.WasmRuntime);
     defer allocator.destroy(rt);
     rt.* = try Decks.init(allocator, index);
@@ -102,7 +102,7 @@ test "P32-04: every proof deck shows the browser frames recorded in its wasm gol
     var dir = try std.fs.cwd().makeOpenPath(options.golden_dir, .{});
     defer dir.close();
 
-    var actual = std.ArrayList(u8).init(allocator);
+    var actual = std.array_list.Managed(u8).init(allocator);
     defer actual.deinit();
     var index: u8 = 0;
     while (index < DECK_COUNT) : (index += 1) try record(allocator, &actual, index);

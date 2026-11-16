@@ -318,7 +318,7 @@ test "P23-01: snapshot restore rewinds stage, volume, and exposure deadline toge
 
     _ = world.step_tick();
     try system.step(&world, null);
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
     try world.save_state(snapshot.writer());
 

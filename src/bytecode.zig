@@ -95,12 +95,12 @@ pub const Opcode = enum(u8) {
 
 /// A compiled container of bytecode instructions and constant data.
 pub const BytecodeChunk = struct {
-    code: std.ArrayList(u8),
+    code: std.array_list.Managed(u8),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) BytecodeChunk {
         return BytecodeChunk{
-            .code = std.ArrayList(u8).init(allocator),
+            .code = std.array_list.Managed(u8).init(allocator),
             .allocator = allocator,
         };
     }

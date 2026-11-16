@@ -307,7 +307,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     if (world.lookup_entity("Tamsin")) |player| display_bridge.set_active_character(player);
 
     // Save initial state snapshot for time-travel verification
-    var snapshot_0 = std.ArrayList(u8).init(allocator);
+    var snapshot_0 = std.array_list.Managed(u8).init(allocator);
     defer snapshot_0.deinit();
     try world.save_state(snapshot_0.writer());
 

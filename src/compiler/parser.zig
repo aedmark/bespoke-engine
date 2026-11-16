@@ -132,16 +132,16 @@ pub const RelationDecl = struct {
 
 pub const SceneDef = struct {
     name: []const u8,
-    cast: std.ArrayList([]const u8),
-    props: std.ArrayList([]const u8),
-    marks: std.ArrayList([]const u8),
+    cast: std.array_list.Managed([]const u8),
+    props: std.array_list.Managed([]const u8),
+    marks: std.array_list.Managed([]const u8),
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) SceneDef {
         return .{
             .name = name,
-            .cast = std.ArrayList([]const u8).init(allocator),
-            .props = std.ArrayList([]const u8).init(allocator),
-            .marks = std.ArrayList([]const u8).init(allocator),
+            .cast = std.array_list.Managed([]const u8).init(allocator),
+            .props = std.array_list.Managed([]const u8).init(allocator),
+            .marks = std.array_list.Managed([]const u8).init(allocator),
         };
     }
 
@@ -357,53 +357,53 @@ pub const PathDecl = struct {
 };
 
 pub const AST = struct {
-    entities: std.ArrayList([]const u8),
-    relations: std.ArrayList(RelationDecl),
-    initial_stmts: std.ArrayList(Stmt),
-    routines: std.ArrayList(Routine),
-    cue_handlers: std.ArrayList(CueHandler),
-    when_rules: std.ArrayList(WhenRule),
-    scenes: std.ArrayList([]const u8),
-    scene_defs: std.ArrayList(SceneDef),
-    cast: std.ArrayList([]const u8),
-    props: std.ArrayList([]const u8),
-    marks: std.ArrayList([]const u8),
-    drafts: std.ArrayList(DraftDecl),
-    societies: std.ArrayList(SocietyDecl),
-    duels: std.ArrayList(DuelDecl),
-    degradations: std.ArrayList(DegradationDecl),
-    paths: std.ArrayList(PathDecl),
-    grids: std.ArrayList(GridDecl),
-    agendas: std.ArrayList(AgendaDecl),
-    commands: std.ArrayList(CommandDecl),
-    aliases: std.ArrayList(AliasDecl),
+    entities: std.array_list.Managed([]const u8),
+    relations: std.array_list.Managed(RelationDecl),
+    initial_stmts: std.array_list.Managed(Stmt),
+    routines: std.array_list.Managed(Routine),
+    cue_handlers: std.array_list.Managed(CueHandler),
+    when_rules: std.array_list.Managed(WhenRule),
+    scenes: std.array_list.Managed([]const u8),
+    scene_defs: std.array_list.Managed(SceneDef),
+    cast: std.array_list.Managed([]const u8),
+    props: std.array_list.Managed([]const u8),
+    marks: std.array_list.Managed([]const u8),
+    drafts: std.array_list.Managed(DraftDecl),
+    societies: std.array_list.Managed(SocietyDecl),
+    duels: std.array_list.Managed(DuelDecl),
+    degradations: std.array_list.Managed(DegradationDecl),
+    paths: std.array_list.Managed(PathDecl),
+    grids: std.array_list.Managed(GridDecl),
+    agendas: std.array_list.Managed(AgendaDecl),
+    commands: std.array_list.Managed(CommandDecl),
+    aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
-    scores: std.ArrayList(mml.ScoreDecl),
+    scores: std.array_list.Managed(mml.ScoreDecl),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) AST {
         return AST{
-            .entities = std.ArrayList([]const u8).init(allocator),
-            .relations = std.ArrayList(RelationDecl).init(allocator),
-            .initial_stmts = std.ArrayList(Stmt).init(allocator),
-            .routines = std.ArrayList(Routine).init(allocator),
-            .cue_handlers = std.ArrayList(CueHandler).init(allocator),
-            .when_rules = std.ArrayList(WhenRule).init(allocator),
-            .scenes = std.ArrayList([]const u8).init(allocator),
-            .scene_defs = std.ArrayList(SceneDef).init(allocator),
-            .cast = std.ArrayList([]const u8).init(allocator),
-            .props = std.ArrayList([]const u8).init(allocator),
-            .marks = std.ArrayList([]const u8).init(allocator),
-            .drafts = std.ArrayList(DraftDecl).init(allocator),
-            .societies = std.ArrayList(SocietyDecl).init(allocator),
-            .duels = std.ArrayList(DuelDecl).init(allocator),
-            .degradations = std.ArrayList(DegradationDecl).init(allocator),
-            .paths = std.ArrayList(PathDecl).init(allocator),
-            .grids = std.ArrayList(GridDecl).init(allocator),
-            .agendas = std.ArrayList(AgendaDecl).init(allocator),
-            .commands = std.ArrayList(CommandDecl).init(allocator),
-            .aliases = std.ArrayList(AliasDecl).init(allocator),
-            .scores = std.ArrayList(mml.ScoreDecl).init(allocator),
+            .entities = std.array_list.Managed([]const u8).init(allocator),
+            .relations = std.array_list.Managed(RelationDecl).init(allocator),
+            .initial_stmts = std.array_list.Managed(Stmt).init(allocator),
+            .routines = std.array_list.Managed(Routine).init(allocator),
+            .cue_handlers = std.array_list.Managed(CueHandler).init(allocator),
+            .when_rules = std.array_list.Managed(WhenRule).init(allocator),
+            .scenes = std.array_list.Managed([]const u8).init(allocator),
+            .scene_defs = std.array_list.Managed(SceneDef).init(allocator),
+            .cast = std.array_list.Managed([]const u8).init(allocator),
+            .props = std.array_list.Managed([]const u8).init(allocator),
+            .marks = std.array_list.Managed([]const u8).init(allocator),
+            .drafts = std.array_list.Managed(DraftDecl).init(allocator),
+            .societies = std.array_list.Managed(SocietyDecl).init(allocator),
+            .duels = std.array_list.Managed(DuelDecl).init(allocator),
+            .degradations = std.array_list.Managed(DegradationDecl).init(allocator),
+            .paths = std.array_list.Managed(PathDecl).init(allocator),
+            .grids = std.array_list.Managed(GridDecl).init(allocator),
+            .agendas = std.array_list.Managed(AgendaDecl).init(allocator),
+            .commands = std.array_list.Managed(CommandDecl).init(allocator),
+            .aliases = std.array_list.Managed(AliasDecl).init(allocator),
+            .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
             .allocator = allocator,
         };
     }
@@ -463,9 +463,9 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
     diagnostic: ?Diagnostic = null,
     diag_buf: [256]u8 = undefined,
-    weave_refs: std.ArrayList(WeaveRef),
-    arrival_refs: std.ArrayList(ArrivalRef),
-    score_refs: std.ArrayList(ScoreRef),
+    weave_refs: std.array_list.Managed(WeaveRef),
+    arrival_refs: std.array_list.Managed(ArrivalRef),
+    score_refs: std.array_list.Managed(ScoreRef),
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -474,9 +474,9 @@ pub const Parser = struct {
             .allocator = allocator,
             .diagnostic = null,
             .diag_buf = undefined,
-            .weave_refs = std.ArrayList(WeaveRef).init(allocator),
-            .arrival_refs = std.ArrayList(ArrivalRef).init(allocator),
-            .score_refs = std.ArrayList(ScoreRef).init(allocator),
+            .weave_refs = std.array_list.Managed(WeaveRef).init(allocator),
+            .arrival_refs = std.array_list.Managed(ArrivalRef).init(allocator),
+            .score_refs = std.array_list.Managed(ScoreRef).init(allocator),
         };
         try p.advance();
         return p;
@@ -527,7 +527,7 @@ pub const Parser = struct {
         if ((self.current.tag != .identifier and self.current.tag != .number) or self.current.line != line) {
             return first;
         }
-        var buf = std.ArrayList(u8).init(self.allocator);
+        var buf = std.array_list.Managed(u8).init(self.allocator);
         try buf.appendSlice(first);
         while ((self.current.tag == .identifier or self.current.tag == .number) and self.current.line == line) {
             try buf.append(' ');
@@ -576,7 +576,7 @@ pub const Parser = struct {
                     try ast.initial_stmts.append(.{ .transition_scene = .{ .target_scene = target_scene } });
                 },
                 .kw_choice => {
-                    var choices = std.ArrayList(DialogueChoice).init(self.allocator);
+                    var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);
                     while (self.current.tag == .kw_choice) {
                         try self.advance(); // consume 'choice'
                         const text = if (self.current.tag == .string_literal)
@@ -588,7 +588,7 @@ pub const Parser = struct {
                             try self.advance();
                             guard = try self.parse_expr();
                         }
-                        var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                        var where_patterns = std.array_list.Managed(FactPattern).init(self.allocator);
                         if (self.current.tag == .kw_where) {
                             try self.advance();
                             while (true) {
@@ -649,7 +649,7 @@ pub const Parser = struct {
                     try self.advance();
                     const entity = (try self.expect(.identifier)).slice;
                     _ = try self.expect(.colon);
-                    var phrases = std.ArrayList([]const u8).init(self.allocator);
+                    var phrases = std.array_list.Managed([]const u8).init(self.allocator);
                     while (true) {
                         const phrase = (try self.expect(.string_literal)).slice;
                         if (phrase.len == 0) return self.set_error("alias for '{s}' has an empty phrase", .{entity});
@@ -682,7 +682,7 @@ pub const Parser = struct {
                     _ = try self.expect(.kw_cue);
                     const cue_name = (try self.expect(.identifier)).slice;
                     _ = try self.expect(.lparen);
-                    var params = std.ArrayList([]const u8).init(self.allocator);
+                    var params = std.array_list.Managed([]const u8).init(self.allocator);
                     while (self.current.tag != .rparen and self.current.tag != .eof) {
                         try params.append(self.current.slice);
                         try self.advance();
@@ -693,7 +693,7 @@ pub const Parser = struct {
                     }
                     _ = try self.expect(.rparen);
 
-                    var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                    var where_patterns = std.array_list.Managed(FactPattern).init(self.allocator);
                     if (self.current.tag == .kw_where) {
                         try self.advance();
                         while (true) {
@@ -721,7 +721,7 @@ pub const Parser = struct {
                     try self.advance(); // consume 'verb' (P7-02, D-009)
                     const verb_name = (try self.expect(.identifier)).slice;
                     _ = try self.expect(.lparen);
-                    var params = std.ArrayList([]const u8).init(self.allocator);
+                    var params = std.array_list.Managed([]const u8).init(self.allocator);
                     while (self.current.tag != .rparen and self.current.tag != .eof) {
                         try params.append(self.current.slice);
                         try self.advance();
@@ -732,7 +732,7 @@ pub const Parser = struct {
                     }
                     _ = try self.expect(.rparen);
 
-                    var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                    var where_patterns = std.array_list.Managed(FactPattern).init(self.allocator);
                     if (self.current.tag == .kw_where) {
                         try self.advance();
                         while (true) {
@@ -762,7 +762,7 @@ pub const Parser = struct {
                     if (self.current.tag == .kw_currently) {
                         try self.advance();
                     }
-                    var trigger_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                    var trigger_patterns = std.array_list.Managed(FactPattern).init(self.allocator);
 
                     if (self.current.tag == .identifier) {
                         const first_name = try self.parse_name();
@@ -1042,7 +1042,7 @@ pub const Parser = struct {
     }
 
     fn take_line_names(self: *Parser, line: u32) ![]const []const u8 {
-        var names = std.ArrayList([]const u8).init(self.allocator);
+        var names = std.array_list.Managed([]const u8).init(self.allocator);
         while (self.current.line == line and self.current.tag != .dedent and self.current.tag != .eof) {
             if (self.current.tag == .comma) {
                 try self.advance();
@@ -1061,9 +1061,9 @@ pub const Parser = struct {
         _ = try self.expect(.colon);
         _ = try self.expect(.indent);
 
-        var needs = std.ArrayList(SocietyNeedDecl).init(self.allocator);
-        var members = std.ArrayList(SocietyMemberDecl).init(self.allocator);
-        var friends = std.ArrayList([2][]const u8).init(self.allocator);
+        var needs = std.array_list.Managed(SocietyNeedDecl).init(self.allocator);
+        var members = std.array_list.Managed(SocietyMemberDecl).init(self.allocator);
+        var friends = std.array_list.Managed([2][]const u8).init(self.allocator);
         var enforcer: ?[]const u8 = null;
         var holding: ?[]const u8 = null;
         var gathering: ?[]const u8 = null;
@@ -1135,7 +1135,7 @@ pub const Parser = struct {
                 const idle = try self.take_atom();
                 _ = try self.expect(.colon);
                 _ = try self.expect(.indent);
-                var member_needs = std.ArrayList(SocietyMemberNeedDecl).init(self.allocator);
+                var member_needs = std.array_list.Managed(SocietyMemberNeedDecl).init(self.allocator);
                 var routine_activity: ?[]const u8 = null;
                 var stops: []const []const u8 = &.{};
                 var period: u64 = 1;
@@ -1202,10 +1202,10 @@ pub const Parser = struct {
         const name = try self.take_atom();
         _ = try self.expect(.colon);
         _ = try self.expect(.indent);
-        var pairs = std.ArrayList(DuelPairDecl).init(self.allocator);
-        var tiers = std.ArrayList(DuelTierDecl).init(self.allocator);
-        var stages = std.ArrayList(FatigueStageDecl).init(self.allocator);
-        var fallbacks = std.ArrayList([]const u8).init(self.allocator);
+        var pairs = std.array_list.Managed(DuelPairDecl).init(self.allocator);
+        var tiers = std.array_list.Managed(DuelTierDecl).init(self.allocator);
+        var stages = std.array_list.Managed(FatigueStageDecl).init(self.allocator);
+        var fallbacks = std.array_list.Managed([]const u8).init(self.allocator);
         var win_at: ?u32 = null;
         var relations = (DuelDecl{ .name = "", .pairs = &.{}, .fallbacks = &.{}, .win_at = null, .tiers = &.{}, .fatigue_count_relation = "Inquiries", .fatigue_calm_label = "calm", .fatigue_stages = &.{} }).relations;
         var count_relation: []const u8 = "Inquiries";
@@ -1220,7 +1220,7 @@ pub const Parser = struct {
                 _ = try self.expect(.indent);
                 var challenge: ?[]const u8 = null;
                 var reply: ?[]const u8 = null;
-                var variants = std.ArrayList([]const u8).init(self.allocator);
+                var variants = std.array_list.Managed([]const u8).init(self.allocator);
                 while (self.current.tag != .dedent and self.current.tag != .eof) {
                     const field = self.current.slice;
                     try self.advance();
@@ -1278,7 +1278,7 @@ pub const Parser = struct {
             return decl;
         }
         _ = try self.expect(.indent);
-        var scenes = std.ArrayList([]const u8).init(self.allocator);
+        var scenes = std.array_list.Managed([]const u8).init(self.allocator);
         var seen = [_]bool{false} ** mml.PART_COUNT;
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             if (self.current.tag == .kw_scene) {
@@ -1345,8 +1345,8 @@ pub const Parser = struct {
         _ = try self.expect(.colon);
         _ = try self.expect(.indent);
         var substance: ?[]const u8 = null;
-        var stages = std.ArrayList(DegradationStageDecl).init(self.allocator);
-        var vessels = std.ArrayList(DegradationVesselDecl).init(self.allocator);
+        var stages = std.array_list.Managed(DegradationStageDecl).init(self.allocator);
+        var vessels = std.array_list.Managed(DegradationVesselDecl).init(self.allocator);
         var spill_per_moving_tick: u32 = 0;
         var relations = (DegradationDecl{ .name = "", .substance = "", .stages = &.{}, .vessels = &.{} }).relations;
 
@@ -1400,8 +1400,8 @@ pub const Parser = struct {
         var cell_size: ?u32 = null;
         var origin_x: i32 = 0;
         var origin_y: i32 = 0;
-        var rects = std.ArrayList(GridRectDecl).init(self.allocator);
-        var places = std.ArrayList(GridPlaceDecl).init(self.allocator);
+        var rects = std.array_list.Managed(GridRectDecl).init(self.allocator);
+        var places = std.array_list.Managed(GridPlaceDecl).init(self.allocator);
         var rates = [_]?u32{null} ** 4;
         const rate_names = [_][]const u8{ "burn", "spread", "dissipate", "flow" };
 
@@ -1472,7 +1472,7 @@ pub const Parser = struct {
         var actor: ?[]const u8 = null;
         var target: ?[]const u8 = null;
         var decl = AgendaDecl{ .name = name, .actor = "", .target = "", .clauses = &.{} };
-        var clauses = std.ArrayList(AgendaClauseDecl).init(self.allocator);
+        var clauses = std.array_list.Managed(AgendaClauseDecl).init(self.allocator);
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             const directive = self.current.slice;
             try self.advance();
@@ -1603,8 +1603,8 @@ pub const Parser = struct {
         _ = try self.expect(.colon);
         _ = try self.expect(.indent);
 
-        var facts = std.ArrayList(Stmt).init(self.allocator);
-        var routines = std.ArrayList(Routine).init(self.allocator);
+        var facts = std.array_list.Managed(Stmt).init(self.allocator);
+        var routines = std.array_list.Managed(Routine).init(self.allocator);
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             switch (self.current.tag) {
                 .kw_remember => try facts.append(try self.parse_remember_stmt()),
@@ -1634,7 +1634,7 @@ pub const Parser = struct {
     }
 
     fn parse_stmt_list(self: *Parser) ![]const Stmt {
-        var list = std.ArrayList(Stmt).init(self.allocator);
+        var list = std.array_list.Managed(Stmt).init(self.allocator);
 
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             switch (self.current.tag) {
@@ -1661,7 +1661,7 @@ pub const Parser = struct {
                     try list.append(.{ .transition_scene = .{ .target_scene = target_scene } });
                 },
                 .kw_choice => {
-                    var choices = std.ArrayList(DialogueChoice).init(self.allocator);
+                    var choices = std.array_list.Managed(DialogueChoice).init(self.allocator);
                     while (self.current.tag == .kw_choice) {
                         try self.advance(); // consume 'choice'
                         const text = if (self.current.tag == .string_literal)
@@ -1673,7 +1673,7 @@ pub const Parser = struct {
                             try self.advance();
                             guard = try self.parse_expr();
                         }
-                        var where_patterns = std.ArrayList(FactPattern).init(self.allocator);
+                        var where_patterns = std.array_list.Managed(FactPattern).init(self.allocator);
                         if (self.current.tag == .kw_where) {
                             try self.advance();
                             while (true) {
@@ -1764,7 +1764,7 @@ pub const Parser = struct {
                         (try self.expect(.string_literal)).slice
                     else if (self.current.tag == .lparen) blk: {
                         try self.advance();
-                        var paren_buf = std.ArrayList(u8).init(self.allocator);
+                        var paren_buf = std.array_list.Managed(u8).init(self.allocator);
                         while (self.current.tag != .rparen and self.current.tag != .eof) {
                             if (paren_buf.items.len > 0) try paren_buf.append(' ');
                             try paren_buf.appendSlice(self.current.slice);
@@ -1909,7 +1909,7 @@ pub const Parser = struct {
         } else {
             _ = try self.expect(.lparen);
         }
-        var args = std.ArrayList([]const u8).init(self.allocator);
+        var args = std.array_list.Managed([]const u8).init(self.allocator);
         const end_tag = if (is_bracket) TokenTag.rbracket else TokenTag.rparen;
         while (self.current.tag != end_tag and self.current.tag != .eof) {
             try args.append(self.current.slice);

@@ -273,7 +273,7 @@ fn print_row(writer: anytype, world: *const bespoke.World, decl: grid.Declaratio
     try writer.writeAll("  (t tapestry, F fire, s smoke, ~ water, # rubble)\n");
 }
 
-fn checkpoint(allocator: std.mem.Allocator, stage: Stage, out: *std.ArrayList(u8)) !void {
+fn checkpoint(allocator: std.mem.Allocator, stage: Stage, out: *std.array_list.Managed(u8)) !void {
     out.clearRetainingCapacity();
     _ = try bespoke.write_save_state(allocator, out.writer(), stage.world, stage.spatial, stage.vm, .{ .description = "Castle Fire Escape opening" });
 }
@@ -308,7 +308,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const decl = try declaration(&compiled);
     const stage = Stage{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .ids = ids };
 
-    var opening = std.ArrayList(u8).init(allocator);
+    var opening = std.array_list.Managed(u8).init(allocator);
     defer opening.deinit();
     try checkpoint(allocator, stage, &opening);
     try print_row(writer, &world, decl);

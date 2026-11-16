@@ -350,7 +350,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Advanced to Tick 5: Captain Rook is pacing between Room 7 and the stairs.\n\n", .{});
 
     // Save snapshot 0 for time-travel rewind verification
-    var snapshot_start = std.ArrayList(u8).init(allocator);
+    var snapshot_start = std.array_list.Managed(u8).init(allocator);
     defer snapshot_start.deinit();
     try world.save_state(snapshot_start.writer());
 
@@ -1075,7 +1075,7 @@ test "P14-01: The Borrowed Beard script compiles and lowers to bytecode" {
 
 test "P14-03: The Borrowed Beard headless simulation executes and rewinds cleanly" {
     const testing = std.testing;
-    var list = std.ArrayList(u8).init(testing.allocator);
+    var list = std.array_list.Managed(u8).init(testing.allocator);
     defer list.deinit();
 
     try run_headless(testing.allocator, list.writer());

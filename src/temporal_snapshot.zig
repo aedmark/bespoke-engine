@@ -45,14 +45,14 @@ pub const TemporalSnapshot = struct {
     receiver_entity: ?EntityId = null,
     keystone_entity: ?EntityId = null,
     convergence_waypoint: ?WaypointId = null,
-    teleological_dependencies: std.ArrayList(TeleologicalDependency),
-    dream_residue_facts: std.ArrayList(DreamFact),
+    teleological_dependencies: std.array_list.Managed(TeleologicalDependency),
+    dream_residue_facts: std.array_list.Managed(DreamFact),
 
     pub fn init(allocator: std.mem.Allocator) TemporalSnapshot {
         return .{
             .allocator = allocator,
-            .teleological_dependencies = std.ArrayList(TeleologicalDependency).init(allocator),
-            .dream_residue_facts = std.ArrayList(DreamFact).init(allocator),
+            .teleological_dependencies = std.array_list.Managed(TeleologicalDependency).init(allocator),
+            .dream_residue_facts = std.array_list.Managed(DreamFact).init(allocator),
         };
     }
 
@@ -101,7 +101,7 @@ pub const TemporalSnapshot = struct {
         }
 
         if (hypervisor.branch_world) |*branch| {
-            var bytes = std.ArrayList(u8).init(hypervisor.allocator);
+            var bytes = std.array_list.Managed(u8).init(hypervisor.allocator);
             defer bytes.deinit();
             try branch.save_state(bytes.writer());
             if (bytes.items.len > MAX_BRANCH_BYTES) return Error.InconsistentTemporalState;
@@ -297,7 +297,7 @@ test "P31-04: temporal snapshot round-trips branch world, countdown, teleology, 
     _ = try hypervisor.step_tick(null);
     _ = try hypervisor.step_tick(null);
 
-    var bytes = std.ArrayList(u8).init(testing.allocator);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
     defer bytes.deinit();
     try TemporalSnapshot.write(&hypervisor, bytes.writer());
 
@@ -336,7 +336,7 @@ test "P31-04: temporal snapshot preserves a resolved branch without a branch wor
     try hypervisor.collapse_branch(false);
     hypervisor.collapse_state = .budget_expired;
 
-    var bytes = std.ArrayList(u8).init(testing.allocator);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
     defer bytes.deinit();
     try TemporalSnapshot.write(&hypervisor, bytes.writer());
 
@@ -360,7 +360,7 @@ test "P31-04: temporal snapshot rejects a corrupt branch header" {
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
 
-    var bytes = std.ArrayList(u8).init(testing.allocator);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
     defer bytes.deinit();
     try bytes.appendSlice(&MAGIC);
     try bytes.writer().writeInt(u32, VERSION + 1, .little);

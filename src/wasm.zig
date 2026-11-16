@@ -1530,18 +1530,18 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return if (runtime_ready) &global_runtime else null;
         }
 
-        fn wasm_init(scenario_id: u8) callconv(.C) void {
+        fn wasm_init(scenario_id: u8) callconv(.c) void {
             if (runtime_ready) global_runtime.deinit();
             runtime_ready = false;
             global_runtime = WasmRuntime.init_with_framebuffer(global_heap.allocator(), decks, scenario_id, &framebuffer) catch return;
             runtime_ready = true;
         }
 
-        fn wasm_load_scenario(scenario_id: u8) callconv(.C) void {
+        fn wasm_load_scenario(scenario_id: u8) callconv(.c) void {
             wasm_init(scenario_id);
         }
 
-        fn wasm_step_tick() callconv(.C) void {
+        fn wasm_step_tick() callconv(.c) void {
             if (runtime()) |rt| {
                 if (!rt.is_paused) {
                     rt.step_tick() catch {};
@@ -1550,23 +1550,23 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             }
         }
 
-        fn wasm_render_frame() callconv(.C) void {
+        fn wasm_render_frame() callconv(.c) void {
             if (runtime()) |rt| {
                 rt.render_frame();
             }
         }
 
-        fn wasm_framebuffer_ptr() callconv(.C) [*]const u8 {
+        fn wasm_framebuffer_ptr() callconv(.c) [*]const u8 {
             // Valid memory of the right length before a runtime exists, so the page can read it
             // without a check.
             return &framebuffer;
         }
 
-        fn wasm_framebuffer_len() callconv(.C) usize {
+        fn wasm_framebuffer_len() callconv(.c) usize {
             return FRAMEBUFFER_BYTES;
         }
 
-        fn wasm_on_pointer_down(x: i32, y: i32) callconv(.C) u8 {
+        fn wasm_on_pointer_down(x: i32, y: i32) callconv(.c) u8 {
             if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .pointer_down, .x = x, .y = y }) catch .none;
                 rt.render_frame();
@@ -1575,7 +1575,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
-        fn wasm_on_pointer_move(x: i32, y: i32) callconv(.C) u8 {
+        fn wasm_on_pointer_move(x: i32, y: i32) callconv(.c) u8 {
             if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .pointer_move, .x = x, .y = y }) catch .none;
                 return @intFromEnum(tag);
@@ -1583,7 +1583,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
-        fn wasm_on_right_click(x: i32, y: i32) callconv(.C) u8 {
+        fn wasm_on_right_click(x: i32, y: i32) callconv(.c) u8 {
             if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .right_click, .x = x, .y = y }) catch .none;
                 rt.render_frame();
@@ -1592,7 +1592,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
-        fn wasm_on_key_down(key_code: u8) callconv(.C) u8 {
+        fn wasm_on_key_down(key_code: u8) callconv(.c) u8 {
             if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .key_down, .key_code = key_code }) catch .none;
                 rt.render_frame();
@@ -1603,7 +1603,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         /// A typed character (the page sends `event.key` when it is one character), for the
         /// command bar of a deck that has one (P34-04).
-        fn wasm_on_char(code: u8) callconv(.C) u8 {
+        fn wasm_on_char(code: u8) callconv(.c) u8 {
             if (runtime()) |rt| {
                 const tag = rt.dispatch_event(.{ .kind = .char, .key_code = code }) catch .none;
                 rt.render_frame();
@@ -1613,12 +1613,12 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         /// True while a command bar has the keyboard, so a page holds back its own shortcuts.
-        fn wasm_command_bar_focused() callconv(.C) u8 {
+        fn wasm_command_bar_focused() callconv(.c) u8 {
             if (runtime()) |rt| return @intFromBool(rt.command_bar_on() and rt.window.command_bar_focused);
             return 0;
         }
 
-        fn wasm_on_touch(kind_id: u8, x: i32, y: i32, points: u8) callconv(.C) u8 {
+        fn wasm_on_touch(kind_id: u8, x: i32, y: i32, points: u8) callconv(.c) u8 {
             if (runtime()) |rt| {
                 const kind: BrowserEventKind = switch (kind_id) {
                     0 => .touch_start,
@@ -1632,14 +1632,14 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
 
-        fn wasm_scrub_to_tick(target_tick: u32) callconv(.C) void {
+        fn wasm_scrub_to_tick(target_tick: u32) callconv(.c) void {
             if (runtime()) |rt| {
                 rt.scrub_to_tick(target_tick);
                 rt.render_frame();
             }
         }
 
-        fn wasm_get_tick() callconv(.C) u32 {
+        fn wasm_get_tick() callconv(.c) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.clock());
             }
@@ -1648,12 +1648,12 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         /// 1 while a script deck's dialogue is open, so a page can send number keys to it
         /// instead of switching decks (D-069).
-        fn wasm_message_pending() callconv(.C) u8 {
+        fn wasm_message_pending() callconv(.c) u8 {
             if (runtime()) |rt| return @intFromBool(rt.messages.pending());
             return 0;
         }
 
-        fn wasm_dialogue_open() callconv(.C) u8 {
+        fn wasm_dialogue_open() callconv(.c) u8 {
             if (runtime()) |rt| return @intFromBool(dialogue_mod.view(&rt.world) != null);
             return 0;
         }
@@ -1663,7 +1663,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         /// Renders `frames` stereo frames (at most 4096) of the engine synthesizer at
         /// `wasm_audio_sample_rate` into a buffer and returns it; the page plays it through Web
         /// Audio (D-071). Silence before a runtime exists.
-        fn wasm_audio_render(frames: u32) callconv(.C) [*]const i16 {
+        fn wasm_audio_render(frames: u32) callconv(.c) [*]const i16 {
             const n: usize = @min(frames, AUDIO_MAX_FRAMES);
             if (runtime()) |rt| {
                 rt.audio.render_samples(audio_samples[0 .. 2 * n]);
@@ -1673,18 +1673,18 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return &audio_samples;
         }
 
-        fn wasm_audio_sample_rate() callconv(.C) u32 {
+        fn wasm_audio_sample_rate() callconv(.c) u32 {
             return audio_mod.SAMPLE_RATE;
         }
 
         /// 1 while the state inspector is open (D-070); the clock is paused then.
-        fn wasm_inspector_open() callconv(.C) u8 {
+        fn wasm_inspector_open() callconv(.c) u8 {
             if (runtime()) |rt| return @intFromBool(rt.inspector_open);
             return 0;
         }
 
         /// Runs the deck's page action `id`, for a page's own button (D-095).
-        fn wasm_deck_action(id: u8) callconv(.C) void {
+        fn wasm_deck_action(id: u8) callconv(.c) void {
             if (runtime()) |rt| {
                 rt.deck_action(id) catch {};
                 rt.render_frame();
@@ -1693,14 +1693,14 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         /// The active verb's index (WALK 0 to USE 4), so a page's own verb buttons can follow
         /// the canvas, which changes the verb when an item is taken in hand (D-094).
-        fn wasm_active_verb() callconv(.C) u8 {
+        fn wasm_active_verb() callconv(.c) u8 {
             if (runtime()) |rt| return @intFromEnum(rt.active_verb);
             return 0;
         }
 
         /// Selects verb `index` (WALK 0 to USE 4) and puts away an item in hand, as a click on
         /// the canvas verb bar does, so a page's own buttons need not know where that bar is.
-        fn wasm_set_verb(index: u8) callconv(.C) void {
+        fn wasm_set_verb(index: u8) callconv(.c) void {
             if (runtime()) |rt| {
                 if (index > 4) return;
                 rt.active_verb = @enumFromInt(index);
@@ -1709,7 +1709,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             }
         }
 
-        fn wasm_get_fact_count() callconv(.C) u32 {
+        fn wasm_get_fact_count() callconv(.c) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.world.fact_count());
             }

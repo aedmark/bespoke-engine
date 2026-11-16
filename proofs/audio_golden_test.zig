@@ -117,8 +117,8 @@ fn record_mml(allocator: std.mem.Allocator, w: anytype) !void {
     try w.print("mml/demo: {x:0>16}\n", .{try render(allocator, &s, 22_050 * 12)});
 }
 
-fn record_all(allocator: std.mem.Allocator) !std.ArrayList(u8) {
-    var out = std.ArrayList(u8).init(allocator);
+fn record_all(allocator: std.mem.Allocator) !std.array_list.Managed(u8) {
+    var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const w = out.writer();
 

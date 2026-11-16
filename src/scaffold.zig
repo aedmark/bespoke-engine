@@ -58,7 +58,7 @@ pub fn fingerprint(name: []const u8, id: u32) u64 {
 /// Any other `{{` is copied as it is: the CI workflow's `${{ expr }}` expressions belong to
 /// GitHub Actions, and placeholders never start with a space.
 pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const u8, engine_root: []const u8, id: u32) ![]u8 {
-    var out = std.ArrayList(u8).init(allocator);
+    var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     var i: usize = 0;
     while (i < template.len) {

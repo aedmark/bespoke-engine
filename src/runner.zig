@@ -170,7 +170,7 @@ pub fn run_bytes(
     var display_bridge = DisplayBridge.init();
     var repl_instance = Repl.init(&world, &spatial, &vm);
 
-    var history_snapshots = std.ArrayList(std.ArrayList(u8)).init(allocator);
+    var history_snapshots = std.array_list.Managed(std.array_list.Managed(u8)).init(allocator);
     defer {
         for (history_snapshots.items) |*buf| buf.deinit();
         history_snapshots.deinit();
@@ -183,7 +183,7 @@ pub fn run_bytes(
         display_bridge.capture_frame(&world, &spatial, &vm);
         display_bridge.swap();
 
-        var snap0 = std.ArrayList(u8).init(allocator);
+        var snap0 = std.array_list.Managed(u8).init(allocator);
         try world.save_state(snap0.writer());
         try history_snapshots.append(snap0);
 
@@ -208,7 +208,7 @@ pub fn run_bytes(
             _ = try bespoke.host.tick(&vm, &compiled);
             try story.report(&world, &vm, stdout);
 
-            var snap = std.ArrayList(u8).init(allocator);
+            var snap = std.array_list.Managed(u8).init(allocator);
             try world.save_state(snap.writer());
             try history_snapshots.append(snap);
 
@@ -272,7 +272,7 @@ pub fn run_bytes(
         display_bridge.swap();
         bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
 
-        var snap0 = std.ArrayList(u8).init(allocator);
+        var snap0 = std.array_list.Managed(u8).init(allocator);
         try world.save_state(snap0.writer());
         try history_snapshots.append(snap0);
 
@@ -355,7 +355,7 @@ pub fn run_bytes(
                         window.set_cue_banner(res.get_text(), 120);
                     }
                     if (world.current_tick >= history_snapshots.items.len) {
-                        var snap = std.ArrayList(u8).init(allocator);
+                        var snap = std.array_list.Managed(u8).init(allocator);
                         try world.save_state(snap.writer());
                         try history_snapshots.append(snap);
                     }
@@ -379,7 +379,7 @@ pub fn run_bytes(
                 var speech_buf: [256]u8 = undefined;
                 if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |line| window.set_cue_banner(line, 160);
 
-                var snap = std.ArrayList(u8).init(allocator);
+                var snap = std.array_list.Managed(u8).init(allocator);
                 try world.save_state(snap.writer());
                 try history_snapshots.append(snap);
 
@@ -390,7 +390,7 @@ pub fn run_bytes(
             }
 
             window.render_frame(display_bridge.get_frame(), is_paused);
-            std.time.sleep(16 * std.time.ns_per_ms);
+            std.Thread.sleep(16 * std.time.ns_per_ms);
         }
     }
 }

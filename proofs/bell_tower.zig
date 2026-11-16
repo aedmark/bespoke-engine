@@ -336,7 +336,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     sync_reach(&world, ids, &input);
     var buf: [256]u8 = undefined;
 
-    var snapshot_0 = std.ArrayList(u8).init(allocator);
+    var snapshot_0 = std.array_list.Managed(u8).init(allocator);
     defer snapshot_0.deinit();
     try world.save_state(snapshot_0.writer());
 

@@ -1222,9 +1222,9 @@ pub const bell_tower = Arranged{ .sections = &BELL_TOWER_SECTIONS, .arrangement 
 /// that is a smaller loop played several times reports that smaller loop.
 pub fn seconds_before_repeat(allocator: std.mem.Allocator, a: Arranged) !f64 {
     const Step = [5]u8;
-    var stream = std.ArrayList(Step).init(allocator);
+    var stream = std.array_list.Managed(Step).init(allocator);
     defer stream.deinit();
-    var seconds_per_pass = std.ArrayList(f64).init(allocator);
+    var seconds_per_pass = std.array_list.Managed(f64).init(allocator);
     defer seconds_per_pass.deinit();
     const music = audio.Music{ .name = "", .sections = a.sections, .arrangement = a.arrangement };
     for (a.arrangement) |pass| {

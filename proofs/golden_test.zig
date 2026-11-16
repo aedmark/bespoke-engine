@@ -30,7 +30,7 @@ const observatory_puzzle = @import("observatory_puzzle.zig");
 const golden_digest = @import("golden_digest.zig");
 const bespoke = @import("bespoke");
 
-const Writer = std.ArrayList(u8).Writer;
+const Writer = std.array_list.Managed(u8).Writer;
 
 fn tavern(allocator: std.mem.Allocator, w: anytype) anyerror!void {
     try tavern_heist.run(allocator, w, true);
@@ -85,7 +85,7 @@ test "P32-07: every proof's headless transcript matches its golden file" {
 
     var failures: usize = 0;
     for (proofs) |p| {
-        var out = std.ArrayList(u8).init(allocator);
+        var out = std.array_list.Managed(u8).init(allocator);
         defer out.deinit();
         try p.run(allocator, out.writer());
 
@@ -148,7 +148,7 @@ test "P34-01: one altered final fact fails a proof's golden on its digest line a
 
         golden_digest.tamper = tamper_one_fact;
         defer golden_digest.tamper = null;
-        var out = std.ArrayList(u8).init(allocator);
+        var out = std.array_list.Managed(u8).init(allocator);
         defer out.deinit();
         try p.run(allocator, out.writer());
 

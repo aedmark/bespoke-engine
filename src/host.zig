@@ -448,8 +448,8 @@ pub fn place_waypoint(spatial: *SpatialSystem, wp_id: u16, x: i32, y: i32) void 
 /// point (`discard_after`), which records a divergent timeline.
 pub const Timeline = struct {
     pub const Snapshot = struct {
-        world: std.ArrayList(u8),
-        temporal: ?std.ArrayList(u8) = null,
+        world: std.array_list.Managed(u8),
+        temporal: ?std.array_list.Managed(u8) = null,
 
         pub fn deinit(self: *Snapshot) void {
             self.world.deinit();
@@ -457,11 +457,11 @@ pub const Timeline = struct {
         }
     };
 
-    snapshots: std.ArrayList(Snapshot),
+    snapshots: std.array_list.Managed(Snapshot),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Timeline {
-        return .{ .snapshots = std.ArrayList(Snapshot).init(allocator), .allocator = allocator };
+        return .{ .snapshots = std.array_list.Managed(Snapshot).init(allocator), .allocator = allocator };
     }
 
     pub fn deinit(self: *Timeline) void {
@@ -488,11 +488,11 @@ pub const Timeline = struct {
         world: *const World,
         hypervisor: ?*const TemporalHypervisor,
     ) !void {
-        var snapshot = Snapshot{ .world = std.ArrayList(u8).init(self.allocator) };
+        var snapshot = Snapshot{ .world = std.array_list.Managed(u8).init(self.allocator) };
         errdefer snapshot.deinit();
         try world.save_state(snapshot.world.writer());
         if (hypervisor) |live| {
-            var temporal = std.ArrayList(u8).init(self.allocator);
+            var temporal = std.array_list.Managed(u8).init(self.allocator);
             errdefer temporal.deinit();
             try temporal_mod.TemporalSnapshot.write(live, temporal.writer());
             snapshot.temporal = temporal;

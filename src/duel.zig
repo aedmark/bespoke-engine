@@ -830,7 +830,7 @@ test "P32-17: duel state is facts, so a snapshot restore rewinds it" {
     const pupil = try bed.world.intern_entity("Pupil");
     const elder = try bed.world.intern_entity("Elder");
 
-    var snapshot = std.ArrayList(u8).init(testing.allocator);
+    var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
     try bed.world.save_state(snapshot.writer());
 

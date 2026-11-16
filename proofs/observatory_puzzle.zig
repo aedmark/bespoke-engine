@@ -384,7 +384,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var reply: [160]u8 = undefined;
     const stage = Stage{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .ids = ids, .interp = &interp, .reply = &reply };
 
-    var opening = std.ArrayList(u8).init(allocator);
+    var opening = std.array_list.Managed(u8).init(allocator);
     defer opening.deinit();
     _ = try bespoke.write_save_state(allocator, opening.writer(), &world, &spatial, &vm, .{ .description = "Larkspur opening" });
     try stage.report(writer);

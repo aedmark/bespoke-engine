@@ -100,8 +100,8 @@ pub const TemporalHypervisor = struct {
     ticks_elapsed: u64,
     collapse_state: BranchCollapseState,
 
-    teleological_dependencies: std.ArrayList(TeleologicalDependency),
-    dream_residue_facts: std.ArrayList(DreamFact),
+    teleological_dependencies: std.array_list.Managed(TeleologicalDependency),
+    dream_residue_facts: std.array_list.Managed(DreamFact),
 
     pub fn init(allocator: std.mem.Allocator, primary_world: *World) TemporalHypervisor {
         return TemporalHypervisor{
@@ -119,8 +119,8 @@ pub const TemporalHypervisor = struct {
             .collapse_budget_ticks = 0,
             .ticks_elapsed = 0,
             .collapse_state = .dormant,
-            .teleological_dependencies = std.ArrayList(TeleologicalDependency).init(allocator),
-            .dream_residue_facts = std.ArrayList(DreamFact).init(allocator),
+            .teleological_dependencies = std.array_list.Managed(TeleologicalDependency).init(allocator),
+            .dream_residue_facts = std.array_list.Managed(DreamFact).init(allocator),
         };
     }
 

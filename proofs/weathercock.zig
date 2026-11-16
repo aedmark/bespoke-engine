@@ -850,7 +850,7 @@ fn deliver_note(
 
 test "P31-03: The Copper Weathercock forks a branch, follows the current, and closes the loop" {
     const testing = std.testing;
-    var buf = std.ArrayList(u8).init(testing.allocator);
+    var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
     try run_headless(testing.allocator, buf.writer());

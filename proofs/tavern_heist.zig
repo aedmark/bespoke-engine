@@ -485,7 +485,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
             session.render();
 
             // Cap display loop ~60 FPS
-            std.time.sleep(16 * std.time.ns_per_ms);
+            std.Thread.sleep(16 * std.time.ns_per_ms);
         }
     }
 }

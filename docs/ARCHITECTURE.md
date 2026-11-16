@@ -201,7 +201,7 @@ Everything the engine needs that it did not write in-tree. Core compiler, simula
 
 | Dependency | Version | For | Why this one (and not writing it) |
 | --- | --- | --- | --- |
-| Zig Toolchain | 0.14.1+ | Runtime, compiler, tests, and WebAssembly build | Native memory arena control, comptime, zero-overhead C-ABI, and freestanding cross-compilation (D-002, D-022) |
+| Zig Toolchain | 0.15.2+ | Runtime, compiler, tests, and WebAssembly build | Native memory arena control, comptime, zero-overhead C-ABI, and freestanding cross-compilation (D-002, D-022) |
 | Python 3 Standard Library | 3.9+ | Documentation linter (`tools/check_docs.py`) and manual tool (`tools/manual.py`) | Zero external pip dependencies; portable cross-platform repository memory enforcement |
 | SDL2 (libSDL2) | 2.0+ (system C library) | Host peripheral display window, keyboard/mouse input, and audio callback | Peripheral rendering on desktop Linux; optional/peripheral only, with graceful headless fallback (D-001, D-008, D-019) |
 

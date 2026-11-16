@@ -179,7 +179,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(volume(&world, system, ids.cup_a) == 10 and world.get_property(ids.cup_a, system.rel.failed_at) == null, error.RewindFailed);
 
     try writer.writeAll("\n[Save] Round-trip World, Spatial, and VM before the sprint.\n");
-    var save_bytes = std.ArrayList(u8).init(allocator);
+    var save_bytes = std.array_list.Managed(u8).init(allocator);
     defer save_bytes.deinit();
     _ = try bespoke.write_save_state(allocator, save_bytes.writer(), &world, &spatial, &vm, .{ .description = "Caustic Grog opening" });
     _ = try host.tick(&vm, &compiled);
