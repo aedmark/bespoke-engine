@@ -49,8 +49,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    exe.linkLibC();
-    exe.linkSystemLibrary("SDL2");
+    exe.root_module.link_libc = true;
+    exe.root_module.linkSystemLibrary("SDL2", .{});
     // `bespoke init` records this checkout as a new project's engine (P29-01, D-063).
     const build_opts = b.addOptions();
     build_opts.addOption([]const u8, "engine_root", b.pathFromRoot("."));
@@ -111,8 +111,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
     proofs_exe.root_module.addImport("bespoke", bespoke_mod);
-    proofs_exe.linkLibC();
-    proofs_exe.linkSystemLibrary("SDL2");
+    proofs_exe.root_module.link_libc = true;
+    proofs_exe.root_module.linkSystemLibrary("SDL2", .{});
 
     const install_proofs = b.addInstallArtifact(proofs_exe, .{});
     const proofs_step = b.step("proofs", "Build the proofs-of-concept binary (bespoke-proofs)");
@@ -123,7 +123,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_proof_cmd.addArgs(args);
     }
-    const run_proof_step = b.step("run-proof", "Run a proof of concept, e.g. `zig build run-proof -- --loom --headless`");
+    const run_proof_step = b.step("run-proof", "Run a proof of concept, e.g. `zig build run-proof -- --bell-tower --headless`");
     run_proof_step.dependOn(&run_proof_cmd.step);
 
     // Creates a step for unit testing. This only builds the test executable
@@ -138,8 +138,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    lib_unit_tests.linkLibC();
-    lib_unit_tests.linkSystemLibrary("SDL2");
+    lib_unit_tests.root_module.link_libc = true;
+    lib_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
@@ -154,8 +154,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe_unit_tests.root_module.addOptions("build_options", build_opts);
-    exe_unit_tests.linkLibC();
-    exe_unit_tests.linkSystemLibrary("SDL2");
+    exe_unit_tests.root_module.link_libc = true;
+    exe_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
     // The authoring guide's examples are read at test time (P29-02, D-064); declaring the file
@@ -181,8 +181,8 @@ pub fn build(b: *std.Build) void {
     golden_opts.addOption(bool, "update_goldens", b.option(bool, "update-goldens", "Rewrite proofs/golden/*.txt from current proof output (P32-07)") orelse false);
     golden_opts.addOption([]const u8, "golden_dir", b.pathFromRoot("proofs/golden"));
     proofs_unit_tests.root_module.addOptions("golden_options", golden_opts);
-    proofs_unit_tests.linkLibC();
-    proofs_unit_tests.linkSystemLibrary("SDL2");
+    proofs_unit_tests.root_module.link_libc = true;
+    proofs_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
     const run_proofs_unit_tests = b.addRunArtifact(proofs_unit_tests);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
@@ -204,10 +204,12 @@ pub fn build(b: *std.Build) void {
     // a project into the cache, then runs its tests, its bundled release build, and its browser
     // build with this checkout as the engine. It runs nested `zig build`s, so it stays out of
     // `zig build test`.
-    b.cache_root.handle.makePath("tmp") catch {};
+    b.cache_root.handle.createDirPath(b.graph.io, "tmp") catch {};
     const template_root = b.cache_root.join(b.allocator, &.{"tmp"}) catch @panic("OOM");
     const starter_dir = b.pathJoin(&.{ template_root, "template_check" });
-    const clear_template = b.addRemoveDirTree(.{ .cwd_relative = starter_dir });
+    // Zig 0.16 has no remove-directory step; the template check runs on Linux, where `rm` does.
+    const clear_template = b.addSystemCommand(&.{ "rm", "-rf", starter_dir });
+    clear_template.has_side_effects = true;
     const init_template = b.addRunArtifact(exe);
     init_template.has_side_effects = true;
     init_template.addArgs(&.{ "init", "template_check", "--engine", b.pathFromRoot(".") });

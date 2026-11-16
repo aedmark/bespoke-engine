@@ -25,6 +25,7 @@
 //!
 //! The module names no character, line, or setting.
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const vm_mod = @import("vm.zig");
 const bytecode_mod = @import("bytecode.zig");
@@ -832,15 +833,16 @@ test "P32-17: duel state is facts, so a snapshot restore rewinds it" {
 
     var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
-    try bed.world.save_state(snapshot.writer());
+    var lw1 = ListWriter.init(&snapshot);
+    try bed.world.save_state(&lw1.writer);
 
     try duel.master(pupil, duel.reply(1));
     _ = try duel.resolve_round(elder, pupil, duel.challenge(0, 0), duel.reply(1));
     try testing.expect(bed.world.has_fact(pupil, duel.heard_rel, null));
     try testing.expect(bed.world.has_fact(elder, duel.mastered_rel, duel.reply(1).to_int()));
 
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try bed.world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try bed.world.restore_state(&stream);
 
     try testing.expect(!bed.world.has_fact(pupil, duel.heard_rel, null));
     try testing.expect(!bed.world.has_fact(pupil, duel.mastered_rel, null));

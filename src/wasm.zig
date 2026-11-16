@@ -455,8 +455,9 @@ pub const WasmRuntime = struct {
         bridge.* = display_mod.DisplayBridge.init();
         const saves = try allocator.create(save_mod.SaveManager);
         errdefer allocator.destroy(saves);
-        // A save list with no directory: the browser never opens the save drawer.
-        saves.* = .{ .allocator = allocator, .save_dir = "", .slots = undefined, .session_start_ms = 0, .accumulated_playtime_secs = 0 };
+        // A save list with no directory: the browser never opens the save drawer. Its `Io` is
+        // `std.Io.failing`, so a file operation that reached it would fail rather than act.
+        saves.* = .{ .allocator = allocator, .io = std.Io.failing, .save_dir = "", .slots = undefined, .session_start_ms = 0, .accumulated_playtime_secs = 0 };
         for (0..save_mod.MAX_SLOTS + 1) |i| saves.slots[i] = .{ .slot_id = @intCast(i) };
         const window = try allocator.create(renderer.DisplayWindow);
         errdefer allocator.destroy(window);
@@ -576,8 +577,8 @@ pub const WasmRuntime = struct {
     pub fn load_program(self: *WasmRuntime, data: []const u8) !void {
         const is_package = data.len >= 4 and std.mem.eql(u8, data[0..4], &package_mod.PACKAGE_MAGIC);
         if (is_package) {
-            var stream = std.io.fixedBufferStream(data);
-            self.program = try package_mod.load_package(self.allocator, stream.reader(), &self.world, &self.spatial);
+            var stream: std.Io.Reader = .fixed(data);
+            self.program = try package_mod.load_package(self.allocator, &stream, &self.world, &self.spatial);
         } else {
             self.program = try compiler_mod.compile_source(self.allocator, &self.world, &self.spatial, data);
         }
@@ -1036,10 +1037,10 @@ pub const WasmRuntime = struct {
 
     pub fn record_snapshot(self: *WasmRuntime) void {
         const slot = self.snapshot_count % MAX_WASM_SNAPSHOTS;
-        var fbs = std.io.fixedBufferStream(&self.snapshot_bufs[slot]);
-        self.world.save_state(fbs.writer()) catch return;
-        if (self.hypervisor) |hv| write_temporal(hv, fbs.writer()) catch return;
-        self.snapshot_lens[slot] = fbs.pos;
+        var writer: std.Io.Writer = .fixed(&self.snapshot_bufs[slot]);
+        self.world.save_state(&writer) catch return;
+        if (self.hypervisor) |hv| write_temporal(hv, &writer) catch return;
+        self.snapshot_lens[slot] = writer.end;
         self.snapshot_ticks[slot] = self.clock();
         if (self.snapshot_count < MAX_WASM_SNAPSHOTS) {
             self.snapshot_count += 1;
@@ -1060,7 +1061,7 @@ pub const WasmRuntime = struct {
     }
 
     fn read_temporal(self: *WasmRuntime, hv: *TemporalHypervisor, reader: anytype) !void {
-        const had_branch = (try reader.readByte()) != 0;
+        const had_branch = (try reader.takeByte()) != 0;
         if (had_branch) {
             // A rewind to before a collapse brings the branch back: clone a world to restore over.
             if (hv.branch_world == null) hv.branch_world = try self.world.clone(self.allocator);
@@ -1071,8 +1072,8 @@ pub const WasmRuntime = struct {
         }
         hv.branch_active = had_branch;
         hv.tangent_active = had_branch;
-        hv.ticks_elapsed = try reader.readInt(u64, .little);
-        hv.collapse_state = std.meta.intToEnum(hypervisor_mod.BranchCollapseState, try reader.readByte()) catch return error.InvalidSnapshot;
+        hv.ticks_elapsed = try reader.takeInt(u64, .little);
+        hv.collapse_state = std.enums.fromInt(hypervisor_mod.BranchCollapseState, try reader.takeByte()) orelse return error.InvalidSnapshot;
     }
 
     pub fn scrub_to_tick(self: *WasmRuntime, target_tick: u64) void {
@@ -1090,9 +1091,9 @@ pub const WasmRuntime = struct {
         if (best_slot) |slot| {
             // A held action belongs to the timeline being left.
             self.approach = null;
-            var fbs = std.io.fixedBufferStream(self.snapshot_bufs[slot][0..self.snapshot_lens[slot]]);
-            self.world.restore_state(fbs.reader()) catch return;
-            if (self.hypervisor) |hv| self.read_temporal(hv, fbs.reader()) catch {
+            var fbs: std.Io.Reader = .fixed(self.snapshot_bufs[slot][0..self.snapshot_lens[slot]]);
+            self.world.restore_state(&fbs) catch return;
+            if (self.hypervisor) |hv| self.read_temporal(hv, &fbs) catch {
                 self.set_banner("Could not restore the tangent world here.");
                 return;
             };

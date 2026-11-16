@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world = @import("world.zig");
 const EntityId = world.EntityId;
 const RelationKind = world.RelationKind;
@@ -124,15 +125,18 @@ pub const BytecodeChunk = struct {
     }
 
     pub fn emit_u16(self: *BytecodeChunk, val: u16) !void {
-        try self.code.writer().writeInt(u16, val, .little);
+        var lw1 = ListWriter.init(&self.code);
+        try lw1.writer.writeInt(u16, val, .little);
     }
 
     pub fn emit_i16(self: *BytecodeChunk, val: i16) !void {
-        try self.code.writer().writeInt(i16, val, .little);
+        var lw2 = ListWriter.init(&self.code);
+        try lw2.writer.writeInt(i16, val, .little);
     }
 
     pub fn emit_u32(self: *BytecodeChunk, val: u32) !void {
-        try self.code.writer().writeInt(u32, val, .little);
+        var lw3 = ListWriter.init(&self.code);
+        try lw3.writer.writeInt(u32, val, .little);
     }
 
     // Convenience emitters

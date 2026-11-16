@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const vm_mod = @import("vm.zig");
@@ -206,8 +207,8 @@ fn write_fiber_state(writer: anytype, state: FiberState) !void {
 }
 
 fn read_fiber_state(reader: anytype) !FiberState {
-    const tag = try reader.readByte();
-    const val = try reader.readInt(u64, .little);
+    const tag = try reader.takeByte();
+    const val = try reader.takeInt(u64, .little);
     return switch (tag) {
         0 => FiberState{ .ready = {} },
         1 => FiberState{ .waiting_ticks = val },
@@ -246,27 +247,27 @@ fn serialize_metadata(writer: anytype, meta: *const SaveMetadata) !void {
 
 fn deserialize_metadata(reader: anytype) !SaveMetadata {
     var meta = SaveMetadata{};
-    meta.version = try reader.readInt(u32, .little);
-    meta.slot_id = try reader.readByte();
-    meta.current_tick = try reader.readInt(u64, .little);
-    meta.playtime_secs = try reader.readInt(u64, .little);
-    meta.timestamp = try reader.readInt(i64, .little);
-    meta.fact_count = try reader.readInt(u32, .little);
-    meta.entity_count = try reader.readInt(u32, .little);
-    meta.scene_id = try reader.readInt(u32, .little);
-    meta.scene_name_len = @min(32, try reader.readByte());
-    try reader.readNoEof(&meta.scene_name);
-    meta.description_len = @min(64, try reader.readByte());
-    try reader.readNoEof(&meta.description);
-    meta.actor_count = @min(8, try reader.readByte());
+    meta.version = try reader.takeInt(u32, .little);
+    meta.slot_id = try reader.takeByte();
+    meta.current_tick = try reader.takeInt(u64, .little);
+    meta.playtime_secs = try reader.takeInt(u64, .little);
+    meta.timestamp = try reader.takeInt(i64, .little);
+    meta.fact_count = try reader.takeInt(u32, .little);
+    meta.entity_count = try reader.takeInt(u32, .little);
+    meta.scene_id = try reader.takeInt(u32, .little);
+    meta.scene_name_len = @min(32, try reader.takeByte());
+    try reader.readSliceAll(&meta.scene_name);
+    meta.description_len = @min(64, try reader.takeByte());
+    try reader.readSliceAll(&meta.description);
+    meta.actor_count = @min(8, try reader.takeByte());
     for (0..8) |i| {
-        meta.actors[i].entity_id = try reader.readInt(u32, .little);
-        meta.actors[i].x = try reader.readInt(i32, .little);
-        meta.actors[i].y = try reader.readInt(i32, .little);
-        meta.actors[i].name_len = @min(24, try reader.readByte());
-        try reader.readNoEof(&meta.actors[i].name);
+        meta.actors[i].entity_id = try reader.takeInt(u32, .little);
+        meta.actors[i].x = try reader.takeInt(i32, .little);
+        meta.actors[i].y = try reader.takeInt(i32, .little);
+        meta.actors[i].name_len = @min(24, try reader.takeByte());
+        try reader.readSliceAll(&meta.actors[i].name);
     }
-    try reader.readNoEof(&meta.thumbnail);
+    try reader.readSliceAll(&meta.thumbnail);
     return meta;
 }
 
@@ -282,7 +283,9 @@ pub fn build_metadata(
         .slot_id = options.slot_id,
         .current_tick = world.current_tick,
         .playtime_secs = options.playtime_secs,
-        .timestamp = options.timestamp orelse std.time.timestamp(),
+        // A save that reaches disk is stamped by `SaveManager`, which has an `Io` clock; an
+        // in-memory checkpoint passes none and records 0 (P37-01).
+        .timestamp = options.timestamp orelse 0,
         .fact_count = @intCast(world.fact_count()),
         .entity_count = @intCast(world.entity_names.items.len),
         .scene_id = 0,
@@ -374,7 +377,8 @@ fn write_save_state_versioned(
 
     var payload = std.array_list.Managed(u8).init(allocator);
     defer payload.deinit();
-    const pw = payload.writer();
+    var pw_list = ListWriter.init(&payload);
+    const pw = &pw_list.writer;
 
     // 1. Metadata header block
     try serialize_metadata(pw, &meta);
@@ -385,7 +389,8 @@ fn write_save_state_versioned(
         if (temporal) |hypervisor| {
             var temporal_bytes = std.array_list.Managed(u8).init(allocator);
             defer temporal_bytes.deinit();
-            try temporal_mod.TemporalSnapshot.write(hypervisor, temporal_bytes.writer());
+            var lw1 = ListWriter.init(&temporal_bytes);
+            try temporal_mod.TemporalSnapshot.write(hypervisor, &lw1.writer);
             try pw.writeByte(1);
             try pw.writeInt(u32, @intCast(temporal_bytes.items.len), .little);
             try pw.writeAll(temporal_bytes.items);
@@ -493,22 +498,22 @@ const VerifiedPayload = struct {
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
 fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !VerifiedPayload {
     var magic: [4]u8 = undefined;
-    const m_read = try reader.readAll(&magic);
+    const m_read = try reader.readSliceShort(&magic);
     if (m_read < 4) return error.EndOfStream;
     if (!std.mem.eql(u8, &magic, &SAVE_MAGIC)) return SaveError.InvalidSaveMagic;
 
-    const version = try reader.readInt(u32, .little);
+    const version = try reader.takeInt(u32, .little);
     if (version < MIN_SAVE_VERSION or version > SAVE_VERSION) return SaveError.UnsupportedSaveVersion;
 
-    const expected_crc = try reader.readInt(u32, .little);
-    const payload_len = try reader.readInt(u32, .little);
+    const expected_crc = try reader.takeInt(u32, .little);
+    const payload_len = try reader.takeInt(u32, .little);
     if (payload_len == 0 or payload_len > MAX_SAVE_PAYLOAD_SIZE) {
         return SaveError.SavePayloadTooLarge;
     }
 
     const payload = try allocator.alloc(u8, payload_len);
     errdefer allocator.free(payload);
-    try reader.readNoEof(payload);
+    try reader.readSliceAll(payload);
 
     const actual_crc = std.hash.Crc32.hash(payload);
     if (actual_crc != expected_crc) {
@@ -523,8 +528,8 @@ pub fn inspect_save_stream(allocator: std.mem.Allocator, reader: anytype) !SaveM
     const verified = try read_verified_payload(allocator, reader);
     defer allocator.free(verified.bytes);
 
-    var fbs = std.io.fixedBufferStream(verified.bytes);
-    return try deserialize_metadata(fbs.reader());
+    var fbs: std.Io.Reader = .fixed(verified.bytes);
+    return try deserialize_metadata(&fbs);
 }
 
 /// Restores a complete persistent save state (.sav) into World, SpatialSystem, and VM after verifying CRC32 integrity (P17-01, D-020).
@@ -562,8 +567,8 @@ fn read_save_state_versioned(
     const verified = try read_verified_payload(allocator, reader);
     defer allocator.free(verified.bytes);
 
-    var fbs = std.io.fixedBufferStream(verified.bytes);
-    const pr = fbs.reader();
+    var fbs: std.Io.Reader = .fixed(verified.bytes);
+    const pr = &fbs;
 
     // 1. Metadata
     const meta = try deserialize_metadata(pr);
@@ -573,20 +578,20 @@ fn read_save_state_versioned(
     defer if (pending_temporal) |*snapshot| snapshot.deinit();
 
     if (verified.version >= 2) {
-        const has_temporal = try pr.readByte();
+        const has_temporal = try pr.takeByte();
         switch (has_temporal) {
             0 => if (require_temporal) return SaveError.MissingTemporalState,
             1 => {
-                const temporal_len = try pr.readInt(u32, .little);
+                const temporal_len = try pr.takeInt(u32, .little);
                 if (temporal_len == 0 or temporal_len > MAX_SAVE_PAYLOAD_SIZE) {
                     return SaveError.SavePayloadTooLarge;
                 }
                 const temporal_bytes = try allocator.alloc(u8, temporal_len);
                 defer allocator.free(temporal_bytes);
-                try pr.readNoEof(temporal_bytes);
+                try pr.readSliceAll(temporal_bytes);
                 if (temporal != null or require_temporal) {
-                    var temporal_stream = std.io.fixedBufferStream(temporal_bytes);
-                    pending_temporal = try temporal_mod.TemporalSnapshot.read(allocator, world, temporal_stream.reader());
+                    var temporal_stream: std.Io.Reader = .fixed(temporal_bytes);
+                    pending_temporal = try temporal_mod.TemporalSnapshot.read(allocator, world, &temporal_stream);
                 }
             },
             else => return SaveError.InvalidTemporalState,
@@ -601,9 +606,9 @@ fn read_save_state_versioned(
     if (pending_temporal) |*snapshot| try snapshot.validate(world);
 
     // 3. Spatial motor agents
-    const has_spatial = try pr.readByte();
+    const has_spatial = try pr.takeByte();
     if (has_spatial != 0) {
-        const agent_count = try pr.readInt(u32, .little);
+        const agent_count = try pr.takeInt(u32, .little);
         if (spatial) |sp| {
             var old_it = sp.agents.valueIterator();
             while (old_it.next()) |ag| {
@@ -613,22 +618,22 @@ fn read_save_state_versioned(
 
             var ai: u32 = 0;
             while (ai < agent_count) : (ai += 1) {
-                const ent_raw = try pr.readInt(u32, .little);
-                const px = try pr.readInt(i32, .little);
-                const py = try pr.readInt(i32, .little);
-                const cur_wp = try pr.readInt(u16, .little);
-                const target_wp_raw = try pr.readInt(u16, .little);
-                const speed = try pr.readInt(u32, .little);
-                const is_moving = (try pr.readByte()) != 0;
-                const arrived = (try pr.readByte()) != 0;
-                const path_index = try pr.readInt(u16, .little);
-                const path_len = try pr.readInt(u16, .little);
+                const ent_raw = try pr.takeInt(u32, .little);
+                const px = try pr.takeInt(i32, .little);
+                const py = try pr.takeInt(i32, .little);
+                const cur_wp = try pr.takeInt(u16, .little);
+                const target_wp_raw = try pr.takeInt(u16, .little);
+                const speed = try pr.takeInt(u32, .little);
+                const is_moving = (try pr.takeByte()) != 0;
+                const arrived = (try pr.takeByte()) != 0;
+                const path_index = try pr.takeInt(u16, .little);
+                const path_len = try pr.takeInt(u16, .little);
 
                 var path_slice: ?[]WaypointId = null;
                 if (path_len > 0) {
                     const pbuf = try sp.allocator.alloc(WaypointId, path_len);
                     for (0..path_len) |pi| {
-                        pbuf[pi] = try pr.readInt(u16, .little);
+                        pbuf[pi] = try pr.takeInt(u16, .little);
                     }
                     path_slice = pbuf;
                 }
@@ -650,30 +655,30 @@ fn read_save_state_versioned(
             // Skip spatial section if caller did not pass a SpatialSystem
             var ai: u32 = 0;
             while (ai < agent_count) : (ai += 1) {
-                _ = try pr.readInt(u32, .little);
-                _ = try pr.readInt(i32, .little);
-                _ = try pr.readInt(i32, .little);
-                _ = try pr.readInt(u16, .little);
-                _ = try pr.readInt(u16, .little);
-                _ = try pr.readInt(u32, .little);
-                _ = try pr.readByte();
-                _ = try pr.readByte();
-                _ = try pr.readInt(u16, .little);
-                const path_len = try pr.readInt(u16, .little);
+                _ = try pr.takeInt(u32, .little);
+                _ = try pr.takeInt(i32, .little);
+                _ = try pr.takeInt(i32, .little);
+                _ = try pr.takeInt(u16, .little);
+                _ = try pr.takeInt(u16, .little);
+                _ = try pr.takeInt(u32, .little);
+                _ = try pr.takeByte();
+                _ = try pr.takeByte();
+                _ = try pr.takeInt(u16, .little);
+                const path_len = try pr.takeInt(u16, .little);
                 var pi: u16 = 0;
                 while (pi < path_len) : (pi += 1) {
-                    _ = try pr.readInt(u16, .little);
+                    _ = try pr.takeInt(u16, .little);
                 }
             }
         }
     }
 
     // 4. VM execution state
-    const has_vm = try pr.readByte();
+    const has_vm = try pr.takeByte();
     if (has_vm != 0) {
-        const cur_scene_raw = try pr.readInt(u32, .little);
-        const next_fib_id = try pr.readInt(u32, .little);
-        const fiber_count = try pr.readInt(u32, .little);
+        const cur_scene_raw = try pr.takeInt(u32, .little);
+        const next_fib_id = try pr.takeInt(u32, .little);
+        const fiber_count = try pr.takeInt(u32, .little);
 
         if (vm) |v| {
             v.current_scene = if (cur_scene_raw == 0) null else EntityId.from_int(cur_scene_raw);
@@ -688,11 +693,11 @@ fn read_save_state_versioned(
 
             var fi: u32 = 0;
             while (fi < fiber_count) : (fi += 1) {
-                const fid = try pr.readInt(u32, .little);
-                const owner_raw = try pr.readInt(u32, .little);
-                const pc = try pr.readInt(u32, .little);
-                const sp_val = try pr.readInt(u16, .little);
-                const active_prio = try pr.readInt(u16, .little);
+                const fid = try pr.takeInt(u32, .little);
+                const owner_raw = try pr.takeInt(u32, .little);
+                const pc = try pr.takeInt(u32, .little);
+                const sp_val = try pr.takeInt(u16, .little);
+                const active_prio = try pr.takeInt(u16, .little);
 
                 var fib = Fiber.init(v.allocator, fid, EntityId.from_int(owner_raw), pc);
                 errdefer fib.deinit();
@@ -701,19 +706,19 @@ fn read_save_state_versioned(
 
                 var si: u16 = 0;
                 while (si < sp_val) : (si += 1) {
-                    const sval = try pr.readInt(u32, .little);
+                    const sval = try pr.takeInt(u32, .little);
                     if (si < vm_mod.MAX_STACK) {
                         fib.stack[si] = sval;
                     }
                 }
                 fib.state = try read_fiber_state(pr);
 
-                const int_depth = try pr.readInt(u16, .little);
+                const int_depth = try pr.takeInt(u16, .little);
                 var ii: u16 = 0;
                 while (ii < int_depth) : (ii += 1) {
-                    const ipc = try pr.readInt(u32, .little);
-                    const isp = try pr.readInt(u16, .little);
-                    const iprio = try pr.readInt(u16, .little);
+                    const ipc = try pr.takeInt(u32, .little);
+                    const isp = try pr.takeInt(u16, .little);
+                    const iprio = try pr.takeInt(u16, .little);
                     const istate = try read_fiber_state(pr);
                     try fib.interrupt_stack.append(InterruptFrame{
                         .pc = ipc,
@@ -726,10 +731,10 @@ fn read_save_state_versioned(
                 try v.fibers.append(fib);
             }
 
-            const rule_count = try pr.readInt(u32, .little);
+            const rule_count = try pr.takeInt(u32, .little);
             var ri: u32 = 0;
             while (ri < rule_count) : (ri += 1) {
-                const is_act = (try pr.readByte()) != 0;
+                const is_act = (try pr.takeByte()) != 0;
                 if (ri < v.reactive_rules.items.len) {
                     v.reactive_rules.items[ri].is_active = is_act;
                 }
@@ -760,6 +765,11 @@ pub const LoadResult = struct {
 };
 
 /// Persistent Save/Load Slot Manager supporting numbered slots (1..8), Quick-Save (slot 0), and .bak recovery (P17-02, D-020).
+/// Monotonic milliseconds for playtime: the awake clock, which wall-clock changes cannot move.
+fn now_ms(io: std.Io) i64 {
+    return std.Io.Timestamp.now(io, .awake).toMilliseconds();
+}
+
 pub const SaveManager = struct {
     /// Thumbnail colours for every save this manager writes; set from a display theme.
     thumbnails: ?*const ThumbnailPainter = null,
@@ -768,14 +778,17 @@ pub const SaveManager = struct {
     slots: [MAX_SLOTS + 1]SaveSlotInfo,
     session_start_ms: i64,
     accumulated_playtime_secs: u64,
+    /// The host's I/O (Zig 0.16+): slot files, the save directory, and the playtime clock.
+    io: std.Io,
 
-    pub fn init(allocator: std.mem.Allocator, save_dir: []const u8) !SaveManager {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, save_dir: []const u8) !SaveManager {
         const owned_dir = try allocator.dupe(u8, save_dir);
         var sm = SaveManager{
             .allocator = allocator,
+            .io = io,
             .save_dir = owned_dir,
             .slots = undefined,
-            .session_start_ms = std.time.milliTimestamp(),
+            .session_start_ms = now_ms(io),
             .accumulated_playtime_secs = 0,
         };
         for (0..MAX_SLOTS + 1) |i| {
@@ -792,7 +805,7 @@ pub const SaveManager = struct {
 
     /// Computes total playtime in seconds (accumulated prior save time + current session elapsed seconds).
     pub fn current_playtime_secs(self: *const SaveManager) u64 {
-        const now = std.time.milliTimestamp();
+        const now = now_ms(self.io);
         const elapsed_ms = @max(0, now - self.session_start_ms);
         return self.accumulated_playtime_secs + @as(u64, @intCast(@divTrunc(elapsed_ms, 1000)));
     }
@@ -819,9 +832,11 @@ pub const SaveManager = struct {
 
     /// Inspects a single save file on disk and returns its SaveMetadata if valid.
     fn inspect_file(self: *const SaveManager, path: []const u8) !SaveMetadata {
-        const file = try std.fs.cwd().openFile(path, .{});
-        defer file.close();
-        return try inspect_save_stream(self.allocator, file.deprecatedReader());
+        const file = try std.Io.Dir.cwd().openFile(self.io, path, .{});
+        defer file.close(self.io);
+        var buf: [4096]u8 = undefined;
+        var reader = file.reader(self.io, &buf);
+        return try inspect_save_stream(self.allocator, &reader.interface);
     }
 
     /// Scans the save directory and refreshes slot occupancy, metadata, and corruption/backup flags (P17-02).
@@ -907,7 +922,7 @@ pub const SaveManager = struct {
     ) !SaveMetadata {
         if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
 
-        try std.fs.cwd().makePath(self.save_dir);
+        try std.Io.Dir.cwd().createDirPath(self.io, self.save_dir);
 
         var path_buf: [256]u8 = undefined;
         var bak_buf: [256]u8 = undefined;
@@ -916,22 +931,26 @@ pub const SaveManager = struct {
 
         // If an existing valid save is present at slot_path, preserve it as slot_path.bak before overwriting
         if (self.inspect_file(slot_path)) |_| {
-            std.fs.cwd().copyFile(slot_path, std.fs.cwd(), bak_path, .{}) catch {};
+            std.Io.Dir.cwd().copyFile(slot_path, std.Io.Dir.cwd(), bak_path, self.io, .{}) catch {};
         } else |_| {}
 
-        const file = try std.fs.cwd().createFile(slot_path, .{ .truncate = true });
-        defer file.close();
+        const file = try std.Io.Dir.cwd().createFile(self.io, slot_path, .{ .truncate = true });
+        defer file.close(self.io);
+        var buf: [4096]u8 = undefined;
+        var file_writer = file.writer(self.io, &buf);
 
         const options = SaveOptions{
             .thumbnail = self.thumbnails,
             .slot_id = slot_id,
             .playtime_secs = self.current_playtime_secs(),
             .description = description,
+            .timestamp = std.Io.Timestamp.now(self.io, .real).toSeconds(),
         };
         const meta = if (temporal) |hypervisor|
-            try write_save_state_with_temporal(self.allocator, file.deprecatedWriter(), world, spatial, vm, hypervisor, options)
+            try write_save_state_with_temporal(self.allocator, &file_writer.interface, world, spatial, vm, hypervisor, options)
         else
-            try write_save_state(self.allocator, file.deprecatedWriter(), world, spatial, vm, options);
+            try write_save_state(self.allocator, &file_writer.interface, world, spatial, vm, options);
+        try file_writer.interface.flush();
 
         const has_bak = (self.inspect_file(bak_path) catch null) != null;
         self.slots[slot_id] = SaveSlotInfo{
@@ -986,15 +1005,17 @@ pub const SaveManager = struct {
         const bak_path = try self.format_backup_path(slot_id, &bak_buf);
 
         // 1. Attempt primary save file
-        if (std.fs.cwd().openFile(slot_path, .{})) |file| {
-            defer file.close();
+        if (std.Io.Dir.cwd().openFile(self.io, slot_path, .{})) |file| {
+            defer file.close(self.io);
+            var buf: [4096]u8 = undefined;
+            var file_reader = file.reader(self.io, &buf);
             const loaded = if (temporal) |hypervisor|
-                read_save_state_with_temporal(self.allocator, file.deprecatedReader(), world, spatial, vm, hypervisor)
+                read_save_state_with_temporal(self.allocator, &file_reader.interface, world, spatial, vm, hypervisor)
             else
-                read_save_state(self.allocator, file.deprecatedReader(), world, spatial, vm);
+                read_save_state(self.allocator, &file_reader.interface, world, spatial, vm);
             if (loaded) |meta| {
                 self.accumulated_playtime_secs = meta.playtime_secs;
-                self.session_start_ms = std.time.milliTimestamp();
+                self.session_start_ms = now_ms(self.io);
                 self.slots[slot_id].occupied = true;
                 self.slots[slot_id].corrupted = false;
                 self.slots[slot_id].recovered_from_backup = false;
@@ -1012,29 +1033,31 @@ pub const SaveManager = struct {
         }
 
         // 2. Corrupted or missing primary file: attempt recovery from .sav.bak (P17-02)
-        const bak_file = std.fs.cwd().openFile(bak_path, .{}) catch |err| {
+        const bak_file = std.Io.Dir.cwd().openFile(self.io, bak_path, .{}) catch |err| {
             if (err == error.FileNotFound) {
                 if (self.slots[slot_id].corrupted) return SaveError.CorruptedSaveUnrecoverable;
                 return SaveError.EmptySlot;
             }
             return err;
         };
-        defer bak_file.close();
+        defer bak_file.close(self.io);
+        var bak_buf_io: [4096]u8 = undefined;
+        var bak_reader = bak_file.reader(self.io, &bak_buf_io);
 
         const recovered_meta = if (temporal) |hypervisor|
-            read_save_state_with_temporal(self.allocator, bak_file.deprecatedReader(), world, spatial, vm, hypervisor) catch {
+            read_save_state_with_temporal(self.allocator, &bak_reader.interface, world, spatial, vm, hypervisor) catch {
                 return SaveError.CorruptedSaveUnrecoverable;
             }
         else
-            read_save_state(self.allocator, bak_file.deprecatedReader(), world, spatial, vm) catch {
+            read_save_state(self.allocator, &bak_reader.interface, world, spatial, vm) catch {
                 return SaveError.CorruptedSaveUnrecoverable;
             };
 
         // Self-heal primary slot file from the verified backup
-        std.fs.cwd().copyFile(bak_path, std.fs.cwd(), slot_path, .{}) catch {};
+        std.Io.Dir.cwd().copyFile(bak_path, std.Io.Dir.cwd(), slot_path, self.io, .{}) catch {};
 
         self.accumulated_playtime_secs = recovered_meta.playtime_secs;
-        self.session_start_ms = std.time.milliTimestamp();
+        self.session_start_ms = now_ms(self.io);
         self.slots[slot_id] = SaveSlotInfo{
             .slot_id = slot_id,
             .occupied = true,
@@ -1099,8 +1122,8 @@ pub const SaveManager = struct {
         const slot_path = try self.format_slot_path(slot_id, &path_buf);
         const bak_path = try self.format_backup_path(slot_id, &bak_buf);
 
-        std.fs.cwd().deleteFile(slot_path) catch {};
-        std.fs.cwd().deleteFile(bak_path) catch {};
+        std.Io.Dir.cwd().deleteFile(self.io, slot_path) catch {};
+        std.Io.Dir.cwd().deleteFile(self.io, bak_path) catch {};
         self.slots[slot_id] = SaveSlotInfo{ .slot_id = slot_id };
     }
 };
@@ -1180,10 +1203,11 @@ test "P17-01: .sav stream serialization, metadata headers, and World/Spatial/VM 
     // Serialize to memory buffer
     var save_buf = std.array_list.Managed(u8).init(testing.allocator);
     defer save_buf.deinit();
+    var save_lw = ListWriter.init(&save_buf);
 
     const written_meta = try write_save_state(
         testing.allocator,
-        save_buf.writer(),
+        &save_lw.writer,
         &world,
         &spatial,
         &vm,
@@ -1203,8 +1227,8 @@ test "P17-01: .sav stream serialization, metadata headers, and World/Spatial/VM 
     try testing.expectEqual(@as(u8, 1), written_meta.actor_count);
 
     // Inspect stream without mutating world
-    var inspect_stream = std.io.fixedBufferStream(save_buf.items);
-    const inspected = try inspect_save_stream(testing.allocator, inspect_stream.reader());
+    var inspect_stream: std.Io.Reader = .fixed(save_buf.items);
+    const inspected = try inspect_save_stream(testing.allocator, &inspect_stream);
     try testing.expectEqual(@as(u64, 2), inspected.current_tick);
     try testing.expectEqualStrings("CellarRoom", inspected.get_scene_name());
 
@@ -1217,10 +1241,10 @@ test "P17-01: .sav stream serialization, metadata headers, and World/Spatial/VM 
     spatial.agents.getPtr(guard).?.pos = .{ .x = 999, .y = 999 };
 
     // Restore from .sav buffer
-    var restore_stream = std.io.fixedBufferStream(save_buf.items);
+    var restore_stream: std.Io.Reader = .fixed(save_buf.items);
     const restored_meta = try read_save_state(
         testing.allocator,
-        restore_stream.reader(),
+        &restore_stream,
         &world,
         &spatial,
         &vm,
@@ -1245,31 +1269,32 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var save_buf = std.array_list.Managed(u8).init(testing.allocator);
     defer save_buf.deinit();
-    _ = try write_save_state(testing.allocator, save_buf.writer(), &world, null, null, .{});
+    var lw2 = ListWriter.init(&save_buf);
+    _ = try write_save_state(testing.allocator, &lw2.writer, &world, null, null, .{});
 
     // 1. Corrupt payload byte -> ChecksumMismatch
     var corrupted = try testing.allocator.dupe(u8, save_buf.items);
     defer testing.allocator.free(corrupted);
     corrupted[corrupted.len - 1] ^= 0xFF;
 
-    var s1 = std.io.fixedBufferStream(corrupted);
-    try testing.expectError(SaveError.ChecksumMismatch, read_save_state(testing.allocator, s1.reader(), &world, null, null));
+    var s1: std.Io.Reader = .fixed(corrupted);
+    try testing.expectError(SaveError.ChecksumMismatch, read_save_state(testing.allocator, &s1, &world, null, null));
 
     // 2. Corrupt magic header -> InvalidSaveMagic
     var bad_magic = try testing.allocator.dupe(u8, save_buf.items);
     defer testing.allocator.free(bad_magic);
     bad_magic[0] = 'X';
 
-    var s2 = std.io.fixedBufferStream(bad_magic);
-    try testing.expectError(SaveError.InvalidSaveMagic, read_save_state(testing.allocator, s2.reader(), &world, null, null));
+    var s2: std.Io.Reader = .fixed(bad_magic);
+    try testing.expectError(SaveError.InvalidSaveMagic, read_save_state(testing.allocator, &s2, &world, null, null));
 
     // 3. Unsupported version -> UnsupportedSaveVersion
     var bad_ver = try testing.allocator.dupe(u8, save_buf.items);
     defer testing.allocator.free(bad_ver);
     bad_ver[4] = 99;
 
-    var s3 = std.io.fixedBufferStream(bad_ver);
-    try testing.expectError(SaveError.UnsupportedSaveVersion, read_save_state(testing.allocator, s3.reader(), &world, null, null));
+    var s3: std.Io.Reader = .fixed(bad_ver);
+    try testing.expectError(SaveError.UnsupportedSaveVersion, read_save_state(testing.allocator, &s3, &world, null, null));
 }
 
 test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .bak recovery" {
@@ -1278,10 +1303,10 @@ test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .b
     var tmp_dir = testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
-    const base_path = try tmp_dir.dir.realpathAlloc(testing.allocator, ".");
+    const base_path = try tmp_dir.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
     defer testing.allocator.free(base_path);
 
-    var sm = try SaveManager.init(testing.allocator, base_path);
+    var sm = try SaveManager.init(testing.allocator, testing.io, base_path);
     defer sm.deinit();
 
     var world = try World.init(testing.allocator, 512 * 1024);
@@ -1319,10 +1344,9 @@ test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .b
     var slot1_path_buf: [256]u8 = undefined;
     const slot1_path = try sm.format_slot_path(1, &slot1_path_buf);
     {
-        const f = try std.fs.cwd().openFile(slot1_path, .{ .mode = .read_write });
-        defer f.close();
-        try f.seekTo(20);
-        try f.deprecatedWriter().writeAll("CORRUPTED_BYTES!");
+        const f = try std.Io.Dir.cwd().openFile(testing.io, slot1_path, .{ .mode = .read_write });
+        defer f.close(testing.io);
+        try f.writePositionalAll(testing.io, "CORRUPTED_BYTES!", 20);
     }
 
     sm.refresh_slots();
@@ -1406,9 +1430,10 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
 
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
+    var buffer_lw = ListWriter.init(&buffer);
     const meta = try write_save_state_with_temporal(
         testing.allocator,
-        buffer.writer(),
+        &buffer_lw.writer,
         &world,
         null,
         null,
@@ -1425,10 +1450,10 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     defer loaded_world.deinit();
     var loaded_hypervisor = TemporalHypervisor.init(testing.allocator, &loaded_world);
     defer loaded_hypervisor.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
+    var stream: std.Io.Reader = .fixed(buffer.items);
     const loaded_meta = try read_save_state_with_temporal(
         testing.allocator,
-        stream.reader(),
+        &stream,
         &loaded_world,
         null,
         null,
@@ -1443,31 +1468,32 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     // A non-temporal reader skips the envelope and still restores the primary world.
     var plain_world = try World.init(testing.allocator, 1024 * 1024);
     defer plain_world.deinit();
-    var plain_stream = std.io.fixedBufferStream(buffer.items);
-    const plain_meta = try read_save_state(testing.allocator, plain_stream.reader(), &plain_world, null, null);
+    var plain_stream: std.Io.Reader = .fixed(buffer.items);
+    const plain_meta = try read_save_state(testing.allocator, &plain_stream, &plain_world, null, null);
     try testing.expectEqual(@as(u32, 2), plain_meta.version);
     try testing.expect(plain_world.has_fact(hero, in_room, room.to_int()));
 
     // Version 1 saves remain readable, but cannot satisfy a temporal restore.
     var legacy = std.array_list.Managed(u8).init(testing.allocator);
     defer legacy.deinit();
-    const legacy_meta = try write_save_state(testing.allocator, legacy.writer(), &world, null, null, .{});
+    var lw3 = ListWriter.init(&legacy);
+    const legacy_meta = try write_save_state(testing.allocator, &lw3.writer, &world, null, null, .{});
     try testing.expectEqual(@as(u32, 1), legacy_meta.version);
     var legacy_world = try World.init(testing.allocator, 1024 * 1024);
     defer legacy_world.deinit();
-    var legacy_stream = std.io.fixedBufferStream(legacy.items);
-    _ = try read_save_state(testing.allocator, legacy_stream.reader(), &legacy_world, null, null);
+    var legacy_stream: std.Io.Reader = .fixed(legacy.items);
+    _ = try read_save_state(testing.allocator, &legacy_stream, &legacy_world, null, null);
 
     var legacy_temporal_world = try World.init(testing.allocator, 1024 * 1024);
     defer legacy_temporal_world.deinit();
     var legacy_temporal = TemporalHypervisor.init(testing.allocator, &legacy_temporal_world);
     defer legacy_temporal.deinit();
-    var legacy_temporal_stream = std.io.fixedBufferStream(legacy.items);
+    var legacy_temporal_stream: std.Io.Reader = .fixed(legacy.items);
     try testing.expectError(
         SaveError.MissingTemporalState,
         read_save_state_with_temporal(
             testing.allocator,
-            legacy_temporal_stream.reader(),
+            &legacy_temporal_stream,
             &legacy_temporal_world,
             null,
             null,

@@ -7,6 +7,7 @@
 //! input, and the two rules a script cannot yet express because it cannot read cells: the door is
 //! revealed when the tapestry beside it catches, and it collapses if it burns.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -275,12 +276,13 @@ fn print_row(writer: anytype, world: *const bespoke.World, decl: grid.Declaratio
 
 fn checkpoint(allocator: std.mem.Allocator, stage: Stage, out: *std.array_list.Managed(u8)) !void {
     out.clearRetainingCapacity();
-    _ = try bespoke.write_save_state(allocator, out.writer(), stage.world, stage.spatial, stage.vm, .{ .description = "Castle Fire Escape opening" });
+    var lw1 = ListWriter.init(out);
+    _ = try bespoke.write_save_state(allocator, &lw1.writer, stage.world, stage.spatial, stage.vm, .{ .description = "Castle Fire Escape opening" });
 }
 
 fn restore(allocator: std.mem.Allocator, stage: Stage, bytes: []const u8) !void {
-    var stream = std.io.fixedBufferStream(bytes);
-    _ = try bespoke.read_save_state(allocator, stream.reader(), stage.world, stage.spatial, stage.vm);
+    var stream: std.Io.Reader = .fixed(bytes);
+    _ = try bespoke.read_save_state(allocator, &stream, stage.world, stage.spatial, stage.vm);
 }
 
 /// Deterministic proof: two failures (walking into the fire; letting the door burn), each
@@ -384,7 +386,7 @@ fn show_speech(window: *bespoke.display.DisplayWindow, world: *bespoke.World, vm
 }
 
 /// Native window proof. The ordinary Session supplies pause, save/load, scrub, and rewind.
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
@@ -400,7 +402,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try host.run_initial_statements(&world, &vm, &compiled);
     try host.initialize_subsystems(&world, &compiled);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Castle Fire Escape", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Castle Fire Escape", 1280, 720);
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
@@ -470,7 +472,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 }
 
 test "P25-03: Castle Fire Escape fails twice, rewinds, and escapes" {
-    try run_headless(std.testing.allocator, std.io.null_writer);
+    var null_buf5: [64]u8 = undefined;
+    var null_sink5: std.Io.Writer.Discarding = .init(&null_buf5);
+    try run_headless(std.testing.allocator, &null_sink5.writer);
 }
 
 test "P25-03: script grid matches the cell layout the host and art assume" {

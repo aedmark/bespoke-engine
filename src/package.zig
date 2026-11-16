@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const bytecode_mod = @import("bytecode.zig");
@@ -76,9 +77,9 @@ fn write_str(writer: anytype, str: []const u8) !void {
 }
 
 fn read_str(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
-    const len = try reader.readInt(u16, .little);
+    const len = try reader.takeInt(u16, .little);
     const buf = try allocator.alloc(u8, len);
-    try reader.readNoEof(buf);
+    try reader.readSliceAll(buf);
     return buf;
 }
 
@@ -88,7 +89,7 @@ fn write_text_ref(world: *const World, writer: anytype, value: []const u8) !void
 }
 
 fn read_text_ref(world: *const World, reader: anytype) ![]const u8 {
-    const raw = try reader.readInt(u32, .little);
+    const raw = try reader.takeInt(u32, .little);
     return world.get_entity_name(EntityId.from_int(raw)) orelse error.InvalidProgramTextRef;
 }
 
@@ -350,8 +351,8 @@ fn write_pattern_clause(writer: anytype, clause: PatternClause) !void {
 /// Untrusted input: a variable index must name one of the eight binding slots
 /// (`VariableBindings`); a larger value would truncate when narrowed to `u8`.
 fn read_pattern_term(reader: anytype) !PatternTerm {
-    const tag = try reader.readByte();
-    const val = try reader.readInt(u32, .little);
+    const tag = try reader.takeByte();
+    const val = try reader.takeInt(u32, .little);
     return switch (tag) {
         0 => .{ .wildcard = {} },
         1 => .{ .constant = val },
@@ -361,7 +362,7 @@ fn read_pattern_term(reader: anytype) !PatternTerm {
 }
 
 fn read_pattern_clause(reader: anytype) !PatternClause {
-    const rel_kind = try reader.readInt(u16, .little);
+    const rel_kind = try reader.takeInt(u16, .little);
     return .{
         .relation = RelationKind.from_int(rel_kind),
         .subject = try read_pattern_term(reader),
@@ -370,49 +371,49 @@ fn read_pattern_clause(reader: anytype) !PatternClause {
 }
 
 fn read_entity_ref(world: *const World, reader: anytype) !EntityId {
-    const raw = try reader.readInt(u32, .little);
+    const raw = try reader.takeInt(u32, .little);
     if (world.get_entity_name(EntityId.from_int(raw)) == null) return error.InvalidProgramEntity;
     return EntityId.from_int(raw);
 }
 
 fn read_optional_index(reader: anytype) !?usize {
-    const raw = try reader.readInt(i32, .little);
+    const raw = try reader.takeInt(i32, .little);
     if (raw < -1) return error.InvalidProgramIndex;
     return if (raw < 0) null else @intCast(raw);
 }
 
 fn read_optional_waypoint(reader: anytype, waypoint_count: usize) !?spatial_mod.WaypointId {
-    const raw = try reader.readInt(i32, .little);
+    const raw = try reader.takeInt(i32, .little);
     if (raw < -1 or raw > waypoint_count or raw == 0) return error.InvalidProgramWaypoint;
     return if (raw < 0) null else @intCast(raw);
 }
 
 fn read_waypoint(reader: anytype, waypoint_count: usize) !spatial_mod.WaypointId {
-    const value = try reader.readInt(u16, .little);
+    const value = try reader.takeInt(u16, .little);
     if (value == 0 or value > waypoint_count) return error.InvalidProgramWaypoint;
     return value;
 }
 
 fn read_activity(reader: anytype) !society_mod.Activity {
-    const raw = try reader.readByte();
+    const raw = try reader.takeByte();
     if (raw > @intFromEnum(society_mod.Activity.arrested)) return error.InvalidProgramActivity;
     return @enumFromInt(raw);
 }
 
 fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, waypoint_count: usize) !society_mod.Declaration {
-    const need_count = try reader.readInt(u32, .little);
+    const need_count = try reader.takeInt(u32, .little);
     if (need_count == 0 or need_count > society_mod.MAX_NEEDS) return error.InvalidSocietyConfig;
     const needs = try allocator.alloc(society_mod.Need, need_count);
     errdefer allocator.free(needs);
     for (needs) |*need| {
         const name = try read_text_ref(world, reader);
-        const worse_raw = try reader.readByte();
+        const worse_raw = try reader.takeByte();
         if (worse_raw > 1) return error.InvalidSocietyConfig;
-        const max = try reader.readInt(u32, .little);
-        const rate = try reader.readInt(u32, .little);
-        const resting_rate = try reader.readInt(u32, .little);
-        const seek = try reader.readInt(u32, .little);
-        const kind = try reader.readByte();
+        const max = try reader.takeInt(u32, .little);
+        const rate = try reader.takeInt(u32, .little);
+        const resting_rate = try reader.takeInt(u32, .little);
+        const seek = try reader.takeInt(u32, .little);
+        const kind = try reader.takeByte();
         need.* = .{
             .name = name,
             .worse = @enumFromInt(worse_raw),
@@ -423,10 +424,10 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
             .satisfy = switch (kind) {
                 0 => .{ .stay = .{
                     .at = try read_waypoint(reader, waypoint_count),
-                    .restore = try reader.readInt(u32, .little),
-                    .until = try reader.readInt(u32, .little),
+                    .restore = try reader.takeInt(u32, .little),
+                    .until = try reader.takeInt(u32, .little),
                     .activity = try read_activity(reader),
-                    .unaware = switch (try reader.readByte()) {
+                    .unaware = switch (try reader.takeByte()) {
                         0 => false,
                         1 => true,
                         else => return error.InvalidSocietyConfig,
@@ -436,10 +437,10 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
                 } },
                 1 => blk: {
                     const provider = try read_optional_index(reader);
-                    const price = try reader.readInt(u32, .little);
-                    const relief = try reader.readInt(u32, .little);
-                    const floor = try reader.readInt(u32, .little);
-                    const critical_raw = try reader.readInt(i64, .little);
+                    const price = try reader.takeInt(u32, .little);
+                    const relief = try reader.takeInt(u32, .little);
+                    const floor = try reader.takeInt(u32, .little);
+                    const critical_raw = try reader.takeInt(i64, .little);
                     if (critical_raw < -1 or critical_raw > std.math.maxInt(u32)) return error.InvalidSocietyConfig;
                     break :blk .{ .trade = .{
                         .provider = provider,
@@ -447,8 +448,8 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
                         .relief = relief,
                         .floor = floor,
                         .critical = if (critical_raw < 0) null else @intCast(critical_raw),
-                        .theft_relief = try reader.readInt(u32, .little),
-                        .theft_floor = try reader.readInt(u32, .little),
+                        .theft_relief = try reader.takeInt(u32, .little),
+                        .theft_floor = try reader.takeInt(u32, .little),
                         .item = try read_text_ref(world, reader),
                     } };
                 },
@@ -457,7 +458,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
         };
     }
 
-    const member_count = try reader.readInt(u32, .little);
+    const member_count = try reader.takeInt(u32, .little);
     if (member_count == 0 or member_count > society_mod.MAX_MEMBERS) return error.InvalidSocietyConfig;
     const members = try allocator.alloc(society_mod.Member, member_count);
     var built: usize = 0;
@@ -472,52 +473,52 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
     }
     for (members) |*member| {
         const entity = try read_entity_ref(world, reader);
-        const member_need_count = try reader.readInt(u32, .little);
+        const member_need_count = try reader.takeInt(u32, .little);
         if (member_need_count != need_count) return error.InvalidSocietyConfig;
         const member_needs = try allocator.alloc(society_mod.MemberNeed, member_need_count);
         errdefer allocator.free(member_needs);
         for (member_needs) |*need| {
-            const value = try reader.readInt(u32, .little);
-            const rate_raw = try reader.readInt(i64, .little);
+            const value = try reader.takeInt(u32, .little);
+            const rate_raw = try reader.takeInt(i64, .little);
             if (rate_raw < -1 or rate_raw > std.math.maxInt(u32)) return error.InvalidSocietyConfig;
             const provider = try read_optional_index(reader);
             need.* = .{ .value = value, .rate = if (rate_raw < 0) null else @intCast(rate_raw), .provider = provider };
         }
-        const gold = try reader.readInt(u32, .little);
+        const gold = try reader.takeInt(u32, .little);
         const idle = try read_activity(reader);
-        const routine_activity_raw = try reader.readByte();
+        const routine_activity_raw = try reader.takeByte();
         if (routine_activity_raw != 255 and routine_activity_raw > @intFromEnum(society_mod.Activity.arrested)) return error.InvalidProgramActivity;
-        const stop_count = try reader.readInt(u16, .little);
+        const stop_count = try reader.takeInt(u16, .little);
         if (stop_count > society_mod.MAX_STOPS) return error.InvalidSocietyConfig;
         const stops = try allocator.alloc(spatial_mod.WaypointId, stop_count);
         errdefer allocator.free(stops);
         for (stops) |*stop| stop.* = try read_waypoint(reader, waypoint_count);
-        const period = try reader.readInt(u64, .little);
-        const has_work = try reader.readByte();
+        const period = try reader.takeInt(u64, .little);
+        const has_work = try reader.takeByte();
         const work: ?society_mod.Work = switch (has_work) {
             0 => null,
-            1 => .{ .at = try read_waypoint(reader, waypoint_count), .every = try reader.readInt(u64, .little), .earn = try reader.readInt(u32, .little), .restock = switch (try reader.readByte()) {
+            1 => .{ .at = try read_waypoint(reader, waypoint_count), .every = try reader.takeInt(u64, .little), .earn = try reader.takeInt(u32, .little), .restock = switch (try reader.takeByte()) {
                 0 => false,
                 1 => true,
                 else => return error.InvalidSocietyConfig,
             } },
             else => return error.InvalidSocietyConfig,
         };
-        const has_merchant = try reader.readByte();
+        const has_merchant = try reader.takeByte();
         const merchant: ?society_mod.Merchant = switch (has_merchant) {
             0 => null,
             1 => .{ .post = try read_waypoint(reader, waypoint_count), .goods = try read_entity_ref(world, reader) },
             else => return error.InvalidSocietyConfig,
         };
-        const broadcaster = switch (try reader.readByte()) {
+        const broadcaster = switch (try reader.takeByte()) {
             0 => false,
             1 => true,
             else => return error.InvalidSocietyConfig,
         };
-        const owns = try allocator.alloc(EntityId, try reader.readInt(u16, .little));
+        const owns = try allocator.alloc(EntityId, try reader.takeInt(u16, .little));
         errdefer allocator.free(owns);
         for (owns) |*item| item.* = try read_entity_ref(world, reader);
-        const carries = try allocator.alloc(EntityId, try reader.readInt(u16, .little));
+        const carries = try allocator.alloc(EntityId, try reader.takeInt(u16, .little));
         errdefer allocator.free(carries);
         for (carries) |*item| item.* = try read_entity_ref(world, reader);
         member.* = .{
@@ -539,20 +540,20 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
     const gathering = try read_waypoint(reader, waypoint_count);
     const flight_to = try read_waypoint(reader, waypoint_count);
     const flight_then = try read_optional_waypoint(reader, waypoint_count);
-    const flight_every = try reader.readInt(u64, .little);
+    const flight_every = try reader.takeInt(u64, .little);
     const radii = society_mod.Radii{
-        .witness = try reader.readInt(i32, .little),
-        .culprit = try reader.readInt(i32, .little),
-        .rumor = try reader.readInt(i32, .little),
-        .arrest = try reader.readInt(i32, .little),
+        .witness = try reader.takeInt(i32, .little),
+        .culprit = try reader.takeInt(i32, .little),
+        .rumor = try reader.takeInt(i32, .little),
+        .arrest = try reader.takeInt(i32, .little),
     };
-    const witness_grudge_ticks = try reader.readInt(u64, .little);
-    const rumor_grudge_ticks = try reader.readInt(u64, .little);
-    const warrant_priority = try reader.readInt(u16, .little);
+    const witness_grudge_ticks = try reader.takeInt(u64, .little);
+    const rumor_grudge_ticks = try reader.takeInt(u64, .little);
+    const warrant_priority = try reader.takeInt(u16, .little);
     const currency_unit = try read_text_ref(world, reader);
     var relation_names: [14][]const u8 = undefined;
     for (&relation_names) |*name| name.* = try read_text_ref(world, reader);
-    const friend_count = try reader.readInt(u32, .little);
+    const friend_count = try reader.takeInt(u32, .little);
     const friends = try allocator.alloc(society_mod.FriendLink, friend_count);
     errdefer allocator.free(friends);
     for (friends) |*friend| friend.* = .{ .a = try read_entity_ref(world, reader), .b = try read_entity_ref(world, reader) };
@@ -589,7 +590,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
 }
 
 fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, version: u32) !duel_mod.Declaration {
-    const pair_count = try reader.readInt(u32, .little);
+    const pair_count = try reader.takeInt(u32, .little);
     if (pair_count == 0 or pair_count > duel_mod.MAX_PAIRS) return error.InvalidDuelConfig;
     const pairs = try allocator.alloc(duel_mod.Pair, pair_count);
     var built: usize = 0;
@@ -601,7 +602,7 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
         const name = try read_text_ref(world, reader);
         const challenge = try read_text_ref(world, reader);
         const reply = try read_text_ref(world, reader);
-        const variant_count = try reader.readByte();
+        const variant_count = try reader.takeByte();
         if (variant_count >= duel_mod.MAX_TIERS) return error.InvalidDuelConfig;
         const variants = try allocator.alloc([]const u8, variant_count);
         errdefer allocator.free(variants);
@@ -609,27 +610,27 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
         pair.* = .{ .name = name, .challenge = challenge, .reply = reply, .variants = variants };
         built += 1;
     }
-    const fallback_count = try reader.readByte();
+    const fallback_count = try reader.takeByte();
     const fallback_limit: usize = if (version >= 14) duel_mod.MAX_FALLBACKS else 1;
     if (fallback_count > fallback_limit) return error.InvalidDuelConfig;
     const fallbacks = try allocator.alloc([]const u8, fallback_count);
     errdefer allocator.free(fallbacks);
     for (fallbacks) |*line| line.* = try read_text_ref(world, reader);
-    const win_raw = try reader.readInt(i64, .little);
+    const win_raw = try reader.takeInt(i64, .little);
     if (win_raw < -1 or win_raw > std.math.maxInt(u32)) return error.InvalidDuelConfig;
     var relations: [7][]const u8 = undefined;
     for (&relations) |*name| name.* = try read_text_ref(world, reader);
     const count_relation = try read_text_ref(world, reader);
     const calm_label = try read_text_ref(world, reader);
-    const stage_count = try reader.readByte();
+    const stage_count = try reader.takeByte();
     if (stage_count == 0 or stage_count > duel_mod.MAX_STAGES) return error.InvalidFatigueConfig;
     const stages = try allocator.alloc(duel_mod.Stage, stage_count);
     errdefer allocator.free(stages);
-    for (stages) |*stage| stage.* = .{ .relation = try read_text_ref(world, reader), .at = try reader.readInt(u32, .little), .ttl = try reader.readInt(u64, .little), .label = try read_text_ref(world, reader) };
-    const tier_count = try reader.readByte();
+    for (stages) |*stage| stage.* = .{ .relation = try read_text_ref(world, reader), .at = try reader.takeInt(u32, .little), .ttl = try reader.takeInt(u64, .little), .label = try read_text_ref(world, reader) };
+    const tier_count = try reader.takeByte();
     const tiers = try allocator.alloc(duel_mod.TierAssignment, tier_count);
     errdefer allocator.free(tiers);
-    for (tiers) |*tier| tier.* = .{ .opponent = try read_entity_ref(world, reader), .tier = try reader.readInt(u32, .little) };
+    for (tiers) |*tier| tier.* = .{ .opponent = try read_entity_ref(world, reader), .tier = try reader.takeInt(u32, .little) };
     return .{
         .config = .{
             .pairs = pairs,
@@ -649,31 +650,31 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
     const grid = grid_mod.Grid{
         .entity = try read_entity_ref(world, reader),
         .room = try read_entity_ref(world, reader),
-        .width = try reader.readInt(u16, .little),
-        .height = try reader.readInt(u16, .little),
-        .cell_size = try reader.readInt(u32, .little),
-        .origin_x = try reader.readInt(i32, .little),
-        .origin_y = try reader.readInt(i32, .little),
+        .width = try reader.takeInt(u16, .little),
+        .height = try reader.takeInt(u16, .little),
+        .cell_size = try reader.takeInt(u32, .little),
+        .origin_x = try reader.takeInt(i32, .little),
+        .origin_y = try reader.takeInt(i32, .little),
     };
     grid_mod.validate_grid(grid) catch return error.InvalidGridConfig;
     // Version 7 knew only flammable, liquid, and blocking; a later attribute byte there is corrupt.
     const attribute_count: usize = if (has_rules) @typeInfo(grid_mod.Attribute).@"enum".fields.len else 3;
-    const cell_count = try reader.readInt(u32, .little);
+    const cell_count = try reader.takeInt(u32, .little);
     if (cell_count > grid.cell_count() * attribute_count) return error.InvalidGridConfig;
     const cells = try allocator.alloc(grid_mod.InitialCell, cell_count);
     errdefer allocator.free(cells);
     for (cells) |*cell| {
-        const index = try reader.readInt(u32, .little);
-        const raw = try reader.readByte();
+        const index = try reader.takeInt(u32, .little);
+        const raw = try reader.takeByte();
         if (raw >= attribute_count) return error.InvalidGridConfig;
         cell.* = .{ .index = index, .attribute = @enumFromInt(raw) };
     }
     var rules = grid_mod.Rules{};
     if (has_rules) {
-        rules.burn_ticks = try reader.readInt(u32, .little);
-        rules.spread_ticks = try reader.readInt(u32, .little);
-        rules.dissipate_ticks = try reader.readInt(u32, .little);
-        rules.flow_ticks = try reader.readInt(u32, .little);
+        rules.burn_ticks = try reader.takeInt(u32, .little);
+        rules.spread_ticks = try reader.takeInt(u32, .little);
+        rules.dissipate_ticks = try reader.takeInt(u32, .little);
+        rules.flow_ticks = try reader.takeInt(u32, .little);
     }
     const declaration = grid_mod.Declaration{ .grid = grid, .cells = cells, .rules = rules };
     declaration.validate() catch return error.InvalidGridConfig;
@@ -686,10 +687,10 @@ fn read_agenda_declaration(allocator: std.mem.Allocator, world: *const World, re
     const entity = try read_entity_ref(world, reader);
     const actor = try read_entity_ref(world, reader);
     const target = try read_entity_ref(world, reader);
-    const priority = try reader.readInt(u16, .little);
-    const cooldown_ticks = try reader.readInt(u32, .little);
+    const priority = try reader.takeInt(u16, .little);
+    const cooldown_ticks = try reader.takeInt(u32, .little);
     const once = try read_flag(reader);
-    const clause_count = try reader.readByte();
+    const clause_count = try reader.takeByte();
     if (clause_count == 0 or clause_count > agency_mod.MAX_CLAUSES) return error.InvalidAgendaConfig;
     const clauses = try allocator.alloc(agency_mod.Clause, clause_count);
     errdefer allocator.free(clauses);
@@ -728,7 +729,7 @@ fn read_command_declaration(allocator: std.mem.Allocator, reader: anytype) !comm
 
 fn read_alias_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !command_mod.AliasDecl {
     const entity = try read_entity_ref(world, reader);
-    const count = try reader.readByte();
+    const count = try reader.takeByte();
     if (count == 0 or count > command_mod.MAX_ALIAS_PHRASES) return error.InvalidCommandConfig;
     const phrases = try allocator.alloc([]const u8, count);
     var made: usize = 0;
@@ -758,7 +759,7 @@ fn read_score_declaration(allocator: std.mem.Allocator, reader: anytype) !mml.Sc
         allocator.free(scenes);
         for (decl.parts[0..parts_made]) |text| allocator.free(text);
     }
-    const scene_count = try reader.readByte();
+    const scene_count = try reader.takeByte();
     if (scene_count > mml.MAX_SCORE_SCENES) return error.InvalidScoreConfig;
     scenes = try allocator.alloc([]const u8, scene_count);
     for (scenes) |*scene| {
@@ -781,7 +782,7 @@ fn read_score_declaration(allocator: std.mem.Allocator, reader: anytype) !mml.Sc
 }
 
 fn read_flag(reader: anytype) !bool {
-    return switch (try reader.readByte()) {
+    return switch (try reader.takeByte()) {
         0 => false,
         1 => true,
         else => error.InvalidAgendaConfig,
@@ -789,7 +790,7 @@ fn read_flag(reader: anytype) !bool {
 }
 
 fn read_optional_entity_ref(world: *const World, reader: anytype) !?EntityId {
-    const raw = try reader.readInt(u32, .little);
+    const raw = try reader.takeInt(u32, .little);
     if (raw == 0) return null;
     if (world.get_entity_name(EntityId.from_int(raw)) == null) return error.InvalidProgramEntity;
     return EntityId.from_int(raw);
@@ -797,26 +798,26 @@ fn read_optional_entity_ref(world: *const World, reader: anytype) !?EntityId {
 
 fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_spill: bool) !container_mod.Declaration {
     const substance = try read_entity_ref(world, reader);
-    const spill_per_moving_tick = if (has_spill) try reader.readInt(u32, .little) else 0;
-    const stage_count = try reader.readByte();
+    const spill_per_moving_tick = if (has_spill) try reader.takeInt(u32, .little) else 0;
+    const stage_count = try reader.takeByte();
     if (stage_count < 2 or stage_count > container_mod.MAX_STAGES) return error.InvalidContainerConfig;
     const stages = try allocator.alloc(container_mod.Stage, stage_count);
     errdefer allocator.free(stages);
     for (stages, 0..) |*stage, i| {
-        stage.* = .{ .entity = try read_entity_ref(world, reader), .duration_ticks = try reader.readInt(u64, .little) };
+        stage.* = .{ .entity = try read_entity_ref(world, reader), .duration_ticks = try reader.takeInt(u64, .little) };
         if ((i == stages.len - 1) != (stage.duration_ticks == 0)) return error.InvalidContainerConfig;
         for (stages[0..i]) |prior| if (prior.entity == stage.entity) return error.InvalidContainerConfig;
     }
-    const vessel_count = try reader.readByte();
+    const vessel_count = try reader.takeByte();
     if (vessel_count == 0 or vessel_count > container_mod.MAX_VESSELS) return error.InvalidContainerConfig;
     const vessels = try allocator.alloc(container_mod.Vessel, vessel_count);
     errdefer allocator.free(vessels);
     for (vessels, 0..) |*vessel, i| {
         vessel.* = .{
             .entity = try read_entity_ref(world, reader),
-            .capacity = try reader.readInt(u32, .little),
-            .initial_volume = try reader.readInt(u32, .little),
-            .initial_stage = try reader.readByte(),
+            .capacity = try reader.takeInt(u32, .little),
+            .initial_volume = try reader.takeInt(u32, .little),
+            .initial_stage = try reader.takeByte(),
         };
         if (vessel.capacity == 0 or vessel.initial_volume > vessel.capacity or vessel.initial_stage >= stages.len - 1)
             return error.InvalidContainerConfig;
@@ -845,7 +846,8 @@ pub fn save_package(
 ) !void {
     var payload = std.array_list.Managed(u8).init(allocator);
     defer payload.deinit();
-    const pw = payload.writer();
+    var pw_list = ListWriter.init(&payload);
+    const pw = &pw_list.writer;
 
     // 1. Entity table
     const entity_count: u32 = @intCast(world.entity_names.items.len);
@@ -978,7 +980,7 @@ pub fn load_package(
     spatial: ?*SpatialSystem,
 ) !CompiledProgram {
     var header: PackageHeader = undefined;
-    const bytes_read = try reader.readAll(std.mem.asBytes(&header));
+    const bytes_read = try reader.readSliceShort(std.mem.asBytes(&header));
     if (bytes_read < @sizeOf(PackageHeader)) {
         return error.EndOfStream;
     }
@@ -998,7 +1000,7 @@ pub fn load_package(
     // Read full payload
     const payload = try allocator.alloc(u8, header.payload_size);
     defer allocator.free(payload);
-    try reader.readNoEof(payload);
+    try reader.readSliceAll(payload);
 
     // Verify CRC32 checksum
     const computed_crc = std.hash.Crc32.hash(payload);
@@ -1006,8 +1008,8 @@ pub fn load_package(
         return error.ChecksumMismatch;
     }
 
-    var stream = std.io.fixedBufferStream(payload);
-    const pr = stream.reader();
+    var stream: std.Io.Reader = .fixed(payload);
+    const pr = &stream;
 
     // 1. Entities
     var e_idx: u32 = 0;
@@ -1022,16 +1024,16 @@ pub fn load_package(
     while (r_idx < header.relation_count) : (r_idx += 1) {
         const name = try read_str(allocator, pr);
         defer allocator.free(name);
-        const is_prop = (try pr.readByte()) == 1;
+        const is_prop = (try pr.takeByte()) == 1;
         _ = try world.intern_relation(name, if (is_prop) .property else .set);
     }
 
     // 3. Spatial waypoints, edges, hotspots
     var wp_idx: u32 = 0;
     while (wp_idx < header.waypoint_count) : (wp_idx += 1) {
-        const room_int = try pr.readInt(u32, .little);
-        const x = try pr.readInt(i32, .little);
-        const y = try pr.readInt(i32, .little);
+        const room_int = try pr.takeInt(u32, .little);
+        const x = try pr.takeInt(i32, .little);
+        const y = try pr.takeInt(i32, .little);
         const name = try read_str(allocator, pr);
         defer allocator.free(name);
 
@@ -1042,9 +1044,9 @@ pub fn load_package(
 
     var edge_idx: u32 = 0;
     while (edge_idx < header.edge_count) : (edge_idx += 1) {
-        const from = try pr.readInt(u16, .little);
-        const to = try pr.readInt(u16, .little);
-        const cost = try pr.readInt(u32, .little);
+        const from = try pr.takeInt(u16, .little);
+        const to = try pr.takeInt(u16, .little);
+        const cost = try pr.takeInt(u32, .little);
 
         if (spatial) |sp| {
             try sp.graph.connect(from, to, cost);
@@ -1053,11 +1055,11 @@ pub fn load_package(
 
     var hs_idx: u32 = 0;
     while (hs_idx < header.hotspot_count) : (hs_idx += 1) {
-        const ent_int = try pr.readInt(u32, .little);
-        const room_int = try pr.readInt(u32, .little);
-        const x = try pr.readInt(i32, .little);
-        const y = try pr.readInt(i32, .little);
-        const radius = try pr.readInt(u32, .little);
+        const ent_int = try pr.takeInt(u32, .little);
+        const room_int = try pr.takeInt(u32, .little);
+        const x = try pr.takeInt(i32, .little);
+        const y = try pr.takeInt(i32, .little);
+        const radius = try pr.takeInt(u32, .little);
         const name = try read_str(allocator, pr);
         defer allocator.free(name);
         const desc = try read_str(allocator, pr);
@@ -1081,7 +1083,7 @@ pub fn load_package(
     if (header.bytecode_len > 0) {
         const code_slice = try allocator.alloc(u8, header.bytecode_len);
         defer allocator.free(code_slice);
-        try pr.readNoEof(code_slice);
+        try pr.readSliceAll(code_slice);
         try chunk.code.appendSlice(code_slice);
     }
 
@@ -1100,7 +1102,7 @@ pub fn load_package(
     while (rout_idx < header.routine_count) : (rout_idx += 1) {
         const rname = try read_str(allocator, pr);
         try allocated_cue_keys.append(rname);
-        const pc = try pr.readInt(u32, .little);
+        const pc = try pr.takeInt(u32, .little);
         const actor = try read_str(allocator, pr);
         try allocated_cue_keys.append(actor);
         try routine_entries.put(rname, pc);
@@ -1112,7 +1114,7 @@ pub fn load_package(
     errdefer when_rule_entries.deinit();
     var wr_idx: u32 = 0;
     while (wr_idx < header.when_rule_count) : (wr_idx += 1) {
-        const pc = try pr.readInt(u32, .little);
+        const pc = try pr.takeInt(u32, .little);
         try when_rule_entries.append(pc);
     }
 
@@ -1123,7 +1125,7 @@ pub fn load_package(
     while (cue_idx < header.cue_count) : (cue_idx += 1) {
         const sig = try read_str(allocator, pr);
         try allocated_cue_keys.append(sig);
-        const pc = try pr.readInt(u32, .little);
+        const pc = try pr.takeInt(u32, .little);
         try cue_handler_entries.put(sig, pc);
     }
 
@@ -1136,10 +1138,10 @@ pub fn load_package(
 
     var rr_idx: u32 = 0;
     while (rr_idx < header.reactive_rule_count) : (rr_idx += 1) {
-        const tent = try pr.readInt(u32, .little);
-        const priority = try pr.readInt(u16, .little);
-        const handler_pc = try pr.readInt(u32, .little);
-        const edge_byte = try pr.readByte();
+        const tent = try pr.takeInt(u32, .little);
+        const priority = try pr.takeInt(u16, .little);
+        const handler_pc = try pr.takeInt(u32, .little);
+        const edge_byte = try pr.takeByte();
         const edge: WhenEdge = switch (edge_byte) {
             0 => .rising,
             1 => .falling,
@@ -1147,7 +1149,7 @@ pub fn load_package(
             3 => if (header.version >= 3) .on_arrive else return error.InvalidWhenEdge,
             else => return error.InvalidWhenEdge,
         };
-        const clause_count = try pr.readInt(u16, .little);
+        const clause_count = try pr.takeInt(u16, .little);
         const clauses = try allocator.alloc(PatternClause, clause_count);
         errdefer allocator.free(clauses);
         for (clauses) |*cl| cl.* = try read_pattern_clause(pr);
@@ -1166,17 +1168,17 @@ pub fn load_package(
     var drafts = std.array_list.Managed(draft_mod.CompiledDraft).init(allocator);
     errdefer drafts.deinit();
     if (header.version >= 2) {
-        const draft_count = try pr.readInt(u32, .little);
+        const draft_count = try pr.takeInt(u32, .little);
         const entity_limit = world.entity_names.items.len;
         var di: u32 = 0;
         while (di < draft_count) : (di += 1) {
-            const ent_raw = try pr.readInt(u32, .little);
+            const ent_raw = try pr.takeInt(u32, .little);
             var notes: draft_mod.Notes = undefined;
             for (&notes) |*n| {
-                n.* = draft_mod.Note.from_int(try pr.readByte()) orelse return error.InvalidDraftNote;
+                n.* = draft_mod.Note.from_int(try pr.takeByte()) orelse return error.InvalidDraftNote;
             }
-            const has_inverse = try pr.readByte();
-            const inv_raw = try pr.readInt(u32, .little);
+            const has_inverse = try pr.takeByte();
+            const inv_raw = try pr.takeInt(u32, .little);
             if (ent_raw == 0 or ent_raw > entity_limit) return error.InvalidDraftEntity;
             if (has_inverse > 1) return error.InvalidDraftEntity;
             if (has_inverse == 1 and (inv_raw == 0 or inv_raw > entity_limit)) return error.InvalidDraftEntity;
@@ -1204,15 +1206,15 @@ pub fn load_package(
         degradations.deinit();
     }
     if (header.version >= 4) {
-        const society_count = try pr.readInt(u32, .little);
+        const society_count = try pr.takeInt(u32, .little);
         var si: u32 = 0;
         while (si < society_count) : (si += 1) try societies.append(try read_society_declaration(allocator, world, pr, header.waypoint_count));
-        const duel_count = try pr.readInt(u32, .little);
+        const duel_count = try pr.takeInt(u32, .little);
         var di: u32 = 0;
         while (di < duel_count) : (di += 1) try duels.append(try read_duel_declaration(allocator, world, pr, header.version));
     }
     if (header.version >= 5) {
-        const degradation_count = try pr.readInt(u32, .little);
+        const degradation_count = try pr.takeInt(u32, .little);
         var ci: u32 = 0;
         while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr, header.version >= 6));
     }
@@ -1222,7 +1224,7 @@ pub fn load_package(
         grids.deinit();
     }
     if (header.version >= 7) {
-        const grid_count = try pr.readInt(u32, .little);
+        const grid_count = try pr.takeInt(u32, .little);
         if (grid_count > grid_mod.MAX_GRIDS) return error.InvalidGridConfig;
         var gi: u32 = 0;
         while (gi < grid_count) : (gi += 1) {
@@ -1240,7 +1242,7 @@ pub fn load_package(
         agendas.deinit();
     }
     if (header.version >= 9) {
-        const agenda_count = try pr.readInt(u32, .little);
+        const agenda_count = try pr.takeInt(u32, .little);
         if (agenda_count > agency_mod.MAX_AGENDAS) return error.InvalidAgendaConfig;
         var ai: u32 = 0;
         while (ai < agenda_count) : (ai += 1) {
@@ -1263,7 +1265,7 @@ pub fn load_package(
         aliases.deinit();
     }
     if (header.version >= 10) {
-        const command_count = try pr.readInt(u32, .little);
+        const command_count = try pr.takeInt(u32, .little);
         if (command_count > 256) return error.InvalidCommandConfig;
         var ci2: u32 = 0;
         while (ci2 < command_count) : (ci2 += 1) {
@@ -1273,7 +1275,7 @@ pub fn load_package(
                 return err;
             };
         }
-        const alias_count = try pr.readInt(u32, .little);
+        const alias_count = try pr.takeInt(u32, .little);
         if (alias_count > 256) return error.InvalidCommandConfig;
         var ai2: u32 = 0;
         while (ai2 < alias_count) : (ai2 += 1) {
@@ -1291,7 +1293,7 @@ pub fn load_package(
         scores.deinit();
     }
     if (header.version >= 11) {
-        const score_count = try pr.readInt(u32, .little);
+        const score_count = try pr.takeInt(u32, .little);
         if (score_count > 256) return error.InvalidScoreConfig;
         var si2: u32 = 0;
         while (si2 < score_count) : (si2 += 1) {
@@ -1303,10 +1305,10 @@ pub fn load_package(
         }
     }
 
-    var cast = std.ArrayListUnmanaged(codegen_mod.CastPlace){};
+    var cast = std.ArrayListUnmanaged(codegen_mod.CastPlace).empty;
     errdefer cast.deinit(allocator);
     if (header.version >= 12) {
-        const cast_count = try pr.readInt(u32, .little);
+        const cast_count = try pr.takeInt(u32, .little);
         if (cast_count > MAX_CAST) return error.InvalidCastConfig;
         try cast.ensureTotalCapacity(allocator, cast_count);
         var ci: u32 = 0;
@@ -1317,18 +1319,18 @@ pub fn load_package(
         }
     }
 
-    var cue_guards = std.ArrayListUnmanaged(codegen_mod.CueGuard){};
+    var cue_guards = std.ArrayListUnmanaged(codegen_mod.CueGuard).empty;
     errdefer {
         for (cue_guards.items) |guard| allocator.free(guard.clauses);
         cue_guards.deinit(allocator);
     }
     if (header.version >= 13) {
-        const guard_count = try pr.readInt(u32, .little);
+        const guard_count = try pr.takeInt(u32, .little);
         if (guard_count > MAX_CUE_GUARDS) return error.InvalidCueGuard;
         try cue_guards.ensureTotalCapacity(allocator, guard_count);
         var gi: u32 = 0;
         while (gi < guard_count) : (gi += 1) {
-            const handler_pc = try pr.readInt(u32, .little);
+            const handler_pc = try pr.takeInt(u32, .little);
             // A guard belongs to a cue handler; any other pc would never be consulted.
             if (handler_pc >= header.bytecode_len) return error.InvalidCueGuard;
             var names_handler = false;
@@ -1339,10 +1341,10 @@ pub fn load_package(
             if (!names_handler) return error.InvalidCueGuard;
             var guard = codegen_mod.CueGuard{ .handler_pc = handler_pc, .clauses = &.{} };
             for (&guard.param_slots) |*slot| {
-                const raw = try pr.readByte();
+                const raw = try pr.takeByte();
                 slot.* = if (raw == NO_GUARD_SLOT) null else if (raw < 8) raw else return error.InvalidCueGuard;
             }
-            const clause_count = try pr.readInt(u16, .little);
+            const clause_count = try pr.takeInt(u16, .little);
             if (clause_count == 0 or clause_count > MAX_GUARD_CLAUSES) return error.InvalidCueGuard;
             const clauses = try allocator.alloc(PatternClause, clause_count);
             errdefer allocator.free(clauses);
@@ -1378,26 +1380,33 @@ pub fn load_package(
 /// Saves a compiled program package directly to a file on disk (P15-02).
 pub fn save_package_file(
     allocator: std.mem.Allocator,
+    io: std.Io,
     path: []const u8,
     compiled: *const CompiledProgram,
     world: *const World,
     spatial: ?*const SpatialSystem,
 ) !void {
-    const file = try std.fs.cwd().createFile(path, .{});
-    defer file.close();
-    try save_package(allocator, file.deprecatedWriter(), compiled, world, spatial);
+    const file = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer file.close(io);
+    var buf: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &buf);
+    try save_package(allocator, &file_writer.interface, compiled, world, spatial);
+    try file_writer.interface.flush();
 }
 
 /// Loads a compiled program package directly from a file on disk (P15-02).
 pub fn load_package_file(
     allocator: std.mem.Allocator,
+    io: std.Io,
     path: []const u8,
     world: *World,
     spatial: ?*SpatialSystem,
 ) !CompiledProgram {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-    return try load_package(allocator, file.deprecatedReader(), world, spatial);
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer file.close(io);
+    var buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &buf);
+    return try load_package(allocator, &file_reader.interface, world, spatial);
 }
 
 // =========================================================================
@@ -1443,7 +1452,8 @@ test "P15-02: package serializes and deserializes CompiledProgram with CRC32 int
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
 
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+    var lw1 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw1.writer, &compiled1, &world1, &spatial1);
     try testing.expect(buffer.items.len > @sizeOf(PackageHeader));
 
     // Verify header magic and version
@@ -1459,8 +1469,8 @@ test "P15-02: package serializes and deserializes CompiledProgram with CRC32 int
     var spatial2 = SpatialSystem.init(testing.allocator);
     defer spatial2.deinit();
 
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
     defer compiled2.deinit();
 
     // Verify restored entities and relations
@@ -1502,12 +1512,12 @@ test "P15-02: package loader rejects invalid magic header" {
         .payload_size = 0,
         .crc32 = 0,
     };
-    var stream = std.io.fixedBufferStream(std.mem.asBytes(&header));
+    var stream: std.Io.Reader = .fixed(std.mem.asBytes(&header));
 
     var dummy_world = try World.init(testing.allocator, 1024 * 1024);
     defer dummy_world.deinit();
 
-    const res = load_package(testing.allocator, stream.reader(), &dummy_world, null);
+    const res = load_package(testing.allocator, &stream, &dummy_world, null);
     try testing.expectError(error.InvalidPackageMagic, res);
 }
 
@@ -1525,16 +1535,17 @@ test "P15-02: package loader rejects corrupted payload with checksum mismatch" {
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
 
-    try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
+    var lw2 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw2.writer, &compiled, &world, null);
 
     // Corrupt one byte in the payload
     buffer.items[buffer.items.len - 1] ^= 0xFF;
 
-    var stream = std.io.fixedBufferStream(buffer.items);
+    var stream: std.Io.Reader = .fixed(buffer.items);
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
 
-    const res = load_package(testing.allocator, stream.reader(), &world2, null);
+    const res = load_package(testing.allocator, &stream, &world2, null);
     try testing.expectError(error.ChecksumMismatch, res);
 }
 
@@ -1547,12 +1558,12 @@ test "P15-02: package loader rejects unsupported version" {
         .payload_size = 0,
         .crc32 = 0,
     };
-    var stream = std.io.fixedBufferStream(std.mem.asBytes(&header));
+    var stream: std.Io.Reader = .fixed(std.mem.asBytes(&header));
 
     var dummy_world = try World.init(testing.allocator, 1024 * 1024);
     defer dummy_world.deinit();
 
-    const res = load_package(testing.allocator, stream.reader(), &dummy_world, null);
+    const res = load_package(testing.allocator, &stream, &dummy_world, null);
     try testing.expectError(error.UnsupportedPackageVersion, res);
 }
 
@@ -1577,17 +1588,17 @@ test "P15-02: package file save and load roundtrip" {
     // A private directory per run: two test binaries run this test at the same time.
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    const dir_path = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
     defer testing.allocator.free(dir_path);
     const tmp_path = try std.fs.path.join(testing.allocator, &.{ dir_path, "test_scenario.bspk" });
     defer testing.allocator.free(tmp_path);
 
-    try save_package_file(testing.allocator, tmp_path, &compiled1, &world1, null);
+    try save_package_file(testing.allocator, testing.io, tmp_path, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
 
-    var compiled2 = try load_package_file(testing.allocator, tmp_path, &world2, null);
+    var compiled2 = try load_package_file(testing.allocator, testing.io, tmp_path, &world2, null);
     defer compiled2.deinit();
 
     try testing.expect(world2.lookup_entity("Cat") != null);
@@ -1633,12 +1644,13 @@ test "P22-01: package round-trips the draft table including declared reverses" {
 
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw3 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw3.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
 
     try testing.expectEqual(@as(usize, 3), compiled2.drafts.items.len);
@@ -1659,7 +1671,8 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
 
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled, &world, null);
+    var lw4 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw4.writer, &compiled, &world, null);
 
     // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
     // The draft table is followed by empty society, duel, degradation, grid, and agenda counts,
@@ -1674,8 +1687,8 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
         reseal_for_test(bad, PACKAGE_VERSION);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
         defer world2.deinit();
-        var stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidDraftNote, load_package(testing.allocator, stream.reader(), &world2, null));
+        var stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidDraftNote, load_package(testing.allocator, &stream, &world2, null));
     }
     {
         // A real version 4 payload ends after the duel table and loads no degradation profiles.
@@ -1684,8 +1697,8 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
         reseal_for_test(v4, 4);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
         defer world2.deinit();
-        var stream = std.io.fixedBufferStream(v4);
-        var loaded = try load_package(testing.allocator, stream.reader(), &world2, null);
+        var stream: std.Io.Reader = .fixed(v4);
+        var loaded = try load_package(testing.allocator, &stream, &world2, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.degradations.items.len);
     }
@@ -1696,8 +1709,8 @@ test "P22-01: package loader rejects out-of-range draft notes and loads version 
         reseal_for_test(v1, 1);
         var world2 = try World.init(testing.allocator, 1024 * 1024);
         defer world2.deinit();
-        var stream = std.io.fixedBufferStream(v1);
-        var loaded = try load_package(testing.allocator, stream.reader(), &world2, null);
+        var stream: std.Io.Reader = .fixed(v1);
+        var loaded = try load_package(testing.allocator, &stream, &world2, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.drafts.items.len);
     }
@@ -1722,12 +1735,13 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw5 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw5.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
     try testing.expectEqual(@as(usize, 1), compiled2.degradations.items.len);
     const declaration = &compiled2.degradations.items[0];
@@ -1752,8 +1766,8 @@ test "P23-01/P23-02: package round-trips degradation declarations and loads vers
     reseal_for_test(v5.items, 5);
     var world3 = try World.init(testing.allocator, 1024 * 1024);
     defer world3.deinit();
-    var v5_stream = std.io.fixedBufferStream(v5.items);
-    var compiled3 = try load_package(testing.allocator, v5_stream.reader(), &world3, null);
+    var v5_stream: std.Io.Reader = .fixed(v5.items);
+    var compiled3 = try load_package(testing.allocator, &v5_stream, &world3, null);
     defer compiled3.deinit();
     try testing.expectEqual(@as(u32, 0), compiled3.degradations.items[0].config.spill_per_moving_tick);
 }
@@ -1785,14 +1799,15 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+    var lw6 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw6.writer, &compiled1, &world1, &spatial1);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
     var spatial2 = SpatialSystem.init(testing.allocator);
     defer spatial2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
     defer compiled2.deinit();
     try testing.expectEqual(@as(usize, 1), compiled2.grids.items.len);
     const grid = spatial2.grid_in_room(world2.lookup_entity("Armory").?).?;
@@ -1819,8 +1834,8 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         const bad = try testing.allocator.dupe(u8, buffer.items);
@@ -1829,8 +1844,8 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         // A version 7 payload has no rates; its grids load with every rule off.
@@ -1839,8 +1854,8 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
         reseal_for_test(v7, 7);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var v7_stream = std.io.fixedBufferStream(v7);
-        var loaded = try load_package(testing.allocator, v7_stream.reader(), &world3, null);
+        var v7_stream: std.Io.Reader = .fixed(v7);
+        var loaded = try load_package(testing.allocator, &v7_stream, &world3, null);
         defer loaded.deinit();
         try testing.expect(!loaded.grids.items[0].rules.any());
 
@@ -1849,8 +1864,8 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
         reseal_for_test(v7, 7);
         var world4 = try World.init(testing.allocator, 1024 * 1024);
         defer world4.deinit();
-        var bad_stream = std.io.fixedBufferStream(v7);
-        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, bad_stream.reader(), &world4, null));
+        var bad_stream: std.Io.Reader = .fixed(v7);
+        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, &bad_stream, &world4, null));
     }
     {
         // A version 6 payload ends before the grid table and loads no grids.
@@ -1862,8 +1877,8 @@ test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and
         defer world3.deinit();
         var spatial3 = SpatialSystem.init(testing.allocator);
         defer spatial3.deinit();
-        var v6_stream = std.io.fixedBufferStream(v6);
-        var loaded = try load_package(testing.allocator, v6_stream.reader(), &world3, &spatial3);
+        var v6_stream: std.Io.Reader = .fixed(v6);
+        var loaded = try load_package(testing.allocator, &v6_stream, &world3, &spatial3);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.grids.items.len);
         try testing.expectEqual(@as(usize, 0), spatial3.grids.items.len);
@@ -1889,12 +1904,13 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw7 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw7.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
     try testing.expectEqual(@as(usize, 1), compiled2.agendas.items.len);
     const agenda = compiled2.agendas.items[0].agenda;
@@ -1915,8 +1931,8 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidAgendaConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidAgendaConfig, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         // A version 8 payload ends before the agenda table and loads none.
@@ -1926,8 +1942,8 @@ test "P33-01: package version 9 round-trips agendas, rejects bad flags, and load
         reseal_for_test(v8, 8);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var v8_stream = std.io.fixedBufferStream(v8);
-        var loaded = try load_package(testing.allocator, v8_stream.reader(), &world3, null);
+        var v8_stream: std.Io.Reader = .fixed(v8);
+        var loaded = try load_package(testing.allocator, &v8_stream, &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.agendas.items.len);
     }
@@ -1946,12 +1962,13 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw8 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw8.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
     try testing.expectEqualStrings("pour <thing> into <thing>", compiled2.commands.items[0].text);
     try testing.expectEqualStrings("lantern", compiled2.aliases.items[0].phrases[0]);
@@ -1969,8 +1986,8 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidCommandConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidCommandConfig, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         const v9 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V10 - alias_section_len - command_section_len]);
@@ -1978,8 +1995,8 @@ test "P26-01: package version 10 round-trips commands and aliases and loads vers
         reseal_for_test(v9, 9);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var v9_stream = std.io.fixedBufferStream(v9);
-        var loaded = try load_package(testing.allocator, v9_stream.reader(), &world3, null);
+        var v9_stream: std.Io.Reader = .fixed(v9);
+        var loaded = try load_package(testing.allocator, &v9_stream, &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.commands.items.len + loaded.aliases.items.len);
     }
@@ -2001,12 +2018,13 @@ test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads 
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw9 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw9.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
     const score = compiled2.scores.items[0];
     try testing.expectEqualStrings("Night", score.name);
@@ -2028,8 +2046,8 @@ test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads 
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidScoreConfig, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidScoreConfig, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         const v10 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - score_section_len - EMPTY_TAIL_AFTER_V11]);
@@ -2037,8 +2055,8 @@ test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads 
         reseal_for_test(v10, 10);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var v10_stream = std.io.fixedBufferStream(v10);
-        var loaded = try load_package(testing.allocator, v10_stream.reader(), &world3, null);
+        var v10_stream: std.Io.Reader = .fixed(v10);
+        var loaded = try load_package(testing.allocator, &v10_stream, &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.scores.items.len);
     }
@@ -2071,12 +2089,13 @@ test "P24-01: package round-trips path initializers and guarded routines" {
 
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw10 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw10.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
 
     try testing.expect(compiled2.find_path("Wits") != null);
@@ -2118,15 +2137,16 @@ test "P32-18: package round-trips an arrival rule and version 2 rejects its edge
 
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+    var lw11 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw11.writer, &compiled1, &world1, &spatial1);
 
     {
         var world2 = try World.init(testing.allocator, 1024 * 1024);
         defer world2.deinit();
         var spatial2 = SpatialSystem.init(testing.allocator);
         defer spatial2.deinit();
-        var stream = std.io.fixedBufferStream(buffer.items);
-        var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+        var stream: std.Io.Reader = .fixed(buffer.items);
+        var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
         defer compiled2.deinit();
 
         try testing.expectEqual(@as(usize, 1), compiled2.reactive_rules.items.len);
@@ -2145,8 +2165,8 @@ test "P32-18: package round-trips an arrival rule and version 2 rejects its edge
         defer world2.deinit();
         var spatial2 = SpatialSystem.init(testing.allocator);
         defer spatial2.deinit();
-        var stream = std.io.fixedBufferStream(v2);
-        try testing.expectError(error.InvalidWhenEdge, load_package(testing.allocator, stream.reader(), &world2, &spatial2));
+        var stream: std.Io.Reader = .fixed(v2);
+        try testing.expectError(error.InvalidWhenEdge, load_package(testing.allocator, &stream, &world2, &spatial2));
     }
 }
 
@@ -2191,14 +2211,15 @@ test "P32-22/P32-24: package version 6 round-trips society and duel declarations
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+    var lw12 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw12.writer, &compiled1, &world1, &spatial1);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
     var spatial2 = SpatialSystem.init(testing.allocator);
     defer spatial2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
     defer compiled2.deinit();
     try testing.expectEqual(@as(usize, 1), compiled2.societies.items.len);
     try testing.expectEqual(@as(usize, 1), compiled2.duels.items.len);
@@ -2222,8 +2243,8 @@ test "P32-22/P32-24: package version 6 round-trips society and duel declarations
     defer world3.deinit();
     var spatial3 = SpatialSystem.init(testing.allocator);
     defer spatial3.deinit();
-    var stream3 = std.io.fixedBufferStream(v13);
-    try testing.expectError(error.InvalidDuelConfig, load_package(testing.allocator, stream3.reader(), &world3, &spatial3));
+    var stream3: std.Io.Reader = .fixed(v13);
+    try testing.expectError(error.InvalidDuelConfig, load_package(testing.allocator, &stream3, &world3, &spatial3));
 }
 
 test "D-065: package version 12 round-trips cast places, rejects a bad mark, and loads version 11" {
@@ -2245,14 +2266,15 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
     defer compiled1.deinit();
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, &spatial1);
+    var lw13 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw13.writer, &compiled1, &world1, &spatial1);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
     var spatial2 = SpatialSystem.init(testing.allocator);
     defer spatial2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, &spatial2);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
     defer compiled2.deinit();
     try testing.expectEqual(@as(usize, 2), compiled2.cast.items.len);
     const captain = compiled2.cast.items[1];
@@ -2268,8 +2290,8 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidProgramWaypoint, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidProgramWaypoint, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         const v11 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - cast_section_len - EMPTY_TAIL_AFTER_V12]);
@@ -2277,8 +2299,8 @@ test "D-065: package version 12 round-trips cast places, rejects a bad mark, and
         reseal_for_test(v11, 11);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var v11_stream = std.io.fixedBufferStream(v11);
-        var loaded = try load_package(testing.allocator, v11_stream.reader(), &world3, null);
+        var v11_stream: std.Io.Reader = .fixed(v11);
+        var loaded = try load_package(testing.allocator, &v11_stream, &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.cast.items.len);
     }
@@ -2299,12 +2321,13 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
     try testing.expectEqual(@as(usize, 1), compiled1.cue_guards.items.len);
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
-    try save_package(testing.allocator, buffer.writer(), &compiled1, &world1, null);
+    var lw14 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw14.writer, &compiled1, &world1, null);
 
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
-    var stream = std.io.fixedBufferStream(buffer.items);
-    var compiled2 = try load_package(testing.allocator, stream.reader(), &world2, null);
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
     defer compiled2.deinit();
     try testing.expectEqual(@as(usize, 1), compiled2.cue_guards.items.len);
     const cat = world2.lookup_entity("Cat").?;
@@ -2325,8 +2348,8 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var bad_stream = std.io.fixedBufferStream(bad);
-        try testing.expectError(error.InvalidPatternVariable, load_package(testing.allocator, bad_stream.reader(), &world3, null));
+        var bad_stream: std.Io.Reader = .fixed(bad);
+        try testing.expectError(error.InvalidPatternVariable, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
         const v12 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - guard_section_len]);
@@ -2334,8 +2357,8 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
         reseal_for_test(v12, 12);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
-        var v12_stream = std.io.fixedBufferStream(v12);
-        var loaded = try load_package(testing.allocator, v12_stream.reader(), &world3, null);
+        var v12_stream: std.Io.Reader = .fixed(v12);
+        var loaded = try load_package(testing.allocator, &v12_stream, &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.cue_guards.items.len);
     }

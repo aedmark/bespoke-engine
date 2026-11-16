@@ -1985,7 +1985,7 @@ test "P36-05: every browser deck draws the frame the desktop window draws for th
 
         // A desktop window drawing offscreen, given the deck's theme and the browser's view
         // state, must produce the same pixels from the same captured frame.
-        var desk = try bespoke.display.DisplayWindow.init_offscreen(wasm.CANVAS_WIDTH, wasm.CANVAS_HEIGHT);
+        var desk = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, wasm.CANVAS_WIDTH, wasm.CANVAS_HEIGHT);
         defer desk.deinit();
         const frame = rt.capture();
         const shown = rt.screen(frame);

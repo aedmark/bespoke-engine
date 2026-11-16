@@ -17,6 +17,7 @@
 //! The module names no character, place, or setting. Names in chronicle lines come from the
 //! World (entity names), the Spatial graph (waypoint names), and the config's theme strings.
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const vm_mod = @import("vm.zig");
@@ -1200,13 +1201,14 @@ test "P32-05: society state lives in facts, so a snapshot restore rewinds it" {
     defer o.deinit();
     var snap = std.array_list.Managed(u8).init(testing.allocator);
     defer snap.deinit();
-    try o.world.save_state(snap.writer());
+    var lw1 = ListWriter.init(&snap);
+    try o.world.save_state(&lw1.writer);
     const stamina = o.society.need_index("Stamina").?;
     try o.society.set_need(&o.world, o.medic, stamina, 5);
     try step_outpost(&o);
     try testing.expect(o.world.get_property(o.medic, o.society.rel.tending) != null);
-    var fbs = std.io.fixedBufferStream(snap.items);
-    try o.world.restore_state(fbs.reader());
+    var fbs: std.Io.Reader = .fixed(snap.items);
+    try o.world.restore_state(&fbs);
     try testing.expect(o.world.get_property(o.medic, o.society.rel.tending) == null);
     try testing.expectEqual(@as(u32, 90), o.society.get_need(&o.world, o.medic, stamina));
 }

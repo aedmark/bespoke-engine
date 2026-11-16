@@ -7,6 +7,7 @@
 //! and interactive loop.
 
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -368,7 +369,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Save baseline snapshot at Tick 0 for time-travel verification
     var snap0 = std.array_list.Managed(u8).init(allocator);
     defer snap0.deinit();
-    try world.save_state(snap0.writer());
+    var lw1 = ListWriter.init(&snap0);
+    try world.save_state(&lw1.writer);
 
     try writer.print("[Phase 1: Settlement Topology & Initial Villager Drives (Tick 0)]\n", .{});
     try writer.print("   -> Settlement Landmarks: Bakery, Farm, TownSquare, Cottages, Tavern, SheriffsPost\n", .{});
@@ -444,8 +446,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Verify deterministic time-travel rewind back to Tick 0 pre-crime state
     try writer.print("\n[Phase 3: Deterministic Time-Travel Rewind to Pre-Crime State]\n", .{});
-    var fbs = std.io.fixedBufferStream(snap0.items);
-    try world.restore_state(fbs.reader());
+    var fbs: std.Io.Reader = .fixed(snap0.items);
+    try world.restore_state(&fbs);
     try writer.print("   -> Restored Tick {d} snapshot.\n", .{world.current_tick});
     try writer.print("   -> StolenFrom(Drifter, Baker) active? {s}\n", .{
         if (!world.has_fact(sim.drifter, sim.rel().stolen_from, null)) "false (Clean)" else "true (Leaked!)",
@@ -462,7 +464,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 }
 
 /// Runs the interactive 60 Hz SDL2 graphical sandbox for "The Living Village" (P18-03, D-021).
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
@@ -479,7 +481,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     vm.spatial = &spatial;
     try vm.transition_to_scene(sim.village_scene);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Living Village (Emergent Simulation Sandbox)", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Living Village (Emergent Simulation Sandbox)", 1280, 720);
     defer window.deinit();
     window.set_theme(&village_theme);
 
@@ -547,7 +549,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     window.set_cue_banner(msg, 160);
                 }
             },
-            .custom => |id| if (std.meta.intToEnum(VillageKey, id)) |key| switch (key) {
+            .custom => |id| if (std.enums.fromInt(VillageKey, id)) |key| switch (key) {
                 .theft => {
                     // [S] hotkey triggers the Desperation Theft Catalyst in Living Village
                     try sim.trigger_desperation_catalyst(&world, &spatial);
@@ -570,7 +572,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                     display_bridge.capture_frame(&world, &spatial, &vm);
                     display_bridge.swap();
                 },
-            } else |_| {},
+            } else {},
             .repl_command => |rc| {
                 const cmd_str = rc.buf[0..rc.len];
                 const res = repl_engine.execute(cmd_str);
@@ -595,7 +597,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         }
 
         session.render();
-        std.Thread.sleep(16 * std.time.ns_per_ms);
+        io.sleep(.fromMilliseconds(16), .awake) catch {};
     }
 }
 
@@ -751,6 +753,7 @@ test "P18-03: Village spatial topology, hotspots, and headless runner verificati
     var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
-    try run_headless(testing.allocator, buf.writer());
+    var lw2 = ListWriter.init(&buf);
+    try run_headless(testing.allocator, &lw2.writer);
     try testing.expect(std.mem.indexOf(u8, buf.items, "ALL LIVING VILLAGE EMERGENT SIMULATION CHECKS PASSED!") != null);
 }

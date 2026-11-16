@@ -25,11 +25,14 @@ const usage =
 
 const Subcommand = enum { run, compile, check, init, help };
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    // Zig 0.16+: the process supplies the allocator and the I/O that file reads, package
+    // writes, and the window's clock go through (P37-01). Standard output is unbuffered, so a
+    // message printed just before `std.process.exit` is not lost.
+    const io = init.io;
+    const allocator = init.gpa;
+    var stdout_writer = std.Io.File.stdout().writer(io, &.{});
+    const stdout = &stdout_writer.interface;
 
     var headless = false;
     var ticks: usize = 20;
@@ -38,7 +41,7 @@ pub fn main() !void {
     var output_file: ?[]const u8 = null;
     var engine_root: []const u8 = build_options.engine_root;
 
-    var args = try std.process.argsWithAllocator(allocator);
+    var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
     defer args.deinit();
     _ = args.next();
     while (args.next()) |arg| {
@@ -70,20 +73,20 @@ pub fn main() !void {
         .help => try stdout.writeAll(usage),
         .check => {
             const path = target_file orelse return fail(stdout, "'bespoke check' requires a script file path");
-            if (!try bespoke.runner.check_file(allocator, path, stdout)) std.process.exit(1);
+            if (!try bespoke.runner.check_file(allocator, io, path, stdout)) std.process.exit(1);
         },
         .compile => {
             const path = target_file orelse return fail(stdout, "'bespoke compile' requires an input script file path");
-            try bespoke.runner.compile_file(allocator, path, output_file orelse "game.bspk", stdout);
+            try bespoke.runner.compile_file(allocator, io, path, output_file orelse "game.bspk", stdout);
         },
         .init => {
             const name = target_file orelse return fail(stdout, "'bespoke init' requires a project name");
             // A relative --engine path is made absolute, because the project's build resolves
             // `.path` from its own directory, not from where init ran.
-            const root = std.fs.cwd().realpathAlloc(allocator, engine_root) catch
+            const root = std.Io.Dir.cwd().realPathFileAlloc(io, engine_root, allocator) catch
                 return fail(stdout, "the engine checkout was not found; pass --engine <path>");
             defer allocator.free(root);
-            scaffold.generate(allocator, std.fs.cwd(), name, root) catch |err| switch (err) {
+            scaffold.generate(allocator, io, std.Io.Dir.cwd(), name, root) catch |err| switch (err) {
                 error.InvalidProjectName => return fail(stdout, "a project name is a lowercase letter, then lowercase letters, digits, or underscores (at most 32)"),
                 error.ProjectExists => return fail(stdout, "that directory already exists; choose another name"),
                 else => return err,
@@ -92,7 +95,7 @@ pub fn main() !void {
         },
         .run => {
             const path = target_file orelse return fail(stdout, "'bespoke run' requires a script or package path");
-            try bespoke.runner.run_file(allocator, path, .{
+            try bespoke.runner.run_file(allocator, io, path, .{
                 .ticks = ticks,
                 .is_headless = headless,
                 .verbose = true,

@@ -308,7 +308,7 @@ fn solve_path(
     return true;
 }
 
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
@@ -324,7 +324,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try vm.load_compiled_rules(&compiled);
     try host.run_initial_statements(&world, &vm, &compiled);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Saltmarket", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Saltmarket", 1280, 720);
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
@@ -420,7 +420,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 }
 
 test "P24-03: all three Saltmarket approaches acquire the logbook" {
-    try run_headless(std.testing.allocator, std.io.null_writer);
+    var null_buf4: [64]u8 = undefined;
+    var null_sink4: std.Io.Writer.Discarding = .init(&null_buf4);
+    try run_headless(std.testing.allocator, &null_sink4.writer);
 }
 
 test "P24-03: the generated selector chooses the Cunning route" {

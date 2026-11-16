@@ -2,6 +2,7 @@
 //! wreckers' cellar. Each step is an arrival rule in the script; a 30-tick retreat window opens
 //! when Cudgel charges, and hauling the anchor into his rope line closes the way to the hatch.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -309,7 +310,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Save initial state snapshot for time-travel verification
     var snapshot_0 = std.array_list.Managed(u8).init(allocator);
     defer snapshot_0.deinit();
-    try world.save_state(snapshot_0.writer());
+    var lw1 = ListWriter.init(&snapshot_0);
+    try world.save_state(&lw1.writer);
 
     try writer.print("\n[Step 1] Initial Inspection: Tamsin arrives at Lamp Point.\n", .{});
     _ = try vm.fire_cue(&compiled, "LooksAt", stage.tamsin, stage.donkey, null);
@@ -354,8 +356,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     display_bridge.capture_frame(&world, &spatial, &vm);
 
     try writer.print("\n[Step 6] Time-Travel Rewind Verification: Restoring pristine Lamp Point state.\n", .{});
-    var stream = std.io.fixedBufferStream(snapshot_0.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot_0.items);
+    try world.restore_state(&stream);
     vm.current_scene = stage.point_scene;
     _ = try spatial.transition_actor(stage.tamsin, stage.point_scene, stage.path_wp);
     _ = try spatial.transition_actor(stage.donkey, stage.point_scene, stage.tether_wp);
@@ -374,7 +376,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 }
 
 /// Executes interactive 60 Hz simulation with graphical display (P20-03, D-023).
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
@@ -409,7 +411,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     // The player whose inventory the tray shows.
     if (world.lookup_entity("Tamsin")) |player| display_bridge.set_active_character(player);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Donkey of Lamp Point", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Donkey of Lamp Point", 1280, 720);
     defer window.deinit();
     window.set_theme(&point_theme);
 
@@ -549,7 +551,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         // Check helper hotkeys
         // Bound keys arrive once per press as `UserAction.custom` (P32-02c); they used to be
         // polled every frame from SDL's keyboard state.
-        const pressed: ?PointKey = if (action == .custom) std.meta.intToEnum(PointKey, action.custom) catch null else null;
+        const pressed: ?PointKey = if (action == .custom) std.enums.fromInt(PointKey, action.custom) else null;
         if (pressed != null) {
             // [L] Lamp Point
             if (pressed == .point) {
@@ -701,6 +703,8 @@ test "P20-01: compile and execute the Lamp Point donkey script" {
 
 test "P20-03: headless execution runs full scenario and time-travel rewind" {
     const allocator = std.testing.allocator;
-    const null_writer = std.io.null_writer;
+    var null_writer_buf: [64]u8 = undefined;
+    var null_writer_sink: std.Io.Writer.Discarding = .init(&null_writer_buf);
+    const null_writer = &null_writer_sink.writer;
     try run_headless(allocator, null_writer);
 }

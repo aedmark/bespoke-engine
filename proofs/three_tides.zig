@@ -2,6 +2,7 @@
 //! through Doctor Brine's Tide Wells. Items cross only between wells whose holders may reach
 //! them (D-026); a change in 1712 carries forward to 2112 through the script's rules.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -712,7 +713,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 }
 
 /// Executes interactive SDL2 simulation with party switching and retro audio (P21-03, D-025).
-pub fn run_interactive(allocator: std.mem.Allocator) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
@@ -794,7 +795,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
     try vm.load_compiled_rules(&compiled);
     try vm.transition_to_scene(present_scene);
 
-    var win = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Well of Three Tides", 1280, 720);
+    var win = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Well of Three Tides", 1280, 720);
     defer win.deinit();
     win.set_theme(&art.theme);
     win.audio_bridge.set_track(art.track(.three_tides));
@@ -973,7 +974,8 @@ test "P21-03: Three Tides full puzzle DAG compilation, cross-era transfers, and 
     var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
-    try run_headless(testing.allocator, buf.writer());
+    var lw1 = ListWriter.init(&buf);
+    try run_headless(testing.allocator, &lw1.writer);
     try testing.expect(buf.items.len > 0);
     try testing.expect(std.mem.indexOf(u8, buf.items, "VICTORY ACHIEVED!") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "[Step 0b] Three-Era Environmental Inspection (LooksAt cues):") != null);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -512,8 +513,8 @@ const WHIRL_LINE = "The weathercock sits in the whirl. The loop is ready to clos
 const NOTE_LINE = "Hester Quill: \"Fair weather, falling glass. I wrote that in the almanac forty years ago, and nobody ever read it back to me.\"";
 
 /// Runs the windowed session (P31-03, D-027, P35-07).
-pub fn run_interactive(allocator: std.mem.Allocator) !void {
-    var win = try bespoke.display.renderer.DisplayWindow.init("BeSpoke Engine - The Copper Weathercock", 1280, 720);
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io) !void {
+    var win = try bespoke.display.renderer.DisplayWindow.init(io, "BeSpoke Engine - The Copper Weathercock", 1280, 720);
     defer win.deinit();
     win.set_theme(&weathercock_theme);
 
@@ -582,7 +583,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
             session.refresh();
         } else switch (action) {
             .quit => break,
-            .custom => |id| if (std.meta.intToEnum(WeathercockKey, id)) |key| switch (key) {
+            .custom => |id| if (std.enums.fromInt(WeathercockKey, id)) |key| switch (key) {
                 .follow_conduit => {
                     if (spatial.get_agent_vector_conduit(wren)) |cond| {
                         _ = try spatial.follow_conduit(wren, cond);
@@ -602,7 +603,7 @@ pub fn run_interactive(allocator: std.mem.Allocator) !void {
                         action_taken = true;
                     }
                 },
-            } else |_| {},
+            } else {},
             .walk_player => |wp_id| {
                 // Walking onto a doorway changes scenes when the walk ends (D-100).
                 _ = try session.walk_player(wp_id);
@@ -853,7 +854,8 @@ test "P31-03: The Copper Weathercock forks a branch, follows the current, and cl
     var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
-    try run_headless(testing.allocator, buf.writer());
+    var lw1 = ListWriter.init(&buf);
+    try run_headless(testing.allocator, &lw1.writer);
     try testing.expect(std.mem.indexOf(u8, buf.items, "VICTORY ACHIEVED") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Midnight: fork_branch(280 ticks)") != null);
     try testing.expect(std.mem.indexOf(u8, buf.items, "Pilot Ashe's echo gives the countdown") != null);

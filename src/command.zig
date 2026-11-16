@@ -479,8 +479,8 @@ pub const Outcome = union(enum) {
 
     /// The reply a player sees, or null when the command goes on to its cue.
     pub fn message(self: Outcome, world: *const World, buf: []u8) ?[]const u8 {
-        var stream = std.io.fixedBufferStream(buf);
-        const out = stream.writer();
+        var writer: std.Io.Writer = .fixed(buf);
+        const out = &writer;
         switch (self) {
             .empty, .command => return null,
             .unknown_word => |word| out.print("I don't know the word \"{s}\".", .{word}) catch {},
@@ -500,7 +500,7 @@ pub const Outcome = union(enum) {
                 out.writeByte('?') catch {};
             },
         }
-        return stream.getWritten();
+        return writer.buffered();
     }
 };
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const bespoke = @import("root.zig");
 
 const World = bespoke.World;
@@ -15,16 +16,11 @@ pub const RunConfig = struct {
 };
 
 /// Validates syntax and semantics of a .bespoke scenario file (P15-03, D-018).
-pub fn check_file(allocator: std.mem.Allocator, path: []const u8, stdout: anytype) !bool {
-    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
-        try stdout.print("{s}: error: cannot open file ({s})\n", .{ path, @errorName(err) });
-        return false;
-    };
-    defer file.close();
-
+pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, stdout: anytype) !bool {
     const max_size: usize = 16 * 1024 * 1024;
-    const source = file.readToEndAlloc(allocator, max_size) catch |err| {
-        try stdout.print("{s}: error: failed to read file ({s})\n", .{ path, @errorName(err) });
+    const source = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size)) catch |err| {
+        const what = if (err == error.FileNotFound) "cannot open file" else "failed to read file";
+        try stdout.print("{s}: error: {s} ({s})\n", .{ path, what, @errorName(err) });
         return false;
     };
     defer allocator.free(source);
@@ -52,15 +48,13 @@ pub fn check_file(allocator: std.mem.Allocator, path: []const u8, stdout: anytyp
 /// Compiles a .bespoke source file to a standalone .bspk binary package (P15-02, D-018).
 pub fn compile_file(
     allocator: std.mem.Allocator,
+    io: std.Io,
     in_path: []const u8,
     out_path: []const u8,
     stdout: anytype,
 ) !void {
-    const file = try std.fs.cwd().openFile(in_path, .{});
-    defer file.close();
-
     const max_size: usize = 16 * 1024 * 1024;
-    const source = try file.readToEndAlloc(allocator, max_size);
+    const source = try std.Io.Dir.cwd().readFileAlloc(io, in_path, allocator, .limited(max_size));
     defer allocator.free(source);
 
     var world = try World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
@@ -80,7 +74,7 @@ pub fn compile_file(
     };
     defer compiled.deinit();
 
-    try bespoke.save_package_file(allocator, out_path, &compiled, &world, &spatial);
+    try bespoke.save_package_file(allocator, io, out_path, &compiled, &world, &spatial);
 
     const bytecode_bytes = compiled.chunk.count();
     const entity_count = world.entity_names.items.len;
@@ -100,23 +94,22 @@ pub fn compile_file(
 /// Executes a .bespoke text scenario or .bspk binary package from disk (P15-01, D-018).
 pub fn run_file(
     allocator: std.mem.Allocator,
+    io: std.Io,
     path: []const u8,
     config: RunConfig,
     stdout: anytype,
 ) !void {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
     const max_size: usize = 32 * 1024 * 1024;
-    const data = try file.readToEndAlloc(allocator, max_size);
+    const data = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size));
     defer allocator.free(data);
-    try run_bytes(allocator, path, data, config, stdout);
+    try run_bytes(allocator, io, path, data, config, stdout);
 }
 
 /// Executes a script or `.bspk` package already in memory; `name` labels messages. A game that
 /// embeds its compiled package runs through this (P29-03, D-066).
 pub fn run_bytes(
     allocator: std.mem.Allocator,
+    io: std.Io,
     name: []const u8,
     data: []const u8,
     config: RunConfig,
@@ -134,8 +127,8 @@ pub fn run_bytes(
     var compiled: CompiledProgram = undefined;
     if (is_binary) {
         if (config.verbose) try stdout.print("[Runner] Loading precompiled binary package '{s}'...\n", .{path});
-        var stream = std.io.fixedBufferStream(data);
-        compiled = try bespoke.load_package(allocator, stream.reader(), &world, &spatial);
+        var stream: std.Io.Reader = .fixed(data);
+        compiled = try bespoke.load_package(allocator, &stream, &world, &spatial);
     } else {
         if (config.verbose) try stdout.print("[Runner] Compiling narrative script '{s}'...\n", .{path});
         compiled = bespoke.compile_source(allocator, &world, &spatial, data) catch |err| {
@@ -184,7 +177,8 @@ pub fn run_bytes(
         display_bridge.swap();
 
         var snap0 = std.array_list.Managed(u8).init(allocator);
-        try world.save_state(snap0.writer());
+        var lw1 = ListWriter.init(&snap0);
+        try world.save_state(&lw1.writer);
         try history_snapshots.append(snap0);
 
         // Headless runs report each change of script music, so a score's triggers can be
@@ -209,7 +203,8 @@ pub fn run_bytes(
             try story.report(&world, &vm, stdout);
 
             var snap = std.array_list.Managed(u8).init(allocator);
-            try world.save_state(snap.writer());
+            var lw2 = ListWriter.init(&snap);
+            try world.save_state(&lw2.writer);
             try history_snapshots.append(snap);
 
             display_bridge.capture_frame(&world, &spatial, &vm);
@@ -241,14 +236,14 @@ pub fn run_bytes(
         if (history_snapshots.items.len > 2) {
             try stdout.print(">>> DEMONSTRATING TIME-TRAVEL REWIND: REWINDING TO TICK 2 <<<\n", .{});
             const rewind_snap = history_snapshots.items[2];
-            var stream = std.io.fixedBufferStream(rewind_snap.items);
-            try world.restore_state(stream.reader());
+            var stream: std.Io.Reader = .fixed(rewind_snap.items);
+            try world.restore_state(&stream);
             display_bridge.capture_frame(&world, &spatial, &vm);
             display_bridge.swap();
             try stdout.print("Rewound Simulation Clock Restored: Tick {d}\n", .{world.current_tick});
         }
     } else {
-        var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Standalone Scenario Runner", 1280, 720);
+        var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - Standalone Scenario Runner", 1280, 720);
         defer window.deinit();
 
         display_bridge.attach_audio_bridge(window.audio_bridge);
@@ -273,11 +268,12 @@ pub fn run_bytes(
         bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
 
         var snap0 = std.array_list.Managed(u8).init(allocator);
-        try world.save_state(snap0.writer());
+        var lw3 = ListWriter.init(&snap0);
+        try world.save_state(&lw3.writer);
         try history_snapshots.append(snap0);
 
         var is_paused = false;
-        var last_tick_time = std.time.milliTimestamp();
+        var last_tick_time = std.Io.Timestamp.now(io, .awake).toMilliseconds();
 
         window.set_cue_banner("BeSpoke Engine: Scenario Loaded. Left-click waypoints to navigate.", 90);
 
@@ -323,8 +319,8 @@ pub fn run_bytes(
                     if (history_snapshots.items.len > 2) {
                         is_paused = true;
                         const target_snapshot = history_snapshots.items[2];
-                        var stream = std.io.fixedBufferStream(target_snapshot.items);
-                        try world.restore_state(stream.reader());
+                        var stream: std.Io.Reader = .fixed(target_snapshot.items);
+                        try world.restore_state(&stream);
                         display_bridge.capture_frame(&world, &spatial, &vm);
                         display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
                         display_bridge.swap();
@@ -336,8 +332,8 @@ pub fn run_bytes(
                         const clamped = @min(target_tick, history_snapshots.items.len - 1);
                         is_paused = true;
                         const target_snapshot = history_snapshots.items[clamped];
-                        var stream = std.io.fixedBufferStream(target_snapshot.items);
-                        try world.restore_state(stream.reader());
+                        var stream: std.Io.Reader = .fixed(target_snapshot.items);
+                        try world.restore_state(&stream);
                         display_bridge.capture_frame(&world, &spatial, &vm);
                         display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
                         display_bridge.swap();
@@ -356,7 +352,8 @@ pub fn run_bytes(
                     }
                     if (world.current_tick >= history_snapshots.items.len) {
                         var snap = std.array_list.Managed(u8).init(allocator);
-                        try world.save_state(snap.writer());
+                        var lw4 = ListWriter.init(&snap);
+                        try world.save_state(&lw4.writer);
                         try history_snapshots.append(snap);
                     }
                     display_bridge.capture_frame(&world, &spatial, &vm);
@@ -366,7 +363,7 @@ pub fn run_bytes(
                 else => {},
             }
 
-            const now = std.time.milliTimestamp();
+            const now = std.Io.Timestamp.now(io, .awake).toMilliseconds();
             if (!is_paused and (now - last_tick_time >= window.current_tick_interval_ms)) {
                 should_step_now = true;
                 last_tick_time = now;
@@ -380,7 +377,8 @@ pub fn run_bytes(
                 if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |line| window.set_cue_banner(line, 160);
 
                 var snap = std.array_list.Managed(u8).init(allocator);
-                try world.save_state(snap.writer());
+                var lw5 = ListWriter.init(&snap);
+                try world.save_state(&lw5.writer);
                 try history_snapshots.append(snap);
 
                 display_bridge.capture_frame(&world, &spatial, &vm);
@@ -390,7 +388,7 @@ pub fn run_bytes(
             }
 
             window.render_frame(display_bridge.get_frame(), is_paused);
-            std.Thread.sleep(16 * std.time.ns_per_ms);
+            io.sleep(.fromMilliseconds(16), .awake) catch {};
         }
     }
 }
@@ -460,7 +458,7 @@ test "P15-01: runner checks and compiles external scenario file" {
     // time, and with fixed /tmp paths one deleted the other's files mid-test.
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    const dir_path = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
     defer testing.allocator.free(dir_path);
     const tmp_script = try std.fs.path.join(testing.allocator, &.{ dir_path, "test_runner_script.bespoke" });
     defer testing.allocator.free(tmp_script);
@@ -468,32 +466,29 @@ test "P15-01: runner checks and compiles external scenario file" {
     defer testing.allocator.free(tmp_pkg);
 
     // Write source file
-    {
-        const f = try std.fs.cwd().createFile(tmp_script, .{});
-        defer f.close();
-        try f.writeAll(script_content);
-    }
+    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = tmp_script, .data = script_content });
+
+    var discard_buf: [256]u8 = undefined;
+    var discarding: std.Io.Writer.Discarding = .init(&discard_buf);
+    const null_writer = &discarding.writer;
 
     // Test check_file
-    const null_writer = std.io.null_writer;
-    const is_valid = try check_file(testing.allocator, tmp_script, null_writer);
+    const is_valid = try check_file(testing.allocator, testing.io, tmp_script, null_writer);
     try testing.expect(is_valid);
 
     // Test compile_file
-    try compile_file(testing.allocator, tmp_script, tmp_pkg, null_writer);
+    try compile_file(testing.allocator, testing.io, tmp_script, tmp_pkg, null_writer);
 
     // Verify .bspk exists and has valid magic
-    const pkg_file = try std.fs.cwd().openFile(tmp_pkg, .{});
-    defer pkg_file.close();
     var magic_buf: [4]u8 = undefined;
-    _ = try pkg_file.readAll(&magic_buf);
-    try testing.expectEqualStrings("BSPB", &magic_buf);
+    const head = try std.Io.Dir.cwd().readFile(testing.io, tmp_pkg, &magic_buf);
+    try testing.expectEqualStrings("BSPB", head);
 
     // Test run_file on source in headless mode
-    try run_file(testing.allocator, tmp_script, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
+    try run_file(testing.allocator, testing.io, tmp_script, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
 
     // Test run_file on compiled binary package in headless mode
-    try run_file(testing.allocator, tmp_pkg, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
+    try run_file(testing.allocator, testing.io, tmp_pkg, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
 }
 
 test "P29-02: the window acts for the first routine's actor and answers scripted dialogue" {

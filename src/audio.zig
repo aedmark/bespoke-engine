@@ -982,8 +982,24 @@ pub const ChiptuneSynth = struct {
 // 7. Decoupled Audio Bridge (P16-01, D-001, D-019)
 // ---------------------------------------------------------------------------
 
+/// Guards the bridge between the host thread and SDL's audio callback thread. Zig 0.16 has no
+/// blocking thread mutex outside `std.Io`, and the callback runs on a thread SDL owns, with no
+/// `Io` to lock through; the critical sections are a few queue writes, so a short spin on the
+/// lock-free `std.atomic.Mutex` is enough, and it never sleeps inside the audio callback.
+const SpinLock = struct {
+    state: std.atomic.Mutex = .unlocked,
+
+    fn lock(self: *SpinLock) void {
+        while (!self.state.tryLock()) std.atomic.spinLoopHint();
+    }
+
+    fn unlock(self: *SpinLock) void {
+        self.state.unlock();
+    }
+};
+
 pub const AudioBridge = struct {
-    mutex: std.Thread.Mutex = .{},
+    mutex: SpinLock = .{},
     event_queue: [MAX_AUDIO_EVENTS]AudioEvent = undefined,
     queue_head: usize = 0,
     queue_tail: usize = 0,

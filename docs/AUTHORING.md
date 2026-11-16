@@ -356,15 +356,17 @@ To fire what a player types, use `host.run_command` with a `command.Interpreter`
 
 A host is the Zig program that owns the window, the clock, and the player's input. The stock runner (`bespoke run`) and a generated project's `src/main.zig` are hosts; write your own when the game needs its own controls. Import the engine as the `bespoke` module.
 
+Functions that touch files or the clock take `io`, the `std.Io` that `main` receives from `std.process.Init` (Zig 0.16 and later, D-104); `writer` is a `*std.Io.Writer`.
+
 | Call | Contract |
 | --- | --- |
 | `bespoke.compile_source(allocator, &world, &spatial, source)` | Compiles a script into a `CompiledProgram`, interning its entities and marks |
 | `bespoke.check_source(allocator, source)` | Syntax and semantic check; `.diagnostic()` gives line, column, and message |
 | `bespoke.load_package(allocator, reader, &world, &spatial)` | Loads a `.bspk` package written by `bespoke compile` |
-| `bespoke.run_file(allocator, path, config, writer)` | The stock runner: window, or headless with `config.is_headless` |
+| `bespoke.run_file(allocator, io, path, config, writer)` | The stock runner: window, or headless with `config.is_headless` |
 | `host.initialize_subsystems(&world, &compiled)` | Seeds declared grids, agendas, and containers; safe to repeat |
 | `host.start_script(&world, &spatial, &vm, &compiled)` | Starts a script as every stock host does: top-level statements, the cast, every routine; returns the player |
-| `bespoke.run_bytes(allocator, name, data, config, writer)` | The stock runner on a script or package already in memory, such as an embedded one |
+| `bespoke.run_bytes(allocator, io, name, data, config, writer)` | The stock runner on a script or package already in memory, such as an embedded one |
 | `bespoke.wasm.script_deck(title, program)` | A browser deck that runs an embedded script or package |
 | `host.run_initial_statements(&world, &vm, &compiled)` | Runs the script's top-level statements |
 | `host.place_cast(&spatial, &compiled)` | Puts each cast member on its scene's first mark, unless already placed; call before starting routines |

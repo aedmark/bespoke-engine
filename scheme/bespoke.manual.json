@@ -1238,7 +1238,7 @@
           "id": "persistent-save-load-and-slot-management",
           "title": "Persistent Save/Load Storage & Slot Manager",
           "summary": "File-backed .sav format with CRC32 integrity, 16x12 RGB332 thumbnails, .bak recovery, and in-engine Save/Load drawer.",
-          "synopsis": "var sm = try SaveManager.init(allocator, \"saves\"); _ = try sm.save_slot(1, &world, &spatial, &vm, \"Tavern\"); _ = try sm.load_slot(1, &world, &spatial, &vm);",
+          "synopsis": "var sm = try SaveManager.init(allocator, io, \"saves\"); _ = try sm.save_slot(1, &world, &spatial, &vm, \"Tavern\"); _ = try sm.load_slot(1, &world, &spatial, &vm);",
           "tags": ["save", "load", "persistence", "slots", "crc32", "thumbnail"],
           "what": "Provides durable cross-session save/load persistence on disk (.sav), managing 8 numbered save slots plus a dedicated Quick-Save slot with metadata headers, miniature visual frame thumbnails, automatic backup recovery, and an interactive SDL2 Save/Load drawer.",
           "how": [

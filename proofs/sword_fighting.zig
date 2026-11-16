@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -989,7 +990,7 @@ fn play_choice(
 }
 
 /// Executes interactive 60 Hz playability with graphical display or falls back to headless simulation
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
@@ -1035,13 +1036,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     _ = try bespoke.host.start_script(&world, &spatial, &vm, &compiled);
     // A fresh deal of the fencers' barbs and comebacks each launch (D-082), before the first
     // snapshot, so rewinding keeps it.
-    const launch_seed: u64 = @bitCast(std.time.milliTimestamp());
+    const launch_seed: u64 = @bitCast(std.Io.Timestamp.now(io, .real).toMilliseconds());
     try deal_knowledge(&duel, &.{ bosun_pike, old_gannet, dory_quill }, launch_seed);
     // The same launch seeds every pick of barbs and offered lines (D-083).
     try bout.set_seed(@truncate(launch_seed));
     try vm.transition_to_scene(tidewalk_scene);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - Brackwater Barbs", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - Brackwater Barbs", 1280, 720);
     defer window.deinit();
     window.set_theme(&sword_theme);
 
@@ -1094,7 +1095,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 .dialogue_choice => |choice_idx| {
                     try play_choice(&session, &vm, &compiled, &bout, choice_idx, &window);
                 },
-                .custom => |id| if (std.meta.intToEnum(SwordKey, id)) |key| switch (key) {
+                .custom => |id| if (std.enums.fromInt(SwordKey, id)) |key| switch (key) {
                     .duel_pike => {
                         try vm.transition_to_scene(tidewalk_scene);
                         _ = try spatial.transition_actor(tamsin, tidewalk_scene, walk_m);
@@ -1150,7 +1151,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                             window.set_cue_banner(msg, 120);
                         }
                     },
-                } else |_| {},
+                } else {},
                 else => {},
             }
         }
@@ -1158,7 +1159,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         if (session.tick_due()) _ = try session.advance();
 
         session.render();
-        std.Thread.sleep(16 * std.time.ns_per_ms);
+        io.sleep(.fromMilliseconds(16), .awake) catch {};
     }
 }
 
@@ -1550,10 +1551,11 @@ test "D-083: offers rotate past nine, a known counter is always offered, and pic
     // The picks come from facts, so restoring a snapshot replays them.
     var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
-    try world.save_state(snapshot.writer());
+    var lw1 = ListWriter.init(&snapshot);
+    try world.save_state(&lw1.writer);
     const before = try bout.next_barb(gannet);
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try world.restore_state(&stream);
     try testing.expectEqual(before, try bout.next_barb(gannet));
 }
 
@@ -1633,6 +1635,7 @@ test "P15-04: headless simulation of Brackwater Barbs passes cleanly" {
     var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
 
-    try run_headless(testing.allocator, buf.writer());
+    var lw2 = ListWriter.init(&buf);
+    try run_headless(testing.allocator, &lw2.writer);
     try testing.expect(buf.items.len > 0);
 }

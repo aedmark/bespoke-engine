@@ -6,6 +6,7 @@
 //! single-step, scrub, rewind, and save actions. These used to be copied into each proof with
 //! drifting behaviour. They live here once, named by function, with no game content.
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const vm_mod = @import("vm.zig");
 const spatial_mod = @import("spatial.zig");
@@ -238,12 +239,12 @@ pub const ScriptSoundtrack = struct {
 /// every tick, so speech must be collected after each tick; a cue index taken before a tick is
 /// meaningless after it (the bug this replaces in the old per-proof readers).
 pub const SpeechLog = struct {
-    stream: std.io.FixedBufferStream([]u8),
+    writer: std.Io.Writer,
     count: usize = 0,
     last_speaker: u32 = 0,
 
     pub fn init(buf: []u8) SpeechLog {
-        return .{ .stream = std.io.fixedBufferStream(buf) };
+        return .{ .writer = .fixed(buf) };
     }
 
     /// Appends every `say` cue emitted during the most recent tick.
@@ -264,7 +265,7 @@ pub const SpeechLog = struct {
             var name_buf: [48]u8 = undefined;
             const name = @import("display/dialogue_panel.zig").display_name(world.get_entity_name(EntityId.from_int(cue.args[0])) orelse "Someone", &name_buf);
             const text = world.get_entity_name(EntityId.from_int(cue.args[1])) orelse "";
-            const w = self.stream.writer();
+            const w = &self.writer;
             if (self.count > 0) w.writeAll("  ") catch return;
             if (self.count == 0 or cue.args[0] != self.last_speaker) w.print("{s}: ", .{name}) catch return;
             w.print("\"{s}\"", .{text}) catch return;
@@ -274,9 +275,15 @@ pub const SpeechLog = struct {
     }
 
     pub fn message(self: *SpeechLog) ?[]const u8 {
-        return if (self.count > 0) self.stream.getWritten() else null;
+        return if (self.count > 0) self.writer.buffered() else null;
     }
 };
+
+/// Milliseconds on the awake clock, read through the window's `Io` (Zig 0.16+). A session runs
+/// only in a desktop or offscreen window, which is always made with one.
+fn now_ms(window: *const display_mod.DisplayWindow) i64 {
+    return std.Io.Timestamp.now(window.io.?, .awake).toMilliseconds();
+}
 
 /// One `say` line from the most recent tick: the speaker's entity name and the line.
 pub const SpeechLine = struct { speaker: []const u8, text: []const u8 };
@@ -490,11 +497,13 @@ pub const Timeline = struct {
     ) !void {
         var snapshot = Snapshot{ .world = std.array_list.Managed(u8).init(self.allocator) };
         errdefer snapshot.deinit();
-        try world.save_state(snapshot.world.writer());
+        var lw1 = ListWriter.init(&snapshot.world);
+        try world.save_state(&lw1.writer);
         if (hypervisor) |live| {
             var temporal = std.array_list.Managed(u8).init(self.allocator);
             errdefer temporal.deinit();
-            try temporal_mod.TemporalSnapshot.write(live, temporal.writer());
+            var lw2 = ListWriter.init(&temporal);
+            try temporal_mod.TemporalSnapshot.write(live, &lw2.writer);
             snapshot.temporal = temporal;
         }
         try self.snapshots.append(snapshot);
@@ -517,13 +526,13 @@ pub const Timeline = struct {
         if (self.snapshots.items.len == 0) return null;
         const i = @min(index, self.snapshots.items.len - 1);
         const snapshot = &self.snapshots.items[i];
-        var world_stream = std.io.fixedBufferStream(snapshot.world.items);
-        try world.restore_state(world_stream.reader());
+        var world_stream: std.Io.Reader = .fixed(snapshot.world.items);
+        try world.restore_state(&world_stream);
 
         if (hypervisor) |live| {
             const temporal_bytes = &(snapshot.temporal orelse return error.MissingTemporalSnapshot);
-            var temporal_stream = std.io.fixedBufferStream(temporal_bytes.items);
-            var temporal = try temporal_mod.TemporalSnapshot.read(self.allocator, world, temporal_stream.reader());
+            var temporal_stream: std.Io.Reader = .fixed(temporal_bytes.items);
+            var temporal = try temporal_mod.TemporalSnapshot.read(self.allocator, world, &temporal_stream);
             defer temporal.deinit();
             try temporal.validate(world);
             try temporal.apply(live);
@@ -674,7 +683,7 @@ pub const Session = struct {
             .window = window,
             .hypervisor = hypervisor,
             .timeline = Timeline.init(allocator),
-            .last_tick_ms = std.time.milliTimestamp(),
+            .last_tick_ms = now_ms(window),
         };
         s.sync_active_world();
         try initialize_subsystems(s.active_world(), compiled);
@@ -793,7 +802,7 @@ pub const Session = struct {
     /// True when the clock should advance now: the interval elapsed while running, or a single
     /// step was requested. Consumes the step request and restarts the interval.
     pub fn tick_due(self: *Session) bool {
-        const now = std.time.milliTimestamp();
+        const now = now_ms(self.window);
         const due = self.step_requested or (!self.is_paused and now - self.last_tick_ms >= self.window.current_tick_interval_ms);
         if (due) {
             self.step_requested = false;
@@ -1488,7 +1497,7 @@ test "D-100: a doorway mark is added on stage, and a walk ending on it, or asked
     try vm.transition_to_scene(quay);
 
     var bridge = display_mod.DisplayBridge.init();
-    var window = try display_mod.DisplayWindow.init_offscreen(320, 180);
+    var window = try display_mod.DisplayWindow.init_offscreen(std.testing.io, 320, 180);
     defer window.deinit();
     var session = try Session.init(testing.allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
     defer session.deinit();

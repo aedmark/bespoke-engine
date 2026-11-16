@@ -120,9 +120,9 @@ pub fn wrap(text: []const u8, columns: usize, out: [][]const u8) usize {
         if (std.mem.lastIndexOfScalar(u8, rest[0 .. cols + 1], ' ')) |space| {
             if (space > 0) cut = space;
         }
-        out[count] = std.mem.trimRight(u8, rest[0..cut], " ");
+        out[count] = std.mem.trimEnd(u8, rest[0..cut], " ");
         count += 1;
-        rest = std.mem.trimLeft(u8, rest[cut..], " ");
+        rest = std.mem.trimStart(u8, rest[cut..], " ");
     }
     return count;
 }

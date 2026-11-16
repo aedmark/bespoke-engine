@@ -12,6 +12,7 @@
 //! state lives outside the World.
 
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 
 pub const World = world_mod.World;
@@ -465,7 +466,8 @@ test "P25-01: cell attributes are sparse World facts seeded once and rewound wit
 
     var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
-    try world.save_state(snapshot.writer());
+    var lw1 = ListWriter.init(&snapshot);
+    try world.save_state(&lw1.writer);
 
     // A runtime change, then re-initialisation: the cleared cell stays cleared.
     try set_attribute(&world, grid, .{ .x = 1, .y = 0 }, .flammable, false);
@@ -474,8 +476,8 @@ test "P25-01: cell attributes are sparse World facts seeded once and rewound wit
     try testing.expect(!has_attribute(&world, grid, .{ .x = 1, .y = 0 }, .flammable));
     try testing.expect(has_attribute(&world, grid, .{ .x = 3, .y = 2 }, .flammable));
 
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try world.restore_state(&stream);
     try testing.expect(has_attribute(&world, grid, .{ .x = 1, .y = 0 }, .flammable));
     try testing.expect(!has_attribute(&world, grid, .{ .x = 3, .y = 2 }, .flammable));
     try testing.expectError(Error.CellOutOfBounds, set_attribute(&world, grid, .{ .x = 4, .y = 0 }, .liquid, true));
@@ -521,7 +523,8 @@ test "P25-02: fire spreads along flammable cells, burns out, and leaves dissipat
         _ = world.step_tick();
         try step(&world, declaration);
         if (tick == 1) {
-            try world.save_state(snapshot.writer());
+            var lw2 = ListWriter.init(&snapshot);
+            try world.save_state(&lw2.writer);
             try testing.expect(has_attribute(&world, grid, .{ .x = 1, .y = 0 }, .burning));
             try testing.expect(!has_attribute(&world, grid, .{ .x = 2, .y = 0 }, .burning));
             try testing.expect(has_attribute(&world, grid, .{ .x = 0, .y = 0 }, .smoke));
@@ -535,8 +538,8 @@ test "P25-02: fire spreads along flammable cells, burns out, and leaves dissipat
     try testing.expect(has_attribute(&world, grid, .{ .x = 3, .y = 0 }, .burning));
 
     // Rewinding to tick 1 and replaying reproduces the same layout (D-001).
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try world.restore_state(&stream);
     try testing.expectEqual(@as(u64, 1), world.current_tick);
     _ = world.step_tick();
     try step(&world, declaration);

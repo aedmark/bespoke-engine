@@ -9,6 +9,7 @@
 //! Regenerate deliberately: `zig build test-proofs -Dupdate-goldens`, then review the diff.
 //! On a mismatch, `proofs/golden/wasm.actual.txt` is written beside the golden.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const options = @import("golden_options");
 const wasm = bespoke.wasm;
@@ -86,7 +87,8 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
             },
         }
         rt.render_frame();
-        try out.writer().print("deck/{d}/{s}: {x:0>16} facts={d} tick={d} banner=\"{s}\"\n", .{
+        var lw1 = ListWriter.init(out);
+        try lw1.writer.print("deck/{d}/{s}: {x:0>16} facts={d} tick={d} banner=\"{s}\"\n", .{
             index,
             entry.label,
             std.hash.Wyhash.hash(0, rt.framebuffer),
@@ -99,8 +101,8 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
 
 test "P32-04: every proof deck shows the browser frames recorded in its wasm golden" {
     const allocator = std.testing.allocator;
-    var dir = try std.fs.cwd().makeOpenPath(options.golden_dir, .{});
-    defer dir.close();
+    var dir = try std.Io.Dir.cwd().createDirPathOpen(std.testing.io, options.golden_dir, .{});
+    defer dir.close(std.testing.io);
 
     var actual = std.array_list.Managed(u8).init(allocator);
     defer actual.deinit();
@@ -108,20 +110,20 @@ test "P32-04: every proof deck shows the browser frames recorded in its wasm gol
     while (index < DECK_COUNT) : (index += 1) try record(allocator, &actual, index);
 
     if (options.update_goldens) {
-        try dir.writeFile(.{ .sub_path = GOLDEN_NAME, .data = actual.items });
-        dir.deleteFile(ACTUAL_NAME) catch {};
+        try dir.writeFile(std.testing.io, .{ .sub_path = GOLDEN_NAME, .data = actual.items });
+        dir.deleteFile(std.testing.io, ACTUAL_NAME) catch {};
         return;
     }
-    const expected = dir.readFileAlloc(allocator, GOLDEN_NAME, 1 << 20) catch |err| {
+    const expected = dir.readFileAlloc(std.testing.io, GOLDEN_NAME, allocator, .limited(1 << 20)) catch |err| {
         std.debug.print("wasm golden {s}/{s} unreadable ({s}); run `zig build test-proofs -Dupdate-goldens`\n", .{ options.golden_dir, GOLDEN_NAME, @errorName(err) });
         return error.WasmGoldenMissing;
     };
     defer allocator.free(expected);
     if (std.mem.eql(u8, expected, actual.items)) {
-        dir.deleteFile(ACTUAL_NAME) catch {};
+        dir.deleteFile(std.testing.io, ACTUAL_NAME) catch {};
         return;
     }
-    try dir.writeFile(.{ .sub_path = ACTUAL_NAME, .data = actual.items });
+    try dir.writeFile(std.testing.io, .{ .sub_path = ACTUAL_NAME, .data = actual.items });
     var want_lines = std.mem.splitScalar(u8, expected, '\n');
     var got_lines = std.mem.splitScalar(u8, actual.items, '\n');
     var changed: usize = 0;

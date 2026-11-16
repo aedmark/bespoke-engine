@@ -1348,6 +1348,12 @@ Format:
 **Alternatives:** Allow a switch that undoes the old path's facts and routines: rejected by the maintainer. The Saltmarket is built around a choice that sticks, and rewind already lets a player go back before the choice and take another way, with every effect undone by the snapshot rather than by new undo rules.
 **Consequences:** No `.bspk` change and no undo logic in the VM. A game that wants a change of heart offers it as its own path design (for example a later choice that opens a new path's facts), not as a switch.
 
+## D-104 The Engine Takes Its Io Explicitly (2026-11-16, status: accepted)
+**Context:** Zig 0.16 moves files, directories, the clock, sleep, and randomness behind an `std.Io` handle (P37-01). The engine touched them in the save-slot manager, package files, the stock runner, scaffolding, the window's session clock, and its `main` programs.
+**Decision:** Code that touches the operating system takes `io: std.Io` the way it takes an allocator. `SaveManager.init`, `save_package_file`, `load_package_file`, `runner.check_file`, `compile_file`, `run_file`, `run_bytes`, `scaffold.generate`, and `DisplayWindow.init` / `init_offscreen` take it; the window keeps it so `host.Session` reads its tick clock through the window without a new parameter. `main` gets it from `std.process.Init`, tests from `std.testing.io`, the build script from `b.graph.io`, and the browser runtime's save list holds `std.Io.failing`. The simulation itself (World, VM, ticks, serialization to `std.Io.Writer`) never sees an `Io`. In-memory checkpoints record a timestamp of 0; `SaveManager` stamps the real time when it writes a slot.
+**Alternatives:** One engine-wide `Io` set by `main`: fewer signature changes, rejected by the maintainer as hidden global state every host and test would have to remember to set.
+**Consequences:** Hosts pass one more argument to the functions above; P38-03 freezes the result as part of the supported API. The audio bridge guards its queue with a spin on `std.atomic.Mutex`, because SDL's audio thread has no `Io` to lock through.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

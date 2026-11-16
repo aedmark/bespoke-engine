@@ -7,6 +7,7 @@
 //! lingers by the generator shed. The agendas, their triggers, the encounters, and the evidence
 //! rebuttals all live in the script; this host owns staging, input, and the society tick.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -386,7 +387,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     var opening = std.array_list.Managed(u8).init(allocator);
     defer opening.deinit();
-    _ = try bespoke.write_save_state(allocator, opening.writer(), &world, &spatial, &vm, .{ .description = "Larkspur opening" });
+    var lw1 = ListWriter.init(&opening);
+    _ = try bespoke.write_save_state(allocator, &lw1.writer, &world, &spatial, &vm, .{ .description = "Larkspur opening" });
     try stage.report(writer);
 
     try writer.writeAll("\n[Night 1] Ines searches the darkroom, then reads the log empty-handed.\n");
@@ -409,8 +411,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("  -> Ines was talked out of the darkroom and believes Pell's alibi.\n");
 
     try writer.writeAll("\n[Rewind] Restore the saved opening.\n");
-    var stream = std.io.fixedBufferStream(opening.items);
-    _ = try bespoke.read_save_state(allocator, stream.reader(), &world, &spatial, &vm);
+    var stream: std.Io.Reader = .fixed(opening.items);
+    _ = try bespoke.read_save_state(allocator, &stream, &world, &spatial, &vm);
     try expect_true(!holds(&world, ids.ines, "Believes", null) and agency.stage_of(&world, ids.dissuade) == .idle, error.RewindFailed);
     try stage.report(writer);
 
@@ -439,8 +441,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(host.has_state(&world, ids.pell, "cornered") and !holds(&world, ids.ines, "Believes", null), error.CaseOpen);
 
     try writer.writeAll("\n[Rewind] Restore the saved opening for a typed playthrough.\n");
-    var again = std.io.fixedBufferStream(opening.items);
-    _ = try bespoke.read_save_state(allocator, again.reader(), &world, &spatial, &vm);
+    var again: std.Io.Reader = .fixed(opening.items);
+    _ = try bespoke.read_save_state(allocator, &again, &world, &spatial, &vm);
     interp = .{};
 
     try writer.writeAll("\n[Typed] The same evidence, by keyboard.\n");
@@ -567,7 +569,7 @@ const Play = struct {
 };
 
 /// Native window proof. The ordinary Session supplies pause, save/load, scrub, and rewind.
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
@@ -584,7 +586,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try host.initialize_subsystems(&world, &compiled);
     var soc = try staff(&world, &compiled);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Larkspur Observatory", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Larkspur Observatory", 1280, 720);
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
@@ -615,7 +617,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 }
 
 test "P33-03: Larkspur Observatory contends, rewinds, and closes the case" {
-    try run_headless(std.testing.allocator, std.io.null_writer);
+    var null_buf3: [64]u8 = undefined;
+    var null_sink3: std.Io.Writer.Discarding = .init(&null_buf3);
+    try run_headless(std.testing.allocator, &null_sink3.writer);
 }
 
 test "P33-03: script declares three agendas with distinct priorities" {
@@ -647,7 +651,7 @@ test "P33-03: window actions give feedback and Pell can be confronted within rea
     try host.run_initial_statements(&world, &vm, &compiled);
     try host.initialize_subsystems(&world, &compiled);
     var soc = try staff(&world, &compiled);
-    var window = try bespoke.display.DisplayWindow.init_offscreen(1280, 720);
+    var window = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer window.deinit();
     window.set_theme(&theme);
     var bridge = bespoke.DisplayBridge.init();
@@ -730,7 +734,7 @@ test "P26-03: typed commands in the window reply on the banner and respect where
     try host.run_initial_statements(&world, &vm, &compiled);
     try host.initialize_subsystems(&world, &compiled);
     var soc = try staff(&world, &compiled);
-    var window = try bespoke.display.DisplayWindow.init_offscreen(1280, 720);
+    var window = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer window.deinit();
     window.set_theme(&theme);
     window.enable_command_bar(true);

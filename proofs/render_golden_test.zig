@@ -16,6 +16,7 @@
 //! On a mismatch, `proofs/golden/render.actual.txt` and one `<scene>.actual.bmp` per changed
 //! scene are written beside the golden.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const options = @import("golden_options");
 const art = @import("art.zig");
@@ -195,13 +196,15 @@ const Recorder = struct {
     /// Records the 16x12 save thumbnail for a scene (P32-03d): its backdrop and actor dots.
     fn thumbnail(self: *Recorder, proof: []const u8, scene: []const u8, world: *const bespoke.World, spatial: *const bespoke.SpatialSystem) !void {
         const thumb = Thumbs.make(world, spatial, scene);
-        try self.out.writer().print("thumb/{s}/{s}: {x:0>16}\n", .{ proof, scene, std.hash.Wyhash.hash(0, &thumb) });
+        var lw1 = ListWriter.init(&self.out);
+        try lw1.writer.print("thumb/{s}/{s}: {x:0>16}\n", .{ proof, scene, std.hash.Wyhash.hash(0, &thumb) });
     }
 
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
         self.window.render_frame(frame, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
-        try self.out.writer().print("{s}: {x:0>16}\n", .{ label, hash });
+        var lw2 = ListWriter.init(&self.out);
+        try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
 
         const expected = self.dump_against orelse return;
         var hash_buf: [16]u8 = undefined;
@@ -396,10 +399,10 @@ fn hash_of(record: []const u8, label: []const u8) ?[]const u8 {
 
 test "P32-02a: every proof scene draws the pixels recorded in its render golden" {
     const allocator = std.testing.allocator;
-    var dir = try std.fs.cwd().makeOpenPath(options.golden_dir, .{});
-    defer dir.close();
+    var dir = try std.Io.Dir.cwd().createDirPathOpen(std.testing.io, options.golden_dir, .{});
+    defer dir.close(std.testing.io);
 
-    var window = try bespoke.display.DisplayWindow.init_offscreen(WIDTH, HEIGHT);
+    var window = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, WIDTH, HEIGHT);
     defer window.deinit();
     window.set_theme(&art.theme);
 
@@ -417,23 +420,23 @@ test "P32-02a: every proof scene draws the pixels recorded in its render golden"
     }
 
     if (options.update_goldens) {
-        try dir.writeFile(.{ .sub_path = GOLDEN_NAME, .data = actual.items });
-        dir.deleteFile(ACTUAL_NAME) catch {};
+        try dir.writeFile(std.testing.io, .{ .sub_path = GOLDEN_NAME, .data = actual.items });
+        dir.deleteFile(std.testing.io, ACTUAL_NAME) catch {};
         return;
     }
 
-    const expected = dir.readFileAlloc(allocator, GOLDEN_NAME, 1 << 20) catch |err| {
+    const expected = dir.readFileAlloc(std.testing.io, GOLDEN_NAME, allocator, .limited(1 << 20)) catch |err| {
         std.debug.print("render golden {s}/{s} unreadable ({s}); run `zig build test-proofs -Dupdate-goldens`\n", .{ options.golden_dir, GOLDEN_NAME, @errorName(err) });
         return error.RenderGoldenMissing;
     };
     defer allocator.free(expected);
 
     if (std.mem.eql(u8, expected, actual.items)) {
-        dir.deleteFile(ACTUAL_NAME) catch {};
+        dir.deleteFile(std.testing.io, ACTUAL_NAME) catch {};
         return;
     }
 
-    try dir.writeFile(.{ .sub_path = ACTUAL_NAME, .data = actual.items });
+    try dir.writeFile(std.testing.io, .{ .sub_path = ACTUAL_NAME, .data = actual.items });
     // Third pass: save an image of each scene that changed, to look at.
     var dumped = try record_all(allocator, &window, expected, true);
     dumped.deinit();

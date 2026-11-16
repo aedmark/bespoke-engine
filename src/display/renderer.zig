@@ -1032,6 +1032,9 @@ pub const DisplayWindow = struct {
     save_menu_mode: SaveMenuMode = .save,
     hovered_save_slot: ?u8 = null,
     selected_save_slot: u8 = 1,
+    /// The host's I/O (Zig 0.16+), kept by a desktop or offscreen window so the session's tick
+    /// clock reads time through it; a browser canvas window has none.
+    io: ?std.Io = null,
     owned_save_manager: *save_mod.SaveManager,
     save_manager: *save_mod.SaveManager,
     // Phase 26/D-028 Master Simulation Clock Pacing & Speed Scaling
@@ -1043,12 +1046,12 @@ pub const DisplayWindow = struct {
     /// keeps its own (D-097).
     backdrop_color: Color = Color.stage_bg,
 
-    pub fn init(title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
+    pub fn init(io: std.Io, title: [:0]const u8, width: i32, height: i32) !DisplayWindow {
         const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
         bridge.* = audio_mod.AudioBridge.init();
 
         const sm = try std.heap.c_allocator.create(save_mod.SaveManager);
-        sm.* = try save_mod.SaveManager.init(std.heap.c_allocator, "saves");
+        sm.* = try save_mod.SaveManager.init(std.heap.c_allocator, io, "saves");
 
         if (c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO) != 0) {
             if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) {
@@ -1062,6 +1065,7 @@ pub const DisplayWindow = struct {
                     .audio_bridge = bridge,
                     .audio_device_opened = false,
                     .owned_save_manager = sm,
+            .io = io,
                     .save_manager = sm,
                     .current_tick_interval_ms = vm_mod.DEFAULT_TICK_INTERVAL_MS,
                 };
@@ -1086,6 +1090,7 @@ pub const DisplayWindow = struct {
                 .audio_bridge = bridge,
                 .audio_device_opened = false,
                 .owned_save_manager = sm,
+            .io = io,
                 .save_manager = sm,
             };
         };
@@ -1106,6 +1111,7 @@ pub const DisplayWindow = struct {
                 .audio_bridge = bridge,
                 .audio_device_opened = false,
                 .owned_save_manager = sm,
+            .io = io,
                 .save_manager = sm,
             };
         };
@@ -1146,6 +1152,7 @@ pub const DisplayWindow = struct {
             .audio_bridge = bridge,
             .audio_device_opened = audio_opened,
             .owned_save_manager = sm,
+            .io = io,
             .save_manager = sm,
             .current_tick_interval_ms = vm_mod.DEFAULT_TICK_INTERVAL_MS,
         };
@@ -1154,14 +1161,14 @@ pub const DisplayWindow = struct {
     /// Creates a window that draws only into its canvas (P32-02a, P36-03). It needs no display
     /// server, opens no audio device, and calls no SDL, and the same frame always produces the
     /// same pixels, which is what lets tests compare `frame_hash` with a committed value.
-    pub fn init_offscreen(width: i32, height: i32) !DisplayWindow {
+    pub fn init_offscreen(io: std.Io, width: i32, height: i32) !DisplayWindow {
         const bridge = try std.heap.c_allocator.create(audio_mod.AudioBridge);
         errdefer std.heap.c_allocator.destroy(bridge);
         bridge.* = audio_mod.AudioBridge.init();
 
         const sm = try std.heap.c_allocator.create(save_mod.SaveManager);
         errdefer std.heap.c_allocator.destroy(sm);
-        sm.* = try save_mod.SaveManager.init(std.heap.c_allocator, "saves");
+        sm.* = try save_mod.SaveManager.init(std.heap.c_allocator, io, "saves");
         errdefer sm.deinit();
 
         const pixels = try alloc_pixels(width, height);
@@ -1177,6 +1184,7 @@ pub const DisplayWindow = struct {
             .audio_bridge = bridge,
             .audio_device_opened = false,
             .owned_save_manager = sm,
+            .io = io,
             .save_manager = sm,
             .current_tick_interval_ms = vm_mod.DEFAULT_TICK_INTERVAL_MS,
         };
@@ -3895,7 +3903,7 @@ test "P11-03: inventory item hit testing and two-operand combining interaction" 
     try testing.expectEqual(@as(?usize, 1), hit_item1);
 
     // Test selection and cancellation state in DisplayWindow
-    var win = try DisplayWindow.init("Test Window", 960, 540);
+    var win = try DisplayWindow.init(std.testing.io, "Test Window", 960, 540);
     defer win.deinit();
 
     try testing.expect(win.selected_inventory_item == null);
@@ -3931,7 +3939,7 @@ test "P12-03: display renderer dynamically recognizes scene themes from RenderFr
     try testing.expectEqualStrings("Tavern", frame.get_current_scene());
 
     // Verify headless window can render all frames without panic
-    var win = try DisplayWindow.init("Scene Switcher Test", 960, 540);
+    var win = try DisplayWindow.init(std.testing.io, "Scene Switcher Test", 960, 540);
     defer win.deinit();
 
     win.render_frame(&frame, false);
@@ -3940,7 +3948,7 @@ test "P12-03: display renderer dynamically recognizes scene themes from RenderFr
 test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
     const testing = std.testing;
 
-    var win = try DisplayWindow.init("Dialogue Test", 960, 600);
+    var win = try DisplayWindow.init(std.testing.io, "Dialogue Test", 960, 600);
     defer win.deinit();
 
     const choices = [_][]const u8{
@@ -4031,7 +4039,7 @@ test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
 test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes without truncation" {
     const testing = std.testing;
 
-    var win = try DisplayWindow.init("Banner Test", 1280, 720);
+    var win = try DisplayWindow.init(std.testing.io, "Banner Test", 1280, 720);
     defer win.deinit();
 
     const long_msg = "Room Desk: A wooden desk with a black marker, masking tape, and breakfast syrup.";
@@ -4044,7 +4052,7 @@ test "P14-02: set_cue_banner supports long examine descriptions up to 256 bytes 
 
 test "D-099: the message log keeps the three newest lines under the stage, and the panel stays clear of it" {
     const testing = std.testing;
-    var win = try DisplayWindow.init_offscreen(1280, 720);
+    var win = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer win.deinit();
     win.set_cue_banner("One.", 0);
     win.set_cue_banner("Two.", 0);
@@ -4071,7 +4079,7 @@ test "D-099: the message log keeps the three newest lines under the stage, and t
 
 test "D-099: a long log line wraps into rows at the band's width instead of shrinking" {
     const testing = std.testing;
-    var win = try DisplayWindow.init_offscreen(1280, 720);
+    var win = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer win.deinit();
     const max_w = win.width - 48;
     win.set_cue_banner("An older line.", 0);
@@ -4090,7 +4098,7 @@ test "D-099: a long log line wraps into rows at the band's width instead of shri
 
     // In a narrow window, a newest line too long for every row keeps its start and is cut on
     // the last row; the older lines give way to it.
-    var narrow = try DisplayWindow.init_offscreen(640, 360);
+    var narrow = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer narrow.deinit();
     narrow.set_cue_banner("An older line.", 0);
     var huge: [250]u8 = undefined;
@@ -4128,13 +4136,13 @@ test "P17-03: save/load drawer layout, slot and tab hit testing, and handle_save
     // Test handle_save_action with temporary directory
     var tmp_dir = testing.tmpDir(.{});
     defer tmp_dir.cleanup();
-    const base_path = try tmp_dir.dir.realpathAlloc(testing.allocator, ".");
+    const base_path = try tmp_dir.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
     defer testing.allocator.free(base_path);
 
-    var sm = try save_mod.SaveManager.init(testing.allocator, base_path);
+    var sm = try save_mod.SaveManager.init(testing.allocator, testing.io, base_path);
     defer sm.deinit();
 
-    var win = try DisplayWindow.init("Save Drawer Test", 1280, 720);
+    var win = try DisplayWindow.init(std.testing.io, "Save Drawer Test", 1280, 720);
     defer win.deinit();
     win.attach_save_manager(&sm);
     win.show_save_drawer = true;
@@ -4241,7 +4249,7 @@ test "P22-02: distaff panel geometry, note hit-testing, and reach limits" {
 
 test "P32-02a: an offscreen window draws deterministically and hashes what it drew" {
     const testing = std.testing;
-    var window = try DisplayWindow.init_offscreen(640, 360);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer window.deinit();
     try testing.expect(!window.is_headless);
 
@@ -4308,7 +4316,7 @@ const ThemeProbe = struct {
 
 test "P32-02b: a theme draws what it claims and the engine draws the rest" {
     const testing = std.testing;
-    var window = try DisplayWindow.init_offscreen(640, 360);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer window.deinit();
 
     var frame = std.mem.zeroes(RenderFrame);
@@ -4368,7 +4376,7 @@ test "P32-02c: a host key binding returns its action before the engine's own key
     if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
     defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
 
-    var window = try DisplayWindow.init_offscreen(640, 360);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer window.deinit();
     const frame = std.mem.zeroes(RenderFrame);
 
@@ -4406,7 +4414,7 @@ test "P26-03: the command bar takes every key while focused and submits typed li
     if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
     defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
 
-    var window = try DisplayWindow.init_offscreen(640, 360);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer window.deinit();
     const frame = std.mem.zeroes(RenderFrame);
     const keys = [_]KeyBinding{.{ .key = c.SDLK_t, .action = 7 }};
@@ -4471,7 +4479,7 @@ test "P27-01: the State tab cycles in with Tab and never saves or loads" {
     const testing = std.testing;
     if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
     defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
-    var window = try DisplayWindow.init_offscreen(640, 360);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer window.deinit();
     const frame = std.mem.zeroes(RenderFrame);
     const Press = struct {
@@ -4504,7 +4512,7 @@ test "P27-03: State tab keys select, recentre, go back, reset, filter, and click
     const testing = std.testing;
     if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
     defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
-    var window = try DisplayWindow.init_offscreen(640, 360);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
     defer window.deinit();
     const Fact = struct {
         fn make(subject: u32, subject_name: []const u8, relation: []const u8, object: u32, object_name: []const u8) display_mod.RenderDebugFact {
@@ -4606,7 +4614,7 @@ test "D-080: click-through messages hide the choices until each is dismissed" {
     const testing = std.testing;
     if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
     defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
-    var window = try DisplayWindow.init_offscreen(1280, 720);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer window.deinit();
     const frame = std.mem.zeroes(RenderFrame);
     const Input = struct {
@@ -4671,7 +4679,7 @@ test "D-091: bar text fits its bar: footers wrap at a separator, long text ends 
 
 test "D-092: an action waits until the player walks to its target, and is never lost" {
     const testing = std.testing;
-    var win = try DisplayWindow.init_offscreen(1280, 720);
+    var win = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer win.deinit();
 
     var frame = std.mem.zeroes(RenderFrame);
@@ -4723,7 +4731,7 @@ test "D-092: an action waits until the player walks to its target, and is never 
 
 test "D-093: a mark says 'Walk to' only when a click would walk, and a reached target clears" {
     const testing = std.testing;
-    var win = try DisplayWindow.init_offscreen(1280, 720);
+    var win = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
     defer win.deinit();
     win.hovered_wp = 6;
     win.hovered_actor = 0;

@@ -6,6 +6,7 @@
 //! that restores a world snapshot without restoring this envelope would leave the branch ahead
 //! of the primary timeline.
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const hypervisor_mod = @import("hypervisor.zig");
@@ -103,7 +104,8 @@ pub const TemporalSnapshot = struct {
         if (hypervisor.branch_world) |*branch| {
             var bytes = std.array_list.Managed(u8).init(hypervisor.allocator);
             defer bytes.deinit();
-            try branch.save_state(bytes.writer());
+            var lw1 = ListWriter.init(&bytes);
+            try branch.save_state(&lw1.writer);
             if (bytes.items.len > MAX_BRANCH_BYTES) return Error.InconsistentTemporalState;
             try writer.writeInt(u32, @intCast(bytes.items.len), .little);
             try writer.writeAll(bytes.items);
@@ -121,17 +123,17 @@ pub const TemporalSnapshot = struct {
         errdefer snapshot.deinit();
 
         var magic: [4]u8 = undefined;
-        try reader.readNoEof(&magic);
+        try reader.readSliceAll(&magic);
         if (!std.mem.eql(u8, &magic, &MAGIC)) return Error.InvalidTemporalSnapshot;
-        if (try reader.readInt(u32, .little) != VERSION) return Error.InvalidTemporalSnapshot;
+        if (try reader.takeInt(u32, .little) != VERSION) return Error.InvalidTemporalSnapshot;
 
-        const active_byte = try reader.readByte();
+        const active_byte = try reader.takeByte();
         if (active_byte > 1) return Error.InvalidTemporalSnapshot;
         snapshot.branch_active = active_byte == 1;
 
-        snapshot.collapse_budget_ticks = try reader.readInt(u64, .little);
-        snapshot.ticks_elapsed = try reader.readInt(u64, .little);
-        const collapse_byte = try reader.readByte();
+        snapshot.collapse_budget_ticks = try reader.takeInt(u64, .little);
+        snapshot.ticks_elapsed = try reader.takeInt(u64, .little);
+        const collapse_byte = try reader.takeByte();
         snapshot.collapse_state = switch (collapse_byte) {
             0 => .dormant,
             1 => .active,
@@ -148,41 +150,41 @@ pub const TemporalSnapshot = struct {
         snapshot.keystone_entity = try readEntity(reader);
         snapshot.convergence_waypoint = try readWaypoint(reader);
 
-        const dependency_count = try reader.readInt(u32, .little);
+        const dependency_count = try reader.takeInt(u32, .little);
         if (dependency_count > MAX_RECORDS) return Error.InvalidTemporalSnapshot;
         try snapshot.teleological_dependencies.ensureTotalCapacity(dependency_count);
         for (0..dependency_count) |_| {
-            const prerequisite = RelationKind.from_int(try reader.readInt(u16, .little));
-            const goal = RelationKind.from_int(try reader.readInt(u16, .little));
+            const prerequisite = RelationKind.from_int(try reader.takeInt(u16, .little));
+            const goal = RelationKind.from_int(try reader.takeInt(u16, .little));
             snapshot.teleological_dependencies.appendAssumeCapacity(.{
                 .prerequisite_relation = prerequisite,
                 .target_goal_relation = goal,
             });
         }
 
-        const residue_count = try reader.readInt(u32, .little);
+        const residue_count = try reader.takeInt(u32, .little);
         if (residue_count > MAX_RECORDS) return Error.InvalidTemporalSnapshot;
         try snapshot.dream_residue_facts.ensureTotalCapacity(residue_count);
         for (0..residue_count) |_| {
             snapshot.dream_residue_facts.appendAssumeCapacity(.{
-                .subject = EntityId.from_int(try reader.readInt(u32, .little)),
-                .relation = RelationKind.from_int(try reader.readInt(u16, .little)),
-                .object_or_value = try reader.readInt(u32, .little),
+                .subject = EntityId.from_int(try reader.takeInt(u32, .little)),
+                .relation = RelationKind.from_int(try reader.takeInt(u16, .little)),
+                .object_or_value = try reader.takeInt(u32, .little),
             });
         }
 
         if (snapshot.branch_active) {
-            const branch_len = try reader.readInt(u32, .little);
+            const branch_len = try reader.takeInt(u32, .little);
             if (branch_len == 0 or branch_len > MAX_BRANCH_BYTES) return Error.InvalidTemporalSnapshot;
             const branch_bytes = try allocator.alloc(u8, branch_len);
             defer allocator.free(branch_bytes);
-            try reader.readNoEof(branch_bytes);
+            try reader.readSliceAll(branch_bytes);
 
             var branch = try World.init(allocator, primary_world.arena_buffer.len);
             var branch_owned = true;
             errdefer if (branch_owned) branch.deinit();
-            var stream = std.io.fixedBufferStream(branch_bytes);
-            try branch.restore_state(stream.reader());
+            var stream: std.Io.Reader = .fixed(branch_bytes);
+            try branch.restore_state(&stream);
             snapshot.branch_world = branch;
             branch_owned = false;
         }
@@ -246,7 +248,7 @@ fn writeEntity(writer: anytype, value: ?EntityId) !void {
 }
 
 fn readEntity(reader: anytype) !?EntityId {
-    const raw = try reader.readInt(u32, .little);
+    const raw = try reader.takeInt(u32, .little);
     return if (raw == 0) null else EntityId.from_int(raw);
 }
 
@@ -255,7 +257,7 @@ fn writeWaypoint(writer: anytype, value: ?WaypointId) !void {
 }
 
 fn readWaypoint(reader: anytype) !?WaypointId {
-    const raw = try reader.readInt(u16, .little);
+    const raw = try reader.takeInt(u16, .little);
     return if (raw == 0) null else raw;
 }
 
@@ -299,10 +301,11 @@ test "P31-04: temporal snapshot round-trips branch world, countdown, teleology, 
 
     var bytes = std.array_list.Managed(u8).init(testing.allocator);
     defer bytes.deinit();
-    try TemporalSnapshot.write(&hypervisor, bytes.writer());
+    var lw2 = ListWriter.init(&bytes);
+    try TemporalSnapshot.write(&hypervisor, &lw2.writer);
 
-    var stream = std.io.fixedBufferStream(bytes.items);
-    var decoded = try TemporalSnapshot.read(testing.allocator, &primary, stream.reader());
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    var decoded = try TemporalSnapshot.read(testing.allocator, &primary, &stream);
     defer decoded.deinit();
 
     try testing.expect(decoded.branch_active);
@@ -338,10 +341,11 @@ test "P31-04: temporal snapshot preserves a resolved branch without a branch wor
 
     var bytes = std.array_list.Managed(u8).init(testing.allocator);
     defer bytes.deinit();
-    try TemporalSnapshot.write(&hypervisor, bytes.writer());
+    var lw3 = ListWriter.init(&bytes);
+    try TemporalSnapshot.write(&hypervisor, &lw3.writer);
 
-    var stream = std.io.fixedBufferStream(bytes.items);
-    var decoded = try TemporalSnapshot.read(testing.allocator, &primary, stream.reader());
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    var decoded = try TemporalSnapshot.read(testing.allocator, &primary, &stream);
     defer decoded.deinit();
     try testing.expect(!decoded.branch_active);
     try testing.expect(decoded.branch_world == null);
@@ -363,8 +367,9 @@ test "P31-04: temporal snapshot rejects a corrupt branch header" {
     var bytes = std.array_list.Managed(u8).init(testing.allocator);
     defer bytes.deinit();
     try bytes.appendSlice(&MAGIC);
-    try bytes.writer().writeInt(u32, VERSION + 1, .little);
+    var lw4 = ListWriter.init(&bytes);
+    try lw4.writer.writeInt(u32, VERSION + 1, .little);
 
-    var stream = std.io.fixedBufferStream(bytes.items);
-    try testing.expectError(Error.InvalidTemporalSnapshot, TemporalSnapshot.read(testing.allocator, &primary, stream.reader()));
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    try testing.expectError(Error.InvalidTemporalSnapshot, TemporalSnapshot.read(testing.allocator, &primary, &stream));
 }

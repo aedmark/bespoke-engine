@@ -5,7 +5,7 @@ const art = @import("art.zig");
 
 /// The Tavern Heist: the original Engine-as-Spine vertical slice (P5, P6, P9), moved out of
 /// the engine CLI so `src/main.zig` carries no scenario content (D-031).
-pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool) !void {
+pub fn run(allocator: std.mem.Allocator, io: std.Io, stdout: anytype, is_headless_arg: bool) !void {
     try stdout.print("===================================================================\n", .{});
     try stdout.print("       BeSpoke Engine: The Tavern Heist Vertical Slice Demo        \n", .{});
     try stdout.print("   (Engine-as-Spine * Custom Bytecode * Relational & Temporal)  \n", .{});
@@ -105,7 +105,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
     var window_storage: ?bespoke.display.DisplayWindow = if (is_headless_arg)
         null
     else
-        try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Tavern Heist", 1280, 720);
+        try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Tavern Heist", 1280, 720);
     defer if (window_storage) |*w| w.deinit();
     if (window_storage) |*w| w.set_theme(&art.theme);
 
@@ -485,7 +485,7 @@ pub fn run(allocator: std.mem.Allocator, stdout: anytype, is_headless_arg: bool)
             session.render();
 
             // Cap display loop ~60 FPS
-            std.Thread.sleep(16 * std.time.ns_per_ms);
+            io.sleep(.fromMilliseconds(16), .awake) catch {};
         }
     }
 }

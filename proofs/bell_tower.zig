@@ -7,6 +7,7 @@
 //! reaches all seven once Maren holds the tuning fork, which gates `Toll`. Tolling the bell weaves
 //! `Kindle` on the beacon from inside the handler, which exercises host re-dispatch (D-029).
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -338,7 +339,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     var snapshot_0 = std.array_list.Managed(u8).init(allocator);
     defer snapshot_0.deinit();
-    try world.save_state(snapshot_0.writer());
+    var lw1 = ListWriter.init(&snapshot_0);
+    try world.save_state(&lw1.writer);
 
     try writer.print("\n[Step 1] Observation: Maren watches the lantern.\n", .{});
     if (try host.act(&world, &vm, &compiled, "LooksAt", ids.maren, ids.lantern, &buf)) |m| try writer.print("  -> {s}\n", .{m});
@@ -407,8 +409,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(is_solved(&world, ids), error.BellTowerNotSolved);
 
     try writer.print("\n[Step 13] Time-travel rewind to tick 0.\n", .{});
-    var stream = std.io.fixedBufferStream(snapshot_0.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot_0.items);
+    try world.restore_state(&stream);
     vm.current_scene = ids.base;
     _ = try spatial.transition_actor(ids.maren, ids.base, ids.doorway_wp);
     sync_reach(&world, ids, &input);
@@ -449,7 +451,7 @@ fn follow_scene(vm: *const bespoke.VM, spatial: *bespoke.SpatialSystem, ids: Ids
 }
 
 /// Executes the interactive Bell Tower with the distaff HUD (P22-03, D-030).
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
@@ -464,7 +466,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try vm.transition_to_scene(ids.base);
     try host.run_initial_statements(&world, &vm, &compiled);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Bell Tower", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Bell Tower", 1280, 720);
     defer window.deinit();
     window.set_theme(&art.theme);
     if (window.is_headless) {
@@ -593,7 +595,9 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
 }
 
 test "P22-03: headless Bell Tower run solves the scenario and rewinds" {
-    try run_headless(std.testing.allocator, std.io.null_writer);
+    var null_buf2: [64]u8 = undefined;
+    var null_sink2: std.Io.Writer.Discarding = .init(&null_buf2);
+    try run_headless(std.testing.allocator, &null_sink2.writer);
 }
 
 test "P22-03: drafts weave only where the script allows" {

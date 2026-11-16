@@ -14,9 +14,9 @@ const GUIDE_PATH = "docs/AUTHORING.md";
 const FENCE = "```bespoke\n";
 
 fn read_guide(allocator: std.mem.Allocator) ![]u8 {
-    var root = try std.fs.openDirAbsolute(build_options.engine_root, .{});
-    defer root.close();
-    return root.readFileAlloc(allocator, GUIDE_PATH, 1 << 20);
+    var root = try std.Io.Dir.openDirAbsolute(std.testing.io, build_options.engine_root, .{});
+    defer root.close(std.testing.io);
+    return root.readFileAlloc(std.testing.io, GUIDE_PATH, allocator, .limited(1 << 20));
 }
 
 /// The body of the ```bespoke block that follows `start` in `text`, and where it ends.

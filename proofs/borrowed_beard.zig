@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const bespoke = @import("bespoke");
 const golden = @import("golden_digest.zig");
 const art = @import("art.zig");
@@ -352,7 +353,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Save snapshot 0 for time-travel rewind verification
     var snapshot_start = std.array_list.Managed(u8).init(allocator);
     defer snapshot_start.deinit();
-    try world.save_state(snapshot_start.writer());
+    var lw1 = ListWriter.init(&snapshot_start);
+    try world.save_state(&lw1.writer);
 
     // Step 3: Search the washstand for supplies (Charcoal, SailTape, HoneyPot)
     try writer.print("[Step 3: Search the Washstand for Supplies]\n", .{});
@@ -503,8 +505,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 15: Time-Travel Rewind Demo
     try writer.print("[Step 15: Time-Travel Rewind Demo]\n", .{});
     try writer.print("   -> Rewinding simulation state back to Step 2 (inn landing, undisguised, empty inventory)...\n", .{});
-    var stream = std.io.fixedBufferStream(snapshot_start.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot_start.items);
+    try world.restore_state(&stream);
 
     try writer.print("   -> Rewound Tamsin Disguised? {s}\n", .{if (evaluate_disguise(&world)) "YES" else "NO (Restored to false!)"});
     try writer.print("   -> Rewound Has the Berth Ticket? {s}\n", .{if (evaluate_puzzle_victory(&world)) "YES" else "NO (Restored to false!)"});
@@ -521,7 +523,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 }
 
 /// Executes interactive 60 Hz simulation with graphical display (P14-03, D-016).
-pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
 
@@ -585,7 +587,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     const repl_instance = bespoke.Repl.init(&world, &spatial, &vm);
     _ = repl_instance;
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Borrowed Beard", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Borrowed Beard", 1280, 720);
     defer window.deinit();
     window.set_theme(&beard_theme);
 
@@ -921,7 +923,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
         // Check helper hotkeys
         // Bound keys arrive once per press as `UserAction.custom` (P32-02c); they used to be
         // polled every frame from SDL's keyboard state.
-        const pressed: ?BeardKey = if (action == .custom) std.meta.intToEnum(BeardKey, action.custom) catch null else null;
+        const pressed: ?BeardKey = if (action == .custom) std.enums.fromInt(BeardKey, action.custom) else null;
         if (pressed != null) {
             var hotkey_handled = false;
             // [I] Inn Landing
@@ -1078,7 +1080,8 @@ test "P14-03: The Borrowed Beard headless simulation executes and rewinds cleanl
     var list = std.array_list.Managed(u8).init(testing.allocator);
     defer list.deinit();
 
-    try run_headless(testing.allocator, list.writer());
+    var lw2 = ListWriter.init(&list);
+    try run_headless(testing.allocator, &lw2.writer);
     try testing.expect(list.items.len > 0);
 }
 

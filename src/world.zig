@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 
 /// Opaque 32-bit entity identifier (D-003). 0 is reserved for 'none'.
 pub const EntityId = enum(u32) {
@@ -140,9 +141,9 @@ pub const World = struct {
             .fba = fba,
             .facts = facts,
             .current_tick = 0,
-            .entity_names = .{},
+            .entity_names = .empty,
             .entity_map = .{},
-            .relation_meta = .{},
+            .relation_meta = .empty,
             .relation_map = .{},
             .recently_expired = undefined,
             .recently_expired_count = 0,
@@ -658,7 +659,7 @@ pub const World = struct {
     /// Restores the complete World state from a reader.
     pub fn restore_state(self: *World, reader: anytype) !void {
         var header: SnapshotHeader = undefined;
-        try reader.readNoEof(std.mem.asBytes(&header));
+        try reader.readSliceAll(std.mem.asBytes(&header));
 
         if (!std.mem.eql(u8, &header.magic, "BSPK")) {
             return SnapshotError.InvalidMagic;
@@ -678,10 +679,10 @@ pub const World = struct {
         const objects_bytes = std.mem.sliceAsBytes(slice.items(.object_or_value)[0..header.facts_len]);
         const expirations_bytes = std.mem.sliceAsBytes(slice.items(.expires_at_tick)[0..header.facts_len]);
 
-        try reader.readNoEof(subjects_bytes);
-        try reader.readNoEof(relations_bytes);
-        try reader.readNoEof(objects_bytes);
-        try reader.readNoEof(expirations_bytes);
+        try reader.readSliceAll(subjects_bytes);
+        try reader.readSliceAll(relations_bytes);
+        try reader.readSliceAll(objects_bytes);
+        try reader.readSliceAll(expirations_bytes);
 
         var hasher = std.hash.Crc32.init();
         hasher.update(subjects_bytes);
@@ -701,9 +702,9 @@ pub const World = struct {
         const alloc = self.allocator();
 
         for (0..header.entity_count) |_| {
-            const len = try reader.readInt(u16, .little);
+            const len = try reader.takeInt(u16, .little);
             const name_buf = try alloc.alloc(u8, len);
-            try reader.readNoEof(name_buf);
+            try reader.readSliceAll(name_buf);
             const id_val: u32 = @intCast(self.entity_names.items.len + 1);
             const id = EntityId.from_int(id_val);
             try self.entity_names.append(alloc, name_buf);
@@ -715,10 +716,10 @@ pub const World = struct {
         self.relation_map.clearRetainingCapacity();
 
         for (0..header.relation_count) |_| {
-            const len = try reader.readInt(u16, .little);
+            const len = try reader.takeInt(u16, .little);
             const name_buf = try alloc.alloc(u8, len);
-            try reader.readNoEof(name_buf);
-            const rel_type_byte = try reader.readByte();
+            try reader.readSliceAll(name_buf);
+            const rel_type_byte = try reader.takeByte();
             const rel_type: RelationType = @enumFromInt(rel_type_byte);
             const kind_val: u16 = @intCast(self.relation_meta.items.len + 1);
             const kind = RelationKind.from_int(kind_val);
@@ -739,9 +740,10 @@ pub const World = struct {
         var stream_buf = std.array_list.Managed(u8).init(backing_allocator);
         defer stream_buf.deinit();
 
-        try self.save_state(stream_buf.writer());
-        var read_stream = std.io.fixedBufferStream(stream_buf.items);
-        try cloned.restore_state(read_stream.reader());
+        var lw1 = ListWriter.init(&stream_buf);
+        try self.save_state(&lw1.writer);
+        var read_stream: std.Io.Reader = .fixed(stream_buf.items);
+        try cloned.restore_state(&read_stream);
 
         return cloned;
     }
@@ -874,7 +876,8 @@ test "P1-04: deterministic save_state and restore_state" {
     // Save state to buffer
     var save_stream = std.array_list.Managed(u8).init(testing.allocator);
     defer save_stream.deinit();
-    try world.save_state(save_stream.writer());
+    var lw2 = ListWriter.init(&save_stream);
+    try world.save_state(&lw2.writer);
 
     // Mutate world after save: alter alertness, add facts, advance ticks
     try world.remember(guard, alertness, 20, 0);
@@ -887,8 +890,8 @@ test "P1-04: deterministic save_state and restore_state" {
     try testing.expectEqual(@as(u32, 20), world.get_property(guard, alertness).?);
 
     // Restore state from snapshot
-    var read_stream = std.io.fixedBufferStream(save_stream.items);
-    try world.restore_state(read_stream.reader());
+    var read_stream: std.Io.Reader = .fixed(save_stream.items);
+    try world.restore_state(&read_stream);
 
     // Verify tick and state are precisely restored
     try testing.expectEqual(@as(u64, 12), world.current_tick);

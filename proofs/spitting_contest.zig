@@ -446,7 +446,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 }
 
 /// Launches the full graphical 2D adventure display window for the Spitting Contest (P10-03, D-001, D-008, D-012).
-pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
+pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {
     try stdout.print("\n===================================================================\n", .{});
     try stdout.print("   BeSpoke Engine: The Pip-Spitting Green (Graphical 2D)\n", .{});
     try stdout.print("  (Natural Stageplay DSL * Relational Spine * Falling Edge & TTL)  \n", .{});
@@ -520,7 +520,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
         _ = try vm.spawn_routine(room_ent, entry);
     }
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Pip-Spitting Green", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Pip-Spitting Green", 1280, 720);
     defer window.deinit();
     window.set_theme(&spit_theme);
 
@@ -683,7 +683,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                 }
             },
             .dismiss_dialogue => window.dismiss_dialogue(),
-            .custom => |id| if (std.meta.intToEnum(SpitKey, id)) |key| switch (key) {
+            .custom => |id| if (std.enums.fromInt(SpitKey, id)) |key| switch (key) {
                 .spit => {
                     _ = try vm.fire_cue(&compiled, "Spits", tamsin, null, null);
                     try advance_and_show(&session, &vm);
@@ -724,7 +724,7 @@ pub fn run_gui(allocator: std.mem.Allocator, stdout: anytype) !void {
                         window.play_sfx(.combine);
                     }
                 },
-            } else |_| {},
+            } else {},
             .repl_command => |cmd| {
                 const line = cmd.buf[0..cmd.len];
                 const res = repl_instance.execute(line);
@@ -886,7 +886,9 @@ test "P10-03: spitting contest puzzle systemic progression and resolution" {
 
 test "P10-03: headless execution of Spitting Contest scenario" {
     const testing = std.testing;
-    try run_headless(testing.allocator, std.io.null_writer);
+    var null_buf1: [64]u8 = undefined;
+    var null_sink1: std.Io.Writer.Discarding = .init(&null_buf1);
+    try run_headless(testing.allocator, &null_sink1.writer);
 }
 
 test "P35-03: the judge watches the harbour for the whole distraction, and the breeze comes every 65 ticks" {

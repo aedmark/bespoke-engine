@@ -15,7 +15,7 @@ const Game = struct {
     vm: bespoke.VM,
 
     fn init(self: *Game) !void {
-        self.source = try std.fs.cwd().readFileAlloc(testing.allocator, SCRIPT_PATH, 1 << 20);
+        self.source = try std.Io.Dir.cwd().readFileAlloc(testing.io, SCRIPT_PATH, testing.allocator, .limited(1 << 20));
         self.world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
         self.spatial = bespoke.SpatialSystem.init(testing.allocator);
         self.compiled = try bespoke.compile_source(testing.allocator, &self.world, &self.spatial, self.source);
@@ -63,7 +63,7 @@ const Game = struct {
 };
 
 test "the script compiles" {
-    const source = try std.fs.cwd().readFileAlloc(testing.allocator, SCRIPT_PATH, 1 << 20);
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, SCRIPT_PATH, testing.allocator, .limited(1 << 20));
     defer testing.allocator.free(source);
     try testing.expect(bespoke.check_source(testing.allocator, source).is_valid);
 }

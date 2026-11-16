@@ -31,8 +31,8 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("bespoke", bespoke);
     exe.root_module.addOptions("game_options", options);
     if (bundle) exe.root_module.addAnonymousImport("game_package", .{ .root_source_file = compiled_package(b) });
-    exe.linkLibC();
-    exe.linkSystemLibrary("SDL2");
+    exe.root_module.link_libc = true;
+    exe.root_module.linkSystemLibrary("SDL2", .{});
     b.installArtifact(exe);
 
     // Without -Dbundle the game reads scripts/ at run time, so run it from the project root.
@@ -53,8 +53,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addImport("bespoke", bespoke);
-    tests.linkLibC();
-    tests.linkSystemLibrary("SDL2");
+    tests.root_module.link_libc = true;
+    tests.root_module.linkSystemLibrary("SDL2", .{});
     const run_tests = b.addRunArtifact(tests);
     run_tests.setCwd(b.path("."));
     const test_step = b.step("test", "Compile the game script and check its simulation");

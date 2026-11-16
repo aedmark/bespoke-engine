@@ -1,4 +1,5 @@
 const std = @import("std");
+const ListWriter = @import("../list_writer.zig").ListWriter;
 const parser_mod = @import("parser.zig");
 const lexer_mod = @import("lexer.zig");
 const bytecode_mod = @import("../bytecode.zig");
@@ -82,9 +83,9 @@ pub const CompiledProgram = struct {
     /// Script music in declaration order, as validated MML text (P28-03, D-062).
     scores: std.array_list.Managed(mml.ScoreDecl),
     /// Each cast member's starting mark, in source order (D-065). Empty without a SpatialSystem.
-    cast: std.ArrayListUnmanaged(CastPlace) = .{},
+    cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     /// `where` guards of cue handlers, in source order (D-072). Handlers without one are absent.
-    cue_guards: std.ArrayListUnmanaged(CueGuard) = .{},
+    cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
 
     pub fn deinit(self: *CompiledProgram) void {
         for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
@@ -279,14 +280,13 @@ pub const CompiledProgram = struct {
 
     fn lookup_cue(self: *const CompiledProgram, cue_name: []const u8, parts: []const []const u8) ?usize {
         var buf: [192]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&buf);
-        const w = stream.writer();
+        var w: std.Io.Writer = .fixed(&buf);
         w.writeAll(cue_name) catch return null;
         for (parts) |part| {
             w.writeByte(':') catch return null;
             w.writeAll(part) catch return null;
         }
-        return self.cue_handler_entries.get(stream.getWritten());
+        return self.cue_handler_entries.get(w.buffered());
     }
 };
 
@@ -323,8 +323,8 @@ pub const Codegen = struct {
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
-    cast: std.ArrayListUnmanaged(CastPlace) = .{},
-    cue_guards: std.ArrayListUnmanaged(CueGuard) = .{},
+    cast: std.ArrayListUnmanaged(CastPlace) = .empty,
+    cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -1835,9 +1835,10 @@ test "P22-01: saving with undispatched weaves is refused" {
 
     var buf = std.array_list.Managed(u8).init(testing.allocator);
     defer buf.deinit();
+    var lw1 = ListWriter.init(&buf);
     try testing.expectError(
         error.PendingWeavesNotDispatched,
-        save_mod.write_save_state(testing.allocator, buf.writer(), &world, null, &vm, .{}),
+        save_mod.write_save_state(testing.allocator, &lw1.writer, &world, null, &vm, .{}),
     );
 }
 
@@ -1988,9 +1989,10 @@ test "P32-30: a scripted choice set suspends, prunes, and resumes at the chosen 
 
     var snap = std.array_list.Managed(u8).init(alloc);
     defer snap.deinit();
-    try world.save_state(snap.writer());
-    var stream = std.io.fixedBufferStream(snap.items);
-    try world.restore_state(stream.reader());
+    var lw2 = ListWriter.init(&snap);
+    try world.save_state(&lw2.writer);
+    var stream: std.Io.Reader = .fixed(snap.items);
+    try world.restore_state(&stream);
     try testing.expectEqualStrings("Only with coin", vm.dialogue_view().?.text(1));
     try testing.expectEqualStrings("blocked by Carries(Actor, Coin)", vm.dialogue_view().?.branch(2).failure);
 
@@ -2443,15 +2445,16 @@ test "P28-03: score declarations compile, seed scene facts, and play and stop by
         _ = try host.tick(&vm, &compiled);
         const now = display.current_score_entity(&world, vm.current_scene);
         if (seen.items.len == 0 or seen.items[seen.items.len - 1] != now) try seen.append(now);
-        if (t == 3) try world.save_state(snapshot.writer());
+        var lw3 = ListWriter.init(&snapshot);
+        if (t == 3) try world.save_state(&lw3.writer);
     }
     // Calm, then the Chase override, which persists into the Rampart (no scene score there);
     // `stop score` in the Rampart leaves silence, and the Gatehouse brings Calm back.
     try testing.expectEqualSlices(?EntityId, &.{ calm_id, chase_id, null, calm_id }, seen.items);
 
     // A rewind restores the override along with the rest of the World.
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try world.restore_state(&stream);
     try testing.expectEqual(@as(?EntityId, chase_id), display.current_score_entity(&world, vm.current_scene));
 }
 

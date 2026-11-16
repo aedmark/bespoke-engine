@@ -10,6 +10,7 @@
 //!   Pursuing(Actor)                                presence while any of its agendas pursues
 
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 
@@ -370,7 +371,8 @@ test "P33-01: pursuit starts, abandons, resolves with cooldown, and rewinds with
 
     var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
-    try fx.world.save_state(snapshot.writer());
+    var lw1 = ListWriter.init(&snapshot);
+    try fx.world.save_state(&lw1.writer);
 
     // The trigger lapses: the agenda gives up without a cooldown.
     _ = fx.world.forget(fx.hero, fx.investigated, null);
@@ -378,8 +380,8 @@ test "P33-01: pursuit starts, abandons, resolves with cooldown, and rewinds with
     try testing.expectEqual(Stage.idle, stage_of(&fx.world, agenda.entity).?);
     try testing.expectError(Error.InvalidAgenda, resolve(&fx.world, agenda));
 
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try fx.world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try fx.world.restore_state(&stream);
     try testing.expectEqual(Stage.pursuing, stage_of(&fx.world, agenda.entity).?);
 
     // Resolution starts a three-tick cooldown, after which the still-true trigger fires again.

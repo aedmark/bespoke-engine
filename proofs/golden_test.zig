@@ -12,6 +12,7 @@
 //! Regenerate deliberately, and review the diff: `zig build test-proofs -Dupdate-goldens`.
 //! On a mismatch the actual output is written to `proofs/golden/<proof>.actual.txt`.
 const std = @import("std");
+const ListWriter = @import("bespoke").ListWriter;
 const options = @import("golden_options");
 
 const tavern_heist = @import("tavern_heist.zig");
@@ -30,10 +31,11 @@ const observatory_puzzle = @import("observatory_puzzle.zig");
 const golden_digest = @import("golden_digest.zig");
 const bespoke = @import("bespoke");
 
-const Writer = std.array_list.Managed(u8).Writer;
+/// Every proof runner writes through `std.Io.Writer` since Zig 0.16 (P37-01).
+const Writer = *std.Io.Writer;
 
 fn tavern(allocator: std.mem.Allocator, w: anytype) anyerror!void {
-    try tavern_heist.run(allocator, w, true);
+    try tavern_heist.run(allocator, std.testing.io, w, true);
 }
 
 const RunFn = *const fn (std.mem.Allocator, Writer) anyerror!void;
@@ -80,14 +82,15 @@ fn first_difference(expected: []const u8, actual: []const u8) struct { line: usi
 
 test "P32-07: every proof's headless transcript matches its golden file" {
     const allocator = std.testing.allocator;
-    var dir = try std.fs.cwd().makeOpenPath(options.golden_dir, .{});
-    defer dir.close();
+    var dir = try std.Io.Dir.cwd().createDirPathOpen(std.testing.io, options.golden_dir, .{});
+    defer dir.close(std.testing.io);
 
     var failures: usize = 0;
     for (proofs) |p| {
         var out = std.array_list.Managed(u8).init(allocator);
         defer out.deinit();
-        try p.run(allocator, out.writer());
+        var lw1 = ListWriter.init(&out);
+        try p.run(allocator, &lw1.writer);
 
         var golden_name_buf: [64]u8 = undefined;
         var actual_name_buf: [64]u8 = undefined;
@@ -95,12 +98,12 @@ test "P32-07: every proof's headless transcript matches its golden file" {
         const actual_name = try std.fmt.bufPrint(&actual_name_buf, "{s}.actual.txt", .{p.name});
 
         if (options.update_goldens) {
-            try dir.writeFile(.{ .sub_path = golden_name, .data = out.items });
-            dir.deleteFile(actual_name) catch {};
+            try dir.writeFile(std.testing.io, .{ .sub_path = golden_name, .data = out.items });
+            dir.deleteFile(std.testing.io, actual_name) catch {};
             continue;
         }
 
-        const expected = dir.readFileAlloc(allocator, golden_name, 1 << 22) catch |err| {
+        const expected = dir.readFileAlloc(std.testing.io, golden_name, allocator, .limited(1 << 22)) catch |err| {
             std.debug.print("golden {s}/{s} unreadable ({s}); run `zig build test-proofs -Dupdate-goldens`\n", .{ options.golden_dir, golden_name, @errorName(err) });
             failures += 1;
             continue;
@@ -108,11 +111,11 @@ test "P32-07: every proof's headless transcript matches its golden file" {
         defer allocator.free(expected);
 
         if (std.mem.eql(u8, expected, out.items)) {
-            dir.deleteFile(actual_name) catch {};
+            dir.deleteFile(std.testing.io, actual_name) catch {};
             continue;
         }
         failures += 1;
-        try dir.writeFile(.{ .sub_path = actual_name, .data = out.items });
+        try dir.writeFile(std.testing.io, .{ .sub_path = actual_name, .data = out.items });
         const d = first_difference(expected, out.items);
         std.debug.print(
             "\nproof '{s}' differs from its golden at line {d}:\n  golden: {s}\n  actual: {s}\n  full output: {s}/{s}\n",
@@ -139,18 +142,19 @@ fn tamper_one_fact(world: *bespoke.World) anyerror!void {
 test "P34-01: one altered final fact fails a proof's golden on its digest line alone" {
     if (options.update_goldens) return;
     const allocator = std.testing.allocator;
-    var dir = try std.fs.cwd().openDir(options.golden_dir, .{});
-    defer dir.close();
+    var dir = try std.Io.Dir.cwd().openDir(std.testing.io, options.golden_dir, .{});
+    defer dir.close(std.testing.io);
     for (proofs) |p| {
         var name_buf: [64]u8 = undefined;
-        const expected = try dir.readFileAlloc(allocator, try std.fmt.bufPrint(&name_buf, "{s}.txt", .{p.name}), 1 << 22);
+        const expected = try dir.readFileAlloc(std.testing.io, try std.fmt.bufPrint(&name_buf, "{s}.txt", .{p.name}), allocator, .limited(1 << 22));
         defer allocator.free(expected);
 
         golden_digest.tamper = tamper_one_fact;
         defer golden_digest.tamper = null;
         var out = std.array_list.Managed(u8).init(allocator);
         defer out.deinit();
-        try p.run(allocator, out.writer());
+        var lw2 = ListWriter.init(&out);
+        try p.run(allocator, &lw2.writer);
 
         // The transcript differs, and only on a "final facts" line.
         try std.testing.expect(!std.mem.eql(u8, expected, out.items));

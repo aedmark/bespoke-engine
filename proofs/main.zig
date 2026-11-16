@@ -104,16 +104,19 @@ const usage =
     \\
 ;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    // Zig 0.16+: the process supplies its allocator and its I/O, which reaches every window,
+    // save, and clock below (P37-01). Standard output is unbuffered, so an interactive proof's
+    // instructions appear before its window opens.
+    const io = init.io;
+    const allocator = init.gpa;
+    var stdout_writer = std.Io.File.stdout().writer(io, &.{});
+    const stdout = &stdout_writer.interface;
 
     var headless = false;
     var proof: Proof = .tavern;
 
-    var args = try std.process.argsWithAllocator(allocator);
+    var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
     defer args.deinit();
     _ = args.next();
     while (args.next()) |arg| {
@@ -140,19 +143,19 @@ pub fn main() !void {
     }
 
     switch (proof) {
-        .tavern => try tavern_heist.run(allocator, stdout, headless),
-        .spitting_contest => if (headless) try spitting_contest.run_headless(allocator, stdout) else try spitting_contest.run_gui(allocator, stdout),
-        .borrowed_beard => if (headless) try borrowed_beard.run_headless(allocator, stdout) else try borrowed_beard.run_interactive(allocator, stdout),
-        .sword_fighting => if (headless) try sword_fighting.run_headless(allocator, stdout) else try sword_fighting.run_interactive(allocator, stdout),
-        .village => if (headless) try village.run_headless(allocator, stdout) else try village.run_interactive(allocator, stdout),
-        .lamp_point => if (headless) try lamp_point.run_headless(allocator, stdout) else try lamp_point.run_interactive(allocator, stdout),
-        .three_tides => if (headless) try three_tides.run_headless(allocator, stdout) else try three_tides.run_interactive(allocator),
-        .weathercock => if (headless) try weathercock.run_headless(allocator, stdout) else try weathercock.run_interactive(allocator),
-        .bell_tower => if (headless) try bell_tower.run_headless(allocator, stdout) else try bell_tower.run_interactive(allocator, stdout),
-        .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
-        .saltmarket => if (headless) try saltmarket.run_headless(allocator, stdout) else try saltmarket.run_interactive(allocator, stdout),
-        .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, stdout),
-        .observatory => if (headless) try observatory_puzzle.run_headless(allocator, stdout) else try observatory_puzzle.run_interactive(allocator, stdout),
+        .tavern => try tavern_heist.run(allocator, io, stdout, headless),
+        .spitting_contest => if (headless) try spitting_contest.run_headless(allocator, stdout) else try spitting_contest.run_gui(allocator, io, stdout),
+        .borrowed_beard => if (headless) try borrowed_beard.run_headless(allocator, stdout) else try borrowed_beard.run_interactive(allocator, io, stdout),
+        .sword_fighting => if (headless) try sword_fighting.run_headless(allocator, stdout) else try sword_fighting.run_interactive(allocator, io, stdout),
+        .village => if (headless) try village.run_headless(allocator, stdout) else try village.run_interactive(allocator, io, stdout),
+        .lamp_point => if (headless) try lamp_point.run_headless(allocator, stdout) else try lamp_point.run_interactive(allocator, io, stdout),
+        .three_tides => if (headless) try three_tides.run_headless(allocator, stdout) else try three_tides.run_interactive(allocator, io),
+        .weathercock => if (headless) try weathercock.run_headless(allocator, stdout) else try weathercock.run_interactive(allocator, io),
+        .bell_tower => if (headless) try bell_tower.run_headless(allocator, stdout) else try bell_tower.run_interactive(allocator, io, stdout),
+        .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, io, stdout),
+        .saltmarket => if (headless) try saltmarket.run_headless(allocator, stdout) else try saltmarket.run_interactive(allocator, io, stdout),
+        .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, io, stdout),
+        .observatory => if (headless) try observatory_puzzle.run_headless(allocator, stdout) else try observatory_puzzle.run_interactive(allocator, io, stdout),
     }
 }
 

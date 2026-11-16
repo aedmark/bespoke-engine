@@ -5,6 +5,7 @@
 //! rewind, and branch restore capture the complete state without subsystem-specific snapshots.
 
 const std = @import("std");
+const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 
@@ -320,13 +321,14 @@ test "P23-01: snapshot restore rewinds stage, volume, and exposure deadline toge
     try system.step(&world, null);
     var snapshot = std.array_list.Managed(u8).init(testing.allocator);
     defer snapshot.deinit();
-    try world.save_state(snapshot.writer());
+    var lw1 = ListWriter.init(&snapshot);
+    try world.save_state(&lw1.writer);
 
     _ = world.step_tick();
     try system.step(&world, null);
     try testing.expectEqual(etched.to_int(), world.get_property(vial, system.rel.stage).?);
-    var stream = std.io.fixedBufferStream(snapshot.items);
-    try world.restore_state(stream.reader());
+    var stream: std.Io.Reader = .fixed(snapshot.items);
+    try world.restore_state(&stream);
     try testing.expectEqual(sound.to_int(), world.get_property(vial, system.rel.stage).?);
     try testing.expectEqual(@as(u32, 5), world.get_property(vial, system.rel.volume).?);
 
