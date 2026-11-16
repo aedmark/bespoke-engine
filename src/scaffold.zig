@@ -34,7 +34,8 @@ pub const FILES = [_]File{
 
 /// A project name becomes a directory, a Zig package name, and an executable name, so it is
 /// held to what all three accept everywhere: a lowercase letter, then lowercase letters,
-/// digits, or underscores, at most 32 characters.
+/// digits, or underscores, at most 32 characters, and not a Zig keyword (the package name is
+/// a bare enum literal in `build.zig.zon` since Zig 0.14).
 pub fn validate_name(name: []const u8) Error!void {
     if (name.len == 0 or name.len > MAX_NAME_LEN) return error.InvalidProjectName;
     if (name[0] < 'a' or name[0] > 'z') return error.InvalidProjectName;
@@ -42,13 +43,21 @@ pub fn validate_name(name: []const u8) Error!void {
         const ok = (ch >= 'a' and ch <= 'z') or (ch >= '0' and ch <= '9') or ch == '_';
         if (!ok) return error.InvalidProjectName;
     }
+    if (std.zig.Token.getKeyword(name) != null) return error.InvalidProjectName;
 }
 
-/// Replaces `{{name}}` and `{{engine_root}}`. The engine root lands inside a ZON string, so
+/// A Zig package fingerprint (Zig 0.14): the name's CRC-32 in the high 32 bits and a random
+/// id in the low 32, never 0 or all ones. Each generated project gets its own id.
+pub fn fingerprint(name: []const u8, id: u32) u64 {
+    std.debug.assert(id != 0 and id != std.math.maxInt(u32));
+    return (@as(u64, std.hash.Crc32.hash(name)) << 32) | id;
+}
+
+/// Replaces `{{name}}`, `{{fingerprint}}`, and `{{engine_root}}`. The engine root lands inside a ZON string, so
 /// backslashes and quotes are escaped; a control character is refused rather than escaped.
 /// Any other `{{` is copied as it is: the CI workflow's `${{ expr }}` expressions belong to
 /// GitHub Actions, and placeholders never start with a space.
-pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const u8, engine_root: []const u8) ![]u8 {
+pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const u8, engine_root: []const u8, id: u32) ![]u8 {
     var out = std.ArrayList(u8).init(allocator);
     errdefer out.deinit();
     var i: usize = 0;
@@ -56,6 +65,9 @@ pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const 
         if (std.mem.startsWith(u8, template[i..], "{{name}}")) {
             try out.appendSlice(name);
             i += "{{name}}".len;
+        } else if (std.mem.startsWith(u8, template[i..], "{{fingerprint}}")) {
+            try out.writer().print("0x{x:0>16}", .{fingerprint(name, id)});
+            i += "{{fingerprint}}".len;
         } else if (std.mem.startsWith(u8, template[i..], "{{engine_root}}")) {
             for (engine_root) |ch| {
                 if (ch < 0x20) return error.InvalidEngineRoot;
@@ -73,7 +85,7 @@ pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const 
 
 /// Writes the project into `parent/name`. Refuses when that path already exists, so it never
 /// overwrites an author's work. `engine_root` is the absolute path of the engine checkout; the
-/// project records it relative to itself, because Zig 0.13 accepts only relative `.path`
+/// project records it relative to itself, because Zig accepts only relative `.path`
 /// dependencies. Moving the project or the engine therefore means editing `build.zig.zon`.
 pub fn generate(allocator: std.mem.Allocator, parent: std.fs.Dir, name: []const u8, engine_root: []const u8) !void {
     try validate_name(name);
@@ -94,9 +106,10 @@ pub fn generate(allocator: std.mem.Allocator, parent: std.fs.Dir, name: []const 
     defer allocator.free(engine_rel);
     // On Windows a path on another drive stays absolute, which Zig would reject.
     if (engine_rel.len == 0 or std.fs.path.isAbsolute(engine_rel)) return error.InvalidEngineRoot;
+    const id = std.crypto.random.intRangeLessThan(u32, 1, std.math.maxInt(u32));
     for (FILES) |file| {
         if (std.fs.path.dirname(file.path)) |dir| try project.makePath(dir);
-        const text = try render(allocator, file.template, name, engine_rel);
+        const text = try render(allocator, file.template, name, engine_rel, id);
         defer allocator.free(text);
         try project.writeFile(.{ .sub_path = file.path, .data = text, .flags = .{ .exclusive = true } });
     }
@@ -107,20 +120,20 @@ const testing = std.testing;
 test "P29-01: project names are lowercase identifiers of at most 32 characters" {
     try validate_name("lighthouse");
     try validate_name("game_2");
-    for ([_][]const u8{ "", "Game", "2game", "my-game", "my game", "../x", "a" ** 33, "_x" }) |bad| {
+    for ([_][]const u8{ "", "Game", "2game", "my-game", "my game", "../x", "a" ** 33, "_x", "test", "fn", "error" }) |bad| {
         try testing.expectError(error.InvalidProjectName, validate_name(bad));
     }
 }
 
 test "P29-01: templates substitute the name and escape the engine path for ZON" {
-    const text = try render(testing.allocator, ".name = \"{{name}}\", .path = \"{{engine_root}}\"", "tide", "C:\\eng \"x\"");
+    const text = try render(testing.allocator, ".name = \"{{name}}\", .path = \"{{engine_root}}\"", "tide", "C:\\eng \"x\"", 7);
     defer testing.allocator.free(text);
     try testing.expectEqualStrings(".name = \"tide\", .path = \"C:\\\\eng \\\"x\\\"\"", text);
-    try testing.expectError(error.InvalidEngineRoot, render(testing.allocator, "{{engine_root}}", "a", "bad\npath"));
+    try testing.expectError(error.InvalidEngineRoot, render(testing.allocator, "{{engine_root}}", "a", "bad\npath", 7));
     // No template keeps a placeholder after rendering. A placeholder is `{{` and a name;
     // GitHub Actions expressions (`${{ matrix.os }}`) start with a space and stay.
     for (FILES) |file| {
-        const out = try render(testing.allocator, file.template, "tide", "/engine");
+        const out = try render(testing.allocator, file.template, "tide", "/engine", 7);
         defer testing.allocator.free(out);
         var at: usize = 0;
         while (std.mem.indexOfPos(u8, out, at, "{{")) |i| : (at = i + 2) {
@@ -146,7 +159,11 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     const zon = try tmp.dir.readFileAlloc(testing.allocator, "tide/build.zig.zon", 1 << 16);
     defer testing.allocator.free(zon);
     try testing.expect(std.mem.indexOf(u8, zon, ".path = \"../engine\"") != null);
-    try testing.expect(std.mem.indexOf(u8, zon, ".name = \"tide\"") != null);
+    try testing.expect(std.mem.indexOf(u8, zon, ".name = .tide,") != null);
+    // The fingerprint's high half is the name's CRC-32, as Zig checks it.
+    var expect_buf: [32]u8 = undefined;
+    const checksum = try std.fmt.bufPrint(&expect_buf, ".fingerprint = 0x{x:0>8}", .{std.hash.Crc32.hash("tide")});
+    try testing.expect(std.mem.indexOf(u8, zon, checksum) != null);
 
     try testing.expectError(error.ProjectExists, generate(testing.allocator, tmp.dir, "tide", engine));
     try tmp.dir.makeDir("taken");

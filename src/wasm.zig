@@ -80,28 +80,37 @@ pub const CappedAllocator = struct {
     used: usize = 0,
 
     pub fn allocator(self: *CappedAllocator) std.mem.Allocator {
-        return .{ .ptr = self, .vtable = &.{ .alloc = alloc, .resize = resize, .free = free } };
+        return .{ .ptr = self, .vtable = &.{ .alloc = alloc, .resize = resize, .remap = remap, .free = free } };
     }
 
-    fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
         const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
         if (len > self.limit - self.used) return null;
-        const ptr = self.child.rawAlloc(len, ptr_align, ret_addr) orelse return null;
+        const ptr = self.child.rawAlloc(len, alignment, ret_addr) orelse return null;
         self.used += len;
         return ptr;
     }
 
-    fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+    fn resize(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
         const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
         if (new_len > buf.len and new_len - buf.len > self.limit - self.used) return false;
-        if (!self.child.rawResize(buf, buf_align, new_len, ret_addr)) return false;
+        if (!self.child.rawResize(buf, alignment, new_len, ret_addr)) return false;
         self.used = self.used - buf.len + new_len;
         return true;
     }
 
-    fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+    /// Like `resize`, but the child may move the memory; the ceiling counts it the same way.
+    fn remap(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
         const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
-        self.child.rawFree(buf, buf_align, ret_addr);
+        if (new_len > buf.len and new_len - buf.len > self.limit - self.used) return null;
+        const ptr = self.child.rawRemap(buf, alignment, new_len, ret_addr) orelse return null;
+        self.used = self.used - buf.len + new_len;
+        return ptr;
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const self: *CappedAllocator = @ptrCast(@alignCast(ctx));
+        self.child.rawFree(buf, alignment, ret_addr);
         self.used -= buf.len;
     }
 };
@@ -1707,30 +1716,30 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return 0;
         }
     };
-    @export(Exports.wasm_init, .{ .name = "wasm_init" });
-    @export(Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
-    @export(Exports.wasm_message_pending, .{ .name = "wasm_message_pending" });
-    @export(Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
-    @export(Exports.wasm_active_verb, .{ .name = "wasm_active_verb" });
-    @export(Exports.wasm_set_verb, .{ .name = "wasm_set_verb" });
-    @export(Exports.wasm_deck_action, .{ .name = "wasm_deck_action" });
-    @export(Exports.wasm_audio_render, .{ .name = "wasm_audio_render" });
-    @export(Exports.wasm_audio_sample_rate, .{ .name = "wasm_audio_sample_rate" });
-    @export(Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
-    @export(Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
-    @export(Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });
-    @export(Exports.wasm_framebuffer_ptr, .{ .name = "wasm_framebuffer_ptr" });
-    @export(Exports.wasm_framebuffer_len, .{ .name = "wasm_framebuffer_len" });
-    @export(Exports.wasm_on_pointer_down, .{ .name = "wasm_on_pointer_down" });
-    @export(Exports.wasm_on_pointer_move, .{ .name = "wasm_on_pointer_move" });
-    @export(Exports.wasm_on_right_click, .{ .name = "wasm_on_right_click" });
-    @export(Exports.wasm_on_key_down, .{ .name = "wasm_on_key_down" });
-    @export(Exports.wasm_on_char, .{ .name = "wasm_on_char" });
-    @export(Exports.wasm_command_bar_focused, .{ .name = "wasm_command_bar_focused" });
-    @export(Exports.wasm_on_touch, .{ .name = "wasm_on_touch" });
-    @export(Exports.wasm_scrub_to_tick, .{ .name = "wasm_scrub_to_tick" });
-    @export(Exports.wasm_get_tick, .{ .name = "wasm_get_tick" });
-    @export(Exports.wasm_get_fact_count, .{ .name = "wasm_get_fact_count" });
+    @export(&Exports.wasm_init, .{ .name = "wasm_init" });
+    @export(&Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
+    @export(&Exports.wasm_message_pending, .{ .name = "wasm_message_pending" });
+    @export(&Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
+    @export(&Exports.wasm_active_verb, .{ .name = "wasm_active_verb" });
+    @export(&Exports.wasm_set_verb, .{ .name = "wasm_set_verb" });
+    @export(&Exports.wasm_deck_action, .{ .name = "wasm_deck_action" });
+    @export(&Exports.wasm_audio_render, .{ .name = "wasm_audio_render" });
+    @export(&Exports.wasm_audio_sample_rate, .{ .name = "wasm_audio_sample_rate" });
+    @export(&Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
+    @export(&Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
+    @export(&Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });
+    @export(&Exports.wasm_framebuffer_ptr, .{ .name = "wasm_framebuffer_ptr" });
+    @export(&Exports.wasm_framebuffer_len, .{ .name = "wasm_framebuffer_len" });
+    @export(&Exports.wasm_on_pointer_down, .{ .name = "wasm_on_pointer_down" });
+    @export(&Exports.wasm_on_pointer_move, .{ .name = "wasm_on_pointer_move" });
+    @export(&Exports.wasm_on_right_click, .{ .name = "wasm_on_right_click" });
+    @export(&Exports.wasm_on_key_down, .{ .name = "wasm_on_key_down" });
+    @export(&Exports.wasm_on_char, .{ .name = "wasm_on_char" });
+    @export(&Exports.wasm_command_bar_focused, .{ .name = "wasm_command_bar_focused" });
+    @export(&Exports.wasm_on_touch, .{ .name = "wasm_on_touch" });
+    @export(&Exports.wasm_scrub_to_tick, .{ .name = "wasm_scrub_to_tick" });
+    @export(&Exports.wasm_get_tick, .{ .name = "wasm_get_tick" });
+    @export(&Exports.wasm_get_fact_count, .{ .name = "wasm_get_fact_count" });
 }
 
 // =============================================================================

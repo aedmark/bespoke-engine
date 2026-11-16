@@ -178,7 +178,7 @@ pub fn build(b: *std.Build) void {
     b.cache_root.handle.makePath("tmp") catch {};
     const template_root = b.cache_root.join(b.allocator, &.{"tmp"}) catch @panic("OOM");
     const starter_dir = b.pathJoin(&.{ template_root, "template_check" });
-    const clear_template = b.addRemoveDirTree(starter_dir);
+    const clear_template = b.addRemoveDirTree(.{ .cwd_relative = starter_dir });
     const init_template = b.addRunArtifact(exe);
     init_template.has_side_effects = true;
     init_template.addArgs(&.{ "init", "template_check", "--engine", b.pathFromRoot(".") });

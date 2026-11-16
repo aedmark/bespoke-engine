@@ -56,7 +56,7 @@ pub const Attribute = enum(u8) {
     }
 
     pub fn from_name(name: []const u8) ?Attribute {
-        inline for (@typeInfo(Attribute).Enum.fields) |field| {
+        inline for (@typeInfo(Attribute).@"enum".fields) |field| {
             if (std.mem.eql(u8, name, field.name)) return @enumFromInt(field.value);
         }
         return null;
@@ -225,8 +225,8 @@ const CellState = struct {
     }
 
     fn load(self: *CellState, world: *const World, grid: Grid) void {
-        var relations: [@typeInfo(Attribute).Enum.fields.len]?RelationKind = undefined;
-        inline for (@typeInfo(Attribute).Enum.fields, 0..) |field, i| {
+        var relations: [@typeInfo(Attribute).@"enum".fields.len]?RelationKind = undefined;
+        inline for (@typeInfo(Attribute).@"enum".fields, 0..) |field, i| {
             relations[i] = world.lookup_relation(Attribute.relation_name(@enumFromInt(field.value)));
         }
         const slice = world.facts.slice();

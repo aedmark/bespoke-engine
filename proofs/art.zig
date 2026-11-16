@@ -3275,7 +3275,7 @@ fn capture_gallery(world: *const bespoke.World, st: *Status) void {
     st.gallery_cells = [_]u8{0} ** GALLERY_CELLS;
     st.gallery_door_revealed = false;
     const floor = world.lookup_entity("GalleryFloor") orelse return;
-    inline for (@typeInfo(bespoke.grid.Attribute).Enum.fields) |field| {
+    inline for (@typeInfo(bespoke.grid.Attribute).@"enum".fields) |field| {
         const attribute: bespoke.grid.Attribute = @enumFromInt(field.value);
         if (world.lookup_relation(attribute.relation_name())) |rel| {
             for (&st.gallery_cells, 0..) |*mask, i| {

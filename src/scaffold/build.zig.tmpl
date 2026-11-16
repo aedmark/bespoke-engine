@@ -80,7 +80,7 @@ var package_cache: ?std.Build.LazyPath = null;
 /// for the machine running the build. A script error fails the build here.
 fn compiled_package(b: *std.Build) std.Build.LazyPath {
     if (package_cache) |path| return path;
-    const tools = b.dependency("bespoke", .{ .target = b.host, .optimize = .ReleaseSafe });
+    const tools = b.dependency("bespoke", .{ .target = b.graph.host, .optimize = .ReleaseSafe });
     const compile = b.addRunArtifact(tools.artifact("bespoke"));
     compile.addArg("compile");
     compile.addFileArg(b.path("scripts/main.bespoke"));

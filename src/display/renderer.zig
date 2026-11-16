@@ -3132,13 +3132,13 @@ pub const DisplayWindow = struct {
         const top_text = if (is_paused)
             std.fmt.bufPrint(
                 &top_buf,
-                "BeSpoke Engine | Tick: {d:03} | Facts: {d} | [PAUSED] (Space to run, N to step)",
+                "BeSpoke Engine | Tick: {d:>3} | Facts: {d} | [PAUSED] (Space to run, N to step)",
                 .{ frame.tick, frame.fact_count },
             ) catch "BeSpoke Engine"
         else if (self.current_tick_interval_ms >= 1000)
             std.fmt.bufPrint(
                 &top_buf,
-                "BeSpoke Engine | Tick: {d:03} | Facts: {d} | [RUNNING {d:.1}s] ([-]/[+] speed)",
+                "BeSpoke Engine | Tick: {d:>3} | Facts: {d} | [RUNNING {d:.1}s] ([-]/[+] speed)",
                 .{
                     frame.tick,
                     frame.fact_count,
@@ -3148,7 +3148,7 @@ pub const DisplayWindow = struct {
         else
             std.fmt.bufPrint(
                 &top_buf,
-                "BeSpoke Engine | Tick: {d:03} | Facts: {d} | [RUNNING {d}ms] ([-]/[+] speed)",
+                "BeSpoke Engine | Tick: {d:>3} | Facts: {d} | [RUNNING {d}ms] ([-]/[+] speed)",
                 .{
                     frame.tick,
                     frame.fact_count,
@@ -3225,7 +3225,7 @@ pub const DisplayWindow = struct {
         var tb_text_buf: [80]u8 = undefined;
         // The newest tick can run one ahead of the last snapshot; the label never reads 29/28.
         const tb_last = @max(frame.tick, frame.max_history_tick);
-        const tb_text = std.fmt.bufPrint(&tb_text_buf, "TIMELINE [Tick {d:02}/{d:02}] (Click or [< / >] to Scrub | Space: Pause)", .{ frame.tick, tb_last }) catch "TIMELINE";
+        const tb_text = std.fmt.bufPrint(&tb_text_buf, "TIMELINE [Tick {d:>2}/{d:>2}] (Click or [< / >] to Scrub | Space: Pause)", .{ frame.tick, tb_last }) catch "TIMELINE";
         // Centred in the bar at the readable size (D-091); it was drawn 1 px under the fill's
         // top edge at scale 1 and read as cut off.
         const tb_scale: i32 = if (font.text_width(tb_text, 2) <= tb_w - 16) 2 else 1;
@@ -3520,7 +3520,7 @@ pub const DisplayWindow = struct {
             while (fib_i < frame.debug_fiber_count and fib_i < 5) : (fib_i += 1) {
                 const fib = &frame.debug_fibers[fib_i];
                 var fib_buf: [96]u8 = undefined;
-                const fib_str = std.fmt.bufPrint(&fib_buf, " #{d} [{s}] pc:{d:03} depth:{d} prio:{d} ({s})", .{
+                const fib_str = std.fmt.bufPrint(&fib_buf, " #{d} [{s}] pc:{d:>3} depth:{d} prio:{d} ({s})", .{
                     fib.id, fib.get_owner(), fib.pc, fib.interrupt_depth, fib.priority, fib.get_state(),
                 }) catch "?";
                 self.draw_text(fib_str, dbg_x + 12, cur_y, 1, Color.hud_text);

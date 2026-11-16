@@ -400,7 +400,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
         // Print any new chronicle events emitted during this tick
         while (printed_chronicle_idx < sim.society.chronicle.count) : (printed_chronicle_idx += 1) {
             const entry = &sim.society.chronicle.entries[printed_chronicle_idx];
-            try writer.print("   [Tick {d:02} | {s:<7}] {s}\n", .{
+            try writer.print("   [Tick {d:>2} | {s:<7}] {s}\n", .{
                 entry.tick,
                 entry.category.tag(),
                 entry.get_message(),

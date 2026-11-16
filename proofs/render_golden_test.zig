@@ -94,7 +94,7 @@ const Status = struct {
     /// frame has nothing to attach it to (no actor to hold the cheese, say).
     fn apply(frame: *bespoke.RenderFrame, variant: []const u8) bool {
         const st = frame.host_status_mut(art.Status);
-        inline for (@typeInfo(art.Status).Struct.fields) |field| {
+        inline for (@typeInfo(art.Status).@"struct".fields) |field| {
             if (field.type == bool and std.mem.eql(u8, field.name, variant)) {
                 @field(st, field.name) = true;
                 return true;

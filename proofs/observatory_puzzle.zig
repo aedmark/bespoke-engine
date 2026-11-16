@@ -263,13 +263,16 @@ const Stage = struct {
     staff: *society.Society,
     ids: Ids,
     interp: *bespoke.command.Interpreter,
+    /// Where a typed reply is built. It belongs to the run, not to `typed`, because the reply's
+    /// text is a slice into it that the caller reads after `typed` returns; a buffer local to
+    /// `typed` would be dead stack by then.
+    reply: *[160]u8,
 
     /// Types a line as the player would, prints the reply, and ticks so a fired cue speaks
     /// and a walk finishes.
     fn typed(self: Stage, writer: anytype, line: []const u8) !Typed {
         try writer.print("  > {s}\n", .{line});
-        var buf: [160]u8 = undefined;
-        const result = try type_line(self.vm, self.compiled, self.interp, self.spatial, self.ids, line, &buf);
+        const result = try type_line(self.vm, self.compiled, self.interp, self.spatial, self.ids, line, self.reply);
         if (result.text) |text| try writer.print("    {s}\n", .{text});
         if (result.fired) try self.tick(writer);
         var guard: usize = 0;
@@ -378,7 +381,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try host.initialize_subsystems(&world, &compiled);
     var soc = try staff(&world, &compiled);
     var interp = bespoke.command.Interpreter{};
-    const stage = Stage{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .ids = ids, .interp = &interp };
+    var reply: [160]u8 = undefined;
+    const stage = Stage{ .world = &world, .spatial = &spatial, .vm = &vm, .compiled = &compiled, .staff = &soc, .ids = ids, .interp = &interp, .reply = &reply };
 
     var opening = std.ArrayList(u8).init(allocator);
     defer opening.deinit();

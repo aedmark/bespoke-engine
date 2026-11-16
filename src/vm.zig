@@ -153,7 +153,7 @@ pub const VM = struct {
     emitted_cues: std.ArrayList(EmittedCue),
     reactive_rules: std.ArrayList(ReactiveRule),
     current_scene: ?EntityId = null,
-    prng: std.rand.DefaultPrng,
+    prng: std.Random.DefaultPrng,
     /// Weaves queued by the `weave` opcode, awaiting `dispatch_pending_weaves` (D-029).
     /// Transient between `step_tick` and the host's dispatch call; `save.zig` refuses to
     /// snapshot while non-empty so a weave can never be silently dropped by save/restore.
@@ -170,7 +170,7 @@ pub const VM = struct {
             .emitted_cues = std.ArrayList(EmittedCue).init(allocator),
             .reactive_rules = std.ArrayList(ReactiveRule).init(allocator),
             .current_scene = null,
-            .prng = std.rand.DefaultPrng.init(42),
+            .prng = std.Random.DefaultPrng.init(42),
             .pending_weaves = std.ArrayList(PendingWeave).init(allocator),
         };
     }
@@ -1110,7 +1110,7 @@ pub const VM = struct {
                     _ = try self.interrupt_entity(EntityId.from_int(target_raw), handler_pc);
                 },
                 .resume_routine => {
-                    if (f.interrupt_stack.popOrNull()) |frame| {
+                    if (f.interrupt_stack.pop()) |frame| {
                         f.pc = frame.pc;
                         f.sp = frame.sp;
                         f.state = frame.state;

@@ -1,5 +1,7 @@
 .{
-    .name = "{{name}}",
+    .name = .{{name}},
+    // The package's identity (Zig 0.14+): generated once by `bespoke init`; never change it.
+    .fingerprint = {{fingerprint}},
     .version = "0.1.0",
     .dependencies = .{
         // The BeSpoke engine checkout this project was created from. Point it elsewhere, or

@@ -898,7 +898,7 @@ pub const DisplayBridge = struct {
     pub fn render_terminal(self: *const DisplayBridge, writer: anytype) !void {
         const f = &self.front_buffer;
         try writer.print("+-------------------------------------------------------------------+\n", .{});
-        try writer.print("| [Tick {d:03}] Active Facts: {d:<3}                                           |\n", .{ f.tick, f.fact_count });
+        try writer.print("| [Tick {d:>3}] Active Facts: {d:<3}                                           |\n", .{ f.tick, f.fact_count });
         try writer.print("+-------------------------------------------------------------------+\n", .{});
         try writer.print("| Hearth (0,0)  <===========>  Bar (20,0)  <===========>  Cellar (40,0) |\n", .{});
         try writer.print("|                                                                   |\n", .{});
