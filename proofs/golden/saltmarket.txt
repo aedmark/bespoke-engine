@@ -1,0 +1,33 @@
+===================================================================
+      BeSpoke Engine: The Saltmarket                               
+      (Three Paths * Waypoint Locks * Route Dialogue)             
+===================================================================
+
+Path Cunning:
+  locks: MuscleGate, CrewGate
+  route: Entrance -> CunningGate -> LogbookMark
+  dialogue: Read the tally book (rival choices pruned)
+  Broker Quince: "The tally book was always the map, Miss Tamsin."
+  solve: Solved(Tamsin, Cunning); Acquired(Tamsin, Logbook)
+  rival path routines: muted
+
+Path Muscle:
+  locks: CunningGate, CrewGate
+  route: Entrance -> MuscleGate -> LogbookMark
+  dialogue: Force the stall (rival choices pruned)
+  Broker Quince: "Not the bills of lading! Take the logbook!"
+  solve: Solved(Tamsin, Muscle); Acquired(Tamsin, Logbook)
+  rival path routines: muted
+
+Path Crew:
+  locks: CunningGate, MuscleGate
+  route: Entrance -> CrewGate -> LogbookMark
+  dialogue: Recruit the net-menders (rival choices pruned)
+  Broker Quince: "A share for every hand. That is how the Saltmarket survives."
+  solve: Solved(Tamsin, Crew); Acquired(Tamsin, Logbook)
+  rival path routines: muted
+
+===================================================================
+  VERIFICATION COMPLETE: all three approaches reach the logbook.
+===================================================================
+

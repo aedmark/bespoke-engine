@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Algiers: Three Paths is now The Saltmarket (`--saltmarket`, `P35-09`): Tamsin gets Pilot Ashe's lost logbook out of Broker Quince's stall by Cunning, Muscle, or Crew, and the way she chooses locks the other two. `--atlantis` still works.
 - The Bell Tower runs with `--bell-tower` (`P35-08`), and its bell-keeper is now Maren. `--loom` still works. The `draft`, `weave`, and distaff keywords stay as they are (`D-102`).
 - `site/weathercock.html` plays The Copper Weathercock on its own page, with how to play and a hidden walkthrough. The browser deck can now be played by hand: Take and Use work on the crank, the note, and the weathercock; the attic stairs and the Customs House's street door and hill road lead between the scenes, in the window too, where they replace the 1, 2, 3 scene keys; Hester Quill takes the note only once Wren has it from the post box; and the borrowed month's countdown shows at the top of the stage, in the window too.
 - The Middlesex Anomaly is now The Copper Weathercock (`--weathercock`, P35-07): the Customs House weathercock falls through Wren's attic 28 days early and the world splits into a borrowed month. Wren opens the Customs House sluice, gets a note to Hester Quill on Beacon Hill, and carries the weathercock into the fog whirl before the countdown runs out; if it runs out, the month tears away and she rewinds. `--darko` still works.

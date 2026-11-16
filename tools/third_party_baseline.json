@@ -1,37 +1,13 @@
 {
   "about": "Third-party terms allowed today. Only shrinks; see tools/check_third_party.py (P35-01).",
   "counts": {
-    "README.md": {
-      "Indiana Jones and the Fate of Atlantis": 3
-    },
-    "proofs/atlantis_puzzle.zig": {
-      "Indiana Jones and the Fate of Atlantis": 53
-    },
-    "proofs/golden/atlantis_puzzle.txt": {
-      "Indiana Jones and the Fate of Atlantis": 11
-    },
-    "proofs/golden_test.zig": {
-      "Indiana Jones and the Fate of Atlantis": 4
-    },
     "proofs/main.zig": {
       "Day of the Tentacle": 2,
       "Donnie Darko": 1,
       "Gabriel Knight 3": 1,
-      "Indiana Jones and the Fate of Atlantis": 15,
+      "Indiana Jones and the Fate of Atlantis": 1,
       "Loom": 2
-    },
-    "proofs/wasm_deck.zig": {
-      "Indiana Jones and the Fate of Atlantis": 28
-    },
-    "scheme/bespoke.manual.json": {
-      "Indiana Jones and the Fate of Atlantis": 8
-    },
-    "site/index.html": {
-      "Indiana Jones and the Fate of Atlantis": 28
-    },
-    "tools/site_gallery.json": {
-      "Indiana Jones and the Fate of Atlantis": 5
     }
   },
-  "total": 161
+  "total": 7
 }

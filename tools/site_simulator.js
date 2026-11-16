@@ -53,7 +53,7 @@
     'The Well of Three Tides',
     'Caustic Grog',
     'Brackwater Barbs',
-    'Algiers: Three Paths',
+    'The Saltmarket: Three Ways In',
     'The Copper Weathercock',
     'The Bell Tower',
   ];
@@ -66,7 +66,7 @@
     'THE WELL OF THREE TIDES',
     'CAUSTIC GROG',
     'BRACKWATER BARBS',
-    'ALGIERS: THREE PATHS',
+    'THE SALTMARKET: THREE WAYS IN',
     'THE COPPER WEATHERCOCK',
     'THE BELL TOWER',
   ];

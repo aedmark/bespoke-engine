@@ -1,61 +1,61 @@
-//! The Fate of Atlantis: Algiers Bazaar, the Phase 24 path-divergence proof (P24-03).
+//! The Saltmarket, the Phase 24 path-divergence proof (P24-03, P35-09).
 //!
-//! Three operational approaches reach Omar's lost dialogue manuscript by different routes. The
+//! Three approaches reach Pilot Ashe's lost logbook in Broker Quince's stall by different routes. The
 //! selected path asserts facts that lock the other two gates, so the same spatial graph is
-//! navigable only through that approach. Omar's dialogue repertoire is pruned by the same route.
+//! navigable only through that approach. Quince's dialogue repertoire is pruned by the same route.
 //! The script owns the paths, facts, routines, and dialogue; this proof owns staging and input.
 const std = @import("std");
 const bespoke = @import("bespoke");
 const host = bespoke.host;
 const r = bespoke.display.renderer;
 
-pub const ATLANTIS_PUZZLE_SCRIPT =
-    \\scene: Algiers Bazaar
-    \\cast: Indy, Omar
-    \\props: Manuscript
-    \\marks: Entrance, StallMark, WitsGate, FistsGate, TeamGate, ManuscriptMark
+pub const SALTMARKET_SCRIPT =
+    \\scene: Saltmarket
+    \\cast: Tamsin, BrokerQuince
+    \\props: Logbook
+    \\marks: Entrance, StallMark, CunningGate, MuscleGate, CrewGate, LogbookMark
     \\
     \\relation Chosen(actor, approach)
     \\relation Solved(actor, approach)
     \\relation Acquired(actor, item)
     \\relation WaypointBlocked(mark)
     \\
-    \\path Wits:
-    \\  remember Chosen(Indy, Wits)
-    \\  remember WaypointBlocked(FistsGate)
-    \\  remember WaypointBlocked(TeamGate)
-    \\  routine SolveWits(Indy):
-    \\    say Indy: "The ledger's margin points to a false invoice. The manuscript is behind it."
-    \\    remember Solved(Indy, Wits)
-    \\    remember Acquired(Indy, Manuscript)
+    \\path Cunning:
+    \\  remember Chosen(Tamsin, Cunning)
+    \\  remember WaypointBlocked(MuscleGate)
+    \\  remember WaypointBlocked(CrewGate)
+    \\  routine SolveCunning(Tamsin):
+    \\    say Tamsin: "The tally book's margin points to a false bill of lading. The logbook is tucked behind it."
+    \\    remember Solved(Tamsin, Cunning)
+    \\    remember Acquired(Tamsin, Logbook)
     \\
-    \\path Fists:
-    \\  remember Chosen(Indy, Fists)
-    \\  remember WaypointBlocked(WitsGate)
-    \\  remember WaypointBlocked(TeamGate)
-    \\  routine SolveFists(Indy):
-    \\    say Indy: "Omar's guard folds under a straight right. The back room gives up the manuscript."
-    \\    remember Solved(Indy, Fists)
-    \\    remember Acquired(Indy, Manuscript)
+    \\path Muscle:
+    \\  remember Chosen(Tamsin, Muscle)
+    \\  remember WaypointBlocked(CunningGate)
+    \\  remember WaypointBlocked(CrewGate)
+    \\  routine SolveMuscle(Tamsin):
+    \\    say Tamsin: "Quince's porter folds under one good shove. The back room gives up the logbook."
+    \\    remember Solved(Tamsin, Muscle)
+    \\    remember Acquired(Tamsin, Logbook)
     \\
-    \\path Team:
-    \\  remember Chosen(Indy, Team)
-    \\  remember WaypointBlocked(WitsGate)
-    \\  remember WaypointBlocked(FistsGate)
-    \\  routine SolveTeam(Indy):
-    \\    say Indy: "The diggers know the back passage. We split the take and walk out together."
-    \\    remember Solved(Indy, Team)
-    \\    remember Acquired(Indy, Manuscript)
+    \\path Crew:
+    \\  remember Chosen(Tamsin, Crew)
+    \\  remember WaypointBlocked(CunningGate)
+    \\  remember WaypointBlocked(MuscleGate)
+    \\  routine SolveCrew(Tamsin):
+    \\    say Tamsin: "The net-menders know the back way in. We split the reward and walk out together."
+    \\    remember Solved(Tamsin, Crew)
+    \\    remember Acquired(Tamsin, Logbook)
     \\
-    \\on cue Talk(Indy, Omar):
-    \\  choice "Follow the ledger" if PathActive(Wits):
-    \\    say Omar: "The ledger was always the map, Dr. Jones."
-    \\  choice "Force the stall" if PathActive(Fists):
-    \\    say Omar: "No! Not the invoices! Take the manuscript!"
-    \\  choice "Recruit the diggers" if PathActive(Team):
-    \\    say Omar: "A share for every hand. That is how a bazaar survives."
-    \\  choice "Leave Omar's stall":
-    \\    say Omar: "Come back when you know what you want."
+    \\on cue Talk(Tamsin, BrokerQuince):
+    \\  choice "Read the tally book" if PathActive(Cunning):
+    \\    say BrokerQuince: "The tally book was always the map, Miss Tamsin."
+    \\  choice "Force the stall" if PathActive(Muscle):
+    \\    say BrokerQuince: "Not the bills of lading! Take the logbook!"
+    \\  choice "Recruit the net-menders" if PathActive(Crew):
+    \\    say BrokerQuince: "A share for every hand. That is how the Saltmarket survives."
+    \\  choice "Leave Quince's stall":
+    \\    say BrokerQuince: "Come back when you know what you want."
 ;
 
 pub const PathSpec = struct {
@@ -69,76 +69,76 @@ pub const PathSpec = struct {
 
 pub const paths = [_]PathSpec{
     .{
-        .name = "Wits",
-        .gate = "WitsGate",
-        .blocked = .{ "FistsGate", "TeamGate" },
-        .routine = "SolveWits",
-        .choice = "Follow the ledger",
-        .banner = "Wits selected. Walk to ManuscriptMark, talk to Omar, then press [S].",
+        .name = "Cunning",
+        .gate = "CunningGate",
+        .blocked = .{ "MuscleGate", "CrewGate" },
+        .routine = "SolveCunning",
+        .choice = "Read the tally book",
+        .banner = "Cunning selected. Walk to the logbook, talk to Quince, then press [S].",
     },
     .{
-        .name = "Fists",
-        .gate = "FistsGate",
-        .blocked = .{ "WitsGate", "TeamGate" },
-        .routine = "SolveFists",
+        .name = "Muscle",
+        .gate = "MuscleGate",
+        .blocked = .{ "CunningGate", "CrewGate" },
+        .routine = "SolveMuscle",
         .choice = "Force the stall",
-        .banner = "Fists selected. Walk to ManuscriptMark, talk to Omar, then press [S].",
+        .banner = "Muscle selected. Walk to the logbook, talk to Quince, then press [S].",
     },
     .{
-        .name = "Team",
-        .gate = "TeamGate",
-        .blocked = .{ "WitsGate", "FistsGate" },
-        .routine = "SolveTeam",
-        .choice = "Recruit the diggers",
-        .banner = "Team selected. Walk to ManuscriptMark, talk to Omar, then press [S].",
+        .name = "Crew",
+        .gate = "CrewGate",
+        .blocked = .{ "CunningGate", "MuscleGate" },
+        .routine = "SolveCrew",
+        .choice = "Recruit the net-menders",
+        .banner = "Crew selected. Walk to the logbook, talk to Quince, then press [S].",
     },
 };
 
 pub const Ids = struct {
     scene: bespoke.EntityId,
-    indy: bespoke.EntityId,
-    omar: bespoke.EntityId,
-    manuscript: bespoke.EntityId,
+    tamsin: bespoke.EntityId,
+    quince: bespoke.EntityId,
+    logbook: bespoke.EntityId,
     entrance_wp: u16,
     stall_wp: u16,
-    manuscript_wp: u16,
+    logbook_wp: u16,
 };
 
 pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
-    const scene = world.lookup_entity("Algiers Bazaar").?;
+    const scene = world.lookup_entity("Saltmarket").?;
     const ids = Ids{
         .scene = scene,
-        .indy = world.lookup_entity("Indy").?,
-        .omar = world.lookup_entity("Omar").?,
-        .manuscript = world.lookup_entity("Manuscript").?,
+        .tamsin = world.lookup_entity("Tamsin").?,
+        .quince = world.lookup_entity("BrokerQuince").?,
+        .logbook = world.lookup_entity("Logbook").?,
         .entrance_wp = spatial.graph.find_waypoint_in_room(scene, "Entrance").?,
         .stall_wp = spatial.graph.find_waypoint_in_room(scene, "StallMark").?,
-        .manuscript_wp = spatial.graph.find_waypoint_in_room(scene, "ManuscriptMark").?,
+        .logbook_wp = spatial.graph.find_waypoint_in_room(scene, "LogbookMark").?,
     };
 
     host.place_waypoint(spatial, ids.entrance_wp, 0, 0);
     host.place_waypoint(spatial, ids.stall_wp, 0, 10);
-    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "WitsGate").?, 20, -10);
-    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "FistsGate").?, 20, 0);
-    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "TeamGate").?, 20, 10);
-    host.place_waypoint(spatial, ids.manuscript_wp, 40, 0);
+    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "CunningGate").?, 20, -10);
+    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "MuscleGate").?, 20, 0);
+    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "CrewGate").?, 20, 10);
+    host.place_waypoint(spatial, ids.logbook_wp, 40, 0);
 
     spatial.graph.edges.clearRetainingCapacity();
-    const wits_gate = spatial.graph.find_waypoint_in_room(scene, "WitsGate").?;
-    const fists_gate = spatial.graph.find_waypoint_in_room(scene, "FistsGate").?;
-    const team_gate = spatial.graph.find_waypoint_in_room(scene, "TeamGate").?;
+    const cunning_gate = spatial.graph.find_waypoint_in_room(scene, "CunningGate").?;
+    const muscle_gate = spatial.graph.find_waypoint_in_room(scene, "MuscleGate").?;
+    const crew_gate = spatial.graph.find_waypoint_in_room(scene, "CrewGate").?;
     try spatial.graph.connect(ids.entrance_wp, ids.stall_wp, null);
-    try spatial.graph.connect(ids.entrance_wp, wits_gate, null);
-    try spatial.graph.connect(ids.entrance_wp, fists_gate, null);
-    try spatial.graph.connect(ids.entrance_wp, team_gate, null);
-    try spatial.graph.connect(wits_gate, ids.manuscript_wp, null);
-    try spatial.graph.connect(fists_gate, ids.manuscript_wp, null);
-    try spatial.graph.connect(team_gate, ids.manuscript_wp, null);
+    try spatial.graph.connect(ids.entrance_wp, cunning_gate, null);
+    try spatial.graph.connect(ids.entrance_wp, muscle_gate, null);
+    try spatial.graph.connect(ids.entrance_wp, crew_gate, null);
+    try spatial.graph.connect(cunning_gate, ids.logbook_wp, null);
+    try spatial.graph.connect(muscle_gate, ids.logbook_wp, null);
+    try spatial.graph.connect(crew_gate, ids.logbook_wp, null);
 
     spatial.clear_hotspots();
-    try spatial.add_hotspot(ids.manuscript, scene, .{ .x = 40, .y = -4 }, 6, "Lost Manuscript", "A folio of lost dialogue hidden behind the merchant's invoices.");
-    try spatial.register_entity(ids.indy, ids.entrance_wp, 10);
-    try spatial.register_entity(ids.omar, ids.stall_wp, 1);
+    try spatial.add_hotspot(ids.logbook, scene, .{ .x = 40, .y = -4 }, 6, "Lost Logbook", "Pilot Ashe's logbook, hidden behind the broker's bills of lading.");
+    try spatial.register_entity(ids.tamsin, ids.entrance_wp, 10);
+    try spatial.register_entity(ids.quince, ids.stall_wp, 1);
     return ids;
 }
 
@@ -151,7 +151,7 @@ fn run_path(allocator: std.mem.Allocator, writer: anytype, spec: PathSpec) !void
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
     defer spatial.deinit();
-    var compiled = try bespoke.compile_source(allocator, &world, &spatial, ATLANTIS_PUZZLE_SCRIPT);
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, SALTMARKET_SCRIPT);
     defer compiled.deinit();
     const ids = try configure(&world, &spatial);
 
@@ -172,7 +172,7 @@ fn run_path(allocator: std.mem.Allocator, writer: anytype, spec: PathSpec) !void
     const solved = world.lookup_relation("Solved").?;
     const acquired = world.lookup_relation("Acquired").?;
     try std.testing.expect(world.has_fact(route, path_active, null));
-    try std.testing.expect(world.has_fact(ids.indy, chosen, route.to_int()));
+    try std.testing.expect(world.has_fact(ids.tamsin, chosen, route.to_int()));
 
     for (spec.blocked) |gate_name| {
         const gate = path_entity(&world, gate_name);
@@ -181,28 +181,28 @@ fn run_path(allocator: std.mem.Allocator, writer: anytype, spec: PathSpec) !void
     try std.testing.expect(!world.has_fact(path_entity(&world, spec.gate), blocked, null));
 
     try writer.print("  locks: {s}, {s}\n", .{ spec.blocked[0], spec.blocked[1] });
-    try writer.print("  route: Entrance -> {s} -> ManuscriptMark\n", .{spec.gate});
+    try writer.print("  route: Entrance -> {s} -> LogbookMark\n", .{spec.gate});
 
-    if (!try spatial.walk_to_with_world(&world, ids.indy, ids.manuscript_wp)) return error.NoRoute;
+    if (!try spatial.walk_to_with_world(&world, ids.tamsin, ids.logbook_wp)) return error.NoRoute;
     const gate_wp = spatial.graph.find_waypoint_in_room(ids.scene, spec.gate).?;
     var passed_gate = false;
     var ticks: usize = 0;
     while (ticks < 12) : (ticks += 1) {
         _ = try host.tick(&vm, &compiled);
-        const here = spatial.get_current_waypoint(ids.indy).?;
+        const here = spatial.get_current_waypoint(ids.tamsin).?;
         if (here == gate_wp) passed_gate = true;
-        if (here == ids.manuscript_wp) break;
+        if (here == ids.logbook_wp) break;
     }
     if (!passed_gate) return error.DidNotPassSelectedGate;
-    if (spatial.get_current_waypoint(ids.indy) != ids.manuscript_wp) return error.DidNotReachManuscript;
+    if (spatial.get_current_waypoint(ids.tamsin) != ids.logbook_wp) return error.DidNotReachLogbook;
 
-    try vm.set_dialogue_speaker(ids.indy, ids.omar);
-    _ = try vm.fire_cue(&compiled, "Talk", ids.indy, ids.omar, null);
+    try vm.set_dialogue_speaker(ids.tamsin, ids.quince);
+    _ = try vm.fire_cue(&compiled, "Talk", ids.tamsin, ids.quince, null);
     _ = try host.tick(&vm, &compiled);
-    const open = vm.dialogue_view() orelse return error.NoOmarDialogue;
+    const open = vm.dialogue_view() orelse return error.NoQuinceDialogue;
     if (open.count != 2) return error.WrongDialogueRepertoire;
     if (!std.mem.eql(u8, open.text(0), spec.choice)) return error.WrongDialogueChoice;
-    if (!std.mem.eql(u8, open.text(1), "Leave Omar's stall")) return error.MissingLeaveChoice;
+    if (!std.mem.eql(u8, open.text(1), "Leave Quince's stall")) return error.MissingLeaveChoice;
     try writer.print("  dialogue: {s} (rival choices pruned)\n", .{spec.choice});
 
     _ = (try vm.choose(0)) orelse return error.ChoiceNotSelected;
@@ -213,28 +213,28 @@ fn run_path(allocator: std.mem.Allocator, writer: anytype, spec: PathSpec) !void
     }
 
     const routine_entry = compiled.routine_entries.get(spec.routine) orelse return error.UnknownPathRoutine;
-    _ = try vm.spawn_routine(ids.indy, routine_entry);
+    _ = try vm.spawn_routine(ids.tamsin, routine_entry);
     _ = try host.tick(&vm, &compiled);
-    try std.testing.expect(world.has_fact(ids.indy, solved, route.to_int()));
-    try std.testing.expect(world.has_fact(ids.indy, acquired, ids.manuscript.to_int()));
+    try std.testing.expect(world.has_fact(ids.tamsin, solved, route.to_int()));
+    try std.testing.expect(world.has_fact(ids.tamsin, acquired, ids.logbook.to_int()));
 
     for (paths) |other| {
         if (std.mem.eql(u8, other.name, spec.name)) continue;
         const other_entry = compiled.routine_entries.get(other.routine) orelse return error.UnknownPathRoutine;
-        _ = try vm.spawn_routine(ids.indy, other_entry);
+        _ = try vm.spawn_routine(ids.tamsin, other_entry);
         _ = try host.tick(&vm, &compiled);
-        if (world.has_fact(ids.indy, solved, path_entity(&world, other.name).to_int())) {
+        if (world.has_fact(ids.tamsin, solved, path_entity(&world, other.name).to_int())) {
             return error.InactivePathRoutineRan;
         }
     }
 
-    try writer.print("  solve: Solved(Indy, {s}); Acquired(Indy, Manuscript)\n", .{spec.name});
+    try writer.print("  solve: Solved(Tamsin, {s}); Acquired(Tamsin, Logbook)\n", .{spec.name});
     try writer.writeAll("  rival path routines: muted\n\n");
 }
 
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("===================================================================\n");
-    try writer.writeAll("      BeSpoke Engine: The Fate of Atlantis - Algiers Bazaar       \n");
+    try writer.writeAll("      BeSpoke Engine: The Saltmarket                               \n");
     try writer.writeAll("      (Three Paths * Waypoint Locks * Route Dialogue)             \n");
     try writer.writeAll("===================================================================\n\n");
 
@@ -244,25 +244,25 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     }
 
     try writer.writeAll("===================================================================\n");
-    try writer.writeAll("  VERIFICATION COMPLETE: all three approaches reach the manuscript.\n");
+    try writer.writeAll("  VERIFICATION COMPLETE: all three approaches reach the logbook.\n");
     try writer.writeAll("===================================================================\n\n");
 }
 
-const action_wits: u16 = 1;
-const action_fists: u16 = 2;
-const action_team: u16 = 3;
+const action_cunning: u16 = 1;
+const action_muscle: u16 = 2;
+const action_crew: u16 = 3;
 const action_talk: u16 = 4;
 const action_solve: u16 = 5;
 
 const keys = [_]r.KeyBinding{
-    .{ .key = r.key('1'), .action = action_wits },
-    .{ .key = r.key('2'), .action = action_fists },
-    .{ .key = r.key('3'), .action = action_team },
+    .{ .key = r.key('1'), .action = action_cunning },
+    .{ .key = r.key('2'), .action = action_muscle },
+    .{ .key = r.key('3'), .action = action_crew },
     .{ .key = r.key('t'), .action = action_talk },
     .{ .key = r.key('s'), .action = action_solve },
 };
 
-fn bazaar_backdrop(w: *r.Canvas, frame: *const bespoke.RenderFrame) bool {
+fn saltmarket_backdrop(w: *r.Canvas, frame: *const bespoke.RenderFrame) bool {
     _ = frame;
     w.fill_rect(0, 0, w.width, w.height, r.Color{ .r = 58, .g = 38, .b = 24 });
     w.fill_rect(0, w.height - 150, w.width, 150, r.Color{ .r = 158, .g = 122, .b = 70 });
@@ -272,7 +272,7 @@ fn bazaar_backdrop(w: *r.Canvas, frame: *const bespoke.RenderFrame) bool {
 }
 
 pub const theme = r.Theme{
-    .backdrop = bazaar_backdrop,
+    .backdrop = saltmarket_backdrop,
     .keys = &keys,
 };
 
@@ -300,9 +300,9 @@ fn solve_path(
     ids: Ids,
     spec: PathSpec,
 ) !bool {
-    if (spatial.get_current_waypoint(ids.indy) != ids.manuscript_wp) return false;
+    if (spatial.get_current_waypoint(ids.tamsin) != ids.logbook_wp) return false;
     const entry = compiled.routine_entries.get(spec.routine) orelse return error.UnknownPathRoutine;
-    _ = try vm.spawn_routine(ids.indy, entry);
+    _ = try vm.spawn_routine(ids.tamsin, entry);
     return true;
 }
 
@@ -311,7 +311,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
     defer spatial.deinit();
-    var compiled = try bespoke.compile_source(allocator, &world, &spatial, ATLANTIS_PUZZLE_SCRIPT);
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, SALTMARKET_SCRIPT);
     defer compiled.deinit();
     const ids = try configure(&world, &spatial);
 
@@ -322,27 +322,27 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     try vm.load_compiled_rules(&compiled);
     try host.run_initial_statements(&world, &vm, &compiled);
 
-    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Fate of Atlantis: Algiers", 1280, 720);
+    var window = try bespoke.display.DisplayWindow.init("BeSpoke Engine - The Saltmarket", 1280, 720);
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
 
     var bridge = bespoke.DisplayBridge.init();
-    bridge.set_active_character(ids.indy);
+    bridge.set_active_character(ids.tamsin);
     var session = try host.Session.init(allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
     defer session.deinit();
 
     const selector = [_]bespoke.dialogue.Choice{
-        .{ .text = "Wits: follow the ledger", .action = action_wits },
-        .{ .text = "Fists: force the stall", .action = action_fists },
-        .{ .text = "Team: recruit the diggers", .action = action_team },
+        .{ .text = "Cunning: read the tally book", .action = action_cunning },
+        .{ .text = "Muscle: force the stall", .action = action_muscle },
+        .{ .text = "Crew: recruit the net-menders", .action = action_crew },
     };
-    _ = try vm.open_generated_dialogue(ids.omar, "Choose your approach, Indy.", &selector);
+    _ = try vm.open_generated_dialogue(ids.quince, "Choose your approach, Tamsin.", &selector);
     try session.record_now();
-    window.set_cue_banner("Choose a path: [1] Wits, [2] Fists, [3] Team. Then talk and solve.", 600);
+    window.set_cue_banner("Choose a way in: [1] Cunning, [2] Muscle, [3] Crew. Then talk and solve.", 600);
 
-    try stdout.writeAll("\nAlgiers Bazaar: choose [1] Wits, [2] Fists, or [3] Team. Click ManuscriptMark to walk.\n");
-    try stdout.writeAll("[T] talks to Omar with the selected repertoire; [S] solves at ManuscriptMark.\n\n");
+    try stdout.writeAll("\nSaltmarket: choose [1] Cunning, [2] Muscle, or [3] Crew. Click LogbookMark to walk.\n");
+    try stdout.writeAll("[T] talks to Quince with the selected repertoire; [S] solves at LogbookMark.\n\n");
 
     var selected: ?PathSpec = null;
     while (true) {
@@ -360,13 +360,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
             },
             .dismiss_dialogue => {
                 if (selected == null) {
-                    _ = try vm.open_generated_dialogue(ids.omar, "Choose your approach, Indy.", &selector);
+                    _ = try vm.open_generated_dialogue(ids.quince, "Choose your approach, Tamsin.", &selector);
                     try session.record_now();
                 }
             },
             .custom => |which| {
-                if (which == action_wits or which == action_fists or which == action_team) {
-                    const choice_index: usize = @intCast(which - action_wits);
+                if (which == action_cunning or which == action_muscle or which == action_crew) {
+                    const choice_index: usize = @intCast(which - action_cunning);
                     if (selected == null) {
                         const selection = (try session.choose_dialogue(choice_index)) orelse continue;
                         selected = try select_path(&session, &vm, &compiled, selection.action);
@@ -377,7 +377,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 } else if (which == action_talk) {
                     if (selected) |_| {
                         if (session.dialogue_view() == null) {
-                            _ = try vm.fire_cue(&compiled, "Talk", ids.indy, ids.omar, null);
+                            _ = try vm.fire_cue(&compiled, "Talk", ids.tamsin, ids.quince, null);
                             _ = try session.advance();
                         }
                     } else {
@@ -388,13 +388,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                         if (try solve_path(&spatial, &vm, &compiled, ids, spec)) {
                             _ = try session.advance();
                             const acquired = world.lookup_relation("Acquired").?;
-                            if (world.has_fact(ids.indy, acquired, ids.manuscript.to_int())) {
-                                window.set_cue_banner("The manuscript is yours.", 240);
+                            if (world.has_fact(ids.tamsin, acquired, ids.logbook.to_int())) {
+                                window.set_cue_banner("The logbook is yours.", 240);
                             } else {
                                 window.set_cue_banner("The path routine did not run.", 120);
                             }
                         } else {
-                            window.set_cue_banner("Walk to ManuscriptMark before solving.", 90);
+                            window.set_cue_banner("Walk to the logbook before solving.", 90);
                         }
                     } else {
                         window.set_cue_banner("Choose a path first.", 90);
@@ -405,7 +405,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
                 if (selected == null) {
                     window.set_cue_banner("Choose a path first.", 90);
                 } else {
-                    _ = try spatial.walk_to_with_world(&world, ids.indy, waypoint);
+                    _ = try spatial.walk_to_with_world(&world, ids.tamsin, waypoint);
                 }
             },
             else => {},
@@ -417,16 +417,16 @@ pub fn run_interactive(allocator: std.mem.Allocator, stdout: anytype) !void {
     }
 }
 
-test "P24-03: all three Algiers approaches acquire the manuscript" {
+test "P24-03: all three Saltmarket approaches acquire the logbook" {
     try run_headless(std.testing.allocator, std.io.null_writer);
 }
 
-test "P24-03: the generated selector chooses the Wits route" {
+test "P24-03: the generated selector chooses the Cunning route" {
     var world = try bespoke.World.init(std.testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(std.testing.allocator);
     defer spatial.deinit();
-    var compiled = try bespoke.compile_source(std.testing.allocator, &world, &spatial, ATLANTIS_PUZZLE_SCRIPT);
+    var compiled = try bespoke.compile_source(std.testing.allocator, &world, &spatial, SALTMARKET_SCRIPT);
     defer compiled.deinit();
     const ids = try configure(&world, &spatial);
 
@@ -436,23 +436,23 @@ test "P24-03: the generated selector chooses the Wits route" {
     try vm.transition_to_scene(ids.scene);
 
     const selector = [_]bespoke.dialogue.Choice{
-        .{ .text = "Wits: follow the ledger", .action = action_wits },
-        .{ .text = "Fists: force the stall", .action = action_fists },
-        .{ .text = "Team: recruit the diggers", .action = action_team },
+        .{ .text = "Cunning: read the tally book", .action = action_cunning },
+        .{ .text = "Muscle: force the stall", .action = action_muscle },
+        .{ .text = "Crew: recruit the net-menders", .action = action_crew },
     };
-    _ = try vm.open_generated_dialogue(ids.omar, "Choose your approach, Indy.", &selector);
+    _ = try vm.open_generated_dialogue(ids.quince, "Choose your approach, Tamsin.", &selector);
     const selection = (try vm.choose(0)).?;
-    try std.testing.expectEqual(@as(u32, action_wits), selection.action);
+    try std.testing.expectEqual(@as(u32, action_cunning), selection.action);
 
     const spec = path_spec_for(selection.action).?;
-    try std.testing.expectEqualStrings("Wits", spec.name);
+    try std.testing.expectEqualStrings("Cunning", spec.name);
     _ = try vm.select_path(&compiled, spec.name);
     _ = try host.tick(&vm, &compiled);
 
     const path_active = world.lookup_relation("PathActive").?;
     const blocked = world.lookup_relation("WaypointBlocked").?;
-    try std.testing.expect(world.has_fact(world.lookup_entity("Wits").?, path_active, null));
-    try std.testing.expect(world.has_fact(world.lookup_entity("FistsGate").?, blocked, null));
-    try std.testing.expect(world.has_fact(world.lookup_entity("TeamGate").?, blocked, null));
-    try std.testing.expect(!world.has_fact(world.lookup_entity("WitsGate").?, blocked, null));
+    try std.testing.expect(world.has_fact(world.lookup_entity("Cunning").?, path_active, null));
+    try std.testing.expect(world.has_fact(world.lookup_entity("MuscleGate").?, blocked, null));
+    try std.testing.expect(world.has_fact(world.lookup_entity("CrewGate").?, blocked, null));
+    try std.testing.expect(!world.has_fact(world.lookup_entity("CunningGate").?, blocked, null));
 }

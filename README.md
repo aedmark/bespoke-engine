@@ -107,7 +107,7 @@ The repository has three layers:
 
 ## Proofs of Concept
 
-Each proof is a small playable scene that shows an engine feature working end to end. It runs headless (no window) and checks its own outcome, and it opens in the SDL2 window for play. Twelve of the thirteen also rewind and check that the world matches; Algiers does not yet. Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
+Each proof is a small playable scene that shows an engine feature working end to end. It runs headless (no window) and checks its own outcome, and it opens in the SDL2 window for play. Twelve of the thirteen also rewind and check that the world matches; the Saltmarket does not yet. Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
 
 ```bash
 zig build run-proof -- --bell-tower       # interactive
@@ -127,7 +127,7 @@ zig build test-proofs                     # every proof's tests
 | `--weathercock` | The Copper Weathercock | A temporary copy of the world on a countdown that merges back or is thrown away |
 | `--bell-tower` | The Bell Tower | Four-note tunes (drafts) that act as spells, forwards or reversed |
 | `--grog` | Caustic Grog | Containers that wear out, pouring between them, spilling while carried |
-| `--atlantis` | The Fate of Atlantis: Algiers | Three routes through one puzzle; choosing one locks the others and limits the dialogue |
+| `--saltmarket` | The Saltmarket | Three routes through one puzzle; choosing one locks the others and limits the dialogue |
 | `--grid` | The Castle Fire Escape | Fire, smoke, and water spreading across a grid of cells |
 | `--observatory` | The Larkspur Observatory | Characters with goals who chase and intercept the player; typed commands |
 
@@ -137,7 +137,7 @@ zig build test-proofs                     # every proof's tests
 
 - Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
-- The Bell Tower, Caustic Grog, and Algiers windows have not been hand-played on a desktop, and the Castle Fire Escape has not been replayed since its speech fix; macOS and Windows builds have never run (the template's CI workflow is untested). See [Phase 34](ROADMAP.md) and the [release hand-test](docs/runbooks/release-hand-test.md).
+- The Bell Tower, Caustic Grog, and Saltmarket windows have not been hand-played on a desktop, and the Castle Fire Escape has not been replayed since its speech fix; macOS and Windows builds have never run (the template's CI workflow is untested). See [Phase 34](ROADMAP.md) and the [release hand-test](docs/runbooks/release-hand-test.md).
 - The showcase site embeds `bespoke-proofs.wasm`, so its eleven decks run their proofs' scripts in the real browser runtime from `file://`, with the engine's own audio; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`. The Castle Fire Escape and The Larkspur Observatory are desktop-only for now.
 
 ---

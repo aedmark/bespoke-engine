@@ -81,7 +81,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--weathercock` | V follow the current; walk the attic stairs and the hill road | The borrowed month's countdown runs; the note must be taken from the post box before Hester Quill takes it; closing the loop merges the branch back; letting it run out tears the month away. |
 | `--bell-tower` | C D E F G A B notes, Backspace clears | Notes sound and show on the distaff; a four-note draft weaves its effect; played backwards it does the opposite. |
 | `--grog` | 1 pour A to B, 2 pour B to C, L unlock | Cups visibly degrade; a late pour spills; enough grog at the lock dissolves it. |
-| `--atlantis` | 1 Wits, 2 Fists, 3 Team, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
+| `--saltmarket` | 1 Cunning, 2 Muscle, 3 Crew, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
 | `--grid` | 1 fill, 2 torch, 3 throw | Fire spreads on the grid, smoke follows, and water flows back down the corridor and puts it out. |
 | `--observatory` | 1 search, 2 take, 3 read, 4 confront; Enter opens the command bar | Staff walk their routines and intercept you. Type commands (`go to the archive`, `take the slip`, `ask pell about the slip`); Up and Down recall history; an ambiguous noun asks which you meant. |
 
@@ -154,9 +154,9 @@ zig build web && node web/smoke.js
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
 - [ ] The playground loads with no console errors (open the developer tools).
-- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Algiers, Copper Weathercock, Bell Tower.
+- [ ] Number keys 1 to 9 and the tabs switch decks; all eleven decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Saltmarket, Copper Weathercock, Bell Tower.
 - [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
-- [ ] Algiers: choosing a path with 1, 2, or 3 locks the others.
+- [ ] Saltmarket: choosing a way in with 1, 2, or 3 locks the others.
 - [ ] Copper Weathercock: the tick counter never runs backwards; a rewind across the collapse brings the branch back.
 - [ ] Bell Tower: act on something, then C to B notes; the DISTAFF line shows notes, reach, and target, and the tower rings.
 - [ ] Pause, step, rewind, scrub, and reset each work on the page.

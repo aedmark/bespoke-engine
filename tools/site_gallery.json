@@ -75,13 +75,13 @@
       "flag": "sword"
     },
     {
-      "id": "atlantis",
-      "title": "Algiers: Three Paths",
+      "id": "saltmarket",
+      "title": "The Saltmarket: Three Ways In",
       "tag": "Stageplay paths",
-      "blurb": "Wits, Fists, or Team: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach's solution.",
-      "source": "proofs/atlantis_puzzle.zig#ATLANTIS_PUZZLE_SCRIPT",
+      "blurb": "Pilot Ashe's lost logbook is behind Broker Quince's bills of lading. Cunning, Muscle, or Crew: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach's solution.",
+      "source": "proofs/saltmarket.zig#SALTMARKET_SCRIPT",
       "deck": 8,
-      "flag": "atlantis"
+      "flag": "saltmarket"
     },
     {
       "id": "weathercock",

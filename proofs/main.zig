@@ -15,7 +15,7 @@ pub const three_tides = @import("three_tides.zig");
 pub const weathercock = @import("weathercock.zig");
 pub const bell_tower = @import("bell_tower.zig");
 pub const grog_puzzle = @import("grog_puzzle.zig");
-pub const atlantis_puzzle = @import("atlantis_puzzle.zig");
+pub const saltmarket = @import("saltmarket.zig");
 pub const grid_puzzle = @import("grid_puzzle.zig");
 pub const observatory_puzzle = @import("observatory_puzzle.zig");
 
@@ -30,7 +30,7 @@ const Proof = enum {
     weathercock,
     bell_tower,
     grog,
-    atlantis,
+    saltmarket,
     grid,
     observatory,
 };
@@ -69,9 +69,9 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "drafts", .proof = .bell_tower },
     .{ .name = "grog", .proof = .grog },
     .{ .name = "caustic-grog", .proof = .grog },
-    .{ .name = "atlantis", .proof = .atlantis },
-    .{ .name = "fate-of-atlantis", .proof = .atlantis },
-    .{ .name = "algiers", .proof = .atlantis },
+    .{ .name = "saltmarket", .proof = .saltmarket },
+    .{ .name = "atlantis", .proof = .saltmarket },
+    .{ .name = "algiers", .proof = .saltmarket },
     .{ .name = "grid", .proof = .grid },
     .{ .name = "castle-fire", .proof = .grid },
     .{ .name = "fire-escape", .proof = .grid },
@@ -103,7 +103,7 @@ const usage =
     \\  --weathercock        The Copper Weathercock (temporal hypervisor, conduits)
     \\  --bell-tower         The Bell Tower (musical drafts, distaff)
     \\  --grog               Caustic Grog (container degradation, pours, spill)
-    \\  --atlantis           The Fate of Atlantis: Algiers (three paths, route locks)
+    \\  --saltmarket         The Saltmarket (three paths, route locks)
     \\  --grid               The Castle Fire Escape (grid fire, smoke, water, hazards)
     \\  --observatory        The Larkspur Observatory (agendas, pursuit, interception)
     \\
@@ -155,7 +155,7 @@ pub fn main() !void {
         .weathercock => if (headless) try weathercock.run_headless(allocator, stdout) else try weathercock.run_interactive(allocator),
         .bell_tower => if (headless) try bell_tower.run_headless(allocator, stdout) else try bell_tower.run_interactive(allocator, stdout),
         .grog => if (headless) try grog_puzzle.run_headless(allocator, stdout) else try grog_puzzle.run_interactive(allocator, stdout),
-        .atlantis => if (headless) try atlantis_puzzle.run_headless(allocator, stdout) else try atlantis_puzzle.run_interactive(allocator, stdout),
+        .saltmarket => if (headless) try saltmarket.run_headless(allocator, stdout) else try saltmarket.run_interactive(allocator, stdout),
         .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, stdout),
         .observatory => if (headless) try observatory_puzzle.run_headless(allocator, stdout) else try observatory_puzzle.run_interactive(allocator, stdout),
     }
@@ -172,7 +172,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = weathercock;
     _ = bell_tower;
     _ = grog_puzzle;
-    _ = atlantis_puzzle;
+    _ = saltmarket;
     _ = grid_puzzle;
     _ = observatory_puzzle;
     std.testing.refAllDecls(@This());

@@ -24,7 +24,7 @@ const THREE_TIDES_SCRIPT = three_tides.THREE_TIDES_SCRIPT;
 const GROG_PUZZLE_SCRIPT = @import("grog_puzzle.zig").GROG_PUZZLE_SCRIPT;
 const sword_fighting = @import("sword_fighting.zig");
 const SWORD_FIGHTING_SCRIPT = sword_fighting.SWORD_FIGHTING_SCRIPT;
-const algiers = @import("atlantis_puzzle.zig");
+const saltmarket = @import("saltmarket.zig");
 const bell_tower = @import("bell_tower.zig");
 const art = @import("art.zig");
 const weathercock = @import("weathercock.zig");
@@ -118,14 +118,14 @@ pub const decks = [_]wasm.Deck{
         .on_choice = sword_choice,
         .on_act = sword_act,
     }),
-    wasm.script_deck_with("ALGIERS: THREE PATHS", algiers.ATLANTIS_PUZZLE_SCRIPT, .{
-        .player = "Indy",
+    wasm.script_deck_with("THE SALTMARKET: THREE WAYS IN", saltmarket.SALTMARKET_SCRIPT, .{
+        .player = "Tamsin",
         .soundtrack = &art.soundtrack,
-        .theme = &algiers.theme,
+        .theme = &saltmarket.theme,
         .background = .{ .r = 52, .g = 38, .b = 22 },
-        .setup = atlantis_setup,
-        .catalyst = atlantis_solve,
-        .on_choice = atlantis_choice,
+        .setup = saltmarket_setup,
+        .catalyst = saltmarket_solve,
+        .on_choice = saltmarket_choice,
         .cues = .{ .talk = "Talk" },
     }),
     wasm.script_deck_with("THE COPPER WEATHERCOCK (BRANCH WORLDS)", weathercock.WEATHERCOCK_SCRIPT, .{
@@ -864,73 +864,73 @@ fn sword_choice(rt: *WasmRuntime, action: u32) anyerror!void {
 }
 
 // =============================================================================
-// Algiers: three stageplay paths, chosen from a generated selector
+// The Saltmarket: three stageplay paths, chosen from a generated selector
 // =============================================================================
 
-const ATLANTIS_SELECTOR = [_]bespoke.dialogue.Choice{
-    .{ .text = "Wits: follow the ledger", .action = 1 },
-    .{ .text = "Fists: force the stall", .action = 2 },
-    .{ .text = "Team: recruit the diggers", .action = 3 },
+const SALTMARKET_SELECTOR = [_]bespoke.dialogue.Choice{
+    .{ .text = "Cunning: read the tally book", .action = 1 },
+    .{ .text = "Muscle: force the stall", .action = 2 },
+    .{ .text = "Crew: recruit the net-menders", .action = 3 },
 };
 
-/// The desktop proof's own bazaar layout and gates, then the path selector.
-fn atlantis_setup(rt: *WasmRuntime) anyerror!void {
-    const ids = try algiers.configure(&rt.world, &rt.spatial);
+/// The desktop proof's own market layout and gates, then the path selector.
+fn saltmarket_setup(rt: *WasmRuntime) anyerror!void {
+    const ids = try saltmarket.configure(&rt.world, &rt.spatial);
     try rt.vm.transition_to_scene(ids.scene);
-    _ = try rt.vm.open_generated_dialogue(ids.omar, "Choose your approach, Indy.", &ATLANTIS_SELECTOR);
-    rt.set_banner("Algiers: choose [1] Wits, [2] Fists, or [3] Team. [S] plays the next step.");
+    _ = try rt.vm.open_generated_dialogue(ids.quince, "Choose your approach, Tamsin.", &SALTMARKET_SELECTOR);
+    rt.set_banner("Saltmarket: choose [1] Cunning, [2] Muscle, or [3] Crew. [S] plays the next step.");
 }
 
-fn atlantis_active(rt: *WasmRuntime) ?algiers.PathSpec {
+fn saltmarket_active(rt: *WasmRuntime) ?saltmarket.PathSpec {
     const active = rt.world.lookup_relation("PathActive") orelse return null;
-    for (algiers.paths) |spec| {
+    for (saltmarket.paths) |spec| {
         const route = rt.world.lookup_entity(spec.name) orelse continue;
         if (rt.world.has_fact(route, active, null)) return spec;
     }
     return null;
 }
 
-fn atlantis_choice(rt: *WasmRuntime, action: u32) anyerror!void {
-    if (action == 0 or action > algiers.paths.len) return;
-    const spec = algiers.paths[action - 1];
+fn saltmarket_choice(rt: *WasmRuntime, action: u32) anyerror!void {
+    if (action == 0 or action > saltmarket.paths.len) return;
+    const spec = saltmarket.paths[action - 1];
     const program = if (rt.program) |*p| p else return;
     _ = (try rt.vm.select_path(program, spec.name)) orelse return;
     try rt.step_tick();
     rt.set_banner(spec.banner);
 }
 
-/// `[S]`: the desktop proof's path run: choose Wits if no path is chosen, walk through the
-/// path's gate to the manuscript, talk to Omar, then run the path's own solution routine.
-fn atlantis_solve(rt: *WasmRuntime) anyerror!void {
+/// `[S]`: the desktop proof's path run: choose Cunning if no path is chosen, walk through the
+/// path's gate to the logbook, talk to Quince, then run the path's own solution routine.
+fn saltmarket_solve(rt: *WasmRuntime) anyerror!void {
     const program = if (rt.program) |*p| p else return;
-    const indy = try entity(rt, "Indy");
-    const spec = atlantis_active(rt) orelse {
+    const tamsin = try entity(rt, "Tamsin");
+    const spec = saltmarket_active(rt) orelse {
         if (bespoke.dialogue.view(&rt.world) != null) return rt.answer(0);
         return;
     };
-    if (holds(rt, "Indy", "Acquired", "Manuscript")) {
-        rt.set_banner("The manuscript is Indy's. Press [R] to rewind and try another path.");
+    if (holds(rt, "Tamsin", "Acquired", "Logbook")) {
+        rt.set_banner("The logbook is Tamsin's. Press [R] to rewind and try another way.");
         return;
     }
-    const scene = try entity(rt, "Algiers Bazaar");
-    const manuscript_wp = rt.spatial.graph.find_waypoint_in_room(scene, "ManuscriptMark") orelse return;
-    if (rt.spatial.get_current_waypoint(indy) != manuscript_wp) {
-        rt.set_banner("Indy heads through the open gate to the manuscript.");
-        _ = try rt.spatial.walk_to_with_world(&rt.world, indy, manuscript_wp);
-        _ = try perform(rt, .{ .settle = "Indy" });
+    const scene = try entity(rt, "Saltmarket");
+    const logbook_wp = rt.spatial.graph.find_waypoint_in_room(scene, "LogbookMark") orelse return;
+    if (rt.spatial.get_current_waypoint(tamsin) != logbook_wp) {
+        rt.set_banner("Tamsin heads through the open gate to the logbook.");
+        _ = try rt.spatial.walk_to_with_world(&rt.world, tamsin, logbook_wp);
+        _ = try perform(rt, .{ .settle = "Tamsin" });
         return;
     }
     if (bespoke.dialogue.view(&rt.world) != null) return rt.answer(0);
     const chosen = rt.world.lookup_relation("SolveTalked");
-    if (chosen == null or !rt.world.has_fact(indy, chosen.?, null)) {
-        try rt.vm.set_dialogue_speaker(indy, try entity(rt, "Omar"));
-        _ = try rt.vm.fire_cue(program, "Talk", indy, try entity(rt, "Omar"), null);
+    if (chosen == null or !rt.world.has_fact(tamsin, chosen.?, null)) {
+        try rt.vm.set_dialogue_speaker(tamsin, try entity(rt, "BrokerQuince"));
+        _ = try rt.vm.fire_cue(program, "Talk", tamsin, try entity(rt, "BrokerQuince"), null);
         try rt.step_tick();
-        try rt.world.remember(indy, try rt.world.intern_relation("SolveTalked", .property), 1, 0);
+        try rt.world.remember(tamsin, try rt.world.intern_relation("SolveTalked", .property), 1, 0);
         return;
     }
     const entry = program.routine_entries.get(spec.routine) orelse return;
-    _ = try rt.vm.spawn_routine(indy, entry);
+    _ = try rt.vm.spawn_routine(tamsin, entry);
     try rt.step_tick();
     try rt.step_tick();
 }
@@ -967,7 +967,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Indy", "Wren", "Maren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1126,16 +1126,16 @@ test "P30-01: a rewind restores the branch the timeline recorded" {
     try testing.expect(!weathercock.evaluate_weathercock_solved(&rt.world));
 }
 
-test "P30-01: the Algiers deck picks a path from the selector and takes the manuscript" {
+test "P30-01: the Saltmarket deck picks a way in from the selector and takes the logbook" {
     const rt = try load(8);
     defer unload(rt);
-    // Number key 2 answers the generated selector: Fists.
+    // Number key 2 answers the generated selector: Muscle.
     try testing.expectEqual(wasm.BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .key_down, .key_code = '2' }));
-    try testing.expect(holds(rt, "Fists", "PathActive", null));
-    try testing.expect(holds(rt, "WitsGate", "WaypointBlocked", null));
+    try testing.expect(holds(rt, "Muscle", "PathActive", null));
+    try testing.expect(holds(rt, "CunningGate", "WaypointBlocked", null));
     try solve(rt);
-    try testing.expect(holds(rt, "Indy", "Acquired", "Manuscript"));
-    try testing.expect(holds(rt, "Indy", "Solved", "Fists"));
+    try testing.expect(holds(rt, "Tamsin", "Acquired", "Logbook"));
+    try testing.expect(holds(rt, "Tamsin", "Solved", "Muscle"));
 }
 
 test "P30-05: the village's society reacts to the desperation catalyst" {
