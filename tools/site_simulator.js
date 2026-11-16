@@ -104,36 +104,20 @@
     }
   }
 
-  // The engine's own synthesizer (D-071): a ScriptProcessor pulls stereo samples from the module
-  // while audio is on, so scores, scene music, and effects sound as they do on desktop.
-  let engineNode = null;
+  // The engine's own synthesizer (D-071), played through an AudioWorklet (P34-05,
+  // tools/engine_audio.js), so scores, scene music, and effects sound as they do on desktop.
+  let engineAudio = null;
 
   function startEngineAudio() {
-    if (!exp || engineNode) return;
-    try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: exp.wasm_audio_sample_rate() });
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      engineNode = audioCtx.createScriptProcessor(4096, 0, 2);
-      engineNode.onaudioprocess = (event) => {
-        const frames = event.outputBuffer.length;
-        const pcm = new Int16Array(exp.memory.buffer, exp.wasm_audio_render(frames), 2 * frames);
-        const left = event.outputBuffer.getChannelData(0);
-        const right = event.outputBuffer.getChannelData(1);
-        for (let i = 0; i < frames; i++) {
-          left[i] = pcm[2 * i] / 32768;
-          right[i] = pcm[2 * i + 1] / 32768;
-        }
-      };
-      engineNode.connect(audioCtx.destination);
-    } catch (error) {
-      engineNode = null;
-    }
+    if (!exp) return;
+    if (!engineAudio) engineAudio = new window.BespokeEngineAudio(exp);
+    engineAudio.start().catch(() => {
+      // Engine audio is optional; a browser without AudioWorklet must not stop the simulator.
+    });
   }
 
   function stopEngineAudio() {
-    if (!engineNode) return;
-    engineNode.disconnect();
-    engineNode = null;
+    if (engineAudio) engineAudio.stop();
   }
 
   function decodeBase64(value) {

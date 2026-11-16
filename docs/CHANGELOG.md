@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Sound on the showcase, the proof pages, and the page `bespoke init` makes now plays through an AudioWorklet instead of the deprecated ScriptProcessorNode (`P34-05`), opened from a file or a server alike.
 - `site/saltmarket.html` plays The Saltmarket on its own page. In the browser the three ways in now work as on desktop: no gate is locked until you choose, Tamsin walks only through the open gate, a click on a locked one says "That way is blocked.", and taking the logbook runs the way you chose (`D-052`, `D-053`).
 - The old flags `--gk3`, `--dott`, `--darko`, `--loom`, and `--atlantis` are gone (`P35-10`); use `--borrowed-beard`, `--three-tides`, `--weathercock`, `--bell-tower`, and `--saltmarket`. No third-party name is left in the code, site, or manual, and the docs check fails if one returns.
 - Algiers: Three Paths is now The Saltmarket (`--saltmarket`, `P35-09`): Tamsin gets Pilot Ashe's lost logbook out of Broker Quince's stall by Cunning, Muscle, or Crew, and the way she chooses locks the other two. `--atlantis` still works.

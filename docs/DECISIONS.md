@@ -984,6 +984,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - On-screen note buttons: not chosen; letters match the desktop distaff keys.
 - A larger fixed buffer instead of a reusing allocator: rejected; a repeated rewind across a collapse would still exhaust it.
 **Consequences:** `bespoke-proofs.wasm` is 475 KB. Typed commands remain desktop-only, as do The Castle Fire Escape and The Larkspur Observatory. Audio has not been heard by a person; the tests measure non-silent samples. The page's ScriptProcessor is a deprecated API that browsers still ship; an AudioWorklet would need a second file or a Blob URL.
+**Update, 2026-11-15 (P34-05):** The pages no longer use a ScriptProcessorNode. The module still renders on the main thread; `tools/engine_audio.js` posts its samples to an AudioWorklet loaded from a `data:` URL (a Blob URL is refused from `file://`), keeping about 0.2 s queued.
 
 ## D-072 Cue `where` Guards Bind the Handler's Parameters and Fall Through When They Fail (2026-11-13, status: accepted)
 **Context:** Since the first parser, `on cue X(...) where ...:` compiled, and the handler ran whether or not the guard held, with no warning (Claims vs. code since 2026-11-08). `script_spec.md` opens with this form. Q-006 asked whether to reject, warn, or implement; the maintainer chose to implement.

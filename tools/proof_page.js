@@ -26,8 +26,7 @@
 
   let exp = null;
   let lastTickTime = 0;
-  let audioCtx = null;
-  let engineNode = null;
+  let engineAudio = null;
   let soundOn = false;
 
   function decodeBase64(value) {
@@ -72,32 +71,20 @@
     draw();
   }
 
-  // The engine's own synthesizer: the proof's soundtrack and effects, started on a click
-  // because browsers block audio until the page is touched.
+  // The engine's own synthesizer: the proof's soundtrack and effects, played through an
+  // AudioWorklet (P34-05, tools/engine_audio.js) and started on a click, because browsers
+  // block audio until the page is touched.
   function startSound() {
-    try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: exp.wasm_audio_sample_rate() });
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      engineNode = audioCtx.createScriptProcessor(4096, 0, 2);
-      engineNode.onaudioprocess = (event) => {
-        const frames = event.outputBuffer.length;
-        const pcm = new Int16Array(exp.memory.buffer, exp.wasm_audio_render(frames), 2 * frames);
-        const left = event.outputBuffer.getChannelData(0);
-        const right = event.outputBuffer.getChannelData(1);
-        for (let i = 0; i < frames; i++) {
-          left[i] = pcm[2 * i] / 32768;
-          right[i] = pcm[2 * i + 1] / 32768;
-        }
-      };
-      engineNode.connect(audioCtx.destination);
-    } catch (_) {
-      // Sound is optional; a blocked AudioContext must not stop the game.
-    }
+    if (!engineAudio) engineAudio = new window.BespokeEngineAudio(exp);
+    engineAudio.start().catch(() => {
+      // Sound is optional; say so instead of stopping the game.
+      soundOn = false;
+      btnSound.textContent = 'Sound: unavailable';
+    });
   }
 
   function stopSound() {
-    if (engineNode) engineNode.disconnect();
-    engineNode = null;
+    if (engineAudio) engineAudio.stop();
   }
 
   function canvasCoords(event) {
