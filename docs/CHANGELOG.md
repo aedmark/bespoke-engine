@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- `site/saltmarket.html` plays The Saltmarket on its own page. In the browser the three ways in now work as on desktop: no gate is locked until you choose, Tamsin walks only through the open gate, a click on a locked one says "That way is blocked.", and taking the logbook runs the way you chose (`D-052`, `D-053`).
+- The old flags `--gk3`, `--dott`, `--darko`, `--loom`, and `--atlantis` are gone (`P35-10`); use `--borrowed-beard`, `--three-tides`, `--weathercock`, `--bell-tower`, and `--saltmarket`. No third-party name is left in the code, site, or manual, and the docs check fails if one returns.
 - Algiers: Three Paths is now The Saltmarket (`--saltmarket`, `P35-09`): Tamsin gets Pilot Ashe's lost logbook out of Broker Quince's stall by Cunning, Muscle, or Crew, and the way she chooses locks the other two. `--atlantis` still works.
 - The Bell Tower runs with `--bell-tower` (`P35-08`), and its bell-keeper is now Maren. `--loom` still works. The `draft`, `weave`, and distaff keywords stay as they are (`D-102`).
 - `site/weathercock.html` plays The Copper Weathercock on its own page, with how to play and a hidden walkthrough. The browser deck can now be played by hand: Take and Use work on the crank, the note, and the weathercock; the attic stairs and the Customs House's street door and hill road lead between the scenes, in the window too, where they replace the 1, 2, 3 scene keys; Hester Quill takes the note only once Wren has it from the post box; and the borrowed month's countdown shows at the top of the stage, in the window too.

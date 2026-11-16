@@ -41,7 +41,7 @@ TERMS_NAME = "tools/third_party_terms.json"
 BASELINE_NAME = "tools/third_party_baseline.json"
 
 SCAN_DIRS = ("src", "proofs", "scenarios", "scheme")
-SCAN_FILES = ("site/index.html", "site/barbs.html", "site/pips.html", "site/beard.html", "site/donkey.html", "site/tides.html", "site/weathercock.html", "tools/site_gallery.json", "README.md", "docs/state.html")
+SCAN_FILES = ("site/index.html", "site/barbs.html", "site/pips.html", "site/beard.html", "site/donkey.html", "site/tides.html", "site/weathercock.html", "site/saltmarket.html", "tools/site_gallery.json", "README.md", "docs/state.html")
 SCAN_SUFFIXES = {".zig", ".tmpl", ".bespoke", ".txt", ".json", ".html", ".md"}
 # The site embeds the proofs' WebAssembly as base64; random letters must not count.
 EMBED_START = "<!-- SITE_SIMULATOR_START -->"
@@ -50,8 +50,9 @@ EMBED_END = "<!-- SITE_SIMULATOR_END -->"
 MIN_LINE_LENGTH = 12
 QUOTED_RE = re.compile(r'"([^"\n]{%d,})"' % MIN_LINE_LENGTH)
 # A markup tag within one line. Tags are stripped only from markup files: in code, `a < b`
-# and a later `>` would otherwise swallow every line between them (D-087).
-TAG_RE = re.compile(r"<[^>\n]+>")
+# and a later `>` would otherwise swallow every line between them (D-087). An HTML comment is
+# not a tag: its text ships in the page, so a name inside one still counts (P35-10).
+TAG_RE = re.compile(r"<(?!!--)[^>\n]+>")
 MARKUP_SUFFIXES = {".html", ".json"}
 
 

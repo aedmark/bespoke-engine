@@ -381,8 +381,19 @@ pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *
     try run_initial_statements(world, vm, compiled);
     try place_cast(spatial, compiled);
     const first_mark: ?spatial_mod.WaypointId = if (spatial.graph.waypoints.items.len > 0) spatial.graph.waypoints.items[0].id else null;
+    // Paths compile after every top-level routine (initializer first, then its routines), so an
+    // entry at or past the first initializer belongs to a path. A path's initializer runs when
+    // `VM.select_path` chooses it, and its routines when the host starts them (D-052); started
+    // here, every path would lock the others' gates, and a muted routine whose guard had not run
+    // yet would run its body once its path was chosen.
+    var first_path_pc: usize = std.math.maxInt(usize);
+    var paths_it = compiled.routine_entries.iterator();
+    while (paths_it.next()) |entry| {
+        if (std.mem.startsWith(u8, entry.key_ptr.*, codegen.PATH_ROUTINE_PREFIX)) first_path_pc = @min(first_path_pc, entry.value_ptr.*);
+    }
     var it = compiled.routine_entries.iterator();
     while (it.next()) |entry| {
+        if (entry.value_ptr.* >= first_path_pc) continue;
         const actor_name = compiled.routine_entities.get(entry.key_ptr.*) orelse "Player";
         const actor = try world.intern_entity(actor_name);
         // `Scene` names the whole stage (`say ... to Scene`, scene-wide `animate`); a routine
@@ -1345,6 +1356,45 @@ test "D-094: a routine on the Scene runs, but the Scene gets no body on a mark" 
     const scene = world.lookup_entity(STAGE_ACTOR).?;
     try testing.expect(!spatial.agents.contains(scene));
     try testing.expect(world.has_fact(scene, world.lookup_relation("Breezy").?, null));
+}
+
+test "D-052: start_script leaves path initializers and path routines to the host" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Yard
+        \\cast: Hero
+        \\marks: Start, LeftGate, RightGate
+        \\
+        \\relation WaypointBlocked(mark)
+        \\
+        \\path Left:
+        \\  remember WaypointBlocked(RightGate)
+        \\  routine CrossLeft(Hero):
+        \\    remember Crossed(Hero, LeftGate)
+        \\
+        \\path Right:
+        \\  remember WaypointBlocked(LeftGate)
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+    _ = try start_script(&world, &spatial, &vm, &compiled);
+    for (0..3) |_| _ = try tick(&vm, &compiled);
+    const blocked = world.lookup_relation("WaypointBlocked").?;
+    try testing.expect(!world.has_fact(null, blocked, null));
+
+    _ = (try vm.select_path(&compiled, "Left")).?;
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(world.lookup_entity("RightGate").?, blocked, null));
+    try testing.expect(!world.has_fact(world.lookup_entity("LeftGate").?, blocked, null));
+    // The path's routine was not started either: choosing the path does not run it.
+    try testing.expect(world.lookup_relation("Crossed") == null or !world.has_fact(null, world.lookup_relation("Crossed").?, null));
 }
 
 test "D-100: a doorway mark is added on stage, and a walk ending on it, or asked for on it, changes rooms" {

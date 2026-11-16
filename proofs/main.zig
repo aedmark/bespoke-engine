@@ -44,7 +44,6 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "spit", .proof = .spitting_contest },
     .{ .name = "borrowed-beard", .proof = .borrowed_beard },
     .{ .name = "beard", .proof = .borrowed_beard },
-    .{ .name = "gk3", .proof = .borrowed_beard },
     .{ .name = "cat-moustache", .proof = .borrowed_beard },
     .{ .name = "sword-fighting", .proof = .sword_fighting },
     .{ .name = "barbs", .proof = .sword_fighting },
@@ -59,18 +58,14 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "broken-sword", .proof = .lamp_point },
     .{ .name = "three-tides", .proof = .three_tides },
     .{ .name = "tides", .proof = .three_tides },
-    .{ .name = "dott", .proof = .three_tides },
     .{ .name = "tentacle", .proof = .three_tides },
     .{ .name = "chrono-mansion", .proof = .three_tides },
     .{ .name = "weathercock", .proof = .weathercock },
-    .{ .name = "darko", .proof = .weathercock },
     .{ .name = "bell-tower", .proof = .bell_tower },
-    .{ .name = "loom", .proof = .bell_tower },
     .{ .name = "drafts", .proof = .bell_tower },
     .{ .name = "grog", .proof = .grog },
     .{ .name = "caustic-grog", .proof = .grog },
     .{ .name = "saltmarket", .proof = .saltmarket },
-    .{ .name = "atlantis", .proof = .saltmarket },
     .{ .name = "algiers", .proof = .saltmarket },
     .{ .name = "grid", .proof = .grid },
     .{ .name = "castle-fire", .proof = .grid },
@@ -190,8 +185,8 @@ test {
 
 test "proofs: legacy flag spellings resolve to the same proofs" {
     try std.testing.expectEqual(Proof.three_tides, lookup("tentacle").?);
-    try std.testing.expectEqual(Proof.three_tides, lookup("dott").?);
-    try std.testing.expectEqual(Proof.bell_tower, lookup("loom").?);
+    try std.testing.expectEqual(Proof.bell_tower, lookup("drafts").?);
+    try std.testing.expectEqual(Proof.saltmarket, lookup("algiers").?);
     try std.testing.expectEqual(Proof.lamp_point, lookup("broken-sword").?);
     try std.testing.expectEqual(Proof.lamp_point, lookup("goat").?);
     try std.testing.expect(lookup("headless") == null);

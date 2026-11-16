@@ -625,7 +625,7 @@ pub const WasmRuntime = struct {
             if (self.reach_mark(target)) |wp| {
                 const at = self.spatial.agents.get(self.player_entity);
                 const there = if (at) |a| a.current_wp == wp and !self.spatial.is_moving(self.player_entity) else true;
-                if (!there and try self.spatial.walk_to(self.player_entity, wp)) {
+                if (!there and try self.plan_walk(wp)) {
                     self.approach = .{ .verb = self.active_verb, .target = target, .examine = examine, .wp = wp, .asked_tick = self.clock(), .item = item };
                     var name_buf: [48]u8 = undefined;
                     const name = dialogue_panel.display_name(self.world.get_entity_name(target) orelse "it", &name_buf);
@@ -636,6 +636,13 @@ pub const WasmRuntime = struct {
             }
         }
         return self.act_now(target, examine, item, true);
+    }
+
+    /// Plans the player's walk around marks the world blocks (`WaypointBlocked`, blocking grid
+    /// cells), as the desktop hosts that lock routes do (P24-02, D-054); with no such facts it is
+    /// a plain walk. Plans in the active world, the branch while one is live.
+    fn plan_walk(self: *WasmRuntime, wp: u16) !bool {
+        return self.spatial.walk_to_with_world(self.active_world(), self.player_entity, wp);
     }
 
     /// The mark beside a target: where a person stands, else the mark nearest a prop in its room.
@@ -1183,13 +1190,13 @@ pub const WasmRuntime = struct {
                     if (renderer.hit_test_waypoint(ev.x, ev.y, marks, CANVAS_WIDTH, CANVAS_HEIGHT)) |wp_id| {
                         if (self.player_entity != .none) {
                             self.approach = null;
-                            _ = try self.spatial.walk_to(self.player_entity, wp_id);
+                            const planned = try self.plan_walk(wp_id);
                             // Already standing on an exit mark: a click on it leaves (D-094).
                             if (!self.spatial.is_moving(self.player_entity) and try self.exit_here()) {
                                 self.record_snapshot();
                                 return .walk_issued;
                             }
-                            self.walk_banner(wp_id);
+                            if (planned or !self.spatial.waypoint_blocked(self.active_world(), wp_id)) self.walk_banner(wp_id) else self.set_banner("That way is blocked.");
                             return .walk_issued;
                         }
                     }
@@ -1228,8 +1235,7 @@ pub const WasmRuntime = struct {
                 // 6. Marks with any other verb: a walk.
                 if (renderer.hit_test_waypoint(ev.x, ev.y, marks, CANVAS_WIDTH, CANVAS_HEIGHT)) |wp_id| {
                     if (self.player_entity != .none) {
-                        _ = try self.spatial.walk_to(self.player_entity, wp_id);
-                        self.walk_banner(wp_id);
+                        if ((try self.plan_walk(wp_id)) or !self.spatial.waypoint_blocked(self.active_world(), wp_id)) self.walk_banner(wp_id) else self.set_banner("That way is blocked.");
                         return .walk_issued;
                     }
                 }

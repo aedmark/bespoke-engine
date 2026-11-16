@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE_HTML = ROOT / "site" / "index.html"
 # The standalone proof pages (D-086, D-094), copied beside index.html; each carries its own
 # sharing tags.
-PROOF_PAGES = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html", "donkey.html", "tides.html", "weathercock.html"))
+PROOF_PAGES = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html", "donkey.html", "tides.html", "weathercock.html", "saltmarket.html"))
 DEFAULT_OUT = ROOT / "dist" / "site"
 HEAD_MARKER = "<!-- DEPLOY_METADATA -->"
 BODY_MARKER = "<!-- DEPLOY_SERVICE_WORKER -->"

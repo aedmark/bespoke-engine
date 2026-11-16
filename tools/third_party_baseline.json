@@ -1,13 +1,5 @@
 {
   "about": "Third-party terms allowed today. Only shrinks; see tools/check_third_party.py (P35-01).",
-  "counts": {
-    "proofs/main.zig": {
-      "Day of the Tentacle": 2,
-      "Donnie Darko": 1,
-      "Gabriel Knight 3": 1,
-      "Indiana Jones and the Fate of Atlantis": 1,
-      "Loom": 2
-    }
-  },
-  "total": 7
+  "counts": {},
+  "total": 0
 }

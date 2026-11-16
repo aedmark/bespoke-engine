@@ -66,6 +66,11 @@ class ThirdPartyLintTests(unittest.TestCase):
         root = self.make_repo({"src/a.zig": code, "site/index.html": page})
         self.assertEqual({"src/a.zig": {"Example Saga": 1}, "site/index.html": {"Example Saga": 1}}, self.counts(root))
 
+    def test_names_in_html_comments_still_count(self):
+        # P35-10: a comment ships in the page, so stripping it as a tag would hide a name.
+        root = self.make_repo({"site/index.html": "<p>ok</p>\n<!-- Zorbin -->\n"})
+        self.assertEqual({"site/index.html": {"Example Saga": 1}}, self.counts(root))
+
     def test_the_embedded_wasm_region_and_history_are_not_scanned(self):
         page = "<!-- SITE_SIMULATOR_START -->\nZorbin Zorbin\n<!-- SITE_SIMULATOR_END -->\nZorbin\n"
         root = self.make_repo({"site/index.html": page, "docs/DECISIONS.md": "Zorbin\n", "docs/archive/x.md": "Zorbin\n"})

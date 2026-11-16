@@ -126,6 +126,7 @@ pub const decks = [_]wasm.Deck{
         .setup = saltmarket_setup,
         .catalyst = saltmarket_solve,
         .on_choice = saltmarket_choice,
+        .on_act = saltmarket_act,
         .cues = .{ .talk = "Talk" },
     }),
     wasm.script_deck_with("THE COPPER WEATHERCOCK (BRANCH WORLDS)", weathercock.WEATHERCOCK_SCRIPT, .{
@@ -899,6 +900,26 @@ fn saltmarket_choice(rt: *WasmRuntime, action: u32) anyerror!void {
     rt.set_banner(spec.banner);
 }
 
+/// TAKE or USE on the logbook, once Tamsin has walked over to it (D-092), runs the chosen
+/// path's solution routine, as `[S]` does at the end of its run; the script owns the routine.
+fn saltmarket_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    if (verb != .pick_up and verb != .use_with) return false;
+    if (target != try entity(rt, "Logbook")) return false;
+    const spec = saltmarket_active(rt) orelse {
+        rt.set_banner("Choose a way in first.");
+        return true;
+    };
+    if (holds(rt, "Tamsin", "Acquired", "Logbook")) {
+        rt.set_banner("The logbook is Tamsin's. Press [R] to rewind and try another way.");
+        return true;
+    }
+    const program = if (rt.program) |*p| p else return false;
+    const entry = program.routine_entries.get(spec.routine) orelse return false;
+    _ = try rt.vm.spawn_routine(try entity(rt, "Tamsin"), entry);
+    try rt.step_tick();
+    return true;
+}
+
 /// `[S]`: the desktop proof's path run: choose Cunning if no path is chosen, walk through the
 /// path's gate to the logbook, talk to Quince, then run the path's own solution routine.
 fn saltmarket_solve(rt: *WasmRuntime) anyerror!void {
@@ -1548,6 +1569,39 @@ test "D-094: The Copper Weathercock plays to the end with clicks alone, through 
     try testing.expect(!rt.hypervisor.?.branch_active);
     try testing.expect(weathercock.evaluate_weathercock_solved(&rt.world));
     try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "folds back cleanly") != null);
+}
+
+test "D-094: The Saltmarket plays by clicks, walking only through the chosen gate" {
+    const rt = try load(8);
+    defer unload(rt);
+    try testing.expectEqualStrings("Tamsin", rt.world.get_entity_name(rt.player_entity).?);
+    // Number key 3 answers the selector: Crew locks the Cunning and Muscle gates.
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '3' });
+    try testing.expect(holds(rt, "Crew", "PathActive", null));
+    try testing.expect(holds(rt, "MuscleGate", "WaypointBlocked", null));
+
+    // Taking the logbook walks there through the Crew gate, the one left open.
+    const scene = try entity(rt, "Saltmarket");
+    const crew_gate = rt.spatial.graph.find_waypoint_in_room(scene, "CrewGate").?;
+    const muscle_gate = rt.spatial.graph.find_waypoint_in_room(scene, "MuscleGate").?;
+    try pick_verb(rt, .pick_up);
+    _ = try click_on(rt, "Logbook");
+    var through_crew = false;
+    var through_muscle = false;
+    for (0..40) |_| {
+        const here = rt.spatial.get_current_waypoint(rt.player_entity).?;
+        if (here == crew_gate) through_crew = true;
+        if (here == muscle_gate) through_muscle = true;
+        if (holds(rt, "Tamsin", "Acquired", "Logbook")) break;
+        try rt.step_tick();
+    }
+    try testing.expect(through_crew and !through_muscle);
+    try testing.expect(holds(rt, "Tamsin", "Solved", "Crew"));
+
+    // A walk to a locked gate is refused and says so.
+    try pick_verb(rt, .walk);
+    _ = try click_on(rt, "CunningGate");
+    try testing.expectEqualStrings("That way is blocked.", rt.get_banner());
 }
 
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {
