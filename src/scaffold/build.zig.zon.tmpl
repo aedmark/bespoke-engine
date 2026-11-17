@@ -3,6 +3,8 @@
     // The package's identity (Zig 0.14+): generated once by `bespoke init`; never change it.
     .fingerprint = {{fingerprint}},
     .version = "0.1.0",
+    // The engine's own minimum; the CI workflow pins the same release.
+    .minimum_zig_version = "0.17.1",
     .dependencies = .{
         // The BeSpoke engine checkout this project was created from. Point it elsewhere, or
         // replace it with a `.url` and `.hash`, to build against another engine.

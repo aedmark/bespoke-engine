@@ -128,7 +128,7 @@ const testing = std.testing;
 test "P29-01: project names are lowercase identifiers of at most 32 characters" {
     try validate_name("lighthouse");
     try validate_name("game_2");
-    for ([_][]const u8{ "", "Game", "2game", "my-game", "my game", "../x", "a" ** 33, "_x", "test", "fn", "error" }) |bad| {
+    for ([_][]const u8{ "", "Game", "2game", "my-game", "my game", "../x", &@as([33]u8, @splat('a')), "_x", "test", "fn", "error" }) |bad| {
         try testing.expectError(error.InvalidProjectName, validate_name(bad));
     }
 }

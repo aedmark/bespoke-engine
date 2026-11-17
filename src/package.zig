@@ -658,7 +658,7 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
     };
     grid_mod.validate_grid(grid) catch return error.InvalidGridConfig;
     // Version 7 knew only flammable, liquid, and blocking; a later attribute byte there is corrupt.
-    const attribute_count: usize = if (has_rules) @typeInfo(grid_mod.Attribute).@"enum".fields.len else 3;
+    const attribute_count: usize = if (has_rules) std.meta.tags(grid_mod.Attribute).len else 3;
     const cell_count = try reader.takeInt(u32, .little);
     if (cell_count > grid.cell_count() * attribute_count) return error.InvalidGridConfig;
     const cells = try allocator.alloc(grid_mod.InitialCell, cell_count);

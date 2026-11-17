@@ -411,7 +411,7 @@ pub const WasmRuntime = struct {
     hypervisor: ?*TemporalHypervisor = null,
 
     /// Long enough for a spoken line with its speaker; drawn wrapped over two rows (D-077).
-    banner_buf: [512]u8 = [_]u8{0} ** 512,
+    banner_buf: [512]u8 = @as([512]u8, @splat(0)),
     banner_len: usize = 0,
     /// The open dialogue's speaker as a display name; the panel's rows slice into it.
     panel_name_buf: [48]u8 = undefined,
@@ -422,8 +422,8 @@ pub const WasmRuntime = struct {
 
     // Fixed ring buffer of binary World snapshots for instant browser timeline scrubbing
     snapshot_bufs: [MAX_WASM_SNAPSHOTS][SNAPSHOT_SLOT_BYTES]u8 = undefined,
-    snapshot_lens: [MAX_WASM_SNAPSHOTS]usize = [_]usize{0} ** MAX_WASM_SNAPSHOTS,
-    snapshot_ticks: [MAX_WASM_SNAPSHOTS]u64 = [_]u64{0} ** MAX_WASM_SNAPSHOTS,
+    snapshot_lens: [MAX_WASM_SNAPSHOTS]usize = @as([MAX_WASM_SNAPSHOTS]usize, @splat(0)),
+    snapshot_ticks: [MAX_WASM_SNAPSHOTS]u64 = @as([MAX_WASM_SNAPSHOTS]u64, @splat(0)),
     snapshot_count: usize = 0,
 
     /// The frame the page shows: 1280x720 RGBA8888 (D-097). Borrowed from the host in the

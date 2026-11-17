@@ -95,9 +95,10 @@ const Status = struct {
     /// frame has nothing to attach it to (no actor to hold the cheese, say).
     fn apply(frame: *bespoke.RenderFrame, variant: []const u8) bool {
         const st = frame.host_status_mut(art.Status);
-        inline for (@typeInfo(art.Status).@"struct".fields) |field| {
-            if (field.type == bool and std.mem.eql(u8, field.name, variant)) {
-                @field(st, field.name) = true;
+        const info = @typeInfo(art.Status).@"struct";
+        inline for (info.field_names, info.field_types) |name, field_type| {
+            if (field_type == bool and std.mem.eql(u8, name, variant)) {
+                @field(st, name) = true;
                 return true;
             }
         }
@@ -213,7 +214,7 @@ const Recorder = struct {
             if (std.mem.eql(u8, want, hash_text)) return;
         }
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const path = try std.fmt.bufPrintZ(&path_buf, "{s}/{s}.actual.bmp", .{ options.golden_dir, label });
+        const path = try std.mem.printSentinel(&path_buf, "{s}/{s}.actual.bmp", .{ options.golden_dir, label }, 0);
         // Labels read `<proof>/<scene name>`; flatten them into one file name.
         for (path_buf[options.golden_dir.len + 1 .. path.len]) |*ch| {
             if (ch.* == '/' or ch.* == ' ') ch.* = '_';

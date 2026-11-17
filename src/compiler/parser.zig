@@ -1279,7 +1279,7 @@ pub const Parser = struct {
         }
         _ = try self.expect(.indent);
         var scenes = std.array_list.Managed([]const u8).init(self.allocator);
-        var seen = [_]bool{false} ** mml.PART_COUNT;
+        var seen = @as([mml.PART_COUNT]bool, @splat(false));
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             if (self.current.tag == .kw_scene) {
                 try self.advance();
@@ -1402,7 +1402,7 @@ pub const Parser = struct {
         var origin_y: i32 = 0;
         var rects = std.array_list.Managed(GridRectDecl).init(self.allocator);
         var places = std.array_list.Managed(GridPlaceDecl).init(self.allocator);
-        var rates = [_]?u32{null} ** 4;
+        var rates = @as([4]?u32, @splat(null));
         const rate_names = [_][]const u8{ "burn", "spread", "dissipate", "flow" };
 
         while (self.current.tag != .dedent and self.current.tag != .eof) {

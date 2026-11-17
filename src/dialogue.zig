@@ -279,10 +279,10 @@ pub fn view(world: *const World) ?View {
         .revision = world.get_property(speaker, r.revision) orelse 0,
         .prompt = "",
         .count = count,
-        .texts = [_][]const u8{""} ** MAX_CHOICES,
-        .actions = [_]u32{0} ** MAX_CHOICES,
+        .texts = @as([MAX_CHOICES][]const u8, @splat("")),
+        .actions = @as([MAX_CHOICES]u32, @splat(0)),
         .branch_count = 0,
-        .branches = [_]Branch{.{}} ** MAX_CHOICES,
+        .branches = @as([MAX_CHOICES]Branch, @splat(.{})),
     };
 
     if (world.get_property(speaker, r.prompt)) |prompt_id| {

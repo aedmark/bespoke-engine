@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The engine builds with Zig 0.17.1 (`P37-01`), and a game made by `bespoke init` asks for it too. Functions that read files or the clock take an `io: std.Io` argument as they take an allocator, and `main` receives both from `std.process.Init` (`D-104`); `docs/AUTHORING.md` shows the new signatures. The SDL2 headers come through the build's translate-C step instead of `@cImport`. Every transcript, render, browser, and audio golden is unchanged.
 - Typed commands work in the browser (`P34-04`): The Larkspur Observatory plays on the showcase, where Enter opens the command bar and a line such as "go to the archive" walks Ines there, and the page made by `bespoke init` has the bar too. No proof is desktop-only any more.
 - The Castle Fire Escape plays in the browser (`P34-03`): the showcase has a Fire Escape tab, where USE on the trough fills the bucket, USE on the torch lights the tapestry, and `[S]` plays the next step.
 - Sound on the showcase, the proof pages, and the page `bespoke init` makes now plays through an AudioWorklet instead of the deprecated ScriptProcessorNode (`P34-05`), opened from a file or a server alike.

@@ -90,11 +90,10 @@ pub fn key(comptime ch: u8) Keycode {
     return ch;
 }
 
-/// SDL, for the desktop build. The browser build has no SDL headers; it gets an empty
-/// namespace, so a drawing path that reached for SDL fails to compile there by name (D-097).
-pub const c = if (builtin.os.tag == .freestanding) struct {} else @cImport({
-    @cInclude("SDL2/SDL.h");
-});
+/// SDL, for the desktop build, translated from `sdl.h` by build.zig. The browser build has no
+/// SDL headers; it gets an empty namespace, so a drawing path that reached for SDL fails to
+/// compile there by name (D-097).
+pub const c = if (builtin.os.tag == .freestanding) struct {} else @import("sdl");
 
 fn sdl_audio_callback(userdata: ?*anyopaque, stream: [*c]u8, len: c_int) callconv(.c) void {
     const bridge: *audio_mod.AudioBridge = @ptrCast(@alignCast(userdata orelse return));
@@ -993,7 +992,7 @@ pub const DisplayWindow = struct {
     /// do not time out; a new one pushes the oldest off, so nothing hangs forever or vanishes
     /// before it is read.
     log_text: [LOG_LINES][512]u8 = undefined,
-    log_len: [LOG_LINES]usize = [_]usize{0} ** LOG_LINES,
+    log_len: [LOG_LINES]usize = @as([LOG_LINES]usize, @splat(0)),
     log_count: usize = 0,
     // Phase 11 Inventory In-Hand Selection & Combining (P11-03, D-013)
     selected_inventory_item: ?usize = null,
@@ -1016,7 +1015,7 @@ pub const DisplayWindow = struct {
     command_input: [128]u8 = undefined,
     command_len: usize = 0,
     command_history: [8][128]u8 = undefined,
-    command_history_lens: [8]usize = [_]usize{0} ** 8,
+    command_history_lens: [8]usize = @as([8]usize, @splat(0)),
     command_history_count: usize = 0,
     /// Index into the history while Up/Down browse it; null when editing a fresh line.
     command_history_cursor: ?usize = null,
@@ -1025,7 +1024,7 @@ pub const DisplayWindow = struct {
     console_input: [128]u8 = undefined,
     console_len: usize = 0,
     console_history: [5][128]u8 = undefined,
-    console_history_lens: [5]usize = [_]usize{0} ** 5,
+    console_history_lens: [5]usize = @as([5]usize, @splat(0)),
     console_history_count: usize = 0,
     // Phase 17 In-Engine Save/Load Drawer & Pause Menu Overlay (P17-03, D-020)
     show_save_drawer: bool = false,
@@ -1554,7 +1553,7 @@ pub const DisplayWindow = struct {
             .text_len = 0,
             .ticks_remaining = if (choices.len > 0) std.math.maxInt(u32) else 360,
             .choices = undefined,
-            .choice_lens = [_]u8{0} ** 9,
+            .choice_lens = @as([9]u8, @splat(0)),
             .choice_count = 0,
             .scroll_offset = 0,
         };
@@ -4020,7 +4019,7 @@ test "P13-03/D-077: the dialogue panel wraps, scrolls, and selects choices" {
 
     // A long line wraps inside the panel instead of running past its edge, and the speaker's
     // entity name is shown as a display name.
-    win.show_dialogue(EntityId.from_int(2), Point{ .x = 0, .y = 0 }, "HarbourWarden", "You wield that sword like a mop handle! " ** 3, &[_][]const u8{"Unfortunately for you, they'll be too busy picking apart your reputation."});
+    win.show_dialogue(EntityId.from_int(2), Point{ .x = 0, .y = 0 }, "HarbourWarden", "You wield that sword like a mop handle! " ++ "You wield that sword like a mop handle! " ++ "You wield that sword like a mop handle! ", &[_][]const u8{"Unfortunately for you, they'll be too busy picking apart your reputation."});
     const long = &win.active_balloon.?;
     try testing.expectEqualStrings("Harbour Warden", long.get_speaker_name());
     const narrow = get_dialogue_panel(long, 640, 540, false);

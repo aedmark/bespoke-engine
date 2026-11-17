@@ -66,7 +66,7 @@ pub const PatternClause = struct {
 
 /// Variable bindings result from relational pattern unification (P8-01, D-010).
 pub const VariableBindings = struct {
-    values: [8]?u32 = [_]?u32{null} ** 8,
+    values: [8]?u32 = @as([8]?u32, @splat(null)),
 
     pub fn get(self: VariableBindings, var_idx: u8) ?u32 {
         if (var_idx >= 8) return null;

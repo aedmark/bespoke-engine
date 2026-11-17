@@ -1522,7 +1522,7 @@ test "D-083: offers rotate past nine, a known counter is always offered, and pic
 
     // Attacking: eight barbs and the flub per turn, a different handful each time, and every
     // barb turns up within a few turns.
-    var offered = [_]bool{false} ** 15;
+    var offered = @as([15]bool, @splat(false));
     try bout.start(&vm, gannet, .none);
     for (0..12) |_| {
         _ = world.forget(tamsin, bout.thrown_rel, null);

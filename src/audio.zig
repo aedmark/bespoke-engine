@@ -228,7 +228,7 @@ fn osc_term(source: @TypeOf(@as(Term, undefined).source), shape: Wave, weight: i
 
 /// The engine's own effects, indexed by `SoundEffectKind`.
 pub const STOCK_SFX = blk: {
-    var t: [std.meta.fields(SoundEffectKind).len]SfxPatch = undefined;
+    var t: [std.meta.tags(SoundEffectKind).len]SfxPatch = undefined;
     // Quick crisp noise burst with subtle bass tap
     t[@intFromEnum(SoundEffectKind.footstep)] = .{ .note1 = 36, .sweep = -120, .env = 26000, .decay = 26, .samples = 1000, .terms = &.{ .{ .source = .noise, .weight = 3 }, osc_term(.osc1, .triangle, 1) }, .mix = .{ .shift = 2 } };
     // Rising two-tone chime (note 64, then 71 at 50% duty)
@@ -305,10 +305,10 @@ pub const BgmPattern = struct {
 pub const SILENT_PATTERN = BgmPattern{
     .bpm = 120,
     .step_count = 32,
-    .bass_notes = [_]u8{0} ** BGM_STEPS,
-    .lead_notes = [_]u8{0} ** BGM_STEPS,
-    .chord_notes = [_]u8{0} ** BGM_STEPS,
-    .drum_pattern = [_]u8{0} ** BGM_STEPS,
+    .bass_notes = @as([BGM_STEPS]u8, @splat(0)),
+    .lead_notes = @as([BGM_STEPS]u8, @splat(0)),
+    .chord_notes = @as([BGM_STEPS]u8, @splat(0)),
+    .drum_pattern = @as([BGM_STEPS]u8, @splat(0)),
 };
 
 // ---------------------------------------------------------------------------
@@ -333,7 +333,7 @@ pub const MmlTrack = struct {
 /// A four-part MML score. Borrowed like a `Soundtrack`: the audio thread reads it, so it must
 /// outlive the bridge and must not change once registered.
 pub const MmlScore = struct {
-    parts: [MML_PART_COUNT]MmlTrack = [_]MmlTrack{.{}} ** MML_PART_COUNT,
+    parts: [MML_PART_COUNT]MmlTrack = @as([MML_PART_COUNT]MmlTrack, @splat(.{})),
 
     pub fn part(self: *const MmlScore, which: MmlPart) MmlTrack {
         return self.parts[@intFromEnum(which)];
@@ -391,7 +391,7 @@ pub const MmlPartState = struct {
 /// `60 / (tempo * 48)` seconds on average and four parts can never drift apart.
 pub const MmlState = struct {
     score: ?*const MmlScore = null,
-    parts: [MML_PART_COUNT]MmlPartState = [_]MmlPartState{.{}} ** MML_PART_COUNT,
+    parts: [MML_PART_COUNT]MmlPartState = @as([MML_PART_COUNT]MmlPartState, @splat(.{})),
     /// One tempo for every part (D-061): a `t` in any part sets it for all.
     tempo: u16 = mml.DEFAULT_TEMPO,
     clock: u32 = 0,
@@ -410,7 +410,7 @@ pub const ChiptuneSynth = struct {
     rng_state: u32 = 0x811c9dc5,
 
     // SFX Voice Pool
-    sfx_voices: [MAX_SFX_VOICES]SfxVoice = [_]SfxVoice{.{}} ** MAX_SFX_VOICES,
+    sfx_voices: [MAX_SFX_VOICES]SfxVoice = @as([MAX_SFX_VOICES]SfxVoice, @splat(.{})),
 
     // BGM Sequencer State
     /// Read by the audio thread; replaced only through `AudioEvent.set_soundtrack`.
@@ -982,7 +982,7 @@ pub const ChiptuneSynth = struct {
 // 7. Decoupled Audio Bridge (P16-01, D-001, D-019)
 // ---------------------------------------------------------------------------
 
-/// Guards the bridge between the host thread and SDL's audio callback thread. Zig 0.16 has no
+/// Guards the bridge between the host thread and SDL's audio callback thread. Zig 0.16+ has no
 /// blocking thread mutex outside `std.Io`, and the callback runs on a thread SDL owns, with no
 /// `Io` to lock through; the critical sections are a few queue writes, so a short spin on the
 /// lock-free `std.atomic.Mutex` is enough, and it never sleeps inside the audio callback.
@@ -1422,10 +1422,10 @@ fn test_pattern(bpm: u16, root: u8) BgmPattern {
     var p = BgmPattern{
         .bpm = bpm,
         .step_count = 8,
-        .bass_notes = [_]u8{0} ** BGM_STEPS,
-        .lead_notes = [_]u8{0} ** BGM_STEPS,
-        .chord_notes = [_]u8{0} ** BGM_STEPS,
-        .drum_pattern = [_]u8{0} ** BGM_STEPS,
+        .bass_notes = @as([BGM_STEPS]u8, @splat(0)),
+        .lead_notes = @as([BGM_STEPS]u8, @splat(0)),
+        .chord_notes = @as([BGM_STEPS]u8, @splat(0)),
+        .drum_pattern = @as([BGM_STEPS]u8, @splat(0)),
     };
     for (0..8) |i| {
         p.bass_notes[i] = if (i % 2 == 0) root else 0;
@@ -1483,7 +1483,7 @@ test "P32-02d: patches step, loop, ring-modulate, and divide as declared" {
 
     const v = &synth.sfx_voices[0];
     var buf: [2]i16 = undefined;
-    var notes_seen = [_]bool{false} ** 2;
+    var notes_seen = @as([2]bool, @splat(false));
     var peak: i32 = 0;
     for (0..2500) |_| {
         synth.render_stereo(&buf, 100, 100, 0);

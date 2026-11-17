@@ -448,7 +448,7 @@ pub const VM = struct {
         // Record cue emission for peripheral visual/audio bridge
         var emitted = EmittedCue{
             .cue_id = @intCast((try self.world.intern_entity(cue_name)).to_int() & 0xFFFF),
-            .args = [_]u32{0} ** 4,
+            .args = @as([4]u32, @splat(0)),
             .arg_count = 1,
         };
         emitted.args[0] = actor.to_int();
@@ -488,7 +488,7 @@ pub const VM = struct {
         const cue_name = if (handler_pc != null) draft_mod.WEAVE_CUE else draft_mod.WEAVE_FIZZLED_CUE;
         var emitted = EmittedCue{
             .cue_id = @intCast((try self.world.intern_entity(cue_name)).to_int() & 0xFFFF),
-            .args = [_]u32{0} ** 4,
+            .args = @as([4]u32, @splat(0)),
             .arg_count = 3,
         };
         emitted.args[0] = caster.to_int();
@@ -615,7 +615,7 @@ pub const VM = struct {
         const st_cue_id = (try self.world.intern_entity("SceneTransition")).to_int() & 0xFFFF;
         var emitted = EmittedCue{
             .cue_id = @intCast(st_cue_id),
-            .args = [_]u32{0} ** 4,
+            .args = @as([4]u32, @splat(0)),
             .arg_count = 2,
         };
         emitted.args[0] = if (old_scene) |os| os.to_int() else 0;

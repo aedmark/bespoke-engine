@@ -57,10 +57,7 @@ pub const Attribute = enum(u8) {
     }
 
     pub fn from_name(name: []const u8) ?Attribute {
-        inline for (@typeInfo(Attribute).@"enum".fields) |field| {
-            if (std.mem.eql(u8, name, field.name)) return @enumFromInt(field.value);
-        }
-        return null;
+        return std.meta.stringToEnum(Attribute, name);
     }
 };
 
@@ -217,18 +214,18 @@ pub fn seed(world: *World, declaration: Declaration) !void {
 /// Attribute masks and timer expiries for every cell, read in one pass over the fact table.
 /// Per-cell `has_fact` calls would scan the table once per cell and neighbour each tick.
 const CellState = struct {
-    masks: [MAX_CELLS]u8 = [_]u8{0} ** MAX_CELLS,
-    burning_expires: [MAX_CELLS]u64 = [_]u64{0} ** MAX_CELLS,
-    smoke_expires: [MAX_CELLS]u64 = [_]u64{0} ** MAX_CELLS,
+    masks: [MAX_CELLS]u8 = @as([MAX_CELLS]u8, @splat(0)),
+    burning_expires: [MAX_CELLS]u64 = @as([MAX_CELLS]u64, @splat(0)),
+    smoke_expires: [MAX_CELLS]u64 = @as([MAX_CELLS]u64, @splat(0)),
 
     fn has(self: *const CellState, index: u32, attribute: Attribute) bool {
         return self.masks[index] & attribute.bit() != 0;
     }
 
     fn load(self: *CellState, world: *const World, grid: Grid) void {
-        var relations: [@typeInfo(Attribute).@"enum".fields.len]?RelationKind = undefined;
-        inline for (@typeInfo(Attribute).@"enum".fields, 0..) |field, i| {
-            relations[i] = world.lookup_relation(Attribute.relation_name(@enumFromInt(field.value)));
+        var relations: [std.meta.tags(Attribute).len]?RelationKind = undefined;
+        inline for (std.meta.tags(Attribute), 0..) |attribute, i| {
+            relations[i] = world.lookup_relation(attribute.relation_name());
         }
         const slice = world.facts.slice();
         const subjects = slice.items(.subject);
@@ -305,8 +302,8 @@ pub fn step(world: *World, declaration: Declaration) !void {
 
     var state = CellState{};
     state.load(world, grid);
-    var ignite_set = std.StaticBitSet(MAX_CELLS).initEmpty();
-    var flood_set = std.StaticBitSet(MAX_CELLS).initEmpty();
+    var ignite_set = std.bit_set.Static(MAX_CELLS).empty;
+    var flood_set = std.bit_set.Static(MAX_CELLS).empty;
     const flows = rules.flow_ticks != 0 and now % rules.flow_ticks == 0;
 
     var index: u32 = 0;
@@ -552,7 +549,7 @@ test "P25-02: fire spreads along flammable cells, burns out, and leaves dissipat
         try step(&world, declaration);
     }
     // Everything burned and every plume has dissipated.
-    try testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &layout_mask(&world, grid));
+    try testing.expectEqualSlices(u8, &(@as([16]u8, @splat(0))), &layout_mask(&world, grid));
 }
 
 test "P25-02: liquid flows around blocking cells on its cadence and douses fire" {

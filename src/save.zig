@@ -69,7 +69,7 @@ pub const SaveActorPreview = struct {
     entity_id: u32 = 0,
     x: i32 = 0,
     y: i32 = 0,
-    name: [24]u8 = [_]u8{0} ** 24,
+    name: [24]u8 = @as([24]u8, @splat(0)),
     name_len: u8 = 0,
 
     pub fn get_name(self: *const SaveActorPreview) []const u8 {
@@ -87,13 +87,13 @@ pub const SaveMetadata = struct {
     fact_count: u32 = 0,
     entity_count: u32 = 0,
     scene_id: u32 = 0,
-    scene_name: [32]u8 = [_]u8{0} ** 32,
+    scene_name: [32]u8 = @as([32]u8, @splat(0)),
     scene_name_len: u8 = 0,
-    description: [64]u8 = [_]u8{0} ** 64,
+    description: [64]u8 = @as([64]u8, @splat(0)),
     description_len: u8 = 0,
     actor_count: u8 = 0,
-    actors: [8]SaveActorPreview = [_]SaveActorPreview{.{}} ** 8,
-    thumbnail: [THUMB_SIZE]u8 = [_]u8{0} ** THUMB_SIZE,
+    actors: [8]SaveActorPreview = @as([8]SaveActorPreview, @splat(.{})),
+    thumbnail: [THUMB_SIZE]u8 = @as([THUMB_SIZE]u8, @splat(0)),
 
     pub fn get_scene_name(self: *const SaveMetadata) []const u8 {
         if (self.scene_name_len == 0) return "Default Stage";

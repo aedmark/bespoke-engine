@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 54 (2026-11-11)
+- **Goal:** Ship P28-01 and implement P28-02, multi-part MML playback.
+- **Work:** Committed P28-01 (`2936cc7`), fast-forwarded `main`, and pushed. The maintainer chose one shared tempo clock, a whole-score loop, and an ADSR-lite envelope table. Added `MmlScore`, `MmlTrack`, `Envelope`/`ENVELOPES`, and `MmlState` to `src/audio.zig`; `Music.score` with `SILENT_PATTERN` as the pattern default; the integer tick clock, part advance, whole-score loop, note on/off, drums, and per-sample envelopes driving the grid voices. Added 8 playback tests and an `mml/demo` audio golden line. Recorded D-061 and updated roadmap, architecture, testing, security, changelog, and handoff.
+- **Outcome:** See the Verified table. Mutations for independent loops, lead-only tempo, and no release each failed a P28-02 test. The first test run crashed in a test helper (`@min` with a comptime bound narrowed `n` to `u10`), not in the synth. The demo score was hashed, not heard by ear. Not merged.
+
 ### Session 53 (2026-11-11)
 - **Goal:** Ship P27-03, then start Phase 28 with P28-01.
 - **Work:** Committed P27-03 (`afe2a32`), fast-forwarded `main`, and pushed it with P27-02, closing Phase 27. The maintainer chose the MML defaults (core command set with repeats, coexistence with grid patterns, drum letters, parser-only scope). Added `src/mml.zig` and its tests, recorded D-060, and updated roadmap, architecture, testing, security, changelog, and handoff. The manual waits for P28-03, when scripts can use scores.

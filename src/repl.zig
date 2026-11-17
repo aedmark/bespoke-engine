@@ -180,7 +180,7 @@ pub const Repl = struct {
         const cue_ent = self.world.intern_entity(cue_name) catch return ReplResult.err("Out of memory interning cue");
         var cue = vm_mod.EmittedCue{
             .cue_id = @truncate(cue_ent.to_int()),
-            .args = [_]u32{0} ** 4,
+            .args = @as([4]u32, @splat(0)),
             .arg_count = 0,
         };
 

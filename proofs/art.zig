@@ -3071,7 +3071,7 @@ fn wave(source: anytype, shape: audio.Wave, weight: i32) audio.Term {
 }
 
 const SFX = blk: {
-    var t: [std.meta.fields(Sfx).len]audio.SfxPatch = undefined;
+    var t: [std.meta.tags(Sfx).len]audio.SfxPatch = undefined;
     // Two detuned saw voices: a ship's foghorn
     t[@intFromEnum(Sfx.horn)] = .{ .note1 = 38, .note2 = 45, .env = 30000, .decay = 3, .samples = 11000, .terms = &.{ wave(.osc1, .saw, 1), wave(.osc2, .saw, 1) }, .mix = .{ .shift = 1 } };
     // Falling bubble over noise
@@ -3146,7 +3146,7 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
 
 pub const VillagerDrive = struct {
     entity: bespoke.EntityId = .none,
-    name: [16]u8 = [_]u8{0} ** 16,
+    name: [16]u8 = @as([16]u8, @splat(0)),
     name_len: u8 = 0,
     hunger: u8 = 0,
     energy: u8 = 0,
@@ -3163,9 +3163,9 @@ pub const VillagerDrive = struct {
 
 /// A directed social or emergence edge for the live Social Graph HUD (P18-02, P18-03, D-021).
 pub const SocialEdge = struct {
-    from_name: [16]u8 = [_]u8{0} ** 16,
+    from_name: [16]u8 = @as([16]u8, @splat(0)),
     from_len: u8 = 0,
-    to_name: [16]u8 = [_]u8{0} ** 16,
+    to_name: [16]u8 = @as([16]u8, @splat(0)),
     to_len: u8 = 0,
     /// 0 = Friend, 1 = Grudge/Rival, 2 = KnowsRumor, 3 = WarrantFor, 4 = Arrested
     kind: u8 = 0,
@@ -3220,15 +3220,15 @@ pub const Status = struct {
     village_crime_active: bool = false,
     village_warrant_active: bool = false,
     village_arrest_made: bool = false,
-    branch_countdown: [16]u8 = [_]u8{0} ** 16,
+    branch_countdown: [16]u8 = @as([16]u8, @splat(0)),
     branch_countdown_len: u8 = 0,
     /// Castle Fire Escape (P25-03): one attribute mask per gallery cell, bit n set when
     /// `grid.Attribute` n holds, and whether the hidden door has been found.
-    gallery_cells: [GALLERY_CELLS]u8 = [_]u8{0} ** GALLERY_CELLS,
+    gallery_cells: [GALLERY_CELLS]u8 = @as([GALLERY_CELLS]u8, @splat(0)),
     gallery_door_revealed: bool = false,
-    villager_drives: [8]VillagerDrive = [_]VillagerDrive{.{}} ** 8,
+    villager_drives: [8]VillagerDrive = @as([8]VillagerDrive, @splat(.{})),
     villager_drive_count: usize = 0,
-    social_edges: [16]SocialEdge = [_]SocialEdge{.{}} ** 16,
+    social_edges: [16]SocialEdge = @as([16]SocialEdge, @splat(.{})),
     social_edge_count: usize = 0,
 
     pub fn countdown(self: *const Status) []const u8 {
@@ -3272,14 +3272,13 @@ pub fn show_branch(bridge: *bespoke.DisplayBridge, hypervisor: *const bespoke.Te
 
 /// Reads the gallery grid's cell facts by the names its script uses (P25-03).
 fn capture_gallery(world: *const bespoke.World, st: *Status) void {
-    st.gallery_cells = [_]u8{0} ** GALLERY_CELLS;
+    st.gallery_cells = @as([GALLERY_CELLS]u8, @splat(0));
     st.gallery_door_revealed = false;
     const floor = world.lookup_entity("GalleryFloor") orelse return;
-    inline for (@typeInfo(bespoke.grid.Attribute).@"enum".fields) |field| {
-        const attribute: bespoke.grid.Attribute = @enumFromInt(field.value);
+    inline for (comptime std.meta.tags(bespoke.grid.Attribute)) |attribute| {
         if (world.lookup_relation(attribute.relation_name())) |rel| {
             for (&st.gallery_cells, 0..) |*mask, i| {
-                if (world.has_fact(floor, rel, @intCast(i))) mask.* |= @as(u8, 1) << field.value;
+                if (world.has_fact(floor, rel, @intCast(i))) mask.* |= @as(u8, 1) << @intCast(@intFromEnum(attribute));
             }
         }
     }

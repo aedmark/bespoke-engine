@@ -713,9 +713,7 @@ pub const Codegen = struct {
     }
 
     fn activity_from_name(name: []const u8) !society_mod.Activity {
-        const fields = std.meta.fields(society_mod.Activity);
-        inline for (fields) |field| if (std.mem.eql(u8, name, field.name)) return @enumFromInt(field.value);
-        return error.UnknownSocietyActivity;
+        return std.meta.stringToEnum(society_mod.Activity, name) orelse error.UnknownSocietyActivity;
     }
 
     fn society_waypoint(self: *Codegen, name: []const u8) !spatial_mod.WaypointId {

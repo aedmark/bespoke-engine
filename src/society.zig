@@ -276,7 +276,7 @@ pub const ChronicleCategory = enum(u8) {
 pub const ChronicleEntry = struct {
     tick: u64 = 0,
     category: ChronicleCategory = .work,
-    message: [CHRONICLE_MESSAGE_LEN]u8 = [_]u8{0} ** CHRONICLE_MESSAGE_LEN,
+    message: [CHRONICLE_MESSAGE_LEN]u8 = @as([CHRONICLE_MESSAGE_LEN]u8, @splat(0)),
     message_len: u8 = 0,
 
     pub fn get_message(self: *const ChronicleEntry) []const u8 {
@@ -287,7 +287,7 @@ pub const ChronicleEntry = struct {
 /// Display log of emergent events. It is presentation, not state: it is not part of the world
 /// snapshot, so a rewind leaves it as it was.
 pub const Chronicle = struct {
-    entries: [MAX_CHRONICLE_ENTRIES]ChronicleEntry = [_]ChronicleEntry{.{}} ** MAX_CHRONICLE_ENTRIES,
+    entries: [MAX_CHRONICLE_ENTRIES]ChronicleEntry = @as([MAX_CHRONICLE_ENTRIES]ChronicleEntry, @splat(.{})),
     count: usize = 0,
 
     pub fn log(self: *Chronicle, tick: u64, category: ChronicleCategory, text: []const u8) void {

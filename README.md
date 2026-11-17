@@ -77,6 +77,8 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 
 ## Quick Start
 
+You need Zig 0.17.1 or later and the SDL2 development libraries; the browser build needs neither SDL2 nor anything else.
+
 ```bash
 # Engine and proof tests, and the WebAssembly builds
 zig build test

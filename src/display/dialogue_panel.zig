@@ -65,8 +65,8 @@ pub const Layout = struct {
     rows: [MAX_ROWS]Row = undefined,
     row_count: usize = 0,
     /// Vertical span of each laid-out choice, from the panel's top.
-    choice_top: [MAX_CHOICES]i32 = [_]i32{0} ** MAX_CHOICES,
-    choice_bottom: [MAX_CHOICES]i32 = [_]i32{0} ** MAX_CHOICES,
+    choice_top: [MAX_CHOICES]i32 = @as([MAX_CHOICES]i32, @splat(0)),
+    choice_bottom: [MAX_CHOICES]i32 = @as([MAX_CHOICES]i32, @splat(0)),
     choice_count: usize = 0,
     height: i32 = 0,
     /// The panel's width, borders included: its widest row plus padding, at most

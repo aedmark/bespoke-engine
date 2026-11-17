@@ -61,7 +61,7 @@ fn note_value(comptime tok: []const u8) u8 {
 }
 
 fn part(comptime text: []const u8, count: *usize) [audio.BGM_STEPS]u8 {
-    var out = [_]u8{0} ** audio.BGM_STEPS;
+    var out = @as([audio.BGM_STEPS]u8, @splat(0));
     var n: usize = 0;
     var it = std.mem.tokenizeAny(u8, text, " |\n");
     while (it.next()) |tok| {

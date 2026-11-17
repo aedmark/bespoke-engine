@@ -244,8 +244,8 @@ pub const RenderDebugFiber = struct {
 /// Pre-cognitive Fourth-Dimensional vector conduit render slice (P31-02, D-027).
 pub const RenderVectorConduit = struct {
     entity: EntityId = EntityId.from_int(0),
-    points_x: [16]i32 = [_]i32{0} ** 16,
-    points_y: [16]i32 = [_]i32{0} ** 16,
+    points_x: [16]i32 = @as([16]i32, @splat(0)),
+    points_y: [16]i32 = @as([16]i32, @splat(0)),
     point_count: usize = 0,
     terminal_wp: WaypointId = 0,
     color_r: u8 = 100,
@@ -258,11 +258,11 @@ pub const RenderVectorConduit = struct {
 /// so the renderer never reads input state the host is mutating. Zeroed frames are disabled.
 pub const RenderDistaff = struct {
     enabled: bool = false,
-    played: [draft_mod.DRAFT_LEN]u8 = [_]u8{0} ** draft_mod.DRAFT_LEN,
+    played: [draft_mod.DRAFT_LEN]u8 = @as([draft_mod.DRAFT_LEN]u8, @splat(0)),
     played_len: u8 = 0,
     reach: u8 = 0,
     outcome: WeaveOutcome = .none,
-    target_name: [24]u8 = [_]u8{0} ** 24,
+    target_name: [24]u8 = @as([24]u8, @splat(0)),
     target_len: u8 = 0,
 
     pub fn get_played(self: *const RenderDistaff) []const u8 {
@@ -305,10 +305,10 @@ pub const RenderDialogue = struct {
     prompt_len: u8 = 0,
     /// Room for a long reply; the panel wraps it (D-077).
     choices: [dialogue_mod.MAX_CHOICES][160]u8 = undefined,
-    choice_lens: [dialogue_mod.MAX_CHOICES]u8 = [_]u8{0} ** dialogue_mod.MAX_CHOICES,
+    choice_lens: [dialogue_mod.MAX_CHOICES]u8 = @as([dialogue_mod.MAX_CHOICES]u8, @splat(0)),
     choice_count: u8 = 0,
     /// Source-order active and pruned branches for the paused inspector (P27-02, D-058).
-    branches: [dialogue_mod.MAX_CHOICES]RenderDialogueBranch = [_]RenderDialogueBranch{.{}} ** dialogue_mod.MAX_CHOICES,
+    branches: [dialogue_mod.MAX_CHOICES]RenderDialogueBranch = @as([dialogue_mod.MAX_CHOICES]RenderDialogueBranch, @splat(.{})),
     branch_count: u8 = 0,
 
     pub fn get_speaker_name(self: *const RenderDialogue) []const u8 {
@@ -341,10 +341,10 @@ pub const RenderFrame = struct {
     cues: [16]RenderCue,
     cue_count: usize,
     fact_count: usize,
-    vector_conduits: [4]RenderVectorConduit = [_]RenderVectorConduit{.{}} ** 4,
+    vector_conduits: [4]RenderVectorConduit = @as([4]RenderVectorConduit, @splat(.{})),
     vector_conduit_count: usize = 0,
     // Multi-character party coordination state (P21-01, D-025)
-    party: [MAX_PARTY_MEMBERS]RenderPartyMember = [_]RenderPartyMember{.{ .entity = EntityId.from_int(0) }} ** MAX_PARTY_MEMBERS,
+    party: [MAX_PARTY_MEMBERS]RenderPartyMember = @as([MAX_PARTY_MEMBERS]RenderPartyMember, @splat(.{ .entity = EntityId.from_int(0) })),
     party_count: usize = 0,
     active_party_index: usize = 0,
     /// The character the player controls, when the host names one (D-092): the window walks it
@@ -367,7 +367,7 @@ pub const RenderFrame = struct {
     max_history_tick: u64,
     /// The host's own status for its presentation (P32-03b, D-041): bytes the engine never
     /// reads, filled by the bridge's status hook and read back typed with `host_status`.
-    host_status_bytes: [HOST_STATUS_BYTES]u8 align(8) = [_]u8{0} ** HOST_STATUS_BYTES,
+    host_status_bytes: [HOST_STATUS_BYTES]u8 align(8) = @as([HOST_STATUS_BYTES]u8, @splat(0)),
 
     /// The host status block as the host's own type. `T` must fit the block and must be valid
     /// when every byte is zero, which is how the block starts.
@@ -497,7 +497,7 @@ pub const DisplayBridge = struct {
     distaff: ?*const DistaffInput = null,
     active_player_character: ?EntityId = null,
     active_party_index: ?usize = null,
-    party: [MAX_PARTY_MEMBERS]EntityId = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
+    party: [MAX_PARTY_MEMBERS]EntityId = @as([MAX_PARTY_MEMBERS]EntityId, @splat(EntityId.from_int(0))),
     party_count: usize = 0,
 
     pub fn init() DisplayBridge {
@@ -507,7 +507,7 @@ pub const DisplayBridge = struct {
             .audio_bridge = null,
             .active_player_character = null,
             .active_party_index = null,
-            .party = [_]EntityId{EntityId.from_int(0)} ** MAX_PARTY_MEMBERS,
+            .party = @as([MAX_PARTY_MEMBERS]EntityId, @splat(EntityId.from_int(0))),
             .party_count = 0,
         };
     }

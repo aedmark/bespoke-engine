@@ -18,6 +18,16 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // Zig 0.17 removed `@cImport`; the SDL2 headers become the `sdl` module here, and every
+    // native module whose code reaches the display imports it (P37-01). Wasm modules get none:
+    // the renderer names `sdl` only on a native target.
+    const sdl_c = b.addTranslateC(.{
+        .root_source_file = b.path("src/display/sdl.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const sdl_mod = sdl_c.createModule();
+
     // Named apart from the `bespoke` CLI so a game's build can fetch the CLI by artifact name
     // to compile its script (P29-03, D-066); Zig refuses a name two installed artifacts share.
     const lib = b.addLibrary(.{
@@ -30,6 +40,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/root.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "sdl", .module = sdl_mod }},
         }),
     });
 
@@ -47,13 +58,14 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "sdl", .module = sdl_mod }},
         }),
     });
     exe.root_module.link_libc = true;
     exe.root_module.linkSystemLibrary("SDL2", .{});
     // `bespoke init` records this checkout as a new project's engine (P29-01, D-063).
     const build_opts = b.addOptions();
-    build_opts.addOption([]const u8, "engine_root", b.pathFromRoot("."));
+    build_opts.addOption([]const u8, "engine_root", b.root.joinString(b.allocator, ".") catch @panic("OOM"));
     exe.root_module.addOptions("build_options", build_opts);
 
     // This declares intent for the executable to be installed into the
@@ -74,9 +86,7 @@ pub fn build(b: *std.Build) void {
 
     // This allows the user to pass arguments to the application in the build
     // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
     // and can be selected like this: `zig build run`
@@ -97,7 +107,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = !is_wasm,
     });
-    if (!is_wasm) bespoke_mod.linkSystemLibrary("SDL2", .{});
+    if (!is_wasm) {
+        bespoke_mod.linkSystemLibrary("SDL2", .{});
+        bespoke_mod.addImport("sdl", sdl_mod);
+    }
 
     const proofs_exe = b.addExecutable(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
@@ -120,9 +133,7 @@ pub fn build(b: *std.Build) void {
 
     const run_proof_cmd = b.addRunArtifact(proofs_exe);
     run_proof_cmd.step.dependOn(&install_proofs.step);
-    if (b.args) |args| {
-        run_proof_cmd.addArgs(args);
-    }
+    run_proof_cmd.addPassthruArgs();
     const run_proof_step = b.step("run-proof", "Run a proof of concept, e.g. `zig build run-proof -- --bell-tower --headless`");
     run_proof_step.dependOn(&run_proof_cmd.step);
 
@@ -136,6 +147,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/root.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "sdl", .module = sdl_mod }},
         }),
     });
     lib_unit_tests.root_module.link_libc = true;
@@ -151,6 +163,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "sdl", .module = sdl_mod }},
         }),
     });
     exe_unit_tests.root_module.addOptions("build_options", build_opts);
@@ -179,7 +192,7 @@ pub fn build(b: *std.Build) void {
     // transcript with proofs/golden/<proof>.txt. `-Dupdate-goldens` rewrites them deliberately.
     const golden_opts = b.addOptions();
     golden_opts.addOption(bool, "update_goldens", b.option(bool, "update-goldens", "Rewrite proofs/golden/*.txt from current proof output (P32-07)") orelse false);
-    golden_opts.addOption([]const u8, "golden_dir", b.pathFromRoot("proofs/golden"));
+    golden_opts.addOption([]const u8, "golden_dir", b.root.joinString(b.allocator, "proofs/golden") catch @panic("OOM"));
     proofs_unit_tests.root_module.addOptions("golden_options", golden_opts);
     proofs_unit_tests.root_module.link_libc = true;
     proofs_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
@@ -204,15 +217,15 @@ pub fn build(b: *std.Build) void {
     // a project into the cache, then runs its tests, its bundled release build, and its browser
     // build with this checkout as the engine. It runs nested `zig build`s, so it stays out of
     // `zig build test`.
-    b.cache_root.handle.createDirPath(b.graph.io, "tmp") catch {};
-    const template_root = b.cache_root.join(b.allocator, &.{"tmp"}) catch @panic("OOM");
+    // Zig 0.17 keeps the configure phase free of file system work, so the folder is cleared and
+    // made by a run step; the template check runs on Linux, where `sh`, `rm`, and `mkdir` do.
+    const template_root = b.root.joinString(b.allocator, ".zig-cache/tmp") catch @panic("OOM");
     const starter_dir = b.pathJoin(&.{ template_root, "template_check" });
-    // Zig 0.16 has no remove-directory step; the template check runs on Linux, where `rm` does.
-    const clear_template = b.addSystemCommand(&.{ "rm", "-rf", starter_dir });
+    const clear_template = b.addSystemCommand(&.{ "sh", "-c", b.fmt("rm -rf '{s}' && mkdir -p '{s}'", .{ starter_dir, template_root }) });
     clear_template.has_side_effects = true;
     const init_template = b.addRunArtifact(exe);
     init_template.has_side_effects = true;
-    init_template.addArgs(&.{ "init", "template_check", "--engine", b.pathFromRoot(".") });
+    init_template.addArgs(&.{ "init", "template_check", "--engine", b.root.joinString(b.allocator, ".") catch @panic("OOM") });
     init_template.setCwd(.{ .cwd_relative = template_root });
     init_template.step.dependOn(&clear_template.step);
     var previous: *std.Build.Step = &init_template.step;
