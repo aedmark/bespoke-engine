@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The script reference now documents the complete accepted language and maps each section to parser and codegen tests (`P38-01`). The compiler reports unknown top-level text, unknown body statements, malformed `wait`, and unsupported `else` blocks instead of silently skipping them. Cue parameters still bind in `where` guards but not handler bodies, and remain listed under Known Limitations (`D-072`).
+
 ## 0.1.0 - 2026-11-16
 
 - Published the first versioned BeSpoke Engine release (`P37-03`). `bespoke --version`, `bespoke-proofs --version`, and `build.zig.zon` report `0.1.0`; `zig build version-check` runs both CLIs and rejects a mismatch before a release is tagged.

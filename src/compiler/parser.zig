@@ -856,6 +856,7 @@ pub const Parser = struct {
                     try self.advance();
                     if (self.current.tag == .colon) try self.advance();
                     const name = try self.parse_name();
+                    if (self.current.tag == .colon) try self.advance();
                     try ast.scenes.append(name);
                     try ast.entities.append(name);
                     try ast.scene_defs.append(SceneDef.init(self.allocator, name));
@@ -943,10 +944,18 @@ pub const Parser = struct {
                         }
                         const stmt = try self.finish_state_stmt(ident);
                         try ast.initial_stmts.append(stmt);
+                    } else {
+                        return self.set_error("unexpected top-level text '{s}'", .{ident});
                     }
                 },
+                // Scene headings use visual indentation for cast/props/marks, but those lines are
+                // still top-level declarations rather than a parser-owned block.
+                .indent, .dedent => try self.advance(),
                 else => {
-                    _ = try self.advance();
+                    return self.set_error("unexpected top-level token {s} ('{s}')", .{
+                        @tagName(self.current.tag),
+                        self.current.slice,
+                    });
                 },
             }
         }
@@ -1723,6 +1732,8 @@ pub const Parser = struct {
                         try self.advance();
                         const expr = try self.parse_expr();
                         try list.append(.{ .wait_until = expr });
+                    } else {
+                        return self.set_error("expected a tick count or 'until' after 'wait', found '{s}'", .{self.current.slice});
                     }
                 },
                 .kw_loop => {
@@ -1827,10 +1838,15 @@ pub const Parser = struct {
                         try self.advance();
                         const stmt = try self.finish_state_stmt(subj);
                         try list.append(stmt);
+                    } else {
+                        return self.set_error("unexpected statement '{s}'", .{subj});
                     }
                 },
                 else => {
-                    _ = try self.advance();
+                    return self.set_error("unexpected statement token {s} ('{s}')", .{
+                        @tagName(self.current.tag),
+                        self.current.slice,
+                    });
                 },
             }
         }
@@ -2501,5 +2517,23 @@ test "D-101: a quoted name keeps characters a word cannot, in scene, cast, props
     switch (ast.cue_handlers.items[0].body[0]) {
         .transition_scene => |ts| try testing.expectEqualStrings("Keeper's Lodge", ts.target_scene),
         else => return error.TestUnexpectedResult,
+    }
+}
+
+test "P38-01: parser rejects undocumented top-level text and body statements" {
+    const cases = [_][]const u8{
+        "mystery words\n",
+        "routine Audit(Hero):\n  mystery words\n",
+        "routine Audit(Hero):\n  wait forever\n",
+        "routine Audit(Hero):\n  else:\n    wait 1 ticks\n",
+    };
+    for (cases) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        var lexer = Lexer.init(arena.allocator(), source);
+        defer lexer.deinit();
+        var parser = try Parser.init(arena.allocator(), &lexer);
+        try std.testing.expectError(error.UnexpectedToken, parser.parse_program());
+        try std.testing.expect(parser.get_diagnostic() != null);
     }
 }

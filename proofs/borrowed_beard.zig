@@ -80,7 +80,7 @@ pub const BORROWED_BEARD_SCRIPT =
     \\
     \\on cue Uses(Tamsin, Charcoal, RookPapers):
     \\  say Tamsin: "Rook's portrait has no beard! A few strokes of charcoal, and now it does."
-    \\    remember PapersMarked(Tamsin, true)
+    \\  remember PapersMarked(Tamsin, true)
     \\
     \\on cue Uses(Tamsin, SailTape, GateGap):
     \\  now GateGap is taped

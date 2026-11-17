@@ -2485,3 +2485,56 @@ test "P28-03: score errors name the script position, the part, and the rule brok
     // `stop animate` still parses beside `stop score`.
     try testing.expect(compiler.check_source(testing.allocator, "score A: \"c\"\nroutine R(X):\n  stop score\n  stop animate Sway\n  play score A\n").is_valid);
 }
+
+test "P38-01: documented core statements parse and compile" {
+    const testing = std.testing;
+    const source =
+        \\scene: Audit Room
+        \\cast: Hero
+        \\props: Key
+        \\marks: Door
+        \\entity Ready, Calm, Wave
+        \\relation Carries(holder, item)
+        \\relation Seen(who)
+        \\property Mood(who, value)
+        \\draft Signal(C, D, E, F) reverse Silence
+        \\score Audit: "t120 o4 l4 L c"
+        \\routine Audit(Hero):
+        \\  remember Carries(Hero, Key) for 2 ticks
+        \\  forget Carries(Hero, Key)
+        \\  now Hero is Ready
+        \\  Hero is not Ready
+        \\  walk Hero to Door
+        \\  face Hero towards Door
+        \\  wait 1 ticks
+        \\  wait until not Seen(Hero)
+        \\  if Carries[Hero, Key]:
+        \\    say Hero to Key: "Found it."
+        \\  if roll 1d6 >= 1:
+        \\    animate(Hero, Wave)
+        \\  interrupt Hero with:
+        \\    animate Wave
+        \\    stop animate Wave
+        \\    resume previous action
+        \\  choice "Continue":
+        \\    weave Signal on Door
+        \\  play score Audit
+        \\  stop score
+        \\  transition to scene: Audit Room
+        \\during Crowd:
+        \\  loop:
+        \\    wait 1 ticks
+        \\    done
+    ;
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try @import("../compiler.zig").compile_source(testing.allocator, &world, &spatial, source);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.routine_entries.contains("Audit"));
+    try testing.expect(compiled.routine_entries.contains("Crowd"));
+    try testing.expectEqual(@as(usize, 1), compiled.scores.items.len);
+}
