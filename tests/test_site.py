@@ -25,6 +25,8 @@ class SiteBuildTests(unittest.TestCase):
         # D-086, D-094: each standalone page's data-deck names its proof in the deck table.
         wrapper = (ROOT / "tools" / "proof_page.js").read_text(encoding="utf-8")
         self.assertIn(build_site.PLACEHOLDER, wrapper)
+        self.assertIn("window.bespokePageState", wrapper)
+        self.assertIn("audioPlaying", wrapper)
         names = re.search(r"const DECK_NAMES = \[(.*?)\];", (ROOT / "tools" / "site_simulator.js").read_text(encoding="utf-8"), re.S).group(1)
         names = re.findall(r"'([^']*)'", names)
         expected = {"barbs.html": "Brackwater Barbs", "pips.html": "The Pip-Spitting Green", "beard.html": "The Borrowed Beard", "donkey.html": "The Donkey of Lamp Point", "tides.html": "The Well of Three Tides", "weathercock.html": "The Copper Weathercock", "saltmarket.html": "The Saltmarket: Three Ways In"}

@@ -1,5 +1,7 @@
 # BeSpoke Engine
 
+[![CI](https://github.com/aedmark/bespoke-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/aedmark/bespoke-engine/actions/workflows/ci.yml)
+
 **A small engine and scripting language for story-driven games, written in Zig.**
 
 BeSpoke runs games where the story comes from rules interacting: a guard who gets distracted, a rumour that spreads, a cup that leaks on the way to the door. You write the game as a script of scenes, characters, facts, and rules. The engine plays it one tick at a time, the same way every run, and can rewind to any recent moment.

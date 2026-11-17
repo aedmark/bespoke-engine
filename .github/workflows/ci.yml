@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.17.1
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Build
+        run: zig build
+      - name: Test engine and proofs
+        run: zig build test
+      - name: Test generated project
+        run: zig build test-template
+      - name: Build and smoke-test WebAssembly
+        run: |
+          zig build wasm wasm-proofs
+          node tools/wasm_smoke.js
+      - name: Test Python tools
+        run: python3 -m unittest discover -s tests -v
+      - name: Check documentation
+        run: python3 tools/check_docs.py
+      - name: Check generated site
+        run: python3 tools/build_site.py --check
+      - name: Open a proof page in Chrome
+        env:
+          CHROME: google-chrome
+        run: node tools/browser_smoke.js

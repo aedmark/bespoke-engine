@@ -250,6 +250,16 @@
       let engineAudio = null;
       let soundOn = false;
 
+      // P37-02: the CI browser check reads the same state a player can observe, without reaching
+      // into the WebAssembly instance. Keep this small and read-only so it does not become a host API.
+      window.bespokePageState = () => ({
+        ready: exp !== null,
+        tick: exp && exp.wasm_get_tick ? exp.wasm_get_tick() : null,
+        facts: exp && exp.wasm_get_fact_count ? exp.wasm_get_fact_count() : null,
+        soundOn,
+        audioPlaying: Boolean(engineAudio && engineAudio.playing),
+      });
+
       function decodeBase64(value) {
         const binary = atob(value);
         const bytes = new Uint8Array(binary.length);
