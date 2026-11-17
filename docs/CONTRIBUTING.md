@@ -34,6 +34,10 @@ Follow [TESTING.md](TESTING.md) for prerequisites and suite limitations. Report 
 - Commit format: Imperative present tense, referencing roadmap IDs where applicable.
 - A change is ready when its scope is clear, relevant checks pass, user and migration impact is described, sensitive data is absent, and the documentation it invalidated has been updated.
 
+## Releases
+
+Version tags, release notes, and downloadable artifacts are published through GitHub Releases on the existing repository (D-105). Release notes come from the Unreleased section of [`CHANGELOG.md`](CHANGELOG.md). The showcase remains a separate hand upload (D-074).
+
 ## Compatibility and Migrations
 
 For bytecode packages (`.bspk`) or save files (`.sav`), binary format changes must increment the container version header, provide backward compatibility where possible, or reject unsupported legacy versions with clean diagnostics.

@@ -2,6 +2,11 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 56 (2026-11-11)
+- **Goal:** Ship P28-03, then P29-01 (`bespoke init`), as part of the maintainer's roadmap speed run.
+- **Work:** Committed P28-03 (`048a77f`), fast-forwarded `main`, and pushed. Two side sessions fixed whole-line comment lexing and the dangling `check_source` message on their own branches (not merged). The maintainer chose a local path dependency and script-declared actors. Added `src/scaffold.zig` and seven templates in `src/scaffold/`, the `init` subcommand with `--engine`, and `build_options.engine_root` in `build.zig`. The first generated build failed because Zig 0.13 refuses absolute `.path` dependencies; the generator now records the engine relative to the project. Recorded D-063 and updated roadmap, architecture, testing, changelog, README, manual, and handoff.
+- **Outcome:** See the Verified table. A mutation removing the existing-path guard failed the generation test. The generated game was run headless, not opened in a window. Not merged.
+
 ### Session 55 (2026-11-11)
 - **Goal:** Ship P28-02 and finish Phase 28 with P28-03, script scores and their triggers.
 - **Work:** Committed P28-02 (`9986f81`), fast-forwarded `main`, and pushed. The maintainer chose block plus one-line syntax, scene defaults with `play`/`stop` overrides, a persistent override, and a scenario demo. Added `score`/`play` keywords, `ScoreDecl` and the shared music names in `src/mml.zig`, the parser declaration, MML error mapping, `play_score` statements with an undeclared-score check, codegen scene seeding and `PlayingScore` remember/forget, `CompiledProgram.scores`, `.bspk` v11 with re-validation, `RenderFrame.current_score` and `display.current_score_entity`, `AudioBridge.track_for`, `host.ScriptSoundtrack`, runner music (window and headless report), and `scenarios/night_watch.bespoke`. Fixed the P26-01 package test, whose end-relative offsets the new tail had shifted (it still passed by accident), with `EMPTY_TAIL_AFTER_V10`. Recorded D-062, two Claims vs. code rows, and updated roadmap, architecture, script spec, testing, security, changelog, manual, and handoff.

@@ -12,7 +12,7 @@ What the most recent phases taught:
 
 ## Era 2: BeSpoke 1.0 for Other Developers
 
-Goal (maintainer, 2026-11-15): BeSpoke ships as an engine and language that other developers install to make their own games, supported on Linux desktop and in the browser. macOS and Windows are not 1.0 targets. Order: the toolchain moves first, so the surface that 1.0 freezes is written once against the Zig that users will have; input hardening comes before the freeze. Open decision: Q-010 (where releases live); Q-009 (license) is answered.
+Goal (maintainer, 2026-11-15): BeSpoke ships as an engine and language that other developers install to make their own games, supported on Linux desktop and in the browser. macOS and Windows are not 1.0 targets. Order: the toolchain moves first, so the surface that 1.0 freezes is written once against the Zig that users will have; input hardening comes before the freeze. Q-009 (license) and Q-010 (release hosting) are answered.
 
 ## Phase 37: Toolchain and Continuous Verification
 
@@ -20,7 +20,7 @@ Goal: every change is checked by a machine on every push, against a current Zig,
 
 - [x] P37-01 Upgrade from Zig 0.13 to the current stable Zig release. Acceptance: `zig build test`, `test-template`, `wasm-proofs`, and `wasm_smoke.js` pass on the new version; every golden in `proofs/golden/` is unchanged (or each change is explained in review); `build.zig.zon` sets `minimum_zig_version`; README, AGENTS, and TESTING name the new version; the template pins the same version. Done 2026-11-16: Zig 0.17.1, one release at a time (0.14.1, 0.15.2, 0.16.0, 0.17.1); 660 tests pass and no golden changed (D-104).
 - [x] P37-02 Engine CI on Linux (GitHub Actions on push and pull request): build, `zig build test`, `test-template`, `wasm-proofs`, `wasm_smoke.js`, the Python tests, `check_docs.py`, `build_site.py --check`, and a headless Chrome run that opens a proof page from `file://`, starts its audio, and plays a deck by its solve key. Acceptance: the workflow passes on `main`, fails on a deliberately broken golden in a test branch, and its status shows in the README. Done 2026-11-16: main run 44005527938 passed every step; disposable-branch run 44004996016 rejected a changed Tavern golden at its exact line; the README shows the workflow badge.
-- [ ] P37-03 Versions and releases: `build.zig.zon` and a `bespoke --version` (and `bespoke-proofs --version`) report `0.1.0`; a git tag per release; release notes cut from `docs/CHANGELOG.md`'s Unreleased section. Acceptance: a `v0.1.0` tag exists with notes, `--version` prints it, and a test checks the CLI and `build.zig.zon` agree.
+- [ ] P37-03 Versions and releases: `build.zig.zon` and a `bespoke --version` (and `bespoke-proofs --version`) report `0.1.0`; a git tag per release; release notes cut from `docs/CHANGELOG.md`'s Unreleased section and published through GitHub Releases (D-105). Acceptance: a `v0.1.0` tag exists with notes, `--version` prints it, and a test checks the CLI and `build.zig.zon` agree.
 
 ## Phase 38: What 1.0 Promises
 
@@ -58,7 +58,7 @@ Goal: know how big a BeSpoke game can be before 1.0, and say so.
 
 Goal: tag 1.0 with binaries, docs, and a full hand-test behind it.
 
-- [ ] P42-01 Release artifacts: static Linux binaries for `bespoke` and the browser runtime package, attached to the release (Q-010). Acceptance: a clean machine runs the downloaded binary and `bespoke init` without a Zig install for playing, and with one for building.
+- [ ] P42-01 Release artifacts: static Linux binaries for `bespoke` and the browser runtime package, attached to the GitHub Release (D-105). Acceptance: a clean machine runs the downloaded binary and `bespoke init` without a Zig install for playing, and with one for building.
 - [ ] P42-02 License housekeeping (Q-009 answered: MIT, encouraging disclosure of agentic use): the license now carries its copyright line and MIT's notice condition, with disclosure of agentic use strongly encouraged (done 2026-11-15); what remains is a license for projects that `bespoke init` generates. Acceptance: `bespoke init` writes a license file or its README says why it does not.
 - [ ] P42-03 The release hand-test runbook run in full on Linux and in Firefox and Chromium, every row filled in HANDOFF, and the uploaded site checked. Acceptance: no row reads "not run".
 - [ ] P42-04 Tag `v1.0.0`. Acceptance: Phases 37 to 41 are done or their open items are moved past 1.0 by the maintainer, and the tag's notes list what 1.0 promises (P38).
