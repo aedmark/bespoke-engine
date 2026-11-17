@@ -1,5 +1,8 @@
 const std = @import("std");
 
+// Supported namespaces are listed in docs/API.md (P38-03, D-107). A declaration being `pub`
+// makes it reachable to engine tests and proofs; it is a compatibility promise only when that
+// document lists it.
 pub const world = @import("world.zig");
 pub const bytecode = @import("bytecode.zig");
 pub const vm = @import("vm.zig");
@@ -27,8 +30,17 @@ pub const command = @import("command.zig");
 pub const ListWriter = @import("list_writer.zig").ListWriter;
 pub const dialogue = @import("dialogue.zig");
 
+// Supported root conveniences. New host code otherwise uses the namespaces above.
 pub const World = world.World;
 pub const EntityId = world.EntityId;
+pub const SpatialSystem = spatial.SpatialSystem;
+pub const VM = vm.VM;
+pub const CompiledProgram = compiler.CompiledProgram;
+pub const DisplayBridge = display.DisplayBridge;
+pub const compile_source = compiler.compile_source;
+
+// Reachable engine/proof conveniences below are not part of the supported host API. They may
+// move without deprecation; use the namespace named in docs/API.md when it lists an equivalent.
 pub const RelationKind = world.RelationKind;
 pub const RelationType = world.RelationType;
 pub const Fact = world.Fact;
@@ -37,7 +49,6 @@ pub const PatternClause = world.PatternClause;
 pub const VariableBindings = world.VariableBindings;
 pub const Opcode = bytecode.Opcode;
 pub const BytecodeChunk = bytecode.BytecodeChunk;
-pub const VM = vm.VM;
 pub const Fiber = vm.Fiber;
 pub const FiberId = vm.FiberId;
 pub const FiberState = vm.FiberState;
@@ -47,7 +58,6 @@ pub const MAX_TICK_INTERVAL_MS = vm.MAX_TICK_INTERVAL_MS;
 pub const step_tick_interval_slower = vm.step_tick_interval_slower;
 pub const step_tick_interval_faster = vm.step_tick_interval_faster;
 pub const SpatialGraph = spatial.SpatialGraph;
-pub const SpatialSystem = spatial.SpatialSystem;
 pub const Point2D = spatial.Point2D;
 pub const Waypoint = spatial.Waypoint;
 pub const WaypointId = spatial.WaypointId;
@@ -55,11 +65,9 @@ pub const VectorConduit = spatial.VectorConduit;
 pub const BitemporalTransceiver = spatial.BitemporalTransceiver;
 pub const CausalDecayTracker = spatial.CausalDecayTracker;
 pub const validate_novikov_consistency = hypervisor.validate_novikov_consistency;
-pub const compile_source = compiler.compile_source;
 pub const check_source = compiler.check_source;
 pub const Diagnostic = compiler.Diagnostic;
 pub const CheckResult = compiler.CheckResult;
-pub const CompiledProgram = compiler.CompiledProgram;
 pub const save_package = package.save_package;
 pub const load_package = package.load_package;
 pub const save_package_file = package.save_package_file;
@@ -68,7 +76,6 @@ pub const run_file = runner.run_file;
 pub const run_bytes = runner.run_bytes;
 pub const compile_file = runner.compile_file;
 pub const check_file = runner.check_file;
-pub const DisplayBridge = display.DisplayBridge;
 pub const RenderFrame = display.RenderFrame;
 pub const Repl = repl.Repl;
 pub const ReplResult = repl.ReplResult;
@@ -88,7 +95,6 @@ pub const TemporalSnapshot = temporal_snapshot.TemporalSnapshot;
 pub const TemporalHypervisor = hypervisor.TemporalHypervisor;
 pub const UniverseBranchKind = hypervisor.UniverseBranchKind;
 pub const BranchCollapseState = hypervisor.BranchCollapseState;
-pub const TangentCollapseState = hypervisor.TangentCollapseState;
 pub const DreamFact = hypervisor.DreamFact;
 pub const HypervisorStepResult = hypervisor.HypervisorStepResult;
 pub const format_countdown = hypervisor.format_countdown;

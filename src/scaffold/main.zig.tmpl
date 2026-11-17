@@ -32,8 +32,8 @@ pub fn main(init: std.process.Init) !void {
     var stdout_writer = std.Io.File.stdout().writer(io, &.{});
     const stdout = &stdout_writer.interface;
     if (game_options.bundled) {
-        try bespoke.run_bytes(allocator, io, "{{name}}", @embedFile("game_package"), config, stdout);
+        try bespoke.runner.run_bytes(allocator, io, "{{name}}", @embedFile("game_package"), config, stdout);
     } else {
-        try bespoke.run_file(allocator, io, SCRIPT_PATH, config, stdout);
+        try bespoke.runner.run_file(allocator, io, SCRIPT_PATH, config, stdout);
     }
 }

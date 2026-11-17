@@ -84,9 +84,9 @@ pub const TemporalSnapshot = struct {
         try writer.writeInt(u64, hypervisor.collapse_budget_ticks, .little);
         try writer.writeInt(u64, hypervisor.ticks_elapsed, .little);
         try writer.writeByte(@intFromEnum(hypervisor.collapse_state));
-        try writeEntity(writer, hypervisor.receiver_entity orelse hypervisor.living_receiver);
-        try writeEntity(writer, hypervisor.keystone_entity orelse hypervisor.artifact_entity);
-        try writeWaypoint(writer, hypervisor.convergence_waypoint orelse hypervisor.vortex_waypoint);
+        try writeEntity(writer, hypervisor.receiver_entity);
+        try writeEntity(writer, hypervisor.keystone_entity);
+        try writeWaypoint(writer, hypervisor.convergence_waypoint);
 
         try writer.writeInt(u32, @intCast(hypervisor.teleological_dependencies.items.len), .little);
         for (hypervisor.teleological_dependencies.items) |dependency| {
@@ -138,7 +138,10 @@ pub const TemporalSnapshot = struct {
             0 => .dormant,
             1 => .active,
             2 => .budget_expired,
-            3 => .collapsed_singularity,
+            // Value 3 was the removed D-044 `.collapsed_singularity` spelling for expiry.
+            // Read it as the canonical state so released version-1 envelopes remain readable
+            // under D-106; writers never emit 3 again.
+            3 => .budget_expired,
             4 => .resolved_and_merged,
             else => return Error.InvalidTemporalSnapshot,
         };
@@ -207,17 +210,13 @@ pub const TemporalSnapshot = struct {
         self.branch_world = null;
 
         hypervisor.branch_active = self.branch_active;
-        hypervisor.tangent_active = self.branch_active;
         hypervisor.collapse_budget_ticks = self.collapse_budget_ticks;
         hypervisor.ticks_elapsed = self.ticks_elapsed;
         hypervisor.collapse_state = self.collapse_state;
 
         hypervisor.receiver_entity = self.receiver_entity;
-        hypervisor.living_receiver = self.receiver_entity;
         hypervisor.keystone_entity = self.keystone_entity;
-        hypervisor.artifact_entity = self.keystone_entity;
         hypervisor.convergence_waypoint = self.convergence_waypoint;
-        hypervisor.vortex_waypoint = self.convergence_waypoint;
 
         hypervisor.teleological_dependencies.clearRetainingCapacity();
         hypervisor.teleological_dependencies.appendSliceAssumeCapacity(self.teleological_dependencies.items);
@@ -350,6 +349,14 @@ test "P31-04: temporal snapshot preserves a resolved branch without a branch wor
     try testing.expect(!decoded.branch_active);
     try testing.expect(decoded.branch_world == null);
     try testing.expectEqual(BranchCollapseState.budget_expired, decoded.collapse_state);
+
+    // D-044's removed `.collapsed_singularity` spelling used wire value 3. Readers retain its
+    // expiry meaning for D-106 compatibility, while canonical writers use value 2.
+    bytes.items[4 + 4 + 1 + 8 + 8] = 3;
+    var legacy_stream: std.Io.Reader = .fixed(bytes.items);
+    var legacy = try TemporalSnapshot.read(testing.allocator, &primary, &legacy_stream);
+    defer legacy.deinit();
+    try testing.expectEqual(BranchCollapseState.budget_expired, legacy.collapse_state);
 
     var restored = TemporalHypervisor.init(testing.allocator, &primary);
     defer restored.deinit();

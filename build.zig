@@ -181,6 +181,21 @@ pub fn build(b: *std.Build) void {
     // makes an edit to the guide re-run the tests instead of reusing a cached pass.
     run_exe_unit_tests.addFileInput(b.path("docs/AUTHORING.md"));
 
+    // P38-03 (D-107): compile a host outside src/ against only the documented supported API.
+    // This catches a renamed or moved contract symbol independently of engine-internal tests.
+    const supported_api_tests = b.addTest(.{
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/supported_host.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    supported_api_tests.root_module.addImport("bespoke", bespoke_mod);
+    supported_api_tests.root_module.link_libc = true;
+    supported_api_tests.root_module.linkSystemLibrary("SDL2", .{});
+    const run_supported_api_tests = b.addRunArtifact(supported_api_tests);
+
     const proofs_unit_tests = b.addTest(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
         // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
@@ -221,12 +236,14 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run engine and proof tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_supported_api_tests.step);
     test_step.dependOn(&run_proofs_unit_tests.step);
     test_step.dependOn(&check_version.step);
 
     const test_engine_step = b.step("test-engine", "Run engine tests only (src/)");
     test_engine_step.dependOn(&run_lib_unit_tests.step);
     test_engine_step.dependOn(&run_exe_unit_tests.step);
+    test_engine_step.dependOn(&run_supported_api_tests.step);
 
     const test_proofs_step = b.step("test-proofs", "Run proof-of-concept tests only (proofs/)");
     test_proofs_step.dependOn(&run_proofs_unit_tests.step);

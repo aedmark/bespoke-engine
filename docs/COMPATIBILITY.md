@@ -17,7 +17,7 @@ An additive, defaultable change increments the affected file-format version. Its
 
 A change that cannot interpret old bytes without ambiguity does not reuse the existing magic or version. It requires a new format generation, an explicit migration path, and a semantic major release unless the old reader remains available beside it.
 
-Removing or renaming a script-language or host API name follows the deprecation policy established by P38-04. A language change that alters serialized package meaning must also follow this file policy.
+Removing or renaming a script-language or supported host API name follows the [deprecation policy](CONTRIBUTING.md#deprecation-policy) (P38-04, D-108). Retiring source syntax leaves existing package and save reader guarantees in force. A language change that alters serialized package meaning must also follow this file policy.
 
 ## Failures
 

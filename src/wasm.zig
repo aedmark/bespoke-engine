@@ -506,6 +506,31 @@ pub const WasmRuntime = struct {
         return self.banner_buf[0..self.banner_len];
     }
 
+    /// Supported callback access to the runtime's spatial state (P38-03, D-107). Deck callbacks
+    /// use methods instead of depending on `WasmRuntime` field layout.
+    pub fn spatial_system(self: *WasmRuntime) *SpatialSystem {
+        return &self.spatial;
+    }
+
+    /// Supported callback access to the runtime's VM (P38-03, D-107).
+    pub fn virtual_machine(self: *WasmRuntime) *VM {
+        return &self.vm;
+    }
+
+    /// The loaded script program, or null for a deck built directly in Zig.
+    pub fn compiled_program(self: *const WasmRuntime) ?*const CompiledProgram {
+        return if (self.program) |*program| program else null;
+    }
+
+    /// The actor browser actions control. A callback may replace it after loading a script.
+    pub fn player(self: *const WasmRuntime) ?EntityId {
+        return if (self.player_entity == .none) null else self.player_entity;
+    }
+
+    pub fn set_player(self: *WasmRuntime, entity: EntityId) void {
+        self.player_entity = entity;
+    }
+
     /// Resets the spine and loads deck `index` (the first deck if out of range).
     pub fn load_deck(self: *WasmRuntime, index: u8) !void {
         self.messages.clear();
@@ -1071,7 +1096,6 @@ pub const WasmRuntime = struct {
             hv.branch_world = null;
         }
         hv.branch_active = had_branch;
-        hv.tangent_active = had_branch;
         hv.ticks_elapsed = try reader.takeInt(u64, .little);
         hv.collapse_state = std.enums.fromInt(hypervisor_mod.BranchCollapseState, try reader.takeByte()) orelse return error.InvalidSnapshot;
     }
@@ -2270,4 +2294,3 @@ test "D-094: the item tray keeps its order, fits the canvas, and uses items alon
         try testing.expectEqual(slot.item, rt.tray_hit(slot.x + 1, slot.y + 1).?);
     }
 }
-

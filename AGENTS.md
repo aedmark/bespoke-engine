@@ -95,6 +95,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `docs/README.md` | Documentation map and update triggers |
 | `docs/HANDOFF.md` | Current state, next steps, gotchas, and bounded session history |
 | `docs/ARCHITECTURE.md` | Components, boundaries, invariants, state, and failure modes |
+| `docs/API.md` | Supported Zig host API contract; unlisted public declarations are internal |
 | `docs/DECISIONS.md` | Append-only architectural and product decisions; open questions |
 | `docs/TESTING.md` | Test strategy, commands, limitations, and environment recipes |
 | `docs/COMPATIBILITY.md` | Released package and save version guarantees and fixture policy |

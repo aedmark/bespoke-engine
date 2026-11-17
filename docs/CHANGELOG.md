@@ -4,6 +4,9 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Documented how supported script syntax and Zig API names retire across releases (P38-04, D-108). Each removal follows a shipped warning release with migration guidance. Existing package and save compatibility guarantees still apply.
+
+- The supported Zig host API is now explicit (`P38-03`, `D-107`) in `docs/API.md`. `host.Session` is the preferred host boundary; `host.init_vm`, `host.start_routine`, and method-only browser-runtime access keep custom hosts off internal storage. Generated projects use this surface. Deprecated tangent, vortex, artifact, and singularity aliases from D-044 are removed before the 1.x API freeze.
 - Released `.bspk` packages and `.sav` saves now have an explicit compatibility policy (`P38-02`, `D-106`). The 1.x reader retains package formats 1 through 14 and save formats 1 through 2; checked-in 0.1.0 fixtures exercise both current formats. An unsupported package reports its version and the full supported range, and hosts can produce the same diagnostic for saves.
 - The script reference now documents the complete accepted language and maps each section to parser and codegen tests (`P38-01`). The compiler reports unknown top-level text, unknown body statements, malformed `wait`, and unsupported `else` blocks instead of silently skipping them. Cue parameters still bind in `where` guards but not handler bodies, and remain listed under Known Limitations (`D-072`).
 

@@ -113,7 +113,7 @@ These recur in most proofs and are handled once, not per proof.
 | Speech readers that take a cue index captured before `step_tick` (stale after the per-tick clear), look-at helpers, and cue-fire-and-tick | dott, darko, loom | Host kit | Done (P32-16) |
 | History, scrub, rewind, and save-action handling copied into each interactive loop | tavern, spitting, gk3, goat, village, loom | Host kit | Done (P32-16) |
 | Outcome checks that probe several spellings of one relation (`tampered` / `Tampered` / `TamperedWith`) | spitting, gk3, goat | Proof hygiene: assert the exact facts the script writes | Done (P32-19): one fact per check; scripts made consistent |
-| Engine features that no proof exercises: `collapse_tangent`, `VectorConduit` / `compute_vector_conduit`, `BitemporalTransceiver`, `CausalDecayTracker`, `DreamFact`, `reject_belief` | `src/hypervisor.zig`, `src/spatial.zig`, `src/vm.zig` | Unproven engine claim | Done (P32-20, Option B): exercised across darko and dott |
+| Engine features that no proof exercises: `collapse_branch` (then `collapse_tangent`), `VectorConduit` / `compute_vector_conduit`, `BitemporalTransceiver`, `CausalDecayTracker`, `DreamFact`, `reject_belief` | `src/hypervisor.zig`, `src/spatial.zig`, `src/vm.zig` | Unproven engine claim | Done (P32-20, Option B): exercised across the branch-world and three-era proofs; the D-044 alias was removed by P38-03 |
 
 ### Tavern Heist (P32-08)
 

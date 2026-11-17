@@ -29,6 +29,22 @@ const SpatialSystem = spatial_mod.SpatialSystem;
 const CompiledProgram = codegen.CompiledProgram;
 const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
 
+/// Builds the VM half of a custom host without exposing `CompiledProgram` storage. The returned
+/// VM borrows `world`, `spatial`, and `compiled`; deinitialize it before any of them (P38-03,
+/// D-107). Call `start_script` to seed and launch the program, or drive it explicitly.
+pub fn init_vm(
+    allocator: std.mem.Allocator,
+    world: *World,
+    spatial: *SpatialSystem,
+    compiled: *const CompiledProgram,
+) !VM {
+    var vm = VM.init(allocator, world, &compiled.chunk);
+    errdefer vm.deinit();
+    vm.spatial = spatial;
+    try vm.load_compiled_rules(compiled);
+    return vm;
+}
+
 /// Cue id the compiler emits for `say` statements (D-009).
 pub const SAY_CUE_ID: u16 = 2;
 
@@ -435,6 +451,27 @@ pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *
         _ = try vm.spawn_routine(actor, entry.value_ptr.*);
     }
     return world.intern_entity(player_actor(compiled) orelse "Player");
+}
+
+/// Starts one named routine for one named actor. If the script did not place that actor through
+/// `cast:`, the actor starts on the graph's first waypoint at `speed` (P38-03, D-107). This is
+/// the supported test/custom-host boundary for routine lookup; program tables remain internal.
+pub fn start_routine(
+    world: *World,
+    spatial: *SpatialSystem,
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    routine: []const u8,
+    actor_name: []const u8,
+    speed: u32,
+) !vm_mod.FiberId {
+    const entry = compiled.routine_entries.get(routine) orelse return error.UnknownRoutine;
+    const actor = try world.intern_entity(actor_name);
+    if (!spatial.agents.contains(actor)) {
+        if (spatial.graph.waypoints.items.len == 0) return error.NoWaypoints;
+        try spatial.register_entity(actor, spatial.graph.waypoints.items[0].id, speed);
+    }
+    return vm.spawn_routine(actor, entry);
 }
 
 /// True when `subject` holds the state `state` (a `X is state` fact), regardless of value.

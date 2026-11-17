@@ -11,6 +11,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`../ROADMAP.md`](../ROADMAP.md) | Maintainers and contributors | Planned scope and status | Detailed implementation notes |
 | [`HANDOFF.md`](HANDOFF.md) | The next work session | Current state, active context, immediate next steps | Permanent design rules |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Developers | System shape, interfaces, invariants, data flow | Chronological history |
+| [`API.md`](API.md) | Zig host authors | Supported `bespoke` namespaces, symbols, methods, and stability boundary | Internal engine implementation or script syntax |
 | [`DECISIONS.md`](DECISIONS.md) | Future decision-makers | Rationale and alternatives for durable choices, plus held tensions | Routine implementation detail |
 | [`TESTING.md`](TESTING.md) | Contributors and release owners | Verification commands, coverage boundaries, known pitfalls | A duplicate of current test results |
 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Game authors and host maintainers | Released `.bspk` and `.sav` version guarantees, failures, and fixture rules | Semantic release procedure or API stability |

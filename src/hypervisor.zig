@@ -11,20 +11,17 @@ const SpatialSystem = spatial_mod.SpatialSystem;
 pub const UniverseBranchKind = enum {
     primary,
     branch,
-
-    pub const tangent = UniverseBranchKind.branch;
 };
 
 /// Lifecycle state of a branch universe (P31-01, P32-21, D-027, D-044).
-pub const BranchCollapseState = enum {
-    dormant,
-    active,
-    budget_expired,
-    collapsed_singularity, // backwards-compatible tag
-    resolved_and_merged,
+pub const BranchCollapseState = enum(u8) {
+    dormant = 0,
+    active = 1,
+    budget_expired = 2,
+    // Value 3 belonged to the removed D-044 `.collapsed_singularity` alias. Do not reuse it;
+    // temporal snapshot version 1 wrote enum values directly (D-106).
+    resolved_and_merged = 4,
 };
-
-pub const TangentCollapseState = BranchCollapseState;
 
 /// Residual memory or emotional impression that survives branch collapse (P31-01, P32-21, D-027, D-044).
 pub const DreamFact = struct {
@@ -75,7 +72,6 @@ pub fn validate_novikov_consistency(
 pub const HypervisorStepResult = enum {
     running,
     budget_expired,
-    singularity_collapse, // backwards-compatible tag
     loop_resolved,
 };
 
@@ -87,14 +83,10 @@ pub const TemporalHypervisor = struct {
     primary_world: *World,
     branch_world: ?World,
     branch_active: bool,
-    tangent_active: bool,
 
     receiver_entity: ?EntityId,
-    living_receiver: ?EntityId,
     keystone_entity: ?EntityId,
-    artifact_entity: ?EntityId,
     convergence_waypoint: ?WaypointId,
-    vortex_waypoint: ?WaypointId,
 
     collapse_budget_ticks: u64,
     ticks_elapsed: u64,
@@ -109,13 +101,9 @@ pub const TemporalHypervisor = struct {
             .primary_world = primary_world,
             .branch_world = null,
             .branch_active = false,
-            .tangent_active = false,
             .receiver_entity = null,
-            .living_receiver = null,
             .keystone_entity = null,
-            .artifact_entity = null,
             .convergence_waypoint = null,
-            .vortex_waypoint = null,
             .collapse_budget_ticks = 0,
             .ticks_elapsed = 0,
             .collapse_state = .dormant,
@@ -157,35 +145,18 @@ pub const TemporalHypervisor = struct {
 
         self.branch_world = try self.primary_world.clone(self.allocator);
         self.branch_active = true;
-        self.tangent_active = true;
         self.collapse_budget_ticks = budget_ticks;
         self.ticks_elapsed = 0;
         self.receiver_entity = receiver;
-        self.living_receiver = receiver;
         self.keystone_entity = keystone;
-        self.artifact_entity = keystone;
         self.collapse_state = .active;
 
         return &self.branch_world.?;
     }
 
-    pub fn fork_tangent(
-        self: *TemporalHypervisor,
-        budget_ticks: u64,
-        receiver: EntityId,
-        artifact: EntityId,
-    ) !*World {
-        return self.fork_branch(budget_ticks, receiver, artifact);
-    }
-
     /// Sets the designated spatial convergence waypoint for keystone resolution (P31-01, P32-21, D-027, D-044).
     pub fn set_convergence_target(self: *TemporalHypervisor, waypoint: WaypointId) void {
         self.convergence_waypoint = waypoint;
-        self.vortex_waypoint = waypoint;
-    }
-
-    pub fn set_vortex_target(self: *TemporalHypervisor, waypoint: WaypointId) void {
-        self.set_convergence_target(waypoint);
     }
 
     /// Registers a teleological Horn clause dependency: prerequisite must precede goal (P31-01, D-027).
@@ -231,8 +202,8 @@ pub const TemporalHypervisor = struct {
         const bw = &self.branch_world.?;
 
         // 1. The Keystone must be positioned at the designated convergence waypoint
-        const target_keystone = self.keystone_entity orelse self.artifact_entity;
-        const target_waypoint = self.convergence_waypoint orelse self.vortex_waypoint;
+        const target_keystone = self.keystone_entity;
+        const target_waypoint = self.convergence_waypoint;
 
         if (target_keystone) |keystone| {
             if (target_waypoint) |conv_wp| {
@@ -296,10 +267,12 @@ pub const TemporalHypervisor = struct {
         if (self.branch_world) |*bw| {
             if (commit_keystone) {
                 // 1. Commit the Keystone Entity to the Primary World
-                const target_keystone = self.keystone_entity orelse self.artifact_entity;
+                const target_keystone = self.keystone_entity;
                 if (target_keystone) |keystone| {
                     const primary_key_rel = try self.primary_world.intern_relation("KeystoneMaterialized", .set);
                     _ = try self.primary_world.remember(keystone, primary_key_rel, 1, 0);
+                    // Released scripts can observe this fact. The D-044 Zig alias cleanup
+                    // preserves the facts produced by a branch merge.
                     const primary_art_rel = try self.primary_world.intern_relation("ArtifactMaterialized", .set);
                     _ = try self.primary_world.remember(keystone, primary_art_rel, 1, 0);
                 }
@@ -314,11 +287,6 @@ pub const TemporalHypervisor = struct {
             self.branch_world = null;
         }
         self.branch_active = false;
-        self.tangent_active = false;
-    }
-
-    pub fn collapse_tangent(self: *TemporalHypervisor, commit_artifact: bool) !void {
-        return self.collapse_branch(commit_artifact);
     }
 
     /// Returns remaining simulation ticks before countdown budget expiration (P31-01, P32-21, D-027, D-044).
@@ -354,7 +322,7 @@ pub const format_countdown = format_countdown_ticks;
 
 // --- Unit Tests (P31-01, D-027) ---
 
-test "P31-01: TemporalHypervisor forks branch world, counts ticks, and triggers singularity on budget expiration" {
+test "P31-01: TemporalHypervisor forks branch world, counts ticks, and expires its budget" {
     const testing = std.testing;
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
@@ -369,8 +337,8 @@ test "P31-01: TemporalHypervisor forks branch world, counts ticks, and triggers 
     defer hypervisor.deinit();
 
     // 1. Fork a branch world with a 10-tick collapse countdown budget
-    const tangent = try hypervisor.fork_tangent(10, hero, keystone);
-    try testing.expect(hypervisor.tangent_active);
+    const branch = try hypervisor.fork_branch(10, hero, keystone);
+    try testing.expect(hypervisor.branch_active);
     try testing.expectEqual(@as(u64, 10), hypervisor.ticks_remaining());
 
     var count_buf: [32]u8 = undefined;
@@ -378,8 +346,8 @@ test "P31-01: TemporalHypervisor forks branch world, counts ticks, and triggers 
     try testing.expect(initial_str.len > 0);
 
     // The hero wanders elsewhere in the branch
-    const elsewhere = try tangent.intern_entity("Elsewhere");
-    _ = try tangent.remember(hero, in_room, elsewhere.to_int(), 0);
+    const elsewhere = try branch.intern_entity("Elsewhere");
+    _ = try branch.remember(hero, in_room, elsewhere.to_int(), 0);
 
     // Step 9 ticks -> still running
     for (0..9) |_| {
@@ -390,9 +358,9 @@ test "P31-01: TemporalHypervisor forks branch world, counts ticks, and triggers 
 
     // 10th tick -> countdown expires without loop closure -> budget expired!
     const collapse_res = try hypervisor.step_tick(null);
-    try testing.expect(collapse_res == .budget_expired or collapse_res == .singularity_collapse);
-    try testing.expect(hypervisor.collapse_state == .budget_expired or hypervisor.collapse_state == .collapsed_singularity);
-    try testing.expect(!hypervisor.tangent_active);
+    try testing.expectEqual(HypervisorStepResult.budget_expired, collapse_res);
+    try testing.expectEqual(BranchCollapseState.budget_expired, hypervisor.collapse_state);
+    try testing.expect(!hypervisor.branch_active);
 
     // The primary world is unharmed and the hero is still in the bedroom
     try testing.expect(primary.has_fact(hero, in_room, bedroom.to_int()));
@@ -423,7 +391,7 @@ test "P31-05: active world follows the branch lifecycle" {
     try testing.expect(hypervisor.active_world() == &primary);
 }
 
-test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dream residue to Primary Universe" {
+test "P31-01: TemporalHypervisor resolves loop closure, commits keystone and dream residue" {
     const testing = std.testing;
     var primary = try World.init(testing.allocator, 1024 * 1024);
     defer primary.deinit();
@@ -436,7 +404,7 @@ test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dre
     var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
     defer hypervisor.deinit();
 
-    const tangent = try hypervisor.fork_tangent(50, hero, keystone);
+    const branch = try hypervisor.fork_branch(50, hero, keystone);
 
     // Record dream residue fact that will survive loop resolution
     try hypervisor.add_dream_residue(.{
@@ -446,17 +414,17 @@ test "P31-01: TemporalHypervisor resolves loop closure, commits Artifact and dre
     });
 
     // In the branch, the hero completes the goals and closes the loop
-    _ = try tangent.remember(keystone, vortex_rel, 1, 0);
+    _ = try branch.remember(keystone, vortex_rel, 1, 0);
 
     // Step tick detects loop closure
     const res = try hypervisor.step_tick(null);
     try testing.expectEqual(HypervisorStepResult.loop_resolved, res);
-    try testing.expectEqual(TangentCollapseState.resolved_and_merged, hypervisor.collapse_state);
-    try testing.expect(!hypervisor.tangent_active);
+    try testing.expectEqual(BranchCollapseState.resolved_and_merged, hypervisor.collapse_state);
+    try testing.expect(!hypervisor.branch_active);
 
     // Artifact and dream residue successfully committed to Primary Universe!
-    const artifact_mat_rel = primary.lookup_relation("ArtifactMaterialized").?;
-    try testing.expect(primary.has_fact(keystone, artifact_mat_rel, 1));
+    const keystone_mat_rel = primary.lookup_relation("KeystoneMaterialized").?;
+    try testing.expect(primary.has_fact(keystone, keystone_mat_rel, 1));
     try testing.expect(primary.has_fact(hero, dream_rel, 1));
 }
 

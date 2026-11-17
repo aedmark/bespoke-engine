@@ -1,6 +1,6 @@
 # Authoring Guide
 
-This guide teaches you to write a BeSpoke game: scenes, dialogue, and reactive puzzles, and the Zig host API underneath them. It assumes you can run a shell command. [`script_spec.md`](script_spec.md) is the complete syntax reference; this guide is the order to learn it in. [`GLOSSARY.md`](GLOSSARY.md) defines the terms (fact, routine, cue, rule, mark) in plain language.
+This guide teaches you to write a BeSpoke game: scenes, dialogue, and reactive puzzles, and the Zig host API underneath them. It assumes you can run a shell command. [`script_spec.md`](script_spec.md) is the complete syntax reference; this guide is the order to learn it in. [`API.md`](API.md) is the supported Zig API contract. [`GLOSSARY.md`](GLOSSARY.md) defines the terms (fact, routine, cue, rule, mark) in plain language.
 
 Every ```` ```bespoke ```` block below is a whole script, and `zig build test` compiles each one and plays the three walkthroughs (`src/authoring_guide_test.zig`, D-064). Fragments are fenced as `text`.
 
@@ -361,12 +361,14 @@ Functions that touch files or the clock take `io`, the `std.Io` that `main` rece
 | Call | Contract |
 | --- | --- |
 | `bespoke.compile_source(allocator, &world, &spatial, source)` | Compiles a script into a `CompiledProgram`, interning its entities and marks |
-| `bespoke.check_source(allocator, source)` | Syntax and semantic check; `.diagnostic()` gives line, column, and message |
-| `bespoke.load_package(allocator, reader, &world, &spatial)` | Loads a `.bspk` package written by `bespoke compile` |
-| `bespoke.run_file(allocator, io, path, config, writer)` | The stock runner: window, or headless with `config.is_headless` |
+| `bespoke.compiler.check_source(allocator, source)` | Syntax and semantic check; `.diagnostic()` gives line, column, and message |
+| `bespoke.package.load_package(allocator, reader, &world, &spatial)` | Loads a `.bspk` package written by `bespoke compile` |
+| `bespoke.runner.run_file(allocator, io, path, config, writer)` | The stock runner: window, or headless with `config.is_headless` |
+| `host.init_vm(allocator, &world, &spatial, &compiled)` | Constructs and binds a VM without exposing compiled bytecode or rule tables |
 | `host.initialize_subsystems(&world, &compiled)` | Seeds declared grids, agendas, and containers; safe to repeat |
 | `host.start_script(&world, &spatial, &vm, &compiled)` | Starts a script as every stock host does: top-level statements, the cast, every routine; returns the player |
-| `bespoke.run_bytes(allocator, io, name, data, config, writer)` | The stock runner on a script or package already in memory, such as an embedded one |
+| `host.start_routine(&world, &spatial, &vm, &compiled, routine, actor, speed)` | Starts one named routine without reading the program's internal routine map |
+| `bespoke.runner.run_bytes(allocator, io, name, data, config, writer)` | The stock runner on a script or package already in memory, such as an embedded one |
 | `bespoke.wasm.script_deck(title, program)` | A browser deck that runs an embedded script or package |
 | `host.run_initial_statements(&world, &vm, &compiled)` | Runs the script's top-level statements |
 | `host.place_cast(&spatial, &compiled)` | Puts each cast member on its scene's first mark, unless already placed; call before starting routines |
@@ -380,7 +382,7 @@ Functions that touch files or the clock take `io`, the `std.Io` that `main` rece
 | `host.Session` | The interactive loop: timeline, rewind, scrub, saves, pause, single step |
 | `host.ScriptSoundtrack` | The script's scores as a soundtrack for the window's audio |
 
-A window host follows the loop documented on `host.Session` in [`src/host.zig`](../src/host.zig): poll an action, let `handle_common` take pause, step, rewind, and save, handle the game's own actions, and `advance` when a tick is due. Engine code never names a game (D-031); everything specific to your story lives in your script and your host.
+A window host follows the loop documented on `host.Session`: poll an action, let `handle_common` take pause, step, rewind, and save, handle the game's own actions, and `advance` when a tick is due. The complete supported symbol list is [`API.md`](API.md); a reachable `pub` declaration not listed there is internal. Engine code never names a game (D-031); everything specific to your story lives in your script and your host.
 
 ## 9. Known limits
 

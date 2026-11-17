@@ -42,7 +42,16 @@ For each release, update the semantic version in `build.zig.zon` and `build.zig`
 
 ## Compatibility and Migrations
 
-For bytecode packages (`.bspk`) or save files (`.sav`), binary format changes must increment the container version header, provide backward compatibility where possible, or reject unsupported legacy versions with clean diagnostics.
+Follow the versioning and reader guarantees in [COMPATIBILITY.md](COMPATIBILITY.md) for bytecode packages and saves.
+
+### Deprecation policy
+
+This policy applies to documented [script syntax](script_spec.md) and the [supported Zig host API](API.md) (P38-04, D-108).
+
+1. **Ship a warning release.** Keep the old spelling or signature working with its existing behavior and ship its replacement when one exists. The warning names the deprecated item, the migration or replacement, and the earliest removal release. Report deprecated script syntax with a source location when checking or compiling source. For Zig declarations, mark the declaration in the API reference and its source documentation. Announce both kinds in the changelog so the warning reaches users through the release notes.
+2. **Remove in a later breaking release.** At least one tagged, non-prerelease warning release must ship first. Before 1.0, removal can ship in the next minor release or at 1.0. From 1.0 onward, removal waits for the next major release. Patch releases preserve deprecated names. Update the reference and the changelog with the migration. For removed script syntax, give a located error with migration guidance where the old spelling can still be recognized unambiguously.
+
+When introducing a deprecation, test that the old and replacement forms retain the intended behavior and that a script warning appears without failing compilation. When removing one, test the replacement and the removal diagnostic when applicable. A source retirement leaves the file reader's supported range and serialized meanings subject to [D-106](COMPATIBILITY.md).
 
 ## Reporting Security Issues
 
