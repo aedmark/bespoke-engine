@@ -1,5 +1,9 @@
 const std = @import("std");
 
+/// Executable version. `tools/check_version.py` keeps this in lockstep with `build.zig.zon` and
+/// both CLI outputs (P37-03).
+const VERSION = "0.1.0";
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -66,6 +70,7 @@ pub fn build(b: *std.Build) void {
     // `bespoke init` records this checkout as a new project's engine (P29-01, D-063).
     const build_opts = b.addOptions();
     build_opts.addOption([]const u8, "engine_root", b.root.joinString(b.allocator, ".") catch @panic("OOM"));
+    build_opts.addOption([]const u8, "version", VERSION);
     exe.root_module.addOptions("build_options", build_opts);
 
     // This declares intent for the executable to be installed into the
@@ -124,6 +129,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     proofs_exe.root_module.addImport("bespoke", bespoke_mod);
+    proofs_exe.root_module.addOptions("build_options", build_opts);
     proofs_exe.root_module.link_libc = true;
     proofs_exe.root_module.linkSystemLibrary("SDL2", .{});
 
@@ -187,6 +193,7 @@ pub fn build(b: *std.Build) void {
     });
     proofs_unit_tests.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
+    proofs_unit_tests.root_module.addOptions("build_options", build_opts);
 
     // Characterization goldens (P32-07): proofs/golden_test.zig compares each proof's headless
     // transcript with proofs/golden/<proof>.txt. `-Dupdate-goldens` rewrites them deliberately.
@@ -198,6 +205,16 @@ pub fn build(b: *std.Build) void {
     proofs_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
     const run_proofs_unit_tests = b.addRunArtifact(proofs_unit_tests);
 
+    // P37-03: exercise the installed interfaces instead of comparing constants in-process.
+    // The checker reads the package manifest, runs each compiled CLI, and requires exact output.
+    const check_version = b.addSystemCommand(&.{"python3"});
+    check_version.addFileArg2(b.path("tools/check_version.py"), .{});
+    check_version.addFileArg2(b.path("build.zig.zon"), .{});
+    check_version.addArtifactArg2(exe, .{});
+    check_version.addArtifactArg2(proofs_exe, .{});
+    const version_check_step = b.step("version-check", "Check the manifest and CLI versions agree");
+    version_check_step.dependOn(&check_version.step);
+
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
@@ -205,6 +222,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
     test_step.dependOn(&run_proofs_unit_tests.step);
+    test_step.dependOn(&check_version.step);
 
     const test_engine_step = b.step("test-engine", "Run engine tests only (src/)");
     test_engine_step.dependOn(&run_lib_unit_tests.step);

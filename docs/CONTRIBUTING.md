@@ -38,6 +38,8 @@ Follow [TESTING.md](TESTING.md) for prerequisites and suite limitations. Report 
 
 Version tags, release notes, and downloadable artifacts are published through GitHub Releases on the existing repository (D-105). Release notes come from the Unreleased section of [`CHANGELOG.md`](CHANGELOG.md). The showcase remains a separate hand upload (D-074).
 
+For each release, update the semantic version in `build.zig.zon` and `build.zig`, run `zig build version-check` and the full release checks in [`TESTING.md`](TESTING.md), then move the Unreleased entries under a dated version heading. Tag the release commit as `v<version>` and publish that changelog section as the GitHub Release notes.
+
 ## Compatibility and Migrations
 
 For bytecode packages (`.bspk`) or save files (`.sav`), binary format changes must increment the container version header, provide backward compatibility where possible, or reject unsupported legacy versions with clean diagnostics.

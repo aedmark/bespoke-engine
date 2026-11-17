@@ -3,7 +3,7 @@
   "project": {
     "name": "BeSpoke Engine",
     "short_name": "BeSpoke",
-    "version": "0.1.0-dev",
+    "version": "0.1.0",
     "repository": "https://github.com/aedmark/bespoke-engine"
   },
   "manual": {
@@ -13,7 +13,7 @@
     "badges": [
       "Engine-as-Spine",
       "Developer Guide",
-      "Pure Zig 0.13.0",
+      "Pure Zig 0.17.1",
       "Wasm32 Browser Target",
       "Zero Dependencies",
       "Deterministic Discrete Ticks",

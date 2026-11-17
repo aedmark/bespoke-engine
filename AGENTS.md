@@ -56,7 +56,7 @@ Do not manufacture ceremony: typo-only or mechanical changes do not need a decis
 - Default branch: `main`.
 - Working branch pattern: `feature/<topic>`.
 - Commit format: Imperative present tense, referencing roadmap IDs where applicable.
-- Release scheme: Semantic versioning (`0.1.0-dev`).
+- Release scheme: Semantic versioning (current release: `0.1.0`).
 
 Never force-push, rewrite shared history, or delete production data without explicit permission.
 

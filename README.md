@@ -79,13 +79,17 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 
 ## Quick Start
 
-You need Zig 0.17.1 or later and the SDL2 development libraries; the browser build needs neither SDL2 nor anything else.
+The current release is [0.1.0](https://github.com/aedmark/bespoke-engine/releases/tag/v0.1.0). You need Zig 0.17.1 or later and the SDL2 development libraries; the browser build needs neither SDL2 nor anything else.
 
 ```bash
 # Engine and proof tests, and the WebAssembly builds
 zig build test
 zig build wasm wasm-proofs
 python3 tools/build_site.py
+
+# Both public command-line tools report the package version
+zig build run -- --version
+zig build run-proof -- --version
 
 # The engine CLI: run, compile, and check scripts
 zig build run -- check scenarios/tavern_heist.bespoke

@@ -1358,7 +1358,7 @@ Format:
 **Context:** P37-03 needs a durable home for version tags and release notes, and P42-01 needs the same home for Linux binaries and the browser runtime package. The showcase is a hand-uploaded public demonstration site (D-074), not an artifact registry.
 **Decision:** The existing GitHub repository hosts version tags, release notes, and downloadable artifacts through GitHub Releases. Tags point at the release commit; notes are cut from `docs/CHANGELOG.md`'s Unreleased section. The showcase remains a separate hand upload.
 **Alternatives:** Put binaries on the showcase: rejected because its hand-upload workflow is for site content and provides no release record. Commit binaries to the repository: rejected because generated artifacts would enlarge history. Operate a separate package server: rejected because the project does not need the additional service or credentials.
-**Consequences:** Q-010 is answered and P37-03 is unblocked. P42-01 attaches its static Linux binaries and browser runtime package to the corresponding GitHub Release. Creating `v0.1.0` and its release remains P37-03 work.
+**Consequences:** Q-010 is answered. P37-03 publishes `v0.1.0` and its notes through GitHub Releases; P42-01 attaches its static Linux binaries and browser runtime package to the corresponding release.
 
 ## Open questions
 

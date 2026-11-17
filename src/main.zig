@@ -17,6 +17,7 @@ const usage =
     \\  bespoke compile <script.bespoke> -o <game.bspk>
     \\  bespoke check <script.bespoke>
     \\  bespoke init <name> [--engine <engine checkout>]
+    \\  bespoke --version
     \\
     \\Sample scripts live in scenarios/. Proofs of concept (vertical slices) are a
     \\separate binary: `zig build proofs`, then `bespoke-proofs --help`.
@@ -56,6 +57,9 @@ pub fn main(init: std.process.Init) !void {
             if (args.next()) |t| ticks = std.fmt.parseInt(usize, t, 10) catch 20;
         } else if (std.mem.eql(u8, arg, "--headless")) {
             headless = true;
+        } else if (std.mem.eql(u8, arg, "--version")) {
+            try stdout.print("bespoke {s}\n", .{build_options.version});
+            return;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "help")) {
             subcommand = .help;
         } else if (!std.mem.startsWith(u8, arg, "-") and target_file == null) {

@@ -4,6 +4,7 @@
 //! advertised. Proofs consume the engine only through the `bespoke` module; the engine never
 //! imports a proof (the compiler enforces this: `proofs/` lies outside the module's path).
 const std = @import("std");
+const build_options = @import("build_options");
 
 pub const tavern_heist = @import("tavern_heist.zig");
 pub const spitting_contest = @import("spitting_contest.zig");
@@ -86,6 +87,7 @@ const usage =
     \\
     \\Usage:
     \\  bespoke-proofs [--<proof> | --scenario <proof>] [--headless]
+    \\  bespoke-proofs --version
     \\
     \\Proofs (default: --tavern):
     \\  --tavern             The Tavern Heist (relational spine, fibers, interrupts, rewind)
@@ -122,6 +124,9 @@ pub fn main(init: std.process.Init) !void {
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--headless")) {
             headless = true;
+        } else if (std.mem.eql(u8, arg, "--version")) {
+            try stdout.print("bespoke-proofs {s}\n", .{build_options.version});
+            return;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "help")) {
             try stdout.writeAll(usage);
             return;
