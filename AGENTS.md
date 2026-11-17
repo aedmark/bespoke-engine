@@ -97,6 +97,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `docs/ARCHITECTURE.md` | Components, boundaries, invariants, state, and failure modes |
 | `docs/DECISIONS.md` | Append-only architectural and product decisions; open questions |
 | `docs/TESTING.md` | Test strategy, commands, limitations, and environment recipes |
+| `docs/COMPATIBILITY.md` | Released package and save version guarantees and fixture policy |
 | `docs/SECURITY.md` | Assets, trust boundaries, secret handling, and reporting |
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |

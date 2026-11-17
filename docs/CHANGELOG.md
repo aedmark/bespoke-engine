@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Released `.bspk` packages and `.sav` saves now have an explicit compatibility policy (`P38-02`, `D-106`). The 1.x reader retains package formats 1 through 14 and save formats 1 through 2; checked-in 0.1.0 fixtures exercise both current formats. An unsupported package reports its version and the full supported range, and hosts can produce the same diagnostic for saves.
 - The script reference now documents the complete accepted language and maps each section to parser and codegen tests (`P38-01`). The compiler reports unknown top-level text, unknown body statements, malformed `wait`, and unsupported `else` blocks instead of silently skipping them. Cue parameters still bind in `where` guards but not handler bodies, and remain listed under Known Limitations (`D-072`).
 
 ## 0.1.0 - 2026-11-16

@@ -49,7 +49,7 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 14 lets a duel declare up to `duel.MAX_FALLBACKS` fallback lines (D-076); earlier
 /// versions wrote 0 or 1, which the same count byte reads unchanged.
 pub const PACKAGE_VERSION: u32 = 14;
-const MIN_PACKAGE_VERSION: u32 = 1;
+pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
 const MAX_CAST: u32 = 4096;
 
@@ -70,6 +70,24 @@ pub const PackageHeader = extern struct {
     reactive_rule_count: u32 = 0,
     initial_entry: i64 = -1,
 };
+
+/// Formats the actionable diagnostic shown when a package's schema is outside the range this
+/// engine can read (P38-02, D-106). The error union stays stable for API callers; the message
+/// carries the file's version and the complete supported range.
+pub fn format_unsupported_version(buf: []u8, found: u32) []const u8 {
+    return std.fmt.bufPrint(buf, "unsupported .bspk format version {d}; this engine supports versions {d} through {d}", .{
+        found,
+        MIN_PACKAGE_VERSION,
+        PACKAGE_VERSION,
+    }) catch "unsupported .bspk format version";
+}
+
+/// Reads only the version field from an in-memory package envelope. The full loader remains the
+/// authority for magic, checksum, bounds, and payload validation.
+pub fn version_from_bytes(bytes: []const u8) ?u32 {
+    if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], &PACKAGE_MAGIC)) return null;
+    return std.mem.readInt(u32, bytes[4..8], .little);
+}
 
 fn write_str(writer: anytype, str: []const u8) !void {
     try writer.writeInt(u16, @intCast(str.len), .little);
@@ -1565,6 +1583,37 @@ test "P15-02: package loader rejects unsupported version" {
 
     const res = load_package(testing.allocator, &stream, &dummy_world, null);
     try testing.expectError(error.UnsupportedPackageVersion, res);
+
+    var message_buf: [128]u8 = undefined;
+    try testing.expectEqualStrings(
+        "unsupported .bspk format version 99; this engine supports versions 1 through 14",
+        format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
+    );
+}
+
+test "P38-02: checked-in current package fixture loads" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.1.0-package-v14.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
+    defer compiled.deinit();
+
+    try testing.expect(world.lookup_entity("FixtureHero") != null);
+    try testing.expect(world.lookup_relation("Ready") != null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
 }
 
 test "P15-02: package file save and load roundtrip" {

@@ -47,6 +47,23 @@ pub const SaveError = error{
     InvalidTemporalState,
 };
 
+/// Formats the actionable diagnostic for a save schema outside this engine's supported range
+/// (P38-02, D-106). Save loaders still return `UnsupportedSaveVersion` for programmatic handling.
+pub fn format_unsupported_version(buf: []u8, found: u32) []const u8 {
+    return std.fmt.bufPrint(buf, "unsupported .sav format version {d}; this engine supports versions {d} through {d}", .{
+        found,
+        MIN_SAVE_VERSION,
+        SAVE_VERSION,
+    }) catch "unsupported .sav format version";
+}
+
+/// Reads only the version field from an in-memory save envelope. Integrity and payload checks
+/// remain the responsibility of `inspect_save_stream` and the restore functions.
+pub fn version_from_bytes(bytes: []const u8) ?u32 {
+    if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], &SAVE_MAGIC)) return null;
+    return std.mem.readInt(u32, bytes[4..8], .little);
+}
+
 /// Packs 8-bit R, G, B channels into a compact 1-byte RGB332 pixel (P17-01).
 pub fn pack_rgb332(r: u8, g: u8, b: u8) u8 {
     return (r & 0xE0) | ((g & 0xE0) >> 3) | (b >> 6);
@@ -1295,6 +1312,35 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var s3: std.Io.Reader = .fixed(bad_ver);
     try testing.expectError(SaveError.UnsupportedSaveVersion, read_save_state(testing.allocator, &s3, &world, null, null));
+
+    var message_buf: [128]u8 = undefined;
+    try testing.expectEqualStrings(
+        "unsupported .sav format version 99; this engine supports versions 1 through 2",
+        format_unsupported_version(&message_buf, version_from_bytes(bad_ver).?),
+    );
+}
+
+test "P38-02: checked-in current save fixture loads" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.1.0-save-v2.sav",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(SAVE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    const meta = try read_save_state(testing.allocator, &stream, &world, null, null);
+
+    try testing.expectEqual(SAVE_VERSION, meta.version);
+    try testing.expectEqualStrings("P38-02 compatibility fixture", meta.get_description());
+    try testing.expect(world.lookup_entity("FixtureHero") != null);
+    try testing.expect(world.lookup_relation("Ready") != null);
 }
 
 test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .bak recovery" {

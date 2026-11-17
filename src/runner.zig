@@ -128,7 +128,14 @@ pub fn run_bytes(
     if (is_binary) {
         if (config.verbose) try stdout.print("[Runner] Loading precompiled binary package '{s}'...\n", .{path});
         var stream: std.Io.Reader = .fixed(data);
-        compiled = try bespoke.load_package(allocator, &stream, &world, &spatial);
+        compiled = bespoke.load_package(allocator, &stream, &world, &spatial) catch |err| {
+            if (err == error.UnsupportedPackageVersion) {
+                var message_buf: [128]u8 = undefined;
+                const found = bespoke.package.version_from_bytes(data) orelse 0;
+                try stdout.print("{s}: error: {s}\n", .{ path, bespoke.package.format_unsupported_version(&message_buf, found) });
+            }
+            return err;
+        };
     } else {
         if (config.verbose) try stdout.print("[Runner] Compiling narrative script '{s}'...\n", .{path});
         compiled = bespoke.compile_source(allocator, &world, &spatial, data) catch |err| {
@@ -489,6 +496,33 @@ test "P15-01: runner checks and compiles external scenario file" {
 
     // Test run_file on compiled binary package in headless mode
     try run_file(testing.allocator, testing.io, tmp_pkg, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
+}
+
+test "P38-02: runner reports the package version and supported range" {
+    const testing = std.testing;
+    const unsupported = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.1.0-package-v14.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(unsupported);
+    std.mem.writeInt(u32, unsupported[4..8], bespoke.package.PACKAGE_VERSION + 1, .little);
+
+    var output_buf: [256]u8 = undefined;
+    var output: std.Io.Writer = .fixed(&output_buf);
+    try testing.expectError(
+        error.UnsupportedPackageVersion,
+        run_bytes(testing.allocator, testing.io, "future.bspk", unsupported, .{
+            .ticks = 0,
+            .is_headless = true,
+            .verbose = false,
+        }, &output),
+    );
+    try testing.expectEqualStrings(
+        "future.bspk: error: unsupported .bspk format version 15; this engine supports versions 1 through 14\n",
+        output.buffered(),
+    );
 }
 
 test "P29-02: the window acts for the first routine's actor and answers scripted dialogue" {

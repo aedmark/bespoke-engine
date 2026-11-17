@@ -165,6 +165,7 @@ The [documentation map](docs/README.md) says which document owns which fact. The
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Current project state, verification tally, and session log |
 | [`docs/TESTING.md`](docs/TESTING.md) | Verification suites, commands, and proof boundaries |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Security model, bytecode/package/save bounds verification, and reporting |
+| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatibility guarantees for released `.bspk` packages and `.sav` saves |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution workflow for human and agent contributors |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | User-visible change notes |
 | [`docs/manual.html`](docs/manual.html) | Standalone interactive 3x What/How/Why manual and developer guide |

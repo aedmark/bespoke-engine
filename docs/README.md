@@ -13,6 +13,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Developers | System shape, interfaces, invariants, data flow | Chronological history |
 | [`DECISIONS.md`](DECISIONS.md) | Future decision-makers | Rationale and alternatives for durable choices, plus held tensions | Routine implementation detail |
 | [`TESTING.md`](TESTING.md) | Contributors and release owners | Verification commands, coverage boundaries, known pitfalls | A duplicate of current test results |
+| [`COMPATIBILITY.md`](COMPATIBILITY.md) | Game authors and host maintainers | Released `.bspk` and `.sav` version guarantees, failures, and fixture rules | Semantic release procedure or API stability |
 | [`SECURITY.md`](SECURITY.md) | Users and developers | Sensitive assets, trust boundaries, reporting, secure defaults | Full operational incident history |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Setup, change, review, and submission workflow | Agent-only instructions |
 | [`CHANGELOG.md`](CHANGELOG.md) | Users | Released and unreleased user-visible changes | Commit-by-commit history |
