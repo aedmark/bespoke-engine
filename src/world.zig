@@ -129,6 +129,7 @@ pub const World = struct {
 
     pub fn initWithMaxFacts(backing_allocator: std.mem.Allocator, arena_size: usize, max_facts: usize) !World {
         const buffer = try backing_allocator.alloc(u8, arena_size);
+        errdefer backing_allocator.free(buffer);
         var fba = std.heap.FixedBufferAllocator.init(buffer);
         const alloc = fba.allocator();
 
@@ -169,12 +170,18 @@ pub const World = struct {
         }
 
         const alloc = self.allocator();
+        if (self.entity_names.items.len == std.math.maxInt(u32)) return error.EntityLimitExceeded;
+        if (name.len > std.math.maxInt(u16)) return error.EntityNameTooLong;
+        // Publish the ID only after every allocation succeeds. An exhausted arena can
+        // still resolve existing names and must not leave an unindexed entity behind.
+        try self.entity_names.ensureUnusedCapacity(alloc, 1);
+        try self.entity_map.ensureUnusedCapacity(alloc, 1);
         const owned_name = try alloc.dupe(u8, name);
         const next_id_val: u32 = @intCast(self.entity_names.items.len + 1);
         const new_id = EntityId.from_int(next_id_val);
 
-        try self.entity_names.append(alloc, owned_name);
-        try self.entity_map.put(alloc, owned_name, new_id);
+        self.entity_names.appendAssumeCapacity(owned_name);
+        self.entity_map.putAssumeCapacityNoClobber(owned_name, new_id);
 
         return new_id;
     }
@@ -750,6 +757,37 @@ pub const World = struct {
 };
 
 // --- Unit Tests (P1-01, P1-02, P1-03, P1-04) ---
+
+test "P39-02: fact capacity rejects new rows but permits updates" {
+    const testing = std.testing;
+    var world = try World.initWithMaxFacts(testing.allocator, 4096, 4);
+    defer world.deinit();
+    const actor = try world.intern_entity("Actor");
+    const seen = try world.intern_relation("Seen", .set);
+    const capacity: u32 = @intCast(world.facts.capacity);
+    for (0..capacity) |value| try world.remember(actor, seen, @intCast(value), 0);
+    try world.remember(actor, seen, 0, 0);
+    try testing.expectError(SnapshotError.CapacityExceeded, world.remember(actor, seen, capacity, 0));
+    try testing.expectEqual(@as(usize, capacity), world.fact_count());
+}
+
+test "P39-02: entity arena exhaustion does not publish a partial entry" {
+    const testing = std.testing;
+    var world = try World.initWithMaxFacts(testing.allocator, 4096, 4);
+    defer world.deinit();
+    const actor = try world.intern_entity("Actor");
+    const too_large = try testing.allocator.alloc(u8, 4096);
+    defer testing.allocator.free(too_large);
+    @memset(too_large, 'x');
+    try testing.expectError(error.OutOfMemory, world.intern_entity(too_large));
+    try testing.expectEqual(@as(usize, 1), world.entity_names.items.len);
+    try testing.expectEqual(actor, try world.intern_entity("Actor"));
+
+    const long_name = try testing.allocator.alloc(u8, @as(usize, std.math.maxInt(u16)) + 1);
+    defer testing.allocator.free(long_name);
+    @memset(long_name, 'x');
+    try testing.expectError(error.EntityNameTooLong, world.intern_entity(long_name));
+}
 
 test "P1-01: world init and string interning" {
     const testing = std.testing;

@@ -3,25 +3,18 @@
 Item IDs are permanent: `P<phase>-<nn>`. Never renumber; append new items at the end of their phase.
 `[ ]` open · `[~]` in progress · `[x]` done · `[-]` dropped.
 
-Phases 1 through 38 are complete and archived in [the November 2026 roadmap archive](docs/archive/ROADMAP_2026_11.md). The maintainer closed the first roadmap on 2026-11-15. The remaining phases prepare BeSpoke 1.0 for other developers.
+Phases 1 through 39 are complete and archived in [the November 2026 roadmap archive](docs/archive/ROADMAP_2026_11.md). The maintainer closed the first roadmap on 2026-11-15. The remaining phases prepare BeSpoke 1.0 for other developers.
 
 What the most recent phases taught:
 - Phase 34 (loose ends): deferrals recorded inside finished items were real work, and each browser deck added to close one exposed a host gap (path routines started at load, walks that ignored locks, a bar the browser could not type into); the release pass itself was accepted on the maintainer's own play, with the macOS, Windows, and uploaded-site checks still unrun.
 - Phase 35 (original proofs): a rewrite goes fastest as an approved draft that keeps every mechanic and transcript step and changes only names and lines; renaming turned up name collisions between proofs, and making each proof playable by hand on its own page turned up engine gaps that no transcript showed.
 - Phase 36 (one presentation): once desktop and browser drew the same frame, each later browser page cost little; what still differed was host plumbing (how scripts start, how walks are planned, where doorways are), not drawing.
 - Phase 38 taught that retiring source names and preserving serialized files require separate compatibility rules.
+- Phase 39 taught that input limits need boundary tests and a CI pin needs a generated project build against the exact tag.
 
 ## Era 2: BeSpoke 1.0 for Other Developers
 
 Goal (maintainer, 2026-11-15): BeSpoke ships as an engine and language that other developers install to make their own games, supported on Linux desktop and in the browser. macOS and Windows are not 1.0 targets. Order: the toolchain moves first, so the surface that 1.0 freezes is written once against the Zig that users will have; input hardening comes before the freeze. Q-009 (license) and Q-010 (release hosting) are answered.
-
-## Phase 39: Hardening Untrusted Input
-
-Goal: no script, package, save, score, or typed line can crash the engine; bad input gives an error.
-
-- [ ] P39-01 Fuzzing harnesses for the lexer and parser, codegen, the `.bspk` loader, the `.sav` loader, MML scores, and the command interpreter, run in CI for a fixed time budget, with a corpus checked in. Acceptance: each harness runs in CI; every crash found becomes a fix with its input added as a regression test.
-- [ ] P39-02 Resource limits written down and enforced: facts, entities, fibers, script size, package size, save size, wasm heap. Acceptance: `docs/SECURITY.md` lists each limit with the code that enforces it, and a test hits each limit and gets an error, not a panic.
-- [ ] P39-03 A real vulnerability reporting channel (GitHub private advisories or an address) in `docs/SECURITY.md`, and the template stops defaulting its engine fetch to `main` once releases exist. Acceptance: the channel is named; the template's CI pins a release tag.
 
 ## Phase 40: The Author's Experience
 

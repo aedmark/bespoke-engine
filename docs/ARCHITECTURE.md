@@ -118,6 +118,8 @@ World Ticks (Discrete Clock) --------------------------------------------->|
 
 ## Invariants
 
+- **Resource exhaustion is explicit (P39-02, D-109).** The World keeps its existing arena and preallocated fact capacity. The VM reclaims halted fibers only when a new spawn needs space, preserves the IDs and order of survivors, and retains save reader compatibility. The host looks up the initial routine by ID because a fiber's slot can move. [SECURITY.md](SECURITY.md#resource-limits) lists the enforced ceilings and tests.
+
 Rules that hold everywhere across the engine and runtime:
 
 - **The browser plays items where it draws them (D-094):** the item tray is the desktop's (`renderer.inventory_layout`, in the order items were first named), and drawing and clicks use that one layout, so a box is clicked where it is drawn. Enforced by: the D-094 tests in `src/wasm.zig` and `proofs/wasm_deck.zig`.

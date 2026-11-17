@@ -196,6 +196,18 @@ pub fn build(b: *std.Build) void {
     supported_api_tests.root_module.linkSystemLibrary("SDL2", .{});
     const run_supported_api_tests = b.addRunArtifact(supported_api_tests);
 
+    const fuzz_tests = b.addTest(.{
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fuzz.zig"),
+            .target = target,
+            .optimize = .Debug,
+            .imports = &.{.{ .name = "bespoke", .module = bespoke_mod }},
+        }),
+    });
+    const test_fuzz_step = b.step("test-fuzz", "Run bounded input mutation tests");
+    test_fuzz_step.dependOn(&b.addRunArtifact(fuzz_tests).step);
+
     const proofs_unit_tests = b.addTest(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
         // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).

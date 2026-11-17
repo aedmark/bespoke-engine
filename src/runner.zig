@@ -17,7 +17,7 @@ pub const RunConfig = struct {
 
 /// Validates syntax and semantics of a .bespoke scenario file (P15-03, D-018).
 pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, stdout: anytype) !bool {
-    const max_size: usize = 16 * 1024 * 1024;
+    const max_size = bespoke.compiler.MAX_SOURCE_SIZE;
     const source = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size)) catch |err| {
         const what = if (err == error.FileNotFound) "cannot open file" else "failed to read file";
         try stdout.print("{s}: error: {s} ({s})\n", .{ path, what, @errorName(err) });
@@ -53,7 +53,7 @@ pub fn compile_file(
     out_path: []const u8,
     stdout: anytype,
 ) !void {
-    const max_size: usize = 16 * 1024 * 1024;
+    const max_size = bespoke.compiler.MAX_SOURCE_SIZE;
     const source = try std.Io.Dir.cwd().readFileAlloc(io, in_path, allocator, .limited(max_size));
     defer allocator.free(source);
 

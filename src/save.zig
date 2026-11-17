@@ -494,6 +494,7 @@ fn write_save_state_versioned(
     }
 
     // Compute CRC32 integrity checksum over the entire payload
+    if (payload.items.len > MAX_SAVE_PAYLOAD_SIZE) return SaveError.SavePayloadTooLarge;
     const crc = std.hash.Crc32.hash(payload.items);
     const payload_len: u32 = @intCast(payload.items.len);
 
@@ -511,6 +512,43 @@ const VerifiedPayload = struct {
     version: u32,
     bytes: []u8,
 };
+
+test "P39-02: save reader rejects an oversized payload before reading it" {
+    var header: [16]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&header);
+    try writer.writeAll(&SAVE_MAGIC);
+    try writer.writeInt(u32, SAVE_VERSION, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u32, MAX_SAVE_PAYLOAD_SIZE + 1, .little);
+    var reader: std.Io.Reader = .fixed(writer.buffered());
+    try std.testing.expectError(SaveError.SavePayloadTooLarge, inspect_save_stream(std.testing.allocator, &reader));
+}
+
+test "P39-02: an older save can restore more fibers than a new spawn permits" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const owner = try world.intern_entity("Actor");
+    var chunk = @import("bytecode.zig").BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    // Build a VM state that predates the spawn cap, then use the unchanged save format.
+    for (0..vm_mod.MAX_FIBERS + 1) |i| {
+        try vm.fibers.append(Fiber.init(testing.allocator, @intCast(i + 1), owner, 0));
+    }
+    vm.next_fiber_id = vm_mod.MAX_FIBERS + 2;
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var list_writer = ListWriter.init(&bytes);
+    _ = try write_save_state(testing.allocator, &list_writer.writer, &world, null, &vm, .{});
+
+    var reader: std.Io.Reader = .fixed(bytes.items);
+    _ = try read_save_state(testing.allocator, &reader, &world, null, &vm);
+    try testing.expectEqual(vm_mod.MAX_FIBERS + 1, vm.fibers.items.len);
+    try testing.expectError(error.FiberLimitExceeded, vm.spawn_routine(owner, 0));
+}
 
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
 fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !VerifiedPayload {

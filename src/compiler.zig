@@ -14,6 +14,8 @@ const spatial_mod = @import("spatial.zig");
 const World = world_mod.World;
 const SpatialSystem = spatial_mod.SpatialSystem;
 
+pub const MAX_SOURCE_SIZE: usize = 16 * 1024 * 1024;
+
 /// High-level compiler entry point: lowers BeSpoke DSL source text directly to VM bytecode (P4-01, P4-02, P4-03).
 pub fn compile_source(
     allocator: std.mem.Allocator,
@@ -21,6 +23,7 @@ pub fn compile_source(
     spatial: ?*SpatialSystem,
     source: []const u8,
 ) !CompiledProgram {
+    if (source.len > MAX_SOURCE_SIZE) return error.ScriptTooLarge;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -78,6 +81,7 @@ pub const CheckResult = struct {
 
 /// Validates syntax and semantic compilation of BeSpoke DSL source without permanent side effects (P15-03, D-018).
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
+    if (source.len > MAX_SOURCE_SIZE) return CheckResult.failure(1, 1, "script exceeds the 16 MiB source limit");
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -150,6 +154,27 @@ test "P15-03: check_source reports diagnostic on invalid script syntax" {
     try testing.expectEqual(@as(u32, 1), res.diagnostic().?.line);
     try testing.expectEqual(@as(u32, 16), res.diagnostic().?.column);
     try testing.expect(std.mem.indexOf(u8, res.diagnostic().?.message, "expected lparen") != null);
+}
+
+test "P39-01: incomplete quoted names fail source validation" {
+    for ([_][]const u8{ "entity \"", "entity \"Unfinished" }) |source| {
+        const result = check_source(std.testing.allocator, source);
+        try std.testing.expect(!result.is_valid);
+        try std.testing.expect(result.diagnostic() != null);
+    }
+}
+
+test "P39-02: both compiler entry points reject oversized source" {
+    const testing = std.testing;
+    const source = try testing.allocator.alloc(u8, MAX_SOURCE_SIZE + 1);
+    defer testing.allocator.free(source);
+    @memset(source, ' ');
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    try testing.expectError(error.ScriptTooLarge, compile_source(testing.allocator, &world, null, source));
+    const result = check_source(testing.allocator, source);
+    try testing.expect(!result.is_valid);
+    try testing.expectEqualStrings("script exceeds the 16 MiB source limit", result.message());
 }
 
 /// Fills a large stack frame with a byte pattern, so any slice still pointing at a returned

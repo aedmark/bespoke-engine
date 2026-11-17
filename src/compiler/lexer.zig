@@ -314,19 +314,17 @@ pub const Lexer = struct {
                 },
                 '"' => {
                     const str_start = self.pos;
-                    while (self.peek_char()) |sc| {
+                    while (self.advance_char()) |sc| {
                         if (sc == '"') {
-                            _ = self.advance_char();
-                            break;
+                            return Token{
+                                .tag = .string_literal,
+                                .slice = self.source[str_start .. self.pos - 1],
+                                .line = self.line,
+                                .col = start_col,
+                            };
                         }
-                        _ = self.advance_char();
                     }
-                    return Token{
-                        .tag = .string_literal,
-                        .slice = self.source[str_start .. self.pos - 1],
-                        .line = self.line,
-                        .col = start_col,
-                    };
+                    return error.UnterminatedString;
                 },
                 else => {},
             }

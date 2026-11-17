@@ -40,6 +40,8 @@ Version tags, release notes, and downloadable artifacts are published through Gi
 
 For each release, update the semantic version in `build.zig.zon` and `build.zig`, run `zig build version-check` and the full release checks in [`TESTING.md`](TESTING.md), then move the Unreleased entries under a dated version heading. Tag the release commit as `v<version>` and publish that changelog section as the GitHub Release notes.
 
+When advancing the starter project's CI pin, select a published tag and verify a generated project against that tag. Update the workflow template and its generation test together (P39-03, D-110).
+
 ## Compatibility and Migrations
 
 Follow the versioning and reader guarantees in [COMPATIBILITY.md](COMPATIBILITY.md) for bytecode packages and saves.

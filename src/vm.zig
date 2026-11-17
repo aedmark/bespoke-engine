@@ -15,6 +15,7 @@ pub const BytecodeChunk = bytecode_mod.BytecodeChunk;
 pub const SpatialSystem = spatial_mod.SpatialSystem;
 
 pub const MAX_STACK: usize = 256;
+pub const MAX_FIBERS: usize = 4096;
 pub const MAX_INSTRUCTIONS_PER_TICK: usize = 10000;
 
 /// Master simulation clock constants for interactive runners (D-028).
@@ -46,6 +47,26 @@ pub const FiberStateTag = enum {
     halted,
     paused,
 };
+
+test "P39-02: fiber spawns reject capacity and reclaim halted slots in order" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    for (0..MAX_FIBERS) |_| _ = try vm.spawn_routine(.none, 0);
+    try testing.expectError(error.FiberLimitExceeded, vm.spawn_routine(.none, 0));
+    try testing.expectError(error.FiberLimitExceeded, vm.spawn_hyper_temporal_routine(.none, 0));
+    vm.fibers.items[0].state = .{ .halted = {} };
+    const id = try vm.spawn_hyper_temporal_routine(.none, 0);
+    try testing.expectEqual(@as(FiberId, MAX_FIBERS + 1), id);
+    try testing.expectEqual(@as(FiberId, 2), vm.fibers.items[0].id);
+    try testing.expectEqual(MAX_FIBERS, vm.fibers.items.len);
+    try testing.expect(vm.fibers.items[MAX_FIBERS - 1].is_hyper_temporal);
+}
 
 pub const FiberState = union(FiberStateTag) {
     ready: void,
@@ -206,29 +227,67 @@ pub const VM = struct {
         }
 
         const entry_pc = compiled.find_path(name) orelse return error.UnknownPath;
+        try self.reserve_fiber();
         try self.world.remember(path_entity, path_active, 0, 0);
-        return try self.spawn_routine(path_entity, entry_pc);
+        return self.append_fiber(path_entity, entry_pc, false);
     }
 
     /// Spawns a new routine fiber owned by an entity.
     pub fn spawn_routine(self: *VM, owner: EntityId, entry_pc: usize) !FiberId {
-        const id = self.next_fiber_id;
-        self.next_fiber_id += 1;
-        const fiber = Fiber.init(self.allocator, id, owner, entry_pc);
-        try self.fibers.append(fiber);
-        return id;
+        try self.reserve_fiber();
+        return self.append_fiber(owner, entry_pc, false);
     }
 
     /// Spawns a hyper-temporal routine fiber owned by a future or meta-temporal entity (e.g. a guide acting from outside the timeline) (P31-01, D-027).
     /// Hyper-temporal fibers execute with priority 255 to deliver guidance across timeline boundaries.
     pub fn spawn_hyper_temporal_routine(self: *VM, owner: EntityId, entry_pc: usize) !FiberId {
+        try self.reserve_fiber();
+        return self.append_fiber(owner, entry_pc, true);
+    }
+
+    fn reserve_fiber(self: *VM) !void {
+        if (self.next_fiber_id == std.math.maxInt(FiberId)) return error.FiberIdExhausted;
+        if (self.fibers.items.len >= MAX_FIBERS) {
+            var live: usize = 0;
+            for (self.fibers.items) |fiber| {
+                if (fiber.state != .halted) live += 1;
+            }
+            if (live >= MAX_FIBERS) return error.FiberLimitExceeded;
+
+            // Preserve the execution order and IDs of surviving fibers. Older saves can
+            // restore more slots than the current spawn budget (D-106).
+            var next: usize = 0;
+            for (self.fibers.items) |*fiber| {
+                if (fiber.state == .halted) {
+                    fiber.deinit();
+                } else {
+                    self.fibers.items[next] = fiber.*;
+                    next += 1;
+                }
+            }
+            self.fibers.items.len = next;
+        }
+        try self.fibers.ensureUnusedCapacity(1);
+    }
+
+    fn append_fiber(self: *VM, owner: EntityId, entry_pc: usize, hyper_temporal: bool) FiberId {
         const id = self.next_fiber_id;
         self.next_fiber_id += 1;
         var fiber = Fiber.init(self.allocator, id, owner, entry_pc);
-        fiber.is_hyper_temporal = true;
-        fiber.active_priority = 255;
-        try self.fibers.append(fiber);
+        if (hyper_temporal) {
+            fiber.is_hyper_temporal = true;
+            fiber.active_priority = 255;
+        }
+        self.fibers.appendAssumeCapacity(fiber);
         return id;
+    }
+
+    /// A retired fiber has already halted. IDs remain stable when slots are reclaimed.
+    pub fn routine_has_halted(self: *const VM, id: FiberId) bool {
+        for (self.fibers.items) |*fiber| {
+            if (fiber.id == id) return fiber.state == .halted;
+        }
+        return true;
     }
 
     /// Preempts an entity's active fiber with an interruption routine and assigned priority (D-004, P2-04, P8-03).

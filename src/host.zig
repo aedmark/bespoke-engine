@@ -354,7 +354,7 @@ pub fn run_initial_statements(world: *World, vm: *VM, compiled: *const CompiledP
     const root_ent = try world.intern_entity("SimulationRoot");
     const fid = try vm.spawn_routine(root_ent, init_pc);
     var guard: usize = 0;
-    while (vm.fibers.items[fid - 1].state != .halted and guard < 64) : (guard += 1) {
+    while (!vm.routine_has_halted(fid) and guard < 64) : (guard += 1) {
         _ = try tick(vm, compiled);
     }
 }

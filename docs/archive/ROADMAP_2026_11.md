@@ -1,6 +1,6 @@
 # Roadmap Archive: November 2026
 
-Finished phases moved from `ROADMAP.md` on 2026-11-15 (Phases 1 through 36) and 2026-11-17 (Phases 37 and 38). Their item IDs stay reserved.
+Finished phases moved from `ROADMAP.md` on 2026-11-15 (Phases 1 through 36) and 2026-11-17 (Phases 37 through 39). Their item IDs stay reserved.
 
 ## Phase 37: Toolchain and Continuous Verification
 
@@ -18,6 +18,14 @@ Goal: write down, and test, exactly what a game written today can rely on tomorr
 - [x] P38-02 Compatibility policy for `.bspk` packages and `.sav` saves: which version changes a release may make, what loads old files, and what fails with a clear version error. Acceptance: D-106 and `docs/COMPATIBILITY.md`; release-produced `.bspk` v14 and `.sav` v2 fixtures in `tests/fixtures/compat/` load in engine tests; unsupported package and save diagnostics name the found version and supported range.
 - [x] P38-03 The supported Zig API: the `bespoke` module's public surface for hosts (host kit, `wasm.Deck`, display, world queries) is listed, the rest is marked internal or moved, and the deprecated D-044 aliases are removed. Acceptance: D-107 and `docs/API.md` list the supported surface; `tests/supported_host.zig` compiles outside `src/` using only that list; generated projects use `host.init_vm`, `host.start_routine`, and namespaces instead of program and spatial storage; D-044 aliases are removed with temporal wire value 3 reserved.
 - [x] P38-04 Deprecation policy. Completed 2026-11-17 (D-108). [CONTRIBUTING.md](../CONTRIBUTING.md#deprecation-policy) defines the warning and removal releases. [COMPATIBILITY.md](../COMPATIBILITY.md) and [API.md](../API.md) link to the policy.
+
+## Phase 39: Hardening Untrusted Input
+
+Goal: no script, package, save, score, or typed line can crash the engine; bad input gives an error.
+
+- [x] P39-01 Fuzzing harnesses for the lexer and parser, codegen, the `.bspk` loader, the `.sav` loader, MML scores, and the command interpreter, run in CI for a fixed time budget, with a corpus checked in. Done 2026-11-17. Linux CI invokes seven one-second harnesses using checked-in text and compatibility fixtures. The first run found an incomplete-string lexer panic. Source validation now rejects it and a compiler regression test covers it.
+- [x] P39-02 Resource limits for facts, entities, fibers, script size, package size, save size, and wasm heap. Done 2026-11-17. `docs/SECURITY.md` lists the limits and enforcement points. Engine tests verify error returns at each boundary and continued restore of older saves (D-109).
+- [x] P39-03 Private vulnerability reporting and template CI release pinning. Done 2026-11-17. [SECURITY.md](../SECURITY.md#report-a-vulnerability) links to GitHub Security Advisories. The authenticated repository API confirms reporting is enabled. Both generated CI jobs fetch the published `v0.1.0` tag, verified by building a generated game against that tag (D-110).
 
 ## Phase 1: Foundations (Relational World Store & Core Memory)
 

@@ -33,6 +33,8 @@ jobs:
         run: zig build
       - name: Test engine and proofs
         run: zig build test
+      - name: Fuzz engine input boundaries
+        run: zig build test-fuzz --test-timeout 10s
       - name: Test generated project
         run: zig build test-template
       - name: Build and smoke-test WebAssembly

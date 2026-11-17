@@ -1383,6 +1383,22 @@ Format:
 
 **Consequences.** [CONTRIBUTING.md](CONTRIBUTING.md#deprecation-policy) owns the release procedure. Retiring source names preserves the D-106 reader guarantees. The D-044 cleanup in P38-03 predates this policy.
 
+## D-109 Limit New Fiber Spawns While Preserving Save Restore (2026-11-17, status: accepted)
+
+**Context.** P39-02 requires resource limits with predictable failure. The VM historically retained completed fibers and stored them in saves. D-106 preserves previously readable saves.
+
+**Decision.** Cap new fiber spawns at 4,096 slots. When a spawn reaches the cap and enough fibers have halted, reclaim the halted slots in a stable pass. Keep survivor IDs and execution order. Save restore retains the existing payload and allocator limits. A restored VM with at least 4,096 live fibers refuses new spawns until enough finish.
+
+**Rationale.** Reclamation bounds normal VM growth without imposing a lifetime limit on routine launches. Keeping the new count limit at spawn preserves earlier save semantics and the wire format.
+
+## D-110 Pin Generated CI to a Published Engine Release (2026-11-17, status: accepted)
+
+**Context.** Generated CI fetched `main`, so upstream changes could affect a game's build without a game-side change. As of 2026-11-17, the published `v0.1.0` release predates D-107's `host.init_vm` and `host.start_routine`.
+
+**Decision.** Both generated CI jobs fetch the fully qualified `refs/tags/v0.1.0` tag. Local builds still point to the engine checkout selected during generation. The generated game tests use D-107 helpers when present and retain the v0.1.0 setup path until the CI pin advances to a release that includes those helpers.
+
+**Rationale.** A published tag gives game authors an explicit engine upgrade point. A small compatibility path lets the current template use the existing release without requiring a new release for this change.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
@@ -1397,3 +1413,4 @@ Questions requiring maintainer or stakeholder input. This is their one home: HAN
 - **Q-008** One presentation for desktop and browser (raised 2026-11-14 by the maintainer). The desktop window draws with SDL render calls at 1280x720, and each proof's scene art lives in `proofs/art.zig` as `Theme` hooks written against `DisplayWindow`. The browser draws its own simpler stage into a 640x360 pixel buffer (`WasmCanvas`, D-022, chosen to avoid an SDL2/Emscripten port) and shares only the scripts, the inspector capture (D-070), the dialogue layout (D-077), and the synthesizer (D-071). No decision chose two looks; they grew apart. One path: a single software canvas both sides draw into, with SDL only presenting it, taking input, and playing sound, and proof art written once against that canvas. Cost: porting `renderer.zig` and `art.zig` to the canvas, one hit-test path, a larger wasm file, and every render and browser golden changing once. Should the presentations be unified, and at which resolution? Answered 2026-11-14: unify at 1280x720, Phase 36 before P35-05, D-097.
 - **Q-009** ~~The license for 1.0 (raised 2026-11-15).~~ Answered 2026-11-15 by the maintainer: the license is the MIT license, with a preamble that encourages disclosing agentic use. The grant and the warranty disclaimer are MIT's wording. It is the license used across the maintainer's software; the preamble's "BoneAmanita" was a name left from another project and now reads "The BeSpoke Engine". AI disclosure cannot be enforced, so the notice condition is now MIT's (the copyright notice and the permission notice), and keeping the acknowledgment and disclosing agentic use are strongly encouraged in a separate section. The copyright line reads "Copyright © 2026 OopisMcGoopis.com" (maintainer, 2026-11-15).
 - **Q-010** ~~Where releases live (raised 2026-11-15).~~ Answered 2026-11-16: GitHub Releases on the existing repository hosts version tags, notes, and artifacts; the showcase stays a hand upload, D-105.
+- **Q-011** ~~Fiber limits and older saves (P39-02, raised 2026-11-17).~~ Answered 2026-11-17. Reclaim halted fibers at the spawn limit and preserve older save restore under D-106 (D-109).

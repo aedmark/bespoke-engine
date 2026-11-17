@@ -49,6 +49,7 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 14 lets a duel declare up to `duel.MAX_FALLBACKS` fallback lines (D-076); earlier
 /// versions wrote 0 or 1, which the same count byte reads unchanged.
 pub const PACKAGE_VERSION: u32 = 14;
+pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
 const MAX_CAST: u32 = 4096;
@@ -965,6 +966,7 @@ pub fn save_package(
     try write_program_declarations(world, pw, compiled);
 
     // Compute CRC32 checksum over the payload
+    if (payload.items.len > MAX_PACKAGE_PAYLOAD_SIZE) return error.PackagePayloadTooLarge;
     const crc = std.hash.Crc32.hash(payload.items);
 
     var header = PackageHeader{
@@ -1011,7 +1013,7 @@ pub fn load_package(
         return error.UnsupportedPackageVersion;
     }
 
-    if (header.payload_size > 64 * 1024 * 1024) {
+    if (header.payload_size > MAX_PACKAGE_PAYLOAD_SIZE) {
         return error.PackagePayloadTooLarge;
     }
 
@@ -1537,6 +1539,19 @@ test "P15-02: package loader rejects invalid magic header" {
 
     const res = load_package(testing.allocator, &stream, &dummy_world, null);
     try testing.expectError(error.InvalidPackageMagic, res);
+}
+
+test "P39-02: package loader rejects an oversized payload before reading it" {
+    const testing = std.testing;
+    const header: PackageHeader = .{
+        .magic = PACKAGE_MAGIC,
+        .version = PACKAGE_VERSION,
+        .payload_size = MAX_PACKAGE_PAYLOAD_SIZE + 1,
+    };
+    var reader: std.Io.Reader = .fixed(std.mem.asBytes(&header));
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    try testing.expectError(error.PackagePayloadTooLarge, load_package(testing.allocator, &reader, &world, null));
 }
 
 test "P15-02: package loader rejects corrupted payload with checksum mismatch" {

@@ -4,6 +4,12 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Generated projects pin their CI engine checkout to the published `v0.1.0` release. Report suspected vulnerabilities privately through the [GitHub Security Advisories page](https://github.com/aedmark/bespoke-engine/security/advisories) (P39-03).
+
+- Resource exhaustion now gives explicit errors at the compiler and fiber spawn boundaries (P39-02, D-109). At the spawn cap, the VM can reclaim halted fibers. Older saves still restore under the existing file limits.
+
+- Incomplete quoted strings at end of source now produce a validation error. Bounded input fuzz tests cover this and other input boundaries (P39-01).
+
 - Documented how supported script syntax and Zig API names retire across releases (P38-04, D-108). Each removal follows a shipped warning release with migration guidance. Existing package and save compatibility guarantees still apply.
 
 - The supported Zig host API is now explicit (`P38-03`, `D-107`) in `docs/API.md`. `host.Session` is the preferred host boundary; `host.init_vm`, `host.start_routine`, and method-only browser-runtime access keep custom hosts off internal storage. Generated projects use this surface. Deprecated tangent, vortex, artifact, and singularity aliases from D-044 are removed before the 1.x API freeze.

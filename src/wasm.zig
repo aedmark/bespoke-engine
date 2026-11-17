@@ -2176,6 +2176,16 @@ test "D-071: the capped allocator refuses past its limit and counts frees back" 
     try testing.expectEqual(@as(usize, 900), capped.used);
 }
 
+test "P39-02: the browser heap cap admits its last byte and refuses the next" {
+    const testing = std.testing;
+    var capped = CappedAllocator{ .child = testing.allocator, .limit = WASM_HEAP_LIMIT };
+    const allocator = capped.allocator();
+    const full = try allocator.alloc(u8, WASM_HEAP_LIMIT);
+    defer allocator.free(full);
+    try testing.expectError(error.OutOfMemory, allocator.alloc(u8, 1));
+    try testing.expectEqual(WASM_HEAP_LIMIT, capped.used);
+}
+
 test "D-092: a verb on someone across the room walks the player over first, then acts" {
     const testing = std.testing;
     const script =

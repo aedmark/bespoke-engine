@@ -168,6 +168,10 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     defer testing.allocator.free(zon);
     try testing.expect(std.mem.indexOf(u8, zon, ".path = \"../engine\"") != null);
     try testing.expect(std.mem.indexOf(u8, zon, ".name = .tide,") != null);
+    const workflow = try tmp.dir.readFileAlloc(testing.io, "tide/.github/workflows/build.yml", testing.allocator, .limited(1 << 16));
+    defer testing.allocator.free(workflow);
+    try testing.expect(std.mem.indexOf(u8, workflow, "\n  BESPOKE_ENGINE_REF: refs/tags/v0.1.0\n") != null);
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, workflow, "ref: ${{ env.BESPOKE_ENGINE_REF }}"));
     // The fingerprint's high half is the name's CRC-32, as Zig checks it.
     var expect_buf: [32]u8 = undefined;
     const checksum = try std.fmt.bufPrint(&expect_buf, ".fingerprint = 0x{x:0>8}", .{std.hash.Crc32.hash("tide")});

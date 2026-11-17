@@ -64,9 +64,10 @@ Homebrew, `mingw-w64-x86_64-SDL2` in MSYS2 on Windows, building with
 SDL at run time; its build compiles the script with the engine's native tool. `node` is needed
 only for the smoke check.
 
-`build.zig.zon` points at the engine checkout `bespoke init` was run from; change `.path` if
-the engine moves. The CI workflow fetches the engine from GitHub instead; set
-`BESPOKE_ENGINE_REF` in it to a commit to pin the engine version.
+`build.zig.zon` points at the engine checkout used by `bespoke init`. Update `.path` if the
+engine moves. Both CI jobs fetch the released tag in `BESPOKE_ENGINE_REF` from GitHub.
+Test your game against a new release before changing that pin. To reproduce the CI engine
+version locally, point `.path` at a checkout of the same tag.
 
 ## Next steps
 

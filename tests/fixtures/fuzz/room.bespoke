@@ -1,0 +1,10 @@
+scene Workshop:
+  cast: Hero
+  marks: Door, Bench
+
+relation Ready(who)
+remember Ready(Hero)
+
+routine Patrol(Hero):
+  walk Hero to Bench
+  wait 2 ticks
