@@ -147,9 +147,20 @@ async function main() {
     console.log(`ok  file proof page: audio playing, S changed facts ${initial.facts} -> ${advanced.facts}, tick ${sounded.tick} -> ${advanced.tick}`);
     cdp.close();
   } finally {
-    child.kill('SIGTERM');
-    await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(2000)]);
-    fs.rmSync(profile, { recursive: true, force: true });
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    if (child.exitCode === null) child.kill('SIGTERM');
+    await Promise.race([exited, delay(5000)]);
+    if (child.exitCode === null) {
+      child.kill('SIGKILL');
+      await Promise.race([exited, delay(2000)]);
+    }
+    try {
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (error) {
+      // The runner discards /tmp after the job. A late Chrome helper must not overturn a
+      // completed engine check merely because it held its disposable profile a little longer.
+      console.warn(`WARN could not remove Chrome profile ${profile}: ${error.message}`);
+    }
   }
 }
 
