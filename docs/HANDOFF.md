@@ -95,7 +95,7 @@ Every phase of the first roadmap (1 to 36) is complete; Phase 37 is in progress.
 ### Session 66 (2026-11-16)
 - **Goal:** Move CI tooling to Node.js 24, remove the deprecated action-runtime warning, and answer Q-010.
 - **Work:** Replaced `mlugg/setup-zig@v2` with a direct Zig 0.17.1 download from ziglang.org, pinned to its published SHA-256; moved `actions/setup-node@v7` from Node.js 22 to 24. Recorded D-105: GitHub Releases on the existing repository hosts version tags, notes, and artifacts, while the showcase remains a hand upload (D-074). Updated the roadmap, contributing guide, testing matrix, and current handoff; P37-03 is unblocked.
-- **Checks:** `python3 tools/check_docs.py` reports 0 errors and 0 warnings. The downloaded Zig archive matches SHA-256 `3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a`. GitHub verification is recorded before merge.
+- **Checks:** `python3 tools/check_docs.py` reports 0 errors and 0 warnings. The downloaded Zig archive matches SHA-256 `3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a`. GitHub branch run 44010238931 passed every step in 5m17s and reported 0 annotations, confirming the deprecated Node action-runtime warning is gone.
 
 ### Session 65 (2026-11-16)
 - **Goal:** P37-02, engine CI on Linux.
