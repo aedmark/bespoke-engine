@@ -1,0 +1,48 @@
+Quay. Try: read tide board.
+Dispatcher: The watch has changed. The packet can clear at the outer signal.
+> signal packet
+The shuttered signal lamp is in the beacon house.
+> read tide board
+Ebb tide. Keep the packet outside the eastern shoals.
+> go forward
+Watch office. Try: read duty book.
+> read duty book
+The watch book records the dawn handover.
+> go to forward
+Market. Try: read market slate.
+> read market slate
+The slate lists two parcels due on the packet.
+> go forward
+Chandlery. Try: take wick.
+> take wick
+You take the spare wick for the shuttered signal lamp.
+> go to forward
+Net loft. Try: take flag.
+> take flag
+You take the checked flag from the net loft.
+> go forward
+Customs. Try: read manifest.
+> read manifest
+The manifest matches the parcels on the market slate.
+[Saved at Customs]
+> go forward
+Pump house. Try: turn lever.
+> turn lever
+The pump starts. The water below the signal steps falls.
+[Restored Customs, pump and society state]
+> go to forward
+Pump house. Try: turn lever.
+> turn lever
+The pump starts. The water below the signal steps falls.
+> go forward
+Signal steps. Try: read bell code.
+> read bell code
+The packet answers two strokes. Three means wait outside.
+> go to forward
+Breakwater. Try: secure mooring.
+> secure mooring
+The loose mooring holds fast against the swell.
+> go forward
+Beacon house. Try: signal packet.
+> signal packet
+Two strokes answer from the channel. The dawn packet is clear.

@@ -4,6 +4,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- [Lantern Watch: The Harbour](../scenarios/harbour/README.md) is a ten-scene reference game with a working society, typed commands, a native save/restore golden, and a browser build (P41-02).
+
+- `zig build bench` reports simulation throughput on Linux and in Chrome. CI checks raw size budgets for the browser modules, showcase, standalone proofs, and Lantern Watch (P41-01).
+
 - [Lantern Watch](../scenarios/lantern_watch/README.md) adds a text-first storm watch with opening prose in the gameplay transcript and an optional interactive map. Explore the tower, free the stuck bell yourself or enlist the Keeper, or open the shutter and see what the beacon calls in. Both `go to watch room` and `go watch room` work, with narration on arrival. The first-game tutorial stays unchanged.
 
 - The [BeSpoke Language extension](../editors/vscode/README.md) highlights `.bespoke` files in VS Code. Its TextMate grammar is generated from the lexer, and CI checks every keyword spelling, including aliases (P40-03).

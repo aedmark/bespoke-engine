@@ -9,7 +9,7 @@ const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 13]];
 let failed = false;
 // Each module stays under 1 MiB. The runtime's 1.2 MB of state must stay uninitialised; held
 // as an initialised global it ships as zero bytes in the data section (D-067).
-const MAX_MODULE_BYTES = 1024 * 1024;
+const { wasmModuleBytes: MAX_MODULE_BYTES } = require('./web_budgets.json');
 for (const [file, decks] of modules) {
   const bytes = fs.readFileSync(path.join(bin, file));
   if (bytes.length > MAX_MODULE_BYTES) {

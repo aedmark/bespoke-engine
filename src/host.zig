@@ -21,6 +21,7 @@ const agency_mod = @import("agency.zig");
 const command_mod = @import("command.zig");
 const audio_mod = @import("audio.zig");
 const mml_mod = @import("mml.zig");
+const society_mod = @import("society.zig");
 
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -47,6 +48,26 @@ pub fn init_vm(
 
 /// Cue id the compiler emits for `say` statements (D-009).
 pub const SAY_CUE_ID: u16 = 2;
+
+/// A host-owned instance of one script-declared society. Configure once before
+/// play or save restore; initializing again reseeds the members' starting facts.
+/// The program and the same world's entity and relation registries must outlive it.
+pub const ScriptSociety = struct {
+    core: society_mod.Society,
+    world: *World,
+
+    /// Selects a declaration by zero-based source order.
+    pub fn init(world: *World, compiled: *const CompiledProgram, index: usize) !ScriptSociety {
+        if (index >= compiled.societies.items.len) return error.SocietyNotDeclared;
+        return .{ .core = try society_mod.Society.init(world, compiled.societies.items[index].config), .world = world };
+    }
+
+    /// Runs once after each host tick, using the VM's current world and spatial system.
+    pub fn step(self: *ScriptSociety, vm: *VM) !void {
+        if (vm.world != self.world) return error.SocietyWorldMismatch;
+        try self.core.step(vm.world, vm.spatial orelse return error.SocietyNeedsSpatialSystem, vm);
+    }
+};
 
 /// Seeds script-declared subsystems into a world. Repeated calls preserve restored fact state.
 pub fn initialize_subsystems(world: *World, compiled: *const CompiledProgram) !void {

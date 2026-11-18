@@ -1,6 +1,6 @@
 # Roadmap Archive: November 2026
 
-Finished phases moved from `ROADMAP.md` on 2026-11-15 (Phases 1 through 36) and 2026-11-17 (Phases 37 through 40). Their item IDs stay reserved.
+Finished phases moved from `ROADMAP.md` on 2026-11-15 (Phases 1 through 36) and 2026-11-17 (Phases 37 through 41). Their item IDs stay reserved.
 
 ## Phase 37: Toolchain and Continuous Verification
 
@@ -34,6 +34,13 @@ Goal: a developer new to BeSpoke can write, debug, and publish a small game with
 - [x] P40-01 Compiler diagnostics with file, line, column, the source line, and a caret, plus a suggestion where one is clear (a misspelt keyword or name). `bespoke check` prints the diagnostic; the engine suite verifies locations, messages, and CLI rendering (D-111).
 - [x] P40-02 [First-game tutorial](../FIRST_GAME.md) from `bespoke init` to a browser page packed for manual Neocities upload. Linux CI runs the documented build and preview commands as written (D-112).
 - [x] P40-03 Editor support for `.bespoke` files. The TextMate grammar is generated from the lexer's keyword map; tests verify every spelling and CI checks for drift. [Install notes](../../editors/vscode/README.md) cover VS Code (D-113).
+
+## Phase 41: Scale
+
+Goal: know how big a BeSpoke game can be before 1.0, and say so.
+
+- [x] P41-01 [Benchmarks and browser budgets](../BENCHMARKS.md). `zig build bench` prints verified fact, entity, and fiber counts and native Linux and Chrome tick rates. CI rejects oversized Wasm modules or HTML pages (D-115).
+- [x] P41-02 [Lantern Watch: The Harbour](../../scenarios/harbour/README.md), a supported-API reference game with ten scenes, a society, typed commands, native save/restore, and a standalone browser build. `zig build harbour` compares a headless golden, plays all ten scenes in Chrome, and measures both targets. D-116 adds the society wrapper; D-117 cites the measured results and keeps linear scans through 1.0 (Q-002).
 
 ## Phase 1: Foundations (Relational World Store & Core Memory)
 

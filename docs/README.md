@@ -22,6 +22,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`GLOSSARY.md`](GLOSSARY.md) | Authors, contributors, and copy writers | Engine and language terms in plain language, and which word to use | Process terms (AGENTS) or syntax (`script_spec.md`) |
 | [`AUTHORING.md`](AUTHORING.md) | Game authors | Learning order for the script language, walkthroughs, testing, and the host API contract | Complete syntax (`script_spec.md`) or design rationale |
 | [`FIRST_GAME.md`](FIRST_GAME.md) | First-time game authors | Executable tutorial from `bespoke init` to a static HTML upload | Language reference or hosting credentials |
+| [`BENCHMARKS.md`](BENCHMARKS.md) | Contributors and release owners | Simulation benchmark method and browser artifact budgets | Performance guarantees for a full game or any particular device |
 | [Editor setup](../editors/vscode/README.md) | Game authors | Install and regenerate the TextMate syntax grammar | Compiler diagnostics or language semantics |
 | [`SEPARATION.md`](SEPARATION.md) | Developers and auditors | Engine / proof separation rule, classification rubric, audit and extraction method, checks, baseline inventory | Decision rationale (DECISIONS) or task status (ROADMAP) |
 | [`runbooks/release-hand-test.md`](runbooks/release-hand-test.md) | Release owners and the maintainer | The hand-test pass before a release: desktop proofs, listening, browser builds, export, the hand-uploaded site, macOS and Windows CI, and its results table | Automated suites and commands (TESTING) |

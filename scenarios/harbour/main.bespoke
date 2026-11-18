@@ -1,0 +1,189 @@
+scene Quay:
+  cast: HarbourMaster, Dispatcher, Porter, Runner, Lamplighter, Clerk, Watcher
+  props: TideBoard
+  marks: QuayDesk, RestBench, QuayForward
+
+scene WatchOffice:
+  props: DutyBook
+  marks: OfficeDesk, WatchOfficeBack, WatchOfficeForward
+
+scene Market:
+  props: MarketSlate
+  marks: MarketStall, MarketBack, MarketForward
+
+scene Chandlery:
+  props: Wick
+  marks: ChandleryBench, ChandleryBack, ChandleryForward
+
+scene NetLoft:
+  props: Flag
+  marks: LoftTable, NetLoftBack, NetLoftForward
+
+scene Customs:
+  props: Manifest
+  marks: CustomsDesk, CustomsBack, CustomsForward
+
+scene PumpHouse:
+  props: Lever
+  marks: PumpBench, PumpHouseBack, PumpHouseForward
+
+scene SignalSteps:
+  props: BellCode
+  marks: SignalRail, SignalStepsBack, SignalStepsForward
+
+scene Breakwater:
+  props: Mooring
+  marks: BreakwaterPost, BreakwaterBack, BreakwaterForward
+
+scene BeaconHouse:
+  props: SignalLamp
+  marks: BeaconBench, BeaconHouseBack
+
+property HarbourAt(who, place)
+property HarbourGold(who, amount)
+relation PortOpen(place)
+relation Cleared(place)
+relation Carries(who, thing)
+relation PacketClear(ship)
+entity Packet
+
+command WalksTo: "go to <thing>"
+command WalksTo: "go <thing>"
+command Reads: "read <thing>"
+command Takes: "take <thing>"
+command Turns: "turn <thing>"
+command Secures: "secure <thing>"
+command Signals: "signal packet"
+command Surveys: "look"
+alias QuayForward: "forward"
+alias WatchOfficeBack: "back"
+alias WatchOfficeForward: "forward"
+alias MarketBack: "back"
+alias MarketForward: "forward"
+alias ChandleryBack: "back"
+alias ChandleryForward: "forward"
+alias NetLoftBack: "back"
+alias NetLoftForward: "forward"
+alias CustomsBack: "back"
+alias CustomsForward: "forward"
+alias PumpHouseBack: "back"
+alias PumpHouseForward: "forward"
+alias SignalStepsBack: "back"
+alias SignalStepsForward: "forward"
+alias BreakwaterBack: "back"
+alias BreakwaterForward: "forward"
+alias BeaconHouseBack: "back"
+
+remember HarbourAt(Watcher, Quay)
+transition to scene Quay
+
+routine Watch(Watcher):
+  loop:
+    wait 8 ticks
+
+society Harbour:
+  need HarbourFatigue high 100 1 0 65 stay RestBench 8 20 sleeping false "worn down" "rest"
+  member Dispatcher 10 working:
+    need HarbourFatigue 0 none none
+    routine working 3 QuayDesk
+    work QuayDesk 3 1 false
+  member Porter 6 working:
+    need HarbourFatigue 62 none none
+    routine patrolling 4 QuayDesk RestBench
+  member Runner 4 patrolling:
+    need HarbourFatigue 25 none none
+    routine patrolling 3 RestBench QuayDesk
+  member Lamplighter 8 working:
+    need HarbourFatigue 15 none none
+    routine working 6 QuayDesk RestBench
+  member Clerk 6 working:
+    need HarbourFatigue 40 none none
+    routine working 5 QuayDesk RestBench
+  member HarbourMaster 12 working:
+    need HarbourFatigue 20 none none
+    routine working 7 QuayDesk RestBench
+  gathering QuayDesk
+  flight RestBench QuayDesk 3
+  relations HarbourGold HarbourActivity HarbourTending Friend Rival Grudge Owns Carries StolenFrom CrimeScene Witnessed KnowsRumor WarrantFor Arrested
+
+when HarbourGold(Dispatcher, 11):
+  remember PortOpen(Quay)
+  say Dispatcher: "The watch has changed. The packet can clear at the outer signal."
+
+on cue Surveys(Watcher):
+  say Scene: "Follow the quay chain with 'go forward' and 'go back'. Look for the local objects."
+
+on cue Reads(Watcher, TideBoard):
+  remember Cleared(Quay)
+  say Scene: "Ebb tide. Keep the packet outside the eastern shoals."
+
+on cue Reads(Watcher, DutyBook):
+  remember Cleared(WatchOffice)
+  say Scene: "The watch book records the dawn handover."
+
+on cue Reads(Watcher, MarketSlate):
+  remember Cleared(Market)
+  say Scene: "The slate lists two parcels due on the packet."
+
+on cue Takes(Watcher, Wick):
+  remember Carries(Watcher, Wick)
+  remember Cleared(Chandlery)
+  say Scene: "You take the spare wick for the shuttered signal lamp."
+
+on cue Takes(Watcher, Flag):
+  remember Carries(Watcher, Flag)
+  remember Cleared(NetLoft)
+  say Scene: "You take the checked flag from the net loft."
+
+on cue Reads(Watcher, Manifest):
+  remember Cleared(Customs)
+  say Scene: "The manifest matches the parcels on the market slate."
+
+on cue Turns(Watcher, Lever):
+  remember Cleared(PumpHouse)
+  say Scene: "The pump starts. The water below the signal steps falls."
+
+on cue Reads(Watcher, BellCode):
+  remember Cleared(SignalSteps)
+  say Scene: "The packet answers two strokes. Three means wait outside."
+
+on cue Secures(Watcher, Mooring):
+  remember Cleared(Breakwater)
+  say Scene: "The loose mooring holds fast against the swell."
+
+on cue Signals(Watcher):
+  if not HarbourAt(Watcher, BeaconHouse):
+    say Scene: "The shuttered signal lamp is in the beacon house."
+  if HarbourAt(Watcher, BeaconHouse):
+    if not PortOpen(Quay):
+      say Scene: "Wait for the watch handover."
+    if PortOpen(Quay):
+      if not Cleared(Quay):
+        say Scene: "Check the tide board before signalling."
+      if not Cleared(Customs):
+        say Scene: "Check the customs manifest before signalling."
+      if not Cleared(WatchOffice):
+        say Scene: "Read the duty book to confirm the handover."
+      if not Cleared(Market):
+        say Scene: "Read the market slate to check the parcels."
+      if not Carries(Watcher, Wick):
+        say Scene: "The signal lamp needs its spare wick."
+      if not Carries(Watcher, Flag):
+        say Scene: "The crew needs the checked flag from the net loft."
+      if not Cleared(PumpHouse):
+        say Scene: "Start the pump before calling the packet in."
+      if not Cleared(SignalSteps):
+        say Scene: "Read the bell code at the signal steps."
+      if not Cleared(Breakwater):
+        say Scene: "Secure the loose mooring on the breakwater."
+      if Cleared(Quay):
+        if Cleared(WatchOffice):
+          if Cleared(Market):
+            if Cleared(Customs):
+              if Carries(Watcher, Wick):
+                if Carries(Watcher, Flag):
+                  if Cleared(PumpHouse):
+                    if Cleared(SignalSteps):
+                      if Cleared(Breakwater):
+                        remember PacketClear(Packet)
+                        say Scene: "Two strokes answer from the channel. The dawn packet is clear."

@@ -345,4 +345,86 @@ pub fn build(b: *std.Build) void {
     const install_wasm_proofs = b.addInstallArtifact(wasm_proofs_exe, .{});
     const wasm_proofs_step = b.step("wasm-proofs", "Build the proofs' WebAssembly module (bespoke-proofs.wasm)");
     wasm_proofs_step.dependOn(&install_wasm_proofs.step);
+
+    // P41-01: the same headless workload and optimization mode on both hosts.
+    const bench_step = b.step("bench", "Measure headless simulation on this host and in Chrome");
+    const bench_native = b.addExecutable(.{
+        .name = "bespoke-bench-native",
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/native.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    const fast_native_core = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = b.graph.host,
+        .optimize = .ReleaseFast,
+    });
+    bench_native.root_module.addImport("bespoke", fast_native_core);
+    const bench_wasm = b.addExecutable(.{
+        .name = "bespoke-bench-browser",
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/browser.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    const fast_wasm_core = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = wasm_target,
+        .optimize = .ReleaseFast,
+    });
+    bench_wasm.root_module.addImport("bespoke", fast_wasm_core);
+    bench_wasm.entry = .disabled;
+    bench_wasm.rdynamic = true;
+    const run_bench = b.addSystemCommand(&.{"node"});
+    run_bench.addFileArg(b.path("bench/run.js"));
+    run_bench.addArtifactArg(bench_native);
+    run_bench.addArtifactArg(bench_wasm);
+    run_bench.has_side_effects = true;
+    bench_step.dependOn(&run_bench.step);
+
+    // P41-02: the supported-API reference game runs from one host on Linux and Wasm.
+    const harbour_native = b.addExecutable(.{
+        .name = "bespoke-harbour",
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("scenarios/harbour/native.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    harbour_native.root_module.addImport("bespoke", fast_native_core);
+    const harbour_headless = b.addRunArtifact(harbour_native);
+    harbour_headless.addPassthruArgs();
+    harbour_headless.has_side_effects = true;
+    b.step("harbour-native", "Run the reference game's headless route with a new .sav output path").dependOn(&harbour_headless.step);
+
+    const harbour_wasm = b.addExecutable(.{
+        .name = "bespoke-harbour-web",
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("scenarios/harbour/browser.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseFast,
+            .strip = true,
+        }),
+    });
+    harbour_wasm.root_module.addImport("bespoke", fast_wasm_core);
+    harbour_wasm.entry = .disabled;
+    harbour_wasm.rdynamic = true;
+    const run_harbour = b.addSystemCommand(&.{"node"});
+    run_harbour.addFileArg(b.path("scenarios/harbour/verify.js"));
+    run_harbour.addArtifactArg(harbour_native);
+    run_harbour.addArtifactArg(harbour_wasm);
+    run_harbour.addFileArg(b.path("scenarios/harbour/page.html"));
+    run_harbour.addFileArg(b.path("scenarios/harbour/golden.txt"));
+    run_harbour.addFileArg(b.path("LICENSE"));
+    const harbour_page = run_harbour.addOutputFileArg("index.html");
+    run_harbour.has_side_effects = true;
+    const publish_harbour = b.addInstallFile(harbour_page, "harbour/index.html");
+    b.step("harbour", "Verify, benchmark, and build the reference game's browser page").dependOn(&publish_harbour.step);
 }

@@ -2,6 +2,14 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 77 (2026-11-17)
+- **Work.** Tuned Lantern Watch after maintainer feedback. The tutorial patches its generated page to use the 1 Hz engine default (D-028) and gives both scores sixteen-bar phrases. The shared starter and showcase are unchanged. The replacement upload is `dist/lantern-watch-v2/index.html`; the first export is retained.
+- **Checks.** The tutorial passes with its native tests, WebAssembly smoke check, and local Chrome render. Each score part has 64 beats. The exported page retains the 1,000 ms tick interval. Documentation checks pass. Live hosting and listening were not checked.
+
+### Session 76 (2026-11-17)
+- **Work.** Completed P40-02. The tutorial teaches one story edit and tests it from `bespoke init` through a browser render. CI executes the marked commands verbatim. The upload artifact is `dist/lantern-watch/index.html` locally; it includes its Wasm and engine license. No public upload was attempted.
+- **Checks.** The tutorial passes on Linux with Zig 0.17.1 and Chrome, which renders 19 canvas colours from the single export over local HTTP. All four packer tests pass, the existing proof-page Chrome smoke passes, and `python3 tools/check_docs.py` reports 0 errors and 0 warnings. The full Python suite reports 63/65: its two showcase checks fail because the checked-in HTML embeds a different proof Wasm than the current build. `python3 tools/build_site.py --check` confirms the mismatch. The showcase was left unchanged. GitHub CI has not run this change.
+
 ### Session 75 (2026-11-17)
 - **Work.** Completed P40-01. The checker reports lexer, parser, and codegen failures with readable messages. The runner renders a source excerpt and caret, and offers a suggestion only for a unique nearby spelling within the relevant namespace (D-111).
 - **Checks.** Linux x86_64, Zig 0.17.1: `zig build install test wasm wasm-proofs --summary all -j2` passes 699/699; `zig build test-fuzz --test-timeout 10s --summary all` passes 7/7. The proof render test takes about 15 seconds here, so keep the fuzz timeout off the normal suite. The wasm smoke test and both valid and invalid CLI checks pass; invalid source exits 1. No golden changed. `python3 tools/check_docs.py` reports 0 errors and 0 warnings. GitHub CI has not run these changes.

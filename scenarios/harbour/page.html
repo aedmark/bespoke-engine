@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern Watch: The Harbour</title>
+<style>
+body { margin: 2rem auto; max-width: 45rem; padding: 0 1rem; background: #101821; color: #e6e8df; font: 17px/1.5 system-ui, sans-serif; }
+#log { height: min(48vh, 24rem); overflow: auto; padding: 0 1rem; border: 1px solid #65747c; }
+form { display: flex; gap: .6rem; margin: 1rem 0; }
+input { min-width: 0; flex: 1; }
+.command { color: #a8cce3; font-family: monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lantern Watch: The Harbour</h1>
+  <div id="log" role="log" aria-label="Harbour transcript"><p>The night watch is over. The dawn packet waits outside the shoals. The quay is waking, and the word to clear the ship has to travel from the tide desk to the outer signal.</p></div>
+  <button id="start" type="button" disabled>Start the harbour watch</button>
+  <form id="form">
+    <label for="command">Command</label><input id="command" maxlength="160" autocomplete="off" disabled>
+    <button id="send" disabled>Send</button>
+  </form>
+  <p>Start with <kbd>look</kbd> or <kbd>read tide board</kbd>. Use <kbd>go forward</kbd> and <kbd>go back</kbd>.</p>
+  <details id="map">
+    <summary>Harbour map</summary>
+    <p>Quay → Watch office → Market → Chandlery → Net loft → Customs → Pump house → Signal steps → Breakwater → Beacon house</p>
+  </details>
+</main>
+<script>
+const log = document.getElementById('log');
+const form = document.getElementById('form');
+const input = document.getElementById('command');
+const start = document.getElementById('start');
+const send = document.getElementById('send');
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+let timer;
+const bytes = Uint8Array.from(atob('__HARBOUR_WASM__'), c => c.charCodeAt(0));
+const harbour = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
+function line(text, kind) {
+  const p = document.createElement('p');
+  p.className = kind;
+  p.textContent = text;
+  log.append(p);
+  if (log.childElementCount > 200) log.firstElementChild.remove();
+  log.scrollTop = log.scrollHeight;
+}
+function drain() {
+  const text = decoder.decode(new Uint8Array(harbour.memory.buffer, harbour.harbour_text(), harbour.harbour_text_len()));
+  harbour.harbour_clear_text();
+  for (const item of text.trimEnd().split('\n')) if (item) line(item, 'story');
+}
+function tick() {
+  if (!harbour.harbour_tick()) {
+    clearInterval(timer);
+    line('The harbour watch could not advance.', 'story');
+    return;
+  }
+  drain();
+}
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  if (input.disabled) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  line('> ' + text, 'command');
+  const encoded = encoder.encode(text);
+  if (encoded.length > 160) {
+    line('That command is too long.', 'story');
+    return;
+  }
+  new Uint8Array(harbour.memory.buffer, harbour.harbour_input(), encoded.length).set(encoded);
+  if (!harbour.harbour_command(encoded.length)) line('The harbour watch could not process that command.', 'story');
+  drain();
+});
+start.addEventListener('click', () => {
+  if (!harbour.harbour_init()) {
+    line('The harbour watch could not start.', 'story');
+    return;
+  }
+  start.hidden = true;
+  input.disabled = send.disabled = false;
+  input.focus();
+  drain();
+  timer = setInterval(tick, 1000);
+}, { once: true });
+start.disabled = false;
+start.focus();
+</script>
+</body>
+</html>

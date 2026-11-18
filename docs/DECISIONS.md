@@ -1431,12 +1431,36 @@ Format:
 
 **Consequences.** The map is a second view of the same watch. Parser-only play and the arrival transcript can be tested in a browser with the map closed. The starter project and other proofs keep their existing presentation.
 
+## D-115 Measure Simulation Throughput and Gate Browser Artifact Size (2026-11-17, status: accepted)
+
+**Context.** P41-01 needs a comparable native and browser baseline before the reference game revisits fact indexing. Timing on a shared CI runner varies, but the built artifact's size is a reproducible constraint.
+
+**Decision.** Run one fixed headless workload on native Linux and in real Chrome using the same optimization mode. Vary one workload dimension at a time, then combine the heavy cases. Verify the simulated state and report median ticks per second without a throughput threshold. CI keeps D-067's 1 MiB limit for each shipped Wasm module and adds a 1.25 MiB cap for the showcase and a 1 MiB cap for each standalone proof or Lantern Watch page. The size checker counts raw bytes, including the embedded Wasm.
+
+**Consequences.** The page limits allow modest headroom above current outputs. Growth requires a smaller build or a reviewed budget change. The measurements isolate core simulation cost; they neither imply rendered frame rates nor settle Q-002.
+
+## D-116 Expose Script-Declared Societies Through the Host Kit (2026-11-17, status: accepted)
+
+**Context.** P41-02 requires a society without reading compiled program storage or private engine modules. Existing proof hosts select and step a society directly. Changing the default tick would risk stepping those societies twice.
+
+**Decision.** Add `host.ScriptSociety`. A host selects a declaration by source order, initializes it once in the world's registries, and steps it after `host.tick`. The wrapper refuses a VM bound to a different World. Restore a matching save into the same initialized game without reseeding the society. The reference game tests file saves on Linux; browser save slots remain out of scope.
+
+**Consequences.** Existing hosts and proofs keep their tick order. The reference game uses only the supported API; the society implementation and its chronicle remain internal. The save format does not change.
+
+## D-117 Keep Linear Fact Scans for 1.0 (2026-11-17, status: accepted)
+
+**Context.** Q-002 asks when linear scans justify a secondary index. On Linux x86_64 with a Ryzen 9 7900X and Chrome 157.0.8103.78, P41-02 measures 1,614,373 native and 655,360 Chrome ticks/s at 33 live facts in the Harbour reference game. Adding 4,096 unrelated facts brings rates to 44,220 and 25,144. P41-01's synthetic worst case measures 967 and 523 ticks/s with 7,170 facts and 256 fibers.
+
+**Decision.** Retain D-006 linear scans for 1.0. The measured slowdown with extra facts is real, but neither workload establishes a simulation bottleneck at the supported interactive cadence. Revisit if profiling a representative game or supported device attributes a material tick-budget problem to fact queries. Compare mixed reads, mutations, expiry, and restore on that workload before choosing an index. Preserve deterministic query order and save compatibility.
+
+**Consequences.** No new persistent structures or write overhead. These are headless simulation measurements, not guarantees about rendering cost or low-end hardware. The benchmark stays available to quantify future changes.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
 
 - **Q-001** ~~Spatial topology representation: Should the default spatial model in the spine be a discrete 2D tile grid, a room/waypoint node graph, or a hybrid?~~ Answered 2026-11-04: Room/waypoint node graph adopted for graphical adventure game priority; 2D tile grids deferred, D-005. Revisited 2026-11-10: an optional grid overlay complements the graph, D-054.
-- **Q-002** ~~Fact query indexing: At what scale does linear scanning over `MultiArrayList(Fact)` need to be augmented with sparse bitsets or entity-indexed hash tables?~~ Answered 2026-11-04: Linear scan over SoA columns adopted as baseline; cache-efficient and preserves zero-overhead `memcpy` saves, D-006.
+- **Q-002** ~~Fact query indexing: At what scale does linear scanning over `MultiArrayList(Fact)` need to be augmented with sparse bitsets or entity-indexed hash tables?~~ Answered 2026-11-04: Linear scan over SoA columns adopted as baseline; cache-efficient and preserves zero-overhead `memcpy` saves, D-006. Revisited 2026-11-17: keep linear scans for 1.0, and reopen on representative profiling evidence (D-117).
 - **Q-003** ~~Continuous numerical stats representation: Should continuous/metered stats be stored in a dedicated numeric table/struct per entity, or represented as ternary relational facts?~~ Answered 2026-11-04: Unified ternary facts with functional property auto-overwrite adopted, D-007.
 - **Q-004** ~~Time-branch helpers that claim more than they do (raised 2026-11-13, session 58).~~ Answered 2026-11-13: implement them, D-073. Correction: the question said the two checks had no caller outside unit tests; `proofs/darko_puzzle.zig` asserts both in its headless run. `validate_novikov_consistency` ignores its `candidate_action` argument; it and `TemporalHypervisor.is_teleologically_justified` have no caller outside their unit tests; `check_loop_closure` looks up the proof-derived relation name `VortexReady`; `CausalDecayTracker` returns an `f32`. Options: implement the checks the names promise, keep them as documented stubs, or remove them and the `VortexReady` alias (the Middlesex Anomaly uses `LoopClosed`). See Claims vs. code in `ARCHITECTURE.md`.
 - **Q-005** ~~Third-party names and text in public material (raised 2026-11-13, session 58).~~ Answered 2026-11-13: rewrite each commercial source as a generalized original, one at a time with the maintainer; Phase 35 in `ROADMAP.md`. Several proofs reuse titles, character names, and places from commercial games and a film (Monkey Island, Gabriel Knight 3, Broken Sword, Day of the Tentacle, Indiana Jones and the Fate of Atlantis, Loom, Donnie Darko), and the Insult Sword Fighting script contains the original game's insult and comeback lines verbatim. The showcase gallery publishes those scripts. Should the public site and the proofs keep these names and lines, rename them to original ones, or keep them in the repository but leave them off the published site? Renaming changes scripts, goldens, and render hashes.

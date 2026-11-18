@@ -38,7 +38,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 | Namespace | Supported surface |
 | --- | --- |
 | `vm` | `VM`, `FiberId`, tick interval constants and `step_tick_interval_slower` / `step_tick_interval_faster` |
-| `host` | `Session`, `Exit`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, and the functions listed below |
+| `host` | `Session`, `Exit`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, `ScriptSociety`, and the functions listed below |
 | `dialogue` | `View`, `Selection`, `view` |
 | `command` | `Interpreter`, `WordList`, `Command` |
 
@@ -47,6 +47,8 @@ Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave
 Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
 
 All public methods on `Session`, `SpeechLog`, and `ScriptSoundtrack` are supported. `Session` is the preferred owner of ticking, pause, rewind, save/load actions, dialogue selection, frame refresh, and temporal active-world routing. Their storage fields are internal.
+
+`ScriptSociety.init(world, compiled, index)` selects a script declaration by zero-based source order and seeds its initial facts. Construct it once before play or before restoring a matching save. `ScriptSociety.step(vm)` runs society rules once after `host.tick`; the VM must have a spatial system and still use the original world's registries. The compiled program and registries must outlive the society. Do not reinitialize after restore, since that would reseed the saved facts. The wrapper's fields and its diagnostic chronicle are internal (P41-02).
 
 ## Display and sound
 

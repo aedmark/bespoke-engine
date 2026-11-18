@@ -103,6 +103,8 @@ cd lighthouse && zig build test && zig build run
 
 To make and publish a small browser game, follow the [first-game tutorial](docs/FIRST_GAME.md). The [authoring guide](docs/AUTHORING.md) goes deeper into scenes, dialogue, reactive puzzles, testing, and the host API. See the [editor setup](editors/vscode/README.md) for syntax highlighting.
 
+Run `zig build bench` to measure native and browser simulation throughput, or `zig build harbour` to verify, benchmark, and play the [ten-scene Harbour reference game](scenarios/harbour/README.md). See [benchmarks and size budgets](docs/BENCHMARKS.md) for requirements and interpretation.
+
 The repository has three layers:
 
 | Path | What it is |

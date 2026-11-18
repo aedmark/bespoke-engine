@@ -51,6 +51,20 @@ jobs:
         run: |
           zig build wasm wasm-proofs
           node tools/wasm_smoke.js
+      - name: Check browser size budgets (P41-01)
+        run: python3 tools/check_web_budgets.py --lantern-page "$RUNNER_TEMP/lantern-watch/index.html"
+      - name: Measure simulation on Linux and in Chrome (P41-01)
+        timeout-minutes: 5
+        env:
+          CHROME: google-chrome
+          BESPOKE_BENCH_CHROME_NO_SANDBOX: "1"
+        run: zig build bench
+      - name: Verify and benchmark the Harbour reference game (P41-02)
+        timeout-minutes: 5
+        env:
+          CHROME: google-chrome
+          BESPOKE_BENCH_CHROME_NO_SANDBOX: "1"
+        run: zig build harbour
       - name: Check editor grammar (P40-03)
         run: python3 tools/build_editor_grammar.py --check
       - name: Test Python tools
