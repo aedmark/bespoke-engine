@@ -10,6 +10,10 @@
 //! cast is then spread over the scene's marks. That is the default state of the scene. Art that
 //! depends on puzzle progress (a moved anchor, a tampered flag) is not covered.
 //!
+//! Every staged frame is drawn again at 1920x1080 in a second window and the message band is
+//! checked there too (P43-03). Only the 1280x720 pixels are hashed. 640x360 cannot be checked:
+//! the tallest band starts at row 144 there while world y 0 draws at row 200 (Q-014).
+//!
 //! The hashes come from SDL's software rasterizer and are stable for one SDL build. If an SDL
 //! upgrade changes every hash at once with no change here, regenerate and say so in review.
 //!
@@ -36,6 +40,11 @@ const observatory_puzzle = @import("observatory_puzzle.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
+/// The second size every staged frame is drawn at and band-checked (P43-03). 640x360 is not
+/// included: the tallest band there starts at row 144 while world y 0 already sits at 200, so
+/// no proof layout can fit (see the guard test below and Q-014).
+const ALT_WIDTH: i32 = 1920;
+const ALT_HEIGHT: i32 = 1080;
 const GOLDEN_NAME = "render.txt";
 const ACTUAL_NAME = "render.actual.txt";
 
@@ -163,6 +172,16 @@ const Thumbs = struct {
     }
 };
 
+/// A window the same frames are drawn into at another size, with its own probes, so the band
+/// check covers more than the golden's 1280x720 without adding a golden (P43-03).
+const AltWindow = struct {
+    window: *bespoke.display.DisplayWindow,
+    width: i32,
+    height: i32,
+    text: bespoke.display.canvas.TextProbe = .{},
+    rect: bespoke.display.canvas.RectProbe = .{},
+};
+
 const Recorder = struct {
     allocator: std.mem.Allocator,
     window: *bespoke.display.DisplayWindow,
@@ -171,6 +190,8 @@ const Recorder = struct {
     text: bespoke.display.canvas.TextProbe = .{},
     /// Every rectangle and sprite the last frame drew, for the band check (P43-02).
     rect: bespoke.display.canvas.RectProbe = .{},
+    /// When set, each frame is drawn again at this window's size and band-checked there.
+    alt: ?*AltWindow = null,
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
@@ -216,13 +237,18 @@ const Recorder = struct {
     /// chrome, and full-window overlays are other layers and are skipped by kind. `verbose`
     /// names the offender; the canary test calls it quietly, so a passing run prints nothing.
     fn check_band(self: *Recorder, label: []const u8, verbose: bool) !void {
+        try self.check_band_at(label, HEIGHT, &self.text, &self.rect, verbose);
+    }
+
+    /// The same check at any window height, reading that render's own probes (P43-03).
+    fn check_band_at(self: *Recorder, label: []const u8, height: i32, text: *const bespoke.display.canvas.TextProbe, rect: *const bespoke.display.canvas.RectProbe, verbose: bool) !void {
         // The State drawer covers the stage, band included, and is not proof art.
         if (self.window.show_save_drawer) return;
         const renderer = bespoke.display.renderer;
-        const band_top = renderer.message_band_top(HEIGHT);
-        const band_bottom = renderer.message_band_bottom(HEIGHT);
+        const band_top = renderer.message_band_top(height);
+        const band_bottom = renderer.message_band_bottom(height);
 
-        if (self.rect.overflowed) {
+        if (rect.overflowed) {
             if (verbose) std.debug.print(
                 "\n'{s}': the frame drew more rectangles than the probe holds ({d})\n",
                 .{ label, bespoke.display.canvas.RectProbe.cap },
@@ -233,7 +259,7 @@ const Recorder = struct {
         // Every offender in the frame is named before the test stops, so one run lists all the
         // art a layout change puts in the band rather than the first one found.
         var art_reaches = false;
-        for (self.rect.draws[0..self.rect.count]) |d| {
+        for (rect.draws[0..rect.count]) |d| {
             if (d.kind != .prop and d.kind != .mark and d.kind != .actor) continue;
             if (d.y + d.h > band_top and d.y < band_bottom) {
                 if (verbose) std.debug.print(
@@ -245,7 +271,7 @@ const Recorder = struct {
         }
         if (art_reaches) return error.ArtInMessageBand;
 
-        for (self.text.draws[0..self.text.count]) |d| {
+        for (text.draws[0..text.count]) |d| {
             if (d.y < band_bottom and d.y + d.h > band_top) {
                 if (verbose) std.debug.print(
                     "\n'{s}': text \"{s}\" at ({d}, {d}) reaches the message band's rows {d} to {d}\n",
@@ -254,6 +280,30 @@ const Recorder = struct {
                 return error.TextInMessageBand;
             }
         }
+    }
+
+    /// Draws the same frame into the alt window, with the log cleared and its own probes lent,
+    /// then measures the band there. The primary window and its hash are untouched.
+    fn check_alt(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame, alt: *AltWindow, verbose: bool) !void {
+        alt.window.clear_log();
+        alt.text.count = 0;
+        alt.rect.count = 0;
+        alt.rect.overflowed = false;
+        const canvas: ?*bespoke.display.Canvas = if (alt.window.canvas) |*cv| cv else null;
+        if (canvas) |cv| {
+            cv.text_probe = &alt.text;
+            cv.rect_probe = &alt.rect;
+            cv.rect_kind = .prop;
+            cv.rect_name = "";
+        }
+        defer {
+            if (canvas) |cv| {
+                cv.text_probe = null;
+                cv.rect_probe = null;
+            }
+        }
+        alt.window.render_frame(frame, true);
+        try self.check_band_at(label, alt.height, &alt.text, &alt.rect, verbose);
     }
 
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
@@ -278,6 +328,7 @@ const Recorder = struct {
         }
         self.window.render_frame(frame, true);
         try self.check_band(label, true);
+        if (self.alt) |alt| try self.check_alt(label, frame, alt, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
@@ -499,7 +550,13 @@ fn record_inspector(rec: *Recorder) !void {
 }
 
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.array_list.Managed(u8) {
-    var rec = Recorder{ .allocator = allocator, .window = window, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
+    // The same frames are drawn and band-checked at 1920x1080 in a second window (P43-03); its
+    // pixels are thrown away, so no golden grows.
+    var big = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, ALT_WIDTH, ALT_HEIGHT);
+    defer big.deinit();
+    big.set_theme(&art.theme);
+    var alt = AltWindow{ .window = &big, .width = ALT_WIDTH, .height = ALT_HEIGHT };
+    var rec = Recorder{ .allocator = allocator, .window = window, .alt = &alt, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
@@ -619,6 +676,18 @@ test "D-124: the proof band check fails on a string drawn inside the message ban
     rec.rect.overflowed = true;
     try std.testing.expectError(error.RectProbeOverflow, rec.check_band("canary", false));
     rec.rect.overflowed = false;
+}
+
+test "P43-03: a proof stage cannot fit the message band at 640x360" {
+    const renderer = bespoke.display.renderer;
+    const band_top = renderer.message_band_top(360);
+    const origin = renderer.world_to_screen(0, 0, 640, 360);
+    // The band takes 138 of 360 rows, so its top is 144, while world y 0 already draws at 200
+    // and every proof mark and prop sits at or below y 0. The size sweep therefore starts at
+    // 1280x720 and only grows (Q-014). If a responsive stage lands, replace this with a real
+    // 640x360 check.
+    try std.testing.expectEqual(@as(i32, 144), band_top);
+    try std.testing.expect(origin.y > band_top);
 }
 
 test "P32-02a: scene headers are read from script text" {

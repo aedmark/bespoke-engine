@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 88 (2026-11-17)
+- **Work.** Merged and pushed Phase 41 to `main`. Set 0.2.0 as the next release target and built `dist/release/bespoke-browser-0.2.0.tar.gz`. The archive contains the stock Wasm engine, license, host notes, and checksums. The last published release and starter CI pin remain at 0.1.0. The Linux download shape awaits Q-012; the desktop binary links SDL2 and libc, and the local account cannot access the Docker daemon for a clean-machine test.
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build wasm version-check` passes and both CLIs report 0.2.0. Extracted archive checksums and both Wasm decks pass in Node. All 73 Python tests pass. [Phase 41 CI](https://github.com/aedmark/bespoke-engine/actions/runs/44242396198) starts on `main`.
+
 ### Session 87 (2026-11-17)
 - **Work.** Completed P41-02 and archived Phase 41. Added the narrow `host.ScriptSociety` API, plus the ten-scene Harbour reference game with parser input, native file saves, and a standalone browser page. Doorway marks are unique because compiler marks share a global namespace; room-scoped aliases keep `go forward` and `go back` consistent. Stripping Wasm debug sections brings the page inside the existing budget without changing ReleaseFast.
 - **Checks.** `zig build harbour` passes the native golden, changed-state save/restore, and all ten scenes through the browser parser. The 642,894-byte page passes the 1 MiB cap. Both real-game workloads agree across hosts and support D-117. All 699 Zig tests, Wasm smoke, generated-site freshness, and browser budgets pass. GitHub CI has not run these changes.
