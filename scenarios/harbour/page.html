@@ -87,7 +87,8 @@ start.addEventListener('click', () => {
   timer = setInterval(tick, 1000);
 }, { once: true });
 start.disabled = false;
-start.focus();
+// An embedded watch must not pull focus away from the containing page.
+if (window.top === window.self) start.focus();
 </script>
 </body>
 </html>

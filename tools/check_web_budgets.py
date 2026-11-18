@@ -7,9 +7,9 @@ from pathlib import Path
 import sys
 
 if __package__:
-    from .build_site import HTML_PATH, PROOF_PAGE_PATHS, ROOT
+    from .build_site import HARBOUR_PATH, HTML_PATH, LAB_PATH, PROOF_PAGE_PATHS, ROOT
 else:
-    from build_site import HTML_PATH, PROOF_PAGE_PATHS, ROOT
+    from build_site import HARBOUR_PATH, HTML_PATH, LAB_PATH, PROOF_PAGE_PATHS, ROOT
 
 
 def check_sizes(entries: list[tuple[Path, int]]) -> bool:
@@ -36,7 +36,8 @@ def main() -> int:
     budgets = json.loads(Path(__file__).with_name("web_budgets.json").read_text(encoding="utf-8"))
     modules = [ROOT / "zig-out" / "bin" / name for name in ("bespoke.wasm", "bespoke-proofs.wasm")]
     entries = [(p, budgets["wasmModuleBytes"]) for p in modules]
-    entries.append((HTML_PATH, budgets["showcasePageBytes"]))
+    entries.extend((p, budgets["showcasePageBytes"]) for p in (HTML_PATH, LAB_PATH))
+    entries.append((HARBOUR_PATH, budgets["standalonePageBytes"]))
     entries.extend((p, budgets["standalonePageBytes"]) for p in PROOF_PAGE_PATHS)
     if args.lantern_page is not None:
         entries.append((args.lantern_page, budgets["standalonePageBytes"]))

@@ -31,6 +31,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsdl2-dev patch
       - name: Build
         run: zig build
+      - name: Build and inspect Linux release candidates (P42-01)
+        run: |
+          zig build release-linux
+          python3 tools/package_linux_release.py
       - name: Test engine and proofs
         run: zig build test
       - name: Fuzz engine input boundaries
@@ -51,6 +55,7 @@ jobs:
         run: |
           zig build wasm wasm-proofs
           node tools/wasm_smoke.js
+          python3 tools/package_browser_release.py
       - name: Check browser size budgets (P41-01)
         run: python3 tools/check_web_budgets.py --lantern-page "$RUNNER_TEMP/lantern-watch/index.html"
       - name: Measure simulation on Linux and in Chrome (P41-01)
@@ -76,4 +81,6 @@ jobs:
       - name: Open a proof page in Chrome
         env:
           CHROME: google-chrome
-        run: node tools/browser_smoke.js
+        run: |
+          node tools/browser_smoke.js
+          node tools/browser_smoke.js --showcase-layout

@@ -79,12 +79,12 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 
 ## Quick Start
 
-The current release is [0.1.0](https://github.com/aedmark/bespoke-engine/releases/tag/v0.1.0). You need Zig 0.17.1 or later and the SDL2 development libraries; the browser build needs neither SDL2 nor anything else.
+The current release is [0.2.0](https://github.com/aedmark/bespoke-engine/releases/tag/v0.2.0), with a static Linux x86_64 CLI, an SDL2 desktop build, and the stock browser runtime. To build from source on Linux, use Zig 0.17.1 and the SDL2 development libraries.
 
 ```bash
 # Engine and proof tests, and the WebAssembly builds
 zig build test
-zig build wasm wasm-proofs
+zig build wasm wasm-proofs harbour
 python3 tools/build_site.py
 
 # Both public command-line tools report the package version
@@ -101,7 +101,7 @@ zig build run -- run scenarios/tavern_heist.bspk --headless
 cd lighthouse && zig build test && zig build run
 ```
 
-To make and publish a small browser game, follow the [first-game tutorial](docs/FIRST_GAME.md). The [authoring guide](docs/AUTHORING.md) goes deeper into scenes, dialogue, reactive puzzles, testing, and the host API. See the [editor setup](editors/vscode/README.md) for syntax highlighting.
+`bespoke init` includes the engine's MIT notice as `LICENSE-BeSpoke` and leaves the game's license to you. To make and publish a small browser game, follow the [first-game tutorial](docs/FIRST_GAME.md). The [authoring guide](docs/AUTHORING.md) goes deeper into scenes, dialogue, reactive puzzles, testing, and the host API. See the [editor setup](editors/vscode/README.md) for syntax highlighting.
 
 Run `zig build bench` to measure native and browser simulation throughput, or `zig build harbour` to verify, benchmark, and play the [ten-scene Harbour reference game](scenarios/harbour/README.md). See [benchmarks and size budgets](docs/BENCHMARKS.md) for requirements and interpretation.
 
@@ -148,7 +148,7 @@ zig build test-proofs                     # every proof's tests
 - Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
 - Every proof has been played by hand on Linux (2026-11-15). macOS and Windows builds have never run (the template's CI workflow is untested), and the [release hand-test](docs/runbooks/release-hand-test.md)'s stock-runner, offline-cache, and uploaded-site checks are still unrun.
-- The showcase site embeds `bespoke-proofs.wasm`, so its thirteen decks run their proofs' scripts in the real browser runtime from `file://`, with the engine's own audio; the manual is a static reference and no longer bundles the module (`D-047`). Run `zig build wasm-proofs` before `python3 tools/build_site.py`.
+- The showcase homepage features The Harbour. The Proof Lab and standalone proof pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-121). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
 ---
 

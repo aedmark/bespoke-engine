@@ -108,15 +108,30 @@ class GalleryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "demo.zig").write_text(ZIG_PROOF, encoding="utf-8")
-            block = build_site.render_gallery_block(entries, self.WORDS, root)
-        self.assertIn('data-play-deck="0"', block)
+            block = build_site.render_gallery_block(entries)
+            scripts = build_site.render_proof_scripts(entries, self.WORDS, root)
+        self.assertIn('href="proof-lab.html?deck=0"', block)
         self.assertIn("zig build run-proof -- --c-proof", block)
         self.assertIn("A &amp; B", block)
-        self.assertIn('data-view-script="c"', block)
+        self.assertIn('href="proof-lab.html?deck=0#script-viewer"', block)
         # The embedded JSON cannot close its own <script> element early, even from a raw title.
-        data = block[block.index('id="proof-scripts">') :]
+        data = scripts[scripts.index('id="proof-scripts">') :]
         self.assertEqual(1, data.count("</script>"))
         self.assertTrue(block.startswith("      " + build_site.GALLERY_START))
+
+    def test_homepage_mounts_only_harbour_and_preserves_standalone_routes(self):
+        homepage = build_site.HTML_PATH.read_text(encoding="utf-8")
+        self.assertEqual(['harbour.html'], re.findall(r'<iframe[^>]+src="([^"]+)"', homepage))
+        self.assertLess(homepage.index('id="harbour-demo"'), homepage.index('id="scenarios"'))
+        self.assertNotIn(build_site.START_MARKER, homepage)
+        self.assertNotIn('id="proof-scripts"', homepage)
+        self.assertEqual(homepage, build_site.render_site(homepage))
+        entries = build_site.gallery_entries()
+        self.assertCountEqual([e["page"] for e in entries if "page" in e], [p.name for p in build_site.PROOF_PAGE_PATHS])
+        for e in entries:
+            if "page" in e:
+                page = (build_site.HTML_PATH.parent / e["page"]).read_text(encoding="utf-8")
+                self.assertIn(f'data-deck="{e["deck"]}"', page)
 
     def test_the_real_gallery_covers_every_proof_once_with_valid_decks_and_flags(self):
         gallery = json.loads(build_site.GALLERY_PATH.read_text(encoding="utf-8"))["proofs"]

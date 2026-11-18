@@ -57,13 +57,19 @@ class ExportTests(unittest.TestCase):
         with self.assertRaises(deploy.DeployError):
             deploy.render_export(PAGE.replace("</head>", deploy.HEAD_MARKER + "</head>"), None)
 
+    def test_changed_harbour_invalidates_the_offline_homepage_cache(self):
+        _, first = deploy.render_export(PAGE, None, "first watch")
+        _, second = deploy.render_export(PAGE, None, "second watch")
+        self.assertIn("const PRECACHE = ['./', 'index.html', 'harbour.html'];", first)
+        self.assertNotEqual(first, second)
+
     def test_the_repository_page_is_current_and_exports(self):
         # Guards the real page: export refuses a stale one, as build_site.py --check does.
-        if not (ROOT / "zig-out" / "bin" / "bespoke-proofs.wasm").exists():
-            self.skipTest("run `zig build wasm-proofs` first")
+        if not all((ROOT / "zig-out" / artifact).exists() for artifact in ("bin/bespoke-proofs.wasm", "harbour/index.html")):
+            self.skipTest("run `zig build wasm-proofs harbour` first")
         with tempfile.TemporaryDirectory() as tmp:
             written = deploy.export(Path(tmp), None)
-        self.assertEqual(["index.html", "sw.js", "barbs.html", "pips.html", "beard.html", "donkey.html", "tides.html", "weathercock.html", "saltmarket.html"], [p.name for p in written])
+        self.assertEqual(["index.html", "sw.js", "harbour.html", "proof-lab.html", "barbs.html", "pips.html", "beard.html", "donkey.html", "tides.html", "weathercock.html", "saltmarket.html"], [p.name for p in written])
 
 
 class ExportOnlyTests(unittest.TestCase):

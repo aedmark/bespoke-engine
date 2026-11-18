@@ -9,7 +9,7 @@ const scaffold = @import("scaffold.zig");
 /// project's engine dependency (P29-01, D-063).
 const build_options = @import("build_options");
 
-const usage =
+const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts headless. Use the SDL2 desktop build for a window.\n\n") ++
     \\BeSpoke Engine - Standalone Simulation Spine & Narrative Game DSL
     \\
     \\Usage:
@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
     var stdout_writer = std.Io.File.stdout().writer(io, &.{});
     const stdout = &stdout_writer.interface;
 
-    var headless = false;
+    var headless = !build_options.desktop;
     var ticks: usize = 20;
     var subcommand: Subcommand = .help;
     var target_file: ?[]const u8 = null;
@@ -87,10 +87,11 @@ pub fn main(init: std.process.Init) !void {
             const name = target_file orelse return fail(stdout, "'bespoke init' requires a project name");
             // A relative --engine path is made absolute, because the project's build resolves
             // `.path` from its own directory, not from where init ran.
+            if (engine_root.len == 0) return fail(stdout, "pass --engine <path> to the matching BeSpoke source checkout");
             const root = std.Io.Dir.cwd().realPathFileAlloc(io, engine_root, allocator) catch
                 return fail(stdout, "the engine checkout was not found; pass --engine <path>");
             defer allocator.free(root);
-            scaffold.generate(allocator, io, std.Io.Dir.cwd(), name, root) catch |err| switch (err) {
+            scaffold.generate(allocator, io, std.Io.Dir.cwd(), name, root, @embedFile("engine_license")) catch |err| switch (err) {
                 error.InvalidProjectName => return fail(stdout, "a project name is a lowercase letter, then lowercase letters, digits, or underscores (at most 32)"),
                 error.ProjectExists => return fail(stdout, "that directory already exists; choose another name"),
                 else => return err,
@@ -99,7 +100,7 @@ pub fn main(init: std.process.Init) !void {
         },
         .run => {
             const path = target_file orelse return fail(stdout, "'bespoke run' requires a script or package path");
-            try bespoke.runner.run_file(allocator, io, path, .{
+            try bespoke.runner.run_file_with_presenter(build_options.desktop, allocator, io, path, .{
                 .ticks = ticks,
                 .is_headless = headless,
                 .verbose = true,

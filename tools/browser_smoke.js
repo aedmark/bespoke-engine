@@ -5,6 +5,7 @@
 // Run after `zig build wasm-proofs && python3 tools/build_site.py`:
 //   CHROME=/path/to/chrome node tools/browser_smoke.js
 // P40-02: --starter path/to/index.html serves and checks a packed starter game instead.
+// P42-03: --showcase-layout checks the showcase at a 375 CSS-pixel viewport.
 'use strict';
 
 const fs = require('fs');
@@ -74,7 +75,7 @@ class Cdp {
   }
 }
 
-async function smoke(pageUrl, starter) {
+async function smoke(pageUrl, starter, layout = false) {
   const child = spawn(chrome, [
     '--headless=new',
     '--no-sandbox',
@@ -110,6 +111,60 @@ async function smoke(pageUrl, starter) {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
       return result.result.value;
     };
+    if (layout) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 375, height: 820, deviceScaleFactor: 1, mobile: false,
+      });
+      const harbour = "document.querySelector('#harbour-demo').contentDocument";
+      await waitFor('Harbour Start button', () => evaluate(
+        `Boolean(${harbour}?.querySelector('#start:not(:disabled)'))`
+      ));
+      const sizes = await evaluate(`(() => {
+        const root = document.documentElement;
+        const frame = document.querySelector('#harbour-demo');
+        const inside = frame.contentDocument.documentElement;
+        return { viewport: innerWidth, visible: root.clientWidth, content: root.scrollWidth,
+          stageRight: frame.getBoundingClientRect().right, gameVisible: inside.clientWidth, gameContent: inside.scrollWidth };
+      })()`);
+      if (sizes.viewport !== 375 || sizes.content > sizes.visible || sizes.stageRight > sizes.visible ||
+          sizes.gameContent > sizes.gameVisible) {
+        throw new Error(`375 px showcase overflows: ${JSON.stringify(sizes)}`);
+      }
+      await delay(1100);
+      if (!await evaluate(`(() => {
+        const game = ${harbour};
+        return document.querySelectorAll('iframe').length === 1 && !document.querySelector('#sim-canvas') &&
+          game.querySelector('#command').disabled && game.querySelectorAll('#log p').length === 1 &&
+          document.activeElement !== document.querySelector('#harbour-demo');
+      })()`)) throw new Error('the only live demo must be idle and leave homepage focus alone before Start');
+      await evaluate(`${harbour}.querySelector('#start').click()`);
+      if (!await evaluate(`${harbour}.activeElement.id === 'command'`)) throw new Error('Start must focus the parser');
+      const command = text => evaluate(`(() => {
+        const game = ${harbour};
+        game.querySelector('#command').value = ${JSON.stringify(text)};
+        game.querySelector('#form').requestSubmit();
+      })()`);
+      await command('read tide board');
+      await command('go forward');
+      await waitFor('parser-only arrival at the Watch office', () => evaluate(`(() => {
+        const game = ${harbour};
+        const log = game.querySelector('#log').textContent;
+        return !game.querySelector('#map').open && log.includes('Ebb tide.') && log.includes('Watch office.');
+      })()`));
+      const route = await evaluate(`(() => {
+        const links = [...document.querySelectorAll('#scenarios .gallery-actions a')];
+        if (links.filter(a => a.textContent === 'Play standalone').length !== 7) throw Error('missing standalone proof links');
+        return links.find(a => a.getAttribute('href') === 'proof-lab.html?deck=12#script-viewer').href;
+      })()`);
+      console.log('ok  375 px showcase fits; The Harbour starts on request and plays with the map closed');
+      await cdp.send('Page.navigate', { url: route });
+      await waitFor('Observatory deck and script in the Proof Lab', () => evaluate(
+        "document.querySelector('#runtime-deck-index')?.textContent === '13 / 13' && Boolean(document.querySelector('#script-view-code')?.textContent.trim())"
+      ));
+      console.log('ok  gallery preserves standalone pages and opens the requested Proof Lab deck and script');
+      cdp.close();
+      return;
+    }
     if (starter) {
       const hasIntro = await evaluate("document.querySelector('#start-watch') !== null");
       if (hasIntro) {
@@ -263,14 +318,25 @@ async function main() {
     await smoke(pathToFileURL(path.join(root, 'site', 'pips.html')).href, false);
     return;
   }
+  if (args.length === 1 && args[0] === '--showcase-layout') {
+    const names = ['index.html', 'harbour.html', 'proof-lab.html'];
+    const pages = new Map(names.map(name => [`/site/${name}`, fs.readFileSync(path.join(root, 'site', name))]));
+    await servePages(pages, '/site/index.html', url => smoke(url, false, true));
+    return;
+  }
   if (args.length !== 2 || args[0] !== '--starter') {
-    throw new Error('usage: node tools/browser_smoke.js [--starter path/to/index.html]');
+    throw new Error('usage: node tools/browser_smoke.js [--starter path/to/index.html | --showcase-layout]');
   }
 
   const page = fs.readFileSync(args[1]);
   // Serve only the exact upload artifact, at a subdirectory path like a hosted game.
+  await servePages(new Map([['/game/', page]]), '/game/', url => smoke(url, true));
+}
+
+async function servePages(pages, entry, run) {
   const server = http.createServer((req, res) => {
-    if (req.method !== 'GET' || req.url !== '/game/') {
+    const page = req.method === 'GET' && pages.get(new URL(req.url, 'http://localhost').pathname);
+    if (!page) {
       res.writeHead(404).end();
       return;
     }
@@ -281,7 +347,7 @@ async function main() {
     server.listen(0, '127.0.0.1', resolve);
   });
   try {
-    await smoke(`http://127.0.0.1:${server.address().port}/game/`, true);
+    await run(`http://127.0.0.1:${server.address().port}${entry}`);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

@@ -1,5 +1,5 @@
 {
-  "_comment": "Showcase gallery (P30-03, D-068). tools/build_site.py renders one card per entry and extracts each script from `source`: a .bespoke file, or `file#CONSTANT` for a Zig multiline string in a proof. `deck` is the playground deck index in proofs/wasm_deck.zig, or null for a desktop-only proof. `flag` is the bespoke-proofs argument.",
+  "_comment": "Showcase gallery (D-068, D-121). One card per proof. `source` is a .bespoke file or a Zig file#CONSTANT; `deck` selects the Proof Lab deck; `page` names an available standalone page; `flag` is the bespoke-proofs argument.",
   "proofs": [
     {
       "id": "tavern",
@@ -18,6 +18,7 @@
       "blurb": "Tamsin wants the cherry-pit spitting prize at the Brackwater Harvest Fair. She blows a conch to send the judge looking for the herring fleet, moves the distance pegs, drinks a thick treacle cider, and waits for a sea breeze.",
       "source": "proofs/spitting_contest.zig#SPITTING_CONTEST_SCRIPT",
       "deck": 1,
+      "page": "pips.html",
       "flag": "spit"
     },
     {
@@ -27,6 +28,7 @@
       "blurb": "Tamsin must pass as Captain Rook to claim the last berth on the packet boat. Charcoal, sail tape, honey, his sailing papers, and some dog fur combine across three scenes into a convincing disguise.",
       "source": "proofs/borrowed_beard.zig#BORROWED_BEARD_SCRIPT",
       "deck": 2,
+      "page": "beard.html",
       "flag": "borrowed-beard"
     },
     {
@@ -45,6 +47,7 @@
       "blurb": "Cudgel the donkey shoves Tamsin down whenever she heads for the cellar hatch. While he ambles back to his post, haul the old anchor into his rope line, and the way down to the wreckers' cellar is clear. Each step is an arrival rule in the script.",
       "source": "proofs/lamp_point.zig#LAMP_POINT_SCRIPT",
       "deck": 4,
+      "page": "donkey.html",
       "flag": "lamp-point"
     },
     {
@@ -54,6 +57,7 @@
       "blurb": "Ossie in 1712, Nell in 1912, and Juno in 2112 pass items through Doctor Brine's Tide Wells. A change in the past is a fact the future reads, so each era's puzzles depend on the others.",
       "source": "proofs/three_tides.zig#THREE_TIDES_SCRIPT",
       "deck": 5,
+      "page": "tides.html",
       "flag": "three-tides"
     },
     {
@@ -72,6 +76,7 @@
       "blurb": "A fencing duel fought with barbs, taking turns: whoever wins a round attacks next. You learn a comeback by hearing an opponent use it against your barb. Mistress Vell throws her own versions of the barbs, which the same comebacks answer, and the barkeep tires of repeated questions. Rounds and moods are world facts, so a rewind replays them exactly.",
       "source": "proofs/sword_fighting.zig#SWORD_FIGHTING_SCRIPT",
       "deck": 7,
+      "page": "barbs.html",
       "flag": "sword"
     },
     {
@@ -81,6 +86,7 @@
       "blurb": "Pilot Ashe's lost logbook is behind Broker Quince's bills of lading. Cunning, Muscle, or Crew: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach's solution.",
       "source": "proofs/saltmarket.zig#SALTMARKET_SCRIPT",
       "deck": 8,
+      "page": "saltmarket.html",
       "flag": "saltmarket"
     },
     {
@@ -90,6 +96,7 @@
       "blurb": "A weathercock falls through Wren's attic roof 28 days early, and the world splits into a borrowed month with a countdown. Flood the Customs House, get a note to Hester Quill, and carry the weathercock into the fog whirl before time runs out, and the month merges back; miss it and the month tears away, so you rewind and try again.",
       "source": "proofs/weathercock.zig#WEATHERCOCK_SCRIPT",
       "deck": 9,
+      "page": "weathercock.html",
       "flag": "weathercock"
     },
     {

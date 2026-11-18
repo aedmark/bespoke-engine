@@ -4,6 +4,16 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-18
+
+- The showcase features Lantern Watch: The Harbour as its only live homepage game. Seven proofs link straight to their standalone pages; the Proof Lab keeps all thirteen decks, the timeline, and the script viewer.
+
+- The showcase comparison table wraps inside the page at phone widths, so it no longer creates sideways scrolling (P42-03).
+
+- `bespoke init` includes the BeSpoke MIT notice as `LICENSE-BeSpoke` and leaves the game's own license to its author (P42-02).
+
+- Ship three downloads: a static Linux x86_64 CLI, an SDL2 desktop build, and the stock browser runtime. The Linux archives include Night Watch. Both binaries can scaffold without Zig when given the matching engine source directory (P42-01).
+
 - [Lantern Watch: The Harbour](../scenarios/harbour/README.md) is a ten-scene reference game with a working society, typed commands, a native save/restore golden, and a browser build (P41-02).
 
 - `zig build bench` reports simulation throughput on Linux and in Chrome. CI checks raw size budgets for the browser modules, showcase, standalone proofs, and Lantern Watch (P41-01).

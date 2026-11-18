@@ -1455,6 +1455,32 @@ Format:
 
 **Consequences.** No new persistent structures or write overhead. These are headless simulation measurements, not guarantees about rendering cost or low-end hardware. The benchmark stays available to quantify future changes.
 
+## D-118 Target 0.2.0 Before 1.0 (2026-11-17, status: accepted)
+
+**Decision.** Prepare P42-01 artifacts for 0.2.0. Keep 1.0 and its stability milestone deferred; building candidates does not authorize a version tag or publication.
+
+**Consequences.** The build reports the candidate version. The last published release and starter CI pin stay at 0.1.0 until separately advanced. File-format versions and existing reader tests are unchanged.
+
+## D-119 Split the Linux Downloads (2026-11-18, status: accepted)
+
+**Context.** The existing desktop runner links the system SDL2 and glibc. P42-01 needs a Linux download that can play a script and scaffold a project without installing Zig.
+
+**Decision.** Ship two Linux x86_64 downloads. The static CLI compiles only the batch runner and needs no SDL2 or system libc. The desktop archive uses SDL2 and glibc for interactive play and keeps the same CLI commands. Both are built for baseline x86_64. Both downloads require an explicit `--engine` for `init`; a portable binary cannot name the author's checkout in advance (D-063). The default source build keeps its checkout default.
+
+**Consequences.** The archives identify their runtime prerequisites and include the Night Watch sample, license, and checksums. The packager checks version and linkage before writing them. Zig and SDL2 development headers remain authoring prerequisites for native generated projects. Local artifact generation does not publish a release (D-118).
+
+## D-120 Leave the Game License to Its Author (2026-11-18, status: accepted)
+
+**Decision.** `bespoke init` does not grant a project-wide license. It copies the engine's root `LICENSE` verbatim into `LICENSE-BeSpoke` for the engine and the copied starter files. The generated README explains the distinction, asks authors to retain the notice when they distribute copies or substantial portions of BeSpoke, and describes agentic-use disclosure as voluntary (Q-009).
+
+**Consequences.** Authors can license their own contributions separately. The CLI embeds the canonical notice at build time, so all scaffold variants can write it without reading the engine checkout at run time. The engine license and the native and browser build layouts are unchanged.
+
+## D-121 Feature The Harbour on the Showcase (2026-11-18, status: accepted)
+
+**Decision.** Feature the text-first Lantern Watch: The Harbour as the homepage's only live game. Use the same verified Harbour page standalone and in the homepage frame. The player starts the clock, and embedding the page does not take focus from the homepage. Link the gallery's seven standalone pages directly. Keep all thirteen decks and their script viewer on the separate Proof Lab page, with gallery links selecting the relevant deck.
+
+**Consequences.** The homepage does not load the proof runtime. The local export includes the Harbour page and Proof Lab. Cache the home and Harbour together for offline return visits; a change to either updates the cache. The engine and proof rules are unchanged.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
@@ -1470,3 +1496,4 @@ Questions requiring maintainer or stakeholder input. This is their one home: HAN
 - **Q-009** ~~The license for 1.0 (raised 2026-11-15).~~ Answered 2026-11-15 by the maintainer: the license is the MIT license, with a preamble that encourages disclosing agentic use. The grant and the warranty disclaimer are MIT's wording. It is the license used across the maintainer's software; the preamble's "BoneAmanita" was a name left from another project and now reads "The BeSpoke Engine". AI disclosure cannot be enforced, so the notice condition is now MIT's (the copyright notice and the permission notice), and keeping the acknowledgment and disclosing agentic use are strongly encouraged in a separate section. The copyright line reads "Copyright © 2026 OopisMcGoopis.com" (maintainer, 2026-11-15).
 - **Q-010** ~~Where releases live (raised 2026-11-15).~~ Answered 2026-11-16: GitHub Releases on the existing repository hosts version tags, notes, and artifacts; the showcase stays a hand upload, D-105.
 - **Q-011** ~~Fiber limits and older saves (P39-02, raised 2026-11-17).~~ Answered 2026-11-17. Reclaim halted fibers at the spawn limit and preserve older save restore under D-106 (D-109).
+- **Q-012** ~~Linux downloads for 0.2.0 (P42-01, raised 2026-11-17).~~ Answered 2026-11-18: ship a static CLI plus a separate SDL2 desktop build (D-119).

@@ -3,7 +3,7 @@
 Item IDs are permanent: `P<phase>-<nn>`. Never renumber; append new items at the end of their phase.
 `[ ]` open · `[~]` in progress · `[x]` done · `[-]` dropped.
 
-Phases 1 through 41 are complete and archived in [the November 2026 roadmap archive](docs/archive/ROADMAP_2026_11.md). The maintainer closed the first roadmap on 2026-11-15. The remaining phase prepares BeSpoke 1.0 for other developers.
+Phases 1 through 41 are complete and archived in [the November 2026 roadmap archive](docs/archive/ROADMAP_2026_11.md). The maintainer closed the first roadmap on 2026-11-15. Phase 42 covers BeSpoke 0.2.0; 1.0 remains deferred (D-118).
 
 What the most recent phases taught:
 - Phase 34 (loose ends): deferrals recorded inside finished items were real work, and each browser deck added to close one exposed a host gap (path routines started at load, walks that ignored locks, a bar the browser could not type into); the release pass itself was accepted on the maintainer's own play, with the macOS, Windows, and uploaded-site checks still unrun.
@@ -18,11 +18,11 @@ What the most recent phases taught:
 
 Goal (maintainer, 2026-11-15): BeSpoke ships as an engine and language that other developers install to make their own games, supported on Linux desktop and in the browser. macOS and Windows are not 1.0 targets. Order: the toolchain moves first, so the surface that 1.0 freezes is written once against the Zig that users will have; input hardening comes before the freeze. Q-009 (license) and Q-010 (release hosting) are answered.
 
-## Phase 42: Release 1.0
+## Phase 42: Release Preparation
 
-Goal: tag 1.0 with binaries, docs, and a full hand-test behind it.
+Goal: prepare 0.2.0 with binaries, docs, and a full hand-test. Tagging or publishing requires separate approval. The 1.0 milestone remains deferred.
 
-- [ ] P42-01 Release artifacts: static Linux binaries for `bespoke` and the browser runtime package, attached to the GitHub Release (D-105). Acceptance: a clean machine runs the downloaded binary and `bespoke init` without a Zig install for playing, and with one for building.
-- [ ] P42-02 License housekeeping (Q-009 answered: MIT, encouraging disclosure of agentic use): the license now carries its copyright line and MIT's notice condition, with disclosure of agentic use strongly encouraged (done 2026-11-15); what remains is a license for projects that `bespoke init` generates. Acceptance: `bespoke init` writes a license file or its README says why it does not.
-- [ ] P42-03 The release hand-test runbook run in full on Linux and in Firefox and Chromium, every row filled in HANDOFF, and the uploaded site checked. Acceptance: no row reads "not run".
-- [ ] P42-04 Tag `v1.0.0`. Acceptance: Phases 37 to 41 are done or their open items are moved past 1.0 by the maintainer, and the tag's notes list what 1.0 promises (P38).
+- [x] P42-01 Prepare 0.2.0 release artifacts: a static Linux x86_64 CLI, a separate SDL2 desktop download, and the browser runtime package (D-119). The extracted static download runs source and compiled scripts and scaffolds a project in a clean Linux filesystem without Zig or SDL2; the generated project builds and passes its tests with Zig and SDL2 development libraries installed (2026-11-18). Attach the artifacts to GitHub Releases only when publication is approved (D-105, D-118).
+- [x] P42-02 License housekeeping: the engine retains its MIT license with voluntary agentic-use disclosure (Q-009). `bespoke init` writes the verbatim engine notice to `LICENSE-BeSpoke`; the generated README explains why no project-wide license is assigned and how to redistribute the notice (D-120).
+- [x] P42-03 Release hand-test on Linux, Firefox, and Chromium. HANDOFF records the baseline, local browser checks, 375 px showcase fix, and maintainer sign-off on desktop play, listening, and the uploaded site (2026-11-18), with remaining coverage limits.
+- [ ] P42-04 Tag `v1.0.0` when the maintainer approves that milestone. Acceptance: Phases 37 to 41 are done or their open items are moved past 1.0 by the maintainer, and the tag's notes list what 1.0 promises (P38). Deferred beyond 0.2.0 (D-118).

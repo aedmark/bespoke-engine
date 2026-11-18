@@ -2,7 +2,7 @@ const std = @import("std");
 
 /// Executable version. `tools/check_version.py` keeps this in lockstep with `build.zig.zon` and
 /// both CLI outputs (P37-03).
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
@@ -71,7 +71,10 @@ pub fn build(b: *std.Build) void {
     const build_opts = b.addOptions();
     build_opts.addOption([]const u8, "engine_root", b.root.joinString(b.allocator, ".") catch @panic("OOM"));
     build_opts.addOption([]const u8, "version", VERSION);
+    build_opts.addOption(bool, "desktop", true);
     exe.root_module.addOptions("build_options", build_opts);
+    const engine_license = b.path("LICENSE");
+    exe.root_module.addAnonymousImport("engine_license", .{ .root_source_file = engine_license });
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -98,6 +101,52 @@ pub fn build(b: *std.Build) void {
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the engine CLI (bespoke run/compile/check)");
     run_step.dependOn(&run_cmd.step);
+
+    // Release downloads must not encode the builder's checkout as their engine dependency.
+    // Keep the normal CLI artifact and its Zig build consumers unchanged.
+    if (target.result.os.tag == .linux and target.result.cpu.arch == .x86_64 and target.result.abi == .gnu) {
+        const release_step = b.step("release-linux", "Build the Linux x86_64 static CLI and SDL2 desktop downloads");
+        var desktop_query = target.query;
+        desktop_query.cpu_model = .baseline;
+        const desktop_target = b.resolveTargetQuery(desktop_query);
+        const release_sdl = b.addTranslateC(.{
+            .root_source_file = b.path("src/display/sdl.h"),
+            .target = desktop_target,
+            .optimize = .ReleaseSafe,
+        }).createModule();
+        for ([_]bool{ false, true }) |desktop| {
+            const release_target = if (desktop) desktop_target else b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .cpu_model = .baseline,
+                .os_tag = .linux,
+                .abi = .musl,
+            });
+            const release_opts = b.addOptions();
+            release_opts.addOption([]const u8, "engine_root", "");
+            release_opts.addOption([]const u8, "version", VERSION);
+            release_opts.addOption(bool, "desktop", desktop);
+            const release_exe = b.addExecutable(.{
+                .name = "bespoke",
+                .use_llvm = true,
+                .linkage = if (desktop) .dynamic else .static,
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path("src/main.zig"),
+                    .target = release_target,
+                    .optimize = .ReleaseSafe,
+                    .strip = true,
+                    .link_libc = desktop,
+                }),
+            });
+            release_exe.root_module.addOptions("build_options", release_opts);
+            release_exe.root_module.addAnonymousImport("engine_license", .{ .root_source_file = engine_license });
+            if (desktop) {
+                release_exe.root_module.addImport("sdl", release_sdl);
+                release_exe.root_module.linkSystemLibrary("SDL2", .{});
+            }
+            const dir: std.Build.InstallDir = .{ .custom = if (desktop) "release/linux-desktop" else "release/linux-static" };
+            release_step.dependOn(&b.addInstallArtifact(release_exe, .{ .dest_dir = .{ .override = dir } }).step);
+        }
+    }
 
     // --- Proofs of concept (D-031) ---
     // The engine is exported as the `bespoke` module. Proofs import it by name and live outside
@@ -173,6 +222,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe_unit_tests.root_module.addOptions("build_options", build_opts);
+    exe_unit_tests.root_module.addAnonymousImport("engine_license", .{ .root_source_file = engine_license });
     exe_unit_tests.root_module.link_libc = true;
     exe_unit_tests.root_module.linkSystemLibrary("SDL2", .{});
 
@@ -275,7 +325,11 @@ pub fn build(b: *std.Build) void {
     init_template.addArgs(&.{ "init", "template_check", "--engine", b.root.joinString(b.allocator, ".") catch @panic("OOM") });
     init_template.setCwd(.{ .cwd_relative = template_root });
     init_template.step.dependOn(&clear_template.step);
-    var previous: *std.Build.Step = &init_template.step;
+    const check_template_notice = b.addSystemCommand(&.{"cmp"});
+    check_template_notice.addFileArg2(engine_license, .{});
+    check_template_notice.addFileArg2(.{ .cwd_relative = b.pathJoin(&.{ starter_dir, "LICENSE-BeSpoke" }) }, .{});
+    check_template_notice.step.dependOn(&init_template.step);
+    var previous: *std.Build.Step = &check_template_notice.step;
     const template_steps = [_][]const []const u8{
         &.{ "build", "test" },
         &.{ "build", "-Dbundle", "-Doptimize=ReleaseSafe" },

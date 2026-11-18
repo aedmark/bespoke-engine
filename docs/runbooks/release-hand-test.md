@@ -1,6 +1,6 @@
 # Release Hand-Test Pass
 
-The checks only a person can make before a release: play every proof, listen, drive the browser builds, run the template's CI on macOS and Windows, and publish the showcase. Automated suites are in [TESTING.md](../TESTING.md); this runbook starts where they stop. Roadmap item: P34-07.
+Release verification on Linux, in Firefox and Chromium, and on the uploaded showcase. Automated suites are in [TESTING.md](../TESTING.md); headless checks supplement the play and listening pass. Roadmap items: P34-07 and P42-03.
 
 Work through the sections in order. Each step says what to do and what you should see or hear. Tick the box, or write the failure in the results table at the end. A failure does not stop the pass: note it and move on, unless it blocks the steps after it.
 
@@ -8,12 +8,12 @@ Time: about four hours for everything, or about ninety minutes for sections 1, 2
 
 ## 0. Prerequisites
 
-- Linux x86_64 with Zig 0.13.0, Python 3.9+, Node.js 18+, and SDL2 (`libsdl2-dev` or your distribution's equivalent).
-- Speakers or headphones. Set the volume low before the first sound check: the synthesizer has never been heard through real hardware.
+- Linux x86_64 with Zig 0.17.1, Python 3, Node.js 24, and SDL2 (`libsdl2-dev` or your distribution's equivalent).
+- Speakers or headphones. Set the volume low before the first sound check.
 - Firefox and a Chromium-based browser (Chrome, Chromium, or Edge). The desktop app's browser pane refuses service workers, so use a real browser for section 7.
 - For section 9: a GitHub account and a new empty repository you are willing to push a sample game to.
 - For section 8: access to your Neocities account, to upload `dist/site/` by hand.
-- A clean `main`: `git status` shows nothing, and `git log -1` is the commit you are testing. Write that commit in the results table.
+- For final sign-off, use a clean checkout and write the candidate commit in the results table. For a preliminary pass, record the branch, base commit, and whether the tree has local changes.
 
 ## 1. Automated Baseline
 
@@ -22,7 +22,7 @@ Run these first, so that a hand-test failure cannot be a build that was already 
 ```bash
 python3 tools/check_docs.py
 zig build test
-zig build wasm wasm-proofs && node tools/wasm_smoke.js
+zig build wasm wasm-proofs harbour && node tools/wasm_smoke.js
 python3 tools/build_site.py --check
 python3 -m unittest discover -s tests
 zig build test-template
@@ -147,13 +147,15 @@ zig build web && node web/smoke.js
 
 ### 6.1 The manual
 
-- [ ] Open `docs/manual.html` from `file://` in Firefox and in Chromium. Search finds an entry; section navigation works; the embedded simulator runs.
+- [ ] Open `docs/manual.html` from `file://` in Firefox and in Chromium. Search finds an entry and section navigation works. The simulator lives on the showcase (D-047).
 
 ### 6.2 The showcase page
 
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
-- [ ] The playground loads with no console errors (open the developer tools).
+- [ ] The homepage has one live game, The Harbour. It leaves the clock stopped before Start. With the map closed, start the watch, enter `read tide board`, then `go forward`; the transcript reports the tide and the Watch office. Open the game on its own page as well.
+- [ ] Gallery links open the seven standalone pages or the requested deck and script in `proof-lab.html`.
+- [ ] The Proof Lab loads with no console errors (open the developer tools). Run the remaining deck checks in the lab.
 - [ ] Number keys 1 to 9 and the tabs switch decks; all thirteen decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar).
 - [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
 - [ ] Saltmarket: choosing a way in with 1, 2, or 3 locks the others.
@@ -163,7 +165,7 @@ Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.se
 - [ ] I opens the inspector over the stage, paused; its keys match the desktop's; closing resumes.
 - [ ] AUDIO on: music and effects play; AUDIO off: silence. Switching decks with audio on does not stack two soundtracks.
 - [ ] The script viewer follows the active deck and shows that proof's real script.
-- [ ] Every gallery card's Play opens its deck; desktop-only cards (Castle Fire Escape, Larkspur Observatory) say so.
+- [ ] Every gallery card's Play opens its deck, including Castle Fire Escape and Larkspur Observatory in the Proof Lab.
 - [ ] The three diagrams render in light and dark mode.
 - [ ] **Phone width:** in responsive mode at 375 px, nothing scrolls sideways; the canvas fits; tabs remain usable. Try a real phone if you have one, including touch on the canvas.
 - [ ] Leave a deck running for ten minutes; the page stays responsive and memory in the task manager does not climb without limit.
@@ -176,21 +178,21 @@ python3 -m http.server -d dist/site 8000
 ```
 
 - [ ] Open `http://localhost:8000/` in Chromium. Developer tools, Application, Service Workers: `sw.js` is activated.
-- [ ] Stop the server, reload: the page still loads from the cache and the playground runs.
+- [ ] Stop the server, reload: the homepage and Harbour still load from the cache. Start the watch and play by parser.
 - [ ] Restart the server, change nothing, export again, reload: no second cache appears. After a rebuild that changes the page, the old cache is replaced.
 - [ ] View the page source: the OpenGraph and Twitter tags name your site URL.
 
 ## 8. Neocities Release
 
-Upload `dist/site/index.html`, `dist/site/sw.js`, and `dist/site/barbs.html` from section 7 to your site by hand (D-074, D-086).
+The maintainer uploads the complete export from section 7 by hand, including all standalone proof pages, and places the manual at `docs/manual.html` (D-074, D-086, D-094).
 
-- [ ] Open the live site in a private window. The playground runs, audio plays after a click, and the service worker activates.
+- [ ] Open the live site in a private window. The Harbour plays, the service worker activates, and audio plays after a click in the Proof Lab.
 - [ ] The Manual link in the page header opens the manual. Upload `docs/manual.html` to `docs/manual.html` on the site: the export does not include it (Q-007).
 - [ ] Share the URL in a link preview (a chat app, or an OpenGraph checker): the title and description show. The export adds no preview image, so none is expected.
 
 ## 9. macOS and Windows
 
-The engine has no CI of its own; the starter template's GitHub Actions workflow covers Linux, macOS, Windows, and the web build.
+The engine has Linux CI. The generated starter project also defines separate GitHub Actions jobs for Linux, macOS, Windows, and the web build. These checks cover the starter workflow, not extra target platforms for the engine release.
 
 1. Generate a project with `bespoke init` (section 5), `git init` it, commit, and push it to your new GitHub repository.
 2. Open the repository's Actions tab and wait for the `build` workflow.
@@ -199,7 +201,7 @@ The engine has no CI of its own; the starter template's GitHub Actions workflow 
 - [ ] The web job passes and its smoke check runs.
 - [ ] If you have a Mac or a Windows machine: clone the engine, run `zig build test` and one proof in a window, and note the result. If not, write "CI only" in the results table.
 
-The workflow fetches the engine from `main`, so a push to the engine repository changes what the next run tests. Pin `BESPOKE_ENGINE_REF` to the tested commit if you need a repeatable run.
+The generated workflow fetches the published tag in `BESPOKE_ENGINE_REF` (D-110). Record the actual pin when interpreting CI results. It only tests a candidate if that candidate is the engine revision the jobs check out.
 
 ## 10. Recording Results
 
@@ -226,4 +228,4 @@ For each failure:
 - Anything larger becomes a roadmap item with its origin (`found during P34-07`) and an acceptance line.
 - A failure you cannot reproduce goes in HANDOFF under Corrections, with what you saw and where.
 
-When every row passes or has an item, mark P34-07 done in ROADMAP.
+For P42-03, record every row, including partial checks and blockers. Keep the item open until its acceptance criteria are met.

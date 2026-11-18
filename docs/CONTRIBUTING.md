@@ -42,6 +42,10 @@ For each release, update the semantic version in `build.zig.zon` and `build.zig`
 
 When advancing the starter project's CI pin, select a published tag and verify a generated project against that tag. Update the workflow template and its generation test together (P39-03, D-110).
 
+For the browser runtime download (P42-01), run `zig build wasm`, then `python3 tools/package_browser_release.py`. The archive in `dist/release/` gets its version from `build.zig.zon` and includes the stock engine module, license, host instructions, and file checksums. It excludes the proof decks and does not upload anything. Extract it before publication and run `sha256sum -c SHA256SUMS` from the extracted directory.
+
+On Linux x86_64 with Zig and the SDL2 development libraries, run `zig build release-linux`, then `python3 tools/package_linux_release.py` (requires GNU `readelf`). This creates the static CLI and SDL2 desktop archives in `dist/release/` without uploading them. Use `python3 tools/check_linux_release.py` with bubblewrap to test the extracted downloads. Each archive lists its runtime dependencies; both portable binaries need `bespoke init <name> --engine <matching source dir>` when scaffolding.
+
 ## Compatibility and Migrations
 
 Follow the versioning and reader guarantees in [COMPATIBILITY.md](COMPATIBILITY.md) for bytecode packages and saves.

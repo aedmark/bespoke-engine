@@ -2,6 +2,30 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 83 (2026-11-17)
+- **Work.** The bell's seized pivot is a script fact. The oilcan frees it at the landing, or the Keeper takes the weight off it once the player shows him the logbook and he has arrived. The safe bell ending uses the maintainer's exact closing line. First visits and `look` give location-specific prose. The replacement upload is `dist/lantern-watch-repair/index.html`.
+- **Checks.** Seven native tests, the Wasm parser routes and soundtrack checks, and a Chrome playthrough from the stuck bell to the ship's answer pass. The bell tests confirm the rope fails while seized and that the Keeper can help without the oilcan. Documentation checks pass. No upload was performed.
+
+### Session 82 (2026-11-17)
+- **Work.** Lantern Watch now focuses a text command field at Start and retains narration and parser replies in the transcript. The interactive stage is optional. Both `go to watch room` and `go watch room` arrive through the same engine parser and trigger script narration. The replacement upload is `dist/lantern-watch-text/index.html`.
+- **Checks.** Six native tests, both Wasm paths, and soundtrack checks pass. Chrome verifies Start, both movement forms and narration, parser feedback, map rendering after reveal, and audio startup. Documentation checks pass. No upload was performed.
+
+### Session 81 (2026-11-17)
+- **Work.** Lantern Watch opens with a narrative intro and does not initialize the simulation until Start. The ambient knock remains a recurring fact but no longer prints every eight ticks. The player can type `listen`; an entry still gets a one-time notification. Replacement upload: `dist/lantern-watch-intro/index.html`.
+- **Checks.** All five native tests, both keyboard-only Wasm routes, and the soundtrack checks pass. Chrome verifies that the clock stays stopped during the intro, Enter starts it, and the export renders and starts audio. The browser test supplies Enter's character event so Chrome activates the focused button. Documentation checks pass. No upload was performed.
+
+### Session 80 (2026-11-17)
+- **Work.** Retuned Lantern Watch after maintainer feedback, using Brackwater Barbs as a reference for phrasing and space. Both original scores use low triangle and soft pad voices. The page has a low-pass filter and a volume slider that defaults to 30%. The engine, proofs, and starter tutorial were left unchanged. Replacement upload: `dist/lantern-watch-mix/index.html`.
+- **Checks.** Five native tests and both keyboard-only routes pass. Measured raw PCM peaks drop from 7,702/8,016 to 3,241/3,198 in the same playback sequences before page gain; the Wasm check covers peak, signal, and sample edges. Chrome starts the AudioWorklet on the exported page. Documentation checks pass. No listening or public upload was performed.
+
+### Session 79 (2026-11-17)
+- **Work.** Built Lantern Watch as a separate storm-watch script on the stock generated host. The ship responds to the bell. Knocking continues in any weather; entry requires both rain and the exposed beacon. The handwritten Keeper refusal is included. The new upload is `dist/lantern-watch-story/index.html`.
+- **Checks.** `bespoke check`, five native route tests, the Wasm keyboard-only bell and shutter routes, and Chrome rendering of the packed file pass. The initial parser test found that `bell` also named the landing; an exact script frame resolves the conflict without changing the engine. Documentation checks pass. No live upload or GitHub CI run was performed.
+
+### Session 78 (2026-11-17)
+- **Work.** Completed P40-03 and archived Phase 40. The TextMate grammar and declarative VS Code extension support `.bespoke` highlighting. CI verifies generated output and tests each keyword spelling (D-113).
+- **Checks.** The grammar drift check and all four editor tests pass. The TextMate tokenizer with Oniguruma highlights all 65 lexer spellings and correctly scopes comments, multiline strings, dice, and hyphenated identifiers. VSIX installation was not run. The known showcase Wasm mismatch remains unchanged. GitHub CI has not run this change.
+
 ### Session 77 (2026-11-17)
 - **Work.** Tuned Lantern Watch after maintainer feedback. The tutorial patches its generated page to use the 1 Hz engine default (D-028) and gives both scores sixteen-bar phrases. The shared starter and showcase are unchanged. The replacement upload is `dist/lantern-watch-v2/index.html`; the first export is retained.
 - **Checks.** The tutorial passes with its native tests, WebAssembly smoke check, and local Chrome render. Each score part has 64 beats. The exported page retains the 1,000 ms tick interval. Documentation checks pass. Live hosting and listening were not checked.

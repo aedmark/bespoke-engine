@@ -185,15 +185,39 @@ pub fn run_file(
     config: RunConfig,
     stdout: anytype,
 ) !void {
+    try run_file_with_presenter(true, allocator, io, path, config, stdout);
+}
+
+/// The static CLI instantiates only the headless path, so it needs no SDL import or linkage.
+pub fn run_file_with_presenter(
+    comptime desktop: bool,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    config: RunConfig,
+    stdout: anytype,
+) !void {
     const max_size: usize = 32 * 1024 * 1024;
     const data = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size));
     defer allocator.free(data);
-    try run_bytes(allocator, io, path, data, config, stdout);
+    try run_bytes_with_presenter(desktop, allocator, io, path, data, config, stdout);
 }
 
 /// Executes a script or `.bspk` package already in memory; `name` labels messages. A game that
 /// embeds its compiled package runs through this (P29-03, D-066).
 pub fn run_bytes(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    name: []const u8,
+    data: []const u8,
+    config: RunConfig,
+    stdout: anytype,
+) !void {
+    try run_bytes_with_presenter(true, allocator, io, name, data, config, stdout);
+}
+
+fn run_bytes_with_presenter(
+    comptime desktop: bool,
     allocator: std.mem.Allocator,
     io: std.Io,
     name: []const u8,
@@ -262,7 +286,7 @@ pub fn run_bytes(
         history_snapshots.deinit();
     }
 
-    if (config.is_headless) {
+    if (!desktop or config.is_headless) {
         try stdout.print("\n>>> STARTING SIMULATION CLOCK (Headless Mode, {d} ticks) <<<\n", .{config.ticks});
 
         // Capture initial frame 0

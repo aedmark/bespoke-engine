@@ -494,7 +494,8 @@
       }
       statusEl.textContent = 'bespoke-proofs.wasm ready. Thirteen proof decks embedded.';
       log('BOOT', 'Instantiated the embedded proof runtime.', 'cue');
-      loadDeck(0);
+      const requestedDeck = Number(new URLSearchParams(location.search).get('deck'));
+      loadDeck(Number.isInteger(requestedDeck) && requestedDeck >= 0 && requestedDeck < DECK_COUNT ? requestedDeck : 0);
       lastTickTime = performance.now();
       requestAnimationFrame(loop);
     } catch (error) {

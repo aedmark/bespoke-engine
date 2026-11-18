@@ -26,6 +26,10 @@ zig build run
 | `src/web.zig`, `web/` | The browser version and its smoke check |
 | `.github/workflows/build.yml` | CI: tests and release builds on Linux, macOS, and Windows, and the browser build |
 | `build.zig`, `build.zig.zon` | The build; the engine is a relative path dependency |
+| `LICENSE-BeSpoke` | The BeSpoke MIT notice for the engine and copied starter files |
+
+No project-wide license is generated. Choose a license for your own contributions and keep
+`LICENSE-BeSpoke` with distributions that include the engine or substantial portions of it (D-120).
 
 The loop while writing is: edit the script, `bespoke check` it for syntax and compiler validation, run it headless to read what happens, then add a test for anything the story depends on.
 

@@ -89,7 +89,7 @@ pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const 
 /// overwrites an author's work. `engine_root` is the absolute path of the engine checkout; the
 /// project records it relative to itself, because Zig accepts only relative `.path`
 /// dependencies. Moving the project or the engine therefore means editing `build.zig.zon`.
-pub fn generate(allocator: std.mem.Allocator, io: std.Io, parent: std.Io.Dir, name: []const u8, engine_root: []const u8) !void {
+pub fn generate(allocator: std.mem.Allocator, io: std.Io, parent: std.Io.Dir, name: []const u8, engine_root: []const u8, engine_license: []const u8) !void {
     try validate_name(name);
     if (engine_root.len == 0 or !std.fs.path.isAbsolute(engine_root)) return error.InvalidEngineRoot;
     if (parent.access(io, name, .{})) |_| {
@@ -121,6 +121,8 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io, parent: std.Io.Dir, na
         defer allocator.free(text);
         try project.writeFile(io, .{ .sub_path = file.path, .data = text, .flags = .{ .exclusive = true } });
     }
+    // Copy the engine's notice byte for byte; it is not a game license or a template.
+    try project.writeFile(io, .{ .sub_path = "LICENSE-BeSpoke", .data = engine_license, .flags = .{ .exclusive = true } });
 }
 
 const testing = std.testing;
@@ -157,7 +159,8 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     try tmp.dir.createDir(testing.io, "engine", .default_dir);
     const engine = try tmp.dir.realPathFileAlloc(testing.io, "engine", testing.allocator);
     defer testing.allocator.free(engine);
-    try generate(testing.allocator, testing.io, tmp.dir, "tide", engine);
+    const notice = "Engine notice, kept verbatim: {{name}}\n";
+    try generate(testing.allocator, testing.io, tmp.dir, "tide", engine, notice);
     for (FILES) |file| {
         var path_buf: [64]u8 = undefined;
         const text = try tmp.dir.readFileAlloc(testing.io, try std.fmt.bufPrint(&path_buf, "tide/{s}", .{file.path}), testing.allocator, .limited(1 << 20));
@@ -177,9 +180,18 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     const checksum = try std.fmt.bufPrint(&expect_buf, ".fingerprint = 0x{x:0>8}", .{std.hash.Crc32.hash("tide")});
     try testing.expect(std.mem.indexOf(u8, zon, checksum) != null);
 
-    try testing.expectError(error.ProjectExists, generate(testing.allocator, testing.io, tmp.dir, "tide", engine));
+    const copied_notice = try tmp.dir.readFileAlloc(testing.io, "tide/LICENSE-BeSpoke", testing.allocator, .limited(1 << 16));
+    defer testing.allocator.free(copied_notice);
+    try testing.expectEqualStrings(notice, copied_notice);
+    try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "tide/LICENSE", .{}));
+    const readme = try tmp.dir.readFileAlloc(testing.io, "tide/README.md", testing.allocator, .limited(1 << 16));
+    defer testing.allocator.free(readme);
+    try testing.expect(std.mem.indexOf(u8, readme, "[LICENSE-BeSpoke](LICENSE-BeSpoke)") != null);
+    try testing.expect(std.mem.indexOf(u8, readme, "There is no project-wide license") != null);
+
+    try testing.expectError(error.ProjectExists, generate(testing.allocator, testing.io, tmp.dir, "tide", engine, notice));
     try tmp.dir.createDir(testing.io, "taken", .default_dir);
-    try testing.expectError(error.ProjectExists, generate(testing.allocator, testing.io, tmp.dir, "taken", engine));
-    try testing.expectError(error.InvalidProjectName, generate(testing.allocator, testing.io, tmp.dir, "../escape", engine));
-    try testing.expectError(error.InvalidEngineRoot, generate(testing.allocator, testing.io, tmp.dir, "fresh", "relative/engine"));
+    try testing.expectError(error.ProjectExists, generate(testing.allocator, testing.io, tmp.dir, "taken", engine, notice));
+    try testing.expectError(error.InvalidProjectName, generate(testing.allocator, testing.io, tmp.dir, "../escape", engine, notice));
+    try testing.expectError(error.InvalidEngineRoot, generate(testing.allocator, testing.io, tmp.dir, "fresh", "relative/engine", notice));
 }
