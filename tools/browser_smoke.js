@@ -4,16 +4,17 @@
 //
 // Run after `zig build wasm-proofs && python3 tools/build_site.py`:
 //   CHROME=/path/to/chrome node tools/browser_smoke.js
+// P40-02: --starter path/to/index.html serves and checks a packed starter game instead.
 'use strict';
 
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 
 const root = path.resolve(__dirname, '..');
-const pageUrl = pathToFileURL(path.join(root, 'site', 'pips.html')).href;
 const chrome = process.env.CHROME || 'google-chrome';
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-chrome-'));
 let stderr = '';
@@ -73,7 +74,7 @@ class Cdp {
   }
 }
 
-async function main() {
+async function smoke(pageUrl, starter) {
   const child = spawn(chrome, [
     '--headless=new',
     '--no-sandbox',
@@ -94,7 +95,7 @@ async function main() {
       if (!fs.existsSync(portFile)) return null;
       return Number(fs.readFileSync(portFile, 'utf8').split('\n', 1)[0]) || null;
     });
-    const target = await waitFor('proof page target', async () => {
+    const target = await waitFor('game page target', async () => {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`);
       const targets = await response.json();
       return targets.find((item) => item.type === 'page' && item.url === pageUrl);
@@ -109,6 +110,98 @@ async function main() {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
       return result.result.value;
     };
+    if (starter) {
+      const hasIntro = await evaluate("document.querySelector('#start-watch') !== null");
+      if (hasIntro) {
+        await waitFor('Start watch button', () =>
+          evaluate("!document.querySelector('#start-watch').disabled")
+        );
+        const opening = await evaluate("document.querySelector('#transcript #watch-intro').textContent.trim()");
+        if (!opening) throw new Error('the opening narration is missing from the transcript');
+        // Wait longer than one simulation interval. The stage must still have no tick.
+        await delay(1250);
+        if (!await evaluate("!document.querySelector('#watch-stage').hidden && document.querySelector('#command').matches(':disabled') && document.querySelector('#stage').dataset.tick === undefined")) {
+          throw new Error('the gameplay window should be visible but idle before Start');
+        }
+        if (!await evaluate("document.activeElement === document.querySelector('#start-watch')")) {
+          throw new Error('the intro did not focus the Start button');
+        }
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+        const initial = await waitFor('watch to start from keyboard', () =>
+          evaluate("document.querySelector('#start-prompt').hidden && !document.querySelector('#command').matches(':disabled') && { tick: Number(document.querySelector('#stage').dataset.tick) }")
+        );
+        await waitFor('watch clock to advance', () =>
+          evaluate("Number(document.querySelector('#stage').dataset.tick) > " + initial.tick)
+        );
+        if (!await evaluate("document.querySelector('#transcript #watch-intro').textContent.trim() === " + JSON.stringify(opening))) {
+          throw new Error('Start removed the opening narration');
+        }
+        console.log('ok  opening prose stays in the transcript; clock waits for Start');
+      }
+      if (await evaluate("document.querySelector('#command-form') !== null")) {
+        if (!await evaluate("document.querySelector('#watch-map').hidden && document.activeElement.id === 'command'")) {
+          throw new Error('the command field should be focused and the map hidden at start');
+        }
+        const typeCommand = async (line) => {
+          await evaluate("document.querySelector('#command').value = " + JSON.stringify(line));
+          await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+          await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+        };
+        const storyCount = (needle, count) => evaluate(
+          "[...document.querySelectorAll('#transcript .story')].filter(p => p.textContent.includes(" +
+          JSON.stringify(needle) + ")).length === " + count
+        );
+        await typeCommand('Go to watch room');
+        await waitFor('first watch room arrival', () => storyCount('You enter the watch room.', 1));
+        await typeCommand('go gallery');
+        await waitFor('gallery arrival', () => storyCount('You reach the gallery.', 1));
+        await typeCommand('go watch room');
+        await waitFor('second watch room arrival', () => storyCount('You enter the watch room.', 2));
+        await typeCommand('xyzzy');
+        await waitFor('parser failure in the transcript', () => storyCount("I don't know the word", 1));
+        if (!await evaluate("document.querySelector('#watch-map').hidden && document.querySelectorAll('#transcript .command').length === 4")) {
+          throw new Error('typed movement should retain the transcript without opening the map');
+        }
+        await typeCommand('take oilcan');
+        await waitFor('oilcan pickup', () => storyCount('You take the oilcan.', 1));
+        await typeCommand('go bell landing');
+        await waitFor('bell landing arrival', () => storyCount('You reach the bell landing.', 1));
+        await typeCommand('ring bell');
+        await waitFor('jammed bell', () => storyCount("the bell doesn't move.", 1));
+        await typeCommand('oil bell');
+        await waitFor('bell repair', () => storyCount('the pivot gives.', 1));
+        await typeCommand('ring bell');
+        await waitFor('Keeper closes the watch', () => storyCount('We all sleep soundly tonight.', 1));
+        await evaluate("document.querySelector('#map-toggle').click()");
+        console.log('ok  text-only bell repair, both go forms, and optional map');
+      }
+      // Read pixels back from the actual canvas. A fetched page or a successful
+      // WebAssembly instantiation alone would miss a broken renderer bootstrap.
+      const colours = await waitFor('starter game frame', async () => {
+        const count = await evaluate(`(() => {
+          const canvas = document.querySelector('#stage');
+          if (!canvas) return 0;
+          const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          const colours = new Set();
+          for (let i = 0; i < pixels.length; i += 4 * 101) {
+            if (pixels[i + 3]) colours.add((pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2]);
+          }
+          return colours.size;
+        })()`);
+        return count > 3 ? count : null;
+      });
+      console.log(`ok  packed starter page over HTTP: ${colours} canvas colours`);
+      if (await evaluate("document.querySelector('#volume') !== null")) {
+        await evaluate("document.querySelector('#sound').click()");
+        await waitFor('starter audio graph', () =>
+          evaluate("document.querySelector('#sound').textContent === 'Sound: on'")
+        );
+        console.log('ok  packed starter page: AudioWorklet and volume controls ready');
+      }
+      cdp.close();
+      return;
+    }
     const state = () => evaluate('window.bespokePageState && window.bespokePageState()');
     const initial = await waitFor('embedded engine', async () => {
       const value = await state();
@@ -161,6 +254,36 @@ async function main() {
       // completed engine check merely because it held its disposable profile a little longer.
       console.warn(`WARN could not remove Chrome profile ${profile}: ${error.message}`);
     }
+  }
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.length === 0) {
+    await smoke(pathToFileURL(path.join(root, 'site', 'pips.html')).href, false);
+    return;
+  }
+  if (args.length !== 2 || args[0] !== '--starter') {
+    throw new Error('usage: node tools/browser_smoke.js [--starter path/to/index.html]');
+  }
+
+  const page = fs.readFileSync(args[1]);
+  // Serve only the exact upload artifact, at a subdirectory path like a hosted game.
+  const server = http.createServer((req, res) => {
+    if (req.method !== 'GET' || req.url !== '/game/') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(page);
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  try {
+    await smoke(`http://127.0.0.1:${server.address().port}/game/`, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 }
 

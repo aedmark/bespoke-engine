@@ -101,7 +101,7 @@ zig build run -- run scenarios/tavern_heist.bspk --headless
 cd lighthouse && zig build test && zig build run
 ```
 
-To write your own story, follow the [authoring guide](docs/AUTHORING.md): scenes, dialogue, reactive puzzles, testing, and the host API.
+To make and publish a small browser game, follow the [first-game tutorial](docs/FIRST_GAME.md). The [authoring guide](docs/AUTHORING.md) goes deeper into scenes, dialogue, reactive puzzles, testing, and the host API. See the [editor setup](editors/vscode/README.md) for syntax highlighting.
 
 The repository has three layers:
 

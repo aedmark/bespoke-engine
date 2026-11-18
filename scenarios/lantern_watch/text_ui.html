@@ -1,0 +1,14 @@
+<h1>Lantern Watch</h1>
+<div id="transcript" role="log" aria-label="Story transcript">
+  <!-- opening prose -->
+  <div id="turns"></div>
+</div>
+<p id="start-prompt"><button id="start-watch" type="button" disabled>Start watch</button></p>
+<fieldset id="watch-controls" aria-label="Watch controls" disabled>
+<form id="command-form">
+  <label for="command">Command</label>
+  <input id="command" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="160">
+  <button type="submit">Send</button>
+</form>
+<p id="command-help">Try <kbd>look</kbd>, <kbd>listen</kbd>, or <kbd>go watch room</kbd>. Reload for a fresh watch.</p>
+<button id="map-toggle" type="button" aria-expanded="false" aria-controls="watch-map">Show map</button>

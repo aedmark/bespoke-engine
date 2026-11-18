@@ -4,6 +4,14 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- [Lantern Watch](../scenarios/lantern_watch/README.md) adds a text-first storm watch with opening prose in the gameplay transcript and an optional interactive map. Explore the tower, free the stuck bell yourself or enlist the Keeper, or open the shutter and see what the beacon calls in. Both `go to watch room` and `go watch room` work, with narration on arrival. The first-game tutorial stays unchanged.
+
+- The [BeSpoke Language extension](../editors/vscode/README.md) highlights `.bespoke` files in VS Code. Its TextMate grammar is generated from the lexer, and CI checks every keyword spelling, including aliases (P40-03).
+
+- The [first-game tutorial](FIRST_GAME.md) takes Lantern Watch from `bespoke init` to a single HTML file ready for manual static hosting. Linux CI runs the tutorial and checks the upload file in Chrome (P40-02).
+
+- `bespoke check` shows the first compiler error with its file, source line, and caret, plus a spelling suggestion when there is one clear match. Source compilation and execution use the same diagnostic format (P40-01).
+
 - Generated projects pin their CI engine checkout to the published `v0.1.0` release. Report suspected vulnerabilities privately through the [GitHub Security Advisories page](https://github.com/aedmark/bespoke-engine/security/advisories) (P39-03).
 
 - Resource exhaustion now gives explicit errors at the compiler and fiber spawn boundaries (P39-02, D-109). At the spawn cap, the VM can reclaim halted fibers. Older saves still restore under the existing file limits.

@@ -100,6 +100,12 @@ pub const Token = struct {
     slice: []const u8,
     line: u32,
     col: u32,
+
+    // Multiline strings retain their ending line for the parser's layout checks,
+    // but a diagnostic at the token starts at the opening quote.
+    pub fn opening_line(self: Token) u32 {
+        return if (self.tag == .string_literal) self.line - @as(u32, @intCast(std.mem.count(u8, self.slice, "\n"))) else self.line;
+    }
 };
 
 pub const Lexer = struct {
@@ -110,17 +116,15 @@ pub const Lexer = struct {
     indent_stack: std.array_list.Managed(u32),
     pending_dedents: u32,
     at_line_start: bool,
+    string_start: ?Token = null,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) Lexer {
-        var stack = std.array_list.Managed(u32).init(allocator);
-        stack.append(0) catch {}; // base level
-
         return Lexer{
             .source = source,
             .pos = 0,
             .line = 1,
             .col = 1,
-            .indent_stack = stack,
+            .indent_stack = std.array_list.Managed(u32).init(allocator),
             .pending_dedents = 0,
             .at_line_start = true,
         };
@@ -152,6 +156,7 @@ pub const Lexer = struct {
     const mut_self = Lexer;
 
     pub fn next(self: *Lexer) !Token {
+        if (self.indent_stack.items.len == 0) try self.indent_stack.append(0);
         if (self.pending_dedents > 0) {
             self.pending_dedents -= 1;
             return Token{
@@ -247,6 +252,7 @@ pub const Lexer = struct {
 
             const start_pos = self.pos;
             const start_col = self.col;
+            const start_line = self.line;
             const c = self.advance_char().?;
 
             if (c == '\n') {
@@ -324,6 +330,7 @@ pub const Lexer = struct {
                             };
                         }
                     }
+                    self.string_start = .{ .tag = .string_literal, .slice = "", .line = start_line, .col = start_col };
                     return error.UnterminatedString;
                 },
                 else => {},
@@ -387,8 +394,8 @@ pub const Lexer = struct {
     }
 };
 
-fn resolve_keyword(ident: []const u8) TokenTag {
-    const map = std.StaticStringMap(TokenTag).initComptime(.{
+pub fn keyword_map() std.StaticStringMap(TokenTag) {
+    return std.StaticStringMap(TokenTag).initComptime(.{
         .{ "entity", .kw_entity },
         .{ "relation", .kw_relation },
         .{ "property", .kw_property },
@@ -455,8 +462,10 @@ fn resolve_keyword(ident: []const u8) TokenTag {
         .{ "score", .kw_score },
         .{ "play", .kw_play },
     });
+}
 
-    return map.get(ident) orelse .identifier;
+fn resolve_keyword(ident: []const u8) TokenTag {
+    return keyword_map().get(ident) orelse .identifier;
 }
 
 test "P4-01: lexer tokenizes vertical slice script" {

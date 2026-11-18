@@ -8,6 +8,8 @@ const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
+const diagnostic_mod = @import("diagnostic.zig");
+const Suggestions = diagnostic_mod.Suggestions;
 pub const Note = draft_mod.Note;
 pub const Notes = draft_mod.Notes;
 
@@ -436,11 +438,7 @@ pub const AST = struct {
     }
 };
 
-pub const Diagnostic = struct {
-    line: u32,
-    column: u32,
-    message: []const u8,
-};
+pub const Diagnostic = diagnostic_mod.Diagnostic;
 
 /// Source position of an arrival rule's mark, kept so undeclared marks report where they were used.
 const ArrivalRef = struct {
@@ -462,6 +460,7 @@ pub const Parser = struct {
     current: Token,
     allocator: std.mem.Allocator,
     diagnostic: ?Diagnostic = null,
+    suggestion: ?[]const u8 = null,
     diag_buf: [256]u8 = undefined,
     weave_refs: std.array_list.Managed(WeaveRef),
     arrival_refs: std.array_list.Managed(ArrivalRef),
@@ -483,13 +482,21 @@ pub const Parser = struct {
     }
 
     pub fn set_error(self: *Parser, comptime fmt: []const u8, args: anytype) error{UnexpectedToken} {
+        return self.error_at(self.current, fmt, args);
+    }
+
+    fn error_at(self: *Parser, tok: Token, comptime fmt: []const u8, args: anytype) error{UnexpectedToken} {
+        self.record_error(tok, fmt, args);
+        return error.UnexpectedToken;
+    }
+
+    fn record_error(self: *Parser, tok: Token, comptime fmt: []const u8, args: anytype) void {
         const msg = std.fmt.bufPrint(&self.diag_buf, fmt, args) catch "syntax error";
         self.diagnostic = .{
-            .line = self.current.line,
-            .column = self.current.col,
+            .line = tok.opening_line(),
+            .column = tok.col,
             .message = msg,
         };
-        return error.UnexpectedToken;
     }
 
     pub fn get_diagnostic(self: *const Parser) ?Diagnostic {
@@ -506,15 +513,53 @@ pub const Parser = struct {
 
     fn expect(self: *Parser, tag: TokenTag) !Token {
         if (self.current.tag != tag) {
-            return self.set_error("expected {s}, found {s} ('{s}')", .{
-                @tagName(tag),
-                @tagName(self.current.tag),
-                self.current.slice,
-            });
+            if (self.current.tag == .identifier) self.suggest_keyword(self.current.slice, &.{tag});
+            if (self.current.slice.len == 0) {
+                return self.set_error("expected {s}, found {s}", .{ token_label(tag), token_label(self.current.tag) });
+            }
+            return self.set_error("expected {s}, found '{s}'", .{ token_label(tag), self.current.slice });
         }
         const tok = self.current;
         try self.advance();
         return tok;
+    }
+
+    fn token_label(tag: TokenTag) []const u8 {
+        const name = @tagName(tag);
+        if (std.mem.startsWith(u8, name, "kw_")) {
+            return switch (tag) {
+                inline else => |t| if (comptime std.mem.startsWith(u8, @tagName(t), "kw_"))
+                    "'" ++ @tagName(t)[3..] ++ "'"
+                else
+                    unreachable,
+            };
+        }
+        return switch (tag) {
+            .lparen => "'('",
+            .rparen => "')'",
+            .lbracket => "'['",
+            .rbracket => "']'",
+            .comma => "','",
+            .colon => "':'",
+            .gte => "'>='",
+            .eof => "end of file",
+            .indent => "an indented block",
+            .dedent => "end of the indented block",
+            .identifier => "a name",
+            .number => "a number",
+            .dice => "a dice expression such as 2d6",
+            .string_literal => "a quoted string",
+            else => name,
+        };
+    }
+
+    fn suggest_keyword(self: *Parser, input: []const u8, allowed: []const TokenTag) void {
+        const keywords = lexer_mod.keyword_map();
+        var hints = Suggestions{};
+        for (keywords.keys(), keywords.values()) |candidate, tag| {
+            if (std.mem.indexOfScalar(TokenTag, allowed, tag) != null) hints.consider(input, candidate);
+        }
+        self.suggestion = hints.result();
     }
 
     fn parse_name(self: *Parser) ![]const u8 {
@@ -786,7 +831,7 @@ pub const Parser = struct {
                             try self.advance();
                             const mark_tok = self.current;
                             const mark_name = try self.parse_name();
-                            try self.arrival_refs.append(.{ .mark = mark_name, .line = mark_tok.line, .column = mark_tok.col });
+                            try self.arrival_refs.append(.{ .mark = mark_name, .line = mark_tok.opening_line(), .column = mark_tok.col });
                             edge = .on_arrive;
                             var pat_args = try self.allocator.alloc([]const u8, 2);
                             pat_args[0] = first_name;
@@ -924,6 +969,7 @@ pub const Parser = struct {
                     try ast.initial_stmts.append(stmt);
                 },
                 .identifier => {
+                    const start = self.current;
                     const ident = try self.parse_name();
                     if (self.current.tag == .kw_with) {
                         _ = try self.advance();
@@ -945,7 +991,8 @@ pub const Parser = struct {
                         const stmt = try self.finish_state_stmt(ident);
                         try ast.initial_stmts.append(stmt);
                     } else {
-                        return self.set_error("unexpected top-level text '{s}'", .{ident});
+                        self.suggest_keyword(start.slice, &.{ .kw_entity, .kw_relation, .kw_property, .kw_remember, .kw_transition, .kw_choice, .kw_draft, .kw_society, .kw_duel, .kw_degradation, .kw_path, .kw_command, .kw_score, .kw_play, .kw_stop, .kw_alias, .kw_agenda, .kw_grid, .kw_routine, .kw_on, .kw_verb, .kw_when, .kw_scene, .kw_cast, .kw_props, .kw_marks, .kw_now });
+                        return self.error_at(start, "unexpected top-level text '{s}'", .{ident});
                     }
                 },
                 // Scene headings use visual indentation for cast/props/marks, but those lines are
@@ -963,6 +1010,12 @@ pub const Parser = struct {
         // Every woven draft must be declared somewhere in the program (P22-01, D-029).
         for (self.weave_refs.items) |ref| {
             if (!draft_declared(ast.drafts.items, ref.draft)) {
+                var hints = Suggestions{};
+                for (ast.drafts.items) |decl| {
+                    hints.consider(ref.draft, decl.name);
+                    if (decl.reverse_name) |name| hints.consider(ref.draft, name);
+                }
+                self.suggestion = hints.result();
                 const msg = std.fmt.bufPrint(&self.diag_buf, "weave of undeclared draft '{s}'", .{ref.draft}) catch "weave of undeclared draft";
                 self.diagnostic = .{ .line = ref.line, .column = ref.column, .message = msg };
                 return error.UnexpectedToken;
@@ -975,6 +1028,9 @@ pub const Parser = struct {
                 if (std.mem.eql(u8, decl.name, ref.score)) break true;
             } else false;
             if (!declared) {
+                var hints = Suggestions{};
+                for (ast.scores.items) |decl| hints.consider(ref.score, decl.name);
+                self.suggestion = hints.result();
                 const msg = std.fmt.bufPrint(&self.diag_buf, "play of undeclared score '{s}'", .{ref.score}) catch "play of undeclared score";
                 self.diagnostic = .{ .line = ref.line, .column = ref.column, .message = msg };
                 return error.UnexpectedToken;
@@ -984,6 +1040,12 @@ pub const Parser = struct {
         // An arrival rule must name a declared mark: an unknown one could never fire (D-036).
         for (self.arrival_refs.items) |ref| {
             if (!mark_declared(&ast, ref.mark)) {
+                var hints = Suggestions{};
+                for (ast.marks.items) |mark| hints.consider(ref.mark, mark);
+                for (ast.scene_defs.items) |scene| {
+                    for (scene.marks.items) |mark| hints.consider(ref.mark, mark);
+                }
+                self.suggestion = hints.result();
                 const msg = std.fmt.bufPrint(&self.diag_buf, "arrival at undeclared mark '{s}'", .{ref.mark}) catch "arrival at undeclared mark";
                 self.diagnostic = .{ .line = ref.line, .column = ref.column, .message = msg };
                 return error.UnexpectedToken;
@@ -1018,6 +1080,9 @@ pub const Parser = struct {
 
     fn take_word(self: *Parser, expected: []const u8) !void {
         if (!std.mem.eql(u8, self.current.slice, expected)) {
+            var hints = Suggestions{};
+            hints.consider(self.current.slice, expected);
+            self.suggestion = hints.result();
             return self.set_error("expected '{s}', found '{s}'", .{ expected, self.current.slice });
         }
         try self.advance();
@@ -1025,24 +1090,25 @@ pub const Parser = struct {
 
     fn take_u32(self: *Parser) !u32 {
         const tok = try self.expect(.number);
-        return std.fmt.parseInt(u32, tok.slice, 10) catch self.set_error("invalid integer '{s}'", .{tok.slice});
+        return std.fmt.parseInt(u32, tok.slice, 10) catch self.error_at(tok, "invalid integer '{s}'", .{tok.slice});
     }
 
     fn take_u64(self: *Parser) !u64 {
         const tok = try self.expect(.number);
-        return std.fmt.parseInt(u64, tok.slice, 10) catch self.set_error("invalid integer '{s}'", .{tok.slice});
+        return std.fmt.parseInt(u64, tok.slice, 10) catch self.error_at(tok, "invalid integer '{s}'", .{tok.slice});
     }
 
     fn take_i32(self: *Parser) !i32 {
         const tok = try self.expect(.number);
-        return std.fmt.parseInt(i32, tok.slice, 10) catch self.set_error("invalid integer '{s}'", .{tok.slice});
+        return std.fmt.parseInt(i32, tok.slice, 10) catch self.error_at(tok, "invalid integer '{s}'", .{tok.slice});
     }
 
     fn take_bool(self: *Parser) !bool {
+        const tok = self.current;
         const value = try self.take_atom();
         if (std.mem.eql(u8, value, "true")) return true;
         if (std.mem.eql(u8, value, "false")) return false;
-        return self.set_error("expected true or false, found '{s}'", .{value});
+        return self.error_at(tok, "expected true or false, found '{s}'", .{value});
     }
 
     fn take_optional_name(self: *Parser) !?[]const u8 {
@@ -1327,7 +1393,7 @@ pub const Parser = struct {
             error.InvalidScore => {
                 const msg = std.fmt.bufPrint(&self.diag_buf, "score '{s}' {s}: {s}", .{ name, mml.PART_NAMES[index], diag.message }) catch "invalid MML";
                 self.diagnostic = .{
-                    .line = tok.line + diag.line - 1,
+                    .line = tok.opening_line() + diag.line - 1,
                     .column = if (diag.line == 1) tok.col + diag.column else diag.column,
                     .message = msg,
                 };
@@ -1344,7 +1410,7 @@ pub const Parser = struct {
         _ = try self.expect(.kw_score);
         if (!is_play) return .{ .play_score = null };
         const tok = try self.expect(.identifier);
-        try self.score_refs.append(.{ .score = tok.slice, .line = tok.line, .column = tok.col });
+        try self.score_refs.append(.{ .score = tok.slice, .line = tok.opening_line(), .column = tok.col });
         return .{ .play_score = tok.slice };
     }
 
@@ -1723,16 +1789,17 @@ pub const Parser = struct {
                 .kw_wait => {
                     try self.advance();
                     if (self.current.tag == .number) {
-                        const num_str = self.current.slice;
+                        const num_tok = self.current;
                         try self.advance();
                         _ = try self.expect(.kw_ticks);
-                        const ticks = try std.fmt.parseInt(u32, num_str, 10);
+                        const ticks = try self.parse_number(u32, num_tok, "tick count", num_tok.slice);
                         try list.append(.{ .wait_ticks = ticks });
                     } else if (self.current.tag == .kw_until) {
                         try self.advance();
                         const expr = try self.parse_expr();
                         try list.append(.{ .wait_until = expr });
                     } else {
+                        self.suggest_keyword(self.current.slice, &.{.kw_until});
                         return self.set_error("expected a tick count or 'until' after 'wait', found '{s}'", .{self.current.slice});
                     }
                 },
@@ -1829,17 +1896,19 @@ pub const Parser = struct {
                     const draft_name = try self.parse_name();
                     _ = try self.expect(.kw_on);
                     const target = try self.parse_name();
-                    try self.weave_refs.append(.{ .draft = draft_name, .line = draft_tok.line, .column = draft_tok.col });
+                    try self.weave_refs.append(.{ .draft = draft_name, .line = draft_tok.opening_line(), .column = draft_tok.col });
                     try list.append(.{ .weave = .{ .draft = draft_name, .target = target } });
                 },
                 .identifier => {
+                    const start = self.current;
                     const subj = try self.parse_name();
                     if (self.current.tag == .kw_is or self.current.tag == .kw_are) {
                         try self.advance();
                         const stmt = try self.finish_state_stmt(subj);
                         try list.append(stmt);
                     } else {
-                        return self.set_error("unexpected statement '{s}'", .{subj});
+                        self.suggest_keyword(start.slice, &.{ .kw_remember, .kw_forget, .kw_now, .kw_transition, .kw_choice, .kw_walk, .kw_face, .kw_wait, .kw_loop, .kw_if, .kw_interrupt, .kw_say, .kw_animate, .kw_play, .kw_stop, .kw_resume, .kw_done, .kw_weave });
+                        return self.error_at(start, "unexpected statement '{s}'", .{subj});
                     }
                 },
                 else => {
@@ -1907,7 +1976,7 @@ pub const Parser = struct {
             try self.advance();
             const num_tok = try self.expect(.number);
             _ = try self.expect(.kw_ticks);
-            ttl = try std.fmt.parseInt(u32, num_tok.slice, 10);
+            ttl = try self.parse_number(u32, num_tok, "tick count", num_tok.slice);
         }
         return Stmt{
             .remember = .{
@@ -1945,6 +2014,13 @@ pub const Parser = struct {
         return self.finish_fact_pattern(rel_name);
     }
 
+    fn parse_number(self: *Parser, comptime T: type, tok: Token, what: []const u8, bytes: []const u8) !T {
+        return std.fmt.parseInt(T, bytes, 10) catch |err| {
+            self.record_error(tok, "invalid {s}: '{s}'", .{ what, tok.slice });
+            return err;
+        };
+    }
+
     fn parse_expr(self: *Parser) !Expr {
         if (self.current.tag == .kw_roll) {
             try self.advance();
@@ -1953,12 +2029,12 @@ pub const Parser = struct {
             var it = std.mem.splitScalar(u8, dice_tok.slice, 'd');
             const count_str = it.next() orelse "1";
             const sides_str = it.next() orelse "6";
-            const count = try std.fmt.parseInt(u8, count_str, 10);
-            const sides = try std.fmt.parseInt(u8, sides_str, 10);
+            const count = try self.parse_number(u8, dice_tok, "dice expression", count_str);
+            const sides = try self.parse_number(u8, dice_tok, "dice expression", sides_str);
 
             _ = try self.expect(.gte);
             const num_tok = try self.expect(.number);
-            const thresh = try std.fmt.parseInt(u32, num_tok.slice, 10);
+            const thresh = try self.parse_number(u32, num_tok, "roll threshold", num_tok.slice);
             return Expr{ .roll_gte = .{ .count = count, .sides = sides, .threshold = thresh } };
         } else if (self.current.tag == .kw_not) {
             try self.advance();
@@ -2358,7 +2434,7 @@ test "P15-03: parser captures accurate line and column diagnostics on syntax err
     try testing.expect(diag != null);
     try testing.expectEqual(@as(u32, 1), diag.?.line);
     try testing.expectEqual(@as(u32, 16), diag.?.column);
-    try testing.expect(std.mem.indexOf(u8, diag.?.message, "expected lparen") != null);
+    try testing.expect(std.mem.indexOf(u8, diag.?.message, "expected '('") != null);
 }
 
 fn expect_draft_error(source: []const u8, needle: []const u8, line: u32) !void {

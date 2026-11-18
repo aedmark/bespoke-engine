@@ -1,4 +1,5 @@
 const std = @import("std");
+const Suggestions = @import("diagnostic.zig").Suggestions;
 const ListWriter = @import("../list_writer.zig").ListWriter;
 const parser_mod = @import("parser.zig");
 const lexer_mod = @import("lexer.zig");
@@ -220,11 +221,11 @@ pub const CompiledProgram = struct {
             const b = target_b.?;
             const Form = struct { parts: [3][]const u8, swap: bool };
             const forms = [_]Form{
-                .{ .parts = .{ who, a, b }, .swap = false },                                  .{ .parts = .{ who, b, a }, .swap = true },
-                .{ .parts = .{ who, a, CUE_WILDCARD }, .swap = false },                       .{ .parts = .{ who, CUE_WILDCARD, b }, .swap = false },
-                .{ .parts = .{ who, b, CUE_WILDCARD }, .swap = true },                        .{ .parts = .{ who, CUE_WILDCARD, a }, .swap = true },
-                .{ .parts = .{ who, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },            .{ .parts = .{ CUE_WILDCARD, a, b }, .swap = false },
-                .{ .parts = .{ CUE_WILDCARD, b, a }, .swap = true },                          .{ .parts = .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },
+                .{ .parts = .{ who, a, b }, .swap = false },                       .{ .parts = .{ who, b, a }, .swap = true },
+                .{ .parts = .{ who, a, CUE_WILDCARD }, .swap = false },            .{ .parts = .{ who, CUE_WILDCARD, b }, .swap = false },
+                .{ .parts = .{ who, b, CUE_WILDCARD }, .swap = true },             .{ .parts = .{ who, CUE_WILDCARD, a }, .swap = true },
+                .{ .parts = .{ who, CUE_WILDCARD, CUE_WILDCARD }, .swap = false }, .{ .parts = .{ CUE_WILDCARD, a, b }, .swap = false },
+                .{ .parts = .{ CUE_WILDCARD, b, a }, .swap = true },               .{ .parts = .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },
             };
             for (forms) |f| {
                 if (self.lookup_cue(cue_name, &f.parts)) |pc| {
@@ -305,6 +306,10 @@ fn cue_param_key(param: []const u8) []const u8 {
 }
 
 pub const Codegen = struct {
+    // Borrowed AST text, mapped back to the source by the checker before the arena is freed.
+    // These fields never enter CompiledProgram.
+    error_context: []const u8 = "",
+    error_suggestion: ?[]const u8 = null,
     allocator: std.mem.Allocator,
     world: *World,
     spatial: ?*SpatialSystem,
@@ -353,21 +358,27 @@ pub const Codegen = struct {
     pub fn compile(mut_self: *Codegen, ast: *const AST) !CompiledProgram {
         // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
+            mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.scenes.items) |name| {
+            mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.cast.items) |name| {
+            mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.props.items) |name| {
+            mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.marks.items) |name| {
+            mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.paths.items) |path| {
+            mut_self.error_context = path.name;
             _ = try mut_self.world.intern_entity(path.name);
         }
 
@@ -450,15 +461,37 @@ pub const Codegen = struct {
             }
         }
 
-        for (ast.societies.items) |decl| try mut_self.societies.append(try mut_self.compile_society(decl));
-        for (ast.duels.items) |decl| try mut_self.duels.append(try mut_self.compile_duel(decl));
-        for (ast.degradations.items) |decl| try mut_self.degradations.append(try mut_self.compile_degradation(decl));
-        for (ast.grids.items) |decl| try mut_self.grids.append(try mut_self.compile_grid(decl));
-        for (ast.agendas.items) |decl| try mut_self.agendas.append(try mut_self.compile_agenda(decl));
+        for (ast.societies.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.societies.append(try mut_self.compile_society(decl));
+        }
+        for (ast.duels.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.duels.append(try mut_self.compile_duel(decl));
+        }
+        for (ast.degradations.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.degradations.append(try mut_self.compile_degradation(decl));
+        }
+        for (ast.grids.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.grids.append(try mut_self.compile_grid(decl));
+        }
+        for (ast.agendas.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.agendas.append(try mut_self.compile_agenda(decl));
+        }
         try agency_mod.validate_all(mut_self.agendas.items);
-        for (ast.commands.items) |decl| try mut_self.commands.append(try mut_self.compile_command(decl));
-        for (ast.aliases.items) |decl| try mut_self.aliases.append(try mut_self.compile_alias(decl));
+        for (ast.commands.items) |decl| {
+            mut_self.error_context = decl.text;
+            try mut_self.commands.append(try mut_self.compile_command(decl));
+        }
+        for (ast.aliases.items) |decl| {
+            mut_self.error_context = decl.entity;
+            try mut_self.aliases.append(try mut_self.compile_alias(decl));
+        }
         for (ast.scores.items) |decl| {
+            mut_self.error_context = decl.name;
             var owned = try mml.ScoreDecl.dupe(mut_self.allocator, decl);
             mut_self.scores.append(owned) catch |err| {
                 owned.deinit_owned(mut_self.allocator);
@@ -468,6 +501,7 @@ pub const Codegen = struct {
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
+            mut_self.error_context = rel.name;
             _ = try mut_self.world.intern_relation(
                 rel.name,
                 if (rel.is_property) .property else .set,
@@ -488,6 +522,7 @@ pub const Codegen = struct {
         var drafts = std.array_list.Managed(CompiledDraft).init(mut_self.allocator);
         errdefer drafts.deinit();
         for (ast.drafts.items) |d| {
+            mut_self.error_context = d.name;
             const ent = try mut_self.world.intern_entity(d.name);
             const inv: ?EntityId = if (d.reverse_name) |rn| try mut_self.world.intern_entity(rn) else null;
             try drafts.append(.{ .entity = ent, .notes = d.notes, .inverse = inv });
@@ -501,6 +536,7 @@ pub const Codegen = struct {
         var scene_bindings: usize = 0;
         for (ast.scores.items) |decl| scene_bindings += decl.scenes.len;
         if (ast.initial_stmts.items.len > 0 or scene_bindings > 0) {
+            mut_self.error_context = "";
             initial_entry = mut_self.chunk.count();
             // Scene defaults are World facts, seeded before the script's own statements, so the
             // display can pick a scene's score from World alone and saves carry the binding.
@@ -522,6 +558,7 @@ pub const Codegen = struct {
 
         // 4. Compile routines
         for (ast.routines.items) |routine| {
+            mut_self.error_context = routine.name;
             const entry_pc = mut_self.chunk.count();
             try mut_self.routine_entries.put(routine.name, entry_pc);
             try mut_self.routine_entities.put(routine.name, routine.entity);
@@ -538,6 +575,7 @@ pub const Codegen = struct {
         if (ast.paths.items.len > 0) {
             const path_active = try mut_self.world.intern_relation("PathActive", .property);
             for (ast.paths.items) |path| {
+                mut_self.error_context = path.name;
                 const path_entity = try mut_self.world.intern_entity(path.name);
                 const init_key = try std.fmt.allocPrint(mut_self.allocator, "{s}{s}", .{ PATH_ROUTINE_PREFIX, path.name });
                 try mut_self.allocated_cue_keys.append(init_key);
@@ -550,6 +588,7 @@ pub const Codegen = struct {
                 _ = try mut_self.chunk.emit_op(.halt);
 
                 for (path.routines) |routine| {
+                    mut_self.error_context = routine.name;
                     if (mut_self.routine_entries.contains(routine.name)) return error.DuplicateRoutineName;
                     try mut_self.routine_entries.put(routine.name, mut_self.chunk.count());
                     try mut_self.routine_entities.put(routine.name, routine.entity);
@@ -568,12 +607,14 @@ pub const Codegen = struct {
 
         // 5. Compile when rules into reactive simulation rules (P8-02, D-010)
         for (ast.when_rules.items) |rule| {
+            mut_self.error_context = "";
             var var_map = std.StringHashMap(u8).init(mut_self.allocator);
             defer var_map.deinit();
             var next_var: u8 = 0;
 
             var clauses = std.array_list.Managed(world_mod.PatternClause).init(mut_self.allocator);
             for (rule.trigger_patterns) |pat| {
+                mut_self.error_context = pat.relation;
                 const rel = try mut_self.resolve_relation(pat.relation);
                 if (rule.edge == .on_arrive) {
                     // An arrival trigger names an actor and a mark, not a fact: the object is
@@ -647,6 +688,7 @@ pub const Codegen = struct {
 
         // 6. Compile cue handlers (P11-01, P11-02, D-013)
         for (ast.cue_handlers.items) |cue| {
+            mut_self.error_context = cue.cue_name;
             const entry_pc = mut_self.chunk.count();
 
             // One key per declared signature. Parameters declared as variables are stored as
@@ -705,20 +747,40 @@ pub const Codegen = struct {
         return self.world.get_entity_name(entity) orelse return error.InvalidProgramText;
     }
 
-    fn society_member_index(decl: parser_mod.SocietyDecl, name: []const u8) !usize {
+    fn society_member_index(self: *Codegen, decl: parser_mod.SocietyDecl, name: []const u8) !usize {
         for (decl.members, 0..) |member, index| {
             if (std.mem.eql(u8, member.name, name)) return index;
         }
+        var hints = Suggestions{};
+        for (decl.members) |member| hints.consider(name, member.name);
+        self.error_context = name;
+        self.error_suggestion = hints.result();
         return error.UnknownSocietyMember;
     }
 
-    fn activity_from_name(name: []const u8) !society_mod.Activity {
-        return std.meta.stringToEnum(society_mod.Activity, name) orelse error.UnknownSocietyActivity;
+    fn activity_from_name(self: *Codegen, name: []const u8) !society_mod.Activity {
+        if (std.meta.stringToEnum(society_mod.Activity, name)) |activity| return activity;
+        self.error_context = name;
+        var hints = Suggestions{};
+        for (std.meta.fieldNames(society_mod.Activity)) |candidate| hints.consider(name, candidate);
+        self.error_suggestion = hints.result();
+        return error.UnknownSocietyActivity;
     }
 
     fn society_waypoint(self: *Codegen, name: []const u8) !spatial_mod.WaypointId {
         const spatial = self.spatial orelse return error.SocietyNeedsSpatialSystem;
-        return spatial.graph.find_waypoint(name) orelse error.UnknownSocietyPlace;
+        return spatial.graph.find_waypoint(name) orelse {
+            self.note_unknown_waypoint(name);
+            return error.UnknownSocietyPlace;
+        };
+    }
+
+    fn note_unknown_waypoint(self: *Codegen, name: []const u8) void {
+        self.error_context = name;
+        const sp = self.spatial orelse return;
+        var hints = Suggestions{};
+        for (sp.graph.waypoints.items) |wp| hints.consider(name, wp.name);
+        self.error_suggestion = hints.result();
     }
 
     fn compile_society(self: *Codegen, decl: parser_mod.SocietyDecl) !society_mod.Declaration {
@@ -735,7 +797,7 @@ pub const Codegen = struct {
                 .seek = source.seek,
                 .satisfy = switch (source.satisfy) {
                     .trade => |trade| .{ .trade = .{
-                        .provider = if (trade.provider) |name| try society_member_index(decl, name) else null,
+                        .provider = if (trade.provider) |name| try self.society_member_index(decl, name) else null,
                         .price = trade.price,
                         .relief = trade.relief,
                         .floor = trade.floor,
@@ -748,7 +810,7 @@ pub const Codegen = struct {
                         .at = try self.society_waypoint(stay.at),
                         .restore = stay.restore,
                         .until = stay.until,
-                        .activity = try activity_from_name(stay.activity),
+                        .activity = try self.activity_from_name(stay.activity),
                         .unaware = stay.unaware,
                         .state = try self.intern_program_text(stay.state),
                         .verb = try self.intern_program_text(stay.verb),
@@ -777,7 +839,7 @@ pub const Codegen = struct {
                 member_needs[ni] = .{
                     .value = member_need.value,
                     .rate = member_need.rate,
-                    .provider = if (member_need.provider) |provider| try society_member_index(decl, provider) else null,
+                    .provider = if (member_need.provider) |provider| try self.society_member_index(decl, provider) else null,
                 };
             }
             const stops = try self.allocator.alloc(spatial_mod.WaypointId, source.stops.len);
@@ -793,9 +855,9 @@ pub const Codegen = struct {
                 .entity = try self.world.intern_entity(source.name),
                 .needs = member_needs,
                 .gold = source.gold,
-                .idle = try activity_from_name(source.idle),
+                .idle = try self.activity_from_name(source.idle),
                 .routine = .{
-                    .activity = if (source.routine_activity) |activity| try activity_from_name(activity) else null,
+                    .activity = if (source.routine_activity) |activity| try self.activity_from_name(activity) else null,
                     .stops = stops,
                     .period = source.period,
                     .work = if (source.work) |work| .{
@@ -826,7 +888,7 @@ pub const Codegen = struct {
         return .{ .config = .{
             .needs = needs,
             .members = members,
-            .enforcer = if (decl.enforcer) |name| try society_member_index(decl, name) else null,
+            .enforcer = if (decl.enforcer) |name| try self.society_member_index(decl, name) else null,
             .holding = if (decl.holding) |place| try self.society_waypoint(place) else null,
             .gathering = try self.society_waypoint(decl.gathering),
             .flight = .{ .to = try self.society_waypoint(decl.flight_to), .then = if (decl.flight_then) |place| try self.society_waypoint(place) else null, .every = decl.flight_every },
@@ -957,9 +1019,15 @@ pub const Codegen = struct {
         if (self.spatial) |sp| {
             try sp.add_grid(grid);
             for (decl.places) |place| {
-                const id = self.find_waypoint(place.mark) orelse return error.UnknownGridMark;
+                const id = self.find_waypoint(place.mark) orelse {
+                    self.note_unknown_waypoint(place.mark);
+                    return error.UnknownGridMark;
+                };
                 const wp = sp.graph.get_waypoint(id).?;
-                if (wp.room != grid.room) return error.GridMarkOutsideRoom;
+                if (wp.room != grid.room) {
+                    self.error_context = place.mark;
+                    return error.GridMarkOutsideRoom;
+                }
                 const center = grid.cell_center(.{ .x = @intCast(place.x), .y = @intCast(place.y) });
                 try sp.graph.move_waypoint(id, .{ .x = center.x, .y = center.y });
             }
@@ -1045,7 +1113,13 @@ pub const Codegen = struct {
                 .entity = try self.world.intern_entity(source.name),
                 .capacity = source.capacity,
                 .initial_volume = source.initial_volume,
-                .initial_stage = initial_stage orelse return error.UnknownDegradationStage,
+                .initial_stage = initial_stage orelse {
+                    self.error_context = source.initial_stage;
+                    var hints = Suggestions{};
+                    for (decl.stages) |stage| hints.consider(source.initial_stage, stage.name);
+                    self.error_suggestion = hints.result();
+                    return error.UnknownDegradationStage;
+                },
             };
         }
         const r = decl.relations;
@@ -1241,7 +1315,10 @@ pub const Codegen = struct {
                 _ = try self.chunk.emit_op(.choices_begin);
 
                 for (choices, 0..) |choice, source_index| {
-                    if (source_index >= dialogue_lifecycle.MAX_CHOICES) return error.DialogueTooLarge;
+                    if (source_index >= dialogue_lifecycle.MAX_CHOICES) {
+                        self.error_context = choice.text;
+                        return error.DialogueTooLarge;
+                    }
                     const source_index_u8: u8 = @intCast(source_index);
                     const text_id = try self.world.intern_entity(choice.text);
                     const FailureJump = struct { jump_pc: usize, failure_text: EntityId };
@@ -1396,7 +1473,10 @@ pub const Codegen = struct {
     /// appears only in the guard, so dispatch can bind them to the cue's arguments. A guard
     /// pattern names a state (one argument) or a fact (two); the join has eight slots in all.
     fn compile_cue_guard(self: *Codegen, cue: parser_mod.CueHandler, entry_pc: usize) !CueGuard {
-        if (cue.params.len > MAX_CUE_PARAMS) return error.TooManyCueParameters;
+        if (cue.params.len > MAX_CUE_PARAMS) {
+            self.error_context = cue.params[MAX_CUE_PARAMS];
+            return error.TooManyCueParameters;
+        }
         var var_map = std.StringHashMap(u8).init(self.allocator);
         defer var_map.deinit();
         var next_var: u8 = 0;
@@ -1416,6 +1496,7 @@ pub const Codegen = struct {
         const clauses = try self.allocator.alloc(world_mod.PatternClause, cue.where_patterns.len);
         errdefer self.allocator.free(clauses);
         for (cue.where_patterns, clauses) |pattern, *clause| {
+            self.error_context = pattern.relation;
             if (pattern.args.len == 0 or pattern.args.len > 2) return error.InvalidCueGuardPattern;
             clause.* = .{
                 .relation = try self.resolve_relation(pattern.relation),
@@ -1429,6 +1510,7 @@ pub const Codegen = struct {
             if (next_var > 8) return error.TooManyCueGuardVariables;
         }
         guard.clauses = clauses;
+        self.error_context = cue.cue_name;
         return guard;
     }
 

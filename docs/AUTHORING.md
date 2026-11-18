@@ -27,11 +27,20 @@ zig build run
 | `.github/workflows/build.yml` | CI: tests and release builds on Linux, macOS, and Windows, and the browser build |
 | `build.zig`, `build.zig.zon` | The build; the engine is a relative path dependency |
 
-The loop while writing is: edit the script, `bespoke check` it for syntax, run it headless to read what happens, then add a test for anything the story depends on.
+The loop while writing is: edit the script, `bespoke check` it for syntax and compiler validation, run it headless to read what happens, then add a test for anything the story depends on.
 
 ```bash
 bespoke check scripts/main.bespoke
 zig build run -- --headless --ticks 80
+```
+
+When a script fails validation, `bespoke check` exits with status 1 and prints the file, line, column, and first diagnostic. The caret points to the relevant part of the source line. A `help:` line suggests a replacement when the compiler finds one close, unambiguous match.
+
+```text
+scripts/main.bespoke:2:3: error: unexpected statement 'wiat 1'
+    wiat 1 ticks
+    ^
+  help: did you mean 'wait'?
 ```
 
 A headless run prints each line spoken, each change of scene and music, and each set of choices offered, with its tick. The window runs the same script at 20 ticks a second.

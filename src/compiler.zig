@@ -39,6 +39,7 @@ pub fn compile_source(
 }
 
 pub const Diagnostic = parser.Diagnostic;
+const Suggestions = @import("compiler/diagnostic.zig").Suggestions;
 
 /// Bytes a `CheckResult` keeps for its diagnostic message; matches `Parser.diag_buf`, so a
 /// parser message is never cut.
@@ -53,6 +54,8 @@ pub const CheckResult = struct {
     column: u32 = 0,
     message_buf: [check_message_capacity]u8 = undefined,
     message_len: usize = 0,
+    hint_buf: [Suggestions.max_len]u8 = undefined,
+    hint_len: usize = 0,
     entity_count: usize = 0,
     routine_count: usize = 0,
     rule_count: usize = 0,
@@ -64,6 +67,19 @@ pub const CheckResult = struct {
         res.message_len = @min(text.len, res.message_buf.len);
         @memcpy(res.message_buf[0..res.message_len], text[0..res.message_len]);
         return res;
+    }
+
+    fn with_hint(self: CheckResult, hint: ?[]const u8) CheckResult {
+        var res = self;
+        if (hint) |name| {
+            res.hint_len = name.len;
+            @memcpy(res.hint_buf[0..name.len], name);
+        }
+        return res;
+    }
+
+    pub fn suggestion(self: *const CheckResult) ?[]const u8 {
+        return if (self.hint_len == 0) null else self.hint_buf[0..self.hint_len];
     }
 
     /// The diagnostic text; empty when the source is valid. Borrows from `self`.
@@ -89,22 +105,25 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
     var lex = Lexer.init(alloc, source);
     defer lex.deinit();
 
-    var parse = Parser.init(alloc, &lex) catch |err| return CheckResult.failure(1, 1, @errorName(err));
+    var parse = Parser.init(alloc, &lex) catch |err| return lexer_failure(&lex, err);
 
-    const ast = parse.parse_program() catch {
+    const ast = parse.parse_program() catch |err| {
         // `parse.diagnostic.message` points into `parse.diag_buf`; `failure` copies it out.
-        if (parse.diagnostic) |d| return CheckResult.failure(d.line, d.column, d.message);
-        return CheckResult.failure(parse.current.line, parse.current.col, "syntax error");
+        if (parse.diagnostic) |d| return CheckResult.failure(d.line, d.column, d.message).with_hint(parse.suggestion);
+        return lexer_failure(&lex, err);
     };
 
-    var dummy_world = World.init(alloc, 1024 * 1024) catch |err| return CheckResult.failure(1, 1, @errorName(err));
+    var dummy_world = World.init(alloc, 1024 * 1024) catch |err| return CheckResult.failure(1, 1, failure_message(err));
     defer dummy_world.deinit();
 
     var dummy_spatial = SpatialSystem.init(alloc);
     defer dummy_spatial.deinit();
 
     var cg = Codegen.init(alloc, &dummy_world, &dummy_spatial);
-    var compiled = cg.compile(&ast) catch |err| return CheckResult.failure(1, 1, @errorName(err));
+    var compiled = cg.compile(&ast) catch |err| {
+        const line, const col = source_position(source, cg.error_context);
+        return CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion);
+    };
     defer compiled.deinit();
 
     return .{
@@ -115,6 +134,85 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
         .scene_count = if (ast.scene_defs.items.len > 0) ast.scene_defs.items.len else ast.scenes.items.len,
         .bytecode_len = compiled.chunk.count(),
     };
+}
+
+fn lexer_failure(lex: *const Lexer, err: anyerror) CheckResult {
+    if (lex.string_start) |tok| return CheckResult.failure(tok.line, tok.col, "unterminated string; add a closing double quote");
+    return CheckResult.failure(lex.line, lex.col, failure_message(err));
+}
+
+fn source_position(source: []const u8, context: []const u8) struct { u32, u32 } {
+    const start = @intFromPtr(source.ptr);
+    const pos = @intFromPtr(context.ptr);
+    // Some AST names are assembled in the arena or synthesized. Never search for their
+    // spelling in the source: that could point at an earlier, unrelated use.
+    if (pos < start or pos - start > source.len) return .{ 1, 1 };
+    const prefix = source[0 .. pos - start];
+    const line = std.mem.count(u8, prefix, "\n") + 1;
+    const line_start = if (std.mem.lastIndexOfScalar(u8, prefix, '\n')) |i| i + 1 else 0;
+    return .{ @intCast(line), @intCast(prefix.len - line_start + 1) };
+}
+
+fn failure_message(err: anyerror) []const u8 {
+    return switch (err) {
+        // Bytecode's ListWriter translates allocation failure to WriteFailed.
+        error.OutOfMemory, error.WriteFailed => "not enough memory to check this script",
+        error.Overflow => "number is outside the supported range",
+        error.InvalidCharacter => "invalid numeric literal",
+        error.DuplicateRoutineName => "path routine name is already in use",
+        error.UnknownArrivalMark => "this arrival rule needs a declared mark",
+        error.InvalidProgramText => "could not store this declaration's text",
+        error.UnknownSocietyMember => "no society member has this name",
+        error.SocietyNeedsSpatialSystem => "this society needs a spatial system",
+        error.InvalidSocietyWorse => "a society need must say whether 'high' or 'low' is worse",
+        error.InvalidSocietyMemberNeeds => "member needs must match the society's need declarations in order",
+        error.UnknownSocietyActivity => "unknown society activity",
+        error.UnknownSocietyPlace => "no society waypoint has this name",
+        error.UnknownGridAttribute => "unknown grid cell attribute",
+        error.UnknownGridMark => "no grid placement mark has this name",
+        error.GridMarkOutsideRoom => "this mark belongs to a different room than the grid",
+        error.InvalidGrid => "invalid grid dimensions, origin, or number of grids",
+        error.CellOutOfBounds => "cell is outside the grid",
+        error.DuplicateRoomGrid => "this room already has a grid",
+        error.DuplicateGrid => "this grid name is already in use",
+        error.UnknownDegradationStage => "no degradation stage has this name",
+        error.InvalidConfig => "invalid degradation profile; check stage durations, vessel capacities, and relation names",
+        error.DialogueTooLarge => "too many options in one choice set",
+        error.TooManyCueParameters => "a guarded cue can have at most three parameters",
+        error.InvalidCueGuardPattern => "a cue guard needs one or two arguments per fact",
+        error.TooManyCueGuardVariables => "a cue guard can bind at most eight variables",
+        error.InvalidAgenda => "invalid agenda or too many agendas",
+        error.InvalidAlias => "alias phrases may use letters, digits, spaces, and apostrophes",
+        error.InvalidFrame => "invalid command frame",
+        error.InputTooLong => "command text is too long",
+        error.TooManyWords => "command has too many words",
+        // The declaration validator shares its error set with the container runtime.
+        error.UnknownVessel => "vessel is not declared in this degradation profile",
+        error.SameVessel => "source and target must be different vessels",
+        error.SourceEmpty => "source vessel is empty",
+        error.TargetNotEmpty => "target vessel is not empty",
+        error.InsufficientCapacity => "target vessel cannot hold the source volume",
+        error.VesselFailed => "vessel is in its terminal stage",
+        error.InvalidState => "invalid vessel state",
+        error.EntityLimitExceeded => "too many distinct entity names",
+        error.EntityNameTooLong => "entity name exceeds 65,535 bytes",
+        error.WaypointNotFound => "waypoint could not be resolved",
+        else => "compiler could not validate this script",
+    };
+}
+
+test "P40-01: every code generation error has a user-facing message" {
+    const result = @typeInfo(@TypeOf(Codegen.compile)).@"fn".return_type.?;
+    const errors = @typeInfo(result).error_union.error_set;
+    var missing: usize = 0;
+    inline for (@typeInfo(errors).error_set.error_names.?) |name| {
+        const err = @field(errors, name);
+        if (std.mem.eql(u8, failure_message(err), "compiler could not validate this script")) {
+            std.debug.print("missing compiler diagnostic for {s}\n", .{name});
+            missing += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
 }
 
 test {
@@ -153,7 +251,7 @@ test "P15-03: check_source reports diagnostic on invalid script syntax" {
     try testing.expect(res.diagnostic() != null);
     try testing.expectEqual(@as(u32, 1), res.diagnostic().?.line);
     try testing.expectEqual(@as(u32, 16), res.diagnostic().?.column);
-    try testing.expect(std.mem.indexOf(u8, res.diagnostic().?.message, "expected lparen") != null);
+    try testing.expect(std.mem.indexOf(u8, res.diagnostic().?.message, "expected '('") != null);
 }
 
 test "P39-01: incomplete quoted names fail source validation" {
@@ -162,6 +260,48 @@ test "P39-01: incomplete quoted names fail source validation" {
         try std.testing.expect(!result.is_valid);
         try std.testing.expect(result.diagnostic() != null);
     }
+}
+
+test "P40-01: lexical, syntax, numeric, and semantic diagnostics retain their source positions" {
+    const testing = std.testing;
+    const cases = [_]struct {
+        source: []const u8,
+        message: []const u8,
+        line: u32,
+        column: u32,
+        hint: ?[]const u8 = null,
+    }{
+        .{ .source = "\"first\nsecond", .message = "unterminated string; add a closing double quote", .line = 1, .column = 1 },
+        .{ .source = "routine Patrol(Guard):\n  say Guard: \"unfinished\nnext", .message = "unterminated string; add a closing double quote", .line = 2, .column = 14 },
+        .{ .source = "# header\nrouitne Patrol(Guard):\n  wait 1 ticks", .message = "unexpected top-level text 'rouitne Patrol'", .line = 2, .column = 1, .hint = "routine" },
+        .{ .source = "routine Patrol(Guard):\n  wiat 1 ticks", .message = "unexpected statement 'wiat 1'", .line = 2, .column = 3, .hint = "wait" },
+        .{ .source = "routine Patrol(Guard):\n  walt 1 ticks", .message = "unexpected statement 'walt 1'", .line = 2, .column = 3 },
+        .{ .source = "routine Patrol(Guard):\n  wait 1 tikcs", .message = "expected 'ticks', found 'tikcs'", .line = 2, .column = 10, .hint = "ticks" },
+        .{ .source = "routine Patrol(Guard):\n  wait 4294967296 ticks", .message = "invalid tick count: '4294967296'", .line = 2, .column = 8 },
+        .{ .source = "routine Patrol(Guard):\n  if roll 2d >= 8:", .message = "invalid dice expression: '2d'", .line = 2, .column = 11 },
+        .{ .source = "play score Huming\nscore Humming: \"c\"", .message = "play of undeclared score 'Huming'", .line = 1, .column = 12, .hint = "Humming" },
+        .{ .source = "play score Hump\nscore Hums: \"c\"\nscore Humpa: \"d\"", .message = "play of undeclared score 'Hump'", .line = 1, .column = 12 },
+        .{ .source = "draft Signal(C, D, E, F)\nroutine Patrol(Guard):\n  weave Singal on Door", .message = "weave of undeclared draft 'Singal'", .line = 3, .column = 9, .hint = "Signal" },
+        .{ .source = "marks: Gate\nwhen Guard arrives at Gtae:\n  wait 1 ticks", .message = "arrival at undeclared mark 'Gtae'", .line = 2, .column = 23, .hint = "Gate" },
+        .{ .source = "scene Yard:\n  marks: Gate\ngrid Floor in Yard:\n  size 2 2\n  cell 10\n  place Gtae 0 0", .message = "no grid placement mark has this name", .line = 6, .column = 9, .hint = "Gate" },
+        .{ .source = "entity Guard\nalias Guard: \"guard!\"", .message = "alias phrases may use letters, digits, spaces, and apostrophes", .line = 2, .column = 7 },
+    };
+    for (cases) |case| {
+        const result = check_source(testing.allocator, case.source);
+        errdefer std.debug.print("diagnostic source:\n{s}\n", .{case.source});
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+        try testing.expectEqual(case.column, result.column);
+        if (case.hint) |hint| {
+            try testing.expectEqualStrings(hint, result.suggestion() orelse "");
+        } else try testing.expect(result.suggestion() == null);
+    }
+}
+
+test "P40-01: a lexer allocation failure is reported instead of using a missing base indent" {
+    const check = check_source(std.testing.failing_allocator, "entity Guard");
+    try std.testing.expectEqualStrings("not enough memory to check this script", check.message());
 }
 
 test "P39-02: both compiler entry points reject oversized source" {
@@ -196,7 +336,7 @@ test "CheckResult owns its message after check_source returns" {
     @memset(noise, 0x55);
 
     const d = res.diagnostic().?;
-    try testing.expectEqualStrings("expected lparen, found identifier ('Guard')", d.message);
+    try testing.expectEqualStrings("expected '(', found 'Guard'", d.message);
     try testing.expectEqualStrings(d.message, res.message());
     try testing.expectEqual(@as(u32, 1), d.line);
     try testing.expectEqual(@as(u32, 16), d.column);
@@ -204,7 +344,7 @@ test "CheckResult owns its message after check_source returns" {
     // A copied result carries the bytes, not a slice into the original.
     const copy = res;
     _ = scribble_stack(0x33);
-    try testing.expectEqualStrings("expected lparen, found identifier ('Guard')", copy.message());
+    try testing.expectEqualStrings("expected '(', found 'Guard'", copy.message());
 }
 
 const ARRIVAL_SCRIPT =
@@ -470,7 +610,9 @@ test "D-072: cue where guards bind cue parameters and fall through to the next h
         \\  wait 1 ticks
     );
     try testing.expect(!wide.is_valid);
-    try testing.expect(std.mem.indexOf(u8, wide.diagnostic().?.message, "InvalidCueGuardPattern") != null);
+    try testing.expectEqualStrings("a cue guard needs one or two arguments per fact", wide.message());
+    try testing.expectEqual(@as(u32, 2), wide.line);
+    try testing.expectEqual(@as(u32, 32), wide.column);
 }
 
 test "D-072: VM.fire_cue runs nothing when every matching handler's guard fails" {

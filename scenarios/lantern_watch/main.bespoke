@@ -1,0 +1,233 @@
+# Lantern Watch: one storm watch, playable through the command bar.
+scene Tower:
+  cast: Watcher, Keeper
+  props: Bell, Logbook, Shutter, HandLamp, Oilcan
+  marks: BellLanding, WatchRoom, Gallery
+
+entity Beacon, Ship
+property Standing(who, mark)
+relation Raining(place)
+relation Shining(lamp)
+relation Warned(ship)
+relation Entered(place)
+relation Knocking(place)
+relation Read(who, book)
+relation Helping(who)
+relation Ready(who)
+relation Seized(thing)
+relation Carries(who, thing)
+relation Visited(mark)
+
+command Listens: "listen"
+command Surveys: "look"
+command WalksTo: "go to <thing>"
+command WalksTo: "go <thing>"
+command Reads: "read <thing>"
+command Shows: "show <thing> to <thing>"
+command Rings: "ring bell"
+command BellLook: "examine bell"
+command BellLook: "look at bell"
+command BellLook: "x bell"
+command Takes: "take <thing>"
+command Oils: "oil bell"
+command Oils: "use oilcan on bell"
+command Oils: "use oil can on bell"
+command Opens: "open <thing>"
+command Closes: "close <thing>"
+command Lights: "light <thing>"
+command AsksHelp: "ask <thing> to open <thing>"
+command Advice: "ask <thing> about storm"
+alias BellLanding: "landing"
+alias HandLamp: "hand lamp", "lantern"
+alias Oilcan: "oil can", "can"
+
+# A low triangle melody, with the pad answering it in a quieter register.
+score Tide:
+  bass "t88 o3 l4 v5 @7 L a2 e r a > c < b a f2 a r g b a g a2 e a d f a2 f a g f e2 b r c e g2 g b a g a > c2 < a f2 e r d2 f a a g e2 e b g+ e a2 e r"
+  chords "o3 v3 @7 L e1 c1 c1 d1 e1 f1 c1 b1 e1 d1 e1 c1 f1 e1 b1 r1"
+  scene Tower
+
+score Inside:
+  bass "t76 o3 l4 v5 @7 L d2 r2 a2 g r f2 d r e1 d2 a r f2 e d c2 g r a2 r2 d2 f r a2 g f e2 c r d1 f2 e r d2 g r a2 c r d2 r2"
+  chords "o3 v3 @7 L a1 r1 a1 g1 f1 c1 e1 r1 a1 d1 g1 a1 c1 d1 e1 r1"
+
+remember Standing(Watcher, BellLanding)
+remember Visited(BellLanding)
+remember Seized(Bell)
+remember Raining(Tower)
+transition to scene Tower
+
+routine Watch(Watcher):
+  loop:
+    wait 8 ticks
+    remember Knocking(Tower) for 2 ticks
+    if not Entered(Tower):
+      if Raining(Tower):
+        if Shining(Beacon):
+          remember Entered(Tower)
+          play score Inside
+          say Scene: "Three knocks. This time, from inside the door."
+
+routine Keep(Keeper):
+  walk Keeper to WatchRoom
+  wait until Helping(Keeper)
+  walk Keeper to BellLanding
+
+when Keeper arrives at BellLanding:
+  if Helping(Keeper):
+    remember Ready(Keeper)
+    say Keeper: "Take the rope. I'll take the weight off the pivot."
+
+when Watcher arrives at WatchRoom:
+  remember Standing(Watcher, WatchRoom)
+  say Scene: "You enter the watch room. The logbook lies open on the desk."
+  if not Visited(WatchRoom):
+    say Scene: "The room smells of damp wool. A stub of candle has burned down into its own wax."
+    say Scene: "An oilcan sits on the shelf above a pair of dry gloves."
+    remember Visited(WatchRoom)
+
+when Watcher arrives at Gallery:
+  remember Standing(Watcher, Gallery)
+  say Scene: "You reach the gallery. Rain rattles the glass beside the shutter."
+  if not Visited(Gallery):
+    say Scene: "A seam of gold shows under the iron. The handle is warm."
+    say Scene: "There's only black water beyond the glass, and nowhere for a man to stand."
+    remember Visited(Gallery)
+
+when Watcher arrives at BellLanding:
+  remember Standing(Watcher, BellLanding)
+  say Scene: "You reach the bell landing. The rope hangs within reach."
+
+on cue Surveys(Watcher):
+  if Standing(Watcher, BellLanding):
+    say Scene: "The bell rope hangs through a hole in the ceiling. Rainwater runs down the strands."
+    say Scene: "The stair leads to the watch room and the gallery."
+  if Standing(Watcher, WatchRoom):
+    say Scene: "The logbook lies open under the candle stub."
+    if not Carries(Watcher, Oilcan):
+      say Scene: "There's an oilcan on the shelf."
+  if Standing(Watcher, Gallery):
+    say Scene: "A glass wall faces the sea. The shutter handle is warm enough to feel through your sleeve."
+
+on cue Listens(Watcher):
+  if not Entered(Tower):
+    say Watcher: "The knocks come in threes. The wind doesn't."
+  if Entered(Tower):
+    say Watcher: "The rain is outside. The knocking isn't."
+
+on cue BellLook(Watcher):
+  if not Standing(Watcher, BellLanding):
+    say Scene: "You'll need to go to the bell landing to see what's holding it."
+  if Standing(Watcher, BellLanding):
+    if Seized(Bell):
+      say Scene: "You lean over the rail. A crust of salt has seized the bell's pivot."
+      say Scene: "The rope moves, but the iron won't turn. A little oil might free it."
+    if not Seized(Bell):
+      say Scene: "The pivot turns freely when you put a little weight on the rope."
+
+on cue LooksAt(Watcher, Oilcan):
+  say Scene: "A squat tin oilcan with a long spout, greasy around the cap."
+
+on cue Takes(Watcher, Oilcan):
+  if Carries(Watcher, Oilcan):
+    say Scene: "The oilcan is already in your hand."
+  if not Carries(Watcher, Oilcan):
+    if not Standing(Watcher, WatchRoom):
+      say Scene: "The Keeper keeps his tools in the watch room."
+    if Standing(Watcher, WatchRoom):
+      remember Carries(Watcher, Oilcan)
+      say Scene: "You take the oilcan. Something sloshes inside."
+
+on cue Oils(Watcher):
+  if not Standing(Watcher, BellLanding):
+    say Scene: "The bell's pivot is only reachable from the landing."
+  if Standing(Watcher, BellLanding):
+    if not Seized(Bell):
+      say Scene: "It doesn't need more oil. The pivot already moves."
+    if Seized(Bell):
+      if not Carries(Watcher, Oilcan):
+        say Scene: "You need an oilcan. The Keeper keeps his tools in the watch room."
+      if Carries(Watcher, Oilcan):
+        forget Seized(Bell)
+        say Scene: "The oil runs black down the iron. You work the rope until the pivot gives."
+        say Scene: "The clapper touches the bell with a small, clear note."
+
+on cue LooksAt(Watcher, Shutter):
+  say Watcher: "The lamp is burning behind an iron shutter."
+
+on cue LooksAt(Watcher, Logbook):
+  say Watcher: "Two pages are marked. I should read the logbook."
+
+on cue Reads(Watcher, Logbook):
+  if not Standing(Watcher, WatchRoom):
+    say Watcher: "The logbook is in the watch room."
+  if Standing(Watcher, WatchRoom):
+    remember Read(Watcher, Logbook)
+    say Watcher: "Fair all day. Sea flat enough to see the gulls twice."
+    say Watcher: "I hope tomorrow's as dull."
+    say Watcher: "Lit the lamp after midnight. A light answered from below."
+    say Watcher: "It came in against the sea. I shut the lamp."
+    say Watcher: "It waited there till dawn."
+
+on cue TalksTo(Watcher, Keeper):
+  say Keeper: "Leave the shutter be. Ring the bell if a ship comes in."
+
+on cue Advice(Watcher, Keeper):
+  say Keeper: "I've stood this watch a long time. Use the bell."
+
+on cue AsksHelp(Watcher, Keeper, Shutter):
+  say Keeper: "The ships know to listen for the bell. They can hear the bell. They don't need the light to see where the shore is; they know better than that. And soon you will too."
+
+on cue Shows(Watcher, Logbook, Keeper):
+  if not Read(Watcher, Logbook):
+    say Keeper: "Read it first. Then tell me what you make of it."
+  if Read(Watcher, Logbook):
+    remember Helping(Keeper)
+    say Keeper: "I'll come with you to the bell. Leave the shutter shut."
+
+on cue Lights(Watcher, HandLamp):
+  remember Shining(HandLamp)
+  say Watcher: "The hand lamp lights my feet. Nothing outside changes."
+
+on cue Opens(Watcher, Shutter):
+  if not Standing(Watcher, Gallery):
+    say Watcher: "The shutter is up in the gallery."
+  if Standing(Watcher, Gallery):
+    remember Shining(Beacon)
+    say Watcher: "The beacon shines out over the water."
+    if Raining(Tower):
+      say Watcher: "A light answers from the water. It's coming closer."
+
+on cue Closes(Watcher, Shutter):
+  if not Standing(Watcher, Gallery):
+    say Watcher: "I need to be in the gallery to close it."
+  if Standing(Watcher, Gallery):
+    forget Shining(Beacon)
+    say Watcher: "I close the shutter. The beam cuts out."
+
+on cue Rings(Watcher):
+  if not Standing(Watcher, BellLanding):
+    say Watcher: "The bell rope hangs at the bell landing."
+  if Standing(Watcher, BellLanding):
+    if not Entered(Tower):
+      if Seized(Bell):
+        if Ready(Keeper):
+          forget Seized(Bell)
+          say Scene: "The Keeper leans into the yoke. You pull, and the pivot gives."
+      if Seized(Bell):
+        say Scene: "The rope gives an inch, then pulls tight. Iron scrapes above you, but the bell doesn't move."
+        if Helping(Keeper):
+          say Scene: "You can hear the Keeper coming down the stair."
+      if not Seized(Bell):
+        if Shining(Beacon):
+          say Scene: "The bell rings, but the beam is still out on the water. You strain to hear an answer."
+        if not Shining(Beacon):
+          if Warned(Ship):
+            say Scene: "You ring again. The ship is already standing off."
+          if not Warned(Ship):
+            remember Warned(Ship)
+            say Scene: "The bell rolls out through the rain. You count the space where the answer ought to be."
+            say Scene: "Then a ship's bell answers from offshore. The Keeper lets go of the rail."
+            say Keeper: "The bell tells them what they need to know. We all sleep soundly tonight."
+    if Entered(Tower):
+      say Watcher: "The bell is for ships. What's inside pays it no mind."

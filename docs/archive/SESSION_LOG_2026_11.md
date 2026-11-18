@@ -2,6 +2,57 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 75 (2026-11-17)
+- **Work.** Completed P40-01. The checker reports lexer, parser, and codegen failures with readable messages. The runner renders a source excerpt and caret, and offers a suggestion only for a unique nearby spelling within the relevant namespace (D-111).
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build install test wasm wasm-proofs --summary all -j2` passes 699/699; `zig build test-fuzz --test-timeout 10s --summary all` passes 7/7. The proof render test takes about 15 seconds here, so keep the fuzz timeout off the normal suite. The wasm smoke test and both valid and invalid CLI checks pass; invalid source exits 1. No golden changed. `python3 tools/check_docs.py` reports 0 errors and 0 warnings. GitHub CI has not run these changes.
+
+### Session 74 (2026-11-17)
+- **Work.** Completed P39-03. Verified that GitHub private reporting is enabled and linked the repository advisories in SECURITY. Generated CI pins both checkout jobs to the published v0.1.0 tag. The generated tests bridge the two D-107 helpers added after that release (D-110). Archived Phase 39.
+- **Checks.** The starter project passes its native tests, bundle, web build, and browser smoke check against the current checkout and against an archive of the published tag. GitHub Actions has no run for the pending workflow changes.
+
+### Session 73 (2026-11-17)
+- **Work.** Completed P39-02. The approved 4,096-fiber spawn cap reclaims halted fibers under pressure and preserves older save restore. Added an in-memory source size check, binary writer size checks, safer entity interning on allocation failure, and regression tests for the documented ceilings.
+- **Checks.** Linux with Zig 0.17.1. The combined engine, proof, and fuzz run passed 696/696, both wasm builds passed, and `node tools/wasm_smoke.js` passed. No golden changed. The formatter still proposes pre-existing builtin migrations in the affected files. GitHub CI has no run for this branch.
+
+### Session 72 (2026-11-17)
+- **Work.** Added P39-01 seed inputs, seven one-second harnesses, and the Linux CI step. The lexer, parser, and codegen harnesses initially crashed in the same incomplete quoted string lexer path. The lexer now returns an error at end of input, and the compiler suite covers the rejected source.
+- **Checks.** On Linux with Zig 0.17.1, `zig build test-fuzz --test-timeout 10s --summary all` passes 7/7 and `zig build test --summary all` passes 673/673 with existing goldens. The updated GitHub workflow has no remote run yet.
+
+### Session 71 (2026-11-17)
+- **Work.** Completed P38-04 and recorded D-108. Linked the policy from the API and file compatibility references. Archived Phases 37 and 38.
+- **Correction.** The full suite initially failed the Weathercock golden because the pending P38-03 branch merge omitted the legacy `ArtifactMaterialized` fact. Restored the observable fact alongside `KeystoneMaterialized`. The deprecated Zig names remain removed.
+- **Checks.** `zig build test` passes after the correction. No proof golden was edited. `python3 tools/check_docs.py` reports 0 errors and 0 warnings. `git diff --check` passes.
+
+### Session 70 (2026-11-17)
+- **Goal:** P38-03, define and enforce the supported Zig host API.
+- **Work:** Recorded D-107 and added `docs/API.md` with the exact supported namespaces, root conveniences, types, methods, and internal-field boundary. Added `host.init_vm` and `host.start_routine`; added method-only `WasmRuntime` access to spatial state, VM, compiled program, and player; updated generated projects to use namespaces and host constructors. Added `tests/supported_host.zig` as an external module in `zig build test-engine`. Removed every D-044 tangent, vortex, artifact, and singularity alias. Reserved temporal enum wire value 3 and read it as canonical budget expiry so D-106 compatibility holds.
+- **Checks:** `zig build test-engine`, `zig build test`, and `zig build test-template` pass; `python3 tools/check_docs.py` reports 0 errors and 0 warnings; `git diff --check` passes. No golden changed.
+
+### Session 69 (2026-11-17)
+- **Goal:** P38-02, define compatibility for released `.bspk` packages and `.sav` saves.
+- **Work:** Recorded D-106 and added `docs/COMPATIBILITY.md`: format versions are independent, 1.x readers retain every released readable version, additive changes increment one format with old-file defaults, and incompatible reinterpretation needs a new format generation and migration path. Preserved D-048's two active save profiles: plain saves emit v1 and temporal saves v2. Added immutable 0.1.0 `.bspk` v14 and `.sav` v2 fixtures under `tests/fixtures/compat/`, tests that load them, public supported-range constants and diagnostic helpers, and the stock runner's unsupported-package message.
+- **Checks:** `zig build test-engine` and `zig build test` pass; `python3 tools/check_docs.py` reports 0 errors and 0 warnings; `git diff --check` passes. No golden changed.
+
+### Session 68 (2026-11-17)
+- **Goal:** P38-01, audit and freeze the documented script-language surface.
+- **Work:** Expanded `docs/script_spec.md` from a vertical-slice note into the complete accepted language reference: declarations and facts, scenes and execution blocks, every body statement and condition, every reactive-rule form, drafts, paths, and every mechanic directive. Added the required section-to-test table. Added one codegen fixture that compiles the full core statement set and parser regressions for unknown top-level text, unknown statements, malformed `wait`, and unsupported `else`. Replaced the parser's silent catch-all with located errors; made the established trailing-colon scene form explicit instead of relying on that catch-all. The README already stated the only confirmed language gap, D-072 cue parameters binding in guards but not bodies.
+- **Checks:** `zig build test-engine` and `zig build test` pass; `python3 tools/check_docs.py` reports 0 errors and 0 warnings; `git diff --check` passes. No golden changed. The full suite found one Borrowed Beard line with an extra indentation level that the old catch-all discarded; correcting the indentation preserved its intended statement and made the proof suite green.
+
+### Session 67 (2026-11-16)
+- **Goal:** P37-03, versions and releases.
+- **Work:** Set the package and executable version to `0.1.0`; added `--version` to `bespoke` and `bespoke-proofs`; added `tools/check_version.py` and the `zig build version-check` step, also run by `zig build test`, which reads `build.zig.zon` and executes both compiled CLIs. Cut the Unreleased changelog into the dated 0.1.0 notes, updated the release procedure, roadmap, README, manual version, and handoff. Tag `v0.1.0` and the GitHub Release use that release commit and changelog section (D-105).
+- **Checks:** `zig build test` passes with `version 0.1.0: manifest and CLIs agree`. A manifest-only mutation to `0.1.1` fails on the exact CLI mismatch. Documentation and remote release verification are recorded before handoff.
+
+### Session 66 (2026-11-16)
+- **Goal:** Move CI tooling to Node.js 24, remove the deprecated action-runtime warning, and answer Q-010.
+- **Work:** Replaced `mlugg/setup-zig@v2` with a direct Zig 0.17.1 download from ziglang.org, pinned to its published SHA-256; moved `actions/setup-node@v7` from Node.js 22 to 24. Recorded D-105: GitHub Releases on the existing repository hosts version tags, notes, and artifacts, while the showcase remains a hand upload (D-074). Updated the roadmap, contributing guide, testing matrix, and current handoff; P37-03 is unblocked.
+- **Checks:** `python3 tools/check_docs.py` reports 0 errors and 0 warnings. The downloaded Zig archive matches SHA-256 `3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a`. GitHub branch run 44010238931 passed every step in 5m17s and reported 0 annotations, confirming the deprecated Node action-runtime warning is gone.
+
+### Session 65 (2026-11-16)
+- **Goal:** P37-02, engine CI on Linux.
+- **Work:** Added `.github/workflows/ci.yml` for pushes and pull requests on `ubuntu-24.04`, pinned Zig 0.17.1 and Node.js 22, and ran every build and check named by the roadmap. Added `tools/browser_smoke.js`, a dependency-free Chrome DevTools client that opens the generated Pip-Spitting Green page from `file://`, clicks Sound, waits for the engine AudioWorklet, presses `S`, and requires the World fact count to change. The shared proof-page wrapper exposes a read-only diagnostic snapshot for that check; all seven generated standalone pages were rebuilt. Added the workflow badge to README.
+- **Checks:** The full workflow command sequence passes locally: `zig build`, 660/660 Zig tests, `test-template`, both wasm builds and smoke checks, 61 Python tests, documentation and generated-site checks, and Chrome (`facts 2 -> 4`, audio playing). GitHub main run 44005527938 passed every step. Disposable-branch run 44004996016 failed at `zig build test`, naming the deliberately changed Tavern golden and its exact line; the branch was then deleted. GitHub warns that current `mlugg/setup-zig@v2` targets deprecated Node 20 and force-runs it on Node 24; checkout and setup-node use their current v7 actions.
+
 ### Session 64 (2026-11-16)
 - **Goal:** P37-01, Zig 0.13 to 0.17.1 one release at a time, a commit per step.
 - **Work:** 0.14.1 (manifest name and fingerprint, allocator `remap`, `{d:>N}` keeps the space fill), 0.15.2 (root modules, `array_list.Managed`, LLVM for native links), 0.16.0 (explicit `Io`, D-104; `ListWriter` for byte lists), 0.17.1 (translate-C for SDL, `@splat` for `**`, new type info, passthrough args). A flaky Observatory test (a reply slice into a stack buffer) was found by parallel stress runs on 0.14 and fixed.

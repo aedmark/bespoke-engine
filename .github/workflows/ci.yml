@@ -27,8 +27,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Install SDL2
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Install SDL2 and tutorial tools
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev patch
       - name: Build
         run: zig build
       - name: Test engine and proofs
@@ -37,10 +37,22 @@ jobs:
         run: zig build test-fuzz --test-timeout 10s
       - name: Test generated project
         run: zig build test-template
+      - name: Follow the first-game tutorial (P40-02)
+        timeout-minutes: 8
+        env:
+          CHROME: google-chrome
+        run: python3 tools/check_tutorial.py
+      - name: Test Lantern Watch through the parser
+        timeout-minutes: 8
+        env:
+          CHROME: google-chrome
+        run: python3 tools/build_lantern_watch.py --chrome "$RUNNER_TEMP/lantern-watch/index.html"
       - name: Build and smoke-test WebAssembly
         run: |
           zig build wasm wasm-proofs
           node tools/wasm_smoke.js
+      - name: Check editor grammar (P40-03)
+        run: python3 tools/build_editor_grammar.py --check
       - name: Test Python tools
         run: python3 -m unittest discover -s tests -v
       - name: Check documentation

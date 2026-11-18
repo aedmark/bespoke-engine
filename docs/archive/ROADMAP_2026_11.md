@@ -1,6 +1,6 @@
 # Roadmap Archive: November 2026
 
-Finished phases moved from `ROADMAP.md` on 2026-11-15 (Phases 1 through 36) and 2026-11-17 (Phases 37 through 39). Their item IDs stay reserved.
+Finished phases moved from `ROADMAP.md` on 2026-11-15 (Phases 1 through 36) and 2026-11-17 (Phases 37 through 40). Their item IDs stay reserved.
 
 ## Phase 37: Toolchain and Continuous Verification
 
@@ -26,6 +26,14 @@ Goal: no script, package, save, score, or typed line can crash the engine; bad i
 - [x] P39-01 Fuzzing harnesses for the lexer and parser, codegen, the `.bspk` loader, the `.sav` loader, MML scores, and the command interpreter, run in CI for a fixed time budget, with a corpus checked in. Done 2026-11-17. Linux CI invokes seven one-second harnesses using checked-in text and compatibility fixtures. The first run found an incomplete-string lexer panic. Source validation now rejects it and a compiler regression test covers it.
 - [x] P39-02 Resource limits for facts, entities, fibers, script size, package size, save size, and wasm heap. Done 2026-11-17. `docs/SECURITY.md` lists the limits and enforcement points. Engine tests verify error returns at each boundary and continued restore of older saves (D-109).
 - [x] P39-03 Private vulnerability reporting and template CI release pinning. Done 2026-11-17. [SECURITY.md](../SECURITY.md#report-a-vulnerability) links to GitHub Security Advisories. The authenticated repository API confirms reporting is enabled. Both generated CI jobs fetch the published `v0.1.0` tag, verified by building a generated game against that tag (D-110).
+
+## Phase 40: The Author's Experience
+
+Goal: a developer new to BeSpoke can write, debug, and publish a small game without reading the engine source.
+
+- [x] P40-01 Compiler diagnostics with file, line, column, the source line, and a caret, plus a suggestion where one is clear (a misspelt keyword or name). `bespoke check` prints the diagnostic; the engine suite verifies locations, messages, and CLI rendering (D-111).
+- [x] P40-02 [First-game tutorial](../FIRST_GAME.md) from `bespoke init` to a browser page packed for manual Neocities upload. Linux CI runs the documented build and preview commands as written (D-112).
+- [x] P40-03 Editor support for `.bespoke` files. The TextMate grammar is generated from the lexer's keyword map; tests verify every spelling and CI checks for drift. [Install notes](../../editors/vscode/README.md) cover VS Code (D-113).
 
 ## Phase 1: Foundations (Relational World Store & Core Memory)
 

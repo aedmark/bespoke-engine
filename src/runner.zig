@@ -19,16 +19,22 @@ pub const RunConfig = struct {
 pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, stdout: anytype) !bool {
     const max_size = bespoke.compiler.MAX_SOURCE_SIZE;
     const source = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size)) catch |err| {
-        const what = if (err == error.FileNotFound) "cannot open file" else "failed to read file";
-        try stdout.print("{s}: error: {s} ({s})\n", .{ path, what, @errorName(err) });
+        try write_diagnostic_text(stdout, path);
+        const what = switch (err) {
+            error.FileNotFound => "cannot open file",
+            error.StreamTooLong => "script exceeds the 16 MiB source limit",
+            else => "failed to read file",
+        };
+        try stdout.print(": error: {s} ({s})\n", .{ what, @errorName(err) });
         return false;
     };
     defer allocator.free(source);
 
     const res = bespoke.check_source(allocator, source);
     if (res.is_valid) {
-        try stdout.print("[check] '{s}': syntax and semantics valid ({d} scene(s), {d} routine(s), {d} reactive rule(s), {d} bytes bytecode)\n", .{
-            path,
+        try stdout.print("[check] '", .{});
+        try write_diagnostic_text(stdout, path);
+        try stdout.print("': syntax and semantics valid ({d} scene(s), {d} routine(s), {d} reactive rule(s), {d} bytes bytecode)\n", .{
             res.scene_count,
             res.routine_count,
             res.rule_count,
@@ -36,13 +42,93 @@ pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, st
         });
         return true;
     } else {
-        if (res.diagnostic()) |d| {
-            try stdout.print("{s}:{d}:{d}: error: {s}\n", .{ path, d.line, d.column, d.message });
-        } else {
-            try stdout.print("{s}: error: compilation failed\n", .{path});
-        }
+        try write_script_diagnostic(stdout, path, source, &res);
         return false;
     }
+}
+
+// Script and path bytes are untrusted terminal input. Escape control and non-ASCII bytes
+// consistently, so an excerpt and its caret use the same width even for malformed UTF-8.
+fn write_diagnostic_text(out: anytype, bytes: []const u8) !void {
+    var start: usize = 0;
+    for (bytes, 0..) |byte, i| {
+        if (byte >= ' ' and byte <= '~') continue;
+        try out.print("{s}\\x{x:0>2}", .{ bytes[start..i], byte });
+        start = i + 1;
+    }
+    if (start < bytes.len) try out.print("{s}", .{bytes[start..]});
+}
+
+fn write_script_diagnostic(out: anytype, path: []const u8, source: []const u8, res: *const bespoke.compiler.CheckResult) !void {
+    const d = res.diagnostic() orelse return;
+    try write_diagnostic_text(out, path);
+    try out.print(":{d}:{d}: error: ", .{ d.line, d.column });
+    try write_diagnostic_text(out, d.message);
+    try out.print("\n", .{});
+
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    var line_no: u32 = 1;
+    while (line_no < d.line) : (line_no += 1) {
+        if (lines.next() == null) break;
+    }
+    if (lines.next()) |raw_line| {
+        const line = if (std.mem.endsWith(u8, raw_line, "\r")) raw_line[0 .. raw_line.len - 1] else raw_line;
+        const caret = @min(d.column -| 1, line.len);
+        // Center long excerpts near the fault and bound terminal output by bytes.
+        const before = if (line.len > 120) @min(caret -| 40, line.len - 120) else 0;
+        const after = @min(before + 120, line.len);
+        try out.print("{s}", .{if (before == 0) "  " else "  ..."});
+        try write_diagnostic_text(out, line[before..after]);
+        if (after < line.len) try out.print("...", .{});
+        var pad: usize = if (before == 0) 2 else 5;
+        for (line[before..caret]) |byte| {
+            pad += if (byte >= ' ' and byte <= '~') @as(usize, 1) else 4;
+        }
+        try out.print("\n{s: >[1]}^\n", .{ "", pad });
+    }
+    if (res.suggestion()) |hint| {
+        try out.print("  help: did you mean '", .{});
+        try write_diagnostic_text(out, hint);
+        try out.print("'?\n", .{});
+    }
+}
+
+test "P40-01: check_file prints the diagnostic excerpt, caret, and suggestion" {
+    const testing = std.testing;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{
+        .sub_path = "invalid.bespoke",
+        .data = "routine Patrol(Guard):\r\n  wiat 1 ticks\r\n",
+    });
+    const path = try tmp.dir.realPathFileAlloc(testing.io, "invalid.bespoke", testing.allocator);
+    defer testing.allocator.free(path);
+
+    var storage: [1024]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&storage);
+    // Runner hosts could already supply a writer exposing only print.
+    const PrintOnly = struct {
+        writer: *std.Io.Writer,
+        pub fn print(self: @This(), comptime fmt: []const u8, args: anytype) !void {
+            try self.writer.print(fmt, args);
+        }
+    };
+    try testing.expect(!try check_file(testing.allocator, testing.io, path, PrintOnly{ .writer = &out }));
+    const tail = "invalid.bespoke:2:3: error: unexpected statement 'wiat 1'\n" ++
+        "    wiat 1 ticks\n    ^\n  help: did you mean 'wait'?\n";
+    try testing.expect(std.mem.endsWith(u8, out.buffered(), tail));
+}
+
+test "P40-01: diagnostic excerpts bound long lines and escape terminal controls" {
+    const testing = std.testing;
+    const script = "entity " ++ @as([240]u8, @splat(' ')) ++ "\x1b\t:";
+    const check = bespoke.check_source(testing.allocator, script);
+    var storage: [512]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&storage);
+    try write_script_diagnostic(&out, "bad\nfile", script, &check);
+    const expected = "bad\\x0afile:1:250: error: expected a name, found ':'\n" ++
+        "  ..." ++ @as([117]u8, @splat(' ')) ++ "\\x1b\\x09:\n" ++ @as([130]u8, @splat(' ')) ++ "^\n";
+    try testing.expectEqualStrings(expected, out.buffered());
 }
 
 /// Compiles a .bespoke source file to a standalone .bspk binary package (P15-02, D-018).
@@ -65,8 +151,8 @@ pub fn compile_file(
 
     var compiled = bespoke.compile_source(allocator, &world, &spatial, source) catch |err| {
         const res = bespoke.check_source(allocator, source);
-        if (res.diagnostic()) |d| {
-            try stdout.print("{s}:{d}:{d}: error: {s}\n", .{ in_path, d.line, d.column, d.message });
+        if (!res.is_valid) {
+            try write_script_diagnostic(stdout, in_path, source, &res);
         } else {
             try stdout.print("{s}: error: compilation failed ({s})\n", .{ in_path, @errorName(err) });
         }
@@ -140,8 +226,8 @@ pub fn run_bytes(
         if (config.verbose) try stdout.print("[Runner] Compiling narrative script '{s}'...\n", .{path});
         compiled = bespoke.compile_source(allocator, &world, &spatial, data) catch |err| {
             const res = bespoke.check_source(allocator, data);
-            if (res.diagnostic()) |d| {
-                try stdout.print("{s}:{d}:{d}: error: {s}\n", .{ path, d.line, d.column, d.message });
+            if (!res.is_valid) {
+                try write_script_diagnostic(stdout, path, data, &res);
             } else {
                 try stdout.print("{s}: error: compilation failed ({s})\n", .{ path, @errorName(err) });
             }

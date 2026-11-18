@@ -1,0 +1,33 @@
+{
+  "name": "bespoke-language",
+  "displayName": "BeSpoke Language",
+  "description": "Syntax highlighting for BeSpoke Engine scripts",
+  "publisher": "aedmark",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aedmark/bespoke-engine.git",
+    "directory": "editors/vscode"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "bespoke",
+        "aliases": ["BeSpoke"],
+        "extensions": [".bespoke"]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bespoke",
+        "scopeName": "source.bespoke",
+        "path": "./syntaxes/bespoke.tmLanguage.json"
+      }
+    ]
+  }
+}
