@@ -166,6 +166,8 @@ const Recorder = struct {
     allocator: std.mem.Allocator,
     window: *bespoke.display.DisplayWindow,
     out: std.array_list.Managed(u8),
+    /// Every string the last frame drew, for the band check (D-124).
+    text: bespoke.display.canvas.TextProbe = .{},
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
@@ -201,8 +203,64 @@ const Recorder = struct {
         try lw1.writer.print("thumb/{s}/{s}: {x:0>16}\n", .{ proof, scene, std.hash.Wyhash.hash(0, &thumb) });
     }
 
+    /// D-124: no mark, prop marker, room name, sign, or prompt reaches into the message band at
+    /// its tallest, four rows over a command bar. The frame is drawn with the log cleared, so a
+    /// string found in those rows is proof drawing. Backdrop scenery that merely extends below
+    /// the log stays out of scope, as D-124 records; a prop drawn as the default marker is
+    /// covered whole. `verbose` names the offender; the canary test calls it quietly, so a
+    /// passing run prints nothing.
+    fn check_band(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame, verbose: bool) !void {
+        // The State drawer covers the stage, band included, and is not proof art.
+        if (self.window.show_save_drawer) return;
+        const renderer = bespoke.display.renderer;
+        const band_top = renderer.message_band_top(HEIGHT);
+        const band_bottom = renderer.message_band_bottom(HEIGHT);
+
+        for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+            const pt = renderer.world_to_screen(wp.x, wp.y, WIDTH, HEIGHT);
+            if (pt.y + renderer.WAYPOINT_SCREEN_RADIUS > band_top) {
+                if (verbose) std.debug.print(
+                    "\n'{s}': mark {s} reaches the message band (its circle ends at {d}, the band starts at {d})\n",
+                    .{ label, wp.get_name(), pt.y + renderer.WAYPOINT_SCREEN_RADIUS, band_top },
+                );
+                return error.MarkInMessageBand;
+            }
+        }
+
+        for (frame.hotspots[0..frame.hotspot_count]) |hs| {
+            const pt = renderer.world_to_screen(hs.x, hs.y, WIDTH, HEIGHT);
+            if (pt.y + renderer.PROP_MARKER_HALF > band_top) {
+                if (verbose) std.debug.print(
+                    "\n'{s}': prop {s} reaches the message band (its marker ends at {d}, the band starts at {d})\n",
+                    .{ label, hs.get_name(), pt.y + renderer.PROP_MARKER_HALF, band_top },
+                );
+                return error.PropInMessageBand;
+            }
+        }
+
+        for (self.text.draws[0..self.text.count]) |d| {
+            if (d.y < band_bottom and d.y + d.h > band_top) {
+                if (verbose) std.debug.print(
+                    "\n'{s}': text \"{s}\" at ({d}, {d}) reaches the message band's rows {d} to {d}\n",
+                    .{ label, d.get_text(), d.x, d.y, band_top, band_bottom },
+                );
+                return error.TextInMessageBand;
+            }
+        }
+    }
+
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        // The band check reads what proof drawing puts in the message band's rows, so the log is
+        // cleared first. These frames carry no messages anyway, so the hash is unchanged.
+        self.window.clear_log();
+        self.text.count = 0;
+        const canvas: ?*bespoke.display.Canvas = if (self.window.canvas) |*cv| cv else null;
+        if (canvas) |cv| cv.text_probe = &self.text;
+        defer {
+            if (canvas) |cv| cv.text_probe = null;
+        }
         self.window.render_frame(frame, true);
+        try self.check_band(label, frame, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
@@ -237,6 +295,11 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
     vm.spatial = &spatial;
+
+    // A proof whose host places its props and cast in Zig stages them here, so its frames and
+    // the band check cover the scene a player sees (D-124). The cast loop below leaves an
+    // actor the host already placed alone.
+    if (std.mem.eql(u8, name, "observatory_puzzle")) _ = try observatory_puzzle.configure(&world, &spatial);
 
     // Stage every scene's cast on that scene's marks, one mark apart.
     var lines = std.mem.splitScalar(u8, script, '\n');
@@ -453,6 +516,40 @@ test "P32-02a: every proof scene draws the pixels recorded in its render golden"
     }
     std.debug.print("\n{d} scene(s) differ; record and one .actual.bmp per changed scene written to {s}\n", .{ changed, options.golden_dir });
     return error.RenderGoldenMismatch;
+}
+
+test "D-124: the proof band check fails on a string drawn inside the message band" {
+    var window = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, WIDTH, HEIGHT);
+    defer window.deinit();
+    var rec = Recorder{
+        .allocator = std.testing.allocator,
+        .window = &window,
+        .out = std.array_list.Managed(u8).init(std.testing.allocator),
+    };
+    defer rec.out.deinit();
+
+    const band_top = bespoke.display.renderer.message_band_top(HEIGHT);
+    try std.testing.expectEqual(@as(i32, 504), band_top);
+    var frame = std.mem.zeroes(bespoke.RenderFrame);
+
+    // A name whose last row stops above the band passes; one four pixels lower fails.
+    rec.text.draws[0] = .{ .x = 40, .y = band_top - 14, .w = 60, .h = 14 };
+    rec.text.count = 1;
+    try rec.check_band("canary", &frame, false);
+    rec.text.draws[0].y = band_top - 4;
+    try std.testing.expectError(error.TextInMessageBand, rec.check_band("canary", &frame, false));
+    rec.text.count = 0;
+
+    // A mark and a prop placed low fail too, with the rows already measured.
+    frame.waypoint_count = 1;
+    frame.waypoints[0] = std.mem.zeroes(@TypeOf(frame.waypoints[0]));
+    frame.waypoints[0].y = 20;
+    try std.testing.expectError(error.MarkInMessageBand, rec.check_band("canary", &frame, false));
+    frame.waypoint_count = 0;
+    frame.hotspot_count = 1;
+    frame.hotspots[0] = std.mem.zeroes(@TypeOf(frame.hotspots[0]));
+    frame.hotspots[0].y = 20;
+    try std.testing.expectError(error.PropInMessageBand, rec.check_band("canary", &frame, false));
 }
 
 test "P32-02a: scene headers are read from script text" {

@@ -1358,7 +1358,8 @@ fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
         }
         // Daylight from the open hatch above the top step
         w.fill_rect(steps_x, room_y + 46, 60, 6, Color{ .r = 200, .g = 210, .b = 220 });
-        w.draw_text("STEPS UP", steps_x - 4, room_y + room_h - 40, 1, Color.wp_hover);
+        // Under the lowest step. At the room's floor it sat in the message band's rows (D-124).
+        w.draw_text("STEPS UP", steps_x - 4, room_y + 60 + 6 * 36 + 10, 1, Color.wp_hover);
 
         // Title
         w.draw_text("WRECKERS CELLAR - UNDER LAMP POINT", room_x + 16, room_y + 16, 2, Color{ .r = 254, .g = 240, .b = 138 });

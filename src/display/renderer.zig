@@ -222,6 +222,9 @@ pub const DEFAULT_HEIGHT: i32 = 720;
 pub const WAYPOINT_SCREEN_RADIUS = 16;
 pub const ACTOR_SCREEN_RADIUS = 18;
 pub const HOTSPOT_SCREEN_RADIUS = 22;
+/// Half the size of the marker a prop without art is drawn as. Proof tests keep the whole
+/// marker above the message band (D-124).
+pub const PROP_MARKER_HALF: i32 = 16;
 
 /// Maps simulation discrete spatial coordinates to screen canvas coordinates.
 pub fn world_to_screen(world_x: i32, world_y: i32, screen_w: i32, screen_h: i32) Point {
@@ -472,6 +475,18 @@ pub fn inventory_layout(screen_w: i32, inventory: []const RenderInventoryItem, o
         x += w + gap;
     }
     return out[0..n];
+}
+
+/// The top of the message band at its tallest (D-099, D-124): four rows over the command bar,
+/// 504 pixels at 1280x720. Proof art, marks, and labels stay above it, which the proof render
+/// test checks for every scene.
+pub fn message_band_top(screen_h: i32) i32 {
+    return screen_h - 80 - 30 - 28 - (@as(i32, LOG_ROWS) * LOG_ROW + 6);
+}
+
+/// The bottom of that band: where the command bar starts, 582 pixels at 1280x720.
+pub fn message_band_bottom(screen_h: i32) i32 {
+    return screen_h - 80 - 30 - 28;
 }
 
 /// The band of the verb bar row that takes clicks on verbs and items: from 78 above the
@@ -1462,12 +1477,11 @@ pub const DisplayWindow = struct {
     }
 
     /// True when a label of `height` under a mark at `y` would reach into the message band at
-    /// its tallest, four rows over a command bar, where the log would cover it. Such a label
-    /// is drawn above its mark instead (D-124). The command bar is counted whether or not this
-    /// window shows one, so a label does not move when the bar or a page turns it on.
+    /// its tallest, where the log would cover it. Such a label is drawn above its mark instead
+    /// (D-124). The command bar is counted whether or not this window shows one, so a label
+    /// does not move when the bar or a page turns it on.
     fn mark_label_needs_air(self: *const DisplayWindow, y: i32, height: i32) bool {
-        const band_top = self.height - 80 - 30 - 28 - (@as(i32, LOG_ROWS) * LOG_ROW + 6);
-        return y + WAYPOINT_SCREEN_RADIUS + 6 + height > band_top;
+        return y + WAYPOINT_SCREEN_RADIUS + 6 + height > message_band_top(self.height);
     }
 
     /// Height the log takes above `log_bottom`, which the dialogue panel stays clear of.
@@ -2881,8 +2895,8 @@ pub const DisplayWindow = struct {
             }) else false) else false;
             if (!prop_drawn) {
                 // Default prop
-                self.fill_rect(pt.x - 16, pt.y - 16, 32, 32, Color{ .r = 75, .g = 65, .b = 60 });
-                self.draw_rect_outline(pt.x - 16, pt.y - 16, 32, 32, Color.panel_border);
+                self.fill_rect(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color{ .r = 75, .g = 65, .b = 60 });
+                self.draw_rect_outline(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color.panel_border);
             }
 
             // Hover highlight ring and action prompt

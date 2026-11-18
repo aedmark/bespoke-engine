@@ -71,9 +71,9 @@ lamp_point/Lamp Point +branch_active: dd884aee00174291
 lamp_point/Lamp Point +branch_collapsed: 2cc76a702eed9a47
 lamp_point/Lamp Point +countdown: a8639e59334b622a
 thumb/lamp_point/Wreckers Cellar: a3c754100f847826
-lamp_point/Wreckers Cellar: ed697daec37c741e
-lamp_point/Wreckers Cellar +branch_active: 8bd023f996f7cc90
-lamp_point/Wreckers Cellar +branch_collapsed: 3bce6014b9794dfa
+lamp_point/Wreckers Cellar: fc811214c032a0b6
+lamp_point/Wreckers Cellar +branch_active: 0cdc408846223806
+lamp_point/Wreckers Cellar +branch_collapsed: 33fb5cb382499b28
 thumb/three_tides/Charter Yard: dcd036eeab4188e3
 three_tides/Charter Yard: 433d07e63dc17714
 three_tides/Charter Yard +tides_tree_felled: fc9757b042cf35a4
@@ -135,10 +135,10 @@ grid_puzzle/Hollin Keep Gallery +branch_collapsed: 121217587ca76a9e
 grid_puzzle/Hollin Keep Gallery +countdown: a6a353d36faaf68a
 grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: 09a5d3f0b48797bc
 grid_puzzle/Hollin Keep Gallery +gallery_fire: da7da7cea328be1e
-thumb/observatory_puzzle/Larkspur Observatory: dd90ad4ad06fbde2
-observatory_puzzle/Larkspur Observatory: 9a6c5be47013c93b
-observatory_puzzle/Larkspur Observatory +branch_active: a90022832e80b9df
-observatory_puzzle/Larkspur Observatory +branch_collapsed: 93335e065fbbfc79
-observatory_puzzle/Larkspur Observatory +countdown: e5193b62b430848f
+thumb/observatory_puzzle/Larkspur Observatory: 1bf9f1ead65002c9
+observatory_puzzle/Larkspur Observatory: 0427713770315423
+observatory_puzzle/Larkspur Observatory +branch_active: 5a3857da06544326
+observatory_puzzle/Larkspur Observatory +branch_collapsed: c885f1b4366033a5
+observatory_puzzle/Larkspur Observatory +countdown: a3ac64a8267176e1
 inspector/Larkspur Observatory: 584cc259267dc268
 inspector-filtered/Larkspur Observatory: dee9194b868f249c

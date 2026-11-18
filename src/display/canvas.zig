@@ -49,11 +49,51 @@ pub const Color = struct {
     pub const slate = Color{ .r = 148, .g = 163, .b = 184 };
 };
 
+/// Where one string was drawn and how much room it took, as `draw_text` lays it out. The
+/// string's start is kept so a failing check can name it.
+pub const TextDraw = struct {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    text: [48]u8 = undefined,
+    text_len: usize = 0,
+
+    pub fn get_text(self: *const TextDraw) []const u8 {
+        return self.text[0..self.text_len];
+    }
+};
+
+/// Collects the strings a canvas draws, so a test can prove that no proof text, a room name,
+/// a sign, or a prompt, reaches into the message band (D-124). A canvas records only while a
+/// probe is lent to it; drawing is otherwise unchanged.
+pub const TextProbe = struct {
+    pub const cap = 256;
+    draws: [cap]TextDraw = undefined,
+    count: usize = 0,
+
+    pub fn record(self: *TextProbe, text: []const u8, x: i32, y: i32, scale: i32) void {
+        if (self.count == cap) return;
+        var draw = TextDraw{
+            .x = x,
+            .y = y,
+            .w = font.text_width(text, scale),
+            .h = font.FONT_HEIGHT * scale,
+        };
+        draw.text_len = @min(text.len, draw.text.len);
+        @memcpy(draw.text[0..draw.text_len], text[0..draw.text_len]);
+        self.draws[self.count] = draw;
+        self.count += 1;
+    }
+};
+
 pub const Canvas = struct {
     /// `width * height * 4` bytes, row by row, R G B A. Borrowed: the owner keeps it alive.
     pixels: []u8,
     width: i32,
     height: i32,
+    /// When set, every string drawn is also recorded in the probe (D-124).
+    text_probe: ?*TextProbe = null,
 
     pub fn init(pixels: []u8, width: i32, height: i32) Canvas {
         std.debug.assert(pixels.len >= @as(usize, @intCast(width * height * 4)));
@@ -202,6 +242,7 @@ pub const Canvas = struct {
 
     /// Text in the 5x7 font, each lit dot a `scale`-sized square.
     pub fn draw_text(self: *Canvas, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
+        if (self.text_probe) |probe| probe.record(text, start_x, start_y, scale);
         var cur_x = start_x;
         for (text) |ch| {
             if (ch < 32 or ch > 126) {
