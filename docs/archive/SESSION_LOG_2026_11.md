@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 90 (2026-11-18)
+- **Work.** Completed P42-02. `bespoke init` embeds the canonical license and copies it unmodified as `LICENSE-BeSpoke`. The generated README explains author choice, distribution of the BeSpoke notice, and voluntary agentic-use disclosure. The engine license and browser runtime archive are unchanged. Both Linux archives are rebuilt.
+- **Checks.** All 699 Zig tests pass. `zig build test-template` compares the generated notice byte for byte and passes the generated tests, bundle, and web build. Both extracted Linux CLIs generate the exact notice and no project-wide license. The static test runs in a filesystem without Zig or SDL2 and without the source copy of the notice. No generated site or golden changed.
+
 ### Session 89 (2026-11-18)
 - **Work.** Completed P42-01. Q-012 selects a static Linux x86_64 CLI and a separate SDL2 desktop download (D-119). Both keep the same stock runner, ship the Night Watch sample, and require an explicit engine source directory for `init`. Linux and browser archives stay local, under `dist/release/`; CI builds packages but does not publish.
 - **Checks.** The extracted static CLI runs source and compiled Night Watch and scaffolds without Zig, SDL2, a system libc, or a loader in a bubblewrap root. The first empty-root init check exposed Zig path resolution's reliance on procfs; mounting that kernel filesystem resolves it without adding host binaries or libraries. The project passes its tests with Zig 0.17.1 and SDL2 headers. The desktop archive initializes SDL2 with offscreen video and dummy audio. Its local executable requires glibc 2.36 or newer. Physical display, audio, and other distributions are not tested.

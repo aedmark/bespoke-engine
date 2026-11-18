@@ -10,10 +10,10 @@
 //! cast is then spread over the scene's marks. That is the default state of the scene. Art that
 //! depends on puzzle progress (a moved anchor, a tampered flag) is not covered.
 //!
-//! Every staged frame is drawn again at 1920x1080 in a second window and at 640x360 in a third
-//! that shows the 1280x720 frame scaled to half size, and the band is checked in both (P43-03).
-//! Only the 1280x720 pixels are hashed. The scaled window's probes are in logical coordinates,
-//! so its band check reads the 720-row band that the 360-row image half-sizes (Q-014).
+//! Every staged frame is drawn again at 1920x1080 in a second window and the band is checked
+//! there too (P43-03); only the 1280x720 pixels are hashed. A 640x360 window needs no pass of
+//! its own: it draws this same 1280x720 frame and shows it at half size, so its band is the band
+//! checked here, moved to rows 252 to 291 (Q-014, and the guard test below).
 //!
 //! The hashes come from SDL's software rasterizer and are stable for one SDL build. If an SDL
 //! upgrade changes every hash at once with no change here, regenerate and say so in review.
@@ -179,9 +179,6 @@ const Thumbs = struct {
 /// check covers more than the golden's 1280x720 without adding a golden (P43-03).
 const AltWindow = struct {
     window: *bespoke.display.DisplayWindow,
-    /// The height whose band rows this render's probes are measured in: the logical height for
-    /// a scaled window, where drawing happens before the downscale.
-    band_height: i32,
     text: bespoke.display.canvas.TextProbe = .{},
     rect: bespoke.display.canvas.RectProbe = .{},
 };
@@ -194,8 +191,8 @@ const Recorder = struct {
     text: bespoke.display.canvas.TextProbe = .{},
     /// Every rectangle and sprite the last frame drew, for the band check (P43-02).
     rect: bespoke.display.canvas.RectProbe = .{},
-    /// Each frame is drawn again in these windows and band-checked there (P43-03).
-    alts: []const *AltWindow = &.{},
+    /// When set, each frame is drawn again at this window's size and band-checked there.
+    alt: ?*AltWindow = null,
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
@@ -307,7 +304,7 @@ const Recorder = struct {
             }
         }
         alt.window.render_frame(frame, true);
-        try self.check_band_at(label, alt.band_height, &alt.text, &alt.rect, verbose);
+        try self.check_band_at(label, alt.window.height, &alt.text, &alt.rect, verbose);
     }
 
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
@@ -332,7 +329,7 @@ const Recorder = struct {
         }
         self.window.render_frame(frame, true);
         try self.check_band(label, true);
-        for (self.alts) |alt| try self.check_alt(label, frame, alt, true);
+        if (self.alt) |alt| try self.check_alt(label, frame, alt, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
@@ -559,15 +556,8 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     var big = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, ALT_WIDTH, ALT_HEIGHT);
     defer big.deinit();
     big.set_theme(&art.theme);
-    var big_alt = AltWindow{ .window = &big, .band_height = ALT_HEIGHT };
-    // The short window draws the same 1280x720 frame and shows it at half size (Q-014), so its
-    // probes are logical and its band rows are the 720-row ones.
-    var short = try bespoke.display.DisplayWindow.init_offscreen_scaled(std.testing.io, SHORT_WIDTH, SHORT_HEIGHT, WIDTH, HEIGHT);
-    defer short.deinit();
-    short.set_theme(&art.theme);
-    var short_alt = AltWindow{ .window = &short, .band_height = HEIGHT };
-    var alts = [_]*AltWindow{ &big_alt, &short_alt };
-    var rec = Recorder{ .allocator = allocator, .window = window, .alts = &alts, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
+    var alt = AltWindow{ .window = &big };
+    var rec = Recorder{ .allocator = allocator, .window = window, .alt = &alt, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
@@ -689,11 +679,11 @@ test "D-124: the proof band check fails on a string drawn inside the message ban
     rec.rect.overflowed = false;
 }
 
-test "P43-03: a 640x360 window shows the 1280x720 frame at half size, band included" {
+test "P43-03: a short window shows the whole frame, so its band is the 1280x720 band scaled" {
     const renderer = bespoke.display.renderer;
     // A native 640x360 layout cannot fit the band and a stage: the band's top is row 144 while
-    // world y 0 draws at row 200. The short window therefore draws all 720 rows and shows them
-    // scaled, so the band lands at rows 252 to 291 in the pixels a viewer sees (Q-014).
+    // world y 0 draws at row 200. A short window therefore draws all 720 rows and shows them
+    // scaled, so the band lands at rows 252 to 291 of the pixels a viewer sees (Q-014).
     try std.testing.expectEqual(@as(i32, 144), renderer.message_band_top(360));
     const band_top = renderer.message_band_top(HEIGHT);
     const band_bottom = renderer.message_band_bottom(HEIGHT);
@@ -702,7 +692,11 @@ test "P43-03: a 640x360 window shows the 1280x720 frame at half size, band inclu
 
     var win = try bespoke.display.DisplayWindow.init_offscreen_scaled(std.testing.io, SHORT_WIDTH, SHORT_HEIGHT, WIDTH, HEIGHT);
     defer win.deinit();
+    // Drawing stays at the golden's size, which is why the sweep needs no 640x360 pass: the
+    // frame it would measure is the one already checked at 1280x720.
     try std.testing.expectEqual(WIDTH, win.width);
+    try std.testing.expectEqual(HEIGHT, win.height);
+    try std.testing.expectEqual(SHORT_WIDTH, win.scaled_canvas.?.width);
     try std.testing.expectEqual(SHORT_HEIGHT, win.scaled_canvas.?.height);
 }
 
