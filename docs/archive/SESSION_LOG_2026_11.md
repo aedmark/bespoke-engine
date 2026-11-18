@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 86 (2026-11-17)
+- **Work.** Completed P41-01 on `feature/p41-01-benchmarks`. The benchmark reports rates for five verified cases on Linux and Chrome. CI checks both production Wasm modules, the showcase, standalone proof pages, and the packed Lantern Watch. Raw byte limits are enforced; throughput is informational (D-115).
+- **Checks.** `zig build bench --summary all -j2` passes; the combined case records 967 ticks/s native and 523 in Chrome on the local Ryzen 9 7900X. The full local Zig and 71-test Python suites, Wasm smoke, generated-site freshness, browser size budgets, and docs checks pass. GitHub CI has not run this branch.
+
 ### Session 85 (2026-11-17)
 - **Work.** Prepared Phase 40 and Lantern Watch for integration. Regenerated the showcase and seven standalone proof pages from the current `bespoke-proofs.wasm` (694,256 bytes), clearing the stale-page checks. The hand-uploaded site and local Lantern Watch exports are not part of the commit.
 - **Checks.** On Linux with Zig 0.17.1, the full suite, generated template, fuzz harnesses, and both Wasm builds pass. All 69 Python tests, the docs and editor checks, and generated-site freshness pass. Chrome verifies the tutorial, the complete solo bell repair in Lantern Watch, and proof-page audio and play.

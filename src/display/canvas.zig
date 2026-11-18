@@ -87,6 +87,54 @@ pub const TextProbe = struct {
     }
 };
 
+/// What a rectangle belongs to. `.prop` is the proof art the band check measures; `.mark`,
+/// `.actor`, and `.walkway` are the engine's own stage furniture, `.backdrop` is the scenery
+/// D-124 lets extend behind the log, and `.chrome` and `.overlay` are the window's panels,
+/// bars, and drawers, which the check skips by kind.
+pub const RectKind = enum { backdrop, prop, actor, mark, walkway, chrome, overlay };
+
+/// One rectangle or sprite a canvas drew, with the kind of layer it belongs to and the name of
+/// the thing drawn when the renderer knows it.
+pub const RectDraw = struct {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    kind: RectKind,
+    name: [32]u8 = undefined,
+    name_len: usize = 0,
+
+    pub fn get_name(self: *const RectDraw) []const u8 {
+        return self.name[0..self.name_len];
+    }
+};
+
+/// Collects the rectangles and sprites a canvas draws, so the proof render test measures the
+/// art a frame really paints rather than a marker's nominal size (P43-02). Text is not recorded
+/// here: `TextProbe` covers it, and a glyph's dots would swamp this probe. A canvas records only
+/// while a probe is lent to it; drawing is otherwise unchanged.
+pub const RectProbe = struct {
+    pub const cap = 2048;
+    draws: [cap]RectDraw = undefined,
+    count: usize = 0,
+    /// Set when more rectangles were drawn than the probe holds, so a check fails rather than
+    /// silently measuring a partial frame.
+    overflowed: bool = false,
+
+    pub fn record(self: *RectProbe, kind: RectKind, name: []const u8, x: i32, y: i32, w: i32, h: i32) void {
+        if (w <= 0 or h <= 0) return;
+        if (self.count == cap) {
+            self.overflowed = true;
+            return;
+        }
+        var draw = RectDraw{ .x = x, .y = y, .w = w, .h = h, .kind = kind };
+        draw.name_len = @min(name.len, draw.name.len);
+        @memcpy(draw.name[0..draw.name_len], name[0..draw.name_len]);
+        self.draws[self.count] = draw;
+        self.count += 1;
+    }
+};
+
 pub const Canvas = struct {
     /// `width * height * 4` bytes, row by row, R G B A. Borrowed: the owner keeps it alive.
     pixels: []u8,
@@ -94,6 +142,14 @@ pub const Canvas = struct {
     height: i32,
     /// When set, every string drawn is also recorded in the probe (D-124).
     text_probe: ?*TextProbe = null,
+    /// When set, every rectangle, line, circle, and sprite drawn is recorded (P43-02).
+    rect_probe: ?*RectProbe = null,
+    /// The layer the next draws belong to, and the name of the thing being drawn.
+    rect_kind: RectKind = .walkway,
+    rect_name: []const u8 = "",
+    /// Suppresses recording for text glyphs and full-canvas clears, which are not art.
+    text_depth: u8 = 0,
+    suppress_rects: u8 = 0,
 
     pub fn init(pixels: []u8, width: i32, height: i32) Canvas {
         std.debug.assert(pixels.len >= @as(usize, @intCast(width * height * 4)));
@@ -101,7 +157,14 @@ pub const Canvas = struct {
     }
 
     pub fn clear(self: *Canvas, col: Color) void {
+        self.suppress_rects += 1;
+        defer self.suppress_rects -= 1;
         self.fill_rect(0, 0, self.width, self.height, .{ .r = col.r, .g = col.g, .b = col.b, .a = col.a });
+    }
+
+    inline fn note_rect(self: *Canvas, x: i32, y: i32, w: i32, h: i32) void {
+        if (self.text_depth != 0 or self.suppress_rects != 0) return;
+        if (self.rect_probe) |probe| probe.record(self.rect_kind, self.rect_name, x, y, w, h);
     }
 
     /// Writes one pixel, blending a translucent colour over what is there as SDL's
@@ -141,6 +204,7 @@ pub const Canvas = struct {
         const x1 = @min(self.width, x + w);
         const y1 = @min(self.height, y + h);
         if (x0 >= x1 or y0 >= y1) return;
+        self.note_rect(x0, y0, x1 - x0, y1 - y0);
         if (col.a == 255) {
             // Opaque rows are a repeated 4-byte pattern: write the first pixel, then double the
             // copied span, which keeps a full-canvas clear fast in a Debug build.
@@ -182,6 +246,7 @@ pub const Canvas = struct {
     pub fn draw_line(self: *Canvas, x0_in: i32, y0_in: i32, x1: i32, y1: i32, col: Color) void {
         var x0 = x0_in;
         var y0 = y0_in;
+        self.note_rect(@min(x0, x1), @min(y0, y1), @intCast(@abs(x1 - x0) + 1), @intCast(@abs(y1 - y0) + 1));
         const dx: i32 = @intCast(@abs(x1 - x0));
         const sx: i32 = if (x0 < x1) 1 else -1;
         const dy: i32 = -@as(i32, @intCast(@abs(y1 - y0)));
@@ -206,6 +271,7 @@ pub const Canvas = struct {
     /// pixel once.
     pub fn fill_circle(self: *Canvas, cx: i32, cy: i32, radius: i32, col: Color) void {
         if (radius <= 0) return;
+        self.note_rect(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
         var dy: i32 = -radius;
         while (dy <= radius) : (dy += 1) {
             const dx: i32 = @intCast(std.math.sqrt(@as(u64, @intCast(@max(0, radius * radius - dy * dy)))));
@@ -217,6 +283,7 @@ pub const Canvas = struct {
     /// The midpoint circle, eight octants per step.
     pub fn draw_circle_outline(self: *Canvas, cx: i32, cy: i32, radius: i32, col: Color) void {
         if (radius <= 0) return;
+        self.note_rect(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
         var x: i32 = radius;
         var y: i32 = 0;
         var err: i32 = 0;
@@ -243,6 +310,8 @@ pub const Canvas = struct {
     /// Text in the 5x7 font, each lit dot a `scale`-sized square.
     pub fn draw_text(self: *Canvas, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
         if (self.text_probe) |probe| probe.record(text, start_x, start_y, scale);
+        self.text_depth += 1;
+        defer self.text_depth -= 1;
         var cur_x = start_x;
         for (text) |ch| {
             if (ch < 32 or ch > 126) {
@@ -305,6 +374,51 @@ test "P36-02: the canvas clips at its edges and draws each primitive where asked
     cv.fill_circle(-50, -50, 10, Color.white);
     cv.draw_line(-10, -10, -1, -20, Color.white);
     cv.draw_text("A", 100, 100, 2, Color.white);
+}
+
+test "P43-02: the rect probe records shapes with their layer, skips text and clears, and flags overflow" {
+    var buf: [16 * 8 * 4]u8 = undefined;
+    var cv = Canvas.init(&buf, 16, 8);
+    var probe = RectProbe{};
+    cv.rect_probe = &probe;
+
+    // A full-canvas clear is background, not art.
+    cv.clear(Color.black);
+    try testing.expectEqual(@as(usize, 0), probe.count);
+
+    cv.rect_kind = .prop;
+    cv.rect_name = "Cask";
+    cv.fill_rect(2, 1, 6, 4, Color.gold);
+    try testing.expectEqual(@as(usize, 1), probe.count);
+    try testing.expectEqual(RectKind.prop, probe.draws[0].kind);
+    try testing.expectEqualStrings("Cask", probe.draws[0].get_name());
+    try testing.expectEqual(@as(i32, 2), probe.draws[0].x);
+    try testing.expectEqual(@as(i32, 4), probe.draws[0].h);
+
+    // Glyph dots are text, which the text probe covers, not art rectangles.
+    cv.draw_text("A", 0, 0, 1, Color.white);
+    try testing.expectEqual(@as(usize, 1), probe.count);
+
+    cv.rect_kind = .chrome;
+    cv.fill_circle(8, 4, 3, Color.amber);
+    try testing.expectEqual(@as(usize, 2), probe.count);
+    try testing.expectEqual(RectKind.chrome, probe.draws[1].kind);
+    try testing.expectEqual(@as(i32, 7), probe.draws[1].h);
+
+    cv.rect_kind = .backdrop;
+    cv.draw_line(0, 7, 15, 7, Color.white);
+    try testing.expectEqual(@as(usize, 3), probe.count);
+
+    // A shape wholly off the canvas draws nothing and records nothing.
+    cv.rect_kind = .prop;
+    cv.fill_rect(-10, -10, 4, 4, Color.white);
+    try testing.expectEqual(@as(usize, 3), probe.count);
+
+    // A frame the probe cannot hold is flagged, not silently cut short.
+    var small = RectProbe{};
+    small.count = RectProbe.cap;
+    small.record(.prop, "Late", 0, 0, 4, 4);
+    try testing.expect(small.overflowed);
 }
 
 test "P36-02: a translucent colour blends as SDL's blend mode does, and text is drawn in the 5x7 font" {

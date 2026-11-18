@@ -2873,8 +2873,12 @@ pub const DisplayWindow = struct {
         self.audio_bridge.process_scene_and_cues(frame.get_current_scene(), frame.get_current_score());
 
         // 1. Backdrop: the host's theme draws its scene; without one, a neutral stage (D-039)
+        // The backdrop is the one layer D-124 lets extend behind the log; the probe keeps it
+        // apart from proof scenery so the band check can skip it by kind (P43-02).
+        if (self.canvas) |*cv| cv.rect_kind = .backdrop;
         const backdrop_drawn = if (self.theme) |t| (if (t.backdrop) |draw| draw(&self.canvas.?, frame) else false) else false;
         if (!backdrop_drawn) self.render_default_backdrop(frame);
+        if (self.canvas) |*cv| cv.rect_kind = .prop;
         const walkways_shown = if (self.theme) |t| (if (t.shows_walkways) |ask| ask(frame) else true) else true;
 
         // 2b. Centralized Text Layout Resolver (D-024)
@@ -2885,6 +2889,7 @@ pub const DisplayWindow = struct {
             const pt = world_to_screen(hs.x, hs.y, self.width, self.height);
             const is_hovered = self.hover_target() == .prop and self.hovered_hotspot.? == idx;
             const name = words(hs.get_name());
+            if (self.canvas) |*cv| cv.rect_name = hs.get_name();
 
             const prop_drawn = if (self.theme) |t| (if (t.prop) |draw| draw(&self.canvas.?, frame, .{
                 .hotspot = &hs,
@@ -2898,6 +2903,8 @@ pub const DisplayWindow = struct {
                 self.fill_rect(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color{ .r = 75, .g = 65, .b = 60 });
                 self.draw_rect_outline(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color.panel_border);
             }
+            if (self.canvas) |*cv| cv.rect_name = "";
+            if (self.canvas) |*cv| cv.rect_kind = .walkway;
 
             // Hover highlight ring and action prompt
             if (is_hovered) {
@@ -2953,6 +2960,7 @@ pub const DisplayWindow = struct {
         }
 
         // 4. Render Waypoint Nodes
+        if (self.canvas) |*cv| cv.rect_kind = .mark;
         // A reached walk target is no longer a target (D-093): its "[Walk to]" prompt went away
         // only when another walk replaced it.
         if (self.target_wp) |twp| if (player_on_stage(frame)) |player| {
@@ -2963,6 +2971,7 @@ pub const DisplayWindow = struct {
         const mark_click_walks = self.mark_hover_walks();
         for (frame.waypoints[0..frame.waypoint_count]) |wp| {
             const pt = world_to_screen(wp.x, wp.y, self.width, self.height);
+            if (self.canvas) |*cv| cv.rect_name = wp.get_name();
             const is_hovered = (self.hovered_wp == wp.id) and mark_click_walks;
             const is_targeted = (self.target_wp == wp.id);
 
@@ -3043,6 +3052,7 @@ pub const DisplayWindow = struct {
                     self.fill_circle(pt.x, pt.y, 2, Color.white);
                 }
             }
+            if (self.canvas) |*cv| cv.rect_name = "";
         }
 
         // 4b. Render Fourth-Dimensional Pre-Cognitive Vector Conduits (P31-02, D-027)
@@ -3086,8 +3096,10 @@ pub const DisplayWindow = struct {
         }
 
         // 5. Render Actors
+        if (self.canvas) |*cv| cv.rect_kind = .actor;
         for (frame.entities[0..frame.entity_count], 0..) |e, idx| {
             const name = words(e.get_name());
+            if (self.canvas) |*cv| cv.rect_name = e.get_name();
             const layout = get_entity_screen_layout(idx, frame.entities[0..frame.entity_count], self.width, self.height);
             const pt = layout.pos;
             layout_resolver.add_obstacle(pt.x - ACTOR_SCREEN_RADIUS, pt.y - ACTOR_SCREEN_RADIUS, ACTOR_SCREEN_RADIUS * 2, ACTOR_SCREEN_RADIUS * 2);
@@ -3115,6 +3127,7 @@ pub const DisplayWindow = struct {
                     .actor_name,
                 ));
             }
+            if (self.canvas) |*cv| cv.rect_name = "";
 
             // The person a click would act on gets a gold ring and the action it would take
             // (D-093), as the browser does (D-088); before, only marks and props lit up.
@@ -3154,7 +3167,9 @@ pub const DisplayWindow = struct {
             }
         }
 
-        // 6. Top Status HUD Bar
+        // 6. Top Status HUD Bar. Everything from here down is the window's own furniture, so the
+        // band check skips it by kind (P43-02).
+        if (self.canvas) |*cv| cv.rect_kind = .chrome;
         self.fill_rect(0, 0, self.width, 48, Color.hud_bg);
         self.draw_line(0, 48, self.width, 48, Color.panel_border);
 
@@ -3774,7 +3789,9 @@ pub const DisplayWindow = struct {
         }
 
         // 12b. The theme's overlays, above everything else (D-041)
+        if (self.canvas) |*cv| cv.rect_kind = .overlay;
         if (self.theme) |t| if (t.overlay) |draw| draw(&self.canvas.?, frame);
+        if (self.canvas) |*cv| cv.rect_kind = .chrome;
 
         // 13. Present: a window on screen shows the canvas through its texture.
         // The browser has no SDL; its host copies the canvas itself.

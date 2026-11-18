@@ -169,6 +169,8 @@ const Recorder = struct {
     out: std.array_list.Managed(u8),
     /// Every string the last frame drew, for the band check (D-124).
     text: bespoke.display.canvas.TextProbe = .{},
+    /// Every rectangle and sprite the last frame drew, for the band check (P43-02).
+    rect: bespoke.display.canvas.RectProbe = .{},
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
@@ -204,12 +206,15 @@ const Recorder = struct {
         try lw1.writer.print("thumb/{s}/{s}: {x:0>16}\n", .{ proof, scene, std.hash.Wyhash.hash(0, &thumb) });
     }
 
-    /// D-124: no mark, prop marker, room name, sign, or prompt reaches into the message band at
-    /// its tallest, four rows over a command bar. The frame is drawn with the log cleared, so a
-    /// string found in those rows is proof drawing. Backdrop scenery that merely extends below
-    /// the log stays out of scope, as D-124 records; a prop drawn as the default marker is
-    /// covered whole. `verbose` names the offender; the canary test calls it quietly, so a
-    /// passing run prints nothing.
+    /// D-124: no proof art, room name, sign, or prompt reaches into the message band at its
+    /// tallest, four rows over a command bar. The frame is drawn with the log cleared, so a
+    /// string found in those rows is proof drawing.
+    ///
+    /// Art is measured by what the frame drew, not by a marker's nominal size (P43-02): every
+    /// rectangle, line, circle, and sprite is recorded with its layer, and the check fails on a
+    /// stage draw that reaches the band. Backdrop scenery (D-124's one exemption), the window's
+    /// chrome, and full-window overlays are other layers and are skipped by kind. `verbose`
+    /// names the offender; the canary test calls it quietly, so a passing run prints nothing.
     fn check_band(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame, verbose: bool) !void {
         // The State drawer covers the stage, band included, and is not proof art.
         if (self.window.show_save_drawer) return;
@@ -217,6 +222,16 @@ const Recorder = struct {
         const band_top = renderer.message_band_top(HEIGHT);
         const band_bottom = renderer.message_band_bottom(HEIGHT);
 
+        if (self.rect.overflowed) {
+            if (verbose) std.debug.print(
+                "\n'{s}': the frame drew more rectangles than the probe holds ({d})\n",
+                .{ label, bespoke.display.canvas.RectProbe.cap },
+            );
+            return error.RectProbeOverflow;
+        }
+
+        // Every offender in the frame is named before the test stops, so one run lists all the
+        // art a layout change puts in the band rather than the first one found.
         for (frame.waypoints[0..frame.waypoint_count]) |wp| {
             const pt = renderer.world_to_screen(wp.x, wp.y, WIDTH, HEIGHT);
             if (pt.y + renderer.WAYPOINT_SCREEN_RADIUS > band_top) {
@@ -228,16 +243,22 @@ const Recorder = struct {
             }
         }
 
-        for (frame.hotspots[0..frame.hotspot_count]) |hs| {
-            const pt = renderer.world_to_screen(hs.x, hs.y, WIDTH, HEIGHT);
-            if (pt.y + renderer.PROP_MARKER_HALF > band_top) {
+        // Prop art is measured by the rectangles and sprites it drew, not by the 32-pixel marker
+        // a prop without art would get (P43-02). Mark discs and people are engine tokens and
+        // keep the nominal circle check above; whether they may paint the band's first rows is
+        // Q-013.
+        var art_reaches = false;
+        for (self.rect.draws[0..self.rect.count]) |d| {
+            if (d.kind != .prop) continue;
+            if (d.y + d.h > band_top and d.y < band_bottom) {
                 if (verbose) std.debug.print(
-                    "\n'{s}': prop {s} reaches the message band (its marker ends at {d}, the band starts at {d})\n",
-                    .{ label, hs.get_name(), pt.y + renderer.PROP_MARKER_HALF, band_top },
+                    "\n'{s}': art \"{s}\" at ({d}, {d}) size {d}x{d} reaches the message band's rows {d} to {d}\n",
+                    .{ label, if (d.get_name().len > 0) d.get_name() else "shape", d.x, d.y, d.w, d.h, band_top, band_bottom },
                 );
-                return error.PropInMessageBand;
+                art_reaches = true;
             }
         }
+        if (art_reaches) return error.ArtInMessageBand;
 
         for (self.text.draws[0..self.text.count]) |d| {
             if (d.y < band_bottom and d.y + d.h > band_top) {
@@ -255,10 +276,20 @@ const Recorder = struct {
         // cleared first. These frames carry no messages anyway, so the hash is unchanged.
         self.window.clear_log();
         self.text.count = 0;
+        self.rect.count = 0;
+        self.rect.overflowed = false;
         const canvas: ?*bespoke.display.Canvas = if (self.window.canvas) |*cv| cv else null;
-        if (canvas) |cv| cv.text_probe = &self.text;
+        if (canvas) |cv| {
+            cv.text_probe = &self.text;
+            cv.rect_probe = &self.rect;
+            cv.rect_kind = .prop;
+            cv.rect_name = "";
+        }
         defer {
-            if (canvas) |cv| cv.text_probe = null;
+            if (canvas) |cv| {
+                cv.text_probe = null;
+                cv.rect_probe = null;
+            }
         }
         self.window.render_frame(frame, true);
         try self.check_band(label, frame, true);
@@ -581,16 +612,23 @@ test "D-124: the proof band check fails on a string drawn inside the message ban
     try std.testing.expectError(error.TextInMessageBand, rec.check_band("canary", &frame, false));
     rec.text.count = 0;
 
-    // A mark and a prop placed low fail too, with the rows already measured.
-    frame.waypoint_count = 1;
-    frame.waypoints[0] = std.mem.zeroes(@TypeOf(frame.waypoints[0]));
-    frame.waypoints[0].y = 20;
-    try std.testing.expectError(error.MarkInMessageBand, rec.check_band("canary", &frame, false));
-    frame.waypoint_count = 0;
-    frame.hotspot_count = 1;
-    frame.hotspots[0] = std.mem.zeroes(@TypeOf(frame.hotspots[0]));
-    frame.hotspots[0].y = 20;
-    try std.testing.expectError(error.PropInMessageBand, rec.check_band("canary", &frame, false));
+    // A stage shape placed low fails, named by what the renderer was drawing.
+    rec.rect.record(.prop, "Chalk Line", 40, band_top - 4, 32, 32);
+    try std.testing.expectError(error.ArtInMessageBand, rec.check_band("canary", &frame, false));
+    rec.rect.count = 0;
+
+    // Backdrop scenery and window chrome may reach the band: D-124 keeps the backdrop out of
+    // scope, and the log and bars are the window's own furniture.
+    rec.rect.record(.backdrop, "roof", 40, band_top - 4, 600, 200);
+    rec.rect.record(.chrome, "log", 0, band_top, WIDTH, 78);
+    rec.rect.record(.overlay, "modal", 0, band_top, WIDTH, 78);
+    try rec.check_band("canary", &frame, false);
+    rec.rect.count = 0;
+
+    // A frame the probe could not hold fails rather than passing on a partial measurement.
+    rec.rect.overflowed = true;
+    try std.testing.expectError(error.RectProbeOverflow, rec.check_band("canary", &frame, false));
+    rec.rect.overflowed = false;
 }
 
 test "P32-02a: scene headers are read from script text" {
