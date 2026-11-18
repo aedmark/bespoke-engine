@@ -210,12 +210,12 @@ const Recorder = struct {
     /// tallest, four rows over a command bar. The frame is drawn with the log cleared, so a
     /// string found in those rows is proof drawing.
     ///
-    /// Art is measured by what the frame drew, not by a marker's nominal size (P43-02): every
-    /// rectangle, line, circle, and sprite is recorded with its layer, and the check fails on a
-    /// stage draw that reaches the band. Backdrop scenery (D-124's one exemption), the window's
+    /// Art is measured by what the frame drew (P43-02, Q-013): every rectangle, line, circle,
+    /// and sprite is recorded with its layer, and the check fails on a prop, mark, or person
+    /// that reaches the band. Backdrop scenery (D-124's one exemption), walkways, the window's
     /// chrome, and full-window overlays are other layers and are skipped by kind. `verbose`
     /// names the offender; the canary test calls it quietly, so a passing run prints nothing.
-    fn check_band(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame, verbose: bool) !void {
+    fn check_band(self: *Recorder, label: []const u8, verbose: bool) !void {
         // The State drawer covers the stage, band included, and is not proof art.
         if (self.window.show_save_drawer) return;
         const renderer = bespoke.display.renderer;
@@ -232,24 +232,9 @@ const Recorder = struct {
 
         // Every offender in the frame is named before the test stops, so one run lists all the
         // art a layout change puts in the band rather than the first one found.
-        for (frame.waypoints[0..frame.waypoint_count]) |wp| {
-            const pt = renderer.world_to_screen(wp.x, wp.y, WIDTH, HEIGHT);
-            if (pt.y + renderer.WAYPOINT_SCREEN_RADIUS > band_top) {
-                if (verbose) std.debug.print(
-                    "\n'{s}': mark {s} reaches the message band (its circle ends at {d}, the band starts at {d})\n",
-                    .{ label, wp.get_name(), pt.y + renderer.WAYPOINT_SCREEN_RADIUS, band_top },
-                );
-                return error.MarkInMessageBand;
-            }
-        }
-
-        // Prop art is measured by the rectangles and sprites it drew, not by the 32-pixel marker
-        // a prop without art would get (P43-02). Mark discs and people are engine tokens and
-        // keep the nominal circle check above; whether they may paint the band's first rows is
-        // Q-013.
         var art_reaches = false;
         for (self.rect.draws[0..self.rect.count]) |d| {
-            if (d.kind != .prop) continue;
+            if (d.kind != .prop and d.kind != .mark and d.kind != .actor) continue;
             if (d.y + d.h > band_top and d.y < band_bottom) {
                 if (verbose) std.debug.print(
                     "\n'{s}': art \"{s}\" at ({d}, {d}) size {d}x{d} reaches the message band's rows {d} to {d}\n",
@@ -292,7 +277,7 @@ const Recorder = struct {
             }
         }
         self.window.render_frame(frame, true);
-        try self.check_band(label, frame, true);
+        try self.check_band(label, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
@@ -602,32 +587,37 @@ test "D-124: the proof band check fails on a string drawn inside the message ban
 
     const band_top = bespoke.display.renderer.message_band_top(HEIGHT);
     try std.testing.expectEqual(@as(i32, 504), band_top);
-    var frame = std.mem.zeroes(bespoke.RenderFrame);
-
     // A name whose last row stops above the band passes; one four pixels lower fails.
     rec.text.draws[0] = .{ .x = 40, .y = band_top - 14, .w = 60, .h = 14 };
     rec.text.count = 1;
-    try rec.check_band("canary", &frame, false);
+    try rec.check_band("canary", false);
     rec.text.draws[0].y = band_top - 4;
-    try std.testing.expectError(error.TextInMessageBand, rec.check_band("canary", &frame, false));
+    try std.testing.expectError(error.TextInMessageBand, rec.check_band("canary", false));
     rec.text.count = 0;
 
-    // A stage shape placed low fails, named by what the renderer was drawing.
+    // Prop art, a mark disc, and a person placed low all fail, named by what was drawn.
     rec.rect.record(.prop, "Chalk Line", 40, band_top - 4, 32, 32);
-    try std.testing.expectError(error.ArtInMessageBand, rec.check_band("canary", &frame, false));
+    try std.testing.expectError(error.ArtInMessageBand, rec.check_band("canary", false));
+    rec.rect.count = 0;
+    rec.rect.record(.mark, "Cottages", 40, band_top - 12, 33, 33);
+    try std.testing.expectError(error.ArtInMessageBand, rec.check_band("canary", false));
+    rec.rect.count = 0;
+    rec.rect.record(.actor, "Innkeeper", 40, band_top - 14, 37, 37);
+    try std.testing.expectError(error.ArtInMessageBand, rec.check_band("canary", false));
     rec.rect.count = 0;
 
-    // Backdrop scenery and window chrome may reach the band: D-124 keeps the backdrop out of
-    // scope, and the log and bars are the window's own furniture.
+    // Backdrop scenery, walkways, and window chrome may reach the band: D-124 keeps the
+    // backdrop out of scope, and the log and bars are the window's own furniture.
     rec.rect.record(.backdrop, "roof", 40, band_top - 4, 600, 200);
+    rec.rect.record(.walkway, "path", 0, band_top, WIDTH, 78);
     rec.rect.record(.chrome, "log", 0, band_top, WIDTH, 78);
     rec.rect.record(.overlay, "modal", 0, band_top, WIDTH, 78);
-    try rec.check_band("canary", &frame, false);
+    try rec.check_band("canary", false);
     rec.rect.count = 0;
 
     // A frame the probe could not hold fails rather than passing on a partial measurement.
     rec.rect.overflowed = true;
-    try std.testing.expectError(error.RectProbeOverflow, rec.check_band("canary", &frame, false));
+    try std.testing.expectError(error.RectProbeOverflow, rec.check_band("canary", false));
     rec.rect.overflowed = false;
 }
 

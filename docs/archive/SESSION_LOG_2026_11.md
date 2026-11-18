@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 87 (2026-11-17)
+- **Work.** Completed P41-02 and archived Phase 41. Added the narrow `host.ScriptSociety` API, plus the ten-scene Harbour reference game with parser input, native file saves, and a standalone browser page. Doorway marks are unique because compiler marks share a global namespace; room-scoped aliases keep `go forward` and `go back` consistent. Stripping Wasm debug sections brings the page inside the existing budget without changing ReleaseFast.
+- **Checks.** `zig build harbour` passes the native golden, changed-state save/restore, and all ten scenes through the browser parser. The 642,894-byte page passes the 1 MiB cap. Both real-game workloads agree across hosts and support D-117. All 699 Zig tests, Wasm smoke, generated-site freshness, and browser budgets pass. GitHub CI has not run these changes.
+
 ### Session 86 (2026-11-17)
 - **Work.** Completed P41-01 on `feature/p41-01-benchmarks`. The benchmark reports rates for five verified cases on Linux and Chrome. CI checks both production Wasm modules, the showcase, standalone proof pages, and the packed Lantern Watch. Raw byte limits are enforced; throughput is informational (D-115).
 - **Checks.** `zig build bench --summary all -j2` passes; the combined case records 967 ticks/s native and 523 in Chrome on the local Ryzen 9 7900X. The full local Zig and 71-test Python suites, Wasm smoke, generated-site freshness, browser size budgets, and docs checks pass. GitHub CI has not run this branch.

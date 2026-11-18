@@ -146,7 +146,9 @@ pub fn lay_out_settlement(world: *bespoke.World, spatial: *bespoke.SpatialSystem
     spatial.graph.waypoints.items[bakery_wp - 1].pos = .{ .x = 2, .y = -10 };
     spatial.graph.waypoints.items[farm_wp - 1].pos = .{ .x = 2, .y = 6 };
     spatial.graph.waypoints.items[town_square_wp - 1].pos = .{ .x = 15, .y = -2 };
-    spatial.graph.waypoints.items[cottages_wp - 1].pos = .{ .x = 15, .y = 9 };
+    // The cottages mark sits one unit above its row so its disc and the Innkeeper's token clear
+    // the message band's top at 504 (Q-013).
+    spatial.graph.waypoints.items[cottages_wp - 1].pos = .{ .x = 15, .y = 8 };
     spatial.graph.waypoints.items[tavern_wp - 1].pos = .{ .x = 28, .y = -10 };
     spatial.graph.waypoints.items[sheriffs_post_wp - 1].pos = .{ .x = 28, .y = 6 };
     spatial.graph.edges.clearRetainingCapacity();

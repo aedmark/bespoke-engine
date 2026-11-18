@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Larkspur Observatory's working-floor marks and The Living Village's cottages mark sit one world unit higher, so their discs and the people on them clear the message band (Q-013).
+
 - The Living Village's cottages prop sits on its mark's row instead of below it, where its marker reached into the message band (D-124).
 
 - A mark's name or prompt that would fall under the message band is drawn above its mark, and stays above when another label takes that place (D-124).

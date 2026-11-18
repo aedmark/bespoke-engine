@@ -205,6 +205,15 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .telescope_wp = try find.wp(spatial, scene, "TelescopeFloor"),
         .shed_wp = try find.wp(spatial, scene, "GeneratorShed"),
     };
+    // The working floor's marks sit one unit above its cell centres (y 8 rather than 9), so a
+    // 16-pixel disc centred at 476 ends on row 492 and an 18-pixel person ends on 494, both
+    // clear of the message band's top at 504 (Q-013). The grid still owns the floor plan, and
+    // the props stay on the cell row at y 9.
+    const working_marks = [_][]const u8{ "Library", "Office", "Archive", "TelescopeFloor", "Dome", "Darkroom" };
+    for (working_marks) |name| {
+        const wp = try find.wp(spatial, scene, name);
+        spatial.graph.waypoints.items[wp - 1].pos.y = 8;
+    }
     spatial.clear_hotspots();
     // Inside the working floor and above the message band's tallest top (D-123, D-124): the
     // renderer's 32-pixel prop marker centred at world y 9 ends on row 503, one row above the

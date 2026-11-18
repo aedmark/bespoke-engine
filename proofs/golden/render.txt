@@ -52,14 +52,14 @@ sword_fighting/Drowned Lantern +branch_active: bcc6489c80a5e4af
 sword_fighting/Drowned Lantern +branch_collapsed: 9932a8b2c680cc25
 sword_fighting/Drowned Lantern +countdown: 0d3f447a1e87f7a4
 thumb/village/Living Village: 566b6184d69fa2d0
-village/Living Village: c5a0ea3c8e159b9a
-village/Living Village +branch_active: 1afdde09777f954a
-village/Living Village +branch_collapsed: ec11c57972806052
-village/Living Village +village_crime_active: 56b67600463098a0
-village/Living Village +village_warrant_active: bfb1718772776e3e
-village/Living Village +village_arrest_made: 1197b9c187742751
-village/Living Village +countdown: 072b8407b2a01db3
-village/Living Village +villagers: 6fecc87204baa88e
+village/Living Village: d1843d8282a90baa
+village/Living Village +branch_active: 78a6e023f9ba4028
+village/Living Village +branch_collapsed: ee5b5fbcea0c9e97
+village/Living Village +village_crime_active: 1eef903b9fc805be
+village/Living Village +village_warrant_active: 2cd9dab5020ba84e
+village/Living Village +village_arrest_made: 8ff038f68677b724
+village/Living Village +countdown: 5bf90a067caf9e3e
+village/Living Village +villagers: 2af53bd87ef65f86
 thumb/lamp_point/Lamp Point: 67b94138d11efe81
 lamp_point/Lamp Point: f0c5e5788129a341
 lamp_point/Lamp Point +donkey_tangled: 852131a7ff2e846b
@@ -136,9 +136,9 @@ grid_puzzle/Hollin Keep Gallery +countdown: a6a353d36faaf68a
 grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: 09a5d3f0b48797bc
 grid_puzzle/Hollin Keep Gallery +gallery_fire: da7da7cea328be1e
 thumb/observatory_puzzle/Larkspur Observatory: 1bf9f1ead65002c9
-observatory_puzzle/Larkspur Observatory: 0427713770315423
-observatory_puzzle/Larkspur Observatory +branch_active: 5a3857da06544326
-observatory_puzzle/Larkspur Observatory +branch_collapsed: c885f1b4366033a5
-observatory_puzzle/Larkspur Observatory +countdown: a3ac64a8267176e1
+observatory_puzzle/Larkspur Observatory: acb2a24d8c010385
+observatory_puzzle/Larkspur Observatory +branch_active: fbabcda4d4018f8d
+observatory_puzzle/Larkspur Observatory +branch_collapsed: 56f9dcc798ca81d3
+observatory_puzzle/Larkspur Observatory +countdown: ccf4cdcd330d723d
 inspector/Larkspur Observatory: 584cc259267dc268
 inspector-filtered/Larkspur Observatory: dee9194b868f249c
