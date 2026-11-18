@@ -2,6 +2,24 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 91 (2026-11-18)
+- **Work.** Started P42-03. Corrected stale runbook expectations using D-047, D-074, D-110, and the current showcase. At 375 CSS pixels the comparison table forced a 448 px document in Firefox and Chromium. Fixed the table's narrow layout and added a Chrome regression check that fails before the fix. Exported the showcase, seven standalone pages, service worker, and manual into `dist/p42-03-showcase/`. No upload, commit, or tag.
+
+| Section | Result | Notes (proof, tick, browser, OS) |
+| --- | --- | --- |
+| Commit tested | Preliminary | Local `feature/p42-01-release-artifacts` worktree, base `4da1552`, with P42 changes uncommitted. Repeat release sign-off on a clean candidate. |
+| 1. Automated baseline | Pass | Linux x86_64, Zig 0.17.1. Build, 699 Zig tests, generated-project builds, both Wasm modules, Wasm smoke, 75 Python tests, docs, and generated-site freshness pass. |
+| 2. Desktop proofs (13) | Partial | All 13 exit successfully headless and stay up with offscreen SDL video and dummy audio. Live-window play to each ending remains. |
+| 2.3 Shared features | Partial | Automated suites cover renderer input, save/restore, and temporal snapshots. Physical window scaling and input, drawer thumbnails, and the other manual controls remain. |
+| 3. Listening | Pending | Wasm audio is non-silent; Night Watch logs Calm, Chase, Calm, Wind, Calm. Hardware listening and subjective balance remain. |
+| 4. Stock runner | Partial | Tavern Heist, Guard Patrol, and Night Watch validate, compile, open offscreen SDL windows, and emit identical 80-tick simulation transcripts from source and packages. Live-window dialogue and the handwritten walkthrough remain. |
+| 5. Starter template | Partial | Refuses overwrite, tests and builds pass, notice matches, and a copied bundle plays without scripts. Firefox and Chromium render the two-file browser version and enable audio after a click. Live desktop controls and manual browser dialogue remain. |
+| 6.1 Manual | Pass | Search and section navigation from `file://` in Firefox 155 and Chrome 157. |
+| 6.2 Showcase (Firefox / Chromium / phone) | Partial | Both headless browsers load all 13 decks from file and HTTP, accept Solve dispatch, follow the script viewer, play via gallery controls, and exercise pause, step, rewind, reset, and the inspector. The fixed 375 px viewport fits in both. Proof-specific manual interactions, real touch, listening, and the ten-minute memory check remain. |
+| 7. Export and offline | Pass locally | Chromium activates the worker, retains one cache on an unchanged reload, replaces it on changed export, and runs the playground after the server stops. Verified URL metadata with `https://example.invalid/`; the upload folder omits canonical URL tags until the public URL is supplied. |
+| 8. Neocities release | Pending | The maintainer uploads the export by hand (D-074). The updated live page, manual link, audio, service worker, and link preview need the deployed URL. |
+| 9. macOS / Windows | Pending external workflow | The generated workflow pins `v0.1.0`. No remote sample project is created this pass; these are template portability checks, not 0.2.0 engine target platforms. |
+
 ### Session 90 (2026-11-18)
 - **Work.** Completed P42-02. `bespoke init` embeds the canonical license and copies it unmodified as `LICENSE-BeSpoke`. The generated README explains author choice, distribution of the BeSpoke notice, and voluntary agentic-use disclosure. The engine license and browser runtime archive are unchanged. Both Linux archives are rebuilt.
 - **Checks.** All 699 Zig tests pass. `zig build test-template` compares the generated notice byte for byte and passes the generated tests, bundle, and web build. Both extracted Linux CLIs generate the exact notice and no project-wide license. The static test runs in a filesystem without Zig or SDL2 and without the source copy of the notice. No generated site or golden changed.

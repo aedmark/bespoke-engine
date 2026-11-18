@@ -240,6 +240,17 @@ pub fn world_to_screen(world_x: i32, world_y: i32, screen_w: i32, screen_h: i32)
     };
 }
 
+/// Maps a point in window pixels to the logical 1280x720 frame (P43-03, Q-014). A resized window
+/// shows the whole frame, so each axis scales independently and a click lands on what it points
+/// at; points outside the window clamp to its edge instead of falling off the canvas.
+fn window_to_stage(x: i32, y: i32, window_width: i32, window_height: i32, stage_width: i32, stage_height: i32) Point {
+    if (window_width <= 0 or window_height <= 0 or stage_width <= 0 or stage_height <= 0) return .{ .x = 0, .y = 0 };
+    return .{
+        .x = std.math.clamp(@divTrunc(x * stage_width, window_width), 0, stage_width - 1),
+        .y = std.math.clamp(@divTrunc(y * stage_height, window_height), 0, stage_height - 1),
+    };
+}
+
 /// Hit-tests screen coordinates against visible waypoint anchors.
 pub fn hit_test_waypoint(
     screen_x: i32,
@@ -1097,7 +1108,7 @@ pub const DisplayWindow = struct {
             c.SDL_WINDOWPOS_CENTERED,
             width,
             height,
-            c.SDL_WINDOW_SHOWN,
+            c.SDL_WINDOW_SHOWN | c.SDL_WINDOW_RESIZABLE,
         ) orelse {
             c.SDL_Quit();
             return DisplayWindow{
@@ -2134,6 +2145,18 @@ pub const DisplayWindow = struct {
         return null;
     }
 
+    /// The logical point under a window pixel. SDL presents the 1280x720 texture stretched to
+    /// the window, so input scales the same way before any hit test (P43-03, Q-014).
+    fn stage_point(self: *const DisplayWindow, x: i32, y: i32) Point {
+        var w = self.width;
+        var h = self.height;
+        if (self.window) |win| {
+            const sdl_window: *c.SDL_Window = @ptrCast(win);
+            c.SDL_GetWindowSize(sdl_window, &w, &h);
+        }
+        return window_to_stage(x, y, w, h, self.width, self.height);
+    }
+
     fn poll_input(self: *DisplayWindow, frame: *const RenderFrame) UserAction {
 
         var event: c.SDL_Event = undefined;
@@ -2143,6 +2166,9 @@ pub const DisplayWindow = struct {
             switch (event.type) {
                 c.SDL_QUIT => return .quit,
                 c.SDL_MOUSEMOTION => {
+                    const p = self.stage_point(event.motion.x, event.motion.y);
+                    event.motion.x = p.x;
+                    event.motion.y = p.y;
                     if (self.show_save_drawer) {
                         const drect = get_save_drawer_rect(self.width, self.height);
                         self.hovered_save_slot = hit_test_save_slot(event.motion.x, event.motion.y, drect);
@@ -2157,6 +2183,9 @@ pub const DisplayWindow = struct {
                     self.update_hover(frame, event.motion.x, event.motion.y);
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
+                    const p = self.stage_point(event.button.x, event.button.y);
+                    event.button.x = p.x;
+                    event.button.y = p.y;
                     if (self.show_save_drawer) {
                         if (event.button.button == c.SDL_BUTTON_LEFT) {
                             const drect = get_save_drawer_rect(self.width, self.height);
@@ -4380,6 +4409,20 @@ test "P32-02a: an offscreen window draws deterministically and hashes what it dr
         .save_manager = window.save_manager,
     };
     try testing.expectEqual(@as(?u64, null), headless.frame_hash());
+}
+
+test "P43-03: a resized window maps its pixels back to the logical frame" {
+    const testing = std.testing;
+    // At the design size every point maps to itself.
+    try testing.expectEqual(@as(i32, 640), window_to_stage(640, 400, 1280, 720, 1280, 720).x);
+    try testing.expectEqual(@as(i32, 400), window_to_stage(640, 400, 1280, 720, 1280, 720).y);
+    // At half size one window pixel is two logical ones, and the last pixel stays on the canvas.
+    try testing.expectEqual(@as(i32, 20), window_to_stage(10, 10, 640, 360, 1280, 720).x);
+    try testing.expectEqual(@as(i32, 1278), window_to_stage(639, 359, 640, 360, 1280, 720).x);
+    try testing.expectEqual(@as(i32, 718), window_to_stage(639, 359, 640, 360, 1280, 720).y);
+    // A point outside the window clamps to the nearest edge, never past the canvas.
+    try testing.expectEqual(@as(i32, 0), window_to_stage(-10, 400, 640, 360, 1280, 720).x);
+    try testing.expectEqual(@as(i32, 719), window_to_stage(10, 4000, 640, 360, 1280, 720).y);
 }
 
 test "P43-03: a short window shows the logical frame scaled down" {

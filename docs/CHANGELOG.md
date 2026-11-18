@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The desktop window can be resized. It shows the whole 1280x720 frame scaled to the window, so a short window keeps the message band and the stage, and clicks land on what they point at (Q-014, D-125).
+
 - The Larkspur Observatory's working-floor marks and The Living Village's cottages mark sit one world unit higher, so their discs and the people on them clear the message band (Q-013).
 
 - The Living Village's cottages prop sits on its mark's row instead of below it, where its marker reached into the message band (D-124).
