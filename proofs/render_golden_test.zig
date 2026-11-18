@@ -10,9 +10,10 @@
 //! cast is then spread over the scene's marks. That is the default state of the scene. Art that
 //! depends on puzzle progress (a moved anchor, a tampered flag) is not covered.
 //!
-//! Every staged frame is drawn again at 1920x1080 in a second window and the message band is
-//! checked there too (P43-03). Only the 1280x720 pixels are hashed. 640x360 cannot be checked:
-//! the tallest band starts at row 144 there while world y 0 draws at row 200 (Q-014).
+//! Every staged frame is drawn again at 1920x1080 in a second window and at 640x360 in a third
+//! that shows the 1280x720 frame scaled to half size, and the band is checked in both (P43-03).
+//! Only the 1280x720 pixels are hashed. The scaled window's probes are in logical coordinates,
+//! so its band check reads the 720-row band that the 360-row image half-sizes (Q-014).
 //!
 //! The hashes come from SDL's software rasterizer and are stable for one SDL build. If an SDL
 //! upgrade changes every hash at once with no change here, regenerate and say so in review.
@@ -40,11 +41,13 @@ const observatory_puzzle = @import("observatory_puzzle.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
-/// The second size every staged frame is drawn at and band-checked (P43-03). 640x360 is not
-/// included: the tallest band there starts at row 144 while world y 0 already sits at 200, so
-/// no proof layout can fit (see the guard test below and Q-014).
+/// The second size every staged frame is drawn at and band-checked (P43-03).
 const ALT_WIDTH: i32 = 1920;
 const ALT_HEIGHT: i32 = 1080;
+/// The short size: its window shows the 1280x720 frame scaled to half, because a native 640x360
+/// layout cannot fit the band and a proof stage at once (Q-014).
+const SHORT_WIDTH: i32 = 640;
+const SHORT_HEIGHT: i32 = 360;
 const GOLDEN_NAME = "render.txt";
 const ACTUAL_NAME = "render.actual.txt";
 
@@ -176,8 +179,9 @@ const Thumbs = struct {
 /// check covers more than the golden's 1280x720 without adding a golden (P43-03).
 const AltWindow = struct {
     window: *bespoke.display.DisplayWindow,
-    width: i32,
-    height: i32,
+    /// The height whose band rows this render's probes are measured in: the logical height for
+    /// a scaled window, where drawing happens before the downscale.
+    band_height: i32,
     text: bespoke.display.canvas.TextProbe = .{},
     rect: bespoke.display.canvas.RectProbe = .{},
 };
@@ -190,8 +194,8 @@ const Recorder = struct {
     text: bespoke.display.canvas.TextProbe = .{},
     /// Every rectangle and sprite the last frame drew, for the band check (P43-02).
     rect: bespoke.display.canvas.RectProbe = .{},
-    /// When set, each frame is drawn again at this window's size and band-checked there.
-    alt: ?*AltWindow = null,
+    /// Each frame is drawn again in these windows and band-checked there (P43-03).
+    alts: []const *AltWindow = &.{},
     /// When set, a scene whose hash is not the one recorded here is also saved as a BMP.
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
@@ -303,7 +307,7 @@ const Recorder = struct {
             }
         }
         alt.window.render_frame(frame, true);
-        try self.check_band_at(label, alt.height, &alt.text, &alt.rect, verbose);
+        try self.check_band_at(label, alt.band_height, &alt.text, &alt.rect, verbose);
     }
 
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
@@ -328,7 +332,7 @@ const Recorder = struct {
         }
         self.window.render_frame(frame, true);
         try self.check_band(label, true);
-        if (self.alt) |alt| try self.check_alt(label, frame, alt, true);
+        for (self.alts) |alt| try self.check_alt(label, frame, alt, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
@@ -555,8 +559,15 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     var big = try bespoke.display.DisplayWindow.init_offscreen(std.testing.io, ALT_WIDTH, ALT_HEIGHT);
     defer big.deinit();
     big.set_theme(&art.theme);
-    var alt = AltWindow{ .window = &big, .width = ALT_WIDTH, .height = ALT_HEIGHT };
-    var rec = Recorder{ .allocator = allocator, .window = window, .alt = &alt, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
+    var big_alt = AltWindow{ .window = &big, .band_height = ALT_HEIGHT };
+    // The short window draws the same 1280x720 frame and shows it at half size (Q-014), so its
+    // probes are logical and its band rows are the 720-row ones.
+    var short = try bespoke.display.DisplayWindow.init_offscreen_scaled(std.testing.io, SHORT_WIDTH, SHORT_HEIGHT, WIDTH, HEIGHT);
+    defer short.deinit();
+    short.set_theme(&art.theme);
+    var short_alt = AltWindow{ .window = &short, .band_height = HEIGHT };
+    var alts = [_]*AltWindow{ &big_alt, &short_alt };
+    var rec = Recorder{ .allocator = allocator, .window = window, .alts = &alts, .out = std.array_list.Managed(u8).init(allocator), .dump_against = dump_against, .variants = variants };
     errdefer rec.out.deinit();
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
@@ -678,16 +689,21 @@ test "D-124: the proof band check fails on a string drawn inside the message ban
     rec.rect.overflowed = false;
 }
 
-test "P43-03: a proof stage cannot fit the message band at 640x360" {
+test "P43-03: a 640x360 window shows the 1280x720 frame at half size, band included" {
     const renderer = bespoke.display.renderer;
-    const band_top = renderer.message_band_top(360);
-    const origin = renderer.world_to_screen(0, 0, 640, 360);
-    // The band takes 138 of 360 rows, so its top is 144, while world y 0 already draws at 200
-    // and every proof mark and prop sits at or below y 0. The size sweep therefore starts at
-    // 1280x720 and only grows (Q-014). If a responsive stage lands, replace this with a real
-    // 640x360 check.
-    try std.testing.expectEqual(@as(i32, 144), band_top);
-    try std.testing.expect(origin.y > band_top);
+    // A native 640x360 layout cannot fit the band and a stage: the band's top is row 144 while
+    // world y 0 draws at row 200. The short window therefore draws all 720 rows and shows them
+    // scaled, so the band lands at rows 252 to 291 in the pixels a viewer sees (Q-014).
+    try std.testing.expectEqual(@as(i32, 144), renderer.message_band_top(360));
+    const band_top = renderer.message_band_top(HEIGHT);
+    const band_bottom = renderer.message_band_bottom(HEIGHT);
+    try std.testing.expectEqual(@as(i32, 252), @divTrunc(band_top * SHORT_HEIGHT, HEIGHT));
+    try std.testing.expectEqual(@as(i32, 291), @divTrunc(band_bottom * SHORT_HEIGHT, HEIGHT));
+
+    var win = try bespoke.display.DisplayWindow.init_offscreen_scaled(std.testing.io, SHORT_WIDTH, SHORT_HEIGHT, WIDTH, HEIGHT);
+    defer win.deinit();
+    try std.testing.expectEqual(WIDTH, win.width);
+    try std.testing.expectEqual(SHORT_HEIGHT, win.scaled_canvas.?.height);
 }
 
 test "P32-02a: scene headers are read from script text" {

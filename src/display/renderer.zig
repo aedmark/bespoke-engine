@@ -980,6 +980,11 @@ pub const DisplayWindow = struct {
     canvas: ?Canvas = null,
     /// The canvas's pixels when this window allocated them (`init`, `init_offscreen`).
     owned_pixels: ?[]u8 = null,
+    /// A short window's visible pixels: the logical canvas, scaled down to `width`x`height`
+    /// after every frame (P43-03, Q-014). The logical canvas stays the size drawing uses, so
+    /// probes, hit tests, and layout all read one frame; only the shown pixels shrink.
+    scaled_canvas: ?Canvas = null,
+    scaled_pixels: ?[]u8 = null,
     width: i32,
     height: i32,
     active_verb: AdventureVerb = .walk,
@@ -1204,6 +1209,46 @@ pub const DisplayWindow = struct {
         };
     }
 
+    /// An offscreen window `width`x`height` that draws the whole `logical_width`x`logical_height`
+    /// frame and scales it down to fit after every frame (P43-03, Q-014). A short window cannot
+    /// hold the message band and a proof stage side by side, so it shows the full frame at a
+    /// smaller size instead of a cramped one. `width` and `height` stay logical.
+    pub fn init_offscreen_scaled(io: std.Io, width: i32, height: i32, logical_width: i32, logical_height: i32) !DisplayWindow {
+        if (width <= 0 or height <= 0 or width > logical_width or height > logical_height) return error.BadWindowSize;
+        var win = try DisplayWindow.init_offscreen(io, logical_width, logical_height);
+        errdefer win.deinit();
+        const pixels = try alloc_pixels(width, height);
+        win.scaled_pixels = pixels;
+        win.scaled_canvas = Canvas.init(pixels, width, height);
+        return win;
+    }
+
+    /// The canvas a viewer sees: the scaled pixels for a short window, else the drawn canvas.
+    fn visible_canvas(self: *const DisplayWindow) ?*const Canvas {
+        if (self.scaled_canvas) |*cv| return cv;
+        if (self.canvas) |*cv| return cv;
+        return null;
+    }
+
+    /// Nearest-neighbour copy of the logical canvas into the short window's pixels. Sampling
+    /// keeps every source pixel reachable and costs one pass over the smaller image.
+    fn present_scaled(self: *DisplayWindow) void {
+        const out = if (self.scaled_canvas) |*cv| cv else return;
+        const src = if (self.canvas) |*cv| cv else return;
+        if (out.width == src.width and out.height == src.height) return;
+        var y: i32 = 0;
+        while (y < out.height) : (y += 1) {
+            const sy = @divTrunc(y * src.height, out.height);
+            var x: i32 = 0;
+            while (x < out.width) : (x += 1) {
+                const sx = @divTrunc(x * src.width, out.width);
+                const si: usize = @intCast((sy * src.width + sx) * 4);
+                const di: usize = @intCast((y * out.width + x) * 4);
+                @memcpy(out.pixels[di..][0..4], src.pixels[si..][0..4]);
+            }
+        }
+    }
+
     /// A window that draws into `pixels` and owns nothing else (D-097): no SDL, no audio device,
     /// no save directory. The browser runtime keeps one and draws the desktop frame with it. It
     /// borrows everything it is given, so it must never be passed to `deinit`.
@@ -1227,13 +1272,13 @@ pub const DisplayWindow = struct {
     /// Hash of the pixels last drawn by `render_frame`; null for a headless window, which draws
     /// nothing.
     pub fn frame_hash(self: *const DisplayWindow) ?u64 {
-        const cv = self.canvas orelse return null;
+        const cv = self.visible_canvas() orelse return null;
         return cv.hash();
     }
 
     /// Writes the last frame as a BMP, for looking at a frame whose hash changed.
     pub fn save_frame_bmp(self: *const DisplayWindow, path: [:0]const u8) !void {
-        const cv = self.canvas orelse return error.NoCanvas;
+        const cv = self.visible_canvas() orelse return error.NoCanvas;
         const surface = c.SDL_CreateRGBSurfaceWithFormatFrom(cv.pixels.ptr, cv.width, cv.height, 32, cv.width * 4, c.SDL_PIXELFORMAT_RGBA32) orelse
             return error.BmpSurfaceFailed;
         defer c.SDL_FreeSurface(surface);
@@ -1253,6 +1298,9 @@ pub const DisplayWindow = struct {
         if (self.owned_pixels) |px| std.heap.c_allocator.free(px);
         self.owned_pixels = null;
         self.canvas = null;
+        if (self.scaled_pixels) |px| std.heap.c_allocator.free(px);
+        self.scaled_pixels = null;
+        self.scaled_canvas = null;
         // An offscreen window never called SDL_Init, so there is nothing to destroy or quit.
         if (!self.is_headless and self.window != null) {
             if (self.texture) |t| c.SDL_DestroyTexture(@ptrCast(t));
@@ -3793,6 +3841,9 @@ pub const DisplayWindow = struct {
         if (self.theme) |t| if (t.overlay) |draw| draw(&self.canvas.?, frame);
         if (self.canvas) |*cv| cv.rect_kind = .chrome;
 
+        // 12c. A short window shows the whole logical frame, band included, scaled down.
+        self.present_scaled();
+
         // 13. Present: a window on screen shows the canvas through its texture.
         // The browser has no SDL; its host copies the canvas itself.
         if (comptime builtin.os.tag != .freestanding) {
@@ -4329,6 +4380,29 @@ test "P32-02a: an offscreen window draws deterministically and hashes what it dr
         .save_manager = window.save_manager,
     };
     try testing.expectEqual(@as(?u64, null), headless.frame_hash());
+}
+
+test "P43-03: a short window shows the logical frame scaled down" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen_scaled(std.testing.io, 2, 2, 4, 4);
+    defer win.deinit();
+    // The drawing size stays logical, so layout and probes never see the smaller window.
+    try testing.expectEqual(@as(i32, 4), win.width);
+    try testing.expectEqual(@as(i32, 4), win.height);
+    try testing.expectEqual(@as(i32, 2), win.scaled_canvas.?.width);
+
+    const red = Color{ .r = 255, .g = 0, .b = 0 };
+    const blue = Color{ .r = 0, .g = 0, .b = 255 };
+    win.canvas.?.fill_rect(0, 0, 4, 2, red);
+    win.canvas.?.fill_rect(0, 2, 4, 2, blue);
+    win.present_scaled();
+    const scaled = &win.scaled_canvas.?;
+    try testing.expectEqual(@as(u8, 255), scaled.get_pixel(0, 0).r);
+    try testing.expectEqual(@as(u8, 255), scaled.get_pixel(1, 0).r);
+    try testing.expectEqual(@as(u8, 255), scaled.get_pixel(0, 1).b);
+    try testing.expectEqual(@as(u8, 255), scaled.get_pixel(1, 1).b);
+    // The hash covers the pixels a viewer sees, not the logical ones.
+    try testing.expect(win.frame_hash() != null);
 }
 
 const ThemeProbe = struct {
