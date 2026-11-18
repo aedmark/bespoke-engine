@@ -1,8 +1,7 @@
 import base64
+import importlib.util
 import json
 import re
-import tempfile
-import importlib.util
 import unittest
 from pathlib import Path
 
@@ -18,23 +17,35 @@ WebAssembly.instantiate(decodeBase64(WASM_BASE64), {});
 wasm_init(0);
 """
 PAYLOAD = b"\0asm\x01\0\0\0"
+# D-086, D-094, D-122: each standalone page's data-deck names its proof in the deck table.
+DECK_BY_PAGE = {
+    "tavern.html": 0,
+    "pips.html": 1,
+    "beard.html": 2,
+    "village.html": 3,
+    "donkey.html": 4,
+    "tides.html": 5,
+    "grog.html": 6,
+    "barbs.html": 7,
+    "saltmarket.html": 8,
+    "weathercock.html": 9,
+    "bell-tower.html": 10,
+    "fire-escape.html": 11,
+    "observatory.html": 12,
+}
 
 
 class SiteBuildTests(unittest.TestCase):
     def test_each_proof_page_plays_its_own_deck_and_is_current(self):
-        # D-086, D-094: each standalone page's data-deck names its proof in the deck table.
         wrapper = (ROOT / "tools" / "proof_page.js").read_text(encoding="utf-8")
         self.assertIn(build_site.PLACEHOLDER, wrapper)
         self.assertIn("window.bespokePageState", wrapper)
         self.assertIn("audioPlaying", wrapper)
-        names = re.search(r"const DECK_NAMES = \[(.*?)\];", (ROOT / "tools" / "site_simulator.js").read_text(encoding="utf-8"), re.S).group(1)
-        names = re.findall(r"'([^']*)'", names)
-        expected = {"barbs.html": "Brackwater Barbs", "pips.html": "The Pip-Spitting Green", "beard.html": "The Borrowed Beard", "donkey.html": "The Donkey of Lamp Point", "tides.html": "The Well of Three Tides", "weathercock.html": "The Copper Weathercock", "saltmarket.html": "The Saltmarket: Three Ways In"}
-        self.assertEqual(sorted(expected), sorted(p.name for p in build_site.PROOF_PAGE_PATHS))
+        self.assertEqual(sorted(DECK_BY_PAGE), sorted(p.name for p in build_site.PROOF_PAGE_PATHS))
         for path in build_site.PROOF_PAGE_PATHS:
             page = path.read_text(encoding="utf-8")
             index = int(re.search(r'id="game-canvas"[^>]*data-deck="(\d+)"', page).group(1))
-            self.assertEqual(expected[path.name], names[index], path.name)
+            self.assertEqual(DECK_BY_PAGE[path.name], index, path.name)
             for element in ("game-status", "btn-next", "btn-sound", "btn-restart"):
                 self.assertIn(f'id="{element}"', page, path.name)
             if build_site.WASM_ARTIFACT.exists():
@@ -63,86 +74,51 @@ class SiteBuildTests(unittest.TestCase):
             build_site.render_page("<!-- SITE_SIMULATOR_START -->\nafter\n", WRAPPER, PAYLOAD)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-ZIG_PROOF = r'''const std = @import("std");
-pub const DEMO_SCRIPT =
-    \\scene: Quay
-    \\  say Pilot: "a </script> b"
-;
-const OTHER = 1;
-'''
-
-
 class GalleryTests(unittest.TestCase):
-    """P30-03 (D-068): the gallery and script viewer come from the proofs' real scripts."""
+    """P30-03 (D-068), D-122: the gallery links one standalone page per proof."""
 
-    WORDS = {"scene", "say", "when"}
-
-    def test_extracts_a_zig_multiline_constant_and_a_bespoke_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "demo.zig").write_text(ZIG_PROOF, encoding="utf-8")
-            (root / "demo.bespoke").write_text("scene Quay:\n\n", encoding="utf-8")
-            self.assertEqual('scene: Quay\n  say Pilot: "a </script> b"\n', build_site.extract_script("demo.zig#DEMO_SCRIPT", root))
-            self.assertEqual("scene Quay:\n", build_site.extract_script("demo.bespoke", root))
-            with self.assertRaises(SystemExit):
-                build_site.extract_script("demo.zig#MISSING", root)
-
-    def test_highlight_escapes_and_marks_keywords_strings_numbers_and_comments(self):
-        out = build_site.highlight('# when <x>\nscene Quay: "a <b>" 3 when\n', self.WORDS)
-        self.assertEqual(
-            '<span class="line"><span class="code-comment"># when &lt;x&gt;</span></span>'
-            '<span class="line"><span class="code-kw">scene</span> Quay: <span class="code-str">"a &lt;b&gt;"</span> '
-            '<span class="code-num">3</span> <span class="code-kw">when</span></span>',
-            out,
-        )
-
-    def test_gallery_cards_play_or_point_to_the_desktop_and_embed_scripts_safely(self):
+    def test_gallery_cards_open_each_proofs_own_page(self):
         entries = [
-            {"id": "a", "title": "A & B", "tag": "t", "blurb": "b", "source": "demo.zig#DEMO_SCRIPT", "deck": 0, "flag": "a"},
-            {"id": "c", "title": "C </script> D", "tag": "t", "blurb": "b", "source": "demo.zig#DEMO_SCRIPT", "deck": None, "flag": "c-proof"},
+            {"id": "a", "title": "A & B", "tag": "t", "blurb": "b", "deck": 4, "page": "donkey.html", "flag": "lamp-point"},
+            {"id": "c", "title": "C", "tag": "t", "blurb": "b", "deck": 0, "page": "tavern.html", "flag": "tavern"},
         ]
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "demo.zig").write_text(ZIG_PROOF, encoding="utf-8")
-            block = build_site.render_gallery_block(entries)
-            scripts = build_site.render_proof_scripts(entries, self.WORDS, root)
-        self.assertIn('href="proof-lab.html?deck=0"', block)
-        self.assertIn("zig build run-proof -- --c-proof", block)
+        block = build_site.render_gallery_block(entries)
+        self.assertIn('href="donkey.html"', block)
+        self.assertIn('href="tavern.html"', block)
         self.assertIn("A &amp; B", block)
-        self.assertIn('href="proof-lab.html?deck=0#script-viewer"', block)
-        # The embedded JSON cannot close its own <script> element early, even from a raw title.
-        data = scripts[scripts.index('id="proof-scripts">') :]
-        self.assertEqual(1, data.count("</script>"))
+        self.assertIn("Proof 01", block)
+        self.assertIn("Proof 02", block)
+        self.assertNotIn("proof-lab", block)
+        with self.assertRaises(SystemExit):
+            build_site.render_gallery_block([{**entries[0], "page": "missing.html"}])
         self.assertTrue(block.startswith("      " + build_site.GALLERY_START))
 
-    def test_homepage_mounts_only_harbour_and_preserves_standalone_routes(self):
+    def test_homepage_mounts_only_harbour_and_links_every_proof_page(self):
         homepage = build_site.HTML_PATH.read_text(encoding="utf-8")
         self.assertEqual(['harbour.html'], re.findall(r'<iframe[^>]+src="([^"]+)"', homepage))
         self.assertLess(homepage.index('id="harbour-demo"'), homepage.index('id="scenarios"'))
         self.assertNotIn(build_site.START_MARKER, homepage)
-        self.assertNotIn('id="proof-scripts"', homepage)
+        self.assertNotIn("proof-lab", homepage)
         self.assertEqual(homepage, build_site.render_site(homepage))
         entries = build_site.gallery_entries()
-        self.assertCountEqual([e["page"] for e in entries if "page" in e], [p.name for p in build_site.PROOF_PAGE_PATHS])
-        for e in entries:
-            if "page" in e:
-                page = (build_site.HTML_PATH.parent / e["page"]).read_text(encoding="utf-8")
-                self.assertIn(f'data-deck="{e["deck"]}"', page)
+        self.assertCountEqual([e["page"] for e in entries], list(build_site.PROOF_PAGE_NAMES))
+        for entry in entries:
+            page = (build_site.HTML_PATH.parent / entry["page"]).read_text(encoding="utf-8")
+            self.assertIn(f'data-deck="{entry["deck"]}"', page, entry["page"])
 
     def test_the_real_gallery_covers_every_proof_once_with_valid_decks_and_flags(self):
         gallery = json.loads(build_site.GALLERY_PATH.read_text(encoding="utf-8"))["proofs"]
-        words = build_site.keywords(build_site.LEXER_PATH.read_text(encoding="utf-8"))
-        self.assertIn("remember", words)
+        self.assertEqual(len(gallery), 13)
         self.assertEqual(len(gallery), len({e["id"] for e in gallery}))
-        decks = sorted(e["deck"] for e in gallery if e["deck"] is not None)
-        simulator = build_site.SIMULATOR_JS_PATH.read_text(encoding="utf-8")
-        names = simulator[simulator.index("const DECK_NAMES = [") : simulator.index("];", simulator.index("const DECK_NAMES = ["))]
-        self.assertEqual(list(range(names.count("'") // 2)), decks)
+        decks = sorted(e["deck"] for e in gallery)
+        self.assertEqual(list(range(len(decks))), decks)
         proofs_main = (ROOT / "proofs" / "main.zig").read_text(encoding="utf-8")
         for entry in gallery:
             self.assertIn(f'.name = "{entry["flag"]}"', proofs_main, entry["id"])
-            self.assertGreater(len(build_site.extract_script(entry["source"]).splitlines()), 10, entry["id"])
+            self.assertTrue((build_site.HTML_PATH.parent / entry["page"]).is_file(), entry["id"])
+            for key in ("id", "title", "tag", "blurb", "page", "deck", "flag"):
+                self.assertIn(key, entry, entry["id"])
+
+
+if __name__ == "__main__":
+    unittest.main()

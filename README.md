@@ -148,7 +148,7 @@ zig build test-proofs                     # every proof's tests
 - Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
 - Every proof has been played by hand on Linux (2026-11-15). macOS and Windows builds have never run (the template's CI workflow is untested), and the [release hand-test](docs/runbooks/release-hand-test.md)'s stock-runner, offline-cache, and uploaded-site checks are still unrun.
-- The showcase homepage features The Harbour. The Proof Lab and standalone proof pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-121). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
+- The showcase homepage features The Harbour, and each of the thirteen proofs has its own page. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-122). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
 ---
 
@@ -172,7 +172,7 @@ The [documentation map](docs/README.md) says which document owns which fact. The
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution workflow for human and agent contributors |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | User-visible change notes |
 | [`docs/manual.html`](docs/manual.html) | Standalone interactive 3x What/How/Why manual and developer guide |
-| [`site/index.html`](site/index.html) | Public showcase website with the embedded proof WebAssembly playground |
+| [`site/index.html`](site/index.html) | Public showcase website; its gallery links one standalone page per proof |
 | [`docs/whitepaper.md`](docs/whitepaper.md) | The original vision statement (2026-11-04), kept as written |
 
 ---

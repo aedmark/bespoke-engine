@@ -5,9 +5,9 @@
     python3 tools/deploy_site.py export [--site-url https://NAME.neocities.org/]
 
 `export` writes dist/site/: the homepage with sharing metadata and a service worker,
-The Harbour, the Proof Lab, and the standalone proof pages. The worker precaches the
-homepage and Harbour under a content-named cache. The source pages are not changed.
-Export refuses stale input. Uploading dist/site/ is done by hand (D-074).
+The Harbour, and the thirteen standalone proof pages. The worker precaches the homepage
+and Harbour under a content-named cache. The source pages are not changed. Export refuses
+stale input. Uploading dist/site/ is done by hand (D-074).
 """
 from __future__ import annotations
 
@@ -163,7 +163,7 @@ def export(out_dir: Path, site_url: str | None, page_path: Path = SITE_HTML, che
     companions = []
     if page_path == SITE_HTML:
         build = load_build_site()
-        inputs = [(build.HARBOUR_PATH, lambda _: build.load_harbour()), (build.LAB_PATH, build.render_lab)]
+        inputs = [(build.HARBOUR_PATH, lambda _: build.load_harbour())]
         inputs.extend((p, build.render_proof_page) for p in build.PROOF_PAGE_PATHS)
         for path, render in inputs:
             try:

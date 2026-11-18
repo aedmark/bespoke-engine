@@ -930,7 +930,9 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 ## D-068 Showcase Gallery, Script Viewer, and Architecture Diagrams (2026-11-12, status: accepted)
 **Context:** P30-03 asks for an interactive scenario gallery, architecture diagram embeds, and a live script source viewer beside each playable slice. The page's five scenario cards carried hand-written script snippets that had drifted from the proofs (one named a scene the proof does not have), and covered ten of thirteen proofs. The seven browser decks rebuild their stages in Zig (`proofs/wasm_deck.zig`) and do not run the proofs' scripts. The maintainer chose (2026-11-12): show each proof's real script, labelled as the desktop proof's source; a generated gallery whose viewer follows the active deck; and hand-drawn inline SVG diagrams.
 **Decision:**
-1. **The gallery is generated.** `tools/site_gallery.json` lists all thirteen proofs with a title, tag, blurb, script source, playground deck (or none), and `bespoke-proofs` flag. `tools/build_site.py` renders a second generated region (`SITE_GALLERY_START`/`END`) with one card per proof: Play here switches the viewport to its deck, desktop-only proofs show their `zig build run-proof` command, and View script opens the viewer.
+1. **The gallery is generated.** `tools/site_gallery.json` lists all thirteen proofs with a title, tag, blurb, playground deck (or none), page, and `bespoke-proofs` flag. `tools/build_site.py` renders a second generated region (`SITE_GALLERY_START`/`END`) with one card per proof: Play here switches the viewport to its deck, desktop-only proofs show their `zig build run-proof` command, and View script opens the viewer.
+
+**Update, 2026-11-18 (D-122):** the Proof Lab and its script viewer are retired. Each card now links `Play this proof` to that proof's own page (`site/<name>.html`), and the script source and View script links are gone. The gallery data, the generated region, and the deck cross-check stand.
 2. **Scripts come from their sources.** A source is a `.bespoke` file or `file.zig#CONSTANT`, a Zig multiline string read line by line. The Tavern Heist proof builds its stage in Zig, so its card shows `scenarios/tavern_heist.bespoke` and says so. Scripts are highlighted at build time with the keyword list read from `src/compiler/lexer.zig`, escaped, and embedded as JSON whose `</` is escaped so it cannot close its element.
 3. **The viewer follows the deck.** A panel under the viewport shows the active deck's script with line numbers and a note that the browser deck is a Zig reconstruction. It fills before the module loads, so it works even if WebAssembly fails.
 4. **Diagrams are inline SVG.** A How It Works section draws Engine-as-Spine, the cue-to-story-beat cycle, and the script-to-platform build, styled by CSS classes on the page's theme variables. No external files; the page still opens from `file://`.
@@ -1475,11 +1477,59 @@ Format:
 
 **Consequences.** Authors can license their own contributions separately. The CLI embeds the canonical notice at build time, so all scaffold variants can write it without reading the engine checkout at run time. The engine license and the native and browser build layouts are unchanged.
 
-## D-121 Feature The Harbour on the Showcase (2026-11-18, status: accepted)
+## D-121 Feature The Harbour on the Showcase (2026-11-18, status: accepted; Proof Lab clause superseded by D-122)
 
 **Decision.** Feature the text-first Lantern Watch: The Harbour as the homepage's only live game. Use the same verified Harbour page standalone and in the homepage frame. The player starts the clock, and embedding the page does not take focus from the homepage. Link the gallery's seven standalone pages directly. Keep all thirteen decks and their script viewer on the separate Proof Lab page, with gallery links selecting the relevant deck.
 
 **Consequences.** The homepage does not load the proof runtime. The local export includes the Harbour page and Proof Lab. Cache the home and Harbour together for offline return visits; a change to either updates the cache. The engine and proof rules are unchanged.
+
+## D-122 Every Proof Gets Its Own Page; the Proof Lab Is Retired (2026-11-18, status: accepted)
+
+**Context.** D-121 put all thirteen browser decks and a script viewer on one Proof Lab page reached from the gallery, while seven proofs already had standalone pages to share. The maintainer found the two arrangements redundant and the lab cluttered (2026-11-18).
+
+**Decision.**
+1. **One page per proof.** `site/` holds thirteen pages, one per deck: tavern, pips, beard, village, donkey, tides, grog, barbs, saltmarket, weathercock, bell-tower, fire-escape, observatory. Each is checked-in HTML with the generated-region markers and its deck named on the canvas.
+2. **The lab and its script viewer are gone.** `site/proof-lab.html` and `tools/site_simulator.js` are deleted. A gallery card links `Play this proof` to its page and carries no view-script link; the proof scripts remain in the repository.
+3. **One wrapper.** Every page embeds `tools/engine_audio.js`, `tools/proof_page.js`, and `bespoke-proofs.wasm`. The wrapper forwards distaff notes on C to B so the Bell Tower can play drafts; other decks ignore them.
+4. **The gallery keeps deck data as a check.** `tools/site_gallery.json` still names each proof's deck, page, and CLI flag, and `tests/test_site.py` holds each page's `data-deck` to it.
+
+**Alternatives.**
+- Keeping the lab as a fallback: rejected; the pages carry everything it had except the script viewer.
+- A script viewer on each page: not done; the pages are for playing, and publishing proof scripts is a separate question under Q-005.
+
+**Consequences.** `python3 tools/build_site.py` writes the homepage, thirteen proof pages, and the Harbour page into the export. Each proof page is one file of about 946 KB with the module embedded, inside the 1 MB budget. The homepage loads no proof runtime. D-068's gallery data and the page mechanics of D-086, D-094, and D-095 stand.
+
+## D-123 The Observatory's Floors Sit Above the Message Band, and Proof Pages Fit the Window (2026-11-18, status: accepted)
+
+**Context.** On the new standalone pages the maintainer found the Larkspur Observatory's working-floor room names missing and the frame's bottom status area below the fold (2026-11-18). The proof's art mapped its two floors to world y 0 to 16, which put the lower row's names at 550 pixels, inside the message band that grows upward from 582 with up to four rows (D-099); any log line covered them. The pages drew the canvas at its full width, about 680 pixels tall, so a 790-pixel window cut off the log, command bar, and footer.
+
+**Decision.**
+1. **The observatory plan is shorter.** `LarkspurPlan` uses `cell 6`, so the two floors sit at world y 3 and 9, and `render_observatory` draws its bands and the dome column to the same 36 by 12 extent. The working row's names print at 500 pixels, above the band's highest top.
+2. **The floor names are a legend beside the plan.** At 72-pixel bands a person's name would print over a caption inside the band, so "PUBLIC FLOOR" and "WORKING FLOOR" sit right of the plan, centred on their floor.
+3. **Pages fit the window.** Each proof page caps the canvas at `max(320px, (100vh - 250px) * 16/9)`, keeps 16:9, and centres a narrower stage, so the log, command bar, verb bar, and footer are visible without scrolling in a 790-pixel-tall window.
+
+**Alternatives.**
+- Keeping 8-unit cells and drawing under the band: rejected; the names were hidden by any message.
+- Moving the plan without moving its marks: rejected; the renderer draws marks from their world coordinates, so each floor box would no longer contain its rooms.
+- Shrinking the log band or its row count: rejected; it would change every proof's messages to rescue one scene's layout.
+
+**Consequences.** In `proofs/golden/render.txt` seven observatory lines changed and in `proofs/golden/wasm.txt` thirteen; five lines of `proofs/golden/observatory_puzzle.txt` changed their tick stamps only, because the nearer marks shorten walks. `bespoke-proofs.wasm` and all thirteen pages were rebuilt. The desktop window shows the lifted plan too, since both surfaces draw one frame (D-097). D-124 later measured these names at 510, six inside the band's tallest top, and moved them above their marks.
+
+## D-124 A Mark's Name Above the Mark, and Proof Scenery Above the Band (2026-11-18, status: accepted)
+
+**Context.** An audit of every proof scene for art under the message band (D-099, D-123) found three things the band covers. The Larkspur Observatory's working-floor room names printed at 510 pixels, six inside the band's tallest top of 504, because a name sits 22 pixels under its mark and those marks stand at 488. The Drowned Lantern's bar counter and its "CIDER BAR" and "CIDER" signs were drawn at 480 to 540, inside the band. The Observatory's three props stood at 512.
+
+**Decision.**
+1. **A mark's name flips above the mark when the band would cover it.** The renderer asks `mark_label_needs_air` before placing an idle name or a hover prompt: if the label would reach the tallest band, four rows over a command bar, it is placed above its mark instead. The rule counts the command bar whether or not the window shows one, so a name does not jump when the bar or a page turns it on. A label asked to sit above stays above: when another label already holds the air above its mark, the layout resolver climbs a tier rather than drop it back to the other side of the mark, where the band is.
+2. **The Drowned Lantern's counter and signs move up 50 pixels,** onto the wall between the cast's marks and the band.
+3. **The Observatory's props move from world y 11 to y 9,** inside the working floor. The renderer draws a prop without art as a 32-pixel marker centred on its hotspot, so only y 9 puts the marker's last row at 503, above the band's tallest top of 504.
+
+**Alternatives.**
+- Shortening the Observatory's plan again: rejected; 6-unit cells already give the room names only 72 pixels each, and a narrower plan makes "Telescope Floor" collide with its neighbours.
+- Shrinking the log: rejected for the same reason as D-123; it changes every proof's messages to rescue one layout.
+- Raising each proof's art by hand: rejected; the flip fixes the cause for every current and future proof, including ones drawn at other window sizes.
+
+**Consequences.** The Observatory's working-floor names now print above their marks, the only row on any page that does. In `proofs/golden/render.txt` seven Observatory frames and four Drowned Lantern frames changed, for the flipped labels and the raised counter; in `proofs/golden/wasm.txt` every frame of decks 3, 4, 8, and 12 changed, forty-seven hashes counting the thirteen D-123 had already moved, because their labels flip at the browser's size. The Observatory transcript's five tick stamps are D-123's: the props' row changes no walk, and the render golden stages the Observatory without its hotspots, so the prop move itself touches no golden. Scenery that merely extends below the log, such as a village roof or the Beacon Hill light string, stays where it is: D-123 covers room names, signs, and puzzle items, not backdrops.
 
 ## Open questions
 

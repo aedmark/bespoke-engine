@@ -153,15 +153,15 @@ async function smoke(pageUrl, starter, layout = false) {
       })()`));
       const route = await evaluate(`(() => {
         const links = [...document.querySelectorAll('#scenarios .gallery-actions a')];
-        if (links.filter(a => a.textContent === 'Play standalone').length !== 7) throw Error('missing standalone proof links');
-        return links.find(a => a.getAttribute('href') === 'proof-lab.html?deck=12#script-viewer').href;
+        if (links.filter(a => a.textContent === 'Play this proof').length !== 13) throw Error('missing standalone proof links');
+        return links.find(a => a.getAttribute('href') === 'observatory.html').href;
       })()`);
       console.log('ok  375 px showcase fits; The Harbour starts on request and plays with the map closed');
       await cdp.send('Page.navigate', { url: route });
-      await waitFor('Observatory deck and script in the Proof Lab', () => evaluate(
-        "document.querySelector('#runtime-deck-index')?.textContent === '13 / 13' && Boolean(document.querySelector('#script-view-code')?.textContent.trim())"
+      await waitFor('Observatory deck on its own page', () => evaluate(
+        "document.querySelector('#game-canvas')?.dataset.deck === '12' && Boolean(window.bespokePageState && window.bespokePageState().ready)"
       ));
-      console.log('ok  gallery preserves standalone pages and opens the requested Proof Lab deck and script');
+      console.log('ok  gallery opens each proof on its own page, including the Observatory deck');
       cdp.close();
       return;
     }
@@ -319,7 +319,7 @@ async function main() {
     return;
   }
   if (args.length === 1 && args[0] === '--showcase-layout') {
-    const names = ['index.html', 'harbour.html', 'proof-lab.html'];
+    const names = ['index.html', 'harbour.html', 'observatory.html'];
     const pages = new Map(names.map(name => [`/site/${name}`, fs.readFileSync(path.join(root, 'site', name))]));
     await servePages(pages, '/site/index.html', url => smoke(url, false, true));
     return;

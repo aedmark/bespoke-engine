@@ -17,7 +17,7 @@ counted twice.
 
 Quoted lines are matched by digest: every double-quoted string of 12 or more characters is
 lowercased, its whitespace collapsed, and its SHA-256 compared with the list. HTML tags and
-JSON escapes are removed first, so a line inside the site's highlighted script viewer counts.
+JSON escapes are removed first, so a line inside a site page's highlighted code sample counts.
 
 Usage:
   python3 tools/check_third_party.py                    # check against the baseline

@@ -1,5 +1,5 @@
-// Browser wrapper for the standalone proof pages (D-086, D-094): site/barbs.html,
-// site/pips.html, site/beard.html, site/donkey.html, site/tides.html, site/weathercock.html, and site/saltmarket.html. tools/build_site.py embeds this file and
+// Browser wrapper for the standalone proof pages (D-086, D-094, D-122): one page per proof in
+// site/, tavern.html through observatory.html. tools/build_site.py embeds this file and
 // bespoke-proofs.wasm into each. A page plays one deck, named by its canvas's data-deck
 // attribute; the deck itself (proofs/wasm_deck.zig) runs the proof's own script, so this
 // wrapper holds no game content.
@@ -181,6 +181,11 @@
       // step (or, in the duel, starts the next duel).
       event.preventDefault();
       if (!open) key(83);
+    } else if ('cdefgab'.includes(event.key.toLowerCase()) && event.key.length === 1) {
+      // Distaff notes (D-071): The Bell Tower plays drafts on C to B. Decks whose script
+      // declares no drafts ignore them.
+      event.preventDefault();
+      key(event.key.toUpperCase().charCodeAt(0));
     } else if (event.key === 'Enter') {
       // Enter opens a deck's command bar, if it has one (P34-04).
       event.preventDefault();

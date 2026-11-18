@@ -4,6 +4,16 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A mark's name or prompt that would fall under the message band is drawn above its mark, and stays above when another label takes that place (D-124).
+
+- The Drowned Lantern's bar counter and its signs sit above the message band, and the Larkspur Observatory's props sit inside the working floor rather than in the band's top (D-124).
+
+- Standalone proof pages scale the stage to the window, so the whole frame, status area included, is visible without scrolling (D-123).
+
+- The Larkspur Observatory's two floors sit higher and its floor names stand beside the plan, so the message log no longer covers the working floor's room names (D-123).
+
+- The showcase gives every proof its own standalone page, including The Tavern Heist, The Living Village, Caustic Grog, The Bell Tower, The Castle Fire Escape, and The Larkspur Observatory. The Proof Lab and its script viewer are gone; the proof scripts stay in the repository (D-122).
+
 ## 0.2.0 - 2026-11-18
 
 - The showcase features Lantern Watch: The Harbour as its only live homepage game. Seven proofs link straight to their standalone pages; the Proof Lab keeps all thirteen decks, the timeline, and the script viewer.

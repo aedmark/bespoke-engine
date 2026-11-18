@@ -1461,6 +1461,15 @@ pub const DisplayWindow = struct {
         return self.height - 80 - 30 - (if (command_bar) @as(i32, 28) else 0);
     }
 
+    /// True when a label of `height` under a mark at `y` would reach into the message band at
+    /// its tallest, four rows over a command bar, where the log would cover it. Such a label
+    /// is drawn above its mark instead (D-124). The command bar is counted whether or not this
+    /// window shows one, so a label does not move when the bar or a page turns it on.
+    fn mark_label_needs_air(self: *const DisplayWindow, y: i32, height: i32) bool {
+        const band_top = self.height - 80 - 30 - 28 - (@as(i32, LOG_ROWS) * LOG_ROW + 6);
+        return y + WAYPOINT_SCREEN_RADIUS + 6 + height > band_top;
+    }
+
     /// Height the log takes above `log_bottom`, which the dialogue panel stays clear of.
     fn log_reserve(self: *const DisplayWindow) i32 {
         var rows: [LOG_ROWS]LogRow = undefined;
@@ -2975,7 +2984,7 @@ pub const DisplayWindow = struct {
                         prompt,
                         pt.x,
                         pt.y,
-                        .below,
+                        if (self.mark_label_needs_air(pt.y, 20)) .above else .below,
                         WAYPOINT_SCREEN_RADIUS + 6,
                         2,
                         to_layout(Color.wp_hover),
@@ -2987,7 +2996,7 @@ pub const DisplayWindow = struct {
                         name,
                         pt.x,
                         pt.y,
-                        .below,
+                        if (self.mark_label_needs_air(pt.y, 10)) .above else .below,
                         WAYPOINT_SCREEN_RADIUS + 6,
                         1,
                         to_layout(Color.hud_text),
@@ -3007,7 +3016,7 @@ pub const DisplayWindow = struct {
                         prompt,
                         pt.x,
                         pt.y,
-                        .below,
+                        if (self.mark_label_needs_air(pt.y, 20)) .above else .below,
                         WAYPOINT_SCREEN_RADIUS + 6,
                         2,
                         to_layout(Color.wp_hover),
@@ -4074,6 +4083,21 @@ test "D-099: the message log keeps the three newest lines under the stage, and t
     win.show_dialogue(EntityId.from_int(1), .{ .x = 600, .y = 300 }, "Pilot", "Which way?", &.{ "North", "South" });
     const panel = win.dialogue_panel_for(&win.active_balloon.?);
     try testing.expect(panel.rect.y + panel.rect.h <= win.log_bottom() - win.log_reserve());
+}
+
+test "D-124: a mark's name goes above the mark rather than under the message band" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
+    defer win.deinit();
+    // The tallest band leaves a top of 504 on a 720-pixel window: a name under a mark at 500
+    // would be covered, and one under a mark at 380 is far clear. The bar is counted even
+    // with the window's bar off, so the answer does not change when a page turns it on.
+    win.enable_command_bar(true);
+    try testing.expect(win.mark_label_needs_air(500, 10));
+    try testing.expect(!win.mark_label_needs_air(380, 10));
+    win.enable_command_bar(false);
+    try testing.expect(win.mark_label_needs_air(500, 10));
+    try testing.expect(!win.mark_label_needs_air(470, 10));
 }
 
 test "D-099: a long log line wraps into rows at the band's width instead of shrinking" {

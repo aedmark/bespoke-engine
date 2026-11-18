@@ -1,14 +1,13 @@
 {
-  "_comment": "Showcase gallery (D-068, D-121). One card per proof. `source` is a .bespoke file or a Zig file#CONSTANT; `deck` selects the Proof Lab deck; `page` names an available standalone page; `flag` is the bespoke-proofs argument.",
+  "_comment": "Showcase gallery (D-068, D-122). One card per proof. `page` is that proof's standalone page, `deck` is its browser deck (cross-checked against the page's data-deck), and `flag` is the bespoke-proofs argument.",
   "proofs": [
     {
       "id": "tavern",
       "title": "The Tavern Heist",
       "tag": "Systemic emergence",
       "blurb": "A patrolling Guard carries the Cheese. The Bard's lute charms him, and the Cat takes the cheese while he is distracted. No cutscene: rules react to facts as they change.",
-      "source": "scenarios/tavern_heist.bespoke",
-      "source_note": "The desktop proof builds this stage in Zig; the browser deck and `bespoke run` both play this script, the stock version of the same slice.",
       "deck": 0,
+      "page": "tavern.html",
       "flag": "tavern"
     },
     {
@@ -16,7 +15,6 @@
       "title": "The Pip-Spitting Green",
       "tag": "Environmental hooks",
       "blurb": "Tamsin wants the cherry-pit spitting prize at the Brackwater Harvest Fair. She blows a conch to send the judge looking for the herring fleet, moves the distance pegs, drinks a thick treacle cider, and waits for a sea breeze.",
-      "source": "proofs/spitting_contest.zig#SPITTING_CONTEST_SCRIPT",
       "deck": 1,
       "page": "pips.html",
       "flag": "spit"
@@ -26,7 +24,6 @@
       "title": "The Borrowed Beard",
       "tag": "Multi-scene crafting",
       "blurb": "Tamsin must pass as Captain Rook to claim the last berth on the packet boat. Charcoal, sail tape, honey, his sailing papers, and some dog fur combine across three scenes into a convincing disguise.",
-      "source": "proofs/borrowed_beard.zig#BORROWED_BEARD_SCRIPT",
       "deck": 2,
       "page": "beard.html",
       "flag": "borrowed-beard"
@@ -36,8 +33,8 @@
       "title": "The Living Village",
       "tag": "Emergent society",
       "blurb": "Six villagers with hunger, energy, and money run their own days. A starving drifter steals, a witness talks, rumours spread, and the Sheriff makes an arrest, with nothing scripted in between.",
-      "source": "proofs/village.zig#VILLAGE_SCRIPT",
       "deck": 3,
+      "page": "village.html",
       "flag": "village"
     },
     {
@@ -45,7 +42,6 @@
       "title": "The Donkey of Lamp Point",
       "tag": "Arrival rules",
       "blurb": "Cudgel the donkey shoves Tamsin down whenever she heads for the cellar hatch. While he ambles back to his post, haul the old anchor into his rope line, and the way down to the wreckers' cellar is clear. Each step is an arrival rule in the script.",
-      "source": "proofs/lamp_point.zig#LAMP_POINT_SCRIPT",
       "deck": 4,
       "page": "donkey.html",
       "flag": "lamp-point"
@@ -55,7 +51,6 @@
       "title": "The Well of Three Tides",
       "tag": "Three eras, one world",
       "blurb": "Ossie in 1712, Nell in 1912, and Juno in 2112 pass items through Doctor Brine's Tide Wells. A change in the past is a fact the future reads, so each era's puzzles depend on the others.",
-      "source": "proofs/three_tides.zig#THREE_TIDES_SCRIPT",
       "deck": 5,
       "page": "tides.html",
       "flag": "three-tides"
@@ -65,8 +60,8 @@
       "title": "Caustic Grog",
       "tag": "Container degradation",
       "blurb": "Three cups of grog eat through themselves on the way from the barrel to the lock. Pour from cup to cup before each fails, and arrive with enough to dissolve the lock.",
-      "source": "proofs/grog_puzzle.zig#GROG_PUZZLE_SCRIPT",
       "deck": 6,
+      "page": "grog.html",
       "flag": "grog"
     },
     {
@@ -74,7 +69,6 @@
       "title": "Brackwater Barbs",
       "tag": "Learning dialogue",
       "blurb": "A fencing duel fought with barbs, taking turns: whoever wins a round attacks next. You learn a comeback by hearing an opponent use it against your barb. Mistress Vell throws her own versions of the barbs, which the same comebacks answer, and the barkeep tires of repeated questions. Rounds and moods are world facts, so a rewind replays them exactly.",
-      "source": "proofs/sword_fighting.zig#SWORD_FIGHTING_SCRIPT",
       "deck": 7,
       "page": "barbs.html",
       "flag": "sword"
@@ -84,7 +78,6 @@
       "title": "The Saltmarket: Three Ways In",
       "tag": "Stageplay paths",
       "blurb": "Pilot Ashe's lost logbook is behind Broker Quince's bills of lading. Cunning, Muscle, or Crew: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach's solution.",
-      "source": "proofs/saltmarket.zig#SALTMARKET_SCRIPT",
       "deck": 8,
       "page": "saltmarket.html",
       "flag": "saltmarket"
@@ -94,7 +87,6 @@
       "title": "The Copper Weathercock",
       "tag": "Branch worlds",
       "blurb": "A weathercock falls through Wren's attic roof 28 days early, and the world splits into a borrowed month with a countdown. Flood the Customs House, get a note to Hester Quill, and carry the weathercock into the fog whirl before time runs out, and the month merges back; miss it and the month tears away, so you rewind and try again.",
-      "source": "proofs/weathercock.zig#WEATHERCOCK_SCRIPT",
       "deck": 9,
       "page": "weathercock.html",
       "flag": "weathercock"
@@ -104,8 +96,8 @@
       "title": "The Bell Tower",
       "tag": "Musical drafts",
       "blurb": "Play four-note tunes (drafts) on a musical staff to change the world. Played backwards, each tune does its opposite.",
-      "source": "proofs/bell_tower.zig#BELL_TOWER_SCRIPT",
       "deck": 10,
+      "page": "bell-tower.html",
       "flag": "bell-tower"
     },
     {
@@ -113,8 +105,8 @@
       "title": "The Castle Fire Escape",
       "tag": "Fire, smoke, and water",
       "blurb": "Burn a tapestry to find the hidden door, then soak the door before the fire reaches it. Water floods back through the corridor and puts the fire out.",
-      "source": "proofs/grid_puzzle.zig#GRID_PUZZLE_SCRIPT",
       "deck": 11,
+      "page": "fire-escape.html",
       "flag": "grid"
     },
     {
@@ -122,8 +114,8 @@
       "title": "The Larkspur Observatory",
       "tag": "Agendas and typed commands",
       "blurb": "Investigate a missing comet plate while the staff go about their night. Each of them has an agenda and intercepts you when your evidence threatens it. Type your commands.",
-      "source": "proofs/observatory_puzzle.zig#OBSERVATORY_SCRIPT",
       "deck": 12,
+      "page": "observatory.html",
       "flag": "observatory"
     }
   ]

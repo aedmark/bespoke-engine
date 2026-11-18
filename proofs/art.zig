@@ -1004,15 +1004,16 @@ fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
         w.fill_rect(b_x, b_y, b_w, b_h, Color{ .r = 55, .g = 32, .b = 20 });
         w.draw_rect_outline(b_x, b_y, b_w, b_h, Color{ .r = 120, .g = 75, .b = 40 });
 
-        // Oak bar counter
-        w.fill_rect(b_x + 80, b_y + b_h - 140, 260, 60, Color{ .r = 90, .g = 50, .b = 28 });
-        w.draw_rect_outline(b_x + 80, b_y + b_h - 140, 260, 60, Color{ .r = 160, .g = 95, .b = 45 });
-        w.draw_text("CIDER BAR", b_x + 100, b_y + b_h - 125, 2, Color{ .r = 254, .g = 240, .b = 138 });
+        // Oak bar counter. The counter and its sign sit above the message band's tallest top,
+        // which would otherwise cover them (D-124).
+        w.fill_rect(b_x + 80, b_y + b_h - 190, 260, 60, Color{ .r = 90, .g = 50, .b = 28 });
+        w.draw_rect_outline(b_x + 80, b_y + b_h - 190, 260, 60, Color{ .r = 160, .g = 95, .b = 45 });
+        w.draw_text("CIDER BAR", b_x + 100, b_y + b_h - 175, 2, Color{ .r = 254, .g = 240, .b = 138 });
 
         // Cider barrel
-        w.fill_circle(b_x + b_w - 160, b_y + b_h - 100, 30, Color{ .r = 40, .g = 25, .b = 18 });
-        w.draw_circle_outline(b_x + b_w - 160, b_y + b_h - 100, 30, Color{ .r = 180, .g = 120, .b = 50 });
-        w.draw_text("CIDER", b_x + b_w - 180, b_y + b_h - 106, 2, Color{ .r = 239, .g = 68, .b = 68 });
+        w.fill_circle(b_x + b_w - 160, b_y + b_h - 150, 30, Color{ .r = 40, .g = 25, .b = 18 });
+        w.draw_circle_outline(b_x + b_w - 160, b_y + b_h - 150, 30, Color{ .r = 180, .g = 120, .b = 50 });
+        w.draw_text("CIDER", b_x + b_w - 180, b_y + b_h - 156, 2, Color{ .r = 239, .g = 68, .b = 68 });
 
         // Header
         w.draw_text("THE DROWNED LANTERN - BRACKWATER", b_x + 16, b_y + 16, 2, Color{ .r = 251, .g = 191, .b = 36 });
@@ -3299,14 +3300,16 @@ fn render_observatory(w: *Canvas) void {
     while (star < 40) : (star += 1) {
         w.fill_rect(@mod(star * 211, w.width), 60 + @mod(star * 97, 80), 2, 2, Color{ .r = 226, .g = 232, .b = 240 });
     }
-    // The script's `LarkspurPlan` grid: six 8-unit cells per floor, public floor on top.
+    // The script's `LarkspurPlan` grid: six 6-unit cells per floor, public floor on top. The
+    // plan stops above the message band, so the working floor's room names stay readable
+    // while the log holds two or three rows (D-123).
     const left = world_to_screen(0, 0, w.width, w.height).x;
-    const right = world_to_screen(48, 0, w.width, w.height).x;
+    const right = world_to_screen(36, 0, w.width, w.height).x;
     const upper = world_to_screen(0, 0, w.width, w.height).y;
-    const middle = world_to_screen(0, 8, w.width, w.height).y;
-    const lower = world_to_screen(0, 16, w.width, w.height).y;
+    const middle = world_to_screen(0, 6, w.width, w.height).y;
+    const lower = world_to_screen(0, 12, w.width, w.height).y;
     // The dome rises above the Dome room's column.
-    const dome = world_to_screen(36, 0, w.width, w.height);
+    const dome = world_to_screen(27, 0, w.width, w.height);
     w.fill_circle(dome.x, upper - 10, 70, Color{ .r = 148, .g = 163, .b = 184 });
     w.fill_rect(dome.x - 6, upper - 80, 12, 70, Color{ .r = 30, .g = 41, .b = 59 });
     w.fill_rect(left, upper, right - left, middle - upper, Color{ .r = 51, .g = 65, .b = 85 });
@@ -3314,8 +3317,11 @@ fn render_observatory(w: *Canvas) void {
     w.draw_rect_outline(left, upper, right - left, lower - upper, Color{ .r = 100, .g = 116, .b = 139 });
     w.draw_line(left, middle, right, middle, Color{ .r = 100, .g = 116, .b = 139 });
     w.draw_text("LARKSPUR OBSERVATORY - THE NIGHT PLATE 41 VANISHED", left + 12, upper - 34, 2, Color{ .r = 191, .g = 219, .b = 254 });
-    w.draw_text("PUBLIC FLOOR", left + 8, upper + 6, 1, Color.hud_subtext);
-    w.draw_text("WORKING FLOOR", left + 8, middle + 6, 1, Color.hud_subtext);
+    // The floor names sit beside the plan, not inside the short bands where a person's name
+    // would print over them; each legend line is centred on its own floor.
+    const legend_x = right + 12;
+    w.draw_text("PUBLIC FLOOR", legend_x, @divTrunc(upper + middle, 2) - 4, 1, Color.hud_subtext);
+    w.draw_text("WORKING FLOOR", legend_x, @divTrunc(middle + lower, 2) - 4, 1, Color.hud_subtext);
 }
 
 /// Hollin Keep's long gallery (P25-03): a wall band with the tapestry, door, trough, and

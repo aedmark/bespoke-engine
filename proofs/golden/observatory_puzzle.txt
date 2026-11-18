@@ -11,8 +11,8 @@
   [ 18] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
   -> Agendas: Dissuade Pursuing, PlantAlibi Idle, ShedWarning Idle
   -> Both agendas hold; Halloran (priority 5) already pursues Ines, so Pell (3) waits.
-  [ 21] Halloran: "The darkroom is no place to wander at night, Miss Varga. Go to bed."
-  [ 27] Pell: "I was in the library from midnight to three. Ask anyone."
+  [ 20] Halloran: "The darkroom is no place to wander at night, Miss Varga. Go to bed."
+  [ 22] Pell: "I was in the library from midnight to three. Ask anyone."
   -> Agendas: Dissuade Done, PlantAlibi Done, ShedWarning Idle
   -> Ines was talked out of the darkroom and believes Pell's alibi.
 
@@ -25,14 +25,14 @@
   -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
   [ 16] Ines: "A cotton glove, stained brown with developer. Monogrammed H."
   [ 17] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
-  [ 29] Halloran: "That glove... I can explain. The plate is safe in my office."
+  [ 25] Halloran: "That glove... I can explain. The plate is safe in my office."
 
 [Night 2] Ines lingers by the generator shed.
-  [ 48] Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
+  [ 40] Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
   -> Agendas: Dissuade Done, PlantAlibi Idle, ShedWarning Idle
 
 [Night 2] Ines confronts Pell with the slip.
-  [ 49] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+  [ 41] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
 
 [Rewind] Restore the saved opening for a typed playthrough.
 

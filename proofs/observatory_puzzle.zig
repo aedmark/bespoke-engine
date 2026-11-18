@@ -23,7 +23,7 @@ pub const OBSERVATORY_SCRIPT =
     \\
     \\grid LarkspurPlan in "Larkspur Observatory":
     \\  size 6 2
-    \\  cell 8
+    \\  cell 6
     \\  place CablePlatform 0 0
     \\  place Stair 1 0
     \\  place Terrace 2 0
@@ -206,9 +206,12 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .shed_wp = try find.wp(spatial, scene, "GeneratorShed"),
     };
     spatial.clear_hotspots();
-    try spatial.add_hotspot(ids.glove, scene, .{ .x = 44, .y = 15 }, 3, "Stained Glove", "A glove on the darkroom bench.");
-    try spatial.add_hotspot(ids.slip, scene, .{ .x = 20, .y = 15 }, 3, "Exposure Slip", "A slip pinned in the plate archive.");
-    try spatial.add_hotspot(ids.log, scene, .{ .x = 28, .y = 15 }, 3, "Telescope Log", "The night's observing log.");
+    // Inside the working floor and above the message band's tallest top (D-123, D-124): the
+    // renderer's 32-pixel prop marker centred at world y 9 ends on row 503, one row above the
+    // band's top of 504 at 1280x720. At y 10 (centre 500) the marker reached 516, underneath it.
+    try spatial.add_hotspot(ids.glove, scene, .{ .x = 33, .y = 9 }, 3, "Stained Glove", "A glove on the darkroom bench.");
+    try spatial.add_hotspot(ids.slip, scene, .{ .x = 15, .y = 9 }, 3, "Exposure Slip", "A slip pinned in the plate archive.");
+    try spatial.add_hotspot(ids.log, scene, .{ .x = 21, .y = 9 }, 3, "Telescope Log", "The night's observing log.");
     try spatial.register_entity(ids.ines, try find.wp(spatial, scene, "CablePlatform"), 4);
     try spatial.register_entity(ids.halloran, try find.wp(spatial, scene, "Office"), 3);
     try spatial.register_entity(ids.pell, try find.wp(spatial, scene, "Library"), 3);

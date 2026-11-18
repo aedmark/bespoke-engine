@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Generate the showcase gallery, Proof Lab, and their standalone games.
+"""Generate the showcase gallery and the standalone proof pages.
 
     zig build wasm-proofs harbour
     python3 tools/build_site.py
     python3 tools/build_site.py --check
 
-The homepage links to separate proof pages and embeds the generated Harbour page. The Proof
-Lab and standalone proofs carry bespoke-proofs.wasm and run from file://. Edit the inputs,
-not the generated regions.
+The homepage links to one page per proof and embeds the generated Harbour page. The proof pages
+carry bespoke-proofs.wasm and run from file://. Edit the inputs, not the generated regions.
 """
 from __future__ import annotations
 
@@ -15,19 +14,31 @@ import argparse
 import base64
 import html as html_lib
 import json
-import re
 import sys
 import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 HTML_PATH = ROOT / "site" / "index.html"
-LAB_PATH = ROOT / "site" / "proof-lab.html"
 HARBOUR_PATH = ROOT / "site" / "harbour.html"
 HARBOUR_ARTIFACT = ROOT / "zig-out" / "harbour" / "index.html"
-SIMULATOR_JS_PATH = Path(__file__).with_name("site_simulator.js")
-# The standalone proof pages (D-086, D-094): one deck each, a shared wrapper, the same module.
-PROOF_PAGE_PATHS = tuple(ROOT / "site" / name for name in ("barbs.html", "pips.html", "beard.html", "donkey.html", "tides.html", "weathercock.html", "saltmarket.html"))
+# The standalone proof pages (D-086, D-094, D-122): one deck each, a shared wrapper, the same module.
+PROOF_PAGE_NAMES = (
+    "tavern.html",
+    "pips.html",
+    "beard.html",
+    "village.html",
+    "donkey.html",
+    "tides.html",
+    "grog.html",
+    "barbs.html",
+    "saltmarket.html",
+    "weathercock.html",
+    "bell-tower.html",
+    "fire-escape.html",
+    "observatory.html",
+)
+PROOF_PAGE_PATHS = tuple(ROOT / "site" / name for name in PROOF_PAGE_NAMES)
 PROOF_PAGE_JS_PATH = Path(__file__).with_name("proof_page.js")
 ENGINE_AUDIO_JS_PATH = Path(__file__).with_name("engine_audio.js")
 WASM_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-proofs.wasm"
@@ -35,7 +46,6 @@ START_MARKER = "<!-- SITE_SIMULATOR_START -->"
 END_MARKER = "<!-- SITE_SIMULATOR_END -->"
 PLACEHOLDER = "__BESPOKE_PROOFS_WASM_BASE64__"
 GALLERY_PATH = Path(__file__).with_name("site_gallery.json")
-LEXER_PATH = ROOT / "src" / "compiler" / "lexer.zig"
 GALLERY_START = "<!-- SITE_GALLERY_START -->"
 GALLERY_END = "<!-- SITE_GALLERY_END -->"
 
@@ -52,7 +62,7 @@ def load_wasm(path: Path = WASM_ARTIFACT) -> bytes:
     return payload
 
 
-def render_page(html: str, wrapper: str, payload: bytes, wrapper_path: Path = SIMULATOR_JS_PATH) -> str:
+def render_page(html: str, wrapper: str, payload: bytes, wrapper_path: Path = PROOF_PAGE_JS_PATH) -> str:
     if html.count(START_MARKER) != 1 or html.count(END_MARKER) != 1:
         raise SystemExit("the page needs exactly one simulator start and end marker")
     start = html.index(START_MARKER)
@@ -87,67 +97,13 @@ def replace_region(html: str, start_marker: str, end_marker: str, block: str, wh
     return html[:start] + block + html[end:]
 
 
-def keywords(lexer_source: str) -> set[str]:
-    """The DSL's keywords, read from the lexer's table so highlighting never drifts from it."""
-    words = set(re.findall(r'\.\{ "([a-z]+)", \.kw_', lexer_source))
-    if not words:
-        raise SystemExit(f"no keywords found in {LEXER_PATH}")
-    return words
-
-
-def extract_script(source: str, root: Path = ROOT) -> str:
-    """A `.bespoke` file's text, or `file.zig#CONSTANT`: that Zig multiline string's lines."""
-    path_text, _, constant = source.partition("#")
-    text = (root / path_text).read_text(encoding="utf-8")
-    if not constant:
-        return text.rstrip("\n") + "\n"
-    match = re.search(rf"^(?:pub )?const {re.escape(constant)} =\n((?:[ \t]*\\\\.*\n)+)[ \t]*;", text, re.M)
-    if match is None:
-        raise SystemExit(f"{path_text} has no multiline string constant {constant}")
-    return "".join(line.split("\\\\", 1)[1] + "\n" for line in match.group(1).splitlines())
-
-
-TOKEN = re.compile(r'(?P<comment>(?:^|(?<=\n))[ \t]*[#~][^\n]*)|(?P<string>"[^"\n]*")|(?P<number>\b\d+\b)|(?P<word>\b[A-Za-z_]+\b)')
-
-
-def highlight(script: str, words: set[str]) -> str:
-    """Escaped HTML with keyword, string, number, and comment spans, one block-level
-    `<span class=line>` per source line so CSS can number them. No newline separates the line
-    spans: inside `<pre>` it would add a blank line after each."""
-    out = []
-    pos = 0
-    for m in TOKEN.finditer(script):
-        out.append(html_lib.escape(script[pos:m.start()], quote=False))
-        text = html_lib.escape(m.group(0), quote=False)
-        kind = m.lastgroup
-        if kind == "word":
-            out.append(f'<span class="code-kw">{text}</span>' if m.group(0) in words else text)
-        else:
-            css = {"comment": "code-comment", "string": "code-str", "number": "code-num"}[kind]
-            out.append(f'<span class="{css}">{text}</span>')
-        pos = m.end()
-    out.append(html_lib.escape(script[pos:], quote=False))
-    lines = "".join(out).rstrip("\n").split("\n")
-    return "".join(f'<span class="line">{line}</span>' for line in lines)
-
-
 def render_gallery_block(entries: list[dict]) -> str:
     cards = []
     for number, entry in enumerate(entries, start=1):
         esc = lambda value: html_lib.escape(value, quote=True)  # noqa: E731
-        deck = entry.get("deck")
-        page = entry.get("page")
-        lab_url = f"proof-lab.html?deck={deck}" if deck is not None else "proof-lab.html"
-        if deck is None:
-            play = (
-                f'<span class="gallery-desktop">Desktop only: <code>zig build run-proof -- --{esc(entry["flag"])}</code></span>'
-            )
-        elif page:
-            if page not in {p.name for p in PROOF_PAGE_PATHS}:
-                raise SystemExit(f"unknown standalone proof page: {page}")
-            play = f'<a class="sim-btn" href="{esc(page)}">Play standalone</a>'
-        else:
-            play = f'<a class="sim-btn" href="{lab_url}">Play in Proof Lab</a>'
+        page = entry["page"]
+        if page not in PROOF_PAGE_NAMES:
+            raise SystemExit(f"unknown standalone proof page: {page}")
         cards.append(
             f'        <div class="scenario-card gallery-card" id="proof-{esc(entry["id"])}">\n'
             '          <div class="scenario-info">\n'
@@ -156,8 +112,7 @@ def render_gallery_block(entries: list[dict]) -> str:
             f'            <p class="scenario-text">{esc(entry["blurb"])}</p>\n'
             '          </div>\n'
             '          <div class="gallery-actions">\n'
-            f'            {play}\n'
-            f'            <a class="sim-btn" href="{lab_url}#script-viewer">View script in Proof Lab</a>\n'
+            f'            <a class="sim-btn" href="{esc(page)}">Play this proof</a>\n'
             '          </div>\n'
             '        </div>\n'
         )
@@ -171,38 +126,12 @@ def render_gallery_block(entries: list[dict]) -> str:
     )
 
 
-def render_proof_scripts(entries: list[dict], words: set[str], root: Path = ROOT) -> str:
-    scripts = {
-        entry["id"]: {
-            "title": entry["title"],
-            "source": entry["source"].replace("#", " ", 1),
-            "note": entry.get("source_note", ""),
-            "deck": entry.get("deck"),
-            "html": highlight(extract_script(entry["source"], root), words),
-        }
-        for entry in entries
-    }
-    data = json.dumps(scripts, ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
-    return (
-        f"      {GALLERY_START}\n"
-        "      <!-- Generated by tools/build_site.py from the proofs' own scripts. -->\n"
-        f'      <script type="application/json" id="proof-scripts">{data}</script>\n'
-        f"      {GALLERY_END}"
-    )
-
-
 def gallery_entries() -> list[dict]:
     return json.loads(GALLERY_PATH.read_text(encoding="utf-8"))["proofs"]
 
 
 def render_site(html: str) -> str:
     return replace_region(html, GALLERY_START, GALLERY_END, render_gallery_block(gallery_entries()), "gallery")
-
-
-def render_lab(html: str) -> str:
-    page = render_page(html, SIMULATOR_JS_PATH.read_text(encoding="utf-8"), load_wasm())
-    block = render_proof_scripts(gallery_entries(), keywords(LEXER_PATH.read_text(encoding="utf-8")))
-    return replace_region(page, GALLERY_START, GALLERY_END, block, "proof scripts")
 
 
 def load_harbour(path: Path = HARBOUR_ARTIFACT) -> str:
@@ -213,7 +142,7 @@ def load_harbour(path: Path = HARBOUR_ARTIFACT) -> str:
 
 
 def render_proof_page(html: str) -> str:
-    """A standalone proof page rendered from the current module (D-086, D-094)."""
+    """A standalone proof page rendered from the current module (D-086, D-094, D-122)."""
     return render_page(html, PROOF_PAGE_JS_PATH.read_text(encoding="utf-8"), load_wasm(), PROOF_PAGE_JS_PATH)
 
 
@@ -223,24 +152,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     payload = load_wasm()
-    pages = []
-    for path, render in ((HTML_PATH, render_site), (LAB_PATH, render_lab)) + tuple((p, render_proof_page) for p in PROOF_PAGE_PATHS):
+    rendered = []
+    for path, render in [(HTML_PATH, render_site)] + [(p, render_proof_page) for p in PROOF_PAGE_PATHS]:
         html = path.read_text(encoding="utf-8")
-        pages.append((path, html, render(html)))
-    pages.append((HARBOUR_PATH, HARBOUR_PATH.read_text(encoding="utf-8") if HARBOUR_PATH.exists() else None, load_harbour()))
+        rendered.append((path, html, render(html)))
+    inside = HARBOUR_PATH.read_text(encoding="utf-8") if HARBOUR_PATH.exists() else None
+    rendered.append((HARBOUR_PATH, inside, load_harbour()))
 
     if args.check:
-        stale = [path for path, html, rendered in pages if rendered != html]
+        stale = [path for path, html, page in rendered if page != html]
         for path in stale:
             print(f"{path.relative_to(ROOT)} is stale; run `python3 tools/build_site.py`", file=sys.stderr)
         if stale:
             return 1
-        print(f"{len(pages)} showcase pages are current (proof Wasm: {len(payload):,} bytes)")
+        print(f"{len(rendered)} showcase pages are current (proof Wasm: {len(payload):,} bytes)")
         return 0
 
-    for path, _, rendered in pages:
-        path.write_text(rendered, encoding="utf-8")
-        print(f"wrote {path.relative_to(ROOT)} ({len(rendered.encode('utf-8')):,} bytes)")
+    for path, _, page in rendered:
+        path.write_text(page, encoding="utf-8")
+        print(f"wrote {path.relative_to(ROOT)} ({len(page.encode('utf-8')):,} bytes)")
     return 0
 
 

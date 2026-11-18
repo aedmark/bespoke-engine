@@ -886,7 +886,7 @@
     .code-num { color: var(--highlight); }
     .code-comment { color: #888888; font-style: italic; }
 
-    /* Proof gallery and script viewer (P30-03, D-068) */
+    /* Proof gallery (P30-03, D-068) */
     @media (min-width: 900px) {
       .scenario-grid { grid-template-columns: 1fr 1fr; }
       .scenario-card.gallery-card { grid-template-columns: 1fr; }
@@ -904,36 +904,6 @@
       font-family: var(--mono);
       font-size: 0.72rem;
       color: var(--line);
-    }
-    .script-view {
-      background: #000000;
-      border: 1px solid var(--line-subtle);
-      padding: 12px 0;
-      margin: 0;
-      max-height: 420px;
-      overflow: auto;
-      font-family: var(--mono);
-      font-size: 0.78rem;
-      line-height: 1.55;
-      color: var(--text-bright);
-      counter-reset: script-line;
-    }
-    .script-view .line {
-      display: block;
-      padding: 0 14px 0 0;
-      white-space: pre;
-    }
-    .script-view .line::before {
-      counter-increment: script-line;
-      content: counter(script-line);
-      display: inline-block;
-      width: 3.2em;
-      margin-right: 12px;
-      padding-right: 8px;
-      text-align: right;
-      color: #666666;
-      border-right: 1px solid var(--line-subtle);
-      user-select: none;
     }
 
     /* Architecture diagrams (P30-03, D-068): inline SVG, coloured by the page theme. */
@@ -1274,8 +1244,8 @@
           Thirteen proofs of concept drive the engine end to end. Each runs without a window and checks its own outcome;
           twelve also rewind and check the world matches (the Saltmarket does not yet).
           They live in <code>proofs/</code>, depend on the engine through its public module, and build as a separate
-          <code>bespoke-proofs</code> binary. Open a standalone game from its card, or visit the
-          <a href="proof-lab.html">Proof Lab</a> for all thirteen decks, the timeline, and the script viewer.
+          <code>bespoke-proofs</code> binary. Each card below opens that proof on its own page, where the
+          deck runs the proof's own script in your browser.
         </p>
       </div>
 
@@ -1289,8 +1259,7 @@
             <p class="scenario-text">A patrolling Guard carries the Cheese. The Bard&#x27;s lute charms him, and the Cat takes the cheese while he is distracted. No cutscene: rules react to facts as they change.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="proof-lab.html?deck=0">Play in Proof Lab</a>
-            <a class="sim-btn" href="proof-lab.html?deck=0#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="tavern.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-spit">
@@ -1300,8 +1269,7 @@
             <p class="scenario-text">Tamsin wants the cherry-pit spitting prize at the Brackwater Harvest Fair. She blows a conch to send the judge looking for the herring fleet, moves the distance pegs, drinks a thick treacle cider, and waits for a sea breeze.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="pips.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=1#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="pips.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-beard">
@@ -1311,8 +1279,7 @@
             <p class="scenario-text">Tamsin must pass as Captain Rook to claim the last berth on the packet boat. Charcoal, sail tape, honey, his sailing papers, and some dog fur combine across three scenes into a convincing disguise.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="beard.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=2#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="beard.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-village">
@@ -1322,8 +1289,7 @@
             <p class="scenario-text">Six villagers with hunger, energy, and money run their own days. A starving drifter steals, a witness talks, rumours spread, and the Sheriff makes an arrest, with nothing scripted in between.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="proof-lab.html?deck=3">Play in Proof Lab</a>
-            <a class="sim-btn" href="proof-lab.html?deck=3#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="village.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-lamp-point">
@@ -1333,8 +1299,7 @@
             <p class="scenario-text">Cudgel the donkey shoves Tamsin down whenever she heads for the cellar hatch. While he ambles back to his post, haul the old anchor into his rope line, and the way down to the wreckers&#x27; cellar is clear. Each step is an arrival rule in the script.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="donkey.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=4#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="donkey.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-three-tides">
@@ -1344,8 +1309,7 @@
             <p class="scenario-text">Ossie in 1712, Nell in 1912, and Juno in 2112 pass items through Doctor Brine&#x27;s Tide Wells. A change in the past is a fact the future reads, so each era&#x27;s puzzles depend on the others.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="tides.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=5#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="tides.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-grog">
@@ -1355,8 +1319,7 @@
             <p class="scenario-text">Three cups of grog eat through themselves on the way from the barrel to the lock. Pour from cup to cup before each fails, and arrive with enough to dissolve the lock.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="proof-lab.html?deck=6">Play in Proof Lab</a>
-            <a class="sim-btn" href="proof-lab.html?deck=6#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="grog.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-sword">
@@ -1366,8 +1329,7 @@
             <p class="scenario-text">A fencing duel fought with barbs, taking turns: whoever wins a round attacks next. You learn a comeback by hearing an opponent use it against your barb. Mistress Vell throws her own versions of the barbs, which the same comebacks answer, and the barkeep tires of repeated questions. Rounds and moods are world facts, so a rewind replays them exactly.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="barbs.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=7#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="barbs.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-saltmarket">
@@ -1377,8 +1339,7 @@
             <p class="scenario-text">Pilot Ashe&#x27;s lost logbook is behind Broker Quince&#x27;s bills of lading. Cunning, Muscle, or Crew: choosing an approach locks the other routes, limits the dialogue to that approach, and runs only that approach&#x27;s solution.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="saltmarket.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=8#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="saltmarket.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-weathercock">
@@ -1388,8 +1349,7 @@
             <p class="scenario-text">A weathercock falls through Wren&#x27;s attic roof 28 days early, and the world splits into a borrowed month with a countdown. Flood the Customs House, get a note to Hester Quill, and carry the weathercock into the fog whirl before time runs out, and the month merges back; miss it and the month tears away, so you rewind and try again.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="weathercock.html">Play standalone</a>
-            <a class="sim-btn" href="proof-lab.html?deck=9#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="weathercock.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-bell-tower">
@@ -1399,8 +1359,7 @@
             <p class="scenario-text">Play four-note tunes (drafts) on a musical staff to change the world. Played backwards, each tune does its opposite.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="proof-lab.html?deck=10">Play in Proof Lab</a>
-            <a class="sim-btn" href="proof-lab.html?deck=10#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="bell-tower.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-grid">
@@ -1410,8 +1369,7 @@
             <p class="scenario-text">Burn a tapestry to find the hidden door, then soak the door before the fire reaches it. Water floods back through the corridor and puts the fire out.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="proof-lab.html?deck=11">Play in Proof Lab</a>
-            <a class="sim-btn" href="proof-lab.html?deck=11#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="fire-escape.html">Play this proof</a>
           </div>
         </div>
         <div class="scenario-card gallery-card" id="proof-observatory">
@@ -1421,8 +1379,7 @@
             <p class="scenario-text">Investigate a missing comet plate while the staff go about their night. Each of them has an agenda and intercepts you when your evidence threatens it. Type your commands.</p>
           </div>
           <div class="gallery-actions">
-            <a class="sim-btn" href="proof-lab.html?deck=12">Play in Proof Lab</a>
-            <a class="sim-btn" href="proof-lab.html?deck=12#script-viewer">View script in Proof Lab</a>
+            <a class="sim-btn" href="observatory.html">Play this proof</a>
           </div>
         </div>
       </div>

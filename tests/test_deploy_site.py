@@ -69,7 +69,15 @@ class ExportTests(unittest.TestCase):
             self.skipTest("run `zig build wasm-proofs harbour` first")
         with tempfile.TemporaryDirectory() as tmp:
             written = deploy.export(Path(tmp), None)
-        self.assertEqual(["index.html", "sw.js", "harbour.html", "proof-lab.html", "barbs.html", "pips.html", "beard.html", "donkey.html", "tides.html", "weathercock.html", "saltmarket.html"], [p.name for p in written])
+        self.assertEqual(
+            [
+                "index.html", "sw.js", "harbour.html",
+                "tavern.html", "pips.html", "beard.html", "village.html", "donkey.html", "tides.html",
+                "grog.html", "barbs.html", "saltmarket.html", "weathercock.html", "bell-tower.html",
+                "fire-escape.html", "observatory.html",
+            ],
+            [p.name for p in written],
+        )
 
 
 class ExportOnlyTests(unittest.TestCase):

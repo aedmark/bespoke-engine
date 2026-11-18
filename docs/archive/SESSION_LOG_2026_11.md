@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 84 (2026-11-17)
+- **Work.** Moved Lantern Watch's opening prose into the gameplay transcript. Start unlocks the existing command field and starts the clock in place. The opening remains above the rolling turn history, and the map stays optional. The replacement upload is `dist/lantern-watch-inline/index.html`.
+- **Checks.** Seven native tests, both Wasm routes and soundtrack checks, and the Chrome playthrough pass. Chrome verifies that the opening stays in place, the controls wait for Start, and the clock then advances. Documentation checks pass. Nothing was uploaded.
+
 ### Session 83 (2026-11-17)
 - **Work.** The bell's seized pivot is a script fact. The oilcan frees it at the landing, or the Keeper takes the weight off it once the player shows him the logbook and he has arrived. The safe bell ending uses the maintainer's exact closing line. First visits and `look` give location-specific prose. The replacement upload is `dist/lantern-watch-repair/index.html`.
 - **Checks.** Seven native tests, the Wasm parser routes and soundtrack checks, and a Chrome playthrough from the stuck bell to the ship's answer pass. The bell tests confirm the rope fails while seized and that the Keeper can help without the oilcan. Documentation checks pass. No upload was performed.

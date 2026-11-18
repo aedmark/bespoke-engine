@@ -47,10 +47,10 @@ sword_fighting/Fencing Yard +branch_active: df0067c719175d68
 sword_fighting/Fencing Yard +branch_collapsed: 1e072746787d7704
 sword_fighting/Fencing Yard +countdown: 31577919b6bdcc8d
 thumb/sword_fighting/Drowned Lantern: 593cbd5023f9e234
-sword_fighting/Drowned Lantern: 135e59f2c4ea112f
-sword_fighting/Drowned Lantern +branch_active: 93a1fa298922fb8c
-sword_fighting/Drowned Lantern +branch_collapsed: 006869ae4cc82253
-sword_fighting/Drowned Lantern +countdown: 33bc3ca7671fadd5
+sword_fighting/Drowned Lantern: 8266a8fda5528e11
+sword_fighting/Drowned Lantern +branch_active: 953a91dc6f7d308a
+sword_fighting/Drowned Lantern +branch_collapsed: f2396e8fb3799ba9
+sword_fighting/Drowned Lantern +countdown: 565ee003d07db2c6
 thumb/village/Living Village: be29f86e95cd791a
 village/Living Village: 211d16011a3703d5
 village/Living Village +branch_active: a2b692ae5af47ad4
@@ -135,10 +135,10 @@ grid_puzzle/Hollin Keep Gallery +branch_collapsed: 121217587ca76a9e
 grid_puzzle/Hollin Keep Gallery +countdown: a6a353d36faaf68a
 grid_puzzle/Hollin Keep Gallery +gallery_door_revealed: 09a5d3f0b48797bc
 grid_puzzle/Hollin Keep Gallery +gallery_fire: da7da7cea328be1e
-thumb/observatory_puzzle/Larkspur Observatory: cb00ba92a3345d46
-observatory_puzzle/Larkspur Observatory: 104c08e0b50aadb5
-observatory_puzzle/Larkspur Observatory +branch_active: 68f60132094c0aac
-observatory_puzzle/Larkspur Observatory +branch_collapsed: a2984f12e15f0f22
-observatory_puzzle/Larkspur Observatory +countdown: d9366990f4cd7614
-inspector/Larkspur Observatory: a75327bf02f5e0c7
-inspector-filtered/Larkspur Observatory: e0d32239496d124c
+thumb/observatory_puzzle/Larkspur Observatory: dd90ad4ad06fbde2
+observatory_puzzle/Larkspur Observatory: 9a6c5be47013c93b
+observatory_puzzle/Larkspur Observatory +branch_active: a90022832e80b9df
+observatory_puzzle/Larkspur Observatory +branch_collapsed: 93335e065fbbfc79
+observatory_puzzle/Larkspur Observatory +countdown: e5193b62b430848f
+inspector/Larkspur Observatory: 584cc259267dc268
+inspector-filtered/Larkspur Observatory: dee9194b868f249c

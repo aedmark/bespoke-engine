@@ -154,18 +154,15 @@ zig build web && node web/smoke.js
 Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.server -d site`), in both browsers.
 
 - [ ] The homepage has one live game, The Harbour. It leaves the clock stopped before Start. With the map closed, start the watch, enter `read tide board`, then `go forward`; the transcript reports the tide and the Watch office. Open the game on its own page as well.
-- [ ] Gallery links open the seven standalone pages or the requested deck and script in `proof-lab.html`.
-- [ ] The Proof Lab loads with no console errors (open the developer tools). Run the remaining deck checks in the lab.
-- [ ] Number keys 1 to 9 and the tabs switch decks; all thirteen decks load: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Insult Sword Fighting, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar).
-- [ ] In each deck: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
+- [ ] Every gallery card opens its proof's own page, and each page loads with no console errors (open the developer tools).
+- [ ] All thirteen pages load their deck: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Barbs, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar).
+- [ ] In each page: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
 - [ ] Saltmarket: choosing a way in with 1, 2, or 3 locks the others.
 - [ ] Copper Weathercock: the tick counter never runs backwards; a rewind across the collapse brings the branch back.
 - [ ] Bell Tower: act on something, then C to B notes; the DISTAFF line shows notes, reach, and target, and the tower rings.
-- [ ] Pause, step, rewind, scrub, and reset each work on the page.
 - [ ] I opens the inspector over the stage, paused; its keys match the desktop's; closing resumes.
-- [ ] AUDIO on: music and effects play; AUDIO off: silence. Switching decks with audio on does not stack two soundtracks.
-- [ ] The script viewer follows the active deck and shows that proof's real script.
-- [ ] Every gallery card's Play opens its deck, including Castle Fire Escape and Larkspur Observatory in the Proof Lab.
+- [ ] AUDIO on: music and effects play; AUDIO off: silence.
+- [ ] Fire Escape: the three buttons fill, light, and throw water; the door survives when the water arrives in time.
 - [ ] The three diagrams render in light and dark mode.
 - [ ] **Phone width:** in responsive mode at 375 px, nothing scrolls sideways; the canvas fits; tabs remain usable. Try a real phone if you have one, including touch on the canvas.
 - [ ] Leave a deck running for ten minutes; the page stays responsive and memory in the task manager does not climb without limit.
@@ -186,7 +183,7 @@ python3 -m http.server -d dist/site 8000
 
 The maintainer uploads the complete export from section 7 by hand, including all standalone proof pages, and places the manual at `docs/manual.html` (D-074, D-086, D-094).
 
-- [ ] Open the live site in a private window. The Harbour plays, the service worker activates, and audio plays after a click in the Proof Lab.
+- [ ] Open the live site in a private window. The Harbour plays, the service worker activates, and audio plays after a click on a proof page.
 - [ ] The Manual link in the page header opens the manual. Upload `docs/manual.html` to `docs/manual.html` on the site: the export does not include it (Q-007).
 - [ ] Share the URL in a link preview (a chat app, or an OpenGraph checker): the title and description show. The export adds no preview image, so none is expected.
 

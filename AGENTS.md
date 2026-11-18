@@ -112,8 +112,8 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `src/` | The engine: spine, VM, compiler, spatial, emergent society, audio, display, persistence, wasm runtime, host kit; exported as the `bespoke` module |
 | `proofs/` | Proofs of concept (vertical slices) built as `bespoke-proofs`; consume the engine only through the `bespoke` module (D-031) |
 | `scenarios/` | Sample `.bespoke` DSL scripts run by the stock engine CLI (`bespoke run`) |
-| `site/index.html` | Standalone public showcase website with the embedded proof WebAssembly playground |
-| `site/barbs.html`, `site/pips.html`, `site/beard.html`, `site/donkey.html`, `site/tides.html`, `site/weathercock.html`, `site/saltmarket.html` | Standalone pages to share, one deck each (Brackwater Barbs, The Pip-Spitting Green, The Borrowed Beard, The Donkey of Lamp Point, The Well of Three Tides, The Copper Weathercock, The Saltmarket), built by `tools/build_site.py` with the shared wrapper `tools/proof_page.js` (D-086, D-094) |
+| `site/index.html` | Standalone public showcase website; its gallery links one proof page per card |
+| `site/tavern.html`, `site/pips.html`, `site/beard.html`, `site/village.html`, `site/donkey.html`, `site/tides.html`, `site/grog.html`, `site/barbs.html`, `site/saltmarket.html`, `site/weathercock.html`, `site/bell-tower.html`, `site/fire-escape.html`, `site/observatory.html` | Standalone pages to share, one deck each (The Tavern Heist, The Pip-Spitting Green, The Borrowed Beard, The Living Village, The Donkey of Lamp Point, The Well of Three Tides, Caustic Grog, Brackwater Barbs, The Saltmarket, The Copper Weathercock, The Bell Tower, The Castle Fire Escape, The Larkspur Observatory), built by `tools/build_site.py` with the shared wrapper `tools/proof_page.js` (D-086, D-094, D-122) |
 | `tools/check_docs.py` | Documentation consistency checks |
 | `tools/manual.py` | 3x manual and developer guide build/lint/review tool |
 | `tools/check_third_party.py` | Third-party name lint with `tools/third_party_terms.json` and a shrink-only baseline (P35-01, D-075) |

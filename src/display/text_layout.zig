@@ -355,9 +355,12 @@ pub const TextLayoutResolver = struct {
             },
 
             else => {
-                // For hover prompts and other labels: try above or below
+                // For hover prompts and other labels: try the other side of the anchor. A label
+                // asked to sit above stays above, because the space below it may be the message
+                // band that a mark's flipped label is escaping (D-124); it climbs a tier instead
+                // of dropping back under the band.
                 const alt_y = if (lbl.placement == .above)
-                    lbl.anchor_y + lbl.preferred_offset
+                    std.math.clamp(lbl.anchor_y - lbl.preferred_offset - lbl.height * 2 - 4, self.stage_top, max_y)
                 else
                     lbl.anchor_y - lbl.preferred_offset - lbl.height;
 
@@ -661,4 +664,43 @@ test "D-024: Tethered-animal layout resolves Hero, Goat, and FallMark without co
             try std.testing.expect(!la.rect().intersects(lb.rect(), 0, 0));
         }
     }
+}
+
+test "D-124: a label asked to sit above its anchor stays above when its place is taken" {
+    var resolver = TextLayoutResolver.init(1280, 720);
+    // Two prompts on one mark at 500, four pixels above the band's tallest top of 504. The first
+    // takes the air above the mark; the second finds it taken, and the space below the mark is
+    // the band, so it climbs a tier instead of dropping back under the band.
+    resolver.submit(TextLabel.init(
+        "[Walk to Archive]",
+        640,
+        500,
+        .above,
+        22,
+        2,
+        .{},
+        .waypoint_hover,
+        .hover_tooltip,
+    ));
+    resolver.submit(TextLabel.init(
+        "[Walk to Darkroom]",
+        640,
+        500,
+        .above,
+        22,
+        2,
+        .{},
+        .waypoint_hover,
+        .hover_tooltip,
+    ));
+    resolver.resolve();
+
+    const labels = resolver.get_labels();
+    try std.testing.expectEqual(@as(usize, 2), labels.len);
+    for (labels) |lbl| {
+        try std.testing.expect(lbl.visible);
+        try std.testing.expect(lbl.rect().y + lbl.rect().h <= 500 - 22);
+        try std.testing.expect(lbl.rect().y + lbl.rect().h <= 504);
+    }
+    try std.testing.expect(!labels[0].rect().intersects(labels[1].rect(), 0, 0));
 }

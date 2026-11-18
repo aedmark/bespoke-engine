@@ -1317,23 +1317,25 @@
         },
         {
           "id": "showcase-gallery-and-viewer",
-          "title": "Showcase Gallery, Script Viewer, and Diagrams",
-          "summary": "The showcase lists every proof, plays eleven in the viewport, and shows each proof's real script in a viewer that follows the active deck.",
-          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html",
-          "tags": ["site", "gallery", "scripts", "diagrams"],
-          "what": "A generated gallery of thirteen proof cards with Play and View script buttons, a line-numbered script viewer under the viewport, and a How It Works section of three inline SVG diagrams.",
+          "title": "Showcase Gallery and the Standalone Proof Pages",
+          "summary": "The showcase lists every proof, and each card opens that proof's own standalone page, which plays its deck in the browser.",
+          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html and thirteen site/*.html pages",
+          "tags": ["site", "gallery", "standalone", "diagrams"],
+          "what": "A generated gallery of thirteen proof cards, each linking to a standalone page that plays one deck, and a How It Works section of three inline SVG diagrams. Each page carries its own how-to-play notes, walkthrough, and keys.",
           "how": [
-            "build_site.py reads tools/site_gallery.json and extracts each script from a .bespoke file or a Zig multiline constant (file.zig#CONSTANT).",
-            "Scripts are highlighted at build time with the keyword list read from src/compiler/lexer.zig, escaped, and embedded as JSON with </ escaped.",
-            "site_simulator.js shows the active deck's script whenever a deck loads, and any proof's script when its View script button is pressed.",
-            "build_site.py --check, and deploy_site.py export, treat a changed script or gallery entry as a stale page."
+            "build_site.py reads tools/site_gallery.json and writes one card per proof, linking the page and deck that entry names.",
+            "Each page is a checked-in HTML file with the generated-region markers; build_site.py embeds tools/engine_audio.js, tools/proof_page.js, and bespoke-proofs.wasm into it.",
+            "A page's canvas names its deck with data-deck, and proof_page.js reads it; the wrapper holds no game content, and the deck runs the proof's own script.",
+            "build_site.py --check, and deploy_site.py export, treat a changed page or gallery entry as stale."
           ],
-          "why": "Hand-copied snippets had drifted from the proofs. Extracting the scripts at build time keeps the showcase honest, and labelling them as the desktop proofs' source keeps it honest about the browser decks being Zig reconstructions.",
+          "why": "Each proof is shareable on its own, with nothing to select first. The deck runs the proof's own script, so the browser build cannot drift from the desktop proofs.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-068", "target": "docs/DECISIONS.md#d-068", "kind": "decision"},
+            {"label": "Architectural Decision D-122", "target": "docs/DECISIONS.md#d-122", "kind": "decision"},
             {"label": "Gallery Data", "target": "tools/site_gallery.json", "kind": "source"},
             {"label": "Site Build", "target": "tools/build_site.py", "kind": "source"},
+            {"label": "Proof Page Wrapper", "target": "tools/proof_page.js", "kind": "source"},
             {"label": "Site Tests", "target": "tests/test_site.py", "kind": "test"}
           ],
           "related": ["showcase-deploy-pipeline", "wasm-browser-target-and-simulator"]
@@ -1376,7 +1378,7 @@
             "The engine synthesizer plays in the browser (D-071): the runtime's AudioBridge renders the script's scores or a deck's soundtrack, and the page pulls stereo samples with wasm_audio_render into Web Audio. A deck can own a TemporalHypervisor whose live branch the VM, story, and inspector follow and the timeline records; draft decks play notes on C to B.",
             "I opens the state inspector (D-070, D-098): the desktop State tab itself, drawn in the save drawer's place, with the clock paused and the desktop's keys sent as DOM key codes.",
             "Script decks (wasm.script_deck_with) compile a game's or a proof's script in the browser, start it with host.start_script, and tick through host.tick. Verbs on people and props fire LooksAt, TalksTo, Takes, or Uses for the deck's player; the number keys answer an open dialogue; the stage shows only the current scene, as on desktop (D-066, D-069).",
-            "The standalone showcase website (site/index.html) embeds bespoke-proofs.wasm via tools/build_site.py to provide a live interactive simulation viewport. tools/wasm_smoke.js exercises both modules in Node."
+            "The showcase gives each proof its own page (D-122); build_site.py embeds bespoke-proofs.wasm into all thirteen via tools/proof_page.js. The homepage loads no proof runtime. tools/wasm_smoke.js exercises both modules in Node."
           ],
           "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required). Drawing both surfaces through one canvas means a game's art and interface are written once (D-097). Decks keep game content out of the engine module (D-042), and the interactive simulator lives on the public showcase site rather than inside the reference manual (D-047).",
           "why_basis": "recorded",
@@ -1390,7 +1392,7 @@
             {"label": "Proof Decks", "target": "proofs/wasm_deck.zig", "kind": "source"},
             {"label": "Zig Wasm32 Build Step", "target": "build.zig", "kind": "source"},
             {"label": "Site Showcase Generator", "target": "tools/build_site.py", "kind": "source"},
-            {"label": "Showcase Simulator Wrapper", "target": "tools/site_simulator.js", "kind": "source"}
+            {"label": "Proof Page Wrapper", "target": "tools/proof_page.js", "kind": "source"}
           ],
           "related": ["engine-as-spine", "zero-external-dependencies", "living-village-emergent-sandbox", "3x-documentation-contract"]
         }
