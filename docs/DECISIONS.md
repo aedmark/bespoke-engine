@@ -1533,6 +1533,8 @@ Format:
 
 **Enforcement.** The proof render test now measures the rule for every scene and progress state: it clears the log, records every string the frame draws (`Canvas.TextProbe`), and fails when a mark's circle, a prop's default marker, or a drawn string reaches `message_band_top` to `message_band_bottom`. Its first run found a case the audit missed, the Wreckers Cellar's "STEPS UP" sign at 580, which moved under its lowest step, and staging the Observatory's props (four frames and a thumbnail) brought the prop row under it; the two together changed eight `proofs/golden/render.txt` hashes. Moving the props back to y 10 reproduces the original report, a prop marker ending at 516.
 
+P43-01 widens that staging. The test calls each proof's own layout function wherever the host places marks, props, exit marks, or cast starts in Zig (`stage_host` in `proofs/render_golden_test.zig`), so the hashes and the band rule cover the stage a player sees for every proof but The Well of Three Tides, whose script declares every mark and prop. Staging them changed 97 lines of `proofs/golden/render.txt` and 11 lines of deck 3 in `proofs/golden/wasm.txt`, with no transcript change. The check then found The Living Village's cottages marker ending at 540 pixels; the prop moved onto its mark's row at world y 9, where that marker ends at 504.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

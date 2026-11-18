@@ -74,7 +74,9 @@ const Ids = struct {
     lock_wp: u16,
 };
 
-fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+/// Places the stockade's marks, props, and cast, so the headless run, the window, and the
+/// render golden draw one scene.
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const scene = world.lookup_entity("Saltglass Stockade").?;
     const ids = Ids{
         .scene = scene,

@@ -266,26 +266,13 @@ fn advance_and_show(session: *bespoke.host.Session, vm: *bespoke.VM) !void {
 }
 
 /// Executes headless simulation of the Pip-Spitting Green vertical slice (P10-03, D-012).
-pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
-    try writer.print("===================================================================\n", .{});
-    try writer.print("   BeSpoke Engine: The Pip-Spitting Green Vertical Slice\n", .{});
-    try writer.print("  (Natural Stageplay DSL * Relational Spine * Falling Edge & TTL)  \n", .{});
-    try writer.print("===================================================================\n\n", .{});
-
-    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
-    defer world.deinit();
-
-    var spatial = bespoke.SpatialSystem.init(allocator);
-    defer spatial.deinit();
-
-    try writer.print("[Compiler] Lowering Pip-Spitting Green stageplay script to bytecode...\n", .{});
-    var compiled = try bespoke.compile_source(allocator, &world, &spatial, SPITTING_CONTEST_SCRIPT);
-    defer compiled.deinit();
-
+/// Places the field's marks and cast and puts the Pegs prop where the crowd can reach it, for
+/// the headless run, the window, and the render golden. Both runners call this, so the field a
+/// player sees is the field the tests draw.
+pub fn stage(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !void {
     const tamsin = world.lookup_entity("Tamsin").?;
     const judge = world.lookup_entity("JudgeMarrow").?;
     const fairgoers = world.lookup_entity("Fairgoers").?;
-    const pegs = world.lookup_entity("Pegs").?;
     const room_ent = world.lookup_entity("Pip-Spitting Green") orelse try world.intern_entity("Pip-Spitting Green");
 
     const starting_line_wp = spatial.graph.find_waypoint("Chalk Line") orelse 1;
@@ -314,6 +301,30 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try spatial.register_entity(tamsin, starting_line_wp, 10);
     try spatial.register_entity(judge, starting_line_wp, 12);
     try spatial.register_entity(fairgoers, fairgoers_wp, 15);
+}
+
+pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
+    try writer.print("===================================================================\n", .{});
+    try writer.print("   BeSpoke Engine: The Pip-Spitting Green Vertical Slice\n", .{});
+    try writer.print("  (Natural Stageplay DSL * Relational Spine * Falling Edge & TTL)  \n", .{});
+    try writer.print("===================================================================\n\n", .{});
+
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+
+    try writer.print("[Compiler] Lowering Pip-Spitting Green stageplay script to bytecode...\n", .{});
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, SPITTING_CONTEST_SCRIPT);
+    defer compiled.deinit();
+
+    const tamsin = world.lookup_entity("Tamsin").?;
+    const judge = world.lookup_entity("JudgeMarrow").?;
+    const fairgoers = world.lookup_entity("Fairgoers").?;
+    const pegs = world.lookup_entity("Pegs").?;
+
+    try stage(&world, &spatial);
 
     // Script-declared initial items for Tamsin.
     const carries_rel = try world.intern_relation("Carries", .set);
@@ -464,36 +475,10 @@ pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void 
 
     const tamsin = world.lookup_entity("Tamsin").?;
     const judge = world.lookup_entity("JudgeMarrow").?;
-    const fairgoers = world.lookup_entity("Fairgoers").?;
-    const pegs = world.lookup_entity("Pegs").?;
     const room_ent = world.lookup_entity("Pip-Spitting Green") orelse try world.intern_entity("Pip-Spitting Green");
+    const pegs = world.lookup_entity("Pegs").?;
 
-    const starting_line_wp = spatial.graph.find_waypoint("Chalk Line") orelse 1;
-    const offstage_wp = spatial.graph.find_waypoint("Harbour Wall") orelse 2;
-    const fairgoers_wp = spatial.graph.find_waypoint("Fairgoers") orelse
-        try spatial.graph.add_waypoint(room_ent, -8, 3, "Fairgoers");
-
-    if (spatial.graph.get_waypoint(starting_line_wp)) |_| {
-        spatial.graph.waypoints.items[starting_line_wp - 1].pos = .{ .x = 0, .y = 0 };
-    }
-    if (spatial.graph.get_waypoint(offstage_wp)) |_| {
-        spatial.graph.waypoints.items[offstage_wp - 1].pos = .{ .x = 42, .y = 0 };
-    }
-
-    try spatial.graph.connect(fairgoers_wp, starting_line_wp, null);
-    try spatial.graph.connect(starting_line_wp, offstage_wp, null);
-
-    // Position Pegs hotspot in the field at x=22
-    for (spatial.hotspots.items) |*hs| {
-        if (std.mem.indexOf(u8, hs.name, "Peg") != null) {
-            hs.pos = .{ .x = 22, .y = -2 };
-            break;
-        }
-    }
-
-    try spatial.register_entity(tamsin, starting_line_wp, 10);
-    try spatial.register_entity(judge, starting_line_wp, 12);
-    try spatial.register_entity(fairgoers, fairgoers_wp, 15);
+    try stage(&world, &spatial);
 
     // Initial items are declared by the script.
     const conch_ent = try world.intern_entity("Conch");

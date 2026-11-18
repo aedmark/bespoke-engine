@@ -8,72 +8,72 @@ tavern_heist/Tavern +countdown: 8434902f2f151229
 tavern_heist/CellarRoom: dff6cfe60149aca3
 tavern_heist/CellarRoom +branch_active: 8ff65cc5710bbd0e
 tavern_heist/CellarRoom +branch_collapsed: 3721f81a900b24df
-thumb/spitting_contest/Pip-Spitting Green: 61e816b848e745c1
-spitting_contest/Pip-Spitting Green: 6d9f724c5daf83b1
-spitting_contest/Pip-Spitting Green +spit_is_thick: aba14ebbb1a55613
-spitting_contest/Pip-Spitting Green +pegs_tampered: 06253b13457ca0c5
-spitting_contest/Pip-Spitting Green +wind_blowing: 23585b9d13409f2c
-spitting_contest/Pip-Spitting Green +judge_distracted: dd42207135f6cd59
-spitting_contest/Pip-Spitting Green +branch_active: 776cfcb40db401ae
-spitting_contest/Pip-Spitting Green +branch_collapsed: a406465e81f6f442
-spitting_contest/Pip-Spitting Green +countdown: 2923475b023f47ea
-thumb/borrowed_beard/Inn Landing: c7278207f45bb4ed
-borrowed_beard/Inn Landing: c65dee31dca7bf05
-borrowed_beard/Inn Landing +tamsin_disguised: 3651ecab07f6d1e5
-borrowed_beard/Inn Landing +branch_active: 4285067559821ac4
-borrowed_beard/Inn Landing +branch_collapsed: f7f37d388c6a88be
-borrowed_beard/Inn Landing +countdown: 5509994e689eedae
-thumb/borrowed_beard/Net Loft Yard: 28f9c66b758896d4
-borrowed_beard/Net Loft Yard: 6f3e20f78bc7820d
-borrowed_beard/Net Loft Yard +gap_taped: c4ee8d8ac0cf89e2
-borrowed_beard/Net Loft Yard +dog_startled: ab02b6539fcc77d6
-borrowed_beard/Net Loft Yard +branch_active: b12a58d18db437ac
-borrowed_beard/Net Loft Yard +branch_collapsed: 1a2f65c5b360921f
-borrowed_beard/Net Loft Yard +countdown: 0cd9e5e3f7591a96
-thumb/borrowed_beard/Harbour Office: 27baf7f3090affb8
-borrowed_beard/Harbour Office: f5045110338e11d6
-borrowed_beard/Harbour Office +berth_taken: ca342bd9d601056e
-borrowed_beard/Harbour Office +branch_active: 397646e3c7ef8c1b
-borrowed_beard/Harbour Office +branch_collapsed: 45602ac51d399472
-borrowed_beard/Harbour Office +countdown: 0b222a6531c2ea15
+thumb/spitting_contest/Pip-Spitting Green: 99d7a570ceeaa2f5
+spitting_contest/Pip-Spitting Green: 2f1893e40715dc4f
+spitting_contest/Pip-Spitting Green +spit_is_thick: f48d545cdb144801
+spitting_contest/Pip-Spitting Green +pegs_tampered: 4d46cbdfc2adfde0
+spitting_contest/Pip-Spitting Green +wind_blowing: 3a0ba218f826f769
+spitting_contest/Pip-Spitting Green +judge_distracted: 2a7be8ce0c378920
+spitting_contest/Pip-Spitting Green +branch_active: 3fa4007d0e58e380
+spitting_contest/Pip-Spitting Green +branch_collapsed: 12c2461037bb87c2
+spitting_contest/Pip-Spitting Green +countdown: ae7fe9fb2f25d48b
+thumb/borrowed_beard/Inn Landing: e1711df68c8bc1f3
+borrowed_beard/Inn Landing: ccb1177491117bc5
+borrowed_beard/Inn Landing +tamsin_disguised: 71a3f55edea1da22
+borrowed_beard/Inn Landing +branch_active: c12ea203f3eea34f
+borrowed_beard/Inn Landing +branch_collapsed: c5049f8e16007db4
+borrowed_beard/Inn Landing +countdown: abf83af7b7623e22
+thumb/borrowed_beard/Net Loft Yard: 8802fe5740c718f3
+borrowed_beard/Net Loft Yard: 55e108e40b3f5a22
+borrowed_beard/Net Loft Yard +gap_taped: 902a7093229f3822
+borrowed_beard/Net Loft Yard +dog_startled: 8ff5e0f015f94456
+borrowed_beard/Net Loft Yard +branch_active: 63458e501a0be964
+borrowed_beard/Net Loft Yard +branch_collapsed: 2e357f61d391fff8
+borrowed_beard/Net Loft Yard +countdown: b57e26943d1f20e0
+thumb/borrowed_beard/Harbour Office: 8f26eee28d10551e
+borrowed_beard/Harbour Office: 80169a9c440c761e
+borrowed_beard/Harbour Office +berth_taken: 3a204412cebc57de
+borrowed_beard/Harbour Office +branch_active: d20bf68ce438dc6c
+borrowed_beard/Harbour Office +branch_collapsed: 3f6f4612988af159
+borrowed_beard/Harbour Office +countdown: 9599fbf2e649ed38
 thumb/sword_fighting/Tidewalk: e0185a13b7445c31
-sword_fighting/Tidewalk: a5137456a50748b1
-sword_fighting/Tidewalk +branch_active: 4a4ad0b083470ac7
-sword_fighting/Tidewalk +branch_collapsed: 6c4432a32a6a8d01
-sword_fighting/Tidewalk +countdown: 5e56d531e3ca1a4b
+sword_fighting/Tidewalk: 16077ccb2937f3e9
+sword_fighting/Tidewalk +branch_active: 0d7357324eff7706
+sword_fighting/Tidewalk +branch_collapsed: f6b53c9864d8d3fc
+sword_fighting/Tidewalk +countdown: 789b0208577b6870
 thumb/sword_fighting/Fencing Yard: b18e109f2e745aab
-sword_fighting/Fencing Yard: 5a03f7a1b9e60f0d
-sword_fighting/Fencing Yard +branch_active: df0067c719175d68
-sword_fighting/Fencing Yard +branch_collapsed: 1e072746787d7704
-sword_fighting/Fencing Yard +countdown: 31577919b6bdcc8d
+sword_fighting/Fencing Yard: aa1bfbbffbe145ee
+sword_fighting/Fencing Yard +branch_active: b581bf5247caeeb7
+sword_fighting/Fencing Yard +branch_collapsed: 4acd7bc49d0aeb59
+sword_fighting/Fencing Yard +countdown: bd6366466c5fd34e
 thumb/sword_fighting/Drowned Lantern: 593cbd5023f9e234
-sword_fighting/Drowned Lantern: 8266a8fda5528e11
-sword_fighting/Drowned Lantern +branch_active: 953a91dc6f7d308a
-sword_fighting/Drowned Lantern +branch_collapsed: f2396e8fb3799ba9
-sword_fighting/Drowned Lantern +countdown: 565ee003d07db2c6
-thumb/village/Living Village: be29f86e95cd791a
-village/Living Village: 211d16011a3703d5
-village/Living Village +branch_active: a2b692ae5af47ad4
-village/Living Village +branch_collapsed: 2a67491e627d2849
-village/Living Village +village_crime_active: 13497aa8e25bc827
-village/Living Village +village_warrant_active: bbb866145e729063
-village/Living Village +village_arrest_made: 1c94001b56ff0c44
-village/Living Village +countdown: 3eee4e11b5bbd66b
-village/Living Village +villagers: ab7cde1893210bd6
-thumb/lamp_point/Lamp Point: d89c93d57615097a
-lamp_point/Lamp Point: 9547be4a99c9ada9
-lamp_point/Lamp Point +donkey_tangled: 7e754386e4c244f9
-lamp_point/Lamp Point +donkey_charging: ab93a469a53afdbe
-lamp_point/Lamp Point +donkey_retreating: f620afa82587fa74
-lamp_point/Lamp Point +tamsin_knocked_down: 4e36d9051d3c1348
-lamp_point/Lamp Point +anchor_moved: a253be51096bc614
-lamp_point/Lamp Point +branch_active: dd884aee00174291
-lamp_point/Lamp Point +branch_collapsed: 2cc76a702eed9a47
-lamp_point/Lamp Point +countdown: a8639e59334b622a
-thumb/lamp_point/Wreckers Cellar: a3c754100f847826
-lamp_point/Wreckers Cellar: fc811214c032a0b6
-lamp_point/Wreckers Cellar +branch_active: 0cdc408846223806
-lamp_point/Wreckers Cellar +branch_collapsed: 33fb5cb382499b28
+sword_fighting/Drowned Lantern: c7de65ddbcd63bfb
+sword_fighting/Drowned Lantern +branch_active: bcc6489c80a5e4af
+sword_fighting/Drowned Lantern +branch_collapsed: 9932a8b2c680cc25
+sword_fighting/Drowned Lantern +countdown: 0d3f447a1e87f7a4
+thumb/village/Living Village: 566b6184d69fa2d0
+village/Living Village: c5a0ea3c8e159b9a
+village/Living Village +branch_active: 1afdde09777f954a
+village/Living Village +branch_collapsed: ec11c57972806052
+village/Living Village +village_crime_active: 56b67600463098a0
+village/Living Village +village_warrant_active: bfb1718772776e3e
+village/Living Village +village_arrest_made: 1197b9c187742751
+village/Living Village +countdown: 072b8407b2a01db3
+village/Living Village +villagers: 6fecc87204baa88e
+thumb/lamp_point/Lamp Point: 67b94138d11efe81
+lamp_point/Lamp Point: f0c5e5788129a341
+lamp_point/Lamp Point +donkey_tangled: 852131a7ff2e846b
+lamp_point/Lamp Point +donkey_charging: aaf9f9190492bd49
+lamp_point/Lamp Point +donkey_retreating: 2bdb8678182ac0c7
+lamp_point/Lamp Point +tamsin_knocked_down: 982ae952a430ce52
+lamp_point/Lamp Point +anchor_moved: 9ee05c5d9baebfe6
+lamp_point/Lamp Point +branch_active: 17170235b18be97d
+lamp_point/Lamp Point +branch_collapsed: 05f1a682640464d6
+lamp_point/Lamp Point +countdown: 07a79b4b3d1b6217
+thumb/lamp_point/Wreckers Cellar: 5ff415da3df9500f
+lamp_point/Wreckers Cellar: 06c8a2f61bfb7d2b
+lamp_point/Wreckers Cellar +branch_active: a2f74a0536f7530e
+lamp_point/Wreckers Cellar +branch_collapsed: 5753670829847d0d
 thumb/three_tides/Charter Yard: dcd036eeab4188e3
 three_tides/Charter Yard: 433d07e63dc17714
 three_tides/Charter Yard +tides_tree_felled: fc9757b042cf35a4
@@ -94,40 +94,40 @@ three_tides/Gull Roost +tides_juno_disguised: 425a790b968a9fcd
 three_tides/Gull Roost +branch_active: 03fd48e5e9f7ec49
 three_tides/Gull Roost +branch_collapsed: a40160a0e7203e5a
 three_tides/Gull Roost +countdown: a0e00b26e365395d
-thumb/weathercock/Wren's Attic: 913799b2e824834d
-weathercock/Wren's Attic: a2d80835b774e1ad
-weathercock/Wren's Attic +branch_active: 5d8957cfce4fec28
-weathercock/Wren's Attic +branch_collapsed: 4fed1ae2251abd7d
-weathercock/Wren's Attic +countdown: 72ab78992bdb9013
-thumb/weathercock/The Customs House: 913799b2e824834d
-weathercock/The Customs House: a786c9096a4901ad
-weathercock/The Customs House +branch_active: b88211894f416794
-weathercock/The Customs House +branch_collapsed: 27c3e17ae10cdd7e
-weathercock/The Customs House +weathercock_flooded: 30ddaf447fd72887
-weathercock/The Customs House +countdown: 68dad07ab914d9dd
-thumb/weathercock/Beacon Hill: 913799b2e824834d
-weathercock/Beacon Hill: 855c7b71d9657b0d
-weathercock/Beacon Hill +branch_active: 75a033f1df746e7f
-weathercock/Beacon Hill +branch_collapsed: c15617b3462448a0
-weathercock/Beacon Hill +countdown: 6ff977204b3b4a86
-thumb/bell_tower/Bell Tower Base: de2e85e4d9574afc
-bell_tower/Bell Tower Base: 26bdd1b975ffd62f
-bell_tower/Bell Tower Base +branch_active: c9cae9c006814b33
-bell_tower/Bell Tower Base +branch_collapsed: 2a80b69c009bdf4d
-bell_tower/Bell Tower Base +bell_brazier_lit: 21c5025ff9029a5a
-bell_tower/Bell Tower Base +countdown: b00910c2fd1e8ed4
-thumb/bell_tower/Bell Tower Belfry: de2e85e4d9574afc
-bell_tower/Bell Tower Belfry: 82ddc1963d721979
-bell_tower/Bell Tower Belfry +branch_active: 6f301084a08e3c1c
-bell_tower/Bell Tower Belfry +branch_collapsed: c16856937bd40be4
-bell_tower/Bell Tower Belfry +bell_chain_loosed: ede5811adc4fc0b5
-bell_tower/Bell Tower Belfry +bell_ringing: 5adb06386c692c7c
-bell_tower/Bell Tower Belfry +bell_beacon_lit: adb7a036a45fb55c
-thumb/grog_puzzle/Saltglass Stockade: 262933539195addc
-grog_puzzle/Saltglass Stockade: fc3ff7869b588634
-grog_puzzle/Saltglass Stockade +branch_active: 3825fc5184f26369
-grog_puzzle/Saltglass Stockade +branch_collapsed: 63eda43332e4629d
-grog_puzzle/Saltglass Stockade +countdown: cc1299dae2086175
+thumb/weathercock/Wren's Attic: 593cbd5023f9e234
+weathercock/Wren's Attic: 9034ee7dfab75b69
+weathercock/Wren's Attic +branch_active: 37f76c6bca33f555
+weathercock/Wren's Attic +branch_collapsed: c86cb60901edad34
+weathercock/Wren's Attic +countdown: ce1dae99df9f3834
+thumb/weathercock/The Customs House: 593cbd5023f9e234
+weathercock/The Customs House: dfecfbbafc24a8dd
+weathercock/The Customs House +branch_active: 3a85ba5287f7335c
+weathercock/The Customs House +branch_collapsed: 2fa6acca8feada0f
+weathercock/The Customs House +weathercock_flooded: 989cecf0d0c3b62a
+weathercock/The Customs House +countdown: 2917d3ff4a4fbbac
+thumb/weathercock/Beacon Hill: 593cbd5023f9e234
+weathercock/Beacon Hill: cf0839acb22a1823
+weathercock/Beacon Hill +branch_active: 789706ae23eef654
+weathercock/Beacon Hill +branch_collapsed: 2f973eb438f749eb
+weathercock/Beacon Hill +countdown: b586ca57d009a177
+thumb/bell_tower/Bell Tower Base: 85b839fa0992cedc
+bell_tower/Bell Tower Base: be930190150da383
+bell_tower/Bell Tower Base +branch_active: 3fc869adc55c1d2b
+bell_tower/Bell Tower Base +branch_collapsed: 77283f161c6bb714
+bell_tower/Bell Tower Base +bell_brazier_lit: 8cde957a02f044f8
+bell_tower/Bell Tower Base +countdown: e0788d3fc27c8dc8
+thumb/bell_tower/Bell Tower Belfry: 85b839fa0992cedc
+bell_tower/Bell Tower Belfry: b37ef145a326ce41
+bell_tower/Bell Tower Belfry +branch_active: 8d2e69a2e4fe86d5
+bell_tower/Bell Tower Belfry +branch_collapsed: 33e8502fbaf8747c
+bell_tower/Bell Tower Belfry +bell_chain_loosed: 9c64b67dea4b7fc5
+bell_tower/Bell Tower Belfry +bell_ringing: d1a4a1bc57e4dc89
+bell_tower/Bell Tower Belfry +bell_beacon_lit: 09838cbaacb52cc5
+thumb/grog_puzzle/Saltglass Stockade: 2a8b11838ffb45f9
+grog_puzzle/Saltglass Stockade: a7d51246b1bf6d28
+grog_puzzle/Saltglass Stockade +branch_active: 31d0de3734b79071
+grog_puzzle/Saltglass Stockade +branch_collapsed: c2da7140db3d53b9
+grog_puzzle/Saltglass Stockade +countdown: 9c305513feef7b6e
 thumb/grid_puzzle/Hollin Keep Gallery: 85b839fa0992cedc
 grid_puzzle/Hollin Keep Gallery: d2614c41e5fdceda
 grid_puzzle/Hollin Keep Gallery +branch_active: 05e5541b6bbb8c0a

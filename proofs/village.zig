@@ -172,7 +172,9 @@ pub fn lay_out_settlement(world: *bespoke.World, spatial: *bespoke.SpatialSystem
     try spatial.add_hotspot(oven_ent, village_scene, .{ .x = 2, .y = -13 }, 6, "BakeryOven", "Warm brick bakery oven stacked with golden sourdough loaves.");
     try spatial.add_hotspot(granary_ent, village_scene, .{ .x = 2, .y = 9 }, 6, "FarmGranary", "Timber granary storing harvested bundles of village wheat.");
     try spatial.add_hotspot(fountain_ent, village_scene, .{ .x = 15, .y = -5 }, 6, "TownFountain", "The cobblestone town square fountain where villagers exchange gossip.");
-    try spatial.add_hotspot(beds_ent, village_scene, .{ .x = 15, .y = 12 }, 6, "VillageCottages", "Cozy thatched cottages where tired villagers rest to restore Energy.");
+    // The cottages sit on their mark's row: a prop with no art is a 32-pixel marker, and at
+    // world y 12 it reaches 540 pixels, inside the message band (D-124).
+    try spatial.add_hotspot(beds_ent, village_scene, .{ .x = 15, .y = 9 }, 6, "VillageCottages", "Cozy thatched cottages where tired villagers rest to restore Energy.");
     try spatial.add_hotspot(hearth_ent, village_scene, .{ .x = 28, .y = -13 }, 6, "TavernHearth", "Crackling stone hearth inside the village tavern.");
     try spatial.add_hotspot(jail_ent, village_scene, .{ .x = 28, .y = 9 }, 6, "SheriffJail", "Iron-barred holding cell inside the Sheriff's Post.");
     return .{

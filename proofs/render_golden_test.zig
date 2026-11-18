@@ -5,8 +5,9 @@
 //! hash of the pixels with `proofs/golden/render.txt`, so moving proof art out of the engine
 //! (P32-02b) cannot change a pixel unnoticed.
 //!
-//! Each scene is staged from the proof's own script: its marks and props as compiled, and its
-//! cast spread over the scene's marks. That is the default state of the scene. Art that
+//! Each scene is staged from the proof's own script and, where the host places marks, props,
+//! exit marks, or cast starts in Zig, from that proof's own layout function too (P43-01). The
+//! cast is then spread over the scene's marks. That is the default state of the scene. Art that
 //! depends on puzzle progress (a moved anchor, a tampered flag) is not covered.
 //!
 //! The hashes come from SDL's software rasterizer and are stable for one SDL build. If an SDL
@@ -281,6 +282,46 @@ const Recorder = struct {
     }
 };
 
+/// Stages each proof the way its own host does: the marks, props, exit marks, and cast starts
+/// its script does not declare. Every proof whose host places any of those in Zig is listed
+/// here, through the proof's own layout function, so this test never restates a coordinate
+/// (D-124). The Well of Three Tides is absent because its script declares every mark and prop;
+/// its host only connects the marks, starts the cast, and registers the era portals.
+fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem) !void {
+    if (std.mem.eql(u8, name, "spitting_contest")) return spitting_contest.stage(world, spatial);
+    if (std.mem.eql(u8, name, "borrowed_beard")) return borrowed_beard.stage(world, spatial, false);
+    if (std.mem.eql(u8, name, "sword_fighting")) return sword_fighting.place_cast(world, spatial, false);
+    if (std.mem.eql(u8, name, "village")) {
+        const scene = world.lookup_entity("Living Village") orelse return error.SceneNotCompiled;
+        _ = try village.lay_out_settlement(world, spatial, scene);
+        return;
+    }
+    if (std.mem.eql(u8, name, "lamp_point")) {
+        _ = try lamp_point.Stage.init(world, spatial, false);
+        return;
+    }
+    if (std.mem.eql(u8, name, "weathercock")) {
+        _ = try weathercock.Layout.init(world, spatial);
+        return;
+    }
+    if (std.mem.eql(u8, name, "bell_tower")) {
+        _ = try bell_tower.configure(world, spatial);
+        return;
+    }
+    if (std.mem.eql(u8, name, "grog_puzzle")) {
+        _ = try grog_puzzle.configure(world, spatial);
+        return;
+    }
+    if (std.mem.eql(u8, name, "grid_puzzle")) {
+        _ = try grid_puzzle.configure(world, spatial);
+        return;
+    }
+    if (std.mem.eql(u8, name, "observatory_puzzle")) {
+        _ = try observatory_puzzle.configure(world, spatial);
+        return;
+    }
+}
+
 fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     const allocator = rec.allocator;
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
@@ -296,10 +337,10 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     defer vm.deinit();
     vm.spatial = &spatial;
 
-    // A proof whose host places its props and cast in Zig stages them here, so its frames and
-    // the band check cover the scene a player sees (D-124). The cast loop below leaves an
-    // actor the host already placed alone.
-    if (std.mem.eql(u8, name, "observatory_puzzle")) _ = try observatory_puzzle.configure(&world, &spatial);
+    // Each proof's host stages what its script does not: marks placed in Zig, props, exit marks,
+    // and cast starts. Without it the frames and the band check would show a scene no player
+    // sees (D-124). The cast loop below leaves an actor the host already placed alone.
+    try stage_host(name, &world, &spatial);
 
     // Stage every scene's cast on that scene's marks, one mark apart.
     var lines = std.mem.splitScalar(u8, script, '\n');

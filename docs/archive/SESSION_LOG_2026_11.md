@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 85 (2026-11-17)
+- **Work.** Prepared Phase 40 and Lantern Watch for integration. Regenerated the showcase and seven standalone proof pages from the current `bespoke-proofs.wasm` (694,256 bytes), clearing the stale-page checks. The hand-uploaded site and local Lantern Watch exports are not part of the commit.
+- **Checks.** On Linux with Zig 0.17.1, the full suite, generated template, fuzz harnesses, and both Wasm builds pass. All 69 Python tests, the docs and editor checks, and generated-site freshness pass. Chrome verifies the tutorial, the complete solo bell repair in Lantern Watch, and proof-page audio and play.
+
 ### Session 84 (2026-11-17)
 - **Work.** Moved Lantern Watch's opening prose into the gameplay transcript. Start unlocks the existing command field and starts the clock in place. The opening remains above the rolling turn history, and the map stays optional. The replacement upload is `dist/lantern-watch-inline/index.html`.
 - **Checks.** Seven native tests, both Wasm routes and soundtrack checks, and the Chrome playthrough pass. Chrome verifies that the opening stays in place, the controls wait for Start, and the clock then advances. Documentation checks pass. Nothing was uploaded.

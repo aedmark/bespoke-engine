@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Living Village's cottages prop sits on its mark's row instead of below it, where its marker reached into the message band (D-124).
+
 - A mark's name or prompt that would fall under the message band is drawn above its mark, and stays above when another label takes that place (D-124).
 
 - The Drowned Lantern's bar counter and its signs sit above the message band, the Larkspur Observatory's props sit inside the working floor rather than in the band's top, and the Wreckers Cellar's STEPS UP sign stands under its lowest step (D-124).

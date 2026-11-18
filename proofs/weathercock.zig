@@ -224,7 +224,9 @@ pub fn execute_look_at(
 
 /// Places the three scenes' props, corridors, and cast. The headless run and the window share
 /// it so both play the same layout.
-const Layout = struct {
+/// The proof's three-scene layout, shared by the headless run, the window, and the render
+/// golden, so all three draw one stage.
+pub const Layout = struct {
     attic: bespoke.EntityId,
     customs: bespoke.EntityId,
     hill: bespoke.EntityId,
@@ -248,7 +250,7 @@ const Layout = struct {
     postbox_wp: bespoke.WaypointId,
     whirl_wp: bespoke.WaypointId,
 
-    fn init(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Layout {
+    pub fn init(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Layout {
         const attic = world.lookup_entity("Wren's Attic").?;
         const customs = world.lookup_entity("The Customs House").?;
         const hill = world.lookup_entity("Beacon Hill").?;
