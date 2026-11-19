@@ -367,8 +367,10 @@ const SPIT_SOLUTION = [_]Beat{
     .{ .note = "Tamsin drinks the treacle cider.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "TreacleCider" } }, .{ .ticks = 2 } } },
     .{ .note = "Tamsin blows the conch.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Conch" } }, .{ .ticks = 2 } } },
     .{ .note = "Tamsin moves the pegs while nobody watches.", .actions = &.{ .{ .cue = .{ .name = "Uses", .actor = "Tamsin", .a = "Pegs" } }, .{ .ticks = 2 } } },
+    // A distracted judge marks nothing, so the throw waits until he is back at the chalk line.
+    .{ .note = "Tamsin waits for Judge Marrow to turn back from the harbour.", .actions = &.{ .{ .until_gone = .{ .subject = "JudgeMarrow", .relation = "Distracted" } } } },
     .{ .note = "The wind picks up.", .actions = &.{ .{ .cue = .{ .name = "Gusts", .actor = "Tamsin" } }, .{ .ticks = 1 } } },
-    .{ .note = "Tamsin spits.", .actions = &.{ .{ .cue = .{ .name = "Spits", .actor = "Tamsin" } }, .{ .ticks = 1 } } },
+    .{ .note = "Tamsin spits while the judge watches and the breeze blows.", .actions = &.{ .{ .cue = .{ .name = "Spits", .actor = "Tamsin" } }, .{ .ticks = 1 } } },
 };
 
 const BEARD_SOLUTION = [_]Beat{
@@ -635,7 +637,7 @@ fn spit_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bo
 fn spit_choice(rt: *WasmRuntime, action: u32) anyerror!void {
     switch (action) {
         SPIT_NOW => try spit_now(rt),
-        SPIT_RULES => rt.queue_message("JudgeMarrow", "Spit past the last peg to win! Thick spit and a sea breeze will do it!"),
+        SPIT_RULES => rt.queue_message("JudgeMarrow", "Spit past the last peg to win! Thick spit, a sea breeze, and my eyes on the throw!"),
         else => rt.set_banner("Tamsin steps back."),
     }
 }
@@ -1602,8 +1604,15 @@ test "D-094: the Pip-Spitting Green wins first place with clicks alone" {
     }
     try rt.step_tick();
 
-    // Wait for the breeze, then talk to the judge and spit.
+    // He has to be back at the chalk line to mark the throw, and the breeze has to be up.
+    for (0..90) |_| {
+        if (!holds(rt, "JudgeMarrow", "Distracted", null)) break;
+        try rt.step_tick();
+    }
+    try testing.expect(!holds(rt, "JudgeMarrow", "Distracted", null));
     try tick_until(rt, "Wind", "blowing", null, 80);
+
+    // Then talk to the judge and spit.
     try pick_verb(rt, .talk_to);
     _ = try click_on(rt, "JudgeMarrow");
     for (0..30) |_| {
@@ -1613,6 +1622,13 @@ test "D-094: the Pip-Spitting Green wins first place with clicks alone" {
     try testing.expect(bespoke.dialogue.view(rt.active_world()) != null);
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = '1' });
     try tick_until(rt, "Tamsin", "Placed", "FirstPlace", 3);
+}
+
+test "D-129: the Green's [S] solution waits for the judge and wins first place" {
+    const rt = try load(1);
+    defer unload(rt);
+    try solve(rt);
+    try testing.expect(holds(rt, "Tamsin", "Placed", "FirstPlace"));
 }
 
 test "D-094: the Donkey of Lamp Point reaches the wreckers' chart with clicks alone" {

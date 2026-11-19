@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A spit in The Pip-Spitting Green counts only while Judge Marrow is watching, so first place needs him back at the chalk line as well as thick spit, moved pegs, and the breeze; a throw he does not see is unmarked (`D-129`).
+
 - A hover prompt on a person near the message band reads above them, so the log no longer covers it (D-127).
 
 - The desktop window can be resized. It shows the whole 1280x720 frame at its own shape, with bars beside it in a window of another shape, so a short window keeps the message band and the stage and a click lands on what it points at (Q-014, D-125).

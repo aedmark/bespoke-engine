@@ -23,19 +23,21 @@
 
 [Step 5: Tamsin tampers with Pegs while crowd is distracted!]
    -> Fact asserted: Pegs are tampered with (moved closer to line)!
-   -> Spit check without wind: thick_pegs_moved_no_wind_second (Second place! Close, but need a tailwind!)
+   -> Result: unjudged (his back is turned, so nobody marks it)
 
 [Step 6: Wind gust cycles in!] Rising edge trigger activates...
-   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = TAMSIN WINS!
-   -> FINAL RESULT: winner_first!
-   -> Judge Marrow: "Past the last peg! We have a champion!"
+   -> Wind is blowing! Thick spit and moved pegs wait on a judge who is watching.
 
 [Step 7: Testing TTL Expiration & Falling-Edge Triggers]
    -> Distraction TTL expired at Tick 54!
    -> 'when Judge Marrow forgets Distracted' fired: Judge Marrow returned to Chalk Line.
+
+[Step 8: Tamsin spits with Judge Marrow back at the chalk line and the breeze behind her]
+   -> FINAL RESULT: winner_first!
+   -> Judge Marrow: "Past the last peg! We have a champion!"
    -> Wind stopped blowing: 'when Wind stops being blowing' falling-edge hook fired.
 
-[Step 8: Time-Travel Rewind Demo]
+[Step 9: Time-Travel Rewind Demo]
    -> Rewinding simulation to Tick 8 (before Conch distraction)...
    -> Rewound Tick: 8
    -> Judge Marrow Distracted? NO (Restored to false!)
@@ -45,4 +47,4 @@
 ===================================================================
    Pip-Spitting Green Vertical Slice Successfully Completed!  
 ===================================================================
-final facts: 4, digest 022327d137df8210
+final facts: 4, digest 63029fa2e665a728

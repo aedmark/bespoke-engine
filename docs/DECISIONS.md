@@ -1573,6 +1573,14 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** `Canvas.suppress_text` and the renderer's suppression block are gone, and a drawn string that lands in the band fails whichever layer draws it except the window's own. The deck golden measures every beat of every deck before hashing it, which found two scenes the render golden never drew: The Living Village's Drifter badge, `[Hungry]` at row 498 to 505, and The Saltmarket's near row at world y 10, where a mark's disc ended at 517 and Quince at 518. Badges lift, and the near row moved to world y 8, where a mark ends at 492 and a person on it at 494. Fourteen `wasm.txt` lines moved and no render hash did. A text_layout test pins the badge rule without a proof scene, and the band module's test pins the rows and the layers the check skips.
 
+## D-129 A Distracted Judge Marks No Spit (2026-11-19, status: accepted)
+
+**Context.** The maintainer found that a spit still won The Pip-Spitting Green while Judge Marrow stood at the Harbour Wall: the script's `Spits` handler judged every throw, whatever the judge was doing. A judge looking for the herring fleet cannot call a placing, and the conch skipped the contest's timing, since the distraction and the breeze are the two things the player lines up.
+
+**Decision.** The script judges a spit only while Judge Marrow is not `Distracted`. The handler clears the previous placing, checks the fact, says through the Narrator that nobody marks the throw, and records `Placed(Tamsin, Unjudged)`; the thick spit, moved pegs, and wind rules are unchanged. The judge's rules line names the condition, and the page's how-to and walkthrough say it too.
+
+**Consequences.** First place needs three things at once: thick spit, moved pegs, and a breeze while he watches. A distracted throw still replaces her placing, as every throw does, so spitting while he is away after a win loses the win. The distraction lasts 45 ticks and the breeze comes on a 65-tick cycle, so a player who blows the conch waits for him to walk back and then for the next gust, which arrives within 45 ticks. The headless run spits while he is away, shows it unmarked, waits out the distraction, and spits again to win; `spitting_contest.txt` changed in steps 5 to 9, and the deck's `[S]` solution gained a beat that waits for him. No `wasm.txt` or `render.txt` line moved, because the deck golden records only the first `[S]` press. Two tests hold the rule: one makes the whole winning throw while he is distracted, sees it unjudged, waits for him to turn back, and makes the same throw to win; the other plays the deck's `[S]` solution to first place.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

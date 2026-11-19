@@ -144,6 +144,10 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\
     \\on cue Spits(Tamsin):
     \\  forget Placed(Tamsin)
+    \\  if Distracted(JudgeMarrow, _):
+    \\    say Narrator to Scene: "Judge Marrow has his back to the chalk line. Nobody marks that one."
+    \\    remember Placed(Tamsin, Unjudged)
+    \\    done
     \\  if Spit is not thick:
     \\    say Tamsin to Scene: "Pfft!"
     \\    animate (Tamsin, Tamsin-dribbling)
@@ -165,6 +169,8 @@ pub const SPITTING_CONTEST_SCRIPT =
 ;
 
 pub const SpitResult = enum {
+    /// A spit nobody marked, because Judge Marrow was watching the harbour.
+    unjudged,
     dribble_third,
     thick_pegs_untouched_third,
     thick_pegs_moved_no_wind_second,
@@ -178,6 +184,7 @@ pub fn placement(world: *const bespoke.World) ?SpitResult {
     const placed_rel = world.lookup_relation("Placed") orelse return null;
     const fact = world.find_first(tamsin, placed_rel, null) orelse return null;
     const name = world.get_entity_name(bespoke.EntityId.from_int(fact.object_or_value)) orelse return null;
+    if (std.mem.eql(u8, name, "Unjudged")) return .unjudged;
     if (std.mem.eql(u8, name, "Dribble")) return .dribble_third;
     if (std.mem.eql(u8, name, "ThirdPlace")) return .thick_pegs_untouched_third;
     if (std.mem.eql(u8, name, "SecondPlace")) return .thick_pegs_moved_no_wind_second;
@@ -409,7 +416,8 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     const res3 = try spit(&world, &vm, &compiled);
     try timeline.record(&world);
-    try writer.print("   -> Spit check without wind: {s} (Second place! Close, but need a tailwind!)\n", .{@tagName(res3)});
+    try std.testing.expectEqual(SpitResult.unjudged, res3);
+    try writer.print("   -> Result: {s} (his back is turned, so nobody marks it)\n", .{@tagName(res3)});
 
     // Step 6: Wind gust arrives! (Rising edge trigger)
     try writer.print("\n[Step 6: Wind gust cycles in!] Rising edge trigger activates...\n", .{});
@@ -421,13 +429,9 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
         try timeline.record(&world);
     }
 
-    try writer.print("   -> Wind is blowing! Thick Spit + Tampered Pegs + Tailwind = TAMSIN WINS!\n", .{});
-    const res4 = try spit(&world, &vm, &compiled);
-    try timeline.record(&world);
-    try writer.print("   -> FINAL RESULT: {s}!\n", .{@tagName(res4)});
-    try writer.print("   -> Judge Marrow: \"Past the last peg! We have a champion!\"\n", .{});
+    try writer.print("   -> Wind is blowing! Thick spit and moved pegs wait on a judge who is watching.\n", .{});
 
-    // Step 7: TTL Expiration and Falling Edge
+    // Step 7: TTL Expiration and Falling Edge walk the judge back to the chalk line.
     try writer.print("\n[Step 7: Testing TTL Expiration & Falling-Edge Triggers]\n", .{});
     while (world.has_fact(judge, distracted_rel, null)) {
         try vm.step_tick();
@@ -436,12 +440,20 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("   -> Distraction TTL expired at Tick {d}!\n", .{world.current_tick});
     try writer.print("   -> 'when Judge Marrow forgets Distracted' fired: Judge Marrow returned to Chalk Line.\n", .{});
 
+    // Step 8: The judged throw.
+    try writer.print("\n[Step 8: Tamsin spits with Judge Marrow back at the chalk line and the breeze behind her]\n", .{});
+    const res4 = try spit(&world, &vm, &compiled);
+    try timeline.record(&world);
+    try std.testing.expectEqual(SpitResult.winner_first, res4);
+    try writer.print("   -> FINAL RESULT: {s}!\n", .{@tagName(res4)});
+    try writer.print("   -> Judge Marrow: \"Past the last peg! We have a champion!\"\n", .{});
+
     _ = world.forget(wind_ent, blowing_rel, null);
     try vm.step_tick();
     try writer.print("   -> Wind stopped blowing: 'when Wind stops being blowing' falling-edge hook fired.\n", .{});
 
-    // Step 8: Time-Travel Rewind
-    try writer.print("\n[Step 8: Time-Travel Rewind Demo]\n", .{});
+    // Step 9: Time-Travel Rewind
+    try writer.print("\n[Step 9: Time-Travel Rewind Demo]\n", .{});
     try writer.print("   -> Rewinding simulation to Tick {d} (before Conch distraction)...\n", .{pre_conch_tick});
     _ = try timeline.restore(&world, pre_conch_snapshot);
 
@@ -644,6 +656,9 @@ pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void 
                     try advance_and_show(&session, &vm);
                     const res = placement(&world) orelse return error.SpitNotJudged;
                     switch (res) {
+                        .unjudged => {
+                            window.set_cue_banner("Judge Marrow has his back to the chalk line. Nobody marks that one.", 120);
+                        },
                         .dribble_third => {
                             window.set_cue_banner("The spit dribbles down her chin. (3rd place)", 120);
                             window.play_sound(art.sfx(.splash));
@@ -662,7 +677,7 @@ pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void 
                         },
                     }
                 } else if (choice_idx == 1) {
-                    window.queue_message("JudgeMarrow", "Spit past the last peg to win! Thick spit and a sea breeze will do it!");
+                    window.queue_message("JudgeMarrow", "Spit past the last peg to win! Thick spit, a sea breeze, and my eyes on the throw!");
                 } else {
                     window.set_cue_banner("Tamsin steps back.", 60);
                 }
@@ -674,6 +689,9 @@ pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void 
                     try advance_and_show(&session, &vm);
                     const res = placement(&world) orelse return error.SpitNotJudged;
                     switch (res) {
+                        .unjudged => {
+                            window.set_cue_banner("Judge Marrow has his back to the chalk line. Nobody marks that one.", 120);
+                        },
                         .dribble_third => {
                             window.set_cue_banner("The spit dribbles down her chin. (3rd place)", 120);
                             window.play_sound(art.sfx(.splash));
@@ -855,9 +873,15 @@ test "P10-03: spitting contest puzzle systemic progression and resolution" {
     _ = try vm.fire_cue(&compiled, "Uses", tamsin, pegs, null);
     _ = try bespoke.host.tick(&vm, &compiled);
     try testing.expect(world.has_fact(pegs, tampered_rel, null));
+
+    // 4. A distracted judge marks nothing, so the throw is not scored.
+    try testing.expectEqual(SpitResult.unjudged, try spit(&world, &vm, &compiled));
+
+    // 5. He walks back from the harbour; the same throw without wind is second place.
+    while (world.has_fact(judge, distracted_rel, null)) _ = try bespoke.host.tick(&vm, &compiled);
     try testing.expectEqual(SpitResult.thick_pegs_moved_no_wind_second, try spit(&world, &vm, &compiled));
 
-    // 4. Wind gust blows! -> Thick spit + moved pegs + wind gust -> WINNER! 1st place!
+    // 6. Wind gust blows! -> Thick spit + moved pegs + wind gust -> WINNER! 1st place!
     _ = try script_action(&world, &vm, &compiled, "Gusts", tamsin, null, null, 1, &speech_buf);
     try testing.expect(world.has_fact(world.lookup_entity("Wind").?, blowing_rel, null));
     try testing.expectEqual(SpitResult.winner_first, try spit(&world, &vm, &compiled));
@@ -867,6 +891,46 @@ test "P10-03: spitting contest puzzle systemic progression and resolution" {
     var it = world.query(tamsin, world.lookup_relation("Placed").?, null);
     while (it.next()) |_| count += 1;
     try testing.expectEqual(@as(usize, 1), count);
+}
+
+test "D-129: a distracted judge marks no spit, and the same throw wins once he turns back" {
+    const testing = std.testing;
+    var world = try bespoke.World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, SPITTING_CONTEST_SCRIPT);
+    defer compiled.deinit();
+    var vm = bespoke.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+
+    const tamsin = world.lookup_entity("Tamsin").?;
+    const judge = world.lookup_entity("JudgeMarrow").?;
+    const pegs = world.lookup_entity("Pegs").?;
+    const distracted_rel = world.lookup_relation("Distracted").?;
+    var speech_buf: [256]u8 = undefined;
+
+    // A throw with every other winning piece in place: thick spit, moved pegs, and the breeze.
+    _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, world.lookup_entity("TreacleCider").?, null, 1, &speech_buf);
+    _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, try world.intern_entity("Conch"), null, 2, &speech_buf);
+    try testing.expect(world.has_fact(judge, distracted_rel, null));
+    _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, pegs, null, 1, &speech_buf);
+    try testing.expect(world.has_fact(pegs, world.lookup_relation("tampered").?, null));
+    _ = try script_action(&world, &vm, &compiled, "Gusts", tamsin, null, null, 1, &speech_buf);
+    try testing.expect(world.has_fact(world.lookup_entity("Wind").?, world.lookup_relation("blowing").?, null));
+
+    // He is watching the harbour, so the throw is not scored at all.
+    try testing.expectEqual(SpitResult.unjudged, try spit(&world, &vm, &compiled));
+
+    // Back at the chalk line, the same throw wins.
+    var guard: usize = 0;
+    while (world.has_fact(judge, distracted_rel, null) and guard < 80) : (guard += 1) {
+        _ = try bespoke.host.tick(&vm, &compiled);
+    }
+    try testing.expect(!world.has_fact(judge, distracted_rel, null));
+    try testing.expectEqual(SpitResult.winner_first, try spit(&world, &vm, &compiled));
 }
 
 test "P10-03: headless execution of Spitting Contest scenario" {
