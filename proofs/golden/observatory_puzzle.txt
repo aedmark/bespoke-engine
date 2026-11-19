@@ -35,8 +35,12 @@
   [ 42] Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
   -> Agendas: Dissuade Done, PlantAlibi Idle, ShedWarning Idle
 
-[Night 2] Ines confronts Pell with the slip.
-  [ 43] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+[Night 2] Ines shows Moss the slip. He does not know it.
+  [ 43] Moss: "A plate slip? I only mind the cables, miss."
+
+[Night 2] Ines shows Pell the glove, then the slip.
+  [ 44] Pell: "A glove. Half the staff keep a pair by the developer trays."
+  [ 45] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
 
 [Rewind] Restore the saved opening for a typed playthrough.
 
@@ -52,11 +56,11 @@
   > go to the archive
   > pick up the exposure slip
   [  9] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
-  > ask the rival about the slip
+  > present the slip to the rival
   [ 10] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
 
 ===================================================================
   VERIFICATION COMPLETE: plate 41 is in Halloran's office.         
 ===================================================================
 
-final facts: 18, digest eb7c7448875981ed
+final facts: 22, digest 6280b19b4673fc63

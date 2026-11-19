@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A player can present evidence to a character (`present the slip to Pell`), and the engine records each distinct thing shown so reactions and readouts follow what the character has seen; the character reveals only what they know (`P44-03`).
+
 - A condition counts matching facts (`2 of Clue(_)`) or sums their third slot toward a threshold (`6 points of Clue(_)`), so an investigation can move on with enough evidence instead of all of it (`P44-02`).
 
 - A script declares a goal as needs with the fact each one requires, prerequisites, a room, and optional per-tier text; the engine reports the nearest unmet need as a hint, in the story's voice while the character could reason about it and as the author's direction otherwise (`P44-01`, `D-126`, `D-134`).

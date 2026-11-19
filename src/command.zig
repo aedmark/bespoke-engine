@@ -134,6 +134,8 @@ pub const DEFAULT_FRAMES = [_]struct { cue: []const u8, text: []const u8 }{
     .{ .cue = "Uses", .text = "use <thing>" },
     .{ .cue = "TalksTo", .text = "ask <thing> about <thing>" },
     .{ .cue = "TalksTo", .text = "talk to <thing>" },
+    .{ .cue = "Presents", .text = "present <thing> to <thing>" },
+    .{ .cue = "Presents", .text = "show <thing> to <thing>" },
     .{ .cue = "WalksTo", .text = "go to <thing>" },
     .{ .cue = "WalksTo", .text = "walk to <thing>" },
 };
@@ -741,6 +743,12 @@ test "P26-02: the interpreter resolves commands, asks which, and explains failur
     const ask = interp.interpret(&world, &aliases, frames.slice(), &scope, "ask butler about iron key");
     try testing.expectEqualStrings("TalksTo", ask.command.cue);
     try testing.expectEqual(iron, ask.command.b.?);
+
+    // A presentation names the evidence first and the person second (P44-03).
+    const show = interp.interpret(&world, &aliases, frames.slice(), &scope, "present the brass key to butler");
+    try testing.expectEqualStrings("Presents", show.command.cue);
+    try testing.expectEqual(brass, show.command.a.?);
+    try testing.expectEqual(butler, show.command.b.?);
 
     // "key" names two things: the interpreter asks, and a bare noun answers.
     const which = interp.interpret(&world, &aliases, frames.slice(), &scope, "use key on lamp");

@@ -1172,7 +1172,7 @@ fn larkspur_solve(rt: *WasmRuntime) anyerror!void {
         }
         return;
     }
-    return larkspur_typed(rt, "ask the rival about the slip");
+    return larkspur_typed(rt, "present the slip to the rival");
 }
 
 // =============================================================================
@@ -1941,7 +1941,7 @@ test "P34-04: the Larkspur Observatory reaches its ending from typed commands" {
         if (!rt.spatial.is_moving(rt.player_entity) and observatory.within_reach(&rt.spatial, rt.player_entity, pell)) break;
         try rt.step_tick();
     }
-    try type_into(rt, "ask the rival about the slip");
+    try type_into(rt, "present the slip to the rival");
     for (0..3) |_| try rt.step_tick();
     try testing.expect(bespoke.host.has_state(&rt.world, pell, "cornered"));
 }

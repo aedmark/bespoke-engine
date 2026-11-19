@@ -264,7 +264,7 @@ when Warden forgets Alarm:
 
 ### Typed commands (P26-01, D-057)
 
-A typed line such as `> pour the grog into the mug` is matched against sentence shapes (frames) and becomes a cue. The engine provides frames for looking, using, talking, and walking; a script adds its own, which are tried first.
+A typed line such as `> pour the grog into the mug` is matched against sentence shapes (frames) and becomes a cue. The engine provides frames for looking, using, talking, presenting, and walking; a script adds its own, which are tried first.
 
 ```bespoke
 command Pours: "pour <thing> into <thing>"
@@ -272,12 +272,22 @@ command Takes: "take <thing>"
 alias ExposureSlip: "slip", "receipt"
 ```
 
-- A frame is lowercase words and at most two `<thing>` slots, starting with a word and never with two slots side by side. Engine frames: `look at`, `examine`, `x` (`LooksAt`); `use <thing> with/on <thing>`, `use <thing>` (`Uses`); `ask <thing> about <thing>`, `talk to <thing>` (`TalksTo`); `go to`, `walk to` (`WalksTo`).
+- A frame is lowercase words and at most two `<thing>` slots, starting with a word and never with two slots side by side. Engine frames: `look at`, `examine`, `x` (`LooksAt`); `use <thing> with/on <thing>`, `use <thing>` (`Uses`); `ask <thing> about <thing>`, `talk to <thing>` (`TalksTo`); `present <thing> to <thing>`, `show <thing> to <thing>` (`Presents`); `go to`, `walk to` (`WalksTo`).
 - Typed input ignores case, punctuation, and the articles `a`, `an`, `the`.
 - An entity answers to the words of its name, split at capitals, spaces, and underscores (`ExposureSlip` answers to "exposure slip" and "slip"), and to the words of its `alias` phrases. Only what is in the actor's room or carried by the actor can be named. If two things match, the command is ambiguous and the game asks which.
 - Package format version 10 carries commands and aliases.
 - Hosts that enable the window's command bar let the player type these lines: Enter focuses the bar, Esc leaves, Up/Down recall history, Tab completes a word. A browser deck turns on the same bar with `command_bar`, and the page made by `bespoke init` has it on.
 - What the player sees: a matched, resolved command fires its cue, whose handler speaks on the next tick; `go to <mark>` or `go to <person>` also walks there. Otherwise the reply is one of "I don't know the word \"x\".", "I don't understand that.", "You don't see that here.", "Which do you mean: the brass key or the iron key?" (answer with a noun such as "brass"), or "Nothing happens." when no handler answers.
+
+### Presenting evidence (P44-03)
+
+`present <thing> to <thing>` and `show <thing> to <thing>` are engine frames for `Presents`. The first noun is the evidence and the second is the character, matching the cue's roles: `on cue Presents(Ines, Pell, ExposureSlip):`.
+
+The engine records `Presented(person, evidence)` before dispatching, so the presentation is World state whether or not a handler answers. `Presented` is a set relation: it keeps one row per distinct piece of evidence, so `1 of Presented(Pell, _)` counts what the character has been shown, and showing the same thing again runs the handler without adding a row. A routine or readout can follow that count, which lets a character's composure react to evidence as it arrives rather than to a fixed story beat.
+
+The script decides what the character reveals, usually by branching on `Knows(person, evidence)`; `Believes` counts as knowledge and `Rejects` cancels it (D-134). A host calls `host.present(vm, compiled, actor, evidence, person)`, which records the fact and fires the cue. Its parameters take the evidence before the person, the reverse of the cue's target order. No statement or package format change is needed: `Presents` is an ordinary three-argument cue, with the person second.
+
+Cue dispatch still tries the two target arguments in either order, as it does for `Uses`. The typed frames and `host.present` are what fix person-second, so a handler should declare that order: `Presents(Ines, Pell, ExposureSlip)`.
 
 ### Agendas (P33-01, D-038, D-056)
 
@@ -385,5 +395,6 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Grids; Fire, smoke, and water | `P25-01: grid declarations compile into overlays, layouts, and placed marks` | `P25-01: grid declarations compile into overlays, layouts, and placed marks`; grid automata tests in `src/grid.zig` |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
-| Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones` |
+| Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |
+| Presentation (P44-03) | Existing three-argument cue grammar; the item adds no statement | `P44-03: a presentation records Presented and reveals only what the character knows` (`src/host.zig`); the Observatory's headless run presents the glove, the slip, and the slip to Moss |
 | Agendas | `P33-01: agenda declarations compile and reject malformed agendas` | `P33-01: agenda declarations compile and reject malformed agendas` |

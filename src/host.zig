@@ -171,9 +171,27 @@ pub fn interpret_command(
     };
 }
 
+/// Presents `evidence` to `person` for `actor` (P44-03). The engine records `Presented(person,
+/// evidence)` before dispatching, so rules and readouts observe every presentation as World
+/// state even when no handler answers. The script's `Presents(actor, person, evidence)` handler
+/// decides what the character reveals, with `Knows`/`Believes`/`Rejects` naming what they know.
+/// The parameters take evidence before person, the reverse of the cue's target order.
+/// Returns whether a handler answered.
+pub fn present(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    actor: EntityId,
+    evidence: EntityId,
+    person: EntityId,
+) !bool {
+    const presented = try vm.world.intern_relation("Presented", .set);
+    try vm.world.remember(person, presented, evidence.to_int(), 0);
+    return (try vm.fire_cue(compiled, "Presents", actor, person, evidence)) != null;
+}
+
 /// Runs an interpreted command. `WalksTo` starts a world-aware walk to a mark or to an agent's
-/// waypoint and also fires its cue if handled. A command nothing answers replies
-/// "Nothing happens."
+/// waypoint and also fires its cue if handled. `Presents` records the presentation and fires
+/// `Presents(actor, person, evidence)`. A command nothing answers replies "Nothing happens."
 pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, command: command_mod.Command) !CommandReply {
     const world = vm.world;
     var reply = CommandReply{};
@@ -186,7 +204,13 @@ pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: Entity
             }
         }
     }
-    reply.fired = (try vm.fire_cue(compiled, command.cue, actor, command.a, command.b)) != null;
+    if (std.mem.eql(u8, command.cue, "Presents")) {
+        if (command.a) |evidence| {
+            if (command.b) |person| reply.fired = try present(vm, compiled, actor, evidence, person);
+        }
+    } else {
+        reply.fired = (try vm.fire_cue(compiled, command.cue, actor, command.a, command.b)) != null;
+    }
     if (!reply.fired and !reply.walking) {
         reply.text = if (blocked) "You can't get there from here." else "Nothing happens.";
     }
@@ -1312,6 +1336,83 @@ test "P26-02: typed lines fire script cues, walk, and reply when nothing answers
 
     reply = try run_command(&vm, &compiled, &interp, cook, "talk to the xyzzy", &buf);
     try testing.expectEqualStrings("I don't know the word \"xyzzy\".", reply.text.?);
+}
+
+test "P44-03: a presentation records Presented and reveals only what the character knows" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Study
+        \\cast: Hero, Pell
+        \\props: Slip, Log
+        \\marks: Desk
+        \\
+        \\relation Knows(who, what)
+        \\relation Revealed(who, what)
+        \\
+        \\on cue Presents(Hero, Pell, Slip):
+        \\  if Knows(Pell, Slip):
+        \\    remember Revealed(Hero, Slip)
+        \\    say Pell: "That is the slip from plate 41."
+        \\  if not Knows(Pell, Slip):
+        \\    say Pell: "What is this meant to prove?"
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    const study = world.lookup_entity("Study").?;
+    try vm.transition_to_scene(study);
+    const hero = world.lookup_entity("Hero").?;
+    const pell = world.lookup_entity("Pell").?;
+    const slip = world.lookup_entity("Slip").?;
+    const log = world.lookup_entity("Log").?;
+    const desk = spatial.graph.find_waypoint("Desk").?;
+    try spatial.register_entity(hero, desk, 10);
+    try spatial.register_entity(pell, desk, 10);
+    const carries = try world.intern_relation("Carries", .set);
+    try world.remember(hero, carries, slip.to_int(), 0);
+    try world.remember(hero, carries, log.to_int(), 0);
+
+    var interp = command_mod.Interpreter{};
+    var buf: [160]u8 = undefined;
+    var speech: [160]u8 = undefined;
+
+    // The action records the presentation before the handler runs, and a character who does not
+    // know the evidence reveals nothing.
+    var reply = try run_command(&vm, &compiled, &interp, hero, "present the slip to pell", &buf);
+    try testing.expect(reply.fired and reply.text == null);
+    const presented = world.lookup_relation("Presented") orelse return error.MissingPresented;
+    try testing.expect(world.has_fact(pell, presented, slip.to_int()));
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqualStrings("Pell: \"What is this meant to prove?\"", speech_this_tick(&world, &vm, &speech).?);
+    try testing.expect(!world.has_fact(hero, world.lookup_relation("Revealed").?, slip.to_int()));
+
+    // Teaching him the evidence changes what the next presentation reveals. A set fact keeps
+    // one row per piece of evidence, so showing the same slip again adds no second row.
+    try world.remember(pell, try world.intern_relation("Knows", .set), slip.to_int(), 0);
+    reply = try run_command(&vm, &compiled, &interp, hero, "show the slip to pell", &buf);
+    try testing.expect(reply.fired);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqualStrings("Pell: \"That is the slip from plate 41.\"", speech_this_tick(&world, &vm, &speech).?);
+    try testing.expect(world.has_fact(hero, world.lookup_relation("Revealed").?, slip.to_int()));
+    var presentations: usize = 0;
+    var it = world.query(pell, presented, null);
+    while (it.next()) |_| presentations += 1;
+    try testing.expectEqual(@as(usize, 1), presentations);
+
+    // A second piece of evidence records even when no handler answers it.
+    reply = try run_command(&vm, &compiled, &interp, hero, "present the log to pell", &buf);
+    try testing.expect(!reply.fired);
+    try testing.expectEqualStrings("Nothing happens.", reply.text.?);
+    try testing.expect(world.has_fact(pell, presented, log.to_int()));
+    presentations = 0;
+    it = world.query(pell, presented, null);
+    while (it.next()) |_| presentations += 1;
+    try testing.expectEqual(@as(usize, 2), presentations);
 }
 
 test "P28-03: script scores become a soundtrack the frame's score name selects" {

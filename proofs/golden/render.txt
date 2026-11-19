@@ -259,5 +259,5 @@ observatory_puzzle/Larkspur Observatory +branch_collapsed: 550368f9c3205c4b
 clearance/observatory_puzzle/Larkspur Observatory +branch_collapsed: 9
 observatory_puzzle/Larkspur Observatory +countdown: 8c171d95e57481d9
 clearance/observatory_puzzle/Larkspur Observatory +countdown: 9
-inspector/Larkspur Observatory: 75fb9aea0be201c0
-inspector-filtered/Larkspur Observatory: a767f7aabf0a7c69
+inspector/Larkspur Observatory: ced1814273961cf6
+inspector-filtered/Larkspur Observatory: 223bc995aafeabae

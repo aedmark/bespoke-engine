@@ -44,10 +44,14 @@ pub const OBSERVATORY_SCRIPT =
     \\relation Believes(who, claim)
     \\relation Knows(who, what)
     \\relation NearShed(who)
+    \\relation Broken(who)
+    \\relation Presented(who, what)
+    \\relation Rattled(who)
     \\
     \\remember Knows(Ines, Archive)
     \\remember Knows(Ines, TelescopeLog)
     \\remember Knows(Ines, ExposureSlip)
+    \\remember Knows(Pell, ExposureSlip)
     \\
     \\society LarkspurStaff:
     \\  need Rest low 100 0 0 22 stay Dormitory 14 90 sleeping true "weary" "rest"
@@ -134,12 +138,14 @@ pub const OBSERVATORY_SCRIPT =
     \\on cue Intercepts(Moss, Ines, ShedWarning):
     \\  say Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
     \\
+    \\on cue Presents(Ines, Moss, ExposureSlip):
+    \\  if Knows(Moss, ExposureSlip):
+    \\    say Moss: "That is the slip from plate 41. The director asked me to bin it."
+    \\  if not Knows(Moss, ExposureSlip):
+    \\    say Moss: "A plate slip? I only mind the cables, miss."
+    \\
     \\on cue TalksTo(Ines, Pell):
-    \\  if Carries(Ines, ExposureSlip):
-    \\    Pell is cornered
-    \\    say Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
-    \\  if not Carries(Ines, ExposureSlip):
-    \\    say Pell: "Not now, Miss Varga. Some of us have plates to measure."
+    \\  say Pell: "Not now, Miss Varga. Some of us have plates to measure."
     \\
     \\on cue TalksTo(Ines, Halloran):
     \\  say Halloran: "It is late, Miss Varga. Whatever it is can wait for morning."
@@ -161,12 +167,25 @@ pub const OBSERVATORY_SCRIPT =
     \\on cue LooksAt(Ines, StainedGlove):
     \\  say Ines: "Developer stains, and an H stitched at the cuff."
     \\
-    \\on cue TalksTo(Ines, Pell, ExposureSlip):
-    \\  if Carries(Ines, ExposureSlip):
+    \\on cue Presents(Ines, Pell, StainedGlove):
+    \\  if not Broken(Pell):
+    \\    Pell is not steady
+    \\    Pell is rattled
+    \\  say Pell: "A glove. Half the staff keep a pair by the developer trays."
+    \\
+    \\on cue Presents(Ines, Pell, ExposureSlip):
+    \\  if Knows(Pell, ExposureSlip):
     \\    Pell is cornered
+    \\    remember Knows(Pell, PlateLoggedAtTwo)
+    \\    if 2 of Presented(Pell, _):
+    \\      Pell is not rattled
+    \\      Pell is broken
+    \\    if 1 of Presented(Pell, _):
+    \\      Pell is not steady
+    \\      Pell is rattled
     \\    say Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
-    \\  if not Carries(Ines, ExposureSlip):
-    \\    say Pell: "What slip? I have no idea what you mean."
+    \\  if not Knows(Pell, ExposureSlip):
+    \\    say Pell: "I do not know what this is meant to prove."
 ;
 
 pub const Ids = struct {
@@ -269,6 +288,9 @@ fn refusal(spatial: *const bespoke.SpatialSystem, ids: Ids, command: bespoke.com
         if (a == ids.darkroom and here != ids.darkroom_wp) return "Ines must be in the Darkroom to search it.";
     } else if (std.mem.eql(u8, command.cue, "TalksTo")) {
         if (a == ids.pell and !within_reach(spatial, ids.ines, ids.pell)) return "Pell is too far away. Get within one mark of him.";
+    } else if (std.mem.eql(u8, command.cue, "Presents")) {
+        const person = command.b orelse return null;
+        if (person == ids.pell and !within_reach(spatial, ids.ines, ids.pell)) return "Pell is too far away. Get within one mark of him.";
     }
     return null;
 }
@@ -349,6 +371,12 @@ const Stage = struct {
 
     fn act(self: Stage, writer: anytype, cue: []const u8, target: bespoke.EntityId) !void {
         _ = try self.vm.fire_cue(self.compiled, cue, self.ids.ines, target, null);
+        try self.tick(writer);
+    }
+
+    /// Presents evidence to a character, which records `Presented` and fires `Presents` (P44-03).
+    fn present(self: Stage, writer: anytype, evidence: bespoke.EntityId, person: bespoke.EntityId) !void {
+        _ = try host.present(self.vm, self.compiled, self.ids.ines, evidence, person);
         try self.tick(writer);
     }
 
@@ -495,14 +523,22 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try stage.encounter(writer, moss_spoke, 60, error.PorterNeverCame);
     try stage.report(writer);
 
-    try writer.writeAll("\n[Night 2] Ines confronts Pell with the slip.\n");
-    try stage.act(writer, "TalksTo", ids.pell);
-    try expect_true(host.has_state(&world, ids.pell, "cornered") and !holds(&world, ids.ines, "Believes", null), error.CaseOpen);
+    try writer.writeAll("\n[Night 2] Ines shows Moss the slip. He does not know it.\n");
+    try stage.present(writer, ids.slip, ids.moss);
+    try expect_true(holds(&world, ids.moss, "Presented", ids.slip) and !holds(&world, ids.moss, "Knows", ids.slip), error.MossRecognizedSlip);
+
+    try writer.writeAll("\n[Night 2] Ines shows Pell the glove, then the slip.\n");
+    try stage.present(writer, ids.glove, ids.pell);
+    try expect_true(host.has_state(&world, ids.pell, "rattled"), error.PellUnmoved);
+    try stage.present(writer, ids.slip, ids.pell);
+    try expect_true(host.has_state(&world, ids.pell, "cornered") and host.has_state(&world, ids.pell, "broken") and !holds(&world, ids.ines, "Believes", null), error.CaseOpen);
 
     try writer.writeAll("\n[Rewind] Restore the saved opening for a typed playthrough.\n");
     var again: std.Io.Reader = .fixed(opening.items);
     _ = try bespoke.read_save_state(allocator, &again, &world, &spatial, &vm);
     interp = .{};
+    // The record and the composure it drove are World facts, so the rewind clears both.
+    try expect_true(!holds(&world, ids.pell, "Presented", null) and !host.has_state(&world, ids.pell, "rattled"), error.PresentationSurvivedRewind);
 
     try writer.writeAll("\n[Typed] The same evidence, by keyboard.\n");
     const which = try stage.typed(writer, "examine the telescope");
@@ -515,7 +551,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(spatial.get_current_waypoint(ids.ines) == ids.archive_wp, error.TypedWalkFailed);
     try expect_true((try stage.typed(writer, "pick up the exposure slip")).fired, error.TypedTakeFailed);
     try stage.tick_until(writer, pell_near, 80, error.PellNeverNear);
-    try expect_true((try stage.typed(writer, "ask the rival about the slip")).fired, error.TypedAskFailed);
+    try expect_true((try stage.typed(writer, "present the slip to the rival")).fired, error.TypedPresentFailed);
     try expect_true(host.has_state(&world, ids.pell, "cornered"), error.CaseOpen);
 
     try writer.writeAll("\n===================================================================\n");
@@ -578,6 +614,11 @@ const Play = struct {
         try self.advance();
     }
 
+    fn present(self: Play, evidence: bespoke.EntityId, person: bespoke.EntityId) !void {
+        _ = try host.present(self.vm, self.compiled, self.ids.ines, evidence, person);
+        try self.advance();
+    }
+
     fn hint(self: Play, text: []const u8) void {
         self.window.set_cue_banner(text, 150);
     }
@@ -604,7 +645,13 @@ const Play = struct {
                 } else if (which == action_read) {
                     if (here == ids.telescope_wp) try self.act("Reads", ids.log) else self.hint("[3] reads the log on the TelescopeFloor. Walk there first.");
                 } else if (which == action_confront) {
-                    if (within_reach(self.spatial, ids.ines, ids.pell)) try self.act("TalksTo", ids.pell) else self.hint("Pell is too far away. Get within one mark of him.");
+                    if (!within_reach(self.spatial, ids.ines, ids.pell)) {
+                        self.hint("Pell is too far away. Get within one mark of him.");
+                    } else if (holds(self.world, ids.ines, "Carries", ids.slip)) {
+                        try self.present(ids.slip, ids.pell);
+                    } else {
+                        try self.act("TalksTo", ids.pell);
+                    }
                 }
             },
             .typed_command => |t| {
@@ -649,7 +696,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
-    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] confronts Pell when he is on Ines's mark or the next one. Clicking a staff member talks to them. [Enter] opens the command bar: try 'go to the archive', 'take the slip', 'ask pell about the slip'.\n");
+    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] presents the slip to Pell when Ines carries it and he is on her mark or the next one; without the slip it talks to him. Clicking a staff member talks to them. [Enter] opens the command bar: try 'go to the archive', 'take the slip', 'present the slip to the rival'.\n");
     try stdout.writeAll("Pause/save/load, single-step, scrub, rewind, debug, and console use the standard engine controls.\n\n");
 
     var bridge = bespoke.DisplayBridge.init();
@@ -754,6 +801,7 @@ test "P33-03: window actions give feedback and Pell can be confronted within rea
     try play.handle(.{ .custom = action_confront });
     try std.testing.expect(has(play, "Ask Halloran"));
     try std.testing.expect(host.has_state(&world, ids.pell, "cornered"));
+    try std.testing.expect(host.has_state(&world, ids.pell, "rattled"));
 }
 
 test "P33-03: reach is the same mark or one edge away" {

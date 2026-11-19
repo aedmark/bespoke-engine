@@ -47,6 +47,7 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | goal | A line of investigation the player has to finish, declared as needs with the fact each one requires | `goal`, `src/hint.zig` (P44-01, D-134) | quest log (a goal is script data, not a screen) |
 | hint | The nearest unmet need reported as help: the character's own deduction while she could reason about it, the author's direction otherwise | `hint.query()` (D-126) | walkthrough |
 | evidence threshold | A condition that counts the facts a pattern matches, or sums their third slot, and holds when the total reaches a number: `2 of Clue(_)`, `6 points of Clue(_)` | `count_at_least`, `points_at_least`, `query_count`, `query_points` (P44-02) | aggregate expression |
+| presentation | Showing a character a piece of evidence, with what that character knows deciding the response. The engine records `Presented(person, evidence)` and fires `Presents(actor, person, evidence)` | `host.present`, `Presented` (P44-03) | show item (in user copy, present is the action) |
 
 ## Stage, dialogue, and play
 

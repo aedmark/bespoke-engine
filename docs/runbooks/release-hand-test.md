@@ -83,7 +83,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--grog` | 1 pour A to B, 2 pour B to C, L unlock | Cups visibly degrade; a late pour spills; enough grog at the lock dissolves it. |
 | `--saltmarket` | 1 Cunning, 2 Muscle, 3 Crew, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
 | `--grid` | 1 fill, 2 torch, 3 throw | Fire spreads on the grid, smoke follows, and water flows back down the corridor and puts it out. |
-| `--observatory` | 1 search, 2 take, 3 read, 4 confront; Enter opens the command bar | Staff walk their routines and intercept you. Type commands (`go to the archive`, `take the slip`, `ask pell about the slip`); Up and Down recall history; an ambiguous noun asks which you meant. |
+| `--observatory` | 1 search, 2 take, 3 read, 4 present or talk; Enter opens the command bar | Staff walk their routines and intercept you. Type commands (`go to the archive`, `take the slip`, `present the slip to the rival`); Up and Down recall history; an ambiguous noun asks which you meant. |
 
 ### 2.3 Shared features (check each in at least one proof)
 
