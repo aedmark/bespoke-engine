@@ -51,6 +51,10 @@ const SHORT_HEIGHT: i32 = 360;
 const GOLDEN_NAME = "render.txt";
 const ACTUAL_NAME = "render.actual.txt";
 
+/// Q-017 (P43-08): every recorded scene leaves its lowest stage draw at least this many pixels
+/// above the band, so a name that has to flip above its mark and a hover prompt still have air.
+const CLEARANCE_FLOOR: i32 = 8;
+
 const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "spitting_contest", .script = spitting_contest.SPITTING_CONTEST_SCRIPT },
     .{ .name = "borrowed_beard", .script = borrowed_beard.BORROWED_BEARD_SCRIPT },
@@ -225,6 +229,12 @@ const Recorder = struct {
     dump_against: ?[]const u8 = null,
     /// Also draw each scene in its progress states.
     variants: bool = true,
+    /// The 1280x720 band check of the last recorded frame (P43-08). Its clearance is the smallest
+    /// gap a stage draw leaves; the 1920x1080 pass is checked for overlap but does not move it.
+    last_check: ?bespoke.display.band.Check = null,
+    /// Recorded frames that left less than the floor above the band. Reported together at the end
+    /// of the pass, so one crowded scene does not hide the rest.
+    crowded: usize = 0,
 
     /// Draws the current frame and appends `<label>: <hash>` to the record.
     fn draw(self: *Recorder, label: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem, vm: *bespoke.VM) !void {
@@ -269,23 +279,25 @@ const Recorder = struct {
     /// chrome, and full-window overlays are other layers and are skipped by kind. `verbose`
     /// names the offender; the canary test calls it quietly, so a passing run prints nothing.
     fn check_band(self: *Recorder, label: []const u8, verbose: bool) !void {
-        try self.check_band_at(label, HEIGHT, &self.text, &self.rect, verbose);
+        self.last_check = try self.check_band_at(label, HEIGHT, &self.text, &self.rect, verbose);
     }
 
     /// The same check at any window height, reading that render's own probes (P43-03). The rule
     /// itself lives in `display.band`, which the deck golden applies to its frames too (P43-05).
-    fn check_band_at(self: *Recorder, label: []const u8, height: i32, text: *const bespoke.display.canvas.TextProbe, rect: *const bespoke.display.canvas.RectProbe, verbose: bool) !void {
+    fn check_band_at(self: *Recorder, label: []const u8, height: i32, text: *const bespoke.display.canvas.TextProbe, rect: *const bespoke.display.canvas.RectProbe, verbose: bool) !?bespoke.display.band.Check {
         // The State drawer covers the stage, band included, and is not proof art.
-        if (self.window.show_save_drawer) return;
+        if (self.window.show_save_drawer) return null;
         const check = bespoke.display.band.Check.measure(height, text, rect);
-        if (check.verdict == .clear) return;
-        if (verbose) check.report(label);
-        return switch (check.verdict) {
-            .overflow => error.RectProbeOverflow,
-            .art => error.ArtInMessageBand,
-            .text => error.TextInMessageBand,
-            .clear => unreachable,
-        };
+        if (check.verdict != .clear) {
+            if (verbose) check.report(label);
+            return switch (check.verdict) {
+                .overflow => error.RectProbeOverflow,
+                .art => error.ArtInMessageBand,
+                .text => error.TextInMessageBand,
+                .clear => unreachable,
+            };
+        }
+        return check;
     }
 
     /// Draws the same frame into the alt window, with the log cleared and its own probes lent,
@@ -309,7 +321,7 @@ const Recorder = struct {
             }
         }
         alt.window.render_frame(frame, true);
-        try self.check_band_at(label, alt.window.height, &alt.text, &alt.rect, verbose);
+        _ = try self.check_band_at(label, alt.window.height, &alt.text, &alt.rect, verbose);
     }
 
     /// P43-04: a hover prompt is world text, so it obeys the same band rule. The lowest mark,
@@ -452,6 +464,7 @@ const Recorder = struct {
     }
 
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        self.last_check = null;
         const checked_before = bespoke.display.band.measured();
         self.render_probed(frame);
         try self.check_band(label, true);
@@ -460,6 +473,19 @@ const Recorder = struct {
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
+
+        // P43-08: the smallest gap this scene leaves above the band, so a crowded room shows up
+        // in the diff before it reaches the band. The State drawer's frames have no stage.
+        if (!self.window.show_save_drawer) {
+            const check = self.last_check orelse return error.NoStagedDraw;
+            const clearance = check.clearance orelse return error.NoStagedDraw;
+            if (clearance < CLEARANCE_FLOOR) {
+                check.report_clearance(label, CLEARANCE_FLOOR);
+                self.crowded += 1;
+            }
+            var lw3 = ListWriter.init(&self.out);
+            try lw3.writer.print("clearance/{s}: {d}\n", .{ label, clearance });
+        }
 
         const expected = self.dump_against orelse return;
         var hash_buf: [16]u8 = undefined;
@@ -689,6 +715,10 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
     try record_inspector(&rec);
+    if (rec.crowded > 0) {
+        std.debug.print("\n{d} recorded frame(s) leave fewer than {d} pixels above the message band (Q-017, P43-08)\n", .{ rec.crowded, CLEARANCE_FLOOR });
+        return error.SceneTooCloseToBand;
+    }
     return rec.out;
 }
 

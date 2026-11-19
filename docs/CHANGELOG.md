@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Larkspur Observatory's three props sit one world unit higher and the Wreckers Cellar's SEA CHEST label sits higher on the chest lid, so both keep clear of the log and leave room for a name or prompt above them (`Q-017`, `D-133`).
+
 - The Pip-Spitting Green's breeze comes every 15 seconds and blows for 15, and the conch holds Judge Marrow for 15, so lining up a watched throw takes about a third of the wait it did (`D-130`).
 
 - A spit in The Pip-Spitting Green counts only while Judge Marrow is watching, so first place needs him back at the chalk line as well as thick spit, moved pegs, and the breeze; a throw he does not see is unmarked (`D-129`).

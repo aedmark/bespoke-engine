@@ -1345,7 +1345,8 @@ fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
         w.fill_rect(chest_x + 40, chest_y - 12, 30, 8, Color{ .r = 28, .g = 25, .b = 24 });
         w.fill_rect(chest_x + 20, chest_y - 12, 6, 72, Color{ .r = 70, .g = 70, .b = 75 });
         w.fill_rect(chest_x + 94, chest_y - 12, 6, 72, Color{ .r = 70, .g = 70, .b = 75 });
-        w.draw_text("SEA CHEST", chest_x + 24, chest_y + 40, 1, Color{ .r = 254, .g = 240, .b = 138 });
+        // The label sat 7 pixels above the band (Q-017, P43-08); higher on the lid it leaves 19.
+        w.draw_text("SEA CHEST", chest_x + 24, chest_y + 28, 1, Color{ .r = 254, .g = 240, .b = 138 });
 
         // Stone steps up to the hatch on the left (at CellarSteps world_x = 4)
         const pt_steps = world_to_screen(4, 0, w.width, w.height);

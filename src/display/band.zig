@@ -42,10 +42,23 @@ pub fn measured() usize {
 
 pub const Verdict = enum { clear, overflow, art, text };
 
+/// The draw that leaves the smallest gap above the band (P43-08), kept so a crowded-scene report
+/// can name it rather than only its number.
+pub const Low = union(enum) {
+    art: canvas.RectDraw,
+    text: canvas.TextDraw,
+};
+
 pub const Check = struct {
     band_top: i32,
     band_bottom: i32,
     verdict: Verdict = .clear,
+    /// The smallest gap, in pixels, between a stage draw's lowest row and the band's top row,
+    /// over every prop, mark, person, and stage string (P43-08). Null when the frame staged
+    /// nothing, so a caller cannot read a margin out of a backdrop alone.
+    clearance: ?i32 = null,
+    /// The draw that sets `clearance`.
+    low: ?Low = null,
     art: [CAP]canvas.RectDraw = undefined,
     art_count: usize = 0,
     text: [CAP]canvas.TextDraw = undefined,
@@ -69,6 +82,7 @@ pub const Check = struct {
                 .prop, .mark, .actor => {},
                 .backdrop, .walkway, .chrome, .overlay => continue,
             }
+            check.note_clearance(d.y, d.h, .{ .art = d });
             if (!check.reaches(d.y, d.h)) continue;
             if (check.art_count < CAP) {
                 check.art[check.art_count] = d;
@@ -82,6 +96,7 @@ pub const Check = struct {
                 .chrome, .overlay => continue,
                 else => {},
             }
+            check.note_clearance(d.y, d.h, .{ .text = d });
             if (!check.reaches(d.y, d.h)) continue;
             if (check.text_count < CAP) {
                 check.text[check.text_count] = d;
@@ -90,6 +105,34 @@ pub const Check = struct {
             if (check.verdict == .clear) check.verdict = .text;
         }
         return check;
+    }
+
+    /// Keeps the smallest gap above the band a stage draw leaves (P43-08). Only a draw that starts
+    /// above the band counts: one drawn from the band down is already a failure, and one drawn
+    /// behind the log or the bars has no air above the band to leave.
+    fn note_clearance(self: *Check, draw_top: i32, h: i32, low: Low) void {
+        if (draw_top >= self.band_top) return;
+        const gap = self.band_top - (draw_top + h);
+        if (self.clearance == null or gap < self.clearance.?) {
+            self.clearance = gap;
+            self.low = low;
+        }
+    }
+
+    /// Names the draw that leaves the smallest gap and the floor it falls under, so a crowded
+    /// scene can be fixed without hunting the frame.
+    pub fn report_clearance(self: *const Check, label: []const u8, floor: i32) void {
+        const gap = self.clearance orelse return;
+        if (self.low) |low| switch (low) {
+            .art => |d| std.debug.print(
+                "\n'{s}': art \"{s}\" ends on row {d} and leaves {d} pixels above the message band; the floor is {d}\n",
+                .{ label, if (d.get_name().len > 0) d.get_name() else "shape", d.y + d.h - 1, gap, floor },
+            ),
+            .text => |d| std.debug.print(
+                "\n'{s}': text \"{s}\" ends on row {d} and leaves {d} pixels above the message band; the floor is {d}\n",
+                .{ label, d.get_text(), d.y + d.h - 1, gap, floor },
+            ),
+        };
     }
 
     /// True when a shape of `h` rows at `y` overlaps the band. A shape that ends on the band's
@@ -164,4 +207,35 @@ test "P43-05: the band check measures stage layers and skips the window's own" {
     const before = measured();
     _ = Check.measure(720, &text, &rect);
     try testing.expectEqual(before + 1, measured());
+}
+
+test "P43-08: a frame reports the smallest gap a stage draw leaves above the band" {
+    const testing = std.testing;
+    var text = canvas.TextProbe{};
+    var rect = canvas.RectProbe{};
+    const band_top = top(720);
+    const band_bottom = bottom(720);
+
+    // A frame that staged nothing has no margin to report.
+    try testing.expectEqual(@as(?i32, null), Check.measure(720, &text, &rect).clearance);
+
+    // The lowest stage draw sets the number: a prop ends at 432, a stage string at 441, and a
+    // mark disc at 503, one row above the band's top of 504.
+    rect.record(.prop, "Pegs", 40, 400, 32, 32);
+    rect.record(.mark, "Chalk Line", 40, 470, 33, 33);
+    text.record(.mark, "Berth", 40, 440, 1);
+    const check = Check.measure(720, &text, &rect);
+    try testing.expectEqual(Verdict.clear, check.verdict);
+    try testing.expectEqual(@as(?i32, 1), check.clearance);
+    try testing.expectEqualStrings("Chalk Line", check.low.?.art.get_name());
+
+    // Backdrop scenery, a walkway, the log, and a panel are not stage draws, so none of them
+    // can move the number lower.
+    rect.record(.backdrop, "roof", 0, band_top, 600, 200);
+    rect.record(.walkway, "path", 0, band_top, 1280, 78);
+    rect.record(.chrome, "log", 0, band_top, 1280, 78);
+    text.record(.overlay, "modal", 40, band_top, 1);
+    // A stage shape drawn from below the band has no air above it to leave either.
+    rect.record(.prop, "foot plate", 40, band_bottom, 32, 32);
+    try testing.expectEqual(@as(?i32, 1), Check.measure(720, &text, &rect).clearance);
 }
