@@ -1534,7 +1534,15 @@ pub const DisplayWindow = struct {
     /// (D-124). The command bar is counted whether or not this window shows one, so a label
     /// does not move when the bar or a page turns it on.
     fn mark_label_needs_air(self: *const DisplayWindow, y: i32, height: i32) bool {
-        return y + WAYPOINT_SCREEN_RADIUS + 6 + height > message_band_top(self.height);
+        return self.label_reaches_band(y, WAYPOINT_SCREEN_RADIUS, 6, height);
+    }
+
+    /// True when a label of `height` sitting `gap` pixels under a token of `radius` at `y`
+    /// would reach into the message band at its tallest, where the log would cover it
+    /// (D-124, D-127). The command bar is counted whether or not this window shows one, so a
+    /// label does not move when the bar or a page turns it on.
+    fn label_reaches_band(self: *const DisplayWindow, y: i32, radius: i32, gap: i32, height: i32) bool {
+        return y + radius + gap + height > message_band_top(self.height);
     }
 
     /// Height the log takes above `log_bottom`, which the dialogue panel stays clear of.
@@ -3194,11 +3202,15 @@ pub const DisplayWindow = struct {
                     std.fmt.bufPrint(&hover_buf, "[Use {s} on {s}]", .{ words(frame.inventory[sel].get_name()), name }) catch name
                 else
                     name) else std.fmt.bufPrint(&hover_buf, "[{s} {s}]", .{ self.active_verb.word(), name }) catch name;
+                // A prompt sits under the person, clear of the name above them, unless the
+                // message band is there: the log would cover it, so it goes above instead
+                // (D-124, D-127).
+                const prompt_placement: LabelPlacement = if (self.label_reaches_band(pt.y, ACTOR_SCREEN_RADIUS, 18, font.FONT_HEIGHT * 2)) .above else .below;
                 layout_resolver.submit(TextLabel.init(
                     prompt,
                     pt.x,
                     pt.y,
-                    .below,
+                    prompt_placement,
                     ACTOR_SCREEN_RADIUS + 18,
                     2,
                     to_layout(Color.wp_hover),
@@ -3503,82 +3515,92 @@ pub const DisplayWindow = struct {
 
         // 9. Dialogue panel: a waiting click-through message (D-080) covers the speaker, wrapped
         // line, and wrapped numbered choices (D-077) until the player dismisses it.
-        if (self.messages.front()) |beat| {
-            const panel = lift_panel(get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console), self.log_reserve());
-            const r = panel.rect;
-            self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
-            self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
-            self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, Color{ .r = 180, .g = 83, .b = 9 });
-            for (panel.layout.slice()) |row| {
-                const col = switch (row.kind) {
-                    .speaker => Color{ .r = 180, .g = 83, .b = 9 },
-                    .hint => Color{ .r = 120, .g = 53, .b = 15 },
-                    else => Color{ .r = 28, .g = 25, .b = 23 },
-                };
-                self.draw_text(row.text, r.x + row.x, r.y + row.y, 2, col);
+        // The panel is lifted clear of the log's own rows (D-099) and may cover the band's air,
+        // so its rows are not measured as stage text; the player opened it, and a prompt is not
+        // hidden by it (D-127). The scope ends with the panel, so the console, the drawer, and a
+        // theme overlay are still measured.
+        {
+            if (self.canvas) |*cv| cv.suppress_text += 1;
+            defer {
+                if (self.canvas) |*cv| cv.suppress_text -= 1;
             }
-        } else if (self.active_balloon) |*b| {
-            const panel = self.dialogue_panel_for(b);
-            const r = panel.rect;
-            const ink = Color{ .r = 28, .g = 25, .b = 23 };
-            const accent = Color{ .r = 180, .g = 83, .b = 9 };
-
-            self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
-            self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
-            self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, accent);
-
-            // Choice backgrounds first, so the rows draw over them.
-            for (0..panel.layout.choice_count) |slot| {
-                const actual_idx = b.scroll_offset + slot;
-                const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
-                const top = r.y + panel.layout.choice_top[slot];
-                const height = panel.layout.choice_bottom[slot] - panel.layout.choice_top[slot];
-                const row_w = r.w - 16 - panel.scrollbar_w;
-                if (is_hovered) {
-                    self.fill_rect(r.x + 8, top, row_w, height, Color.wp_hover);
-                    self.draw_rect_outline(r.x + 8, top, row_w, height, Color.white);
-                } else {
-                    self.fill_rect(r.x + 8, top, row_w, height, Color{ .r = 253, .g = 230, .b = 138 });
-                    self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color{ .r = 217, .g = 119, .b = 6 });
+            if (self.messages.front()) |beat| {
+                const panel = lift_panel(get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console), self.log_reserve());
+                const r = panel.rect;
+                self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
+                self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
+                self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, Color{ .r = 180, .g = 83, .b = 9 });
+                for (panel.layout.slice()) |row| {
+                    const col = switch (row.kind) {
+                        .speaker => Color{ .r = 180, .g = 83, .b = 9 },
+                        .hint => Color{ .r = 120, .g = 53, .b = 15 },
+                        else => Color{ .r = 28, .g = 25, .b = 23 },
+                    };
+                    self.draw_text(row.text, r.x + row.x, r.y + row.y, 2, col);
                 }
-            }
+            } else if (self.active_balloon) |*b| {
+                const panel = self.dialogue_panel_for(b);
+                const r = panel.rect;
+                const ink = Color{ .r = 28, .g = 25, .b = 23 };
+                const accent = Color{ .r = 180, .g = 83, .b = 9 };
 
-            for (panel.layout.slice()) |row| {
-                const x = r.x + row.x;
-                const y = r.y + row.y;
-                switch (row.kind) {
-                    .speaker => self.draw_text(row.text, x, y, 2, accent),
-                    .hint => self.draw_text(row.text, x, y, 2, Color{ .r = 120, .g = 53, .b = 15 }),
-                    .prompt => self.draw_text(row.text, x, y, 2, ink),
-                    .choice => {
-                        const actual_idx = b.scroll_offset + row.choice;
-                        const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
-                        const col = if (is_hovered) Color.black else Color{ .r = 120, .g = 53, .b = 15 };
-                        if (row.numbered) {
-                            var num_buf: [8]u8 = undefined;
-                            const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{actual_idx + 1}) catch "[?]";
-                            self.draw_text(num, x - panel.layout.indent, y, 2, col);
-                        }
-                        self.draw_text(row.text, x, y, 2, col);
-                    },
+                self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
+                self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
+                self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, accent);
+
+                // Choice backgrounds first, so the rows draw over them.
+                for (0..panel.layout.choice_count) |slot| {
+                    const actual_idx = b.scroll_offset + slot;
+                    const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
+                    const top = r.y + panel.layout.choice_top[slot];
+                    const height = panel.layout.choice_bottom[slot] - panel.layout.choice_top[slot];
+                    const row_w = r.w - 16 - panel.scrollbar_w;
+                    if (is_hovered) {
+                        self.fill_rect(r.x + 8, top, row_w, height, Color.wp_hover);
+                        self.draw_rect_outline(r.x + 8, top, row_w, height, Color.white);
+                    } else {
+                        self.fill_rect(r.x + 8, top, row_w, height, Color{ .r = 253, .g = 230, .b = 138 });
+                        self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color{ .r = 217, .g = 119, .b = 6 });
+                    }
                 }
-            }
 
-            // A scroll bar along the right edge when choices exceed the visible six (D-084): the
-            // track spans the visible choices, and the thumb's size and place show which of all
-            // the choices are in view. The wheel and arrow keys scroll.
-            if (panel.scrollbar_w > 0 and panel.layout.choice_count > 0) {
-                const last = panel.layout.choice_count - 1;
-                const track_x = r.x + r.w - panel.scrollbar_w - 4;
-                const track_top = r.y + panel.layout.choice_top[0];
-                const track_h = panel.layout.choice_bottom[last] - panel.layout.choice_top[0];
-                const total: i32 = b.choice_count;
-                const shown: i32 = b.visible_choice_count();
-                const thumb_h = @max(12, @divTrunc(track_h * shown, total));
-                const thumb_y = track_top + @divTrunc((track_h - thumb_h) * @as(i32, b.scroll_offset), @max(1, total - shown));
-                self.fill_rect(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 253, .g = 230, .b = 138 });
-                self.draw_rect_outline(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 146, .g = 64, .b = 14 });
-                self.fill_rect(track_x + 2, thumb_y + 2, panel.scrollbar_w - 8, thumb_h - 4, accent);
+                for (panel.layout.slice()) |row| {
+                    const x = r.x + row.x;
+                    const y = r.y + row.y;
+                    switch (row.kind) {
+                        .speaker => self.draw_text(row.text, x, y, 2, accent),
+                        .hint => self.draw_text(row.text, x, y, 2, Color{ .r = 120, .g = 53, .b = 15 }),
+                        .prompt => self.draw_text(row.text, x, y, 2, ink),
+                        .choice => {
+                            const actual_idx = b.scroll_offset + row.choice;
+                            const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
+                            const col = if (is_hovered) Color.black else Color{ .r = 120, .g = 53, .b = 15 };
+                            if (row.numbered) {
+                                var num_buf: [8]u8 = undefined;
+                                const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{actual_idx + 1}) catch "[?]";
+                                self.draw_text(num, x - panel.layout.indent, y, 2, col);
+                            }
+                            self.draw_text(row.text, x, y, 2, col);
+                        },
+                    }
+                }
+
+                // A scroll bar along the right edge when choices exceed the visible six (D-084): the
+                // track spans the visible choices, and the thumb's size and place show which of all
+                // the choices are in view. The wheel and arrow keys scroll.
+                if (panel.scrollbar_w > 0 and panel.layout.choice_count > 0) {
+                    const last = panel.layout.choice_count - 1;
+                    const track_x = r.x + r.w - panel.scrollbar_w - 4;
+                    const track_top = r.y + panel.layout.choice_top[0];
+                    const track_h = panel.layout.choice_bottom[last] - panel.layout.choice_top[0];
+                    const total: i32 = b.choice_count;
+                    const shown: i32 = b.visible_choice_count();
+                    const thumb_h = @max(12, @divTrunc(track_h * shown, total));
+                    const thumb_y = track_top + @divTrunc((track_h - thumb_h) * @as(i32, b.scroll_offset), @max(1, total - shown));
+                    self.fill_rect(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 253, .g = 230, .b = 138 });
+                    self.draw_rect_outline(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 146, .g = 64, .b = 14 });
+                    self.fill_rect(track_x + 2, thumb_y + 2, panel.scrollbar_w - 8, thumb_h - 4, accent);
+                }
             }
         }
 
@@ -4176,6 +4198,52 @@ test "D-099: the message log keeps the three newest lines under the stage, and t
     win.show_dialogue(EntityId.from_int(1), .{ .x = 600, .y = 300 }, "Pilot", "Which way?", &.{ "North", "South" });
     const panel = win.dialogue_panel_for(&win.active_balloon.?);
     try testing.expect(panel.rect.y + panel.rect.h <= win.log_bottom() - win.log_reserve());
+}
+
+/// The record of a string a frame drew, for the band tests (D-124, D-127).
+fn drawn_text(probe: *const canvas_mod.TextProbe, text: []const u8) ?canvas_mod.TextDraw {
+    for (probe.draws[0..probe.count]) |d| {
+        if (std.mem.eql(u8, d.get_text(), text)) return d;
+    }
+    return null;
+}
+
+test "D-127: a person's prompt goes above them rather than under the message band" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
+    defer win.deinit();
+    var probe = canvas_mod.TextProbe{};
+    win.canvas.?.text_probe = &probe;
+    defer win.canvas.?.text_probe = null;
+
+    // A person on a mark at world y 8 draws at row 476, the row Q-013 describes. The prompt
+    // under them would start at 512, inside the band's top of 504, so it goes above them; a
+    // person high on the stage keeps it below. No proof scene is needed for either answer.
+    var frame = std.mem.zeroes(RenderFrame);
+    const name = "Innkeeper";
+    @memcpy(frame.entities[0].name[0..name.len], name);
+    frame.entities[0].name_len = name.len;
+    frame.entities[0].entity = EntityId.from_int(7);
+    frame.entity_count = 1;
+    win.hovered_actor = 0;
+    win.active_verb = .talk_to;
+
+    frame.entities[0].y = 8;
+    probe.count = 0;
+    win.render_frame(&frame, false);
+    const low = drawn_text(&probe, "[Talk to Innkeeper]") orelse return error.PromptNotDrawn;
+    const low_row = world_to_screen(0, 8, win.width, win.height).y;
+    try testing.expectEqual(@as(i32, 476), low_row);
+    try testing.expect(low.y < low_row);
+    try testing.expect(low.y + low.h <= message_band_top(win.height));
+
+    frame.entities[0].y = 0;
+    probe.count = 0;
+    win.render_frame(&frame, false);
+    const high = drawn_text(&probe, "[Talk to Innkeeper]") orelse return error.PromptNotDrawn;
+    const high_row = world_to_screen(0, 0, win.width, win.height).y;
+    try testing.expect(high.y > high_row);
+    try testing.expect(high.y + high.h <= message_band_top(win.height));
 }
 
 test "D-124: a mark's name goes above the mark rather than under the message band" {

@@ -1557,6 +1557,14 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Hints stay in-world until the player is stuck and speak as the author only then. The Holmesian path needs per-character knowledge, so P44-01's full form depends on P44-05; until that lands, the player's known facts are the world's facts the player has been shown, and the fallback carries the rest. Each hint records which path produced it, so a transcript shows when the fallback fired.
 
+## D-127 Hover Prompts Clear the Band; the Dialogue Panel May Cover Its Air (2026-11-19, status: accepted)
+
+**Context.** P43-04 names two gaps the band check left. Every staged frame drew without a pointer, so no hover prompt ever faced the check; drawing one found The Living Village's "[Talk to Innkeeper]" at row 512, under the log. The dialogue panel had no recorded rule either, and it occupies the band: `lift_panel` moves it above the log's own rows, while its lower rows still cover the band's reserved air.
+
+**Decision.** A hover prompt is world text and obeys the band rule: it stays out of `message_band_top` to `message_band_bottom`. A person's prompt therefore sits under them only when that space clears the band and goes above them otherwise, where the resolver keeps it above (D-124); marks and props already place theirs that way. The dialogue panel may cover the band's air: it is lifted clear of the log's own rows (D-099), the player opened it, and it draws after the log. Its rows are the one text layer the check skips, through `Canvas.suppress_text`, set only around the panel.
+
+**Consequences.** The proof render test draws the lowest mark, prop, and person of every scene hovered, the person with an item in hand when the frame has one, and one frame with a dialogue open; all of them after the scene's hashes are recorded, so no render golden moved. The prompt placement changed three Observatory beats in the browser deck golden, where Ines's prompt now reads above her. A renderer test pins the rule without a proof scene: a person drawn at row 476 draws their prompt above the band, and one at row 380 keeps it below them and clear. Reverting the person prompt to `.below` fails both the renderer test and the hover pass, the pass with `text "[Talk to Innkeeper]" at (436, 512)`. The talking pass fails when its panel does not reach the band, so it cannot pass on a small panel.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

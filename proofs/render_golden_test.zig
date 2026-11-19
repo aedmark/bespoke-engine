@@ -183,6 +183,34 @@ const AltWindow = struct {
     rect: bespoke.display.canvas.RectProbe = .{},
 };
 
+/// The one thing under the pointer in a hover pass, with the verb and the item in hand
+/// (P43-04). One target is set at a time, so the window highlights exactly what the pass
+/// means, as the click handler would.
+const HoverState = struct {
+    wp: ?bespoke.WaypointId = null,
+    hotspot: ?usize = null,
+    actor: ?usize = null,
+    verb: bespoke.display.renderer.AdventureVerb = .walk,
+    item: ?usize = null,
+};
+
+/// Clears the panel a pass opened, so the next scene builds the balloon its own frame names
+/// instead of keeping this pass's (D-127).
+fn reset_dialogue(w: *bespoke.display.DisplayWindow) void {
+    w.dismiss_dialogue();
+    w.balloon_from_frame = false;
+    w.balloon_revision = 0;
+}
+
+fn apply_hover(w: *bespoke.display.DisplayWindow, hover: HoverState) void {
+    w.hovered_wp = hover.wp;
+    w.hovered_hotspot = hover.hotspot;
+    w.hovered_actor = hover.actor;
+    w.hovered_party_member = null;
+    w.active_verb = hover.verb;
+    w.selected_inventory_item = hover.item;
+}
+
 const Recorder = struct {
     allocator: std.mem.Allocator,
     window: *bespoke.display.DisplayWindow,
@@ -205,20 +233,23 @@ const Recorder = struct {
         bridge.capture_frame(world, spatial, vm);
         bridge.swap();
         try self.draw_frame(label, bridge.get_frame());
+        const default_hash = self.window.frame_hash().?;
 
         // Progress states (P32-03a): the same scene with one piece of proof status set. Only
         // states that change the picture are recorded, so the golden lists what each scene's
         // art reacts to.
-        if (!self.variants) return;
-        const default_hash = self.window.frame_hash().?;
-        for (STATUS_VARIANTS) |variant| {
+        if (self.variants) for (STATUS_VARIANTS) |variant| {
             var frame = bridge.get_frame().*;
             if (!Status.apply(&frame, variant)) continue;
             self.window.render_frame(&frame, true);
             if (self.window.frame_hash().? == default_hash) continue;
             var label_buf: [160]u8 = undefined;
             try self.draw_frame(try std.fmt.bufPrint(&label_buf, "{s} +{s}", .{ label, variant }), &frame);
-        }
+        };
+
+        // The hovered and talking frames face the band check too, once per scene and after
+        // every hash is recorded, so no golden moves (P43-04).
+        try self.check_prompts(label, bridge.get_frame());
     }
 
     /// Records the 16x12 save thumbnail for a scene (P32-03d): its backdrop and actor dots.
@@ -307,9 +338,113 @@ const Recorder = struct {
         try self.check_band_at(label, alt.window.height, &alt.text, &alt.rect, verbose);
     }
 
-    fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
-        // The band check reads what proof drawing puts in the message band's rows, so the log is
-        // cleared first. These frames carry no messages anyway, so the hash is unchanged.
+    /// P43-04: a hover prompt is world text, so it obeys the same band rule. The lowest mark,
+    /// prop, and person in the frame sit nearest the band and are the ones a layout change
+    /// pushes into it; the widest prompt is a person with an item in hand. Each hover is drawn
+    /// after the scene's hash is recorded, so no golden moves.
+    fn check_prompts(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        const renderer = bespoke.display.renderer;
+        const width = self.window.width;
+        const height = self.window.height;
+
+        var lowest_wp: ?bespoke.WaypointId = null;
+        var lowest_wp_row: i32 = std.math.minInt(i32);
+        for (frame.waypoints[0..frame.waypoint_count]) |wp| {
+            const row = renderer.world_to_screen(wp.x, wp.y, width, height).y;
+            if (lowest_wp == null or row > lowest_wp_row) {
+                lowest_wp = wp.id;
+                lowest_wp_row = row;
+            }
+        }
+        var lowest_prop: ?usize = null;
+        var lowest_prop_row: i32 = std.math.minInt(i32);
+        for (frame.hotspots[0..frame.hotspot_count], 0..) |hs, idx| {
+            const row = renderer.world_to_screen(hs.x, hs.y, width, height).y;
+            if (lowest_prop == null or row > lowest_prop_row) {
+                lowest_prop = idx;
+                lowest_prop_row = row;
+            }
+        }
+        var lowest_person: ?usize = null;
+        var lowest_person_row: i32 = std.math.minInt(i32);
+        for (frame.entities[0..frame.entity_count], 0..) |e, idx| {
+            const row = renderer.world_to_screen(e.x, e.y, width, height).y;
+            if (lowest_person == null or row > lowest_person_row) {
+                lowest_person = idx;
+                lowest_person_row = row;
+            }
+        }
+
+        if (lowest_wp) |id| try self.check_hover(label, frame, .{ .wp = id, .verb = .walk });
+        if (lowest_prop) |idx| try self.check_hover(label, frame, .{ .hotspot = idx, .verb = .look_at });
+        if (lowest_person) |idx| {
+            // An item in hand reads "[Use X on Y]", the widest prompt a person carries; with
+            // empty hands, TALK still names them.
+            const carrying = frame.inventory_count > 0;
+            try self.check_hover(label, frame, .{
+                .actor = idx,
+                .verb = if (carrying) .use_with else .talk_to,
+                .item = if (carrying) 0 else null,
+            });
+        }
+        try self.check_talking(label, frame);
+    }
+
+    fn check_hover(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame, hover: HoverState) !void {
+        apply_hover(self.window, hover);
+        defer apply_hover(self.window, .{});
+        self.render_probed(frame);
+        try self.check_band(label, true);
+        if (self.alt) |alt| {
+            apply_hover(alt.window, hover);
+            defer apply_hover(alt.window, .{});
+            try self.check_alt(label, frame, alt, true);
+        }
+    }
+
+    /// P43-04: the dialogue panel may cover the band's air, because it is lifted clear of the
+    /// log's own rows (D-099) and the player opened it. This pass draws one, fails when the
+    /// panel does not reach the band (so the pass cannot go quiet), and band-checks the stage
+    /// under it.
+    fn check_talking(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        var open = frame.*;
+        open.dialogue.active = true;
+        open.dialogue.revision = 1;
+        const speaker = "Harbour Warden";
+        @memcpy(open.dialogue.speaker_name[0..speaker.len], speaker);
+        open.dialogue.speaker_name_len = speaker.len;
+        const prompt = "The tide turns under the pier and the mooring rope is paying out fast. What do you do?";
+        @memcpy(open.dialogue.prompt[0..prompt.len], prompt);
+        open.dialogue.prompt_len = prompt.len;
+        const choices = [_][]const u8{
+            "Haul the rope in before the boat drifts",
+            "Ask the harbour warden what he saw",
+            "Leave it be; the boat is not yours",
+        };
+        for (choices, 0..) |text, i| {
+            @memcpy(open.dialogue.choices[i][0..text.len], text);
+            open.dialogue.choice_lens[i] = @intCast(text.len);
+        }
+        open.dialogue.choice_count = @intCast(choices.len);
+
+        self.render_probed(&open);
+        defer {
+            reset_dialogue(self.window);
+            if (self.alt) |alt| reset_dialogue(alt.window);
+        }
+        if (self.window.active_balloon == null) return error.NoDialoguePanel;
+        const band_top = bespoke.display.renderer.message_band_top(self.window.height);
+        const panel = self.window.dialogue_panel_for(&self.window.active_balloon.?);
+        // The panel really is over the band's air, or the pass proves nothing.
+        try std.testing.expect(panel.rect.y < band_top);
+        try self.check_band(label, true);
+        if (self.alt) |alt| try self.check_alt(label, &open, alt, true);
+    }
+
+    /// Draws `frame` into the primary window with this recorder's probes lent, the log cleared
+    /// first, so the band check reads only what the frame drew. These frames carry no messages
+    /// anyway, so the hash is unchanged.
+    fn render_probed(self: *Recorder, frame: *const bespoke.RenderFrame) void {
         self.window.clear_log();
         self.text.count = 0;
         self.rect.count = 0;
@@ -328,6 +463,10 @@ const Recorder = struct {
             }
         }
         self.window.render_frame(frame, true);
+    }
+
+    fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        self.render_probed(frame);
         try self.check_band(label, true);
         if (self.alt) |alt| try self.check_alt(label, frame, alt, true);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
@@ -595,7 +734,10 @@ test "P32-02a: every proof scene draws the pixels recorded in its render golden"
     var again_lines = std.mem.splitScalar(u8, again.items, '\n');
     while (again_lines.next()) |line| {
         if (line.len == 0) continue;
-        try std.testing.expect(std.mem.indexOf(u8, actual.items, line) != null);
+        if (std.mem.indexOf(u8, actual.items, line) == null) {
+            std.debug.print("\nthe second pass records '{s}', which the first pass did not\n", .{line});
+            return error.RenderNotRepeatable;
+        }
     }
 
     if (options.update_goldens) {

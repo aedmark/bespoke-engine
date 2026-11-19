@@ -2,6 +2,12 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 93 (2026-11-18)
+- **Release sign-off.** The maintainer reports desktop play, hardware listening, and uploaded Neocities verification complete with no issues. The site was not modified by Codex. Sessions 91 and 92 record the independent Linux and cross-browser checks. The ten-minute browser memory observation, hardware coverage beyond the maintainer's report, and the optional remote macOS and Windows template checks are not independently verified for this release.
+- **Work.** Cut the 0.2.0 changelog section and update the advertised version and generated manual. Stage three GitHub Release downloads. Do not tag 1.0 or change the generated project's CI pin.
+- **Checks.** Linux x86_64, Zig 0.17.1 and Chrome 157: World tests, full suite, template, both Wasm targets, release builds, Harbour golden and parser route, benchmarks, browser smokes, 77 Python tests, generated-site freshness, web budgets, and document checks pass.
+- **Publication.** [GitHub CI](https://github.com/aedmark/bespoke-engine/actions/runs/44337114236) passes on `249b300`. The annotated `v0.2.0` tag resolves to that commit, and all three uploaded asset hashes match the locally tested archives. GitHub lists 0.2.0 as the latest stable release.
+
 ### Session 92 (2026-11-18)
 - **Work.** Featured Lantern Watch: The Harbour as the only live homepage game, with its clock idle until Start and its map optional. Linked the seven standalone proofs below it and moved all thirteen decks and script viewing to the Proof Lab, reachable per deck from the gallery (D-121). The replacement export is `dist/p42-03-harbour-showcase/`, including the manual. Nothing is published.
 - **Checks.** `zig build harbour` passes the native golden, save restore, and ten-scene browser parser route. All 77 Python tests, ten generated page freshness checks, and web budgets pass. Chrome 157 and Firefox 155 verify the export at 375 px and the Proof Lab route from `file://`. Chrome plays the embedded game with the server stopped; parser motion with the map closed passes the homepage smoke check. No live-site or hardware checks are claimed.

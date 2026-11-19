@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A hover prompt on a person near the message band reads above them, so the log no longer covers it (D-127).
+
 - The desktop window can be resized. It shows the whole 1280x720 frame at its own shape, with bars beside it in a window of another shape, so a short window keeps the message band and the stage and a click lands on what it points at (Q-014, D-125).
 
 - The Larkspur Observatory's working-floor marks and The Living Village's cottages mark sit one world unit higher, so their discs and the people on them clear the message band (Q-013).

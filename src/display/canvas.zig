@@ -150,6 +150,9 @@ pub const Canvas = struct {
     /// Suppresses recording for text glyphs and full-canvas clears, which are not art.
     text_depth: u8 = 0,
     suppress_rects: u8 = 0,
+    /// Suppresses text recording for a window's own panels, whose rows may cover the message
+    /// band (D-127). Only the panel that sets it is exempt; stage labels are still measured.
+    suppress_text: u8 = 0,
 
     pub fn init(pixels: []u8, width: i32, height: i32) Canvas {
         std.debug.assert(pixels.len >= @as(usize, @intCast(width * height * 4)));
@@ -309,7 +312,7 @@ pub const Canvas = struct {
 
     /// Text in the 5x7 font, each lit dot a `scale`-sized square.
     pub fn draw_text(self: *Canvas, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
-        if (self.text_probe) |probe| probe.record(text, start_x, start_y, scale);
+        if (self.text_probe) |probe| if (self.suppress_text == 0) probe.record(text, start_x, start_y, scale);
         self.text_depth += 1;
         defer self.text_depth -= 1;
         var cur_x = start_x;
@@ -398,6 +401,18 @@ test "P43-02: the rect probe records shapes with their layer, skips text and cle
     // Glyph dots are text, which the text probe covers, not art rectangles.
     cv.draw_text("A", 0, 0, 1, Color.white);
     try testing.expectEqual(@as(usize, 1), probe.count);
+
+    // A window panel's own rows are not stage text, so a panel asks the canvas to skip them
+    // (D-127); the drawing is unchanged and the next draw records again.
+    var text_probe = TextProbe{};
+    cv.text_probe = &text_probe;
+    cv.suppress_text += 1;
+    cv.draw_text("Panel", 0, 0, 1, Color.white);
+    cv.suppress_text -= 1;
+    try testing.expectEqual(@as(usize, 0), text_probe.count);
+    cv.draw_text("Stage", 0, 0, 1, Color.white);
+    try testing.expectEqual(@as(usize, 1), text_probe.count);
+    cv.text_probe = null;
 
     cv.rect_kind = .chrome;
     cv.fill_circle(8, 4, 3, Color.amber);
