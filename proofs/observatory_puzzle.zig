@@ -696,7 +696,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
     defer window.deinit();
     window.set_theme(&theme);
     if (window.is_headless) return run_headless(allocator, stdout);
-    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] presents the slip to Pell when Ines carries it and he is on her mark or the next one; without the slip it talks to him. Clicking a staff member talks to them. [Enter] opens the command bar: try 'go to the archive', 'take the slip', 'present the slip to the rival'.\n");
+    try stdout.writeAll("\nLarkspur Observatory: click marks to walk; [1] searches the darkroom, [2] takes the evidence where Ines stands, [3] reads the telescope log, [4] presents the slip to Pell, or talks to him without it, when he is on her mark or the next one. Clicking a staff member talks to them. [Enter] opens the command bar: try 'go to the archive', 'take the slip', 'present the slip to the rival'.\n");
     try stdout.writeAll("Pause/save/load, single-step, scrub, rewind, debug, and console use the standard engine controls.\n\n");
 
     var bridge = bespoke.DisplayBridge.init();
