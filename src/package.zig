@@ -23,6 +23,7 @@ const PatternClause = world_mod.PatternClause;
 const PatternTerm = world_mod.PatternTerm;
 const SpatialSystem = spatial_mod.SpatialSystem;
 const BytecodeChunk = bytecode_mod.BytecodeChunk;
+const Opcode = bytecode_mod.Opcode;
 const CompiledProgram = codegen_mod.CompiledProgram;
 const CompiledWhenRule = codegen_mod.CompiledWhenRule;
 const WhenEdge = parser_mod.WhenEdge;
@@ -50,8 +51,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 14 lets a duel declare up to `duel.MAX_FALLBACKS` fallback lines (D-076); earlier
 /// versions wrote 0 or 1, which the same count byte reads unchanged.
 /// Version 15 appends goals with their needs and authored hints (P44-01, D-134); versions 1
-/// through 14 load with no goals.
-pub const PACKAGE_VERSION: u32 = 15;
+/// through 14 load with no goals. Version 16 adds the aggregate condition opcodes (P44-02);
+/// versions 1 through 15 hold bytecode that cannot contain them, so they load unchanged.
+pub const PACKAGE_VERSION: u32 = 16;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -1702,7 +1704,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 15",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 16",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -1733,7 +1735,7 @@ test "P38-02: checked-in earlier package fixture still loads" {
     try testing.expectEqual(@as(usize, 0), compiled.goals.items.len);
 }
 
-test "P44-01: checked-in current package fixture loads with its goal" {
+test "P44-01: checked-in version 15 package fixture still loads its goal" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
@@ -1743,7 +1745,8 @@ test "P44-01: checked-in current package fixture loads with its goal" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    // The current writer is version 16; this fixture pins that version 15 still loads.
+    try testing.expectEqual(@as(u32, 15), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -1762,6 +1765,39 @@ test "P44-01: checked-in current package fixture loads with its goal" {
     try testing.expectEqualStrings("Sit", world.get_entity_name(goal.needs[0].entity).?);
     try testing.expectEqualStrings("Ready", goal.needs[0].relation);
     try testing.expectEqualStrings("Bench", world.get_entity_name(goal.needs[0].room.?).?);
+}
+
+test "P44-02: checked-in current package fixture carries aggregate conditions" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.2.0-package-v16.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
+    defer compiled.deinit();
+
+    try testing.expect(world.lookup_entity("FixtureHero") != null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    // The routine's bytecode holds both aggregate opcodes, so the fixture pins version 16.
+    const code = compiled.chunk.code.items;
+    var saw_count = false;
+    var saw_points = false;
+    for (code) |byte| {
+        if (byte == @intFromEnum(Opcode.query_count)) saw_count = true;
+        if (byte == @intFromEnum(Opcode.query_points)) saw_points = true;
+    }
+    try testing.expect(saw_count and saw_points);
 }
 
 test "P15-02: package file save and load roundtrip" {

@@ -6,10 +6,10 @@ BeSpoke Engine reads released `.bspk` packages and `.sav` saves according to the
 
 | File | Writer emits | Reader accepts | Unsupported error |
 | --- | ---: | ---: | --- |
-| `.bspk` package | 15 | 1 through 15 | Names the file's version and the supported range |
+| `.bspk` package | 16 | 1 through 16 | Names the file's version and the supported range |
 | `.sav` save | 1 without a temporal branch; 2 with one | 1 through 2 | Names the file's version and the supported range |
 
-The package writer emits only the current format. Save format 1 remains the active plain-world profile; format 2 adds the optional temporal envelope and is emitted by the temporal writer. A reader in the 1.x release line keeps support for every format version that an earlier 1.x release could read. Format version numbers are never reused.
+Package version 16 adds the count and points condition opcodes (P44-02); versions 1 through 15 hold bytecode that cannot contain them and load unchanged. The package writer emits only the current format. Save format 1 remains the active plain-world profile; format 2 adds the optional temporal envelope and is emitted by the temporal writer. A reader in the 1.x release line keeps support for every format version that an earlier 1.x release could read. Format version numbers are never reused.
 
 ## Changing a format
 

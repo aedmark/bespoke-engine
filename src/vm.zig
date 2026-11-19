@@ -735,7 +735,36 @@ pub const VM = struct {
                 }
                 return sum >= roll.threshold;
             },
+            .count_at_least => |c| return self.aggregate_ast(c.pattern, false) >= c.threshold,
+            .points_at_least => |c| return self.aggregate_ast(c.pattern, true) >= c.threshold,
         }
+    }
+
+    /// Counts facts matching a parsed pattern, or sums their third slots (P44-02). An unknown
+    /// entity name matches nothing, as in `has_fact_pattern`; `_` is a wildcard in either slot.
+    fn aggregate_ast(self: *VM, pat: parser_mod.FactPattern, points: bool) u64 {
+        var subj: ?EntityId = null;
+        var obj: ?u32 = null;
+        if (pat.args.len > 0 and !std.mem.eql(u8, pat.args[0], "_")) {
+            subj = self.world.lookup_entity(pat.args[0]) orelse return 0;
+        }
+        if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
+            const arg1 = pat.args[1];
+            if (std.mem.eql(u8, arg1, "true")) {
+                obj = 1;
+            } else if (std.mem.eql(u8, arg1, "false")) {
+                obj = 0;
+            } else if (std.fmt.parseInt(u32, arg1, 10)) |num| {
+                obj = num;
+            } else |_| {
+                obj = (self.world.lookup_entity(arg1) orelse return 0).to_int();
+            }
+        }
+        const rel = self.world.lookup_relation(pat.relation) orelse return 0;
+        var total: u64 = 0;
+        var it = self.world.query(subj, rel, obj);
+        while (it.next()) |fact| total += if (points) fact.object_or_value else 1;
+        return total;
     }
 
     /// Evaluates candidate dialogue choice guards against world state and prunes unsatisfied choices (P13-02, D-015).
@@ -861,6 +890,21 @@ pub const VM = struct {
         }
     }
 
+    /// Counts facts matching a pattern, or sums their third slots (P44-02). A null term is a
+    /// wildcard. The total is u64 so a long table cannot wrap the threshold comparison.
+    fn aggregate_total(self: *VM, subj: ?u32, rel: ?u16, obj: ?u32, points: bool) u64 {
+        var total: u64 = 0;
+        var it = self.world.query(
+            if (subj) |s| EntityId.from_int(s) else null,
+            if (rel) |r| RelationKind.from_int(r) else null,
+            obj,
+        );
+        while (it.next()) |fact| {
+            total += if (points) fact.object_or_value else 1;
+        }
+        return total;
+    }
+
     /// Evaluates a condition bytecode block for wait_until without altering fiber's main stack.
     fn eval_condition(self: *VM, fiber: *Fiber, cond_pc: u16) !bool {
         var temp_stack: [16]u32 = undefined;
@@ -911,6 +955,28 @@ pub const VM = struct {
                     const rel = if (rel_raw) |r| RelationKind.from_int(r) else null;
                     const has = self.world.has_fact(subj, rel, obj);
                     temp_stack[temp_sp] = if (has) 1 else 0;
+                    temp_sp += 1;
+                },
+                .query_count, .query_points => {
+                    const points = op == .query_points;
+                    const mask = code[pc];
+                    pc += 1;
+                    const threshold = std.mem.readInt(u32, code[pc..][0..4], .little);
+                    pc += 4;
+                    const obj: ?u32 = if ((mask & 0x04) != 0) blk: {
+                        temp_sp -= 1;
+                        break :blk temp_stack[temp_sp];
+                    } else null;
+                    const rel_raw: ?u16 = if ((mask & 0x02) != 0) blk: {
+                        temp_sp -= 1;
+                        break :blk @intCast(temp_stack[temp_sp]);
+                    } else null;
+                    const subj_raw: ?u32 = if ((mask & 0x01) != 0) blk: {
+                        temp_sp -= 1;
+                        break :blk temp_stack[temp_sp];
+                    } else null;
+                    const total = self.aggregate_total(subj_raw, rel_raw, obj, points);
+                    temp_stack[temp_sp] = if (total >= threshold) 1 else 0;
                     temp_sp += 1;
                 },
                 .not => {
@@ -1123,6 +1189,19 @@ pub const VM = struct {
                         obj,
                     );
                     try f.push(if (has) 1 else 0);
+                },
+                .query_count, .query_points => {
+                    const points = op == .query_points;
+                    const mask = code[f.pc];
+                    f.pc += 1;
+                    const threshold = std.mem.readInt(u32, code[f.pc..][0..4], .little);
+                    f.pc += 4;
+
+                    const obj: ?u32 = if ((mask & 0x04) != 0) try f.pop() else null;
+                    const rel_val: ?u16 = if ((mask & 0x02) != 0) @intCast(try f.pop()) else null;
+                    const subj_val: ?u32 = if ((mask & 0x01) != 0) try f.pop() else null;
+                    const total = self.aggregate_total(subj_val, rel_val, obj, points);
+                    try f.push(if (total >= threshold) 1 else 0);
                 },
                 .query_property => {
                     const rel = try f.pop();
@@ -2207,4 +2286,38 @@ test "P31-01: hyper-temporal fiber execution and priority preemption" {
     try testing.expectEqual(@as(u16, 2), cue.cue_id);
     try testing.expectEqual(echo.to_int(), cue.args[0]);
     try testing.expectEqual(msg.to_int(), cue.args[1]);
+}
+
+/// Evaluates one aggregate condition over the world as `wait until` does (P44-02).
+fn aggregate_holds(allocator: std.mem.Allocator, world: *World, actor: EntityId, clue: RelationKind, subject: ?EntityId, points: bool, threshold: u32) !bool {
+    var chunk = BytecodeChunk.init(allocator);
+    defer chunk.deinit();
+    if (subject) |s| try chunk.emit_push_entity(s);
+    try chunk.emit_push_relation(clue);
+    try chunk.emit_query_aggregate(if (points) .query_points else .query_count, if (subject == null) 0x02 else 0x03, threshold);
+    _ = try chunk.emit_op(.ret);
+
+    var vm = VM.init(allocator, world, &chunk);
+    defer vm.deinit();
+    _ = try vm.spawn_routine(actor, 0);
+    return vm.eval_condition(&vm.fibers.items[0], 0);
+}
+
+test "P44-02: a wait-until aggregate counts facts and sums their third slots" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const clue = try world.intern_relation("Clue", .set);
+    const hero = try world.intern_entity("Hero");
+    try world.remember(try world.intern_entity("Diary"), clue, 3, 0);
+    try world.remember(try world.intern_entity("Ledger"), clue, 4, 0);
+
+    try testing.expect(try aggregate_holds(testing.allocator, &world, hero, clue, null, false, 2));
+    try testing.expect(!try aggregate_holds(testing.allocator, &world, hero, clue, null, false, 3));
+    try testing.expect(try aggregate_holds(testing.allocator, &world, hero, clue, null, true, 7));
+    try testing.expect(!try aggregate_holds(testing.allocator, &world, hero, clue, null, true, 8));
+
+    // A bound subject that matches nothing counts zero, so any threshold above zero fails.
+    const ghost = try world.intern_entity("Ghost");
+    try testing.expect(!try aggregate_holds(testing.allocator, &world, ghost, clue, ghost, false, 1));
 }

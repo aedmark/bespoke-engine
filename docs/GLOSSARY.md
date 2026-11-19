@@ -46,6 +46,7 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | society | Characters with needs, jobs, rumours, and justice, declared in a script and run by the engine | `society`, `src/society.zig` | |
 | goal | A line of investigation the player has to finish, declared as needs with the fact each one requires | `goal`, `src/hint.zig` (P44-01, D-134) | quest log (a goal is script data, not a screen) |
 | hint | The nearest unmet need reported as help: the character's own deduction while she could reason about it, the author's direction otherwise | `hint.query()` (D-126) | walkthrough |
+| evidence threshold | A condition that counts the facts a pattern matches, or sums their third slot, and holds when the total reaches a number: `2 of Clue(_)`, `6 points of Clue(_)` | `count_at_least`, `points_at_least`, `query_count`, `query_points` (P44-02) | aggregate expression |
 
 ## Stage, dialogue, and play
 

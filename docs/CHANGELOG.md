@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A condition counts matching facts (`2 of Clue(_)`) or sums their third slot toward a threshold (`6 points of Clue(_)`), so an investigation can move on with enough evidence instead of all of it (`P44-02`).
+
 - A script declares a goal as needs with the fact each one requires, prerequisites, a room, and optional per-tier text; the engine reports the nearest unmet need as a hint, in the story's voice while the character could reason about it and as the author's direction otherwise (`P44-01`, `D-126`, `D-134`).
 
 - The Larkspur Observatory's three props sit one world unit higher and the Wreckers Cellar's SEA CHEST label sits higher on the chest lid, so both keep clear of the log and leave room for a name or prompt above them (`Q-017`, `D-133`).

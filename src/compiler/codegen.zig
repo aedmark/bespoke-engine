@@ -10,6 +10,7 @@ const spatial_mod = @import("../spatial.zig");
 pub const AST = parser_mod.AST;
 pub const Stmt = parser_mod.Stmt;
 pub const Expr = parser_mod.Expr;
+pub const FactPattern = parser_mod.FactPattern;
 pub const BytecodeChunk = bytecode_mod.BytecodeChunk;
 pub const Opcode = bytecode_mod.Opcode;
 pub const World = world_mod.World;
@@ -1492,9 +1493,43 @@ pub const Codegen = struct {
             else
                 try std.fmt.allocPrint(self.allocator, "blocked by {s}({s})", .{ pat.relation, pat.args[0] }),
             .roll_gte => |roll| try std.fmt.allocPrint(self.allocator, "failed {d}d{d} >= {d}", .{ roll.count, roll.sides, roll.threshold }),
+            .count_at_least => |c| blk: {
+                const label = try self.pattern_text(c.pattern);
+                defer self.allocator.free(label);
+                break :blk try std.fmt.allocPrint(self.allocator, "needs {d} of {s}", .{ c.threshold, label });
+            },
+            .points_at_least => |c| blk: {
+                const label = try self.pattern_text(c.pattern);
+                defer self.allocator.free(label);
+                break :blk try std.fmt.allocPrint(self.allocator, "needs {d} points of {s}", .{ c.threshold, label });
+            },
         };
         defer self.allocator.free(text);
         return self.world.intern_entity(text);
+    }
+
+    /// Emits the arguments a fact query pops, and returns its wildcard mask: bit 0 subject,
+    /// bit 1 relation, bit 2 object. The relation is always pushed. Aggregates treat `_` in
+    /// the subject slot as a wildcard; ordinary conditions keep their historical binding.
+    fn emit_pattern_args(self: *Codegen, pat: FactPattern, wildcard_subject: bool) !u8 {
+        var mask: u8 = 0x02; // bit 1 (rel)
+        if (!wildcard_subject or !std.mem.eql(u8, pat.args[0], "_")) {
+            try self.chunk.emit_push_entity(try self.resolve_entity(pat.args[0]));
+            mask |= 0x01;
+        }
+        try self.chunk.emit_push_relation(try self.resolve_relation(pat.relation));
+        if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
+            try self.chunk.emit_push_const(try self.resolve_entity_or_value(pat.args[1]));
+            mask |= 0x04;
+        }
+        return mask;
+    }
+
+    fn pattern_text(self: *Codegen, pat: FactPattern) ![]u8 {
+        return if (pat.args.len > 1)
+            std.fmt.allocPrint(self.allocator, "{s}({s}, {s})", .{ pat.relation, pat.args[0], pat.args[1] })
+        else
+            std.fmt.allocPrint(self.allocator, "{s}({s})", .{ pat.relation, pat.args[0] });
     }
 
     fn compile_expr(self: *Codegen, expr: Expr) !void {
@@ -1505,33 +1540,23 @@ pub const Codegen = struct {
                 _ = try self.chunk.emit_op(.gte);
             },
             .has_fact => |pat| {
-                const subj = try self.resolve_entity(pat.args[0]);
-                const rel = try self.resolve_relation(pat.relation);
-                var mask: u8 = 0x03; // bit 0 (subj) | bit 1 (rel)
-                try self.chunk.emit_push_entity(subj);
-                try self.chunk.emit_push_relation(rel);
-                if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
-                    const obj = try self.resolve_entity_or_value(pat.args[1]);
-                    try self.chunk.emit_push_const(obj);
-                    mask |= 0x04; // bit 2 (obj)
-                }
+                const mask = try self.emit_pattern_args(pat, false);
                 _ = try self.chunk.emit_op(.query_has);
                 try self.chunk.emit_u8(mask);
             },
             .not_fact => |pat| {
-                const subj = try self.resolve_entity(pat.args[0]);
-                const rel = try self.resolve_relation(pat.relation);
-                var mask: u8 = 0x03;
-                try self.chunk.emit_push_entity(subj);
-                try self.chunk.emit_push_relation(rel);
-                if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
-                    const obj = try self.resolve_entity_or_value(pat.args[1]);
-                    try self.chunk.emit_push_const(obj);
-                    mask |= 0x04;
-                }
+                const mask = try self.emit_pattern_args(pat, false);
                 _ = try self.chunk.emit_op(.query_has);
                 try self.chunk.emit_u8(mask);
                 _ = try self.chunk.emit_op(.not);
+            },
+            .count_at_least => |c| {
+                const mask = try self.emit_pattern_args(c.pattern, true);
+                try self.chunk.emit_query_aggregate(.query_count, mask, c.threshold);
+            },
+            .points_at_least => |c| {
+                const mask = try self.emit_pattern_args(c.pattern, true);
+                try self.chunk.emit_query_aggregate(.query_points, mask, c.threshold);
             },
         }
     }
@@ -2755,4 +2780,51 @@ test "P44-01: goal declarations compile and reject malformed goals" {
         "goal G:\n  need A after B:\n    met Seen(Hero)\n    room Shed\n  need B after A:\n    met Seen(Shed)\n    room Shed\n",
     };
     for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic() != null);
+}
+
+test "P44-02: count and points conditions compile and read the fact table" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const compiler = @import("../compiler.zig");
+    const source =
+        \\entity Hero
+        \\relation Clue(clue, points)
+        \\relation SawEnough(who)
+        \\relation WeighedEnough(who)
+        \\relation Wrong(who)
+        \\routine Audit(Hero):
+        \\  if 2 of Clue(_):
+        \\    remember SawEnough(Hero)
+        \\  if 6 points of Clue(_):
+        \\    remember WeighedEnough(Hero)
+        \\  if 1 of Clue(Missing):
+        \\    remember Wrong(Hero)
+    ;
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+
+    const clue = world.lookup_relation("Clue").?;
+    try world.remember(try world.intern_entity("Diary"), clue, 3, 0);
+    try world.remember(try world.intern_entity("Ledger"), clue, 4, 0);
+
+    const hero = world.lookup_entity("Hero").?;
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    _ = try vm.spawn_routine(hero, compiled.routine_entries.get("Audit").?);
+    _ = try vm.step_tick();
+
+    try testing.expect(world.has_fact(hero, world.lookup_relation("SawEnough").?, null));
+    try testing.expect(world.has_fact(hero, world.lookup_relation("WeighedEnough").?, null));
+    try testing.expect(!world.has_fact(hero, world.lookup_relation("Wrong").?, null));
+
+    const bad = [_][]const u8{
+        "entity Hero\nrelation Clue(clue, points)\nroutine A(Hero):\n  if 2 Clue(_):\n    wait 1 ticks\n",
+        "entity Hero\nrelation Clue(clue, points)\nroutine A(Hero):\n  if 2 of Clue():\n    wait 1 ticks\n",
+        "entity Hero\nrelation Clue(clue, points)\nroutine A(Hero):\n  if 2 points Clue(_):\n    wait 1 ticks\n",
+        "entity Hero\nrelation Clue(clue, points)\nroutine A(Hero):\n  if 2 of Clue(Hero, _, Extra):\n    wait 1 ticks\n",
+    };
+    for (bad) |text| try testing.expect(compiler.check_source(testing.allocator, text).diagnostic() != null);
 }

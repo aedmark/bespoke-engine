@@ -48,6 +48,13 @@ pub const Opcode = enum(u8) {
     query_has = 0x32,
     /// Query a single property value. Pops: relation: u16, subject: u32. Pushes: value: u32.
     query_property = 0x33,
+    /// Count facts matching a pattern (P44-02). Pops provided arguments per the mask.
+    /// Operands: wildcard_mask: u8, threshold: u32. Pushes 1 when the count reaches it, else 0.
+    query_count = 0x34,
+    /// Sum the third slot of facts matching a pattern (P44-02). Pops provided arguments per
+    /// the mask. Operands: wildcard_mask: u8, threshold: u32. Pushes 1 when the total reaches
+    /// it, else 0. The pattern names one term to match and treats the third slot as points.
+    query_points = 0x35,
 
     // --- Temporal & Fiber Scheduling (D-004) ---
     /// Yields execution of the active fiber until the next tick.
@@ -153,6 +160,14 @@ pub const BytecodeChunk = struct {
     pub fn emit_push_relation(self: *BytecodeChunk, relation: RelationKind) !void {
         _ = try self.emit_op(.push_relation);
         try self.emit_u16(relation.to_int());
+    }
+
+    /// Emits a count or points threshold over the facts a pattern matches (P44-02).
+    pub fn emit_query_aggregate(self: *BytecodeChunk, op: Opcode, mask: u8, threshold: u32) !void {
+        std.debug.assert(op == .query_count or op == .query_points);
+        _ = try self.emit_op(op);
+        try self.emit_u8(mask);
+        try self.emit_u32(threshold);
     }
 
     pub fn emit_jump(self: *BytecodeChunk, op: Opcode, offset: i16) !void {

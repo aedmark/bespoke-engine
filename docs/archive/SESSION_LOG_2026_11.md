@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 101 (2026-11-18)
+- **Work.** Wired the scaled frame into the desktop window (D-125). The window is `SDL_WINDOW_RESIZABLE`; the canvas, message band, layout, and hit tests stay at 1280x720, and SDL presents that texture stretched to the window, so a short or tiled window shows the whole frame instead of a cramped relayout. Mouse motion and button events pass through `window_to_stage` before any hover, drawer, inspector, or scene hit test; it scales each axis by `SDL_GetWindowSize` and clamps to the canvas edge. A unit test pins identity at 1280x720, half size, and clamping.
+- **Checks.** `zig build test` and `zig build test-proofs` pass with no golden change; `zig build wasm wasm-proofs` and `node tools/wasm_smoke.js` pass, and the proof Wasm stays 695,883 bytes. 75 Python tests, `build_site.py --check` (15 pages current), `check_web_budgets.py` (largest page 948,420 bytes), `check_docs.py` (0/0), `manual.py check --check-evidence` (9 sections, 58 entries), and `git diff --check` pass. A real resize through a window manager and a click at a scaled size are not run; the mapping test and SDL's present path are the evidence.
+
 ### Session 100 (2026-11-18)
 - **Work.** Reviewed the short-window scaling. A 640x360 band pass added nothing: `init_offscreen_scaled` draws the 1280x720 frame, so its probes were the golden's probes and the third window repeated the 1280x720 check at a smaller sample grid. The sweep keeps its 1280x720 and 1920x1080 windows; the guard test pins the drawing size, the window size, and the band's rows 252 to 291 of the shown image. The recorder's two-window list collapsed back to one optional window.
 - **Checks.** `zig build test` and `zig build test-proofs` pass with no golden change. `node tools/wasm_smoke.js`, 75 Python tests, `build_site.py --check` (15 pages current, proof Wasm 695,883 bytes), `check_web_budgets.py`, `check_docs.py` (0/0), `manual.py check --check-evidence`, and `git diff --check` follow.

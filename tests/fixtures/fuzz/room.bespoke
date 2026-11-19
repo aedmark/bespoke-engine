@@ -3,8 +3,12 @@ scene Workshop:
   marks: Door, Bench
 
 relation Ready(who)
+relation Witnessed(who, what)
 remember Ready(Hero)
+remember Witnessed(Hero, Door)
 
 routine Patrol(Hero):
   walk Hero to Bench
-  wait 2 ticks
+  if 1 of Witnessed(Hero, _):
+    remember Ready(Hero)
+  wait until 2 points of Witnessed(Hero, _)

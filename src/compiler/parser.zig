@@ -23,6 +23,10 @@ pub const Expr = union(enum) {
     roll_gte: struct { count: u8, sides: u8, threshold: u32 },
     not_fact: FactPattern,
     has_fact: FactPattern,
+    /// `2 of Clue(_)`: at least `threshold` facts match the pattern (P44-02).
+    count_at_least: struct { pattern: FactPattern, threshold: u32 },
+    /// `6 points of Clue(_)`: the matched facts' third slots total at least `threshold`.
+    points_at_least: struct { pattern: FactPattern, threshold: u32 },
 };
 
 pub const Stmt = union(enum) {
@@ -2151,6 +2155,26 @@ pub const Parser = struct {
             try self.advance();
             const pat = try self.parse_fact_pattern();
             return Expr{ .not_fact = pat };
+        } else if (self.current.tag == .number) {
+            const threshold_tok = self.current;
+            try self.advance();
+            const threshold = try self.parse_number(u32, threshold_tok, "aggregate threshold", threshold_tok.slice);
+            const word = (try self.expect(.identifier)).slice;
+            const weighted = std.mem.eql(u8, word, "points");
+            if (weighted) {
+                const of = (try self.expect(.identifier)).slice;
+                if (!std.mem.eql(u8, of, "of"))
+                    return self.set_error("points condition expects 'points of <Fact>'", .{});
+            } else if (!std.mem.eql(u8, word, "of")) {
+                return self.set_error("aggregate condition expects '<n> of <Fact>' or '<n> points of <Fact>'", .{});
+            }
+            const pattern = try self.parse_fact_pattern();
+            if (pattern.args.len == 0 or pattern.args.len > 2)
+                return self.set_error("aggregate condition pattern needs one or two arguments", .{});
+            return if (weighted)
+                Expr{ .points_at_least = .{ .pattern = pattern, .threshold = threshold } }
+            else
+                Expr{ .count_at_least = .{ .pattern = pattern, .threshold = threshold } };
         } else if (self.current.tag == .identifier) {
             const first = try self.parse_name();
             if (self.current.tag == .kw_is or self.current.tag == .kw_are) {
@@ -2189,6 +2213,37 @@ pub const Parser = struct {
         }
     }
 };
+
+test "P44-02: parser recognizes count and points conditions" {
+    const testing = std.testing;
+    const source =
+        \\entity Hero
+        \\relation Clue(clue, points)
+        \\routine Audit(Hero):
+        \\  if 2 of Clue(_):
+        \\    wait until 6 points of Clue(Hero, _)
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var lexer = Lexer.init(arena.allocator(), source);
+    defer lexer.deinit();
+    var parser = try Parser.init(arena.allocator(), &lexer);
+    var ast = try parser.parse_program();
+    defer ast.deinit();
+
+    const body = ast.routines.items[0].body;
+    const count = body[0].if_stmt.cond.count_at_least;
+    try testing.expectEqual(@as(u32, 2), count.threshold);
+    try testing.expectEqualStrings("Clue", count.pattern.relation);
+    try testing.expectEqualStrings("_", count.pattern.args[0]);
+
+    const points = body[0].if_stmt.body[0].wait_until.points_at_least;
+    try testing.expectEqual(@as(u32, 6), points.threshold);
+    try testing.expectEqualStrings("Clue", points.pattern.relation);
+    try testing.expectEqualStrings("Hero", points.pattern.args[0]);
+    try testing.expectEqualStrings("_", points.pattern.args[1]);
+}
 
 test "P4-02: parser parses complete tavern heist AST" {
     const testing = std.testing;
