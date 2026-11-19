@@ -281,9 +281,21 @@ fn generate(world: *const World, need: Need, tier: Tier, buf: []u8) Error![]cons
     }
 }
 
-/// Reports the nearest unmet need at `tier`. Holmesian first: the first unmet frontier need
-/// whose terms the player knows. When there is none, the first unmet need in declaration order
-/// answers as the author (D-126). Null means every need of every goal holds.
+fn report(world: *const World, goal: EntityId, need: Need, tier: Tier, path: Path, buf: []u8) Error!Hint {
+    const text = authored(need, tier);
+    return .{
+        .goal = goal,
+        .need = need.entity,
+        .tier = tier,
+        .path = path,
+        .authored = text != null,
+        .text = text orelse try generate(world, need, tier, buf),
+    };
+}
+
+/// Reports the nearest unmet need at `tier`. Holmesian first: each goal's frontier need, when
+/// the player knows its terms. When no goal offers one, the first unmet need in declaration
+/// order answers as the author (D-126). Null means every need of every goal holds.
 pub fn query(
     goals: []const Declaration,
     world: *const World,
@@ -292,32 +304,14 @@ pub fn query(
     buf: []u8,
 ) Error!?Hint {
     for (goals) |declaration| {
-        for (declaration.goal.needs) |*need| {
-            if (satisfied(world, need.*)) continue;
-            const candidate = frontier(world, declaration.goal.needs) orelse continue;
-            if (candidate.entity != need.entity) continue;
-            if (!terms_known(world, player, need.*, tier)) continue;
-            return .{
-                .goal = declaration.goal.entity,
-                .need = need.entity,
-                .tier = tier,
-                .path = .holmesian,
-                .authored = authored(need.*, tier) != null,
-                .text = authored(need.*, tier) orelse try generate(world, need.*, tier, buf),
-            };
-        }
+        const need = (frontier(world, declaration.goal.needs) orelse continue).*;
+        if (!terms_known(world, player, need, tier)) continue;
+        return try report(world, declaration.goal.entity, need, tier, .holmesian, buf);
     }
     for (goals) |declaration| {
         for (declaration.goal.needs) |*need| {
             if (satisfied(world, need.*)) continue;
-            return .{
-                .goal = declaration.goal.entity,
-                .need = need.entity,
-                .tier = tier,
-                .path = .doylian,
-                .authored = authored(need.*, tier) != null,
-                .text = authored(need.*, tier) orelse try generate(world, need.*, tier, buf),
-            };
+            return try report(world, declaration.goal.entity, need.*, tier, .doylian, buf);
         }
     }
     return null;

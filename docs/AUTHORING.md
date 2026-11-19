@@ -338,12 +338,46 @@ Each of these is a declaration a script carries; [`script_spec.md`](script_spec.
 | --- | --- | --- |
 | Typed commands | `command Pours: "pour <thing> into <thing>"`, `alias` | New verbs and nouns for the command bar |
 | Agendas | `agenda` | An actor who pursues and intercepts another |
+| Goals and hints | `goal` | The next need, phrased from what the character knows |
 | Paths | `path` | Mutually exclusive approaches to a scene, chosen by the host |
 | Grids | `grid` | Room cells that burn, smoke, flood, or block |
 | Society | `society` | Needs, work, trade, and routines for a population |
 | Duels | `duel` | Insult or riddle contests with tiers and fatigue |
 | Degradation | `degradation` | Containers whose contents age, spill, and fail |
 | Scores | `score` | Four-part music in Music Macro Language |
+
+A `goal` declares what the player must make true and what to say when they ask for help. Knowledge is script-asserted: `Knows` and `Believes` facts about the player are what the character could reason about, and `Rejects` cancels either (P44-01, D-134).
+
+```bespoke
+# Goals: the next need, phrased from what the character knows.
+scene PlateArchive:
+  cast: Ines
+  props: ExposureSlip, TelescopeLog
+  marks: Table
+
+relation Carries(holder, item)
+relation Read(who, item)
+relation Knows(who, what)
+
+remember Knows(Ines, ExposureSlip)
+remember Knows(Ines, PlateArchive)
+
+goal RecoverThePlate:
+  need TakeTheSlip:
+    met Carries(Ines, ExposureSlip)
+    room PlateArchive
+    hint 1 "The slip is filed under the ledger."
+  need ReadTheLog after TakeTheSlip:
+    met Read(Ines, TelescopeLog)
+    room PlateArchive
+    hint 3 "The log opens once the slip is in hand."
+```
+
+- `met` is one fact pattern, with `_` as a wildcard. `after` lists needs of the same goal that must hold first, so a hint never points past a step the player has not taken.
+- `room` names the place the room tier points at. Without it, the need inherits the scene that declares the prop or mark it names.
+- `hint 1`, `hint 2`, and `hint 3` replace the generated text for the room, thing, and relation tiers. A tier without text is generated from the names in `met`.
+- A query answers with the first unmet need whose terms the character knows and records which path answered. When no such need is on the frontier, it answers as the author, which may name a place or thing the character has not met.
+- Hints are never stored, so a save, a rewind, and a replay give the same hint for the same world (D-003). Goals travel in package format version 15.
 
 ## 7. Test the story
 
