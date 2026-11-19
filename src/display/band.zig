@@ -30,6 +30,16 @@ pub fn bottom(screen_h: i32) i32 {
 /// cap keeps a mangled layout from growing the record without bound.
 pub const CAP = 8;
 
+/// How many frames this process has measured (P43-06). Each golden compares the growth of this
+/// count with the frames it records, so a deleted check fails the run even though every hash is
+/// unchanged.
+var measured_frames: usize = 0;
+
+/// The number of frames measured so far, for the goldens' tamper check.
+pub fn measured() usize {
+    return measured_frames;
+}
+
 pub const Verdict = enum { clear, overflow, art, text };
 
 pub const Check = struct {
@@ -45,6 +55,7 @@ pub const Check = struct {
     /// string that overlaps the band is kept, so a caller can name all of them before it
     /// stops. A frame the shape probe could not hold is a failed measurement, not a clean one.
     pub fn measure(height: i32, text: *const canvas.TextProbe, rect: *const canvas.RectProbe) Check {
+        measured_frames += 1;
         var check = Check{
             .band_top = top(height),
             .band_bottom = bottom(height),
@@ -148,4 +159,9 @@ test "P43-05: the band check measures stage layers and skips the window's own" {
     try testing.expectEqual(@as(usize, 1), both.text_count);
     rect.overflowed = true;
     try testing.expectEqual(Verdict.overflow, Check.measure(720, &text, &rect).verdict);
+
+    // P43-06: every measure is counted, so a golden can tie its checks to the lines it records.
+    const before = measured();
+    _ = Check.measure(720, &text, &rect);
+    try testing.expectEqual(before + 1, measured());
 }

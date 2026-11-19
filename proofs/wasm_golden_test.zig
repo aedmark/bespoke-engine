@@ -68,6 +68,7 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
     var text_probe = canvas.TextProbe{};
     var rect_probe = canvas.RectProbe{};
     const probes = wasm.WasmRuntime.CanvasProbes{ .text = &text_probe, .rect = &rect_probe };
+    const band_before = band.measured();
 
     for (SCRIPT) |entry| {
         switch (entry.step) {
@@ -119,6 +120,14 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
             rt.clock(),
             rt.get_banner(),
         });
+    }
+
+    // P43-06: one measurement per recorded line. Deleting the check would leave every frame hash
+    // unchanged, so the count is what makes the rule's absence visible.
+    const ran = band.measured() - band_before;
+    if (ran != SCRIPT.len) {
+        std.debug.print("\ndeck/{d}: the band check ran {d} time(s) for {d} recorded lines\n", .{ index, ran, SCRIPT.len });
+        return error.BandCheckMissing;
     }
 }
 

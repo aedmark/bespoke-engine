@@ -1589,6 +1589,14 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** From the conch, the judge is back within 15 ticks and the next breeze starts within 15 more, so the worst wait is 30 seconds; the breeze then blows for 15, enough to walk to the chalk line and spit. The distraction still covers the walk to the pegs and the move: the proof's walkers travel at 10 units a tick over a 22-unit field, and the deck test that plays the puzzle with clicks alone passes. `spitting_contest.txt` moves two lines, the stated TTL and the expiry at tick 24, and no `wasm.txt` or `render.txt` line moves. The P35-03 test counts the judge's stay from his arrival now, because the stay is shorter than the tick filter it used before, and it checks a breeze within 20 ticks that lasts 15.
 
+## D-131 The Band Check Counts What It Checks (2026-11-19, status: accepted)
+
+**Context.** P43-06: the band check is a side effect beside the hash a golden records. Deleting the call leaves every pixel, fact, and tick identical, so a run stays green while the rule is no longer applied. A test that reads its own source is weaker than one whose subject has to run.
+
+**Decision.** `display.band.measure` counts its own calls, and each golden compares the growth of that count with the frames it recorded. The deck golden wants one measurement per `wasm.txt` line. The render golden wants one at 1280x720 and one at 1920x1080 per line, with the State drawer's frames exempt because the drawer covers the stage. A short count fails with `BandCheckMissing`, naming the label and both numbers.
+
+**Consequences.** Removing the measurement, or skipping one frame's check, fails the run even though no hash moves. The count is process-wide, so each golden takes a baseline before it draws; the proof tests share one process and run in order. A new golden that draws frames ties them to this count the same way, or it applies the rule only by habit. The counter is a few bytes of module data in the browser runtime, where nothing reads it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

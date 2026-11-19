@@ -415,6 +415,18 @@ const Recorder = struct {
         if (self.alt) |alt| try self.check_alt(label, &open, alt, true);
     }
 
+    /// P43-06: a recorded line must have been band-checked. `Check.measure` counts its own calls,
+    /// so deleting a check leaves the count short even though every hash is unchanged. The State
+    /// drawer's frames are the one exemption: the drawer covers the stage, and `check_band_at`
+    /// skips them.
+    fn expect_checks(self: *Recorder, label: []const u8, before: usize) !void {
+        const wanted: usize = if (self.window.show_save_drawer) 0 else if (self.alt != null) @as(usize, 2) else 1;
+        const ran = bespoke.display.band.measured() - before;
+        if (ran == wanted) return;
+        std.debug.print("\n'{s}': the band check ran {d} time(s) for a recorded frame that needs {d}\n", .{ label, ran, wanted });
+        return error.BandCheckMissing;
+    }
+
     /// Draws `frame` into the primary window with this recorder's probes lent, the log cleared
     /// first, so the band check reads only what the frame drew. These frames carry no messages
     /// anyway, so the hash is unchanged.
@@ -440,9 +452,11 @@ const Recorder = struct {
     }
 
     fn draw_frame(self: *Recorder, label: []const u8, frame: *const bespoke.RenderFrame) !void {
+        const checked_before = bespoke.display.band.measured();
         self.render_probed(frame);
         try self.check_band(label, true);
         if (self.alt) |alt| try self.check_alt(label, frame, alt, true);
+        try self.expect_checks(label, checked_before);
         const hash = self.window.frame_hash() orelse return error.NoOffscreenFrame;
         var lw2 = ListWriter.init(&self.out);
         try lw2.writer.print("{s}: {x:0>16}\n", .{ label, hash });
