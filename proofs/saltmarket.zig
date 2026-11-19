@@ -117,11 +117,14 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .logbook_wp = spatial.graph.find_waypoint_in_room(scene, "LogbookMark").?,
     };
 
+    // The near row sits at world y 8, where a mark's disc ends on row 492 and a person on row
+    // 494, clear of the message band at 504 (D-124, Q-013). At y 10 a person on the row painted
+    // the band's first rows (P43-05).
     host.place_waypoint(spatial, ids.entrance_wp, 0, 0);
-    host.place_waypoint(spatial, ids.stall_wp, 0, 10);
+    host.place_waypoint(spatial, ids.stall_wp, 0, 8);
     host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "CunningGate").?, 20, -10);
     host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "MuscleGate").?, 20, 0);
-    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "CrewGate").?, 20, 10);
+    host.place_waypoint(spatial, spatial.graph.find_waypoint_in_room(scene, "CrewGate").?, 20, 8);
     host.place_waypoint(spatial, ids.logbook_wp, 40, 0);
 
     spatial.graph.edges.clearRetainingCapacity();

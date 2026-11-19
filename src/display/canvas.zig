@@ -49,13 +49,16 @@ pub const Color = struct {
     pub const slate = Color{ .r = 148, .g = 163, .b = 184 };
 };
 
-/// Where one string was drawn and how much room it took, as `draw_text` lays it out. The
-/// string's start is kept so a failing check can name it.
+/// Where one string was drawn, how much room it took, and the layer it belongs to, as
+/// `draw_text` lays it out. The string's start is kept so a failing check can name it.
 pub const TextDraw = struct {
     x: i32,
     y: i32,
     w: i32,
     h: i32,
+    /// The layer drawn on, so the band check can tell the stage's strings from the window's
+    /// own log, bars, and panels (D-127, P43-05).
+    kind: RectKind = .prop,
     text: [48]u8 = undefined,
     text_len: usize = 0,
 
@@ -65,20 +68,22 @@ pub const TextDraw = struct {
 };
 
 /// Collects the strings a canvas draws, so a test can prove that no proof text, a room name,
-/// a sign, or a prompt, reaches into the message band (D-124). A canvas records only while a
-/// probe is lent to it; drawing is otherwise unchanged.
+/// a sign, or a prompt, reaches into the message band (D-124). Each draw records the layer it
+/// was made on. A canvas records only while a probe is lent to it; drawing is otherwise
+/// unchanged.
 pub const TextProbe = struct {
     pub const cap = 256;
     draws: [cap]TextDraw = undefined,
     count: usize = 0,
 
-    pub fn record(self: *TextProbe, text: []const u8, x: i32, y: i32, scale: i32) void {
+    pub fn record(self: *TextProbe, kind: RectKind, text: []const u8, x: i32, y: i32, scale: i32) void {
         if (self.count == cap) return;
         var draw = TextDraw{
             .x = x,
             .y = y,
             .w = font.text_width(text, scale),
             .h = font.FONT_HEIGHT * scale,
+            .kind = kind,
         };
         draw.text_len = @min(text.len, draw.text.len);
         @memcpy(draw.text[0..draw.text_len], text[0..draw.text_len]);
@@ -150,9 +155,6 @@ pub const Canvas = struct {
     /// Suppresses recording for text glyphs and full-canvas clears, which are not art.
     text_depth: u8 = 0,
     suppress_rects: u8 = 0,
-    /// Suppresses text recording for a window's own panels, whose rows may cover the message
-    /// band (D-127). Only the panel that sets it is exempt; stage labels are still measured.
-    suppress_text: u8 = 0,
 
     pub fn init(pixels: []u8, width: i32, height: i32) Canvas {
         std.debug.assert(pixels.len >= @as(usize, @intCast(width * height * 4)));
@@ -312,7 +314,7 @@ pub const Canvas = struct {
 
     /// Text in the 5x7 font, each lit dot a `scale`-sized square.
     pub fn draw_text(self: *Canvas, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
-        if (self.text_probe) |probe| if (self.suppress_text == 0) probe.record(text, start_x, start_y, scale);
+        if (self.text_probe) |probe| probe.record(self.rect_kind, text, start_x, start_y, scale);
         self.text_depth += 1;
         defer self.text_depth -= 1;
         var cur_x = start_x;
@@ -402,17 +404,20 @@ test "P43-02: the rect probe records shapes with their layer, skips text and cle
     cv.draw_text("A", 0, 0, 1, Color.white);
     try testing.expectEqual(@as(usize, 1), probe.count);
 
-    // A window panel's own rows are not stage text, so a panel asks the canvas to skip them
-    // (D-127); the drawing is unchanged and the next draw records again.
+    // Text records the layer it was drawn on, so the band check can tell the stage's strings
+    // from the window's own log, bars, and panel (D-127, P43-05).
     var text_probe = TextProbe{};
     cv.text_probe = &text_probe;
-    cv.suppress_text += 1;
-    cv.draw_text("Panel", 0, 0, 1, Color.white);
-    cv.suppress_text -= 1;
-    try testing.expectEqual(@as(usize, 0), text_probe.count);
+    cv.rect_kind = .mark;
     cv.draw_text("Stage", 0, 0, 1, Color.white);
-    try testing.expectEqual(@as(usize, 1), text_probe.count);
+    cv.rect_kind = .chrome;
+    cv.draw_text("Panel", 0, 0, 1, Color.white);
+    try testing.expectEqual(@as(usize, 2), text_probe.count);
+    try testing.expectEqual(RectKind.mark, text_probe.draws[0].kind);
+    try testing.expectEqual(RectKind.chrome, text_probe.draws[1].kind);
+    try testing.expectEqualStrings("Panel", text_probe.draws[1].get_text());
     cv.text_probe = null;
+    cv.rect_kind = .prop;
 
     cv.rect_kind = .chrome;
     cv.fill_circle(8, 4, 3, Color.amber);

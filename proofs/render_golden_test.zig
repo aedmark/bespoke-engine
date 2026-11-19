@@ -272,46 +272,20 @@ const Recorder = struct {
         try self.check_band_at(label, HEIGHT, &self.text, &self.rect, verbose);
     }
 
-    /// The same check at any window height, reading that render's own probes (P43-03).
+    /// The same check at any window height, reading that render's own probes (P43-03). The rule
+    /// itself lives in `display.band`, which the deck golden applies to its frames too (P43-05).
     fn check_band_at(self: *Recorder, label: []const u8, height: i32, text: *const bespoke.display.canvas.TextProbe, rect: *const bespoke.display.canvas.RectProbe, verbose: bool) !void {
         // The State drawer covers the stage, band included, and is not proof art.
         if (self.window.show_save_drawer) return;
-        const renderer = bespoke.display.renderer;
-        const band_top = renderer.message_band_top(height);
-        const band_bottom = renderer.message_band_bottom(height);
-
-        if (rect.overflowed) {
-            if (verbose) std.debug.print(
-                "\n'{s}': the frame drew more rectangles than the probe holds ({d})\n",
-                .{ label, bespoke.display.canvas.RectProbe.cap },
-            );
-            return error.RectProbeOverflow;
-        }
-
-        // Every offender in the frame is named before the test stops, so one run lists all the
-        // art a layout change puts in the band rather than the first one found.
-        var art_reaches = false;
-        for (rect.draws[0..rect.count]) |d| {
-            if (d.kind != .prop and d.kind != .mark and d.kind != .actor) continue;
-            if (d.y + d.h > band_top and d.y < band_bottom) {
-                if (verbose) std.debug.print(
-                    "\n'{s}': art \"{s}\" at ({d}, {d}) size {d}x{d} reaches the message band's rows {d} to {d}\n",
-                    .{ label, if (d.get_name().len > 0) d.get_name() else "shape", d.x, d.y, d.w, d.h, band_top, band_bottom },
-                );
-                art_reaches = true;
-            }
-        }
-        if (art_reaches) return error.ArtInMessageBand;
-
-        for (text.draws[0..text.count]) |d| {
-            if (d.y < band_bottom and d.y + d.h > band_top) {
-                if (verbose) std.debug.print(
-                    "\n'{s}': text \"{s}\" at ({d}, {d}) reaches the message band's rows {d} to {d}\n",
-                    .{ label, d.get_text(), d.x, d.y, band_top, band_bottom },
-                );
-                return error.TextInMessageBand;
-            }
-        }
+        const check = bespoke.display.band.Check.measure(height, text, rect);
+        if (check.verdict == .clear) return;
+        if (verbose) check.report(label);
+        return switch (check.verdict) {
+            .overflow => error.RectProbeOverflow,
+            .art => error.ArtInMessageBand,
+            .text => error.TextInMessageBand,
+            .clear => unreachable,
+        };
     }
 
     /// Draws the same frame into the alt window, with the log cleared and its own probes lent,

@@ -1505,12 +1505,29 @@ pub const WasmRuntime = struct {
         return w;
     }
 
+    /// The recorders a golden test lends the window's canvas for one drawn beat, so the frame
+    /// can be measured against the message band (P43-05). The browser lends none.
+    pub const CanvasProbes = struct {
+        text: *canvas_mod.TextProbe,
+        rect: *canvas_mod.RectProbe,
+    };
+
     /// Draws the desktop window's frame into the framebuffer (D-097), and the state inspector
     /// over it while it is open (D-070), both by the window.
     pub fn render_frame(self: *WasmRuntime) void {
+        self.render_frame_probed(null);
+    }
+
+    /// The same draw, recording what it paints when `probes` are lent (P43-05). `screen` makes
+    /// the canvas, so the probes are set after it and before the window draws.
+    pub fn render_frame_probed(self: *WasmRuntime, probes: ?CanvasProbes) void {
         if (self.has_drafts()) self.distaff.set_reach_from(self.active_world(), self.player_entity, "DistaffReach", 7);
         const frame = self.capture();
         const w = self.screen(frame);
+        if (probes) |p| if (w.canvas) |*cv| {
+            cv.text_probe = p.text;
+            cv.rect_probe = p.rect;
+        };
         w.render_frame(frame, self.is_paused);
         if (self.inspector_open) w.render_state_overlay(frame);
     }

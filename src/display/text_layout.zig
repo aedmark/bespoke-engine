@@ -1,5 +1,6 @@
 const std = @import("std");
 const font = @import("font.zig");
+const band = @import("band.zig");
 
 pub const LabelPlacement = enum {
     above,
@@ -137,6 +138,10 @@ pub const TextLayoutResolver = struct {
     obstacle_count: usize = 0,
     screen_w: i32,
     screen_h: i32,
+    /// The message band's rows at this height (D-124, D-127). No label is placed in them: the
+    /// log would cover it.
+    band_top: i32,
+    band_bottom: i32,
     stage_top: i32 = 72,
     stage_bottom_margin: i32 = 76,
     padding_x: i32 = 4,
@@ -146,6 +151,8 @@ pub const TextLayoutResolver = struct {
         return .{
             .screen_w = screen_w,
             .screen_h = screen_h,
+            .band_top = band.top(screen_h),
+            .band_bottom = band.bottom(screen_h),
         };
     }
 
@@ -227,7 +234,12 @@ pub const TextLayoutResolver = struct {
             .center => lbl.anchor_y - @divTrunc(lbl.height, 2),
         };
         const max_y = @max(self.stage_top, self.screen_h - self.stage_bottom_margin - lbl.height);
-        const cand_y = std.math.clamp(raw_y, self.stage_top, max_y);
+        var cand_y = std.math.clamp(raw_y, self.stage_top, max_y);
+        // The band is not a place for a label, whichever layer draws it (D-124, D-127): one that
+        // would sit there lifts to the band's top instead, where the log leaves it visible.
+        if (cand_y + lbl.height > self.band_top and cand_y < self.band_bottom) {
+            cand_y = self.band_top - lbl.height;
+        }
 
         var candidate_rect = LabelRect{
             .x = cand_x,
@@ -291,6 +303,8 @@ pub const TextLayoutResolver = struct {
                 var tier: i32 = 1;
                 while (tier <= 3) : (tier += 1) {
                     const test_y = cand_y + tier * row_step;
+                    // A tier that reaches the band is no place for a badge (D-127).
+                    if (test_y + lbl.height > self.band_top and test_y < self.band_bottom) continue;
                     const test_rect = LabelRect{
                         .x = cand_x,
                         .y = test_y,
@@ -320,9 +334,9 @@ pub const TextLayoutResolver = struct {
                     return;
                 }
 
-                // Fallback: place at first tiered row
+                // Fallback: the first tiered row, unless it would reach the band.
                 lbl.placed_x = cand_x;
-                lbl.placed_y = cand_y + row_step;
+                lbl.placed_y = if (cand_y + row_step + lbl.height <= self.band_top) cand_y + row_step else cand_y;
                 lbl.visible = true;
             },
 
@@ -664,6 +678,24 @@ test "D-024: Tethered-animal layout resolves Hero, Goat, and FallMark without co
             try std.testing.expect(!la.rect().intersects(lb.rect(), 0, 0));
         }
     }
+}
+
+test "D-127: a badge under a person lifts above the band rather than into it" {
+    // The Drifter's "[Hungry]" badge sits 22 pixels under the person at row 476, where it would
+    // start at 498 and end at 505, in the band's first rows. It lifts to the band's top instead,
+    // and a badge with room under its person stays under them.
+    var near = TextLayoutResolver.init(1280, 720);
+    near.submit(TextLabel.init("[Hungry]", 640, 476, .below, 22, 1, .{}, .actor_status, .actor_status));
+    near.resolve();
+    const lifted = near.get_labels()[0];
+    try std.testing.expect(lifted.visible);
+    try std.testing.expect(lifted.rect().y >= 476);
+    try std.testing.expect(lifted.rect().y + lifted.rect().h <= band.top(720));
+
+    var clear = TextLayoutResolver.init(1280, 720);
+    clear.submit(TextLabel.init("[Hungry]", 640, 380, .below, 22, 1, .{}, .actor_status, .actor_status));
+    clear.resolve();
+    try std.testing.expectEqual(@as(i32, 402), clear.get_labels()[0].placed_y);
 }
 
 test "D-124: a label asked to sit above its anchor stays above when its place is taken" {

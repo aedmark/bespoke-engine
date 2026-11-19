@@ -23,6 +23,8 @@ pub const dialogue_panel = @import("display/dialogue_panel.zig");
 pub const beats = @import("display/beats.zig");
 pub const TextLayoutResolver = text_layout.TextLayoutResolver;
 pub const renderer = @import("display/renderer.zig");
+/// The message band rule both golden tests apply to a drawn frame (D-124, D-127, P43-05).
+pub const band = @import("display/band.zig");
 pub const state_graph = @import("display/state_graph.zig");
 pub const DisplayWindow = renderer.DisplayWindow;
 pub const UserAction = renderer.UserAction;

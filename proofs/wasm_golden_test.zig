@@ -14,6 +14,8 @@ const bespoke = @import("bespoke");
 const options = @import("golden_options");
 const wasm = bespoke.wasm;
 const wasm_deck = @import("wasm_deck.zig");
+const canvas = bespoke.display.canvas;
+const band = bespoke.display.band;
 
 const GOLDEN_NAME = "wasm.txt";
 const ACTUAL_NAME = "wasm.actual.txt";
@@ -60,6 +62,13 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
     rt.* = try Decks.init(allocator, index);
     defer rt.deinit();
 
+    // P43-05: every beat is band-checked as it is drawn. The browser frame is the desktop
+    // window's frame at 1280x720 (D-097), so the probes read it the way the render golden reads
+    // a proof scene, and the banner's own log lines are chrome the rule skips (D-127).
+    var text_probe = canvas.TextProbe{};
+    var rect_probe = canvas.RectProbe{};
+    const probes = wasm.WasmRuntime.CanvasProbes{ .text = &text_probe, .rect = &rect_probe };
+
     for (SCRIPT) |entry| {
         switch (entry.step) {
             .ticks => |n| try tick(rt, n),
@@ -86,7 +95,21 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
                 }
             },
         }
-        rt.render_frame();
+        text_probe.count = 0;
+        rect_probe.count = 0;
+        rect_probe.overflowed = false;
+        rt.render_frame_probed(probes);
+        const check = band.Check.measure(rt.window.height, &text_probe, &rect_probe);
+        if (check.verdict != .clear) {
+            var label_buf: [96]u8 = undefined;
+            check.report(try std.fmt.bufPrint(&label_buf, "deck/{d}/{s}", .{ index, entry.label }));
+            return switch (check.verdict) {
+                .overflow => error.RectProbeOverflow,
+                .art => error.ArtInMessageBand,
+                .text => error.TextInMessageBand,
+                .clear => unreachable,
+            };
+        }
         var lw1 = ListWriter.init(out);
         try lw1.writer.print("deck/{d}/{s}: {x:0>16} facts={d} tick={d} banner=\"{s}\"\n", .{
             index,

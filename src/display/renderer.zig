@@ -10,6 +10,7 @@ const command_mod = @import("../command.zig");
 const state_graph = @import("state_graph.zig");
 const font = @import("font.zig");
 const canvas_mod = @import("canvas.zig");
+const band = @import("band.zig");
 const text_layout = @import("text_layout.zig");
 const dialogue_panel = @import("dialogue_panel.zig");
 const beats_mod = @import("beats.zig");
@@ -478,15 +479,15 @@ pub fn inventory_layout(screen_w: i32, inventory: []const RenderInventoryItem, o
 }
 
 /// The top of the message band at its tallest (D-099, D-124): four rows over the command bar,
-/// 504 pixels at 1280x720. Proof art, marks, and labels stay above it, which the proof render
-/// test checks for every scene.
+/// 504 pixels at 1280x720. Proof art, marks, people, and labels stay above it, which both
+/// golden tests check (P43-05).
 pub fn message_band_top(screen_h: i32) i32 {
-    return screen_h - 80 - 30 - 28 - (@as(i32, LOG_ROWS) * LOG_ROW + 6);
+    return band.top(screen_h);
 }
 
 /// The bottom of that band: where the command bar starts, 582 pixels at 1280x720.
 pub fn message_band_bottom(screen_h: i32) i32 {
-    return screen_h - 80 - 30 - 28;
+    return band.bottom(screen_h);
 }
 
 /// The band of the verb bar row that takes clicks on verbs and items: from 78 above the
@@ -665,8 +666,9 @@ pub const SCROLLBAR_W: i32 = 14;
 /// rows. A long line wraps instead of shrinking; the newest line always shows, and an older
 /// one shows only if all its rows still fit.
 pub const LOG_LINES: usize = 3;
-pub const LOG_ROWS: usize = 4;
-pub const LOG_ROW: i32 = 18;
+/// The band's rows live in `display.band`, which the text layout reads too (P43-05).
+pub const LOG_ROWS: usize = band.LOG_ROWS;
+pub const LOG_ROW: i32 = band.LOG_ROW;
 
 /// One drawn row of the message log: its text and the age of the line it belongs to (0 for
 /// the newest), which sets its shade.
@@ -3515,95 +3517,87 @@ pub const DisplayWindow = struct {
 
         // 9. Dialogue panel: a waiting click-through message (D-080) covers the speaker, wrapped
         // line, and wrapped numbered choices (D-077) until the player dismisses it.
-        // The panel is lifted clear of the log's own rows (D-099) and may cover the band's air,
-        // so its rows are not measured as stage text; the player opened it, and a prompt is not
-        // hidden by it (D-127). The scope ends with the panel, so the console, the drawer, and a
-        // theme overlay are still measured.
-        {
-            if (self.canvas) |*cv| cv.suppress_text += 1;
-            defer {
-                if (self.canvas) |*cv| cv.suppress_text -= 1;
+        // The panel is lifted clear of the log's own rows (D-099) and may cover the band's air:
+        // it is drawn as the window's chrome, so the band check skips its rows while a stage
+        // prompt under it stays measured (D-127).
+        if (self.messages.front()) |beat| {
+            const panel = lift_panel(get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console), self.log_reserve());
+            const r = panel.rect;
+            self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
+            self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
+            self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, Color{ .r = 180, .g = 83, .b = 9 });
+            for (panel.layout.slice()) |row| {
+                const col = switch (row.kind) {
+                    .speaker => Color{ .r = 180, .g = 83, .b = 9 },
+                    .hint => Color{ .r = 120, .g = 53, .b = 15 },
+                    else => Color{ .r = 28, .g = 25, .b = 23 },
+                };
+                self.draw_text(row.text, r.x + row.x, r.y + row.y, 2, col);
             }
-            if (self.messages.front()) |beat| {
-                const panel = lift_panel(get_message_panel(beat, self.width, self.height, self.command_bar_enabled and !self.show_console), self.log_reserve());
-                const r = panel.rect;
-                self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
-                self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
-                self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, Color{ .r = 180, .g = 83, .b = 9 });
-                for (panel.layout.slice()) |row| {
-                    const col = switch (row.kind) {
-                        .speaker => Color{ .r = 180, .g = 83, .b = 9 },
-                        .hint => Color{ .r = 120, .g = 53, .b = 15 },
-                        else => Color{ .r = 28, .g = 25, .b = 23 },
-                    };
-                    self.draw_text(row.text, r.x + row.x, r.y + row.y, 2, col);
-                }
-            } else if (self.active_balloon) |*b| {
-                const panel = self.dialogue_panel_for(b);
-                const r = panel.rect;
-                const ink = Color{ .r = 28, .g = 25, .b = 23 };
-                const accent = Color{ .r = 180, .g = 83, .b = 9 };
+        } else if (self.active_balloon) |*b| {
+            const panel = self.dialogue_panel_for(b);
+            const r = panel.rect;
+            const ink = Color{ .r = 28, .g = 25, .b = 23 };
+            const accent = Color{ .r = 180, .g = 83, .b = 9 };
 
-                self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
-                self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
-                self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, accent);
+            self.fill_rect(r.x, r.y, r.w, r.h, Color{ .r = 254, .g = 243, .b = 199 });
+            self.draw_rect_outline(r.x, r.y, r.w, r.h, Color{ .r = 146, .g = 64, .b = 14 });
+            self.draw_rect_outline(r.x + 2, r.y + 2, r.w - 4, r.h - 4, accent);
 
-                // Choice backgrounds first, so the rows draw over them.
-                for (0..panel.layout.choice_count) |slot| {
-                    const actual_idx = b.scroll_offset + slot;
-                    const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
-                    const top = r.y + panel.layout.choice_top[slot];
-                    const height = panel.layout.choice_bottom[slot] - panel.layout.choice_top[slot];
-                    const row_w = r.w - 16 - panel.scrollbar_w;
-                    if (is_hovered) {
-                        self.fill_rect(r.x + 8, top, row_w, height, Color.wp_hover);
-                        self.draw_rect_outline(r.x + 8, top, row_w, height, Color.white);
-                    } else {
-                        self.fill_rect(r.x + 8, top, row_w, height, Color{ .r = 253, .g = 230, .b = 138 });
-                        self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color{ .r = 217, .g = 119, .b = 6 });
-                    }
+            // Choice backgrounds first, so the rows draw over them.
+            for (0..panel.layout.choice_count) |slot| {
+                const actual_idx = b.scroll_offset + slot;
+                const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
+                const top = r.y + panel.layout.choice_top[slot];
+                const height = panel.layout.choice_bottom[slot] - panel.layout.choice_top[slot];
+                const row_w = r.w - 16 - panel.scrollbar_w;
+                if (is_hovered) {
+                    self.fill_rect(r.x + 8, top, row_w, height, Color.wp_hover);
+                    self.draw_rect_outline(r.x + 8, top, row_w, height, Color.white);
+                } else {
+                    self.fill_rect(r.x + 8, top, row_w, height, Color{ .r = 253, .g = 230, .b = 138 });
+                    self.draw_rect_outline(r.x + 8, top, r.w - 16, height, Color{ .r = 217, .g = 119, .b = 6 });
                 }
+            }
 
-                for (panel.layout.slice()) |row| {
-                    const x = r.x + row.x;
-                    const y = r.y + row.y;
-                    switch (row.kind) {
-                        .speaker => self.draw_text(row.text, x, y, 2, accent),
-                        .hint => self.draw_text(row.text, x, y, 2, Color{ .r = 120, .g = 53, .b = 15 }),
-                        .prompt => self.draw_text(row.text, x, y, 2, ink),
-                        .choice => {
-                            const actual_idx = b.scroll_offset + row.choice;
-                            const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
-                            const col = if (is_hovered) Color.black else Color{ .r = 120, .g = 53, .b = 15 };
-                            if (row.numbered) {
-                                var num_buf: [8]u8 = undefined;
-                                const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{actual_idx + 1}) catch "[?]";
-                                self.draw_text(num, x - panel.layout.indent, y, 2, col);
-                            }
-                            self.draw_text(row.text, x, y, 2, col);
-                        },
-                    }
+            for (panel.layout.slice()) |row| {
+                const x = r.x + row.x;
+                const y = r.y + row.y;
+                switch (row.kind) {
+                    .speaker => self.draw_text(row.text, x, y, 2, accent),
+                    .hint => self.draw_text(row.text, x, y, 2, Color{ .r = 120, .g = 53, .b = 15 }),
+                    .prompt => self.draw_text(row.text, x, y, 2, ink),
+                    .choice => {
+                        const actual_idx = b.scroll_offset + row.choice;
+                        const is_hovered = self.hovered_choice != null and self.hovered_choice.? == actual_idx;
+                        const col = if (is_hovered) Color.black else Color{ .r = 120, .g = 53, .b = 15 };
+                        if (row.numbered) {
+                            var num_buf: [8]u8 = undefined;
+                            const num = std.fmt.bufPrint(&num_buf, "[{d}]", .{actual_idx + 1}) catch "[?]";
+                            self.draw_text(num, x - panel.layout.indent, y, 2, col);
+                        }
+                        self.draw_text(row.text, x, y, 2, col);
+                    },
                 }
+            }
 
-                // A scroll bar along the right edge when choices exceed the visible six (D-084): the
-                // track spans the visible choices, and the thumb's size and place show which of all
-                // the choices are in view. The wheel and arrow keys scroll.
-                if (panel.scrollbar_w > 0 and panel.layout.choice_count > 0) {
-                    const last = panel.layout.choice_count - 1;
-                    const track_x = r.x + r.w - panel.scrollbar_w - 4;
-                    const track_top = r.y + panel.layout.choice_top[0];
-                    const track_h = panel.layout.choice_bottom[last] - panel.layout.choice_top[0];
-                    const total: i32 = b.choice_count;
-                    const shown: i32 = b.visible_choice_count();
-                    const thumb_h = @max(12, @divTrunc(track_h * shown, total));
-                    const thumb_y = track_top + @divTrunc((track_h - thumb_h) * @as(i32, b.scroll_offset), @max(1, total - shown));
-                    self.fill_rect(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 253, .g = 230, .b = 138 });
-                    self.draw_rect_outline(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 146, .g = 64, .b = 14 });
-                    self.fill_rect(track_x + 2, thumb_y + 2, panel.scrollbar_w - 8, thumb_h - 4, accent);
-                }
+            // A scroll bar along the right edge when choices exceed the visible six (D-084): the
+            // track spans the visible choices, and the thumb's size and place show which of all
+            // the choices are in view. The wheel and arrow keys scroll.
+            if (panel.scrollbar_w > 0 and panel.layout.choice_count > 0) {
+                const last = panel.layout.choice_count - 1;
+                const track_x = r.x + r.w - panel.scrollbar_w - 4;
+                const track_top = r.y + panel.layout.choice_top[0];
+                const track_h = panel.layout.choice_bottom[last] - panel.layout.choice_top[0];
+                const total: i32 = b.choice_count;
+                const shown: i32 = b.visible_choice_count();
+                const thumb_h = @max(12, @divTrunc(track_h * shown, total));
+                const thumb_y = track_top + @divTrunc((track_h - thumb_h) * @as(i32, b.scroll_offset), @max(1, total - shown));
+                self.fill_rect(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 253, .g = 230, .b = 138 });
+                self.draw_rect_outline(track_x, track_top, panel.scrollbar_w - 4, track_h, Color{ .r = 146, .g = 64, .b = 14 });
+                self.fill_rect(track_x + 2, thumb_y + 2, panel.scrollbar_w - 8, thumb_h - 4, accent);
             }
         }
-
         // 10. In-Engine Debug Inspector Overlay (P9-01, D-011)
         if (self.show_debug_overlay) {
             const dbg_w: i32 = 340;
