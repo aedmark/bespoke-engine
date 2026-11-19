@@ -7,6 +7,7 @@ const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const hint_mod = @import("../hint.zig");
+const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const diagnostic_mod = @import("diagnostic.zig");
@@ -379,6 +380,30 @@ pub const GoalDecl = struct {
     needs: []const GoalNeedDecl,
 };
 
+/// One word of a `spellbook`, in its kind's declaration order (P44-04). The tier is that
+/// position, counted from one.
+pub const SpellWordDecl = struct {
+    kind: spell_mod.Kind,
+    name: []const u8,
+};
+
+/// One `spell <Name>: <Power>, <Element>, <Form>` row: a combination that resolves to the cue
+/// named after it.
+pub const SpellPatternDecl = struct {
+    name: []const u8,
+    power: []const u8,
+    element: []const u8,
+    form: []const u8,
+};
+
+/// `spellbook <Name>:` owns the word sets and the combinations they spell (P44-04). One book
+/// per script; `src/spell.zig` owns validation and resolution.
+pub const SpellbookDecl = struct {
+    name: []const u8,
+    words: []const SpellWordDecl,
+    spells: []const SpellPatternDecl,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -407,6 +432,7 @@ pub const AST = struct {
     grids: std.array_list.Managed(GridDecl),
     agendas: std.array_list.Managed(AgendaDecl),
     goals: std.array_list.Managed(GoalDecl),
+    spellbooks: std.array_list.Managed(SpellbookDecl),
     commands: std.array_list.Managed(CommandDecl),
     aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
@@ -434,6 +460,7 @@ pub const AST = struct {
             .grids = std.array_list.Managed(GridDecl).init(allocator),
             .agendas = std.array_list.Managed(AgendaDecl).init(allocator),
             .goals = std.array_list.Managed(GoalDecl).init(allocator),
+            .spellbooks = std.array_list.Managed(SpellbookDecl).init(allocator),
             .commands = std.array_list.Managed(CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -464,6 +491,7 @@ pub const AST = struct {
         self.grids.deinit();
         self.agendas.deinit();
         self.goals.deinit();
+        self.spellbooks.deinit();
         self.commands.deinit();
         self.aliases.deinit();
         self.scores.deinit();
@@ -751,6 +779,13 @@ pub const Parser = struct {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("goal '{s}' is declared twice", .{decl.name});
                     }
                     try ast.goals.append(decl);
+                },
+                .kw_spellbook => {
+                    const decl = try self.parse_spellbook_decl();
+                    for (ast.spellbooks.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("spellbook '{s}' is declared twice", .{decl.name});
+                    }
+                    try ast.spellbooks.append(decl);
                 },
                 .kw_grid => {
                     const decl = try self.parse_grid_decl();
@@ -1695,6 +1730,100 @@ pub const Parser = struct {
         if (needs.items.len > hint_mod.MAX_NEEDS)
             return self.set_error("goal '{s}' has more than {d} needs", .{ name, hint_mod.MAX_NEEDS });
         return .{ .name = name, .needs = try needs.toOwnedSlice() };
+    }
+
+    /// Parses `spellbook <Name>:`: word lines in three kinds and the rows that combine them.
+    /// A word is checked against its kind and a row against the declared words here, so a
+    /// misspelled or misplaced word names the line that got it wrong (P44-04).
+    fn parse_spellbook_decl(self: *Parser) !SpellbookDecl {
+        try self.advance(); // spellbook
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var words = std.array_list.Managed(SpellWordDecl).init(self.allocator);
+        var spells = std.array_list.Managed(SpellPatternDecl).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            if (self.current.tag != .identifier)
+                return self.set_error("spellbook '{s}' expects 'power', 'element', 'form', or 'spell', found '{s}'", .{ name, directive });
+            try self.advance();
+            if (std.mem.eql(u8, directive, "power") or std.mem.eql(u8, directive, "element") or std.mem.eql(u8, directive, "form")) {
+                const kind: spell_mod.Kind = if (std.mem.eql(u8, directive, "power"))
+                    .power
+                else if (std.mem.eql(u8, directive, "element"))
+                    .element
+                else
+                    .form;
+                var count: usize = 0;
+                while (self.current.tag != .dedent and self.current.tag != .eof) {
+                    const word_name = (try self.expect(.identifier)).slice;
+                    if (word_name.len > spell_mod.MAX_WORD_TEXT)
+                        return self.set_error("spellbook '{s}' word '{s}' is longer than {d} bytes", .{ name, word_name, spell_mod.MAX_WORD_TEXT });
+                    for (words.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, word_name))
+                            return self.set_error("spellbook '{s}' declares word '{s}' twice", .{ name, word_name });
+                    }
+                    for (spells.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, word_name))
+                            return self.set_error("spellbook '{s}' word '{s}' reuses a spell name", .{ name, word_name });
+                    }
+                    count += 1;
+                    if (count > spell_mod.MAX_WORDS_PER_KIND)
+                        return self.set_error("spellbook '{s}' declares more than {d} {s} words", .{ name, spell_mod.MAX_WORDS_PER_KIND, directive });
+                    try words.append(.{ .kind = kind, .name = word_name });
+                    if (self.current.tag != .comma) break;
+                    try self.advance();
+                }
+                if (count == 0) return self.set_error("spellbook '{s}' declares no {s} words", .{ name, directive });
+            } else if (std.mem.eql(u8, directive, "spell")) {
+                const spell_name = (try self.expect(.identifier)).slice;
+                _ = try self.expect(.colon);
+                const power = (try self.expect(.identifier)).slice;
+                if (self.current.tag == .comma) try self.advance();
+                const element = (try self.expect(.identifier)).slice;
+                if (self.current.tag == .comma) try self.advance();
+                const form = (try self.expect(.identifier)).slice;
+                if (self.current.tag == .comma)
+                    return self.set_error("spell '{s}' takes exactly three words: a power, an element, and a form", .{spell_name});
+                for (spells.items) |prior| {
+                    if (std.mem.eql(u8, prior.name, spell_name))
+                        return self.set_error("spellbook '{s}' declares spell '{s}' twice", .{ name, spell_name });
+                }
+                for (words.items) |prior| {
+                    if (std.mem.eql(u8, prior.name, spell_name))
+                        return self.set_error("spell '{s}' reuses the word '{s}'", .{ spell_name, spell_name });
+                }
+                try spells.append(.{ .name = spell_name, .power = power, .element = element, .form = form });
+            } else return self.set_error("unknown spellbook directive '{s}'; expected 'power', 'element', 'form', or 'spell'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+        if (words.items.len == 0) return self.set_error("spellbook '{s}' declares no words", .{name});
+        if (spells.items.len == 0) return self.set_error("spellbook '{s}' declares no spells", .{name});
+        if (spells.items.len > spell_mod.MAX_SPELLS)
+            return self.set_error("spellbook '{s}' declares more than {d} spells", .{ name, spell_mod.MAX_SPELLS });
+        for (spells.items, 0..) |source, si| {
+            const rows = [_]struct { kind: spell_mod.Kind, word: []const u8 }{
+                .{ .kind = .power, .word = source.power },
+                .{ .kind = .element, .word = source.element },
+                .{ .kind = .form, .word = source.form },
+            };
+            for (rows) |row| {
+                const found = spell_word_kind(words.items, row.word) orelse
+                    return self.set_error("spell '{s}' names '{s}', which is not a word of spellbook '{s}'", .{ source.name, row.word, name });
+                if (found != row.kind)
+                    return self.set_error("spell '{s}' puts '{s}' in the {s} slot, but '{s}' is one of the {s}", .{ source.name, row.word, row.kind.label(), row.word, found.plural() });
+            }
+            for (spells.items[0..si]) |prior| {
+                if (std.mem.eql(u8, prior.power, source.power) and std.mem.eql(u8, prior.element, source.element) and std.mem.eql(u8, prior.form, source.form))
+                    return self.set_error("spell '{s}' uses the same three words as spell '{s}'", .{ source.name, prior.name });
+            }
+        }
+        return .{ .name = name, .words = try words.toOwnedSlice(), .spells = try spells.toOwnedSlice() };
+    }
+
+    fn spell_word_kind(words: []const SpellWordDecl, name: []const u8) ?spell_mod.Kind {
+        for (words) |word| if (std.mem.eql(u8, word.name, name)) return word.kind;
+        return null;
     }
 
     fn rate_index(names: []const []const u8, directive: []const u8) ?usize {
@@ -2778,4 +2907,122 @@ test "P38-01: parser rejects undocumented top-level text and body statements" {
         try std.testing.expectError(error.UnexpectedToken, parser.parse_program());
         try std.testing.expect(parser.get_diagnostic() != null);
     }
+}
+
+fn expect_spellbook_error(source: []const u8, needle: []const u8) !void {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    try testing.expectError(error.UnexpectedToken, parser.parse_program());
+    const diag = parser.get_diagnostic().?;
+    if (std.mem.indexOf(u8, diag.message, needle) == null) {
+        std.debug.print("diagnostic was: {s}\n", .{diag.message});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "P44-04: a spellbook declaration reads words in three kinds and the rows that combine them" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const source =
+        \\spellbook Grimoire:
+        \\  power Spark, Forge
+        \\  element Ember
+        \\  form Bolt, Ward
+        \\  spell Kindle: Forge, Ember, Bolt
+    ;
+    var lexer = Lexer.init(arena.allocator(), source);
+    defer lexer.deinit();
+    var parser = try Parser.init(arena.allocator(), &lexer);
+    var ast = try parser.parse_program();
+    defer ast.deinit();
+
+    try testing.expectEqual(@as(usize, 1), ast.spellbooks.items.len);
+    const book = ast.spellbooks.items[0];
+    try testing.expectEqualStrings("Grimoire", book.name);
+    try testing.expectEqual(@as(usize, 5), book.words.len);
+    try testing.expectEqual(spell_mod.Kind.power, book.words[0].kind);
+    try testing.expectEqualStrings("Forge", book.words[1].name);
+    try testing.expectEqual(spell_mod.Kind.element, book.words[2].kind);
+    try testing.expectEqual(spell_mod.Kind.form, book.words[4].kind);
+    try testing.expectEqual(@as(usize, 1), book.spells.len);
+    try testing.expectEqualStrings("Kindle", book.spells[0].name);
+    try testing.expectEqualStrings("Forge", book.spells[0].power);
+    try testing.expectEqualStrings("Ember", book.spells[0].element);
+    try testing.expectEqualStrings("Bolt", book.spells[0].form);
+}
+
+test "P44-04: parser rejects a misplaced or undeclared word, a repeated name, and a fourth word" {
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Ember, Spark, Bolt
+    , "puts 'Ember' in the power slot, but 'Ember' is one of the elements");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Spark
+    , "puts 'Spark' in the form slot, but 'Spark' is one of the powers");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Smoke
+    , "not a word of spellbook 'G'");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark, Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Bolt
+    , "declares word 'Spark' twice");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Bolt
+        \\  spell Kindle: Spark, Ember, Bolt
+    , "declares spell 'Kindle' twice");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Bolt, Ward
+    , "takes exactly three words");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Bolt
+        \\  spell Douse: Spark, Ember, Bolt
+    , "uses the same three words");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Spark, Ember, Bolt
+        \\  power Kindle
+    , "word 'Kindle' reuses a spell name");
+    try expect_spellbook_error(
+        \\spellbook G:
+        \\  power Spark
+        \\  element Ember
+        \\  form Bolt
+        \\  charm Kindle: Spark, Ember, Bolt
+    , "unknown spellbook directive 'charm'");
 }

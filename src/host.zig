@@ -19,6 +19,7 @@ const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
 const command_mod = @import("command.zig");
+const spell_mod = @import("spell.zig");
 const audio_mod = @import("audio.zig");
 const mml_mod = @import("mml.zig");
 const society_mod = @import("society.zig");
@@ -187,6 +188,32 @@ pub fn present(
     const presented = try vm.world.intern_relation("Presented", .set);
     try vm.world.remember(person, presented, evidence.to_int(), 0);
     return (try vm.fire_cue(compiled, "Presents", actor, person, evidence)) != null;
+}
+
+/// Casts a spell for `caster` (P44-04). The spell's words are checked against what the caster
+/// knows, and only an accepted combination fires the cue named after the spell, with the caster
+/// and `target` as its arguments. A refused combination changes nothing, so a fizzle cannot
+/// leak state the player has not earned. The text is matched against the book's spell names
+/// ignoring ASCII case; the name of the first book is the one a script declares.
+pub fn cast(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    caster: EntityId,
+    name: []const u8,
+    target: EntityId,
+) !spell_mod.Outcome {
+    if (compiled.spellbooks.items.len == 0) return .{ .refused = .no_such_spell };
+    const book = &compiled.spellbooks.items[0].book;
+    const spell = spell_mod.named_text(book, vm.world, name) orelse return .{ .refused = .no_such_spell };
+    const cue = vm.world.get_entity_name(spell.entity) orelse return .{ .refused = .no_such_spell };
+    const outcome = spell_mod.check(vm.world, caster, spell);
+    switch (outcome) {
+        .refused => return outcome,
+        .cast => {
+            _ = try vm.fire_cue(compiled, cue, caster, target, null);
+            return outcome;
+        },
+    }
 }
 
 /// Runs an interpreted command. `WalksTo` starts a world-aware walk to a mark or to an agent's
@@ -1413,6 +1440,62 @@ test "P44-03: a presentation records Presented and reveals only what the charact
     it = world.query(pell, presented, null);
     while (it.next()) |_| presentations += 1;
     try testing.expectEqual(@as(usize, 2), presentations);
+}
+
+test "P44-04: a cast fires the spell's cue only when the caster knows every word" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Study
+        \\cast: Hero, Pell
+        \\marks: Desk
+        \\relation Ready(who)
+        \\spellbook Grimoire:
+        \\  power Forge
+        \\  element Ember
+        \\  form Bolt
+        \\  spell Kindle: Forge, Ember, Bolt
+        \\on cue Kindle(Hero, Pell):
+        \\  remember Ready(Pell)
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    const study = world.lookup_entity("Study").?;
+    try vm.transition_to_scene(study);
+    const hero = world.lookup_entity("Hero").?;
+    const pell = world.lookup_entity("Pell").?;
+    const ready = try world.intern_relation("Ready", .set);
+
+    // No word known: the power refuses first and the handler never runs.
+    var outcome = try cast(&vm, &compiled, hero, "kindle", pell);
+    try testing.expectEqual(spell_mod.Refusal.unlearned_power, outcome.refused);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(!world.has_fact(pell, ready, 0));
+
+    // Two of three words: the form refuses.
+    const knows = try world.intern_relation("Knows", .set);
+    try world.remember(hero, knows, world.lookup_entity("Forge").?.to_int(), 0);
+    try world.remember(hero, knows, world.lookup_entity("Ember").?.to_int(), 0);
+    outcome = try cast(&vm, &compiled, hero, "kindle", pell);
+    try testing.expectEqual(spell_mod.Refusal.unlearned_form, outcome.refused);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(!world.has_fact(pell, ready, 0));
+
+    // The whole phrase, typed in any case, fires the cue named after the spell.
+    try world.remember(hero, knows, world.lookup_entity("Bolt").?.to_int(), 0);
+    outcome = try cast(&vm, &compiled, hero, "KINDLE", pell);
+    try testing.expectEqual(world.lookup_entity("Kindle").?, outcome.cast.entity);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(pell, ready, 0));
+
+    // A name the book lacks is refused, and no cue fires.
+    outcome = try cast(&vm, &compiled, hero, "temper", pell);
+    try testing.expectEqual(spell_mod.Refusal.no_such_spell, outcome.refused);
 }
 
 test "P28-03: script scores become a soundtrack the frame's score name selects" {

@@ -25,6 +25,7 @@ const container_mod = @import("../container.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const hint_mod = @import("../hint.zig");
+const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
@@ -83,6 +84,8 @@ pub const CompiledProgram = struct {
     /// Goals and their needs in declaration order, which is the hint search's tie-break
     /// (P44-01, D-134).
     goals: std.array_list.Managed(hint_mod.Declaration),
+    /// Spellbooks with their words and combinations, in declaration order (P44-04).
+    spellbooks: std.array_list.Managed(spell_mod.Declaration),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
@@ -111,6 +114,8 @@ pub const CompiledProgram = struct {
         self.agendas.deinit();
         for (self.goals.items) |*goal| goal.deinit_owned(self.chunk.allocator);
         self.goals.deinit();
+        for (self.spellbooks.items) |*book| book.deinit_owned(self.chunk.allocator);
+        self.spellbooks.deinit();
         for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
         self.commands.deinit();
         for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
@@ -333,6 +338,7 @@ pub const Codegen = struct {
     grids: std.array_list.Managed(grid_mod.Declaration),
     agendas: std.array_list.Managed(agency_mod.Declaration),
     goals: std.array_list.Managed(hint_mod.Declaration),
+    spellbooks: std.array_list.Managed(spell_mod.Declaration),
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
@@ -357,6 +363,7 @@ pub const Codegen = struct {
             .grids = std.array_list.Managed(grid_mod.Declaration).init(allocator),
             .agendas = std.array_list.Managed(agency_mod.Declaration).init(allocator),
             .goals = std.array_list.Managed(hint_mod.Declaration).init(allocator),
+            .spellbooks = std.array_list.Managed(spell_mod.Declaration).init(allocator),
             .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -496,6 +503,11 @@ pub const Codegen = struct {
             try mut_self.goals.append(try mut_self.compile_goal(decl, ast.scene_defs.items));
         }
         try hint_mod.validate_all(mut_self.goals.items);
+        for (ast.spellbooks.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.spellbooks.append(try mut_self.compile_spellbook(decl));
+        }
+        try spell_mod.validate_all(mut_self.spellbooks.items);
         for (ast.commands.items) |decl| {
             mut_self.error_context = decl.text;
             try mut_self.commands.append(try mut_self.compile_command(decl));
@@ -749,6 +761,7 @@ pub const Codegen = struct {
             .grids = mut_self.grids,
             .agendas = mut_self.agendas,
             .goals = mut_self.goals,
+            .spellbooks = mut_self.spellbooks,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
@@ -1178,6 +1191,42 @@ pub const Codegen = struct {
         self.error_context = named;
         self.error_suggestion = suggestions.result();
         return error.UnknownHintRoom;
+    }
+
+    /// Turns a parsed book into program data: words in declaration order carry their tier, and
+    /// each spell row carries the entities its three words name (P44-04).
+    fn compile_spellbook(self: *Codegen, decl: parser_mod.SpellbookDecl) !spell_mod.Declaration {
+        const words = try self.allocator.alloc(spell_mod.Word, decl.words.len);
+        errdefer self.allocator.free(words);
+        var tiers = [3]u16{ 0, 0, 0 };
+        for (decl.words, 0..) |source, i| {
+            const slot = source.kind.index();
+            tiers[slot] += 1;
+            words[i] = .{
+                .entity = try self.world.intern_entity(source.name),
+                .kind = source.kind,
+                .tier = tiers[slot],
+            };
+        }
+        const spells = try self.allocator.alloc(spell_mod.Spell, decl.spells.len);
+        errdefer self.allocator.free(spells);
+        for (decl.spells, 0..) |source, i| {
+            spells[i] = .{
+                .entity = try self.world.intern_entity(source.name),
+                .words = .{
+                    try self.world.intern_entity(source.power),
+                    try self.world.intern_entity(source.element),
+                    try self.world.intern_entity(source.form),
+                },
+            };
+        }
+        const declaration = spell_mod.Declaration{ .book = .{
+            .entity = try self.world.intern_entity(decl.name),
+            .words = words,
+            .spells = spells,
+        } };
+        spell_mod.validate(declaration) catch return error.InvalidSpellbook;
+        return declaration;
     }
 
     fn compile_degradation(self: *Codegen, decl: parser_mod.DegradationDecl) !container_mod.Declaration {
@@ -2827,4 +2876,36 @@ test "P44-02: count and points conditions compile and read the fact table" {
         "entity Hero\nrelation Clue(clue, points)\nroutine A(Hero):\n  if 2 of Clue(Hero, _, Extra):\n    wait 1 ticks\n",
     };
     for (bad) |text| try testing.expect(compiler.check_source(testing.allocator, text).diagnostic() != null);
+}
+
+test "P44-04: a spellbook compiles into tiered words and a resolvable spell" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\entity Maren
+        \\spellbook Grimoire:
+        \\  power Spark, Forge
+        \\  element Ember, Water
+        \\  form Bolt, Ward
+        \\  spell Kindle: Forge, Ember, Bolt
+        \\  spell Quench: Spark, Water, Ward
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.spellbooks.items.len);
+    const book = &compiled.spellbooks.items[0].book;
+    try testing.expectEqualStrings("Grimoire", world.get_entity_name(book.entity).?);
+    try testing.expectEqual(@as(usize, 6), book.words.len);
+    try testing.expectEqual(spell_mod.Kind.element, book.words[2].kind);
+    try testing.expectEqual(@as(u16, 1), book.words[2].tier);
+    try testing.expectEqual(@as(u16, 2), book.words[3].tier);
+    const forge = world.lookup_entity("Forge").?;
+    const ember = world.lookup_entity("Ember").?;
+    const bolt = world.lookup_entity("Bolt").?;
+    const kindle = world.lookup_entity("Kindle").?;
+    try testing.expectEqual(kindle, spell_mod.resolve(book, forge, ember, bolt).?.entity);
+    try testing.expectEqual(kindle, spell_mod.named(book, kindle).?.entity);
+    // Words are entities, so a handler or a typed line can name one.
+    try testing.expectEqualStrings("Ward", world.get_entity_name(book.words[5].entity).?);
 }

@@ -349,6 +349,31 @@ goal RecoverThePlate:
 - When no frontier need is one the character could reason about, the query reports the first unmet need in declaration order as the author: it may name a room or a thing the character has not met.
 - The query reads facts and writes none, so a save, a rewind, or a replay reports the same hint for the same world. Cycles in `after`, duplicate need names, an unknown prerequisite, and a missing or invalid tier are compile errors. Package format version 15 carries goals; versions 1 through 14 load none.
 
+### Spellbooks (P44-04, D-136)
+
+A spellbook declares three kinds of words and the combinations that spell something. A combination resolves to the cue named after the spell.
+
+```bespoke
+relation Lit(thing)
+
+spellbook Grimoire:
+  power Spark, Forge
+  element Ember, Water
+  form Bolt, Ward
+  spell Kindle: Forge, Ember, Bolt
+  spell Douse: Spark, Water, Ward
+
+on cue Kindle(Maren, Crucible):
+  remember Lit(Crucible)
+```
+
+- `power`, `element`, and `form` each take a comma-separated list of words. A word's tier is its position within its kind, counted from one; the tier orders the author's vocabulary and does not gate a cast.
+- `spell <Name>: <Power>, <Element>, <Form>` names a combination. The commas are optional. Each word must be declared in the position it occupies, and the spell's name becomes the cue that fires when it resolves.
+- One book per script. A word or spell name declared twice, a spell that names an undeclared or misplaced word, two spells over the same triple, and a fourth word in a row are compile errors.
+- `spell.cast(book, world, caster, name)` and `spell.combine(book, world, caster, power, element, form)` resolve through `src/spell.zig`, which is program data and reads the fact table without writing any. `host.cast(vm, compiled, caster, name, target)` fires the cue for a resolved spell.
+- Each word is gated by discovery: the caster knows a word through `Knows` or `Believes`, and `Rejects` cancels either. An unknown word refuses the combination before any cue fires, so a fizzle changes no state.
+- Package format version 17 appends the book; versions 1 through 16 load with none.
+
 #### Fire, smoke, and water (P25-02, D-055)
 
 A grid may also declare `burning` and `smoke` cells and four rates. Each rate is off unless declared.
@@ -393,6 +418,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Stageplay Paths | `P24-01: parser parses path declarations with locked facts and path-owned routines` | `P24-01: selecting a path asserts its facts and mutes inactive routines`; `P24-02: active path mutates obstacle facts and prunes rival dialogue choices` |
 | Mechanic Declarations | `P32-22/P32-24: society and duel declarations compile into executable program data`; `P23-01: degradation declarations compile into executable container profiles` | The same compiling tests exercise parsing and code generation for each declaration family. |
 | Grids; Fire, smoke, and water | `P25-01: grid declarations compile into overlays, layouts, and placed marks` | `P25-01: grid declarations compile into overlays, layouts, and placed marks`; grid automata tests in `src/grid.zig` |
+| Spellbooks (P44-04) | `P44-04: a spellbook declaration reads words in three kinds and the rows that combine them`; `P44-04: parser rejects a misplaced or undeclared word, a repeated name, and a fourth word` | `P44-04: a spellbook compiles into tiered words and a resolvable spell`; `P44-04: a valid triple resolves, and an invalid one is refused` and `P44-04: each word is gated by discovery, and Rejects overrides Knows` (`src/spell.zig`); `P44-04: a cast fires the spell's cue only when the caster knows every word` (`src/host.zig`); `P44-04: package version 17 round-trips a spellbook and loads a version 16 payload with none` (`src/package.zig`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

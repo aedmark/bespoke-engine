@@ -184,6 +184,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.InvalidAgenda => "invalid agenda or too many agendas",
         error.UnknownHintRoom => "a need names no room, and no scene declares the prop or mark it names",
         error.InvalidGoal => "invalid goal or too many goals; check need names, prerequisites, rooms, and hint tiers",
+        error.InvalidSpellbook => "invalid spellbook; check word kinds and tiers, and that each spell names a power, an element, and a form",
         error.HintTextTooLong => "a generated hint does not fit the caller's buffer",
         error.InvalidAlias => "alias phrases may use letters, digits, spaces, and apostrophes",
         error.InvalidFrame => "invalid command frame",

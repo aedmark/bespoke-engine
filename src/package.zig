@@ -12,6 +12,7 @@ const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
 const hint_mod = @import("hint.zig");
+const spell_mod = @import("spell.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -53,7 +54,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 15 appends goals with their needs and authored hints (P44-01, D-134); versions 1
 /// through 14 load with no goals. Version 16 adds the aggregate condition opcodes (P44-02);
 /// versions 1 through 15 hold bytecode that cannot contain them, so they load unchanged.
-pub const PACKAGE_VERSION: u32 = 16;
+/// Version 17 appends spellbooks with their words and combinations (P44-04); versions 1
+/// through 16 load with no spellbook.
+pub const PACKAGE_VERSION: u32 = 17;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -361,6 +364,22 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
                 try writer.writeByte(@intFromEnum(hint.tier));
                 try write_str(writer, hint.text);
             }
+        }
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.spellbooks.items.len), .little);
+    for (compiled.spellbooks.items) |decl| {
+        try writer.writeInt(u32, decl.book.entity.to_int(), .little);
+        try writer.writeInt(u32, @intCast(decl.book.words.len), .little);
+        for (decl.book.words) |word| {
+            try writer.writeInt(u32, word.entity.to_int(), .little);
+            try writer.writeByte(@intFromEnum(word.kind));
+            try writer.writeInt(u16, word.tier, .little);
+        }
+        try writer.writeInt(u32, @intCast(decl.book.spells.len), .little);
+        for (decl.book.spells) |spell| {
+            try writer.writeInt(u32, spell.entity.to_int(), .little);
+            for (spell.words) |word| try writer.writeInt(u32, word.to_int(), .little);
         }
     }
 }
@@ -814,6 +833,32 @@ fn read_goal_declaration(allocator: std.mem.Allocator, world: *const World, read
     while (made < needs.len) : (made += 1) needs[made] = try read_goal_need(allocator, world, reader);
     const declaration = hint_mod.Declaration{ .goal = .{ .entity = entity, .needs = needs } };
     hint_mod.validate(declaration) catch return error.InvalidGoalConfig;
+    return declaration;
+}
+
+/// Untrusted input: counts are bounded, entity ids must exist, and the book is validated again
+/// so a package cannot resolve a triple the compiler would have rejected (P44-04).
+fn read_spellbook_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !spell_mod.Declaration {
+    const entity = try read_entity_ref(world, reader);
+    const word_count = try reader.takeInt(u32, .little);
+    if (word_count == 0 or word_count > spell_mod.MAX_WORDS) return error.InvalidSpellbookConfig;
+    const words = try allocator.alloc(spell_mod.Word, word_count);
+    errdefer allocator.free(words);
+    for (words) |*word| {
+        word.entity = try read_entity_ref(world, reader);
+        word.kind = spell_mod.Kind.fromInt(try reader.takeByte()) orelse return error.InvalidSpellbookConfig;
+        word.tier = try reader.takeInt(u16, .little);
+    }
+    const spell_count = try reader.takeInt(u32, .little);
+    if (spell_count == 0 or spell_count > spell_mod.MAX_SPELLS) return error.InvalidSpellbookConfig;
+    const spells = try allocator.alloc(spell_mod.Spell, spell_count);
+    errdefer allocator.free(spells);
+    for (spells) |*spell| {
+        spell.entity = try read_entity_ref(world, reader);
+        for (&spell.words) |*word| word.* = try read_entity_ref(world, reader);
+    }
+    const declaration = spell_mod.Declaration{ .book = .{ .entity = entity, .words = words, .spells = spells } };
+    spell_mod.validate(declaration) catch return error.InvalidSpellbookConfig;
     return declaration;
 }
 
@@ -1476,6 +1521,25 @@ pub fn load_package(
         hint_mod.validate_all(goals.items) catch return error.InvalidGoalConfig;
     }
 
+    var spellbooks = std.array_list.Managed(spell_mod.Declaration).init(allocator);
+    errdefer {
+        for (spellbooks.items) |*decl| decl.deinit_owned(allocator);
+        spellbooks.deinit();
+    }
+    if (header.version >= 17) {
+        const book_count = try pr.takeInt(u32, .little);
+        if (book_count > spell_mod.MAX_BOOKS) return error.InvalidSpellbookConfig;
+        var bi: u32 = 0;
+        while (bi < book_count) : (bi += 1) {
+            var decl = try read_spellbook_declaration(allocator, world, pr);
+            spellbooks.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        spell_mod.validate_all(spellbooks.items) catch return error.InvalidSpellbookConfig;
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1492,6 +1556,7 @@ pub fn load_package(
         .grids = grids,
         .agendas = agendas,
         .goals = goals,
+        .spellbooks = spellbooks,
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
@@ -1704,7 +1769,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 16",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 17",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -1767,6 +1832,90 @@ test "P44-01: checked-in version 15 package fixture still loads its goal" {
     try testing.expectEqualStrings("Bench", world.get_entity_name(goal.needs[0].room.?).?);
 }
 
+const SPELLBOOK_FIXTURE =
+    \\entity FixtureHero
+    \\relation Ready(subject)
+    \\spellbook FixtureGrimoire:
+    \\  power Spark, Forge
+    \\  element Ember, Water
+    \\  form Bolt, Ward
+    \\  spell Glimmer: Forge, Ember, Bolt
+    \\routine Idle(FixtureHero):
+    \\  wait 1 ticks
+;
+
+test "P44-04: package version 17 round-trips a spellbook and loads a version 16 payload with none" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, SPELLBOOK_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw17 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw17.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.spellbooks.items.len);
+    const book = &compiled2.spellbooks.items[0].book;
+    try testing.expectEqualStrings("FixtureGrimoire", world2.get_entity_name(book.entity).?);
+    try testing.expectEqual(@as(usize, 6), book.words.len);
+    try testing.expectEqualStrings("Forge", world2.get_entity_name(book.words[1].entity).?);
+    try testing.expectEqual(spell_mod.Kind.power, book.words[1].kind);
+    try testing.expectEqual(@as(u16, 2), book.words[1].tier);
+    try testing.expectEqual(@as(usize, 1), book.spells.len);
+    const forge = world2.lookup_entity("Forge").?;
+    const ember = world2.lookup_entity("Ember").?;
+    const bolt = world2.lookup_entity("Bolt").?;
+    try testing.expectEqual(book.spells[0].entity, spell_mod.resolve(book, forge, ember, bolt).?.entity);
+
+    // A payload that ends before the spellbook table is a version 16 package and loads none.
+    const v16 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V16]);
+    defer testing.allocator.free(v16);
+    reseal_for_test(v16, 16);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v16_stream: std.Io.Reader = .fixed(v16);
+    var loaded = try load_package(testing.allocator, &v16_stream, &world3, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 0), loaded.spellbooks.items.len);
+}
+
+test "P44-04: checked-in current package fixture carries a spellbook" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.2.0-package-v17.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
+    defer compiled.deinit();
+
+    try testing.expect(world.lookup_entity("FixtureHero") != null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 1), compiled.spellbooks.items.len);
+    const book = &compiled.spellbooks.items[0].book;
+    try testing.expectEqualStrings("FixtureGrimoire", world.get_entity_name(book.entity).?);
+    const kindle = book.spells[0].entity;
+    try testing.expectEqualStrings("Glimmer", world.get_entity_name(kindle).?);
+    try testing.expectEqual(kindle, spell_mod.named_text(book, &world, "glimmer").?.entity);
+}
+
 test "P44-02: checked-in current package fixture carries aggregate conditions" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
@@ -1777,7 +1926,8 @@ test "P44-02: checked-in current package fixture carries aggregate conditions" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    // The current writer is version 17; this fixture pins that version 16 still loads.
+    try testing.expectEqual(@as(u32, 16), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -1850,10 +2000,12 @@ const EMPTY_TAIL_AFTER_V9: usize = 4 + 4 + EMPTY_TAIL_AFTER_V10;
 const EMPTY_TAIL_AFTER_V10: usize = 4 + EMPTY_TAIL_AFTER_V11;
 /// The empty cast count (version 12) and cue guard count (version 13).
 const EMPTY_TAIL_AFTER_V11: usize = 4 + EMPTY_TAIL_AFTER_V12;
-/// The empty cue guard count (version 13) and goal count (version 15).
+/// The empty cue guard count (version 13) and the sections after it.
 const EMPTY_TAIL_AFTER_V12: usize = 4 + EMPTY_TAIL_AFTER_V13;
-/// The empty goal count (version 15).
-const EMPTY_TAIL_AFTER_V13: usize = 4;
+/// The empty goal count (version 15) and the sections after it.
+const EMPTY_TAIL_AFTER_V13: usize = 4 + EMPTY_TAIL_AFTER_V16;
+/// The empty spellbook count (version 17), for tests that locate version 16 sections from the end.
+const EMPTY_TAIL_AFTER_V16: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
