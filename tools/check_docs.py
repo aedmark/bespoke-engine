@@ -11,6 +11,7 @@ Errors (exit 1):
   - an open question (Q-NNN) defined twice
   - a held tension (T-NNN) used twice, out of order, or referenced but not defined
   - a roadmap ID, decision number, question or tension mentioned in a doc that does not exist
+  - a band row quoted in prose that differs from the rows in src/display/band.zig (P43-07)
   - two session-log entries with the same number (HANDOFF and docs/archive/ together)
   - a relative link, or a path in AGENTS.md's Layout table, that points at nothing
   - an invisible or bidirectional control character in a document
@@ -44,6 +45,73 @@ DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)|\b(?:href|src)=\"([^\"]+)\"")
 
 errors, warnings = [], []
+
+# P43-07: the band's rows are written in one place, so a document that quotes them is checked
+# against that source instead of against a copy. Each pattern captures the number it quotes.
+BAND_TOP_PHRASES = (
+    r"band's (?:tallest )?top of (\d+)",
+    r"top of (\d+) with four rows",
+    r"\((\d+) pixels at 1280x720\)",
+    r"clears (\d+) only from world y \d+",
+    r"paints row (\d+), the band's first row",
+    r"marker ends? at (\d+)",
+)
+BAND_BOTTOM_PHRASES = (
+    r"grows upward from (?:y )?(\d+)",
+    r"from y (\d+) at 1280x720",
+)
+ROLLING_BAND_PAIR = re.compile(r"in rows (\d+) to (\d+)")
+
+
+def band_rows(root):
+    """The band's top and bottom rows at 1280x720, computed from src/display/band.zig (P43-07).
+
+    The source is the one owner of the arithmetic, so the checker substitutes its constants into
+    its return expressions rather than repeating a formula that can drift from it.
+    """
+    source = (root / "src" / "display" / "band.zig").read_text(encoding="utf-8")
+    consts = dict(re.findall(r"pub const (LOG_ROWS|LOG_ROW): \w+ = (\d+);", source))
+    if set(consts) != {"LOG_ROWS", "LOG_ROW"}:
+        raise ValueError("LOG_ROWS and LOG_ROW are not both declared")
+    rows = {}
+    for name in ("top", "bottom"):
+        m = re.search(rf"pub fn {name}\(screen_h: i32\) i32 \{{\s*return ([^;]+);", source)
+        if m is None:
+            raise ValueError(f"no single-line return for {name}")
+        expr = re.sub(r"@as\(\s*\w+\s*,\s*([^)]+)\)", r"(\1)", m.group(1))
+        expr = expr.replace("screen_h", "720")
+        for const, value in consts.items():
+            expr = re.sub(rf"\b{const}\b", value, expr)
+        if not re.fullmatch(r"[\d\s()+\-*/]+", expr):
+            raise ValueError(f"unexpected arithmetic in {name}: {expr.strip()}")
+        rows[name] = int(eval(expr, {"__builtins__": {}}, {}))  # digits, spaces and operators only
+    return rows["top"], rows["bottom"]
+
+
+def check_band_numbers(texts, root=ROOT):
+    """Errors for every band row a document quotes that the engine does not compute (P43-07)."""
+    try:
+        top, bottom = band_rows(root)
+    except (OSError, ValueError) as exc:
+        return [f"src/display/band.zig: cannot read the band's rows: {exc}"]
+    found = []
+    for path, text in texts.items():
+        if path.parent.name == "archive":
+            continue
+        for line_no, line in enumerate(text.splitlines(), 1):
+            if "band" not in line.lower():
+                continue
+            for which, phrases, want in (("top", BAND_TOP_PHRASES, top), ("bottom", BAND_BOTTOM_PHRASES, bottom)):
+                for pattern in phrases:
+                    for m in re.finditer(pattern, line):
+                        if int(m.group(1)) != want:
+                            found.append(f"{path.relative_to(root)}:{line_no}: the band's {which} is {want} "
+                                         f"pixels at 1280x720, not {m.group(1)}")
+            for m in ROLLING_BAND_PAIR.finditer(line):
+                if (int(m.group(1)), int(m.group(2))) != (top, bottom):
+                    found.append(f"{path.relative_to(root)}:{line_no}: the band's rows are {top} to {bottom}, "
+                                 f"not {m.group(1)} to {m.group(2)}")
+    return found
 
 
 def read(path):
@@ -132,6 +200,8 @@ def main():
                 errors.append(f"{where(decisions_path, text, m.start())}: {t_id} comes after T-{last_t:03d}")
             tensions.add(t_id)
             last_t = max(last_t, number)
+
+    errors.extend(check_band_numbers(texts))
 
     for path, text in texts.items():
         for m in INVISIBLE_RE.finditer(text):
