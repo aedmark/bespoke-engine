@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 100 (2026-11-18)
+- **Work.** Reviewed the short-window scaling. A 640x360 band pass added nothing: `init_offscreen_scaled` draws the 1280x720 frame, so its probes were the golden's probes and the third window repeated the 1280x720 check at a smaller sample grid. The sweep keeps its 1280x720 and 1920x1080 windows; the guard test pins the drawing size, the window size, and the band's rows 252 to 291 of the shown image. The recorder's two-window list collapsed back to one optional window.
+- **Checks.** `zig build test` and `zig build test-proofs` pass with no golden change. `node tools/wasm_smoke.js`, 75 Python tests, `build_site.py --check` (15 pages current, proof Wasm 695,883 bytes), `check_web_budgets.py`, `check_docs.py` (0/0), `manual.py check --check-evidence`, and `git diff --check` follow.
+
 ### Session 99 (2026-11-18)
 - **Work.** Closed Q-014. `DisplayWindow.init_offscreen_scaled(width, height, logical_width, logical_height)` draws the whole logical frame, keeps `width` and `height` logical so layout, probes and hit tests read one frame, and copies the frame into the smaller pixels with nearest-neighbour sampling after each draw; `frame_hash` covers the shown pixels. The P43-03 sweep now draws every staged proof frame at 640x360 in such a window as well as at 1920x1080, and the band check reads the logical 720-row band there. A native sub-720 layout is still not attempted; the desktop window opens at 1280x720 and the proof pages scale in CSS.
 - **Checks.** `zig build test` and `zig build test-proofs` pass with no golden change; a renderer unit test checks the downscale and that the drawing size stays logical. The guard test maps the 720-row band to rows 252 to 291 of the 640x360 image. `node tools/wasm_smoke.js`, 75 Python tests, `build_site.py --check` (15 pages current, proof Wasm 695,883 bytes), `check_web_budgets.py` (largest page 948,420 bytes), `check_docs.py` (0/0), `manual.py check --check-evidence`, and `git diff --check` follow.

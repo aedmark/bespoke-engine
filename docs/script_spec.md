@@ -307,6 +307,36 @@ on cue Intercepts(Keeper, Hero, WarnOff):
     say Keeper: "Look elsewhere, then."
 ```
 
+### Goals and hints (P44-01, D-134)
+
+A goal declares what the player has to make true, and a query reports the next need as a hint, in the story's voice while the character can reason about it.
+
+```bespoke
+relation Carries(holder, item)
+relation Read(who, item)
+relation Investigated(who, place)
+
+remember Knows(Ines, Archive)
+remember Knows(Ines, ExposureSlip)
+
+goal RecoverThePlate:
+  need TakeTheSlip:
+    met Carries(Ines, ExposureSlip)
+    room Archive
+  need ReadTheLog after TakeTheSlip:
+    met Read(Ines, TelescopeLog)
+    room TelescopeFloor
+    hint 3 "The log names the plate once you hold the slip."
+```
+
+- `need <Name> [after <Need>, <Need>]:` opens one need. `met <Fact>` is required and takes one or two arguments, with `_` as a wildcard. `after` lists needs of the same goal that must hold first.
+- `room <Name>` is the place the room tier names. Without it, the need inherits the scene that declares the prop or mark it names. A proof whose rooms are finer than its scenes names the room.
+- `hint <tier> "text"` replaces one generated tier: 1 names the room, 2 the thing, and 3 the relation. Each tier at most once per need.
+- Declaration order is the search's order. A goal is done when every need holds; a need is on the frontier when it is unmet and every `after` need holds.
+- The query takes the tier and the player entity, and reports the first frontier need whose entities the player knows, together with `holmesian` or `doylian` and whether the text was authored. Knowledge is `Knows` or `Believes` about the player, and `Rejects` cancels either, so a script asserts knowledge when a scene shows the character something.
+- When no frontier need is one the character could reason about, the query reports the first unmet need in declaration order as the author: it may name a room or a thing the character has not met.
+- The query reads facts and writes none, so a save, a rewind, or a replay reports the same hint for the same world. Cycles in `after`, duplicate need names, an unknown prerequisite, and a missing or invalid tier are compile errors. Package format version 15 carries goals; versions 1 through 14 load none.
+
 #### Fire, smoke, and water (P25-02, D-055)
 
 A grid may also declare `burning` and `smoke` cells and four rates. Each rate is off unless declared.

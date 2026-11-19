@@ -23,6 +23,7 @@ const duel_mod = @import("../duel.zig");
 const container_mod = @import("../container.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
+const hint_mod = @import("../hint.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
@@ -78,6 +79,9 @@ pub const CompiledProgram = struct {
     grids: std.array_list.Managed(grid_mod.Declaration),
     /// Agendas in declaration order, which breaks contention ties (P33-01, D-056).
     agendas: std.array_list.Managed(agency_mod.Declaration),
+    /// Goals and their needs in declaration order, which is the hint search's tie-break
+    /// (P44-01, D-134).
+    goals: std.array_list.Managed(hint_mod.Declaration),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
@@ -104,6 +108,8 @@ pub const CompiledProgram = struct {
         self.grids.deinit();
         for (self.agendas.items) |*agenda| agenda.deinit_owned(self.chunk.allocator);
         self.agendas.deinit();
+        for (self.goals.items) |*goal| goal.deinit_owned(self.chunk.allocator);
+        self.goals.deinit();
         for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
         self.commands.deinit();
         for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
@@ -325,6 +331,7 @@ pub const Codegen = struct {
     degradations: std.array_list.Managed(container_mod.Declaration),
     grids: std.array_list.Managed(grid_mod.Declaration),
     agendas: std.array_list.Managed(agency_mod.Declaration),
+    goals: std.array_list.Managed(hint_mod.Declaration),
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
@@ -348,6 +355,7 @@ pub const Codegen = struct {
             .degradations = std.array_list.Managed(container_mod.Declaration).init(allocator),
             .grids = std.array_list.Managed(grid_mod.Declaration).init(allocator),
             .agendas = std.array_list.Managed(agency_mod.Declaration).init(allocator),
+            .goals = std.array_list.Managed(hint_mod.Declaration).init(allocator),
             .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -482,6 +490,11 @@ pub const Codegen = struct {
             try mut_self.agendas.append(try mut_self.compile_agenda(decl));
         }
         try agency_mod.validate_all(mut_self.agendas.items);
+        for (ast.goals.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.goals.append(try mut_self.compile_goal(decl, ast.scene_defs.items));
+        }
+        try hint_mod.validate_all(mut_self.goals.items);
         for (ast.commands.items) |decl| {
             mut_self.error_context = decl.text;
             try mut_self.commands.append(try mut_self.compile_command(decl));
@@ -734,6 +747,7 @@ pub const Codegen = struct {
             .degradations = mut_self.degradations,
             .grids = mut_self.grids,
             .agendas = mut_self.agendas,
+            .goals = mut_self.goals,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
@@ -1092,6 +1106,77 @@ pub const Codegen = struct {
     fn agenda_term(self: *Codegen, name: []const u8) !?world_mod.EntityId {
         if (std.mem.eql(u8, name, "_")) return null;
         return try self.world.intern_entity(name);
+    }
+
+    fn compile_goal(self: *Codegen, decl: parser_mod.GoalDecl, scenes: []const parser_mod.SceneDef) !hint_mod.Declaration {
+        const needs = try self.allocator.alloc(hint_mod.Need, decl.needs.len);
+        var built: usize = 0;
+        errdefer {
+            for (needs[0..built]) |need| {
+                for (need.hints) |hint| self.allocator.free(hint.text);
+                self.allocator.free(need.hints);
+                self.allocator.free(need.after);
+            }
+            self.allocator.free(needs);
+        }
+        for (decl.needs, 0..) |source, i| {
+            needs[i] = try self.compile_need(source, scenes);
+            built += 1;
+        }
+        return .{ .goal = .{
+            .entity = try self.world.intern_entity(decl.name),
+            .needs = needs,
+        } };
+    }
+
+    fn compile_need(self: *Codegen, source: parser_mod.GoalNeedDecl, scenes: []const parser_mod.SceneDef) !hint_mod.Need {
+        const args = source.pattern.args;
+        const after = try self.allocator.alloc(EntityId, source.after.len);
+        errdefer self.allocator.free(after);
+        for (source.after, 0..) |name, j| after[j] = try self.world.intern_entity(name);
+        const hints = try self.allocator.alloc(hint_mod.Authored, source.hints.len);
+        var made: usize = 0;
+        errdefer {
+            for (hints[0..made]) |hint| self.allocator.free(hint.text);
+            self.allocator.free(hints);
+        }
+        for (source.hints, 0..) |hint, j| {
+            const tier = hint_mod.Tier.fromInt(hint.tier) orelse {
+                self.error_context = source.name;
+                return error.InvalidGoal;
+            };
+            hints[j] = .{ .tier = tier, .text = try self.allocator.dupe(u8, hint.text) };
+            made += 1;
+        }
+        return .{
+            .entity = try self.world.intern_entity(source.name),
+            .relation = try self.intern_program_text(source.pattern.relation),
+            .subject = try self.agenda_term(args[0]),
+            .object = if (args.len > 1) try self.agenda_term(args[1]) else null,
+            .after = after,
+            .room = try self.goal_room(source, scenes),
+            .hints = hints,
+        };
+    }
+
+    /// A need names its room, or inherits the scene that declares the prop or mark it names.
+    /// A proof whose rooms are finer than its scenes declares `room` explicitly.
+    fn goal_room(self: *Codegen, source: parser_mod.GoalNeedDecl, scenes: []const parser_mod.SceneDef) !EntityId {
+        if (source.room) |room| return try self.world.intern_entity(room);
+        const named = if (source.pattern.args.len > 1) source.pattern.args[1] else source.pattern.args[0];
+        for (scenes) |scene| {
+            for (scene.props.items) |prop| {
+                if (std.mem.eql(u8, prop, named)) return try self.world.intern_entity(scene.name);
+            }
+            for (scene.marks.items) |mark| {
+                if (std.mem.eql(u8, mark, named)) return try self.world.intern_entity(scene.name);
+            }
+        }
+        var suggestions = Suggestions{};
+        for (scenes) |scene| suggestions.consider(named, scene.name);
+        self.error_context = named;
+        self.error_suggestion = suggestions.result();
+        return error.UnknownHintRoom;
     }
 
     fn compile_degradation(self: *Codegen, decl: parser_mod.DegradationDecl) !container_mod.Declaration {
@@ -2619,4 +2704,55 @@ test "P38-01: documented core statements parse and compile" {
     try testing.expect(compiled.routine_entries.contains("Audit"));
     try testing.expect(compiled.routine_entries.contains("Crowd"));
     try testing.expectEqual(@as(usize, 1), compiled.scores.items.len);
+}
+
+test "P44-01: goal declarations compile and reject malformed goals" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\entity Hero, TelescopeLog
+        \\relation Carries(holder, item)
+        \\relation Read(who, item)
+        \\scene: PlateArchive
+        \\props: ExposureSlip
+        \\marks: Archive
+        \\goal RecoverThePlate:
+        \\  need TakeTheSlip:
+        \\    met Carries(Hero, ExposureSlip)
+        \\    hint 2 "Your notebook names the slip."
+        \\  need ReadTheLog after TakeTheSlip:
+        \\    met Read(Hero, TelescopeLog)
+        \\    room Archive
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.goals.items.len);
+    const goal = compiled.goals.items[0].goal;
+    try testing.expectEqualStrings("RecoverThePlate", world.get_entity_name(goal.entity).?);
+    try testing.expectEqual(@as(usize, 2), goal.needs.len);
+    const take = goal.needs[0];
+    try testing.expectEqualStrings("TakeTheSlip", world.get_entity_name(take.entity).?);
+    try testing.expectEqualStrings("Carries", take.relation);
+    try testing.expectEqual(world.lookup_entity("Hero").?, take.subject.?);
+    try testing.expectEqual(world.lookup_entity("ExposureSlip").?, take.object.?);
+    // No `room` line: the scene that declares the prop sets the room.
+    try testing.expectEqualStrings("PlateArchive", world.get_entity_name(take.room.?).?);
+    try testing.expectEqual(@as(usize, 1), take.hints.len);
+    try testing.expectEqual(hint_mod.Tier.thing, take.hints[0].tier);
+    try testing.expectEqualStrings("Your notebook names the slip.", take.hints[0].text);
+    try testing.expectEqual(@as(usize, 1), goal.needs[1].after.len);
+    try testing.expectEqual(take.entity, goal.needs[1].after[0]);
+    try testing.expectEqualStrings("Archive", world.get_entity_name(goal.needs[1].room.?).?);
+
+    const bad = [_][]const u8{
+        "goal G:\n  need A:\n    room Shed\n",
+        "goal G:\n  need A:\n    met Seen(Hero)\n    room Shed\n  need A:\n    met Seen(Hero)\n    room Shed\n",
+        "goal G:\n  need A:\n    met Seen(Hero)\n    room Shed\n    hint 0 \"no\"\n",
+        "goal G:\n  need A:\n    met Seen(Hero)\n    room Shed\n    hint 2 \"one\"\n    hint 2 \"two\"\n",
+        "goal G:\n  need A:\n    met Seen(Hero)\n    room Shed\n    wants X\n",
+        "goal G:\n  need A after B:\n    met Seen(Hero)\n    room Shed\n",
+        "goal G:\n  need A after B:\n    met Seen(Hero)\n    room Shed\n  need B after A:\n    met Seen(Shed)\n    room Shed\n",
+    };
+    for (bad) |source| try testing.expect(compiler.check_source(testing.allocator, source).diagnostic() != null);
 }

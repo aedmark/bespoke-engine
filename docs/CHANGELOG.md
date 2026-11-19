@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A script declares a goal as needs with the fact each one requires, prerequisites, a room, and optional per-tier text; the engine reports the nearest unmet need as a hint, in the story's voice while the character could reason about it and as the author's direction otherwise (`P44-01`, `D-126`, `D-134`).
+
 - The Larkspur Observatory's three props sit one world unit higher and the Wreckers Cellar's SEA CHEST label sits higher on the chest lid, so both keep clear of the log and leave room for a name or prompt above them (`Q-017`, `D-133`).
 
 - The Pip-Spitting Green's breeze comes every 15 seconds and blows for 15, and the conch holds Judge Marrow for 15, so lining up a watched throw takes about a third of the wait it did (`D-130`).

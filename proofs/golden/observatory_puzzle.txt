@@ -6,13 +6,13 @@
   -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
 
 [Night 1] Ines searches the darkroom, then reads the log empty-handed.
-  [ 13] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
+  [ 14] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
   -> Agendas: Dissuade Pursuing, PlantAlibi Idle, ShedWarning Idle
-  [ 18] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
+  [ 19] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
   -> Agendas: Dissuade Pursuing, PlantAlibi Idle, ShedWarning Idle
   -> Both agendas hold; Halloran (priority 5) already pursues Ines, so Pell (3) waits.
-  [ 20] Halloran: "The darkroom is no place to wander at night, Miss Varga. Go to bed."
-  [ 22] Pell: "I was in the library from midnight to three. Ask anyone."
+  [ 21] Halloran: "The darkroom is no place to wander at night, Miss Varga. Go to bed."
+  [ 24] Pell: "I was in the library from midnight to three. Ask anyone."
   -> Agendas: Dissuade Done, PlantAlibi Done, ShedWarning Idle
   -> Ines was talked out of the darkroom and believes Pell's alibi.
 
@@ -20,19 +20,23 @@
   -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
 
 [Night 2] Ines takes the evidence first.
-  [  7] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
-  [ 10] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
+  -> Hint (Holmesian): Look in the Archive.
+  [  8] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
+  -> Hint (Holmesian, authored): The log names the plate once you hold the slip.
+  [ 11] Ines: "Plate 41 was exposed at 02:10. Who was at the telescope?"
   -> Agendas: Dissuade Idle, PlantAlibi Idle, ShedWarning Idle
-  [ 16] Ines: "A cotton glove, stained brown with developer. Monogrammed H."
-  [ 17] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
-  [ 25] Halloran: "That glove... I can explain. The plate is safe in my office."
+  -> Hint (Doylian): Look in the Darkroom.
+  [ 17] Ines: "A cotton glove, stained brown with developer. Monogrammed H."
+  [ 18] Ines: "Trays of developer, still wet. Someone printed a plate tonight."
+  -> Hint: every need has been met.
+  [ 27] Halloran: "That glove... I can explain. The plate is safe in my office."
 
 [Night 2] Ines lingers by the generator shed.
-  [ 40] Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
+  [ 42] Moss: "Mind the cables, miss. The director was down here at two, swearing at the fuses."
   -> Agendas: Dissuade Done, PlantAlibi Idle, ShedWarning Idle
 
 [Night 2] Ines confronts Pell with the slip.
-  [ 41] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+  [ 43] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
 
 [Rewind] Restore the saved opening for a typed playthrough.
 
@@ -40,19 +44,19 @@
   > examine the telescope
     Which do you mean: the telescope log or the telescope floor?
   > log
-  [  1] Ines: "The night's log, open at plate 41."
+  [  2] Ines: "The night's log, open at plate 41."
   > xyzzy
     I don't know the word "xyzzy".
   > take the slip
     The slip is in the Archive.
   > go to the archive
   > pick up the exposure slip
-  [  8] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
+  [  9] Ines: "The exposure slip: plate 41, logged at 02:10 from the dome."
   > ask the rival about the slip
-  [  9] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
+  [ 10] Pell: "02:10 from the dome? Then it was not me at the telescope. Ask Halloran."
 
 ===================================================================
   VERIFICATION COMPLETE: plate 41 is in Halloran's office.         
 ===================================================================
 
-final facts: 15, digest e68152b222db33db
+final facts: 18, digest eb7c7448875981ed

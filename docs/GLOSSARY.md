@@ -44,6 +44,8 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | interrupt | A rule or cue pausing a routine to run other script; the routine resumes where it paused | `interrupt ... with` | |
 | agenda | A goal a character pursues on its own when its conditions hold, such as chasing the player | `agenda` (D-056) | |
 | society | Characters with needs, jobs, rumours, and justice, declared in a script and run by the engine | `society`, `src/society.zig` | |
+| goal | A line of investigation the player has to finish, declared as needs with the fact each one requires | `goal`, `src/hint.zig` (P44-01, D-134) | quest log (a goal is script data, not a screen) |
+| hint | The nearest unmet need reported as help: the character's own deduction while she could reason about it, the author's direction otherwise | `hint.query()` (D-126) | walkthrough |
 
 ## Stage, dialogue, and play
 

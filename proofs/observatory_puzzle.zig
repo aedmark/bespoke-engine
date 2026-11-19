@@ -42,7 +42,12 @@ pub const OBSERVATORY_SCRIPT =
     \\relation Read(who, item)
     \\relation Warned(who)
     \\relation Believes(who, claim)
+    \\relation Knows(who, what)
     \\relation NearShed(who)
+    \\
+    \\remember Knows(Ines, Archive)
+    \\remember Knows(Ines, TelescopeLog)
+    \\remember Knows(Ines, ExposureSlip)
     \\
     \\society LarkspurStaff:
     \\  need Rest low 100 0 0 22 stay Dormitory 14 90 sleeping true "weary" "rest"
@@ -81,8 +86,21 @@ pub const OBSERVATORY_SCRIPT =
     \\  cooldown 40
     \\  requires NearShed(Ines)
     \\
+    \\goal RecoverThePlate:
+    \\  need TakeTheSlip:
+    \\    met Carries(Ines, ExposureSlip)
+    \\    room Archive
+    \\  need ReadTheLog after TakeTheSlip:
+    \\    met Read(Ines, TelescopeLog)
+    \\    room TelescopeFloor
+    \\    hint 3 "The log names the plate once you hold the slip."
+    \\  need SearchTheDarkroom after ReadTheLog:
+    \\    met Investigated(Ines, Darkroom)
+    \\    room Darkroom
+    \\
     \\on cue Searches(Ines, Darkroom):
     \\  remember Investigated(Ines, Darkroom)
+    \\  remember Knows(Ines, Darkroom)
     \\  say Ines: "Trays of developer, still wet. Someone printed a plate tonight."
     \\
     \\on cue Takes(Ines, StainedGlove):
@@ -334,6 +352,26 @@ const Stage = struct {
         try self.tick(writer);
     }
 
+    /// Reports the hint the script's goal yields at one tier, and the path that produced it
+    /// (P44-01, D-126): Holmesian while the character can reason about the next need, the
+    /// author's fallback when she cannot, and nothing once every need holds.
+    fn hint(self: Stage, writer: anytype, tier: bespoke.hint.Tier) !void {
+        var buf: [160]u8 = undefined;
+        const found = try bespoke.hint.query(self.compiled.goals.items, self.world, self.ids.ines, tier, &buf);
+        if (found) |value| {
+            try writer.print("  -> Hint ({s}{s}): {s}\n", .{
+                switch (value.path) {
+                    .holmesian => "Holmesian",
+                    .doylian => "Doylian",
+                },
+                if (value.authored) ", authored" else "",
+                value.text,
+            });
+        } else {
+            try writer.print("  -> Hint: every need has been met.\n", .{});
+        }
+    }
+
     fn stage_name(self: Stage, agenda: bespoke.EntityId) []const u8 {
         const stage = agency.stage_of(self.world, agenda) orelse return "unseeded";
         return agency.STAGE_NAMES[@intFromEnum(stage)];
@@ -430,17 +468,25 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try stage.report(writer);
 
     try writer.writeAll("\n[Night 2] Ines takes the evidence first.\n");
+    // She knows the archive and the slip, so the frontier need is one she can reason about.
+    try stage.hint(writer, .room);
     try stage.walk(writer, ids.archive_wp, 40);
     try stage.act(writer, "Takes", ids.slip);
+    // The next need carries authored text, which wins over the generated tier here.
+    try stage.hint(writer, .relation);
     try stage.walk(writer, ids.telescope_wp, 40);
     try stage.act(writer, "Reads", ids.log);
     // Holding the slip, the omission Pell's agenda needs is gone: no alibi is offered.
     try stage.tick(writer);
     try stage.report(writer);
+    // The darkroom is unmet and unknown, so no frontier need is Holmesian: the author speaks.
+    try stage.hint(writer, .room);
     try expect_true(agency.stage_of(&world, ids.plant_alibi) == .idle, error.AlibiDespiteSlip);
     try stage.walk(writer, ids.darkroom_wp, 40);
     try stage.act(writer, "Takes", ids.glove);
     try stage.act(writer, "Searches", ids.darkroom);
+    // Searching taught her the darkroom, and the need it satisfied closes the goal.
+    try stage.hint(writer, .room);
     try stage.encounter(writer, dissuade_over, 60, error.DirectorNeverArrived);
     try expect_true(host.has_state(&world, ids.halloran, "exposed"), error.DirectorNotExposed);
 

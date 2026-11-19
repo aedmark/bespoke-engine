@@ -25,6 +25,7 @@ pub const duel = @import("duel.zig");
 pub const container = @import("container.zig");
 pub const grid = @import("grid.zig");
 pub const agency = @import("agency.zig");
+pub const hint = @import("hint.zig");
 pub const command = @import("command.zig");
 /// An `std.Io.Writer` that appends to a managed byte list (P37-01).
 pub const ListWriter = @import("list_writer.zig").ListWriter;

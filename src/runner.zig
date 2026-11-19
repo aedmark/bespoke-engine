@@ -630,7 +630,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 15; this engine supports versions 1 through 14\n",
+        "future.bspk: error: unsupported .bspk format version 16; this engine supports versions 1 through 15\n",
         output.buffered(),
     );
 }

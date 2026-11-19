@@ -6,6 +6,7 @@ pub const TokenTag = lexer_mod.TokenTag;
 const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
+const hint_mod = @import("../hint.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const diagnostic_mod = @import("diagnostic.zig");
@@ -350,6 +351,30 @@ pub const AgendaDecl = struct {
     clauses: []const AgendaClauseDecl,
 };
 
+/// One `hint <tier> "text"` line: authored text for a generated tier (P44-01, D-134).
+pub const GoalHintDecl = struct {
+    tier: u32,
+    text: []const u8,
+};
+
+/// One `need <Name> [after <Need>...]:` block: the fact pattern that satisfies it, its
+/// prerequisites, the room the room tier names, and any authored text.
+pub const GoalNeedDecl = struct {
+    name: []const u8,
+    pattern: FactPattern,
+    after: []const []const u8 = &.{},
+    room: ?[]const u8 = null,
+    hints: []const GoalHintDecl = &.{},
+};
+
+/// `goal <Name>:` owns the needs a player meets to close one line of investigation
+/// (P44-01, D-134). Need and prerequisite order is declaration order, which is the tie-break
+/// the hint search uses.
+pub const GoalDecl = struct {
+    name: []const u8,
+    needs: []const GoalNeedDecl,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -377,6 +402,7 @@ pub const AST = struct {
     paths: std.array_list.Managed(PathDecl),
     grids: std.array_list.Managed(GridDecl),
     agendas: std.array_list.Managed(AgendaDecl),
+    goals: std.array_list.Managed(GoalDecl),
     commands: std.array_list.Managed(CommandDecl),
     aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
@@ -403,6 +429,7 @@ pub const AST = struct {
             .paths = std.array_list.Managed(PathDecl).init(allocator),
             .grids = std.array_list.Managed(GridDecl).init(allocator),
             .agendas = std.array_list.Managed(AgendaDecl).init(allocator),
+            .goals = std.array_list.Managed(GoalDecl).init(allocator),
             .commands = std.array_list.Managed(CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -432,6 +459,7 @@ pub const AST = struct {
         self.paths.deinit();
         self.grids.deinit();
         self.agendas.deinit();
+        self.goals.deinit();
         self.commands.deinit();
         self.aliases.deinit();
         self.scores.deinit();
@@ -712,6 +740,13 @@ pub const Parser = struct {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("agenda '{s}' is declared twice", .{decl.name});
                     }
                     try ast.agendas.append(decl);
+                },
+                .kw_goal => {
+                    const decl = try self.parse_goal_decl();
+                    for (ast.goals.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("goal '{s}' is declared twice", .{decl.name});
+                    }
+                    try ast.goals.append(decl);
                 },
                 .kw_grid => {
                     const decl = try self.parse_grid_decl();
@@ -1580,6 +1615,82 @@ pub const Parser = struct {
             return self.set_error("agenda '{s}' needs between 1 and {d} trigger lines", .{ name, agency_mod.MAX_CLAUSES });
         decl.clauses = try clauses.toOwnedSlice();
         return decl;
+    }
+
+    fn parse_goal_decl(self: *Parser) !GoalDecl {
+        try self.advance(); // goal
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var needs = std.array_list.Managed(GoalNeedDecl).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const directive = self.current.slice;
+            if (self.current.tag != .identifier or !std.mem.eql(u8, directive, "need"))
+                return self.set_error("goal '{s}' expects a 'need <Name>:' block, found '{s}'", .{ name, directive });
+            try self.advance();
+            const need_name = (try self.expect(.identifier)).slice;
+            for (needs.items) |prior| {
+                if (std.mem.eql(u8, prior.name, need_name))
+                    return self.set_error("goal '{s}' declares need '{s}' twice", .{ name, need_name });
+            }
+            var after = std.array_list.Managed([]const u8).init(self.allocator);
+            if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "after")) {
+                try self.advance();
+                while (true) {
+                    try after.append((try self.expect(.identifier)).slice);
+                    if (self.current.tag != .comma) break;
+                    try self.advance();
+                }
+                if (after.items.len > hint_mod.MAX_AFTER)
+                    return self.set_error("need '{s}' waits on more than {d} prerequisites", .{ need_name, hint_mod.MAX_AFTER });
+            }
+            _ = try self.expect(.colon);
+            _ = try self.expect(.indent);
+            var pattern: ?FactPattern = null;
+            var room: ?[]const u8 = null;
+            var hints = std.array_list.Managed(GoalHintDecl).init(self.allocator);
+            while (self.current.tag != .dedent and self.current.tag != .eof) {
+                const need_directive = self.current.slice;
+                if (self.current.tag != .identifier)
+                    return self.set_error("need '{s}' expects 'met', 'room', or 'hint', found '{s}'", .{ need_name, need_directive });
+                try self.advance();
+                if (std.mem.eql(u8, need_directive, "met")) {
+                    if (pattern != null) return self.set_error("need '{s}' declares met twice", .{need_name});
+                    const fact = try self.parse_fact_pattern();
+                    if (fact.args.len == 0 or fact.args.len > 2)
+                        return self.set_error("need '{s}' met pattern needs one or two arguments", .{need_name});
+                    pattern = fact;
+                } else if (std.mem.eql(u8, need_directive, "room")) {
+                    if (room != null) return self.set_error("need '{s}' declares room twice", .{need_name});
+                    room = (try self.expect(.identifier)).slice;
+                } else if (std.mem.eql(u8, need_directive, "hint")) {
+                    const tier = try self.take_u32();
+                    if (hint_mod.Tier.fromInt(tier) == null)
+                        return self.set_error("need '{s}' hint tier is {d}; tiers are 1 (room), 2 (thing), and 3 (relation)", .{ need_name, tier });
+                    for (hints.items) |prior| {
+                        if (prior.tier == tier) return self.set_error("need '{s}' already has a tier {d} hint", .{ need_name, tier });
+                    }
+                    const text = (try self.expect(.string_literal)).slice;
+                    if (text.len == 0 or text.len > hint_mod.MAX_HINT_TEXT)
+                        return self.set_error("need '{s}' hint text must be 1 to {d} bytes", .{ need_name, hint_mod.MAX_HINT_TEXT });
+                    try hints.append(.{ .tier = tier, .text = text });
+                } else return self.set_error("unknown need directive '{s}'", .{need_directive});
+            }
+            _ = try self.expect(.dedent);
+            const met = pattern orelse return self.set_error("need '{s}' needs a 'met <Fact>' line", .{need_name});
+            try needs.append(.{
+                .name = need_name,
+                .pattern = met,
+                .after = try after.toOwnedSlice(),
+                .room = room,
+                .hints = try hints.toOwnedSlice(),
+            });
+        }
+        _ = try self.expect(.dedent);
+        if (needs.items.len == 0) return self.set_error("goal '{s}' needs at least one need", .{name});
+        if (needs.items.len > hint_mod.MAX_NEEDS)
+            return self.set_error("goal '{s}' has more than {d} needs", .{ name, hint_mod.MAX_NEEDS });
+        return .{ .name = name, .needs = try needs.toOwnedSlice() };
     }
 
     fn rate_index(names: []const []const u8, directive: []const u8) ?usize {

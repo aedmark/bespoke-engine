@@ -11,6 +11,7 @@ const duel_mod = @import("duel.zig");
 const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
+const hint_mod = @import("hint.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -48,7 +49,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// so every handler runs as it did unguarded.
 /// Version 14 lets a duel declare up to `duel.MAX_FALLBACKS` fallback lines (D-076); earlier
 /// versions wrote 0 or 1, which the same count byte reads unchanged.
-pub const PACKAGE_VERSION: u32 = 14;
+/// Version 15 appends goals with their needs and authored hints (P44-01, D-134); versions 1
+/// through 14 load with no goals.
+pub const PACKAGE_VERSION: u32 = 15;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -336,6 +339,27 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for (guard.param_slots) |slot| try writer.writeByte(slot orelse NO_GUARD_SLOT);
         try writer.writeInt(u16, @intCast(guard.clauses.len), .little);
         for (guard.clauses) |clause| try write_pattern_clause(writer, clause);
+    }
+
+    try writer.writeInt(u32, @intCast(compiled.goals.items.len), .little);
+    for (compiled.goals.items) |decl| {
+        try writer.writeInt(u32, decl.goal.entity.to_int(), .little);
+        try writer.writeInt(u32, @intCast(decl.goal.needs.len), .little);
+        for (decl.goal.needs) |need| {
+            try writer.writeInt(u32, need.entity.to_int(), .little);
+            try write_text_ref(world, writer, need.relation);
+            // Zero is the `_` wildcard, as in an agenda clause.
+            try writer.writeInt(u32, if (need.subject) |e| e.to_int() else 0, .little);
+            try writer.writeInt(u32, if (need.object) |e| e.to_int() else 0, .little);
+            try writer.writeInt(u32, if (need.room) |e| e.to_int() else 0, .little);
+            try writer.writeByte(@intCast(need.after.len));
+            for (need.after) |prerequisite| try writer.writeInt(u32, prerequisite.to_int(), .little);
+            try writer.writeByte(@intCast(need.hints.len));
+            for (need.hints) |hint| {
+                try writer.writeByte(@intFromEnum(hint.tier));
+                try write_str(writer, hint.text);
+            }
+        }
     }
 }
 
@@ -732,6 +756,63 @@ fn read_agenda_declaration(allocator: std.mem.Allocator, world: *const World, re
     };
     agency_mod.validate(agenda) catch return error.InvalidAgendaConfig;
     return .{ .agenda = agenda };
+}
+
+/// Untrusted input: every entity and text reference, count, tier byte, and hint string is
+/// checked before the need reaches the program.
+fn read_goal_need(allocator: std.mem.Allocator, world: *const World, reader: anytype) !hint_mod.Need {
+    const entity = try read_entity_ref(world, reader);
+    const relation = try read_text_ref(world, reader);
+    const subject = try read_optional_entity_ref(world, reader);
+    const object = try read_optional_entity_ref(world, reader);
+    const room = try read_optional_entity_ref(world, reader);
+    const after_count = try reader.takeByte();
+    if (after_count > hint_mod.MAX_AFTER) return error.InvalidGoalConfig;
+    const after = try allocator.alloc(EntityId, after_count);
+    errdefer allocator.free(after);
+    for (after) |*prerequisite| prerequisite.* = try read_entity_ref(world, reader);
+    const hint_count = try reader.takeByte();
+    if (hint_count > hint_mod.MAX_TIERS) return error.InvalidGoalConfig;
+    const hints = try allocator.alloc(hint_mod.Authored, hint_count);
+    var made: usize = 0;
+    errdefer {
+        for (hints[0..made]) |hint| allocator.free(hint.text);
+        allocator.free(hints);
+    }
+    for (hints) |*hint| {
+        const tier = hint_mod.Tier.fromInt(try reader.takeByte()) orelse return error.InvalidGoalConfig;
+        hint.* = .{ .tier = tier, .text = try read_str(allocator, reader) };
+        made += 1;
+    }
+    return .{
+        .entity = entity,
+        .relation = relation,
+        .subject = subject,
+        .object = object,
+        .after = after,
+        .room = room,
+        .hints = hints,
+    };
+}
+
+fn read_goal_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !hint_mod.Declaration {
+    const entity = try read_entity_ref(world, reader);
+    const need_count = try reader.takeInt(u32, .little);
+    if (need_count == 0 or need_count > hint_mod.MAX_NEEDS) return error.InvalidGoalConfig;
+    const needs = try allocator.alloc(hint_mod.Need, need_count);
+    var made: usize = 0;
+    errdefer {
+        for (needs[0..made]) |need| {
+            for (need.hints) |hint| allocator.free(hint.text);
+            allocator.free(need.hints);
+            allocator.free(need.after);
+        }
+        allocator.free(needs);
+    }
+    while (made < needs.len) : (made += 1) needs[made] = try read_goal_need(allocator, world, reader);
+    const declaration = hint_mod.Declaration{ .goal = .{ .entity = entity, .needs = needs } };
+    hint_mod.validate(declaration) catch return error.InvalidGoalConfig;
+    return declaration;
 }
 
 /// Untrusted input: frame text must parse, and alias entities, phrase counts, and phrase
@@ -1374,6 +1455,25 @@ pub fn load_package(
         }
     }
 
+    var goals = std.array_list.Managed(hint_mod.Declaration).init(allocator);
+    errdefer {
+        for (goals.items) |*decl| decl.deinit_owned(allocator);
+        goals.deinit();
+    }
+    if (header.version >= 15) {
+        const goal_count = try pr.takeInt(u32, .little);
+        if (goal_count > hint_mod.MAX_GOALS) return error.InvalidGoalConfig;
+        var gi2: u32 = 0;
+        while (gi2 < goal_count) : (gi2 += 1) {
+            var decl = try read_goal_declaration(allocator, world, pr);
+            goals.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        hint_mod.validate_all(goals.items) catch return error.InvalidGoalConfig;
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1389,6 +1489,7 @@ pub fn load_package(
         .degradations = degradations,
         .grids = grids,
         .agendas = agendas,
+        .goals = goals,
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
@@ -1601,16 +1702,42 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 14",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 15",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
 
-test "P38-02: checked-in current package fixture loads" {
+test "P38-02: checked-in earlier package fixture still loads" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
         "tests/fixtures/compat/v0.1.0-package-v14.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(@as(u32, 14), version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
+    defer compiled.deinit();
+
+    try testing.expect(world.lookup_entity("FixtureHero") != null);
+    try testing.expect(world.lookup_relation("Ready") != null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 0), compiled.goals.items.len);
+}
+
+test "P44-01: checked-in current package fixture loads with its goal" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.2.0-package-v15.bspk",
         testing.allocator,
         .limited(1024 * 1024),
     );
@@ -1627,8 +1754,14 @@ test "P38-02: checked-in current package fixture loads" {
     defer compiled.deinit();
 
     try testing.expect(world.lookup_entity("FixtureHero") != null);
-    try testing.expect(world.lookup_relation("Ready") != null);
     try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 1), compiled.goals.items.len);
+    const goal = compiled.goals.items[0].goal;
+    try testing.expectEqualStrings("FinishShift", world.get_entity_name(goal.entity).?);
+    try testing.expectEqual(@as(usize, 1), goal.needs.len);
+    try testing.expectEqualStrings("Sit", world.get_entity_name(goal.needs[0].entity).?);
+    try testing.expectEqualStrings("Ready", goal.needs[0].relation);
+    try testing.expectEqualStrings("Bench", world.get_entity_name(goal.needs[0].room.?).?);
 }
 
 test "P15-02: package file save and load roundtrip" {
@@ -1681,8 +1814,10 @@ const EMPTY_TAIL_AFTER_V9: usize = 4 + 4 + EMPTY_TAIL_AFTER_V10;
 const EMPTY_TAIL_AFTER_V10: usize = 4 + EMPTY_TAIL_AFTER_V11;
 /// The empty cast count (version 12) and cue guard count (version 13).
 const EMPTY_TAIL_AFTER_V11: usize = 4 + EMPTY_TAIL_AFTER_V12;
-/// The empty cue guard count (version 13).
-const EMPTY_TAIL_AFTER_V12: usize = 4;
+/// The empty cue guard count (version 13) and goal count (version 15).
+const EMPTY_TAIL_AFTER_V12: usize = 4 + EMPTY_TAIL_AFTER_V13;
+/// The empty goal count (version 15).
+const EMPTY_TAIL_AFTER_V13: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -2408,7 +2543,7 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
         // The clause's subject is the bound `victim`, variable slot 0; slot 9 cannot exist.
         const bad = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(bad);
-        std.mem.writeInt(u32, bad[bad.len - 5 - 4 ..][0..4], 9, .little);
+        std.mem.writeInt(u32, bad[bad.len - EMPTY_TAIL_AFTER_V13 - 5 - 4 ..][0..4], 9, .little);
         reseal_for_test(bad, PACKAGE_VERSION);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
         defer world3.deinit();
@@ -2416,7 +2551,7 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
         try testing.expectError(error.InvalidPatternVariable, load_package(testing.allocator, &bad_stream, &world3, null));
     }
     {
-        const v12 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - guard_section_len]);
+        const v12 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V13 - guard_section_len]);
         defer testing.allocator.free(v12);
         reseal_for_test(v12, 12);
         var world3 = try World.init(testing.allocator, 1024 * 1024);
@@ -2425,5 +2560,81 @@ test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and 
         var loaded = try load_package(testing.allocator, &v12_stream, &world3, null);
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.cue_guards.items.len);
+    }
+}
+
+test "P44-01: package version 15 round-trips goals and loads a version 14 payload with none" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const script =
+        \\entity Hero, TelescopeLog
+        \\relation Carries(holder, item)
+        \\relation Read(who, item)
+        \\scene: PlateArchive
+        \\props: ExposureSlip
+        \\marks: Archive
+        \\goal RecoverThePlate:
+        \\  need TakeTheSlip:
+        \\    met Carries(Hero, ExposureSlip)
+        \\    room Archive
+        \\    hint 2 "Your notebook names the slip."
+        \\  need ReadTheLog after TakeTheSlip:
+        \\    met Read(Hero, TelescopeLog)
+        \\    room Archive
+    ;
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw15 = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw15.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.goals.items.len);
+    const goal = compiled2.goals.items[0].goal;
+    try testing.expectEqualStrings("RecoverThePlate", world2.get_entity_name(goal.entity).?);
+    try testing.expectEqual(@as(usize, 2), goal.needs.len);
+    const take = goal.needs[0];
+    try testing.expectEqualStrings("Carries", take.relation);
+    try testing.expectEqualStrings("Hero", world2.get_entity_name(take.subject.?).?);
+    try testing.expectEqualStrings("ExposureSlip", world2.get_entity_name(take.object.?).?);
+    try testing.expectEqualStrings("Archive", world2.get_entity_name(take.room.?).?);
+    try testing.expectEqual(@as(usize, 1), take.hints.len);
+    try testing.expectEqual(@as(u2, @intFromEnum(take.hints[0].tier)), @as(u2, @intFromEnum(hint_mod.Tier.thing)));
+    try testing.expectEqualStrings("Your notebook names the slip.", take.hints[0].text);
+    try testing.expectEqual(@as(usize, 1), goal.needs[1].after.len);
+    try testing.expectEqual(take.entity, goal.needs[1].after[0]);
+
+    // A payload that ends before the goal table is a version 14 package and loads no goals.
+    {
+        const plain =
+            \\entity FixtureHero
+            \\routine Idle(FixtureHero):
+            \\  wait 1 ticks
+        ;
+        var plain_world = try World.init(testing.allocator, 1024 * 1024);
+        defer plain_world.deinit();
+        var plain_compiled = try compiler.compile_source(testing.allocator, &plain_world, null, plain);
+        defer plain_compiled.deinit();
+        var plain_buffer = std.array_list.Managed(u8).init(testing.allocator);
+        defer plain_buffer.deinit();
+        var lw_plain = ListWriter.init(&plain_buffer);
+        try save_package(testing.allocator, &lw_plain.writer, &plain_compiled, &plain_world, null);
+
+        const v14 = try testing.allocator.dupe(u8, plain_buffer.items[0 .. plain_buffer.items.len - EMPTY_TAIL_AFTER_V13]);
+        defer testing.allocator.free(v14);
+        reseal_for_test(v14, 14);
+        var world3 = try World.init(testing.allocator, 1024 * 1024);
+        defer world3.deinit();
+        var v14_stream: std.Io.Reader = .fixed(v14);
+        var loaded = try load_package(testing.allocator, &v14_stream, &world3, null);
+        defer loaded.deinit();
+        try testing.expectEqual(@as(usize, 0), loaded.goals.items.len);
     }
 }
