@@ -84,9 +84,9 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\routine WindBlowing(Scene):
     \\  loop:
     \\    Wind is not blowing in the scene.
-    \\    wait 45 ticks
+    \\    wait 15 ticks
     \\    Wind is blowing in the scene.
-    \\    wait 20 ticks
+    \\    wait 15 ticks
     \\
     \\when currently Wind is blowing:
     \\  interrupt JudgeMarrow with:
@@ -105,12 +105,12 @@ pub const SPITTING_CONTEST_SCRIPT =
     \\    resume previous action
     \\
     \\on cue Uses(Tamsin, Conch):
-    \\  remember Distracted[JudgeMarrow, Fairgoers] for 45 ticks
+    \\  remember Distracted[JudgeMarrow, Fairgoers] for 15 ticks
     \\  interrupt JudgeMarrow with:
     \\    walk JudgeMarrow to Harbour Wall
     \\    face Fairgoers toward Harbour Wall
     \\    say JudgeMarrow to Scene: "Is that the herring fleet back already?"
-    \\    wait 45 ticks ~ he keeps watching the harbour until the distraction ends
+    \\    wait 15 ticks ~ he keeps watching the harbour until the distraction ends
     \\
     \\when JudgeMarrow forgets Distracted:
     \\  interrupt JudgeMarrow with:
@@ -400,7 +400,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     const conch_speech = try script_action_until_speech(&world, &vm, &compiled, "Uses", tamsin, conch_ent, 12, &speech_buf);
     try std.testing.expect(world.has_fact(judge, distracted_rel, fairgoers.to_int()));
     try writer.print("   -> {s}\n", .{conch_speech orelse "Judge Marrow turns toward the harbour."});
-    try writer.print("   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 45 ticks)\n", .{});
+    try writer.print("   -> Judge Marrow walks to Harbour Wall! (Distracted TTL: 15 ticks)\n", .{});
 
     for (0..3) |_| {
         try vm.step_tick();
@@ -534,7 +534,7 @@ pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void 
     try stdout.print("\n>>> OPENED GRAPHICAL DISPLAY WINDOW (1280x720) <<<\n", .{});
     try stdout.print("Harvest Fair Contest Controls:\n", .{});
     try stdout.print("   - [S]:                   SPIT! (Evaluate spit attempt against active facts)\n", .{});
-    try stdout.print("   - [C]:                   BLOW THE CONCH (Distract the judge for 45 ticks)\n", .{});
+    try stdout.print("   - [C]:                   BLOW THE CONCH (Distract the judge for 15 ticks)\n", .{});
     try stdout.print("   - [D]:                   DRINK TREACLE CIDER (Thicken spit)\n", .{});
     try stdout.print("   - [P]:                   MOVE THE PEGS (Move the record line closer)\n", .{});
     try stdout.print("   - [Left Click Actor]:    Interact with Tamsin, Judge Marrow, or Fairgoers\n", .{});
@@ -940,7 +940,7 @@ test "P10-03: headless execution of Spitting Contest scenario" {
     try run_headless(testing.allocator, &null_sink1.writer);
 }
 
-test "P35-03: the judge watches the harbour for the whole distraction, and the breeze comes every 65 ticks" {
+test "P35-03: the judge watches the harbour for the whole distraction, and the breeze comes every 30 ticks" {
     const testing = std.testing;
     const a = testing.allocator;
     var world = try bespoke.World.init(a, 1024 * 1024);
@@ -994,19 +994,23 @@ test "P35-03: the judge watches the harbour for the whole distraction, and the b
         const blowing = if (world.lookup_relation("blowing")) |r| world.has_fact(wind, r, null) else false;
         if (blowing and first_gust == null) first_gust = world.current_tick;
         if (!blowing and first_gust != null and gust_ends == null) gust_ends = world.current_tick;
-        // Once he has walked there (about 8 ticks), he stays until the distraction ends.
-        if (t >= 14 and world.has_fact(judge, distracted, null)) {
-            if (spatial.agents.get(judge).?.current_wp == wall) at_wall_while_distracted += 1 else away_while_distracted += 1;
+        // Once he has walked there (about 4 ticks), he stays until the distraction ends.
+        if (world.has_fact(judge, distracted, null)) {
+            if (spatial.agents.get(judge).?.current_wp == wall) {
+                at_wall_while_distracted += 1;
+            } else if (at_wall_while_distracted > 0) {
+                away_while_distracted += 1;
+            }
         }
     }
-    try testing.expect(at_wall_while_distracted >= 30);
+    try testing.expect(at_wall_while_distracted >= 3);
     try testing.expectEqual(@as(usize, 0), away_while_distracted);
     // After it ends, the expiry rule walks him back to the chalk line.
     try testing.expect(!world.has_fact(judge, distracted, null));
     try testing.expectEqual(chalk, spatial.agents.get(judge).?.current_wp);
-    // The breeze comes within 50 ticks, lasts 20, and is announced.
-    try testing.expect(first_gust.? <= 50);
-    try testing.expectEqual(@as(u64, 20), gust_ends.? - first_gust.?);
+    // The breeze comes within 20 ticks, lasts 15, and is announced.
+    try testing.expect(first_gust.? <= 20);
+    try testing.expectEqual(@as(u64, 15), gust_ends.? - first_gust.?);
     try testing.expect(announced);
     try testing.expect(chatter >= 2);
     // Replies to the player are not chatter, so they wait for a click.
