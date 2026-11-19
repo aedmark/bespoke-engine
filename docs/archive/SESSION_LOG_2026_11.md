@@ -2,6 +2,10 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 92 (2026-11-18)
+- **Work.** Featured Lantern Watch: The Harbour as the only live homepage game, with its clock idle until Start and its map optional. Linked the seven standalone proofs below it and moved all thirteen decks and script viewing to the Proof Lab, reachable per deck from the gallery (D-121). The replacement export is `dist/p42-03-harbour-showcase/`, including the manual. Nothing is published.
+- **Checks.** `zig build harbour` passes the native golden, save restore, and ten-scene browser parser route. All 77 Python tests, ten generated page freshness checks, and web budgets pass. Chrome 157 and Firefox 155 verify the export at 375 px and the Proof Lab route from `file://`. Chrome plays the embedded game with the server stopped; parser motion with the map closed passes the homepage smoke check. No live-site or hardware checks are claimed.
+
 ### Session 91 (2026-11-18)
 - **Work.** Started P42-03. Corrected stale runbook expectations using D-047, D-074, D-110, and the current showcase. At 375 CSS pixels the comparison table forced a 448 px document in Firefox and Chromium. Fixed the table's narrow layout and added a Chrome regression check that fails before the fix. Exported the showcase, seven standalone pages, service worker, and manual into `dist/p42-03-showcase/`. No upload, commit, or tag.
 
