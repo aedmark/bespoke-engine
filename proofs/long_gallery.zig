@@ -64,40 +64,33 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
             return sp.graph.find_waypoint_in_room(room, name) orelse error.MissingGalleryMark;
         }
     };
+    const gallery = world.lookup_entity("Long Gallery").?;
+    const studio = world.lookup_entity("Locked Studio").?;
     const ids = Ids{
-        .gallery = world.lookup_entity("Long Gallery").?,
-        .studio = world.lookup_entity("Locked Studio").?,
+        .gallery = gallery,
+        .studio = studio,
         .audra = world.lookup_entity("Audra").?,
         .corin = world.lookup_entity("Corin").?,
         .pell = world.lookup_entity("Pell").?,
-        .window_wp = 0,
-        .easel_wp = 0,
-        .corner_wp = 0,
+        .window_wp = try find.wp(spatial, gallery, "Window"),
+        .easel_wp = try find.wp(spatial, studio, "Easel"),
+        .corner_wp = try find.wp(spatial, studio, "Corner"),
     };
-    var staged = ids;
-    staged.window_wp = try find.wp(spatial, ids.gallery, "Window");
-    staged.easel_wp = try find.wp(spatial, ids.studio, "Easel");
-    staged.corner_wp = try find.wp(spatial, ids.studio, "Corner");
-    try spatial.graph.connect(staged.easel_wp, staged.corner_wp, null);
-    try spatial.add_hotspot(world.lookup_entity("VelvetRope").?, ids.gallery, .{ .x = 4, .y = -5 }, 3, "Velvet Rope", "A rope across the gallery's far end.");
-    try spatial.add_hotspot(world.lookup_entity("EaselBoard").?, ids.studio, .{ .x = 12, .y = -5 }, 3, "Easel Board", "A board turned to the wall.");
-    try spatial.register_entity(staged.audra, staged.window_wp, 4);
-    try spatial.register_entity(staged.corin, staged.easel_wp, 4);
-    try spatial.register_entity(staged.pell, staged.corner_wp, 4);
-    return staged;
+    try spatial.graph.connect(ids.easel_wp, ids.corner_wp, null);
+    try spatial.add_hotspot(world.lookup_entity("VelvetRope").?, gallery, .{ .x = 4, .y = -5 }, 3, "Velvet Rope", "A rope across the gallery's far end.");
+    try spatial.add_hotspot(world.lookup_entity("EaselBoard").?, studio, .{ .x = 12, .y = -5 }, 3, "Easel Board", "A board turned to the wall.");
+    try spatial.register_entity(ids.audra, ids.window_wp, 4);
+    try spatial.register_entity(ids.corin, ids.easel_wp, 4);
+    try spatial.register_entity(ids.pell, ids.corner_wp, 4);
+    return ids;
 }
 
 fn expect_true(value: bool, err: anyerror) !void {
     if (!value) return err;
 }
 
-fn name_of(world: *const bespoke.World, entity: bespoke.EntityId) []const u8 {
-    return world.get_entity_name(entity) orelse "?";
-}
-
 /// What one run of the studio produced, so the rewind pass can compare two runs.
 const Outcome = struct {
-    ticks: u64 = 0,
     found_tick: ?u64 = null,
     line: [96]u8 = @splat(0),
     line_len: usize = 0,
@@ -149,7 +142,6 @@ fn play(
     var speech_buf: [256]u8 = undefined;
     var ticks: usize = 0;
     while (ticks < 24) : (ticks += 1) {
-        outcome.ticks += 1;
         _ = try host.tick(vm, compiled);
 
         if (host.speech_this_tick(world, vm, &speech_buf)) |line| {
@@ -183,7 +175,7 @@ fn play(
     }
 }
 
-fn run_headless_inner(allocator: std.mem.Allocator, writer: anytype) !void {
+pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
@@ -248,10 +240,6 @@ fn run_headless_inner(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("  VERIFICATION COMPLETE: one room watched, another lived in.\n");
     try writer.writeAll("===================================================================\n\n");
     try golden.final_facts(allocator, writer, &world);
-}
-
-pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
-    try run_headless_inner(allocator, writer);
 }
 
 pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void {

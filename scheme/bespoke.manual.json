@@ -1115,6 +1115,31 @@
             {"label": "Authoring Guide, Host API", "target": "docs/AUTHORING.md#8-host-api", "kind": "document"}
           ],
           "related": ["authoring-guide-walkthroughs", "fiber-scheduler", "typed-commands-vocabulary"]
+        },
+        {
+          "id": "watched-room-view",
+          "title": "Watching a Room the Player Is Not In",
+          "summary": "A host captures a frame from any room and draws it without moving the VM, so the player can watch a scene play out elsewhere.",
+          "synopsis": "bridge.capture_scene(&world, &spatial, &vm, studio); bridge.swap(); window.render_frame(bridge.get_frame(), false);",
+          "tags": ["display", "capture", "scene", "host"],
+          "what": "Lets a host show a room the player is not standing in. The room keeps simulating on the tick clock while its frame is drawn, and the player's own scene, its routines, and the VM are untouched.",
+          "how": [
+            "capture_scene fills the back buffer from a named room: the agents, waypoints, edges, and hotspots whose room is that entity, labelled as the room and carrying its SceneScore.",
+            "capture_frame is the same call with vm.current_scene, so a host that never watches anything keeps its old call and the same frame.",
+            "Capture reads only: it never sets vm.current_scene, pauses or resumes a fiber, or fires a cue. The world already steps facts, expiry, motors, agendas, societies, grids, and decisions in every room.",
+            "Scene-owned routine fibers pause on a transition (D-014), so a watched room shows agenda-driven and cue-driven actors; routine-driven actors wait for P44-07.",
+            "The host keeps interaction off the watched view, since walks and clicks resolve in the room the player is actually in. The view is host state and is never saved; a rewind restores the world and the host captures again.",
+            "The Long Gallery toggles the view with V while an agenda catches a character in the next room; its watched frame is in the render golden."
+          ],
+          "why": "Changing the VM's scene to look elsewhere would pause the room the player is in, wake the watched room's routines, and change scene rules and music. A read-only capture keeps looking separate from being there, and the room label lets the renderer, theme, and audio treat the view as that room.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-138", "target": "docs/DECISIONS.md#d-138", "kind": "decision"},
+            {"label": "Display Bridge", "target": "src/display.zig", "kind": "source"},
+            {"label": "Supported API", "target": "docs/API.md", "kind": "document"},
+            {"label": "The Long Gallery proof", "target": "proofs/long_gallery.zig", "kind": "source"}
+          ],
+          "related": ["host-kit-api", "agendas-and-proactive-agency"]
         }
       ]
     },
