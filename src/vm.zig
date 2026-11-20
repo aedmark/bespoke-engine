@@ -913,7 +913,7 @@ pub const VM = struct {
         const code = self.chunk.code.items;
 
         while (pc < code.len) {
-            const op: Opcode = @enumFromInt(code[pc]);
+            const op: Opcode = @fromBackingInt(@intCast(code[pc]));
             pc += 1;
 
             switch (op) {
@@ -1010,7 +1010,7 @@ pub const VM = struct {
             }
             instructions_executed += 1;
 
-            const op: Opcode = @enumFromInt(code[f.pc]);
+            const op: Opcode = @fromBackingInt(@intCast(code[f.pc]));
             f.pc += 1;
 
             switch (op) {
@@ -1990,6 +1990,61 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
         }
     }
     try testing.expect(found_transition_cue);
+}
+
+test "P44-07: a character routine runs in every room while a scene-owned fiber pauses" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+
+    const gallery = try world.intern_entity("Long Gallery");
+    const studio = try world.intern_entity("Locked Studio");
+    const corin = try world.intern_entity("Corin");
+    const paces = try world.intern_relation("Paces", .property);
+    const lit = try world.intern_relation("Lit", .property);
+
+    // Corin's fiber is owned by a character; the studio's is owned by the scene itself. Each
+    // remembers one fact on its first turn.
+    const corin_pc = chunk.count();
+    try chunk.emit_push_entity(corin);
+    try chunk.emit_push_relation(paces);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.halt);
+
+    const studio_pc = chunk.count();
+    try chunk.emit_push_entity(studio);
+    try chunk.emit_push_relation(lit);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.halt);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    try vm.transition_to_scene(studio);
+    const corin_fiber = try vm.spawn_routine(corin, corin_pc);
+    const studio_fiber = try vm.spawn_routine(studio, studio_pc);
+
+    // The player leaves. The transition pauses the room's own fiber and leaves the character's
+    // alone, so a character routine keeps running in the room left behind.
+    try vm.transition_to_scene(gallery);
+    try testing.expect(vm.fibers.items[corin_fiber - 1].state != .paused);
+    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[studio_fiber - 1].state);
+
+    try vm.step_tick();
+    try testing.expect(world.has_fact(corin, paces, 1));
+    try testing.expect(!world.has_fact(studio, lit, 1));
+    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[studio_fiber - 1].state);
+
+    // Coming back wakes the room's own routine.
+    try vm.transition_to_scene(studio);
+    try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[studio_fiber - 1].state);
+    try vm.step_tick();
+    try testing.expect(world.has_fact(studio, lit, 1));
 }
 
 test "P13-02: VM dynamically evaluates and prunes dialogue choices based on relational facts" {

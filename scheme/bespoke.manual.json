@@ -1127,11 +1127,11 @@
             "capture_scene fills the back buffer from a named room: the agents, waypoints, edges, and hotspots whose room is that entity, labelled as the room and carrying its SceneScore.",
             "capture_frame is the same call with vm.current_scene, so a host that never watches anything keeps its old call and the same frame.",
             "Capture reads only: it never sets vm.current_scene, pauses or resumes a fiber, or fires a cue. The world already steps facts, expiry, motors, agendas, societies, grids, and decisions in every room.",
-            "Scene-owned routine fibers pause on a transition (D-014), so a watched room shows agenda-driven and cue-driven actors; routine-driven actors wait for P44-07.",
+            "Character routines keep running in every room, so a watched room shows them: `step_tick` runs every ready fiber. `transition_to_scene` pauses only fibers owned by the scene being left (D-014), which reaches an ambient routine declared on a scene entity and no routine-driven character.",
             "The host keeps interaction off the watched view, since walks and clicks resolve in the room the player is actually in. The view is host state and is never saved; a rewind restores the world and the host captures again.",
             "The Long Gallery toggles the view with V while an agenda catches a character in the next room; its watched frame is in the render golden."
           ],
-          "why": "Changing the VM's scene to look elsewhere would pause the room the player is in, wake the watched room's routines, and change scene rules and music. A read-only capture keeps looking separate from being there, and the room label lets the renderer, theme, and audio treat the view as that room.",
+          "why": "Changing the VM's scene to look elsewhere would pause the room the player is in, wake the watched room's scene-owned routines, and change scene rules and music. A read-only capture keeps looking separate from being there, and the room label lets the renderer, theme, and audio treat the view as that room.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-138", "target": "docs/DECISIONS.md#d-138", "kind": "decision"},
