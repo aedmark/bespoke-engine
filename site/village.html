@@ -371,6 +371,10 @@
           // step (or, in the duel, starts the next duel).
           event.preventDefault();
           if (!open) key(83);
+        } else if (event.key === 'n' || event.key === 'N') {
+          // [N]: Step, as the desktop window's key does (D-094). The runtime steps one tick.
+          event.preventDefault();
+          key(110);
         } else if ('cdefgab'.includes(event.key.toLowerCase()) && event.key.length === 1) {
           // Distaff notes (D-071): The Bell Tower plays drafts on C to B. Decks whose script
           // declares no drafts ignore them.
