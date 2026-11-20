@@ -29,6 +29,7 @@ const saltmarket = @import("saltmarket.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory_puzzle = @import("observatory_puzzle.zig");
 const word_foundry = @import("word_foundry.zig");
+const cinder_table = @import("cinder_table.zig");
 const golden_digest = @import("golden_digest.zig");
 const bespoke = @import("bespoke");
 
@@ -66,6 +67,7 @@ const proofs = [_]struct { name: []const u8, run: RunFn }{
     .{ .name = "grid_puzzle", .run = bind(grid_puzzle.run_headless) },
     .{ .name = "observatory_puzzle", .run = bind(observatory_puzzle.run_headless) },
     .{ .name = "word_foundry", .run = bind(word_foundry.run_headless) },
+    .{ .name = "cinder_table", .run = bind(cinder_table.run_headless) },
 };
 
 fn first_difference(expected: []const u8, actual: []const u8) struct { line: usize, want: []const u8, got: []const u8 } {

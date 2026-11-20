@@ -20,6 +20,7 @@ pub const saltmarket = @import("saltmarket.zig");
 pub const grid_puzzle = @import("grid_puzzle.zig");
 pub const observatory_puzzle = @import("observatory_puzzle.zig");
 pub const word_foundry = @import("word_foundry.zig");
+pub const cinder_table = @import("cinder_table.zig");
 
 const Proof = enum {
     tavern,
@@ -36,6 +37,7 @@ const Proof = enum {
     grid,
     observatory,
     word_foundry,
+    cinder_table,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -78,6 +80,9 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "word-foundry", .proof = .word_foundry },
     .{ .name = "foundry", .proof = .word_foundry },
     .{ .name = "spellbook", .proof = .word_foundry },
+    .{ .name = "cinder-table", .proof = .cinder_table },
+    .{ .name = "cinder", .proof = .cinder_table },
+    .{ .name = "decisions", .proof = .cinder_table },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -109,6 +114,7 @@ const usage =
     \\  --grid               The Castle Fire Escape (grid fire, smoke, water, hazards)
     \\  --observatory        The Larkspur Observatory (agendas, pursuit, interception)
     \\  --word-foundry       The Word Foundry (spell vocabularies; headless only)
+    \\  --cinder-table       The Cinder Table (private hands and scored decisions; headless only)
     \\
 ;
 
@@ -168,6 +174,7 @@ pub fn main(init: std.process.Init) !void {
         .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, io, stdout),
         .observatory => if (headless) try observatory_puzzle.run_headless(allocator, stdout) else try observatory_puzzle.run_interactive(allocator, io, stdout),
         .word_foundry => if (headless) try word_foundry.run_headless(allocator, stdout) else try stdout.writeAll("The Word Foundry is a headless proof; run it with --headless.\n"),
+        .cinder_table => if (headless) try cinder_table.run_headless(allocator, stdout) else try stdout.writeAll("The Cinder Table is a headless proof; run it with --headless.\n"),
     }
 }
 
@@ -186,6 +193,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = grid_puzzle;
     _ = observatory_puzzle;
     _ = word_foundry;
+    _ = cinder_table;
     std.testing.refAllDecls(@This());
 }
 

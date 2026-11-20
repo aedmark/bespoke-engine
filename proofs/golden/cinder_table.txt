@@ -1,0 +1,39 @@
+===================================================================
+       BeSpoke Engine: The Cinder Table (Private Hands)
+       (Four Rounds * Scored Plays * One Inference)
+===================================================================
+
+[Deal] Three seats, four cards each, and each seat knows only its own.
+  Maren: SaltOne CinderOne CinderTwo SaltTwo
+  Ossic: SaltThree ReedOne ReedTwo ReedThree
+  Ines: SaltFour CinderThree CinderFour ReedFour
+
+[Round 1] Maren leads.
+  Maren plays SaltOne (6).
+  Ossic plays SaltThree (3).
+  Ines plays SaltFour (3).
+
+[Round 2] Maren leads.
+  Maren plays CinderOne (5).
+  Ossic plays ReedOne (2).
+  [ 6] Ossic: "No cinder left. I throw this one away."
+  Ines plays CinderThree (3).
+
+[Round 3] Maren leads.
+  Maren plays CinderTwo (10).
+  Ossic plays ReedTwo (1).
+  Ines plays CinderFour (2).
+
+[Round 4] Maren leads.
+  Maren plays SaltTwo (3).
+  Ossic plays ReedThree (3).
+  Ines plays ReedFour (1).
+
+[Rewind] The same deal replayed makes the same twelve plays.
+     Ossic is void in cinder after round two; Maren's cinder lead rises from 5 to 10.
+
+===================================================================
+  VERIFICATION COMPLETE: private hands, scored plays, one inference.
+===================================================================
+
+final facts: 20, digest 40b185b89249467a
