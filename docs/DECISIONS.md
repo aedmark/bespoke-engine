@@ -1674,6 +1674,8 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **If that changes.** Close the name gap by reading a routine name with `parse_name`, so every `during Name` has a literal replacement. Then ship a minor warning release with a located warning naming `routine Crowd(Crowd):`, and remove the keyword in a later minor before 1.0 with a located error naming the same replacement. The multi-word migration follows the first step: `during Judge Marrow:` becomes `routine Judge Marrow(Judge Marrow):`.
 
+**Update (P44-07, 2026-11-20):** The first step is done. A routine's own name takes a name with spaces the way the actor does, so every `during Name:` form has a literal `routine Name(Name):` replacement. The shorthand still stays for now; a later deprecation needs only the warning release and the removal.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

@@ -255,7 +255,7 @@ test "P15-03: check_source reports diagnostic on invalid script syntax" {
     try testing.expect(!res.is_valid);
     try testing.expect(res.diagnostic() != null);
     try testing.expectEqual(@as(u32, 1), res.diagnostic().?.line);
-    try testing.expectEqual(@as(u32, 16), res.diagnostic().?.column);
+    try testing.expectEqual(@as(u32, 21), res.diagnostic().?.column);
     try testing.expect(std.mem.indexOf(u8, res.diagnostic().?.message, "expected '('") != null);
 }
 
@@ -341,15 +341,15 @@ test "CheckResult owns its message after check_source returns" {
     @memset(noise, 0x55);
 
     const d = res.diagnostic().?;
-    try testing.expectEqualStrings("expected '(', found 'Guard'", d.message);
+    try testing.expectEqualStrings("expected '(', found ')'", d.message);
     try testing.expectEqualStrings(d.message, res.message());
     try testing.expectEqual(@as(u32, 1), d.line);
-    try testing.expectEqual(@as(u32, 16), d.column);
+    try testing.expectEqual(@as(u32, 21), d.column);
 
     // A copied result carries the bytes, not a slice into the original.
     const copy = res;
     _ = scribble_stack(0x33);
-    try testing.expectEqualStrings("expected '(', found 'Guard'", copy.message());
+    try testing.expectEqualStrings("expected '(', found ')'", copy.message());
 }
 
 const ARRIVAL_SCRIPT =

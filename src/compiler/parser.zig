@@ -2025,7 +2025,7 @@ pub const Parser = struct {
 
     fn parse_routine_decl(self: *Parser) !Routine {
         try self.advance(); // consume 'routine'
-        const name = (try self.expect(.identifier)).slice;
+        const name = try self.parse_name();
         _ = try self.expect(.lparen);
         const entity = try self.parse_name();
         _ = try self.expect(.rparen);
@@ -2856,7 +2856,7 @@ test "P15-03: parser captures accurate line and column diagnostics on syntax err
     const diag = parser.get_diagnostic();
     try testing.expect(diag != null);
     try testing.expectEqual(@as(u32, 1), diag.?.line);
-    try testing.expectEqual(@as(u32, 16), diag.?.column);
+    try testing.expectEqual(@as(u32, 21), diag.?.column);
     try testing.expect(std.mem.indexOf(u8, diag.?.message, "expected '('") != null);
 }
 
@@ -2983,10 +2983,12 @@ test "P24-01: parser parses path declarations with locked facts and path-owned r
     }
 }
 
-test "P44-07: a routine header takes a multi-word actor" {
+test "P44-07: a routine header takes multi-word names for itself and its actor" {
     const testing = std.testing;
     const source =
         \\routine Cheer(Judge Marrow):
+        \\  remember Cheered("Judge Marrow")
+        \\routine Judge Marrow(Judge Marrow):
         \\  remember Cheered("Judge Marrow")
     ;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -2996,9 +2998,12 @@ test "P44-07: a routine header takes a multi-word actor" {
     var parser = try Parser.init(arena.allocator(), &lexer);
     const ast = try parser.parse_program();
 
-    try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
+    try testing.expectEqual(@as(usize, 2), ast.routines.items.len);
     try testing.expectEqualStrings("Cheer", ast.routines.items[0].name);
     try testing.expectEqualStrings("Judge Marrow", ast.routines.items[0].entity);
+    // The multi-word name is the literal replacement for `during Judge Marrow:`.
+    try testing.expectEqualStrings("Judge Marrow", ast.routines.items[1].name);
+    try testing.expectEqualStrings("Judge Marrow", ast.routines.items[1].entity);
 }
 
 test "D-101: a quoted name keeps characters a word cannot, in scene, cast, props, marks, and transitions" {

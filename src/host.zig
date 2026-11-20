@@ -1767,7 +1767,7 @@ test "P44-07: the during spelling runs a routine owned by its multi-word name" {
     try testing.expect(world.has_fact(judge, world.lookup_relation("Cheered").?, null));
 }
 
-test "P44-07: a routine header owns a multi-word actor" {
+test "P44-07: a routine header owns a multi-word name and actor" {
     const compiler = @import("compiler.zig");
     var world = try World.init(testing.allocator, 256 * 1024);
     defer world.deinit();
@@ -1776,7 +1776,7 @@ test "P44-07: a routine header owns a multi-word actor" {
     var compiled = try compiler.compile_source(testing.allocator, &world, null,
         \\relation Cheered(who)
         \\
-        \\routine Cheer(Judge Marrow):
+        \\routine Judge Marrow(Judge Marrow):
         \\  remember Cheered("Judge Marrow")
     );
     defer compiled.deinit();
