@@ -23,7 +23,6 @@ const spell_mod = @import("spell.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
-pub const RelationKind = world_mod.RelationKind;
 
 pub const MAX_DECISIONS: usize = 32;
 pub const MAX_CLAUSES: usize = 8;
@@ -129,8 +128,8 @@ pub fn validate_all(declarations: []const Declaration) Error!void {
 }
 
 const Vocabulary = struct {
-    state: RelationKind,
-    chose: RelationKind,
+    state: world_mod.RelationKind,
+    chose: world_mod.RelationKind,
     stages: [STAGE_NAMES.len]EntityId,
 
     fn intern(world: *World) !Vocabulary {
@@ -187,15 +186,17 @@ pub fn seed(world: *World, declarations: []const Declaration) !void {
     }
 }
 
-/// True when every trigger line holds in the current World. A relation no fact has ever used
-/// cannot hold, so a `requires` on it fails and an `unless` on it passes.
+/// Whether the clause's fact is present. A relation no fact has ever used cannot hold, so a
+/// `requires` on it fails and an `unless` on it passes.
+fn holds(world: *const World, clause: Clause) bool {
+    const relation = world.lookup_relation(clause.relation) orelse return false;
+    return world.has_fact(clause.subject, relation, if (clause.object) |o| o.to_int() else null);
+}
+
+/// True when every trigger line holds in the current World.
 pub fn triggered(world: *const World, decision: Decision) bool {
     for (decision.clauses) |clause| {
-        const present = if (world.lookup_relation(clause.relation)) |relation|
-            world.has_fact(clause.subject, relation, if (clause.object) |o| o.to_int() else null)
-        else
-            false;
-        if (present == clause.negated) return false;
+        if (holds(world, clause) == clause.negated) return false;
     }
     return true;
 }
@@ -212,11 +213,7 @@ fn offered(world: *const World, actor: EntityId, option: EntityId) bool {
 pub fn score_of(world: *const World, option: Option) i32 {
     var total: i32 = 0;
     for (option.picks) |pick| {
-        const present = if (world.lookup_relation(pick.clause.relation)) |relation|
-            world.has_fact(pick.clause.subject, relation, if (pick.clause.object) |o| o.to_int() else null)
-        else
-            false;
-        if (present != pick.clause.negated) total += pick.points;
+        if (holds(world, pick.clause) != pick.clause.negated) total += pick.points;
     }
     return total;
 }

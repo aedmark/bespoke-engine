@@ -14,6 +14,9 @@ const decision = bespoke.decision;
 const spell = bespoke.spell;
 const ListWriter = bespoke.ListWriter;
 
+/// Twelve cards: four rounds of three seats.
+const TOTAL_PLAYS: usize = 12;
+
 pub const CINDER_TABLE_SCRIPT =
     \\scene: TheCinderTable
     \\cast: Maren, Ossic, Ines
@@ -231,13 +234,12 @@ fn option_of(decl: decision.Decision, entity: bespoke.EntityId) ?decision.Option
 
 const Play = struct {
     actor: bespoke.EntityId,
-    decision: bespoke.EntityId,
     option: bespoke.EntityId,
     score: i32,
 };
 
 const Run = struct {
-    plays: [12]Play = undefined,
+    plays: [TOTAL_PLAYS]Play = undefined,
     len: usize = 0,
     rounds: usize = 0,
     /// The last option each seat chose, so a choice is reported once.
@@ -255,7 +257,7 @@ fn play_game(
     run: *Run,
 ) !void {
     var ticks: usize = 0;
-    while (run.len < 12 and ticks < 48) : (ticks += 1) {
+    while (run.len < TOTAL_PLAYS and ticks < TOTAL_PLAYS * 4) : (ticks += 1) {
         if (ticks > 0) _ = try host.tick(vm, compiled);
 
         var speech_buf: [512]u8 = undefined;
@@ -279,7 +281,6 @@ fn play_game(
             run.last[index] = option;
             run.plays[run.len] = .{
                 .actor = decl.actor,
-                .decision = entity,
                 .option = option,
                 .score = score,
             };
@@ -316,7 +317,7 @@ fn run_headless_inner(allocator: std.mem.Allocator, writer: anytype) !void {
     var sink_writer = ListWriter.init(&sink);
     try host.run_initial_statements(&world, &vm, &compiled);
     try play_game(&world, &vm, &compiled, ids, &sink_writer.writer, &first);
-    try expect_true(first.len == 12, error.TableNotFinished);
+    try expect_true(first.len == TOTAL_PLAYS, error.TableNotFinished);
 
     // Second pass: restore the deal and report it.
     var restore_stream: std.Io.Reader = .fixed(opening.items);
@@ -336,7 +337,7 @@ fn run_headless_inner(allocator: std.mem.Allocator, writer: anytype) !void {
     }
 
     try play_game(&world, &vm, &compiled, ids, writer, &second);
-    try expect_true(second.len == 12, error.TableNotFinished);
+    try expect_true(second.len == TOTAL_PLAYS, error.TableNotFinished);
 
     // The replayed table makes the same twelve choices, card for card and score for score.
     try expect_true(first.len == second.len, error.ReplayShortened);

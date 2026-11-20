@@ -1892,7 +1892,7 @@ pub const Parser = struct {
             } else if (std.mem.eql(u8, directive, "requires") or std.mem.eql(u8, directive, "unless")) {
                 try clauses.append(.{
                     .pattern = try self.decision_clause("decision", name),
-                    .negated = directive[0] == 'u',
+                    .negated = std.mem.eql(u8, directive, "unless"),
                 });
                 if (clauses.items.len > decision_mod.MAX_CLAUSES)
                     return self.set_error("decision '{s}' has more than {d} trigger lines", .{ name, decision_mod.MAX_CLAUSES });
@@ -1917,7 +1917,7 @@ pub const Parser = struct {
                     const modifier = self.current.slice;
                     if (!(std.mem.eql(u8, modifier, "when") or std.mem.eql(u8, modifier, "unless")))
                         return self.set_error("option '{s}' needs 'when' or 'unless' after its points", .{option_name});
-                    const negated = modifier[0] == 'u';
+                    const negated = std.mem.eql(u8, modifier, "unless");
                     try self.advance();
                     const signed: i32 = if (std.mem.eql(u8, line, "drops")) -@as(i32, @intCast(points)) else @intCast(points);
                     try picks.append(.{
