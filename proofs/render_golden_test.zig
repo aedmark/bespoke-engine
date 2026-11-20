@@ -38,6 +38,7 @@ const bell_tower = @import("bell_tower.zig");
 const grog_puzzle = @import("grog_puzzle.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory_puzzle = @import("observatory_puzzle.zig");
+const long_gallery = @import("long_gallery.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -67,6 +68,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "grog_puzzle", .script = grog_puzzle.GROG_PUZZLE_SCRIPT },
     .{ .name = "grid_puzzle", .script = grid_puzzle.GRID_PUZZLE_SCRIPT },
     .{ .name = "observatory_puzzle", .script = observatory_puzzle.OBSERVATORY_SCRIPT },
+    .{ .name = "long_gallery", .script = long_gallery.LONG_GALLERY_SCRIPT },
 };
 
 /// A `scene:` block's name and `cast:` line, read from script text. The compiler does not
@@ -236,11 +238,16 @@ const Recorder = struct {
     /// of the pass, so one crowded scene does not hide the rest.
     crowded: usize = 0,
 
-    /// Draws the current frame and appends `<label>: <hash>` to the record.
+    /// Draws the VM's current scene and appends `<label>: <hash>` to the record.
     fn draw(self: *Recorder, label: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem, vm: *bespoke.VM) !void {
+        try self.draw_scene(label, world, spatial, vm, null);
+    }
+
+    /// Draws one of the world's rooms, whether or not the VM is in it (P44-06).
+    fn draw_scene(self: *Recorder, label: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem, vm: *bespoke.VM, scene: ?bespoke.EntityId) !void {
         var bridge = bespoke.DisplayBridge.init();
         bridge.set_status_hook(art.capture_status);
-        bridge.capture_frame(world, spatial, vm);
+        bridge.capture_scene(world, spatial, vm, scene orelse vm.current_scene);
         bridge.swap();
         try self.draw_frame(label, bridge.get_frame());
         const default_hash = self.window.frame_hash().?;
@@ -541,6 +548,10 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
         _ = try observatory_puzzle.configure(world, spatial);
         return;
     }
+    if (std.mem.eql(u8, name, "long_gallery")) {
+        _ = try long_gallery.configure(world, spatial);
+        return;
+    }
 }
 
 fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
@@ -594,6 +605,18 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
         try rec.thumbnail(name, sc.scene, &world, &spatial);
         var label_buf: [128]u8 = undefined;
         try rec.draw(try std.fmt.bufPrint(&label_buf, "{s}/{s}", .{ name, sc.scene }), &world, &spatial, &vm);
+    }
+
+    // P44-06: the watched frame is the studio while the VM stands in the gallery, with the
+    // studio's agenda already walking Corin across the room.
+    if (std.mem.eql(u8, name, "long_gallery")) {
+        const gallery = world.lookup_entity("Long Gallery") orelse return error.SceneNotCompiled;
+        const studio = world.lookup_entity("Locked Studio") orelse return error.SceneNotCompiled;
+        try vm.transition_to_scene(gallery);
+        try bespoke.host.run_initial_statements(&world, &vm, &compiled);
+        var ticks: usize = 0;
+        while (ticks < 3) : (ticks += 1) _ = try bespoke.host.tick(&vm, &compiled);
+        try rec.draw_scene("long_gallery/Locked Studio watched", &world, &spatial, &vm, studio);
     }
 }
 

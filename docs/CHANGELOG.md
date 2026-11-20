@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A host can show a room the player is not in: `DisplayBridge.capture_scene` fills a frame from a named room without moving the VM, and the room keeps simulating on the tick clock (`P44-06`, `D-138`). The Long Gallery watches an agenda play out in a locked studio.
+
 - A script declares a decision with an actor, a cue, trigger lines, and options whose scored lines sum to a total; the engine offers only the options the actor knows, picks the highest total with ties going to the first declared, and fires the cue with the winner (`P44-05`, `D-137`). The Cinder Table shows it: three seats play four rounds from private hands, and a public discard raises the lead one seat already held.
 
 - A script declares a spellbook of power, element, and form words and the combinations that spell something; a cast resolves by name or by triple and fires the cue named after the spell, and each word is gated by what the caster has discovered (`P44-04`, `D-136`). The Word Foundry shows it: three clues teach six words, two combinations resolve, and a third refuses without changing the room.

@@ -583,17 +583,31 @@ pub const DisplayBridge = struct {
         self.back_buffer.vector_conduit_count += 1;
     }
 
-    /// Captures a read-only snapshot of simulation state into the back buffer (D-001, P6-02).
+    /// Captures a read-only snapshot of the VM's current scene into the back buffer (D-001, P6-02).
     pub fn capture_frame(
         self: *DisplayBridge,
         world: *const World,
         spatial: *const SpatialSystem,
         vm: *const VM,
     ) void {
+        self.capture_scene(world, spatial, vm, vm.current_scene);
+    }
+
+    /// Captures a named room into the back buffer without moving the VM (P44-06, D-138). The frame
+    /// is labelled as that room and carries its `SceneScore`, so the renderer, theme, and audio
+    /// treat it as that room. A null scene captures every room, as `capture_frame` does before a
+    /// scene is set. Read-only: the VM's scene, fibers, and rules are untouched.
+    pub fn capture_scene(
+        self: *DisplayBridge,
+        world: *const World,
+        spatial: *const SpatialSystem,
+        vm: *const VM,
+        scene: ?EntityId,
+    ) void {
         const prev_max_history = self.back_buffer.max_history_tick;
         self.back_buffer.tick = world.current_tick;
         self.back_buffer.fact_count = world.fact_count();
-        const active_scene_id = vm.current_scene;
+        const active_scene_id = scene;
 
         // 1. Capture entities and positions (scoped to active scene if set)
         var e_count: usize = 0;
@@ -849,8 +863,9 @@ pub const DisplayBridge = struct {
         }
         self.back_buffer.debug_fiber_count = fib_count;
 
-        // 8. Capture active scene (P12-03, D-014)
-        if (vm.current_scene) |scene_id| {
+        // 8. Capture the scene label (P12-03, D-014): the captured room, which is the VM's own
+        // scene through `capture_frame` and may differ through `capture_scene` (P44-06).
+        if (scene) |scene_id| {
             if (world.get_entity_name(scene_id)) |sname| {
                 const len = @min(sname.len, self.back_buffer.current_scene.len);
                 @memcpy(self.back_buffer.current_scene[0..len], sname[0..len]);
@@ -865,7 +880,7 @@ pub const DisplayBridge = struct {
         // 8a. Choose script music from World facts alone (P28-03, D-062), so a restored save
         // or rewind brings its music back without the compiled program.
         self.back_buffer.current_score_len = 0;
-        if (current_score_entity(world, vm.current_scene)) |score_id| {
+        if (current_score_entity(world, scene)) |score_id| {
             if (world.get_entity_name(score_id)) |name| {
                 const len = @min(name.len, self.back_buffer.current_score.len);
                 @memcpy(self.back_buffer.current_score[0..len], name[0..len]);
@@ -1024,6 +1039,58 @@ test "P12-03: DisplayBridge.capture_frame scopes waypoints, hotspots, and entiti
     try testing.expectEqual(@as(usize, 2), frame_all.waypoint_count);
     try testing.expectEqual(@as(usize, 2), frame_all.hotspot_count);
     try testing.expectEqual(@as(usize, 2), frame_all.entity_count);
+}
+
+test "P44-06: capture_scene shows another room without moving the VM" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const gallery = try world.intern_entity("Gallery");
+    const studio = try world.intern_entity("Studio");
+    const wp_gallery = try spatial.graph.add_waypoint(gallery, 0, 0, "Window");
+    const wp_studio = try spatial.graph.add_waypoint(studio, 10, 0, "Easel");
+    const painter = try world.intern_entity("Painter");
+    const visitor = try world.intern_entity("Visitor");
+    try spatial.register_entity(visitor, wp_gallery, 5);
+    try spatial.register_entity(painter, wp_studio, 5);
+    try spatial.add_hotspot(try world.intern_entity("Canvas"), studio, .{ .x = 10, .y = -5 }, 5, "Canvas", "A wet canvas.");
+    const track = try world.intern_entity("StudioTheme");
+    try world.remember(studio, try world.intern_relation(mml_mod.SCENE_RELATION, .property), track.to_int(), 0);
+
+    var chunk = vm_mod.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    vm.current_scene = gallery;
+
+    // A routine owned by the room the player is in must stay paused through a watched capture.
+    const fiber_id = try vm.spawn_routine(gallery, 0);
+    for (vm.fibers.items) |*fiber| {
+        if (fiber.id == fiber_id) fiber.state = .{ .paused = {} };
+    }
+
+    var bridge = DisplayBridge.init();
+    bridge.capture_scene(&world, &spatial, &vm, studio);
+    bridge.swap();
+    const frame = bridge.get_frame();
+    try testing.expectEqualStrings("Studio", frame.get_current_scene());
+    try testing.expectEqualStrings("StudioTheme", frame.get_current_score());
+    try testing.expectEqual(@as(usize, 1), frame.waypoint_count);
+    try testing.expectEqualStrings("Easel", frame.waypoints[0].get_name());
+    try testing.expectEqual(@as(usize, 1), frame.hotspot_count);
+    try testing.expectEqualStrings("Canvas", frame.hotspots[0].get_name());
+    try testing.expectEqual(@as(usize, 1), frame.entity_count);
+    try testing.expectEqualStrings("Painter", frame.entities[0].get_name());
+
+    // The capture read the studio; it did not take the VM there.
+    try testing.expectEqual(gallery, vm.current_scene.?);
+    for (vm.fibers.items) |fiber| {
+        if (fiber.id == fiber_id) try testing.expectEqual(vm_mod.FiberStateTag.paused, std.meta.activeTag(fiber.state));
+    }
 }
 
 test "P16-01: DisplayBridge attaches AudioBridge and forwards scene context" {

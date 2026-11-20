@@ -1,0 +1,18 @@
+===================================================================
+       BeSpoke Engine: The Long Gallery (A Room You Are Not In)
+===================================================================
+
+[Opening] Audra keeps the gallery. The studio door is locked from the far side.
+[Watching] Locked Studio at tick 2
+  Pell at Corner
+  Corin at Easel, moving
+[Speech 7] Corin: "Caught you at the easel."
+
+[Caught] Pell at tick 7: Corin: "Caught you at the easel."
+[Rewind] The same opening replays to the same line and the same tick.
+
+===================================================================
+  VERIFICATION COMPLETE: one room watched, another lived in.
+===================================================================
+
+final facts: 2, digest 2ef00ccb7213da56
