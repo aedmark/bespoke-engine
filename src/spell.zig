@@ -59,14 +59,6 @@ pub const Kind = enum(u2) {
             .form => "form",
         };
     }
-
-    pub fn plural(self: Kind) []const u8 {
-        return switch (self) {
-            .power => "powers",
-            .element => "elements",
-            .form => "forms",
-        };
-    }
 };
 
 /// One word of a book. `tier` is its position among the words of its kind, from one.
@@ -80,10 +72,6 @@ pub const Word = struct {
 pub const Spell = struct {
     entity: EntityId,
     words: [3]EntityId,
-
-    pub fn word(self: Spell, kind: Kind) EntityId {
-        return self.words[kind.index()];
-    }
 };
 
 pub const Book = struct {
@@ -126,7 +114,7 @@ pub const Outcome = union(enum) {
     refused: Refusal,
 };
 
-pub fn find_word(book: *const Book, entity: EntityId) ?Word {
+fn find_word(book: *const Book, entity: EntityId) ?Word {
     for (book.words) |word| if (word.entity == entity) return word;
     return null;
 }
@@ -236,22 +224,11 @@ pub fn validate(declaration: Declaration) Error!void {
     }
 }
 
-/// Validates a program's books together. One book is allowed; word and spell entities must be
-/// unique across the file because both are interned by name.
+/// Validates a program's books. One book is allowed, so each book is validated on its own;
+/// raise the ceiling and add a cross-book name check here before allowing a second.
 pub fn validate_all(declarations: []const Declaration) Error!void {
     if (declarations.len > MAX_BOOKS) return Error.InvalidSpellbook;
-    for (declarations, 0..) |declaration, i| {
-        try validate(declaration);
-        for (declarations[0..i]) |prior| {
-            if (prior.book.entity == declaration.book.entity) return Error.InvalidSpellbook;
-            for (prior.book.words) |word| for (declaration.book.words) |other| {
-                if (word.entity == other.entity) return Error.InvalidSpellbook;
-            };
-            for (prior.book.spells) |spell| for (declaration.book.spells) |other| {
-                if (spell.entity == other.entity) return Error.InvalidSpellbook;
-            };
-        }
-    }
+    for (declarations) |declaration| try validate(declaration);
 }
 
 test "P44-04: a valid triple resolves, and an invalid one is refused" {

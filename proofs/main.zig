@@ -19,6 +19,7 @@ pub const grog_puzzle = @import("grog_puzzle.zig");
 pub const saltmarket = @import("saltmarket.zig");
 pub const grid_puzzle = @import("grid_puzzle.zig");
 pub const observatory_puzzle = @import("observatory_puzzle.zig");
+pub const word_foundry = @import("word_foundry.zig");
 
 const Proof = enum {
     tavern,
@@ -34,6 +35,7 @@ const Proof = enum {
     saltmarket,
     grid,
     observatory,
+    word_foundry,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -73,6 +75,9 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "fire-escape", .proof = .grid },
     .{ .name = "observatory", .proof = .observatory },
     .{ .name = "larkspur", .proof = .observatory },
+    .{ .name = "word-foundry", .proof = .word_foundry },
+    .{ .name = "foundry", .proof = .word_foundry },
+    .{ .name = "spellbook", .proof = .word_foundry },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -103,6 +108,7 @@ const usage =
     \\  --saltmarket         The Saltmarket (three paths, route locks)
     \\  --grid               The Castle Fire Escape (grid fire, smoke, water, hazards)
     \\  --observatory        The Larkspur Observatory (agendas, pursuit, interception)
+    \\  --word-foundry       The Word Foundry (spell vocabularies; headless only)
     \\
 ;
 
@@ -161,6 +167,7 @@ pub fn main(init: std.process.Init) !void {
         .saltmarket => if (headless) try saltmarket.run_headless(allocator, stdout) else try saltmarket.run_interactive(allocator, io, stdout),
         .grid => if (headless) try grid_puzzle.run_headless(allocator, stdout) else try grid_puzzle.run_interactive(allocator, io, stdout),
         .observatory => if (headless) try observatory_puzzle.run_headless(allocator, stdout) else try observatory_puzzle.run_interactive(allocator, io, stdout),
+        .word_foundry => if (headless) try word_foundry.run_headless(allocator, stdout) else try stdout.writeAll("The Word Foundry is a headless proof; run it with --headless.\n"),
     }
 }
 
@@ -178,6 +185,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = saltmarket;
     _ = grid_puzzle;
     _ = observatory_puzzle;
+    _ = word_foundry;
     std.testing.refAllDecls(@This());
 }
 

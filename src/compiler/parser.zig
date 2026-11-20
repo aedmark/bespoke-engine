@@ -1811,7 +1811,7 @@ pub const Parser = struct {
                 const found = spell_word_kind(words.items, row.word) orelse
                     return self.set_error("spell '{s}' names '{s}', which is not a word of spellbook '{s}'", .{ source.name, row.word, name });
                 if (found != row.kind)
-                    return self.set_error("spell '{s}' puts '{s}' in the {s} slot, but '{s}' is one of the {s}", .{ source.name, row.word, row.kind.label(), row.word, found.plural() });
+                    return self.set_error("spell '{s}' puts '{s}' in the {s} slot, but '{s}' is a word of another kind", .{ source.name, row.word, row.kind.label(), row.word });
             }
             for (spells.items[0..si]) |prior| {
                 if (std.mem.eql(u8, prior.power, source.power) and std.mem.eql(u8, prior.element, source.element) and std.mem.eql(u8, prior.form, source.form))
@@ -2965,14 +2965,14 @@ test "P44-04: parser rejects a misplaced or undeclared word, a repeated name, an
         \\  element Ember
         \\  form Bolt
         \\  spell Kindle: Ember, Spark, Bolt
-    , "puts 'Ember' in the power slot, but 'Ember' is one of the elements");
+    , "puts 'Ember' in the power slot, but 'Ember' is a word of another kind");
     try expect_spellbook_error(
         \\spellbook G:
         \\  power Spark
         \\  element Ember
         \\  form Bolt
         \\  spell Kindle: Spark, Ember, Spark
-    , "puts 'Spark' in the form slot, but 'Spark' is one of the powers");
+    , "puts 'Spark' in the form slot, but 'Spark' is a word of another kind");
     try expect_spellbook_error(
         \\spellbook G:
         \\  power Spark

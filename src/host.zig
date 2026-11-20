@@ -202,9 +202,33 @@ pub fn cast(
     name: []const u8,
     target: EntityId,
 ) !spell_mod.Outcome {
-    if (compiled.spellbooks.items.len == 0) return .{ .refused = .no_such_spell };
-    const book = &compiled.spellbooks.items[0].book;
+    const book = spellbook(compiled) orelse return .{ .refused = .no_such_spell };
     const spell = spell_mod.named_text(book, vm.world, name) orelse return .{ .refused = .no_such_spell };
+    return dispatch_spell(vm, compiled, caster, spell, target);
+}
+
+/// Combines three words for `caster` (P44-04), for a host that lets the player build a phrase
+/// instead of naming a spell. The refusal and dispatch rules match `cast`.
+pub fn combine(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    caster: EntityId,
+    power: EntityId,
+    element: EntityId,
+    form: EntityId,
+    target: EntityId,
+) !spell_mod.Outcome {
+    const book = spellbook(compiled) orelse return .{ .refused = .no_such_spell };
+    const spell = spell_mod.resolve(book, power, element, form) orelse return .{ .refused = .no_such_spell };
+    return dispatch_spell(vm, compiled, caster, spell, target);
+}
+
+fn spellbook(compiled: *const CompiledProgram) ?*const spell_mod.Book {
+    if (compiled.spellbooks.items.len == 0) return null;
+    return &compiled.spellbooks.items[0].book;
+}
+
+fn dispatch_spell(vm: *VM, compiled: *const CompiledProgram, caster: EntityId, spell: spell_mod.Spell, target: EntityId) !spell_mod.Outcome {
     const cue = vm.world.get_entity_name(spell.entity) orelse return .{ .refused = .no_such_spell };
     const outcome = spell_mod.check(vm.world, caster, spell);
     switch (outcome) {

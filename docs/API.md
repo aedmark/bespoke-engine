@@ -41,7 +41,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 | `host` | `Session`, `Exit`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, `ScriptSociety`, and the functions listed below |
 | `dialogue` | `View`, `Selection`, `view` |
 | `command` | `Interpreter`, `WordList`, `Command` |
-| `spell` | `Book`, `Spell`, `Word`, `Kind`, `Refusal`, `Outcome`, `MAX_BOOKS`, `MAX_WORDS_PER_KIND`, `MAX_SPELLS`, `resolve`, `named`, `named_text`, `find_word`, `knows`, `check`, `cast`, `combine` |
+| `spell` | `Book`, `Spell`, `Word`, `Kind`, `Refusal`, `Outcome`, `MAX_BOOKS`, `MAX_WORDS_PER_KIND`, `MAX_SPELLS`, `resolve`, `named`, `named_text`, `knows`, `check`, `cast`, `combine` |
 
 Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave_notes`, `set_dialogue_speaker`, `open_generated_dialogue`, `dialogue_view`, `choose`, `sync_dialogue`, `transition_to_scene`, `evaluates_belief`, `assert_belief`, and `reject_belief`. Construct a VM with `host.init_vm`; advance it with `host.tick` or `Session.advance`, never bare `VM.step_tick`.
 

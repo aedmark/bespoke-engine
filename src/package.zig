@@ -1836,10 +1836,10 @@ const SPELLBOOK_FIXTURE =
     \\entity FixtureHero
     \\relation Ready(subject)
     \\spellbook FixtureGrimoire:
-    \\  power Spark, Forge
-    \\  element Ember, Water
-    \\  form Bolt, Ward
-    \\  spell Glimmer: Forge, Ember, Bolt
+    \\  power FixturePowerA, FixturePowerB
+    \\  element FixtureElementA, FixtureElementB
+    \\  form FixtureFormA, FixtureFormB
+    \\  spell FixtureSpell: FixturePowerB, FixtureElementA, FixtureFormA
     \\routine Idle(FixtureHero):
     \\  wait 1 ticks
 ;
@@ -1865,14 +1865,14 @@ test "P44-04: package version 17 round-trips a spellbook and loads a version 16 
     const book = &compiled2.spellbooks.items[0].book;
     try testing.expectEqualStrings("FixtureGrimoire", world2.get_entity_name(book.entity).?);
     try testing.expectEqual(@as(usize, 6), book.words.len);
-    try testing.expectEqualStrings("Forge", world2.get_entity_name(book.words[1].entity).?);
+    try testing.expectEqualStrings("FixturePowerB", world2.get_entity_name(book.words[1].entity).?);
     try testing.expectEqual(spell_mod.Kind.power, book.words[1].kind);
     try testing.expectEqual(@as(u16, 2), book.words[1].tier);
     try testing.expectEqual(@as(usize, 1), book.spells.len);
-    const forge = world2.lookup_entity("Forge").?;
-    const ember = world2.lookup_entity("Ember").?;
-    const bolt = world2.lookup_entity("Bolt").?;
-    try testing.expectEqual(book.spells[0].entity, spell_mod.resolve(book, forge, ember, bolt).?.entity);
+    const beta_word = world2.lookup_entity("FixturePowerB").?;
+    const gamma_word = world2.lookup_entity("FixtureElementA").?;
+    const epsilon_word = world2.lookup_entity("FixtureFormA").?;
+    try testing.expectEqual(book.spells[0].entity, spell_mod.resolve(book, beta_word, gamma_word, epsilon_word).?.entity);
 
     // A payload that ends before the spellbook table is a version 16 package and loads none.
     const v16 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V16]);
@@ -1912,8 +1912,8 @@ test "P44-04: checked-in current package fixture carries a spellbook" {
     const book = &compiled.spellbooks.items[0].book;
     try testing.expectEqualStrings("FixtureGrimoire", world.get_entity_name(book.entity).?);
     const kindle = book.spells[0].entity;
-    try testing.expectEqualStrings("Glimmer", world.get_entity_name(kindle).?);
-    try testing.expectEqual(kindle, spell_mod.named_text(book, &world, "glimmer").?.entity);
+    try testing.expectEqualStrings("FixtureSpell", world.get_entity_name(kindle).?);
+    try testing.expectEqual(kindle, spell_mod.named_text(book, &world, "fixturespell").?.entity);
 }
 
 test "P44-02: checked-in current package fixture carries aggregate conditions" {

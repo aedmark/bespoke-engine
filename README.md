@@ -117,7 +117,7 @@ The repository has three layers:
 
 ## Proofs of Concept
 
-Each proof is a small playable scene that shows an engine feature working end to end. It runs headless (no window) and checks its own outcome, and it opens in the SDL2 window for play. Twelve of the thirteen also rewind and check that the world matches; the Saltmarket does not yet. Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
+Each proof is a small playable scene that shows an engine feature working end to end. It runs headless (no window) and checks its own outcome, and most open in the SDL2 window for play. Twelve of the fourteen also rewind and check that the world matches; the Saltmarket and The Word Foundry do not yet. Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
 
 ```bash
 zig build run-proof -- --bell-tower       # interactive
@@ -140,6 +140,7 @@ zig build test-proofs                     # every proof's tests
 | `--saltmarket` | The Saltmarket | Three routes through one puzzle; choosing one locks the others and limits the dialogue |
 | `--grid` | The Castle Fire Escape | Fire, smoke, and water spreading across a grid of cells |
 | `--observatory` | The Larkspur Observatory | Characters with goals who chase and intercept the player; typed commands |
+| `--word-foundry` | The Word Foundry | Spell words learned from clues; two combinations resolve and a wrong one refuses without changing anything (headless only) |
 
 ---
 
@@ -147,8 +148,8 @@ zig build test-proofs                     # every proof's tests
 
 - Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
-- Every proof has been played by hand on Linux (2026-11-15). macOS and Windows builds have never run (the template's CI workflow is untested), and the [release hand-test](docs/runbooks/release-hand-test.md)'s stock-runner, offline-cache, and uploaded-site checks are still unrun.
-- The showcase homepage features The Harbour, and each of the thirteen proofs has its own page. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-122). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
+- Every proof with a window has been played by hand on Linux (2026-11-15); The Word Foundry is headless only. macOS and Windows builds have never run (the template's CI workflow is untested), and the [release hand-test](docs/runbooks/release-hand-test.md)'s stock-runner, offline-cache, and uploaded-site checks are still unrun.
+- The showcase homepage features The Harbour, and each of the thirteen windowed proofs has its own page. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-122). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
 ---
 

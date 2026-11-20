@@ -1,0 +1,34 @@
+===================================================================
+       BeSpoke Engine: The Word Foundry (Spell Vocabulary)         
+       (Discovery * Two Spells * One Refusal)                      
+===================================================================
+
+[Empty hands] Maren tries the phrase she has not earned.
+  -> Forge Ember Bolt: refused, the power is unknown.
+     0 facts before, 0 after.
+
+[Words] Three clues. None names a combination.
+  [ 1] Maren: "Bellows: a spark to start the fire, and the forge for the long heat."
+     Bellows: knows Spark and Forge.
+  [ 2] Maren: "Embers still red in the grate, and a kettle of water on the hook."
+     Cold Hearth: knows Ember and Water.
+  [ 3] Maren: "Two plates: one a bolt of light, the other a standing ward."
+     Pattern Book: knows Bolt and Ward.
+
+[Fizzle] Three known words that the book does not join.
+  -> Forge Water Bolt: refused, no such spell.
+     6 facts before, 6 after.
+
+[Kindle] Forge, ember, bolt.
+  -> Forge Ember Bolt: Kindle.
+  [ 5] Maren: "Forge, ember, bolt. The crucible holds the light."
+
+[Quench] Spark, water, ward.
+  -> Spark Water Ward: Quench.
+  [ 6] Maren: "Spark, water, ward. The metal goes still and hard."
+
+===================================================================
+  VERIFICATION COMPLETE: two spells found by their words alone.  
+===================================================================
+
+final facts: 8, digest a0887b103b626bc8

@@ -4,7 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
-- A script declares a spellbook of power, element, and form words and the combinations that spell something; a cast resolves by name or by triple and fires the cue named after the spell, and each word is gated by what the caster has discovered (`P44-04`, `D-136`).
+- A script declares a spellbook of power, element, and form words and the combinations that spell something; a cast resolves by name or by triple and fires the cue named after the spell, and each word is gated by what the caster has discovered (`P44-04`, `D-136`). The Word Foundry shows it: three clues teach six words, two combinations resolve, and a third refuses without changing the room.
 
 - A player can present evidence to a character (`present the slip to Pell`), and the engine records each distinct thing shown so reactions and readouts follow what the character has seen; the character reveals only what they know (`P44-03`).
 
