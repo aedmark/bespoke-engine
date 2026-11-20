@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A `during` routine keeps its name when the name has spaces; the compiler now owns the routine names and entities it registers (`P44-07`).
+
 - A scene transition changes the room and fires its cue without pausing or waking any fiber; a routine's owner names an actor or the stage, not a room (`D-139`). No shipped script declares a scene-owned routine, so the proofs are unchanged.
 
 - A host can show a room the player is not in: `DisplayBridge.capture_scene` fills a frame from a named room without moving the VM, and the room keeps simulating on the tick clock (`P44-06`, `D-138`). The Long Gallery watches an agenda play out in a locked studio.

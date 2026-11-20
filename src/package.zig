@@ -1646,6 +1646,7 @@ pub fn load_package(
         .when_rule_entries = when_rule_entries,
         .cue_handler_entries = cue_handler_entries,
         .allocated_cue_keys = allocated_cue_keys,
+        .allocated_routine_names = std.array_list.Managed([]const u8).init(allocator),
         .reactive_rules = reactive_rules,
         .initial_entry = if (header.initial_entry >= 0) @intCast(header.initial_entry) else null,
         .societies = societies,

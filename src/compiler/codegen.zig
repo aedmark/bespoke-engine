@@ -69,6 +69,9 @@ pub const CompiledProgram = struct {
     when_rule_entries: std.array_list.Managed(usize),
     cue_handler_entries: std.StringHashMap(usize),
     allocated_cue_keys: std.array_list.Managed([]const u8),
+    /// Owned copies of routine names and entities; a `during` name with spaces is built in the
+    /// parser's arena, which is freed before the program is used (P44-07).
+    allocated_routine_names: std.array_list.Managed([]const u8),
     reactive_rules: std.array_list.Managed(CompiledWhenRule),
     initial_entry: ?usize = null,
     /// Draft note table (P22-01, D-029). Program data, not world state: never saved in `.sav`.
@@ -135,6 +138,10 @@ pub const CompiledProgram = struct {
             self.chunk.allocator.free(k);
         }
         self.allocated_cue_keys.deinit();
+        for (self.allocated_routine_names.items) |name| {
+            self.chunk.allocator.free(name);
+        }
+        self.allocated_routine_names.deinit();
         for (self.reactive_rules.items) |r| {
             self.chunk.allocator.free(r.clauses);
         }
@@ -336,6 +343,7 @@ pub const Codegen = struct {
     when_rule_entries: std.array_list.Managed(usize),
     cue_handler_entries: std.StringHashMap(usize),
     allocated_cue_keys: std.array_list.Managed([]const u8),
+    allocated_routine_names: std.array_list.Managed([]const u8),
     reactive_rules: std.array_list.Managed(CompiledWhenRule),
     societies: std.array_list.Managed(society_mod.Declaration),
     duels: std.array_list.Managed(duel_mod.Declaration),
@@ -362,6 +370,7 @@ pub const Codegen = struct {
             .when_rule_entries = std.array_list.Managed(usize).init(allocator),
             .cue_handler_entries = std.StringHashMap(usize).init(allocator),
             .allocated_cue_keys = std.array_list.Managed([]const u8).init(allocator),
+            .allocated_routine_names = std.array_list.Managed([]const u8).init(allocator),
             .reactive_rules = std.array_list.Managed(CompiledWhenRule).init(allocator),
             .societies = std.array_list.Managed(society_mod.Declaration).init(allocator),
             .duels = std.array_list.Managed(duel_mod.Declaration).init(allocator),
@@ -378,6 +387,18 @@ pub const Codegen = struct {
     }
 
     /// Compiles an entire AST into a CompiledProgram (P4-03).
+    /// Registers a routine under owned copies of its name and entity. Single-word names point
+    /// into the source, which outlives the program, but a `during` name with spaces is built in
+    /// the parser's arena and would dangle once `compile_source` frees it (P44-07).
+    fn register_routine(mut_self: *Codegen, routine: parser_mod.Routine, entry_pc: usize) !void {
+        const name = try mut_self.chunk.allocator.dupe(u8, routine.name);
+        const entity = try mut_self.chunk.allocator.dupe(u8, routine.entity);
+        try mut_self.allocated_routine_names.append(name);
+        try mut_self.allocated_routine_names.append(entity);
+        try mut_self.routine_entries.put(name, entry_pc);
+        try mut_self.routine_entities.put(name, entity);
+    }
+
     pub fn compile(mut_self: *Codegen, ast: *const AST) !CompiledProgram {
         // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
@@ -598,8 +619,7 @@ pub const Codegen = struct {
         for (ast.routines.items) |routine| {
             mut_self.error_context = routine.name;
             const entry_pc = mut_self.chunk.count();
-            try mut_self.routine_entries.put(routine.name, entry_pc);
-            try mut_self.routine_entities.put(routine.name, routine.entity);
+            try mut_self.register_routine(routine, entry_pc);
 
             for (routine.body) |stmt| {
                 try mut_self.compile_stmt(stmt);
@@ -628,8 +648,7 @@ pub const Codegen = struct {
                 for (path.routines) |routine| {
                     mut_self.error_context = routine.name;
                     if (mut_self.routine_entries.contains(routine.name)) return error.DuplicateRoutineName;
-                    try mut_self.routine_entries.put(routine.name, mut_self.chunk.count());
-                    try mut_self.routine_entities.put(routine.name, routine.entity);
+                    try mut_self.register_routine(routine, mut_self.chunk.count());
 
                     const guard_pc = try mut_self.emit_path_guard(path_entity, path_active);
                     for (routine.body) |stmt| {
@@ -764,6 +783,7 @@ pub const Codegen = struct {
             .when_rule_entries = mut_self.when_rule_entries,
             .cue_handler_entries = mut_self.cue_handler_entries,
             .allocated_cue_keys = mut_self.allocated_cue_keys,
+            .allocated_routine_names = mut_self.allocated_routine_names,
             .reactive_rules = mut_self.reactive_rules,
             .initial_entry = initial_entry,
             .drafts = drafts,
@@ -1776,7 +1796,6 @@ pub const Codegen = struct {
     }
 };
 
-
 /// Where the `idx`th of `count` marks (or props, offset by 10) sits along a scene: 20 units
 /// apart from 0, which keeps three within the 1280x720 stage. More than three are spread over
 /// the same 40 units instead, since a fourth at 60 would fall off the right edge (D-100).
@@ -2026,7 +2045,7 @@ test "P12-01: codegen compiles multi-scene transitions and registers scoped mark
     // Verify routine compiled and contains transition_scene opcode (0x44)
     const pc = compiled.routine_entries.get("EnterCellar").?;
     const op_byte = compiled.chunk.code.items[pc];
-    try testing.expectEqual(@as(u8, @intFromEnum(Opcode.transition_scene)), op_byte);
+    try testing.expectEqual(@as(u8, @backingInt(Opcode.transition_scene)), op_byte);
     const target_scene_val = std.mem.readInt(u32, compiled.chunk.code.items[pc + 1 ..][0..4], .little);
     try testing.expectEqual(cellar_id.to_int(), target_scene_val);
 }
