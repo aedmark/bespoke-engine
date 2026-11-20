@@ -673,6 +673,31 @@
             {"label": "The Larkspur Observatory proof", "target": "proofs/observatory_puzzle.zig", "kind": "source"}
           ],
           "related": ["continuous-when-rules", "relational-facts", "living-village-emergent-sandbox"]
+        },
+        {
+          "id": "decisions-and-scored-options",
+          "title": "Decisions: Scored Options from What a Character Knows",
+          "summary": "A script declares an actor, a cue, trigger lines, and scored options; the engine offers only what the actor knows and fires the cue with the highest-scoring option.",
+          "synopsis": "decision LeadMaren:  actor Maren  fires CardPlayed  requires Turn(Maren)  option CinderTwo: picks 4 when TrickOpen(Table)  picks 6 when Void(Ossic, Cinder)",
+          "tags": ["decision", "scoring", "knowledge", "agency"],
+          "what": "Lets a character choose among the actions a script offers using only what it knows. The engine offers the options, scores them, and fires the cue, so a game rule such as following the led suit lives in script scoring lines rather than in host branching.",
+          "how": [
+            "A decision declaration compiles into CompiledProgram.decisions: an actor, the cue it fires, requires and unless trigger lines, and option blocks whose picks and drops lines are scored clauses.",
+            "An option is offered only when its actor knows it: Knows or Believes, with Rejects overriding, so a hand of cards is private without a second knowledge model.",
+            "decision.step runs in host.tick after agendas: it sums the offered options whose clauses hold, picks the highest total, and keeps the earlier option on an equal total.",
+            "The choice is the set fact Chose(Decision, Option) and the stage is the property DecisionState(Decision, Idle | Done), so a save, rewind, or branch carries the point without a snapshot; a falling trigger re-arms the decision.",
+            "The engine fires the cue with the actor and the winning option. A cue body cannot read lowercase parameters (D-072), so a handler that needs the option names it as an exact argument.",
+            ".bspk version 18 stores decisions."
+          ],
+          "why": "Agendas cover pursuit and interception only. A scoring table lets every seat act from its own hand, and because scoring reads facts only, the same state always makes the same choice under replay and rewind.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-137", "target": "docs/DECISIONS.md#d-137", "kind": "decision"},
+            {"label": "Decision Engine", "target": "src/decision.zig", "kind": "source"},
+            {"label": "Decision step in the host tick", "target": "src/host.zig", "kind": "source"},
+            {"label": "The Cinder Table proof", "target": "proofs/cinder_table.zig", "kind": "source"}
+          ],
+          "related": ["agendas-and-proactive-agency", "continuous-when-rules", "relational-facts"]
         }
       ]
     },
