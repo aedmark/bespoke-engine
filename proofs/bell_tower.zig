@@ -500,7 +500,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
     var announced_solved = false;
     var buf: [256]u8 = undefined;
 
-    window.set_cue_banner("The bell has been silent for years. Watch the tower, then weave on the distaff.", 200);
+    window.set_cue_banner("The bell has been silent for years. Watch the tower. Click a target, then play a draft.", 200);
 
     while (true) {
         const action = window.poll_events(session.frame());
@@ -546,7 +546,13 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
                         }
                         sync_reach(&world, ids, &input);
                     } else {
-                        window.set_cue_banner("Maren turns toward it. Play a draft to weave on it.", 90);
+                        var target_buf: [96]u8 = undefined;
+                        const target_msg = std.fmt.bufPrint(
+                            &target_buf,
+                            "Distaff target: {s}. Play a draft to weave on it.",
+                            .{frame.hotspots[idx].get_name()},
+                        ) catch "Distaff target set. Play a draft to weave on it.";
+                        window.set_cue_banner(target_msg, 120);
                     }
                 }
             },

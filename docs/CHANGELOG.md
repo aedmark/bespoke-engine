@@ -2,6 +2,10 @@
 
 User-visible changes to the BeSpoke Engine, newest first.
 
+## Unreleased
+
+- The Bell Tower's distaff names its target (`DISTAFF target: Brazier`) and wraps the message log before the staff, so the two no longer overlap (`P42-06`).
+
 ## 0.3.0 - 2026-11-20
 
 - A routine header takes names with spaces for the routine and its actor (`routine Judge Marrow(Judge Marrow):`), and the compiler owns the routine names and entities it registers, so a `during` name with spaces survives compilation (`P44-07`). A routine name repeated across top-level, path, or `during` declarations is a compile error at the second declaration instead of silently replacing the first.

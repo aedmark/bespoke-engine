@@ -1549,17 +1549,33 @@ pub const DisplayWindow = struct {
 
     /// Height the log takes above `log_bottom`, which the dialogue panel stays clear of.
     fn log_reserve(self: *const DisplayWindow) i32 {
+        return self.log_reserve_for(self.log_right(false) - 24);
+    }
+
+    fn log_reserve_for(self: *const DisplayWindow, text_width: i32) i32 {
         var rows: [LOG_ROWS]LogRow = undefined;
-        const n = self.log_rows(&rows);
+        const n = self.log_rows_for(&rows, text_width);
         if (n == 0) return 0;
         return @as(i32, @intCast(n)) * LOG_ROW + 6;
+    }
+
+    /// The right edge of the message log. The distaff panel owns the band's right side, so text
+    /// wraps before it instead of running under the staff (P42-06).
+    fn log_right(self: *const DisplayWindow, distaff: bool) i32 {
+        if (!distaff) return self.width - 24;
+        const panel = get_distaff_panel_rect(self.width, self.height);
+        return @max(144, panel.x - 12);
     }
 
     /// The log's rows, top to bottom. Lines are wrapped at spaces to the band's width. The
     /// newest line takes up to `LOG_ROWS` rows (its last row cut with "..." if it needs more);
     /// older lines follow above it while every row of theirs fits, so no line shows in part.
     fn log_rows(self: *const DisplayWindow, out: *[LOG_ROWS]LogRow) usize {
-        const columns: usize = @intCast(@max(1, @divTrunc(self.width - 48, font.char_width(2))));
+        return self.log_rows_for(out, self.log_right(false) - 24);
+    }
+
+    fn log_rows_for(self: *const DisplayWindow, out: *[LOG_ROWS]LogRow, text_width: i32) usize {
+        const columns: usize = @intCast(@max(1, @divTrunc(text_width, font.char_width(2))));
         // Filled bottom-up into `stack`, then reversed into `out`.
         var stack: [LOG_ROWS]LogRow = undefined;
         var used: usize = 0;
@@ -2824,9 +2840,9 @@ pub const DisplayWindow = struct {
         self.draw_text("DISTAFF", panel.x + 10, panel.y + 6, 1, gold);
         var target_buf: [40]u8 = undefined;
         const target_text = if (d.target_len > 0)
-            std.fmt.bufPrint(&target_buf, "on: {s}", .{d.get_target()}) catch ""
+            std.fmt.bufPrint(&target_buf, "target: {s}", .{d.get_target()}) catch ""
         else
-            "on: (click a target)";
+            "target: click a prop";
         self.draw_text(target_text, panel.x + 64, panel.y + 6, 1, if (d.target_len > 0) ink else Color.hud_subtext);
 
         const outcome_text: []const u8 = switch (d.outcome) {
@@ -3502,16 +3518,19 @@ pub const DisplayWindow = struct {
         // 8. The message log under the stage (D-099): the newest line brightest at the bottom,
         // older lines dimmer above it, each wrapped to the band, on a dark band so they read
         // over any backdrop.
+        const log_edge = self.log_right(frame.distaff.enabled);
+        const log_text_width = log_edge - 24;
         var log: [LOG_ROWS]LogRow = undefined;
-        const log_n = self.log_rows(&log);
+        const log_n = self.log_rows_for(&log, log_text_width);
         if (log_n > 0) {
             const bottom = self.log_bottom();
-            const top = bottom - self.log_reserve();
-            self.fill_rect(16, top, self.width - 32, bottom - top, Color.hud_bg);
+            const top = bottom - self.log_reserve_for(log_text_width);
+            const log_fill_width = if (frame.distaff.enabled) log_edge - 16 else self.width - 32;
+            self.fill_rect(16, top, log_fill_width, bottom - top, Color.hud_bg);
             const shades = [_]Color{ Color{ .r = 100, .g = 116, .b = 139 }, Color.hud_subtext, Color.hud_text };
             for (log[0..log_n], 0..) |row, i| {
                 const y = top + 3 + @as(i32, @intCast(i)) * LOG_ROW + 2;
-                self.draw_text_fit(row.text, 24, y, self.width - 48, 2, shades[shades.len - 1 - @min(row.age, shades.len - 1)]);
+                self.draw_text_fit(row.text, 24, y, log_text_width, 2, shades[shades.len - 1 - @min(row.age, shades.len - 1)]);
             }
         }
 
@@ -4423,6 +4442,39 @@ test "P22-02: distaff panel geometry, note hit-testing, and reach limits" {
     try testing.expectEqual(@as(?u8, 0), distaff_key_to_degree(c.SDLK_c));
     try testing.expectEqual(@as(?u8, 5), distaff_key_to_degree(c.SDLK_a));
     try testing.expectEqual(@as(?u8, null), distaff_key_to_degree(c.SDLK_h));
+}
+
+test "P42-06: the distaff reserves the message log's right edge" {
+    const testing = std.testing;
+    var win = try DisplayWindow.init_offscreen(std.testing.io, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    defer win.deinit();
+
+    const panel = get_distaff_panel_rect(win.width, win.height);
+    try testing.expectEqual(win.width - 24, win.log_right(false));
+    try testing.expectEqual(panel.x - 12, win.log_right(true));
+    try testing.expect(win.log_right(true) < win.log_right(false));
+
+    // A line long enough to reach the panel wraps inside the reserved column instead.
+    win.set_cue_banner("Maren: \"The brazier catches. Firelight climbs the stairwell while the old iron cools and the tower waits for a draft.\"", 0);
+    var rows: [LOG_ROWS]LogRow = undefined;
+    const n = win.log_rows_for(&rows, win.log_right(true) - 24);
+    try testing.expect(n > 0);
+    for (rows[0..n]) |row| try testing.expect(font.text_width(row.text, 2) <= win.log_right(true) - 24);
+
+    var probe = canvas_mod.TextProbe{};
+    win.canvas.?.text_probe = &probe;
+    defer win.canvas.?.text_probe = null;
+    var frame = std.mem.zeroes(RenderFrame);
+    frame.distaff = .{ .enabled = true, .reach = 4 };
+    win.render_frame(&frame, false);
+    const band_top = message_band_top(win.height);
+    const band_bottom = win.log_bottom();
+    for (probe.draws[0..probe.count]) |draw| {
+        if (draw.kind != .chrome) continue;
+        if (draw.y < band_top or draw.y >= band_bottom) continue;
+        if (draw.x >= panel.x) continue;
+        try testing.expect(draw.x + draw.w <= panel.x);
+    }
 }
 
 test "P32-02a: an offscreen window draws deterministically and hashes what it drew" {
