@@ -1666,6 +1666,14 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Character routines keep running in every room, which P44-07 found. `P12-01` now asserts that a fiber owned by the room being left still runs after the transition, and the `P44-07` test keeps the watched-room coverage. `FiberState.paused` stays in the save format for hosts and for the display test that pauses a fiber directly; no save, bytecode, or host API version changes.
 
+## D-140 The during Shorthand Stays for Now (2026-11-20, status: accepted)
+
+**Context.** `during Name` compiles to `routine Name(Name)`. P44-07 gave both headers a multi-word actor, so the shorthand is ordinary sugar: the spec documents it, a codegen test compiles `during Crowd:`, and a host test runs `during Judge Marrow:`. No proof or scenario uses it. It is not replaceable in every case yet, because a routine's own name is still one identifier: `during Judge Marrow:` has no `routine Judge Marrow(Judge Marrow):` equivalent.
+
+**Decision.** Keep `during` and leave it documented as shorthand. D-108 asks for a located warning, a tagged non-prerelease warning release, and a later removal release. The compiler, `check_source`, and the CLI have no warning channel, so deprecating unused sugar means building one first.
+
+**If that changes.** Close the name gap by reading a routine name with `parse_name`, so every `during Name` has a literal replacement. Then ship a minor warning release with a located warning naming `routine Crowd(Crowd):`, and remove the keyword in a later minor before 1.0 with a located error naming the same replacement. The multi-word migration follows the first step: `during Judge Marrow:` becomes `routine Judge Marrow(Judge Marrow):`.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
