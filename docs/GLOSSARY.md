@@ -43,6 +43,7 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | arrival rule | A rule that fires when a character finishes walking to a mark | `when X arrives at M:` (D-036) | |
 | interrupt | A rule or cue pausing a routine to run other script; the routine resumes where it paused | `interrupt ... with` | |
 | agenda | A goal a character pursues on its own when its conditions hold, such as chasing the player | `agenda` (D-056) | |
+| decision | A choice point where a character picks one of the options a script offers. The engine offers only the options the character knows, scores each against the facts, and fires the cue with the highest-scoring one | `decision`, `src/decision.zig` (P44-05, D-137) | choice menu (a decision is script data, not a screen), dialogue choice (that is the separate branching-dialogue feature) |
 | society | Characters with needs, jobs, rumours, and justice, declared in a script and run by the engine | `society`, `src/society.zig` | |
 | goal | A line of investigation the player has to finish, declared as needs with the fact each one requires | `goal`, `src/hint.zig` (P44-01, D-134) | quest log (a goal is script data, not a screen) |
 | hint | The nearest unmet need reported as help: the character's own deduction while she could reason about it, the author's direction otherwise | `hint.query()` (D-126) | walkthrough |
