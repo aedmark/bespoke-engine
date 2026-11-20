@@ -20,12 +20,14 @@ Goal (maintainer, 2026-11-15): BeSpoke ships as an engine and language that othe
 
 ## Phase 42: Release Preparation
 
-Goal: prepare 0.2.0 with binaries, docs, and a full hand-test. Tagging or publishing requires separate approval. The 1.0 milestone remains deferred.
+Goal: prepare the 0.2.0 release, then the 0.3.0 release, with binaries, docs, and a full hand-test. Tagging or publishing requires separate approval. The 1.0 milestone remains deferred.
 
 - [x] P42-01 Prepare 0.2.0 release artifacts: a static Linux x86_64 CLI, a separate SDL2 desktop download, and the browser runtime package (D-119). The extracted static download runs source and compiled scripts and scaffolds a project in a clean Linux filesystem without Zig or SDL2; the generated project builds and passes its tests with Zig and SDL2 development libraries installed (2026-11-18). Attach the artifacts to GitHub Releases only when publication is approved (D-105, D-118).
 - [x] P42-02 License housekeeping: the engine retains its MIT license with voluntary agentic-use disclosure (Q-009). `bespoke init` writes the verbatim engine notice to `LICENSE-BeSpoke`; the generated README explains why no project-wide license is assigned and how to redistribute the notice (D-120).
 - [x] P42-03 Release hand-test on Linux, Firefox, and Chromium. HANDOFF records the baseline, local browser checks, 375 px showcase fix, and maintainer sign-off on desktop play, listening, and the uploaded site (2026-11-18), with remaining coverage limits.
 - [ ] P42-04 Tag `v1.0.0` when the maintainer approves that milestone. Acceptance: Phases 37 to 41 are done or their open items are moved past 1.0 by the maintainer, and the tag's notes list what 1.0 promises (P38). Deferred beyond 0.2.0 (D-118).
+- [x] P42-05 Prepare BeSpoke 0.3.0: bump the semantic version and stamp it in the manual, cut the Unreleased changelog entries under a dated heading, build the Linux and browser downloads, and run the release checks. Tagging and publication need separate approval. Done 2026-11-20 (session 115): `build.zig`, `build.zig.zon`, and the manual report 0.3.0, and the Unreleased entries sit under `0.3.0`; the showcase pages are rebuilt for the new Wasm module; `dist/release/` holds the browser, static Linux, and desktop Linux archives, each checksum-verified and exercised by `check_linux_release.py`; engine, proof, template, Wasm smoke, site, Python, and documentation checks pass. The maintainer approved tagging and publication on 2026-11-20; tag `v0.3.0` and its GitHub release publish this commit. The four-hour hand-test is tracked as P42-06.
+- [ ] P42-06 Run the 0.3.0 release hand-test on Linux, Firefox, and Chromium, and record its results. Origin: P42-05 published 0.3.0 without the four-hour pass. Acceptance: every row of [`docs/runbooks/release-hand-test.md`](docs/runbooks/release-hand-test.md) has a result in HANDOFF, including partial checks and blockers, and desktop play, listening, browser pages, export, and the uploaded site are covered.
 
 ## Phase 43: The Band Rule Where Proofs Are Drawn
 
