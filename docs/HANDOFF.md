@@ -95,7 +95,7 @@ _Last updated: 2026-11-20, session 115. [BeSpoke 0.3.0](https://github.com/aedma
 ### Session 116 (2026-11-20)
 - **Work.** Started P42-06 on the published 0.3.0 commit `0af708b`. Section 1's automated baseline passes on Linux x86_64 with Zig 0.17.1, Python 3, Node.js, and SDL2. Sections 2 to 9 remain unrun.
 - **Baseline.** `check_docs.py` reports 0 errors and 0 warnings. `zig build test` passes, including `version-check` at 0.3.0. `zig build wasm wasm-proofs harbour` and `node tools/wasm_smoke.js` pass every deck and the audio line (16 lines). `build_site.py --check` reports 15 current pages. All 82 Python tests pass. `zig build test-template` passes. `zig build` and `zig build proofs` produce the binaries the hand pass uses.
-- **CI.** The `main` run for `0af708b` (44752192276) failed in the P40-02 tutorial's browser smoke on a 15-second Chrome DevTools port wait; the tag run (44752196821) stalled at "Test generated project" and has no conclusion. `tools/browser_smoke.js` now gives Chrome startup 60 seconds, and the tutorial passes locally with Chrome 158. A rerun follows on the fix commit.
+- **CI.** The `main` run for `0af708b` (44752192276) failed in the P40-02 tutorial's browser smoke on a 15-second Chrome DevTools port wait; the tag run (44752196821) stalled at "Test generated project" and has no conclusion. `tools/browser_smoke.js` now gives Chrome startup 60 seconds, and the tutorial passes locally with Chrome 158. The rerun on `cb651ae` (44755641308) passed the tutorial but failed the browser page budget: all 13 proof pages are 1,057,255 to 1,059,271 bytes against 1,048,576, while both Wasm modules, the homepage, Harbour, and the Lantern Watch page pass.
 - **P42-06 results.**
 
 | Section | Result | Notes |
@@ -104,6 +104,7 @@ _Last updated: 2026-11-20, session 115. [BeSpoke 0.3.0](https://github.com/aedma
 | 1. Automated baseline | Pass | 0 docs issues; engine and proofs pass; smoke 16/16; 15 pages; 82 Python tests; template passes |
 | CI main run (`0af708b`, 44752192276) | Failed | P40-02 tutorial browser smoke timed out waiting for Chrome DevTools port after 15 seconds; build, release candidates, engine/proof tests, and fuzzing passed before it. |
 | CI tag run (`0af708b`, 44752196821) | Stalled | Still in progress at "Test generated project" when checked; no conclusion. |
+| CI rerun (`cb651ae`, 44755641308) | Failed | Tutorial browser smoke passes with the 60-second wait; all 13 proof pages fail the 1,048,576-byte budget at 1,057,255 to 1,059,271 bytes. Both Wasm modules, homepage, Harbour, and Lantern Watch page pass. |
 | 2. Desktop proofs (13) | Not run | |
 | 2.3 Shared features | Not run | |
 | 3. Listening | Not run | |
