@@ -2027,7 +2027,7 @@ pub const Parser = struct {
         try self.advance(); // consume 'routine'
         const name = (try self.expect(.identifier)).slice;
         _ = try self.expect(.lparen);
-        const entity = (try self.expect(.identifier)).slice;
+        const entity = try self.parse_name();
         _ = try self.expect(.rparen);
         _ = try self.expect(.colon);
         _ = try self.expect(.indent);
@@ -2981,6 +2981,24 @@ test "P24-01: parser parses path declarations with locked facts and path-owned r
         .remember => |r| try testing.expectEqualStrings("ChosenFists", r.relation),
         else => try testing.expect(false),
     }
+}
+
+test "P44-07: a routine header takes a multi-word actor" {
+    const testing = std.testing;
+    const source =
+        \\routine Cheer(Judge Marrow):
+        \\  remember Cheered("Judge Marrow")
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var lexer = Lexer.init(arena.allocator(), source);
+    defer lexer.deinit();
+    var parser = try Parser.init(arena.allocator(), &lexer);
+    const ast = try parser.parse_program();
+
+    try testing.expectEqual(@as(usize, 1), ast.routines.items.len);
+    try testing.expectEqualStrings("Cheer", ast.routines.items[0].name);
+    try testing.expectEqualStrings("Judge Marrow", ast.routines.items[0].entity);
 }
 
 test "D-101: a quoted name keeps characters a word cannot, in scene, cast, props, marks, and transitions" {

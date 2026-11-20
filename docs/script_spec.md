@@ -51,7 +51,7 @@ during Crowd:
   wait 1 ticks
 ```
 
-`scene`, `cast`, `props`, and `marks` describe stages. A scene heading may put the colon before or after its name (`scene: Harbour Office` or `scene Harbour Office:`); the other three use `cast:`, `props:`, and `marks:`. Their visual indentation is optional. Each later `cast`, `props`, or `marks` line belongs to the most recent scene. `routine Name(Actor)` declares a fiber owned by that actor. `during Name` is the stageplay spelling of a routine whose name and owner are both `Name`, and it accepts a name with spaces where `routine Name(Actor)` takes one word. A top-level `transition to scene Name` seeds an initial transition; the same statement in a body changes scene when that fiber reaches it.
+`scene`, `cast`, `props`, and `marks` describe stages. A scene heading may put the colon before or after its name (`scene: Harbour Office` or `scene Harbour Office:`); the other three use `cast:`, `props:`, and `marks:`. Their visual indentation is optional. Each later `cast`, `props`, or `marks` line belongs to the most recent scene. `routine Name(Actor)` declares a fiber owned by that actor, and the actor may be a name with spaces. `during Name` is the stageplay shorthand for `routine Name(Name)`. A top-level `transition to scene Name` seeds an initial transition; the same statement in a body changes scene when that fiber reaches it.
 
 `on cue Name(parameters)` and its synonym `verb Name(parameters)` declare externally fired handlers. Parameters beginning with an uppercase letter match that entity; lowercase parameters match any entity. An optional `where` clause contains fact patterns joined by `and`. See the D-072 limitation above for body bindings.
 

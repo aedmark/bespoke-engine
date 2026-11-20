@@ -1767,6 +1767,32 @@ test "P44-07: the during spelling runs a routine owned by its multi-word name" {
     try testing.expect(world.has_fact(judge, world.lookup_relation("Cheered").?, null));
 }
 
+test "P44-07: a routine header owns a multi-word actor" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\relation Cheered(who)
+        \\
+        \\routine Cheer(Judge Marrow):
+        \\  remember Cheered("Judge Marrow")
+    );
+    defer compiled.deinit();
+
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    _ = try start_script(&world, &spatial, &vm, &compiled);
+
+    try testing.expectEqualStrings("Judge Marrow", world.get_entity_name(vm.fibers.items[0].owner).?);
+
+    _ = try tick(&vm, &compiled);
+    const judge = world.lookup_entity("Judge Marrow").?;
+    try testing.expect(world.has_fact(judge, world.lookup_relation("Cheered").?, null));
+}
+
 test "D-100: a doorway mark is added on stage, and a walk ending on it, or asked for on it, changes rooms" {
     const compiler = @import("compiler.zig");
     var world = try World.init(testing.allocator, 256 * 1024);
