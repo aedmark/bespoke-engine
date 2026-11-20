@@ -4,7 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
-- The proof pages' `[N]` key steps the clock one tick, as the desktop window's key does, so the canvas hint is true (`P42-06`).
+- The proof pages' `[N]`, `[Space]`, and `[R]` keys step one tick, pause and resume, and rewind to tick 0, as the desktop window's keys do, so the canvas hint line is true (`P42-06`).
 
 - The Bell Tower's distaff names its target (`DISTAFF target: Brazier`) and wraps the message log before the staff, so the two no longer overlap (`P42-06`).
 

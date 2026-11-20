@@ -374,7 +374,7 @@
           return;
         }
         if (exp.wasm_inspector_open && exp.wasm_inspector_open()) {
-          const named = { ArrowLeft: 37, ArrowRight: 39, Enter: 13, Backspace: 8, Home: 36, f: 70, F: 70 }[event.key];
+          const named = { ArrowLeft: 37, ArrowRight: 39, Enter: 13, Backspace: 8, Home: 36, f: 70, F: 70, r: 114, R: 114 }[event.key];
           if (named) {
             event.preventDefault();
             key(named);
@@ -396,6 +396,14 @@
           // step (or, in the duel, starts the next duel).
           event.preventDefault();
           if (!open) key(83);
+        } else if (event.key === ' ') {
+          // [Space]: Pause, as the desktop window's key does; a waiting message took it above.
+          event.preventDefault();
+          key(32);
+        } else if (event.key === 'r' || event.key === 'R') {
+          // [R]: Rewind to tick 0, as the desktop window's key does.
+          event.preventDefault();
+          key(114);
         } else if (event.key === 'n' || event.key === 'N') {
           // [N]: Step, as the desktop window's key does (D-094). The runtime steps one tick.
           event.preventDefault();
@@ -409,8 +417,6 @@
           // Enter opens a deck's command bar, if it has one (P34-04).
           event.preventDefault();
           if (!open) key(13);
-        } else if (event.key === ' ') {
-          event.preventDefault();
         }
       });
 
