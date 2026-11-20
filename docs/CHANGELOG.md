@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A scene transition changes the room and fires its cue without pausing or waking any fiber; a routine's owner names an actor or the stage, not a room (`D-139`). No shipped script declares a scene-owned routine, so the proofs are unchanged.
+
 - A host can show a room the player is not in: `DisplayBridge.capture_scene` fills a frame from a named room without moving the VM, and the room keeps simulating on the tick clock (`P44-06`, `D-138`). The Long Gallery watches an agenda play out in a locked studio.
 
 - A script declares a decision with an actor, a cue, trigger lines, and options whose scored lines sum to a total; the engine offers only the options the actor knows, picks the highest total with ties going to the first declared, and fires the cue with the winner (`P44-05`, `D-137`). The Cinder Table shows it: three seats play four rounds from private hands, and a public discard raises the lead one seat already held.

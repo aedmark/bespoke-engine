@@ -65,7 +65,7 @@ pub const Opcode = enum(u8) {
     wait_until = 0x42,
     /// Pops: destination_wp: u16, entity: u32. Initiates spatial walk and suspends fiber until arrival (P3-02).
     walk_to = 0x43,
-    /// Transitions simulation to target scene entity, pausing old scene fibers and waking new ones (P12-01, D-014).
+    /// Transitions simulation to target scene entity and emits the SceneTransition cue; fibers keep running (P12-01, D-139).
     /// Operand: target_scene: u32 (EntityId).
     transition_scene = 0x44,
 

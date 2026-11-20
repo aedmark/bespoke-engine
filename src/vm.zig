@@ -645,7 +645,7 @@ pub const VM = struct {
         }
     }
 
-    /// Transitions simulation to target scene entity, pausing old scene fibers and waking/resuming target scene fibers (P12-01, D-014).
+    /// Transitions simulation to target scene entity without touching any fiber and emits the SceneTransition cue (P12-01, D-139).
     pub fn transition_to_scene(self: *VM, target_scene: EntityId) !void {
         const old_scene = self.current_scene;
         if (old_scene) |os| {
@@ -654,23 +654,8 @@ pub const VM = struct {
 
         self.current_scene = target_scene;
 
-        // 1. Pause ambient routines whose owner is the old scene
-        if (old_scene) |os| {
-            for (self.fibers.items) |*f| {
-                if (f.owner == os and f.state != .halted) {
-                    f.state = .{ .paused = {} };
-                }
-            }
-        }
-
-        // 2. Resume paused routines whose owner is the target scene
-        for (self.fibers.items) |*f| {
-            if (f.owner == target_scene and f.state == .paused) {
-                f.state = .{ .ready = {} };
-            }
-        }
-
-        // 3. Emit a SceneTransition cue for peripheral / rule tracking (P12-01, D-014)
+        // Fibers keep running: an owner is an actor or the stage, not a room (D-139). Emit a
+        // SceneTransition cue for peripheral / rule tracking (P12-01, D-014).
         const st_cue_id = (try self.world.intern_entity("SceneTransition")).to_int() & 0xFFFF;
         var emitted = EmittedCue{
             .cue_id = @intCast(st_cue_id),
@@ -1905,7 +1890,7 @@ test "P11-02: VM.fire_cue executes 3-argument item combining cue with commutativ
     try testing.expect(world.has_fact(hero, carries, beard.to_int()));
 }
 
-test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new scene fibers, and preserves world facts" {
+test "P12-01: vm executes scene transition without pausing fibers and preserves world facts" {
     const testing = std.testing;
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -1918,22 +1903,29 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
     const hero = try world.intern_entity("Hero");
     const horn = try world.intern_entity("Horn");
     const carries = try world.intern_relation("Carries", .set);
+    const tavern_ran = try world.intern_relation("TavernRan", .property);
+    const cellar_ran = try world.intern_relation("CellarRan", .property);
 
-    // Initial fact in world: Hero carries Horn
     try world.remember(hero, carries, horn.to_int(), 0);
 
-    // Routine 1: TavernAmbience (owner: tavern) -> loop wait 5 ticks
+    // Each room routine waits one tick, so both are still waiting when the hero's fiber
+    // transitions. The tavern's fiber must run even though the tavern was left behind.
     const tavern_pc = chunk.count();
-    try chunk.emit_wait_ticks(5);
+    try chunk.emit_wait_ticks(1);
+    try chunk.emit_push_entity(tavern);
+    try chunk.emit_push_relation(tavern_ran);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
     _ = try chunk.emit_op(.halt);
 
-    // Routine 2: CellarDrips (owner: cellar) -> wait 5 ticks
     const cellar_pc = chunk.count();
-    try chunk.emit_wait_ticks(5);
+    try chunk.emit_wait_ticks(1);
+    try chunk.emit_push_entity(cellar);
+    try chunk.emit_push_relation(cellar_ran);
+    try chunk.emit_push_const(1);
+    try chunk.emit_remember(0);
     _ = try chunk.emit_op(.halt);
 
-    // Routine 3: Hero transitions to cellar:
-    // emit transition_scene cellar, then wait 10 ticks
     const hero_pc = chunk.count();
     try chunk.emit_transition_scene(cellar);
     try chunk.emit_wait_ticks(10);
@@ -1942,43 +1934,17 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
     var vm = VM.init(testing.allocator, &world, &chunk);
     defer vm.deinit();
 
-    // Start in Tavern
     try vm.transition_to_scene(tavern);
-    try testing.expectEqual(tavern, vm.current_scene.?);
-
     const f_tavern = try vm.spawn_routine(tavern, tavern_pc);
-    const f_cellar = try vm.spawn_routine(cellar, cellar_pc);
-    const f_hero = try vm.spawn_routine(hero, hero_pc);
+    _ = try vm.spawn_routine(cellar, cellar_pc);
+    _ = try vm.spawn_routine(hero, hero_pc);
 
-    // Manually pause cellar routine since it belongs to inactive cellar
-    vm.fibers.items[f_cellar - 1].state = .{ .paused = {} };
-
-    // Before tick: f_tavern is ready, f_cellar is paused
-    try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_tavern - 1].state);
-    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[f_cellar - 1].state);
-
-    // Step 1 tick: Hero executes transition_scene(cellar)
+    // The hero's fiber transitions on the first tick, while both room routines wait.
     try vm.step_tick();
-
-    // Current scene should now be cellar!
     try testing.expectEqual(cellar, vm.current_scene.?);
+    try testing.expect(vm.fibers.items[f_tavern - 1].state != .paused);
 
-    // Tavern fiber is now paused!
-    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[f_tavern - 1].state);
-
-    // Cellar fiber is unpaused and ready!
-    try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[f_cellar - 1].state);
-
-    // Hero's fiber transitioned to waiting_ticks(10)
-    switch (vm.fibers.items[f_hero - 1].state) {
-        .waiting_ticks => {},
-        else => try testing.expect(false),
-    }
-
-    // World relational facts (Carries(Hero, Horn)) remain fully preserved!
-    try testing.expect(world.has_fact(hero, carries, horn.to_int()));
-
-    // SceneTransition cue was emitted
+    // SceneTransition cue was emitted, and the tick cleared it before the next one.
     var found_transition_cue = false;
     for (vm.emitted_cues.items) |c| {
         if (world.get_entity_name(EntityId.from_int(c.cue_id))) |cname| {
@@ -1990,9 +1956,17 @@ test "P12-01: vm executes scene transition, pauses old scene fibers, wakes new s
         }
     }
     try testing.expect(found_transition_cue);
+
+    // Both rooms' routines run on the next tick, the tavern's included.
+    try vm.step_tick();
+    try testing.expect(world.has_fact(tavern, tavern_ran, 1));
+    try testing.expect(world.has_fact(cellar, cellar_ran, 1));
+
+    // World relational facts (Carries(Hero, Horn)) remain fully preserved.
+    try testing.expect(world.has_fact(hero, carries, horn.to_int()));
 }
 
-test "P44-07: a character routine runs in every room while a scene-owned fiber pauses" {
+test "P44-07: a character routine runs in a room the player left" {
     const testing = std.testing;
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -2004,20 +1978,12 @@ test "P44-07: a character routine runs in every room while a scene-owned fiber p
     const studio = try world.intern_entity("Locked Studio");
     const corin = try world.intern_entity("Corin");
     const paces = try world.intern_relation("Paces", .property);
-    const lit = try world.intern_relation("Lit", .property);
 
-    // Corin's fiber is owned by a character; the studio's is owned by the scene itself. Each
-    // remembers one fact on its first turn.
+    // Corin's fiber is owned by a character. The player leaves the studio for the gallery, and
+    // his routine runs anyway.
     const corin_pc = chunk.count();
     try chunk.emit_push_entity(corin);
     try chunk.emit_push_relation(paces);
-    try chunk.emit_push_const(1);
-    try chunk.emit_remember(0);
-    _ = try chunk.emit_op(.halt);
-
-    const studio_pc = chunk.count();
-    try chunk.emit_push_entity(studio);
-    try chunk.emit_push_relation(lit);
     try chunk.emit_push_const(1);
     try chunk.emit_remember(0);
     _ = try chunk.emit_op(.halt);
@@ -2027,22 +1993,9 @@ test "P44-07: a character routine runs in every room while a scene-owned fiber p
 
     try vm.transition_to_scene(studio);
     _ = try vm.spawn_routine(corin, corin_pc);
-    const studio_fiber = try vm.spawn_routine(studio, studio_pc);
-
-    // The player leaves. The transition pauses the room's own fiber and leaves the character's
-    // alone, so a character routine keeps running in the room left behind.
     try vm.transition_to_scene(gallery);
-    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[studio_fiber - 1].state);
-
     try vm.step_tick();
     try testing.expect(world.has_fact(corin, paces, 1));
-    try testing.expect(!world.has_fact(studio, lit, 1));
-
-    // Coming back wakes the room's own routine.
-    try vm.transition_to_scene(studio);
-    try testing.expectEqual(FiberState{ .ready = {} }, vm.fibers.items[studio_fiber - 1].state);
-    try vm.step_tick();
-    try testing.expect(world.has_fact(studio, lit, 1));
 }
 
 test "P13-02: VM dynamically evaluates and prunes dialogue choices based on relational facts" {

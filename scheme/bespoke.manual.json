@@ -1127,14 +1127,15 @@
             "capture_scene fills the back buffer from a named room: the agents, waypoints, edges, and hotspots whose room is that entity, labelled as the room and carrying its SceneScore.",
             "capture_frame is the same call with vm.current_scene, so a host that never watches anything keeps its old call and the same frame.",
             "Capture reads only: it never sets vm.current_scene, pauses or resumes a fiber, or fires a cue. The world already steps facts, expiry, motors, agendas, societies, grids, and decisions in every room.",
-            "Character routines keep running in every room, so a watched room shows them. `transition_to_scene` pauses only fibers owned by the scene being left (D-014), which reaches an ambient routine declared on a scene entity.",
+            "Character routines keep running in every room, so a watched room shows them. A transition changes the room the player is in and fires its cue; it pauses no fiber (D-139).",
             "The host keeps interaction off the watched view, since walks and clicks resolve in the room the player is actually in. The view is host state and is never saved; a rewind restores the world and the host captures again.",
             "The Long Gallery toggles the view with V while an agenda catches a character in the next room; its watched frame is in the render golden."
           ],
-          "why": "Changing the VM's scene to look elsewhere would pause the room the player is in, wake the watched room's scene-owned routines, and change scene rules and music. A read-only capture keeps looking separate from being there, and the room label lets the renderer, theme, and audio treat the view as that room.",
+          "why": "Changing the VM's scene to look elsewhere would change scene rules, music, and the room walks and clicks resolve in. A read-only capture keeps looking separate from being there, and the room label lets the renderer, theme, and audio treat the view as that room.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-138", "target": "docs/DECISIONS.md#d-138", "kind": "decision"},
+            {"label": "Architectural Decision D-139", "target": "docs/DECISIONS.md#d-139", "kind": "decision"},
             {"label": "Display Bridge", "target": "src/display.zig", "kind": "source"},
             {"label": "Supported API", "target": "docs/API.md", "kind": "document"},
             {"label": "The Long Gallery proof", "target": "proofs/long_gallery.zig", "kind": "source"}
