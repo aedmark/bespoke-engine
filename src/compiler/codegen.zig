@@ -334,6 +334,10 @@ pub const Codegen = struct {
     // These fields never enter CompiledProgram.
     error_context: []const u8 = "",
     error_suggestion: ?[]const u8 = null,
+    /// Set with the context when the error points at a parsed name, including a quoted or
+    /// multi-word name the parser built in its arena.
+    error_line: u32 = 0,
+    error_column: u32 = 0,
     allocator: std.mem.Allocator,
     world: *World,
     spatial: ?*SpatialSystem,
@@ -391,6 +395,13 @@ pub const Codegen = struct {
     /// into the source, which outlives the program, but a `during` name with spaces is built in
     /// the parser's arena and would dangle once `compile_source` frees it (P44-07).
     fn register_routine(mut_self: *Codegen, routine: parser_mod.Routine, entry_pc: usize) !void {
+        // Top-level, path, and `during` declarations share one name space. A later declaration
+        // would silently replace an earlier entry, so refuse it at the duplicate itself.
+        if (mut_self.routine_entries.contains(routine.name)) {
+            mut_self.error_line = routine.line;
+            mut_self.error_column = routine.column;
+            return error.DuplicateRoutineName;
+        }
         const name = try mut_self.chunk.allocator.dupe(u8, routine.name);
         const entity = try mut_self.chunk.allocator.dupe(u8, routine.entity);
         try mut_self.allocated_routine_names.append(name);
@@ -636,6 +647,7 @@ pub const Codegen = struct {
                 mut_self.error_context = path.name;
                 const path_entity = try mut_self.world.intern_entity(path.name);
                 const init_key = try std.fmt.allocPrint(mut_self.allocator, "{s}{s}", .{ PATH_ROUTINE_PREFIX, path.name });
+                if (mut_self.routine_entries.contains(init_key)) return error.DuplicateRoutineName;
                 try mut_self.allocated_cue_keys.append(init_key);
                 try mut_self.routine_entries.put(init_key, mut_self.chunk.count());
                 try mut_self.routine_entities.put(init_key, path.name);
@@ -647,7 +659,6 @@ pub const Codegen = struct {
 
                 for (path.routines) |routine| {
                     mut_self.error_context = routine.name;
-                    if (mut_self.routine_entries.contains(routine.name)) return error.DuplicateRoutineName;
                     try mut_self.register_routine(routine, mut_self.chunk.count());
 
                     const guard_pc = try mut_self.emit_path_guard(path_entity, path_active);

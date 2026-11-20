@@ -108,6 +108,9 @@ pub const Routine = struct {
     name: []const u8,
     entity: []const u8,
     body: []const Stmt,
+    /// Where the name begins, so a semantic error can point at the declaration.
+    line: u32 = 0,
+    column: u32 = 0,
 };
 
 pub const CueHandler = struct {
@@ -1068,6 +1071,8 @@ pub const Parser = struct {
                 },
                 .kw_during => {
                     try self.advance();
+                    const name_line = self.current.line;
+                    const name_column = self.current.col;
                     const name = try self.parse_name();
                     _ = try self.expect(.colon);
                     _ = try self.expect(.indent);
@@ -1077,6 +1082,8 @@ pub const Parser = struct {
                         .name = name,
                         .entity = name,
                         .body = body,
+                        .line = name_line,
+                        .column = name_column,
                     });
                 },
                 .kw_now => {
@@ -2025,6 +2032,8 @@ pub const Parser = struct {
 
     fn parse_routine_decl(self: *Parser) !Routine {
         try self.advance(); // consume 'routine'
+        const name_line = self.current.line;
+        const name_column = self.current.col;
         const name = try self.parse_name();
         _ = try self.expect(.lparen);
         const entity = try self.parse_name();
@@ -2039,6 +2048,8 @@ pub const Parser = struct {
             .name = name,
             .entity = entity,
             .body = body,
+            .line = name_line,
+            .column = name_column,
         };
     }
 

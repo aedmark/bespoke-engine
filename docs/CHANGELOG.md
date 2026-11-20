@@ -4,7 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
-- A routine header takes names with spaces for the routine and its actor (`routine Judge Marrow(Judge Marrow):`), and the compiler owns the routine names and entities it registers, so a `during` name with spaces survives compilation (`P44-07`).
+- A routine header takes names with spaces for the routine and its actor (`routine Judge Marrow(Judge Marrow):`), and the compiler owns the routine names and entities it registers, so a `during` name with spaces survives compilation (`P44-07`). A routine name repeated across top-level, path, or `during` declarations is a compile error at the second declaration instead of silently replacing the first.
 
 - A scene transition changes the room and fires its cue without pausing or waking any fiber; a routine's owner names an actor or the stage, not a room (`D-139`). No shipped script declares a scene-owned routine, so the proofs are unchanged.
 

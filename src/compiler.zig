@@ -121,7 +121,13 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
 
     var cg = Codegen.init(alloc, &dummy_world, &dummy_spatial);
     var compiled = cg.compile(&ast) catch |err| {
-        const line, const col = source_position(source, cg.error_context);
+        var line = cg.error_line;
+        var col = cg.error_column;
+        if (line == 0) {
+            const pos = source_position(source, cg.error_context);
+            line = pos[0];
+            col = pos[1];
+        }
         return CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion);
     };
     defer compiled.deinit();
@@ -159,7 +165,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.OutOfMemory, error.WriteFailed => "not enough memory to check this script",
         error.Overflow => "number is outside the supported range",
         error.InvalidCharacter => "invalid numeric literal",
-        error.DuplicateRoutineName => "path routine name is already in use",
+        error.DuplicateRoutineName => "routine name is already in use",
         error.UnknownArrivalMark => "this arrival rule needs a declared mark",
         error.InvalidProgramText => "could not store this declaration's text",
         error.UnknownSocietyMember => "no society member has this name",
@@ -350,6 +356,68 @@ test "CheckResult owns its message after check_source returns" {
     const copy = res;
     _ = scribble_stack(0x33);
     try testing.expectEqualStrings("expected '(', found ')'", copy.message());
+}
+
+test "routine names are unique across top-level, path, and during declarations" {
+    const testing = std.testing;
+    const top_level_duplicate =
+        \\entity Guard, Hero
+        \\routine Patrol(Guard):
+        \\  wait 1 ticks
+        \\routine Patrol(Hero):
+        \\  wait 1 ticks
+    ;
+    const during_duplicate =
+        \\during Crowd:
+        \\  wait 1 ticks
+        \\routine Crowd(Crowd):
+        \\  wait 1 ticks
+    ;
+    const during_after_routine =
+        \\routine Crowd(Crowd):
+        \\  wait 1 ticks
+        \\during Crowd:
+        \\  wait 1 ticks
+    ;
+    const quoted_duplicate =
+        \\routine "Judge Marrow"("Judge Marrow"):
+        \\  wait 1 ticks
+        \\routine "Judge Marrow"("Judge Marrow"):
+        \\  wait 1 ticks
+    ;
+    const path_duplicate =
+        \\entity Hero, Guard
+        \\routine WitsPlan(Hero):
+        \\  wait 1 ticks
+        \\path Wits:
+        \\  routine WitsPlan(Guard):
+        \\    wait 1 ticks
+    ;
+    const two_path_duplicates =
+        \\entity Hero, Guard
+        \\path Wits:
+        \\  routine Plan(Hero):
+        \\    wait 1 ticks
+        \\  routine Plan(Guard):
+        \\    wait 1 ticks
+    ;
+
+    const cases = [_]struct { source: []const u8, line: u32, column: u32 }{
+        .{ .source = top_level_duplicate, .line = 4, .column = 9 },
+        .{ .source = during_duplicate, .line = 3, .column = 9 },
+        .{ .source = during_after_routine, .line = 3, .column = 8 },
+        .{ .source = quoted_duplicate, .line = 3, .column = 9 },
+        .{ .source = path_duplicate, .line = 5, .column = 11 },
+        .{ .source = two_path_duplicates, .line = 5, .column = 11 },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.source);
+        try testing.expect(!res.is_valid);
+        const d = res.diagnostic() orelse return error.TestUnexpectedResult;
+        try testing.expectEqual(case.line, d.line);
+        try testing.expectEqual(case.column, d.column);
+        try testing.expectEqualStrings("routine name is already in use", d.message);
+    }
 }
 
 const ARRIVAL_SCRIPT =
