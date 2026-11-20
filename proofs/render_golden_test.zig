@@ -513,8 +513,8 @@ const Recorder = struct {
 /// Stages each proof the way its own host does: the marks, props, exit marks, and cast starts
 /// its script does not declare. Every proof whose host places any of those in Zig is listed
 /// here, through the proof's own layout function, so this test never restates a coordinate
-/// (D-124). The Well of Three Tides is absent because its script declares every mark and prop;
-/// its host only connects the marks, starts the cast, and registers the era portals.
+/// (D-124). The Well of Three Tides declares every script mark and prop; its host adds only
+/// Fenn's sewing bench, through its own `place_fenn`, and the test stages that too.
 fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem) !void {
     if (std.mem.eql(u8, name, "spitting_contest")) return spitting_contest.stage(world, spatial);
     if (std.mem.eql(u8, name, "borrowed_beard")) return borrowed_beard.stage(world, spatial, false);
@@ -552,6 +552,7 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
         _ = try long_gallery.configure(world, spatial);
         return;
     }
+    if (std.mem.eql(u8, name, "three_tides")) return three_tides.place_fenn(world, spatial);
 }
 
 fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {

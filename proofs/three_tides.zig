@@ -283,6 +283,26 @@ pub fn evaluate_tides_solved(world: *const bespoke.World) bool {
         world.has_fact(null, disg_rel, null);
 }
 
+/// Fenn's sewing bench, on its own mark below and right of the 1712 well. Her first mark,
+/// the niche, stands between the well and the cornerstone box; seating her on the well itself
+/// leaves her in Ossie's cluster there. The bench connects only to the well, so no route to
+/// the box or the lawn passes through it.
+const FENN_SEAT = "SewingBench1712";
+
+/// Adds Fenn's bench if the scene does not have it and seats her there. The desktop runs and
+/// the render staging call this, so the window and its golden show the same mark (D-124).
+pub fn place_fenn(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !void {
+    const past_scene = world.lookup_entity("Charter Yard") orelse return error.MissingScene;
+    const past_well = spatial.graph.find_waypoint_in_room(past_scene, "WellMark1712") orelse return error.MissingMark;
+    const fenn = world.lookup_entity("WidowFenn") orelse return error.MissingFenn;
+    const seat = spatial.graph.find_waypoint_in_room(past_scene, FENN_SEAT) orelse blk: {
+        const wp = try spatial.graph.add_waypoint(past_scene, 44, 6, FENN_SEAT);
+        try spatial.graph.connect(past_well, wp, null);
+        break :blk wp;
+    };
+    try spatial.register_entity(fenn, seat, 8);
+}
+
 /// Fires the script's `LooksAt` handler, runs the tick, and returns what was said. Every
 /// description is script text (P32-19); a per-actor `LooksAt(<Actor>)` handler is the default.
 pub fn execute_look_at(
@@ -399,7 +419,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Register actors at topological waypoints
     try spatial.register_entity(ossie, past_well_wp, 8);
     try spatial.register_entity(gale, past_lawn_wp, 8);
-    try spatial.register_entity(fenn, past_niche_wp, 8);
+    try place_fenn(&world, &spatial);
     try spatial.register_entity(nell, pres_desk_wp, 8);
     try spatial.register_entity(juno, fut_tree_wp, 8);
     try spatial.register_entity(squall, fut_guard_wp, 8);
@@ -731,7 +751,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io) !void {
     const nell = world.lookup_entity("Nell").?;
     const juno = world.lookup_entity("Juno").?;
     const gale = world.lookup_entity("FounderGale").?;
-    const fenn = world.lookup_entity("WidowFenn").?;
     const squall = world.lookup_entity("AdmiralSquall").?;
 
     // Spatial marks
@@ -757,7 +776,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io) !void {
 
     try spatial.register_entity(ossie, past_well, 8);
     try spatial.register_entity(gale, past_lawn, 8);
-    try spatial.register_entity(fenn, past_niche, 8);
+    try place_fenn(&world, &spatial);
     try spatial.register_entity(nell, pres_desk, 8);
     try spatial.register_entity(juno, fut_tree, 8);
     try spatial.register_entity(squall, fut_guard, 8);

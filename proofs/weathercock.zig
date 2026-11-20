@@ -284,7 +284,9 @@ pub const Layout = struct {
         try spatial.add_hotspot(l.desk, attic, .{ .x = 20, .y = -6 }, 8, "WritingDesk", "My writing desk. Hester Quill's storm almanac lies open at a page I haven't read yet.");
         try spatial.add_hotspot(l.crank, customs, .{ .x = 10, .y = -6 }, 8, "CrankProp", "The sluice crank, hung on its hook by the door.");
         try spatial.add_hotspot(l.sluice, customs, .{ .x = 40, .y = -6 }, 10, "SluiceProp", "The Customs House sluice. One turn of the crank and the tide comes in across the counting floor.");
-        try spatial.add_hotspot(l.whirl, hill, .{ .x = 20, .y = -6 }, 12, "FogWhirlProp", "A whirl of grey fog turning slowly over the crest.");
+        // The ring is drawn 118 px above the waypoint row, so its hotspot must sit there too;
+        // at y -6 the only clickable point was below the visible fog.
+        try spatial.add_hotspot(l.whirl, hill, .{ .x = 20, .y = -16 }, 12, "FogWhirlProp", "A whirl of grey fog turning slowly over the crest.");
         try spatial.add_hotspot(l.note, hill, .{ .x = 40, .y = -6 }, 8, "NoteProp", "A sealed note addressed to Hester Quill. On the back: 'Fair weather, falling glass.'");
 
         // Corridors within and across scenes: attic stairs to the ledgers, the sluice corner to the hill road.
