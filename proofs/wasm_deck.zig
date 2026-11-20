@@ -695,6 +695,10 @@ fn tides_setup(rt: *WasmRuntime) anyerror!void {
     };
     for (facts) |f| try rt.world.remember(try entity(rt, f.subject), try relation(rt, f.relation), try fact_object(rt, f), 0);
     try rt.vm.transition_to_scene(try entity(rt, "Brine's Boarding House"));
+    // Fastened after the script starts, which stands the cast on each scene's first mark, the
+    // niche between the well and the box. The window, the render golden, and this page seat
+    // Fenn on her sewing bench through the same function (P43-01, D-100, D-124).
+    try three_tides.place_fenn(&rt.world, &rt.spatial);
 }
 
 /// The page's party buttons (D-095): each makes one of the three the player, in their own era.
