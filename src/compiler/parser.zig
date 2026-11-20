@@ -6,6 +6,7 @@ pub const TokenTag = lexer_mod.TokenTag;
 const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
+const decision_mod = @import("../decision.zig");
 const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
@@ -404,6 +405,36 @@ pub const SpellbookDecl = struct {
     spells: []const SpellPatternDecl,
 };
 
+/// One trigger or scoring line of a `decision` (P44-05). `negated` lines are `unless`.
+pub const DecisionClauseDecl = struct {
+    pattern: FactPattern,
+    negated: bool,
+};
+
+/// One `picks <N> when <clause>` or `drops <N> when <clause>` line of an option. `points` is
+/// signed: a drop is stored negative so the module sums one kind of line.
+pub const DecisionPickDecl = struct {
+    points: i32,
+    pattern: FactPattern,
+    negated: bool,
+};
+
+/// One `option <Name>:` block. The name is what the actor must know to be offered it.
+pub const DecisionOptionDecl = struct {
+    name: []const u8,
+    picks: []const DecisionPickDecl,
+};
+
+/// `decision <Name>:` offers an actor the options it knows and fires one cue with the winner
+/// (P44-05). `src/decision.zig` owns validation and scoring.
+pub const DecisionDecl = struct {
+    name: []const u8,
+    actor: []const u8,
+    cue: []const u8,
+    clauses: []const DecisionClauseDecl,
+    options: []const DecisionOptionDecl,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -433,6 +464,7 @@ pub const AST = struct {
     agendas: std.array_list.Managed(AgendaDecl),
     goals: std.array_list.Managed(GoalDecl),
     spellbooks: std.array_list.Managed(SpellbookDecl),
+    decisions: std.array_list.Managed(DecisionDecl),
     commands: std.array_list.Managed(CommandDecl),
     aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
@@ -461,6 +493,7 @@ pub const AST = struct {
             .agendas = std.array_list.Managed(AgendaDecl).init(allocator),
             .goals = std.array_list.Managed(GoalDecl).init(allocator),
             .spellbooks = std.array_list.Managed(SpellbookDecl).init(allocator),
+            .decisions = std.array_list.Managed(DecisionDecl).init(allocator),
             .commands = std.array_list.Managed(CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -492,6 +525,7 @@ pub const AST = struct {
         self.agendas.deinit();
         self.goals.deinit();
         self.spellbooks.deinit();
+        self.decisions.deinit();
         self.commands.deinit();
         self.aliases.deinit();
         self.scores.deinit();
@@ -786,6 +820,13 @@ pub const Parser = struct {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("spellbook '{s}' is declared twice", .{decl.name});
                     }
                     try ast.spellbooks.append(decl);
+                },
+                .kw_decision => {
+                    const decl = try self.parse_decision_decl();
+                    for (ast.decisions.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("decision '{s}' is declared twice", .{decl.name});
+                    }
+                    try ast.decisions.append(decl);
                 },
                 .kw_grid => {
                     const decl = try self.parse_grid_decl();
@@ -1824,6 +1865,93 @@ pub const Parser = struct {
     fn spell_word_kind(words: []const SpellWordDecl, name: []const u8) ?spell_mod.Kind {
         for (words) |word| if (std.mem.eql(u8, word.name, name)) return word.kind;
         return null;
+    }
+
+    /// Parses `decision <Name>:`: an actor, a cue, trigger lines, and scored options (P44-05).
+    /// A malformed line names the decision or option that owns it, so a misplaced score reports
+    /// where it went wrong rather than at the end of the block.
+    fn parse_decision_decl(self: *Parser) !DecisionDecl {
+        try self.advance(); // decision
+        const name = (try self.expect(.identifier)).slice;
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var actor: ?[]const u8 = null;
+        var cue: ?[]const u8 = null;
+        var clauses = std.array_list.Managed(DecisionClauseDecl).init(self.allocator);
+        var options = std.array_list.Managed(DecisionOptionDecl).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            // Directives are matched by text, as agendas are: `unless` is a keyword token.
+            const directive = self.current.slice;
+            try self.advance();
+            if (std.mem.eql(u8, directive, "actor")) {
+                if (actor != null) return self.set_error("decision '{s}' declares actor twice", .{name});
+                actor = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "fires")) {
+                if (cue != null) return self.set_error("decision '{s}' declares fires twice", .{name});
+                cue = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "requires") or std.mem.eql(u8, directive, "unless")) {
+                try clauses.append(.{
+                    .pattern = try self.decision_clause("decision", name),
+                    .negated = directive[0] == 'u',
+                });
+                if (clauses.items.len > decision_mod.MAX_CLAUSES)
+                    return self.set_error("decision '{s}' has more than {d} trigger lines", .{ name, decision_mod.MAX_CLAUSES });
+            } else if (std.mem.eql(u8, directive, "option")) {
+                const option_name = (try self.expect(.identifier)).slice;
+                for (options.items) |prior| {
+                    if (std.mem.eql(u8, prior.name, option_name))
+                        return self.set_error("decision '{s}' declares option '{s}' twice", .{ name, option_name });
+                }
+                _ = try self.expect(.colon);
+                _ = try self.expect(.indent);
+                var picks = std.array_list.Managed(DecisionPickDecl).init(self.allocator);
+                while (self.current.tag != .dedent and self.current.tag != .eof) {
+                    const line = self.current.slice;
+                    if (self.current.tag != .identifier or !(std.mem.eql(u8, line, "picks") or std.mem.eql(u8, line, "drops")))
+                        return self.set_error("option '{s}' expects a 'picks' or 'drops' line, found '{s}'", .{ option_name, line });
+                    try self.advance();
+                    const points = try self.take_u32();
+                    if (points == 0 or points > decision_mod.MAX_POINTS)
+                        return self.set_error("option '{s}' scores {d}; use 1 to {d}", .{ option_name, points, decision_mod.MAX_POINTS });
+                    // `when` and `unless` are keyword tokens, so match the text, not the tag.
+                    const modifier = self.current.slice;
+                    if (!(std.mem.eql(u8, modifier, "when") or std.mem.eql(u8, modifier, "unless")))
+                        return self.set_error("option '{s}' needs 'when' or 'unless' after its points", .{option_name});
+                    const negated = modifier[0] == 'u';
+                    try self.advance();
+                    const signed: i32 = if (std.mem.eql(u8, line, "drops")) -@as(i32, @intCast(points)) else @intCast(points);
+                    try picks.append(.{
+                        .points = signed,
+                        .pattern = try self.decision_clause("option", option_name),
+                        .negated = negated,
+                    });
+                    if (picks.items.len > decision_mod.MAX_PICKS)
+                        return self.set_error("option '{s}' scores more than {d} lines", .{ option_name, decision_mod.MAX_PICKS });
+                }
+                _ = try self.expect(.dedent);
+                if (picks.items.len == 0) return self.set_error("option '{s}' scores no lines", .{option_name});
+                try options.append(.{ .name = option_name, .picks = try picks.toOwnedSlice() });
+            } else return self.set_error("unknown decision directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', or 'option'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+        if (clauses.items.len == 0)
+            return self.set_error("decision '{s}' needs at least one 'requires' or 'unless' line", .{name});
+        if (options.items.len == 0 or options.items.len > decision_mod.MAX_OPTIONS)
+            return self.set_error("decision '{s}' needs between 1 and {d} options", .{ name, decision_mod.MAX_OPTIONS });
+        return .{
+            .name = name,
+            .actor = actor orelse return self.set_error("decision '{s}' needs an actor", .{name}),
+            .cue = cue orelse return self.set_error("decision '{s}' needs a cue, as 'fires <Name>'", .{name}),
+            .clauses = try clauses.toOwnedSlice(),
+            .options = try options.toOwnedSlice(),
+        };
+    }
+
+    fn decision_clause(self: *Parser, owner_kind: []const u8, owner: []const u8) !FactPattern {
+        const pattern = try self.parse_fact_pattern();
+        if (pattern.args.len == 0 or pattern.args.len > 2)
+            return self.set_error("{s} '{s}' line '{s}' needs one or two arguments", .{ owner_kind, owner, pattern.relation });
+        return pattern;
     }
 
     fn rate_index(names: []const []const u8, directive: []const u8) ?usize {
@@ -3025,4 +3153,103 @@ test "P44-04: parser rejects a misplaced or undeclared word, a repeated name, an
         \\  form Bolt
         \\  charm Kindle: Spark, Ember, Bolt
     , "unknown spellbook directive 'charm'");
+}
+
+test "P44-05: a decision declaration reads its actor, cue, trigger lines, and scored options" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const source =
+        \\decision LeadAtTable:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  requires Turn(Maren)
+        \\  unless Closed(Trick)
+        \\  option SaltTwo:
+        \\    picks 4 when SuitLed(Salt)
+        \\    drops 2 when High(SaltThree)
+        \\  option ReedOne:
+        \\    picks 1 when NotLast(Maren)
+    ;
+    var lexer = Lexer.init(arena.allocator(), source);
+    defer lexer.deinit();
+    var parser = try Parser.init(arena.allocator(), &lexer);
+    var ast = try parser.parse_program();
+    defer ast.deinit();
+
+    try testing.expectEqual(@as(usize, 1), ast.decisions.items.len);
+    const decision = ast.decisions.items[0];
+    try testing.expectEqualStrings("LeadAtTable", decision.name);
+    try testing.expectEqualStrings("Maren", decision.actor);
+    try testing.expectEqualStrings("CardPlayed", decision.cue);
+    try testing.expectEqual(@as(usize, 2), decision.clauses.len);
+    try testing.expectEqualStrings("Turn", decision.clauses[0].pattern.relation);
+    try testing.expectEqual(false, decision.clauses[0].negated);
+    try testing.expectEqual(true, decision.clauses[1].negated);
+    try testing.expectEqual(@as(usize, 2), decision.options.len);
+    try testing.expectEqualStrings("SaltTwo", decision.options[0].name);
+    try testing.expectEqual(@as(usize, 2), decision.options[0].picks.len);
+    try testing.expectEqual(@as(i32, 4), decision.options[0].picks[0].points);
+    try testing.expectEqual(false, decision.options[0].picks[0].negated);
+    try testing.expectEqual(@as(i32, -2), decision.options[0].picks[1].points);
+    try testing.expectEqualStrings("High", decision.options[0].picks[1].pattern.relation);
+    try testing.expectEqualStrings("ReedOne", decision.options[1].name);
+}
+
+test "P44-05: parser rejects a decision without a cue, an option without scores, and a repeated option" {
+    try expect_decision_error(
+        \\decision NoCue:
+        \\  actor Maren
+        \\  requires Turn(Maren)
+        \\  option SaltTwo:
+        \\    picks 1 when Open(Table)
+    , "needs a cue");
+    try expect_decision_error(
+        \\decision NoOptions:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  requires Turn(Maren)
+    , "between 1 and");
+    try expect_decision_error(
+        \\decision NoScores:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  requires Turn(Maren)
+        \\  option SaltTwo:
+        \\    picks 1 when Open(Table)
+        \\  option SaltTwo:
+        \\    picks 1 when Open(Table)
+    , "declares option 'SaltTwo' twice");
+    try expect_decision_error(
+        \\decision NoTrigger:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  option SaltTwo:
+        \\    picks 1 when Open(Table)
+    , "at least one 'requires'");
+    try expect_decision_error(
+        \\decision TooManyPoints:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  requires Turn(Maren)
+        \\  option SaltTwo:
+        \\    picks 101 when Open(Table)
+    , "use 1 to");
+}
+
+fn expect_decision_error(source: []const u8, needle: []const u8) !void {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lexer = Lexer.init(alloc, source);
+    defer lexer.deinit();
+    var parser = try Parser.init(alloc, &lexer);
+    try testing.expectError(error.UnexpectedToken, parser.parse_program());
+    const diag = parser.get_diagnostic().?;
+    if (std.mem.indexOf(u8, diag.message, needle) == null) {
+        std.debug.print("diagnostic was: {s}\n", .{diag.message});
+        return error.TestUnexpectedResult;
+    }
 }

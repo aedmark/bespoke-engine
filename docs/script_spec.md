@@ -401,6 +401,33 @@ when Hero is InBurningCell:
 
 All decisions in a tick read the grid as it stood at the start of that tick, so the result never depends on cell order, and rewinds replay exactly. The engine marks each actor with `InBurningCell`, `InSmokeCell`, and `InLiquidCell` for the cell it stands in; `when Actor is InBurningCell:` and `when Actor stops being InBurningCell:` react to them on the following tick. Package format version 8 carries the rates and the two new cell kinds.
 
+### Decisions (P44-05, D-137)
+
+A decision offers an actor the options it knows and fires one cue with the winner.
+
+```bespoke
+relation Chose(decision, option)
+
+decision LeadAtTable:
+  actor Maren
+  fires CardPlayed
+  requires Turn(Maren)
+  unless Closed(Trick)
+  option SaltTwo:
+    picks 4 when SuitLed(Salt)
+    drops 2 when High(SaltThree)
+  option ReedOne:
+    picks 1 when SuitLed(Salt)
+```
+
+- `actor` and `fires` are required. `requires` and `unless` are the trigger lines, the same shape agendas use, with `_` as a wildcard and no variables.
+- An option is offered only when its actor knows the option's entity: `Knows` or `Believes`, with `Rejects` overriding. A hand is the set of cards its seat knows, so another seat's cards are never candidates.
+- `picks N when <clause>` adds N when the clause holds, `drops N when <clause>` subtracts, and `unless` inverts the clause. Each line's magnitude is 1 to 100.
+- The highest total wins and an equal total keeps the earlier option. A decision whose options are all unoffered resolves to nothing and fires nothing.
+- A decision point is a rising edge: the engine chooses once while the trigger holds and re-arms when it falls. The choice is the set fact `Chose(Decision, Option)`, which a script reads by declaring that relation; it clears on re-arm.
+- The cue fires with the actor and the winning option. A cue body cannot read lowercase parameters (D-072), so a handler that needs the option names it as an exact argument: `on cue CardPlayed(Maren, SaltTwo):`.
+- Scoring reads facts and draws no random number, so a replay makes the same choice. Package format version 18 carries decisions; versions 1 through 17 load none.
+
 ## Test Coverage
 
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.

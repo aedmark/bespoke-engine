@@ -26,6 +26,7 @@ const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
+const decision_mod = @import("../decision.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
@@ -86,6 +87,8 @@ pub const CompiledProgram = struct {
     goals: std.array_list.Managed(hint_mod.Declaration),
     /// Spellbooks with their words and combinations, in declaration order (P44-04).
     spellbooks: std.array_list.Managed(spell_mod.Declaration),
+    /// Decisions in declaration order, which breaks score ties and orders choices (P44-05).
+    decisions: std.array_list.Managed(decision_mod.Declaration),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
@@ -116,6 +119,8 @@ pub const CompiledProgram = struct {
         self.goals.deinit();
         for (self.spellbooks.items) |*book| book.deinit_owned(self.chunk.allocator);
         self.spellbooks.deinit();
+        for (self.decisions.items) |*decision| decision.deinit_owned(self.chunk.allocator);
+        self.decisions.deinit();
         for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
         self.commands.deinit();
         for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
@@ -339,6 +344,7 @@ pub const Codegen = struct {
     agendas: std.array_list.Managed(agency_mod.Declaration),
     goals: std.array_list.Managed(hint_mod.Declaration),
     spellbooks: std.array_list.Managed(spell_mod.Declaration),
+    decisions: std.array_list.Managed(decision_mod.Declaration),
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
@@ -364,6 +370,7 @@ pub const Codegen = struct {
             .agendas = std.array_list.Managed(agency_mod.Declaration).init(allocator),
             .goals = std.array_list.Managed(hint_mod.Declaration).init(allocator),
             .spellbooks = std.array_list.Managed(spell_mod.Declaration).init(allocator),
+            .decisions = std.array_list.Managed(decision_mod.Declaration).init(allocator),
             .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -508,6 +515,11 @@ pub const Codegen = struct {
             try mut_self.spellbooks.append(try mut_self.compile_spellbook(decl));
         }
         try spell_mod.validate_all(mut_self.spellbooks.items);
+        for (ast.decisions.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.decisions.append(try mut_self.compile_decision(decl));
+        }
+        try decision_mod.validate_all(mut_self.decisions.items);
         for (ast.commands.items) |decl| {
             mut_self.error_context = decl.text;
             try mut_self.commands.append(try mut_self.compile_command(decl));
@@ -762,6 +774,7 @@ pub const Codegen = struct {
             .agendas = mut_self.agendas,
             .goals = mut_self.goals,
             .spellbooks = mut_self.spellbooks,
+            .decisions = mut_self.decisions,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
@@ -1227,6 +1240,50 @@ pub const Codegen = struct {
         } };
         spell_mod.validate(declaration) catch return error.InvalidSpellbook;
         return declaration;
+    }
+
+    /// Turns a parsed decision into program data: trigger lines, then options in declaration
+    /// order, which breaks score ties (P44-05).
+    fn compile_decision(self: *Codegen, decl: parser_mod.DecisionDecl) !decision_mod.Declaration {
+        const clauses = try self.allocator.alloc(decision_mod.Clause, decl.clauses.len);
+        errdefer self.allocator.free(clauses);
+        for (decl.clauses, 0..) |source, i| clauses[i] = try self.compile_clause(source.pattern, source.negated);
+
+        const options = try self.allocator.alloc(decision_mod.Option, decl.options.len);
+        var built: usize = 0;
+        errdefer {
+            for (options[0..built]) |option| self.allocator.free(option.picks);
+            self.allocator.free(options);
+        }
+        for (decl.options, 0..) |source, i| {
+            const picks = try self.allocator.alloc(decision_mod.Pick, source.picks.len);
+            errdefer self.allocator.free(picks);
+            for (source.picks, 0..) |line, pi| picks[pi] = .{
+                .points = line.points,
+                .clause = try self.compile_clause(line.pattern, line.negated),
+            };
+            options[i] = .{ .entity = try self.world.intern_entity(source.name), .picks = picks };
+            built += 1;
+        }
+
+        const decision = decision_mod.Decision{
+            .entity = try self.world.intern_entity(decl.name),
+            .actor = try self.world.intern_entity(decl.actor),
+            .cue = try self.world.intern_entity(decl.cue),
+            .clauses = clauses,
+            .options = options,
+        };
+        decision_mod.validate(decision) catch return error.InvalidDecision;
+        return .{ .decision = decision };
+    }
+
+    fn compile_clause(self: *Codegen, pattern: parser_mod.FactPattern, negated: bool) !decision_mod.Clause {
+        return .{
+            .relation = try self.intern_program_text(pattern.relation),
+            .subject = try self.agenda_term(pattern.args[0]),
+            .object = if (pattern.args.len > 1) try self.agenda_term(pattern.args[1]) else null,
+            .negated = negated,
+        };
     }
 
     fn compile_degradation(self: *Codegen, decl: parser_mod.DegradationDecl) !container_mod.Declaration {
@@ -2908,4 +2965,44 @@ test "P44-04: a spellbook compiles into tiered words and a resolvable spell" {
     try testing.expectEqual(kindle, spell_mod.named(book, kindle).?.entity);
     // Words are entities, so a handler or a typed line can name one.
     try testing.expectEqualStrings("Ward", world.get_entity_name(book.words[5].entity).?);
+}
+
+test "P44-05: a decision compiles into trigger lines and scored options" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\entity Maren
+        \\relation Turn(who)
+        \\relation SuitLed(suit)
+        \\relation High(card)
+        \\decision LeadAtTable:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  requires Turn(Maren)
+        \\  option SaltTwo:
+        \\    picks 4 when SuitLed(Salt)
+        \\    drops 2 when High(SaltThree)
+        \\  option ReedOne:
+        \\    picks 1 when SuitLed(Reed)
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.decisions.items.len);
+    const decision = &compiled.decisions.items[0].decision;
+    try testing.expectEqualStrings("LeadAtTable", world.get_entity_name(decision.entity).?);
+    try testing.expectEqualStrings("Maren", world.get_entity_name(decision.actor).?);
+    try testing.expectEqualStrings("CardPlayed", world.get_entity_name(decision.cue).?);
+    try testing.expectEqual(@as(usize, 1), decision.clauses.len);
+    try testing.expectEqualStrings("Turn", decision.clauses[0].relation);
+    try testing.expectEqual(world.lookup_entity("Maren").?, decision.clauses[0].subject.?);
+    try testing.expect(decision.clauses[0].object == null);
+    try testing.expectEqual(@as(usize, 2), decision.options.len);
+    try testing.expectEqual(@as(usize, 2), decision.options[0].picks.len);
+    try testing.expectEqual(@as(i32, 4), decision.options[0].picks[0].points);
+    try testing.expectEqualStrings("SuitLed", decision.options[0].picks[0].clause.relation);
+    try testing.expectEqual(@as(i32, -2), decision.options[0].picks[1].points);
+    try testing.expectEqualStrings("High", decision.options[0].picks[1].clause.relation);
+    try testing.expectEqual(world.lookup_entity("SaltThree").?, decision.options[0].picks[1].clause.subject.?);
+    try testing.expectEqualStrings("ReedOne", world.get_entity_name(decision.options[1].entity).?);
 }

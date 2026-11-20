@@ -2,6 +2,8 @@
 
 How the BeSpoke Engine fits together. This document maps the core components, data flow, invariants, and boundaries. Rationale and alternatives live in [DECISIONS.md](DECISIONS.md).
 
+- **Decisions are program data and the choice is a fact (P44-05, D-137):** a `decision` declaration compiles into `CompiledProgram.decisions`: an actor, a cue, trigger lines, and options with their scored lines. `src/decision.zig` offers only options the actor knows (the spell discovery rule), sums the satisfied lines, breaks a tie by declaration order, and fires the cue with the actor and the winner. `DecisionState` is a property and `Chose(Decision, Option)` is a set fact, so save, rewind, and branch restore need no snapshot. `.bspk` version 18 appends decisions; versions 1 through 17 load none. Enforced by: the P44-05 tests in `src/decision.zig`, `src/compiler/parser.zig`, `src/compiler/codegen.zig`, `src/host.zig`, and `src/package.zig`, and the version 18 compatibility fixture.
+
 ## The Shape, in One Paragraph
 
 The BeSpoke Engine inverts traditional game engine architecture into an **Engine-as-Spine** model (D-001). The Zig runtime is `main()`, owning the master simulation clock, entity IDs, contiguous relational fact tables (`MultiArrayList(Fact)`), and cooperative fiber scheduler. Game scripts written in the BeSpoke domain-specific language are compiled by a hand-written Zig front-end directly into compact custom bytecode (D-002). Downstream graphics and audio (an SDL2 window, or a WebAssembly canvas in the browser) act as stateless peripheral consumers that read a double-buffered snapshot of the simulation state each frame, and send player input back to the host as actions; they never write World facts themselves.

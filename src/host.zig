@@ -20,6 +20,7 @@ const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
 const command_mod = @import("command.zig");
 const spell_mod = @import("spell.zig");
+const decision_mod = @import("decision.zig");
 const audio_mod = @import("audio.zig");
 const mml_mod = @import("mml.zig");
 const society_mod = @import("society.zig");
@@ -77,6 +78,7 @@ pub fn initialize_subsystems(world: *World, compiled: *const CompiledProgram) !v
     }
     for (compiled.grids.items) |declaration| try grid_mod.seed(world, declaration);
     try agency_mod.seed(world, compiled.agendas.items);
+    try decision_mod.seed(world, compiled.decisions.items);
 }
 
 /// One engine lifecycle tick: initialize declared subsystems, step the VM, advance subsystem
@@ -105,6 +107,15 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
             var met: [agency_mod.MAX_AGENDAS]agency_mod.Interception = undefined;
             const n = try agency_mod.pursue(vm.world, sp, compiled.agendas.items, &met);
             for (met[0..n]) |m| _ = try vm.fire_cue(compiled, "Intercepts", m.actor, m.target, m.agenda);
+        }
+    }
+    // Decisions run after agendas, so an arriving actor can decide on the tick it arrives
+    // (P44-05). The chosen option's cue runs on the next tick like any fired cue.
+    if (compiled.decisions.items.len > 0) {
+        const choices = try decision_mod.step(vm.world, compiled.decisions.items);
+        for (choices.slice()) |choice| {
+            const cue_name = vm.world.get_entity_name(choice.cue) orelse continue;
+            _ = try vm.fire_cue(compiled, cue_name, choice.actor, choice.option, null);
         }
     }
     return try vm.dispatch_pending_weaves(compiled);
@@ -1784,4 +1795,73 @@ test "D-100: a doorway mark is added on stage, and a walk ending on it, or asked
     try testing.expect(try session.walk_player(hatch));
     try testing.expectEqual(quay, vm.current_scene.?);
     try testing.expectEqual(gangway, spatial.agents.get(hero).?.current_wp);
+}
+
+test "P44-05: a decision fires its cue with the winning option, once per rising trigger" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    // A cue body cannot read lowercase parameters (D-072), so a handler that needs the option
+    // names it as an exact argument. The engine also records `Chose(Decision, Option)`.
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Table
+        \\cast: Maren
+        \\marks: Seat
+        \\relation Turn(who)
+        \\relation SuitLed(suit)
+        \\relation Ready(who)
+        \\relation Chose(decision, option)
+        \\decision LeadAtTable:
+        \\  actor Maren
+        \\  fires CardPlayed
+        \\  requires Turn(Maren)
+        \\  option SaltTwo:
+        \\    picks 2 when SuitLed(Salt)
+        \\  option ReedOne:
+        \\    picks 1 when SuitLed(Salt)
+        \\on cue CardPlayed(Maren, SaltTwo):
+        \\  remember Ready(Maren)
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    const table = world.lookup_entity("Table").?;
+    try vm.transition_to_scene(table);
+    const maren = world.lookup_entity("Maren").?;
+    const decision = world.lookup_entity("LeadAtTable").?;
+    const ready = try world.intern_relation("Ready", .set);
+    const knows = try world.intern_relation("Knows", .set);
+    const turn = try world.intern_relation("Turn", .set);
+    const led = try world.intern_relation("SuitLed", .set);
+    const salt = world.lookup_entity("Salt").?;
+    const salt_two = world.lookup_entity("SaltTwo").?;
+    try world.remember(maren, knows, salt_two.to_int(), 0);
+    try world.remember(maren, knows, world.lookup_entity("ReedOne").?.to_int(), 0);
+    try world.remember(salt, led, 0, 0);
+    try world.remember(maren, turn, 0, 0);
+
+    // The choice is recorded when the trigger rises; the handler answers on the next tick.
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision).?);
+    try testing.expect(!world.has_fact(maren, ready, 0));
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(maren, ready, 0));
+
+    // The trigger still holds, so the same decision point cannot fire again.
+    _ = world.forget(maren, ready, null);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(!world.has_fact(maren, ready, 0));
+
+    // Falling and rising again re-arms it, and a second tick runs the new handler.
+    _ = world.forget(maren, turn, null);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(@as(?world_mod.EntityId, null), decision_mod.chosen(&world, decision));
+    try world.remember(maren, turn, 0, 0);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision).?);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(maren, ready, 0));
 }

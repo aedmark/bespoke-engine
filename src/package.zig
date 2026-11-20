@@ -13,6 +13,7 @@ const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
 const hint_mod = @import("hint.zig");
 const spell_mod = @import("spell.zig");
+const decision_mod = @import("decision.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -55,8 +56,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// through 14 load with no goals. Version 16 adds the aggregate condition opcodes (P44-02);
 /// versions 1 through 15 hold bytecode that cannot contain them, so they load unchanged.
 /// Version 17 appends spellbooks with their words and combinations (P44-04); versions 1
-/// through 16 load with no spellbook.
-pub const PACKAGE_VERSION: u32 = 17;
+/// through 16 load with no spellbook. Version 18 appends decisions with their trigger lines and
+/// scored options (P44-05); versions 1 through 17 load with no decisions.
+pub const PACKAGE_VERSION: u32 = 18;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -382,6 +384,33 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             for (spell.words) |word| try writer.writeInt(u32, word.to_int(), .little);
         }
     }
+
+    try writer.writeInt(u32, @intCast(compiled.decisions.items.len), .little);
+    for (compiled.decisions.items) |decl| {
+        const decision = decl.decision;
+        try writer.writeInt(u32, decision.entity.to_int(), .little);
+        try writer.writeInt(u32, decision.actor.to_int(), .little);
+        try writer.writeInt(u32, decision.cue.to_int(), .little);
+        try writer.writeByte(@intCast(decision.clauses.len));
+        for (decision.clauses) |clause| try write_decision_clause(world, writer, clause);
+        try writer.writeByte(@intCast(decision.options.len));
+        for (decision.options) |option| {
+            try writer.writeInt(u32, option.entity.to_int(), .little);
+            try writer.writeByte(@intCast(option.picks.len));
+            for (option.picks) |pick| {
+                try writer.writeInt(i32, pick.points, .little);
+                try write_decision_clause(world, writer, pick.clause);
+            }
+        }
+    }
+}
+
+/// Writes one trigger or scoring line; a null subject or object is the `_` wildcard.
+fn write_decision_clause(world: *const World, writer: anytype, clause: decision_mod.Clause) !void {
+    try write_text_ref(world, writer, clause.relation);
+    try writer.writeInt(u32, if (clause.subject) |e| e.to_int() else 0, .little);
+    try writer.writeInt(u32, if (clause.object) |e| e.to_int() else 0, .little);
+    try writer.writeByte(if (clause.negated) 1 else 0);
 }
 
 /// Marks a cue parameter with no guard variable slot in a package (D-072).
@@ -838,6 +867,56 @@ fn read_goal_declaration(allocator: std.mem.Allocator, world: *const World, read
 
 /// Untrusted input: counts are bounded, entity ids must exist, and the book is validated again
 /// so a package cannot resolve a triple the compiler would have rejected (P44-04).
+fn read_decision_clause(world: *const World, reader: anytype) !decision_mod.Clause {
+    return .{
+        .relation = try read_text_ref(world, reader),
+        .subject = try read_optional_entity_ref(world, reader),
+        .object = try read_optional_entity_ref(world, reader),
+        .negated = try read_flag(reader),
+    };
+}
+
+fn read_decision_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !decision_mod.Declaration {
+    const entity = try read_entity_ref(world, reader);
+    const actor = try read_entity_ref(world, reader);
+    const cue = try read_entity_ref(world, reader);
+    const clause_count = try reader.takeByte();
+    if (clause_count == 0 or clause_count > decision_mod.MAX_CLAUSES) return error.InvalidDecisionConfig;
+    const clauses = try allocator.alloc(decision_mod.Clause, clause_count);
+    errdefer allocator.free(clauses);
+    for (clauses) |*clause| clause.* = try read_decision_clause(world, reader);
+    const option_count = try reader.takeByte();
+    if (option_count == 0 or option_count > decision_mod.MAX_OPTIONS) return error.InvalidDecisionConfig;
+    const options = try allocator.alloc(decision_mod.Option, option_count);
+    var built: usize = 0;
+    errdefer {
+        for (options[0..built]) |option| allocator.free(option.picks);
+        allocator.free(options);
+    }
+    for (options) |*option| {
+        const option_entity = try read_entity_ref(world, reader);
+        const pick_count = try reader.takeByte();
+        if (pick_count == 0 or pick_count > decision_mod.MAX_PICKS) return error.InvalidDecisionConfig;
+        const picks = try allocator.alloc(decision_mod.Pick, pick_count);
+        errdefer allocator.free(picks);
+        for (picks) |*pick| pick.* = .{
+            .points = try reader.takeInt(i32, .little),
+            .clause = try read_decision_clause(world, reader),
+        };
+        option.* = .{ .entity = option_entity, .picks = picks };
+        built += 1;
+    }
+    const decision = decision_mod.Decision{
+        .entity = entity,
+        .actor = actor,
+        .cue = cue,
+        .clauses = clauses,
+        .options = options,
+    };
+    decision_mod.validate(decision) catch return error.InvalidDecisionConfig;
+    return .{ .decision = decision };
+}
+
 fn read_spellbook_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !spell_mod.Declaration {
     const entity = try read_entity_ref(world, reader);
     const word_count = try reader.takeInt(u32, .little);
@@ -1540,6 +1619,25 @@ pub fn load_package(
         spell_mod.validate_all(spellbooks.items) catch return error.InvalidSpellbookConfig;
     }
 
+    var decisions = std.array_list.Managed(decision_mod.Declaration).init(allocator);
+    errdefer {
+        for (decisions.items) |*decl| decl.deinit_owned(allocator);
+        decisions.deinit();
+    }
+    if (header.version >= 18) {
+        const decision_count = try pr.takeInt(u32, .little);
+        if (decision_count > decision_mod.MAX_DECISIONS) return error.InvalidDecisionConfig;
+        var di: u32 = 0;
+        while (di < decision_count) : (di += 1) {
+            var decl = try read_decision_declaration(allocator, world, pr);
+            decisions.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        decision_mod.validate_all(decisions.items) catch return error.InvalidDecisionConfig;
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1557,6 +1655,7 @@ pub fn load_package(
         .agendas = agendas,
         .goals = goals,
         .spellbooks = spellbooks,
+        .decisions = decisions,
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
@@ -1769,7 +1868,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 17",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 18",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -1886,7 +1985,7 @@ test "P44-04: package version 17 round-trips a spellbook and loads a version 16 
     try testing.expectEqual(@as(usize, 0), loaded.spellbooks.items.len);
 }
 
-test "P44-04: checked-in current package fixture carries a spellbook" {
+test "P44-04: checked-in version 17 package fixture carries a spellbook" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
@@ -1896,7 +1995,7 @@ test "P44-04: checked-in current package fixture carries a spellbook" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 17), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -1916,6 +2015,94 @@ test "P44-04: checked-in current package fixture carries a spellbook" {
     try testing.expectEqual(kindle, spell_mod.named_text(book, &world, "fixturespell").?.entity);
 }
 
+const DECISION_FIXTURE =
+    \\entity FixtureDecider
+    \\relation Turn(who)
+    \\relation Open(who)
+    \\decision FixtureDecision:
+    \\  actor FixtureDecider
+    \\  fires FixtureChoice
+    \\  requires Turn(FixtureDecider)
+    \\  option FixtureOptionA:
+    \\    picks 3 when Open(FixtureDecider)
+    \\    drops 1 when Turn(FixtureDecider)
+    \\  option FixtureOptionB:
+    \\    picks 1 when Open(FixtureDecider)
+    \\routine Idle(FixtureDecider):
+    \\  wait 1 ticks
+;
+
+test "P44-05: package version 18 round-trips a decision and loads a version 17 payload with none" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, DECISION_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.decisions.items.len);
+    const decision = &compiled2.decisions.items[0].decision;
+    try testing.expectEqualStrings("FixtureDecision", world2.get_entity_name(decision.entity).?);
+    try testing.expectEqualStrings("FixtureDecider", world2.get_entity_name(decision.actor).?);
+    try testing.expectEqualStrings("FixtureChoice", world2.get_entity_name(decision.cue).?);
+    try testing.expectEqual(@as(usize, 1), decision.clauses.len);
+    try testing.expectEqualStrings("Turn", decision.clauses[0].relation);
+    try testing.expectEqual(world2.lookup_entity("FixtureDecider").?, decision.clauses[0].subject.?);
+    try testing.expectEqual(@as(usize, 2), decision.options.len);
+    try testing.expectEqualStrings("FixtureOptionA", world2.get_entity_name(decision.options[0].entity).?);
+    try testing.expectEqual(@as(i32, 3), decision.options[0].picks[0].points);
+    try testing.expectEqual(@as(i32, -1), decision.options[0].picks[1].points);
+    try testing.expectEqual(@as(i32, 1), decision.options[1].picks[0].points);
+
+    // A payload that ends before the decision table is a version 17 package and loads none.
+    const v17 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V17]);
+    defer testing.allocator.free(v17);
+    reseal_for_test(v17, 17);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v17_stream: std.Io.Reader = .fixed(v17);
+    var loaded = try load_package(testing.allocator, &v17_stream, &world3, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 0), loaded.decisions.items.len);
+    try testing.expect(loaded.routine_entries.contains("Idle"));
+}
+
+test "P44-05: checked-in current package fixture carries a decision" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.2.0-package-v18.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+
+    try testing.expect(world.lookup_entity("FixtureDecider") != null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 1), compiled.decisions.items.len);
+    const decision = &compiled.decisions.items[0].decision;
+    try testing.expectEqualStrings("FixtureDecision", world.get_entity_name(decision.entity).?);
+    try testing.expectEqualStrings("FixtureChoice", world.get_entity_name(decision.cue).?);
+    try testing.expectEqual(@as(usize, 2), decision.options.len);
+}
+
 test "P44-02: checked-in current package fixture carries aggregate conditions" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
@@ -1926,7 +2113,7 @@ test "P44-02: checked-in current package fixture carries aggregate conditions" {
     );
     defer testing.allocator.free(fixture);
 
-    // The current writer is version 17; this fixture pins that version 16 still loads.
+    // The current writer is version 18; this fixture pins that version 16 still loads.
     try testing.expectEqual(@as(u32, 16), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
@@ -2004,8 +2191,11 @@ const EMPTY_TAIL_AFTER_V11: usize = 4 + EMPTY_TAIL_AFTER_V12;
 const EMPTY_TAIL_AFTER_V12: usize = 4 + EMPTY_TAIL_AFTER_V13;
 /// The empty goal count (version 15) and the sections after it.
 const EMPTY_TAIL_AFTER_V13: usize = 4 + EMPTY_TAIL_AFTER_V16;
-/// The empty spellbook count (version 17), for tests that locate version 16 sections from the end.
-const EMPTY_TAIL_AFTER_V16: usize = 4;
+/// The spellbook and decision sections after version 16, for tests that locate version 16
+/// sections from the end.
+const EMPTY_TAIL_AFTER_V16: usize = 4 + EMPTY_TAIL_AFTER_V17;
+/// The empty decision count (version 18), for tests that locate version 17 sections from the end.
+const EMPTY_TAIL_AFTER_V17: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
