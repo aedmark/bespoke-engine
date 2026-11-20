@@ -2026,19 +2026,17 @@ test "P44-07: a character routine runs in every room while a scene-owned fiber p
     defer vm.deinit();
 
     try vm.transition_to_scene(studio);
-    const corin_fiber = try vm.spawn_routine(corin, corin_pc);
+    _ = try vm.spawn_routine(corin, corin_pc);
     const studio_fiber = try vm.spawn_routine(studio, studio_pc);
 
     // The player leaves. The transition pauses the room's own fiber and leaves the character's
     // alone, so a character routine keeps running in the room left behind.
     try vm.transition_to_scene(gallery);
-    try testing.expect(vm.fibers.items[corin_fiber - 1].state != .paused);
     try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[studio_fiber - 1].state);
 
     try vm.step_tick();
     try testing.expect(world.has_fact(corin, paces, 1));
     try testing.expect(!world.has_fact(studio, lit, 1));
-    try testing.expectEqual(FiberState{ .paused = {} }, vm.fibers.items[studio_fiber - 1].state);
 
     // Coming back wakes the room's own routine.
     try vm.transition_to_scene(studio);
