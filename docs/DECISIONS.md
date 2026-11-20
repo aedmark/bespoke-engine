@@ -1676,6 +1676,16 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Update (P44-07, 2026-11-20):** The first step is done. A routine's own name takes a name with spaces the way the actor does, so every `during Name:` form has a literal `routine Name(Name):` replacement. The shorthand still stays for now; a later deprecation needs only the warning release and the removal.
 
+## D-141 Standalone Proof Pages Get a 1.25 MiB Budget (2026-11-20, status: accepted)
+
+**Context.** P41-01 set two independent limits: each Wasm module at 1 MiB and each standalone page at 1 MiB. A page embeds the module as base64, so the module becomes 4/3 its size before the page wrapper. Phase 44 grew `bespoke-proofs.wasm` to 778,064 bytes; its base64 is 1,037,420 bytes, and the thirteen proof pages are 1,057,255 to 1,059,271 bytes, 8,679 to 10,695 over the page limit while both modules and every other page pass. The module is already `ReleaseSmall`, has no custom or name sections to strip, and holds 646 KB of code plus 130 KB of data, so clearing 8 to 11 KB means removing or refactoring shipped behaviour. Serving the module beside each page would break the standalone `file://` design.
+
+**Decision.** Raise `standalonePageBytes` to 1.25 MiB (1,310,720), the same limit as the showcase page. Keep the 1 MiB module limit as D-067's tripwire. The page limit is the binding limit: 1.25 MiB carries a module up to about 820 KB before base64 and the page wrapper exceed it. That is intentional, because page weight is the user-visible cost.
+
+**Alternatives:** shrink the module, rejected because no safe 8 to 11 KB saving exists without dropping Phase 44 behaviour; split the module into a sibling file, rejected because it breaks self-contained pages and `file://` play; compress the embedded module, rejected because it adds a decoder and a second loading path to every page for a one-off limit breach.
+
+**Review.** Revisit when a proof page approaches 1.25 MiB or the module passes about 820 KB. At that point shrink the runtime or change the embedding rather than raise the page limit again.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
