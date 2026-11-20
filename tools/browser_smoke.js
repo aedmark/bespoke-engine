@@ -17,6 +17,9 @@ const { pathToFileURL } = require('url');
 
 const root = path.resolve(__dirname, '..');
 const chrome = process.env.CHROME || 'google-chrome';
+// A loaded CI runner can take well over 15 seconds to create DevToolsActivePort. Keep the
+// startup budget separate from the short waits for page state once Chrome is attached.
+const CHROME_START_TIMEOUT_MS = 60000;
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-chrome-'));
 let stderr = '';
 
@@ -95,12 +98,12 @@ async function smoke(pageUrl, starter, layout = false) {
     const port = await waitFor('Chrome DevTools port', () => {
       if (!fs.existsSync(portFile)) return null;
       return Number(fs.readFileSync(portFile, 'utf8').split('\n', 1)[0]) || null;
-    });
+    }, CHROME_START_TIMEOUT_MS);
     const target = await waitFor('game page target', async () => {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`);
       const targets = await response.json();
       return targets.find((item) => item.type === 'page' && item.url === pageUrl);
-    });
+    }, CHROME_START_TIMEOUT_MS);
     const cdp = new Cdp(target.webSocketDebuggerUrl);
     await cdp.open();
     await cdp.send('Runtime.enable');
