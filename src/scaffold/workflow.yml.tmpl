@@ -33,9 +33,28 @@ jobs:
           repository: ${{ env.BESPOKE_ENGINE_REPO }}
           ref: ${{ env.BESPOKE_ENGINE_REF }}
           path: bespoke-engine
-      - uses: mlugg/setup-zig@v1
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      # Zig comes straight from ziglang.org, checked against the published SHA-256, as the
+      # engine's own CI does; the community setup action could not fetch 0.17.1.
+      - name: Install Zig
+        run: |
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64) asset="zig-x86_64-linux-$ZIG_VERSION.tar.xz"; sum=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a ;;
+            macOS-ARM64) asset="zig-aarch64-macos-$ZIG_VERSION.tar.xz"; sum=75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d ;;
+            macOS-X64) asset="zig-x86_64-macos-$ZIG_VERSION.tar.xz"; sum=9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7 ;;
+            Windows-X64) asset="zig-x86_64-windows-$ZIG_VERSION.zip"; sum=b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e ;;
+            *) echo "No Zig $ZIG_VERSION download for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+          esac
+          tmp="$RUNNER_TEMP"
+          if [ "$RUNNER_OS" = "Windows" ]; then tmp="$(cygpath -u "$RUNNER_TEMP")"; fi
+          curl --fail --location --retry 3 --output "$tmp/$asset" "https://ziglang.org/download/$ZIG_VERSION/$asset"
+          if command -v sha256sum >/dev/null; then got="$(sha256sum "$tmp/$asset" | cut -d' ' -f1)"; else got="$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)"; fi
+          if [ "$got" != "$sum" ]; then echo "Checksum mismatch for $asset: $got"; exit 1; fi
+          mkdir -p "$tmp/zig"
+          case "$asset" in
+            *.zip) 7z x -y -o"$tmp/zig-unpack" "$tmp/$asset" >/dev/null && mv "$tmp"/zig-unpack/*/* "$tmp/zig/" ;;
+            *) tar -xJf "$tmp/$asset" --strip-components=1 -C "$tmp/zig" ;;
+          esac
+          if [ "$RUNNER_OS" = "Windows" ]; then cygpath -w "$tmp/zig" >> "$GITHUB_PATH"; else echo "$tmp/zig" >> "$GITHUB_PATH"; fi
       - name: Point the game at the fetched engine
         run: perl -pi -e 's|\.path = ".*"|.path = "../bespoke-engine"|' game/build.zig.zon
       - name: Install SDL2 (Linux)
@@ -87,9 +106,28 @@ jobs:
           repository: ${{ env.BESPOKE_ENGINE_REPO }}
           ref: ${{ env.BESPOKE_ENGINE_REF }}
           path: bespoke-engine
-      - uses: mlugg/setup-zig@v1
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      # Zig comes straight from ziglang.org, checked against the published SHA-256, as the
+      # engine's own CI does; the community setup action could not fetch 0.17.1.
+      - name: Install Zig
+        run: |
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64) asset="zig-x86_64-linux-$ZIG_VERSION.tar.xz"; sum=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a ;;
+            macOS-ARM64) asset="zig-aarch64-macos-$ZIG_VERSION.tar.xz"; sum=75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d ;;
+            macOS-X64) asset="zig-x86_64-macos-$ZIG_VERSION.tar.xz"; sum=9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7 ;;
+            Windows-X64) asset="zig-x86_64-windows-$ZIG_VERSION.zip"; sum=b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e ;;
+            *) echo "No Zig $ZIG_VERSION download for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+          esac
+          tmp="$RUNNER_TEMP"
+          if [ "$RUNNER_OS" = "Windows" ]; then tmp="$(cygpath -u "$RUNNER_TEMP")"; fi
+          curl --fail --location --retry 3 --output "$tmp/$asset" "https://ziglang.org/download/$ZIG_VERSION/$asset"
+          if command -v sha256sum >/dev/null; then got="$(sha256sum "$tmp/$asset" | cut -d' ' -f1)"; else got="$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)"; fi
+          if [ "$got" != "$sum" ]; then echo "Checksum mismatch for $asset: $got"; exit 1; fi
+          mkdir -p "$tmp/zig"
+          case "$asset" in
+            *.zip) 7z x -y -o"$tmp/zig-unpack" "$tmp/$asset" >/dev/null && mv "$tmp"/zig-unpack/*/* "$tmp/zig/" ;;
+            *) tar -xJf "$tmp/$asset" --strip-components=1 -C "$tmp/zig" ;;
+          esac
+          if [ "$RUNNER_OS" = "Windows" ]; then cygpath -w "$tmp/zig" >> "$GITHUB_PATH"; else echo "$tmp/zig" >> "$GITHUB_PATH"; fi
       - uses: actions/setup-node@v4
         with:
           node-version: 20
