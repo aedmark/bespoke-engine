@@ -1417,18 +1417,25 @@ pub const Codegen = struct {
                 .spent = rels.spent,
             };
         }
-        // Appeal lines name one of the two weighed axes, which the parser has checked; an appeal
-        // toward the counter-axis lowers the delta (D-149).
+        // An appeal names the value appealed to, which may be any declared axis, and leans
+        // toward one of the two weighed axes, which the parser has checked; an appeal toward the
+        // counter-axis lowers the delta (D-149, amended by D-150).
         const appeals = try self.allocator.alloc(dilemma_mod.Appeal, decl.appeals.len);
         errdefer self.allocator.free(appeals);
         for (decl.appeals, 0..) |source, i| {
-            const toward_axis = std.mem.eql(u8, source.axis, decl.axis);
+            const rel = self.world.lookup_relation(source.axis);
+            if (rel == null or self.world.value_bound(rel.?) == null) {
+                self.error_context = source.axis;
+                return error.UnknownDilemmaAxis;
+            }
+            const toward_axis = std.mem.eql(u8, source.toward, decl.axis);
             const magnitude: i32 = @intCast(source.points);
             appeals[i] = .{
-                .axis = if (toward_axis) axes[0] else axes[1],
+                .axis = rel.?,
                 .entity = try self.world.intern_entity(source.axis),
                 .points = if (toward_axis) magnitude else -magnitude,
             };
+            _ = try value_mod.known_value(self.world, rel.?, actor);
         }
         // The values an appeal or a hint can name for this actor exist from the start, so a
         // script can write `remember Knows(Player, "Mercy of Valerius")` (D-149).
@@ -3514,7 +3521,7 @@ test "P45-05: appeal lines compile toward a weighed axis and refuse any other" {
     try testing.expect(world.lookup_entity("Justice of Valerius") != null);
 
     const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
-        .{ .source = head ++ "  appeals 4 to Loyalty\n" ++ tiers, .message = "dilemma 'StolenBread' appeals to 'Loyalty', which it does not weigh", .line = 9 },
+        .{ .source = head ++ "  appeals 4 to Loyalty\n" ++ tiers, .message = "dilemma 'StolenBread' appeals toward 'Loyalty', which it does not weigh; add 'toward <Axis>' naming a weighed axis", .line = 9 },
         .{ .source = head ++ "  appeals 4 to Mercy\n  appeals 3 to Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' declares an appeal to 'Mercy' twice", .line = 10 },
         .{ .source = head ++ "  appeals 11 to Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' appeals more than 10 or less than 1; use 1 to 10", .line = 9 },
         .{ .source = head ++ "  appeals 4 toward Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' expects 'appeals <N> to <Axis>'", .line = 9 },
@@ -3526,4 +3533,43 @@ test "P45-05: appeal lines compile toward a weighed axis and refuse any other" {
         try testing.expectEqualStrings(case.message, result.message());
         try testing.expectEqual(case.line, result.line);
     }
+}
+
+test "D-150: an appeal to an unweighed value names the weighed axis it moves" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const head =
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Indulgence
+        \\axis Loyalty between Servility and Treachery
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  appeals 4 to Mercy
+        \\
+    ;
+    const tiers =
+        \\  strong Justice: "a" -> Flog
+        \\  moderate Justice: "b" -> Jail
+        \\  neutral: "c" -> Wait
+        \\  moderate Mercy: "d" -> Pardon
+        \\  strong Mercy: "e" -> OpenStore
+        \\
+    ;
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, head ++ "  appeals 8 to Loyalty toward Mercy\n" ++ tiers);
+    defer compiled.deinit();
+    const appeals = compiled.dilemmas.items[0].dilemma.appeals;
+    try testing.expectEqual(@as(usize, 2), appeals.len);
+    try testing.expectEqualStrings("Loyalty", world.get_relation_meta(appeals[1].axis).?.name);
+    try testing.expectEqual(@as(i32, -8), appeals[1].points);
+    try testing.expect(world.lookup_entity("Loyalty of Valerius") != null);
+
+    const twice = compiler.check_source(testing.allocator, head ++ "  appeals 8 to Loyalty toward Mercy\n  appeals 2 to Loyalty toward Justice\n" ++ tiers);
+    try testing.expectEqualStrings("dilemma 'StolenBread' declares an appeal to 'Loyalty' twice", twice.message());
+    const undeclared = compiler.check_source(testing.allocator, head ++ "  appeals 8 to Greed toward Mercy\n" ++ tiers);
+    try testing.expectEqualStrings("a dilemma weighs an axis that no 'axis' line declares", undeclared.message());
 }

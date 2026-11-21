@@ -67,8 +67,8 @@ pub const DRIFT_STEPS_PER_DILEMMA: u32 = 2;
 pub const HOLDING_RELATION = "DriftHolding";
 pub const PENDING_APPEAL_RELATION = "PendingAppeal";
 pub const KNOWS_RELATION = "Knows";
-/// One appeal line per weighed axis: the axis and the counter-axis.
-pub const MAX_APPEALS: usize = 2;
+/// Appeal lines per dilemma: the values a player may appeal to (D-149, D-150).
+pub const MAX_APPEALS: usize = 4;
 pub const MAX_APPEAL: u16 = 10;
 pub const WEIGHED_RELATION = "DilemmaWeighed";
 /// Tier boundaries, mirrored around zero (D-146).
@@ -113,8 +113,9 @@ pub const Drift = struct {
     spent: RelationKind,
 };
 
-/// One appeal line: an appeal to `axis` (the dilemma's axis or counter-axis) adds `points`
-/// toward it at the next weighing; `entity` is the axis's entity, which the appeal names.
+/// One appeal line: an appeal to the value `axis` adds `points` to the next weighing's delta,
+/// positive toward the dilemma's axis and negative toward its counter-axis; `entity` is the
+/// value's entity, which the appeal names. The value may be any declared axis (D-150).
 pub const Appeal = struct {
     axis: RelationKind,
     entity: EntityId,
@@ -200,7 +201,6 @@ pub fn validate(world: *const World, dilemma: Dilemma) Error!void {
     }
     if (dilemma.appeals.len > MAX_APPEALS) return Error.InvalidDilemma;
     for (dilemma.appeals, 0..) |appeal, i| {
-        if (appeal.axis != dilemma.axis and appeal.axis != dilemma.counter) return Error.InvalidDilemma;
         for (dilemma.appeals[0..i]) |prior| if (prior.axis == appeal.axis) return Error.InvalidDilemma;
         if (appeal.points == 0 or appeal.points > MAX_APPEAL or appeal.points < -@as(i32, MAX_APPEAL)) return Error.InvalidDilemma;
         if (value_mod.axis_of_entity(world, appeal.entity) != appeal.axis) return Error.InvalidDilemma;
