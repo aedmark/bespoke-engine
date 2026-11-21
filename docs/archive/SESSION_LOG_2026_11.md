@@ -2,6 +2,9 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 106 (2026-11-19)
+- **Work.** Retuned The Pip-Spitting Green's waits after the maintainer's hand test found both too long (D-130). The conch holds Judge Marrow for 15 ticks instead of 45, and the breeze is calm for 15 and blows for 15 instead of 45 and 20, a 30-tick cycle. With D-129's watched throw, the worst wait from the conch is 30 seconds; it was 90.
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build test-engine` and `zig build test-proofs` pass; `spitting_contest.txt` moved two lines (the stated TTL and the expiry at tick 24) and `wasm.txt` and `render.txt` are unchanged. The P35-03 test counts the judge's stay from his arrival now and checks a breeze within 20 ticks that lasts 15. `zig build wasm wasm-proofs` (proof Wasm 696,407 bytes), `node tools/wasm_smoke.js`, 15 rebuilt and current pages, `check_web_budgets.py` (largest page 949,120 bytes), 75 Python tests, `check_docs.py`, and `manual.py check --check-evidence` pass. The window and the page were not replayed by hand after the retune.
 ### Session 105 (2026-11-19)
 - **Work.** Fixed the spit contest's judging, reported by the maintainer: a spit made while Judge Marrow watched the harbour still won. The script's `Spits` handler now checks `Distracted`, and a throw he cannot see is recorded as `Placed(Tamsin, Unjudged)` with a narrator line; the judge's rules line names the condition (D-129). First place now needs thick spit, moved pegs, and a breeze while he is watching.
 - **Consequence.** The headless run spits while he is away, shows it unmarked, waits out the 45-tick distraction, and spits again to win; `spitting_contest.txt` changed in steps 5 to 9, and the deck's `[S]` solution gained a beat that waits for him. No `wasm.txt` or `render.txt` line moved, because the deck golden records only the first `[S]` press.
