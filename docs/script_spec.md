@@ -460,6 +460,35 @@ remember Mercy(Valerius, -3)
 - At run time every write is clamped into the range, so a host call, a loaded save, or later drift stores -10 or +10 rather than a value past it. The state inspector lists the value as a signed number on its character.
 - Scoring a decision by value is not part of this item: `picks` and `drops` lines still read facts, and dilemmas that compare two axes arrive with P45-03. Package format version 19 carries axes; versions 1 through 18 load none.
 
+### Dilemmas (P45-03, D-146)
+
+A dilemma weighs one value axis against another and answers by tier.
+
+```bespoke
+axis Justice between Cruelty and Leniency
+axis Mercy between Vengeance and "Condoning Harm"
+
+dilemma StolenBread:
+  actor Valerius
+  fires Judged
+  requires Accused(Thief)
+  weighs Justice against Mercy
+  leans 3 toward Justice when Criminal(Thief)
+  leans 4 toward Mercy when Famine(Town)
+  strong Justice: "The law is the law." -> Hang
+  moderate Justice: "A night in the cells." -> Jail
+  neutral: "Show me why I should spare him." -> Wait
+  moderate Mercy: "Pay for the loaf." -> Fine
+  strong Mercy: "Feed him and let him go." -> Pardon
+```
+
+- `actor`, `fires`, `weighs`, at least one `requires` or `unless` line, and all five tier lines are required. Both axes must be declared with `axis`, and they differ.
+- The delta is the actor's value on the first axis minus its value on the second, plus each `leans` line that holds (`unless` inverts the fact). A value the actor does not hold counts as 0. Each lean is 1 to 10, at most 8 lines, and leans toward one of the two weighed axes.
+- The tiers are fixed: 7 or more is strong toward the first axis, 3 to 6 moderate, -2 to 2 neutral, -6 to -3 moderate toward the second, -7 or less strong toward it. A missing or repeated tier is a compile error that names it, such as `dilemma 'StolenBread' has no line for the strong Mercy tier`.
+- When the trigger rises, the actor says the tier's line, the engine records `Chose(StolenBread, Jail)`, and the cue fires with the actor and the action: `on cue Judged(Valerius, Jail):`. The dilemma weighs once while the trigger holds and re-arms when it falls.
+- A neutral result waits for evidence: each tick on which something new has been presented to the actor (`present <thing> to <person>`), the dilemma weighs again, speaking and firing again. Evidence that turns a `leans` line on can move it to another tier.
+- A tier action on the actor's red lines is a compile error. A dilemma may not share a decision's name. Package format version 21 carries dilemmas; versions 1 through 20 load none.
+
 ## Test Coverage
 
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.
@@ -481,6 +510,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Decisions (P44-05) | `P44-05: a decision declaration reads its actor, cue, trigger lines, and scored options`; `P44-05: parser rejects a decision without a cue, an option without scores, and a repeated option` | `P44-05: a decision compiles into trigger lines and scored options`; `P44-05: the highest-scoring offered option wins, and an equal score keeps the earlier one`, `P44-05: an option the actor does not know is never offered, and Rejects overrides`, and `P44-05: a decision fires its cue with the winning option, once per rising trigger` (`src/decision.zig`, `src/host.zig`); `P44-05: package version 18 round-trips a decision and loads a version 17 payload with none` (`src/package.zig`); The Cinder Table's `cinder_table.txt` transcript |
 | Value axes (P45-01) | `P45-01: axis declarations and values are range-checked at compile time` (`src/compiler/codegen.zig`) | `P45-01: an author-declared axis compiles into a bounded property with signed values`; `P45-01: an axis bounds its property and reads signed values` (`src/value.zig`); `P45-01: a bounded property clamps writes, restores, and clones` (`src/world.zig`); `P45-01: the inspector lists an axis value as a signed number, not an entity` (`src/display.zig`); `P45-01: package version 19 round-trips value axes and loads a version 18 payload with none` (`src/package.zig`) |
 | Red lines (P45-02) | `P45-02: red lines compile per character and are checked against its decisions` (`src/compiler/codegen.zig`) | `P45-02: a vetoed option is never chosen, even when it would score highest` and `P45-02: red lines must name an option offered to that character and leave one open` (`src/decision.zig`); `P45-02: a red line vetoes the highest-scoring option through host.tick` (`src/host.zig`); `P45-02: package version 20 round-trips red lines and loads a version 19 payload with none` (`src/package.zig`) |
+| Dilemmas (P45-03) | `P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a gap` (`src/compiler/codegen.zig`) | `P45-03: tier boundaries are fixed and mirrored`, `P45-03: each tier boundary selects its line and action`, `P45-03: lean lines read world facts and move the tier`, `P45-03: a neutral weighing waits for evidence and weighs again when it arrives`, and `P45-03: a tier action on the actor's red lines is refused` (`src/dilemma.zig`); `P45-03: a dilemma speaks its tier's line and fires the action through host.tick` (`src/host.zig`); `P45-03: package version 21 round-trips a dilemma and loads a version 20 payload with none` (`src/package.zig`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

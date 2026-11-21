@@ -7,6 +7,7 @@ const draft_mod = @import("../draft.zig");
 const grid_mod = @import("../grid.zig");
 const agency_mod = @import("../agency.zig");
 const decision_mod = @import("../decision.zig");
+const dilemma_mod = @import("../dilemma.zig");
 const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
@@ -446,6 +447,33 @@ pub const AxisDecl = struct {
     poles: [2][]const u8,
 };
 
+/// One `leans <N> toward <Axis> when|unless <Fact>` line of a dilemma (P45-03).
+pub const DilemmaLeanDecl = struct {
+    points: u32,
+    toward: []const u8,
+    pattern: FactPattern,
+    negated: bool,
+};
+
+/// One tier's `"line" -> Action`.
+pub const DilemmaResponseDecl = struct {
+    line: []const u8,
+    action: []const u8,
+};
+
+/// `dilemma <Name>:` weighs an axis against a counter-axis and answers by tier (P45-03, D-146).
+/// `responses` is indexed by `dilemma.Tier`; the parser refuses a block that misses a tier.
+pub const DilemmaDecl = struct {
+    name: []const u8,
+    actor: []const u8,
+    cue: []const u8,
+    clauses: []const DecisionClauseDecl,
+    axis: []const u8,
+    counter: []const u8,
+    leans: []const DilemmaLeanDecl,
+    responses: [dilemma_mod.TIER_COUNT]DilemmaResponseDecl,
+};
+
 /// `red lines <Character>: <Option>, <Option>` lists options a character never takes in any
 /// decision (P45-02, D-145).
 pub const RedLinesDecl = struct {
@@ -485,6 +513,7 @@ pub const AST = struct {
     decisions: std.array_list.Managed(DecisionDecl),
     axes: std.array_list.Managed(AxisDecl),
     red_lines: std.array_list.Managed(RedLinesDecl),
+    dilemmas: std.array_list.Managed(DilemmaDecl),
     commands: std.array_list.Managed(CommandDecl),
     aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
@@ -516,6 +545,7 @@ pub const AST = struct {
             .decisions = std.array_list.Managed(DecisionDecl).init(allocator),
             .axes = std.array_list.Managed(AxisDecl).init(allocator),
             .red_lines = std.array_list.Managed(RedLinesDecl).init(allocator),
+            .dilemmas = std.array_list.Managed(DilemmaDecl).init(allocator),
             .commands = std.array_list.Managed(CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -550,6 +580,7 @@ pub const AST = struct {
         self.decisions.deinit();
         self.axes.deinit();
         self.red_lines.deinit();
+        self.dilemmas.deinit();
         self.commands.deinit();
         self.aliases.deinit();
         self.scores.deinit();
@@ -855,6 +886,13 @@ pub const Parser = struct {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("decision '{s}' is declared twice", .{decl.name});
                     }
                     try ast.decisions.append(decl);
+                },
+                .kw_dilemma => {
+                    const decl = try self.parse_dilemma_decl();
+                    for (ast.dilemmas.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("dilemma '{s}' is declared twice", .{decl.name});
+                    }
+                    try ast.dilemmas.append(decl);
                 },
                 .kw_axis => {
                     const decl = try self.parse_axis_decl();
@@ -1997,6 +2035,166 @@ pub const Parser = struct {
             .clauses = try clauses.toOwnedSlice(),
             .options = try options.toOwnedSlice(),
         };
+    }
+
+    /// Parses `dilemma <Name>:` (P45-03). Tier lines name the axis they lean toward, so the
+    /// block reads from the axis to the counter-axis; a missing tier is an error here, so no
+    /// weighing can fall silent.
+    fn parse_dilemma_decl(self: *Parser) !DilemmaDecl {
+        try self.advance(); // dilemma
+        const name_tok = try self.expect(.identifier);
+        const name = name_tok.slice;
+        _ = try self.expect(.colon);
+        _ = try self.expect(.indent);
+        var actor: ?[]const u8 = null;
+        var cue: ?[]const u8 = null;
+        var axis: ?[]const u8 = null;
+        var counter: ?[]const u8 = null;
+        var clauses = std.array_list.Managed(DecisionClauseDecl).init(self.allocator);
+        var leans = std.array_list.Managed(DilemmaLeanDecl).init(self.allocator);
+        const TierLine = struct { strength: enum { strong, moderate, neutral }, toward: []const u8, response: DilemmaResponseDecl, at: Token };
+        var tiers = std.array_list.Managed(TierLine).init(self.allocator);
+        // Where each lean names its axis, so a wrong name is reported on its own line.
+        var lean_at = std.array_list.Managed(Token).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            // Directives are matched by text: `unless` and `when` are keyword tokens.
+            const directive_tok = self.current;
+            const directive = directive_tok.slice;
+            try self.advance();
+            if (std.mem.eql(u8, directive, "actor")) {
+                if (actor != null) return self.dilemma_fail(self.current, name, &.{"declares actor twice"});
+                actor = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "fires")) {
+                if (cue != null) return self.dilemma_fail(self.current, name, &.{"declares fires twice"});
+                cue = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "requires") or std.mem.eql(u8, directive, "unless")) {
+                try clauses.append(.{
+                    .pattern = try self.decision_clause("dilemma", name),
+                    .negated = std.mem.eql(u8, directive, "unless"),
+                });
+                if (clauses.items.len > dilemma_mod.MAX_CLAUSES)
+                    return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("has more than {d} trigger lines", .{dilemma_mod.MAX_CLAUSES})});
+            } else if (std.mem.eql(u8, directive, "weighs")) {
+                if (axis != null) return self.dilemma_fail(self.current, name, &.{"declares weighs twice"});
+                axis = (try self.expect(.identifier)).slice;
+                if (!std.mem.eql(u8, self.current.slice, "against"))
+                    return self.dilemma_fail(self.current, name, &.{"expects 'weighs <Axis> against <Axis>'"});
+                try self.advance();
+                counter = (try self.expect(.identifier)).slice;
+            } else if (std.mem.eql(u8, directive, "leans")) {
+                const points = try self.take_u32();
+                if (points == 0 or points > dilemma_mod.MAX_LEAN)
+                    return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("leans more than {d} or less than 1; use 1 to {d}", .{ dilemma_mod.MAX_LEAN, dilemma_mod.MAX_LEAN })});
+                if (!std.mem.eql(u8, self.current.slice, "toward"))
+                    return self.dilemma_fail(self.current, name, &.{"expects 'leans <N> toward <Axis> when <Fact>'"});
+                try self.advance();
+                const toward_tok = try self.expect(.identifier);
+                try lean_at.append(toward_tok);
+                const toward = toward_tok.slice;
+                const modifier = self.current.slice;
+                if (!(std.mem.eql(u8, modifier, "when") or std.mem.eql(u8, modifier, "unless")))
+                    return self.dilemma_fail(self.current, name, &.{ "needs 'when' or 'unless' after 'toward ", toward, "'" });
+                try self.advance();
+                try leans.append(.{
+                    .points = points,
+                    .toward = toward,
+                    .pattern = try self.decision_clause("dilemma", name),
+                    .negated = std.mem.eql(u8, modifier, "unless"),
+                });
+                if (leans.items.len > dilemma_mod.MAX_LEANS)
+                    return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("has more than {d} lean lines", .{dilemma_mod.MAX_LEANS})});
+            } else if (std.mem.eql(u8, directive, "strong") or std.mem.eql(u8, directive, "moderate") or std.mem.eql(u8, directive, "neutral")) {
+                const neutral = std.mem.eql(u8, directive, "neutral");
+                const toward = if (neutral) "" else (try self.expect(.identifier)).slice;
+                _ = try self.expect(.colon);
+                const line = (try self.expect(.string_literal)).slice;
+                _ = try self.expect(.arrow);
+                const action = (try self.expect(.identifier)).slice;
+                try tiers.append(.{
+                    .strength = if (neutral) .neutral else if (std.mem.eql(u8, directive, "strong")) .strong else .moderate,
+                    .toward = toward,
+                    .response = .{ .line = line, .action = action },
+                    .at = directive_tok,
+                });
+            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'strong', 'moderate', or 'neutral'", .{directive});
+        }
+        _ = try self.expect(.dedent);
+        if (clauses.items.len == 0)
+            return self.dilemma_fail(self.current, name, &.{"needs at least one 'requires' or 'unless' line"});
+        const axis_name = axis orelse return self.dilemma_fail(name_tok, name, &.{"needs 'weighs <Axis> against <Axis>'"});
+        const counter_name = counter.?;
+        if (std.mem.eql(u8, axis_name, counter_name))
+            return self.dilemma_fail(name_tok, name, &.{ "weighs '", axis_name, "' against itself" });
+        for (leans.items, lean_at.items) |lean, at| {
+            if (!std.mem.eql(u8, lean.toward, axis_name) and !std.mem.eql(u8, lean.toward, counter_name))
+                return self.dilemma_fail(at, name, &.{ "leans toward '", lean.toward, "', which it does not weigh" });
+        }
+
+        // Order the tiers from the axis to the counter-axis, refusing a repeat or a gap.
+        var responses: [dilemma_mod.TIER_COUNT]?DilemmaResponseDecl = @splat(null);
+        for (tiers.items) |tier| {
+            const index: usize = switch (tier.strength) {
+                .neutral => @backingInt(dilemma_mod.Tier.neutral),
+                .strong, .moderate => blk: {
+                    const toward_axis = std.mem.eql(u8, tier.toward, axis_name);
+                    if (!toward_axis and !std.mem.eql(u8, tier.toward, counter_name))
+                        return self.dilemma_fail(tier.at, name, &.{ "has a tier toward '", tier.toward, "', which it does not weigh" });
+                    const t: dilemma_mod.Tier = if (tier.strength == .strong)
+                        (if (toward_axis) .strong_axis else .strong_counter)
+                    else
+                        (if (toward_axis) .moderate_axis else .moderate_counter);
+                    break :blk @backingInt(t);
+                },
+            };
+            if (responses[index] != null)
+                return self.dilemma_fail(tier.at, name, &.{ "gives the ", tier_strength(index), tier_axis(index, axis_name, counter_name), " tier twice" });
+            responses[index] = tier.response;
+        }
+        var ordered: [dilemma_mod.TIER_COUNT]DilemmaResponseDecl = undefined;
+        for (responses, 0..) |response, i| {
+            ordered[i] = response orelse
+                return self.dilemma_fail(name_tok, name, &.{ "has no line for the ", tier_strength(i), tier_axis(i, axis_name, counter_name), " tier" });
+        }
+        return .{
+            .name = name,
+            .actor = actor orelse return self.dilemma_fail(name_tok, name, &.{"needs an actor"}),
+            .cue = cue orelse return self.dilemma_fail(name_tok, name, &.{"needs a cue, as 'fires <Name>'"}),
+            .clauses = try clauses.toOwnedSlice(),
+            .axis = axis_name,
+            .counter = counter_name,
+            .leans = try leans.toOwnedSlice(),
+            .responses = ordered,
+        };
+    }
+
+    /// A tier as the script writes it, in two pieces: `strong ` + `Justice`, or `neutral` + ``.
+    fn tier_strength(index: usize) []const u8 {
+        return switch (index) {
+            0, 4 => "strong ",
+            1, 3 => "moderate ",
+            else => "neutral",
+        };
+    }
+
+    fn tier_axis(index: usize, axis: []const u8, counter: []const u8) []const u8 {
+        return switch (index) {
+            0, 1 => axis,
+            3, 4 => counter,
+            else => "",
+        };
+    }
+
+    /// One message shape for every dilemma diagnostic, so the block adds one formatting
+    /// instantiation to the browser module rather than one per message (D-141).
+    fn dilemma_fail(self: *Parser, tok: Token, name: []const u8, pieces: []const []const u8) error{UnexpectedToken} {
+        var detail: [160]u8 = undefined;
+        var len: usize = 0;
+        for (pieces) |piece| {
+            const n = @min(piece.len, detail.len - len);
+            @memcpy(detail[len..][0..n], piece[0..n]);
+            len += n;
+        }
+        return self.error_at(tok, "dilemma '{s}' {s}", .{ name, detail[0..len] });
     }
 
     /// Finishes `red lines <Character>: <Option>, ...` once `red lines` has been read. The options

@@ -15,6 +15,7 @@ const hint_mod = @import("hint.zig");
 const spell_mod = @import("spell.zig");
 const decision_mod = @import("decision.zig");
 const value_mod = @import("value.zig");
+const dilemma_mod = @import("dilemma.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -60,8 +61,10 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// through 16 load with no spellbook. Version 18 appends decisions with their trigger lines and
 /// scored options (P44-05); versions 1 through 17 load with no decisions. Version 19 appends value
 /// axes with their poles (P45-01, D-144); versions 1 through 18 load with none. Version 20 appends
-/// each character's red lines (P45-02, D-145); versions 1 through 19 load with none.
-pub const PACKAGE_VERSION: u32 = 20;
+/// each character's red lines (P45-02, D-145); versions 1 through 19 load with none. Version 21
+/// appends dilemmas with their axes, leans, and tier responses (P45-03, D-146); versions 1 through
+/// 20 load with none.
+pub const PACKAGE_VERSION: u32 = 21;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -415,6 +418,65 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         try writer.writeByte(@intCast(decl.red_lines.options.len));
         for (decl.red_lines.options) |option| try writer.writeInt(u32, option.to_int(), .little);
     }
+
+    try writer.writeInt(u32, @intCast(compiled.dilemmas.items.len), .little);
+    for (compiled.dilemmas.items) |decl| {
+        const d = decl.dilemma;
+        try writer.writeInt(u32, d.entity.to_int(), .little);
+        try writer.writeInt(u32, d.actor.to_int(), .little);
+        try writer.writeInt(u32, d.cue.to_int(), .little);
+        try writer.writeByte(@intCast(d.clauses.len));
+        for (d.clauses) |clause| try write_decision_clause(world, writer, clause);
+        try writer.writeInt(u16, d.axis.to_int(), .little);
+        try writer.writeInt(u16, d.counter.to_int(), .little);
+        try writer.writeByte(@intCast(d.leans.len));
+        for (d.leans) |lean| {
+            try writer.writeInt(i32, lean.points, .little);
+            try write_decision_clause(world, writer, lean.clause);
+        }
+        for (d.responses) |response| {
+            try writer.writeInt(u32, response.line.to_int(), .little);
+            try writer.writeInt(u32, response.action.to_int(), .little);
+        }
+    }
+}
+
+/// Untrusted input: counts are bounded and entities must exist; the caller validates the whole
+/// set against the loaded axes, decisions, and red lines, as the compiler does (P45-03).
+fn read_dilemma(allocator: std.mem.Allocator, world: *const World, reader: anytype) !dilemma_mod.Declaration {
+    const entity = try read_entity_ref(world, reader);
+    const actor = try read_entity_ref(world, reader);
+    const cue = try read_entity_ref(world, reader);
+    const clause_count = try reader.takeByte();
+    if (clause_count == 0 or clause_count > dilemma_mod.MAX_CLAUSES) return error.InvalidDilemmaConfig;
+    const clauses = try allocator.alloc(decision_mod.Clause, clause_count);
+    errdefer allocator.free(clauses);
+    for (clauses) |*clause| clause.* = try read_decision_clause(world, reader);
+    const axis = RelationKind.from_int(try reader.takeInt(u16, .little));
+    const counter = RelationKind.from_int(try reader.takeInt(u16, .little));
+    const lean_count = try reader.takeByte();
+    if (lean_count > dilemma_mod.MAX_LEANS) return error.InvalidDilemmaConfig;
+    const leans = try allocator.alloc(dilemma_mod.Lean, lean_count);
+    errdefer allocator.free(leans);
+    for (leans) |*lean| lean.* = .{
+        .points = try reader.takeInt(i32, .little),
+        .clause = try read_decision_clause(world, reader),
+    };
+    var responses: [dilemma_mod.TIER_COUNT]dilemma_mod.Response = undefined;
+    for (&responses) |*response| response.* = .{
+        .line = try read_entity_ref(world, reader),
+        .action = try read_entity_ref(world, reader),
+    };
+    return .{ .dilemma = .{
+        .entity = entity,
+        .actor = actor,
+        .cue = cue,
+        .clauses = clauses,
+        .axis = axis,
+        .counter = counter,
+        .leans = leans,
+        .responses = responses,
+    } };
 }
 
 /// Untrusted input: counts are bounded and entities must exist; the caller validates the sets
@@ -1716,6 +1778,25 @@ pub fn load_package(
         decision_mod.validate_red_lines(decisions.items, red_lines.items) catch return error.InvalidRedLineConfig;
     }
 
+    var dilemmas = std.array_list.Managed(dilemma_mod.Declaration).init(allocator);
+    errdefer {
+        for (dilemmas.items) |*decl| decl.deinit_owned(allocator);
+        dilemmas.deinit();
+    }
+    if (header.version >= 21) {
+        const dilemma_count = try pr.takeInt(u32, .little);
+        if (dilemma_count > dilemma_mod.MAX_DILEMMAS) return error.InvalidDilemmaConfig;
+        var di: u32 = 0;
+        while (di < dilemma_count) : (di += 1) {
+            var decl = try read_dilemma(allocator, world, pr);
+            dilemmas.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1737,6 +1818,7 @@ pub fn load_package(
         .decisions = decisions,
         .axes = axes,
         .red_lines = red_lines,
+        .dilemmas = dilemmas,
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
@@ -1949,7 +2031,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 20",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 21",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2281,8 +2363,11 @@ const EMPTY_TAIL_AFTER_V17: usize = 4 + EMPTY_TAIL_AFTER_V18;
 /// The axis and red-line sections after version 18, for tests that locate version 18 sections
 /// from the end.
 const EMPTY_TAIL_AFTER_V18: usize = 4 + EMPTY_TAIL_AFTER_V19;
-/// The empty red-line count (version 20), for tests that locate version 19 sections from the end.
-const EMPTY_TAIL_AFTER_V19: usize = 4;
+/// The red-line and dilemma sections after version 19, for tests that locate version 19
+/// sections from the end.
+const EMPTY_TAIL_AFTER_V19: usize = 4 + EMPTY_TAIL_AFTER_V20;
+/// The empty dilemma count (version 21), for tests that locate version 20 sections from the end.
+const EMPTY_TAIL_AFTER_V20: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -3258,7 +3343,7 @@ test "P45-02: package version 20 round-trips red lines and loads a version 19 pa
     try testing.expectEqualStrings("FixtureExecute", world2.get_entity_name(set.options[0]).?);
 
     // A payload that ends before the red-line table is a version 19 package and loads none.
-    const red_table_len = 4 + 4 + 1 + 4;
+    const red_table_len = 4 + 4 + 1 + 4 + EMPTY_TAIL_AFTER_V20;
     const v19 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - red_table_len]);
     defer testing.allocator.free(v19);
     reseal_for_test(v19, 19);
@@ -3274,7 +3359,7 @@ test "P45-02: package version 20 round-trips red lines and loads a version 19 pa
     const bad = try testing.allocator.dupe(u8, buffer.items);
     defer testing.allocator.free(bad);
     // Point the veto at the judge's own entity, which is not an option of any decision.
-    std.mem.writeInt(u32, bad[bad.len - 4 ..][0..4], world1.lookup_entity("FixtureJudge").?.to_int(), .little);
+    std.mem.writeInt(u32, bad[bad.len - 4 - EMPTY_TAIL_AFTER_V20 ..][0..4], world1.lookup_entity("FixtureJudge").?.to_int(), .little);
     reseal_for_test(bad, PACKAGE_VERSION);
     var world4 = try World.init(testing.allocator, 1024 * 1024);
     defer world4.deinit();
@@ -3292,7 +3377,7 @@ test "P45-02: checked-in version 20 package fixture carries red lines" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 20), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -3304,4 +3389,112 @@ test "P45-02: checked-in version 20 package fixture carries red lines" {
     try testing.expectEqual(@as(usize, 1), compiled.decisions.items.len);
     try testing.expectEqual(@as(usize, 1), compiled.red_lines.items.len);
     try testing.expectEqualStrings("FixtureExecute", world.get_entity_name(compiled.red_lines.items[0].red_lines.options[0]).?);
+}
+
+
+const DILEMMA_FIXTURE =
+    \\entity FixtureJudge
+    \\relation Accused(who)
+    \\relation Criminal(who)
+    \\axis FixtureJustice between Cruelty and Leniency
+    \\axis FixtureMercy between Vengeance and Indulgence
+    \\dilemma FixtureDilemma:
+    \\  actor FixtureJudge
+    \\  fires FixtureJudged
+    \\  requires Accused(FixtureThief)
+    \\  weighs FixtureJustice against FixtureMercy
+    \\  leans 3 toward FixtureJustice when Criminal(FixtureThief)
+    \\  strong FixtureJustice: "Fixture strong justice." -> FixtureHang
+    \\  moderate FixtureJustice: "Fixture moderate justice." -> FixtureJail
+    \\  neutral: "Fixture neutral." -> FixtureWait
+    \\  moderate FixtureMercy: "Fixture moderate mercy." -> FixtureFine
+    \\  strong FixtureMercy: "Fixture strong mercy." -> FixturePardon
+    \\routine Idle(FixtureJudge):
+    \\  wait 1 ticks
+;
+
+test "P45-03: package version 21 round-trips a dilemma and loads a version 20 payload with none" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, DILEMMA_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.dilemmas.items.len);
+    const d = compiled2.dilemmas.items[0].dilemma;
+    try testing.expectEqualStrings("FixtureDilemma", world2.get_entity_name(d.entity).?);
+    try testing.expectEqualStrings("FixtureJustice", world2.get_relation_meta(d.axis).?.name);
+    try testing.expectEqualStrings("FixtureMercy", world2.get_relation_meta(d.counter).?.name);
+    try testing.expectEqual(@as(i32, 3), d.leans[0].points);
+    try testing.expectEqualStrings("Fixture neutral.", world2.get_entity_name(d.responses[2].line).?);
+    try testing.expectEqualStrings("FixturePardon", world2.get_entity_name(d.responses[4].action).?);
+
+    // A payload that ends before the dilemma table is a version 20 package and loads none.
+    const v20 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - dilemma_table_len(d)]);
+    defer testing.allocator.free(v20);
+    reseal_for_test(v20, 20);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v20_stream: std.Io.Reader = .fixed(v20);
+    var loaded = try load_package(testing.allocator, &v20_stream, &world3, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 0), loaded.dilemmas.items.len);
+    try testing.expectEqual(@as(usize, 2), loaded.axes.items.len);
+
+    // A dilemma whose counter-axis is not a bounded axis is refused: point it at `Accused`.
+    const bad = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(bad);
+    const counter_at = bad.len - (dilemma_table_len(d) - counter_offset(d));
+    std.mem.writeInt(u16, bad[counter_at..][0..2], world1.lookup_relation("Accused").?.to_int(), .little);
+    reseal_for_test(bad, PACKAGE_VERSION);
+    var world4 = try World.init(testing.allocator, 1024 * 1024);
+    defer world4.deinit();
+    var bad_stream: std.Io.Reader = .fixed(bad);
+    try testing.expectError(error.InvalidDilemmaConfig, load_package(testing.allocator, &bad_stream, &world4, null));
+}
+
+/// One decision clause on disk: relation text ref, subject, object, negation flag.
+const CLAUSE_BYTES: usize = 4 + 4 + 4 + 1;
+
+/// The bytes of a one-dilemma table: count, three ids, clauses, two axes, leans, five responses.
+fn dilemma_table_len(d: dilemma_mod.Dilemma) usize {
+    return 4 + 12 + 1 + d.clauses.len * CLAUSE_BYTES + 4 + 1 + d.leans.len * (4 + CLAUSE_BYTES) + dilemma_mod.TIER_COUNT * 8;
+}
+
+/// Where the counter-axis sits within that table.
+fn counter_offset(d: dilemma_mod.Dilemma) usize {
+    return 4 + 12 + 1 + d.clauses.len * CLAUSE_BYTES + 2;
+}
+
+test "P45-03: checked-in version 21 package fixture carries a dilemma" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.3.1-package-v21.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items.len);
+    try testing.expectEqualStrings("FixtureHang", world.get_entity_name(compiled.dilemmas.items[0].dilemma.responses[0].action).?);
 }

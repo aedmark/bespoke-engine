@@ -21,6 +21,7 @@ const agency_mod = @import("agency.zig");
 const command_mod = @import("command.zig");
 const spell_mod = @import("spell.zig");
 const decision_mod = @import("decision.zig");
+const dilemma_mod = @import("dilemma.zig");
 const audio_mod = @import("audio.zig");
 const mml_mod = @import("mml.zig");
 const society_mod = @import("society.zig");
@@ -79,6 +80,7 @@ pub fn initialize_subsystems(world: *World, compiled: *const CompiledProgram) !v
     for (compiled.grids.items) |declaration| try grid_mod.seed(world, declaration);
     try agency_mod.seed(world, compiled.agendas.items);
     try decision_mod.seed(world, compiled.decisions.items);
+    try dilemma_mod.seed(world, compiled.dilemmas.items);
 }
 
 /// One engine lifecycle tick: initialize declared subsystems, step the VM, advance subsystem
@@ -116,6 +118,20 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
         for (choices.slice()) |choice| {
             const cue_name = vm.world.get_entity_name(choice.cue) orelse continue;
             _ = try vm.fire_cue(compiled, cue_name, choice.actor, choice.option, null);
+        }
+    }
+    // Dilemmas weigh after decisions (P45-03). The tier's line is spoken this tick, as a `say`
+    // would be, so `SpeechLog` reads it after the tick; the action's cue runs on the next tick.
+    if (compiled.dilemmas.items.len > 0) {
+        const outcomes = try dilemma_mod.step(vm.world, compiled.dilemmas.items);
+        for (outcomes.slice()) |outcome| {
+            try vm.emitted_cues.append(.{
+                .cue_id = SAY_CUE_ID,
+                .args = .{ outcome.actor.to_int(), outcome.line.to_int(), 0, 0 },
+                .arg_count = 2,
+            });
+            const cue_name = vm.world.get_entity_name(outcome.cue) orelse continue;
+            _ = try vm.fire_cue(compiled, cue_name, outcome.actor, outcome.action, null);
         }
     }
     return try vm.dispatch_pending_weaves(compiled);
@@ -1973,4 +1989,68 @@ test "P45-02: a red line vetoes the highest-scoring option through host.tick" {
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(thief, world.lookup_relation("Spared").?, 0));
     try testing.expect(!world.has_fact(thief, world.lookup_relation("Hanged").?, 0));
+}
+
+test "P45-03: a dilemma speaks its tier's line and fires the action through host.tick" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Guardhouse
+        \\cast: Valerius
+        \\marks: Bench
+        \\relation Accused(who)
+        \\relation Criminal(who)
+        \\relation Jailed(who)
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and "Condoning Harm"
+        \\remember Justice(Valerius, 4)
+        \\remember Mercy(Valerius, 3)
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  leans 3 toward Justice when Criminal(Thief)
+        \\  strong Justice: "The law is the law." -> Hang
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  neutral: "Show me why I should spare him." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+        \\  strong Mercy: "Feed him and let him go." -> Pardon
+        \\on cue Judged(Valerius, Jail):
+        \\  remember Jailed(Thief)
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try run_initial_statements(&world, &vm, &compiled);
+    try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
+    const valerius = world.lookup_entity("Valerius").?;
+    const thief = world.lookup_entity("Thief").?;
+    const dilemma = world.lookup_entity("StolenBread").?;
+    try world.remember(thief, try world.intern_relation("Accused", .set), 0, 0);
+
+    // Justice 4 minus Mercy 3 is 1: neutral, and Valerius asks to be shown more.
+    _ = try tick(&vm, &compiled);
+    var buf: [256]u8 = undefined;
+    var log = SpeechLog.init(&buf);
+    log.collect(&world, &vm);
+    try testing.expectEqualStrings("Valerius: \"Show me why I should spare him.\"", log.writer.buffered());
+    try testing.expectEqual(dilemma_mod.Stage.awaits_evidence, dilemma_mod.stage_of(&world, dilemma).?);
+
+    // The player shows a record of past thefts: the criminal lean adds 3, giving 4, moderate.
+    try world.remember(thief, try world.intern_relation("Criminal", .set), 0, 0);
+    const record = try world.intern_entity("Record");
+    _ = try present(&vm, &compiled, world.lookup_entity("Player") orelse try world.intern_entity("Player"), record, valerius);
+    _ = try tick(&vm, &compiled);
+    var buf2: [256]u8 = undefined;
+    var log2 = SpeechLog.init(&buf2);
+    log2.collect(&world, &vm);
+    try testing.expectEqualStrings("Valerius: \"A night in the cells.\"", log2.writer.buffered());
+    try testing.expectEqual(world.lookup_entity("Jail").?, dilemma_mod.chosen(&world, dilemma).?);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(thief, world.lookup_relation("Jailed").?, 0));
 }

@@ -1,0 +1,525 @@
+//! Dilemmas: a character weighs one value axis against another and acts by tier (P45-03, D-146).
+//!
+//! A `dilemma` names an actor, a cue, trigger lines (the decision shape, D-137), an axis and a
+//! counter-axis (P45-01), lean lines read from world facts, and one authored line and action per
+//! tier. When the trigger rises the engine computes
+//!
+//!   delta = value(axis) - value(counter-axis) + leans that hold
+//!
+//! and picks a tier from fixed, mirrored boundaries: 7 or more is strong toward the axis, 3 to 6
+//! moderate, -2 to 2 neutral, and the same toward the counter-axis below zero. The difference,
+//! not the sum, is the arithmetic: a low counter-value strengthens the lean toward the axis. A
+//! missing value counts as 0 for weighing only; no fact is written.
+//!
+//! The actor speaks the tier's line, the engine records `Chose(Dilemma, Action)`, and the cue
+//! fires with the actor and the action. A neutral result means "show me more": the dilemma waits
+//! in `AwaitsEvidence`, and each new `Presented(Actor, Evidence)` fact (P44-03) weighs it again,
+//! so evidence that turns a lean line on can move it out of neutral. All lifecycle state is
+//! World facts, so save, rewind, and branch restore need no dilemma snapshot:
+//!   DilemmaState(Dilemma, Idle | Done | AwaitsEvidence)   property
+//!   EvidenceSeen(Dilemma, n)                               property, the Presented count weighed
+//!   Chose(Dilemma, Action)                                 set fact, cleared on re-arm or re-weigh
+//! Weighing reads facts only and draws no random number, so a replay makes the same choices.
+
+const std = @import("std");
+const world_mod = @import("world.zig");
+const decision_mod = @import("decision.zig");
+
+pub const World = world_mod.World;
+pub const EntityId = world_mod.EntityId;
+pub const RelationKind = world_mod.RelationKind;
+pub const Clause = decision_mod.Clause;
+
+pub const MAX_DILEMMAS: usize = 32;
+pub const MAX_CLAUSES: usize = decision_mod.MAX_CLAUSES;
+pub const MAX_LEANS: usize = 8;
+/// One lean line's magnitude, the width of half an axis.
+pub const MAX_LEAN: u16 = 10;
+/// Tier boundaries, mirrored around zero (D-146).
+pub const STRONG_AT: i32 = 7;
+pub const MODERATE_AT: i32 = 3;
+
+pub const STATE_RELATION = "DilemmaState";
+pub const SEEN_RELATION = "EvidenceSeen";
+pub const PRESENTED_RELATION = "Presented";
+pub const CHOSE_RELATION = decision_mod.CHOSE_RELATION;
+pub const STAGE_NAMES = [_][]const u8{ "Idle", "Done", "AwaitsEvidence" };
+
+pub const Stage = enum(u8) { idle = 0, done = 1, awaits_evidence = 2 };
+
+/// The five tiers, in the order a script lists them from the axis to the counter-axis.
+pub const Tier = enum(u8) {
+    strong_axis = 0,
+    moderate_axis = 1,
+    neutral = 2,
+    moderate_counter = 3,
+    strong_counter = 4,
+};
+pub const TIER_COUNT = 5;
+
+pub const Error = error{InvalidDilemma};
+
+/// One lean line: `points` toward the axis (positive) or the counter-axis (negative) when the
+/// clause holds, or when it does not for an `unless` line.
+pub const Lean = struct {
+    points: i32,
+    clause: Clause,
+};
+
+/// One tier's authored response: a line the actor speaks (an interned text entity, as `say`
+/// uses) and the action the cue carries.
+pub const Response = struct {
+    line: EntityId,
+    action: EntityId,
+};
+
+pub const Dilemma = struct {
+    entity: EntityId,
+    actor: EntityId,
+    cue: EntityId,
+    clauses: []const Clause,
+    axis: RelationKind,
+    counter: RelationKind,
+    leans: []const Lean,
+    /// Indexed by `Tier`; every tier has a response, so weighing is never silent.
+    responses: [TIER_COUNT]Response,
+};
+
+pub const Declaration = struct {
+    dilemma: Dilemma,
+
+    pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
+        allocator.free(self.dilemma.leans);
+        allocator.free(self.dilemma.clauses);
+        self.* = undefined;
+    }
+};
+
+/// The tier a delta falls into. Boundaries are inclusive at their inner edge: 7 is strong, 3 is
+/// moderate, 2 is neutral.
+pub fn tier_of(delta: i32) Tier {
+    if (delta >= STRONG_AT) return .strong_axis;
+    if (delta >= MODERATE_AT) return .moderate_axis;
+    if (delta > -MODERATE_AT) return .neutral;
+    if (delta > -STRONG_AT) return .moderate_counter;
+    return .strong_counter;
+}
+
+pub fn validate(world: *const World, dilemma: Dilemma) Error!void {
+    if (dilemma.entity == .none or dilemma.actor == .none or dilemma.cue == .none) return Error.InvalidDilemma;
+    if (dilemma.clauses.len == 0 or dilemma.clauses.len > MAX_CLAUSES) return Error.InvalidDilemma;
+    for (dilemma.clauses) |clause| if (clause.relation.len == 0) return Error.InvalidDilemma;
+    if (dilemma.axis == dilemma.counter) return Error.InvalidDilemma;
+    for ([_]RelationKind{ dilemma.axis, dilemma.counter }) |axis| {
+        if (world.value_bound(axis) == null) return Error.InvalidDilemma;
+    }
+    if (dilemma.leans.len > MAX_LEANS) return Error.InvalidDilemma;
+    for (dilemma.leans) |lean| {
+        if (lean.clause.relation.len == 0) return Error.InvalidDilemma;
+        if (lean.points == 0 or lean.points > MAX_LEAN or lean.points < -@as(i32, MAX_LEAN)) return Error.InvalidDilemma;
+    }
+    for (dilemma.responses) |response| {
+        if (world.get_entity_name(response.line) == null or world.get_entity_name(response.action) == null) return Error.InvalidDilemma;
+    }
+}
+
+/// Validates a program's dilemmas together: entities are unique and none shares a decision's
+/// entity, since both record their choice in `Chose`. No tier's action may be on its actor's red
+/// lines (P45-02): the compiler refuses rather than let a weighed tier act against a red line.
+pub fn validate_all(
+    world: *const World,
+    declarations: []const Declaration,
+    decisions: []const decision_mod.Declaration,
+    red_lines: []const decision_mod.RedLineDeclaration,
+) Error!void {
+    if (declarations.len > MAX_DILEMMAS) return Error.InvalidDilemma;
+    for (declarations, 0..) |decl, i| {
+        const dilemma = decl.dilemma;
+        try validate(world, dilemma);
+        for (declarations[0..i]) |prior| if (prior.dilemma.entity == dilemma.entity) return Error.InvalidDilemma;
+        for (decisions) |decision| if (decision.decision.entity == dilemma.entity) return Error.InvalidDilemma;
+        for (dilemma.responses) |response| {
+            if (decision_mod.vetoed(red_lines, dilemma.actor, response.action)) return Error.InvalidDilemma;
+        }
+    }
+}
+
+const Vocabulary = struct {
+    state: RelationKind,
+    seen: RelationKind,
+    chose: RelationKind,
+    presented: RelationKind,
+    stages: [STAGE_NAMES.len]EntityId,
+
+    fn intern(world: *World) !Vocabulary {
+        var v = Vocabulary{
+            .state = try world.intern_relation(STATE_RELATION, .property),
+            .seen = try world.intern_relation(SEEN_RELATION, .property),
+            .chose = try world.intern_relation(CHOSE_RELATION, .set),
+            .presented = try world.intern_relation(PRESENTED_RELATION, .set),
+            .stages = undefined,
+        };
+        // Declared with another type, a property would append rows and a set would overwrite.
+        if (world.get_relation_meta(v.state).?.rel_type != .property or
+            world.get_relation_meta(v.seen).?.rel_type != .property or
+            world.get_relation_meta(v.chose).?.rel_type != .set or
+            world.get_relation_meta(v.presented).?.rel_type != .set) return Error.InvalidDilemma;
+        for (STAGE_NAMES, 0..) |name, i| v.stages[i] = try world.intern_entity(name);
+        return v;
+    }
+
+    fn stage_of(self: Vocabulary, world: *const World, dilemma: EntityId) ?Stage {
+        const raw = world.get_property(dilemma, self.state) orelse return null;
+        for (self.stages, 0..) |entity, i| if (entity.to_int() == raw) return @fromBackingInt(@intCast(i));
+        return null;
+    }
+
+    fn set(self: Vocabulary, world: *World, dilemma: EntityId, stage: Stage) !void {
+        try world.remember(dilemma, self.state, self.stages[@backingInt(stage)].to_int(), 0);
+    }
+
+    fn presented_count(self: Vocabulary, world: *const World, actor: EntityId) u32 {
+        var count: u32 = 0;
+        const slice = world.facts.slice();
+        for (slice.items(.subject)[0..world.facts.len], slice.items(.relation)[0..world.facts.len]) |subject, relation| {
+            if (subject == actor and relation == self.presented) count += 1;
+        }
+        return count;
+    }
+};
+
+/// The stage a dilemma is in, or null before seeding.
+pub fn stage_of(world: *const World, dilemma: EntityId) ?Stage {
+    const relation = world.lookup_relation(STATE_RELATION) orelse return null;
+    const raw = world.get_property(dilemma, relation) orelse return null;
+    for (STAGE_NAMES, 0..) |name, i| {
+        const entity = world.lookup_entity(name) orelse continue;
+        if (entity.to_int() == raw) return @fromBackingInt(@intCast(i));
+    }
+    return null;
+}
+
+/// Gives every dilemma without a stage the `Idle` stage; existing stages are left alone.
+pub fn seed(world: *World, declarations: []const Declaration) !void {
+    if (declarations.len == 0) return;
+    const v = try Vocabulary.intern(world);
+    for (declarations) |decl| {
+        if (v.stage_of(world, decl.dilemma.entity) == null) try v.set(world, decl.dilemma.entity, .idle);
+    }
+}
+
+fn holds(world: *const World, clause: Clause) bool {
+    const relation = world.lookup_relation(clause.relation) orelse return false;
+    return world.has_fact(clause.subject, relation, if (clause.object) |o| o.to_int() else null);
+}
+
+fn triggered(world: *const World, dilemma: Dilemma) bool {
+    for (dilemma.clauses) |clause| {
+        if (holds(world, clause) == clause.negated) return false;
+    }
+    return true;
+}
+
+fn value_or_zero(world: *const World, actor: EntityId, axis: RelationKind) i32 {
+    const raw = world.get_property(actor, axis) orelse return 0;
+    return @bitCast(raw);
+}
+
+/// The dilemma's delta in the current World: axis minus counter-axis, plus every lean that holds.
+pub fn delta_of(world: *const World, dilemma: Dilemma) i32 {
+    var delta = value_or_zero(world, dilemma.actor, dilemma.axis) - value_or_zero(world, dilemma.actor, dilemma.counter);
+    for (dilemma.leans) |lean| {
+        if (holds(world, lean.clause) != lean.clause.negated) delta += lean.points;
+    }
+    return delta;
+}
+
+/// One weighing this tick, in declaration order.
+pub const Outcome = struct {
+    dilemma: EntityId,
+    actor: EntityId,
+    cue: EntityId,
+    tier: Tier,
+    delta: i32,
+    line: EntityId,
+    action: EntityId,
+};
+
+pub const Outcomes = struct {
+    items: [MAX_DILEMMAS]Outcome = undefined,
+    len: usize = 0,
+
+    pub fn slice(self: *const Outcomes) []const Outcome {
+        return self.items[0..self.len];
+    }
+};
+
+/// Advances every dilemma by one tick. Runs in `host.tick` after decisions. A dilemma weighs
+/// once when its trigger rises and re-arms when it falls; a neutral weighing waits for evidence
+/// and weighs again each tick the count of things presented to the actor has grown.
+pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
+    var out = Outcomes{};
+    if (declarations.len == 0) return out;
+    const v = try Vocabulary.intern(world);
+    for (declarations) |decl| {
+        const dilemma = decl.dilemma;
+        const stage = v.stage_of(world, dilemma.entity) orelse .idle;
+        const live = triggered(world, dilemma);
+        if (!live) {
+            if (stage != .idle) {
+                try v.set(world, dilemma.entity, .idle);
+                _ = world.forget(dilemma.entity, v.chose, null);
+                _ = world.forget(dilemma.entity, v.seen, null);
+            }
+            continue;
+        }
+        const presented = v.presented_count(world, dilemma.actor);
+        switch (stage) {
+            .done => continue,
+            .awaits_evidence => {
+                const seen = world.get_property(dilemma.entity, v.seen) orelse 0;
+                if (presented <= seen) continue;
+            },
+            .idle => {},
+        }
+
+        const delta = delta_of(world, dilemma);
+        const tier = tier_of(delta);
+        const response = dilemma.responses[@backingInt(tier)];
+        _ = world.forget(dilemma.entity, v.chose, null);
+        try world.remember(dilemma.entity, v.chose, response.action.to_int(), 0);
+        if (tier == .neutral) {
+            try v.set(world, dilemma.entity, .awaits_evidence);
+            try world.remember(dilemma.entity, v.seen, presented, 0);
+        } else {
+            try v.set(world, dilemma.entity, .done);
+            _ = world.forget(dilemma.entity, v.seen, null);
+        }
+        out.items[out.len] = .{
+            .dilemma = dilemma.entity,
+            .actor = dilemma.actor,
+            .cue = dilemma.cue,
+            .tier = tier,
+            .delta = delta,
+            .line = response.line,
+            .action = response.action,
+        };
+        out.len += 1;
+    }
+    return out;
+}
+
+/// The action chosen at the last weighing, or null between points.
+pub fn chosen(world: *const World, dilemma: EntityId) ?EntityId {
+    return decision_mod.chosen(world, dilemma);
+}
+
+test "P45-03: tier boundaries are fixed and mirrored" {
+    const testing = std.testing;
+    const cases = [_]struct { delta: i32, tier: Tier }{
+        .{ .delta = 30, .tier = .strong_axis },
+        .{ .delta = 7, .tier = .strong_axis },
+        .{ .delta = 6, .tier = .moderate_axis },
+        .{ .delta = 3, .tier = .moderate_axis },
+        .{ .delta = 2, .tier = .neutral },
+        .{ .delta = 0, .tier = .neutral },
+        .{ .delta = -2, .tier = .neutral },
+        .{ .delta = -3, .tier = .moderate_counter },
+        .{ .delta = -6, .tier = .moderate_counter },
+        .{ .delta = -7, .tier = .strong_counter },
+        .{ .delta = -30, .tier = .strong_counter },
+    };
+    for (cases) |case| try testing.expectEqual(case.tier, tier_of(case.delta));
+}
+
+const TestRig = struct {
+    world: World,
+    actor: EntityId,
+    justice: RelationKind,
+    mercy: RelationKind,
+    accused: RelationKind,
+    famine: RelationKind,
+    criminal: RelationKind,
+    thief: EntityId,
+    town: EntityId,
+    leans: [2]Lean,
+    decls: [1]Declaration,
+
+    fn init(rig: *TestRig) !void {
+        const testing = std.testing;
+        const value_mod = @import("value.zig");
+        rig.world = try World.init(testing.allocator, 1024 * 1024);
+        const w = &rig.world;
+        rig.actor = try w.intern_entity("Valerius");
+        rig.justice = (try value_mod.declare(w, "Justice", .{ "Cruelty", "Leniency" })).relation;
+        rig.mercy = (try value_mod.declare(w, "Mercy", .{ "Vengeance", "Condoning Harm" })).relation;
+        rig.accused = try w.intern_relation("Accused", .set);
+        rig.famine = try w.intern_relation("Famine", .set);
+        rig.criminal = try w.intern_relation("Criminal", .set);
+        rig.thief = try w.intern_entity("Thief");
+        rig.town = try w.intern_entity("Town");
+        rig.leans = .{
+            .{ .points = 3, .clause = .{ .relation = "Criminal", .subject = rig.thief } },
+            .{ .points = -4, .clause = .{ .relation = "Famine", .subject = rig.town } },
+        };
+        var responses: [TIER_COUNT]Response = undefined;
+        const names = [_][2][]const u8{
+            .{ "The law is the law.", "Hang" },
+            .{ "A night in the cells.", "Jail" },
+            .{ "Show me why I should spare him.", "Wait" },
+            .{ "Pay for the loaf.", "Fine" },
+            .{ "Feed him and let him go.", "Pardon" },
+        };
+        for (names, 0..) |pair, i| responses[i] = .{ .line = try w.intern_entity(pair[0]), .action = try w.intern_entity(pair[1]) };
+        rig.decls = .{.{ .dilemma = .{
+            .entity = try w.intern_entity("StolenBread"),
+            .actor = rig.actor,
+            .cue = try w.intern_entity("Judged"),
+            .clauses = &.{.{ .relation = "Accused" }},
+            .axis = rig.justice,
+            .counter = rig.mercy,
+            .leans = &rig.leans,
+            .responses = responses,
+        } }};
+        try validate_all(w, &rig.decls, &.{}, &.{});
+        try seed(w, &rig.decls);
+    }
+
+    fn set_values(rig: *TestRig, justice: i32, mercy: i32) !void {
+        try rig.world.remember(rig.actor, rig.justice, @bitCast(justice), 0);
+        try rig.world.remember(rig.actor, rig.mercy, @bitCast(mercy), 0);
+    }
+
+    /// Re-arms the dilemma, then raises the trigger and weighs once.
+    fn weigh(rig: *TestRig) !Outcomes {
+        _ = rig.world.forget(rig.thief, rig.accused, null);
+        _ = try step(&rig.world, &rig.decls);
+        try rig.world.remember(rig.thief, rig.accused, 0, 0);
+        return step(&rig.world, &rig.decls);
+    }
+
+    fn action_name(rig: *TestRig, outcome: Outcome) []const u8 {
+        return rig.world.get_entity_name(outcome.action).?;
+    }
+};
+
+test "P45-03: each tier boundary selects its line and action" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    const cases = [_]struct { justice: i32, mercy: i32, action: []const u8, tier: Tier }{
+        .{ .justice = 7, .mercy = 0, .action = "Hang", .tier = .strong_axis },
+        .{ .justice = 6, .mercy = 0, .action = "Jail", .tier = .moderate_axis },
+        .{ .justice = 5, .mercy = 2, .action = "Jail", .tier = .moderate_axis },
+        .{ .justice = 2, .mercy = 0, .action = "Wait", .tier = .neutral },
+        .{ .justice = -2, .mercy = 0, .action = "Wait", .tier = .neutral },
+        .{ .justice = 0, .mercy = 3, .action = "Fine", .tier = .moderate_counter },
+        .{ .justice = 0, .mercy = 6, .action = "Fine", .tier = .moderate_counter },
+        .{ .justice = 0, .mercy = 7, .action = "Pardon", .tier = .strong_counter },
+        // The difference, not the sum: a low counter-value strengthens the lean.
+        .{ .justice = 4, .mercy = -4, .action = "Hang", .tier = .strong_axis },
+    };
+    for (cases) |case| {
+        try rig.set_values(case.justice, case.mercy);
+        const out = try rig.weigh();
+        try testing.expectEqual(@as(usize, 1), out.len);
+        try testing.expectEqual(case.tier, out.items[0].tier);
+        try testing.expectEqual(case.justice - case.mercy, out.items[0].delta);
+        try testing.expectEqualStrings(case.action, rig.action_name(out.items[0]));
+        try testing.expectEqual(out.items[0].action, chosen(&rig.world, rig.decls[0].dilemma.entity).?);
+    }
+    // A strong weighing is done: still triggered, it does not weigh again.
+    try rig.set_values(9, 0);
+    _ = try rig.weigh();
+    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, &rig.decls)).len);
+    try testing.expectEqual(Stage.done, stage_of(&rig.world, rig.decls[0].dilemma.entity).?);
+
+    // A missing value counts as 0 for weighing and writes nothing.
+    _ = rig.world.forget(rig.actor, rig.justice, null);
+    _ = rig.world.forget(rig.actor, rig.mercy, null);
+    const unset = try rig.weigh();
+    try testing.expectEqual(@as(i32, 0), unset.items[0].delta);
+    try testing.expect(rig.world.get_property(rig.actor, rig.justice) == null);
+}
+
+test "P45-03: lean lines read world facts and move the tier" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    // Justice 4, Mercy 0: moderate toward Justice.
+    try rig.set_values(4, 0);
+    try testing.expectEqualStrings("Jail", rig.action_name((try rig.weigh()).items[0]));
+    // A known criminal leans 3 toward Justice: 7, strong.
+    try rig.world.remember(rig.thief, rig.criminal, 0, 0);
+    const strong = try rig.weigh();
+    try testing.expectEqual(@as(i32, 7), strong.items[0].delta);
+    try testing.expectEqualStrings("Hang", rig.action_name(strong.items[0]));
+    // A famine leans 4 toward Mercy: 3, moderate again.
+    try rig.world.remember(rig.town, rig.famine, 0, 0);
+    const both = try rig.weigh();
+    try testing.expectEqual(@as(i32, 3), both.items[0].delta);
+    try testing.expectEqualStrings("Jail", rig.action_name(both.items[0]));
+    // Without the criminal record the famine alone gives 0: neutral.
+    _ = rig.world.forget(rig.thief, rig.criminal, null);
+    const famine = try rig.weigh();
+    try testing.expectEqual(@as(i32, 0), famine.items[0].delta);
+    try testing.expectEqual(Tier.neutral, famine.items[0].tier);
+}
+
+test "P45-03: a neutral weighing waits for evidence and weighs again when it arrives" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    const presented = try rig.world.intern_relation(PRESENTED_RELATION, .set);
+    const ledger = try rig.world.intern_entity("Ledger");
+    const letter = try rig.world.intern_entity("Letter");
+    try rig.set_values(4, 0);
+    try rig.world.remember(rig.town, rig.famine, 0, 0);
+    const first = try rig.weigh();
+    try testing.expectEqual(Tier.neutral, first.items[0].tier);
+    try testing.expectEqual(Stage.awaits_evidence, stage_of(&rig.world, rig.decls[0].dilemma.entity).?);
+
+    // Nothing new presented: no re-weighing.
+    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, &rig.decls)).len);
+
+    // Evidence that changes nothing re-weighs once and stays neutral.
+    try rig.world.remember(rig.actor, presented, letter.to_int(), 0);
+    const still = try step(&rig.world, &rig.decls);
+    try testing.expectEqual(@as(usize, 1), still.len);
+    try testing.expectEqual(Tier.neutral, still.items[0].tier);
+    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, &rig.decls)).len);
+
+    // The ledger proves the thief a criminal; presenting it re-weighs to moderate Justice.
+    try rig.world.remember(rig.thief, rig.criminal, 0, 0);
+    try rig.world.remember(rig.actor, presented, ledger.to_int(), 0);
+    const moved = try step(&rig.world, &rig.decls);
+    try testing.expectEqual(@as(usize, 1), moved.len);
+    try testing.expectEqual(Tier.moderate_axis, moved.items[0].tier);
+    try testing.expectEqualStrings("Jail", rig.action_name(moved.items[0]));
+    try testing.expectEqual(Stage.done, stage_of(&rig.world, rig.decls[0].dilemma.entity).?);
+    // One Chose row: the re-weighing replaced the neutral action.
+    const chose = rig.world.lookup_relation(CHOSE_RELATION).?;
+    var rows: usize = 0;
+    const slice = rig.world.facts.slice();
+    for (slice.items(.subject)[0..rig.world.facts.len], slice.items(.relation)[0..rig.world.facts.len]) |subject, relation| {
+        if (subject == rig.decls[0].dilemma.entity and relation == chose) rows += 1;
+    }
+    try testing.expectEqual(@as(usize, 1), rows);
+}
+
+test "P45-03: a tier action on the actor's red lines is refused" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    const hang = rig.world.lookup_entity("Hang").?;
+    const lines = [_]decision_mod.RedLineDeclaration{.{ .red_lines = .{ .actor = rig.actor, .options = &.{hang} } }};
+    try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &rig.decls, &.{}, &lines));
+    // The same axis twice cannot be weighed.
+    var same = rig.decls;
+    same[0].dilemma.counter = rig.justice;
+    try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &same, &.{}, &.{}));
+}

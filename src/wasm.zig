@@ -598,9 +598,13 @@ pub const WasmRuntime = struct {
     }
 
     /// Loads a script or package into the freshly reset spine and starts it as the stock hosts
-    /// do (`host.start_script`). Called from a deck's `load`.
-    pub fn load_program(self: *WasmRuntime, data: []const u8) !void {
-        const is_package = data.len >= 4 and std.mem.eql(u8, data[0..4], &package_mod.PACKAGE_MAGIC);
+    /// do (`host.start_script`). Called from a deck's `load`. A deck's program is embedded, so
+    /// the choice between source and package is made at compile time: a module whose decks
+    /// all carry source, such as `bespoke-proofs.wasm`, never links the package loader, which
+    /// was about 176 KB of that module (D-147, D-141). A `-Dbundle` deck embeds a package and
+    /// keeps the loader.
+    pub fn load_program(self: *WasmRuntime, comptime data: []const u8) !void {
+        const is_package = comptime data.len >= 4 and std.mem.eql(u8, data[0..4], &package_mod.PACKAGE_MAGIC);
         if (is_package) {
             var stream: std.Io.Reader = .fixed(data);
             self.program = try package_mod.load_package(self.allocator, &stream, &self.world, &self.spatial);
