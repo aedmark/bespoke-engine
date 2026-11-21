@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 0.3.1 - 2026-11-21
+
 - A project made by `bespoke init` installs Zig in CI from ziglang.org against its published SHA-256, as the engine's own CI does; the community setup action it used found no copy of Zig 0.17.1, so every generated project's CI failed before building (`P42-06`).
 - A project made by `bespoke init` builds and tests in CI on Linux and macOS and builds its browser version; the Windows job is gone, because Windows is not a release target until a Windows contributor maintains it (`D-143`).
 - A number key answers a dialogue straight after a typed command such as `talk to pilot`, on desktop and in the browser; before, the key typed into the still-focused command bar until Esc (`D-142`).
