@@ -177,6 +177,9 @@
       text-decoration: none;
       font-weight: 700;
       padding: 3px 6px;
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
     }
     .nav-links a:hover {
       background: #000000;
@@ -605,6 +608,15 @@
       padding: 6px 10px;
       cursor: pointer;
       box-shadow: 2px 2px 0 #000000;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+    }
+    .open-page {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
     }
     .sim-btn:hover {
       background: var(--highlight);
@@ -1231,7 +1243,7 @@
         <div class="section-eyebrow">Featured game</div>
         <h2 id="featured-watch-title" class="section-title">Lantern Watch: The Harbour</h2>
         <p class="section-desc">The dawn packet is waiting outside the shoals. Follow the watch handover through ten harbour stops and clear the ship from the outer beacon house. Play with typed commands; the map is optional.</p>
-        <p><a href="harbour.html">Open The Harbour on its own page</a></p>
+        <p><a class="open-page" href="harbour.html">Open The Harbour on its own page</a></p>
       </div>
       <iframe id="harbour-demo" title="Play Lantern Watch: The Harbour" src="harbour.html"></iframe>
     </section>
