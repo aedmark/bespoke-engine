@@ -1,0 +1,10 @@
+entity Valerius
+axis Justice between Cruelty and Leniency
+axis Mercy between Vengeance and "Condoning Harm"
+remember Justice(Valerius, 8)
+remember Mercy(Valerius, -3)
+
+routine Judge(Valerius):
+  if Mercy(Valerius, -3):
+    remember Mercy(Valerius, 10)
+  remember Justice(Valerius, -10)

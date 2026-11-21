@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Scripts declare their own value axes, such as `axis Mercy between Vengeance and "Condoning Harm"`, and give a character a value from -10 to +10 with `remember Mercy(Valerius, -3)`. A value outside the range is a compile error, a run-time write past it stores the limit, and the state inspector lists the value on its character. Package format 19 carries axes, and versions 1 through 18 still load (`P45-01`, `D-144`).
+
 ## 0.3.1 - 2026-11-21
 
 - A project made by `bespoke init` installs Zig in CI from ziglang.org against its published SHA-256, as the engine's own CI does; the community setup action it used found no copy of Zig 0.17.1, so every generated project's CI failed before building (`P42-06`).

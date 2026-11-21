@@ -50,6 +50,23 @@ pub const RelationMeta = struct {
     rel_type: RelationType,
 };
 
+/// A signed range on a property relation (P45-01, D-144). The value slot holds the integer as
+/// two's complement, so -3 is stored as the bits of `@as(i32, -3)`. Every write through
+/// `remember` clamps into the range, and so does `restore_state`, so no reader of a bounded
+/// relation ever sees a value outside it. Bounds are program data, not fact data: the compiler
+/// or package loader declares them, the world snapshot does not carry them, and `clone` copies
+/// them so a branch world clamps the same way.
+pub const ValueBound = struct {
+    relation: RelationKind,
+    min: i32,
+    max: i32,
+
+    pub fn clamp(self: ValueBound, raw: u32) u32 {
+        const value: i32 = @bitCast(raw);
+        return @bitCast(std.math.clamp(value, self.min, self.max));
+    }
+};
+
 /// Multi-clause pattern matching slot (P8-01, D-010).
 pub const PatternTerm = union(enum) {
     wildcard: void,
@@ -118,6 +135,8 @@ pub const World = struct {
 
     relation_meta: std.ArrayListUnmanaged(RelationMeta),
     relation_map: std.StringHashMapUnmanaged(RelationKind),
+    /// Signed ranges on property relations (P45-01, D-144); see `ValueBound`.
+    value_bounds: std.ArrayListUnmanaged(ValueBound),
 
     // TTL Expiration tracking (P10-02, D-012)
     recently_expired: [16]Fact,
@@ -146,6 +165,7 @@ pub const World = struct {
             .entity_map = .{},
             .relation_meta = .empty,
             .relation_map = .{},
+            .value_bounds = .empty,
             .recently_expired = undefined,
             .recently_expired_count = 0,
         };
@@ -215,6 +235,38 @@ pub const World = struct {
         return new_kind;
     }
 
+    /// Bounds a property relation to a signed range (P45-01, D-144). Facts already stored are
+    /// clamped at once, so declaring a bound after a host wrote a value cannot leave one out of
+    /// range. Declaring the same bound again is a no-op; a different range for the same relation
+    /// is an error, because two programs would disagree on what the value means.
+    pub fn bound_relation(self: *World, relation: RelationKind, min: i32, max: i32) !void {
+        if (min > max) return error.InvalidValueBound;
+        const meta = self.get_relation_meta(relation) orelse return error.InvalidValueBound;
+        if (meta.rel_type != .property) return error.InvalidValueBound;
+        if (self.value_bound(relation)) |existing| {
+            if (existing.min == min and existing.max == max) return;
+            return error.InvalidValueBound;
+        }
+        try self.value_bounds.append(self.allocator(), .{ .relation = relation, .min = min, .max = max });
+        self.clamp_bounded_facts();
+    }
+
+    /// The signed range of a bounded relation, or null for an unbounded one (D-144).
+    pub fn value_bound(self: *const World, relation: RelationKind) ?ValueBound {
+        for (self.value_bounds.items) |bound| if (bound.relation == relation) return bound;
+        return null;
+    }
+
+    fn clamp_bounded_facts(self: *World) void {
+        if (self.value_bounds.items.len == 0) return;
+        const slice = self.facts.slice();
+        const relations = slice.items(.relation);
+        const objects = slice.items(.object_or_value);
+        for (relations[0..self.facts.len], objects[0..self.facts.len]) |relation, *object| {
+            if (self.value_bound(relation)) |bound| object.* = bound.clamp(object.*);
+        }
+    }
+
     /// Read-only lookup of an interned EntityId by name.
     pub fn lookup_entity(self: *const World, name: []const u8) ?EntityId {
         return self.entity_map.get(name);
@@ -246,11 +298,14 @@ pub const World = struct {
         self: *World,
         subject: EntityId,
         relation: RelationKind,
-        object_or_value: u32,
+        raw_object_or_value: u32,
         ttl_ticks: u64,
     ) !void {
         const expires_at_tick: u64 = if (ttl_ticks > 0) self.current_tick + ttl_ticks else 0;
         const meta = self.get_relation_meta(relation) orelse RelationMeta{ .name = "", .rel_type = .set };
+        // A bounded value is clamped here rather than rejected, so a host call or later drift
+        // that overshoots stores the limit instead of failing mid-tick (D-144).
+        const object_or_value = if (self.value_bound(relation)) |bound| bound.clamp(raw_object_or_value) else raw_object_or_value;
 
         if (meta.rel_type == .property) {
             // Functional property: overwrite existing entry if present
@@ -736,6 +791,9 @@ pub const World = struct {
             });
             try self.relation_map.put(alloc, name_buf, kind);
         }
+        // A save written before a bound existed, or edited by hand, may hold a value outside it.
+        // Bounds are program data and survive the restore (D-144).
+        self.clamp_bounded_facts();
     }
 
     /// Creates a complete independent deep copy of this World arena (D-003, D-027).
@@ -751,6 +809,7 @@ pub const World = struct {
         try self.save_state(&lw1.writer);
         var read_stream: std.Io.Reader = .fixed(stream_buf.items);
         try cloned.restore_state(&read_stream);
+        try cloned.value_bounds.appendSlice(cloned.allocator(), self.value_bounds.items);
 
         return cloned;
     }
@@ -1102,4 +1161,52 @@ test "P31-01: World.clone creates independent deep copy for branch world forking
     try testing.expectEqual(@as(u64, 1), tangent.current_tick);
     try testing.expect(primary.has_fact(hero, in_room, bedroom.to_int()));
     try testing.expectEqual(@as(u64, 0), primary.current_tick);
+}
+
+test "P45-01: a bounded property clamps writes, restores, and clones" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const captain = try world.intern_entity("Captain");
+    const steadiness = try world.intern_relation("Steadiness", .property);
+    const carries = try world.intern_relation("Carries", .set);
+
+    // A value written before the bound exists is clamped when the bound arrives.
+    try world.remember(captain, steadiness, 40, 0);
+    try world.bound_relation(steadiness, -10, 10);
+    try testing.expectEqual(@as(u32, 10), world.get_property(captain, steadiness).?);
+
+    // Negative values are two's complement; writes past either end store the end.
+    try world.remember(captain, steadiness, @bitCast(@as(i32, -3)), 0);
+    try testing.expectEqual(@as(i32, -3), @as(i32, @bitCast(world.get_property(captain, steadiness).?)));
+    try world.remember(captain, steadiness, @bitCast(@as(i32, -25)), 0);
+    try testing.expectEqual(@as(i32, -10), @as(i32, @bitCast(world.get_property(captain, steadiness).?)));
+    try testing.expectEqual(@as(usize, 1), world.fact_count());
+
+    // The same bound again is a no-op; a different one, or a bound on a set, is refused.
+    try world.bound_relation(steadiness, -10, 10);
+    try testing.expectError(error.InvalidValueBound, world.bound_relation(steadiness, 0, 5));
+    try testing.expectError(error.InvalidValueBound, world.bound_relation(carries, -10, 10));
+
+    // A snapshot holding an out-of-range value (written before the bound, or by hand) is
+    // clamped on restore.
+    var unbounded = try World.init(testing.allocator, 1024 * 1024);
+    defer unbounded.deinit();
+    _ = try unbounded.intern_entity("Captain");
+    const loose = try unbounded.intern_relation("Steadiness", .property);
+    _ = try unbounded.intern_relation("Carries", .set);
+    try unbounded.remember(captain, loose, 99, 0);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    try unbounded.save_state(&lw.writer);
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    try world.restore_state(&stream);
+    try testing.expectEqual(@as(u32, 10), world.get_property(captain, steadiness).?);
+
+    // A branch world clamps the same way.
+    var branch = try world.clone(testing.allocator);
+    defer branch.deinit();
+    try branch.remember(captain, steadiness, 12, 0);
+    try testing.expectEqual(@as(u32, 10), branch.get_property(captain, steadiness).?);
 }
