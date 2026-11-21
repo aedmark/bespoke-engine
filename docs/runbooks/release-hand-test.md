@@ -181,6 +181,8 @@ python3 -m http.server -d dist/site 8000
 
 ## 8. Neocities Release
 
+Maintainer only (D-074, 2026-11-21): agents skip this section and do not report it as open.
+
 The maintainer uploads the complete export from section 7 by hand, including all standalone proof pages, and places the manual at `docs/manual.html` (D-074, D-086, D-094).
 
 - [ ] Open the live site in a private window. The Harbour plays, the service worker activates, and audio plays after a click on a proof page.

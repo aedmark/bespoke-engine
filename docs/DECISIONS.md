@@ -1026,6 +1026,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Remove the whole tool: rejected by the maintainer; the export still prepares the page for any static host.
 - Keep upload as an option: rejected; it put a credential path in the repository that nobody uses.
 **Consequences:** Publishing is a manual step outside the repository. The release hand-test checks the live site after the maintainer's upload. The page links the manual at `docs/manual.html`, the path the maintainer uploads it to (Q-007); the export does not copy the manual, so it is uploaded separately.
+**Update, 2026-11-21 (maintainer):** the upload and the live-site check are wholly the maintainer's. Agents do not run, track, ask about, or block a release on them: the release hand-test's section 8 is outside an agent's pass, and HANDOFF does not list it as open work.
 
 ## D-075 Third-Party Name Lint: Counted Terms, Digested Lines, a Shrink-Only Baseline (2026-11-13, status: accepted; tag stripping corrected by D-087; all-caps names added by D-091)
 **Context:** Phase 35 (Q-005) rewrites the proofs that borrow from commercial games and a film. Without a count, a rename can miss a file, and a later change can bring a name back.
