@@ -428,6 +428,18 @@ decision LeadAtTable:
 - The cue fires with the actor and the winning option. A cue body cannot read lowercase parameters (D-072), so a handler that needs the option names it as an exact argument: `on cue CardPlayed(Maren, SaltTwo):`.
 - Scoring reads facts and draws no random number, so a replay makes the same choice. Package format version 18 carries decisions; versions 1 through 17 load none.
 
+#### Red lines (P45-02, D-145)
+
+```bespoke
+red lines Valerius: Execute, BurnGranary
+```
+
+- A red line is an option the character never takes, in any decision where it is the actor. The engine removes a vetoed option before scoring, so it is never chosen, even when it would score highest.
+- Each name must be an option that some decision offers that character. A misspelling is a compile error, and so is a decision whose every option is vetoed, since it could never choose.
+- A character's red lines are declared once, name each option once, and hold at most 16 options.
+- Red lines are fixed when the script compiles: they are not facts, so no `remember`, `forget`, save, rewind, or value drift changes them. A decision point whose offered options are all vetoed chooses nothing and fires nothing, as an empty hand does.
+- Red lines veto decision options only; agendas, cues, and typed commands are unaffected. Package format version 20 carries red lines; versions 1 through 19 load none.
+
 ### Value axes (P45-01, D-144)
 
 An axis is a virtue a character holds from -10 to +10. The script names every axis; the engine names none.
@@ -468,6 +480,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Spellbooks (P44-04) | `P44-04: a spellbook declaration reads words in three kinds and the rows that combine them`; `P44-04: parser rejects a misplaced or undeclared word, a repeated name, and a fourth word` | `P44-04: a spellbook compiles into tiered words and a resolvable spell`; `P44-04: a valid triple resolves, and an invalid one is refused` and `P44-04: each word is gated by discovery, and Rejects overrides Knows` (`src/spell.zig`); `P44-04: a cast fires the spell's cue only when the caster knows every word` (`src/host.zig`); `P44-04: package version 17 round-trips a spellbook and loads a version 16 payload with none` (`src/package.zig`); The Word Foundry's `word_foundry.txt` transcript |
 | Decisions (P44-05) | `P44-05: a decision declaration reads its actor, cue, trigger lines, and scored options`; `P44-05: parser rejects a decision without a cue, an option without scores, and a repeated option` | `P44-05: a decision compiles into trigger lines and scored options`; `P44-05: the highest-scoring offered option wins, and an equal score keeps the earlier one`, `P44-05: an option the actor does not know is never offered, and Rejects overrides`, and `P44-05: a decision fires its cue with the winning option, once per rising trigger` (`src/decision.zig`, `src/host.zig`); `P44-05: package version 18 round-trips a decision and loads a version 17 payload with none` (`src/package.zig`); The Cinder Table's `cinder_table.txt` transcript |
 | Value axes (P45-01) | `P45-01: axis declarations and values are range-checked at compile time` (`src/compiler/codegen.zig`) | `P45-01: an author-declared axis compiles into a bounded property with signed values`; `P45-01: an axis bounds its property and reads signed values` (`src/value.zig`); `P45-01: a bounded property clamps writes, restores, and clones` (`src/world.zig`); `P45-01: the inspector lists an axis value as a signed number, not an entity` (`src/display.zig`); `P45-01: package version 19 round-trips value axes and loads a version 18 payload with none` (`src/package.zig`) |
+| Red lines (P45-02) | `P45-02: red lines compile per character and are checked against its decisions` (`src/compiler/codegen.zig`) | `P45-02: a vetoed option is never chosen, even when it would score highest` and `P45-02: red lines must name an option offered to that character and leave one open` (`src/decision.zig`); `P45-02: a red line vetoes the highest-scoring option through host.tick` (`src/host.zig`); `P45-02: package version 20 round-trips red lines and loads a version 19 payload with none` (`src/package.zig`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

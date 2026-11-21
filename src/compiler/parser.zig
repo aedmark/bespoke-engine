@@ -446,6 +446,13 @@ pub const AxisDecl = struct {
     poles: [2][]const u8,
 };
 
+/// `red lines <Character>: <Option>, <Option>` lists options a character never takes in any
+/// decision (P45-02, D-145).
+pub const RedLinesDecl = struct {
+    actor: []const u8,
+    options: []const []const u8,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -477,6 +484,7 @@ pub const AST = struct {
     spellbooks: std.array_list.Managed(SpellbookDecl),
     decisions: std.array_list.Managed(DecisionDecl),
     axes: std.array_list.Managed(AxisDecl),
+    red_lines: std.array_list.Managed(RedLinesDecl),
     commands: std.array_list.Managed(CommandDecl),
     aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
@@ -507,6 +515,7 @@ pub const AST = struct {
             .spellbooks = std.array_list.Managed(SpellbookDecl).init(allocator),
             .decisions = std.array_list.Managed(DecisionDecl).init(allocator),
             .axes = std.array_list.Managed(AxisDecl).init(allocator),
+            .red_lines = std.array_list.Managed(RedLinesDecl).init(allocator),
             .commands = std.array_list.Managed(CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -540,6 +549,7 @@ pub const AST = struct {
         self.spellbooks.deinit();
         self.decisions.deinit();
         self.axes.deinit();
+        self.red_lines.deinit();
         self.commands.deinit();
         self.aliases.deinit();
         self.scores.deinit();
@@ -674,7 +684,11 @@ pub const Parser = struct {
         // A quoted name is taken whole, so it may hold characters a word cannot, such as the
         // apostrophe in "Keeper's Lodge" (D-101). Unquoted names are unchanged.
         if (self.current.tag == .string_literal) return (try self.expect(.string_literal)).slice;
-        const first_tok = try self.expect(.identifier);
+        return self.finish_name(try self.expect(.identifier));
+    }
+
+    /// Joins the rest of an unquoted name once its first word has been consumed.
+    fn finish_name(self: *Parser, first_tok: Token) ![]const u8 {
         const first = first_tok.slice;
         const line = first_tok.line;
         if ((self.current.tag != .identifier and self.current.tag != .number) or self.current.line != line) {
@@ -1110,7 +1124,20 @@ pub const Parser = struct {
                 },
                 .identifier => {
                     const start = self.current;
-                    const ident = try self.parse_name();
+                    try self.advance();
+                    // `red lines` is two words, not keywords, so `red` stays usable as a name.
+                    if (std.mem.eql(u8, start.slice, "red") and self.current.tag == .identifier and
+                        self.current.line == start.line and std.mem.eql(u8, self.current.slice, "lines"))
+                    {
+                        try self.advance();
+                        const decl = try self.finish_red_lines();
+                        for (ast.red_lines.items) |prior| {
+                            if (std.mem.eql(u8, prior.actor, decl.actor)) return self.set_error("red lines for '{s}' are declared twice", .{decl.actor});
+                        }
+                        try ast.red_lines.append(decl);
+                        continue;
+                    }
+                    const ident = try self.finish_name(start);
                     if (self.current.tag == .kw_with) {
                         _ = try self.advance();
                     }
@@ -1970,6 +1997,25 @@ pub const Parser = struct {
             .clauses = try clauses.toOwnedSlice(),
             .options = try options.toOwnedSlice(),
         };
+    }
+
+    /// Finishes `red lines <Character>: <Option>, ...` once `red lines` has been read. The options
+    /// run to the end of the line.
+    fn finish_red_lines(self: *Parser) !RedLinesDecl {
+        const actor = try self.parse_name();
+        if (self.current.tag != .colon) return self.set_error("red lines for '{s}' expect ':' and the options it never takes", .{actor});
+        const line = self.current.line;
+        try self.advance();
+        var options = std.array_list.Managed([]const u8).init(self.allocator);
+        while (self.current.line == line and (self.current.tag == .identifier or self.current.tag == .string_literal)) {
+            try options.append(try self.parse_name());
+            if (self.current.tag != .comma) break;
+            try self.advance();
+        }
+        if (options.items.len == 0) return self.set_error("red lines for '{s}' name no option", .{actor});
+        if (self.current.line == line and self.current.tag != .newline and self.current.tag != .eof)
+            return self.set_error("red lines for '{s}' expect option names separated by commas", .{actor});
+        return .{ .actor = actor, .options = try options.toOwnedSlice() };
     }
 
     /// Parses `axis <Virtue> between <Pole> and <Pole>` (P45-01). A pole may be quoted or run

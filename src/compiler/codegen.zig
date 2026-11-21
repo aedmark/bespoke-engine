@@ -96,6 +96,8 @@ pub const CompiledProgram = struct {
     /// Value axes in declaration order (P45-01, D-144). Each bounds its property relation in
     /// the world the program was compiled or loaded into.
     axes: std.array_list.Managed(value_mod.Axis),
+    /// Red lines per character, which veto decision options before scoring (P45-02, D-145).
+    red_lines: std.array_list.Managed(decision_mod.RedLineDeclaration),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
@@ -129,6 +131,8 @@ pub const CompiledProgram = struct {
         for (self.decisions.items) |*decision| decision.deinit_owned(self.chunk.allocator);
         self.decisions.deinit();
         self.axes.deinit();
+        for (self.red_lines.items) |*decl| decl.deinit_owned(self.chunk.allocator);
+        self.red_lines.deinit();
         for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
         self.commands.deinit();
         for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
@@ -363,6 +367,7 @@ pub const Codegen = struct {
     spellbooks: std.array_list.Managed(spell_mod.Declaration),
     decisions: std.array_list.Managed(decision_mod.Declaration),
     axes: std.array_list.Managed(value_mod.Axis),
+    red_lines: std.array_list.Managed(decision_mod.RedLineDeclaration),
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
@@ -391,6 +396,7 @@ pub const Codegen = struct {
             .spellbooks = std.array_list.Managed(spell_mod.Declaration).init(allocator),
             .decisions = std.array_list.Managed(decision_mod.Declaration).init(allocator),
             .axes = std.array_list.Managed(value_mod.Axis).init(allocator),
+            .red_lines = std.array_list.Managed(decision_mod.RedLineDeclaration).init(allocator),
             .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -559,6 +565,21 @@ pub const Codegen = struct {
             try mut_self.decisions.append(try mut_self.compile_decision(decl));
         }
         try decision_mod.validate_all(mut_self.decisions.items);
+        for (ast.red_lines.items) |decl| {
+            mut_self.error_context = decl.actor;
+            const options = try mut_self.allocator.alloc(EntityId, decl.options.len);
+            for (decl.options, 0..) |name, i| options[i] = try mut_self.world.intern_entity(name);
+            mut_self.red_lines.append(.{ .red_lines = .{
+                .actor = try mut_self.world.intern_entity(decl.actor),
+                .options = options,
+            } }) catch |err| {
+                mut_self.allocator.free(options);
+                return err;
+            };
+            // Validating each prefix points the diagnostic at the declaration that broke it:
+            // every check only gets stricter as red lines are added.
+            decision_mod.validate_red_lines(mut_self.decisions.items, mut_self.red_lines.items) catch return error.InvalidRedLine;
+        }
         for (ast.commands.items) |decl| {
             mut_self.error_context = decl.text;
             try mut_self.commands.append(try mut_self.compile_command(decl));
@@ -825,6 +846,7 @@ pub const Codegen = struct {
             .spellbooks = mut_self.spellbooks,
             .decisions = mut_self.decisions,
             .axes = mut_self.axes,
+            .red_lines = mut_self.red_lines,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
@@ -3185,4 +3207,49 @@ test "P45-01: axis declarations and values are range-checked at compile time" {
     }
     // The ends of the range are values an axis holds.
     try testing.expect(compiler.check_source(testing.allocator, "axis Mercy between Vengeance and Leniency\nremember Mercy(A, 10)\nremember Mercy(B, -10)\nremember Mercy(C, 0)").is_valid);
+}
+
+test "P45-02: red lines compile per character and are checked against its decisions" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const decision =
+        \\decision Judge:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  option Execute:
+        \\    picks 9 when Stole(Thief)
+        \\  option BurnGranary:
+        \\    picks 4 when Stole(Thief)
+        \\  option Pardon:
+        \\    picks 2 when Hungry(Thief)
+        \\
+    ;
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, decision ++
+        \\red lines Valerius: Execute, BurnGranary
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.red_lines.items.len);
+    const set = compiled.red_lines.items[0].red_lines;
+    try testing.expectEqualStrings("Valerius", world.get_entity_name(set.actor).?);
+    try testing.expectEqual(@as(usize, 2), set.options.len);
+    try testing.expectEqualStrings("BurnGranary", world.get_entity_name(set.options[1]).?);
+
+    const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
+        .{ .source = decision ++ "red lines Valerius: Exectue", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
+        .{ .source = decision ++ "red lines Ines: Execute", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
+        .{ .source = decision ++ "red lines Valerius: Execute, BurnGranary, Pardon", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
+        .{ .source = decision ++ "red lines Valerius: Execute\nred lines Valerius: Pardon", .message = "red lines for 'Valerius' are declared twice", .line = 12 },
+        .{ .source = decision ++ "red lines Valerius:", .message = "red lines for 'Valerius' name no option", .line = 11 },
+        .{ .source = decision ++ "red lines Valerius Execute", .message = "red lines for 'Valerius Execute' expect ':' and the options it never takes", .line = 11 },
+    };
+    for (cases) |case| {
+        const result = compiler.check_source(testing.allocator, case.source);
+        errdefer std.debug.print("diagnostic source:\n{s}\ngot: {s} at {d}:{d}\n", .{ case.source, result.message(), result.line, result.column });
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+    }
 }

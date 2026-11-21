@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A character's red lines, such as `red lines Valerius: Execute`, are options it never takes: a decision skips them before scoring, so a vetoed option is never chosen even when it would score highest, and a decision with nothing left chooses nothing. A red line that names no option offered to that character is a compile error. Package format 20 carries red lines, and versions 1 through 19 still load (`P45-02`, `D-145`).
+
 - Scripts declare their own value axes, such as `axis Mercy between Vengeance and "Condoning Harm"`, and give a character a value from -10 to +10 with `remember Mercy(Valerius, -3)`. A value outside the range is a compile error, a run-time write past it stores the limit, and the state inspector lists the value on its character. Package format 19 carries axes, and versions 1 through 18 still load (`P45-01`, `D-144`).
 
 ## 0.3.1 - 2026-11-21
