@@ -19,7 +19,7 @@ pub const VALERIUS_SCRIPT =
     \\scene: Greyhold Store
     \\cast: Valerius, Hesper, Brann, Tam
     \\props: Loaf
-    \\marks: StoreDoor, Counter, Hearth
+    \\marks: StoreDoor, Aisle, Counter, Chimney
     \\
     \\scene: Greyhold Gate
     \\marks: Gatehouse, Wall, Road
@@ -181,6 +181,7 @@ pub const Ids = struct {
     tam: bespoke.EntityId,
     loaf: bespoke.EntityId,
     door_wp: u16,
+    aisle_wp: u16,
     counter_wp: u16,
     hearth_wp: u16,
     gatehouse_wp: u16,
@@ -202,27 +203,30 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
         .tam = world.lookup_entity("Tam").?,
         .loaf = world.lookup_entity("Loaf").?,
         .door_wp = spatial.graph.find_waypoint_in_room(store, "StoreDoor").?,
+        .aisle_wp = spatial.graph.find_waypoint_in_room(store, "Aisle").?,
         .counter_wp = spatial.graph.find_waypoint_in_room(store, "Counter").?,
-        .hearth_wp = spatial.graph.find_waypoint_in_room(store, "Hearth").?,
+        .hearth_wp = spatial.graph.find_waypoint_in_room(store, "Chimney").?,
         .gatehouse_wp = spatial.graph.find_waypoint_in_room(gate, "Gatehouse").?,
         .wall_wp = spatial.graph.find_waypoint_in_room(gate, "Wall").?,
         .road_wp = spatial.graph.find_waypoint_in_room(gate, "Road").?,
     };
     // One row per room, at world y 4, well above the message band (D-123, D-133).
     host.place_waypoint(spatial, ids.door_wp, 4, 4);
-    host.place_waypoint(spatial, ids.counter_wp, 20, 4);
+    host.place_waypoint(spatial, ids.aisle_wp, 12, 4);
+    host.place_waypoint(spatial, ids.counter_wp, 22, 4);
     host.place_waypoint(spatial, ids.hearth_wp, 36, 4);
     host.place_waypoint(spatial, ids.gatehouse_wp, 4, 4);
     host.place_waypoint(spatial, ids.wall_wp, 20, 4);
     host.place_waypoint(spatial, ids.road_wp, 36, 4);
     spatial.graph.edges.clearRetainingCapacity();
-    try spatial.graph.connect(ids.door_wp, ids.counter_wp, null);
+    try spatial.graph.connect(ids.door_wp, ids.aisle_wp, null);
+    try spatial.graph.connect(ids.aisle_wp, ids.counter_wp, null);
     try spatial.graph.connect(ids.counter_wp, ids.hearth_wp, null);
     try spatial.graph.connect(ids.gatehouse_wp, ids.wall_wp, null);
     try spatial.graph.connect(ids.wall_wp, ids.road_wp, null);
     spatial.clear_hotspots();
-    try spatial.add_hotspot(ids.loaf, store, .{ .x = 20, .y = -2 }, 6, "Loaf", "A grey garrison loaf, one corner torn off.");
-    try spatial.register_entity(ids.hesper, ids.door_wp, 6);
+    try spatial.add_hotspot(ids.loaf, store, .{ .x = 22, .y = -2 }, 6, "Loaf", "A grey garrison loaf, one corner torn off.");
+    try spatial.register_entity(ids.hesper, ids.aisle_wp, 6);
     try spatial.register_entity(ids.tam, ids.door_wp, 6);
     try spatial.register_entity(ids.valerius, ids.counter_wp, 6);
     try spatial.register_entity(ids.brann, ids.hearth_wp, 6);

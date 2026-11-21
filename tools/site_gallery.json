@@ -117,6 +117,15 @@
       "deck": 12,
       "page": "observatory.html",
       "flag": "observatory"
+    },
+    {
+      "id": "valerius",
+      "title": "Valerius and the Bread",
+      "tag": "Values, dilemmas, and appeals",
+      "blurb": "A hungry boy steals a loaf from a hill-fort's store. Learn what Captain Valerius values and appeal to it. His red lines hold whatever the score, and the winter's outcome changes him by spring.",
+      "deck": 13,
+      "page": "valerius.html",
+      "flag": "valerius"
     }
   ]
 }

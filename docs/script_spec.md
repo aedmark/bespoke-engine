@@ -515,7 +515,7 @@ on cue TalksTo(Ines, Valerius, Mercy):
   remember Knows(Ines, "Mercy of Valerius")
 ```
 
-- `appeals <N> to <Axis>` says the player may appeal to one of the two weighed values, and how far the appeal moves the next weighing toward it (1 to 10). Each axis has at most one appeal line.
+- `appeals <N> to <Axis>` says the player may appeal to one of the two weighed values, and how far the appeal moves the next weighing toward it (1 to 10). `appeals <N> to <Value> toward <Axis>` lets the player appeal to any declared value, moving the weighing toward one of the two weighed axes: `appeals 8 to Loyalty toward Mercy` (D-150). Each value has at most one appeal line, and a dilemma at most 4.
 - The player types `appeal to mercy`, or a host calls `host.appeal`. The appeal reaches the first character in the room whose open dilemma lists that value. It counts at the next weighing and is then spent; while the dilemma waits in neutral, the appeal weighs it again.
 - The player must know the value first: `Knows(Ines, "Mercy of Valerius")`. Otherwise the reply is "You don't know what moves them." and nothing changes. A weighing that lands outside neutral teaches everyone in the character's room the value it leaned toward; a script teaches the rest, usually when the player asks (`ask valerius about mercy` fires `TalksTo`).
 - An accepted appeal records `Appealed(Valerius, Mercy)` and fires `on cue Appeals(Ines, Valerius, Mercy):`. A goal need `met Appealed(Valerius, Mercy)` is a Holmesian hint once the player knows `Mercy of Valerius`, and a Doylian one before. Package format version 23 carries appeal lines.

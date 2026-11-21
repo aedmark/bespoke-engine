@@ -4,6 +4,9 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Valerius and the Bread is a new proof with its own page (`site/valerius.html`, `--valerius`): in a hard winter at the hill-fort of Greyhold, Hesper learns what Captain Valerius values and appeals to it to save her brother Tam, who stole a loaf. His red lines refuse a hanging and a bribe, Mercy and Loyalty end the winter differently, and the outcome drifts his Mercy into the spring scene (`P45-06`).
+- An appeal can name any declared value and the weighed axis it moves, as in `appeals 8 to Loyalty toward Mercy` (`D-150`).
+
 - The player can appeal to a character's values: `appeal to mercy` moves that character's next weighing of a dilemma toward mercy by the amount its `appeals` line gives, once the player has learned that the character holds that value, by watching a weighing or by asking. An appeal to a value the player has not learned is refused. Learned values make goal hints speak from the player character's knowledge. Package format 23 carries appeal lines, and versions 1 through 22 still load (`P45-05`, `D-149`).
 
 - A dilemma's `drifts` lines change a character's values over a long game: when an outcome such as `Repaid(Thief)` becomes true after the dilemma has been weighed, its points add up, and every 5 move the value one step, at most 2 steps per dilemma and never past -10 or +10. Drift is saved, rewound, and replayed exactly. Package format 22 carries drift lines, and versions 1 through 21 still load (`P45-04`, `D-148`).

@@ -172,7 +172,7 @@
 <h3>Runs anywhere it is pointed</h3>
 <div class="cards">
   <div class="card"><h3>Desktop window</h3><p>A resizable window with verbs, an inventory, speech, a timeline, save slots, and a state inspector.</p><p class="hood"><b>Under the hood:</b> SDL2, a fixed 1280x720 frame letterboxed to any window size.</p></div>
-  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (about 780 KB with all thirteen browser demos) embedded in the page.</p></div>
+  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (about 690 KB with all fourteen browser demos) embedded in the page.</p></div>
   <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code>.</p></div>
   <div class="card"><h3>See inside the world</h3><p>Pause and open the state inspector: a map of who relates to what, why each dialogue option is offered or hidden, and what is about to expire.</p><p class="hood"><b>Under the hood:</b> a fact graph with keyboard and mouse navigation and relation filters, in both window and browser.</p></div>
 </div>
@@ -270,7 +270,7 @@ routine Inspector(Moss):
 </ul>
 
 <h2 id="demos">The demo games</h2>
-<p>Each demo exists to prove one or more engine features in a small, complete story. The thirteen with web pages can be played from the <code>site/</code> folder of the repository in any modern browser.</p>
+<p>Each demo exists to prove one or more engine features in a small, complete story. The fourteen with web pages can be played from the <code>site/</code> folder of the repository in any modern browser.</p>
 <div class="table-wrap">
 <table>
   <tr><th>Demo</th><th>What it shows</th><th>Plays in</th></tr>
@@ -287,6 +287,7 @@ routine Inspector(Moss):
   <tr><td><a href="../site/bell-tower.html">The Bell Tower</a></td><td>Spells played as four-note tunes; backwards, they undo.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td><a href="../site/fire-escape.html">The Castle Fire Escape</a></td><td>Fire, smoke, and water spreading across a grid; get the timing right to save the door.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td><a href="../site/observatory.html">The Larkspur Observatory</a></td><td>Staff with their own agendas, typed commands, generated hints, and evidence presented to suspects.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/valerius.html">Valerius and the Bread</a></td><td>Learn what a captain values and appeal to it. His red lines hold whatever the score, and the winter's outcome changes him by spring.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td>The Long Gallery</td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span></td></tr>
   <tr><td>The Word Foundry</td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Headless</span></td></tr>
   <tr><td>The Cinder Table</td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Headless</span></td></tr>
@@ -307,7 +308,7 @@ routine Inspector(Moss):
 
 <h2 id="next">What is next</h2>
 <ul>
-  <li><strong>Characters with values.</strong> Authors give characters their own values (mercy, justice, loyalty, or anything else) on a scale, with lines they will never cross. Players resolve dilemmas by appealing to those values, characters change slowly with what the player does, and learning someone's values becomes part of the puzzle (roadmap Phase 45).</li>
+  <li><strong>Characters with values, in a release.</strong> Values, red lines, dilemmas, drift, and appeals are complete on the main branch after 0.3.1 (roadmap Phase 45), and Valerius and the Bread plays them; the next release ships them.</li>
   <li><strong>BeSpoke 1.0,</strong> when the maintainer decides the language and host API are ready to promise.</li>
 </ul>
 

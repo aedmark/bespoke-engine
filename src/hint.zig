@@ -224,8 +224,8 @@ fn terms_known(world: *const World, player: EntityId, need: Need, tier: Tier) bo
 }
 
 /// A need's object is known as an entity, except a value axis about a character: knowing that
-/// `Mercy` exists is not knowing that Valerius holds it, so `met Appealed(Valerius, Mercy)` is
-/// Holmesian only once the player knows `Mercy of Valerius` (P45-05, D-149).
+/// `Mercy` exists is not knowing that Oswin holds it, so `met Appealed(Oswin, Mercy)` is
+/// Holmesian only once the player knows `Mercy of Oswin` (P45-05, D-149).
 fn object_known(world: *const World, player: EntityId, subject: ?EntityId, object: EntityId) bool {
     const axis = value_mod.axis_of_entity(world, object) orelse return knows(world, player, object);
     const character = subject orelse return knows(world, player, object);

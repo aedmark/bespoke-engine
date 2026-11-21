@@ -30,6 +30,7 @@ const art = @import("art.zig");
 const weathercock = @import("weathercock.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory = @import("observatory_puzzle.zig");
+const valerius = @import("valerius.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -180,6 +181,19 @@ pub const decks = [_]wasm.Deck{
         .after_tick = larkspur_after_tick,
         .command_bar = true,
         .on_typed = larkspur_typed,
+    }),
+    wasm.script_deck_with("VALERIUS AND THE BREAD (VALUES, DILEMMAS, APPEALS)", valerius.VALERIUS_SCRIPT, .{
+        .player = "Hesper",
+        .intro = valerius.INTRO ++ " [S] types the next step.",
+        .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 18, .g = 16, .b = 20 },
+        .setup = greyhold_setup,
+        .catalyst = greyhold_solve,
+        .after_tick = greyhold_after_tick,
+        .command_bar = true,
+        .on_typed = greyhold_typed,
     }),
 };
 
@@ -1180,6 +1194,60 @@ fn larkspur_solve(rt: *WasmRuntime) anyerror!void {
 }
 
 // =============================================================================
+// Valerius and the Bread: typed lines go through the desktop proof's own interpreter, and the
+// cast follows the script into spring (P45-06).
+// =============================================================================
+
+var greyhold_ids: ?valerius.Ids = null;
+var greyhold_interp: bespoke.command.Interpreter = .{};
+
+fn greyhold_setup(rt: *WasmRuntime) anyerror!void {
+    greyhold_ids = try valerius.configure(&rt.world, &rt.spatial);
+    greyhold_interp = .{};
+    try rt.vm.transition_to_scene(greyhold_ids.?.store);
+    rt.bind();
+    greyhold_words(rt);
+}
+
+fn greyhold_after_tick(rt: *WasmRuntime) anyerror!void {
+    if (greyhold_ids == null) return;
+    _ = try valerius.follow_into_spring(&rt.world, &rt.spatial, &rt.vm);
+    greyhold_words(rt);
+}
+
+fn greyhold_words(rt: *WasmRuntime) void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = greyhold_ids orelse return;
+    bespoke.host.command_words(&rt.vm, program, ids.hesper, &rt.window.command_words);
+}
+
+fn greyhold_typed(rt: *WasmRuntime, line: []const u8) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = greyhold_ids orelse return;
+    var buf: [160]u8 = undefined;
+    const reply = try valerius.type_line(&rt.vm, program, &greyhold_interp, ids, line, &buf);
+    if (reply.text) |text| rt.set_banner(text);
+    if (reply.fired) try rt.step_tick();
+}
+
+/// `[S]`: the appeal to Mercy, one typed line per press: learn the value, appeal to it, and
+/// wait for spring. Before the hearing opens, a press steps the clock.
+fn greyhold_solve(rt: *WasmRuntime) anyerror!void {
+    const ids = greyhold_ids orelse return;
+    if (rt.world.has_fact(ids.tam, try relation(rt, "Settled"), null)) return;
+    if (rt.world.has_fact(ids.tam, try relation(rt, "Recruit"), null)) return rt.step_tick();
+    if (rt.world.has_fact(ids.tam, try relation(rt, "Sentenced"), null)) return greyhold_typed(rt, "wait for spring");
+    if (!rt.world.has_fact(ids.tam, try relation(rt, "Hearing"), null)) return rt.step_tick();
+    // Judged but not yet answered: the judgement's handler runs on the next tick.
+    if (rt.world.lookup_entity("StolenLoaf")) |loaf| {
+        if (bespoke.dilemma.stage_of(&rt.world, loaf) == .done) return rt.step_tick();
+    }
+    const known = rt.world.lookup_entity("Mercy of Valerius") orelse return;
+    if (!rt.world.has_fact(ids.hesper, try relation(rt, "Knows"), known.to_int())) return greyhold_typed(rt, "ask valerius about mercy");
+    return greyhold_typed(rt, "appeal to mercy");
+}
+
+// =============================================================================
 // Tests: every deck's solve key reaches its proof's ending
 // =============================================================================
 
@@ -1211,7 +1279,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -2063,4 +2131,26 @@ test "D-100: every mark of every deck is drawn on the stage, where a click can r
             }
         }
     }
+}
+
+test "P45-06: Valerius and the Bread's [S] types the appeal to Mercy through to spring" {
+    const rt = try load(decks.len - 1);
+    defer unload(rt);
+    try testing.expectEqualStrings("Hesper", rt.world.get_entity_name(rt.player_entity).?);
+    const tam = try entity(rt, "Tam");
+    var presses: usize = 0;
+    while (!rt.world.has_fact(tam, try relation(rt, "Settled"), null) and presses < 40) : (presses += 1) try rt.trigger_catalyst();
+    try testing.expect(rt.world.has_fact(tam, try relation(rt, "Settled"), null));
+    try testing.expectEqualStrings("Greyhold Gate", rt.world.get_entity_name(rt.vm.current_scene.?).?);
+    // The cast followed the script into spring.
+    const wp = rt.spatial.get_current_waypoint(try entity(rt, "Valerius")).?;
+    try testing.expectEqual(rt.vm.current_scene.?, rt.spatial.graph.get_waypoint(wp).?.room);
+}
+
+test "P45-06: an appeal Hesper has not earned is refused in the browser too" {
+    const rt = try load(decks.len - 1);
+    defer unload(rt);
+    for (0..3) |_| try rt.step_tick();
+    try type_into(rt, "appeal to loyalty");
+    try testing.expectEqualStrings("You don't know what moves them.", rt.get_banner());
 }
