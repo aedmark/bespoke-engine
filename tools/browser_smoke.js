@@ -24,6 +24,10 @@ const CHROME_START_TIMEOUT_MS = 60000;
 // The floor a thumb needs on a phone (P42-06). Every link, button, field, and disclosure on the
 // showcase pages is measured against it, so the size is enforced rather than remembered.
 const TOUCH_TARGET_MIN = 44;
+// Every gallery card with a page gets a Play link. Counted from the gallery source rather than
+// written as a number, so a new proof page (P45-06 made fourteen) does not break the layout check.
+const PROOF_PAGE_COUNT = JSON.parse(fs.readFileSync(path.join(root, 'tools', 'site_gallery.json'), 'utf8'))
+  .proofs.filter((proof) => proof.page).length;
 const measureTargets = `(() => {
   const nodes = [...document.querySelectorAll('a, button, input, select, textarea, summary, [role="button"]')];
   const short = [];
@@ -221,7 +225,7 @@ async function smoke(pageUrl, starter, layout = false, touchTargets = false, tou
       })()`));
       const route = await evaluate(`(() => {
         const links = [...document.querySelectorAll('#scenarios .gallery-actions a')];
-        if (links.filter(a => a.textContent === 'Play this proof').length !== 13) throw Error('missing standalone proof links');
+        if (links.filter(a => a.textContent === 'Play this proof').length !== ${PROOF_PAGE_COUNT}) throw Error('missing standalone proof links');
         return links.find(a => a.getAttribute('href') === 'observatory.html').href;
       })()`);
       console.log('ok  375 px showcase fits; The Harbour starts on request and plays with the map closed');
