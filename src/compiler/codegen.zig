@@ -28,6 +28,7 @@ const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
 const decision_mod = @import("../decision.zig");
 const value_mod = @import("../value.zig");
+const dilemma_mod = @import("../dilemma.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
@@ -98,6 +99,8 @@ pub const CompiledProgram = struct {
     axes: std.array_list.Managed(value_mod.Axis),
     /// Red lines per character, which veto decision options before scoring (P45-02, D-145).
     red_lines: std.array_list.Managed(decision_mod.RedLineDeclaration),
+    /// Dilemmas in declaration order (P45-03, D-146).
+    dilemmas: std.array_list.Managed(dilemma_mod.Declaration),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
@@ -133,6 +136,8 @@ pub const CompiledProgram = struct {
         self.axes.deinit();
         for (self.red_lines.items) |*decl| decl.deinit_owned(self.chunk.allocator);
         self.red_lines.deinit();
+        for (self.dilemmas.items) |*decl| decl.deinit_owned(self.chunk.allocator);
+        self.dilemmas.deinit();
         for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
         self.commands.deinit();
         for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
@@ -368,6 +373,7 @@ pub const Codegen = struct {
     decisions: std.array_list.Managed(decision_mod.Declaration),
     axes: std.array_list.Managed(value_mod.Axis),
     red_lines: std.array_list.Managed(decision_mod.RedLineDeclaration),
+    dilemmas: std.array_list.Managed(dilemma_mod.Declaration),
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
@@ -397,6 +403,7 @@ pub const Codegen = struct {
             .decisions = std.array_list.Managed(decision_mod.Declaration).init(allocator),
             .axes = std.array_list.Managed(value_mod.Axis).init(allocator),
             .red_lines = std.array_list.Managed(decision_mod.RedLineDeclaration).init(allocator),
+            .dilemmas = std.array_list.Managed(dilemma_mod.Declaration).init(allocator),
             .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -616,6 +623,12 @@ pub const Codegen = struct {
             try mut_self.axes.append(try value_mod.declare(mut_self.world, decl.name, decl.poles));
         }
         value_mod.validate_all(mut_self.world, mut_self.axes.items) catch return error.InvalidAxis;
+        // Dilemmas weigh declared axes, so they compile once the axes are bounded (P45-03).
+        for (ast.dilemmas.items) |decl| {
+            mut_self.error_context = decl.name;
+            try mut_self.dilemmas.append(try mut_self.compile_dilemma(decl));
+            dilemma_mod.validate_all(mut_self.world, mut_self.dilemmas.items, mut_self.decisions.items, mut_self.red_lines.items) catch return error.InvalidDilemma;
+        }
         if (ast.paths.items.len > 0) {
             _ = try mut_self.world.intern_relation("PathActive", .property);
         }
@@ -847,6 +860,7 @@ pub const Codegen = struct {
             .decisions = mut_self.decisions,
             .axes = mut_self.axes,
             .red_lines = mut_self.red_lines,
+            .dilemmas = mut_self.dilemmas,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
@@ -1347,6 +1361,52 @@ pub const Codegen = struct {
         };
         decision_mod.validate(decision) catch return error.InvalidDecision;
         return .{ .decision = decision };
+    }
+
+    /// Turns a parsed dilemma into program data. Both axes must be declared, and no tier may act
+    /// on its actor's red lines; each refusal names the source text that caused it.
+    fn compile_dilemma(self: *Codegen, decl: parser_mod.DilemmaDecl) !dilemma_mod.Declaration {
+        var axes: [2]world_mod.RelationKind = undefined;
+        for ([_][]const u8{ decl.axis, decl.counter }, 0..) |name, i| {
+            const rel = self.world.lookup_relation(name);
+            if (rel == null or self.world.value_bound(rel.?) == null) {
+                self.error_context = name;
+                return error.UnknownDilemmaAxis;
+            }
+            axes[i] = rel.?;
+        }
+        const actor = try self.world.intern_entity(decl.actor);
+        var responses: [dilemma_mod.TIER_COUNT]dilemma_mod.Response = undefined;
+        for (decl.responses, 0..) |source, i| {
+            const action = try self.world.intern_entity(source.action);
+            if (decision_mod.vetoed(self.red_lines.items, actor, action)) {
+                self.error_context = source.action;
+                return error.DilemmaCrossesRedLine;
+            }
+            responses[i] = .{ .line = try self.world.intern_entity(source.line), .action = action };
+        }
+        const clauses = try self.allocator.alloc(decision_mod.Clause, decl.clauses.len);
+        errdefer self.allocator.free(clauses);
+        for (decl.clauses, 0..) |source, i| clauses[i] = try self.compile_clause(source.pattern, source.negated);
+        const leans = try self.allocator.alloc(dilemma_mod.Lean, decl.leans.len);
+        errdefer self.allocator.free(leans);
+        for (decl.leans, 0..) |source, i| {
+            const magnitude: i32 = @intCast(source.points);
+            leans[i] = .{
+                .points = if (std.mem.eql(u8, source.toward, decl.axis)) magnitude else -magnitude,
+                .clause = try self.compile_clause(source.pattern, source.negated),
+            };
+        }
+        return .{ .dilemma = .{
+            .entity = try self.world.intern_entity(decl.name),
+            .actor = actor,
+            .cue = try self.world.intern_entity(decl.cue),
+            .clauses = clauses,
+            .axis = axes[0],
+            .counter = axes[1],
+            .leans = leans,
+            .responses = responses,
+        } };
     }
 
     fn compile_clause(self: *Codegen, pattern: parser_mod.FactPattern, negated: bool) !decision_mod.Clause {
@@ -3244,6 +3304,81 @@ test "P45-02: red lines compile per character and are checked against its decisi
         .{ .source = decision ++ "red lines Valerius: Execute\nred lines Valerius: Pardon", .message = "red lines for 'Valerius' are declared twice", .line = 12 },
         .{ .source = decision ++ "red lines Valerius:", .message = "red lines for 'Valerius' name no option", .line = 11 },
         .{ .source = decision ++ "red lines Valerius Execute", .message = "red lines for 'Valerius Execute' expect ':' and the options it never takes", .line = 11 },
+    };
+    for (cases) |case| {
+        const result = compiler.check_source(testing.allocator, case.source);
+        errdefer std.debug.print("diagnostic source:\n{s}\ngot: {s} at {d}:{d}\n", .{ case.source, result.message(), result.line, result.column });
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+    }
+}
+
+test "P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a gap" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const axes =
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Indulgence
+        \\
+    ;
+    const head =
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  leans 3 toward Justice when Criminal(Thief)
+        \\  leans 4 toward Mercy unless Fed(Town)
+        \\
+    ;
+    const tiers =
+        \\  strong Justice: "The law is the law." -> Hang
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  neutral: "Show me why." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+        \\  strong Mercy: "Let him go." -> Pardon
+        \\
+    ;
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, axes ++ head ++ tiers);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items.len);
+    const d = compiled.dilemmas.items[0].dilemma;
+    try testing.expectEqualStrings("Justice", world.get_relation_meta(d.axis).?.name);
+    try testing.expectEqualStrings("Mercy", world.get_relation_meta(d.counter).?.name);
+    try testing.expectEqual(@as(i32, 3), d.leans[0].points);
+    try testing.expectEqual(@as(i32, -4), d.leans[1].points);
+    try testing.expect(d.leans[1].clause.negated);
+    try testing.expectEqualStrings("Hang", world.get_entity_name(d.responses[0].action).?);
+    try testing.expectEqualStrings("Show me why.", world.get_entity_name(d.responses[2].line).?);
+    try testing.expectEqualStrings("Pardon", world.get_entity_name(d.responses[4].action).?);
+
+    // Tier lines may come in any order; the compiler orders them by axis.
+    var reordered = try compiler.compile_source(testing.allocator, &world, null, axes ++ head ++
+        \\  strong Mercy: "Let him go." -> Pardon
+        \\  neutral: "Show me why." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  strong Justice: "The law is the law." -> Hang
+    );
+    defer reordered.deinit();
+    try testing.expectEqualStrings("Fine", world.get_entity_name(reordered.dilemmas.items[0].dilemma.responses[3].action).?);
+
+    const no_strong_mercy =
+        \\  strong Justice: "The law is the law." -> Hang
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  neutral: "Show me why." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+    ;
+    const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
+        .{ .source = axes ++ head ++ no_strong_mercy, .message = "dilemma 'StolenBread' has no line for the strong Mercy tier", .line = 3 },
+        .{ .source = axes ++ head ++ tiers ++ "  neutral: \"Again.\" -> Wait\n", .message = "dilemma 'StolenBread' gives the neutral tier twice", .line = 15 },
+        .{ .source = axes ++ head ++ "  leans 3 toward Greed when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' leans toward 'Greed', which it does not weigh", .line = 10 },
+        .{ .source = axes ++ head ++ "  leans 11 toward Justice when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' leans more than 10 or less than 1; use 1 to 10", .line = 10 },
+        .{ .source = "axis Justice between Cruelty and Leniency\n" ++ head ++ tiers, .message = "a dilemma weighs an axis that no 'axis' line declares", .line = 6 },
+        .{ .source = axes ++ "red lines Valerius: Hang\ndecision Gallows:\n  actor Valerius\n  fires Hanged\n  requires Accused(Thief)\n  option Hang:\n    picks 1 when Accused(Thief)\n  option Spare:\n    picks 1 when Accused(Thief)\n" ++ head ++ tiers, .message = "this action is on the actor's red lines, so no tier may take it", .line = 19 },
     };
     for (cases) |case| {
         const result = compiler.check_source(testing.allocator, case.source);

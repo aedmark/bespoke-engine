@@ -1754,6 +1754,32 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review trigger:** a story needs a red line that an event can break, or P45-03 wants a voiced refusal when every option is vetoed.
 
+## D-146 A Dilemma Weighs Two Axes Into Five Fixed Tiers (2026-11-21, status: accepted)
+
+**Context.** P45-03 asks for dilemma resolution: an axis and a counter-axis, a delta of axis minus counter-axis plus modifiers from world facts, five tiers (strong, moderate, neutral, and the mirrored two), an authored line and an action per tier, a neutral tier that asks for evidence (P44-03), and a compile error for a missing tier line. Open were the tier boundaries, how modifiers are declared, how a dilemma relates to `decision` blocks and red lines, what "asks for evidence" does, and what a missing value counts as. The maintainer answered each (2026-11-21).
+
+**Decision.**
+1. `dilemma <Name>:` is its own block with `actor`, `fires`, and `requires`/`unless` trigger lines, the decision shape (D-137): it weighs once when the trigger rises and re-arms when it falls.
+2. `weighs <Axis> against <Axis>` names two declared axes (D-144). `leans <N> toward <Axis> when|unless <Fact>` adds N toward the named axis or counter-axis; N is 1 to 10, at most 8 lines.
+3. The delta is axis value minus counter-axis value plus the leans that hold. A missing value counts as 0 for weighing only; no fact is written.
+4. Tier boundaries are fixed and mirrored: 7 or more is strong toward the axis, 3 to 6 moderate, -2 to 2 neutral, -6 to -3 moderate toward the counter-axis, -7 or less strong toward it.
+5. Each tier is `strong <Axis>: "line" -> Action` (or `moderate`, or `neutral:`), in any order. All five are required; a missing or repeated tier is a compile error naming it, so no weighing is silent.
+6. The actor speaks the tier's line as a `say` would, the engine records `Chose(Dilemma, Action)` (the decision relation), and the cue fires with the actor and the action.
+7. Neutral records `DilemmaState(Dilemma, AwaitsEvidence)` and `EvidenceSeen(Dilemma, n)`, the count of `Presented(Actor, _)` facts at that weighing. Each tick the count has grown, the dilemma weighs again, so evidence that turns a lean on can move it out of neutral; a re-weighing replaces the `Chose` row.
+8. A tier action on the actor's red lines (D-145) is a compile error; a dilemma may not share a decision's name, since both record `Chose`.
+9. `.bspk` version 21 appends dilemmas; versions 1 through 20 load none.
+
+**Alternatives:**
+- Author-declared tier boundaries: rejected by the maintainer; authors tune values and leans, and one rule keeps tiers comparable across characters.
+- Shared modifier declarations reused across dilemmas: rejected for now; a lean is one line beside the dilemma it moves.
+- Scoring a `decision` by delta instead of tiers: rejected, because the tiers carry authored lines, which an option score does not.
+- A vetoed tier falling back toward neutral at run time: rejected in favour of a compile error, so an author sees the conflict.
+- Re-weighing on every change while neutral: rejected; re-weighing follows evidence presented, which is what "asks for evidence" means to the player.
+
+**Consequences.** The neutral tier answers presentations to the actor from anyone, of anything, since `Presented` has no presenter. The parser's dilemma diagnostics share one message format, so the block costs the browser module one formatting instantiation rather than one per message (D-141). Persuasion (P45-05) adds an appeal as a lean the player chooses, and drift (P45-04) moves the values the delta reads; neither needs a new tier rule.
+
+**Review trigger:** a story needs tier boundaries other than 7 and 3, or a neutral character that answers only one presenter.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

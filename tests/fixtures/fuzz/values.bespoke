@@ -18,3 +18,16 @@ decision Judge:
     picks 9 when Stole(Thief, Bread)
   option Pardon:
     picks 2 when Hungry(Thief)
+
+dilemma StolenBread:
+  actor Valerius
+  fires Weighed
+  requires Accused(Thief)
+  weighs Justice against Mercy
+  leans 3 toward Justice when Criminal(Thief)
+  leans 4 toward Mercy unless Fed(Town)
+  strong Justice: "The law is the law." -> Hang
+  moderate Justice: "A night in the cells." -> Jail
+  neutral: "Show me why I should spare him." -> Wait
+  moderate Mercy: "Pay for the loaf." -> Fine
+  strong Mercy: "Feed him and let him go." -> Pardon

@@ -16,7 +16,7 @@
     },
     {
       "name": "keyword.other.bespoke",
-      "match": "(?:agenda|alias|and|animate|are|arrives|axis|being|cast|choice|command|cue|currently|decision|degradation|done|draft|duel|during|else|entity|face|for|forget|forgets|goal|grid|if|in|interrupt|is|loop|marks|not|now|on|or|path|play|property|props|relation|remember|resume|roll|routine|say|says|scene|score|society|spellbook|state|stop|stops|the|ticks|to|toward|towards|transition|until|verb|wait|walk|weave|when|where|with)(?![A-Za-z0-9_-])"
+      "match": "(?:agenda|alias|and|animate|are|arrives|axis|being|cast|choice|command|cue|currently|decision|degradation|dilemma|done|draft|duel|during|else|entity|face|for|forget|forgets|goal|grid|if|in|interrupt|is|loop|marks|not|now|on|or|path|play|property|props|relation|remember|resume|roll|routine|say|says|scene|score|society|spellbook|state|stop|stops|the|ticks|to|toward|towards|transition|until|verb|wait|walk|weave|when|where|with)(?![A-Za-z0-9_-])"
     },
     {
       "name": "constant.numeric.dice.bespoke",

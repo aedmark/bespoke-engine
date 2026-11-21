@@ -29,6 +29,7 @@ pub const hint = @import("hint.zig");
 pub const spell = @import("spell.zig");
 pub const decision = @import("decision.zig");
 pub const value = @import("value.zig");
+pub const dilemma = @import("dilemma.zig");
 pub const command = @import("command.zig");
 /// An `std.Io.Writer` that appends to a managed byte list (P37-01).
 pub const ListWriter = @import("list_writer.zig").ListWriter;
@@ -117,6 +118,7 @@ test "root test imports all modules" {
     _ = @import("spell.zig");
     _ = @import("decision.zig");
     _ = @import("value.zig");
+    _ = @import("dilemma.zig");
     _ = @import("command.zig");
     _ = @import("display/canvas.zig");
     _ = @import("display/state_graph.zig");
