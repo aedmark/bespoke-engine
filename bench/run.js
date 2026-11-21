@@ -45,7 +45,10 @@ function browserRows(chrome, wasmPath) {
       'try { const wasm = Uint8Array.from(atob("' + wasm + '"), c => c.charCodeAt(0));\n' +
       'const exp = new WebAssembly.Instance(new WebAssembly.Module(wasm), {}).exports;\n' +
       'output.textContent = JSON.stringify((' + measure.toString() + ')(exp));\n' +
-      '} catch (err) { output.textContent = JSON.stringify({ error: err.message }); }\n</script>');
+      '} catch (err) { output.textContent = JSON.stringify({ error: err.message }); }\n' +
+      // --dump-dom prints the live DOM, which would otherwise repeat the module's base64 and
+      // outgrow the capture buffer as the engine grows; the result is all the runner reads.
+      'document.currentScript.remove();\n</script>');
     const args = ['--headless=new', '--disable-gpu', '--disable-background-networking', '--no-first-run',
       '--no-default-browser-check', '--user-data-dir=' + path.join(work, 'profile'), '--dump-dom'];
     // CI's Chrome smoke check uses the same option on its disposable runner.
