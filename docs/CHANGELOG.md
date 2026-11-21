@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A dilemma's `drifts` lines change a character's values over a long game: when an outcome such as `Repaid(Thief)` becomes true after the dilemma has been weighed, its points add up, and every 5 move the value one step, at most 2 steps per dilemma and never past -10 or +10. Drift is saved, rewound, and replayed exactly. Package format 22 carries drift lines, and versions 1 through 21 still load (`P45-04`, `D-148`).
+
 - The showcase pages load faster: the browser proof module is 668,536 bytes, down from 836,726, because a deck that plays script source no longer carries the package loader (`D-147`).
 
 - A `dilemma` weighs a character's value on one axis against another, plus `leans` lines read from world facts, and answers with one of five tiers: strong or moderate toward either axis, or neutral. The character speaks the tier's line and the dilemma fires its cue with the tier's action; a neutral character asks to be shown evidence and weighs again when something is presented. A dilemma that misses a tier is a compile error. Package format 21 carries dilemmas, and versions 1 through 20 still load (`P45-03`, `D-146`).

@@ -1792,6 +1792,28 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review trigger:** a browser feature loads a package chosen at run time, or the proof module nears 820 KB again.
 
+## D-148 Drift Is Integer Points From Dilemma Outcomes, Capped Per Dilemma (2026-11-21, status: accepted)
+
+**Context.** P45-04 asks that outcomes the player brings about shift a character's values over a long game, with integer-only drift (an accumulator per axis that moves the value one step at a threshold), bounded per dilemma, saved, and identical under replay and rewind. Open were what triggers drift, the threshold and bound, what happens at the range and red lines, and what a capped dilemma does with further points. The maintainer answered each (2026-11-21).
+
+**Decision.**
+1. A dilemma's `drifts <N> toward|away from <Axis> when|unless <Fact>` line adds N points (signed) to the actor's accumulator on that axis each time the fact rises, once the dilemma has first been weighed. A fact already true at the first weighing is not its outcome. N is 1 to 10, at most 8 lines, and the axis may be any declared axis, not only the two the dilemma weighs.
+2. The threshold and bound are fixed: 5 points move the value one step, and one dilemma moves each axis at most 2 steps over the whole game, in either direction.
+3. A step past -10 or +10 is discarded and spends nothing from the bound; points are never banked past the range. Points from a dilemma whose bound is spent are dropped; between steps the accumulator holds -4 to 4. Red lines stay fixed (D-145): drift never adds or lifts one.
+4. State is World facts on generated relations whose names hold a space, which no script name can: `<Axis> drift(Actor, points)`, `<Axis> drift steps(Dilemma, n)`, `DriftHolding(Dilemma, mask)` for the lines' edges, and the `DilemmaWeighed(Dilemma)` state. Save, rewind, branch restore, and replay therefore need nothing new, and the inspector shows them.
+5. Drift on an axis the actor holds no value on starts from 0 and writes the value, so drift can give a character a value it did not have.
+6. `.bspk` version 22 appends one drift group per dilemma after the version 21 records, so a version 21 package loads its dilemmas without drift.
+
+**Alternatives:**
+- An explicit `drift` statement in any routine: rejected by the maintainer; tying drift to the dilemma whose outcome it is makes the bound natural.
+- Drift from the tier a dilemma chose, so acting on a value reinforces it: rejected; outcomes are what the player brings about, not the character's own choice.
+- Declared thresholds or bounds per dilemma: rejected, for the same reason the tier boundaries are fixed (D-146).
+- Banking points past the range: rejected, because a value pushed hard would then resist moving back in a way no player could see.
+
+**Consequences.** The accumulator is shared by every dilemma that drifts the same axis, so points one dilemma leaves can complete another's step; the step is spent from the bound of the dilemma whose line crossed the threshold. A drift line watches its fact every tick, even before the first weighing, so its edge is ready when weighing happens.
+
+**Review trigger:** a story needs drift from something other than a dilemma's outcomes, or a different threshold or bound.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

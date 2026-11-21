@@ -455,6 +455,15 @@ pub const DilemmaLeanDecl = struct {
     negated: bool,
 };
 
+/// One `drifts <N> toward|away from <Axis> when|unless <Fact>` line (P45-04, D-148).
+pub const DilemmaDriftDecl = struct {
+    points: u32,
+    away: bool,
+    axis: []const u8,
+    pattern: FactPattern,
+    negated: bool,
+};
+
 /// One tier's `"line" -> Action`.
 pub const DilemmaResponseDecl = struct {
     line: []const u8,
@@ -471,6 +480,7 @@ pub const DilemmaDecl = struct {
     axis: []const u8,
     counter: []const u8,
     leans: []const DilemmaLeanDecl,
+    drifts: []const DilemmaDriftDecl,
     responses: [dilemma_mod.TIER_COUNT]DilemmaResponseDecl,
 };
 
@@ -2052,6 +2062,7 @@ pub const Parser = struct {
         var counter: ?[]const u8 = null;
         var clauses = std.array_list.Managed(DecisionClauseDecl).init(self.allocator);
         var leans = std.array_list.Managed(DilemmaLeanDecl).init(self.allocator);
+        var drifts = std.array_list.Managed(DilemmaDriftDecl).init(self.allocator);
         const TierLine = struct { strength: enum { strong, moderate, neutral }, toward: []const u8, response: DilemmaResponseDecl, at: Token };
         var tiers = std.array_list.Managed(TierLine).init(self.allocator);
         // Where each lean names its axis, so a wrong name is reported on its own line.
@@ -2103,6 +2114,33 @@ pub const Parser = struct {
                 });
                 if (leans.items.len > dilemma_mod.MAX_LEANS)
                     return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("has more than {d} lean lines", .{dilemma_mod.MAX_LEANS})});
+            } else if (std.mem.eql(u8, directive, "drifts")) {
+                const points = try self.take_u32();
+                if (points == 0 or points > dilemma_mod.MAX_DRIFT)
+                    return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("drifts more than {d} or less than 1; use 1 to {d}", .{ dilemma_mod.MAX_DRIFT, dilemma_mod.MAX_DRIFT })});
+                var away = false;
+                if (std.mem.eql(u8, self.current.slice, "away")) {
+                    try self.advance();
+                    if (!std.mem.eql(u8, self.current.slice, "from"))
+                        return self.dilemma_fail(self.current, name, &.{"expects 'drifts <N> toward <Axis>' or 'drifts <N> away from <Axis>'"});
+                    away = true;
+                } else if (!std.mem.eql(u8, self.current.slice, "toward"))
+                    return self.dilemma_fail(self.current, name, &.{"expects 'drifts <N> toward <Axis>' or 'drifts <N> away from <Axis>'"});
+                try self.advance();
+                const drift_axis = (try self.expect(.identifier)).slice;
+                const modifier = self.current.slice;
+                if (!(std.mem.eql(u8, modifier, "when") or std.mem.eql(u8, modifier, "unless")))
+                    return self.dilemma_fail(self.current, name, &.{ "needs 'when' or 'unless' after the axis '", drift_axis, "'" });
+                try self.advance();
+                try drifts.append(.{
+                    .points = points,
+                    .away = away,
+                    .axis = drift_axis,
+                    .pattern = try self.decision_clause("dilemma", name),
+                    .negated = std.mem.eql(u8, modifier, "unless"),
+                });
+                if (drifts.items.len > dilemma_mod.MAX_DRIFTS)
+                    return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("has more than {d} drift lines", .{dilemma_mod.MAX_DRIFTS})});
             } else if (std.mem.eql(u8, directive, "strong") or std.mem.eql(u8, directive, "moderate") or std.mem.eql(u8, directive, "neutral")) {
                 const neutral = std.mem.eql(u8, directive, "neutral");
                 const toward = if (neutral) "" else (try self.expect(.identifier)).slice;
@@ -2116,7 +2154,7 @@ pub const Parser = struct {
                     .response = .{ .line = line, .action = action },
                     .at = directive_tok,
                 });
-            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'strong', 'moderate', or 'neutral'", .{directive});
+            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'drifts', 'strong', 'moderate', or 'neutral'", .{directive});
         }
         _ = try self.expect(.dedent);
         if (clauses.items.len == 0)
@@ -2163,6 +2201,7 @@ pub const Parser = struct {
             .axis = axis_name,
             .counter = counter_name,
             .leans = try leans.toOwnedSlice(),
+            .drifts = try drifts.toOwnedSlice(),
             .responses = ordered,
         };
     }

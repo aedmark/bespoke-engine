@@ -1397,6 +1397,26 @@ pub const Codegen = struct {
                 .clause = try self.compile_clause(source.pattern, source.negated),
             };
         }
+        // A drift line may move any declared axis, not only the two the dilemma weighs: an
+        // outcome of a mercy dilemma can change a character's loyalty (D-148).
+        const drifts = try self.allocator.alloc(dilemma_mod.Drift, decl.drifts.len);
+        errdefer self.allocator.free(drifts);
+        for (decl.drifts, 0..) |source, i| {
+            const rel = self.world.lookup_relation(source.axis);
+            if (rel == null or self.world.value_bound(rel.?) == null) {
+                self.error_context = source.axis;
+                return error.UnknownDilemmaAxis;
+            }
+            const rels = try dilemma_mod.drift_relations(self.world, rel.?);
+            const magnitude: i32 = @intCast(source.points);
+            drifts[i] = .{
+                .axis = rel.?,
+                .points = if (source.away) -magnitude else magnitude,
+                .clause = try self.compile_clause(source.pattern, source.negated),
+                .accumulator = rels.accumulator,
+                .spent = rels.spent,
+            };
+        }
         return .{ .dilemma = .{
             .entity = try self.world.intern_entity(decl.name),
             .actor = actor,
@@ -1405,6 +1425,7 @@ pub const Codegen = struct {
             .axis = axes[0],
             .counter = axes[1],
             .leans = leans,
+            .drifts = drifts,
             .responses = responses,
         } };
     }
@@ -3379,6 +3400,57 @@ test "P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a 
         .{ .source = axes ++ head ++ "  leans 11 toward Justice when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' leans more than 10 or less than 1; use 1 to 10", .line = 10 },
         .{ .source = "axis Justice between Cruelty and Leniency\n" ++ head ++ tiers, .message = "a dilemma weighs an axis that no 'axis' line declares", .line = 6 },
         .{ .source = axes ++ "red lines Valerius: Hang\ndecision Gallows:\n  actor Valerius\n  fires Hanged\n  requires Accused(Thief)\n  option Hang:\n    picks 1 when Accused(Thief)\n  option Spare:\n    picks 1 when Accused(Thief)\n" ++ head ++ tiers, .message = "this action is on the actor's red lines, so no tier may take it", .line = 19 },
+    };
+    for (cases) |case| {
+        const result = compiler.check_source(testing.allocator, case.source);
+        errdefer std.debug.print("diagnostic source:\n{s}\ngot: {s} at {d}:{d}\n", .{ case.source, result.message(), result.line, result.column });
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+    }
+}
+
+test "P45-04: drift lines compile to signed points on a declared axis" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const head =
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Indulgence
+        \\axis Loyalty between Servility and Treachery
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\
+    ;
+    const tiers =
+        \\  strong Justice: "a" -> Hang
+        \\  moderate Justice: "b" -> Jail
+        \\  neutral: "c" -> Wait
+        \\  moderate Mercy: "d" -> Fine
+        \\  strong Mercy: "e" -> Pardon
+        \\
+    ;
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, head ++
+        "  drifts 3 toward Mercy when Repaid(Thief)\n  drifts 4 away from Loyalty unless Paid(Guard)\n" ++ tiers);
+    defer compiled.deinit();
+    const drifts = compiled.dilemmas.items[0].dilemma.drifts;
+    try testing.expectEqual(@as(usize, 2), drifts.len);
+    try testing.expectEqual(@as(i32, 3), drifts[0].points);
+    try testing.expectEqual(@as(i32, -4), drifts[1].points);
+    try testing.expect(drifts[1].clause.negated);
+    try testing.expectEqualStrings("Loyalty", world.get_relation_meta(drifts[1].axis).?.name);
+    try testing.expectEqualStrings("Mercy drift", world.get_relation_meta(drifts[0].accumulator).?.name);
+    try testing.expectEqualStrings("Loyalty drift steps", world.get_relation_meta(drifts[1].spent).?.name);
+
+    const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
+        .{ .source = head ++ "  drifts 3 toward Greed when Rich(Thief)\n" ++ tiers, .message = "a dilemma weighs an axis that no 'axis' line declares", .line = 9 },
+        .{ .source = head ++ "  drifts 11 toward Mercy when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' drifts more than 10 or less than 1; use 1 to 10", .line = 9 },
+        .{ .source = head ++ "  drifts 3 towards Mercy when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' expects 'drifts <N> toward <Axis>' or 'drifts <N> away from <Axis>'", .line = 9 },
+        .{ .source = head ++ "  drifts 3 toward Mercy if Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' needs 'when' or 'unless' after the axis 'Mercy'", .line = 9 },
     };
     for (cases) |case| {
         const result = compiler.check_source(testing.allocator, case.source);
