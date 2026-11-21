@@ -1780,6 +1780,18 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review trigger:** a story needs tier boundaries other than 7 and 3, or a neutral character that answers only one presenter.
 
+## D-147 A Browser Deck Links the Package Loader Only When It Embeds a Package (2026-11-21, status: accepted)
+
+**Context.** P45-03 grew `bespoke-proofs.wasm` from 811,677 to 841,204 bytes, past D-141's review point of about 820 KB. Trimming the dilemma code itself saved 4,478 bytes. Stubbing each part showed the package loader is about 176 KB of the module, yet every proof deck embeds `.bespoke` source and compiles it in the browser (D-069). `WasmRuntime.load_program` chose between source and package by reading the program's magic bytes at run time, so the loader was always linked.
+
+**Decision.** `load_program` takes the deck's program as a compile-time argument and checks the magic bytes at compile time. A module whose decks all embed source links only the compiler; a deck that embeds a package, such as a `-Dbundle` build or Lantern Watch, links only the loader. The maintainer approved the change on the P45-03 branch (2026-11-21). Behaviour is unchanged: a deck plays its program exactly as before.
+
+**Alternatives:** keep the run-time check and accept the size, rejected because the cost was a loader no proof deck calls; split the proof module per proof, rejected as a larger change to the page build; compress the embedded module, rejected for the reasons in D-141.
+
+**Consequences.** `bespoke-proofs.wasm` falls to 668,536 bytes and `bespoke.wasm` to 440,653 at this commit, giving D-141's page limit room for Phase 45 again. `load_program` can no longer load bytes chosen at run time; a future deck that accepts a player's own file needs a separate entry point that links the loader on purpose.
+
+**Review trigger:** a browser feature loads a package chosen at run time, or the proof module nears 820 KB again.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
