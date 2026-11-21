@@ -79,7 +79,7 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 
 ## Quick Start
 
-The current release is [0.3.1](https://github.com/aedmark/bespoke-engine/releases/tag/v0.3.1), with a static Linux x86_64 CLI, an SDL2 desktop build, and the stock browser runtime. To build from source on Linux, use Zig 0.17.1 and the SDL2 development libraries.
+The current release is [0.4.0](https://github.com/aedmark/bespoke-engine/releases/tag/v0.4.0), with a static Linux x86_64 CLI, an SDL2 desktop build, and the stock browser runtime. To build from source on Linux, use Zig 0.17.1 and the SDL2 development libraries.
 
 ```bash
 # Engine and proof tests, and the WebAssembly builds

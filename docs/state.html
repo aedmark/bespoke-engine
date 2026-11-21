@@ -69,7 +69,7 @@
 <body>
 <main>
 
-<p class="eyebrow">BeSpoke Engine 0.3.1 &middot; 21 November 2026</p>
+<p class="eyebrow">BeSpoke Engine 0.4.0 &middot; 21 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
@@ -87,9 +87,9 @@
 </nav>
 
 <div class="facts">
-  <div class="fact"><b>17</b><span>demo games, from a heist to a card table</span></div>
-  <div class="fact"><b>13</b><span>of them play in a web page, no install</span></div>
-  <div class="fact"><b>530+</b><span>automated tests and 17 recorded play-throughs, checked on every change</span></div>
+  <div class="fact"><b>18</b><span>demo games, from a heist to a hard winter's judgement</span></div>
+  <div class="fact"><b>14</b><span>of them play in a web page, no install</span></div>
+  <div class="fact"><b>580+</b><span>automated tests and 18 recorded play-throughs, checked on every change</span></div>
   <div class="fact"><b>0</b><span>outside libraries in the core engine</span></div>
   <div class="fact"><b>100%</b><span>repeatable: same inputs, same game, every time</span></div>
 </div>
@@ -143,6 +143,15 @@
   <div class="card"><h3>Present the evidence</h3><p>Show a clue to a suspect. What they reveal depends on what they already know, and their composure can crack as the evidence piles up.</p><p class="hood"><b>Under the hood:</b> "present X to Y" records one fact per thing shown and fires a cue the script answers.</p></div>
   <div class="card"><h3>Characters who decide</h3><p>A character weighs its options using only what it privately knows and picks one. In the card-game demo, each seat plays from its own hand and reacts to what the others reveal.</p><p class="hood"><b>Under the hood:</b> <code>decision</code> blocks score options with <code>picks</code>/<code>drops</code> lines; deterministic, with ties to the first option.</p></div>
   <div class="card"><h3>Duels of wit</h3><p>Win an argument with the right comeback, learned by hearing it used against you. Opponents tire of being asked the same question.</p><p class="hood"><b>Under the hood:</b> data-declared challenge and reply pairs, opponent tiers, advantage, and staged mood decay.</p></div>
+</div>
+
+<h3>Characters with values</h3>
+<div class="cards">
+  <div class="card"><h3>Values the author defines</h3><p>Give characters values such as mercy, justice, or loyalty on a scale from -10 to +10. The author names the values and what failing them looks like; the engine names none.</p><p class="hood"><b>Under the hood:</b> <code>axis Mercy between Vengeance and "Condoning Harm"</code> and <code>remember Mercy(Valerius, 3)</code>; out-of-range numbers are compile errors.</p></div>
+  <div class="card"><h3>Red lines</h3><p>Some things a character will never do, however well the option scores. A captain who will not hang a child, or take a bribe, simply does not.</p><p class="hood"><b>Under the hood:</b> <code>red lines Valerius: Hang, TakeTheCoin</code> removes those options before any decision is scored.</p></div>
+  <div class="card"><h3>Dilemmas with five answers</h3><p>A character weighs one value against another, nudged by what is true in the world, and answers strongly or moderately either way, or asks for more to go on. Every answer has its own authored line.</p><p class="hood"><b>Under the hood:</b> <code>dilemma</code> blocks with <code>weighs Justice against Mercy</code>, <code>leans</code> lines, and five fixed tiers; a missing tier line is a compile error.</p></div>
+  <div class="card"><h3>Persuasion as a puzzle</h3><p>Learn what someone values by watching and asking, then appeal to it. An appeal to a value you have not learned goes nowhere.</p><p class="hood"><b>Under the hood:</b> <code>appeals 4 to Mercy</code> lines and the typed <code>appeal to mercy</code>; learned values also feed the hints.</p></div>
+  <div class="card"><h3>Characters who change</h3><p>What the player brings about shifts a character's values over a long game, slowly and within limits, so a merciful winter can make a kinder spring.</p><p class="hood"><b>Under the hood:</b> <code>drifts 5 toward Mercy when Repaid(Tam)</code>; whole-number points stored as facts, so saves and rewinds need nothing extra.</p></div>
 </div>
 
 <h3>Puzzle and mystery tools</h3>
@@ -308,8 +317,8 @@ routine Inspector(Moss):
 
 <h2 id="next">What is next</h2>
 <ul>
-  <li><strong>Characters with values, in a release.</strong> Values, red lines, dilemmas, drift, and appeals are complete on the main branch after 0.3.1 (roadmap Phase 45), and Valerius and the Bread plays them; the next release ships them.</li>
   <li><strong>BeSpoke 1.0,</strong> when the maintainer decides the language and host API are ready to promise.</li>
+  <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>
 
 <h2 id="start">Get started</h2>
@@ -321,7 +330,7 @@ routine Inspector(Moss):
 </ol>
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
-<footer>BeSpoke Engine 0.3.1 &middot; status as of 21 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<footer>BeSpoke Engine 0.4.0 &middot; status as of 21 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 </main>
 </body>
 </html>

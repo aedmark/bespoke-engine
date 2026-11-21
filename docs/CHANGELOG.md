@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-21
+
 - Valerius and the Bread is a new proof with its own page (`site/valerius.html`, `--valerius`): in a hard winter at the hill-fort of Greyhold, Hesper learns what Captain Valerius values and appeals to it to save her brother Tam, who stole a loaf. His red lines refuse a hanging and a bribe, Mercy and Loyalty end the winter differently, and the outcome drifts his Mercy into the spring scene (`P45-06`).
 - An appeal can name any declared value and the weighed axis it moves, as in `appeals 8 to Loyalty toward Mercy` (`D-150`).
 
