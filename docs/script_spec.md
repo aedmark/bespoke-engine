@@ -489,6 +489,18 @@ dilemma StolenBread:
 - A neutral result waits for evidence: each tick on which something new has been presented to the actor (`present <thing> to <person>`), the dilemma weighs again, speaking and firing again. Evidence that turns a `leans` line on can move it to another tier.
 - A tier action on the actor's red lines is a compile error. A dilemma may not share a decision's name. Package format version 21 carries dilemmas; versions 1 through 20 load none.
 
+#### Value drift (P45-04, D-148)
+
+```bespoke
+  drifts 3 toward Mercy when Repaid(Thief)
+  drifts 4 away from Loyalty when Robbed(Baker)
+```
+
+- A `drifts` line in a dilemma adds points toward or away from an axis each time its fact becomes true, once the dilemma has been weighed at least once. `unless` inverts the fact. Points are 1 to 10, at most 8 lines, and the axis may be any declared axis.
+- Every 5 points move the character's value one step. One dilemma moves each axis at most 2 steps over the whole game; further points from it are dropped.
+- Drift stops at -10 and +10, and points that would push past the end are discarded rather than saved up. Drift never changes red lines.
+- Drift is facts: `Mercy drift(Valerius, 1)` holds the points not yet spent and `Mercy drift steps(StolenBread, 2)` the steps a dilemma has used, so saves and rewinds keep it and a replay reproduces it. Package format version 22 carries drift lines; a version 21 package loads its dilemmas without drift.
+
 ## Test Coverage
 
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.
@@ -511,6 +523,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Value axes (P45-01) | `P45-01: axis declarations and values are range-checked at compile time` (`src/compiler/codegen.zig`) | `P45-01: an author-declared axis compiles into a bounded property with signed values`; `P45-01: an axis bounds its property and reads signed values` (`src/value.zig`); `P45-01: a bounded property clamps writes, restores, and clones` (`src/world.zig`); `P45-01: the inspector lists an axis value as a signed number, not an entity` (`src/display.zig`); `P45-01: package version 19 round-trips value axes and loads a version 18 payload with none` (`src/package.zig`) |
 | Red lines (P45-02) | `P45-02: red lines compile per character and are checked against its decisions` (`src/compiler/codegen.zig`) | `P45-02: a vetoed option is never chosen, even when it would score highest` and `P45-02: red lines must name an option offered to that character and leave one open` (`src/decision.zig`); `P45-02: a red line vetoes the highest-scoring option through host.tick` (`src/host.zig`); `P45-02: package version 20 round-trips red lines and loads a version 19 payload with none` (`src/package.zig`) |
 | Dilemmas (P45-03) | `P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a gap` (`src/compiler/codegen.zig`) | `P45-03: tier boundaries are fixed and mirrored`, `P45-03: each tier boundary selects its line and action`, `P45-03: lean lines read world facts and move the tier`, `P45-03: a neutral weighing waits for evidence and weighs again when it arrives`, and `P45-03: a tier action on the actor's red lines is refused` (`src/dilemma.zig`); `P45-03: a dilemma speaks its tier's line and fires the action through host.tick` (`src/host.zig`); `P45-03: package version 21 round-trips a dilemma and loads a version 20 payload with none` (`src/package.zig`) |
+| Value drift (P45-04) | `P45-04: drift lines compile to signed points on a declared axis` (`src/compiler/codegen.zig`) | `P45-04: drift accumulates whole points and moves a value one step per 5` and `P45-04: one dilemma moves an axis at most two steps, and drift stops at the range` (`src/dilemma.zig`); `P45-04: drift is identical after a save, a rewind, and a replay` (`src/host.zig`); `P45-04: package version 22 round-trips drift lines and loads a version 21 dilemma without them` (`src/package.zig`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

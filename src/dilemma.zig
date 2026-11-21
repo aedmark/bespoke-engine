@@ -20,6 +20,20 @@
 //!   EvidenceSeen(Dilemma, n)                               property, the Presented count weighed
 //!   Chose(Dilemma, Action)                                 set fact, cleared on re-arm or re-weigh
 //! Weighing reads facts only and draws no random number, so a replay makes the same choices.
+//!
+//! Drift (P45-04, D-148) is how outcomes change a character over a long game. A dilemma's
+//! `drifts N toward|away from <Axis> when <Fact>` line adds N points, signed, to the actor's
+//! accumulator on that axis each time its fact rises after the dilemma has first been weighed.
+//! Every 5 points move the value one step, and one dilemma can move each axis at most 2 steps
+//! over the whole game; points past the cap, or a step past -10 or +10, are discarded rather
+//! than banked. Everything is an integer fact, so save, rewind, branch restore, and replay
+//! reproduce drift exactly:
+//!   <Axis> drift(Actor, points)        property, the signed accumulator, -4 to 4 between steps
+//!   <Axis> drift steps(Dilemma, n)     property, the steps this dilemma has spent on the axis
+//!   DriftHolding(Dilemma, mask)        property, which drift lines held last tick (edge state)
+//!   DilemmaWeighed(Dilemma)            state, set at the first weighing and never cleared
+//! The generated relation names contain a space, which no script name can, so they never
+//! collide with an author's relation.
 
 const std = @import("std");
 const world_mod = @import("world.zig");
@@ -35,6 +49,14 @@ pub const MAX_CLAUSES: usize = decision_mod.MAX_CLAUSES;
 pub const MAX_LEANS: usize = 8;
 /// One lean line's magnitude, the width of half an axis.
 pub const MAX_LEAN: u16 = 10;
+/// Drift lines per dilemma; their edge state is one bit each in `DriftHolding`.
+pub const MAX_DRIFTS: usize = 8;
+pub const MAX_DRIFT: u16 = 10;
+/// Points that move a value one step, and the steps one dilemma may move one axis (D-148).
+pub const DRIFT_THRESHOLD: i32 = 5;
+pub const DRIFT_STEPS_PER_DILEMMA: u32 = 2;
+pub const HOLDING_RELATION = "DriftHolding";
+pub const WEIGHED_RELATION = "DilemmaWeighed";
 /// Tier boundaries, mirrored around zero (D-146).
 pub const STRONG_AT: i32 = 7;
 pub const MODERATE_AT: i32 = 3;
@@ -66,6 +88,29 @@ pub const Lean = struct {
     clause: Clause,
 };
 
+/// One drift line: `points` toward the axis (positive) or away from it (negative) each time the
+/// clause rises. `accumulator` and `spent` are the generated relations for that axis; see
+/// `drift_relations`.
+pub const Drift = struct {
+    axis: RelationKind,
+    points: i32,
+    clause: Clause,
+    accumulator: RelationKind,
+    spent: RelationKind,
+};
+
+/// Interns the two drift relations of an axis: `<Axis> drift` on the character and
+/// `<Axis> drift steps` on the dilemma. Both are properties, so a write replaces the row.
+pub fn drift_relations(world: *World, axis: RelationKind) !struct { accumulator: RelationKind, spent: RelationKind } {
+    const name = (world.get_relation_meta(axis) orelse return Error.InvalidDilemma).name;
+    var buf: [96]u8 = undefined;
+    const acc_name = std.fmt.bufPrint(&buf, "{s} drift", .{name}) catch return Error.InvalidDilemma;
+    const accumulator = try world.intern_relation(acc_name, .property);
+    const spent_name = std.fmt.bufPrint(&buf, "{s} drift steps", .{name}) catch return Error.InvalidDilemma;
+    const spent = try world.intern_relation(spent_name, .property);
+    return .{ .accumulator = accumulator, .spent = spent };
+}
+
 /// One tier's authored response: a line the actor speaks (an interned text entity, as `say`
 /// uses) and the action the cue carries.
 pub const Response = struct {
@@ -81,6 +126,7 @@ pub const Dilemma = struct {
     axis: RelationKind,
     counter: RelationKind,
     leans: []const Lean,
+    drifts: []const Drift = &.{},
     /// Indexed by `Tier`; every tier has a response, so weighing is never silent.
     responses: [TIER_COUNT]Response,
 };
@@ -90,6 +136,7 @@ pub const Declaration = struct {
 
     pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
         allocator.free(self.dilemma.leans);
+        allocator.free(self.dilemma.drifts);
         allocator.free(self.dilemma.clauses);
         self.* = undefined;
     }
@@ -117,6 +164,15 @@ pub fn validate(world: *const World, dilemma: Dilemma) Error!void {
     for (dilemma.leans) |lean| {
         if (lean.clause.relation.len == 0) return Error.InvalidDilemma;
         if (lean.points == 0 or lean.points > MAX_LEAN or lean.points < -@as(i32, MAX_LEAN)) return Error.InvalidDilemma;
+    }
+    if (dilemma.drifts.len > MAX_DRIFTS) return Error.InvalidDilemma;
+    for (dilemma.drifts) |drift| {
+        if (world.value_bound(drift.axis) == null or drift.clause.relation.len == 0) return Error.InvalidDilemma;
+        if (drift.points == 0 or drift.points > MAX_DRIFT or drift.points < -@as(i32, MAX_DRIFT)) return Error.InvalidDilemma;
+        for ([_]RelationKind{ drift.accumulator, drift.spent }) |rel| {
+            const meta = world.get_relation_meta(rel) orelse return Error.InvalidDilemma;
+            if (meta.rel_type != .property) return Error.InvalidDilemma;
+        }
     }
     for (dilemma.responses) |response| {
         if (world.get_entity_name(response.line) == null or world.get_entity_name(response.action) == null) return Error.InvalidDilemma;
@@ -261,6 +317,9 @@ pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
     var out = Outcomes{};
     if (declarations.len == 0) return out;
     const v = try Vocabulary.intern(world);
+    // Drift reads last tick's weighings: a fact that rises on the tick a dilemma is first
+    // weighed was already true when it was weighed, so it is not an outcome of it.
+    for (declarations) |decl| try apply_drift(world, decl.dilemma);
     for (declarations) |decl| {
         const dilemma = decl.dilemma;
         const stage = v.stage_of(world, dilemma.entity) orelse .idle;
@@ -288,6 +347,7 @@ pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
         const response = dilemma.responses[@backingInt(tier)];
         _ = world.forget(dilemma.entity, v.chose, null);
         try world.remember(dilemma.entity, v.chose, response.action.to_int(), 0);
+        try world.remember(dilemma.entity, try world.intern_relation(WEIGHED_RELATION, .set), 0, 0);
         if (tier == .neutral) {
             try v.set(world, dilemma.entity, .awaits_evidence);
             try world.remember(dilemma.entity, v.seen, presented, 0);
@@ -307,6 +367,56 @@ pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
         out.len += 1;
     }
     return out;
+}
+
+/// Updates each drift line's edge state and, once the dilemma has been weighed, adds the points
+/// of every line whose fact rose this tick (D-148).
+fn apply_drift(world: *World, dilemma: Dilemma) !void {
+    if (dilemma.drifts.len == 0) return;
+    const holding_rel = try world.intern_relation(HOLDING_RELATION, .property);
+    const weighed_rel = try world.intern_relation(WEIGHED_RELATION, .set);
+    const was: u32 = world.get_property(dilemma.entity, holding_rel) orelse 0;
+    var now: u32 = 0;
+    for (dilemma.drifts, 0..) |drift, i| {
+        if (holds(world, drift.clause) != drift.clause.negated) now |= @as(u32, 1) << @intCast(i);
+    }
+    if (now != was) try world.remember(dilemma.entity, holding_rel, now, 0);
+    if (!world.has_fact(dilemma.entity, weighed_rel, null)) return;
+    const rose = now & ~was;
+    for (dilemma.drifts, 0..) |drift, i| {
+        if (rose & (@as(u32, 1) << @intCast(i)) != 0) try add_drift(world, dilemma, drift);
+    }
+}
+
+/// Adds one line's points to the actor's accumulator and spends whole steps from it, up to the
+/// dilemma's bound. Points that cannot become a step, because the bound is spent or the value
+/// is already at the end of its range, are discarded: the accumulator keeps at most 4.
+fn add_drift(world: *World, dilemma: Dilemma, drift: Drift) !void {
+    var spent: u32 = world.get_property(dilemma.entity, drift.spent) orelse 0;
+    if (spent >= DRIFT_STEPS_PER_DILEMMA) return;
+    const bound = world.value_bound(drift.axis) orelse return;
+    var acc: i32 = @as(i32, @bitCast(world.get_property(dilemma.actor, drift.accumulator) orelse 0)) + drift.points;
+    var value = value_or_zero(world, dilemma.actor, drift.axis);
+    const start_value = value;
+    while (acc >= DRIFT_THRESHOLD or acc <= -DRIFT_THRESHOLD) {
+        const dir: i32 = if (acc > 0) 1 else -1;
+        acc -= dir * DRIFT_THRESHOLD;
+        if (spent >= DRIFT_STEPS_PER_DILEMMA) break;
+        // A step past the range would be clamped away (D-144); it spends nothing.
+        if ((dir > 0 and value >= bound.max) or (dir < 0 and value <= bound.min)) continue;
+        value += dir;
+        spent += 1;
+    }
+    acc = std.math.clamp(acc, -(DRIFT_THRESHOLD - 1), DRIFT_THRESHOLD - 1);
+    if (value != start_value or world.get_property(dilemma.actor, drift.axis) == null)
+        try world.remember(dilemma.actor, drift.axis, @bitCast(value), 0);
+    try world.remember(dilemma.actor, drift.accumulator, @bitCast(acc), 0);
+    try world.remember(dilemma.entity, drift.spent, spent, 0);
+}
+
+/// The actor's undrifted points on an axis: the accumulator between steps, -4 to 4.
+pub fn drift_points(world: *const World, actor: EntityId, accumulator: RelationKind) i32 {
+    return @bitCast(world.get_property(actor, accumulator) orelse 0);
 }
 
 /// The action chosen at the last weighing, or null between points.
@@ -522,4 +632,109 @@ test "P45-03: a tier action on the actor's red lines is refused" {
     var same = rig.decls;
     same[0].dilemma.counter = rig.justice;
     try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &same, &.{}, &.{}));
+}
+
+/// Gives the rig's dilemma drift lines: Repaid(Thief) toward Mercy, Robbed(Miller) away from it.
+fn with_drifts(rig: *TestRig, lines: *[2]Drift, repaid_points: i32, robbed_points: i32) !void {
+    const w = &rig.world;
+    const rels = try drift_relations(w, rig.mercy);
+    _ = try w.intern_relation("Repaid", .set);
+    _ = try w.intern_relation("Robbed", .set);
+    lines.* = .{
+        .{ .axis = rig.mercy, .points = repaid_points, .clause = .{ .relation = "Repaid", .subject = rig.thief }, .accumulator = rels.accumulator, .spent = rels.spent },
+        .{ .axis = rig.mercy, .points = robbed_points, .clause = .{ .relation = "Robbed", .subject = try w.intern_entity("Miller") }, .accumulator = rels.accumulator, .spent = rels.spent },
+    };
+    rig.decls[0].dilemma.drifts = lines;
+    try validate_all(w, &rig.decls, &.{}, &.{});
+}
+
+/// Raises and lowers a drift line's fact once, stepping the dilemma on each side of the edge.
+fn pulse(rig: *TestRig, relation: []const u8, subject: EntityId) !void {
+    const rel = rig.world.lookup_relation(relation).?;
+    try rig.world.remember(subject, rel, 0, 0);
+    _ = try step(&rig.world, &rig.decls);
+    _ = rig.world.forget(subject, rel, null);
+    _ = try step(&rig.world, &rig.decls);
+}
+
+fn mercy_of(rig: *TestRig) i32 {
+    return @bitCast(rig.world.get_property(rig.actor, rig.mercy).?);
+}
+
+test "P45-04: drift accumulates whole points and moves a value one step per 5" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    var lines: [2]Drift = undefined;
+    try with_drifts(&rig, &lines, 3, -5);
+    try rig.set_values(4, 0);
+    const acc = lines[0].accumulator;
+
+    // Before the dilemma has been weighed, an outcome is not its outcome.
+    try pulse(&rig, "Repaid", rig.thief);
+    try testing.expectEqual(@as(i32, 0), mercy_of(&rig));
+    try testing.expectEqual(@as(i32, 0), drift_points(&rig.world, rig.actor, acc));
+
+    _ = try rig.weigh();
+    // A fact that holds without rising adds nothing: hold Repaid across two steps.
+    const repaid = rig.world.lookup_relation("Repaid").?;
+    try rig.world.remember(rig.thief, repaid, 0, 0);
+    _ = try step(&rig.world, &rig.decls);
+    _ = try step(&rig.world, &rig.decls);
+    try testing.expectEqual(@as(i32, 3), drift_points(&rig.world, rig.actor, acc));
+    try testing.expectEqual(@as(i32, 0), mercy_of(&rig));
+    _ = rig.world.forget(rig.thief, repaid, null);
+    _ = try step(&rig.world, &rig.decls);
+
+    // A second repayment makes 6 points: one step toward Mercy, 1 point left over.
+    try pulse(&rig, "Repaid", rig.thief);
+    try testing.expectEqual(@as(i32, 1), mercy_of(&rig));
+    try testing.expectEqual(@as(i32, 1), drift_points(&rig.world, rig.actor, acc));
+
+    // A robbery drifts 5 away from Mercy. It first cancels the leftover point, so the
+    // accumulator reads -4 and the value holds; a second robbery makes -9, one step back.
+    const baker = rig.world.lookup_entity("Miller").?;
+    try pulse(&rig, "Robbed", baker);
+    try testing.expectEqual(@as(i32, 1), mercy_of(&rig));
+    try testing.expectEqual(@as(i32, -4), drift_points(&rig.world, rig.actor, acc));
+    try pulse(&rig, "Robbed", baker);
+    try testing.expectEqual(@as(i32, 0), mercy_of(&rig));
+    try testing.expectEqual(@as(i32, -4), drift_points(&rig.world, rig.actor, acc));
+}
+
+test "P45-04: one dilemma moves an axis at most two steps, and drift stops at the range" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    var lines: [2]Drift = undefined;
+    try with_drifts(&rig, &lines, 10, -10);
+    try rig.set_values(4, 0);
+    _ = try rig.weigh();
+
+    // 10 points are two steps; the bound is then spent and further points are dropped.
+    try pulse(&rig, "Repaid", rig.thief);
+    try testing.expectEqual(@as(i32, 2), mercy_of(&rig));
+    try testing.expectEqual(@as(u32, 2), rig.world.get_property(rig.decls[0].dilemma.entity, lines[0].spent).?);
+    try pulse(&rig, "Repaid", rig.thief);
+    try pulse(&rig, "Robbed", rig.world.lookup_entity("Miller").?);
+    try testing.expectEqual(@as(i32, 2), mercy_of(&rig));
+    try testing.expectEqual(@as(i32, 0), drift_points(&rig.world, rig.actor, lines[0].accumulator));
+
+    // At +10 a step would leave the range: it is discarded and spends nothing.
+    var edge: TestRig = undefined;
+    try edge.init();
+    defer edge.world.deinit();
+    var edge_lines: [2]Drift = undefined;
+    try with_drifts(&edge, &edge_lines, 10, -5);
+    try edge.set_values(0, 10);
+    _ = try edge.weigh();
+    try pulse(&edge, "Repaid", edge.thief);
+    try testing.expectEqual(@as(i32, 10), mercy_of(&edge));
+    try testing.expect(edge.world.get_property(edge.decls[0].dilemma.entity, edge_lines[0].spent).? == 0);
+    try testing.expectEqual(@as(i32, 0), drift_points(&edge.world, edge.actor, edge_lines[0].accumulator));
+    // The bound is untouched, so drift back down still works.
+    try pulse(&edge, "Robbed", edge.world.lookup_entity("Miller").?);
+    try testing.expectEqual(@as(i32, 9), mercy_of(&edge));
 }

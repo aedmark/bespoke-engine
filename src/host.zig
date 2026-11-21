@@ -2054,3 +2054,115 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(thief, world.lookup_relation("Jailed").?, 0));
 }
+
+const DRIFT_SCRIPT =
+    \\scene: Guardhouse
+    \\cast: Valerius
+    \\marks: Stool
+    \\relation Accused(who)
+    \\relation Repaid(who)
+    \\relation Robbed(who)
+    \\axis Justice between Cruelty and Leniency
+    \\axis Mercy between Vengeance and Indulgence
+    \\axis Loyalty between Servility and Treachery
+    \\remember Justice(Valerius, 4)
+    \\remember Mercy(Valerius, 0)
+    \\dilemma StolenBread:
+    \\  actor Valerius
+    \\  fires Judged
+    \\  requires Accused(Thief)
+    \\  weighs Justice against Mercy
+    \\  drifts 3 toward Mercy when Repaid(Thief)
+    \\  drifts 4 away from Loyalty when Robbed(Miller)
+    \\  strong Justice: "The law is the law." -> Hang
+    \\  moderate Justice: "A night in the cells." -> Jail
+    \\  neutral: "Show me more." -> Wait
+    \\  moderate Mercy: "Pay for the loaf." -> Fine
+    \\  strong Mercy: "Let him go." -> Pardon
+;
+
+/// One scripted turn of the drift story: which outcome fact holds on this tick.
+const DriftBeat = enum { accuse, repay, settle, rob, quiet };
+const DRIFT_STORY = [_]DriftBeat{ .accuse, .repay, .settle, .repay, .settle, .rob, .settle, .rob, .settle, .repay, .settle, .quiet };
+
+const DriftRun = struct {
+    world: World,
+    spatial: SpatialSystem,
+    compiled: CompiledProgram,
+    vm: VM,
+
+    fn init(self: *DriftRun) !void {
+        const compiler = @import("compiler.zig");
+        self.world = try World.init(testing.allocator, 1024 * 1024);
+        self.spatial = SpatialSystem.init(testing.allocator);
+        self.compiled = try compiler.compile_source(testing.allocator, &self.world, &self.spatial, DRIFT_SCRIPT);
+        self.vm = VM.init(testing.allocator, &self.world, &self.compiled.chunk);
+        self.vm.spatial = &self.spatial;
+        try run_initial_statements(&self.world, &self.vm, &self.compiled);
+        try self.vm.transition_to_scene(self.world.lookup_entity("Guardhouse").?);
+    }
+
+    fn deinit(self: *DriftRun) void {
+        self.vm.deinit();
+        self.compiled.deinit();
+        self.spatial.deinit();
+        self.world.deinit();
+    }
+
+    fn play(self: *DriftRun, beat: DriftBeat) !void {
+        const w = &self.world;
+        const thief = try w.intern_entity("Thief");
+        const baker = try w.intern_entity("Miller");
+        switch (beat) {
+            .accuse => try w.remember(thief, w.lookup_relation("Accused").?, 0, 0),
+            .repay => try w.remember(thief, w.lookup_relation("Repaid").?, 0, 0),
+            .rob => try w.remember(baker, w.lookup_relation("Robbed").?, 0, 0),
+            .settle => {
+                _ = w.forget(thief, w.lookup_relation("Repaid").?, null);
+                _ = w.forget(baker, w.lookup_relation("Robbed").?, null);
+            },
+            .quiet => {},
+        }
+        _ = try tick(&self.vm, &self.compiled);
+    }
+
+    fn value(self: *DriftRun, axis: []const u8) i32 {
+        const w = &self.world;
+        return @bitCast(w.get_property(w.lookup_entity("Valerius").?, w.lookup_relation(axis).?) orelse 0);
+    }
+};
+
+test "P45-04: drift is identical after a save, a rewind, and a replay" {
+    var first: DriftRun = undefined;
+    try first.init();
+    defer first.deinit();
+    var saved = std.array_list.Managed(u8).init(testing.allocator);
+    defer saved.deinit();
+    for (DRIFT_STORY, 0..) |beat, i| {
+        // Save mid-story, between the first repayment and the second.
+        if (i == 2) {
+            var lw = ListWriter.init(&saved);
+            try first.world.save_state(&lw.writer);
+        }
+        try first.play(beat);
+    }
+    // Two repayments of 3 make one Mercy step; the third leaves 1 point banked. Two robberies of 4
+    // away from Loyalty, an axis the dilemma does not weigh, make one step down from no value.
+    try testing.expectEqual(@as(i32, 1), first.value("Mercy"));
+    try testing.expectEqual(@as(i32, -1), first.value("Loyalty"));
+    try testing.expectEqual(@as(i32, 4), first.value("Justice"));
+    const end_digest = try fact_digest(testing.allocator, &first.world);
+
+    // Rewind: restore the mid-story snapshot and replay the rest of the story.
+    var stream: std.Io.Reader = .fixed(saved.items);
+    try first.world.restore_state(&stream);
+    for (DRIFT_STORY[2..]) |beat| try first.play(beat);
+    try testing.expectEqual(end_digest, try fact_digest(testing.allocator, &first.world));
+
+    // Replay: a fresh run of the same story ends with the same facts, drift included.
+    var second: DriftRun = undefined;
+    try second.init();
+    defer second.deinit();
+    for (DRIFT_STORY) |beat| try second.play(beat);
+    try testing.expectEqual(end_digest, try fact_digest(testing.allocator, &second.world));
+}
