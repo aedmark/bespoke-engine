@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A number key answers a dialogue straight after a typed command such as `talk to pilot`, on desktop and in the browser; before, the key typed into the still-focused command bar until Esc (`D-142`).
 - The proof pages' controls and their "Show the solution" summaries, the showcase homepage's nav links and Play buttons, and the Harbour page's controls are 44 px tall, so a phone's thumb meets them as easily as a mouse does (`P42-06`).
 - The proof pages' `[N]`, `[Space]`, and `[R]` keys step one tick, pause and resume, and rewind to tick 0, as the desktop window's keys do, so the canvas hint line is true (`P42-06`).
 

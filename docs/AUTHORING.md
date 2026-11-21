@@ -191,7 +191,7 @@ command Takes: "take <thing>"
 How a player reaches it:
 
 - **Typing.** The window's command bar opens with Enter. `talk to pilot` fires `TalksTo(Hero, Pilot)`, `ask pilot about ticket` fires `TalksTo(Hero, Pilot, Ticket)`, and `take ticket` fires `Takes(Hero, Ticket)` through the script's own `command` line. Articles and case are ignored, and only things in the player's room or carried by the player can be named.
-- **Choosing.** The window draws the offered options; click one or press its number key. The chosen body runs on the next tick, and the handler then continues after the whole set of choices.
+- **Choosing.** The window draws the offered options; click one or press its number key, which works straight after a typed command while the bar is empty (D-142). The chosen body runs on the next tick, and the handler then continues after the whole set of choices.
 - **The player** is the actor of the first routine in the script, here the Hero (D-064). Clicks on marks walk the player; typed commands act for the player.
 - **The Pilot needs no routine.** Every cast member starts on the first mark of its scene, so a person who only talks can simply stand there (D-065).
 

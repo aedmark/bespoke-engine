@@ -1034,6 +1034,10 @@ pub const DisplayWindow = struct {
     /// key is text, so no engine or host binding fires.
     command_bar_enabled: bool = false,
     command_bar_focused: bool = false,
+    /// Set when a number key answered a choice from the empty focused bar (D-142). SDL sends the
+    /// same key again as SDL_TEXTINPUT, and the answer has already closed the balloon, so the
+    /// flag rather than the balloon tells the text handler to drop that one digit.
+    command_bar_swallow_digit: bool = false,
     command_input: [128]u8 = undefined,
     command_len: usize = 0,
     command_history: [8][128]u8 = undefined,
@@ -1971,6 +1975,23 @@ pub const DisplayWindow = struct {
         self.command_history_count += 1;
     }
 
+    /// True when a number key should answer an open choice set although the bar has focus
+    /// (D-142): the bar is focused and empty, so the digit cannot be part of a command being
+    /// typed, and the digit names one of the `choice_count` options waiting. With text in the
+    /// bar, or a digit past the last option, the digit stays text.
+    pub fn command_bar_yields_digit(self: *const DisplayWindow, choice_count: usize, ch: u8) bool {
+        if (!self.command_bar_focused or self.command_len != 0 or ch < '1' or ch > '9') return false;
+        return ch - '1' < choice_count;
+    }
+
+    /// SDL_TEXTINPUT for the focused bar: the digit whose key-down just answered a choice
+    /// (D-142) is dropped once, and any other text is typed.
+    pub fn command_bar_text_event(self: *DisplayWindow, typed: []const u8) void {
+        const swallow = self.command_bar_swallow_digit and typed.len == 1 and typed[0] >= '1' and typed[0] <= '9';
+        self.command_bar_swallow_digit = false;
+        if (!swallow) self.command_bar_text(typed);
+    }
+
     /// Appends typed text to the focused command bar; editing ends any history browsing. The
     /// browser runtime calls it with the characters a page forwards (P34-04).
     pub fn command_bar_text(self: *DisplayWindow, text: []const u8) void {
@@ -1986,6 +2007,13 @@ pub const DisplayWindow = struct {
         const len = self.command_history_lens[idx];
         @memcpy(self.command_input[0..len], self.command_history[idx][0..len]);
         self.command_len = len;
+    }
+
+    /// The character a number key types, top row or keypad; null for any other key.
+    fn choice_digit(sym: Keycode) ?u8 {
+        if (sym >= c.SDLK_1 and sym <= c.SDLK_9) return @intCast('1' + (sym - c.SDLK_1));
+        if (sym >= c.SDLK_KP_1 and sym <= c.SDLK_KP_9) return @intCast('1' + (sym - c.SDLK_KP_1));
+        return null;
     }
 
     /// Keys while the command bar is focused. Every key is consumed: text arrives separately
@@ -2548,7 +2576,7 @@ pub const DisplayWindow = struct {
                 },
                 c.SDL_TEXTINPUT => {
                     if (self.command_bar_focused and !self.show_console) {
-                        self.command_bar_text(std.mem.sliceTo(&event.text.text, 0));
+                        self.command_bar_text_event(std.mem.sliceTo(&event.text.text, 0));
                     } else if (self.show_console) {
                         var i: usize = 0;
                         while (event.text.text[i] != 0 and self.console_len < 127) : (i += 1) {
@@ -2665,8 +2693,15 @@ pub const DisplayWindow = struct {
                     // Typed-command bar (P26-03): focused, it takes every key; unfocused, Enter
                     // focuses it unless a choice balloon is waiting for an answer.
                     if (self.command_bar_enabled) {
-                        if (self.command_bar_focused) return self.command_bar_key(sym);
-                        const choices_open = if (self.active_balloon) |b| b.choice_count > 0 else false;
+                        const choice_count: usize = if (self.active_balloon) |b| b.choice_count else 0;
+                        const choices_open = choice_count > 0;
+                        if (self.command_bar_focused) {
+                            // An empty bar lets a number key through to the open choices
+                            // below, so a player who typed `talk to ...` can answer at once.
+                            if (self.command_bar_yields_digit(choice_count, choice_digit(sym) orelse 0)) {
+                                self.command_bar_swallow_digit = true;
+                            } else return self.command_bar_key(sym);
+                        }
                         if ((sym == c.SDLK_RETURN or sym == c.SDLK_KP_ENTER) and !choices_open) {
                             self.command_bar_focused = true;
                             self.play_sfx(.click);
@@ -4765,6 +4800,57 @@ test "P26-03: the command bar takes every key while focused and submits typed li
     try testing.expect(!window.command_bar_focused);
     try testing.expectEqual(UserAction{ .custom = 7 }, Input.key(&window, &frame, c.SDLK_t));
     try testing.expectEqual(UserAction.step_tick, Input.key(&window, &frame, c.SDLK_n));
+}
+
+test "D-142: an empty focused command bar lets a number key answer the open choices" {
+    const testing = std.testing;
+    if (c.SDL_InitSubSystem(c.SDL_INIT_EVENTS) != 0) return error.SkipZigTest;
+    defer c.SDL_QuitSubSystem(c.SDL_INIT_EVENTS);
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 1280, 720);
+    defer window.deinit();
+    const frame = std.mem.zeroes(RenderFrame);
+    const Input = struct {
+        fn key(w: *DisplayWindow, f: *const RenderFrame, sym: Keycode) UserAction {
+            c.SDL_FlushEvents(c.SDL_FIRSTEVENT, c.SDL_LASTEVENT);
+            var ev = std.mem.zeroes(c.SDL_Event);
+            ev.type = c.SDL_KEYDOWN;
+            ev.key.keysym.sym = sym;
+            _ = c.SDL_PushEvent(&ev);
+            return w.poll_events(f);
+        }
+    };
+    window.enable_command_bar(true);
+    const choices = [_][]const u8{ "Show the ticket.", "Not yet." };
+
+    // The player typed `talk to pilot` and submitted it: the bar keeps focus, empty.
+    window.command_bar_focused = true;
+    window.show_dialogue(.none, .{ .x = 0, .y = 0 }, "Pilot", "Crossing tonight?", &choices);
+    try testing.expectEqual(UserAction{ .dialogue_choice = 1 }, Input.key(&window, &frame, c.SDLK_2));
+    // SDL's text event for the same key is dropped, so the bar stays empty and focused.
+    window.command_bar_text_event("2");
+    try testing.expectEqual(@as(usize, 0), window.command_len);
+    try testing.expect(window.command_bar_focused);
+    // The next digit typed with no choice open is text again.
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_3));
+    window.command_bar_text_event("3");
+    try testing.expectEqualStrings("3", window.command_input[0..window.command_len]);
+
+    // With text in the bar a digit is text, even with choices open.
+    window.show_dialogue(.none, .{ .x = 0, .y = 0 }, "Pilot", "Crossing tonight?", &choices);
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_1));
+    window.command_bar_text_event("1");
+    try testing.expectEqualStrings("31", window.command_input[0..window.command_len]);
+    try testing.expect(window.active_balloon != null);
+
+    // A digit past the last option stays text; the keypad answers like the top row.
+    window.command_len = 0;
+    try testing.expectEqual(UserAction.none, Input.key(&window, &frame, c.SDLK_7));
+    window.command_bar_text_event("7");
+    try testing.expectEqualStrings("7", window.command_input[0..window.command_len]);
+    window.command_len = 0;
+    try testing.expectEqual(UserAction{ .dialogue_choice = 0 }, Input.key(&window, &frame, c.SDLK_KP_1));
+    window.command_bar_text_event("1");
+    try testing.expectEqual(@as(usize, 0), window.command_len);
 }
 
 test "P27-01: the State tab cycles in with Tab and never saves or loads" {

@@ -722,8 +722,13 @@ pub const WasmRuntime = struct {
     }
 
     fn choices_open(self: *WasmRuntime) bool {
-        const view = dialogue_mod.view(self.active_world()) orelse return false;
-        return view.count > 0;
+        return self.choice_count() > 0;
+    }
+
+    /// How many choices the open dialogue offers; zero when none is open.
+    fn choice_count(self: *WasmRuntime) usize {
+        const view = dialogue_mod.view(self.active_world()) orelse return 0;
+        return view.count;
     }
 
     /// A key while the command bar is focused, with the page's key code turned into the window's
@@ -1431,6 +1436,11 @@ pub const WasmRuntime = struct {
                 // key_down for the same key has already done whatever the key does.
                 if (!self.command_bar_on() or !self.window.command_bar_focused) return .none;
                 if (ev.key_code < 32 or ev.key_code > 126) return .none;
+                // An empty bar lets a number answer the open choices, as on desktop (D-142).
+                if (self.program != null and self.window.command_bar_yields_digit(self.choice_count(), ev.key_code)) {
+                    try self.answer(ev.key_code - '1');
+                    return .dialogue_answered;
+                }
                 self.window.command_bar_text(&[_]u8{ev.key_code});
                 return .command_edited;
             },
@@ -2024,6 +2034,57 @@ test "P34-04: a deck's command bar takes typed characters, keeps shortcuts quiet
     // Escape leaves the bar; a deck without one never focuses it.
     _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 27 });
     try testing.expect(!rt.window.command_bar_focused);
+}
+
+test "D-142: an empty focused command bar lets a number answer the open choices" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\
+        \\relation Said(who, what)
+        \\entity Yes
+        \\entity No
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+        \\on cue TalksTo(Hero, Pilot):
+        \\  say Pilot: "Crossing tonight?"
+        \\  choice "Yes.":
+        \\    remember Said(Hero, Yes)
+        \\  choice "No.":
+        \\    remember Said(Hero, No)
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero", .command_bar = true })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 });
+    for ("talk to pilot") |ch| _ = try rt.dispatch_event(.{ .kind = .char, .key_code = ch });
+    try testing.expectEqual(BrowserActionTag.command_typed, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 13 }));
+    var ticks: usize = 0;
+    while (rt.choice_count() == 0 and ticks < 5) : (ticks += 1) try rt.step_tick();
+    try testing.expectEqual(@as(usize, 2), rt.choice_count());
+    try testing.expect(rt.window.command_bar_focused);
+
+    // A digit past the last option is text; with text in the bar, a valid digit is text too.
+    try testing.expectEqual(BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .char, .key_code = '7' }));
+    try testing.expectEqual(BrowserActionTag.command_edited, try rt.dispatch_event(.{ .kind = .char, .key_code = '2' }));
+    try testing.expectEqualStrings("72", rt.window.command_input[0..rt.window.command_len]);
+    try testing.expectEqual(@as(usize, 2), rt.choice_count());
+
+    // Emptied, the bar lets the digit answer, and the chosen body runs.
+    rt.window.command_len = 0;
+    try testing.expectEqual(BrowserActionTag.dialogue_answered, try rt.dispatch_event(.{ .kind = .char, .key_code = '2' }));
+    const hero = rt.world.lookup_entity("Hero").?;
+    const no = rt.world.lookup_entity("No").?;
+    try testing.expect(rt.world.has_fact(hero, rt.world.lookup_relation("Said").?, no.to_int()));
+    try testing.expectEqual(@as(usize, 0), rt.window.command_len);
+    try testing.expect(rt.window.command_bar_focused);
 }
 
 test "D-066: a script deck compiles its script, speaks in the banner, and answers with number keys" {
