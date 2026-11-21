@@ -21,7 +21,7 @@
        the 16:9 shape and centres a narrower stage rather than cropping it. */
     canvas { display: block; width: 100%; max-width: max(320px, calc((100vh - 250px) * 1.7778)); margin: 0 auto; aspect-ratio: 16 / 9; image-rendering: pixelated; image-rendering: crisp-edges; cursor: pointer; }
     .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    button { font: inherit; color: var(--ink); background: #27272a; border: 1px solid #52525b; padding: 6px 12px; cursor: pointer; }
+    button { font: inherit; color: var(--ink); background: #27272a; border: 1px solid #52525b; min-height: 44px; padding: 6px 12px; cursor: pointer; }
     button:hover { border-color: var(--accent); }
     .spacer { flex: 1; }
     #game-status { color: var(--accent); min-height: 1.5em; margin: 8px 0 0; }
