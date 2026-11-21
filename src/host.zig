@@ -22,6 +22,8 @@ const command_mod = @import("command.zig");
 const spell_mod = @import("spell.zig");
 const decision_mod = @import("decision.zig");
 const dilemma_mod = @import("dilemma.zig");
+const value_mod = @import("value.zig");
+const hint_mod = @import("hint.zig");
 const audio_mod = @import("audio.zig");
 const mml_mod = @import("mml.zig");
 const society_mod = @import("society.zig");
@@ -123,7 +125,7 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
     // Dilemmas weigh after decisions (P45-03). The tier's line is spoken this tick, as a `say`
     // would be, so `SpeechLog` reads it after the tick; the action's cue runs on the next tick.
     if (compiled.dilemmas.items.len > 0) {
-        const outcomes = try dilemma_mod.step(vm.world, compiled.dilemmas.items);
+        const outcomes = try dilemma_mod.step(vm.world, vm.spatial, compiled.dilemmas.items);
         for (outcomes.slice()) |outcome| {
             try vm.emitted_cues.append(.{
                 .cue_id = SAY_CUE_ID,
@@ -168,6 +170,14 @@ pub const Interpreted = union(enum) {
     command: command_mod.Command,
 };
 
+/// Value axes are words the player can say anywhere, though they are not things in a room.
+fn include_values(world: *const World, compiled: *const CompiledProgram, scope: *command_mod.Scope, actor: EntityId) void {
+    for (compiled.axes.items) |axis| {
+        const name = (world.get_relation_meta(axis.relation) orelse continue).name;
+        if (world.lookup_entity(name)) |entity| scope.include(entity, actor);
+    }
+}
+
 fn command_room(vm: *VM, actor: EntityId) ?EntityId {
     var room: ?EntityId = vm.current_scene;
     if (vm.spatial) |sp| {
@@ -191,7 +201,8 @@ pub fn interpret_command(
     const world = vm.world;
     const room = command_room(vm, actor);
     const frames = command_mod.FrameList.build(compiled.commands.items);
-    const scope = command_mod.Scope.gather(world, vm.spatial, room, actor);
+    var scope = command_mod.Scope.gather(world, vm.spatial, room, actor);
+    include_values(world, compiled, &scope, actor);
     const outcome = interp.interpret(world, compiled.aliases.items, frames.slice(), &scope, input);
     return switch (outcome) {
         .command => |c| .{ .command = c },
@@ -215,6 +226,44 @@ pub fn present(
     const presented = try vm.world.intern_relation("Presented", .set);
     try vm.world.remember(person, presented, evidence.to_int(), 0);
     return (try vm.fire_cue(compiled, "Presents", actor, person, evidence)) != null;
+}
+
+pub const AppealOutcome = enum { made, unknown_value, no_dilemma };
+
+/// Appeals to `person`'s value on the axis `value` names, for `actor` (P45-05, D-149). The actor
+/// must know that value (`Knows(actor, "<Axis> of <person>")`, `Rejects` overriding); an appeal
+/// to an unknown value is refused and changes nothing. An accepted appeal is recorded for the
+/// next weighing of the person's dilemma that lists it, adds the history fact
+/// `Appealed(person, value)` a goal can name, and fires `Appeals(actor, person, value)`.
+pub fn appeal(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, person: EntityId, value: EntityId) !AppealOutcome {
+    const world = vm.world;
+    const axis = value_mod.axis_of_entity(world, value) orelse return .no_dilemma;
+    const dilemma = dilemma_mod.appeal_target(world, compiled.dilemmas.items, person, value) orelse return .no_dilemma;
+    var buf: [128]u8 = undefined;
+    const name = value_mod.known_value_name(world, axis, person, &buf) catch return .unknown_value;
+    const known = world.lookup_entity(name) orelse return .unknown_value;
+    if (!hint_mod.knows(world, actor, known)) return .unknown_value;
+    try dilemma_mod.record_appeal(world, dilemma, value);
+    try world.remember(person, try world.intern_relation("Appealed", .set), value.to_int(), 0);
+    _ = try vm.fire_cue(compiled, "Appeals", actor, person, value);
+    return .made;
+}
+
+/// The person a typed `appeal to <value>` addresses: the first dilemma actor in the speaker's
+/// room whose open dilemma lists an appeal to that value.
+fn appeal_person(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, value: EntityId) ?EntityId {
+    const room = command_room(vm, actor);
+    for (compiled.dilemmas.items) |decl| {
+        const person = decl.dilemma.actor;
+        if (dilemma_mod.appeal_target(vm.world, compiled.dilemmas.items, person, value) == null) continue;
+        if (vm.spatial) |sp| {
+            const wp = sp.get_current_waypoint(person) orelse continue;
+            const here = (sp.graph.get_waypoint(wp) orelse continue).room;
+            if (room != null and here != room.?) continue;
+        }
+        return person;
+    }
+    return null;
 }
 
 /// Casts a spell for `caster` (P44-04). The spell's words are checked against what the caster
@@ -282,6 +331,21 @@ pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: Entity
             }
         }
     }
+    if (std.mem.eql(u8, command.cue, "Appeals")) {
+        // An appeal answers for itself: refused appeals reply here, so "Nothing happens." is
+        // never the answer to a value the player named.
+        const value = command.a orelse return reply;
+        const person = appeal_person(vm, compiled, actor, value) orelse {
+            reply.text = "Nobody here would be moved by that.";
+            return reply;
+        };
+        switch (try appeal(vm, compiled, actor, person, value)) {
+            .made => reply.fired = true,
+            .unknown_value => reply.text = "You don't know what moves them.",
+            .no_dilemma => reply.text = "Nobody here would be moved by that.",
+        }
+        return reply;
+    }
     if (std.mem.eql(u8, command.cue, "Presents")) {
         if (command.a) |evidence| {
             if (command.b) |person| reply.fired = try present(vm, compiled, actor, evidence, person);
@@ -300,7 +364,8 @@ pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: Entity
 pub fn command_words(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, out: *command_mod.WordList) void {
     const room = command_room(vm, actor);
     const frames = command_mod.FrameList.build(compiled.commands.items);
-    const scope = command_mod.Scope.gather(vm.world, vm.spatial, room, actor);
+    var scope = command_mod.Scope.gather(vm.world, vm.spatial, room, actor);
+    include_values(vm.world, compiled, &scope, actor);
     command_mod.completion_words(vm.world, compiled.aliases.items, frames.slice(), &scope, out);
 }
 
@@ -2165,4 +2230,190 @@ test "P45-04: drift is identical after a save, a rewind, and a replay" {
     defer second.deinit();
     for (DRIFT_STORY) |beat| try second.play(beat);
     try testing.expectEqual(end_digest, try fact_digest(testing.allocator, &second.world));
+}
+
+const PERSUASION_SCRIPT =
+    \\scene: Guardhouse
+    \\cast: Valerius, Petra
+    \\marks: Stool
+    \\relation Accused(who)
+    \\axis Justice between Cruelty and Leniency
+    \\axis Mercy between Vengeance and Indulgence
+    \\remember Justice(Valerius, 2)
+    \\remember Mercy(Valerius, 1)
+    \\remember Knows(Petra, Valerius)
+    \\dilemma StolenBread:
+    \\  actor Valerius
+    \\  fires Judged
+    \\  requires Accused(Thief)
+    \\  weighs Justice against Mercy
+    \\  appeals 4 to Mercy
+    \\  appeals 4 to Justice
+    \\  strong Justice: "The law is the law." -> Hang
+    \\  moderate Justice: "A night in the cells." -> Jail
+    \\  neutral: "Give me a reason either way." -> Wait
+    \\  moderate Mercy: "Pay for the loaf and go." -> Fine
+    \\  strong Mercy: "Feed him and let him go." -> Pardon
+    \\goal SpareTheThief:
+    \\  need Persuade:
+    \\    met Appealed(Valerius, Mercy)
+    \\    room Guardhouse
+    \\on cue TalksTo(Petra, Valerius, Mercy):
+    \\  say Valerius: "I was a hungry boy once."
+    \\  remember Knows(Petra, "Mercy of Valerius")
+    \\on cue TalksTo(Petra, Valerius, Justice):
+    \\  say Valerius: "Without the law there is only the mob."
+    \\  remember Knows(Petra, "Justice of Valerius")
+;
+
+/// Plays the persuasion story for one appeal and returns its transcript: each typed line with
+/// the reply or the speech of the tick after it.
+fn persuade(value: []const u8, out: []u8) ![]const u8 {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial, PERSUASION_SCRIPT);
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try initialize_subsystems(&world, &compiled);
+    try run_initial_statements(&world, &vm, &compiled);
+    try place_cast(&spatial, &compiled);
+    try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
+    const petra = world.lookup_entity("Petra").?;
+
+    var transcript: std.Io.Writer = .fixed(out);
+    var interp: command_mod.Interpreter = .{};
+    try world.remember(world.lookup_entity("Thief") orelse try world.intern_entity("Thief"), world.lookup_relation("Accused").?, 0, 0);
+    try say_tick(&vm, &compiled, &transcript);
+
+    var hint_buf: [160]u8 = undefined;
+    const before = (try hint_mod.query(compiled.goals.items, &world, petra, .relation, &hint_buf)).?;
+    try transcript.print("[hint: {s}]\n", .{@tagName(before.path)});
+
+    var ask_buf: [32]u8 = undefined;
+    var appeal_buf: [32]u8 = undefined;
+    const ask = try std.fmt.bufPrint(&ask_buf, "ask valerius about {s}", .{value});
+    const plea = try std.fmt.bufPrint(&appeal_buf, "appeal to {s}", .{value});
+    for ([_][]const u8{ plea, ask, plea }) |line| {
+        var reply_buf: [128]u8 = undefined;
+        const reply = try run_command(&vm, &compiled, &interp, petra, line, &reply_buf);
+        try transcript.print("> {s}\n", .{line});
+        if (reply.text) |text| try transcript.print("{s}\n", .{text});
+        try say_tick(&vm, &compiled, &transcript);
+        if (line.ptr == ask.ptr) {
+            const after = (try hint_mod.query(compiled.goals.items, &world, petra, .relation, &hint_buf)).?;
+            try transcript.print("[hint: {s}]\n", .{@tagName(after.path)});
+        }
+    }
+    // The appeal's cue and the weighing land on the tick after the appeal; one more tick runs
+    // the action's handler and leaves `Chose` in place.
+    _ = try tick(&vm, &compiled);
+    const chose = dilemma_mod.chosen(&world, world.lookup_entity("StolenBread").?).?;
+    try transcript.print("= {s}\n", .{world.get_entity_name(chose).?});
+    return transcript.buffered();
+}
+
+fn say_tick(vm: *VM, compiled: *const CompiledProgram, transcript: *std.Io.Writer) !void {
+    _ = try tick(vm, compiled);
+    var buf: [256]u8 = undefined;
+    var log = SpeechLog.init(&buf);
+    log.collect(vm.world, vm);
+    if (log.writer.buffered().len > 0) try transcript.print("{s}\n", .{log.writer.buffered()});
+}
+
+test "P45-05: one dilemma resolves differently under two appeals the player learns" {
+    var mercy_buf: [1024]u8 = undefined;
+    try testing.expectEqualStrings(
+        \\Valerius: "Give me a reason either way."
+        \\[hint: doylian]
+        \\> appeal to mercy
+        \\You don't know what moves them.
+        \\> ask valerius about mercy
+        \\Valerius: "I was a hungry boy once."
+        \\[hint: holmesian]
+        \\> appeal to mercy
+        \\Valerius: "Pay for the loaf and go."
+        \\= Fine
+        \\
+    , try persuade("mercy", &mercy_buf));
+
+    var justice_buf: [1024]u8 = undefined;
+    try testing.expectEqualStrings(
+        \\Valerius: "Give me a reason either way."
+        \\[hint: doylian]
+        \\> appeal to justice
+        \\You don't know what moves them.
+        \\> ask valerius about justice
+        \\Valerius: "Without the law there is only the mob."
+        \\[hint: doylian]
+        \\> appeal to justice
+        \\Valerius: "A night in the cells."
+        \\= Jail
+        \\
+    , try persuade("justice", &justice_buf));
+}
+
+test "P45-05: watching a weighing teaches the value it leaned toward to those in the room" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene Guardhouse:
+        \\  cast: Valerius, Petra
+        \\  marks: Stool
+        \\scene Yard:
+        \\  cast: Corwin
+        \\  marks: Well
+        \\relation Accused(who)
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Indulgence
+        \\remember Justice(Valerius, 9)
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  appeals 4 to Mercy
+        \\  strong Justice: "The law is the law." -> Hang
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  neutral: "Give me a reason." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+        \\  strong Mercy: "Let him go." -> Pardon
+    );
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try initialize_subsystems(&world, &compiled);
+    try run_initial_statements(&world, &vm, &compiled);
+    try place_cast(&spatial, &compiled);
+    try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
+    const petra = world.lookup_entity("Petra").?;
+    const corwin = world.lookup_entity("Corwin").?;
+    const justice_known = world.lookup_entity("Justice of Valerius").?;
+    const knows = try world.intern_relation("Knows", .set);
+
+    // An appeal to a value no open dilemma lists is refused before anything is recorded.
+    var interp: command_mod.Interpreter = .{};
+    var buf: [128]u8 = undefined;
+    const refused = try run_command(&vm, &compiled, &interp, petra, "appeal to justice", &buf);
+    try testing.expectEqualStrings("Nobody here would be moved by that.", refused.text.?);
+
+    try world.remember(try world.intern_entity("Thief"), world.lookup_relation("Accused").?, 0, 0);
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(world.lookup_entity("Hang").?, dilemma_mod.chosen(&world, world.lookup_entity("StolenBread").?).?);
+    // Petra watched in the guardhouse; Corwin was in the yard.
+    try testing.expect(world.has_fact(petra, knows, justice_known.to_int()));
+    try testing.expect(!world.has_fact(corwin, knows, justice_known.to_int()));
+    try testing.expect(!world.has_fact(petra, knows, world.lookup_entity("Mercy of Valerius").?.to_int()));
+
+    // The dilemma has weighed to a final tier, so an appeal can no longer move it.
+    try world.remember(petra, knows, world.lookup_entity("Mercy of Valerius").?.to_int(), 0);
+    try testing.expectEqual(AppealOutcome.no_dilemma, try appeal(&vm, &compiled, petra, world.lookup_entity("Valerius").?, world.lookup_entity("Mercy").?));
 }

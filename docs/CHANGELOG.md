@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The player can appeal to a character's values: `appeal to mercy` moves that character's next weighing of a dilemma toward mercy by the amount its `appeals` line gives, once the player has learned that the character holds that value, by watching a weighing or by asking. An appeal to a value the player has not learned is refused. Learned values make goal hints speak from the player character's knowledge. Package format 23 carries appeal lines, and versions 1 through 22 still load (`P45-05`, `D-149`).
+
 - A dilemma's `drifts` lines change a character's values over a long game: when an outcome such as `Repaid(Thief)` becomes true after the dilemma has been weighed, its points add up, and every 5 move the value one step, at most 2 steps per dilemma and never past -10 or +10. Drift is saved, rewound, and replayed exactly. Package format 22 carries drift lines, and versions 1 through 21 still load (`P45-04`, `D-148`).
 
 - The showcase pages load faster: the browser proof module is 668,536 bytes, down from 836,726, because a deck that plays script source no longer carries the package loader (`D-147`).

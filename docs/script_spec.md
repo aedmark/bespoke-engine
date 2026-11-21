@@ -272,7 +272,7 @@ command Takes: "take <thing>"
 alias ExposureSlip: "slip", "receipt"
 ```
 
-- A frame is lowercase words and at most two `<thing>` slots, starting with a word and never with two slots side by side. Engine frames: `look at`, `examine`, `x` (`LooksAt`); `use <thing> with/on <thing>`, `use <thing>` (`Uses`); `ask <thing> about <thing>`, `talk to <thing>` (`TalksTo`); `present <thing> to <thing>`, `show <thing> to <thing>` (`Presents`); `go to`, `walk to` (`WalksTo`).
+- A frame is lowercase words and at most two `<thing>` slots, starting with a word and never with two slots side by side. Engine frames: `look at`, `examine`, `x` (`LooksAt`); `appeal to` (`Appeals`, P45-05); `use <thing> with/on <thing>`, `use <thing>` (`Uses`); `ask <thing> about <thing>`, `talk to <thing>` (`TalksTo`); `present <thing> to <thing>`, `show <thing> to <thing>` (`Presents`); `go to`, `walk to` (`WalksTo`).
 - Typed input ignores case, punctuation, and the articles `a`, `an`, `the`.
 - An entity answers to the words of its name, split at capitals, spaces, and underscores (`ExposureSlip` answers to "exposure slip" and "slip"), and to the words of its `alias` phrases. Only what is in the actor's room or carried by the actor can be named. If two things match, the command is ambiguous and the game asks which.
 - Package format version 10 carries commands and aliases.
@@ -501,6 +501,25 @@ dilemma StolenBread:
 - Drift stops at -10 and +10, and points that would push past the end are discarded rather than saved up. Drift never changes red lines.
 - Drift is facts: `Mercy drift(Valerius, 1)` holds the points not yet spent and `Mercy drift steps(StolenBread, 2)` the steps a dilemma has used, so saves and rewinds keep it and a replay reproduces it. Package format version 22 carries drift lines; a version 21 package loads its dilemmas without drift.
 
+#### Persuasion (P45-05, D-149)
+
+```bespoke
+dilemma StolenBread:
+  ...
+  weighs Justice against Mercy
+  appeals 4 to Mercy
+  appeals 3 to Justice
+
+on cue TalksTo(Ines, Valerius, Mercy):
+  say Valerius: "I was a hungry boy once."
+  remember Knows(Ines, "Mercy of Valerius")
+```
+
+- `appeals <N> to <Axis>` says the player may appeal to one of the two weighed values, and how far the appeal moves the next weighing toward it (1 to 10). Each axis has at most one appeal line.
+- The player types `appeal to mercy`, or a host calls `host.appeal`. The appeal reaches the first character in the room whose open dilemma lists that value. It counts at the next weighing and is then spent; while the dilemma waits in neutral, the appeal weighs it again.
+- The player must know the value first: `Knows(Ines, "Mercy of Valerius")`. Otherwise the reply is "You don't know what moves them." and nothing changes. A weighing that lands outside neutral teaches everyone in the character's room the value it leaned toward; a script teaches the rest, usually when the player asks (`ask valerius about mercy` fires `TalksTo`).
+- An accepted appeal records `Appealed(Valerius, Mercy)` and fires `on cue Appeals(Ines, Valerius, Mercy):`. A goal need `met Appealed(Valerius, Mercy)` is a Holmesian hint once the player knows `Mercy of Valerius`, and a Doylian one before. Package format version 23 carries appeal lines.
+
 ## Test Coverage
 
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.
@@ -524,6 +543,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Red lines (P45-02) | `P45-02: red lines compile per character and are checked against its decisions` (`src/compiler/codegen.zig`) | `P45-02: a vetoed option is never chosen, even when it would score highest` and `P45-02: red lines must name an option offered to that character and leave one open` (`src/decision.zig`); `P45-02: a red line vetoes the highest-scoring option through host.tick` (`src/host.zig`); `P45-02: package version 20 round-trips red lines and loads a version 19 payload with none` (`src/package.zig`) |
 | Dilemmas (P45-03) | `P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a gap` (`src/compiler/codegen.zig`) | `P45-03: tier boundaries are fixed and mirrored`, `P45-03: each tier boundary selects its line and action`, `P45-03: lean lines read world facts and move the tier`, `P45-03: a neutral weighing waits for evidence and weighs again when it arrives`, and `P45-03: a tier action on the actor's red lines is refused` (`src/dilemma.zig`); `P45-03: a dilemma speaks its tier's line and fires the action through host.tick` (`src/host.zig`); `P45-03: package version 21 round-trips a dilemma and loads a version 20 payload with none` (`src/package.zig`) |
 | Value drift (P45-04) | `P45-04: drift lines compile to signed points on a declared axis` (`src/compiler/codegen.zig`) | `P45-04: drift accumulates whole points and moves a value one step per 5` and `P45-04: one dilemma moves an axis at most two steps, and drift stops at the range` (`src/dilemma.zig`); `P45-04: drift is identical after a save, a rewind, and a replay` (`src/host.zig`); `P45-04: package version 22 round-trips drift lines and loads a version 21 dilemma without them` (`src/package.zig`) |
+| Persuasion (P45-05) | `P45-05: appeal lines compile toward a weighed axis and refuse any other` (`src/compiler/codegen.zig`) | `P45-05: one dilemma resolves differently under two appeals the player learns` and `P45-05: watching a weighing teaches the value it leaned toward to those in the room` (`src/host.zig`); `P45-05: package version 23 round-trips appeal lines and loads a version 22 dilemma without them` (`src/package.zig`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

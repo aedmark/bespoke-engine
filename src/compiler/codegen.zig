@@ -1417,6 +1417,22 @@ pub const Codegen = struct {
                 .spent = rels.spent,
             };
         }
+        // Appeal lines name one of the two weighed axes, which the parser has checked; an appeal
+        // toward the counter-axis lowers the delta (D-149).
+        const appeals = try self.allocator.alloc(dilemma_mod.Appeal, decl.appeals.len);
+        errdefer self.allocator.free(appeals);
+        for (decl.appeals, 0..) |source, i| {
+            const toward_axis = std.mem.eql(u8, source.axis, decl.axis);
+            const magnitude: i32 = @intCast(source.points);
+            appeals[i] = .{
+                .axis = if (toward_axis) axes[0] else axes[1],
+                .entity = try self.world.intern_entity(source.axis),
+                .points = if (toward_axis) magnitude else -magnitude,
+            };
+        }
+        // The values an appeal or a hint can name for this actor exist from the start, so a
+        // script can write `remember Knows(Player, "Mercy of Valerius")` (D-149).
+        for (axes) |axis| _ = try value_mod.known_value(self.world, axis, actor);
         return .{ .dilemma = .{
             .entity = try self.world.intern_entity(decl.name),
             .actor = actor,
@@ -1426,6 +1442,7 @@ pub const Codegen = struct {
             .counter = axes[1],
             .leans = leans,
             .drifts = drifts,
+            .appeals = appeals,
             .responses = responses,
         } };
     }
@@ -3451,6 +3468,56 @@ test "P45-04: drift lines compile to signed points on a declared axis" {
         .{ .source = head ++ "  drifts 11 toward Mercy when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' drifts more than 10 or less than 1; use 1 to 10", .line = 9 },
         .{ .source = head ++ "  drifts 3 towards Mercy when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' expects 'drifts <N> toward <Axis>' or 'drifts <N> away from <Axis>'", .line = 9 },
         .{ .source = head ++ "  drifts 3 toward Mercy if Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' needs 'when' or 'unless' after the axis 'Mercy'", .line = 9 },
+    };
+    for (cases) |case| {
+        const result = compiler.check_source(testing.allocator, case.source);
+        errdefer std.debug.print("diagnostic source:\n{s}\ngot: {s} at {d}:{d}\n", .{ case.source, result.message(), result.line, result.column });
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+    }
+}
+
+test "P45-05: appeal lines compile toward a weighed axis and refuse any other" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const head =
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Indulgence
+        \\axis Loyalty between Servility and Treachery
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\
+    ;
+    const tiers =
+        \\  strong Justice: "a" -> Hang
+        \\  moderate Justice: "b" -> Jail
+        \\  neutral: "c" -> Wait
+        \\  moderate Mercy: "d" -> Fine
+        \\  strong Mercy: "e" -> Pardon
+        \\
+    ;
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, head ++ "  appeals 4 to Mercy\n  appeals 2 to Justice\n" ++ tiers);
+    defer compiled.deinit();
+    const appeals = compiled.dilemmas.items[0].dilemma.appeals;
+    try testing.expectEqual(@as(usize, 2), appeals.len);
+    try testing.expectEqual(@as(i32, -4), appeals[0].points);
+    try testing.expectEqual(@as(i32, 2), appeals[1].points);
+    try testing.expectEqualStrings("Mercy", world.get_entity_name(appeals[0].entity).?);
+    // The values a player can learn about the actor exist as entities from the start.
+    try testing.expect(world.lookup_entity("Mercy of Valerius") != null);
+    try testing.expect(world.lookup_entity("Justice of Valerius") != null);
+
+    const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
+        .{ .source = head ++ "  appeals 4 to Loyalty\n" ++ tiers, .message = "dilemma 'StolenBread' appeals to 'Loyalty', which it does not weigh", .line = 9 },
+        .{ .source = head ++ "  appeals 4 to Mercy\n  appeals 3 to Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' declares an appeal to 'Mercy' twice", .line = 10 },
+        .{ .source = head ++ "  appeals 11 to Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' appeals more than 10 or less than 1; use 1 to 10", .line = 9 },
+        .{ .source = head ++ "  appeals 4 toward Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' expects 'appeals <N> to <Axis>'", .line = 9 },
     };
     for (cases) |case| {
         const result = compiler.check_source(testing.allocator, case.source);

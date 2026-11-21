@@ -64,8 +64,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// each character's red lines (P45-02, D-145); versions 1 through 19 load with none. Version 21
 /// appends dilemmas with their axes, leans, and tier responses (P45-03, D-146); versions 1 through
 /// 20 load with none. Version 22 appends each dilemma's drift lines (P45-04, D-148); versions 1
-/// through 21 load dilemmas without drift.
-pub const PACKAGE_VERSION: u32 = 22;
+/// through 21 load dilemmas without drift. Version 23 appends each dilemma's appeal lines (P45-05,
+/// D-149); versions 1 through 22 load dilemmas that no appeal moves.
+pub const PACKAGE_VERSION: u32 = 23;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -451,6 +452,31 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try write_decision_clause(world, writer, drift.clause);
         }
     }
+
+    // Version 23: appeal lines, one group per dilemma in the same order.
+    for (compiled.dilemmas.items) |decl| {
+        try writer.writeByte(@intCast(decl.dilemma.appeals.len));
+        for (decl.dilemma.appeals) |appeal| {
+            try writer.writeInt(u16, appeal.axis.to_int(), .little);
+            try writer.writeInt(u32, appeal.entity.to_int(), .little);
+            try writer.writeInt(i32, appeal.points, .little);
+        }
+    }
+}
+
+/// Untrusted input: entities must exist; `dilemma.validate` checks the axis, the axis entity,
+/// and the points when the whole set is validated.
+fn read_appeals(allocator: std.mem.Allocator, world: *const World, reader: anytype) ![]const dilemma_mod.Appeal {
+    const count = try reader.takeByte();
+    if (count > dilemma_mod.MAX_APPEALS) return error.InvalidDilemmaConfig;
+    const appeals = try allocator.alloc(dilemma_mod.Appeal, count);
+    errdefer allocator.free(appeals);
+    for (appeals) |*appeal| appeal.* = .{
+        .axis = RelationKind.from_int(try reader.takeInt(u16, .little)),
+        .entity = try read_entity_ref(world, reader),
+        .points = try reader.takeInt(i32, .little),
+    };
+    return appeals;
 }
 
 /// Untrusted input: the axis must be a bounded relation; the generated accumulator and step
@@ -1827,6 +1853,9 @@ pub fn load_package(
         if (header.version >= 22) {
             for (dilemmas.items) |*decl| decl.dilemma.drifts = try read_drifts(allocator, world, pr);
         }
+        if (header.version >= 23) {
+            for (dilemmas.items) |*decl| decl.dilemma.appeals = try read_appeals(allocator, world, pr);
+        }
         dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
     }
 
@@ -2064,7 +2093,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 22",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 23",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -3504,7 +3533,7 @@ const CLAUSE_BYTES: usize = 4 + 4 + 4 + 1;
 /// then its version 22 drift group.
 fn dilemma_table_len(d: dilemma_mod.Dilemma) usize {
     return 4 + 12 + 1 + d.clauses.len * CLAUSE_BYTES + 4 + 1 + d.leans.len * (4 + CLAUSE_BYTES) + dilemma_mod.TIER_COUNT * 8 +
-        1 + d.drifts.len * (2 + 4 + CLAUSE_BYTES);
+        1 + d.drifts.len * (2 + 4 + CLAUSE_BYTES) + 1 + d.appeals.len * (2 + 4 + 4);
 }
 
 /// Where the counter-axis sits within that table.
@@ -3582,7 +3611,8 @@ test "P45-04: package version 22 round-trips drift lines and loads a version 21 
 
     // Cutting the drift group off the end gives a version 21 package: the dilemma loads, still
     // weighs, and carries no drift.
-    const drift_group = 1 + drifts.len * (2 + 4 + CLAUSE_BYTES);
+    // The version 23 appeal group (one empty byte here) follows the drift group.
+    const drift_group = 1 + drifts.len * (2 + 4 + CLAUSE_BYTES) + 1;
     const v21 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - drift_group]);
     defer testing.allocator.free(v21);
     reseal_for_test(v21, 21);
@@ -3605,7 +3635,7 @@ test "P45-04: checked-in version 22 package fixture carries drift lines" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 22), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -3615,4 +3645,85 @@ test "P45-04: checked-in version 22 package fixture carries drift lines" {
 
     try testing.expect(compiled.routine_entries.contains("Idle"));
     try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items[0].dilemma.drifts.len);
+}
+
+
+const APPEAL_FIXTURE =
+    \\entity FixtureJudge
+    \\relation Accused(who)
+    \\relation Repaid(who)
+    \\axis FixtureJustice between Cruelty and Leniency
+    \\axis FixtureMercy between Vengeance and Indulgence
+    \\dilemma FixtureDilemma:
+    \\  actor FixtureJudge
+    \\  fires FixtureJudged
+    \\  requires Accused(FixtureThief)
+    \\  weighs FixtureJustice against FixtureMercy
+    \\  drifts 3 toward FixtureMercy when Repaid(FixtureThief)
+    \\  appeals 4 to FixtureMercy
+    \\  strong FixtureJustice: "Fixture strong justice." -> FixtureHang
+    \\  moderate FixtureJustice: "Fixture moderate justice." -> FixtureJail
+    \\  neutral: "Fixture neutral." -> FixtureWait
+    \\  moderate FixtureMercy: "Fixture moderate mercy." -> FixtureFine
+    \\  strong FixtureMercy: "Fixture strong mercy." -> FixturePardon
+    \\routine Idle(FixtureJudge):
+    \\  wait 1 ticks
+;
+
+test "P45-05: package version 23 round-trips appeal lines and loads a version 22 dilemma without them" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, APPEAL_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    const appeals = compiled2.dilemmas.items[0].dilemma.appeals;
+    try testing.expectEqual(@as(usize, 1), appeals.len);
+    try testing.expectEqual(@as(i32, -4), appeals[0].points);
+    try testing.expectEqualStrings("FixtureMercy", world2.get_entity_name(appeals[0].entity).?);
+
+    // Cutting the appeal group off the end gives a version 22 package with drift but no appeal.
+    const appeal_group = 1 + appeals.len * (2 + 4 + 4);
+    const v22 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - appeal_group]);
+    defer testing.allocator.free(v22);
+    reseal_for_test(v22, 22);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v22_stream: std.Io.Reader = .fixed(v22);
+    var loaded = try load_package(testing.allocator, &v22_stream, &world3, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 1), loaded.dilemmas.items[0].dilemma.drifts.len);
+    try testing.expectEqual(@as(usize, 0), loaded.dilemmas.items[0].dilemma.appeals.len);
+}
+
+test "P45-05: checked-in version 23 package fixture carries appeal lines" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.3.1-package-v23.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items[0].dilemma.appeals.len);
 }

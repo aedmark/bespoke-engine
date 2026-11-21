@@ -136,6 +136,7 @@ pub const DEFAULT_FRAMES = [_]struct { cue: []const u8, text: []const u8 }{
     .{ .cue = "TalksTo", .text = "talk to <thing>" },
     .{ .cue = "Presents", .text = "present <thing> to <thing>" },
     .{ .cue = "Presents", .text = "show <thing> to <thing>" },
+    .{ .cue = "Appeals", .text = "appeal to <thing>" },
     .{ .cue = "WalksTo", .text = "go to <thing>" },
     .{ .cue = "WalksTo", .text = "walk to <thing>" },
 };
@@ -251,6 +252,12 @@ pub const Scope = struct {
 
     pub fn slice(self: *const Scope) []const EntityId {
         return self.items[0..self.len];
+    }
+
+    /// Adds something the actor can name that is not a thing in the room, such as a value axis
+    /// (P45-05), so `appeal to mercy` and `ask Valerius about mercy` resolve.
+    pub fn include(self: *Scope, entity: EntityId, actor: EntityId) void {
+        self.add(entity, actor);
     }
 
     fn add(self: *Scope, entity: EntityId, actor: EntityId) void {
