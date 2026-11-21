@@ -4,182 +4,323 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BeSpoke Engine Today</title>
+<meta name="description" content="What the BeSpoke Engine can do on 21 November 2026, in plain language for players and in enough depth for a development team.">
 <style>
   :root {
     --bg: #fbfaf7; --fg: #1f2328; --muted: #5b636e; --rule: #e3e0d8;
-    --accent: #2f6f5e; --card: #ffffff; --warn: #8a5a12; --warnbg: #fbf3e4;
+    --accent: #2f6f5e; --accent-soft: #e6f1ed; --card: #ffffff; --warn: #8a5a12; --warnbg: #fbf3e4;
+    --code: #f3f1ec;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root {
       --bg: #15181c; --fg: #e6e8eb; --muted: #9aa3ad; --rule: #2a3038;
-      --accent: #7cc4ad; --card: #1b1f24; --warn: #e5b56a; --warnbg: #2a2318;
+      --accent: #7cc4ad; --accent-soft: #1d2b27; --card: #1b1f24; --warn: #e5b56a; --warnbg: #2a2318;
+      --code: #20252b;
     }
   }
-  :root[data-theme="dark"] {
-    --bg: #15181c; --fg: #e6e8eb; --muted: #9aa3ad; --rule: #2a3038;
-    --accent: #7cc4ad; --card: #1b1f24; --warn: #e5b56a; --warnbg: #2a2318;
-  }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 Georgia, "Iowan Old Style", serif; }
-  main { max-width: 720px; margin: 0 auto; padding: 48px 16px 80px; }
-  h1, h2, h3 { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.25; }
-  h1 { font-size: 2rem; margin: 0 0 6px; }
-  .sub { color: var(--muted); font-family: system-ui, sans-serif; font-size: .95rem; margin: 0 0 36px; }
-  h2 { font-size: 1.3rem; margin: 44px 0 10px; padding-top: 18px; border-top: 1px solid var(--rule); }
-  h3 { font-size: 1.02rem; margin: 22px 0 4px; }
+  main { max-width: 860px; margin: 0 auto; padding: 48px 18px 90px; }
+  h1, h2, h3, nav, .facts, table, .tag, .eyebrow, .card h3, .lede { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 2.3rem; line-height: 1.15; margin: 4px 0 12px; }
+  .eyebrow { color: var(--accent); font-size: .85rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin: 0; }
+  .lede { font-size: 1.15rem; line-height: 1.55; color: var(--fg); margin: 0 0 10px; }
+  .sub { color: var(--muted); font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 26px; }
+  h2 { font-size: 1.45rem; line-height: 1.25; margin: 56px 0 10px; padding-top: 20px; border-top: 1px solid var(--rule); scroll-margin-top: 12px; }
+  h3 { font-size: 1.05rem; line-height: 1.3; margin: 24px 0 6px; }
   p { margin: 0 0 14px; }
   ul, ol { padding-left: 1.3em; margin: 0 0 14px; }
-  li { margin: 4px 0; }
-  code { font: .88em ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
-  pre { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: .85rem/1.5 ui-monospace, Menlo, Consolas, monospace; }
-  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 8px; font-family: system-ui, sans-serif; }
-  .fact { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
-  .fact b { display: block; font-size: 1.5rem; color: var(--accent); }
+  li { margin: 5px 0; }
+  a { color: var(--accent); }
+  code { font: .86em ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--code); border-radius: 4px; padding: 1px 5px; }
+  pre { background: var(--code); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: .84rem/1.55 ui-monospace, Menlo, Consolas, monospace; margin: 0 0 16px; }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+  nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--fg); text-decoration: none; font-size: .9rem; }
+  nav a:hover, nav a:focus-visible { border-color: var(--accent); color: var(--accent); }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; margin: 26px 0 8px; }
+  .fact { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+  .fact b { display: block; font-size: 1.7rem; line-height: 1.2; color: var(--accent); }
   .fact span { font-size: .85rem; color: var(--muted); }
-  table { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 14px; }
-  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 12px; margin: 14px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px 12px; }
+  .card h3 { margin: 0 0 6px; font-size: 1rem; }
+  .card p { margin: 0 0 8px; font-size: .97rem; line-height: 1.5; }
+  .card .hood { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--rule); color: var(--muted); font: .8rem/1.5 system-ui, sans-serif; }
+  .card .hood b { color: var(--fg); font-weight: 600; }
+  .big { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); gap: 14px; margin: 14px 0; }
+  .big .card { border-left: 4px solid var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; margin: 0 0 16px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; }
-  .note { background: var(--warnbg); border-left: 3px solid var(--warn); padding: 12px 16px; border-radius: 4px; }
-  .table-wrap { overflow-x: auto; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; margin: 0 0 6px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin: 1px 3px 1px 0; white-space: nowrap; }
+  .tag.off { background: var(--code); color: var(--muted); }
+  .note { background: var(--warnbg); border-left: 3px solid var(--warn); padding: 14px 18px 4px; border-radius: 4px; margin: 0 0 16px; }
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 8px; margin: 14px 0 18px; font-family: system-ui, sans-serif; }
+  .flow div { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: .85rem; line-height: 1.4; }
+  .flow b { display: block; color: var(--accent); font-size: .92rem; margin-bottom: 2px; }
+  .small { font-size: .9rem; color: var(--muted); }
+  footer { margin-top: 60px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--muted); font: .85rem/1.5 system-ui, sans-serif; }
 </style>
 </head>
 <body>
 <main>
-<h1>BeSpoke Engine, today</h1>
-<p class="sub">Where the engine stands on 13 November 2026, written for people who will play with it, test it, or build on it. No background in programming languages needed.</p>
+
+<p class="eyebrow">BeSpoke Engine 0.3.1 &middot; 21 November 2026</p>
+<h1>A game engine where the world keeps its own story</h1>
+<p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
+<p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
+
+<nav aria-label="Sections">
+  <a href="#minute">In one minute</a>
+  <a href="#ideas">The four ideas</a>
+  <a href="#can">What it can do</a>
+  <a href="#language">The language</a>
+  <a href="#teams">For dev teams</a>
+  <a href="#demos">Demo games</a>
+  <a href="#limits">Limits</a>
+  <a href="#next">What is next</a>
+  <a href="#start">Get started</a>
+</nav>
 
 <div class="facts">
-  <div class="fact"><b>13</b><span>playable demo games</span></div>
-  <div class="fact"><b>11</b><span>of them also play in a web browser</span></div>
-  <div class="fact"><b>562</b><span>automatic checks, all passing</span></div>
-  <div class="fact"><b>0</b><span>outside libraries in the core</span></div>
+  <div class="fact"><b>17</b><span>demo games, from a heist to a card table</span></div>
+  <div class="fact"><b>13</b><span>of them play in a web page, no install</span></div>
+  <div class="fact"><b>530+</b><span>automated tests and 17 recorded play-throughs, checked on every change</span></div>
+  <div class="fact"><b>0</b><span>outside libraries in the core engine</span></div>
+  <div class="fact"><b>100%</b><span>repeatable: same inputs, same game, every time</span></div>
 </div>
 
-<h2>What it is</h2>
-<p>BeSpoke is a toolkit for making story-driven adventure games, the kind where you walk characters around rooms, pick things up, talk to people, and solve puzzles. Think of the classic point-and-click adventures, with one difference: the world keeps running on its own. Characters have routines, they notice things, they react to each other, and a puzzle can be solved in ways nobody wrote down step by step.</p>
-<p>It comes in two parts. One is a small, readable writing language for describing a game: who is in a room, what they do, what they say, and what happens when something changes. The other is the program that reads that writing and runs it as a game, in a desktop window or in a web page.</p>
+<h2 id="minute">In one minute</h2>
+<p>Most game engines are built around graphics and physics, and the story is a pile of small scripts attached to objects. BeSpoke turns that around. At its centre is a plain record of everything that is true in the game world, a clock that moves in counted steps, and characters who work through their own to-do lists. Pictures and sound only watch that world and show it.</p>
+<p>That one choice buys a lot. Saving is exact. Rewinding is instant. A game behaves identically on a laptop, in a browser, or on a test server with no screen at all. A whole village of characters can get hungry, steal, gossip, and make arrests without anyone writing those events down, and a writer can still say exactly what must happen for the story to move on.</p>
+<p>You write a game in a short, readable language (rooms, people, routines, conversations, rules), and the engine compiles it and runs it in a desktop window, a single web page, or a text-only test run.</p>
 
-<h2>What it can do</h2>
-<h3>Run a living world</h3>
+<h2 id="ideas">The four ideas everything rests on</h2>
+<div class="big">
+  <div class="card">
+    <h3>1. The world is a notebook of facts</h3>
+    <p>Everything true is one short line: "Guard carries Cheese", "Bard charmed Guard, for the next 30 seconds". Nothing hides inside objects. Facts can expire on their own, so a distraction wears off without a timer to manage.</p>
+    <p class="hood"><b>Under the hood:</b> one contiguous arena of flat 4-tuples <code>(subject, relation, object, expires_at_tick)</code>, no pointers inside, so a snapshot is a copy and a save is that copy with a CRC32.</p>
+  </div>
+  <div class="card">
+    <h3>2. Time moves in ticks</h3>
+    <p>The game advances in counted steps, like a clock's second hand, at one per second by default (adjustable from ten a second to one every three seconds). Nothing depends on how fast your computer is, so the same button presses always produce the same game.</p>
+    <p class="hood"><b>Under the hood:</b> integer ticks only, no floating-point time in the simulation, seeded dice; the display redraws at 60 Hz independently.</p>
+  </div>
+  <div class="card">
+    <h3>3. Characters have to-do lists</h3>
+    <p>Each character follows a routine ("walk to the cellar, wait, walk back") that can pause until something is true, be interrupted by something urgent, and resume where it left off. Writers describe behaviour in the order it happens.</p>
+    <p class="hood"><b>Under the hood:</b> cooperative fibers in a bytecode VM with priority interrupts and edge-triggered reactive rules; every room keeps simulating, watched or not.</p>
+  </div>
+  <div class="card">
+    <h3>4. Pictures and sound only watch</h3>
+    <p>The window, the web page, and the speakers never decide anything. Each tick they read the world and draw or play it, which is why the same game runs anywhere, including with no screen for automated testing.</p>
+    <p class="hood"><b>Under the hood:</b> the VM owns <code>main()</code>, the clock, and the world ("Engine-as-Spine"); display and audio read frames and queued events through one-way bridges.</p>
+  </div>
+</div>
+
+<h2 id="can">What it can do</h2>
+
+<h3>A world that runs itself</h3>
+<div class="cards">
+  <div class="card"><h3>Routines and interruptions</h3><p>Characters walk their rounds, find their own way between spots and rooms, and drop what they are doing when something matters more.</p><p class="hood"><b>Under the hood:</b> waypoint graphs with A* pathfinding, <code>wait until</code> conditions, <code>interrupt ... with:</code> blocks.</p></div>
+  <div class="card"><h3>Rules that notice</h3><p>"When the cat holds the cheese, the guard turns to look." Rules fire the moment their facts become true together, and again when a fact fades.</p><p class="hood"><b>Under the hood:</b> <code>when A and B:</code>, <code>when X forgets R:</code>, and arrival rules for reaching a spot.</p></div>
+  <div class="card"><h3>A village with its own life</h3><p>Villagers get hungry and tired, work, trade, and steal; witnesses spread rumours; the law issues a warrant and makes an arrest. None of it is scripted event by event.</p><p class="hood"><b>Under the hood:</b> data-declared needs, roles, witnesses, rumours, and justice in <code>society</code> blocks, all stored as facts.</p></div>
+  <div class="card"><h3>Characters with goals</h3><p>A character can decide to pursue someone, cut them off, and confront them, then stand down once the matter is settled.</p><p class="hood"><b>Under the hood:</b> <code>agenda</code> declarations with priority, cooldown, and <code>requires</code>/<code>unless</code> triggers; interception fires a cue.</p></div>
+  <div class="card"><h3>Fire, smoke, and water</h3><p>A room can be laid out as a grid where fire spreads to flammable cells, smoke drifts, and water flows and puts fires out.</p><p class="hood"><b>Under the hood:</b> per-room grid overlays with burn, spread, dissipate, and flow rates; fire lifetimes are fact expiries.</p></div>
+  <div class="card"><h3>Things that wear out</h3><p>A cup of acidic grog eats through its cup in stages; pour it into the next one in time, and spill a little on every step you take.</p><p class="hood"><b>Under the hood:</b> container profiles with damage stages, exposure deadlines, spill rates, and failure outcomes.</p></div>
+  <div class="card"><h3>Watch another room</h3><p>The player can look into a room they are not in and watch what happens there, live, while their own room carries on.</p><p class="hood"><b>Under the hood:</b> <code>DisplayBridge.capture_scene</code> draws any room without moving the simulation's focus.</p></div>
+</div>
+
+<h3>Characters who know things</h3>
+<div class="cards">
+  <div class="card"><h3>Belief, doubt, and rejection</h3><p>A character can know a fact, believe it, or reject it, and the story can branch on each. What someone knows is part of the world, not a flag in a script.</p><p class="hood"><b>Under the hood:</b> <code>Knows</code>, <code>Believes</code>, and <code>Rejects</code> facts, with rejection overriding the others.</p></div>
+  <div class="card"><h3>Conversations that adapt</h3><p>Dialogue options appear only when they make sense ("Show the ticket" only if you carry one). Answer by clicking, by a number key, or straight after typing "talk to the pilot".</p><p class="hood"><b>Under the hood:</b> <code>choice "..." if &lt;condition&gt;:</code> blocks; an open choice set is world state, so saving or rewinding mid-conversation restores it.</p></div>
+  <div class="card"><h3>Present the evidence</h3><p>Show a clue to a suspect. What they reveal depends on what they already know, and their composure can crack as the evidence piles up.</p><p class="hood"><b>Under the hood:</b> "present X to Y" records one fact per thing shown and fires a cue the script answers.</p></div>
+  <div class="card"><h3>Characters who decide</h3><p>A character weighs its options using only what it privately knows and picks one. In the card-game demo, each seat plays from its own hand and reacts to what the others reveal.</p><p class="hood"><b>Under the hood:</b> <code>decision</code> blocks score options with <code>picks</code>/<code>drops</code> lines; deterministic, with ties to the first option.</p></div>
+  <div class="card"><h3>Duels of wit</h3><p>Win an argument with the right comeback, learned by hearing it used against you. Opponents tire of being asked the same question.</p><p class="hood"><b>Under the hood:</b> data-declared challenge and reply pairs, opponent tiers, advantage, and staged mood decay.</p></div>
+</div>
+
+<h3>Puzzle and mystery tools</h3>
+<div class="cards">
+  <div class="card"><h3>Hints that know what you know</h3><p>Declare what the player must achieve, and the engine works out the nearest step they are missing. Hints come from inside the story while the character could reason it out, and from the author's side only when the player is truly stuck.</p><p class="hood"><b>Under the hood:</b> <code>goal</code> and <code>need</code> blocks with prerequisites and optional authored text per tier; three hint tiers generated when none is written.</p></div>
+  <div class="card"><h3>Enough evidence, not all of it</h3><p>An investigation can move on when the player has found two of five clues, or enough weight of evidence, rather than every single one.</p><p class="hood"><b>Under the hood:</b> <code>2 of Clue(_)</code> and <code>6 points of Clue(_)</code> in any condition.</p></div>
+  <div class="card"><h3>Several ways to solve it</h3><p>One puzzle, three approaches (by wits, by force, with a team). Choosing a path closes the others.</p><p class="hood"><b>Under the hood:</b> <code>path</code> blocks own their facts and routines; a locked route reroutes walkers.</p></div>
+  <div class="card"><h3>Words of power</h3><p>Spells built from discovered words (a power, an element, a form). Unlearned words do nothing; wrong combinations fizzle.</p><p class="hood"><b>Under the hood:</b> one <code>spellbook</code> per script; casting by name or by word triple, gated by what the caster knows.</p></div>
+  <div class="card"><h3>Magic played as music</h3><p>Play a four-note tune on a staff to cast a spell; play it backwards for the opposite effect.</p><p class="hood"><b>Under the hood:</b> <code>draft</code> declarations and <code>weave</code> handlers; the note staff is a built-in heads-up display.</p></div>
+  <div class="card"><h3>Typed commands and clicks</h3><p>Play by pointing and clicking with verbs, by tapping on a phone, or by typing "take the slip" or "use match on lantern". Scripts add their own phrasings and synonyms.</p><p class="hood"><b>Under the hood:</b> built-in command frames plus <code>command</code> and <code>alias</code> lines; nouns in scope only; tab completion and history.</p></div>
+</div>
+
+<h3>Time, saves, and "what if"</h3>
+<div class="cards">
+  <div class="card"><h3>Rewind anything</h3><p>Rewind to the start or scrub backward and forward through recent history like a video. The world replays exactly.</p><p class="hood"><b>Under the hood:</b> snapshots are arena copies; the timeline keeps recent ticks.</p></div>
+  <div class="card"><h3>Safe saves</h3><p>Save slots with a picture of the moment, quick save and load, and automatic recovery from a damaged save file.</p><p class="hood"><b>Under the hood:</b> checksummed <code>.sav</code> files with a <code>.bak</code> fallback; older save versions still load.</p></div>
+  <div class="card"><h3>Borrowed time</h3><p>Run a temporary copy of the world on a countdown. Close the loop in time and it folds back into reality; fail and it collapses, and you rewind.</p><p class="hood"><b>Under the hood:</b> copy-on-write branch worlds with tick budgets, goal checking, and atomic snapshots of the whole timeline.</p></div>
+  <div class="card"><h3>Three eras at once</h3><p>Characters in three different centuries pass objects to each other through a shared well, and a change in the past ripples forward.</p><p class="hood"><b>Under the hood:</b> forward-only causality between eras; a rewind restores every era together.</p></div>
+</div>
+
+<h3>Sound and music, built in</h3>
+<div class="cards">
+  <div class="card"><h3>A synthesizer, not sound files</h3><p>Retro-style music and effects are generated as the game plays, on the desktop and in the browser, with no audio files to ship.</p><p class="hood"><b>Under the hood:</b> four-channel procedural synth; desktop through SDL2 audio, browser through Web Audio.</p></div>
+  <div class="card"><h3>Music written in the script</h3><p>Write melodies, bass lines, chords, and drums as short lines of notes. Each scene has its own music, and an alarm can take over until it passes.</p><p class="hood"><b>Under the hood:</b> <code>score</code> blocks in MML with loops, volumes, and envelopes; <code>play score</code> and <code>stop score</code>.</p></div>
+</div>
+
+<h3>Runs anywhere it is pointed</h3>
+<div class="cards">
+  <div class="card"><h3>Desktop window</h3><p>A resizable window with verbs, an inventory, speech, a timeline, save slots, and a state inspector.</p><p class="hood"><b>Under the hood:</b> SDL2, a fixed 1280x720 frame letterboxed to any window size.</p></div>
+  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (about 780 KB with all thirteen browser demos) embedded in the page.</p></div>
+  <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code>.</p></div>
+  <div class="card"><h3>See inside the world</h3><p>Pause and open the state inspector: a map of who relates to what, why each dialogue option is offered or hidden, and what is about to expire.</p><p class="hood"><b>Under the hood:</b> a fact graph with keyboard and mouse navigation and relation filters, in both window and browser.</p></div>
+</div>
+
+<h2 id="language">The language, in a few lines</h2>
+<p>A game is a plain text file. This one is a complete, runnable conversation: the Pilot's options depend on whether the Hero carries a ticket, and the player can type "take ticket" to get one.</p>
+<pre><code>scene Quay:
+  cast: Hero, Pilot
+  props: Ticket
+  marks: Steps, Pier
+
+relation Carries(holder, item)
+relation Paid(who)
+
+routine Wait(Hero):
+  wait 1 ticks
+
+on cue TalksTo(Hero, Pilot):
+  say Pilot: "Crossing tonight?"
+  choice "Show the ticket." if Carries(Hero, Ticket):
+    remember Paid(Hero)
+    say Pilot: "Step aboard."
+  choice "Not yet.":
+    say Pilot: "Suit yourself."
+
+on cue Takes(Hero, Ticket):
+  remember Carries(Hero, Ticket)
+  say Hero: "One ticket."
+
+command Takes: "take &lt;thing&gt;"</code></pre>
+<p>And a puzzle rule, a timed fact, and an evidence threshold:</p>
+<pre><code>on cue Uses(Hero, Matches, Lantern):
+  remember Lit(Lantern) for 30 ticks
+  say Hero: "The wick takes."
+
+when Rung(Bell) and Lit(Lantern):
+  remember Signalled(Quay)
+
+routine Inspector(Moss):
+  wait until 2 of Clue(_)
+  say Moss: "That is enough to go on."</code></pre>
+<p class="small">The full reference is <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/script_spec.md">script_spec.md</a>. Every example in the <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/AUTHORING.md">authoring guide</a> is compiled and played by the test suite, so the guide cannot drift from the engine.</p>
+
+<h2 id="teams">For development teams</h2>
+
+<h3>How a game flows through the engine</h3>
+<div class="flow">
+  <div><b>Script</b><code>.bespoke</code> text: scenes, rules, routines, dialogue, scores</div>
+  <div><b>Compiler</b>checks names and types, points at mistakes with line, column, and a suggestion</div>
+  <div><b>Package</b>compact <code>.bspk</code> bytecode, versioned, loadable without the source</div>
+  <div><b>VM and world</b>fibers, rules, and agents step the fact arena once per tick</div>
+  <div><b>Hosts</b>desktop window, web page, or headless runner read frames and send input</div>
+</div>
+
+<h3>What a team gets</h3>
 <ul>
-  <li>Characters walk between spots in a room or across rooms, finding their own way.</li>
-  <li>Each character can follow a routine ("walk to the cellar, wait a while, walk back") and be interrupted when something more urgent happens, then pick up where they left off.</li>
-  <li>Rules watch the world and fire when something becomes true: "when the cat is holding the cheese, the guard turns to look".</li>
-  <li>Things can be temporary: a distraction that lasts ten seconds, a smell that fades, a fire that burns out.</li>
-  <li>A whole village can run itself: people get hungry and tired, work, trade, steal, gossip, and a sheriff makes arrests, without anyone scripting each event.</li>
+  <li><strong>One command to start.</strong> <code>bespoke init my_game</code> writes a project with a starter story, tests, a desktop build, a single-file web build, and a CI workflow that builds and tests on Linux and macOS and smoke-tests the web version. That workflow has been run on GitHub and passes.</li>
+  <li><strong>A toolchain that ships as one file.</strong> The static Linux download compiles, checks, and runs scripts and creates projects with nothing else installed. Building a game's own executable needs Zig 0.17.1 (and SDL2 for the window).</li>
+  <li><strong>Tests that read like a story.</strong> A headless run prints what happens tick by tick; each demo's transcript is recorded and compared byte for byte, along with a pixel hash of every scene, so a behaviour change cannot slip through unnoticed.</li>
+  <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>); anything unlisted is internal and may change.</li>
+  <li><strong>File formats that keep working.</strong> Packages and saves carry versions; the reader accepts package versions 1 to 18 and save versions 1 and 2, and files written by earlier releases are loaded on every test run (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
+  <li><strong>Hardened input.</strong> The lexer, parser, code generator, package and save loaders, music parser, and command interpreter run under mutation tests, and an unsupported file version is refused with a named error before any game state changes.</li>
+  <li><strong>Editor support.</strong> A VS Code syntax grammar generated from the compiler's own word list, so it cannot fall out of date.</li>
+  <li><strong>A recorded decision trail.</strong> Over 140 numbered design decisions, each with its context, the alternatives rejected, and when to revisit it.</li>
 </ul>
 
-<h3>Tell a story</h3>
-<ul>
-  <li>Branching conversations where the options depend on what you know or have done.</li>
-  <li>Characters who believe, doubt, or reject what they are told.</li>
-  <li>Several scenes and rooms, several playable characters, and items passed between them (even between time periods, in one demo).</li>
-  <li>Characters with their own goals who come and find you when you threaten them.</li>
-  <li>Typing commands such as "take the slip" or "present the slip to the rival", alongside clicking.</li>
-</ul>
-
-<h3>Play with time</h3>
-<ul>
-  <li>Rewind at any moment and watch the world replay exactly the same way.</li>
-  <li>Scrub backward and forward through recent history, like a video.</li>
-  <li>Save and load to slots, each with a small picture of the moment.</li>
-  <li>Run a temporary "what if" copy of the world that either merges back or collapses.</li>
-</ul>
-
-<h3>Make sound and music</h3>
-<ul>
-  <li>A built-in synthesizer plays retro-style music and sound effects, with no sound files needed.</li>
-  <li>Music can be written as short lines of notes inside the game script, and changes with the scene.</li>
-  <li>One demo uses musical notes as spells: play four notes on a staff and the world changes.</li>
-</ul>
-
-<h3>Help the people making the game</h3>
-<ul>
-  <li>One command creates a new, ready-to-run game project.</li>
-  <li>A checker reports mistakes in a script with the line and column.</li>
-  <li>A "state inspector" shows everything the world currently knows, as a map of who relates to what.</li>
-  <li>A game can be packed into a single program to hand to players, or built for a web page.</li>
-</ul>
-
-<h2>How it does it</h2>
-<p>Four simple ideas carry nearly everything.</p>
-<h3>1. The world is a notebook of facts</h3>
-<p>Everything true about the game is written as a short line: "Guard carries Cheese", "Bard charmed Guard (until 2 minutes from now)". There are no hidden objects with private settings. To ask a question, the engine reads the notebook. Because the whole world is one notebook, saving a game or rewinding it is copying the notebook (with a checksum to catch damage), which is why rewind is quick and exact.</p>
-<h3>2. Time moves in ticks</h3>
-<p>The game moves forward in small, counted steps (ticks), like the hand of a clock. Nothing depends on how fast your computer is. Given the same start and the same button presses, the game plays out identically every time, which makes replays, rewinds, and testing reliable.</p>
-<h3>3. Characters have to-do lists</h3>
-<p>Each character runs a routine, a list of things to do, which can pause ("wait 5 ticks", "wait until the door is open"). When something important happens, the routine is set aside, the interruption runs, and the routine resumes. Writers describe behaviour in the order it happens, without building complicated state machines.</p>
-<h3>4. Pictures and sound only watch</h3>
-<p>The window, the web page, and the speakers never decide anything. They look at the world each tick and draw or play what they see. The same game therefore runs in a desktop window, in a browser, or with no screen at all (handy for automatic testing).</p>
-<p>Underneath, the engine is written in a language called Zig. It turns game scripts into a compact internal form and runs them quickly, with nothing borrowed from other engines.</p>
-
-<h2>Why we made it</h2>
-<p>Most game tools fall into two camps. Big engines (Unity, Godot, RPG Maker) are built around graphics and physics, and story logic gets bolted on as small scripts scattered across objects. General programming languages give you total freedom but make you build all the plumbing yourself: timers, save systems, state tracking, cleanup.</p>
-<p>Story and simulation games need different things at their core: a clear record of what is true, characters that act over time, rules that react, and the ability to save or rewind without bugs. BeSpoke puts those at the centre and treats graphics as a window onto them.</p>
-<p>The inspirations are the deterministic simulations of <em>RollerCoaster Tycoon</em>, the actor-and-cue design of the old Sierra and LucasArts adventure engines, and the emergent relationships of <em>Dwarf Fortress</em>. The goal is whimsical, systemic games where puzzles fall out of how the world works, and where the writer spends time on the story instead of on plumbing.</p>
-
-<h2>How to make a game with it</h2>
-<ol>
-  <li><strong>Create a project.</strong> Run <code>bespoke init my-game</code>. You get a folder with a starter story, a test file, a desktop version, a web version, and a setup for automatic builds on Linux, Mac, and Windows (written, not yet run).</li>
-  <li><strong>Write the story</strong> in <code>scripts/main.bespoke</code>. Describe the rooms, the characters, their routines, the conversations, and the rules. A small example:
-<pre>scene Tavern:
-  cast: Guard, Bard, Cat
-  marks: Hearth, Bar, Cellar
-
-routine Patrol(Guard):
-  walk Guard to Cellar
-  wait 5 ticks
-  walk Guard to Hearth
-
-when Carries(Cat, Cheese):
-  interrupt Guard with:
-    face Guard toward Cat
-    wait 2 ticks</pre></li>
-  <li><strong>Check it.</strong> <code>bespoke check</code> points at mistakes. Running the game "headless" prints what happens, line by line, without opening a window.</li>
-  <li><strong>Play it</strong> in a window with <code>zig build run</code>.</li>
-  <li><strong>Lock it in with tests.</strong> Write a short check for each puzzle ("after these steps, the door is open"), so later changes cannot quietly break it.</li>
-  <li><strong>Share it.</strong> Build one program file for players, or a web version for a website.</li>
-</ol>
-<p>The authoring guide in the repository (<code>docs/AUTHORING.md</code>) walks through a scene, a conversation, and a puzzle, and every example in it is tested automatically. The full language reference is <code>script_spec.md</code>.</p>
-
-<h2>The demo games</h2>
+<h3>Platforms</h3>
 <div class="table-wrap">
 <table>
-  <tr><th>Demo</th><th>What it shows</th><th>Browser</th></tr>
-  <tr><td>The Tavern Heist</td><td>A cat steals cheese while a bard distracts the guard; no cutscene, just rules reacting</td><td>Yes</td></tr>
-  <tr><td>The Pip-Spitting Green</td><td>Rigging a fair contest with a conch, moved pegs, and a thick treacle cider</td><td>Yes</td></tr>
-  <tr><td>The Borrowed Beard</td><td>A disguise built from items gathered across three scenes</td><td>Yes</td></tr>
-  <tr><td>The Living Village</td><td>Six villagers living their days; theft, gossip, and an arrest emerge on their own</td><td>Yes</td></tr>
-  <tr><td>The Donkey of Lamp Point</td><td>Getting past a donkey by tangling its rope</td><td>Yes</td></tr>
-  <tr><td>The Well of Three Tides</td><td>Three characters in three centuries passing items through a well</td><td>Yes</td></tr>
-  <tr><td>Caustic Grog</td><td>Carrying grog that eats through its cups, pouring before each fails</td><td>Yes</td></tr>
-  <tr><td>Brackwater Barbs</td><td>Duels won with comebacks you learn by hearing them</td><td>Yes</td></tr>
-  <tr><td>The Saltmarket: Three Ways In</td><td>One puzzle, three approaches; choosing one closes the others</td><td>Yes</td></tr>
-  <tr><td>The Copper Weathercock</td><td>A temporary copy of the world on a countdown</td><td>Yes</td></tr>
-  <tr><td>The Bell Tower</td><td>Spells played as four-note tunes; backwards, they do the opposite</td><td>Yes</td></tr>
-  <tr><td>The Castle Fire Escape</td><td>Fire, smoke, and water spreading room by room</td><td>Not yet</td></tr>
-  <tr><td>The Larkspur Observatory</td><td>Staff with their own agendas who intercept you; typed commands</td><td>Not yet</td></tr>
+  <tr><th>Platform</th><th>Status</th><th>Notes</th></tr>
+  <tr><td>Linux desktop (x86_64)</td><td><span class="tag">Supported</span></td><td>The thirteen windowed demos were played to their endings for the 0.3 release; static CLI and SDL2 desktop downloads ship with each release.</td></tr>
+  <tr><td>Web browsers</td><td><span class="tag">Supported</span></td><td>Checked in Chrome and Firefox, at phone width, and offline; touch controls at least 44 px.</td></tr>
+  <tr><td>macOS</td><td><span class="tag">Builds in CI</span></td><td>Generated game projects build, test, and run headless on GitHub's macOS runners; not yet played by hand on a Mac.</td></tr>
+  <tr><td>Windows</td><td><span class="tag off">Deferred</span></td><td>Waits for a contributor who uses Windows to maintain it.</td></tr>
 </table>
 </div>
-<p>Several demos borrow situations, characters, and lines from classic adventure games and a film. They are being rewritten one at a time as original stories that show the same engine features (Phase 35 in the roadmap).</p>
 
-<h2>What it cannot do yet</h2>
+<h3>Performance</h3>
+<p>Measured headless on one desktop machine (Linux x86_64, Zig 0.17.1, Chrome 157, 17 November 2026). These are observations, not guarantees; the method is in <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
+<div class="table-wrap">
+<table>
+  <tr><th>Workload</th><th class="n">Facts</th><th class="n">Native ticks/s</th><th class="n">Browser ticks/s</th></tr>
+  <tr><td>Reference game (ten harbour stops, six-person society)</td><td class="n">33</td><td class="n">1,614,373</td><td class="n">655,360</td></tr>
+  <tr><td>Same game with a large archive loaded</td><td class="n">4,129</td><td class="n">44,220</td><td class="n">25,144</td></tr>
+  <tr><td>Synthetic stress: many facts, entities, and 256 fibers</td><td class="n">7,170</td><td class="n">967</td><td class="n">523</td></tr>
+</table>
+</div>
+<p>A game ticks once per second by default, so even the stress case runs hundreds of times faster than it needs to.</p>
+
+<h3>Built to stay small</h3>
+<ul>
+  <li>Written in Zig, with no outside libraries in the compiler or the simulation. SDL2 is used only for the desktop window and sound; the browser build uses nothing.</li>
+  <li>The engine never names a demo: all demo content lives apart from the engine and reaches it only through the public module, and a check enforces that.</li>
+  <li>MIT licensed (with a voluntary note on AI-assisted use).</li>
+</ul>
+
+<h2 id="demos">The demo games</h2>
+<p>Each demo exists to prove one or more engine features in a small, complete story. The thirteen with web pages can be played from the <code>site/</code> folder of the repository in any modern browser.</p>
+<div class="table-wrap">
+<table>
+  <tr><th>Demo</th><th>What it shows</th><th>Plays in</th></tr>
+  <tr><td><a href="../site/tavern.html">The Tavern Heist</a></td><td>A cat steals the cheese while a bard charms the guard. No cutscene, just rules reacting.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/pips.html">The Pip-Spitting Green</a></td><td>Rig a fair contest: lure the judge back, move the pegs, wait for the breeze. A spit counts only if the judge sees it.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/beard.html">The Borrowed Beard</a></td><td>A disguise gathered piece by piece across three scenes.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/village.html">The Living Village</a></td><td>Six villagers live their days; a theft, a witness, a rumour, and an arrest emerge on their own.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/donkey.html">The Donkey of Lamp Point</a></td><td>A hazard that knocks you down, a timed window, and a way past a stubborn donkey.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/tides.html">The Well of Three Tides</a></td><td>Three characters in three centuries pass objects through one well.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/grog.html">Caustic Grog</a></td><td>Carry grog that eats its cups, pouring before each one fails.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/barbs.html">Brackwater Barbs</a></td><td>Duels won with comebacks you learn by hearing them.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/saltmarket.html">The Saltmarket</a></td><td>One goal, three ways in; choosing one closes the others.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/weathercock.html">The Copper Weathercock</a></td><td>A borrowed month on a countdown: close the loop or the branch collapses.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/bell-tower.html">The Bell Tower</a></td><td>Spells played as four-note tunes; backwards, they undo.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/fire-escape.html">The Castle Fire Escape</a></td><td>Fire, smoke, and water spreading across a grid; get the timing right to save the door.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/observatory.html">The Larkspur Observatory</a></td><td>Staff with their own agendas, typed commands, generated hints, and evidence presented to suspects.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td>The Long Gallery</td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span></td></tr>
+  <tr><td>The Word Foundry</td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Headless</span></td></tr>
+  <tr><td>The Cinder Table</td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Headless</span></td></tr>
+  <tr><td><a href="../site/harbour.html">Lantern Watch: The Harbour</a></td><td>The reference game: ten connected harbour stops played by typed commands, with a six-person society running alongside.</td><td><span class="tag">Web</span><span class="tag">Text</span></td></tr>
+</table>
+</div>
+
+<h2 id="limits">What it does not do yet</h2>
 <div class="note">
 <ul>
-  <li><strong>Graphics are simple.</strong> Rooms, people, and objects are drawn as shapes and labels by code. There is no way yet to load your own artwork or sprite images.</li>
-  <li><strong>Nobody has listened to the sound</strong> on real speakers. It has been checked by measuring the sound waves, not by ear.</li>
-  <li><strong>Mac and Windows are untested.</strong> The automatic builds for them exist but have never run.</li>
-  <li><strong>The public website is uploaded by hand.</strong> A tool prepares the page; nothing in the repository publishes it.</li>
-  <li><strong>In the browser,</strong> two demos are missing and typed commands do not work.</li>
-  <li><strong>Small writing gaps:</strong> inside an event handler, a placeholder such as <code>victim</code> is not yet filled in with the actual character (conditions on the handler now are), and clicking a person in the basic window does not start a conversation (type "talk to" instead).</li>
-  <li><strong>Once you choose a path</strong> in a multi-path puzzle, you cannot switch.</li>
+  <li><strong>Art is drawn by code.</strong> Rooms, people, and objects are shapes, colours, and labels drawn by the engine. There is no way yet to load your own images or sprite sheets.</li>
+  <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
+  <li><strong>The language is still pre-1.0.</strong> It may change before 1.0; removals follow a published deprecation policy, and released packages and saves keep loading.</li>
+  <li><strong>Small writing gaps:</strong> inside an event handler, a lowercase placeholder (such as <code>victim</code>) matches any character but is not yet usable in the handler's body; a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options.</li>
+  <li><strong>Deliberately out of scope:</strong> 3D, physics, and networked multiplayer. BeSpoke is for narrative and systemic games.</li>
 </ul>
 </div>
-<p>Most of these are listed as Phase 34 in the roadmap, alongside the hand-testing pass; the rewrite of borrowed demos is Phase 35.</p>
 
-<h2>For testers</h2>
-<p>Every feature above has automatic checks, but none of it has been played by hand at length. That is the next job. The step-by-step guide is <code>docs/runbooks/release-hand-test.md</code> in the repository: it lists what to try in each demo, what you should see and hear, and a table to record results. A full pass takes about four hours; a useful short pass (the basics, the desktop demos, the browser, and a listening check) takes about ninety minutes.</p>
-<p>Anything odd is worth writing down with the demo name and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
+<h2 id="next">What is next</h2>
+<ul>
+  <li><strong>Characters with values.</strong> Authors give characters their own values (mercy, justice, loyalty, or anything else) on a scale, with lines they will never cross. Players resolve dilemmas by appealing to those values, characters change slowly with what the player does, and learning someone's values becomes part of the puzzle (roadmap Phase 45).</li>
+  <li><strong>BeSpoke 1.0,</strong> when the maintainer decides the language and host API are ready to promise.</li>
+</ul>
+
+<h2 id="start">Get started</h2>
+<ol>
+  <li><strong>Play.</strong> Open any page in the repository's <code>site/</code> folder in a browser, or run a demo in a window with <code>zig build run-proof -- --tavern</code>.</li>
+  <li><strong>Download.</strong> The <a href="https://github.com/aedmark/bespoke-engine/releases/latest">latest release</a> has a static Linux command-line tool, an SDL2 desktop build, and the browser runtime.</li>
+  <li><strong>Make a game.</strong> Follow <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/FIRST_GAME.md">FIRST_GAME.md</a> from <code>bespoke init</code> to a single HTML file you can upload anywhere. The tutorial is run by CI, so it works as written.</li>
+  <li><strong>Go deeper.</strong> The <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/AUTHORING.md">authoring guide</a>, the <a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/ARCHITECTURE.md">architecture</a>, and the <a href="https://github.com/aedmark/bespoke-engine">source on GitHub</a>.</li>
+</ol>
+<p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
+
+<footer>BeSpoke Engine 0.3.1 &middot; status as of 21 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 </main>
 </body>
 </html>

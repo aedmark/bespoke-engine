@@ -18,7 +18,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`SECURITY.md`](SECURITY.md) | Users and developers | Sensitive assets, trust boundaries, reporting, secure defaults | Full operational incident history |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributors | Setup, change, review, and submission workflow | Agent-only instructions |
 | [`CHANGELOG.md`](CHANGELOG.md) | Users | Released and unreleased user-visible changes | Commit-by-commit history |
-| [`state.html`](state.html) | Players, testers, and newcomers who are not programmers | Where the engine stands today, in plain language: what it does, how, why, its limits, and how to help test | Technical detail (ARCHITECTURE) or session state (HANDOFF) |
+| [`state.html`](state.html) | Newcomers and players, and development teams evaluating the engine | What the engine can do today: every capability in plain language with an "Under the hood" line, the language, platforms, performance, demos, limits, and what is next. Update it with each release | Design rationale (DECISIONS), internals (ARCHITECTURE), or session state (HANDOFF) |
 | [`GLOSSARY.md`](GLOSSARY.md) | Authors, contributors, and copy writers | Engine and language terms in plain language, and which word to use | Process terms (AGENTS) or syntax (`script_spec.md`) |
 | [`AUTHORING.md`](AUTHORING.md) | Game authors | Learning order for the script language, walkthroughs, testing, and the host API contract | Complete syntax (`script_spec.md`) or design rationale |
 | [`FIRST_GAME.md`](FIRST_GAME.md) | First-time game authors | Executable tutorial from `bespoke init` to a static HTML upload | Language reference or hosting credentials |

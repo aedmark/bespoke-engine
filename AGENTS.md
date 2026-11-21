@@ -103,7 +103,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 | `docs/CONTRIBUTING.md` | Human and agent contribution workflow |
 | `docs/CHANGELOG.md` | User-visible release notes |
 | `docs/manual.html` | Standalone interactive 3x manual and developer guide |
-| `docs/state.html` | Plain-language status page for players, testers, and newcomers |
+| `docs/state.html` | What the engine can do today, for newcomers and for development teams |
 | `docs/GLOSSARY.md` | Engine and language terms in plain language, and which word to use in user-facing copy |
 | `docs/SEPARATION.md` | Engine / proof separation method, rubric, and audit findings |
 | `docs/runbooks/release-hand-test.md` | Release hand-test pass with a results table (P34-07) |
