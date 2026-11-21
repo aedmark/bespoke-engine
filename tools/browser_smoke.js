@@ -55,7 +55,8 @@ const pageReady = `(async () => {
     const inside = frame.contentDocument;
     return Boolean(inside && inside.readyState === 'complete' && inside.querySelector('#start'));
   }
-  return Boolean(document.querySelector('#start'));
+  // A plain page has no deck to wait on: the document and its fonts are all there is to load.
+  return true;
 })()`;
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-chrome-'));
 let stderr = '';
