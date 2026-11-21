@@ -189,16 +189,16 @@ The maintainer uploads the complete export from section 7 by hand, including all
 - [ ] The Manual link in the page header opens the manual. Upload `docs/manual.html` to `docs/manual.html` on the site: the export does not include it (Q-007).
 - [ ] Share the URL in a link preview (a chat app, or an OpenGraph checker): the title and description show. The export adds no preview image, so none is expected.
 
-## 9. macOS and Windows
+## 9. macOS
 
-The engine has Linux CI. The generated starter project also defines separate GitHub Actions jobs for Linux, macOS, Windows, and the web build. These checks cover the starter workflow, not extra target platforms for the engine release.
+The engine has Linux CI. The generated starter project also defines separate GitHub Actions jobs for Linux, macOS, and the web build. These checks cover the starter workflow, not extra target platforms for the engine release. Windows is not a release target until a Windows contributor maintains it (D-143).
 
 1. Generate a project with `bespoke init` (section 5), `git init` it, commit, and push it to your new GitHub repository.
 2. Open the repository's Actions tab and wait for the `build` workflow.
 
-- [ ] The `native` job passes on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+- [ ] The `native` job passes on `ubuntu-latest` and `macos-latest`.
 - [ ] The web job passes and its smoke check runs.
-- [ ] If you have a Mac or a Windows machine: clone the engine, run `zig build test` and one proof in a window, and note the result. If not, write "CI only" in the results table.
+- [ ] If you have a Mac: clone the engine, run `zig build test` and one proof in a window, and note the result. If not, write "CI only" in the results table.
 
 The generated workflow fetches the published tag in `BESPOKE_ENGINE_REF` (D-110). Record the actual pin when interpreting CI results. It only tests a candidate if that candidate is the engine revision the jobs check out.
 
@@ -219,7 +219,7 @@ Copy this table into HANDOFF's session log (the "Verified" table holds only the 
 | 6.2 Showcase (Firefox / Chromium / phone) | | |
 | 7. Export and offline | | |
 | 8. Neocities release | | |
-| 9. macOS / Windows | | |
+| 9. macOS | | |
 
 For each failure:
 

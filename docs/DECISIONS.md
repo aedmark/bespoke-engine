@@ -915,6 +915,7 @@ This amends D-031 rule 1 for `village.zig` only; the rest of D-031 stands.
 - Cross-compiling Windows and macOS from Linux: not possible without their SDL2 libraries.
 - A committed example project: not chosen; it would drift from the templates.
 **Consequences:** Windows and macOS builds are verified only when a generated project is pushed to GitHub; the Windows SDL2 setup is the least certain. The browser runtime's 2 MiB heap bounds how large a game can be in the browser. The runner's top-level statements now stop after 64 ticks, as every other host's did. `zig-out/lib/libbespoke.a` is now `libbespoke-core.a`.
+**Update, 2026-11-21 (D-143):** the template's CI drops `windows-latest` and its MSYS2 steps; Windows is deferred until a Windows contributor maintains it. Zig is installed from ziglang.org against pinned checksums rather than by a setup action.
 
 ## D-067 Showcase Deployment: Static Export, Neocities Upload by Hash, and a Small Wasm Module (2026-11-12, status: accepted; upload superseded by D-074)
 **Context:** P30-02 asks for a Neocities deployment pipeline that optimizes the wasm asset size, adds metadata, and caches the site offline. The showcase page embedded a 1.28 MB `bespoke-proofs.wasm` as base64 (a 1.78 MB page), of which 1.18 MB was zero bytes: the browser runtime's state was a global `?WasmRuntime = null`, which the compiler emitted as initialised data. Neocities allows no custom response headers. The maintainer chose (2026-11-12): API upload with a dry run by default, the module kept embedded, the public URL passed as an option, and a service worker.
@@ -1698,6 +1699,16 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 **Alternatives:** leave the bar whenever a choice set opens, rejected because the player loses the bar they were using and must press Enter to type again; keep D-057 and document Esc, rejected by the maintainer as a trap a player meets in the first conversation.
 
 **Review.** Revisit if a command frame or alias starts with a digit, or if choice sets grow past nine options.
+
+## D-143 Windows Is Not a Release Target Until a Windows Contributor Maintains It (2026-11-21, status: accepted)
+
+**Context.** The 1.0 goal already names Linux desktop and the browser, with macOS and Windows outside it (2026-11-15), yet the `bespoke init` template's CI ran a Windows job. P42-06 section 9 pushed a generated project to `aedmark/bespoke-starter-check` and ran that CI for the first time. Every job failed because `mlugg/setup-zig@v1` found no copy of Zig 0.17.1; with Zig downloaded from ziglang.org, Linux, macOS, and the web passed, and Windows failed to translate `SDL2/SDL.h`, because translate-c reads no `--search-prefix` while linking does. A build.zig fix for that could not be reproduced locally, and no maintainer or contributor uses Windows to keep it working.
+
+**Decision.** The maintainer deferred Windows as a release target until a contributor who uses Windows maintains it (2026-11-21). The template's CI builds and tests on `ubuntu-latest` and `macos-latest` and builds the browser version; its Windows job, MSYS2 SDL2 install, and Windows build flags are removed, and a scaffold test rejects any `windows` in the workflow. The engine's `build.zig` gains no Windows-only include handling. The release hand-test's section 9 covers macOS only. P42-07 holds the work for when a Windows contributor arrives.
+
+**Alternatives:** keep the Windows job failing as a known gap, rejected because a generated project's CI would be red from its first push; land the search-prefix fix unverified, rejected because nobody could keep it working.
+
+**Review.** Revisit when a contributor offers to maintain Windows: restore the job from this decision's context, starting with the translate-c include path.
 
 ## Open questions
 

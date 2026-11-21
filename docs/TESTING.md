@@ -107,7 +107,7 @@ The BeSpoke core simulation spine is 100% deterministic (D-001): ticks are discr
 
 ## Manual Checks (Before a Release)
 
-What only a person can check (playing every proof, listening, the browser builds, offline caching, the published site after your upload, and macOS and Windows through the template's CI) is a step-by-step pass in [runbooks/release-hand-test.md](runbooks/release-hand-test.md), with a results table to copy into HANDOFF. Roadmap item: P34-07.
+What only a person can check (playing every proof, listening, the browser builds, offline caching, and macOS through the template's CI; the published site is the maintainer's own check, D-074) is a step-by-step pass in [runbooks/release-hand-test.md](runbooks/release-hand-test.md), with a results table to copy into HANDOFF. Roadmap item: P34-07.
 
 One technique the runbook does not cover:
 

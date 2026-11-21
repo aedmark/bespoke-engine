@@ -24,7 +24,7 @@ zig build run
 | `src/main.zig` | A host that runs the script in a window, or headless with `--headless` |
 | `src/game_test.zig` | Tests that compile the script and check its story; add one per puzzle |
 | `src/web.zig`, `web/` | The browser version and its smoke check |
-| `.github/workflows/build.yml` | CI: tests and release builds on Linux, macOS, and Windows, and the browser build |
+| `.github/workflows/build.yml` | CI: tests and release builds on Linux and macOS, and the browser build |
 | `build.zig`, `build.zig.zon` | The build; the engine is a relative path dependency |
 | `LICENSE-BeSpoke` | The BeSpoke MIT notice for the engine and copied starter files |
 
