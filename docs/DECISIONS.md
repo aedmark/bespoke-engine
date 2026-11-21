@@ -1836,6 +1836,16 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review trigger:** a game needs an appeal aimed at a named person in a crowded room, or appeals that persist.
 
+## D-150 An Appeal May Name Any Value and the Weighed Axis It Moves (2026-11-21, status: accepted; amends D-149)
+
+**Context.** P45-06's story, from the maintainer, has two appeals: to Valerius's Mercy and to his Loyalty to his men and the town. The bread dilemma weighs Justice against Mercy, and D-149 let an appeal name only one of the two weighed axes, so Loyalty could not be appealed to. The maintainer chose to let an appeal name its direction (2026-11-21).
+
+**Decision.** `appeals <N> to <Value> toward <Axis>` lets an appeal to any declared value move the delta toward one of the two weighed axes; without `toward`, the value must be a weighed axis and the appeal leans toward it, as before. Each value has at most one appeal line, and a dilemma holds at most 4. Knowing the value is still `Knows(Player, "<Value> of <Character>")`, which the compiler interns for every appealed value. The `.bspk` version 23 appeal record already stores the appealed axis and signed points, so the package format does not change.
+
+**Alternatives:** weigh Loyalty against Justice, rejected because Mercy could then not be appealed to; two dilemmas for one hearing, rejected as more script for the same choice.
+
+**Consequences.** Watching still teaches only the two weighed axes, so a value outside them, such as Loyalty here, is learned by asking.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

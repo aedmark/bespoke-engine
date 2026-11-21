@@ -1,0 +1,43 @@
+===================================================================
+          BeSpoke Engine: Valerius and the Bread (Values)          
+      (Value Axes * Red Lines * Dilemma Tiers * Drift * Appeals)    
+===================================================================
+
+[The appeal to Mercy]
+  Brann: "He took bread from the garrison store, Captain. Hang him, and no one tries it again."  Valerius: "Put the rope away, Sergeant. He is a child, and I will hear it."  "Give me a reason, Hesper. The law, or the boy?"
+  (Brann's counsel: HearTheCase; Hang scored 9 and is a red line.)
+> appeal to mercy
+  You don't know what moves them.
+> present the purse to valerius
+  Hesper: "Take my purse for the loaf, Captain, and let him go."  Valerius: "Give me a reason, Hesper. The law, or the boy?"
+  Valerius: "Put your coin away. Greyhold's captain is not for sale."
+> ask valerius about mercy
+  Valerius: "I was a hungry boy in a hard winter once. Someone fed me."
+> appeal to mercy
+  Hesper: "He is hungry, Captain. You know what that is."  Valerius: "Then he works the kitchens until the loaf is paid."
+  Tam: "I'll scrub every pot in Greyhold."
+> wait for spring
+  Hesper: "The snow goes. In spring, Tam walks back up the hill to the gate."  Valerius: "You stand the night watch, where I can see you."
+  Tam: "I'll earn the day watch, Captain."
+  (Winter: Pardon. Valerius's Mercy 3 -> 4 by drift; Justice 4. Spring: Probation.)
+
+final facts: 31, digest 585af30b0b47beed
+
+[The appeal to Loyalty]
+  Brann: "He took bread from the garrison store, Captain. Hang him, and no one tries it again."  Valerius: "Put the rope away, Sergeant. He is a child, and I will hear it."  "Give me a reason, Hesper. The law, or the boy?"
+  (Brann's counsel: HearTheCase; Hang scored 9 and is a red line.)
+> ask valerius about loyalty
+  Valerius: "Every man on this wall eats before I do. So does the town below it, when I can manage it."
+> appeal to loyalty
+  Hesper: "The lower town feeds this fort in summer. It is starving now, and so are your men."  Valerius: "My men went hungry too. Open the store to the lower town, and the boy guards the door."
+  Brann: "The store is open, Captain. The lower town eats tonight."
+> wait for spring
+  Hesper: "The snow goes. In spring, Tam walks back up the hill to the gate."  Valerius: "Greyhold owes you a loaf and a spear. Welcome to the wall."
+  Tam: "I won't let the store go hungry again."
+  (Winter: OpenStore. Valerius's Mercy 3 -> 5 by drift; Justice 4. Spring: Enlist.)
+
+final facts: 32, digest c3280bb5c435e32d
+
+===================================================================
+  VERIFICATION COMPLETE: two appeals, two winters, two springs.    
+===================================================================

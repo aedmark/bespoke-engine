@@ -1417,21 +1417,28 @@ pub const Codegen = struct {
                 .spent = rels.spent,
             };
         }
-        // Appeal lines name one of the two weighed axes, which the parser has checked; an appeal
-        // toward the counter-axis lowers the delta (D-149).
+        // An appeal names the value appealed to, which may be any declared axis, and leans
+        // toward one of the two weighed axes, which the parser has checked; an appeal toward the
+        // counter-axis lowers the delta (D-149, amended by D-150).
         const appeals = try self.allocator.alloc(dilemma_mod.Appeal, decl.appeals.len);
         errdefer self.allocator.free(appeals);
         for (decl.appeals, 0..) |source, i| {
-            const toward_axis = std.mem.eql(u8, source.axis, decl.axis);
+            const rel = self.world.lookup_relation(source.axis);
+            if (rel == null or self.world.value_bound(rel.?) == null) {
+                self.error_context = source.axis;
+                return error.UnknownDilemmaAxis;
+            }
+            const toward_axis = std.mem.eql(u8, source.toward, decl.axis);
             const magnitude: i32 = @intCast(source.points);
             appeals[i] = .{
-                .axis = if (toward_axis) axes[0] else axes[1],
+                .axis = rel.?,
                 .entity = try self.world.intern_entity(source.axis),
                 .points = if (toward_axis) magnitude else -magnitude,
             };
+            _ = try value_mod.known_value(self.world, rel.?, actor);
         }
         // The values an appeal or a hint can name for this actor exist from the start, so a
-        // script can write `remember Knows(Player, "Mercy of Valerius")` (D-149).
+        // script can write `remember Knows(Player, "Mercy of Oswin")` (D-149).
         for (axes) |axis| _ = try value_mod.known_value(self.world, axis, actor);
         return .{ .dilemma = .{
             .entity = try self.world.intern_entity(decl.name),
@@ -3234,16 +3241,16 @@ test "P45-01: an author-declared axis compiles into a bounded property with sign
     defer world.deinit();
     // Neither axis name is known to the engine: the script alone declares them.
     var compiled = try compiler.compile_source(testing.allocator, &world, null,
-        \\entity Valerius, Ines
+        \\entity Oswin, Ines
         \\axis Justice between Cruelty and Leniency
         \\axis Candour between Bluntness and "Flattering Lies"
-        \\remember Justice(Valerius, 8)
-        \\remember Candour(Valerius, -3)
+        \\remember Justice(Oswin, 8)
+        \\remember Candour(Oswin, -3)
         \\remember Justice(Ines, -10)
-        \\routine Soften(Valerius):
-        \\  remember Justice(Valerius, 2)
-        \\  if Candour(Valerius, -3):
-        \\    remember Candour(Valerius, 10)
+        \\routine Soften(Oswin):
+        \\  remember Justice(Oswin, 2)
+        \\  if Candour(Oswin, -3):
+        \\    remember Candour(Oswin, 10)
     );
     defer compiled.deinit();
     try testing.expectEqual(@as(usize, 2), compiled.axes.items.len);
@@ -3256,24 +3263,24 @@ test "P45-01: an author-declared axis compiles into a bounded property with sign
 
     var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
-    const valerius = world.lookup_entity("Valerius").?;
+    const oswin = world.lookup_entity("Oswin").?;
     const ines = world.lookup_entity("Ines").?;
-    _ = try vm.spawn_routine(valerius, compiled.initial_entry.?);
+    _ = try vm.spawn_routine(oswin, compiled.initial_entry.?);
     _ = try vm.step_tick();
-    try testing.expectEqual(@as(i32, 8), value_mod.value_of(&world, valerius, justice).?);
-    try testing.expectEqual(@as(i32, -3), value_mod.value_of(&world, valerius, candour).?);
+    try testing.expectEqual(@as(i32, 8), value_mod.value_of(&world, oswin, justice).?);
+    try testing.expectEqual(@as(i32, -3), value_mod.value_of(&world, oswin, candour).?);
     try testing.expectEqual(@as(i32, -10), value_mod.value_of(&world, ines, justice).?);
 
     // A later write overwrites the one row (D-007), and a negative literal in a condition
     // matches the stored value.
-    _ = try vm.spawn_routine(valerius, compiled.routine_entries.get("Soften").?);
+    _ = try vm.spawn_routine(oswin, compiled.routine_entries.get("Soften").?);
     _ = try vm.step_tick();
-    try testing.expectEqual(@as(i32, 2), value_mod.value_of(&world, valerius, justice).?);
-    try testing.expectEqual(@as(i32, 10), value_mod.value_of(&world, valerius, candour).?);
+    try testing.expectEqual(@as(i32, 2), value_mod.value_of(&world, oswin, justice).?);
+    try testing.expectEqual(@as(i32, 10), value_mod.value_of(&world, oswin, candour).?);
     var rows: usize = 0;
     const slice = world.facts.slice();
     for (slice.items(.subject)[0..world.facts.len], slice.items(.relation)[0..world.facts.len]) |subject, relation| {
-        if (subject == valerius and (relation == justice.relation or relation == candour.relation)) rows += 1;
+        if (subject == oswin and (relation == justice.relation or relation == candour.relation)) rows += 1;
     }
     try testing.expectEqual(@as(usize, 2), rows);
 }
@@ -3282,13 +3289,13 @@ test "P45-01: axis declarations and values are range-checked at compile time" {
     const testing = std.testing;
     const compiler = @import("../compiler.zig");
     const cases = [_]struct { source: []const u8, message: []const u8, line: u32, column: u32 }{
-        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius, 11)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 26 },
-        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius, -11)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 26 },
-        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius, Kindly)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 26 },
-        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 10 },
-        .{ .source = "axis Mercy between Vengeance and Leniency\nroutine Judge(Valerius):\n  if Mercy(Valerius, 12):\n    wait 1 ticks", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 3, .column = 22 },
-        .{ .source = "axis Mercy between Vengeance and Leniency\nwhen Mercy(Valerius, 40):\n  remember Pardoned(Valerius)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 22 },
-        .{ .source = "property Mood(who, value)\nremember Mood(Valerius, -3)", .message = "only a value on a declared axis may be negative", .line = 2, .column = 25 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Oswin, 11)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 23 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Oswin, -11)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 23 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Oswin, Kindly)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 23 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Oswin)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 10 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nroutine Judge(Oswin):\n  if Mercy(Oswin, 12):\n    wait 1 ticks", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 3, .column = 19 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nwhen Mercy(Oswin, 40):\n  remember Pardoned(Oswin)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 19 },
+        .{ .source = "property Mood(who, value)\nremember Mood(Oswin, -3)", .message = "only a value on a declared axis may be negative", .line = 2, .column = 22 },
         .{ .source = "property Mercy(who, value)\naxis Mercy between Vengeance and Leniency", .message = "invalid axis; its name is already a relation, or the script declares too many axes", .line = 2, .column = 6 },
         .{ .source = "axis Mercy between Vengeance and Leniency\naxis Mercy between Spite and Softness", .message = "axis 'Mercy' is declared twice", .line = 2, .column = 38 },
         .{ .source = "axis Mercy from Vengeance to Leniency", .message = "axis 'Mercy' expects 'between <Pole> and <Pole>'", .line = 1, .column = 17 },
@@ -3314,7 +3321,7 @@ test "P45-02: red lines compile per character and are checked against its decisi
     defer world.deinit();
     const decision =
         \\decision Judge:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  option Execute:
@@ -3326,22 +3333,22 @@ test "P45-02: red lines compile per character and are checked against its decisi
         \\
     ;
     var compiled = try compiler.compile_source(testing.allocator, &world, null, decision ++
-        \\red lines Valerius: Execute, BurnGranary
+        \\red lines Oswin: Execute, BurnGranary
     );
     defer compiled.deinit();
     try testing.expectEqual(@as(usize, 1), compiled.red_lines.items.len);
     const set = compiled.red_lines.items[0].red_lines;
-    try testing.expectEqualStrings("Valerius", world.get_entity_name(set.actor).?);
+    try testing.expectEqualStrings("Oswin", world.get_entity_name(set.actor).?);
     try testing.expectEqual(@as(usize, 2), set.options.len);
     try testing.expectEqualStrings("BurnGranary", world.get_entity_name(set.options[1]).?);
 
     const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
-        .{ .source = decision ++ "red lines Valerius: Exectue", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
+        .{ .source = decision ++ "red lines Oswin: Exectue", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
         .{ .source = decision ++ "red lines Ines: Execute", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
-        .{ .source = decision ++ "red lines Valerius: Execute, BurnGranary, Pardon", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
-        .{ .source = decision ++ "red lines Valerius: Execute\nred lines Valerius: Pardon", .message = "red lines for 'Valerius' are declared twice", .line = 12 },
-        .{ .source = decision ++ "red lines Valerius:", .message = "red lines for 'Valerius' name no option", .line = 11 },
-        .{ .source = decision ++ "red lines Valerius Execute", .message = "red lines for 'Valerius Execute' expect ':' and the options it never takes", .line = 11 },
+        .{ .source = decision ++ "red lines Oswin: Execute, BurnGranary, Pardon", .message = "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left", .line = 11 },
+        .{ .source = decision ++ "red lines Oswin: Execute\nred lines Oswin: Pardon", .message = "red lines for 'Oswin' are declared twice", .line = 12 },
+        .{ .source = decision ++ "red lines Oswin:", .message = "red lines for 'Oswin' name no option", .line = 11 },
+        .{ .source = decision ++ "red lines Oswin Execute", .message = "red lines for 'Oswin Execute' expect ':' and the options it never takes", .line = 11 },
     };
     for (cases) |case| {
         const result = compiler.check_source(testing.allocator, case.source);
@@ -3364,7 +3371,7 @@ test "P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a 
     ;
     const head =
         \\dilemma StolenBread:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  weighs Justice against Mercy
@@ -3416,7 +3423,7 @@ test "P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a 
         .{ .source = axes ++ head ++ "  leans 3 toward Greed when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' leans toward 'Greed', which it does not weigh", .line = 10 },
         .{ .source = axes ++ head ++ "  leans 11 toward Justice when Rich(Thief)\n" ++ tiers, .message = "dilemma 'StolenBread' leans more than 10 or less than 1; use 1 to 10", .line = 10 },
         .{ .source = "axis Justice between Cruelty and Leniency\n" ++ head ++ tiers, .message = "a dilemma weighs an axis that no 'axis' line declares", .line = 6 },
-        .{ .source = axes ++ "red lines Valerius: Hang\ndecision Gallows:\n  actor Valerius\n  fires Hanged\n  requires Accused(Thief)\n  option Hang:\n    picks 1 when Accused(Thief)\n  option Spare:\n    picks 1 when Accused(Thief)\n" ++ head ++ tiers, .message = "this action is on the actor's red lines, so no tier may take it", .line = 19 },
+        .{ .source = axes ++ "red lines Oswin: Hang\ndecision Gallows:\n  actor Oswin\n  fires Hanged\n  requires Accused(Thief)\n  option Hang:\n    picks 1 when Accused(Thief)\n  option Spare:\n    picks 1 when Accused(Thief)\n" ++ head ++ tiers, .message = "this action is on the actor's red lines, so no tier may take it", .line = 19 },
     };
     for (cases) |case| {
         const result = compiler.check_source(testing.allocator, case.source);
@@ -3437,7 +3444,7 @@ test "P45-04: drift lines compile to signed points on a declared axis" {
         \\axis Mercy between Vengeance and Indulgence
         \\axis Loyalty between Servility and Treachery
         \\dilemma StolenBread:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  weighs Justice against Mercy
@@ -3488,7 +3495,7 @@ test "P45-05: appeal lines compile toward a weighed axis and refuse any other" {
         \\axis Mercy between Vengeance and Indulgence
         \\axis Loyalty between Servility and Treachery
         \\dilemma StolenBread:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  weighs Justice against Mercy
@@ -3510,11 +3517,11 @@ test "P45-05: appeal lines compile toward a weighed axis and refuse any other" {
     try testing.expectEqual(@as(i32, 2), appeals[1].points);
     try testing.expectEqualStrings("Mercy", world.get_entity_name(appeals[0].entity).?);
     // The values a player can learn about the actor exist as entities from the start.
-    try testing.expect(world.lookup_entity("Mercy of Valerius") != null);
-    try testing.expect(world.lookup_entity("Justice of Valerius") != null);
+    try testing.expect(world.lookup_entity("Mercy of Oswin") != null);
+    try testing.expect(world.lookup_entity("Justice of Oswin") != null);
 
     const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
-        .{ .source = head ++ "  appeals 4 to Loyalty\n" ++ tiers, .message = "dilemma 'StolenBread' appeals to 'Loyalty', which it does not weigh", .line = 9 },
+        .{ .source = head ++ "  appeals 4 to Loyalty\n" ++ tiers, .message = "dilemma 'StolenBread' appeals toward 'Loyalty', which it does not weigh; add 'toward <Axis>' naming a weighed axis", .line = 9 },
         .{ .source = head ++ "  appeals 4 to Mercy\n  appeals 3 to Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' declares an appeal to 'Mercy' twice", .line = 10 },
         .{ .source = head ++ "  appeals 11 to Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' appeals more than 10 or less than 1; use 1 to 10", .line = 9 },
         .{ .source = head ++ "  appeals 4 toward Mercy\n" ++ tiers, .message = "dilemma 'StolenBread' expects 'appeals <N> to <Axis>'", .line = 9 },
@@ -3526,4 +3533,43 @@ test "P45-05: appeal lines compile toward a weighed axis and refuse any other" {
         try testing.expectEqualStrings(case.message, result.message());
         try testing.expectEqual(case.line, result.line);
     }
+}
+
+test "D-150: an appeal to an unweighed value names the weighed axis it moves" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const head =
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Indulgence
+        \\axis Loyalty between Servility and Treachery
+        \\dilemma StolenBread:
+        \\  actor Oswin
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  appeals 4 to Mercy
+        \\
+    ;
+    const tiers =
+        \\  strong Justice: "a" -> Flog
+        \\  moderate Justice: "b" -> Jail
+        \\  neutral: "c" -> Wait
+        \\  moderate Mercy: "d" -> Pardon
+        \\  strong Mercy: "e" -> OpenStore
+        \\
+    ;
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, head ++ "  appeals 8 to Loyalty toward Mercy\n" ++ tiers);
+    defer compiled.deinit();
+    const appeals = compiled.dilemmas.items[0].dilemma.appeals;
+    try testing.expectEqual(@as(usize, 2), appeals.len);
+    try testing.expectEqualStrings("Loyalty", world.get_relation_meta(appeals[1].axis).?.name);
+    try testing.expectEqual(@as(i32, -8), appeals[1].points);
+    try testing.expect(world.lookup_entity("Loyalty of Oswin") != null);
+
+    const twice = compiler.check_source(testing.allocator, head ++ "  appeals 8 to Loyalty toward Mercy\n  appeals 2 to Loyalty toward Justice\n" ++ tiers);
+    try testing.expectEqualStrings("dilemma 'StolenBread' declares an appeal to 'Loyalty' twice", twice.message());
+    const undeclared = compiler.check_source(testing.allocator, head ++ "  appeals 8 to Greed toward Mercy\n" ++ tiers);
+    try testing.expectEqualStrings("a dilemma weighs an axis that no 'axis' line declares", undeclared.message());
 }

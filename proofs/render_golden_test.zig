@@ -39,6 +39,7 @@ const grog_puzzle = @import("grog_puzzle.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory_puzzle = @import("observatory_puzzle.zig");
 const long_gallery = @import("long_gallery.zig");
+const valerius = @import("valerius.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -69,6 +70,7 @@ const scripted = [_]struct { name: []const u8, script: []const u8 }{
     .{ .name = "grid_puzzle", .script = grid_puzzle.GRID_PUZZLE_SCRIPT },
     .{ .name = "observatory_puzzle", .script = observatory_puzzle.OBSERVATORY_SCRIPT },
     .{ .name = "long_gallery", .script = long_gallery.LONG_GALLERY_SCRIPT },
+    .{ .name = "valerius", .script = valerius.VALERIUS_SCRIPT },
 };
 
 /// A `scene:` block's name and `cast:` line, read from script text. The compiler does not
@@ -550,6 +552,10 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
     }
     if (std.mem.eql(u8, name, "long_gallery")) {
         _ = try long_gallery.configure(world, spatial);
+        return;
+    }
+    if (std.mem.eql(u8, name, "valerius")) {
+        _ = try valerius.configure(world, spatial);
         return;
     }
     if (std.mem.eql(u8, name, "three_tides")) return three_tides.place_fenn(world, spatial);

@@ -1224,12 +1224,12 @@ test "P45-01: the inspector lists an axis value as a signed number, not an entit
     const value_mod = @import("value.zig");
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
-    const valerius = try world.intern_entity("Valerius");
+    const oswin = try world.intern_entity("Oswin");
     const mercy = try value_mod.declare(&world, "Mercy", .{ "Vengeance", "Condoning Harm" });
     const justice = try value_mod.declare(&world, "Justice", .{ "Cruelty", "Leniency" });
-    // Entity 1 is Valerius, so an unbounded value of 1 would be drawn as an edge to him.
-    try world.remember(valerius, justice.relation, 1, 0);
-    try world.remember(valerius, mercy.relation, value_mod.encode_literal("-3").?, 0);
+    // Entity 1 is Oswin, so an unbounded value of 1 would be drawn as an edge to him.
+    try world.remember(oswin, justice.relation, 1, 0);
+    try world.remember(oswin, mercy.relation, value_mod.encode_literal("-3").?, 0);
     var out: [8]RenderDebugFact = undefined;
     const count = capture_debug_facts(&world, &out);
     try testing.expectEqual(@as(usize, 2), count);

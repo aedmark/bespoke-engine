@@ -142,6 +142,7 @@ zig build test-proofs                     # every proof's tests
 | `--observatory` | The Larkspur Observatory | Characters with goals who chase and intercept the player; typed commands |
 | `--word-foundry` | The Word Foundry | Spell words learned from clues; two combinations resolve and a wrong one refuses without changing anything (headless only) |
 | `--cinder-table` | The Cinder Table | Private hands and scored plays: each seat plays only cards it knows, follows the led suit, and leads into a suit an opponent has shown to be void in (headless only) |
+| `--valerius` | Valerius and the Bread | Values, red lines, a five-tier dilemma, appeals the player must learn, and drift carried into a later scene |
 | `--long-gallery` | The Long Gallery | Watching a room the player is not in: an agenda plays out in a locked studio while the gallery frame stays put |
 
 ---
@@ -151,7 +152,7 @@ zig build test-proofs                     # every proof's tests
 - Cue handler parameters such as `target` in `on cue PlayLute(Bard, target):` match any entity and are bound in the handler's `where` guard (D-072), but not in its body: inside the body, `target` is read as an entity name.
 - A society has one enforcer.
 - Every proof with a window built before P44-06 has been played by hand on Linux (2026-11-15); The Long Gallery has a window that has not been looked at in this environment. The Word Foundry and The Cinder Table are headless only. A project made by `bespoke init` builds, tests, and runs on Linux and macOS in its own GitHub CI (2026-11-21); Windows is not a release target until a Windows contributor maintains it (D-143). The 0.3.0 [release hand-test](docs/runbooks/release-hand-test.md) passed every section the agents run; the published site is the maintainer's own check.
-- The showcase homepage features The Harbour, and the thirteen windowed proofs built before The Long Gallery have their own pages; The Long Gallery has none yet. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-122). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
+- The showcase homepage features The Harbour, and the fourteen windowed proofs other than The Long Gallery have their own pages; The Long Gallery has none yet. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-122). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
 ---
 

@@ -464,10 +464,13 @@ pub const DilemmaDriftDecl = struct {
     negated: bool,
 };
 
-/// One `appeals <N> to <Axis>` line (P45-05, D-149).
+/// One `appeals <N> to <Value> [toward <Axis>]` line (P45-05, D-149). Without `toward` the value
+/// is one of the two weighed axes and the appeal leans toward it; with `toward`, any declared
+/// value may be appealed to and the appeal leans toward the named weighed axis.
 pub const DilemmaAppealDecl = struct {
     points: u32,
     axis: []const u8,
+    toward: []const u8,
     at: Token,
 };
 
@@ -2135,7 +2138,16 @@ pub const Parser = struct {
                     if (std.mem.eql(u8, prior.axis, axis_tok.slice))
                         return self.dilemma_fail(axis_tok, name, &.{ "declares an appeal to '", axis_tok.slice, "' twice" });
                 }
-                try appeals.append(.{ .points = points, .axis = axis_tok.slice, .at = axis_tok });
+                var toward = axis_tok.slice;
+                var toward_at = axis_tok;
+                if (std.mem.eql(u8, self.current.slice, "toward") and self.current.line == axis_tok.line) {
+                    try self.advance();
+                    toward_at = try self.expect(.identifier);
+                    toward = toward_at.slice;
+                }
+                try appeals.append(.{ .points = points, .axis = axis_tok.slice, .toward = toward, .at = toward_at });
+                if (appeals.items.len > dilemma_mod.MAX_APPEALS)
+                    return self.dilemma_fail(axis_tok, name, &.{std.fmt.comptimePrint("has more than {d} appeal lines", .{dilemma_mod.MAX_APPEALS})});
             } else if (std.mem.eql(u8, directive, "drifts")) {
                 const points = try self.take_u32();
                 if (points == 0 or points > dilemma_mod.MAX_DRIFT)
@@ -2186,8 +2198,8 @@ pub const Parser = struct {
         if (std.mem.eql(u8, axis_name, counter_name))
             return self.dilemma_fail(name_tok, name, &.{ "weighs '", axis_name, "' against itself" });
         for (appeals.items) |appeal| {
-            if (!std.mem.eql(u8, appeal.axis, axis_name) and !std.mem.eql(u8, appeal.axis, counter_name))
-                return self.dilemma_fail(appeal.at, name, &.{ "appeals to '", appeal.axis, "', which it does not weigh" });
+            if (!std.mem.eql(u8, appeal.toward, axis_name) and !std.mem.eql(u8, appeal.toward, counter_name))
+                return self.dilemma_fail(appeal.at, name, &.{ "appeals toward '", appeal.toward, "', which it does not weigh; add 'toward <Axis>' naming a weighed axis" });
         }
         for (leans.items, lean_at.items) |lean, at| {
             if (!std.mem.eql(u8, lean.toward, axis_name) and !std.mem.eql(u8, lean.toward, counter_name))

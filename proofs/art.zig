@@ -133,6 +133,8 @@ const Scene = struct {
     is_bell_base_scene: bool = false,
     is_gallery_scene: bool = false,
     is_observatory_scene: bool = false,
+    is_greyhold_store_scene: bool = false,
+    is_greyhold_gate_scene: bool = false,
     is_bell_belfry_scene: bool = false,
     is_office_scene: bool = false,
     is_weathercock_attic_scene: bool = false,
@@ -228,7 +230,11 @@ fn detect(frame: *const RenderFrame) Scene {
 
     if (cur_scene.len > 0) {
         // Checked first: "Bell Tower" scenes must not fall through to substring themes below.
-        if (std.mem.indexOf(u8, cur_scene, "Hollin Keep") != null) {
+        if (std.mem.eql(u8, cur_scene, "Greyhold Store")) {
+            sc.is_greyhold_store_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Greyhold Gate")) {
+            sc.is_greyhold_gate_scene = true;
+        } else if (std.mem.indexOf(u8, cur_scene, "Hollin Keep") != null) {
             sc.is_gallery_scene = true;
         } else if (std.mem.indexOf(u8, cur_scene, "Larkspur") != null) {
             sc.is_observatory_scene = true;
@@ -295,6 +301,7 @@ fn detect(frame: *const RenderFrame) Scene {
 
     // Fallback detection if current_scene wasn't explicitly set
     if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and !sc.is_observatory_scene and
+        !sc.is_greyhold_store_scene and !sc.is_greyhold_gate_scene and
         !sc.is_tides_past_scene and !sc.is_tides_present_scene and !sc.is_tides_future_scene and
         !sc.is_lamp_point_scene and !sc.is_wreckers_cellar_scene and
         !sc.is_spitting_scene and !sc.is_wine_cellar_scene and !sc.is_tavern_scene and
@@ -490,6 +497,8 @@ fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
         render_gallery(w, frame);
     } else if (sc.is_observatory_scene) {
         render_observatory(w);
+    } else if (sc.is_greyhold_store_scene or sc.is_greyhold_gate_scene) {
+        render_greyhold(w, sc.is_greyhold_gate_scene);
     } else if (sc.is_bell_base_scene or sc.is_bell_belfry_scene) {
         render_bell_tower(w, frame, sc.is_bell_belfry_scene);
     } else if (sc.is_spitting_scene) {
@@ -3292,6 +3301,54 @@ fn capture_gallery(world: *const bespoke.World, st: *Status) void {
 
 fn gallery_has(st: *const Status, i: usize, attribute: bespoke.grid.Attribute) bool {
     return st.gallery_cells[i] & (@as(u8, 1) << @intCast(@intFromEnum(attribute))) != 0;
+}
+
+/// Greyhold (P45-06): the garrison store in winter, with the door to the snow on the left and
+/// the hearth on the right, or the gate in spring, with the wall between the gatehouse and the
+/// road. The floor line sits just under the marks at world y 4 and well above the message band.
+fn render_greyhold(w: *Canvas, spring: bool) void {
+    const floor_y = world_to_screen(0, 6, w.width, w.height).y;
+    const left = world_to_screen(0, 0, w.width, w.height).x;
+    const right = world_to_screen(40, 0, w.width, w.height).x;
+    const door_x = world_to_screen(4, 0, w.width, w.height).x;
+    const hearth_x = world_to_screen(36, 0, w.width, w.height).x;
+    if (!spring) {
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 18, .g = 16, .b = 20 });
+        // Stone walls and a timber floor.
+        w.fill_rect(left, 150, right - left, floor_y - 150, Color{ .r = 62, .g = 58, .b = 56 });
+        var course: i32 = 178;
+        while (course < floor_y) : (course += 28) w.draw_line(left, course, right, course, Color{ .r = 44, .g = 41, .b = 40 });
+        w.fill_rect(left, floor_y, right - left, 20, Color{ .r = 84, .g = 60, .b = 38 });
+        // The doorway shows the snow outside.
+        w.fill_rect(door_x - 30, 250, 60, floor_y - 250, Color{ .r = 200, .g = 214, .b = 228 });
+        w.draw_rect_outline(door_x - 30, 250, 60, floor_y - 250, Color{ .r = 40, .g = 30, .b = 22 });
+        var flake: i32 = 0;
+        while (flake < 12) : (flake += 1) w.fill_rect(door_x - 26 + @mod(flake * 17, 52), 258 + @mod(flake * 29, floor_y - 270), 2, 2, Color{ .r = 255, .g = 255, .b = 255 });
+        // Store shelves, mostly bare, with a few loaves.
+        const shelf_x = world_to_screen(14, 0, w.width, w.height).x;
+        for ([_]i32{ 200, 250 }) |shelf_y| {
+            w.fill_rect(shelf_x, shelf_y, 220, 8, Color{ .r = 104, .g = 76, .b = 48 });
+        }
+        for ([_]i32{ 0, 1, 2 }) |i| w.fill_circle(shelf_x + 30 + i * 70, 192, 9, Color{ .r = 170, .g = 132, .b = 80 });
+        // The hearth glows behind Brann.
+        w.fill_rect(hearth_x - 40, 300, 80, floor_y - 300, Color{ .r = 48, .g = 44, .b = 42 });
+        w.fill_rect(hearth_x - 26, 340, 52, floor_y - 340, Color{ .r = 20, .g = 14, .b = 12 });
+        w.fill_circle(hearth_x, floor_y - 16, 14, Color{ .r = 234, .g = 120, .b = 40 });
+        w.fill_circle(hearth_x, floor_y - 24, 8, Color{ .r = 250, .g = 204, .b = 21 });
+        w.draw_text("GREYHOLD - THE GARRISON STORE, IN THE HARD WINTER", left + 12, 116, 2, Color{ .r = 214, .g = 211, .b = 209 });
+    } else {
+        w.fill_rect(0, 0, w.width, w.height, Color{ .r = 150, .g = 196, .b = 228 });
+        // Hills, the fort's wall, and the gatehouse; the road runs off to the right.
+        w.fill_rect(0, floor_y - 40, w.width, w.height - floor_y + 40, Color{ .r = 96, .g = 150, .b = 78 });
+        w.fill_rect(left, 220, right - left - 120, floor_y - 220, Color{ .r = 128, .g = 124, .b = 116 });
+        var merlon: i32 = left;
+        while (merlon < right - 120) : (merlon += 40) w.fill_rect(merlon, 200, 24, 20, Color{ .r = 128, .g = 124, .b = 116 });
+        w.fill_rect(door_x - 44, 170, 88, floor_y - 170, Color{ .r = 108, .g = 104, .b = 98 });
+        w.fill_rect(door_x - 22, 300, 44, floor_y - 300, Color{ .r = 64, .g = 44, .b = 28 });
+        w.fill_rect(right - 120, floor_y - 6, 120 + w.width - right, 16, Color{ .r = 170, .g = 150, .b = 112 });
+        w.fill_circle(right - 60, 120, 30, Color{ .r = 250, .g = 230, .b = 140 });
+        w.draw_text("GREYHOLD - THE GATE, IN SPRING", left + 12, 116, 2, Color{ .r = 30, .g = 41, .b = 59 });
+    }
 }
 
 /// The Larkspur Observatory (P33-03): a night sky with the dome, over two floors whose rows

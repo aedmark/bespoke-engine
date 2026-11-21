@@ -22,6 +22,7 @@ pub const observatory_puzzle = @import("observatory_puzzle.zig");
 pub const word_foundry = @import("word_foundry.zig");
 pub const cinder_table = @import("cinder_table.zig");
 pub const long_gallery = @import("long_gallery.zig");
+pub const valerius = @import("valerius.zig");
 
 const Proof = enum {
     tavern,
@@ -40,6 +41,7 @@ const Proof = enum {
     word_foundry,
     cinder_table,
     long_gallery,
+    valerius,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -88,6 +90,9 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "long-gallery", .proof = .long_gallery },
     .{ .name = "gallery", .proof = .long_gallery },
     .{ .name = "watch", .proof = .long_gallery },
+    .{ .name = "valerius", .proof = .valerius },
+    .{ .name = "bread", .proof = .valerius },
+    .{ .name = "greyhold", .proof = .valerius },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -121,6 +126,7 @@ const usage =
     \\  --word-foundry       The Word Foundry (spell vocabularies; headless only)
     \\  --cinder-table       The Cinder Table (private hands and scored decisions; headless only)
     \\  --long-gallery       The Long Gallery (watching a room the player is not in)
+    \\  --valerius           Valerius and the Bread (values, red lines, dilemmas, appeals)
     \\
 ;
 
@@ -182,6 +188,7 @@ pub fn main(init: std.process.Init) !void {
         .word_foundry => if (headless) try word_foundry.run_headless(allocator, stdout) else try stdout.writeAll("The Word Foundry is a headless proof; run it with --headless.\n"),
         .cinder_table => if (headless) try cinder_table.run_headless(allocator, stdout) else try stdout.writeAll("The Cinder Table is a headless proof; run it with --headless.\n"),
         .long_gallery => if (headless) try long_gallery.run_headless(allocator, stdout) else try long_gallery.run_interactive(allocator, io, stdout),
+        .valerius => if (headless) try valerius.run_headless(allocator, stdout) else try valerius.run_interactive(allocator, io, stdout),
     }
 }
 
@@ -202,6 +209,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = word_foundry;
     _ = cinder_table;
     _ = long_gallery;
+    _ = valerius;
     std.testing.refAllDecls(@This());
 }
 

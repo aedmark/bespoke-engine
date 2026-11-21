@@ -2010,25 +2010,25 @@ test "P45-02: a red line vetoes the highest-scoring option through host.tick" {
     defer spatial.deinit();
     var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
         \\scene: Guardhouse
-        \\cast: Valerius
+        \\cast: Oswin
         \\marks: Bench
         \\relation Accused(who)
         \\relation Stole(who, what)
         \\relation Hungry(who)
         \\relation Spared(who)
         \\relation Hanged(who)
-        \\red lines Valerius: Execute
+        \\red lines Oswin: Execute
         \\decision Judge:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  option Execute:
         \\    picks 9 when Stole(Thief, Bread)
         \\  option Pardon:
         \\    picks 2 when Hungry(Thief)
-        \\on cue Judged(Valerius, Execute):
+        \\on cue Judged(Oswin, Execute):
         \\  remember Hanged(Thief)
-        \\on cue Judged(Valerius, Pardon):
+        \\on cue Judged(Oswin, Pardon):
         \\  remember Spared(Thief)
     );
     defer compiled.deinit();
@@ -2037,18 +2037,18 @@ test "P45-02: a red line vetoes the highest-scoring option through host.tick" {
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
-    const valerius = world.lookup_entity("Valerius").?;
+    const oswin = world.lookup_entity("Oswin").?;
     const thief = world.lookup_entity("Thief").?;
     const execute = world.lookup_entity("Execute").?;
     const pardon = world.lookup_entity("Pardon").?;
     const knows = try world.intern_relation("Knows", .set);
-    try world.remember(valerius, knows, execute.to_int(), 0);
-    try world.remember(valerius, knows, pardon.to_int(), 0);
+    try world.remember(oswin, knows, execute.to_int(), 0);
+    try world.remember(oswin, knows, pardon.to_int(), 0);
     try world.remember(thief, try world.intern_relation("Stole", .set), world.lookup_entity("Bread").?.to_int(), 0);
     try world.remember(thief, try world.intern_relation("Hungry", .set), 0, 0);
     try world.remember(thief, try world.intern_relation("Accused", .set), 0, 0);
 
-    // Execute scores 9 and Pardon 2, but Execute is behind Valerius's red line.
+    // Execute scores 9 and Pardon 2, but Execute is behind Oswin's red line.
     _ = try tick(&vm, &compiled);
     try testing.expectEqual(pardon, decision_mod.chosen(&world, world.lookup_entity("Judge").?).?);
     _ = try tick(&vm, &compiled);
@@ -2064,17 +2064,17 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
     defer spatial.deinit();
     var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
         \\scene: Guardhouse
-        \\cast: Valerius
+        \\cast: Oswin
         \\marks: Bench
         \\relation Accused(who)
         \\relation Criminal(who)
         \\relation Jailed(who)
         \\axis Justice between Cruelty and Leniency
         \\axis Mercy between Vengeance and "Condoning Harm"
-        \\remember Justice(Valerius, 4)
-        \\remember Mercy(Valerius, 3)
+        \\remember Justice(Oswin, 4)
+        \\remember Mercy(Oswin, 3)
         \\dilemma StolenBread:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  weighs Justice against Mercy
@@ -2084,7 +2084,7 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
         \\  neutral: "Show me why I should spare him." -> Wait
         \\  moderate Mercy: "Pay for the loaf." -> Fine
         \\  strong Mercy: "Feed him and let him go." -> Pardon
-        \\on cue Judged(Valerius, Jail):
+        \\on cue Judged(Oswin, Jail):
         \\  remember Jailed(Thief)
     );
     defer compiled.deinit();
@@ -2093,28 +2093,28 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
     vm.spatial = &spatial;
     try run_initial_statements(&world, &vm, &compiled);
     try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
-    const valerius = world.lookup_entity("Valerius").?;
+    const oswin = world.lookup_entity("Oswin").?;
     const thief = world.lookup_entity("Thief").?;
     const dilemma = world.lookup_entity("StolenBread").?;
     try world.remember(thief, try world.intern_relation("Accused", .set), 0, 0);
 
-    // Justice 4 minus Mercy 3 is 1: neutral, and Valerius asks to be shown more.
+    // Justice 4 minus Mercy 3 is 1: neutral, and Oswin asks to be shown more.
     _ = try tick(&vm, &compiled);
     var buf: [256]u8 = undefined;
     var log = SpeechLog.init(&buf);
     log.collect(&world, &vm);
-    try testing.expectEqualStrings("Valerius: \"Show me why I should spare him.\"", log.writer.buffered());
+    try testing.expectEqualStrings("Oswin: \"Show me why I should spare him.\"", log.writer.buffered());
     try testing.expectEqual(dilemma_mod.Stage.awaits_evidence, dilemma_mod.stage_of(&world, dilemma).?);
 
     // The player shows a record of past thefts: the criminal lean adds 3, giving 4, moderate.
     try world.remember(thief, try world.intern_relation("Criminal", .set), 0, 0);
     const record = try world.intern_entity("Record");
-    _ = try present(&vm, &compiled, world.lookup_entity("Player") orelse try world.intern_entity("Player"), record, valerius);
+    _ = try present(&vm, &compiled, world.lookup_entity("Player") orelse try world.intern_entity("Player"), record, oswin);
     _ = try tick(&vm, &compiled);
     var buf2: [256]u8 = undefined;
     var log2 = SpeechLog.init(&buf2);
     log2.collect(&world, &vm);
-    try testing.expectEqualStrings("Valerius: \"A night in the cells.\"", log2.writer.buffered());
+    try testing.expectEqualStrings("Oswin: \"A night in the cells.\"", log2.writer.buffered());
     try testing.expectEqual(world.lookup_entity("Jail").?, dilemma_mod.chosen(&world, dilemma).?);
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(thief, world.lookup_relation("Jailed").?, 0));
@@ -2122,7 +2122,7 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
 
 const DRIFT_SCRIPT =
     \\scene: Guardhouse
-    \\cast: Valerius
+    \\cast: Oswin
     \\marks: Stool
     \\relation Accused(who)
     \\relation Repaid(who)
@@ -2130,10 +2130,10 @@ const DRIFT_SCRIPT =
     \\axis Justice between Cruelty and Leniency
     \\axis Mercy between Vengeance and Indulgence
     \\axis Loyalty between Servility and Treachery
-    \\remember Justice(Valerius, 4)
-    \\remember Mercy(Valerius, 0)
+    \\remember Justice(Oswin, 4)
+    \\remember Mercy(Oswin, 0)
     \\dilemma StolenBread:
-    \\  actor Valerius
+    \\  actor Oswin
     \\  fires Judged
     \\  requires Accused(Thief)
     \\  weighs Justice against Mercy
@@ -2193,7 +2193,7 @@ const DriftRun = struct {
 
     fn value(self: *DriftRun, axis: []const u8) i32 {
         const w = &self.world;
-        return @bitCast(w.get_property(w.lookup_entity("Valerius").?, w.lookup_relation(axis).?) orelse 0);
+        return @bitCast(w.get_property(w.lookup_entity("Oswin").?, w.lookup_relation(axis).?) orelse 0);
     }
 };
 
@@ -2234,16 +2234,16 @@ test "P45-04: drift is identical after a save, a rewind, and a replay" {
 
 const PERSUASION_SCRIPT =
     \\scene: Guardhouse
-    \\cast: Valerius, Petra
+    \\cast: Oswin, Petra
     \\marks: Stool
     \\relation Accused(who)
     \\axis Justice between Cruelty and Leniency
     \\axis Mercy between Vengeance and Indulgence
-    \\remember Justice(Valerius, 2)
-    \\remember Mercy(Valerius, 1)
-    \\remember Knows(Petra, Valerius)
+    \\remember Justice(Oswin, 2)
+    \\remember Mercy(Oswin, 1)
+    \\remember Knows(Petra, Oswin)
     \\dilemma StolenBread:
-    \\  actor Valerius
+    \\  actor Oswin
     \\  fires Judged
     \\  requires Accused(Thief)
     \\  weighs Justice against Mercy
@@ -2256,14 +2256,14 @@ const PERSUASION_SCRIPT =
     \\  strong Mercy: "Feed him and let him go." -> Pardon
     \\goal SpareTheThief:
     \\  need Persuade:
-    \\    met Appealed(Valerius, Mercy)
+    \\    met Appealed(Oswin, Mercy)
     \\    room Guardhouse
-    \\on cue TalksTo(Petra, Valerius, Mercy):
-    \\  say Valerius: "I was a hungry boy once."
-    \\  remember Knows(Petra, "Mercy of Valerius")
-    \\on cue TalksTo(Petra, Valerius, Justice):
-    \\  say Valerius: "Without the law there is only the mob."
-    \\  remember Knows(Petra, "Justice of Valerius")
+    \\on cue TalksTo(Petra, Oswin, Mercy):
+    \\  say Oswin: "I was a hungry boy once."
+    \\  remember Knows(Petra, "Mercy of Oswin")
+    \\on cue TalksTo(Petra, Oswin, Justice):
+    \\  say Oswin: "Without the law there is only the mob."
+    \\  remember Knows(Petra, "Justice of Oswin")
 ;
 
 /// Plays the persuasion story for one appeal and returns its transcript: each typed line with
@@ -2296,7 +2296,7 @@ fn persuade(value: []const u8, out: []u8) ![]const u8 {
 
     var ask_buf: [32]u8 = undefined;
     var appeal_buf: [32]u8 = undefined;
-    const ask = try std.fmt.bufPrint(&ask_buf, "ask valerius about {s}", .{value});
+    const ask = try std.fmt.bufPrint(&ask_buf, "ask oswin about {s}", .{value});
     const plea = try std.fmt.bufPrint(&appeal_buf, "appeal to {s}", .{value});
     for ([_][]const u8{ plea, ask, plea }) |line| {
         var reply_buf: [128]u8 = undefined;
@@ -2328,30 +2328,30 @@ fn say_tick(vm: *VM, compiled: *const CompiledProgram, transcript: *std.Io.Write
 test "P45-05: one dilemma resolves differently under two appeals the player learns" {
     var mercy_buf: [1024]u8 = undefined;
     try testing.expectEqualStrings(
-        \\Valerius: "Give me a reason either way."
+        \\Oswin: "Give me a reason either way."
         \\[hint: doylian]
         \\> appeal to mercy
         \\You don't know what moves them.
-        \\> ask valerius about mercy
-        \\Valerius: "I was a hungry boy once."
+        \\> ask oswin about mercy
+        \\Oswin: "I was a hungry boy once."
         \\[hint: holmesian]
         \\> appeal to mercy
-        \\Valerius: "Pay for the loaf and go."
+        \\Oswin: "Pay for the loaf and go."
         \\= Fine
         \\
     , try persuade("mercy", &mercy_buf));
 
     var justice_buf: [1024]u8 = undefined;
     try testing.expectEqualStrings(
-        \\Valerius: "Give me a reason either way."
+        \\Oswin: "Give me a reason either way."
         \\[hint: doylian]
         \\> appeal to justice
         \\You don't know what moves them.
-        \\> ask valerius about justice
-        \\Valerius: "Without the law there is only the mob."
+        \\> ask oswin about justice
+        \\Oswin: "Without the law there is only the mob."
         \\[hint: doylian]
         \\> appeal to justice
-        \\Valerius: "A night in the cells."
+        \\Oswin: "A night in the cells."
         \\= Jail
         \\
     , try persuade("justice", &justice_buf));
@@ -2365,7 +2365,7 @@ test "P45-05: watching a weighing teaches the value it leaned toward to those in
     defer spatial.deinit();
     var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
         \\scene Guardhouse:
-        \\  cast: Valerius, Petra
+        \\  cast: Oswin, Petra
         \\  marks: Stool
         \\scene Yard:
         \\  cast: Corwin
@@ -2373,9 +2373,9 @@ test "P45-05: watching a weighing teaches the value it leaned toward to those in
         \\relation Accused(who)
         \\axis Justice between Cruelty and Leniency
         \\axis Mercy between Vengeance and Indulgence
-        \\remember Justice(Valerius, 9)
+        \\remember Justice(Oswin, 9)
         \\dilemma StolenBread:
-        \\  actor Valerius
+        \\  actor Oswin
         \\  fires Judged
         \\  requires Accused(Thief)
         \\  weighs Justice against Mercy
@@ -2396,7 +2396,7 @@ test "P45-05: watching a weighing teaches the value it leaned toward to those in
     try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
     const petra = world.lookup_entity("Petra").?;
     const corwin = world.lookup_entity("Corwin").?;
-    const justice_known = world.lookup_entity("Justice of Valerius").?;
+    const justice_known = world.lookup_entity("Justice of Oswin").?;
     const knows = try world.intern_relation("Knows", .set);
 
     // An appeal to a value no open dilemma lists is refused before anything is recorded.
@@ -2411,9 +2411,9 @@ test "P45-05: watching a weighing teaches the value it leaned toward to those in
     // Petra watched in the guardhouse; Corwin was in the yard.
     try testing.expect(world.has_fact(petra, knows, justice_known.to_int()));
     try testing.expect(!world.has_fact(corwin, knows, justice_known.to_int()));
-    try testing.expect(!world.has_fact(petra, knows, world.lookup_entity("Mercy of Valerius").?.to_int()));
+    try testing.expect(!world.has_fact(petra, knows, world.lookup_entity("Mercy of Oswin").?.to_int()));
 
     // The dilemma has weighed to a final tier, so an appeal can no longer move it.
-    try world.remember(petra, knows, world.lookup_entity("Mercy of Valerius").?.to_int(), 0);
-    try testing.expectEqual(AppealOutcome.no_dilemma, try appeal(&vm, &compiled, petra, world.lookup_entity("Valerius").?, world.lookup_entity("Mercy").?));
+    try world.remember(petra, knows, world.lookup_entity("Mercy of Oswin").?.to_int(), 0);
+    try testing.expectEqual(AppealOutcome.no_dilemma, try appeal(&vm, &compiled, petra, world.lookup_entity("Oswin").?, world.lookup_entity("Mercy").?));
 }

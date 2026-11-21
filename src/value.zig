@@ -2,7 +2,7 @@
 //!
 //! The engine names no axis. A script declares `axis Mercy between Vengeance and "Condoning
 //! Harm"`, which makes `Mercy` a property relation bounded to the range, so
-//! `remember Mercy(Valerius, 8)` stores one row per character and a later write overwrites it
+//! `remember Mercy(Oswin, 8)` stores one row per character and a later write overwrites it
 //! (D-007). +10 is the virtue held fully; the two poles name the ways it fails and are labels for
 //! later items (P45-03 lines), not ends of the number line. The value slot holds the integer as
 //! two's complement, and `World` clamps every write into the range, so a host call, a loaded
@@ -56,7 +56,7 @@ pub fn declare(world: *World, name: []const u8, poles: [2][]const u8) !Axis {
     }
     const relation = try world.intern_relation(name, .property);
     world.bound_relation(relation, MIN, MAX) catch return Error.InvalidAxis;
-    // The axis is also an entity of the same name, so a typed `appeal to mercy` or `ask Valerius
+    // The axis is also an entity of the same name, so a typed `appeal to mercy` or `ask Oswin
     // about mercy` can name it (P45-05).
     _ = try world.intern_entity(name);
     const axis = Axis{
@@ -67,7 +67,7 @@ pub fn declare(world: *World, name: []const u8, poles: [2][]const u8) !Axis {
     return axis;
 }
 
-/// The entity a character's value on an axis is known as: `Mercy of Valerius` (P45-05, D-149).
+/// The entity a character's value on an axis is known as: `Mercy of Oswin` (P45-05, D-149).
 /// Knowing a value is `Knows(Player, <that entity>)`, the knowledge model every hint and
 /// presentation reads, so a value is learned per character rather than per axis.
 pub fn known_value(world: *World, axis: RelationKind, character: EntityId) !EntityId {
@@ -109,12 +109,12 @@ test "P45-01: an axis bounds its property and reads signed values" {
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     const axis = try declare(&world, "Mercy", .{ "Vengeance", "Condoning Harm" });
-    const valerius = try world.intern_entity("Valerius");
-    try testing.expect(value_of(&world, valerius, axis) == null);
-    try world.remember(valerius, axis.relation, encode_literal("-3").?, 0);
-    try testing.expectEqual(@as(i32, -3), value_of(&world, valerius, axis).?);
-    try world.remember(valerius, axis.relation, encode_literal("8").?, 0);
-    try testing.expectEqual(@as(i32, 8), value_of(&world, valerius, axis).?);
+    const oswin = try world.intern_entity("Oswin");
+    try testing.expect(value_of(&world, oswin, axis) == null);
+    try world.remember(oswin, axis.relation, encode_literal("-3").?, 0);
+    try testing.expectEqual(@as(i32, -3), value_of(&world, oswin, axis).?);
+    try world.remember(oswin, axis.relation, encode_literal("8").?, 0);
+    try testing.expectEqual(@as(i32, 8), value_of(&world, oswin, axis).?);
     try testing.expectEqual(@as(usize, 1), world.fact_count());
     try testing.expect(encode_literal("11") == null);
     try testing.expect(encode_literal("-11") == null);

@@ -255,7 +255,7 @@ pub const Scope = struct {
     }
 
     /// Adds something the actor can name that is not a thing in the room, such as a value axis
-    /// (P45-05), so `appeal to mercy` and `ask Valerius about mercy` resolve.
+    /// (P45-05), so `appeal to mercy` and `ask Oswin about mercy` resolve.
     pub fn include(self: *Scope, entity: EntityId, actor: EntityId) void {
         self.add(entity, actor);
     }
