@@ -6,6 +6,7 @@
 //   CHROME=/path/to/chrome node tools/browser_smoke.js
 // P40-02: --starter path/to/index.html serves and checks a packed starter game instead.
 // P42-03: --showcase-layout checks the showcase at a 375 CSS-pixel viewport.
+// P42-06: --touch-targets fails when any control on any showcase page measures under 44 px tall.
 'use strict';
 
 const fs = require('fs');
@@ -20,6 +21,42 @@ const chrome = process.env.CHROME || 'google-chrome';
 // A loaded CI runner can take well over 15 seconds to create DevToolsActivePort. Keep the
 // startup budget separate from the short waits for page state once Chrome is attached.
 const CHROME_START_TIMEOUT_MS = 60000;
+// The floor a thumb needs on a phone (P42-06). Every link, button, field, and disclosure on the
+// showcase pages is measured against it, so the size is enforced rather than remembered.
+const TOUCH_TARGET_MIN = 44;
+const measureTargets = `(() => {
+  const nodes = [...document.querySelectorAll('a, button, input, select, textarea, summary, [role="button"]')];
+  const short = [];
+  for (const node of nodes) {
+    const box = node.getBoundingClientRect();
+    if (!box.width && !box.height) continue;
+    if (box.height < ${TOUCH_TARGET_MIN}) {
+      short.push({ tag: node.tagName.toLowerCase(),
+        label: (node.textContent || node.id || node.getAttribute('aria-label') || '').trim().slice(0, 30),
+        height: Math.round(box.height * 10) / 10 });
+    }
+  }
+  const root = document.documentElement;
+  const overflow = root.scrollWidth > root.clientWidth
+    ? { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth } : null;
+  return { measured: nodes.length, short, overflow };
+})()`;
+// Each page reports its own readiness: the proof pages once their embedded engine is up, the
+// homepage once the Harbour frame beside it has loaded, and the Harbour page once it parses.
+// Measuring earlier would read a half-built layout, and a fixed delay would be a guess.
+const pageReady = `(async () => {
+  if (document.readyState !== 'complete') return false;
+  if (document.fonts && document.fonts.status !== 'loaded') await document.fonts.ready;
+  if (document.querySelector('#game-canvas')) {
+    return Boolean(window.bespokePageState && window.bespokePageState().ready);
+  }
+  const frame = document.querySelector('#harbour-demo');
+  if (frame) {
+    const inside = frame.contentDocument;
+    return Boolean(inside && inside.readyState === 'complete' && inside.querySelector('#start'));
+  }
+  return Boolean(document.querySelector('#start'));
+})()`;
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-chrome-'));
 let stderr = '';
 
@@ -78,7 +115,7 @@ class Cdp {
   }
 }
 
-async function smoke(pageUrl, starter, layout = false) {
+async function smoke(pageUrl, starter, layout = false, touchTargets = false, touchPageNames = []) {
   const child = spawn(chrome, [
     '--headless=new',
     '--no-sandbox',
@@ -114,6 +151,33 @@ async function smoke(pageUrl, starter, layout = false) {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
       return result.result.value;
     };
+    if (touchTargets) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 375, height: 820, deviceScaleFactor: 1, mobile: false,
+      });
+      const origin = new URL(pageUrl).origin;
+      const problems = [];
+      for (const name of touchPageNames) {
+        await cdp.send('Page.navigate', { url: `${origin}/site/${name}` });
+        await waitFor(`${name} to be ready`, async () => (await evaluate(pageReady)) === true, 30000);
+        const result = await evaluate(measureTargets);
+        if (result.overflow) {
+          problems.push(`${name}: the page scrolls sideways (${result.overflow.scrollWidth} > ${result.overflow.clientWidth})`);
+        }
+        for (const item of result.short) {
+          problems.push(`${name}: <${item.tag}> "${item.label}" is ${item.height} px tall`);
+        }
+        if (!result.short.length && !result.overflow) {
+          console.log(`ok  ${name}: ${result.measured} controls at least ${TOUCH_TARGET_MIN} px tall at 375 px`);
+        }
+      }
+      if (problems.length) {
+        throw new Error(`controls under ${TOUCH_TARGET_MIN} px at 375 px:\n  ${problems.join('\n  ')}`);
+      }
+      console.log(`ok  touch targets: ${touchPageNames.length} showcase pages, every control at least ${TOUCH_TARGET_MIN} px tall at 375 px`);
+      cdp.close();
+      return;
+    }
     if (layout) {
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width: 375, height: 820, deviceScaleFactor: 1, mobile: false,
@@ -327,8 +391,14 @@ async function main() {
     await servePages(pages, '/site/index.html', url => smoke(url, false, true));
     return;
   }
+  if (args.length === 1 && args[0] === '--touch-targets') {
+    const names = fs.readdirSync(path.join(root, 'site')).filter((name) => name.endsWith('.html')).sort();
+    const pages = new Map(names.map(name => [`/site/${name}`, fs.readFileSync(path.join(root, 'site', name))]));
+    await servePages(pages, '/site/index.html', url => smoke(url, false, false, true, names));
+    return;
+  }
   if (args.length !== 2 || args[0] !== '--starter') {
-    throw new Error('usage: node tools/browser_smoke.js [--starter path/to/index.html | --showcase-layout]');
+    throw new Error('usage: node tools/browser_smoke.js [--starter path/to/index.html | --showcase-layout | --touch-targets]');
   }
 
   const page = fs.readFileSync(args[1]);

@@ -135,6 +135,7 @@ Engine and language terms (fact, routine, expiry tick, branch world, proof, deck
 ## Run and verify
 
 - Documentation check: `python3 tools/check_docs.py`.
+- Touch targets: `CHROME=/path/to/chrome node tools/browser_smoke.js --touch-targets` fails when any control on any showcase page measures under 44 px tall at 375 CSS pixels (P42-06).
 - Unit tests: `zig test src/world.zig`.
 - Full build and test: `zig build test` (engine and proofs); `zig build test-engine` and `zig build test-proofs` run each side alone.
 - Proofs of concept: `zig build run-proof -- --<proof> [--headless]` (see `bespoke-proofs --help`).

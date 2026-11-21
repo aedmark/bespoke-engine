@@ -84,3 +84,7 @@ jobs:
         run: |
           node tools/browser_smoke.js
           node tools/browser_smoke.js --showcase-layout
+      - name: Check the showcase touch targets
+        env:
+          CHROME: google-chrome
+        run: node tools/browser_smoke.js --touch-targets
