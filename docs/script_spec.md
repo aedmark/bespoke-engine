@@ -428,6 +428,26 @@ decision LeadAtTable:
 - The cue fires with the actor and the winning option. A cue body cannot read lowercase parameters (D-072), so a handler that needs the option names it as an exact argument: `on cue CardPlayed(Maren, SaltTwo):`.
 - Scoring reads facts and draws no random number, so a replay makes the same choice. Package format version 18 carries decisions; versions 1 through 17 load none.
 
+### Value axes (P45-01, D-144)
+
+An axis is a virtue a character holds from -10 to +10. The script names every axis; the engine names none.
+
+```bespoke
+axis Justice between Cruelty and Leniency
+axis Mercy between Vengeance and "Condoning Harm"
+
+remember Justice(Valerius, 8)
+remember Mercy(Valerius, -3)
+```
+
+- `axis <Virtue> between <Pole> and <Pole>` declares the axis. The virtue names it; the two poles name the ways it fails, and a pole may be quoted or run to the end of its phrase. The two poles differ, and neither repeats the virtue.
+- The axis is a property relation named after the virtue, so `Justice(Valerius, 8)` is one fact per character and a later `remember Justice(Valerius, 2)` replaces it (D-007). +10 is the virtue held fully; lower values lean toward failure.
+- A character holds no value on an axis until a `remember` gives it one; there is no implicit zero.
+- A value on an axis must be a whole number from -10 to +10, in a `remember` and in a condition such as `if Mercy(Valerius, -3):`. Anything else is a compile error, and so is `Mercy(Valerius)` without a value. A negative number is a compile error everywhere except on an axis.
+- An axis cannot reuse the name of a declared `relation` or `property`, and each axis is declared once.
+- At run time every write is clamped into the range, so a host call, a loaded save, or later drift stores -10 or +10 rather than a value past it. The state inspector lists the value as a signed number on its character.
+- Scoring a decision by value is not part of this item: `picks` and `drops` lines still read facts, and dilemmas that compare two axes arrive with P45-03. Package format version 19 carries axes; versions 1 through 18 load none.
+
 ## Test Coverage
 
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.
@@ -447,6 +467,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Grids; Fire, smoke, and water | `P25-01: grid declarations compile into overlays, layouts, and placed marks` | `P25-01: grid declarations compile into overlays, layouts, and placed marks`; grid automata tests in `src/grid.zig` |
 | Spellbooks (P44-04) | `P44-04: a spellbook declaration reads words in three kinds and the rows that combine them`; `P44-04: parser rejects a misplaced or undeclared word, a repeated name, and a fourth word` | `P44-04: a spellbook compiles into tiered words and a resolvable spell`; `P44-04: a valid triple resolves, and an invalid one is refused` and `P44-04: each word is gated by discovery, and Rejects overrides Knows` (`src/spell.zig`); `P44-04: a cast fires the spell's cue only when the caster knows every word` (`src/host.zig`); `P44-04: package version 17 round-trips a spellbook and loads a version 16 payload with none` (`src/package.zig`); The Word Foundry's `word_foundry.txt` transcript |
 | Decisions (P44-05) | `P44-05: a decision declaration reads its actor, cue, trigger lines, and scored options`; `P44-05: parser rejects a decision without a cue, an option without scores, and a repeated option` | `P44-05: a decision compiles into trigger lines and scored options`; `P44-05: the highest-scoring offered option wins, and an equal score keeps the earlier one`, `P44-05: an option the actor does not know is never offered, and Rejects overrides`, and `P44-05: a decision fires its cue with the winning option, once per rising trigger` (`src/decision.zig`, `src/host.zig`); `P44-05: package version 18 round-trips a decision and loads a version 17 payload with none` (`src/package.zig`); The Cinder Table's `cinder_table.txt` transcript |
+| Value axes (P45-01) | `P45-01: axis declarations and values are range-checked at compile time` (`src/compiler/codegen.zig`) | `P45-01: an author-declared axis compiles into a bounded property with signed values`; `P45-01: an axis bounds its property and reads signed values` (`src/value.zig`); `P45-01: a bounded property clamps writes, restores, and clones` (`src/world.zig`); `P45-01: the inspector lists an axis value as a signed number, not an entity` (`src/display.zig`); `P45-01: package version 19 round-trips value axes and loads a version 18 payload with none` (`src/package.zig`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

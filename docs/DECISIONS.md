@@ -1710,6 +1710,29 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review.** Revisit when a contributor offers to maintain Windows: restore the job from this decision's context, starting with the translate-c include path.
 
+## D-144 Value Axes Are Bounded Properties Named by the Script (2026-11-21, status: accepted)
+
+**Context.** P45-01 asks for author-declared value axes, each a virtue between two failure poles, with every character's value an integer from -10 to +10 "stored as a ternary fact such as `Value(Valerius, Justice, 8)`" with functional overwrite (D-007). A fact row has one object slot (`subject, relation, object_or_value, expires_at_tick`), and `World.remember` overwrites a property by subject and relation only, so a three-argument `Value` row does not fit without widening the row or giving `remember` a second overwrite key. The value slot is unsigned and the lexer silently skipped a `-`, so `-3` compiled as `3`. The item also left open what the number means, how a starting value is set, and what happens to a value outside the range. The maintainer answered all four (2026-11-21).
+
+**Decision.**
+1. `axis <Virtue> between <Pole> and <Pole>` declares an axis. The virtue names a property relation, so the fact is `Justice(Valerius, 8)`: one row per character and axis, overwritten by D-007 as written. The engine names no axis.
+2. +10 is the virtue held fully, and lower values lean toward failure. The two poles name the ways the virtue fails; they are labels for later lines (P45-03), not the ends of the number line. P45-03's lean (axis value minus counter-axis value) reads this scale directly.
+3. A starting value is an ordinary `remember Mercy(Valerius, -3)`. A character with no fact holds no value on that axis; there is no implicit zero.
+4. The value slot holds the integer as two's complement. The lexer reads a `-` directly before a digit as part of a number, and the compiler accepts a negative number only as a value on an axis; elsewhere it is an error rather than an entity named `-3`.
+5. A literal outside -10 to +10, a non-number, or a missing value on an axis is a compile error, in a `remember` and in a condition. At run time every write is clamped: `World.bound_relation` records a signed range on a property relation, and `remember`, `restore_state`, and `clone` clamp into it, so a host call, a loaded save, or later drift (P45-04) stores the limit. Bounds are program data, declared by the compiler or the package loader; the world snapshot does not carry them, so the save format does not change.
+6. The inspector lists a bounded value as a signed number on its character, even where the number equals an entity id.
+7. `.bspk` version 19 appends the axes (relation and two pole entities); versions 1 through 18 load none. Decision scoring is unchanged: `picks` and `drops` still read facts, and comparing values is P45-03.
+
+**Alternatives:**
+- One `Value` relation with the axis packed into the value slot: rejected, because `remember` would need an overwrite key of subject, relation, and axis, which changes D-007.
+- A fifth column in the fact row: rejected, because it changes the arena layout, both save formats, and every fact reader for one feature.
+- Storing 0 to 20 with 10 as the midpoint: rejected, because every reader and the inspector would have to undo the offset, and a host writing 3 would mean -7.
+- Rejecting an out-of-range write at run time: the maintainer chose clamping, so a running game never fails mid-tick on drift or a host call.
+
+**Consequences.** `axis` and a leading `-` are new lexer tokens; a script that used `axis` as a name, or relied on a stray `-` being skipped, now reads differently. No shipped script did. The bound check is a linear scan of the declared bounds on every `remember`, which is free while a program declares a few axes; `MAX_AXES` is 64. Bounds survive `restore_state` because a save restores facts into the program that is already loaded; a host that restores a save into a world that never loaded the program gets no clamping until it does. Conditions test an exact value only; ranges such as "Justice above 5" wait for P45-03.
+
+**Review trigger:** P45-03 needs comparisons the exact-value condition cannot express, or a program needs a range other than -10 to +10.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

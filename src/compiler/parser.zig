@@ -438,6 +438,14 @@ pub const DecisionDecl = struct {
     options: []const DecisionOptionDecl,
 };
 
+/// `axis <Virtue> between <Pole> and <Pole>` declares a value axis (P45-01, D-144). The virtue
+/// names the axis and its property relation; +10 is the virtue held fully, and the two poles
+/// name the ways it fails. The engine names no axis: every one comes from a script.
+pub const AxisDecl = struct {
+    name: []const u8,
+    poles: [2][]const u8,
+};
+
 /// `path <Name>:` owns the facts and routines available to one operational approach
 /// (P24-01). One path is selected at runtime; the others stay muted.
 pub const PathDecl = struct {
@@ -468,6 +476,7 @@ pub const AST = struct {
     goals: std.array_list.Managed(GoalDecl),
     spellbooks: std.array_list.Managed(SpellbookDecl),
     decisions: std.array_list.Managed(DecisionDecl),
+    axes: std.array_list.Managed(AxisDecl),
     commands: std.array_list.Managed(CommandDecl),
     aliases: std.array_list.Managed(AliasDecl),
     /// Script music in declaration order (P28-03, D-062). Strings borrow the source.
@@ -497,6 +506,7 @@ pub const AST = struct {
             .goals = std.array_list.Managed(GoalDecl).init(allocator),
             .spellbooks = std.array_list.Managed(SpellbookDecl).init(allocator),
             .decisions = std.array_list.Managed(DecisionDecl).init(allocator),
+            .axes = std.array_list.Managed(AxisDecl).init(allocator),
             .commands = std.array_list.Managed(CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -529,6 +539,7 @@ pub const AST = struct {
         self.goals.deinit();
         self.spellbooks.deinit();
         self.decisions.deinit();
+        self.axes.deinit();
         self.commands.deinit();
         self.aliases.deinit();
         self.scores.deinit();
@@ -830,6 +841,13 @@ pub const Parser = struct {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("decision '{s}' is declared twice", .{decl.name});
                     }
                     try ast.decisions.append(decl);
+                },
+                .kw_axis => {
+                    const decl = try self.parse_axis_decl();
+                    for (ast.axes.items) |prior| {
+                        if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("axis '{s}' is declared twice", .{decl.name});
+                    }
+                    try ast.axes.append(decl);
                 },
                 .kw_grid => {
                     const decl = try self.parse_grid_decl();
@@ -1952,6 +1970,28 @@ pub const Parser = struct {
             .clauses = try clauses.toOwnedSlice(),
             .options = try options.toOwnedSlice(),
         };
+    }
+
+    /// Parses `axis <Virtue> between <Pole> and <Pole>` (P45-01). A pole may be quoted or run
+    /// to the end of its phrase, so `Condoning Harm` needs no quotes.
+    fn parse_axis_decl(self: *Parser) !AxisDecl {
+        try self.advance(); // axis
+        const name = (try self.expect(.identifier)).slice;
+        const between = try self.expect(.identifier);
+        if (!std.mem.eql(u8, between.slice, "between"))
+            return self.set_error("axis '{s}' expects 'between <Pole> and <Pole>'", .{name});
+        const first = try self.parse_name();
+        if (self.current.tag != .kw_and)
+            return self.set_error("axis '{s}' expects 'and' between its two poles", .{name});
+        try self.advance();
+        const second = try self.parse_name();
+        if (std.mem.eql(u8, first, second))
+            return self.set_error("axis '{s}' names '{s}' as both poles", .{ name, first });
+        for ([_][]const u8{ first, second }) |pole| {
+            if (std.mem.eql(u8, pole, name))
+                return self.set_error("axis '{s}' names its virtue as a pole", .{name});
+        }
+        return .{ .name = name, .poles = .{ first, second } };
     }
 
     fn decision_clause(self: *Parser, owner_kind: []const u8, owner: []const u8) !FactPattern {

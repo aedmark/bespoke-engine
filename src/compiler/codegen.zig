@@ -27,6 +27,7 @@ const agency_mod = @import("../agency.zig");
 const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
 const decision_mod = @import("../decision.zig");
+const value_mod = @import("../value.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
@@ -92,6 +93,9 @@ pub const CompiledProgram = struct {
     spellbooks: std.array_list.Managed(spell_mod.Declaration),
     /// Decisions in declaration order, which breaks score ties and orders choices (P44-05).
     decisions: std.array_list.Managed(decision_mod.Declaration),
+    /// Value axes in declaration order (P45-01, D-144). Each bounds its property relation in
+    /// the world the program was compiled or loaded into.
+    axes: std.array_list.Managed(value_mod.Axis),
     /// Typed-command frames and noun aliases, in declaration order (P26-01, D-057).
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
@@ -124,6 +128,7 @@ pub const CompiledProgram = struct {
         self.spellbooks.deinit();
         for (self.decisions.items) |*decision| decision.deinit_owned(self.chunk.allocator);
         self.decisions.deinit();
+        self.axes.deinit();
         for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
         self.commands.deinit();
         for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
@@ -357,6 +362,7 @@ pub const Codegen = struct {
     goals: std.array_list.Managed(hint_mod.Declaration),
     spellbooks: std.array_list.Managed(spell_mod.Declaration),
     decisions: std.array_list.Managed(decision_mod.Declaration),
+    axes: std.array_list.Managed(value_mod.Axis),
     commands: std.array_list.Managed(command_mod.CommandDecl),
     aliases: std.array_list.Managed(command_mod.AliasDecl),
     scores: std.array_list.Managed(mml.ScoreDecl),
@@ -384,6 +390,7 @@ pub const Codegen = struct {
             .goals = std.array_list.Managed(hint_mod.Declaration).init(allocator),
             .spellbooks = std.array_list.Managed(spell_mod.Declaration).init(allocator),
             .decisions = std.array_list.Managed(decision_mod.Declaration).init(allocator),
+            .axes = std.array_list.Managed(value_mod.Axis).init(allocator),
             .commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator),
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
@@ -577,6 +584,17 @@ pub const Codegen = struct {
                 if (rel.is_property) .property else .set,
             );
         }
+        // Axes are interned before any statement, so a `remember` on one meets a bounded
+        // property wherever it appears (P45-01, D-144). An axis may not reuse a declared
+        // relation's name: the two declarations would disagree on what the value slot means.
+        for (ast.axes.items) |decl| {
+            mut_self.error_context = decl.name;
+            for (ast.relations.items) |rel| {
+                if (std.mem.eql(u8, rel.name, decl.name)) return error.InvalidAxis;
+            }
+            try mut_self.axes.append(try value_mod.declare(mut_self.world, decl.name, decl.poles));
+        }
+        value_mod.validate_all(mut_self.world, mut_self.axes.items) catch return error.InvalidAxis;
         if (ast.paths.items.len > 0) {
             _ = try mut_self.world.intern_relation("PathActive", .property);
         }
@@ -698,7 +716,7 @@ pub const Codegen = struct {
                 }
                 const subj = try mut_self.resolve_pattern_term(pat.args[0], &var_map, &next_var);
                 const obj = if (pat.args.len > 1)
-                    try mut_self.resolve_pattern_term(pat.args[1], &var_map, &next_var)
+                    try mut_self.resolve_object_term(pat.relation, pat.args[1], &var_map, &next_var)
                 else
                     world_mod.PatternTerm{ .wildcard = {} };
 
@@ -806,6 +824,7 @@ pub const Codegen = struct {
             .goals = mut_self.goals,
             .spellbooks = mut_self.spellbooks,
             .decisions = mut_self.decisions,
+            .axes = mut_self.axes,
             .commands = mut_self.commands,
             .aliases = mut_self.aliases,
             .scores = mut_self.scores,
@@ -1380,10 +1399,7 @@ pub const Codegen = struct {
             .remember => |rem| {
                 const subj = try self.resolve_entity(rem.args[0]);
                 const rel = try self.resolve_relation(rem.relation);
-                const obj = if (rem.args.len > 1)
-                    try self.resolve_entity_or_value(rem.args[1])
-                else
-                    0;
+                const obj = try self.fact_object(rem.relation, rem.args);
 
                 try self.chunk.emit_push_entity(subj);
                 try self.chunk.emit_push_relation(rel);
@@ -1398,7 +1414,7 @@ pub const Codegen = struct {
                 try self.chunk.emit_push_entity(subj);
                 try self.chunk.emit_push_relation(rel);
                 if (has_obj) {
-                    const obj = try self.resolve_entity_or_value(fg.args[1]);
+                    const obj = try self.fact_value(fg.relation, fg.args[1]);
                     try self.chunk.emit_push_const(obj);
                 }
                 _ = try self.chunk.emit_op(.forget);
@@ -1656,7 +1672,7 @@ pub const Codegen = struct {
         }
         try self.chunk.emit_push_relation(try self.resolve_relation(pat.relation));
         if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
-            try self.chunk.emit_push_const(try self.resolve_entity_or_value(pat.args[1]));
+            try self.chunk.emit_push_const(try self.fact_value(pat.relation, pat.args[1]));
             mask |= 0x04;
         }
         return mask;
@@ -1706,7 +1722,42 @@ pub const Codegen = struct {
         return try self.world.intern_relation(name, .set);
     }
 
+    /// The value slot a `remember` writes. A fact on an axis needs a character and a value;
+    /// any other one-argument fact is a state and stores nothing.
+    fn fact_object(self: *Codegen, relation: []const u8, args: []const []const u8) !u32 {
+        if (args.len > 1) return self.fact_value(relation, args[1]);
+        if (self.axis_bound(relation)) {
+            self.error_context = relation;
+            return error.InvalidAxisValue;
+        }
+        return 0;
+    }
+
+    fn axis_bound(self: *Codegen, relation: []const u8) bool {
+        const rel = self.world.lookup_relation(relation) orelse return false;
+        return self.world.value_bound(rel) != null;
+    }
+
+    /// The object of a fact written or tested with a literal. On an axis it must be a whole
+    /// number from -10 to +10, stored as two's complement; a literal outside the range is a
+    /// compile error rather than a clamp, since the author wrote a value the axis cannot hold
+    /// (D-144). Elsewhere it is an entity or an unsigned value, as before.
+    fn fact_value(self: *Codegen, relation: []const u8, arg: []const u8) !u32 {
+        if (self.axis_bound(relation)) {
+            return value_mod.encode_literal(arg) orelse {
+                self.error_context = arg;
+                return error.InvalidAxisValue;
+            };
+        }
+        return self.resolve_entity_or_value(arg);
+    }
+
     fn resolve_entity_or_value(self: *Codegen, name: []const u8) !u32 {
+        // Only an axis value may be negative; elsewhere `-3` would become an entity name.
+        if (name.len > 1 and name[0] == '-' and std.ascii.isDigit(name[1])) {
+            self.error_context = name;
+            return error.NegativeValueOutsideAxis;
+        }
         if (std.fmt.parseInt(u32, name, 10)) |val| {
             return val;
         } else |_| {
@@ -1749,7 +1800,7 @@ pub const Codegen = struct {
                 .relation = try self.resolve_relation(pattern.relation),
                 .subject = try self.resolve_pattern_term(pattern.args[0], &var_map, &next_var),
                 .object = if (pattern.args.len == 2)
-                    try self.resolve_pattern_term(pattern.args[1], &var_map, &next_var)
+                    try self.resolve_object_term(pattern.relation, pattern.args[1], &var_map, &next_var)
                 else
                     .{ .wildcard = {} },
             };
@@ -1759,6 +1810,20 @@ pub const Codegen = struct {
         guard.clauses = clauses;
         self.error_context = cue.cue_name;
         return guard;
+    }
+
+    /// A pattern's object term: an axis literal is encoded and range-checked like a written one;
+    /// a variable or wildcard is unchanged.
+    fn resolve_object_term(
+        self: *Codegen,
+        relation: []const u8,
+        arg: []const u8,
+        var_map: *std.StringHashMap(u8),
+        next_var: *u8,
+    ) !world_mod.PatternTerm {
+        const literal = arg.len > 0 and (std.ascii.isDigit(arg[0]) or arg[0] == '-');
+        if (literal and self.axis_bound(relation)) return .{ .constant = try self.fact_value(relation, arg) };
+        return self.resolve_pattern_term(arg, var_map, next_var);
     }
 
     fn resolve_pattern_term(
@@ -1778,6 +1843,10 @@ pub const Codegen = struct {
             next_var.* += 1;
             try var_map.put(arg, v_idx);
             return .{ .variable = v_idx };
+        }
+        if (arg.len > 1 and arg[0] == '-' and std.ascii.isDigit(arg[1])) {
+            self.error_context = arg;
+            return error.NegativeValueOutsideAxis;
         }
         if (std.fmt.parseInt(u32, arg, 10)) |num| {
             return .{ .constant = num };
@@ -3035,4 +3104,85 @@ test "P44-05: a decision compiles into trigger lines and scored options" {
     try testing.expectEqualStrings("High", decision.options[0].picks[1].clause.relation);
     try testing.expectEqual(world.lookup_entity("SaltThree").?, decision.options[0].picks[1].clause.subject.?);
     try testing.expectEqualStrings("ReedOne", world.get_entity_name(decision.options[1].entity).?);
+}
+
+test "P45-01: an author-declared axis compiles into a bounded property with signed values" {
+    const testing = std.testing;
+    const vm_mod = @import("../vm.zig");
+    const compiler = @import("../compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    // Neither axis name is known to the engine: the script alone declares them.
+    var compiled = try compiler.compile_source(testing.allocator, &world, null,
+        \\entity Valerius, Ines
+        \\axis Justice between Cruelty and Leniency
+        \\axis Candour between Bluntness and "Flattering Lies"
+        \\remember Justice(Valerius, 8)
+        \\remember Candour(Valerius, -3)
+        \\remember Justice(Ines, -10)
+        \\routine Soften(Valerius):
+        \\  remember Justice(Valerius, 2)
+        \\  if Candour(Valerius, -3):
+        \\    remember Candour(Valerius, 10)
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.axes.items.len);
+    const justice = compiled.axes.items[0];
+    const candour = compiled.axes.items[1];
+    try testing.expectEqualStrings("Justice", world.get_relation_meta(justice.relation).?.name);
+    try testing.expectEqual(world_mod.RelationType.property, world.get_relation_meta(candour.relation).?.rel_type);
+    try testing.expectEqualStrings("Bluntness", world.get_entity_name(candour.poles[0]).?);
+    try testing.expectEqualStrings("Flattering Lies", world.get_entity_name(candour.poles[1]).?);
+
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    const valerius = world.lookup_entity("Valerius").?;
+    const ines = world.lookup_entity("Ines").?;
+    _ = try vm.spawn_routine(valerius, compiled.initial_entry.?);
+    _ = try vm.step_tick();
+    try testing.expectEqual(@as(i32, 8), value_mod.value_of(&world, valerius, justice).?);
+    try testing.expectEqual(@as(i32, -3), value_mod.value_of(&world, valerius, candour).?);
+    try testing.expectEqual(@as(i32, -10), value_mod.value_of(&world, ines, justice).?);
+
+    // A later write overwrites the one row (D-007), and a negative literal in a condition
+    // matches the stored value.
+    _ = try vm.spawn_routine(valerius, compiled.routine_entries.get("Soften").?);
+    _ = try vm.step_tick();
+    try testing.expectEqual(@as(i32, 2), value_mod.value_of(&world, valerius, justice).?);
+    try testing.expectEqual(@as(i32, 10), value_mod.value_of(&world, valerius, candour).?);
+    var rows: usize = 0;
+    const slice = world.facts.slice();
+    for (slice.items(.subject)[0..world.facts.len], slice.items(.relation)[0..world.facts.len]) |subject, relation| {
+        if (subject == valerius and (relation == justice.relation or relation == candour.relation)) rows += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), rows);
+}
+
+test "P45-01: axis declarations and values are range-checked at compile time" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    const cases = [_]struct { source: []const u8, message: []const u8, line: u32, column: u32 }{
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius, 11)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 26 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius, -11)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 26 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius, Kindly)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 26 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nremember Mercy(Valerius)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 10 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nroutine Judge(Valerius):\n  if Mercy(Valerius, 12):\n    wait 1 ticks", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 3, .column = 22 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\nwhen Mercy(Valerius, 40):\n  remember Pardoned(Valerius)", .message = "a value on an axis needs a character and a whole number from -10 to +10", .line = 2, .column = 22 },
+        .{ .source = "property Mood(who, value)\nremember Mood(Valerius, -3)", .message = "only a value on a declared axis may be negative", .line = 2, .column = 25 },
+        .{ .source = "property Mercy(who, value)\naxis Mercy between Vengeance and Leniency", .message = "invalid axis; its name is already a relation, or the script declares too many axes", .line = 2, .column = 6 },
+        .{ .source = "axis Mercy between Vengeance and Leniency\naxis Mercy between Spite and Softness", .message = "axis 'Mercy' is declared twice", .line = 2, .column = 38 },
+        .{ .source = "axis Mercy from Vengeance to Leniency", .message = "axis 'Mercy' expects 'between <Pole> and <Pole>'", .line = 1, .column = 17 },
+        .{ .source = "axis Mercy between Vengeance or Leniency", .message = "axis 'Mercy' expects 'and' between its two poles", .line = 1, .column = 30 },
+        .{ .source = "axis Mercy between Vengeance and Vengeance", .message = "axis 'Mercy' names 'Vengeance' as both poles", .line = 1, .column = 43 },
+    };
+    for (cases) |case| {
+        const result = compiler.check_source(testing.allocator, case.source);
+        errdefer std.debug.print("diagnostic source:\n{s}\ngot: {s} at {d}:{d}\n", .{ case.source, result.message(), result.line, result.column });
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+        try testing.expectEqual(case.column, result.column);
+    }
+    // The ends of the range are values an axis holds.
+    try testing.expect(compiler.check_source(testing.allocator, "axis Mercy between Vengeance and Leniency\nremember Mercy(A, 10)\nremember Mercy(B, -10)\nremember Mercy(C, 0)").is_valid);
 }

@@ -2,6 +2,12 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 108 (2026-11-19)
+- **Work.** Completed P43-07. `check_docs.py` derives the band's rows from `src/display/band.zig`, substituting `LOG_ROWS`, `LOG_ROW`, and the `top` and `bottom` return expressions, then fails on any quoted band row that differs, in prose naming the band (D-132). Archive files are skipped as history. Seven unit tests cover the derivation and the phrasings.
+- **Mutation.** Changing HANDOFF's "top of 504" to 500 failed with `docs/HANDOFF.md:64: the band's top is 504 pixels at 1280x720, not 500`; restoring it passes.
+- **Open.** P43-08, a per-scene clearance budget, waits on Q-017: its three forms differ in whether the render golden grows, whether a floor exists, and whether every proof declares a minimum.
+- **Checks.** Linux x86_64, Python 3 stdlib: `python3 tools/check_docs.py` (0/0), 82 Python tests (seven new in `tests/test_check_docs_band.py`), `manual.py check --check-evidence` (9 sections, 58 entries), and `git diff --check` pass. No Zig source or golden changed, so the Zig suites were not rerun for this item.
+
 ### Session 107 (2026-11-19)
 - **Work.** Completed P43-06. `display.band.measure` counts its own calls, and both goldens tie that count to the frames they record: the deck golden wants one measurement per line, the render golden one per window size drawn, with the State drawer's frames exempt (D-131). A short count fails with `BandCheckMissing` and names the label and both numbers.
 - **Mutation.** Replacing the measurement with a constructed `Check`, so no frame is measured, failed both goldens: `'tavern_heist/Tavern': the band check ran 0 time(s) for a recorded frame that needs 2` and `deck/0: the band check ran 0 time(s) for 13 recorded lines`. Restoring it passes, and no golden moved.

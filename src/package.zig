@@ -14,6 +14,7 @@ const agency_mod = @import("agency.zig");
 const hint_mod = @import("hint.zig");
 const spell_mod = @import("spell.zig");
 const decision_mod = @import("decision.zig");
+const value_mod = @import("value.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -57,8 +58,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// versions 1 through 15 hold bytecode that cannot contain them, so they load unchanged.
 /// Version 17 appends spellbooks with their words and combinations (P44-04); versions 1
 /// through 16 load with no spellbook. Version 18 appends decisions with their trigger lines and
-/// scored options (P44-05); versions 1 through 17 load with no decisions.
-pub const PACKAGE_VERSION: u32 = 18;
+/// scored options (P44-05); versions 1 through 17 load with no decisions. Version 19 appends value
+/// axes with their poles (P45-01, D-144); versions 1 through 18 load with none.
+pub const PACKAGE_VERSION: u32 = 19;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -403,6 +405,33 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             }
         }
     }
+
+    try write_axes(writer, compiled);
+}
+
+/// Writes the value axes (P45-01): each axis's property relation and its two pole entities.
+fn write_axes(writer: anytype, compiled: *const CompiledProgram) !void {
+    try writer.writeInt(u32, @intCast(compiled.axes.items.len), .little);
+    for (compiled.axes.items) |axis| {
+        try writer.writeInt(u16, axis.relation.to_int(), .little);
+        for (axis.poles) |pole| try writer.writeInt(u32, pole.to_int(), .little);
+    }
+}
+
+/// Untrusted input: the relation must already be a property in the package's relation table,
+/// the poles must be entities, and the loader bounds the relation before validating, so a
+/// package cannot declare an axis whose range differs from the compiler's (D-144).
+fn read_axis(world: *World, reader: anytype) !value_mod.Axis {
+    const relation = RelationKind.from_int(try reader.takeInt(u16, .little));
+    const meta = world.get_relation_meta(relation) orelse return error.InvalidAxisConfig;
+    if (meta.rel_type != .property) return error.InvalidAxisConfig;
+    const axis = value_mod.Axis{
+        .relation = relation,
+        .poles = .{ try read_entity_ref(world, reader), try read_entity_ref(world, reader) },
+    };
+    world.bound_relation(relation, value_mod.MIN, value_mod.MAX) catch return error.InvalidAxisConfig;
+    value_mod.validate(world, axis) catch return error.InvalidAxisConfig;
+    return axis;
 }
 
 /// Writes one trigger or scoring line; a null subject or object is the `_` wildcard.
@@ -1638,6 +1667,16 @@ pub fn load_package(
         decision_mod.validate_all(decisions.items) catch return error.InvalidDecisionConfig;
     }
 
+    var axes = std.array_list.Managed(value_mod.Axis).init(allocator);
+    errdefer axes.deinit();
+    if (header.version >= 19) {
+        const axis_count = try pr.takeInt(u32, .little);
+        if (axis_count > value_mod.MAX_AXES) return error.InvalidAxisConfig;
+        var ai: u32 = 0;
+        while (ai < axis_count) : (ai += 1) try axes.append(try read_axis(world, pr));
+        value_mod.validate_all(world, axes.items) catch return error.InvalidAxisConfig;
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1657,6 +1696,7 @@ pub fn load_package(
         .goals = goals,
         .spellbooks = spellbooks,
         .decisions = decisions,
+        .axes = axes,
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
@@ -1869,7 +1909,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 18",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 19",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2077,7 +2117,7 @@ test "P44-05: package version 18 round-trips a decision and loads a version 17 p
     try testing.expect(loaded.routine_entries.contains("Idle"));
 }
 
-test "P44-05: checked-in current package fixture carries a decision" {
+test "P44-05: checked-in version 18 package fixture carries a decision" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
@@ -2087,7 +2127,7 @@ test "P44-05: checked-in current package fixture carries a decision" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 18), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -2114,7 +2154,7 @@ test "P44-02: checked-in current package fixture carries aggregate conditions" {
     );
     defer testing.allocator.free(fixture);
 
-    // The current writer is version 18; this fixture pins that version 16 still loads.
+    // The current writer is version 19; this fixture pins that version 16 still loads.
     try testing.expectEqual(@as(u32, 16), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
@@ -2195,8 +2235,11 @@ const EMPTY_TAIL_AFTER_V13: usize = 4 + EMPTY_TAIL_AFTER_V16;
 /// The spellbook and decision sections after version 16, for tests that locate version 16
 /// sections from the end.
 const EMPTY_TAIL_AFTER_V16: usize = 4 + EMPTY_TAIL_AFTER_V17;
-/// The empty decision count (version 18), for tests that locate version 17 sections from the end.
-const EMPTY_TAIL_AFTER_V17: usize = 4;
+/// The decision and axis sections after version 17, for tests that locate version 17 sections
+/// from the end.
+const EMPTY_TAIL_AFTER_V17: usize = 4 + EMPTY_TAIL_AFTER_V18;
+/// The empty axis count (version 19), for tests that locate version 18 sections from the end.
+const EMPTY_TAIL_AFTER_V18: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -3016,4 +3059,119 @@ test "P44-01: package version 15 round-trips goals and loads a version 14 payloa
         defer loaded.deinit();
         try testing.expectEqual(@as(usize, 0), loaded.goals.items.len);
     }
+}
+
+const AXIS_FIXTURE =
+    \\entity FixtureCaptain
+    \\axis FixtureJustice between Cruelty and Leniency
+    \\axis FixtureMercy between Vengeance and "Condoning Harm"
+    \\remember FixtureJustice(FixtureCaptain, 8)
+    \\remember FixtureMercy(FixtureCaptain, -3)
+    \\routine Idle(FixtureCaptain):
+    \\  wait 1 ticks
+;
+
+test "P45-01: package version 19 round-trips value axes and loads a version 18 payload with none" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, AXIS_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled2.axes.items.len);
+    const mercy = compiled2.axes.items[1];
+    try testing.expectEqualStrings("FixtureMercy", world2.get_relation_meta(mercy.relation).?.name);
+    try testing.expectEqualStrings("Vengeance", world2.get_entity_name(mercy.poles[0]).?);
+    try testing.expectEqualStrings("Condoning Harm", world2.get_entity_name(mercy.poles[1]).?);
+    // The loaded world clamps the axis as the compiling world did.
+    const bound = world2.value_bound(mercy.relation).?;
+    try testing.expectEqual(value_mod.MIN, bound.min);
+    try testing.expectEqual(value_mod.MAX, bound.max);
+    const captain = world2.lookup_entity("FixtureCaptain").?;
+    try world2.remember(captain, mercy.relation, 40, 0);
+    try testing.expectEqual(@as(i32, value_mod.MAX), value_mod.value_of(&world2, captain, mercy).?);
+
+    // A payload that ends before the axis table is a version 18 package and loads none.
+    // The axis table is not empty here, so cut its whole length rather than the empty tail.
+    const axis_table_len = 4 + compiled1.axes.items.len * (2 + 4 + 4);
+    const v18_payload = buffer.items[0 .. buffer.items.len - axis_table_len];
+    const v18_owned = try testing.allocator.dupe(u8, v18_payload);
+    defer testing.allocator.free(v18_owned);
+    reseal_for_test(v18_owned, 18);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v18_stream: std.Io.Reader = .fixed(v18_owned);
+    var loaded = try load_package(testing.allocator, &v18_stream, &world3, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 0), loaded.axes.items.len);
+    try testing.expect(world3.value_bound(world3.lookup_relation("FixtureMercy").?) == null);
+    try testing.expect(loaded.routine_entries.contains("Idle"));
+}
+
+test "P45-01: a package axis on a set relation or with a bad pole is refused" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, AXIS_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
+
+    // The last axis entry is relation (u16) then two pole ids (u32). Point its second pole at an
+    // entity that does not exist.
+    const bad_pole = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(bad_pole);
+    std.mem.writeInt(u32, bad_pole[bad_pole.len - 4 ..][0..4], 0xFFFF_FFF0, .little);
+    reseal_for_test(bad_pole, PACKAGE_VERSION);
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(bad_pole);
+    try testing.expectError(error.InvalidProgramEntity, load_package(testing.allocator, &stream, &world2, null));
+
+    // Point the axis at relation 0, which no table holds.
+    const bad_relation = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(bad_relation);
+    std.mem.writeInt(u16, bad_relation[bad_relation.len - 10 ..][0..2], 0, .little);
+    reseal_for_test(bad_relation, PACKAGE_VERSION);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var stream3: std.Io.Reader = .fixed(bad_relation);
+    try testing.expectError(error.InvalidAxisConfig, load_package(testing.allocator, &stream3, &world3, null));
+}
+
+test "P45-01: checked-in version 19 package fixture carries value axes" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.3.1-package-v19.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 2), compiled.axes.items.len);
+    try testing.expectEqualStrings("FixtureJustice", world.get_relation_meta(compiled.axes.items[0].relation).?.name);
+    try testing.expectEqualStrings("Condoning Harm", world.get_entity_name(compiled.axes.items[1].poles[1]).?);
 }

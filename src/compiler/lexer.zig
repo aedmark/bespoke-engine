@@ -64,6 +64,7 @@ pub const TokenTag = enum {
     kw_goal,
     kw_spellbook,
     kw_decision,
+    kw_axis,
     kw_command,
     kw_alias,
     kw_score,
@@ -339,6 +340,21 @@ pub const Lexer = struct {
                 else => {},
             }
 
+            // A minus sign directly before a digit starts a negative number, which only a value
+            // on a declared axis accepts (P45-01, D-144); the compiler rejects it elsewhere.
+            if (c == '-' and self.peek_char() != null and std.ascii.isDigit(self.peek_char().?)) {
+                while (self.peek_char()) |peek| {
+                    if (!std.ascii.isDigit(peek)) break;
+                    _ = self.advance_char();
+                }
+                return Token{
+                    .tag = .number,
+                    .slice = self.source[start_pos..self.pos],
+                    .line = self.line,
+                    .col = start_col,
+                };
+            }
+
             // Number or Dice literal
             if (std.ascii.isDigit(c)) {
                 var is_dice = false;
@@ -463,6 +479,7 @@ pub fn keyword_map() std.StaticStringMap(TokenTag) {
         .{ "goal", .kw_goal },
         .{ "spellbook", .kw_spellbook },
         .{ "decision", .kw_decision },
+        .{ "axis", .kw_axis },
         .{ "command", .kw_command },
         .{ "alias", .kw_alias },
         .{ "score", .kw_score },

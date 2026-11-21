@@ -172,6 +172,10 @@ fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDe
             value_relation = true;
         };
     }
+    // A bounded relation holds a signed value (D-144), never an entity, so the inspector lists
+    // it as a number: `Justice 8`, `Mercy -3`.
+    const bounded = world.value_bound(fact.relation) != null;
+    if (bounded) value_relation = true;
     const object_name = if (value_relation or fact.object_or_value == 0) null else world.get_entity_name(EntityId.from_int(fact.object_or_value));
     if (object_name) |on| {
         const len = @min(on.len, df.object_name.len);
@@ -180,7 +184,10 @@ fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDe
         df.object_is_entity = true;
     } else {
         var num_buf: [16]u8 = undefined;
-        const formatted = std.fmt.bufPrint(&num_buf, "{d}", .{fact.object_or_value}) catch "?";
+        const formatted = if (bounded)
+            std.fmt.bufPrint(&num_buf, "{d}", .{@as(i32, @bitCast(fact.object_or_value))}) catch "?"
+        else
+            std.fmt.bufPrint(&num_buf, "{d}", .{fact.object_or_value}) catch "?";
         const len = @min(formatted.len, df.object_name.len);
         @memcpy(df.object_name[0..len], formatted[0..len]);
         df.object_len = @intCast(len);
@@ -1210,4 +1217,31 @@ test "P22-02: DisplayBridge copies the attached distaff phrase into frames" {
     // Later input changes do not leak into an already captured frame.
     _ = input.press(.D);
     try testing.expectEqual(@as(usize, 2), db.get_frame().distaff.get_played().len);
+}
+
+test "P45-01: the inspector lists an axis value as a signed number, not an entity" {
+    const testing = std.testing;
+    const value_mod = @import("value.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const valerius = try world.intern_entity("Valerius");
+    const mercy = try value_mod.declare(&world, "Mercy", .{ "Vengeance", "Condoning Harm" });
+    const justice = try value_mod.declare(&world, "Justice", .{ "Cruelty", "Leniency" });
+    // Entity 1 is Valerius, so an unbounded value of 1 would be drawn as an edge to him.
+    try world.remember(valerius, justice.relation, 1, 0);
+    try world.remember(valerius, mercy.relation, value_mod.encode_literal("-3").?, 0);
+    var out: [8]RenderDebugFact = undefined;
+    const count = capture_debug_facts(&world, &out);
+    try testing.expectEqual(@as(usize, 2), count);
+    for (out[0..count]) |fact| {
+        try testing.expect(!fact.object_is_entity);
+        const relation = fact.relation_name[0..fact.relation_len];
+        const shown = fact.object_name[0..fact.object_len];
+        if (std.mem.eql(u8, relation, "Mercy")) {
+            try testing.expectEqualStrings("-3", shown);
+        } else {
+            try testing.expectEqualStrings("Justice", relation);
+            try testing.expectEqualStrings("1", shown);
+        }
+    }
 }

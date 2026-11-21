@@ -5,7 +5,9 @@ const testing = std.testing;
 
 const max_input = 4096;
 const script = @embedFile("fixtures/fuzz/room.bespoke");
+const values = @embedFile("fixtures/fuzz/values.bespoke");
 const package = @embedFile("fixtures/compat/v0.1.0-package-v14.bspk");
+const axis_package = @embedFile("fixtures/compat/v0.3.1-package-v19.bspk");
 const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
@@ -126,19 +128,19 @@ fn interpret(allocator: std.mem.Allocator, input: []const u8) !bool {
 }
 
 test "P39-01 lexer" {
-    try campaign(lex, &.{script});
+    try campaign(lex, &.{ script, values });
 }
 
 test "P39-01 parser" {
-    try campaign(parse, &.{script});
+    try campaign(parse, &.{ script, values });
 }
 
 test "P39-01 codegen" {
-    try campaign(compile, &.{script});
+    try campaign(compile, &.{ script, values });
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{package});
+    try campaign(loadPackage, &.{ package, axis_package });
 }
 
 test "P39-01 save loader" {
