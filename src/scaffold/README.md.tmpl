@@ -10,7 +10,7 @@ A narrative game built on the [BeSpoke Engine](https://github.com/aedmark/bespok
 | `src/main.zig` | The host: runs the script in a window, or headless |
 | `src/game_test.zig` | Tests that compile the script and check its simulation |
 | `src/web.zig`, `web/` | The browser version: the engine's WebAssembly runtime, a page, and a smoke check |
-| `.github/workflows/build.yml` | Builds and tests on Linux, macOS, and Windows, and builds the browser version |
+| `.github/workflows/build.yml` | Builds and tests on Linux and macOS, and builds the browser version |
 | `build.zig`, `build.zig.zon` | The build, with the engine as the `bespoke` dependency |
 
 ## Commands

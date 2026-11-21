@@ -179,6 +179,8 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     // could not fetch 0.17.1, so a generated project's CI failed before building (P42-06).
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, workflow, "- name: Install Zig\n"));
     try testing.expect(std.mem.indexOf(u8, workflow, "setup-zig") == null);
+    // Windows is deferred until a Windows contributor maintains it (D-143).
+    try testing.expect(std.mem.indexOf(u8, workflow, "windows") == null);
     // The fingerprint's high half is the name's CRC-32, as Zig checks it.
     var expect_buf: [32]u8 = undefined;
     const checksum = try std.fmt.bufPrint(&expect_buf, ".fingerprint = 0x{x:0>8}", .{std.hash.Crc32.hash("tide")});

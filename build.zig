@@ -30,16 +30,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    // translate-c reads no `--search-prefix`, though `linkSystemLibrary` does, so on Windows the
-    // MSYS2 SDL2 headers a game's CI passes that way were never found (P42-06). Reading the
-    // prefixes makes the configuration uncacheable, so only a Windows target pays for it;
-    // Linux and macOS find SDL2 on their default include paths.
-    if (target.result.os.tag == .windows) {
-        b.graph.poisonCache();
-        for (b.graph.search_prefixes.items) |prefix| {
-            sdl_c.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "include" }) });
-        }
-    }
     const sdl_mod = sdl_c.createModule();
 
     // Named apart from the `bespoke` CLI so a game's build can fetch the CLI by artifact name

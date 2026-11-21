@@ -25,7 +25,7 @@ This directory stores durable project knowledge for the BeSpoke Engine. Each fac
 | [`BENCHMARKS.md`](BENCHMARKS.md) | Contributors and release owners | Simulation benchmark method and browser artifact budgets | Performance guarantees for a full game or any particular device |
 | [Editor setup](../editors/vscode/README.md) | Game authors | Install and regenerate the TextMate syntax grammar | Compiler diagnostics or language semantics |
 | [`SEPARATION.md`](SEPARATION.md) | Developers and auditors | Engine / proof separation rule, classification rubric, audit and extraction method, checks, baseline inventory | Decision rationale (DECISIONS) or task status (ROADMAP) |
-| [`runbooks/release-hand-test.md`](runbooks/release-hand-test.md) | Release owners and the maintainer | The hand-test pass before a release: desktop proofs, listening, browser builds, export, the hand-uploaded site, macOS and Windows CI, and its results table | Automated suites and commands (TESTING) |
+| [`runbooks/release-hand-test.md`](runbooks/release-hand-test.md) | Release owners and the maintainer | The hand-test pass before a release: desktop proofs, listening, browser builds, export, the hand-uploaded site (maintainer only), macOS CI, and its results table | Automated suites and commands (TESTING) |
 | [`manual.html`](manual.html) | Developers and agents | Standalone 3x interactive manual & developer guide (What, How, Why) | Raw Markdown sources |
 
 ## Update Triggers
