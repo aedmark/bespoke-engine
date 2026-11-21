@@ -56,12 +56,39 @@ pub fn declare(world: *World, name: []const u8, poles: [2][]const u8) !Axis {
     }
     const relation = try world.intern_relation(name, .property);
     world.bound_relation(relation, MIN, MAX) catch return Error.InvalidAxis;
+    // The axis is also an entity of the same name, so a typed `appeal to mercy` or `ask Valerius
+    // about mercy` can name it (P45-05).
+    _ = try world.intern_entity(name);
     const axis = Axis{
         .relation = relation,
         .poles = .{ try world.intern_entity(poles[0]), try world.intern_entity(poles[1]) },
     };
     try validate(world, axis);
     return axis;
+}
+
+/// The entity a character's value on an axis is known as: `Mercy of Valerius` (P45-05, D-149).
+/// Knowing a value is `Knows(Player, <that entity>)`, the knowledge model every hint and
+/// presentation reads, so a value is learned per character rather than per axis.
+pub fn known_value(world: *World, axis: RelationKind, character: EntityId) !EntityId {
+    var buf: [128]u8 = undefined;
+    return world.intern_entity(try known_value_name(world, axis, character, &buf));
+}
+
+/// The name of that entity without interning it, for readers that hold a const World.
+pub fn known_value_name(world: *const World, axis: RelationKind, character: EntityId, buf: []u8) ![]const u8 {
+    const axis_name = (world.get_relation_meta(axis) orelse return Error.InvalidAxis).name;
+    const character_name = world.get_entity_name(character) orelse return Error.InvalidAxis;
+    return std.fmt.bufPrint(buf, "{s} of {s}", .{ axis_name, character_name }) catch Error.InvalidAxis;
+}
+
+/// The axis an entity names, when it is an axis's entity (`Mercy`), or null.
+pub fn axis_of_entity(world: *const World, entity: EntityId) ?RelationKind {
+    const name = world.get_entity_name(entity) orelse return null;
+    const relation = world.lookup_relation(name) orelse return null;
+    const bound = world.value_bound(relation) orelse return null;
+    if (bound.min != MIN or bound.max != MAX) return null;
+    return relation;
 }
 
 /// Encodes a script literal for the value slot, or null when it is not a whole number in range.

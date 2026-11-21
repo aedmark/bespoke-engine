@@ -13,6 +13,7 @@ const std = @import("std");
 const world_mod = @import("world.zig");
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
+const value_mod = @import("value.zig");
 
 pub const MAX_GOALS: usize = 16;
 /// Needs per goal. The frontier walk is linear in this, so the ceiling keeps one query cheap.
@@ -214,12 +215,24 @@ pub fn knows(world: *const World, player: EntityId, entity: EntityId) bool {
 /// the room must be known before the character could point at it.
 fn terms_known(world: *const World, player: EntityId, need: Need, tier: Tier) bool {
     if (need.subject) |subject| if (subject != player and !knows(world, player, subject)) return false;
-    if (need.object) |object| if (object != player and !knows(world, player, object)) return false;
+    if (need.object) |object| if (object != player and !object_known(world, player, need.subject, object)) return false;
     if (tier == .room) {
         const room = need.room orelse return false;
         if (!knows(world, player, room)) return false;
     }
     return true;
+}
+
+/// A need's object is known as an entity, except a value axis about a character: knowing that
+/// `Mercy` exists is not knowing that Valerius holds it, so `met Appealed(Valerius, Mercy)` is
+/// Holmesian only once the player knows `Mercy of Valerius` (P45-05, D-149).
+fn object_known(world: *const World, player: EntityId, subject: ?EntityId, object: EntityId) bool {
+    const axis = value_mod.axis_of_entity(world, object) orelse return knows(world, player, object);
+    const character = subject orelse return knows(world, player, object);
+    var buf: [128]u8 = undefined;
+    const name = value_mod.known_value_name(world, axis, character, &buf) catch return false;
+    const value = world.lookup_entity(name) orelse return false;
+    return knows(world, player, value);
 }
 
 fn authored(need: Need, tier: Tier) ?[]const u8 {

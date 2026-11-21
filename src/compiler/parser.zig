@@ -464,6 +464,13 @@ pub const DilemmaDriftDecl = struct {
     negated: bool,
 };
 
+/// One `appeals <N> to <Axis>` line (P45-05, D-149).
+pub const DilemmaAppealDecl = struct {
+    points: u32,
+    axis: []const u8,
+    at: Token,
+};
+
 /// One tier's `"line" -> Action`.
 pub const DilemmaResponseDecl = struct {
     line: []const u8,
@@ -481,6 +488,7 @@ pub const DilemmaDecl = struct {
     counter: []const u8,
     leans: []const DilemmaLeanDecl,
     drifts: []const DilemmaDriftDecl,
+    appeals: []const DilemmaAppealDecl,
     responses: [dilemma_mod.TIER_COUNT]DilemmaResponseDecl,
 };
 
@@ -2063,6 +2071,7 @@ pub const Parser = struct {
         var clauses = std.array_list.Managed(DecisionClauseDecl).init(self.allocator);
         var leans = std.array_list.Managed(DilemmaLeanDecl).init(self.allocator);
         var drifts = std.array_list.Managed(DilemmaDriftDecl).init(self.allocator);
+        var appeals = std.array_list.Managed(DilemmaAppealDecl).init(self.allocator);
         const TierLine = struct { strength: enum { strong, moderate, neutral }, toward: []const u8, response: DilemmaResponseDecl, at: Token };
         var tiers = std.array_list.Managed(TierLine).init(self.allocator);
         // Where each lean names its axis, so a wrong name is reported on its own line.
@@ -2114,6 +2123,19 @@ pub const Parser = struct {
                 });
                 if (leans.items.len > dilemma_mod.MAX_LEANS)
                     return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("has more than {d} lean lines", .{dilemma_mod.MAX_LEANS})});
+            } else if (std.mem.eql(u8, directive, "appeals")) {
+                const points = try self.take_u32();
+                if (points == 0 or points > dilemma_mod.MAX_APPEAL)
+                    return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("appeals more than {d} or less than 1; use 1 to {d}", .{ dilemma_mod.MAX_APPEAL, dilemma_mod.MAX_APPEAL })});
+                if (!std.mem.eql(u8, self.current.slice, "to"))
+                    return self.dilemma_fail(self.current, name, &.{"expects 'appeals <N> to <Axis>'"});
+                try self.advance();
+                const axis_tok = try self.expect(.identifier);
+                for (appeals.items) |prior| {
+                    if (std.mem.eql(u8, prior.axis, axis_tok.slice))
+                        return self.dilemma_fail(axis_tok, name, &.{ "declares an appeal to '", axis_tok.slice, "' twice" });
+                }
+                try appeals.append(.{ .points = points, .axis = axis_tok.slice, .at = axis_tok });
             } else if (std.mem.eql(u8, directive, "drifts")) {
                 const points = try self.take_u32();
                 if (points == 0 or points > dilemma_mod.MAX_DRIFT)
@@ -2154,7 +2176,7 @@ pub const Parser = struct {
                     .response = .{ .line = line, .action = action },
                     .at = directive_tok,
                 });
-            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'drifts', 'strong', 'moderate', or 'neutral'", .{directive});
+            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'appeals', 'drifts', 'strong', 'moderate', or 'neutral'", .{directive});
         }
         _ = try self.expect(.dedent);
         if (clauses.items.len == 0)
@@ -2163,6 +2185,10 @@ pub const Parser = struct {
         const counter_name = counter.?;
         if (std.mem.eql(u8, axis_name, counter_name))
             return self.dilemma_fail(name_tok, name, &.{ "weighs '", axis_name, "' against itself" });
+        for (appeals.items) |appeal| {
+            if (!std.mem.eql(u8, appeal.axis, axis_name) and !std.mem.eql(u8, appeal.axis, counter_name))
+                return self.dilemma_fail(appeal.at, name, &.{ "appeals to '", appeal.axis, "', which it does not weigh" });
+        }
         for (leans.items, lean_at.items) |lean, at| {
             if (!std.mem.eql(u8, lean.toward, axis_name) and !std.mem.eql(u8, lean.toward, counter_name))
                 return self.dilemma_fail(at, name, &.{ "leans toward '", lean.toward, "', which it does not weigh" });
@@ -2202,6 +2228,7 @@ pub const Parser = struct {
             .counter = counter_name,
             .leans = try leans.toOwnedSlice(),
             .drifts = try drifts.toOwnedSlice(),
+            .appeals = try appeals.toOwnedSlice(),
             .responses = ordered,
         };
     }

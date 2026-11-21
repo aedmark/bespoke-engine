@@ -1814,6 +1814,28 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review trigger:** a story needs drift from something other than a dilemma's outcomes, or a different threshold or bound.
 
+## D-149 Persuasion Is an Appeal to a Learned Value, Spent by One Weighing (2026-11-21, status: accepted)
+
+**Context.** P45-05 asks that the player choose which value to appeal to, adding a modifier to that axis, that a character's values are facts the player learns by watching and asking, and that learned values feed Holmesian hints (P44-01). Open were how an appeal is made, its size and lifetime, whether an appeal to an unknown value works, how a value becomes known, and how hints read it. The maintainer answered each (2026-11-21).
+
+**Decision.**
+1. An appeal is the engine frame `appeal to <value>` or `host.appeal(vm, compiled, actor, person, value)`, so a dialogue choice or a button can make the same appeal. A typed appeal addresses the first dilemma actor in the speaker's room whose open dilemma lists that value. Each axis is also an entity of its own name, and the typed-command scope includes every axis, so `appeal to mercy` and `ask Valerius about mercy` resolve anywhere.
+2. A dilemma's `appeals <N> to <Axis>` lines, one per weighed axis and 1 to 10, say which values move it and how far. An accepted appeal records `PendingAppeal(Dilemma, Axis)`; the next weighing adds that line's points and forgets it. An appeal made while the dilemma waits in neutral weighs it again, as evidence does. A dilemma that has weighed to a final tier cannot be appealed to.
+3. An appeal to a value the actor does not know is refused with "You don't know what moves them." and records nothing. An appeal no open dilemma lists is refused with "Nobody here would be moved by that.".
+4. A value is known as `Knows(Player, "<Axis> of <Character>")`, an entity the compiler interns for each dilemma actor and weighed axis. The player learns it by watching (a weighing that lands outside neutral teaches everyone in the actor's room the axis it leaned toward) or by asking (a script's `TalksTo` handler remembers the fact).
+5. An accepted appeal also records the set fact `Appealed(Character, Axis)` and fires `Appeals(Actor, Character, Axis)`. A hint need whose object is an axis and whose subject is a character, such as `met Appealed(Valerius, Mercy)`, is Holmesian only once the player knows `Mercy of Valerius`; before that the hint is Doylian.
+6. `.bspk` version 23 appends one appeal group per dilemma; versions 1 through 22 load dilemmas that no appeal moves.
+
+**Alternatives:**
+- A script `appeal` statement: rejected by the maintainer in favour of a typed frame and a host call, which a script reaches through choices anyway.
+- A fixed appeal size for any weighed axis: rejected, so an author can make one value easier to reach than another.
+- An appeal that lasts until the dilemma re-arms: rejected; one appeal moves one weighing.
+- Allowing appeals to unknown values: rejected, because learning the value is the puzzle.
+
+**Consequences.** Watching needs a spatial system: a host without one teaches nothing by watching, and the script must teach by asking. The typed appeal names no person; two dilemma actors in one room who both list the value are resolved by declaration order. The generated value names (`Mercy of Valerius`) contain spaces, so a script names them quoted.
+
+**Review trigger:** a game needs an appeal aimed at a named person in a crowded room, or appeals that persist.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

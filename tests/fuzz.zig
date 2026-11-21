@@ -11,6 +11,7 @@ const axis_package = @embedFile("fixtures/compat/v0.3.1-package-v19.bspk");
 const red_line_package = @embedFile("fixtures/compat/v0.3.1-package-v20.bspk");
 const dilemma_package = @embedFile("fixtures/compat/v0.3.1-package-v21.bspk");
 const drift_package = @embedFile("fixtures/compat/v0.3.1-package-v22.bspk");
+const appeal_package = @embedFile("fixtures/compat/v0.3.1-package-v23.bspk");
 const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
@@ -143,7 +144,7 @@ test "P39-01 codegen" {
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package });
+    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package });
 }
 
 test "P39-01 save loader" {

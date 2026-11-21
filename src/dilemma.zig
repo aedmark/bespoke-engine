@@ -34,10 +34,19 @@
 //!   DilemmaWeighed(Dilemma)            state, set at the first weighing and never cleared
 //! The generated relation names contain a space, which no script name can, so they never
 //! collide with an author's relation.
+//!
+//! Persuasion (P45-05, D-149): `appeals N to <Axis>` lines name the values the player may appeal
+//! to and how far each moves the delta. `host.appeal` records `PendingAppeal(Dilemma, Axis)`;
+//! the next weighing adds that line's points and forgets the appeal, and an appeal made while
+//! the dilemma waits in neutral weighs it again, as evidence does. Values are learned by
+//! watching: a weighing that lands outside neutral teaches everyone in the actor's room the axis
+//! it leaned toward, as `Knows(Witness, <Axis> of <Actor>)` (`value.known_value`).
 
 const std = @import("std");
 const world_mod = @import("world.zig");
 const decision_mod = @import("decision.zig");
+const value_mod = @import("value.zig");
+const spatial_mod = @import("spatial.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
@@ -56,6 +65,11 @@ pub const MAX_DRIFT: u16 = 10;
 pub const DRIFT_THRESHOLD: i32 = 5;
 pub const DRIFT_STEPS_PER_DILEMMA: u32 = 2;
 pub const HOLDING_RELATION = "DriftHolding";
+pub const PENDING_APPEAL_RELATION = "PendingAppeal";
+pub const KNOWS_RELATION = "Knows";
+/// One appeal line per weighed axis: the axis and the counter-axis.
+pub const MAX_APPEALS: usize = 2;
+pub const MAX_APPEAL: u16 = 10;
 pub const WEIGHED_RELATION = "DilemmaWeighed";
 /// Tier boundaries, mirrored around zero (D-146).
 pub const STRONG_AT: i32 = 7;
@@ -99,6 +113,14 @@ pub const Drift = struct {
     spent: RelationKind,
 };
 
+/// One appeal line: an appeal to `axis` (the dilemma's axis or counter-axis) adds `points`
+/// toward it at the next weighing; `entity` is the axis's entity, which the appeal names.
+pub const Appeal = struct {
+    axis: RelationKind,
+    entity: EntityId,
+    points: i32,
+};
+
 /// Interns the two drift relations of an axis: `<Axis> drift` on the character and
 /// `<Axis> drift steps` on the dilemma. Both are properties, so a write replaces the row.
 pub fn drift_relations(world: *World, axis: RelationKind) !struct { accumulator: RelationKind, spent: RelationKind } {
@@ -127,6 +149,7 @@ pub const Dilemma = struct {
     counter: RelationKind,
     leans: []const Lean,
     drifts: []const Drift = &.{},
+    appeals: []const Appeal = &.{},
     /// Indexed by `Tier`; every tier has a response, so weighing is never silent.
     responses: [TIER_COUNT]Response,
 };
@@ -137,6 +160,7 @@ pub const Declaration = struct {
     pub fn deinit_owned(self: *Declaration, allocator: std.mem.Allocator) void {
         allocator.free(self.dilemma.leans);
         allocator.free(self.dilemma.drifts);
+        allocator.free(self.dilemma.appeals);
         allocator.free(self.dilemma.clauses);
         self.* = undefined;
     }
@@ -173,6 +197,13 @@ pub fn validate(world: *const World, dilemma: Dilemma) Error!void {
             const meta = world.get_relation_meta(rel) orelse return Error.InvalidDilemma;
             if (meta.rel_type != .property) return Error.InvalidDilemma;
         }
+    }
+    if (dilemma.appeals.len > MAX_APPEALS) return Error.InvalidDilemma;
+    for (dilemma.appeals, 0..) |appeal, i| {
+        if (appeal.axis != dilemma.axis and appeal.axis != dilemma.counter) return Error.InvalidDilemma;
+        for (dilemma.appeals[0..i]) |prior| if (prior.axis == appeal.axis) return Error.InvalidDilemma;
+        if (appeal.points == 0 or appeal.points > MAX_APPEAL or appeal.points < -@as(i32, MAX_APPEAL)) return Error.InvalidDilemma;
+        if (value_mod.axis_of_entity(world, appeal.entity) != appeal.axis) return Error.InvalidDilemma;
     }
     for (dilemma.responses) |response| {
         if (world.get_entity_name(response.line) == null or world.get_entity_name(response.action) == null) return Error.InvalidDilemma;
@@ -313,10 +344,11 @@ pub const Outcomes = struct {
 /// Advances every dilemma by one tick. Runs in `host.tick` after decisions. A dilemma weighs
 /// once when its trigger rises and re-arms when it falls; a neutral weighing waits for evidence
 /// and weighs again each tick the count of things presented to the actor has grown.
-pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
+pub fn step(world: *World, spatial: ?*const spatial_mod.SpatialSystem, declarations: []const Declaration) !Outcomes {
     var out = Outcomes{};
     if (declarations.len == 0) return out;
     const v = try Vocabulary.intern(world);
+    const pending_rel = try world.intern_relation(PENDING_APPEAL_RELATION, .property);
     // Drift reads last tick's weighings: a fact that rises on the tick a dilemma is first
     // weighed was already true when it was weighed, so it is not an outcome of it.
     for (declarations) |decl| try apply_drift(world, decl.dilemma);
@@ -337,12 +369,20 @@ pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
             .done => continue,
             .awaits_evidence => {
                 const seen = world.get_property(dilemma.entity, v.seen) orelse 0;
-                if (presented <= seen) continue;
+                const appealed = world.get_property(dilemma.entity, pending_rel) != null;
+                if (presented <= seen and !appealed) continue;
             },
             .idle => {},
         }
 
-        const delta = delta_of(world, dilemma);
+        // A pending appeal counts at this weighing only, then it is spent (D-149).
+        var delta = delta_of(world, dilemma);
+        if (world.get_property(dilemma.entity, pending_rel)) |raw| {
+            for (dilemma.appeals) |appeal| {
+                if (appeal.entity.to_int() == raw) delta += appeal.points;
+            }
+            _ = world.forget(dilemma.entity, pending_rel, null);
+        }
         const tier = tier_of(delta);
         const response = dilemma.responses[@backingInt(tier)];
         _ = world.forget(dilemma.entity, v.chose, null);
@@ -355,6 +395,7 @@ pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
             try v.set(world, dilemma.entity, .done);
             _ = world.forget(dilemma.entity, v.seen, null);
         }
+        if (tier != .neutral) try reveal(world, spatial, dilemma, tier);
         out.items[out.len] = .{
             .dilemma = dilemma.entity,
             .actor = dilemma.actor,
@@ -367,6 +408,53 @@ pub fn step(world: *World, declarations: []const Declaration) !Outcomes {
         out.len += 1;
     }
     return out;
+}
+
+/// Teaches everyone in the actor's room the value a weighing leaned toward (D-149). Watching is
+/// being there: without a spatial system, or for an actor with no place, nobody learns.
+fn reveal(world: *World, spatial: ?*const spatial_mod.SpatialSystem, dilemma: Dilemma, tier: Tier) !void {
+    const sp = spatial orelse return;
+    const axis = switch (tier) {
+        .strong_axis, .moderate_axis => dilemma.axis,
+        .strong_counter, .moderate_counter => dilemma.counter,
+        .neutral => return,
+    };
+    const room = room_of(sp, dilemma.actor) orelse return;
+    const knows = try world.intern_relation(KNOWS_RELATION, .set);
+    const value = try value_mod.known_value(world, axis, dilemma.actor);
+    var it = sp.agents.iterator();
+    while (it.next()) |entry| {
+        const witness = entry.key_ptr.*;
+        if (witness == dilemma.actor) continue;
+        if ((room_of(sp, witness) orelse continue) != room) continue;
+        try world.remember(witness, knows, value.to_int(), 0);
+    }
+}
+
+fn room_of(sp: *const spatial_mod.SpatialSystem, entity: EntityId) ?EntityId {
+    const wp = sp.get_current_waypoint(entity) orelse return null;
+    return (sp.graph.get_waypoint(wp) orelse return null).room;
+}
+
+/// The dilemma an appeal to `axis_entity` would move for `character`, or null: the first in
+/// declaration order whose actor is the character, that lists an appeal to that value, and that
+/// has not already weighed to a final tier.
+pub fn appeal_target(world: *const World, declarations: []const Declaration, character: EntityId, axis_entity: EntityId) ?*const Dilemma {
+    for (declarations) |*decl| {
+        const dilemma = &decl.dilemma;
+        if (dilemma.actor != character) continue;
+        if (stage_of(world, dilemma.entity) == .done) continue;
+        for (dilemma.appeals) |appeal| {
+            if (appeal.entity == axis_entity) return dilemma;
+        }
+    }
+    return null;
+}
+
+/// Records an appeal for the next weighing; a newer appeal replaces an unspent one.
+pub fn record_appeal(world: *World, dilemma: *const Dilemma, axis_entity: EntityId) !void {
+    const pending_rel = try world.intern_relation(PENDING_APPEAL_RELATION, .property);
+    try world.remember(dilemma.entity, pending_rel, axis_entity.to_int(), 0);
 }
 
 /// Updates each drift line's edge state and, once the dilemma has been weighed, adds the points
@@ -457,7 +545,6 @@ const TestRig = struct {
 
     fn init(rig: *TestRig) !void {
         const testing = std.testing;
-        const value_mod = @import("value.zig");
         rig.world = try World.init(testing.allocator, 1024 * 1024);
         const w = &rig.world;
         rig.actor = try w.intern_entity("Valerius");
@@ -503,9 +590,9 @@ const TestRig = struct {
     /// Re-arms the dilemma, then raises the trigger and weighs once.
     fn weigh(rig: *TestRig) !Outcomes {
         _ = rig.world.forget(rig.thief, rig.accused, null);
-        _ = try step(&rig.world, &rig.decls);
+        _ = try step(&rig.world, null, &rig.decls);
         try rig.world.remember(rig.thief, rig.accused, 0, 0);
-        return step(&rig.world, &rig.decls);
+        return step(&rig.world, null, &rig.decls);
     }
 
     fn action_name(rig: *TestRig, outcome: Outcome) []const u8 {
@@ -542,7 +629,7 @@ test "P45-03: each tier boundary selects its line and action" {
     // A strong weighing is done: still triggered, it does not weigh again.
     try rig.set_values(9, 0);
     _ = try rig.weigh();
-    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, &rig.decls)).len);
+    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, null, &rig.decls)).len);
     try testing.expectEqual(Stage.done, stage_of(&rig.world, rig.decls[0].dilemma.entity).?);
 
     // A missing value counts as 0 for weighing and writes nothing.
@@ -593,19 +680,19 @@ test "P45-03: a neutral weighing waits for evidence and weighs again when it arr
     try testing.expectEqual(Stage.awaits_evidence, stage_of(&rig.world, rig.decls[0].dilemma.entity).?);
 
     // Nothing new presented: no re-weighing.
-    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, &rig.decls)).len);
+    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, null, &rig.decls)).len);
 
     // Evidence that changes nothing re-weighs once and stays neutral.
     try rig.world.remember(rig.actor, presented, letter.to_int(), 0);
-    const still = try step(&rig.world, &rig.decls);
+    const still = try step(&rig.world, null, &rig.decls);
     try testing.expectEqual(@as(usize, 1), still.len);
     try testing.expectEqual(Tier.neutral, still.items[0].tier);
-    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, &rig.decls)).len);
+    try testing.expectEqual(@as(usize, 0), (try step(&rig.world, null, &rig.decls)).len);
 
     // The ledger proves the thief a criminal; presenting it re-weighs to moderate Justice.
     try rig.world.remember(rig.thief, rig.criminal, 0, 0);
     try rig.world.remember(rig.actor, presented, ledger.to_int(), 0);
-    const moved = try step(&rig.world, &rig.decls);
+    const moved = try step(&rig.world, null, &rig.decls);
     try testing.expectEqual(@as(usize, 1), moved.len);
     try testing.expectEqual(Tier.moderate_axis, moved.items[0].tier);
     try testing.expectEqualStrings("Jail", rig.action_name(moved.items[0]));
@@ -652,9 +739,9 @@ fn with_drifts(rig: *TestRig, lines: *[2]Drift, repaid_points: i32, robbed_point
 fn pulse(rig: *TestRig, relation: []const u8, subject: EntityId) !void {
     const rel = rig.world.lookup_relation(relation).?;
     try rig.world.remember(subject, rel, 0, 0);
-    _ = try step(&rig.world, &rig.decls);
+    _ = try step(&rig.world, null, &rig.decls);
     _ = rig.world.forget(subject, rel, null);
-    _ = try step(&rig.world, &rig.decls);
+    _ = try step(&rig.world, null, &rig.decls);
 }
 
 fn mercy_of(rig: *TestRig) i32 {
@@ -680,12 +767,12 @@ test "P45-04: drift accumulates whole points and moves a value one step per 5" {
     // A fact that holds without rising adds nothing: hold Repaid across two steps.
     const repaid = rig.world.lookup_relation("Repaid").?;
     try rig.world.remember(rig.thief, repaid, 0, 0);
-    _ = try step(&rig.world, &rig.decls);
-    _ = try step(&rig.world, &rig.decls);
+    _ = try step(&rig.world, null, &rig.decls);
+    _ = try step(&rig.world, null, &rig.decls);
     try testing.expectEqual(@as(i32, 3), drift_points(&rig.world, rig.actor, acc));
     try testing.expectEqual(@as(i32, 0), mercy_of(&rig));
     _ = rig.world.forget(rig.thief, repaid, null);
-    _ = try step(&rig.world, &rig.decls);
+    _ = try step(&rig.world, null, &rig.decls);
 
     // A second repayment makes 6 points: one step toward Mercy, 1 point left over.
     try pulse(&rig, "Repaid", rig.thief);

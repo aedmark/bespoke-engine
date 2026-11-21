@@ -27,6 +27,8 @@ dilemma StolenBread:
   leans 3 toward Justice when Criminal(Thief)
   leans 4 toward Mercy unless Fed(Town)
   drifts 3 toward Mercy when Repaid(Thief)
+  appeals 4 to Mercy
+  appeals 3 to Justice
   drifts 5 away from Justice when Robbed(Baker)
   strong Justice: "The law is the law." -> Hang
   moderate Justice: "A night in the cells." -> Jail
