@@ -8,3 +8,13 @@ routine Judge(Valerius):
   if Mercy(Valerius, -3):
     remember Mercy(Valerius, 10)
   remember Justice(Valerius, -10)
+
+red lines Valerius: Execute
+decision Judge:
+  actor Valerius
+  fires Judged
+  requires Accused(Thief)
+  option Execute:
+    picks 9 when Stole(Thief, Bread)
+  option Pardon:
+    picks 2 when Hungry(Thief)

@@ -192,6 +192,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.InvalidGoal => "invalid goal or too many goals; check need names, prerequisites, rooms, and hint tiers",
         error.InvalidSpellbook => "invalid spellbook; check word kinds and tiers, and that each spell names a power, an element, and a form",
         error.InvalidDecision => "invalid decision; check its actor, cue, trigger lines, and scored options",
+        error.InvalidRedLine => "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left",
         error.InvalidAxis => "invalid axis; its name is already a relation, or the script declares too many axes",
         error.InvalidAxisValue => "a value on an axis needs a character and a whole number from -10 to +10",
         error.NegativeValueOutsideAxis => "only a value on a declared axis may be negative",

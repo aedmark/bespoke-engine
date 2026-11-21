@@ -2,6 +2,12 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 109 (2026-11-19)
+- **Work.** Completed P43-08 (Q-017, D-133). `band.Check` reports `clearance`, the smallest gap between a stage draw's lowest row and the band's top, and keeps the draw that set it (`Low`) so a report names it. Only a draw that starts above the band counts: one drawn from the band down is already an overlap, and one behind the log has no air to leave. The render golden writes `clearance/<label>: N` for every recorded frame, 119 lines, from the 1280x720 pass, and a run under the 8-pixel floor lists every crowded scene before it fails.
+- **Layout.** The first run named eight frames: the Wreckers Cellar's "SEA CHEST" label ended on row 496 and the Observatory's "Stained Glove" on row 503. The label moved 12 pixels up the chest lid to leave 19, and the three Observatory props moved from world y 9 to y 8, where their markers end on row 491 and leave 13.
+- **Goldens.** Eleven `wasm.txt` hashes moved with the Observatory layout and no transcript changed; the render goldens gained the clearance lines and seven hashes moved, the four Observatory frames and the three Wreckers Cellar frames.
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build test-engine`, `zig build test-proofs`, `zig build wasm wasm-proofs`, `node tools/wasm_smoke.js`, `build_site.py` (15 pages current), `check_web_budgets.py`, `check_docs.py` (0/0), 82 Python tests, `manual.py check --check-evidence` (9 sections, 58 entries), and `git diff --check` pass. No page or browser was looked at by hand.
+
 ### Session 108 (2026-11-19)
 - **Work.** Completed P43-07. `check_docs.py` derives the band's rows from `src/display/band.zig`, substituting `LOG_ROWS`, `LOG_ROW`, and the `top` and `bottom` return expressions, then fails on any quoted band row that differs, in prose naming the band (D-132). Archive files are skipped as history. Seven unit tests cover the derivation and the phrasings.
 - **Mutation.** Changing HANDOFF's "top of 504" to 500 failed with `docs/HANDOFF.md:64: the band's top is 504 pixels at 1280x720, not 500`; restoring it passes.

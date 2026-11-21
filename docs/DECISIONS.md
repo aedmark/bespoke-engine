@@ -1733,6 +1733,27 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Review trigger:** P45-03 needs comparisons the exact-value condition cannot express, or a program needs a range other than -10 to +10.
 
+## D-145 Red Lines Are Fixed Per Character and Veto Options Before Scoring (2026-11-21, status: accepted)
+
+**Context.** P45-02 asks that a character list actions it never takes, removed before any scoring whatever the values say. D-137 left room for a veto line before scoring without changing the decision's shape. Four points were open: where a red line is declared, whether it can change at run time, what happens when every offered option is vetoed, and what a red line may name. The maintainer answered all four (2026-11-21).
+
+**Decision.**
+1. `red lines <Character>: <Option>, <Option>` is a top-level declaration owned by the character, not by a decision. It applies in every decision whose actor is that character. `red lines` is two words matched in place, not keywords, so `red` stays usable as a name.
+2. Red lines are program data in `CompiledProgram.red_lines`, not facts. No script, save, rewind, branch, or later value drift (P45-04) can lift one; changing a red line means editing the script.
+3. The resolver skips a vetoed option before it checks knowledge or scores it, so no score can bring it back. When every offered option is vetoed, the decision chooses nothing: no `Chose` fact, no cue, and it waits for its trigger to fall, as an empty hand does (D-137).
+4. A red line must name an option that some decision offers that character; a misspelled or misplaced name is a compile error. A character's red lines are declared once and name each option once, at most 16. A decision whose every option its actor has vetoed is a compile error, because it could never choose.
+5. Red lines veto decision options only. Agendas, cues, and player commands are unchanged.
+6. `.bspk` version 20 appends red lines (actor and option entities), and the loader validates them against the loaded decisions as the compiler does; versions 1 through 19 load none.
+
+**Alternatives:**
+- A `never <Option>` line inside each decision: rejected by the maintainer, because a red line belongs to the character across every decision it makes.
+- `RedLine(Character, Option)` facts that scripts may remember and forget: rejected, because a red line that a script or drift can lift is a preference, which scoring already expresses.
+- Firing a refusal cue when everything is vetoed: rejected for now; an empty hand already resolves silently, and a refusal line belongs with P45-03's tiers.
+
+**Consequences.** `decision.step` takes the program's red lines, so the host passes them from `host.tick`. A red line is checked against option entities by identity, so two decisions offering the same option entity share one veto, which is the intent: an action the character never takes is the same action in every decision. Because red lines are not facts, the inspector does not show them; a script that wants to display one remembers a fact of its own.
+
+**Review trigger:** a story needs a red line that an event can break, or P45-03 wants a voiced refusal when every option is vetoed.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

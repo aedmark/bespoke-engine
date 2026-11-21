@@ -16,6 +16,11 @@
 //! The engine fires the decision's cue with the actor and the winning option, so one handler can
 //! run a whole game and a script that wants per-option behaviour matches the argument. Scoring
 //! reads facts only and draws no random number, so a replay makes the same choices.
+//!
+//! Red lines (P45-02, D-145) are options a character never takes. They are program data, not
+//! facts, so no script, save, rewind, or later value drift can lift one. A vetoed option is
+//! removed before scoring, so no score can bring it back; a decision point whose offered
+//! options are all vetoed chooses nothing, exactly as an empty hand does.
 
 const std = @import("std");
 const world_mod = @import("world.zig");
@@ -30,6 +35,9 @@ pub const MAX_OPTIONS: usize = 8;
 pub const MAX_PICKS: usize = 8;
 /// A single scored line's magnitude. The sum of a full option stays well inside `i32`.
 pub const MAX_POINTS: u16 = 100;
+/// Characters with red lines in one program, and red lines per character.
+pub const MAX_RED_LINE_SETS: usize = MAX_DECISIONS;
+pub const MAX_RED_LINES: usize = 16;
 
 pub const STATE_RELATION = "DecisionState";
 pub const CHOSE_RELATION = "Chose";
@@ -83,6 +91,62 @@ pub const Declaration = struct {
         self.* = undefined;
     }
 };
+
+/// One character's red lines: options it never takes, in any decision it makes.
+pub const RedLines = struct {
+    actor: EntityId,
+    options: []const EntityId,
+};
+
+/// Compiler- or loader-owned red lines. `deinit_owned` frees the option slice.
+pub const RedLineDeclaration = struct {
+    red_lines: RedLines,
+
+    pub fn deinit_owned(self: *RedLineDeclaration, allocator: std.mem.Allocator) void {
+        allocator.free(self.red_lines.options);
+        self.* = undefined;
+    }
+};
+
+/// Whether the actor has drawn a red line at this option.
+pub fn vetoed(red_lines: []const RedLineDeclaration, actor: EntityId, option: EntityId) bool {
+    for (red_lines) |decl| {
+        if (decl.red_lines.actor != actor) continue;
+        for (decl.red_lines.options) |line| if (line == option) return true;
+    }
+    return false;
+}
+
+/// Checks red lines against the decisions they constrain. Each character appears once and
+/// names each option once; every named option must be one that a decision offers that character,
+/// so a misspelled red line is an error rather than a veto of nothing; and no decision may have
+/// every option vetoed, because it could never choose.
+pub fn validate_red_lines(declarations: []const Declaration, red_lines: []const RedLineDeclaration) Error!void {
+    if (red_lines.len > MAX_RED_LINE_SETS) return Error.InvalidDecision;
+    for (red_lines, 0..) |decl, i| {
+        const set = decl.red_lines;
+        if (set.actor == .none or set.options.len == 0 or set.options.len > MAX_RED_LINES) return Error.InvalidDecision;
+        for (red_lines[0..i]) |prior| if (prior.red_lines.actor == set.actor) return Error.InvalidDecision;
+        for (set.options, 0..) |option, oi| {
+            for (set.options[0..oi]) |prior| if (prior == option) return Error.InvalidDecision;
+            if (!offers(declarations, set.actor, option)) return Error.InvalidDecision;
+        }
+    }
+    for (declarations) |decl| {
+        const decision = decl.decision;
+        for (decision.options) |option| {
+            if (!vetoed(red_lines, decision.actor, option.entity)) break;
+        } else return Error.InvalidDecision;
+    }
+}
+
+fn offers(declarations: []const Declaration, actor: EntityId, option: EntityId) bool {
+    for (declarations) |decl| {
+        if (decl.decision.actor != actor) continue;
+        for (decl.decision.options) |candidate| if (candidate.entity == option) return true;
+    }
+    return false;
+}
 
 /// One choice made this tick, in declaration order.
 pub const Choice = struct {
@@ -221,10 +285,12 @@ pub fn score_of(world: *const World, option: Option) i32 {
 const Scored = struct { option: EntityId, score: i32 };
 
 /// The highest-scoring offered option, or null when the actor knows none of them. An equal score
-/// keeps the earlier option, so declaration order breaks ties without a second rule.
-fn best_option(world: *const World, decision: Decision) ?Scored {
+/// keeps the earlier option, so declaration order breaks ties without a second rule. A vetoed
+/// option is skipped before it is scored, so its score never competes (P45-02).
+fn best_option(world: *const World, decision: Decision, red_lines: []const RedLineDeclaration) ?Scored {
     var best: ?Scored = null;
     for (decision.options) |option| {
+        if (vetoed(red_lines, decision.actor, option.entity)) continue;
         if (!offered(world, decision.actor, option.entity)) continue;
         const score = score_of(world, option);
         if (best == null or score > best.?.score) best = .{ .option = option.entity, .score = score };
@@ -236,7 +302,7 @@ fn best_option(world: *const World, decision: Decision) ?Scored {
 /// this tick's facts, movement included, and its cue handler runs on the next tick like any
 /// fired cue. A decision whose trigger rises with no offered option resolves to nothing, fires
 /// nothing, and waits for the trigger to fall before it can choose again.
-pub fn step(world: *World, declarations: []const Declaration) !Choices {
+pub fn step(world: *World, declarations: []const Declaration, red_lines: []const RedLineDeclaration) !Choices {
     var out = Choices{};
     if (declarations.len == 0) return out;
     const v = try Vocabulary.intern(world);
@@ -254,7 +320,7 @@ pub fn step(world: *World, declarations: []const Declaration) !Choices {
         }
         if (!live) continue;
         try v.set(world, decision.entity, .done);
-        const scored = best_option(world, decision) orelse continue;
+        const scored = best_option(world, decision, red_lines) orelse continue;
         try world.remember(decision.entity, v.chose, scored.option.to_int(), 0);
         out.items[out.len] = .{
             .decision = decision.entity,
@@ -306,23 +372,23 @@ test "P44-05: the highest-scoring offered option wins, and an equal score keeps 
     try world.remember(open, open_rel, 0, 0);
     try seed(&world, &decisions);
 
-    const first = try step(&world, &decisions);
+    const first = try step(&world, &decisions, &.{});
     try testing.expectEqual(@as(usize, 1), first.len);
     try testing.expectEqual(option_a, first.items[0].option);
     try testing.expectEqual(@as(i32, 3), first.items[0].score);
     try testing.expectEqual(option_a, chosen(&world, decisions[0].decision.entity).?);
 
     // Still open: the decision point already happened, so nothing fires again.
-    const again = try step(&world, &decisions);
+    const again = try step(&world, &decisions, &.{});
     try testing.expectEqual(@as(usize, 0), again.len);
 
     // Risky lowers OptionA to a tie with OptionB, and the earlier option keeps it.
     try world.remember(risky, risky_rel, 0, 0);
     _ = world.forget(open, open_rel, null);
-    _ = try step(&world, &decisions);
+    _ = try step(&world, &decisions, &.{});
     try testing.expectEqual(@as(?EntityId, null), chosen(&world, decisions[0].decision.entity));
     try world.remember(open, open_rel, 0, 0);
-    const tied = try step(&world, &decisions);
+    const tied = try step(&world, &decisions, &.{});
     try testing.expectEqual(@as(usize, 1), tied.len);
     try testing.expectEqual(option_a, tied.items[0].option);
     try testing.expectEqual(@as(i32, 2), tied.items[0].score);
@@ -360,16 +426,108 @@ test "P44-05: an option the actor does not know is never offered, and Rejects ov
 
     // The actor knows only `known`, so the higher-scoring card is invisible.
     try world.remember(seat, knows, known.to_int(), 0);
-    const first = try step(&world, &decisions);
+    const first = try step(&world, &decisions, &.{});
     try testing.expectEqual(@as(usize, 1), first.len);
     try testing.expectEqual(known, first.items[0].option);
 
     // A rejection of the known card leaves no offered option, so nothing fires.
     _ = world.forget(known, open, null);
-    _ = try step(&world, &decisions);
+    _ = try step(&world, &decisions, &.{});
     try world.remember(known, open, 0, 0);
     try world.remember(seat, rejects, known.to_int(), 0);
-    const second = try step(&world, &decisions);
+    const second = try step(&world, &decisions, &.{});
     try testing.expectEqual(@as(usize, 0), second.len);
     try testing.expectEqual(@as(?EntityId, null), chosen(&world, decisions[0].decision.entity));
+}
+
+test "P45-02: a vetoed option is never chosen, even when it would score highest" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const captain = try world.intern_entity("Captain");
+    const other = try world.intern_entity("Other");
+    const cue = try world.intern_entity("Judged");
+    const execute = try world.intern_entity("Execute");
+    const pardon = try world.intern_entity("Pardon");
+    const knows = try world.intern_relation("Knows", .set);
+    const accused = try world.intern_relation("Accused", .set);
+    const thief = try world.intern_entity("Thief");
+
+    const execute_picks = [_]Pick{.{ .points = 100, .clause = .{ .relation = "Accused" } }};
+    const pardon_picks = [_]Pick{.{ .points = 1, .clause = .{ .relation = "Accused" } }};
+    const options = [_]Option{
+        .{ .entity = execute, .picks = &execute_picks },
+        .{ .entity = pardon, .picks = &pardon_picks },
+    };
+    const decisions = [_]Declaration{.{
+        .decision = .{
+            .entity = try world.intern_entity("Judge"),
+            .actor = captain,
+            .cue = cue,
+            .clauses = &.{.{ .relation = "Accused" }},
+            .options = &options,
+        },
+    }};
+    const lines = [_]RedLineDeclaration{.{ .red_lines = .{ .actor = captain, .options = &.{execute} } }};
+    // Another character's red line on the same option does not bind the captain.
+    const others = [_]RedLineDeclaration{.{ .red_lines = .{ .actor = other, .options = &.{execute} } }};
+
+    try world.remember(captain, knows, execute.to_int(), 0);
+    try world.remember(captain, knows, pardon.to_int(), 0);
+    try world.remember(thief, accused, 0, 0);
+    try seed(&world, &decisions);
+
+    // Without red lines the 100-point option wins.
+    const free = try step(&world, &decisions, &others);
+    try testing.expectEqual(execute, free.items[0].option);
+
+    // Re-arm, then decide again under the captain's red line: the lower option wins.
+    _ = world.forget(thief, accused, null);
+    _ = try step(&world, &decisions, &lines);
+    try world.remember(thief, accused, 0, 0);
+    const bound = try step(&world, &decisions, &lines);
+    try testing.expectEqual(@as(usize, 1), bound.len);
+    try testing.expectEqual(pardon, bound.items[0].option);
+    try testing.expectEqual(@as(i32, 1), bound.items[0].score);
+    try testing.expectEqual(pardon, chosen(&world, decisions[0].decision.entity).?);
+
+    // When the only option left unvetoed is unknown, the captain chooses nothing and no cue
+    // fires, as with an empty hand.
+    _ = world.forget(thief, accused, null);
+    _ = try step(&world, &decisions, &lines);
+    _ = world.forget(captain, knows, pardon.to_int());
+    try world.remember(thief, accused, 0, 0);
+    const none = try step(&world, &decisions, &lines);
+    try testing.expectEqual(@as(usize, 0), none.len);
+    try testing.expectEqual(@as(?EntityId, null), chosen(&world, decisions[0].decision.entity));
+}
+
+test "P45-02: red lines must name an option offered to that character and leave one open" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const captain = try world.intern_entity("Captain");
+    const mate = try world.intern_entity("Mate");
+    const execute = try world.intern_entity("Execute");
+    const pardon = try world.intern_entity("Pardon");
+    const picks = [_]Pick{.{ .points = 1, .clause = .{ .relation = "Accused" } }};
+    const options = [_]Option{ .{ .entity = execute, .picks = &picks }, .{ .entity = pardon, .picks = &picks } };
+    const decisions = [_]Declaration{.{ .decision = .{
+        .entity = try world.intern_entity("Judge"),
+        .actor = captain,
+        .cue = try world.intern_entity("Judged"),
+        .clauses = &.{.{ .relation = "Accused" }},
+        .options = &options,
+    } }};
+    try validate_red_lines(&decisions, &.{.{ .red_lines = .{ .actor = captain, .options = &.{execute} } }});
+    // Every option vetoed: the decision could never choose.
+    try testing.expectError(Error.InvalidDecision, validate_red_lines(&decisions, &.{.{ .red_lines = .{ .actor = captain, .options = &.{ execute, pardon } } }}));
+    // The mate makes no decision that offers Execute.
+    try testing.expectError(Error.InvalidDecision, validate_red_lines(&decisions, &.{.{ .red_lines = .{ .actor = mate, .options = &.{execute} } }}));
+    // A repeated option, and a character listed twice.
+    try testing.expectError(Error.InvalidDecision, validate_red_lines(&decisions, &.{.{ .red_lines = .{ .actor = captain, .options = &.{ execute, execute } } }}));
+    try testing.expectError(Error.InvalidDecision, validate_red_lines(&decisions, &.{
+        .{ .red_lines = .{ .actor = captain, .options = &.{execute} } },
+        .{ .red_lines = .{ .actor = captain, .options = &.{execute} } },
+    }));
 }

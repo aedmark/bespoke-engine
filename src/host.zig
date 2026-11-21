@@ -112,7 +112,7 @@ pub fn tick(vm: *VM, compiled: *const CompiledProgram) !usize {
     // Decisions run after agendas, so an arriving actor can decide on the tick it arrives
     // (P44-05). The chosen option's cue runs on the next tick like any fired cue.
     if (compiled.decisions.items.len > 0) {
-        const choices = try decision_mod.step(vm.world, compiled.decisions.items);
+        const choices = try decision_mod.step(vm.world, compiled.decisions.items, compiled.red_lines.items);
         for (choices.slice()) |choice| {
             const cue_name = vm.world.get_entity_name(choice.cue) orelse continue;
             _ = try vm.fire_cue(compiled, cue_name, choice.actor, choice.option, null);
@@ -1919,4 +1919,58 @@ test "P44-05: a decision fires its cue with the winning option, once per rising 
     try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision).?);
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(maren, ready, 0));
+}
+
+test "P45-02: a red line vetoes the highest-scoring option through host.tick" {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial,
+        \\scene: Guardhouse
+        \\cast: Valerius
+        \\marks: Bench
+        \\relation Accused(who)
+        \\relation Stole(who, what)
+        \\relation Hungry(who)
+        \\relation Spared(who)
+        \\relation Hanged(who)
+        \\red lines Valerius: Execute
+        \\decision Judge:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  option Execute:
+        \\    picks 9 when Stole(Thief, Bread)
+        \\  option Pardon:
+        \\    picks 2 when Hungry(Thief)
+        \\on cue Judged(Valerius, Execute):
+        \\  remember Hanged(Thief)
+        \\on cue Judged(Valerius, Pardon):
+        \\  remember Spared(Thief)
+    );
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.red_lines.items.len);
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
+    const valerius = world.lookup_entity("Valerius").?;
+    const thief = world.lookup_entity("Thief").?;
+    const execute = world.lookup_entity("Execute").?;
+    const pardon = world.lookup_entity("Pardon").?;
+    const knows = try world.intern_relation("Knows", .set);
+    try world.remember(valerius, knows, execute.to_int(), 0);
+    try world.remember(valerius, knows, pardon.to_int(), 0);
+    try world.remember(thief, try world.intern_relation("Stole", .set), world.lookup_entity("Bread").?.to_int(), 0);
+    try world.remember(thief, try world.intern_relation("Hungry", .set), 0, 0);
+    try world.remember(thief, try world.intern_relation("Accused", .set), 0, 0);
+
+    // Execute scores 9 and Pardon 2, but Execute is behind Valerius's red line.
+    _ = try tick(&vm, &compiled);
+    try testing.expectEqual(pardon, decision_mod.chosen(&world, world.lookup_entity("Judge").?).?);
+    _ = try tick(&vm, &compiled);
+    try testing.expect(world.has_fact(thief, world.lookup_relation("Spared").?, 0));
+    try testing.expect(!world.has_fact(thief, world.lookup_relation("Hanged").?, 0));
 }

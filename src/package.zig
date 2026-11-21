@@ -59,8 +59,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 17 appends spellbooks with their words and combinations (P44-04); versions 1
 /// through 16 load with no spellbook. Version 18 appends decisions with their trigger lines and
 /// scored options (P44-05); versions 1 through 17 load with no decisions. Version 19 appends value
-/// axes with their poles (P45-01, D-144); versions 1 through 18 load with none.
-pub const PACKAGE_VERSION: u32 = 19;
+/// axes with their poles (P45-01, D-144); versions 1 through 18 load with none. Version 20 appends
+/// each character's red lines (P45-02, D-145); versions 1 through 19 load with none.
+pub const PACKAGE_VERSION: u32 = 20;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -407,6 +408,25 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
     }
 
     try write_axes(writer, compiled);
+
+    try writer.writeInt(u32, @intCast(compiled.red_lines.items.len), .little);
+    for (compiled.red_lines.items) |decl| {
+        try writer.writeInt(u32, decl.red_lines.actor.to_int(), .little);
+        try writer.writeByte(@intCast(decl.red_lines.options.len));
+        for (decl.red_lines.options) |option| try writer.writeInt(u32, option.to_int(), .little);
+    }
+}
+
+/// Untrusted input: counts are bounded and entities must exist; the caller validates the sets
+/// against the loaded decisions, as the compiler does (P45-02).
+fn read_red_lines(allocator: std.mem.Allocator, world: *const World, reader: anytype) !decision_mod.RedLineDeclaration {
+    const actor = try read_entity_ref(world, reader);
+    const count = try reader.takeByte();
+    if (count == 0 or count > decision_mod.MAX_RED_LINES) return error.InvalidRedLineConfig;
+    const options = try allocator.alloc(EntityId, count);
+    errdefer allocator.free(options);
+    for (options) |*option| option.* = try read_entity_ref(world, reader);
+    return .{ .red_lines = .{ .actor = actor, .options = options } };
 }
 
 /// Writes the value axes (P45-01): each axis's property relation and its two pole entities.
@@ -1677,6 +1697,25 @@ pub fn load_package(
         value_mod.validate_all(world, axes.items) catch return error.InvalidAxisConfig;
     }
 
+    var red_lines = std.array_list.Managed(decision_mod.RedLineDeclaration).init(allocator);
+    errdefer {
+        for (red_lines.items) |*decl| decl.deinit_owned(allocator);
+        red_lines.deinit();
+    }
+    if (header.version >= 20) {
+        const set_count = try pr.takeInt(u32, .little);
+        if (set_count > decision_mod.MAX_RED_LINE_SETS) return error.InvalidRedLineConfig;
+        var ri: u32 = 0;
+        while (ri < set_count) : (ri += 1) {
+            var decl = try read_red_lines(allocator, world, pr);
+            red_lines.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
+        decision_mod.validate_red_lines(decisions.items, red_lines.items) catch return error.InvalidRedLineConfig;
+    }
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1697,6 +1736,7 @@ pub fn load_package(
         .spellbooks = spellbooks,
         .decisions = decisions,
         .axes = axes,
+        .red_lines = red_lines,
         .commands = commands,
         .aliases = aliases,
         .scores = scores,
@@ -1909,7 +1949,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 19",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 20",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2238,8 +2278,11 @@ const EMPTY_TAIL_AFTER_V16: usize = 4 + EMPTY_TAIL_AFTER_V17;
 /// The decision and axis sections after version 17, for tests that locate version 17 sections
 /// from the end.
 const EMPTY_TAIL_AFTER_V17: usize = 4 + EMPTY_TAIL_AFTER_V18;
-/// The empty axis count (version 19), for tests that locate version 18 sections from the end.
-const EMPTY_TAIL_AFTER_V18: usize = 4;
+/// The axis and red-line sections after version 18, for tests that locate version 18 sections
+/// from the end.
+const EMPTY_TAIL_AFTER_V18: usize = 4 + EMPTY_TAIL_AFTER_V19;
+/// The empty red-line count (version 20), for tests that locate version 19 sections from the end.
+const EMPTY_TAIL_AFTER_V19: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -3103,7 +3146,7 @@ test "P45-01: package version 19 round-trips value axes and loads a version 18 p
 
     // A payload that ends before the axis table is a version 18 package and loads none.
     // The axis table is not empty here, so cut its whole length rather than the empty tail.
-    const axis_table_len = 4 + compiled1.axes.items.len * (2 + 4 + 4);
+    const axis_table_len = 4 + compiled1.axes.items.len * (2 + 4 + 4) + EMPTY_TAIL_AFTER_V19;
     const v18_payload = buffer.items[0 .. buffer.items.len - axis_table_len];
     const v18_owned = try testing.allocator.dupe(u8, v18_payload);
     defer testing.allocator.free(v18_owned);
@@ -3130,11 +3173,11 @@ test "P45-01: a package axis on a set relation or with a bad pole is refused" {
     var lw = ListWriter.init(&buffer);
     try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
 
-    // The last axis entry is relation (u16) then two pole ids (u32). Point its second pole at an
+    // The last axis entry, before the empty red-line count, is relation (u16) then two pole ids (u32). Point its second pole at an
     // entity that does not exist.
     const bad_pole = try testing.allocator.dupe(u8, buffer.items);
     defer testing.allocator.free(bad_pole);
-    std.mem.writeInt(u32, bad_pole[bad_pole.len - 4 ..][0..4], 0xFFFF_FFF0, .little);
+    std.mem.writeInt(u32, bad_pole[bad_pole.len - 4 - EMPTY_TAIL_AFTER_V19 ..][0..4], 0xFFFF_FFF0, .little);
     reseal_for_test(bad_pole, PACKAGE_VERSION);
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
@@ -3144,7 +3187,7 @@ test "P45-01: a package axis on a set relation or with a bad pole is refused" {
     // Point the axis at relation 0, which no table holds.
     const bad_relation = try testing.allocator.dupe(u8, buffer.items);
     defer testing.allocator.free(bad_relation);
-    std.mem.writeInt(u16, bad_relation[bad_relation.len - 10 ..][0..2], 0, .little);
+    std.mem.writeInt(u16, bad_relation[bad_relation.len - 10 - EMPTY_TAIL_AFTER_V19 ..][0..2], 0, .little);
     reseal_for_test(bad_relation, PACKAGE_VERSION);
     var world3 = try World.init(testing.allocator, 1024 * 1024);
     defer world3.deinit();
@@ -3162,7 +3205,7 @@ test "P45-01: checked-in version 19 package fixture carries value axes" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 19), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -3174,4 +3217,91 @@ test "P45-01: checked-in version 19 package fixture carries value axes" {
     try testing.expectEqual(@as(usize, 2), compiled.axes.items.len);
     try testing.expectEqualStrings("FixtureJustice", world.get_relation_meta(compiled.axes.items[0].relation).?.name);
     try testing.expectEqualStrings("Condoning Harm", world.get_entity_name(compiled.axes.items[1].poles[1]).?);
+}
+
+const RED_LINE_FIXTURE =
+    \\entity FixtureJudge
+    \\relation Accused(who)
+    \\red lines FixtureJudge: FixtureExecute
+    \\decision FixtureVerdict:
+    \\  actor FixtureJudge
+    \\  fires FixtureJudged
+    \\  requires Accused(FixtureThief)
+    \\  option FixtureExecute:
+    \\    picks 9 when Accused(FixtureThief)
+    \\  option FixturePardon:
+    \\    picks 1 when Accused(FixtureThief)
+    \\routine Idle(FixtureJudge):
+    \\  wait 1 ticks
+;
+
+test "P45-02: package version 20 round-trips red lines and loads a version 19 payload with none" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world1 = try World.init(testing.allocator, 1024 * 1024);
+    defer world1.deinit();
+    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, RED_LINE_FIXTURE);
+    defer compiled1.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
+    defer compiled2.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled2.red_lines.items.len);
+    const set = compiled2.red_lines.items[0].red_lines;
+    try testing.expectEqualStrings("FixtureJudge", world2.get_entity_name(set.actor).?);
+    try testing.expectEqualStrings("FixtureExecute", world2.get_entity_name(set.options[0]).?);
+
+    // A payload that ends before the red-line table is a version 19 package and loads none.
+    const red_table_len = 4 + 4 + 1 + 4;
+    const v19 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - red_table_len]);
+    defer testing.allocator.free(v19);
+    reseal_for_test(v19, 19);
+    var world3 = try World.init(testing.allocator, 1024 * 1024);
+    defer world3.deinit();
+    var v19_stream: std.Io.Reader = .fixed(v19);
+    var loaded = try load_package(testing.allocator, &v19_stream, &world3, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 0), loaded.red_lines.items.len);
+    try testing.expectEqual(@as(usize, 1), loaded.decisions.items.len);
+
+    // A package whose red line names an option no decision offers that character is refused.
+    const bad = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(bad);
+    // Point the veto at the judge's own entity, which is not an option of any decision.
+    std.mem.writeInt(u32, bad[bad.len - 4 ..][0..4], world1.lookup_entity("FixtureJudge").?.to_int(), .little);
+    reseal_for_test(bad, PACKAGE_VERSION);
+    var world4 = try World.init(testing.allocator, 1024 * 1024);
+    defer world4.deinit();
+    var bad_stream: std.Io.Reader = .fixed(bad);
+    try testing.expectError(error.InvalidRedLineConfig, load_package(testing.allocator, &bad_stream, &world4, null));
+}
+
+test "P45-02: checked-in version 20 package fixture carries red lines" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.3.1-package-v20.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 1), compiled.decisions.items.len);
+    try testing.expectEqual(@as(usize, 1), compiled.red_lines.items.len);
+    try testing.expectEqualStrings("FixtureExecute", world.get_entity_name(compiled.red_lines.items[0].red_lines.options[0]).?);
 }
