@@ -2213,6 +2213,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Update, 2026-11-22 (P48-08 built).** Building it settled four details. A fourth kind, `transient`, marks engine state that belongs to a running routine (open dialogue, its prompt, fiber, and options); a compatible load drops it, since the routines restart. A fact whose relation is still `unknown` and holds a nonzero object refuses the load (`SaveNotTranslatable`), as does a relation that changed type or kind between the builds; the load checks every fact before changing anything. Motor agents stay where the running session has them, the scene is kept by name, and each `when` rule that already holds counts as fired, so a reached ending does not fire again. A save carrying a temporal envelope never loads into another build. The two `Lit` uses were in separate test programs and needed no change. Kinds ride in the high bits of a relation's type byte in world snapshots (so older snapshots read as `unknown`) and in package format 30.
 
+## D-179 `name` Gives an Entity Its On-Screen Text; `phrase` Replaces an Engine Sentence; Chrome Stays English (2026-11-22, status: accepted; P48-09, refines D-163)
+
+**Context.** D-163 separated what players read from script identifiers and made engine sentences whole templates a game may replace. Building it needed a syntax, a scope, and an answer for the window's font, which draws only the 95 printable ASCII characters (`FONT5X7`) and draws every other byte as a blank, so a two-byte character left two gaps. An inventory on 2026-11-22 found four hint sentences, seven command and action replies, the browser's action and walk lines, three fallback names, and about fifteen window chrome messages (save, load, cancel).
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. `name <Thing>: "<text>"` sets what players read for an entity. Without it the name is derived as before (D-093). `name` stays usable as an ordinary word.
+2. `phrase <Key>: "<text>"` replaces one engine sentence by its documented key; each key lists the placeholders it takes, such as `{room}`. A build has one language; shipping several with a player's choice is a later, additive feature.
+3. Story text goes through the table: hints, command and action replies, walk and arrival lines, and fallback names. Window chrome (save and load messages, cancellations, key hints, debug) stays fixed English for now. The ambiguity reply keeps a list, built from per-item and joining phrases.
+4. Display names and phrases may hold any UTF-8. The window draws each non-ASCII character as one placeholder glyph, not as blanks, until a wider font lands (P48-21).
+
+**Alternatives:** `entity X as "..."`; language blocks now; every visible string through the table; ASCII-only display text; a Latin font in this item.
+
+**Consequences.** The English defaults equal today's text, so no golden moves. Display names and phrases are program data, like value bounds: the package carries them and saves do not. P48-09 builds them.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

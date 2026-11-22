@@ -1,0 +1,16 @@
+# A `name` line is what players read for an entity, and a `phrase` replaces an engine reply.
+# pins: D-179; D-163
+# ticks: 3
+# input: 0 look at the moon
+# expect line: Old Mara: "Mind the gap."
+# expect line: < moon? Never heard of it.
+
+scene: Quay
+cast: Scout, Pilot
+marks: Steps
+name Pilot: "Old Mara"
+phrase UnknownWord: "{word}? Never heard of it."
+
+routine Greet(Pilot):
+  wait 1 ticks
+  say Pilot: "Mind the gap."

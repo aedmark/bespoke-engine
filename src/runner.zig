@@ -596,6 +596,8 @@ fn run_bytes_with_presenter(
         window.set_art(&compiled.art);
         // Saves from this window name this build, and loads refuse another's (P48-08, D-162).
         window.save_manager.program = compiled.identity();
+        // Names on screen read the script's `name` lines (P48-09, D-179).
+        bespoke.display.dialogue_panel.use_display_names(&world);
         var interp = bespoke.command.Interpreter{};
 
         display_bridge.capture_frame(&world, &spatial, &vm);
@@ -748,7 +750,10 @@ pub const StoryReport = struct {
         };
         for (vm.emitted_cues.items) |cue| {
             if (cue.cue_id != bespoke.host.SAY_CUE_ID or cue.arg_count < 2) continue;
-            const name = world.get_entity_name(bespoke.EntityId.from_int(cue.args[0])) orelse "Someone";
+            // A declared `name` reads as written (D-179); otherwise the transcript keeps the raw
+            // identifier, as it always has.
+            const speaker = bespoke.EntityId.from_int(cue.args[0]);
+            const name = world.display_text(speaker) orelse world.get_entity_name(speaker) orelse "Someone";
             const text = world.get_entity_name(bespoke.EntityId.from_int(cue.args[1])) orelse "";
             try out.print("[Tick {d:>3}] {s}: \"{s}\"\n", .{ tick, name, text });
         }
@@ -853,7 +858,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 31; this engine supports versions 1 through 30\n",
+        "future.bspk: error: unsupported .bspk format version 32; this engine supports versions 1 through 31\n",
         output.buffered(),
     );
 }

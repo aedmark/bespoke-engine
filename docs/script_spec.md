@@ -526,6 +526,48 @@ on cue TalksTo(Ines, Valerius, Mercy):
 - The player must know the value first: `Knows(Ines, "Mercy of Valerius")`. Otherwise the reply is "You don't know what moves them." and nothing changes. A weighing that lands outside neutral teaches everyone in the character's room the value it leaned toward; a script teaches the rest, usually when the player asks (`ask valerius about mercy` fires `TalksTo`).
 - An accepted appeal records `Appealed(Valerius, Mercy)` and fires `on cue Appeals(Ines, Valerius, Mercy):`. A goal need `met Appealed(Valerius, Mercy)` is a Holmesian hint once the player knows `Mercy of Valerius`, and a Doylian one before. Package format version 23 carries appeal lines.
 
+### What players read (P48-09, D-163, D-179)
+
+```bespoke
+name ExposureSlip: "the slip from the darkroom"
+phrase HintRoom: "Seek out the {room}."
+```
+
+- `name <Thing>: "<text>"` sets what players read for an entity: on screen, in speech, in hints, and in replies. Without it the name is derived from the identifier (`HarbourClerk` reads "Harbour Clerk", D-093). A name for something the script never mentions, or a second name for the same thing, is an error. Typed commands still match the identifier's words and `alias` phrases; `name` changes only what is shown.
+- `phrase <Key>: "<text>"` replaces one sentence the engine writes. The text may use the key's placeholders, in any order, and no others; an unknown key is refused with a suggestion. A build has one language.
+- Text may be any UTF-8. The window's font draws printable ASCII, and any other character as one `?` until a wider font lands (P48-21).
+- Window chrome (save and load messages, cancellations, key hints, debug) stays fixed English. The desktop window's own "You can't get there from here." when a click's walk is blocked is window feedback and does not read `CannotGetThere`.
+- `name` and `phrase` are not reserved words. Package format version 31 carries both.
+
+| Key | English | Placeholders |
+| --- | --- | --- |
+| `HintRoom` | Look in the {room}. | `{room}` |
+| `HintThing` | You need the {thing}. | `{thing}` |
+| `HintFact` | You need {relation}({subject}, {object}). | `{relation}`, `{subject}`, `{object}` |
+| `HintState` | You need {relation}({subject}). | `{relation}`, `{subject}` |
+| `UnknownWord` | I don't know the word "{word}". | `{word}` |
+| `NotUnderstood` | I don't understand that. | none |
+| `NotHere` | You don't see that here. | none |
+| `WhichDoYouMean` | Which do you mean: {choices}? | `{choices}` |
+| `ChoiceItem` | the {thing} | `{thing}` |
+| `ChoiceJoin` | ,  | none |
+| `ChoiceJoinLast` |  or  | none |
+| `NothingHappens` | Nothing happens. | none |
+| `CannotGetThere` | You can't get there from here. | none |
+| `AppealUnknownValue` | You don't know what moves them. | none |
+| `AppealNobody` | Nobody here would be moved by that. | none |
+| `NarrateWalk` | {actor} walks to {target}. | `{actor}`, `{target}` |
+| `NarrateLook` | {actor} looks at {target}. | `{actor}`, `{target}` |
+| `NarrateTalk` | {actor} talks to {target}. | `{actor}`, `{target}` |
+| `NarrateTake` | {actor} takes {target}. | `{actor}`, `{target}` |
+| `NarrateUse` | {actor} uses {target}. | `{actor}`, `{target}` |
+| `NarrateUseOn` | {actor} uses {thing} on {target}. | `{actor}`, `{thing}`, `{target}` |
+| `ArriveScene` | {scene}. | `{scene}` |
+| `WalkingTo` | Walking to {mark}... | `{mark}` |
+| `Someone` | Someone | none |
+| `PlayerFallback` | You | none |
+| `ThingFallback` | it | none |
+
 ### Pixel art (P46-03, D-152, D-155)
 
 A script can declare its own pixel art: one palette, images written as rows of palette codes, a backdrop per scene, and a sprite sheet for a person or prop with its animations.
@@ -572,6 +614,7 @@ The language conformance suite (P48-18, D-173) pins each frozen rule as runnable
 
 | Rule | Conformance cases (`tests/conformance/`) |
 | --- | --- |
+| What players read (D-179) | `d179-player-text/`: a name and a phrase reach the player, an unknown phrase key and a name for nothing are refused |
 | Relation object kinds (D-178) | `d178-object-kinds/`: one kind per relation runs, an entity relation tested with a number is refused |
 | Save version (D-162) | `d162-save-version/`: declared once, a whole number from 1, and adds no facts |
 | Cue signatures and defaults (D-037) | `d037-cue-signatures/`: specific beats variable, actor-only default, unmatched cue runs nothing |

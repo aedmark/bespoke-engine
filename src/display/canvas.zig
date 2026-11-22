@@ -319,7 +319,11 @@ pub const Canvas = struct {
         self.text_depth += 1;
         defer self.text_depth -= 1;
         var cur_x = start_x;
-        for (text) |ch| {
+        for (text) |byte| {
+            // UTF-8 (D-179): a continuation byte belongs to the character before it, and a
+            // character the font lacks draws as one placeholder until a wider font lands (P48-21).
+            if (byte >= 0x80 and byte & 0xC0 == 0x80) continue;
+            const ch: u8 = if (byte >= 0x80) font.PLACEHOLDER else byte;
             if (ch < 32 or ch > 126) {
                 cur_x += font.char_width(scale);
                 continue;

@@ -29,6 +29,7 @@ pub const hint = @import("hint.zig");
 pub const spell = @import("spell.zig");
 pub const decision = @import("decision.zig");
 pub const value = @import("value.zig");
+pub const phrase = @import("phrase.zig");
 pub const dilemma = @import("dilemma.zig");
 pub const image = @import("image.zig");
 pub const png = @import("png.zig");
@@ -121,6 +122,7 @@ test "root test imports all modules" {
     _ = @import("spell.zig");
     _ = @import("decision.zig");
     _ = @import("value.zig");
+    _ = @import("phrase.zig");
     _ = @import("dilemma.zig");
     _ = @import("image.zig");
     _ = @import("png.zig");

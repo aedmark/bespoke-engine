@@ -1,0 +1,5 @@
+# A phrase names one of the engine's documented keys.
+# pins: D-179
+# expect error: UnexpectedToken 5:8
+
+phrase NotThere: "Nobody home."

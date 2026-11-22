@@ -10,6 +10,7 @@
 //! reason about, the search falls back to the author's whole goal graph, which may name a place
 //! or a thing the character has not met. Each result records the path that produced it.
 const std = @import("std");
+const phrase = @import("phrase.zig");
 const world_mod = @import("world.zig");
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -262,7 +263,9 @@ fn human_name(name: []const u8, out: []u8) []const u8 {
     return out[0..n];
 }
 
+/// What players read for `entity`: its `name` line, else its identifier as words (D-179).
 fn name_of(world: *const World, entity: EntityId, out: []u8) []const u8 {
+    if (world.display_text(entity)) |text| return text;
     return human_name(world.get_entity_name(entity) orelse "", out);
 }
 
@@ -273,23 +276,28 @@ fn generate(world: *const World, need: Need, tier: Tier, buf: []u8) Error![]cons
         .room => {
             const room = need.room orelse return Error.InvalidGoal;
             var words: [MAX_HINT_WORDS]u8 = undefined;
-            return std.fmt.bufPrint(buf, "Look in the {s}.", .{name_of(world, room, &words)}) catch Error.HintTextTooLong;
+            return phrase.render(world, .hint_room, &.{.{ .slot = "room", .value = name_of(world, room, &words) }}, buf) catch Error.HintTextTooLong;
         },
         .thing => {
             const thing = need.object orelse need.subject orelse return Error.InvalidGoal;
             var words: [MAX_HINT_WORDS]u8 = undefined;
-            return std.fmt.bufPrint(buf, "You need the {s}.", .{name_of(world, thing, &words)}) catch Error.HintTextTooLong;
+            return phrase.render(world, .hint_thing, &.{.{ .slot = "thing", .value = name_of(world, thing, &words) }}, buf) catch Error.HintTextTooLong;
         },
         .relation => {
             var subject_words: [MAX_HINT_WORDS]u8 = undefined;
             const subject = if (need.subject) |entity| name_of(world, entity, &subject_words) else "_";
             if (need.object) |entity| {
                 var object_words: [MAX_HINT_WORDS]u8 = undefined;
-                return std.fmt.bufPrint(buf, "You need {s}({s}, {s}).", .{
-                    need.relation, subject, name_of(world, entity, &object_words),
-                }) catch Error.HintTextTooLong;
+                return phrase.render(world, .hint_fact, &.{
+                    .{ .slot = "relation", .value = need.relation },
+                    .{ .slot = "subject", .value = subject },
+                    .{ .slot = "object", .value = name_of(world, entity, &object_words) },
+                }, buf) catch Error.HintTextTooLong;
             }
-            return std.fmt.bufPrint(buf, "You need {s}({s}).", .{ need.relation, subject }) catch Error.HintTextTooLong;
+            return phrase.render(world, .hint_state, &.{
+                .{ .slot = "relation", .value = need.relation },
+                .{ .slot = "subject", .value = subject },
+            }, buf) catch Error.HintTextTooLong;
         },
     }
 }

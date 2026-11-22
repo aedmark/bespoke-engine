@@ -73,7 +73,8 @@ comptime {
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
     require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "restart_routines" }, "host");
     require(bespoke.world, &.{"ObjectKind"}, "world");
-    require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind" }, "world.World");
+    require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind", "set_display_name", "display_text", "set_phrase", "phrase_override" }, "world.World");
+    require(bespoke.phrase, &.{ "Key", "Entry", "ENTRIES", "Arg", "Error", "find", "entry", "text", "validate", "render", "fill" }, "phrase");
     require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for" }, "save");
     require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");
 }

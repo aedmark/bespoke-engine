@@ -227,6 +227,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.VariableNotAllowedHere => "a cue parameter cannot be used in this statement",
         error.WhenBodyVariable => "a when rule's variables cannot be used in its body yet; name the entity",
         error.LowercaseName => "names of things start with a capital letter",
+        error.NameForUnknownThing => "this gives a name to something the script never mentions",
         error.MixedRelationObject => "this relation's object is an entity in one place and a number in another; each relation holds one kind",
         error.MissingCueArguments => "a cue handler's arguments were read outside the handler",
         error.UnreachableCueHandler => "this handler can never run: an earlier handler has the same signature and no guard",
@@ -1076,6 +1077,64 @@ test "P48-08: a relation's object kind is inferred, and using it both ways is re
     try testing.expectEqualStrings("MixedRelationObject", mixed.kind());
     try testing.expectEqual(@as(u32, 4), mixed.diagnostic().?.line);
     try testing.expectEqual(@as(u32, 18), mixed.diagnostic().?.column);
+}
+
+test "P48-09: name and phrase lines set what players read, and their mistakes are named" {
+    const testing = std.testing;
+    const hint_mod = @import("hint.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null,
+        \\scene: PlateArchive
+        \\cast: Ines
+        \\props: ExposureSlip
+        \\marks: Table
+        \\name ExposureSlip: "the slip from the darkroom"
+        \\name PlateArchive: "Archive des plaques"
+        \\phrase HintRoom: "Cherchez dans {room}."
+        \\phrase HintThing: "Il vous faut {thing}."
+        \\phrase HintFact: "{subject} doit {relation} {object}."
+        \\phrase HintState: "{subject} doit {relation}."
+        \\relation Carries(holder, item)
+        \\goal RecoverTheSlip:
+        \\  need Slip:
+        \\    met Carries(Ines, ExposureSlip)
+        \\    room PlateArchive
+        \\goal Rest:
+        \\  need Sit:
+        \\    met Seated(Ines)
+        \\    room PlateArchive
+        \\routine Idle(Ines):
+        \\  wait 1 ticks
+    );
+    defer compiled.deinit();
+    const ines = world.lookup_entity("Ines").?;
+    try testing.expectEqualStrings("the slip from the darkroom", world.display_text(world.lookup_entity("ExposureSlip").?).?);
+
+    // A replaced table changes every generated hint (P48-09 acceptance).
+    var buf: [128]u8 = undefined;
+    try testing.expectEqualStrings("Cherchez dans Archive des plaques.", (try hint_mod.query(compiled.goals.items[0..1], &world, ines, .room, &buf)).?.text);
+    try testing.expectEqualStrings("Il vous faut the slip from the darkroom.", (try hint_mod.query(compiled.goals.items[0..1], &world, ines, .thing, &buf)).?.text);
+    try testing.expectEqualStrings("Ines doit Carries the slip from the darkroom.", (try hint_mod.query(compiled.goals.items[0..1], &world, ines, .relation, &buf)).?.text);
+    try testing.expectEqualStrings("Ines doit Seated.", (try hint_mod.query(compiled.goals.items[1..2], &world, ines, .relation, &buf)).?.text);
+
+    const cases = [_]struct { source: []const u8, kind: []const u8, line: u32, column: u32, help: ?[]const u8 = null }{
+        .{ .source = "phrase HintRom: \"x\"\n", .kind = "UnexpectedToken", .line = 1, .column = 8, .help = "HintRoom" },
+        .{ .source = "phrase HintRoom: \"Look for {thing}.\"\n", .kind = "UnexpectedToken", .line = 1, .column = 18 },
+        .{ .source = "phrase NotHere: \"a\"\nphrase NotHere: \"b\"\n", .kind = "UnexpectedToken", .line = 2, .column = 8 },
+        .{ .source = "entity Hero\nname Hero: \"A\"\nname Hero: \"B\"\n", .kind = "UnexpectedToken", .line = 3, .column = 6 },
+        .{ .source = "entity Hero\nname Heor: \"A\"\n", .kind = "NameForUnknownThing", .line = 2, .column = 6 },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.source);
+        try testing.expect(!res.is_valid);
+        try testing.expectEqualStrings(case.kind, res.kind());
+        try testing.expectEqual(case.line, res.diagnostic().?.line);
+        try testing.expectEqual(case.column, res.diagnostic().?.column);
+        if (case.help) |help| try testing.expectEqualStrings(help, res.suggestion() orelse "");
+    }
+    // `name` and `phrase` stay usable as names.
+    try testing.expect(check_source(testing.allocator, "entity Name, Phrase\n").is_valid);
 }
 
 const ART_BASE =

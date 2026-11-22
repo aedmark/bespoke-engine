@@ -11,6 +11,7 @@ const dilemma_mod = @import("../dilemma.zig");
 const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
+const phrase_mod = @import("../phrase.zig");
 const mml = @import("../mml.zig");
 const image_mod = @import("../image.zig");
 const png_mod = @import("../png.zig");
@@ -566,11 +567,18 @@ pub const AreaBinding = struct { target: []const u8, x: u16, y: u16, w: u16, h: 
 pub const BackdropBinding = struct { scene: []const u8, image: u16 };
 pub const SpriteBinding = struct { target: []const u8, image: u16, animations: [image_mod.ANIM_COUNT][]const image_mod.Step };
 
+pub const NameDecl = struct { entity: []const u8, text: []const u8 };
+pub const PhraseDecl = struct { key: []const u8, text: []const u8 };
+
 pub const AST = struct {
     /// Pixel art and what it is attached to (P46-03, D-155).
     art: ArtDecl = .{},
     /// `save version N` (P48-08, D-162); 1 when the script declares none.
     save_version: ?u32 = null,
+    /// `name <Thing>: "<text>"` lines (P48-09, D-179).
+    display_names: std.ArrayListUnmanaged(NameDecl) = .empty,
+    /// `phrase <Key>: "<text>"` lines (P48-09, D-179), already checked against the phrase table.
+    phrases: std.ArrayListUnmanaged(PhraseDecl) = .empty,
     entities: std.array_list.Managed([]const u8),
     relations: std.array_list.Managed(RelationDecl),
     initial_stmts: std.array_list.Managed(Stmt),
@@ -1255,6 +1263,44 @@ pub const Parser = struct {
                     // Art lines are matched by text and the token after them, so `image`,
                     // `palette`, `sprite`, and `backdrop` stay usable as names (P46-03).
                     if (try self.art_declaration(&ast, start)) continue;
+                    // `name Thing: "text"` and `phrase Key: "text"` (P48-09, D-179). Matched by
+                    // text and the tokens after them, so both stay usable as names.
+                    if (std.mem.eql(u8, start.slice, "name") and self.current.line == start.line and
+                        (self.current.tag == .identifier or self.current.tag == .string_literal))
+                    {
+                        const thing = self.current;
+                        const entity = try self.parse_name();
+                        _ = try self.expect(.colon);
+                        const text = (try self.expect(.string_literal)).slice;
+                        if (text.len == 0) return self.error_at(thing, "'{s}' needs a name to show, such as name {s}: \"...\"", .{ entity, entity });
+                        for (ast.display_names.items) |prior| {
+                            if (std.mem.eql(u8, prior.entity, entity)) return self.error_at(thing, "'{s}' is named twice", .{entity});
+                        }
+                        try ast.display_names.append(self.allocator, .{ .entity = entity, .text = text });
+                        continue;
+                    }
+                    if (std.mem.eql(u8, start.slice, "phrase") and self.current.line == start.line and self.current.tag == .identifier) {
+                        const key_tok = self.current;
+                        try self.advance();
+                        _ = try self.expect(.colon);
+                        const text_tok = self.current;
+                        const text = (try self.expect(.string_literal)).slice;
+                        const key = phrase_mod.find(key_tok.slice) orelse {
+                            var hints = Suggestions{};
+                            for (phrase_mod.ENTRIES) |entry| hints.consider(key_tok.slice, entry.name);
+                            self.suggestion = hints.result();
+                            return self.error_at(key_tok, "the engine has no phrase '{s}'", .{key_tok.slice});
+                        };
+                        phrase_mod.validate(key, text) catch |err| return switch (err) {
+                            error.UnknownPhraseSlot => self.error_at(text_tok, "phrase '{s}' can use only the placeholders in \"{s}\"", .{ key_tok.slice, phrase_mod.entry(key).english }),
+                            else => self.error_at(text_tok, "a '{{' in phrase '{s}' has no closing '}}'", .{key_tok.slice}),
+                        };
+                        for (ast.phrases.items) |prior| {
+                            if (std.mem.eql(u8, prior.key, key_tok.slice)) return self.error_at(key_tok, "phrase '{s}' is given twice", .{key_tok.slice});
+                        }
+                        try ast.phrases.append(self.allocator, .{ .key = key_tok.slice, .text = text });
+                        continue;
+                    }
                     // `save version N` names which saves this build can load (P48-08, D-162).
                     // Two words, not keywords, so `save` and `version` stay usable as names.
                     if (std.mem.eql(u8, start.slice, "save") and self.current.tag == .identifier and

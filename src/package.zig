@@ -1,6 +1,7 @@
 const std = @import("std");
 const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
+const phrase_mod = @import("phrase.zig");
 const spatial_mod = @import("spatial.zig");
 const bytecode_mod = @import("bytecode.zig");
 const codegen_mod = @import("compiler/codegen.zig");
@@ -80,7 +81,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// D-162); for versions 1 through 28 the loader takes save version 1 and computes the
 /// fingerprint as the compiler does. Version 30 stores each relation's object kind in the high
 /// bits of its type byte (P48-08, D-178); versions 1 through 29 load with every kind unknown.
-pub const PACKAGE_VERSION: u32 = 30;
+/// Version 31 appends display names and phrase overrides before the program identity (P48-09,
+/// D-179); versions 1 through 30 load with none.
+pub const PACKAGE_VERSION: u32 = 31;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -486,6 +489,7 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for ([_]u16{ a.x, a.y, a.w, a.h }) |v| try writer.writeInt(u16, v, .little);
     }
     try write_cue_chain(writer, compiled);
+    try write_player_text(world, writer);
     // Version 29: which build this is, for saves (D-162).
     try writer.writeInt(u32, compiled.save_version, .little);
     try writer.writeInt(u64, compiled.fingerprint, .little);
@@ -513,6 +517,58 @@ fn write_cue_chain(writer: anytype, compiled: *const CompiledProgram) !void {
         last = pc;
     }
 }
+
+/// Version 31: display names by entity, then phrase overrides by key, each sorted so the same
+/// program writes the same bytes (P48-09, D-179).
+fn write_player_text(world: *const World, writer: anytype) !void {
+    var ids: [MAX_DISPLAY_NAMES]u32 = undefined;
+    var n: usize = 0;
+    var names = world.display_names.keyIterator();
+    while (names.next()) |id| : (n += 1) ids[n] = id.*;
+    std.mem.sort(u32, ids[0..n], {}, std.sort.asc(u32));
+    try writer.writeInt(u32, @intCast(n), .little);
+    for (ids[0..n]) |id| {
+        try writer.writeInt(u32, id, .little);
+        try write_str(writer, world.display_names.get(id).?);
+    }
+    var count: u32 = 0;
+    for (phrase_mod.ENTRIES) |entry| {
+        if (world.phrase_override(entry.name) != null) count += 1;
+    }
+    try writer.writeInt(u32, count, .little);
+    for (phrase_mod.ENTRIES) |entry| {
+        const text = world.phrase_override(entry.name) orelse continue;
+        try write_str(writer, entry.name);
+        try write_str(writer, text);
+    }
+}
+
+/// Untrusted input: counts are bounded, each name belongs to an entity in the package, and each
+/// phrase names a known key and only its placeholders.
+fn read_player_text(allocator: std.mem.Allocator, world: *World, reader: anytype) !void {
+    const names = try reader.takeInt(u32, .little);
+    if (names > MAX_DISPLAY_NAMES) return error.InvalidPlayerText;
+    for (0..names) |_| {
+        const entity = read_entity_ref(world, reader) catch |err| return if (err == error.EndOfStream) err else error.InvalidPlayerText;
+        const text = try read_str(allocator, reader);
+        defer allocator.free(text);
+        try world.set_display_name(entity, text);
+    }
+    const phrases = try reader.takeInt(u32, .little);
+    if (phrases > phrase_mod.ENTRIES.len) return error.InvalidPlayerText;
+    for (0..phrases) |_| {
+        const key_name = try read_str(allocator, reader);
+        defer allocator.free(key_name);
+        const text = try read_str(allocator, reader);
+        defer allocator.free(text);
+        const key = phrase_mod.find(key_name) orelse return error.InvalidPlayerText;
+        phrase_mod.validate(key, text) catch return error.InvalidPlayerText;
+        try world.set_phrase(key_name, text);
+    }
+}
+
+/// Upper bound on display names a package may carry.
+const MAX_DISPLAY_NAMES: usize = 4096;
 
 /// Untrusted input (D-160). A link starts at a signature's first handler or at a handler an
 /// earlier link reached, and its next handler is in the bytecode, is no signature's first
@@ -2106,6 +2162,7 @@ pub fn load_package(
     for (cue_guards.items) |guard| {
         if (!is_first_handler(&cue_handler_entries, guard.handler_pc) and !is_chained_handler(&cue_handler_chain, guard.handler_pc)) return error.InvalidCueGuard;
     }
+    if (header.version >= 31) try read_player_text(allocator, world, pr);
     var save_version: u32 = 1;
     var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
     if (header.version >= 29) {
@@ -2353,7 +2410,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 30",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 31",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2701,7 +2758,9 @@ const EMPTY_TAIL_AFTER_V24: usize = 4 + 4 + EMPTY_TAIL_AFTER_V25;
 /// The empty area count (version 26), and the empty handler chain after it.
 const EMPTY_TAIL_AFTER_V25: usize = 4 + EMPTY_TAIL_AFTER_V26;
 /// The empty handler chain count (version 27) and the program identity after it.
-const EMPTY_TAIL_AFTER_V26: usize = 4 + IDENTITY_TAIL;
+const EMPTY_TAIL_AFTER_V26: usize = 4 + TEXT_TAIL + IDENTITY_TAIL;
+/// The empty display-name and phrase counts (version 31), before the identity.
+const TEXT_TAIL: usize = 4 + 4;
 /// The save version and fingerprint (version 29), present in every package.
 const IDENTITY_TAIL: usize = 4 + 8;
 
@@ -4401,8 +4460,8 @@ test "P48-01: package version 27 round-trips handlers that share a signature, an
     try testing.expectEqualSlices(u8, buffer.items, again.items);
 
     // The last link sits in the final eight bytes; the chain count before the three links.
-    const count_at = buffer.items.len - IDENTITY_TAIL - 4 - 3 * 8;
-    const last = buffer.items.len - IDENTITY_TAIL - 8;
+    const count_at = buffer.items.len - IDENTITY_TAIL - TEXT_TAIL - 4 - 3 * 8;
+    const last = buffer.items.len - IDENTITY_TAIL - TEXT_TAIL - 8;
     const Case = struct { at: usize, value: u32 };
     const cases = [_]Case{
         .{ .at = last + 4, .value = 0xFFFF_FF00 }, // next past the bytecode
@@ -4519,7 +4578,7 @@ test "P48-08: checked-in version 30 package fixture carries relation object kind
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v30.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 30), version_from_bytes(fixture).?);
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     var stream: std.Io.Reader = .fixed(fixture);
@@ -4528,6 +4587,49 @@ test "P48-08: checked-in version 30 package fixture carries relation object kind
     try testing.expectEqual(world_mod.ObjectKind.entity, world.object_kind(world.lookup_relation("Holds").?));
     try testing.expectEqual(world_mod.ObjectKind.number, world.object_kind(world.lookup_relation("Gold").?));
     try testing.expectEqual(@as(u32, 2), compiled.save_version);
+}
+
+test "P48-09: a package carries display names and phrases, and refuses a bad phrase" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, "entity Hero, Lamp\nname Lamp: \"the old lamp\"\nphrase NotHere: \"Nothing of the kind is here.\"\nroutine Idle(Hero):\n  wait 1 ticks\n");
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var loaded = try load_package(testing.allocator, &stream, &world2, null);
+    defer loaded.deinit();
+    try testing.expectEqualStrings("the old lamp", world2.display_text(world2.lookup_entity("Lamp").?).?);
+    try testing.expectEqualStrings("Nothing of the kind is here.", phrase_mod.text(&world2, .not_here));
+
+    // A phrase name the engine does not have is refused.
+    const bad = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(bad);
+    const at = std.mem.indexOf(u8, bad, "NotHere").?;
+    bad[at] = 'X';
+    reseal_for_test(bad, PACKAGE_VERSION);
+    try testing.expectError(error.InvalidPlayerText, load_for_test(bad));
+}
+
+test "P48-09: checked-in version 31 package fixture names a lamp and replaces a reply" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v31.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    try testing.expectEqualStrings("the old lamp", world.display_text(world.lookup_entity("FixtureLamp").?).?);
+    try testing.expectEqualStrings("Nothing of the kind is here.", phrase_mod.text(&world, .not_here));
 }
 
 test "P46-05: checked-in version 26 package fixture carries prop areas" {

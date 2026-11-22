@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const world_mod = @import("world.zig");
+const phrase_mod = @import("phrase.zig");
 const spatial_mod = @import("spatial.zig");
 
 pub const World = world_mod.World;
@@ -488,30 +489,41 @@ pub const Outcome = union(enum) {
 
     /// The reply a player sees, or null when the command goes on to its cue.
     pub fn message(self: Outcome, world: *const World, buf: []u8) ?[]const u8 {
-        var writer: std.Io.Writer = .fixed(buf);
-        const out = &writer;
-        switch (self) {
-            .empty, .command => return null,
-            .unknown_word => |word| out.print("I don't know the word \"{s}\".", .{word}) catch {},
-            .not_understood => out.writeAll("I don't understand that.") catch {},
-            .not_here => out.writeAll("You don't see that here.") catch {},
-            .ambiguous => |amb| {
-                out.writeAll("Which do you mean: ") catch {};
+        // Every reply is a phrase a game may replace (P48-09, D-179); the English defaults are
+        // the sentences this function wrote before.
+        return switch (self) {
+            .empty, .command => null,
+            .unknown_word => |word| phrase_mod.render(world, .unknown_word, &.{.{ .slot = "word", .value = word }}, buf) catch null,
+            .not_understood => phrase_mod.render(world, .not_understood, &.{}, buf) catch null,
+            .not_here => phrase_mod.render(world, .not_here, &.{}, buf) catch null,
+            .ambiguous => |amb| blk: {
+                // The list is built from the per-item and joining phrases, so a translation
+                // controls every word of it.
+                var list_buf: [256]u8 = undefined;
+                var list: std.Io.Writer = .fixed(&list_buf);
                 for (amb.items[0..amb.len], 0..) |entity, i| {
-                    if (i > 0) out.writeAll(if (i + 1 == amb.len) " or " else ", ") catch {};
-                    out.writeAll("the ") catch {};
-                    const words = NameWords.of(world.get_entity_name(entity) orelse "thing");
-                    for (0..words.len) |k| {
-                        if (k > 0) out.writeByte(' ') catch {};
-                        out.writeAll(words.word(k)) catch {};
-                    }
+                    if (i > 0) list.writeAll(phrase_mod.text(world, if (i + 1 == amb.len) .choice_join_last else .choice_join)) catch {};
+                    var name_buf: [64]u8 = undefined;
+                    const name = if (world.display_text(entity)) |text| text else spoken_name(world, entity, &name_buf);
+                    var item_buf: [96]u8 = undefined;
+                    list.writeAll(phrase_mod.render(world, .choice_item, &.{.{ .slot = "thing", .value = name }}, &item_buf) catch name) catch {};
                 }
-                out.writeByte('?') catch {};
+                break :blk phrase_mod.render(world, .which_do_you_mean, &.{.{ .slot = "choices", .value = list.buffered() }}, buf) catch null;
             },
-        }
-        return writer.buffered();
+        };
     }
 };
+
+/// An entity's name as the words a player types: `BrassKey` reads "brass key".
+fn spoken_name(world: *const World, entity: EntityId, buf: []u8) []const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    const words = NameWords.of(world.get_entity_name(entity) orelse "thing");
+    for (0..words.len) |k| {
+        if (k > 0) w.writeByte(' ') catch {};
+        w.writeAll(words.word(k)) catch {};
+    }
+    return w.buffered();
+}
 
 /// Turns typed lines into commands, remembering one open "which do you mean" question.
 pub const Interpreter = struct {

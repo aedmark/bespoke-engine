@@ -408,6 +408,10 @@ area ShopDoor: 96 62 24 42
 - A click anywhere in a sprite's frame or a prop's area acts on it, and the player walks to the mark nearest its foot (D-158). Box outlines appear only in the debug overlay.
 - Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world. Art that follows other facts, such as a lit lamp, is drawn by the host's theme, which reads the facts after each tick. `proofs/lamplighter.zig` shows a theme that picks the lamp's frame.
 
+### What players read
+
+`name ExposureSlip: "the slip from the darkroom"` sets what players read for an entity, everywhere it is shown; without it, `ExposureSlip` reads "Exposure Slip". `phrase HintRoom: "Seek out the {room}."` replaces one sentence the engine writes, such as a hint, a command reply, or a walk line; the script spec lists every key and its placeholders (D-179). Write whole sentences: the engine fills in names but never counts, plurals, or articles, so a translation controls every word. A build has one language, and the window draws characters outside printable ASCII as `?` for now.
+
 ### Saves across updates
 
 Every save records which build of the game wrote it (P48-08, D-162). A player's save loads into the same build; a later build refuses it, and the window says the slot is from another version. Declare `save version N` at the top of the script. When a patch fixes something without changing what saved facts mean, keep the number: the new build loads older saves, keeping their facts (matched by name) and restarting every routine from its beginning, and a `when` rule whose condition already holds does not fire again. Write routines so they can pick up from the facts. Raise the number when old saves should no longer load. Each relation holds either entities or numbers in its second slot, never both.

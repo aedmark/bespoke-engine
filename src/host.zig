@@ -12,6 +12,7 @@ const vm_mod = @import("vm.zig");
 const spatial_mod = @import("spatial.zig");
 const display_mod = @import("display.zig");
 const codegen = @import("compiler/codegen.zig");
+const phrase_mod = @import("phrase.zig");
 const dialogue_mod = @import("dialogue.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 const temporal_mod = @import("temporal_snapshot.zig");
@@ -336,13 +337,13 @@ pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: Entity
         // never the answer to a value the player named.
         const value = command.a orelse return reply;
         const person = appeal_person(vm, compiled, actor, value) orelse {
-            reply.text = "Nobody here would be moved by that.";
+            reply.text = phrase_mod.text(world, .appeal_nobody);
             return reply;
         };
         switch (try appeal(vm, compiled, actor, person, value)) {
             .made => reply.fired = true,
-            .unknown_value => reply.text = "You don't know what moves them.",
-            .no_dilemma => reply.text = "Nobody here would be moved by that.",
+            .unknown_value => reply.text = phrase_mod.text(world, .appeal_unknown_value),
+            .no_dilemma => reply.text = phrase_mod.text(world, .appeal_nobody),
         }
         return reply;
     }
@@ -354,7 +355,7 @@ pub fn dispatch_command(vm: *VM, compiled: *const CompiledProgram, actor: Entity
         reply.fired = (try vm.fire_cue(compiled, command.cue, actor, command.a, command.b)) != null;
     }
     if (!reply.fired and !reply.walking) {
-        reply.text = if (blocked) "You can't get there from here." else "Nothing happens.";
+        reply.text = phrase_mod.text(world, if (blocked) .cannot_get_there else .nothing_happens);
     }
     return reply;
 }
@@ -467,7 +468,7 @@ pub const SpeechLog = struct {
             // The speaker reads as words, as names do everywhere on screen (D-093): `HarbourClerk`
             // speaks as "Harbour Clerk".
             var name_buf: [48]u8 = undefined;
-            const name = @import("display/dialogue_panel.zig").display_name(world.get_entity_name(EntityId.from_int(cue.args[0])) orelse "Someone", &name_buf);
+            const name = @import("display/dialogue_panel.zig").entity_name(world, EntityId.from_int(cue.args[0]), &name_buf) orelse phrase_mod.text(world, .someone);
             const text = world.get_entity_name(EntityId.from_int(cue.args[1])) orelse "";
             const w = &self.writer;
             if (self.count > 0) w.writeAll("  ") catch return;
@@ -927,6 +928,8 @@ pub const Session = struct {
         window.set_art(&compiled.art);
         // Saves from this window name this build, and loads refuse another's (P48-08, D-162).
         window.save_manager.program = compiled.identity();
+        // Names on screen read the script's `name` lines (P48-09, D-179).
+        @import("display/dialogue_panel.zig").use_display_names(world);
         try initialize_subsystems(s.active_world(), compiled);
         try s.record_snapshot();
         s.refresh();
@@ -934,6 +937,7 @@ pub const Session = struct {
     }
 
     pub fn deinit(self: *Session) void {
+        @import("display/dialogue_panel.zig").clear_display_names();
         self.timeline.deinit();
     }
 
@@ -1094,8 +1098,8 @@ pub const Session = struct {
         const exit = (try take_exit_here(self.active_world(), self.spatial, self.vm, self.exits, p)) orelse return false;
         var name_buf: [48]u8 = undefined;
         var buf: [80]u8 = undefined;
-        const name = @import("display/dialogue_panel.zig").display_name(exit.to_scene, &name_buf);
-        self.window.set_cue_banner(std.fmt.bufPrint(&buf, "{s}.", .{name}) catch exit.to_scene, 0);
+        const name = @import("display/dialogue_panel.zig").named(self.active_world(), exit.to_scene, &name_buf);
+        self.window.set_cue_banner(phrase_mod.render(self.active_world(), .arrive_scene, &.{.{ .slot = "scene", .value = name }}, &buf) catch exit.to_scene, 0);
         self.refresh();
         return true;
     }

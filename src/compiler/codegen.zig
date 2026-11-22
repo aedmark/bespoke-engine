@@ -1025,6 +1025,16 @@ pub const Codegen = struct {
             _ = try mut_self.chunk.emit_op(.halt);
         }
 
+        // What players read: display names and the game's phrases (P48-09, D-179). Program data
+        // on the World, like value bounds; the package carries it.
+        for (ast.display_names.items) |decl| {
+            mut_self.error_context = decl.entity;
+            // A name for something the script never mentions is a typo, not a new thing.
+            const entity = mut_self.world.lookup_entity(decl.entity) orelse return error.NameForUnknownThing;
+            try mut_self.world.set_display_name(entity, decl.text);
+        }
+        for (ast.phrases.items) |decl| try mut_self.world.set_phrase(decl.key, decl.text);
+
         // Art last: nothing after it can fail, so the owned copy never needs an errdefer here
         // (P46-03, D-155). Bindings name their scene or entity by text; interning finds the
         // entity the scene, cast, or props line already made.

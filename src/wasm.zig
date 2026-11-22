@@ -48,6 +48,7 @@ pub const InspectorKey = struct {
 const CompiledProgram = compiler_mod.codegen.CompiledProgram;
 const canvas_mod = @import("display/canvas.zig");
 const dialogue_panel = @import("display/dialogue_panel.zig");
+const phrase_mod = @import("phrase.zig");
 const renderer = @import("display/renderer.zig");
 const save_mod = @import("save.zig");
 const beats_mod = @import("display/beats.zig");
@@ -538,6 +539,8 @@ pub const WasmRuntime = struct {
         self.banner_len = 0;
         self.approach = null;
         self.selected_item = .none;
+        // The names belong to the program about to be dropped too (D-179).
+        dialogue_panel.clear_display_names();
         // The art is borrowed from the program about to be dropped.
         self.window.set_art(null);
         self.drop_program();
@@ -618,6 +621,8 @@ pub const WasmRuntime = struct {
         self.window.set_art(&program.art);
         // Browser saves name this build too (P48-08, D-162).
         self.saves.program = program.identity();
+        // Names on screen read the script's `name` lines (P48-09, D-179).
+        dialogue_panel.use_display_names(&self.world);
         self.vm.deinit();
         self.vm = VM.init(self.allocator, &self.world, &program.chunk);
         self.vm.spatial = &self.spatial;
@@ -693,9 +698,9 @@ pub const WasmRuntime = struct {
                 if (!there and try self.plan_walk(wp)) {
                     self.approach = .{ .verb = self.active_verb, .target = target, .examine = examine, .wp = wp, .asked_tick = self.clock(), .item = item };
                     var name_buf: [48]u8 = undefined;
-                    const name = dialogue_panel.display_name(self.world.get_entity_name(target) orelse "it", &name_buf);
+                    const name = dialogue_panel.entity_name(&self.world, target, &name_buf) orelse phrase_mod.text(&self.world, .thing_fallback);
                     var buf: [80]u8 = undefined;
-                    self.set_banner(std.fmt.bufPrint(&buf, "Walking to {s}...", .{name}) catch "Walking...");
+                    self.set_banner(phrase_mod.render(&self.world, .walking_to, &.{.{ .slot = "mark", .value = name }}, &buf) catch "Walking...");
                     return .walk_issued;
                 }
             }
@@ -846,7 +851,7 @@ pub const WasmRuntime = struct {
                 if (run_tick) try self.step_tick();
                 return .cue_fired;
             }
-            self.set_banner("Nothing happens.");
+            self.set_banner(phrase_mod.text(&self.world, .nothing_happens));
             return .cue_fired;
         }
         if (self.decks.len > 0) if (self.decks[self.deck_index].on_act) |hook| {
@@ -877,7 +882,7 @@ pub const WasmRuntime = struct {
                 return .hotspot_inspected;
             }
         }
-        self.set_banner("Nothing happens.");
+        self.set_banner(phrase_mod.text(&self.world, .nothing_happens));
         return .cue_fired;
     }
 
@@ -934,23 +939,23 @@ pub const WasmRuntime = struct {
     /// only changes state or animates gives no sign the click did anything (D-094).
     fn narrate(self: *WasmRuntime, verb: WasmVerb, item: EntityId, target: EntityId) void {
         var names: [3][48]u8 = undefined;
-        const who = dialogue_panel.display_name(self.world.get_entity_name(self.player_entity) orelse "You", &names[0]);
-        const what = if (item != .none) dialogue_panel.display_name(self.world.get_entity_name(item) orelse "it", &names[1]) else "";
-        const on = if (target != .none) dialogue_panel.display_name(self.world.get_entity_name(target) orelse "it", &names[2]) else "";
-        const doing = switch (verb) {
-            .walk => "walks to",
-            .look_at => "looks at",
-            .talk_to => "talks to",
-            .pick_up => "takes",
-            .use_with => "uses",
+        const w = &self.world;
+        const who = dialogue_panel.entity_name(w, self.player_entity, &names[0]) orelse phrase_mod.text(w, .player_fallback);
+        const what = if (item != .none) dialogue_panel.entity_name(w, item, &names[1]) orelse phrase_mod.text(w, .thing_fallback) else "";
+        const on = if (target != .none) dialogue_panel.entity_name(w, target, &names[2]) orelse phrase_mod.text(w, .thing_fallback) else "";
+        // One whole sentence per verb, so a translation controls its word order (D-179).
+        const key: phrase_mod.Key = switch (verb) {
+            .walk => .narrate_walk,
+            .look_at => .narrate_look,
+            .talk_to => .narrate_talk,
+            .pick_up => .narrate_take,
+            .use_with => .narrate_use,
         };
         var buf: [160]u8 = undefined;
         const line = if (item != .none and target != .none)
-            std.fmt.bufPrint(&buf, "{s} uses {s} on {s}.", .{ who, what, on })
-        else if (item != .none)
-            std.fmt.bufPrint(&buf, "{s} {s} {s}.", .{ who, doing, what })
+            phrase_mod.render(w, .narrate_use_on, &.{ .{ .slot = "actor", .value = who }, .{ .slot = "thing", .value = what }, .{ .slot = "target", .value = on } }, &buf)
         else
-            std.fmt.bufPrint(&buf, "{s} {s} {s}.", .{ who, doing, on });
+            phrase_mod.render(w, key, &.{ .{ .slot = "actor", .value = who }, .{ .slot = "target", .value = if (item != .none) what else on } }, &buf);
         self.set_banner(line catch return);
     }
 
@@ -963,7 +968,7 @@ pub const WasmRuntime = struct {
         const program = if (self.program) |*p| p else return .none;
         const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
         var name_buf: [48]u8 = undefined;
-        const name = dialogue_panel.display_name(self.world.get_entity_name(item) orelse "it", &name_buf);
+        const name = dialogue_panel.entity_name(&self.world, item, &name_buf) orelse phrase_mod.text(&self.world, .thing_fallback);
         var buf: [96]u8 = undefined;
         self.bind();
         if (self.active_verb == .look_at) {
@@ -1021,7 +1026,7 @@ pub const WasmRuntime = struct {
         self.approach = null;
         var name_buf: [48]u8 = undefined;
         var buf: [80]u8 = undefined;
-        self.set_banner(std.fmt.bufPrint(&buf, "{s}.", .{dialogue_panel.display_name(exit.to_scene, &name_buf)}) catch exit.to_scene);
+        self.set_banner(phrase_mod.render(&self.world, .arrive_scene, &.{.{ .slot = "scene", .value = dialogue_panel.named(&self.world, exit.to_scene, &name_buf) }}, &buf) catch exit.to_scene);
         return true;
     }
 
@@ -1352,7 +1357,7 @@ pub const WasmRuntime = struct {
                         if (try self.act_on(who, null)) |tag| return tag;
                     }
                     var name_buf: [48]u8 = undefined;
-                    const name = dialogue_panel.display_name(self.world.get_entity_name(who) orelse "Someone", &name_buf);
+                    const name = dialogue_panel.entity_name(&self.world, who, &name_buf) orelse phrase_mod.text(&self.world, .someone);
                     var buf: [80]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "[{s}] {s}", .{ self.active_verb.label(), name }) catch name;
                     self.set_banner(msg);
@@ -1483,7 +1488,7 @@ pub const WasmRuntime = struct {
         const wp = self.spatial.graph.get_waypoint(wp_id) orelse return;
         var buf: [64]u8 = undefined;
         var name_buf: [48]u8 = undefined;
-        const msg = std.fmt.bufPrint(&buf, "Walking to {s}...", .{dialogue_panel.display_name(wp.name, &name_buf)}) catch "Walking...";
+        const msg = phrase_mod.render(&self.world, .walking_to, &.{.{ .slot = "mark", .value = dialogue_panel.display_name(wp.name, &name_buf) }}, &buf) catch "Walking...";
         self.set_banner(msg);
     }
 
@@ -2204,6 +2209,38 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     // Reloading the deck releases the program and starts again.
     try rt.load_deck(0);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+}
+
+test "P48-09: the browser shows a script's display names and phrases" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\name Pilot: "Old Mara"
+        \\phrase NothingHappens: "Rien ne se passe."
+        \\
+        \\routine Walk(Hero):
+        \\  walk Hero to Pier
+        \\  remember Arrived(Hero)
+        \\
+        \\when Arrived(Hero):
+        \\  say Pilot: "Mind the gap."
+    ;
+    const decks = [_]Deck{script_deck("QUAY", script)};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    var heard = false;
+    for (0..12) |_| {
+        try rt.step_tick();
+        if (std.mem.indexOf(u8, rt.get_banner(), "Old Mara") != null) heard = true;
+    }
+    try testing.expect(heard);
+    try testing.expectEqualStrings("Rien ne se passe.", phrase_mod.text(&rt.world, .nothing_happens));
+    var buf: [48]u8 = undefined;
+    try testing.expectEqualStrings("Old Mara", dialogue_panel.display_name("Pilot", &buf));
 }
 
 test "D-070: the inspector pauses, takes the desktop State tab's keys and clicks, and draws in the drawer's place" {

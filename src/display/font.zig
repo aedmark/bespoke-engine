@@ -108,13 +108,33 @@ pub fn char_width(scale: i32) i32 {
     return (FONT_WIDTH + CHAR_SPACING) * scale;
 }
 
+const std = @import("std");
+
+/// What a character outside printable ASCII draws as until a wider font lands (D-179, P48-21).
+pub const PLACEHOLDER: u8 = '?';
+
+/// Characters drawn, not bytes: a UTF-8 continuation byte adds no width, so a measured string
+/// is as wide as the canvas draws it (D-179).
+pub fn char_count(text: []const u8) usize {
+    var n: usize = 0;
+    for (text) |byte| {
+        if (byte >= 0x80 and byte & 0xC0 == 0x80) continue;
+        n += 1;
+    }
+    return n;
+}
+
 pub fn text_width(text: []const u8, scale: i32) i32 {
     if (text.len == 0) return 0;
-    return @as(i32, @intCast(text.len)) * char_width(scale);
+    return @as(i32, @intCast(char_count(text))) * char_width(scale);
+}
+
+test "P48-09: UTF-8 measures one character per code point" {
+    try std.testing.expectEqual(@as(usize, 6), char_count("H\xc3\xa9l\xc3\xa8ne"));
+    try std.testing.expectEqual(text_width("Helene", 1), text_width("H\xc3\xa9l\xc3\xa8ne", 1));
 }
 
 test "font glyph lookup and width calculation" {
-    const std = @import("std");
     try std.testing.expectEqual(@as(usize, 95), FONT5X7.len);
     try std.testing.expectEqual(@as(i32, 12), char_width(2));
     try std.testing.expectEqual(@as(i32, 60), text_width("Hello", 2));

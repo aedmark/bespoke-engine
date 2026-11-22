@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const font = @import("font.zig");
+const world_mod = @import("../world.zig");
 
 /// Rows one panel may hold. Nine choices of four rows, a speaker, and a prompt of four rows fit.
 pub const MAX_ROWS: usize = 48;
@@ -127,12 +128,71 @@ pub fn wrap(text: []const u8, columns: usize, out: [][]const u8) usize {
     return count;
 }
 
+/// The running program's `name` lines (D-179), copied when a host loads a program so the many
+/// places that show a name from a raw identifier (`display_name`) read the declared text. A copy,
+/// not a pointer to the World, so nothing outlives the world it came from. Left undefined until
+/// set: the browser module must not carry it as initialised data (D-067).
+const MAX_SHOWN = 256;
+const SHOWN_KEY = 64;
+const SHOWN_TEXT = 96;
+var shown_keys: [MAX_SHOWN][SHOWN_KEY]u8 = undefined;
+var shown_key_lens: [MAX_SHOWN]u8 = undefined;
+var shown_texts: [MAX_SHOWN][SHOWN_TEXT]u8 = undefined;
+var shown_text_lens: [MAX_SHOWN]u8 = undefined;
+var shown_count: usize = 0;
+
+/// Makes every displayed name read the program's `name` lines; call when a program loads. Names
+/// past the table's size or length are left derived.
+pub fn use_display_names(world: *const world_mod.World) void {
+    shown_count = 0;
+    var it = world.display_names.iterator();
+    while (it.next()) |entry| {
+        if (shown_count == MAX_SHOWN) break;
+        const key = world.get_entity_name(world_mod.EntityId.from_int(entry.key_ptr.*)) orelse continue;
+        const text = entry.value_ptr.*;
+        if (key.len > SHOWN_KEY or text.len > SHOWN_TEXT) continue;
+        @memcpy(shown_keys[shown_count][0..key.len], key);
+        shown_key_lens[shown_count] = @intCast(key.len);
+        @memcpy(shown_texts[shown_count][0..text.len], text);
+        shown_text_lens[shown_count] = @intCast(text.len);
+        shown_count += 1;
+    }
+}
+
+pub fn clear_display_names() void {
+    shown_count = 0;
+}
+
+fn declared_name(name: []const u8) ?[]const u8 {
+    for (0..shown_count) |i| {
+        if (std.mem.eql(u8, shown_keys[i][0..shown_key_lens[i]], name)) return shown_texts[i][0..shown_text_lens[i]];
+    }
+    return null;
+}
+
+/// What players read for an entity (D-179): the script's `name` line when it has one, else
+/// the name derived from its identifier (`display_name`). Null for an entity with no name.
+pub fn entity_name(world: *const world_mod.World, entity: world_mod.EntityId, buf: []u8) ?[]const u8 {
+    if (world.display_text(entity)) |text| return text;
+    return display_name(world.get_entity_name(entity) orelse return null, buf);
+}
+
+/// `entity_name` for a thing known by its script name, such as a scene an exit names; a name
+/// that is no entity is derived as before.
+pub fn named(world: *const world_mod.World, name: []const u8, buf: []u8) []const u8 {
+    if (world.lookup_entity(name)) |entity| {
+        if (world.display_text(entity)) |text| return text;
+    }
+    return display_name(name, buf);
+}
+
 /// A display name for an entity name: `HarbourWarden` reads `Harbour Warden`, `Deckhand2` stays
 /// `Deckhand2`, and `NPCPorter` reads `NPC Porter`. A space goes before an uppercase letter that
 /// follows a lowercase one, or that starts a word after an acronym, so acronyms stay whole. A
 /// name with an inner capital (`McAllister`) splits wrongly; give it a space in the script.
 /// Names already containing spaces are returned unchanged.
 pub fn display_name(name: []const u8, buf: []u8) []const u8 {
+    if (declared_name(name)) |text| return text;
     if (std.mem.indexOfScalar(u8, name, ' ') != null) return name;
     var n: usize = 0;
     for (name, 0..) |ch, i| {

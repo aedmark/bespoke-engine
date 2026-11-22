@@ -149,6 +149,11 @@ pub const World = struct {
     relation_map: std.StringHashMapUnmanaged(RelationKind),
     /// Signed ranges on property relations (P45-01, D-144); see `ValueBound`.
     value_bounds: std.ArrayListUnmanaged(ValueBound),
+    /// What players read for an entity, when the script says (`name X: "..."`, D-179). Program
+    /// data like `value_bounds`: the snapshot does not carry it and a restore keeps it.
+    display_names: std.AutoHashMapUnmanaged(u32, []const u8) = .empty,
+    /// The game's replacements for engine sentences, by phrase name (`phrase Key: "..."`).
+    phrase_overrides: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     // TTL Expiration tracking (P10-02, D-012)
     recently_expired: [16]Fact,
@@ -269,6 +274,27 @@ pub const World = struct {
     pub fn object_kind(self: *const World, relation: RelationKind) ObjectKind {
         const meta = self.get_relation_meta(relation) orelse return .unknown;
         return meta.object_kind;
+    }
+
+    /// Sets what players read for `entity` (D-179). The text is copied into the arena.
+    pub fn set_display_name(self: *World, entity: EntityId, text: []const u8) !void {
+        const alloc = self.allocator();
+        try self.display_names.put(alloc, entity.to_int(), try alloc.dupe(u8, text));
+    }
+
+    /// The script's display text for `entity`, or null when its name is derived (D-093).
+    pub fn display_text(self: *const World, entity: EntityId) ?[]const u8 {
+        return self.display_names.get(entity.to_int());
+    }
+
+    /// Replaces the engine sentence named `name` (D-179). Callers validate the template.
+    pub fn set_phrase(self: *World, name: []const u8, text: []const u8) !void {
+        const alloc = self.allocator();
+        try self.phrase_overrides.put(alloc, try alloc.dupe(u8, name), try alloc.dupe(u8, text));
+    }
+
+    pub fn phrase_override(self: *const World, name: []const u8) ?[]const u8 {
+        return self.phrase_overrides.get(name);
     }
 
     /// Bounds a property relation to a signed range (P45-01, D-144). Facts already stored are
@@ -850,6 +876,10 @@ pub const World = struct {
         var read_stream: std.Io.Reader = .fixed(stream_buf.items);
         try cloned.restore_state(&read_stream);
         try cloned.value_bounds.appendSlice(cloned.allocator(), self.value_bounds.items);
+        var names = self.display_names.iterator();
+        while (names.next()) |entry| try cloned.set_display_name(EntityId.from_int(entry.key_ptr.*), entry.value_ptr.*);
+        var phrases = self.phrase_overrides.iterator();
+        while (phrases.next()) |entry| try cloned.set_phrase(entry.key_ptr.*, entry.value_ptr.*);
 
         return cloned;
     }

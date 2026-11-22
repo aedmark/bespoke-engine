@@ -1,0 +1,6 @@
+# A name line gives a name to something the script mentions.
+# pins: D-179
+# expect error: NameForUnknownThing 6:6
+
+entity Scout
+name Scoot: "the scout"
