@@ -15,6 +15,7 @@ const appeal_package = @embedFile("fixtures/compat/v0.3.1-package-v23.bspk");
 const art_package = @embedFile("fixtures/compat/v0.4.0-package-v24.bspk");
 const sprite_package = @embedFile("fixtures/compat/v0.4.0-package-v25.bspk");
 const area_package = @embedFile("fixtures/compat/v0.4.0-package-v26.bspk");
+const handler_chain_package = @embedFile("fixtures/compat/v0.4.0-package-v27.bspk");
 const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
@@ -155,7 +156,7 @@ test "P39-01 codegen" {
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package });
+    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package, handler_chain_package });
 }
 
 /// Malformed art sections (P46-01): the version 24 fixture with one field broken each. Every

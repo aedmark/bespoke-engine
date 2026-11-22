@@ -71,8 +71,10 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// art, which is a game drawn by code. Version 25 appends what the art is attached to: scene
 /// backdrops and the sprites of people and props with their animations (P46-03, D-155);
 /// versions 1 through 24 load with none. Version 26 appends prop areas, rectangles on the art
-/// that click like the prop (P46-05, D-158); versions 1 through 25 load with none.
-pub const PACKAGE_VERSION: u32 = 26;
+/// that click like the prop (P46-05, D-158); versions 1 through 25 load with none. Version 27
+/// appends the chain of cue handlers that share a signature (P48-01, D-160); versions 1 through
+/// 26 load with one handler per signature, which is how they behaved.
+pub const PACKAGE_VERSION: u32 = 27;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -477,6 +479,77 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         try writer.writeInt(u32, a.entity.to_int(), .little);
         for ([_]u16{ a.x, a.y, a.w, a.h }) |v| try writer.writeInt(u16, v, .little);
     }
+    try write_cue_chain(writer, compiled);
+}
+
+/// Version 27: each (handler pc, next handler pc) link of handlers sharing a signature
+/// (D-160), in ascending pc order so the same program always writes the same bytes. Links are
+/// few (one per repeated guarded handler), so finding each next-smallest pc in turn costs
+/// nothing worth an allocation.
+fn write_cue_chain(writer: anytype, compiled: *const CompiledProgram) !void {
+    const chain = &compiled.cue_handler_chain;
+    try writer.writeInt(u32, chain.count(), .little);
+    var last: ?usize = null;
+    var written: u32 = 0;
+    while (written < chain.count()) : (written += 1) {
+        var best: ?usize = null;
+        var it = chain.keyIterator();
+        while (it.next()) |pc| {
+            if (last != null and pc.* <= last.?) continue;
+            if (best == null or pc.* < best.?) best = pc.*;
+        }
+        const pc = best.?;
+        try writer.writeInt(u32, @intCast(pc), .little);
+        try writer.writeInt(u32, @intCast(chain.get(pc).?), .little);
+        last = pc;
+    }
+}
+
+/// Untrusted input (D-160). A link starts at a signature's first handler or at a handler an
+/// earlier link reached, and its next handler is in the bytecode, is no signature's first
+/// handler, and is reached by no other link; so every chain from a first handler visits
+/// distinct handlers and ends.
+fn read_cue_chain(
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    entries: *const std.StringHashMap(usize),
+    bytecode_len: u32,
+) !std.AutoHashMapUnmanaged(usize, usize) {
+    const count = try reader.takeInt(u32, .little);
+    if (count > MAX_CUE_GUARDS) return error.InvalidCueChain;
+    var chain: std.AutoHashMapUnmanaged(usize, usize) = .empty;
+    errdefer chain.deinit(allocator);
+    try chain.ensureTotalCapacity(allocator, count);
+    var nexts: std.AutoHashMapUnmanaged(usize, void) = .empty;
+    defer nexts.deinit(allocator);
+    try nexts.ensureTotalCapacity(allocator, count);
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        const pc: usize = try reader.takeInt(u32, .little);
+        const next: usize = try reader.takeInt(u32, .little);
+        if (next >= bytecode_len) return error.InvalidCueChain;
+        if (!nexts.contains(pc) and !is_first_handler(entries, pc)) return error.InvalidCueChain;
+        if (chain.contains(pc) or nexts.contains(next) or is_first_handler(entries, next)) return error.InvalidCueChain;
+        chain.putAssumeCapacity(pc, next);
+        nexts.putAssumeCapacity(next, {});
+    }
+    return chain;
+}
+
+fn is_chained_handler(chain: *const std.AutoHashMapUnmanaged(usize, usize), pc: usize) bool {
+    var it = chain.valueIterator();
+    while (it.next()) |v| {
+        if (v.* == pc) return true;
+    }
+    return false;
+}
+
+fn is_first_handler(entries: *const std.StringHashMap(usize), pc: usize) bool {
+    var it = entries.valueIterator();
+    while (it.next()) |v| {
+        if (v.* == pc) return true;
+    }
+    return false;
 }
 
 /// Untrusted input: the count is bounded before allocation, entities must exist, and
@@ -1878,14 +1951,9 @@ pub fn load_package(
         var gi: u32 = 0;
         while (gi < guard_count) : (gi += 1) {
             const handler_pc = try pr.takeInt(u32, .little);
-            // A guard belongs to a cue handler; any other pc would never be consulted.
+            // A guard belongs to a cue handler; any other pc would never be consulted. Whether
+            // it names one is checked once the handler chain (version 27) is read.
             if (handler_pc >= header.bytecode_len) return error.InvalidCueGuard;
-            var names_handler = false;
-            var entries = cue_handler_entries.valueIterator();
-            while (entries.next()) |pc| {
-                if (pc.* == handler_pc) names_handler = true;
-            }
-            if (!names_handler) return error.InvalidCueGuard;
             var guard = codegen_mod.CueGuard{ .handler_pc = handler_pc, .clauses = &.{} };
             for (&guard.param_slots) |*slot| {
                 const raw = try pr.takeByte();
@@ -2017,6 +2085,12 @@ pub fn load_package(
     if (header.version >= 24) art = try read_art(allocator, pr);
     if (header.version >= 25) try read_art_bindings(allocator, world, pr, &art);
     if (header.version >= 26) try read_art_areas(allocator, world, pr, &art);
+    var cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty;
+    errdefer cue_handler_chain.deinit(allocator);
+    if (header.version >= 27) cue_handler_chain = try read_cue_chain(allocator, pr, &cue_handler_entries, header.bytecode_len);
+    for (cue_guards.items) |guard| {
+        if (!is_first_handler(&cue_handler_entries, guard.handler_pc) and !is_chained_handler(&cue_handler_chain, guard.handler_pc)) return error.InvalidCueGuard;
+    }
 
     return CompiledProgram{
         .drafts = drafts,
@@ -2045,6 +2119,7 @@ pub fn load_package(
         .scores = scores,
         .cast = cast,
         .cue_guards = cue_guards,
+        .cue_handler_chain = cue_handler_chain,
         .art = art,
     };
 }
@@ -2253,7 +2328,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 26",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 27",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2598,8 +2673,10 @@ const EMPTY_TAIL_AFTER_V23: usize = 2 + 4 + EMPTY_TAIL_AFTER_V24;
 /// The empty bindings (version 25): zero backdrops and zero sprites, and the empty area count
 /// after them (version 26).
 const EMPTY_TAIL_AFTER_V24: usize = 4 + 4 + EMPTY_TAIL_AFTER_V25;
-/// The empty area count (version 26).
-const EMPTY_TAIL_AFTER_V25: usize = 4;
+/// The empty area count (version 26), and the empty handler chain after it.
+const EMPTY_TAIL_AFTER_V25: usize = 4 + EMPTY_TAIL_AFTER_V26;
+/// The empty handler chain count (version 27).
+const EMPTY_TAIL_AFTER_V26: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -4248,10 +4325,10 @@ test "P46-05: package version 26 round-trips prop areas, and version 25 loads wi
     // An area off the art is refused; cutting the areas off gives version 25 with none.
     const broken = try testing.allocator.dupe(u8, buffer.items);
     defer testing.allocator.free(broken);
-    std.mem.writeInt(u16, broken[broken.len - 4 ..][0..2], 200, .little);
-    reseal_for_test(broken, 26);
+    std.mem.writeInt(u16, broken[broken.len - EMPTY_TAIL_AFTER_V26 - 4 ..][0..2], 200, .little);
+    reseal_for_test(broken, PACKAGE_VERSION);
     try testing.expectError(error.InvalidImageBinding, load_for_test(broken));
-    const v25 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - (4 + 2 * (4 + 8))]);
+    const v25 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V26 - (4 + 2 * (4 + 8))]);
     defer testing.allocator.free(v25);
     reseal_for_test(v25, 25);
     var old = try load_for_test(v25);
@@ -4259,11 +4336,95 @@ test "P46-05: package version 26 round-trips prop areas, and version 25 loads wi
     try testing.expectEqual(@as(usize, 0), old.art.areas.len);
 }
 
+test "P48-01: package version 27 round-trips handlers that share a signature, and refuses a bad chain" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, compiler.ORDERED_HANDLERS);
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+
+    // The Lamp's three handlers make two links and the Cask's two make one.
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var loaded = try load_package(testing.allocator, &stream, &world2, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(u32, 3), loaded.cue_handler_chain.count());
+    const scout = world2.lookup_entity("Scout").?;
+    const lamp = world2.lookup_entity("Lamp").?;
+    const first = loaded.find_cue_handler("Uses", "Scout", "Lamp", null).?;
+    const second = loaded.cue_handler_chain.get(first).?;
+    const third = loaded.cue_handler_chain.get(second).?;
+    try testing.expectEqual(third, loaded.select_cue_handler(&world2, "Uses", scout, lamp, null).?);
+    _ = try world2.remember(world2.lookup_entity("Oil").?, try world2.intern_relation("Full", .set), 0, 0);
+    try testing.expectEqual(second, loaded.select_cue_handler(&world2, "Uses", scout, lamp, null).?);
+
+    // The same program writes the same bytes.
+    var again = std.array_list.Managed(u8).init(testing.allocator);
+    defer again.deinit();
+    var lw2 = ListWriter.init(&again);
+    try save_package(testing.allocator, &lw2.writer, &compiled, &world, null);
+    try testing.expectEqualSlices(u8, buffer.items, again.items);
+
+    // The last link sits in the final eight bytes; the chain count before the three links.
+    const count_at = buffer.items.len - 4 - 3 * 8;
+    const last = buffer.items.len - 8;
+    const Case = struct { at: usize, value: u32 };
+    const cases = [_]Case{
+        .{ .at = last + 4, .value = 0xFFFF_FF00 }, // next past the bytecode
+        .{ .at = last + 4, .value = @intCast(first) }, // next is a signature's first handler
+        .{ .at = last, .value = std.mem.readInt(u32, buffer.items[count_at + 4 ..][0..4], .little) }, // a pc linked twice
+        .{ .at = last, .value = 0xFFFF_FF00 }, // a link from no handler
+        .{ .at = count_at, .value = MAX_CUE_GUARDS + 1 }, // more links than guards allow
+    };
+    for (cases) |case| {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        std.mem.writeInt(u32, bad[case.at..][0..4], case.value, .little);
+        reseal_for_test(bad, PACKAGE_VERSION);
+        try testing.expectError(error.InvalidCueChain, load_for_test(bad));
+    }
+
+    // Without the chain, the later handlers' guards name no handler: version 26 refused such a
+    // script's package, which is the Q-020 failure D-160 removes.
+    const v26 = try testing.allocator.dupe(u8, buffer.items[0..count_at]);
+    defer testing.allocator.free(v26);
+    std.mem.writeInt(u32, v26[v26.len - 4 ..][0..4], 0, .little);
+    reseal_for_test(v26, 26);
+    try testing.expectError(error.InvalidCueGuard, load_for_test(v26));
+}
+
+test "P48-01: checked-in version 27 package fixture keeps handlers in source order" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v27.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(u32, 2), compiled.cue_handler_chain.count());
+    const hero = world.lookup_entity("FixtureHero").?;
+    const lamp = world.lookup_entity("FixtureLamp").?;
+    const first = compiled.find_cue_handler("Uses", "FixtureHero", "FixtureLamp", null).?;
+    const third = compiled.cue_handler_chain.get(compiled.cue_handler_chain.get(first).?).?;
+    try testing.expectEqual(third, compiled.select_cue_handler(&world, "Uses", hero, lamp, null).?);
+    _ = try world.remember(lamp, try world.intern_relation("Lit", .set), 0, 0);
+    try testing.expectEqual(first, compiled.select_cue_handler(&world, "Uses", hero, lamp, null).?);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+}
+
 test "P46-05: checked-in version 26 package fixture carries prop areas" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v26.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 26), version_from_bytes(fixture).?);
     var compiled = try load_for_test(fixture);
     defer compiled.deinit();
     try testing.expectEqual(@as(usize, 2), compiled.art.areas.len);

@@ -111,6 +111,11 @@ pub const CompiledProgram = struct {
     cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     /// `where` guards of cue handlers, in source order (D-072). Handlers without one are absent.
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
+    /// Handlers that share a signature, in source order (D-160): `cue_handler_entries` names
+    /// the first, and this maps each handler's pc to the next one's. A failed guard falls
+    /// through along the chain before the search moves to a broader signature. Owned by
+    /// `chunk.allocator`.
+    cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty,
     /// The game's palette and indexed images (P46-01, D-152). Presentation only: never written
     /// to the world, so it cannot change a replay. Owned by `chunk.allocator`.
     art: image_mod.Art = .{},
@@ -119,6 +124,7 @@ pub const CompiledProgram = struct {
         self.art.deinit_owned(self.chunk.allocator);
         for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
         self.cue_guards.deinit(self.chunk.allocator);
+        self.cue_handler_chain.deinit(self.chunk.allocator);
         self.cast.deinit(self.chunk.allocator);
         for (self.scores.items) |*score| score.deinit_owned(self.chunk.allocator);
         self.scores.deinit();
@@ -271,9 +277,7 @@ pub const CompiledProgram = struct {
                 .{ .parts = .{ CUE_WILDCARD, b, a }, .swap = true },               .{ .parts = .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },
             };
             for (forms) |f| {
-                if (self.lookup_cue(cue_name, &f.parts)) |pc| {
-                    if (self.guard_admits(world, pc, if (f.swap) &swapped else &straight)) return pc;
-                }
+                if (self.first_admitted(world, self.lookup_cue(cue_name, &f.parts), if (f.swap) &swapped else &straight)) |pc| return pc;
             }
         }
 
@@ -285,17 +289,22 @@ pub const CompiledProgram = struct {
                 .{ CUE_WILDCARD, CUE_WILDCARD },
             };
             for (forms) |f| {
-                if (self.lookup_cue(cue_name, &f)) |pc| {
-                    if (self.guard_admits(world, pc, straight[0..2])) return pc;
-                }
+                if (self.first_admitted(world, self.lookup_cue(cue_name, &f), straight[0..2])) |pc| return pc;
             }
         }
 
-        if (self.lookup_cue(cue_name, &.{who})) |pc| {
-            if (self.guard_admits(world, pc, straight[0..1])) return pc;
-        }
-        if (self.lookup_cue(cue_name, &.{CUE_WILDCARD})) |pc| {
-            if (self.guard_admits(world, pc, straight[0..1])) return pc;
+        if (self.first_admitted(world, self.lookup_cue(cue_name, &.{who}), straight[0..1])) |pc| return pc;
+        if (self.first_admitted(world, self.lookup_cue(cue_name, &.{CUE_WILDCARD}), straight[0..1])) |pc| return pc;
+        return null;
+    }
+
+    /// The first handler of one signature, in source order, whose guard admits `args`
+    /// (D-160). Starts at `head`, the handler `cue_handler_entries` names, and follows the
+    /// chain; null when every handler of the signature declines.
+    fn first_admitted(self: *const CompiledProgram, world: ?*const World, head: ?usize, args: []const EntityId) ?usize {
+        var next = head;
+        while (next) |pc| : (next = self.cue_handler_chain.get(pc)) {
+            if (self.guard_admits(world, pc, args)) return pc;
         }
         return null;
     }
@@ -357,6 +366,9 @@ pub const Codegen = struct {
     /// multi-word name the parser built in its arena.
     error_line: u32 = 0,
     error_column: u32 = 0,
+    /// A second source name the diagnostic cites, such as the earlier handler that makes a
+    /// later one unreachable (D-160). Mapped to a line by the checker, like `error_context`.
+    error_related: []const u8 = "",
     allocator: std.mem.Allocator,
     world: *World,
     spatial: ?*SpatialSystem,
@@ -384,6 +396,7 @@ pub const Codegen = struct {
     scores: std.array_list.Managed(mml.ScoreDecl),
     cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
+    cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem) Codegen {
         return Codegen{
@@ -413,6 +426,37 @@ pub const Codegen = struct {
             .aliases = std.array_list.Managed(command_mod.AliasDecl).init(allocator),
             .scores = std.array_list.Managed(mml.ScoreDecl).init(allocator),
         };
+    }
+
+    /// Adds a cue handler under its signature key (D-160). The first handler of a signature is
+    /// the key's entry; each later one is chained after the last, in source order, so a failed
+    /// guard falls through to it. A handler after an unguarded one of the same signature could
+    /// never run, so it is refused, citing the earlier handler. Takes ownership of `sig`.
+    fn register_cue_handler(
+        mut_self: *Codegen,
+        sources: *std.AutoHashMap(usize, parser_mod.CueHandler),
+        sig: []const u8,
+        cue: parser_mod.CueHandler,
+        entry_pc: usize,
+    ) !void {
+        try sources.put(entry_pc, cue);
+        const head = mut_self.cue_handler_entries.get(sig) orelse {
+            errdefer mut_self.allocator.free(sig);
+            try mut_self.allocated_cue_keys.append(sig);
+            try mut_self.cue_handler_entries.put(sig, entry_pc);
+            return;
+        };
+        mut_self.allocator.free(sig);
+        var tail = head;
+        while (true) {
+            const earlier = sources.get(tail).?;
+            if (earlier.where_patterns.len == 0) {
+                mut_self.error_related = earlier.cue_name;
+                return error.UnreachableCueHandler;
+            }
+            tail = mut_self.cue_handler_chain.get(tail) orelse break;
+        }
+        try mut_self.cue_handler_chain.put(mut_self.allocator, tail, entry_pc);
     }
 
     /// Compiles an entire AST into a CompiledProgram (P4-03).
@@ -812,6 +856,10 @@ pub const Codegen = struct {
         }
 
         // 6. Compile cue handlers (P11-01, P11-02, D-013)
+        // Where each compiled handler came from, so a repeated signature can name the
+        // handler that already covers it (D-160).
+        var handler_sources = std.AutoHashMap(usize, parser_mod.CueHandler).init(mut_self.allocator);
+        defer handler_sources.deinit();
         for (ast.cue_handlers.items) |cue| {
             mut_self.error_context = cue.cue_name;
             const entry_pc = mut_self.chunk.count();
@@ -821,17 +869,14 @@ pub const Codegen = struct {
             // (D-037).
             if (cue.params.len == 1) {
                 const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]) });
-                try mut_self.allocated_cue_keys.append(sig);
-                try mut_self.cue_handler_entries.put(sig, entry_pc);
+                try mut_self.register_cue_handler(&handler_sources, sig, cue, entry_pc);
             } else if (cue.params.len == 2) {
                 const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]), cue_param_key(cue.params[1]) });
-                try mut_self.allocated_cue_keys.append(sig);
-                try mut_self.cue_handler_entries.put(sig, entry_pc);
+                try mut_self.register_cue_handler(&handler_sources, sig, cue, entry_pc);
             } else if (cue.params.len >= 3) {
                 // Uses:Actor:ItemA:ItemB; lookup also tries the two items swapped (D-013).
                 const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]), cue_param_key(cue.params[1]), cue_param_key(cue.params[2]) });
-                try mut_self.allocated_cue_keys.append(sig);
-                try mut_self.cue_handler_entries.put(sig, entry_pc);
+                try mut_self.register_cue_handler(&handler_sources, sig, cue, entry_pc);
             }
 
             if (cue.where_patterns.len > 0) {
@@ -875,6 +920,7 @@ pub const Codegen = struct {
             .scores = mut_self.scores,
             .cast = mut_self.cast,
             .cue_guards = mut_self.cue_guards,
+            .cue_handler_chain = mut_self.cue_handler_chain,
             .art = art,
         };
     }

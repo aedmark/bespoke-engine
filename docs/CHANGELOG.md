@@ -4,7 +4,9 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
-- The authoring guide and the manual cover pixel art: palettes, images from PNG files, backdrops, animated sprites, and clickable areas, with the art limits an author meets. The guide also warns that a second `on cue` handler with the same signature replaces the first (`Q-020`).
+- Several `on cue` handlers may share a signature: they are tried in source order, and a handler whose `where` guard fails passes the cue to the next one before a broader handler is tried (`D-160`). Before, the last handler silently replaced the others and the script's package would not load. A handler placed after an unguarded one with the same signature can never run and is now a compile error naming both lines. Package format version 27 carries the order.
+
+- The authoring guide and the manual cover pixel art: palettes, images from PNG files, backdrops, animated sprites, and clickable areas, with the art limits an author meets.
 
 - Props click where they are drawn: `area ShopDoor: 96 62 24 42` makes a painted door clickable anywhere on it, and people and props drawn as sprites are clicked anywhere in their frame (`D-158`). Package format version 26 carries areas.
 

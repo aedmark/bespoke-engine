@@ -164,6 +164,13 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
             line = pos[0];
             col = pos[1];
         }
+        if (err == error.UnreachableCueHandler) {
+            // Name both handlers: the refused one by position, the one that covers it by line.
+            var buf: [check_message_capacity]u8 = undefined;
+            const earlier = source_position(source, cg.error_related)[0];
+            const text = std.fmt.bufPrint(&buf, "this handler can never run: the handler on line {d} has the same signature and no guard", .{earlier}) catch failure_message(err);
+            return CheckResult.failure(line, col, text);
+        }
         return CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion);
     };
     defer compiled.deinit();
@@ -202,6 +209,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.Overflow => "number is outside the supported range",
         error.InvalidCharacter => "invalid numeric literal",
         error.DuplicateRoutineName => "routine name is already in use",
+        error.UnreachableCueHandler => "this handler can never run: an earlier handler has the same signature and no guard",
         error.UnknownArrivalMark => "this arrival rule needs a declared mark",
         error.InvalidProgramText => "could not store this declaration's text",
         error.UnknownSocietyMember => "no society member has this name",
@@ -757,6 +765,104 @@ test "D-072: VM.fire_cue runs nothing when every matching handler's guard fails"
     try testing.expect((try vm.fire_cue(&compiled, "Steal", cat, guard, null)) != null);
     _ = try vm.step_tick();
     try testing.expect(world.has_fact(cheese, world.lookup_relation("Stolen").?, null));
+}
+
+pub const ORDERED_HANDLERS =
+    \\entity Scout, Lamp, Oil, Cask
+    \\
+    \\on cue Uses(Scout, Lamp) where Lit(Lamp):
+    \\  remember Burning(Scout)
+    \\
+    \\on cue Uses(Scout, Lamp) where Full(Oil):
+    \\  remember Fills(Scout)
+    \\
+    \\on cue Uses(Scout, Lamp):
+    \\  remember Dry(Scout)
+    \\
+    \\on cue Uses(Scout, Cask) where Full(Oil):
+    \\  remember Spills(Scout)
+    \\
+    \\on cue Uses(Scout, Cask) where Lit(Lamp):
+    \\  remember Warms(Scout)
+    \\
+    \\on cue Uses(Scout, thing):
+    \\  remember Fiddles(Scout)
+;
+
+/// Fires `Uses(Scout, target)`, runs the handler, and reports whether it remembered `state`.
+fn uses_answers(vm: anytype, compiled: *const CompiledProgram, world: *World, target: []const u8, state: []const u8) !bool {
+    const scout = world.lookup_entity("Scout").?;
+    _ = (try vm.fire_cue(compiled, "Uses", scout, world.lookup_entity(target).?, null)) orelse return false;
+    _ = try vm.step_tick();
+    const relation = world.lookup_relation(state) orelse return false;
+    return world.has_fact(scout, relation, null);
+}
+
+test "P48-01: handlers that share a signature run in source order, each failed guard falling through" {
+    const testing = std.testing;
+    const vm_mod = @import("vm.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, ORDERED_HANDLERS);
+    defer compiled.deinit();
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    const lit = try world.intern_relation("Lit", .set);
+    const full = try world.intern_relation("Full", .set);
+
+    // No guard holds: the unguarded third handler is the default for the Lamp.
+    try testing.expect(try uses_answers(&vm, &compiled, &world, "Lamp", "Dry"));
+    // The second guard holds; the first still fails, so the second runs.
+    _ = try world.remember(world.lookup_entity("Oil").?, full, 0, 0);
+    try testing.expect(try uses_answers(&vm, &compiled, &world, "Lamp", "Fills"));
+    // Both hold: the first in source order wins.
+    _ = try world.remember(world.lookup_entity("Lamp").?, lit, 0, 0);
+    try testing.expect(try uses_answers(&vm, &compiled, &world, "Lamp", "Burning"));
+
+    // The Cask's two guarded handlers both hold, so the first runs; with neither, the
+    // search leaves the signature for the broader `Uses(Scout, thing)` (D-072).
+    try testing.expect(try uses_answers(&vm, &compiled, &world, "Cask", "Spills"));
+    _ = world.forget(world.lookup_entity("Oil").?, full, null);
+    try testing.expect(try uses_answers(&vm, &compiled, &world, "Cask", "Warms"));
+    _ = world.forget(world.lookup_entity("Lamp").?, lit, null);
+    try testing.expect(try uses_answers(&vm, &compiled, &world, "Cask", "Fiddles"));
+
+    // The name-only lookup still names a signature's first handler.
+    const first = compiled.find_cue_handler("Uses", "Scout", "Lamp", null).?;
+    try testing.expect(compiled.cue_handler_chain.get(first) != null);
+}
+
+test "P48-01: a handler after an unguarded one of the same signature is refused, naming both lines" {
+    const testing = std.testing;
+    const cases = [_]struct { source: []const u8, line: u32, column: u32, earlier: u32 }{
+        .{ .source =
+        \\entity Scout, Lamp
+        \\on cue Uses(Scout, Lamp):
+        \\  wait 1 ticks
+        \\on cue Uses(Scout, Lamp) where Lit(Lamp):
+        \\  wait 1 ticks
+        , .line = 4, .column = 8, .earlier = 2 },
+        // Variable parameters share one signature whatever they are called.
+        .{ .source =
+        \\entity Scout, Lamp
+        \\on cue Uses(Scout, thing) where Lit(thing):
+        \\  wait 1 ticks
+        \\on cue Uses(Scout, item):
+        \\  wait 1 ticks
+        \\on cue Uses(Scout, other):
+        \\  wait 1 ticks
+        , .line = 6, .column = 8, .earlier = 4 },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.source);
+        try testing.expect(!res.is_valid);
+        const d = res.diagnostic() orelse return error.TestUnexpectedResult;
+        try testing.expectEqual(case.line, d.line);
+        try testing.expectEqual(case.column, d.column);
+        var buf: [128]u8 = undefined;
+        const want = try std.fmt.bufPrint(&buf, "this handler can never run: the handler on line {d} has the same signature and no guard", .{case.earlier});
+        try testing.expectEqualStrings(want, d.message);
+    }
 }
 
 const ART_BASE =

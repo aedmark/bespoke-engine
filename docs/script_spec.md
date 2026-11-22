@@ -55,6 +55,8 @@ during Crowd:
 
 `on cue Name(parameters)` and its synonym `verb Name(parameters)` declare externally fired handlers. Parameters beginning with an uppercase letter match that entity; lowercase parameters match any entity. An optional `where` clause contains fact patterns joined by `and`. See the D-072 limitation above for body bindings.
 
+Several handlers may share a signature (P48-01, D-160). They are tried in source order: a handler whose guard fails passes the cue to the next one with the same signature, and only when all of them decline does dispatch move to a less specific signature. Write the guarded handlers first and an unguarded default last; a handler after an unguarded one of the same signature can never run and is a compile error naming both lines. Parameters declared as variables share one signature whatever they are called, so `Uses(Hero, thing)` and `Uses(Hero, item)` are the same. Package format version 27 carries the order; versions 1 through 26 hold one handler per signature.
+
 ## Statements and Conditions
 
 Routine, cue, rule, dialogue-choice, and `during` bodies accept these statements:
@@ -567,6 +569,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Spec section | Parser coverage | Codegen or integration test |
 | --- | --- | --- |
 | Opening vertical slice; cue parameters and `where` | `P4-02: parser parses complete tavern heist AST` | `D-072: cue where guards bind cue parameters and fall through to the next handler` (`src/compiler.zig`) |
+| Handlers sharing a signature (P48-01) | `P48-01: a handler after an unguarded one of the same signature is refused, naming both lines` (`src/compiler.zig`) | `P48-01: handlers that share a signature run in source order, each failed guard falling through` (`src/compiler.zig`); `P48-01: package version 27 round-trips handlers that share a signature, and refuses a bad chain` (`src/package.zig`) |
 | Declarations and Facts | `P4-02: parser parses complete tavern heist AST`; `P10-01: parser parses stageplay taxonomy, state declarations, and falling-edge/expiration rules` | `P4-03: end-to-end compilation from source text to bytecode chunk`; `P38-01: documented core statements parse and compile` |
 | Scenes and Execution Blocks | `P12-02: parser groups multiple scenes with scoped cast, props, and marks`; `D-101: a quoted name keeps characters a word cannot, in scene, cast, props, marks, and transitions` | `P12-01: codegen compiles multi-scene transitions and registers scoped marks`; `P38-01: documented core statements parse and compile` |
 | Statements and Conditions | `P4-02: parser parses complete tavern heist AST`; `P10-01: parser parses stageplay taxonomy, state declarations, and falling-edge/expiration rules`; `P38-01: parser rejects undocumented top-level text and body statements`; `P44-02: parser recognizes count and points conditions` | `P38-01: documented core statements parse and compile`; `P44-02: count and points conditions compile and read the fact table`; `P44-02: a wait-until aggregate counts facts and sums their third slots` (`src/vm.zig`) |

@@ -1981,7 +1981,7 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** make a repeated signature a compile error (no format change; authors nest `if` lines in one handler); keep last-wins and diagnose only a handler that can never run.
 
-**Consequences.** Guarded alternatives read as written. One cue can now run at most one handler, as before. Implementation is open work before 1.0; until it lands, the AUTHORING limit and the Claims vs. code row stand.
+**Consequences.** Guarded alternatives read as written. One cue can now run at most one handler, as before. Built by P48-01 (2026-11-22): `CompiledProgram.cue_handler_chain` maps each handler to the next of its signature, `cue_handler_entries` still names the first, `select_cue_handler` walks the chain before the broader forms, and `.bspk` version 27 appends the links (`InvalidCueChain` refuses a bad one).
 
 ## Open questions
 

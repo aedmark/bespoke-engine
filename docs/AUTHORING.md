@@ -466,5 +466,4 @@ These are recorded under Claims vs. code in [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
 - A cue handler parameter written in lowercase (`on cue Shows(Hero, item):`) matches any entity but is not bound; the body cannot use `item`. Write one handler per concrete name.
 - A `where` guard on an `on cue` handler binds the handler's lowercase parameters to the cue's arguments, but the handler body does not: inside the body, a lowercase parameter is read as an entity name. Name the entities in the body, or check them with `if`.
-- A second `on cue` handler with the same signature replaces the first, guard and all, with no diagnostic, and a package compiled from such a script refuses to load (Q-020). Write one handler per cue and choose the reply with `if` lines inside it.
 - The stock window answers dialogue and typed commands, but clicking a person does not talk to them; type `talk to <name>`.

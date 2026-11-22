@@ -125,9 +125,9 @@ on cue LooksAt(Nell, StepsLamp):
   if not Nesting(Jackdaw, StepsLamp):
     say Nell: "The lamp at the foot of the market steps, empty of birds at last."
 
-# One handler per cue: a second handler with the same signature would replace the first
-# (Q-020), so each answer is chosen by `if` lines that cannot both hold. Where a branch changes
-# a fact that a later branch tests, the later branch comes first.
+# One handler per cue, each answer chosen by `if` lines that cannot both hold. Guarded handlers
+# sharing a signature would also work (D-160); nesting keeps each cue's whole story in one place.
+# Where a branch changes a fact that a later branch tests, the later branch comes first.
 on cue TalksTo(Nell, Hobb):
   if Carries(Nell, Taper):
     if Heard(Nell, JessopTale):
