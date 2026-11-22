@@ -1,0 +1,22 @@
+# A handler naming the target wins over one whose target is a variable; the variable one
+# takes every other target.
+# pins: D-037; script_spec.md "Scenes and Execution Blocks"
+# input: 0 use lamp
+# input: 1 use cask
+# expect fact: Specific(Lamp)
+# expect fact: General(Cask)
+# expect no fact: General(Lamp)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+on cue Uses(Scout, Lamp):
+  remember Specific(Lamp)
+
+on cue Uses(Scout, thing):
+  remember General(thing)
+
+routine Idle(Scout):
+  wait 20 ticks

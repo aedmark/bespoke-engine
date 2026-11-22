@@ -1,0 +1,17 @@
+# A handler after an unguarded one of the same signature can never run, and is refused.
+# pins: D-160
+# expect error: UnreachableCueHandler 13:8
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+on cue Uses(Scout, Lamp):
+  remember Default(Scout)
+
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember First(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

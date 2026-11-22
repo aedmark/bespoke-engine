@@ -1,0 +1,11 @@
+# A lowercase name nothing binds is refused where it is written.
+# pins: D-161
+# expect error: UnboundVariable 11:25
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+routine Fetch(Scout):
+  remember Holds(Scout, sword)

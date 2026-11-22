@@ -1,0 +1,15 @@
+# With no handler for the target, the actor-only handler is the default.
+# pins: D-037
+# input: 0 use cask
+# expect fact: Fumbled(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+on cue Uses(Scout):
+  remember Fumbled(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

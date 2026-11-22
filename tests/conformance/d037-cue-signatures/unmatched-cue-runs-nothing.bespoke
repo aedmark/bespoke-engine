@@ -1,0 +1,16 @@
+# A cue no declared signature covers runs nothing; there is no fallback to another target.
+# pins: D-037
+# input: 0 use cask
+# expect no fact: Specific(Lamp)
+# expect line: < Nothing happens.
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+on cue Uses(Scout, Lamp):
+  remember Specific(Lamp)
+
+routine Idle(Scout):
+  wait 20 ticks

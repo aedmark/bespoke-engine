@@ -13,9 +13,9 @@ const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts head
     \\BeSpoke Engine - Standalone Simulation Spine & Narrative Game DSL
     \\
     \\Usage:
-    \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N]
+    \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N] [--input <file>] [--facts]
     \\  bespoke compile <script.bespoke> -o <game.bspk>
-    \\  bespoke check <script.bespoke>
+    \\  bespoke check <script.bespoke> [--kind]
     \\  bespoke import <art.png> --name <Image> [--frames WxH] [--script <script.bespoke>] [-o <file>]
     \\  bespoke init <name> [--engine <engine checkout>]
     \\  bespoke --version
@@ -45,6 +45,9 @@ pub fn main(init: std.process.Init) !void {
     var image_name: ?[]const u8 = null;
     var frames: ?[2]u16 = null;
     var script_file: ?[]const u8 = null;
+    var input_file: ?[]const u8 = null;
+    var print_facts = false;
+    var print_kind = false;
 
     var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
     defer args.deinit();
@@ -68,6 +71,12 @@ pub fn main(init: std.process.Init) !void {
             if (args.next()) |t| ticks = std.fmt.parseInt(usize, t, 10) catch 20;
         } else if (std.mem.eql(u8, arg, "--headless")) {
             headless = true;
+        } else if (std.mem.eql(u8, arg, "--input")) {
+            input_file = args.next() orelse return fail(stdout, "'--input' needs a file of '<tick> <command>' lines");
+        } else if (std.mem.eql(u8, arg, "--facts")) {
+            print_facts = true;
+        } else if (std.mem.eql(u8, arg, "--kind")) {
+            print_kind = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
             try stdout.print("bespoke {s}\n", .{build_options.version});
             return;
@@ -88,7 +97,7 @@ pub fn main(init: std.process.Init) !void {
         .help => try stdout.writeAll(usage),
         .check => {
             const path = target_file orelse return fail(stdout, "'bespoke check' requires a script file path");
-            if (!try bespoke.runner.check_file(allocator, io, path, stdout)) std.process.exit(1);
+            if (!try bespoke.runner.check_file_with(allocator, io, path, stdout, .{ .kind = print_kind })) std.process.exit(1);
         },
         .compile => {
             const path = target_file orelse return fail(stdout, "'bespoke compile' requires an input script file path");
@@ -126,10 +135,18 @@ pub fn main(init: std.process.Init) !void {
         },
         .run => {
             const path = target_file orelse return fail(stdout, "'bespoke run' requires a script or package path");
+            const input = if (input_file) |file|
+                std.Io.Dir.cwd().readFileAlloc(io, file, allocator, .limited(1024 * 1024)) catch
+                    return fail(stdout, "the '--input' file could not be read")
+            else
+                "";
+            defer if (input_file != null) allocator.free(input);
             try bespoke.runner.run_file_with_presenter(build_options.desktop, allocator, io, path, .{
                 .ticks = ticks,
                 .is_headless = headless,
                 .verbose = true,
+                .input = input,
+                .print_facts = print_facts,
             }, stdout);
         },
     }

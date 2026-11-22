@@ -566,6 +566,17 @@ sprite Lamplighter: LamplighterSheet
 
 ## Test Coverage
 
+The language conformance suite (P48-18, D-173) pins each frozen rule as runnable scripts, independent of engine internals:
+
+| Rule | Conformance cases (`tests/conformance/`) |
+| --- | --- |
+| Cue signatures and defaults (D-037) | `d037-cue-signatures/`: specific beats variable, actor-only default, unmatched cue runs nothing |
+| `where` guards (D-072) | `d072-cue-guards/`: a failed guard falls to a broader signature, a holding guard runs, a guard binds its parameter |
+| Handlers sharing a signature (D-160) | `d160-ordered-handlers/`: first holding guard wins, fall-through within a signature, unguarded default last, a handler after an unguarded one is refused |
+| Case decides role; bound bodies (D-161) | `d161-case-and-binding/`: a body reads parameters and guard variables, a state word is the relation, lowercase declarations, unbound lowercase names, and `when` body variables are refused |
+
+Each later Phase 48 item adds the cases for the rule it builds.
+
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.
 
 | Spec section | Parser coverage | Codegen or integration test |

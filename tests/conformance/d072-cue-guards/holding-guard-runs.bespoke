@@ -1,0 +1,21 @@
+# A guard that holds runs its handler, and the broader one does not.
+# pins: D-072
+# input: 0 use lamp
+# expect fact: Warmed(Scout)
+# expect no fact: Cold(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+Lamp is lit
+
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember Warmed(Scout)
+
+on cue Uses(Scout, thing):
+  remember Cold(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

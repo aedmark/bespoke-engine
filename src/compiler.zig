@@ -73,6 +73,9 @@ pub const CheckResult = struct {
     message_len: usize = 0,
     hint_buf: [Suggestions.max_len]u8 = undefined,
     hint_len: usize = 0,
+    /// The error's name, such as `UnboundVariable` (D-173): with the line and column, the part
+    /// of a diagnostic 1.0 promises. The message wording may improve in 1.x.
+    kind_name: []const u8 = "",
     entity_count: usize = 0,
     routine_count: usize = 0,
     rule_count: usize = 0,
@@ -84,6 +87,17 @@ pub const CheckResult = struct {
         res.message_len = @min(text.len, res.message_buf.len);
         @memcpy(res.message_buf[0..res.message_len], text[0..res.message_len]);
         return res;
+    }
+
+    fn with_kind(self: CheckResult, err: anyerror) CheckResult {
+        var res = self;
+        res.kind_name = @errorName(err);
+        return res;
+    }
+
+    /// The diagnostic's error kind; empty when the source is valid.
+    pub fn kind(self: *const CheckResult) []const u8 {
+        return self.kind_name;
     }
 
     fn with_hint(self: CheckResult, hint: ?[]const u8) CheckResult {
@@ -132,7 +146,7 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
 }
 
 pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files: ?FileSource) CheckResult {
-    if (source.len > MAX_SOURCE_SIZE) return CheckResult.failure(1, 1, "script exceeds the 16 MiB source limit");
+    if (source.len > MAX_SOURCE_SIZE) return CheckResult.failure(1, 1, "script exceeds the 16 MiB source limit").with_kind(error.ScriptTooLarge);
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -145,11 +159,11 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
 
     const ast = parse.parse_program() catch |err| {
         // `parse.diagnostic.message` points into `parse.diag_buf`; `failure` copies it out.
-        if (parse.diagnostic) |d| return CheckResult.failure(d.line, d.column, d.message).with_hint(parse.suggestion);
+        if (parse.diagnostic) |d| return CheckResult.failure(d.line, d.column, d.message).with_hint(parse.suggestion).with_kind(err);
         return lexer_failure(&lex, err);
     };
 
-    var dummy_world = World.init(alloc, 1024 * 1024) catch |err| return CheckResult.failure(1, 1, failure_message(err));
+    var dummy_world = World.init(alloc, 1024 * 1024) catch |err| return CheckResult.failure(1, 1, failure_message(err)).with_kind(err);
     defer dummy_world.deinit();
 
     var dummy_spatial = SpatialSystem.init(alloc);
@@ -169,9 +183,9 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
             var buf: [check_message_capacity]u8 = undefined;
             const earlier = source_position(source, cg.error_related)[0];
             const text = std.fmt.bufPrint(&buf, "this handler can never run: the handler on line {d} has the same signature and no guard", .{earlier}) catch failure_message(err);
-            return CheckResult.failure(line, col, text);
+            return CheckResult.failure(line, col, text).with_kind(err);
         }
-        return CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion);
+        return CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion).with_kind(err);
     };
     defer compiled.deinit();
 
@@ -186,8 +200,8 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
 }
 
 fn lexer_failure(lex: *const Lexer, err: anyerror) CheckResult {
-    if (lex.string_start) |tok| return CheckResult.failure(tok.line, tok.col, "unterminated string; add a closing double quote");
-    return CheckResult.failure(lex.line, lex.col, failure_message(err));
+    if (lex.string_start) |tok| return CheckResult.failure(tok.line, tok.col, "unterminated string; add a closing double quote").with_kind(err);
+    return CheckResult.failure(lex.line, lex.col, failure_message(err)).with_kind(err);
 }
 
 fn source_position(source: []const u8, context: []const u8) struct { u32, u32 } {

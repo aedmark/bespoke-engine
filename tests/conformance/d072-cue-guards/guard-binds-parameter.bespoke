@@ -1,0 +1,19 @@
+# A guard reads a variable parameter as the cue's own argument.
+# pins: D-072
+# input: 0 use lamp
+# input: 1 use cask
+# expect fact: Warmed(Lamp)
+# expect no fact: Warmed(Cask)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+Lamp is lit
+
+on cue Uses(Scout, thing) where Lit(thing):
+  remember Warmed(thing)
+
+routine Idle(Scout):
+  wait 20 ticks

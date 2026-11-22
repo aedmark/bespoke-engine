@@ -39,6 +39,8 @@ jobs:
         run: zig build test
       - name: Fuzz engine input boundaries
         run: zig build test-fuzz --test-timeout 10s
+      - name: Run the language conformance suite (P48-18)
+        run: zig build test-conformance
       - name: Test generated project
         run: zig build test-template
       - name: Follow the first-game tutorial (P40-02)

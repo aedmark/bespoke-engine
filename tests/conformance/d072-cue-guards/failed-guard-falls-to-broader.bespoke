@@ -1,0 +1,19 @@
+# A failed guard passes the cue to a less specific signature.
+# pins: D-072; script_spec.md "Scenes and Execution Blocks"
+# input: 0 use lamp
+# expect fact: Cold(Scout)
+# expect no fact: Warmed(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember Warmed(Scout)
+
+on cue Uses(Scout, thing):
+  remember Cold(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

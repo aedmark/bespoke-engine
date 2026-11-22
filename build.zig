@@ -271,6 +271,14 @@ pub fn build(b: *std.Build) void {
     const test_fuzz_step = b.step("test-fuzz", "Run bounded input mutation tests");
     test_fuzz_step.dependOn(&b.addRunArtifact(fuzz_tests).step);
 
+    // The language conformance suite (P48-18, D-173): scripts with expected facts, output, and
+    // diagnostic kinds, run through the stock CLI so it pins behaviour, not engine internals.
+    const conformance = b.addSystemCommand(&.{ "python3", "tools/check_conformance.py", "--bespoke" });
+    conformance.addArtifactArg(exe);
+    conformance.has_side_effects = true;
+    const test_conformance_step = b.step("test-conformance", "Run the language conformance suite");
+    test_conformance_step.dependOn(&conformance.step);
+
     const proofs_unit_tests = b.addTest(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
         // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).

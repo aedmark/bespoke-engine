@@ -129,10 +129,28 @@ pub const RunConfig = struct {
     ticks: usize = 20,
     is_headless: bool = false,
     verbose: bool = true,
+    /// Headless only (P48-18, D-173): lines of `<tick> <typed command>`, each typed for the
+    /// player once that many ticks have run, as the window's command bar would. Lines starting
+    /// with `#` and blank lines are skipped.
+    input: []const u8 = "",
+    /// Headless only (P48-18): print the world's facts, sorted, when the clock stops and before
+    /// the rewind demonstration, so a run can be compared with what it should have left.
+    print_facts: bool = false,
+};
+
+pub const CheckOptions = struct {
+    /// Also print the error's kind (`kind: UnboundVariable`), the part of a diagnostic the 1.0
+    /// promise covers with its position (D-173).
+    kind: bool = false,
 };
 
 /// Validates syntax and semantics of a .bespoke scenario file (P15-03, D-018).
 pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, stdout: anytype) !bool {
+    return check_file_with(allocator, io, path, stdout, .{});
+}
+
+/// `check_file` with output options (P48-18).
+pub fn check_file_with(allocator: std.mem.Allocator, io: std.Io, path: []const u8, stdout: anytype, options: CheckOptions) !bool {
     const max_size = bespoke.compiler.MAX_SOURCE_SIZE;
     const source = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size)) catch |err| {
         try write_diagnostic_text(stdout, path);
@@ -160,7 +178,75 @@ pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, st
         return true;
     } else {
         try write_script_diagnostic(stdout, path, source, &res);
+        if (options.kind) try stdout.print("kind: {s}\n", .{res.kind()});
         return false;
+    }
+}
+
+/// Types each input line due after `ticks` ticks for the player (P48-18). A line is
+/// `<tick> <command>`; the echo and any reply print as `[Tick N] > command` and `[Tick N] < reply`.
+fn type_inputs(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    interp: *bespoke.command.Interpreter,
+    player: bespoke.EntityId,
+    input: []const u8,
+    ticks: usize,
+    stdout: anytype,
+) !void {
+    var lines = std.mem.splitScalar(u8, input, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        const space = std.mem.indexOfScalar(u8, line, ' ') orelse return error.InvalidInputLine;
+        const due = std.fmt.parseInt(usize, line[0..space], 10) catch return error.InvalidInputLine;
+        if (due != ticks) continue;
+        const command = std.mem.trim(u8, line[space + 1 ..], " \t");
+        try stdout.print("[Tick {d:>3}] > ", .{vm.world.current_tick});
+        try write_diagnostic_text(stdout, command);
+        try stdout.print("\n", .{});
+        var buf: [256]u8 = undefined;
+        const reply = try bespoke.host.run_command(vm, compiled, interp, player, command, &buf);
+        if (reply.text) |text| {
+            try stdout.print("[Tick {d:>3}] < ", .{vm.world.current_tick});
+            try write_diagnostic_text(stdout, text);
+            try stdout.print("\n", .{});
+        }
+    }
+}
+
+/// Prints every fact as `fact Relation(Subject)` or `fact Relation(Subject, Object)`, sorted,
+/// so the output does not depend on table order (P48-18). An object that names an entity
+/// prints its name; any other object prints its number.
+fn print_facts(allocator: std.mem.Allocator, world: *const World, stdout: anytype) !void {
+    var lines = std.array_list.Managed([]u8).init(allocator);
+    defer {
+        for (lines.items) |line| allocator.free(line);
+        lines.deinit();
+    }
+    const slice = world.facts.slice();
+    for (0..world.facts.len) |i| {
+        const subject = world.get_entity_name(slice.items(.subject)[i]) orelse "?";
+        const meta = world.get_relation_meta(slice.items(.relation)[i]);
+        const relation = if (meta) |m| m.name else "?";
+        const object = slice.items(.object_or_value)[i];
+        const line = if (object == 0)
+            try std.fmt.allocPrint(allocator, "fact {s}({s})", .{ relation, subject })
+        else if (world.get_entity_name(bespoke.EntityId.from_int(object))) |name|
+            try std.fmt.allocPrint(allocator, "fact {s}({s}, {s})", .{ relation, subject, name })
+        else
+            try std.fmt.allocPrint(allocator, "fact {s}({s}, {d})", .{ relation, subject, object });
+        try lines.append(line);
+    }
+    std.mem.sort([]u8, lines.items, {}, struct {
+        fn less(_: void, a: []u8, b: []u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.less);
+    try stdout.print("facts: {d}\n", .{lines.items.len});
+    for (lines.items) |line| {
+        try write_diagnostic_text(stdout, line);
+        try stdout.print("\n", .{});
     }
 }
 
@@ -435,8 +521,10 @@ fn run_bytes_with_presenter(
         var story = StoryReport{};
         try story.report(&world, &vm, stdout);
 
+        var interp = bespoke.command.Interpreter{};
         var tick_count: usize = 0;
         while (tick_count < config.ticks) : (tick_count += 1) {
+            try type_inputs(&vm, &compiled, &interp, player_entity, config.input, tick_count, stdout);
             _ = try bespoke.host.tick(&vm, &compiled);
             try story.report(&world, &vm, stdout);
 
@@ -463,6 +551,8 @@ fn run_bytes_with_presenter(
                 });
             }
         }
+
+        if (config.print_facts) try print_facts(allocator, &world, stdout);
 
         try stdout.print("\n===================================================================\n", .{});
         try stdout.print("Simulation Finished at Tick {d}:\n", .{world.current_tick});

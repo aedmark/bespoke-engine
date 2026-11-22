@@ -1,0 +1,25 @@
+# A failed guard passes the cue to the next handler of the same signature, then the default.
+# pins: D-160
+# input: 0 use lamp
+# expect fact: Second(Scout)
+# expect no fact: First(Scout)
+# expect no fact: Default(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+Cask is full
+
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember First(Scout)
+
+on cue Uses(Scout, Lamp) where Full(Cask):
+  remember Second(Scout)
+
+on cue Uses(Scout, Lamp):
+  remember Default(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

@@ -1,0 +1,13 @@
+# A declared thing's name must start with a capital letter.
+# pins: D-161
+# expect error: LowercaseName 10:14
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+entity Hero, hero
+
+routine Idle(Scout):
+  wait 20 ticks

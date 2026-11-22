@@ -1,0 +1,16 @@
+# A state word after `is` names the capitalised relation: `Lamp is lit` is `Lit(Lamp)`.
+# pins: D-161
+# ticks: 3
+# expect fact: Lit(Lamp)
+# expect fact: Seen(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+Lamp is lit
+
+routine Look(Scout):
+  if Lit(Lamp):
+    remember Seen(Scout)

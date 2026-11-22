@@ -16,12 +16,12 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 
 | Namespace | Supported surface |
 | --- | --- |
-| `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` methods, `Diagnostic`, `CompiledProgram` and `CompiledProgram.deinit` |
+| `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` / `kind` methods (`kind`, P48-18), `Diagnostic`, `CompiledProgram` and `CompiledProgram.deinit` |
 | `package` | `PACKAGE_MAGIC`, `PACKAGE_VERSION`, `MIN_PACKAGE_VERSION`, `save_package`, `load_package`, `save_package_file`, `load_package_file`, `version_from_bytes`, `format_unsupported_version` |
 | `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `backdrop_for`, `sprite_for`, `validate`, `dupe`, and `deinit_owned` methods, `Anim`, `Step`, `Backdrop`, `Sprite` and its `frame_at` method, `Area` and `Art.area_for` (P46-05), the limits `MAX_IMAGES`, `MAX_SHEET_SIDE`, `MAX_SHEET_PIXELS`, `MAX_NAME`, and `MAX_BINDINGS`, `Error` (P46-01, P46-03). D-166 replaces indexed art with true colour in P48-12, which revises this row |
 | `png` | `MAX_FILE`, `Error`, `Rgba` and its `deinit`, `decode` (P46-04) |
 | `art_import` | `MapError`, `Where`, `map`, `CodeError`, `assign_codes`, `free_codes`, `write_palette_lines`, `write_image_block` (P46-04) |
-| `runner` | `RunConfig`, `check_file`, `compile_file`, `run_file`, `run_bytes`, `import_art`, `ImportOptions`, `ScriptFiles` (P46-04) |
+| `runner` | `RunConfig` (its `input` and `print_facts` fields, P48-18), `CheckOptions`, `check_file_with`, `check_file`, `compile_file`, `run_file`, `run_bytes`, `import_art`, `ImportOptions`, `ScriptFiles` (P46-04) |
 
 `CompiledProgram` owns its compiled data and must outlive every VM using it. Its fields, bytecode chunk, routine maps, and declaration tables are internal. Use `host.init_vm`, `host.start_script`, and `host.start_routine` instead of reading those tables.
 

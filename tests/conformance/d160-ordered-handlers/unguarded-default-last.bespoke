@@ -1,0 +1,19 @@
+# When every guarded handler declines, the unguarded one written last runs.
+# pins: D-160
+# input: 0 use lamp
+# expect fact: Default(Scout)
+# expect no fact: First(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember First(Scout)
+
+on cue Uses(Scout, Lamp):
+  remember Default(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

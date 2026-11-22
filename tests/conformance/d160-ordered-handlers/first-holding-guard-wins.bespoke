@@ -1,0 +1,26 @@
+# Handlers sharing a signature are tried in source order; the first whose guard holds runs.
+# pins: D-160; script_spec.md "Several handlers may share a signature"
+# input: 0 use lamp
+# expect fact: First(Scout)
+# expect no fact: Second(Scout)
+# expect no fact: Default(Scout)
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+Lamp is lit
+Cask is full
+
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember First(Scout)
+
+on cue Uses(Scout, Lamp) where Full(Cask):
+  remember Second(Scout)
+
+on cue Uses(Scout, Lamp):
+  remember Default(Scout)
+
+routine Idle(Scout):
+  wait 20 ticks

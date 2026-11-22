@@ -1,0 +1,22 @@
+# A handler body reads a lowercase parameter as the entity the cue named, and a guard-only
+# variable as the entity the guard matched.
+# pins: D-161; script_spec.md "Names are case-sensitive"
+# input: 0 use cask
+# expect fact: Touched(Cask)
+# expect fact: Found(Coin)
+# expect line: Scout: "Something in the Cask."
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+remember Holds(Cask, Coin)
+
+on cue Uses(Scout, thing) where Holds(thing, item):
+  remember Touched(thing)
+  remember Found(item)
+  say Scout: "Something in the Cask."
+
+routine Idle(Scout):
+  wait 20 ticks

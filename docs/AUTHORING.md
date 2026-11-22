@@ -426,6 +426,8 @@ test "the bell only counts while the lantern burns" {
 }
 ```
 
+From the command line, `bespoke run game.bespoke --headless --ticks 20 --input moves.txt --facts` plays typed commands for the player (each line of `moves.txt` is `<tick> <command>`, such as `3 use the lamp`) and prints the facts the run left, sorted; `bespoke check --kind` adds the error's kind to a diagnostic. The conformance suite in `tests/conformance/` is written this way.
+
 To fire what a player types, use `host.run_command` with a `command.Interpreter`. To answer a dialogue, call `vm.choose(index)` and tick. `src/authoring_guide_test.zig` drives this guide's walkthroughs exactly that way and is a working reference.
 
 ## 8. Host API

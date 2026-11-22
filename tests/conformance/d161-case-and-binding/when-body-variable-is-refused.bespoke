@@ -1,0 +1,14 @@
+# A `when` rule body cannot read its trigger's variables yet.
+# pins: D-161
+# expect error: WhenBodyVariable 11:18
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask, Coin
+marks: Gate
+
+when Holds(who, Coin):
+  remember Armed(who)
+
+routine Idle(Scout):
+  wait 20 ticks
