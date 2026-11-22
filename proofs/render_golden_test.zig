@@ -40,6 +40,7 @@ const grid_puzzle = @import("grid_puzzle.zig");
 const observatory_puzzle = @import("observatory_puzzle.zig");
 const long_gallery = @import("long_gallery.zig");
 const valerius = @import("valerius.zig");
+const image_stage = @import("image_stage.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -239,6 +240,17 @@ const Recorder = struct {
     /// Recorded frames that left less than the floor above the band. Reported together at the end
     /// of the pass, so one crowded scene does not hide the rest.
     crowded: usize = 0,
+
+    fn set_art(self: *Recorder, a: ?*const bespoke.image.Art) void {
+        self.window.set_art(a);
+        if (self.alt) |alt| alt.window.set_art(a);
+    }
+
+    /// Sets the animation clock in both windows; offscreen windows never advance it themselves.
+    fn set_clock(self: *Recorder, clock: u64) void {
+        self.window.animation_clock = clock;
+        if (self.alt) |alt| alt.window.animation_clock = clock;
+    }
 
     /// Draws the VM's current scene and appends `<label>: <hash>` to the record.
     fn draw(self: *Recorder, label: []const u8, world: *bespoke.World, spatial: *bespoke.SpatialSystem, vm: *bespoke.VM) !void {
@@ -569,6 +581,9 @@ fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
     defer spatial.deinit();
     var compiled = try bespoke.compile_source(allocator, &world, &spatial, script);
     defer compiled.deinit();
+    // A script's declared art draws in both windows (P46-03); a script without art sets none.
+    rec.set_art(&compiled.art);
+    defer rec.set_art(null);
     // Seed grid layouts so a grid scene shows its opening cells. Only grids: seeding other
     // subsystems here would redraw scenes whose goldens predate it.
     for (compiled.grids.items) |declaration| try bespoke.grid.seed(&world, declaration);
@@ -733,6 +748,68 @@ fn record_inspector(rec: *Recorder) !void {
     try rec.draw_frame("inspector-filtered/Larkspur Observatory", bridge.get_frame());
 }
 
+/// P46-02, P46-03: a room drawn from the indexed pixel art its script declares, in both windows,
+/// with the band check reading the blit's probe records. The proof theme is lifted for it, so
+/// only declared art and the neutral stage draw, and comes back for a later pass.
+fn record_image_stage(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void {
+    rec.window.set_theme(null);
+    big.set_theme(null);
+    defer {
+        rec.window.set_theme(&art.theme);
+        big.set_theme(&art.theme);
+    }
+    try record_script(rec, "image_stage", image_stage.SCRIPT);
+    try record_image_replay(rec);
+}
+
+/// P46-03: the lamplighter's walk replayed. The script runs from its start, and after each tick
+/// the frame is drawn at two animation clocks, so the record shows the walk animation changing
+/// with the clock and the idle returning on arrival. The run is made twice from a fresh world:
+/// animation is presentation only, so the second run must draw byte-identical frames.
+fn record_image_replay(rec: *Recorder) !void {
+    const start = rec.out.items.len;
+    try replay_image_stage(rec);
+    const first = try rec.allocator.dupe(u8, rec.out.items[start..]);
+    defer rec.allocator.free(first);
+    rec.out.shrinkRetainingCapacity(start);
+    try replay_image_stage(rec);
+    if (!std.mem.eql(u8, first, rec.out.items[start..])) return error.AnimatedReplayDiffers;
+}
+
+fn replay_image_stage(rec: *Recorder) !void {
+    const allocator = rec.allocator;
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, image_stage.SCRIPT);
+    defer compiled.deinit();
+    rec.set_art(&compiled.art);
+    defer {
+        rec.set_art(null);
+        rec.set_clock(0);
+    }
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try bespoke.host.initialize_subsystems(&world, &compiled);
+    try vm.load_compiled_rules(&compiled);
+    _ = try bespoke.host.start_script(&world, &spatial, &vm, &compiled);
+    try vm.transition_to_scene(world.lookup_entity(image_stage.SCENE).?);
+    var tick: usize = 0;
+    while (tick < 6) : (tick += 1) {
+        _ = try bespoke.host.tick(&vm, &compiled);
+        var bridge = bespoke.DisplayBridge.init();
+        bridge.capture_frame(&world, &spatial, &vm);
+        bridge.swap();
+        for ([_]u64{ 0, 8 }) |clock| {
+            rec.set_clock(clock);
+            var label_buf: [96]u8 = undefined;
+            try rec.draw_frame(try std.fmt.bufPrint(&label_buf, "image_stage/replay tick {d} clock {d}", .{ tick + 1, clock }), bridge.get_frame());
+        }
+    }
+}
+
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.array_list.Managed(u8) {
     // The same frames are drawn and band-checked at 1920x1080 in a second window (P43-03); its
     // pixels are thrown away, so no golden grows.
@@ -745,6 +822,7 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     try record_tavern(&rec);
     for (scripted) |p| try record_script(&rec, p.name, p.script);
     try record_inspector(&rec);
+    try record_image_stage(&rec, &big);
     if (rec.crowded > 0) {
         std.debug.print("\n{d} recorded frame(s) leave fewer than {d} pixels above the message band (Q-017, P43-08)\n", .{ rec.crowded, CLEARANCE_FLOOR });
         return error.SceneTooCloseToBand;

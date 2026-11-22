@@ -844,6 +844,10 @@ pub const Codegen = struct {
             _ = try mut_self.chunk.emit_op(.halt);
         }
 
+        // Art last: nothing after it can fail, so the owned copy never needs an errdefer here
+        // (P46-03, D-155). Bindings name their scene or entity by text; interning finds the
+        // entity the scene, cast, or props line already made.
+        const art = try mut_self.compile_art(&ast.art);
         return CompiledProgram{
             .chunk = mut_self.chunk,
             .routine_entries = mut_self.routine_entries,
@@ -871,6 +875,31 @@ pub const Codegen = struct {
             .scores = mut_self.scores,
             .cast = mut_self.cast,
             .cue_guards = mut_self.cue_guards,
+            .art = art,
+        };
+    }
+
+    fn compile_art(self: *Codegen, decl: *const parser_mod.ArtDecl) !image_mod.Art {
+        if (decl.palette.len == 0 and decl.images.len == 0) return .{};
+        const backdrops = try self.allocator.alloc(image_mod.Backdrop, decl.backdrops.len);
+        defer self.allocator.free(backdrops);
+        for (decl.backdrops, backdrops) |b, *out| out.* = .{ .scene = try self.world.intern_entity(b.scene), .image = b.image };
+        const sprites = try self.allocator.alloc(image_mod.Sprite, decl.sprites.len);
+        defer self.allocator.free(sprites);
+        for (decl.sprites, sprites) |sp, *out| out.* = .{
+            .entity = try self.world.intern_entity(sp.target),
+            .image = sp.image,
+            .animations = sp.animations,
+        };
+        return image_mod.Art.dupe(self.allocator, .{
+            .palette = decl.palette,
+            .images = decl.images,
+            .backdrops = backdrops,
+            .sprites = sprites,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            // The parser checked everything `validate` checks, so this is a compiler fault.
+            else => error.InvalidArt,
         };
     }
 

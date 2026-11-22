@@ -377,6 +377,8 @@ fn run_bytes_with_presenter(
 
         // Typed commands fire cues for the player (P29-02, D-064); Enter focuses the bar.
         window.enable_command_bar(true);
+        // Declared backdrops and sprites draw in the stock window (P46-03, D-155).
+        window.set_art(&compiled.art);
         var interp = bespoke.command.Interpreter{};
 
         display_bridge.capture_frame(&world, &spatial, &vm);
@@ -630,7 +632,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 25; this engine supports versions 1 through 24\n",
+        "future.bspk: error: unsupported .bspk format version 26; this engine supports versions 1 through 25\n",
         output.buffered(),
     );
 }

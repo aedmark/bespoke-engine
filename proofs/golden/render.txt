@@ -303,3 +303,30 @@ valerius/Greyhold Gate +branch_collapsed: a9ad59865868fddb
 clearance/valerius/Greyhold Gate +branch_collapsed: 47
 inspector/Larkspur Observatory: ced1814273961cf6
 inspector-filtered/Larkspur Observatory: 223bc995aafeabae
+thumb/image_stage/Lamp Room: de2e85e4d9574afc
+image_stage/Lamp Room: c8aac4e5d32c3ab4
+clearance/image_stage/Lamp Room: 124
+image_stage/replay tick 1 clock 0: ffb3c8414e3cc886
+clearance/image_stage/replay tick 1 clock 0: 124
+image_stage/replay tick 1 clock 8: ffb3c8414e3cc886
+clearance/image_stage/replay tick 1 clock 8: 124
+image_stage/replay tick 2 clock 0: 15c19c3abd147f4d
+clearance/image_stage/replay tick 2 clock 0: 111
+image_stage/replay tick 2 clock 8: 5ee4b0b7ba9aa5ac
+clearance/image_stage/replay tick 2 clock 8: 111
+image_stage/replay tick 3 clock 0: 6b52e0460fa6bb4d
+clearance/image_stage/replay tick 3 clock 0: 111
+image_stage/replay tick 3 clock 8: 30101ff05c04f27e
+clearance/image_stage/replay tick 3 clock 8: 111
+image_stage/replay tick 4 clock 0: 90982e0cdcaa1242
+clearance/image_stage/replay tick 4 clock 0: 124
+image_stage/replay tick 4 clock 8: 90982e0cdcaa1242
+clearance/image_stage/replay tick 4 clock 8: 124
+image_stage/replay tick 5 clock 0: ce370d4310ade255
+clearance/image_stage/replay tick 5 clock 0: 124
+image_stage/replay tick 5 clock 8: ce370d4310ade255
+clearance/image_stage/replay tick 5 clock 8: 124
+image_stage/replay tick 6 clock 0: d356048e33e8de5f
+clearance/image_stage/replay tick 6 clock 0: 124
+image_stage/replay tick 6 clock 8: d356048e33e8de5f
+clearance/image_stage/replay tick 6 clock 8: 124

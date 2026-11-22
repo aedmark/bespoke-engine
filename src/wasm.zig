@@ -538,6 +538,8 @@ pub const WasmRuntime = struct {
         self.banner_len = 0;
         self.approach = null;
         self.selected_item = .none;
+        // The art is borrowed from the program about to be dropped.
+        self.window.set_art(null);
         self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
@@ -612,6 +614,8 @@ pub const WasmRuntime = struct {
             self.program = try compiler_mod.compile_source(self.allocator, &self.world, &self.spatial, data);
         }
         const program = &self.program.?;
+        // The script's art draws on the browser frame as on the desktop (P46-03, D-097).
+        self.window.set_art(&program.art);
         self.vm.deinit();
         self.vm = VM.init(self.allocator, &self.world, &program.chunk);
         self.vm.spatial = &self.spatial;
@@ -1612,6 +1616,13 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             }
         }
 
+        /// Sets the animation clock to the 60 Hz display frames shown since the page started
+        /// (P46-03, D-152). The page derives it from elapsed time, so a fast monitor or a
+        /// redraw on input does not speed animations up.
+        fn wasm_set_animation_clock(frames: u32) callconv(.c) void {
+            if (runtime()) |rt| rt.window.animation_clock = frames;
+        }
+
         fn wasm_framebuffer_ptr() callconv(.c) [*]const u8 {
             // Valid memory of the right length before a runtime exists, so the page can read it
             // without a check.
@@ -1784,6 +1795,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     @export(&Exports.wasm_load_scenario, .{ .name = "wasm_load_scenario" });
     @export(&Exports.wasm_step_tick, .{ .name = "wasm_step_tick" });
     @export(&Exports.wasm_render_frame, .{ .name = "wasm_render_frame" });
+    @export(&Exports.wasm_set_animation_clock, .{ .name = "wasm_set_animation_clock" });
     @export(&Exports.wasm_framebuffer_ptr, .{ .name = "wasm_framebuffer_ptr" });
     @export(&Exports.wasm_framebuffer_len, .{ .name = "wasm_framebuffer_len" });
     @export(&Exports.wasm_on_pointer_down, .{ .name = "wasm_on_pointer_down" });

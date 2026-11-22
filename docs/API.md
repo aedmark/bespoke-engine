@@ -18,7 +18,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 | --- | --- |
 | `compiler` | `compile_source`, `check_source`, `CheckResult` and its `message` / `diagnostic` methods, `Diagnostic`, `CompiledProgram` and `CompiledProgram.deinit` |
 | `package` | `PACKAGE_MAGIC`, `PACKAGE_VERSION`, `MIN_PACKAGE_VERSION`, `save_package`, `load_package`, `save_package_file`, `load_package_file`, `version_from_bytes`, `format_unsupported_version` |
-| `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `validate`, `dupe`, and `deinit_owned` methods, `Error` (P46-01) |
+| `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `backdrop_for`, `sprite_for`, `validate`, `dupe`, and `deinit_owned` methods, `Anim`, `Step`, `Backdrop`, `Sprite` and its `frame_at` method, `Error` (P46-01, P46-03) |
 | `runner` | `RunConfig`, `check_file`, `compile_file`, `run_file`, `run_bytes` |
 
 `CompiledProgram` owns its compiled data and must outlive every VM using it. Its fields, bytecode chunk, routine maps, and declaration tables are internal. Use `host.init_vm`, `host.start_script`, and `host.start_routine` instead of reading those tables.
@@ -65,7 +65,7 @@ All public methods on `Session`, `SpeechLog`, and `ScriptSoundtrack` are support
 
 | Namespace | Supported surface |
 | --- | --- |
-| `display` | `DisplayBridge`, `RenderFrame`, `DisplayWindow`, `UserAction`, `StatusHook`, `RenderEntity`, `RenderWaypoint`, `RenderHotspot`, `RenderInventoryItem`, `RenderDialogue`, `Theme`, `Canvas`, `Color`, `current_score_entity` |
+| `display` | `DisplayBridge`, `RenderFrame`, `DisplayWindow`, `UserAction`, `StatusHook`, `RenderEntity`, `RenderWaypoint`, `RenderHotspot`, `RenderInventoryItem`, `RenderDialogue`, `Theme`, `Canvas` (with `draw_image`, P46-02), `DisplayWindow.set_art` and `DisplayWindow.animation_clock` (P46-03), `Color`, `current_score_entity` |
 | `audio` | `AudioBridge`, `Sound`, `Soundtrack`, `SoundEffectKind`, `ChiptuneSynth` |
 
 All public methods on `DisplayBridge`, `RenderFrame`, and `DisplayWindow` are supported. `DisplayBridge.capture_scene(world, spatial, vm, scene)` fills a frame from a named room without moving the VM (P44-06); `capture_frame` is the same call with the VM's scene. The frame is labelled as that room and carries its `SceneScore`, so the renderer, theme, and audio treat it as that room. Capture is read-only: the VM's scene, fibers, and rules are untouched, and a host that shows a watched view keeps interaction off it. `Theme` is a host configuration record, so its callback, key, thumbnail, and soundtrack fields are supported. The frame's storage layout and the `display.renderer`, `font`, `text_layout`, `dialogue_panel`, `beats`, and `state_graph` implementation namespaces are internal. A theme or status callback uses the documented types but must not depend on unlisted renderer helpers.

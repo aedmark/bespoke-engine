@@ -12,6 +12,7 @@ const hint_mod = @import("../hint.zig");
 const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
+const image_mod = @import("../image.zig");
 const diagnostic_mod = @import("diagnostic.zig");
 const Suggestions = diagnostic_mod.Suggestions;
 pub const Note = draft_mod.Note;
@@ -148,6 +149,8 @@ pub const SceneDef = struct {
     cast: std.array_list.Managed([]const u8),
     props: std.array_list.Managed([]const u8),
     marks: std.array_list.Managed([]const u8),
+    /// `backdrop: <Image>` (P46-03): the image's name as written, resolved after parsing.
+    backdrop: ?Token = null,
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) SceneDef {
         return .{
@@ -510,7 +513,44 @@ pub const PathDecl = struct {
     routines: []const Routine,
 };
 
+/// One `palette:` line (P46-03, D-155): a quoted code and a colour, or `transparent`.
+pub const PaletteEntry = struct { code: Token, colour: ?image_mod.Colour };
+
+/// An `image <Name> [frames <W>x<H>]:` block as written: its rows are resolved against the
+/// palette once the whole script is read, so the palette may come later in the file.
+pub const ImageSource = struct {
+    name: []const u8,
+    at: Token,
+    frame_width: u32 = 0,
+    frame_height: u32 = 0,
+    frames_at: ?Token = null,
+    rows: []const Token,
+};
+
+pub const StepSource = struct { frame: u32, duration: u32, at: Token };
+
+/// A `sprite <Person or Prop>: <Image>` block with its animation lines.
+pub const SpriteSource = struct {
+    target: []const u8,
+    at: Token,
+    image: Token,
+    animations: [image_mod.ANIM_COUNT][]const StepSource = @splat(@as([]const StepSource, &.{})),
+};
+
+/// Art resolved from the declarations above: pixels are palette indices, and bindings name
+/// their scene or entity by text for codegen to intern. Everything is in the parser's arena.
+pub const ArtDecl = struct {
+    palette: []const image_mod.Colour = &.{},
+    images: []const image_mod.Image = &.{},
+    backdrops: []const BackdropBinding = &.{},
+    sprites: []const SpriteBinding = &.{},
+};
+pub const BackdropBinding = struct { scene: []const u8, image: u16 };
+pub const SpriteBinding = struct { target: []const u8, image: u16, animations: [image_mod.ANIM_COUNT][]const image_mod.Step };
+
 pub const AST = struct {
+    /// Pixel art and what it is attached to (P46-03, D-155).
+    art: ArtDecl = .{},
     entities: std.array_list.Managed([]const u8),
     relations: std.array_list.Managed(RelationDecl),
     initial_stmts: std.array_list.Managed(Stmt),
@@ -635,6 +675,11 @@ pub const Parser = struct {
     weave_refs: std.array_list.Managed(WeaveRef),
     arrival_refs: std.array_list.Managed(ArrivalRef),
     score_refs: std.array_list.Managed(ScoreRef),
+    /// Art declarations as written, resolved at the end of `parse_program` (P46-03).
+    palette_at: ?Token = null,
+    palette_src: std.ArrayListUnmanaged(PaletteEntry) = .empty,
+    image_srcs: std.ArrayListUnmanaged(ImageSource) = .empty,
+    sprite_srcs: std.ArrayListUnmanaged(SpriteSource) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -1184,6 +1229,9 @@ pub const Parser = struct {
                 .identifier => {
                     const start = self.current;
                     try self.advance();
+                    // Art lines are matched by text and the token after them, so `image`,
+                    // `palette`, `sprite`, and `backdrop` stay usable as names (P46-03).
+                    if (try self.art_declaration(&ast, start)) continue;
                     // `red lines` is two words, not keywords, so `red` stays usable as a name.
                     if (std.mem.eql(u8, start.slice, "red") and self.current.tag == .identifier and
                         self.current.line == start.line and std.mem.eql(u8, self.current.slice, "lines"))
@@ -1278,6 +1326,7 @@ pub const Parser = struct {
             }
         }
 
+        try self.resolve_art(&ast);
         return ast;
     }
 
@@ -2277,6 +2326,276 @@ pub const Parser = struct {
 
     /// Finishes `red lines <Character>: <Option>, ...` once `red lines` has been read. The options
     /// run to the end of the line.
+    /// Parses one art line or block whose first word, `start`, is already consumed. Returns false
+    /// when `start` does not begin one, leaving the token stream untouched.
+    fn art_declaration(self: *Parser, ast: *AST, start: Token) !bool {
+        const same_line = self.current.line == start.line;
+        const word = start.slice;
+        if (std.mem.eql(u8, word, "palette") and same_line and self.current.tag == .colon) {
+            try self.parse_palette(start);
+            return true;
+        }
+        if (std.mem.eql(u8, word, "backdrop") and same_line and self.current.tag == .colon) {
+            try self.advance();
+            if (ast.scene_defs.items.len == 0) return self.error_at(start, "a backdrop belongs to a scene; put it under a 'scene:' line", .{});
+            const scene = &ast.scene_defs.items[ast.scene_defs.items.len - 1];
+            if (scene.backdrop != null) return self.error_at(start, "scene '{s}' declares a backdrop twice", .{scene.name});
+            scene.backdrop = try self.take_image_name();
+            return true;
+        }
+        const named = same_line and (self.current.tag == .identifier or self.current.tag == .string_literal);
+        if (std.mem.eql(u8, word, "image") and named) {
+            try self.parse_image(start);
+            return true;
+        }
+        if (std.mem.eql(u8, word, "sprite") and named) {
+            try self.parse_sprite(start);
+            return true;
+        }
+        return false;
+    }
+
+    /// An image name is one word or a quoted name, so `frames` can follow it on the line.
+    fn take_image_name(self: *Parser) !Token {
+        if (self.current.tag == .string_literal) return self.expect(.string_literal);
+        return self.expect(.identifier);
+    }
+
+    fn parse_palette(self: *Parser, start: Token) !void {
+        if (self.palette_at != null) return self.error_at(start, "the palette is declared twice; a game has one palette (D-152)", .{});
+        self.palette_at = start;
+        try self.advance(); // colon
+        _ = try self.expect(.indent);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const code = self.current;
+            if (code.tag != .string_literal) return self.set_error("a palette line starts with a quoted colour code, such as \"b\"", .{});
+            try self.advance();
+            if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "transparent") and self.current.line == code.line) {
+                try self.advance();
+                try self.palette_src.append(self.allocator, .{ .code = code, .colour = null });
+                continue;
+            }
+            var rgb: [3]u8 = undefined;
+            for (&rgb) |*channel| {
+                const tok = self.current;
+                if (tok.tag != .number or tok.line != code.line)
+                    return self.error_at(code, "palette code \"{s}\" needs 'transparent' or three numbers from 0 to 255 for red, green, and blue", .{code.slice});
+                const value = std.fmt.parseInt(u32, tok.slice, 10) catch 256;
+                if (value > 255) return self.error_at(tok, "palette code \"{s}\" has a colour value of {s}; each of red, green, and blue is 0 to 255", .{ code.slice, tok.slice });
+                channel.* = @intCast(value);
+                try self.advance();
+            }
+            try self.palette_src.append(self.allocator, .{ .code = code, .colour = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] } });
+        }
+        _ = try self.expect(.dedent);
+    }
+
+    fn parse_image(self: *Parser, start: Token) !void {
+        const name_tok = try self.take_image_name();
+        var src = ImageSource{ .name = name_tok.slice, .at = name_tok, .rows = &.{} };
+        if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "frames") and self.current.line == start.line) {
+            src.frames_at = self.current;
+            try self.advance();
+            // `12x20` lexes as the number 12 and the word x20; `12 x 20` is accepted too.
+            src.frame_width = try self.take_u32();
+            const x_tok = self.current;
+            if (x_tok.tag != .identifier or x_tok.slice.len == 0 or x_tok.slice[0] != 'x')
+                return self.error_at(x_tok, "image '{s}' expects 'frames <width>x<height>', such as 'frames 16x24'", .{src.name});
+            try self.advance();
+            if (x_tok.slice.len > 1) {
+                src.frame_height = std.fmt.parseInt(u32, x_tok.slice[1..], 10) catch
+                    return self.error_at(x_tok, "image '{s}' expects 'frames <width>x<height>', such as 'frames 16x24'", .{src.name});
+            } else src.frame_height = try self.take_u32();
+        }
+        if (self.current.tag != .colon) return self.error_at(self.current, "image '{s}' expects ':' and its pixel rows below it", .{src.name});
+        try self.advance();
+        if (self.current.tag != .indent) return self.error_at(name_tok, "image '{s}' has no pixel rows; list them indented below it, one quoted row per line", .{src.name});
+        try self.advance();
+        var rows = std.array_list.Managed(Token).init(self.allocator);
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            if (self.current.tag != .string_literal) return self.set_error("image '{s}' rows are quoted strings of palette codes", .{src.name});
+            try rows.append(self.current);
+            try self.advance();
+        }
+        _ = try self.expect(.dedent);
+        src.rows = try rows.toOwnedSlice();
+        for (self.image_srcs.items) |prior| {
+            if (std.mem.eql(u8, prior.name, src.name)) return self.error_at(name_tok, "image '{s}' is declared twice", .{src.name});
+        }
+        try self.image_srcs.append(self.allocator, src);
+    }
+
+    fn parse_sprite(self: *Parser, start: Token) !void {
+        _ = start;
+        const at = self.current;
+        const target = try self.parse_name();
+        if (self.current.tag != .colon) return self.error_at(self.current, "sprite '{s}' expects ':' and the image it is drawn from", .{target});
+        try self.advance();
+        var src = SpriteSource{ .target = target, .at = at, .image = try self.take_image_name() };
+        if (self.current.tag == .indent) {
+            try self.advance();
+            while (self.current.tag != .dedent and self.current.tag != .eof) {
+                const anim_tok = self.current;
+                try self.advance();
+                const anim: image_mod.Anim = if (anim_tok.tag == .identifier and std.mem.eql(u8, anim_tok.slice, "idle"))
+                    .idle
+                else if (anim_tok.tag == .kw_walk) blk: {
+                    const dir = self.current;
+                    try self.advance();
+                    const which: ?image_mod.Anim = if (std.mem.eql(u8, dir.slice, "up")) .walk_up else if (std.mem.eql(u8, dir.slice, "down")) .walk_down else if (std.mem.eql(u8, dir.slice, "left")) .walk_left else if (std.mem.eql(u8, dir.slice, "right")) .walk_right else null;
+                    break :blk which orelse return self.error_at(dir, "sprite '{s}' walks up, down, left, or right, not '{s}'", .{ target, dir.slice });
+                } else return self.error_at(anim_tok, "sprite '{s}' has animations 'idle' and 'walk up', 'walk down', 'walk left', 'walk right', not '{s}'", .{ target, anim_tok.slice });
+                const slot = &src.animations[@intFromEnum(anim)];
+                if (slot.len > 0) return self.error_at(anim_tok, "sprite '{s}' declares the '{s}' animation twice", .{ target, @tagName(anim) });
+                _ = try self.expect(.colon);
+                var steps = std.array_list.Managed(StepSource).init(self.allocator);
+                while (true) {
+                    const frame_tok = self.current;
+                    const frame = try self.take_u32();
+                    // Six display frames is ten frames a second (D-152).
+                    var duration: u32 = 6;
+                    if (self.current.tag == .kw_for) {
+                        try self.advance();
+                        const dur_tok = self.current;
+                        duration = try self.take_u32();
+                        if (duration == 0 or duration > image_mod.MAX_DURATION)
+                            return self.error_at(dur_tok, "sprite '{s}' shows a frame for {d} display frames; use 1 to {d}", .{ target, duration, image_mod.MAX_DURATION });
+                    }
+                    try steps.append(.{ .frame = frame, .duration = duration, .at = frame_tok });
+                    if (steps.items.len > image_mod.MAX_STEPS)
+                        return self.error_at(frame_tok, "sprite '{s}' has more than {d} steps in one animation", .{ target, image_mod.MAX_STEPS });
+                    if (self.current.tag != .comma) break;
+                    try self.advance();
+                }
+                slot.* = try steps.toOwnedSlice();
+            }
+            _ = try self.expect(.dedent);
+        }
+        for (self.sprite_srcs.items) |prior| {
+            if (std.mem.eql(u8, prior.target, target)) return self.error_at(at, "'{s}' has two sprites; declare one", .{target});
+        }
+        try self.sprite_srcs.append(self.allocator, src);
+    }
+
+    fn image_index(self: *Parser, tok: Token, what: []const u8, owner: []const u8) !u16 {
+        for (self.image_srcs.items, 0..) |src, i| {
+            if (std.mem.eql(u8, src.name, tok.slice)) return @intCast(i);
+        }
+        var hints = Suggestions{};
+        for (self.image_srcs.items) |src| hints.consider(tok.slice, src.name);
+        self.suggestion = hints.result();
+        return self.error_at(tok, "{s} '{s}' names image '{s}', which is not declared", .{ what, owner, tok.slice });
+    }
+
+    /// Turns the art declarations into palette indices and bindings, naming the first thing
+    /// wrong at its own line. Runs once the whole script is read, so declarations may come in
+    /// any order (P46-03, D-155).
+    fn resolve_art(self: *Parser, ast: *AST) !void {
+        var palette = std.array_list.Managed(image_mod.Colour).init(self.allocator);
+        var code_width: usize = 0;
+        for (self.palette_src.items, 0..) |entry, i| {
+            const code = entry.code.slice;
+            if (i == 0 and entry.colour != null)
+                return self.error_at(entry.code, "the palette's first line is its transparent code, such as '\".\" transparent'; index 0 is never drawn", .{});
+            if (i > 0 and entry.colour == null)
+                return self.error_at(entry.code, "only the palette's first line is transparent", .{});
+            if (code.len == 0 or code.len > 2) return self.error_at(entry.code, "palette code \"{s}\" is one or two characters", .{code});
+            for (code) |c| if (c <= ' ' or c > '~' or c == '"') return self.error_at(entry.code, "palette code \"{s}\" uses a character a code cannot hold; use printable characters other than a space", .{code});
+            if (i == 0) code_width = code.len else if (code.len != code_width)
+                return self.error_at(entry.code, "palette code \"{s}\" is {d} characters wide, but the first code is {d}; every code is the same width", .{ code, code.len, code_width });
+            for (self.palette_src.items[0..i]) |prior| if (std.mem.eql(u8, prior.code.slice, code))
+                return self.error_at(entry.code, "palette code \"{s}\" is declared twice", .{code});
+            if (i == image_mod.MAX_COLOURS) return self.error_at(entry.code, "the palette has more than {d} colours (D-152)", .{image_mod.MAX_COLOURS});
+            try palette.append(entry.colour orelse .{ .r = 0, .g = 0, .b = 0 });
+        }
+
+        var images = std.array_list.Managed(image_mod.Image).init(self.allocator);
+        for (self.image_srcs.items) |src| {
+            if (self.palette_src.items.len == 0) return self.error_at(src.at, "image '{s}' needs a 'palette:' declaration for its codes", .{src.name});
+            image_mod.validate_name(src.name) catch return self.error_at(src.at, "image name '{s}' is 1 to {d} printable characters", .{ src.name, image_mod.MAX_NAME });
+            const first = src.rows[0];
+            if (first.slice.len == 0 or first.slice.len % code_width != 0)
+                return self.error_at(first, "image '{s}' has a row of {d} characters, which is not a whole number of {d}-character codes", .{ src.name, first.slice.len, code_width });
+            const width = first.slice.len / code_width;
+            const height = src.rows.len;
+            const fw: usize = if (src.frames_at == null) width else src.frame_width;
+            const fh: usize = if (src.frames_at == null) height else src.frame_height;
+            const size_at = src.frames_at orelse src.at;
+            if (width > image_mod.MAX_SHEET_SIDE or height > image_mod.MAX_SHEET_SIDE or width * height > image_mod.MAX_SHEET_PIXELS)
+                return self.error_at(src.at, "image '{s}' is {d}x{d}; a sheet is at most {d} on a side and {d} pixels", .{ src.name, width, height, image_mod.MAX_SHEET_SIDE, image_mod.MAX_SHEET_PIXELS });
+            if (fw == 0 or fh == 0 or fw > image_mod.ART_WIDTH or fh > image_mod.ART_HEIGHT)
+                return self.error_at(size_at, "image '{s}' has frames of {d}x{d}; a frame is 1 to {d} wide and 1 to {d} tall (D-152)", .{ src.name, fw, fh, image_mod.ART_WIDTH, image_mod.ART_HEIGHT });
+            if (width % fw != 0 or height % fh != 0)
+                return self.error_at(size_at, "image '{s}' is {d}x{d}, which frames of {d}x{d} do not tile", .{ src.name, width, height, fw, fh });
+            const pixels = try self.allocator.alloc(u8, width * height);
+            for (src.rows, 0..) |row, y| {
+                if (row.slice.len != first.slice.len)
+                    return self.error_at(row, "image '{s}' row {d} is {d} characters wide; its first row is {d}", .{ src.name, y + 1, row.slice.len, first.slice.len });
+                for (0..width) |x| {
+                    const code = row.slice[x * code_width ..][0..code_width];
+                    const index = for (self.palette_src.items, 0..) |entry, i| {
+                        if (std.mem.eql(u8, entry.code.slice, code)) break i;
+                    } else return self.error_at(row, "image '{s}' row {d} uses code \"{s}\", which the palette does not declare", .{ src.name, y + 1, code });
+                    pixels[y * width + x] = @intCast(index);
+                }
+            }
+            try images.append(.{
+                .name = src.name,
+                .width = @intCast(width),
+                .height = @intCast(height),
+                .frame_width = @intCast(fw),
+                .frame_height = @intCast(fh),
+                .pixels = pixels,
+            });
+        }
+        if (images.items.len > image_mod.MAX_IMAGES) return self.error_at(self.image_srcs.items[image_mod.MAX_IMAGES].at, "a game has at most {d} images", .{image_mod.MAX_IMAGES});
+
+        var backdrops = std.array_list.Managed(BackdropBinding).init(self.allocator);
+        for (ast.scene_defs.items) |scene| {
+            const tok = scene.backdrop orelse continue;
+            const index = try self.image_index(tok, "scene", scene.name);
+            const image = images.items[index];
+            if (image.width != image_mod.ART_WIDTH or image.height != image_mod.ART_HEIGHT or image.frame_count() != 1)
+                return self.error_at(tok, "backdrop '{s}' of scene '{s}' is {d}x{d}; a backdrop is one {d}x{d} frame (D-152)", .{ tok.slice, scene.name, image.width, image.height, image_mod.ART_WIDTH, image_mod.ART_HEIGHT });
+            try backdrops.append(.{ .scene = scene.name, .image = index });
+        }
+
+        var sprites = std.array_list.Managed(SpriteBinding).init(self.allocator);
+        for (self.sprite_srcs.items) |src| {
+            const on_stage = for (ast.cast.items) |name| {
+                if (std.mem.eql(u8, name, src.target)) break true;
+            } else for (ast.props.items) |name| {
+                if (std.mem.eql(u8, name, src.target)) break true;
+            } else false;
+            if (!on_stage) {
+                var hints = Suggestions{};
+                for (ast.cast.items) |name| hints.consider(src.target, name);
+                for (ast.props.items) |name| hints.consider(src.target, name);
+                self.suggestion = hints.result();
+                return self.error_at(src.at, "sprite '{s}' is for a person or prop no scene declares in 'cast:' or 'props:'", .{src.target});
+            }
+            const index = try self.image_index(src.image, "sprite", src.target);
+            const frames = images.items[index].frame_count();
+            var binding = SpriteBinding{ .target = src.target, .image = index, .animations = undefined };
+            for (src.animations, &binding.animations) |steps, *out| {
+                const own = try self.allocator.alloc(image_mod.Step, steps.len);
+                for (steps, own) |step, *o| {
+                    if (step.frame >= frames)
+                        return self.error_at(step.at, "image '{s}' has {d} frame(s), numbered from 0; frame {d} does not exist", .{ src.image.slice, frames, step.frame });
+                    o.* = .{ .frame = @intCast(step.frame), .duration = @intCast(step.duration) };
+                }
+                out.* = own;
+            }
+            try sprites.append(binding);
+        }
+        ast.art = .{
+            .palette = try palette.toOwnedSlice(),
+            .images = try images.toOwnedSlice(),
+            .backdrops = try backdrops.toOwnedSlice(),
+            .sprites = try sprites.toOwnedSlice(),
+        };
+    }
+
     fn finish_red_lines(self: *Parser) !RedLinesDecl {
         const actor = try self.parse_name();
         if (self.current.tag != .colon) return self.set_error("red lines for '{s}' expect ':' and the options it never takes", .{actor});

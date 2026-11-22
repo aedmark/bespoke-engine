@@ -13,6 +13,8 @@ const draft_mod = @import("draft.zig");
 pub const DistaffInput = draft_mod.DistaffInput;
 const dialogue_mod = @import("dialogue.zig");
 const mml_mod = @import("mml.zig");
+const image_mod = @import("image.zig");
+const MotorAgent = spatial_mod.MotorAgent;
 pub const WeaveOutcome = draft_mod.WeaveOutcome;
 
 pub const font = @import("display/font.zig");
@@ -47,6 +49,9 @@ pub const RenderEntity = struct {
     y: i32,
     current_wp: WaypointId,
     is_moving: bool,
+    /// Which way a walking person is heading, toward the next mark on its path; `.idle` when
+    /// it stands still (P46-03). It picks a sprite's walk animation and nothing else.
+    heading: image_mod.Anim = .idle,
 
     pub fn get_name(self: *const RenderEntity) []const u8 {
         return self.name[0..self.name_len];
@@ -372,6 +377,9 @@ pub const RenderFrame = struct {
     debug_fiber_count: usize,
     current_scene: [32]u8 = undefined,
     current_scene_len: u8 = 0,
+    /// The captured room itself, so declared art finds its backdrop by entity rather than by a
+    /// name the 32-byte label may cut (P46-03).
+    scene_entity: EntityId = .none,
     /// The script score that should play (P28-03, D-062): the `play score` override, else the
     /// current scene's `SceneScore`; empty when neither names one.
     current_score: [32]u8 = undefined,
@@ -499,6 +507,20 @@ pub fn current_score_entity(world: *const world_mod.World, scene: ?EntityId) ?En
     const rel = world.lookup_relation(mml_mod.SCENE_RELATION) orelse return null;
     const fact = world.find_first(scene_id, rel, null) orelse return null;
     return EntityId.from_int(fact.object_or_value);
+}
+
+/// The direction a walking agent faces: toward the next mark on its path, by the larger of the
+/// two world-axis distances, horizontal on a tie. World y grows down the screen (P46-03).
+fn heading_of(spatial: *const SpatialSystem, agent: *const MotorAgent) image_mod.Anim {
+    if (!agent.is_moving) return .idle;
+    const path = agent.path orelse return .idle;
+    if (agent.path_index >= path.len) return .idle;
+    const next = spatial.graph.get_waypoint(path[agent.path_index]) orelse return .idle;
+    const dx = next.pos.x - agent.pos.x;
+    const dy = next.pos.y - agent.pos.y;
+    if (dx == 0 and dy == 0) return .idle;
+    if (@abs(dx) >= @abs(dy)) return if (dx < 0) .walk_left else .walk_right;
+    return if (dy < 0) .walk_up else .walk_down;
 }
 
 pub const DisplayBridge = struct {
@@ -637,6 +659,7 @@ pub const DisplayBridge = struct {
                 .y = agent.pos.y,
                 .current_wp = agent.current_wp,
                 .is_moving = agent.is_moving,
+                .heading = heading_of(spatial, agent),
             };
             if (world.get_entity_name(agent.entity)) |n| {
                 const len = @min(n.len, re.name.len);
@@ -872,6 +895,7 @@ pub const DisplayBridge = struct {
 
         // 8. Capture the scene label (P12-03, D-014): the captured room, which is the VM's own
         // scene through `capture_frame` and may differ through `capture_scene` (P44-06).
+        self.back_buffer.scene_entity = scene orelse .none;
         if (scene) |scene_id| {
             if (world.get_entity_name(scene_id)) |sname| {
                 const len = @min(sname.len, self.back_buffer.current_scene.len);

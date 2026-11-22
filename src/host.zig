@@ -911,6 +911,8 @@ pub const Session = struct {
             .last_tick_ms = now_ms(window),
         };
         s.sync_active_world();
+        // The script's own art draws in this window (P46-03); a game without art keeps its theme.
+        window.set_art(&compiled.art);
         try initialize_subsystems(s.active_world(), compiled);
         try s.record_snapshot();
         s.refresh();

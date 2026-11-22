@@ -14,6 +14,7 @@
 //! one gate: the package loader and `Art.dupe` both pass through it, so a renderer can index a
 //! sheet with `frame_pixel` and the palette with any stored index without checking again.
 const std = @import("std");
+const EntityId = @import("world.zig").EntityId;
 
 /// The art resolution (D-152). A frame never exceeds it.
 pub const ART_WIDTH: u16 = 320;
@@ -37,6 +38,7 @@ pub const Error = error{
     InvalidImageName,
     InvalidImageSize,
     InvalidImageIndex,
+    InvalidImageBinding,
 };
 
 pub const Colour = struct { r: u8, g: u8, b: u8 };
@@ -100,10 +102,63 @@ pub fn validate_indices(pixels: []const u8, colour_count: usize) Error!void {
     for (pixels) |index| if (index >= colour_count) return Error.InvalidImageIndex;
 }
 
-/// A game's palette and images. Empty for a game drawn by code.
+/// What a sprite is doing, which picks its animation (P46-03, D-155). A person walking takes the
+/// walk for the direction of the mark it is heading to; everything else idles.
+pub const Anim = enum(u8) {
+    idle,
+    walk_up,
+    walk_down,
+    walk_left,
+    walk_right,
+
+    pub fn fromInt(raw: u8) ?Anim {
+        return if (raw < ANIM_COUNT) @enumFromInt(raw) else null;
+    }
+};
+pub const ANIM_COUNT = @typeInfo(Anim).@"enum".field_names.len;
+/// Upper bounds a well-formed package never reaches (D-155).
+pub const MAX_STEPS: usize = 64;
+pub const MAX_DURATION: u16 = 600;
+pub const MAX_BINDINGS: usize = 1024;
+
+/// One step of an animation: a frame of the sheet and how many 60 Hz display frames it shows
+/// (D-152 point 3).
+pub const Step = struct { frame: u16, duration: u16 };
+
+/// A scene drawn over a backdrop image instead of the neutral stage.
+pub const Backdrop = struct { scene: EntityId, image: u16 };
+
+/// A person or prop drawn from a sprite sheet. An empty animation falls back to idle, and an
+/// empty idle shows frame 0.
+pub const Sprite = struct {
+    entity: EntityId,
+    image: u16,
+    animations: [ANIM_COUNT][]const Step = @splat(@as([]const Step, &.{})),
+
+    /// The frame to show for `anim` at display frame `clock`. The clock is the host's counter
+    /// of shown frames; it never enters the world, so a replay draws the same frames when the
+    /// host replays the same clock (D-152).
+    pub fn frame_at(self: Sprite, anim: Anim, clock: u64) u16 {
+        var steps = self.animations[@intFromEnum(anim)];
+        if (steps.len == 0) steps = self.animations[@intFromEnum(Anim.idle)];
+        if (steps.len == 0) return 0;
+        var total: u64 = 0;
+        for (steps) |step| total += step.duration;
+        var t = clock % total;
+        for (steps) |step| {
+            if (t < step.duration) return step.frame;
+            t -= step.duration;
+        }
+        unreachable;
+    }
+};
+
+/// A game's palette, images, and what they are attached to. Empty for a game drawn by code.
 pub const Art = struct {
     palette: []const Colour = &.{},
     images: []const Image = &.{},
+    backdrops: []const Backdrop = &.{},
+    sprites: []const Sprite = &.{},
 
     pub fn is_empty(self: Art) bool {
         return self.palette.len == 0 and self.images.len == 0;
@@ -111,6 +166,16 @@ pub const Art = struct {
 
     pub fn find(self: *const Art, name: []const u8) ?*const Image {
         for (self.images) |*image| if (std.mem.eql(u8, image.name, name)) return image;
+        return null;
+    }
+
+    pub fn backdrop_for(self: *const Art, scene: EntityId) ?*const Image {
+        for (self.backdrops) |b| if (b.scene == scene) return &self.images[b.image];
+        return null;
+    }
+
+    pub fn sprite_for(self: *const Art, entity: EntityId) ?*const Sprite {
+        for (self.sprites) |*sprite| if (sprite.entity == entity) return sprite;
         return null;
     }
 
@@ -122,34 +187,62 @@ pub const Art = struct {
             try image.validate(self.palette.len);
             for (self.images[0..i]) |prior| if (std.mem.eql(u8, prior.name, image.name)) return Error.InvalidImageName;
         }
+        if (self.backdrops.len > MAX_BINDINGS or self.sprites.len > MAX_BINDINGS) return Error.InvalidImageBinding;
+        for (self.backdrops, 0..) |b, i| {
+            if (b.scene == .none or b.image >= self.images.len) return Error.InvalidImageBinding;
+            const image = self.images[b.image];
+            // A backdrop fills the art resolution with one frame (D-152).
+            if (image.width != ART_WIDTH or image.height != ART_HEIGHT or image.frame_count() != 1) return Error.InvalidImageBinding;
+            for (self.backdrops[0..i]) |prior| if (prior.scene == b.scene) return Error.InvalidImageBinding;
+        }
+        for (self.sprites, 0..) |sprite, i| {
+            if (sprite.entity == .none or sprite.image >= self.images.len) return Error.InvalidImageBinding;
+            const frames = self.images[sprite.image].frame_count();
+            for (sprite.animations) |steps| {
+                if (steps.len > MAX_STEPS) return Error.InvalidImageBinding;
+                for (steps) |step| {
+                    if (step.frame >= frames or step.duration == 0 or step.duration > MAX_DURATION) return Error.InvalidImageBinding;
+                }
+            }
+            for (self.sprites[0..i]) |prior| if (prior.entity == sprite.entity) return Error.InvalidImageBinding;
+        }
     }
 
-    /// Validates, then copies palette, names, and pixels into memory owned by `allocator`.
-    pub fn dupe(allocator: std.mem.Allocator, palette: []const Colour, images: []const Image) (Error || std.mem.Allocator.Error)!Art {
-        try (Art{ .palette = palette, .images = images }).validate();
-        const own_palette = try allocator.dupe(Colour, palette);
-        errdefer allocator.free(own_palette);
-        const own_images = try allocator.alloc(Image, images.len);
-        var done: usize = 0;
-        errdefer {
-            for (own_images[0..done]) |image| free_image(allocator, image);
-            allocator.free(own_images);
-        }
-        for (images, own_images) |image, *copy| {
-            const name = try allocator.dupe(u8, image.name);
-            errdefer allocator.free(name);
+    /// Validates, then copies everything into memory owned by `allocator`.
+    pub fn dupe(allocator: std.mem.Allocator, source: Art) (Error || std.mem.Allocator.Error)!Art {
+        try source.validate();
+        var art = Art{};
+        errdefer art.deinit_owned(allocator);
+        art.palette = try allocator.dupe(Colour, source.palette);
+        const images = try allocator.alloc(Image, source.images.len);
+        @memset(images, .{ .name = &.{}, .width = 0, .height = 0, .frame_width = 0, .frame_height = 0, .pixels = &.{} });
+        art.images = images;
+        for (source.images, images) |image, *copy| {
             copy.* = image;
-            copy.name = name;
+            copy.name = &.{};
+            copy.pixels = &.{};
+            copy.name = try allocator.dupe(u8, image.name);
             copy.pixels = try allocator.dupe(u8, image.pixels);
-            done += 1;
         }
-        return .{ .palette = own_palette, .images = own_images };
+        art.backdrops = try allocator.dupe(Backdrop, source.backdrops);
+        const sprites = try allocator.alloc(Sprite, source.sprites.len);
+        for (sprites) |*sprite| sprite.* = .{ .entity = .none, .image = 0 };
+        art.sprites = sprites;
+        for (source.sprites, sprites) |sprite, *copy| {
+            copy.entity = sprite.entity;
+            copy.image = sprite.image;
+            for (sprite.animations, &copy.animations) |steps, *own| own.* = try allocator.dupe(Step, steps);
+        }
+        return art;
     }
 
     pub fn deinit_owned(self: *Art, allocator: std.mem.Allocator) void {
         for (self.images) |image| free_image(allocator, image);
         allocator.free(self.images);
         allocator.free(self.palette);
+        allocator.free(self.backdrops);
+        for (self.sprites) |sprite| for (sprite.animations) |steps| allocator.free(steps);
+        allocator.free(self.sprites);
         self.* = .{};
     }
 };
@@ -206,10 +299,48 @@ test "P46-01: a backdrop is one 320x180 frame and a larger frame is refused" {
 test "P46-01: dupe copies art into owned memory" {
     const palette = [_]Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 8, .b = 7 } };
     var pixels = [_]u8{ 1, 0 };
-    var art = try Art.dupe(std.testing.allocator, &palette, &.{.{ .name = "Dot", .width = 2, .height = 1, .frame_width = 1, .frame_height = 1, .pixels = &pixels }});
+    var art = try Art.dupe(std.testing.allocator, .{ .palette = &palette, .images = &.{.{ .name = "Dot", .width = 2, .height = 1, .frame_width = 1, .frame_height = 1, .pixels = &pixels }} });
     defer art.deinit_owned(std.testing.allocator);
     pixels[0] = 0;
     try std.testing.expectEqual(@as(u8, 1), art.find("Dot").?.pixels[0]);
     try std.testing.expectEqual(@as(u32, 2), art.find("Dot").?.frame_count());
     try std.testing.expect(art.find("Missing") == null);
+}
+
+test "P46-03: a sprite plays its steps by display frame and falls back to idle, then frame 0" {
+    const walk = [_]Step{ .{ .frame = 2, .duration = 6 }, .{ .frame = 3, .duration = 4 } };
+    const idle = [_]Step{.{ .frame = 1, .duration = 30 }};
+    var sprite = Sprite{ .entity = EntityId.from_int(1), .image = 0 };
+    try std.testing.expectEqual(@as(u16, 0), sprite.frame_at(.walk_left, 99));
+    sprite.animations[@intFromEnum(Anim.idle)] = &idle;
+    try std.testing.expectEqual(@as(u16, 1), sprite.frame_at(.walk_left, 99));
+    sprite.animations[@intFromEnum(Anim.walk_left)] = &walk;
+    try std.testing.expectEqual(@as(u16, 2), sprite.frame_at(.walk_left, 0));
+    try std.testing.expectEqual(@as(u16, 2), sprite.frame_at(.walk_left, 5));
+    try std.testing.expectEqual(@as(u16, 3), sprite.frame_at(.walk_left, 6));
+    try std.testing.expectEqual(@as(u16, 3), sprite.frame_at(.walk_left, 9));
+    try std.testing.expectEqual(@as(u16, 2), sprite.frame_at(.walk_left, 10));
+    try std.testing.expectEqual(@as(u16, 2), sprite.frame_at(.walk_left, 10 * 1000));
+}
+
+test "P46-03: bindings name real images, a backdrop is one 320x180 frame, and steps stay in the sheet" {
+    const palette = [_]Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 1, .g = 2, .b = 3 } };
+    const sheet_px = [_]u8{ 1, 0, 0, 1 };
+    const sheet = Image{ .name = "Sheet", .width = 2, .height = 2, .frame_width = 1, .frame_height = 2, .pixels = &sheet_px };
+    const step_ok = [_]Step{.{ .frame = 1, .duration = 6 }};
+    const step_bad = [_]Step{.{ .frame = 2, .duration = 6 }};
+    var sprite = Sprite{ .entity = EntityId.from_int(3), .image = 0 };
+    sprite.animations[0] = &step_ok;
+    try (Art{ .palette = &palette, .images = &.{sheet}, .sprites = &.{sprite} }).validate();
+    sprite.animations[0] = &step_bad;
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .palette = &palette, .images = &.{sheet}, .sprites = &.{sprite} }).validate());
+    // The sheet is not a 320x180 backdrop, and image 1 does not exist.
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .palette = &palette, .images = &.{sheet}, .backdrops = &.{.{ .scene = EntityId.from_int(4), .image = 0 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .palette = &palette, .images = &.{sheet}, .backdrops = &.{.{ .scene = EntityId.from_int(4), .image = 1 }} }).validate());
+
+    sprite.animations[0] = &step_ok;
+    var art = try Art.dupe(std.testing.allocator, .{ .palette = &palette, .images = &.{sheet}, .sprites = &.{sprite} });
+    defer art.deinit_owned(std.testing.allocator);
+    try std.testing.expectEqual(@as(u16, 1), art.sprite_for(EntityId.from_int(3)).?.frame_at(.idle, 0));
+    try std.testing.expect(art.sprite_for(EntityId.from_int(9)) == null);
 }

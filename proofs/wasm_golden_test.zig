@@ -14,6 +14,7 @@ const bespoke = @import("bespoke");
 const options = @import("golden_options");
 const wasm = bespoke.wasm;
 const wasm_deck = @import("wasm_deck.zig");
+const image_stage = @import("image_stage.zig");
 const canvas = bespoke.display.canvas;
 const band = bespoke.display.band;
 
@@ -26,6 +27,15 @@ const Decks = struct {
     fn init(allocator: std.mem.Allocator, index: u8) !wasm.WasmRuntime {
         return wasm.WasmRuntime.init(allocator, &wasm_deck.decks, index);
     }
+};
+
+/// P46-02, P46-03: the image stage as a browser deck, so the browser frame draws the art its
+/// script declares on the same canvas path as the desktop (D-097). It is not a published deck.
+const image_decks = [_]wasm.Deck{
+    wasm.script_deck_with("IMAGE STAGE", image_stage.SCRIPT, .{
+        .player = "Lamplighter",
+        .intro = "Image stage: a room drawn from indexed pixel art.",
+    }),
 };
 
 const Step = union(enum) {
@@ -57,10 +67,15 @@ fn tick(rt: *wasm.WasmRuntime, n: u8) !void {
 }
 
 fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index: u8) !void {
+    var prefix_buf: [16]u8 = undefined;
     const rt = try allocator.create(wasm.WasmRuntime);
     defer allocator.destroy(rt);
     rt.* = try Decks.init(allocator, index);
     defer rt.deinit();
+    try record_runtime(out, rt, try std.fmt.bufPrint(&prefix_buf, "deck/{d}", .{index}));
+}
+
+fn record_runtime(out: *std.array_list.Managed(u8), rt: *wasm.WasmRuntime, prefix: []const u8) !void {
 
     // P43-05: every beat is band-checked as it is drawn. The browser frame is the desktop
     // window's frame at 1280x720 (D-097), so the probes read it the way the render golden reads
@@ -103,7 +118,7 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
         const check = band.Check.measure(rt.window.height, &text_probe, &rect_probe);
         if (check.verdict != .clear) {
             var label_buf: [96]u8 = undefined;
-            check.report(try std.fmt.bufPrint(&label_buf, "deck/{d}/{s}", .{ index, entry.label }));
+            check.report(try std.fmt.bufPrint(&label_buf, "{s}/{s}", .{ prefix, entry.label }));
             return switch (check.verdict) {
                 .overflow => error.RectProbeOverflow,
                 .art => error.ArtInMessageBand,
@@ -112,8 +127,8 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
             };
         }
         var lw1 = ListWriter.init(out);
-        try lw1.writer.print("deck/{d}/{s}: {x:0>16} facts={d} tick={d} banner=\"{s}\"\n", .{
-            index,
+        try lw1.writer.print("{s}/{s}: {x:0>16} facts={d} tick={d} banner=\"{s}\"\n", .{
+            prefix,
             entry.label,
             std.hash.Wyhash.hash(0, rt.framebuffer),
             rt.world.fact_count(),
@@ -126,7 +141,7 @@ fn record(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8), index:
     // unchanged, so the count is what makes the rule's absence visible.
     const ran = band.measured() - band_before;
     if (ran != SCRIPT.len) {
-        std.debug.print("\ndeck/{d}: the band check ran {d} time(s) for {d} recorded lines\n", .{ index, ran, SCRIPT.len });
+        std.debug.print("\n{s}: the band check ran {d} time(s) for {d} recorded lines\n", .{ prefix, ran, SCRIPT.len });
         return error.BandCheckMissing;
     }
 }
@@ -140,6 +155,13 @@ test "P32-04: every proof deck shows the browser frames recorded in its wasm gol
     defer actual.deinit();
     var index: u8 = 0;
     while (index < DECK_COUNT) : (index += 1) try record(allocator, &actual, index);
+    {
+        const rt = try allocator.create(wasm.WasmRuntime);
+        defer allocator.destroy(rt);
+        rt.* = try wasm.WasmRuntime.init(allocator, &image_decks, 0);
+        defer rt.deinit();
+        try record_runtime(&actual, rt, "image");
+    }
 
     if (options.update_goldens) {
         try dir.writeFile(std.testing.io, .{ .sub_path = GOLDEN_NAME, .data = actual.items });

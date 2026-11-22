@@ -10,6 +10,7 @@ const command_mod = @import("../command.zig");
 const state_graph = @import("state_graph.zig");
 const font = @import("font.zig");
 const canvas_mod = @import("canvas.zig");
+const image_mod = @import("../image.zig");
 const band = @import("band.zig");
 const text_layout = @import("text_layout.zig");
 const dialogue_panel = @import("dialogue_panel.zig");
@@ -971,6 +972,15 @@ pub const DisplayWindow = struct {
     /// The host's presentation; null draws the engine's neutral defaults. Borrowed: the theme
     /// must outlive the window.
     theme: ?*const Theme = null,
+    /// The game's declared art (P46-03, D-155): backdrops and sprites drawn in place of the
+    /// theme's and the neutral stage's. Borrowed from the compiled program, which must outlive
+    /// the window.
+    art: ?*const image_mod.Art = null,
+    /// Display frames shown so far, which times sprite animations (D-152 point 3). A window on
+    /// screen counts its own presents; the browser sets it from elapsed time. It is never
+    /// written to the world, so offscreen goldens hold it fixed and a replay redraws the same
+    /// frames for the same clock.
+    animation_clock: u64 = 0,
     /// SDL's window, renderer, and streaming texture, held untyped so the struct and its drawing
     /// compile without SDL for the browser (D-097). Only `init`, `deinit`, and the present step
     /// at the end of `render_frame` cast them back.
@@ -1319,6 +1329,23 @@ pub const DisplayWindow = struct {
             if (self.window) |w| c.SDL_DestroyWindow(@ptrCast(w));
             c.SDL_Quit();
         }
+    }
+
+    pub fn set_art(self: *DisplayWindow, art: ?*const image_mod.Art) void {
+        self.art = if (art) |a| (if (a.is_empty()) null else a) else null;
+    }
+
+    /// Draws one sprite frame standing on `pt`: the frame's bottom edge on the spot, centred
+    /// across it (D-155). The frame is a label obstacle, so names and prompts settle beside the
+    /// art rather than on it. Returns the frame's height in frame pixels, for the label above it.
+    fn draw_sprite(self: *DisplayWindow, sprite: *const image_mod.Sprite, frame_index: u16, pt: Point, labels: *TextLayoutResolver) i32 {
+        const art = self.art.?;
+        const img = &art.images[sprite.image];
+        const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
+        const h: i32 = @as(i32, img.frame_height) * image_mod.SCALE;
+        if (self.canvas) |*cv| cv.draw_image(art.palette, img, frame_index, pt.x - @divTrunc(w, 2), pt.y - h);
+        labels.add_obstacle(pt.x - @divTrunc(w, 2), pt.y - h, w, h);
+        return h;
     }
 
     pub fn set_theme(self: *DisplayWindow, theme: ?*const Theme) void {
@@ -2992,10 +3019,17 @@ pub const DisplayWindow = struct {
         // The backdrop is the one layer D-124 lets extend behind the log; the probe keeps it
         // apart from proof scenery so the band check can skip it by kind (P43-02).
         if (self.canvas) |*cv| cv.rect_kind = .backdrop;
-        const backdrop_drawn = if (self.theme) |t| (if (t.backdrop) |draw| draw(&self.canvas.?, frame) else false) else false;
+        // A declared backdrop is the room (P46-03, D-155): it replaces the theme's scenery, and
+        // the stage's walkways and resting mark discs are hidden over it. Hover and target
+        // prompts still show, and every click target is unchanged.
+        const art_backdrop: ?*const image_mod.Image = if (self.art) |a| a.backdrop_for(frame.scene_entity) else null;
+        if (art_backdrop) |img| {
+            if (self.canvas) |*cv| cv.draw_image(self.art.?.palette, img, 0, 0, 0);
+        }
+        const backdrop_drawn = art_backdrop != null or if (self.theme) |t| (if (t.backdrop) |draw| draw(&self.canvas.?, frame) else false) else false;
         if (!backdrop_drawn) self.render_default_backdrop(frame);
         if (self.canvas) |*cv| cv.rect_kind = .prop;
-        const walkways_shown = if (self.theme) |t| (if (t.shows_walkways) |ask| ask(frame) else true) else true;
+        const walkways_shown = art_backdrop == null and if (self.theme) |t| (if (t.shows_walkways) |ask| ask(frame) else true) else true;
 
         // 2b. Centralized Text Layout Resolver (D-024)
         var layout_resolver = TextLayoutResolver.init(self.width, self.height);
@@ -3007,7 +3041,9 @@ pub const DisplayWindow = struct {
             const name = words(hs.get_name());
             if (self.canvas) |*cv| cv.rect_name = hs.get_name();
 
-            const prop_drawn = if (self.theme) |t| (if (t.prop) |draw| draw(&self.canvas.?, frame, .{
+            const prop_sprite: ?*const image_mod.Sprite = if (self.art) |a| a.sprite_for(hs.entity) else null;
+            if (prop_sprite) |sprite| _ = self.draw_sprite(sprite, sprite.frame_at(.idle, self.animation_clock), pt, &layout_resolver);
+            const prop_drawn = prop_sprite != null or if (self.theme) |t| (if (t.prop) |draw| draw(&self.canvas.?, frame, .{
                 .hotspot = &hs,
                 .index = idx,
                 .pos = pt,
@@ -3162,8 +3198,8 @@ pub const DisplayWindow = struct {
                         .waypoint_hover,
                         .hover_tooltip,
                     ));
-                } else {
-                    // Subtle ground mark anchor
+                } else if (art_backdrop == null) {
+                    // Subtle ground mark anchor; declared art hides it (D-155).
                     self.draw_circle_outline(pt.x, pt.y, 5, Color{ .r = 255, .g = 255, .b = 255, .a = 100 });
                     self.fill_circle(pt.x, pt.y, 2, Color.white);
                 }
@@ -3220,7 +3256,22 @@ pub const DisplayWindow = struct {
             const pt = layout.pos;
             layout_resolver.add_obstacle(pt.x - ACTOR_SCREEN_RADIUS, pt.y - ACTOR_SCREEN_RADIUS, ACTOR_SCREEN_RADIUS * 2, ACTOR_SCREEN_RADIUS * 2);
 
-            const token_drawn = if (self.theme) |t| (if (t.actor) |draw| draw(&self.canvas.?, frame, .{
+            const actor_sprite: ?*const image_mod.Sprite = if (self.art) |a| a.sprite_for(e.entity) else null;
+            if (actor_sprite) |sprite| {
+                const h = self.draw_sprite(sprite, sprite.frame_at(e.heading, self.animation_clock), pt, &layout_resolver);
+                layout_resolver.submit(TextLabel.init(
+                    name,
+                    pt.x,
+                    pt.y,
+                    .above,
+                    h + 2,
+                    2,
+                    to_layout(Color.hud_text),
+                    .actor_name,
+                    .actor_name,
+                ));
+            }
+            const token_drawn = actor_sprite != null or if (self.theme) |t| (if (t.actor) |draw| draw(&self.canvas.?, frame, .{
                 .entity = &e,
                 .index = idx,
                 .layout = layout,
@@ -3924,7 +3975,11 @@ pub const DisplayWindow = struct {
         // 13. Present: a window on screen shows the canvas through its texture.
         // The browser has no SDL; its host copies the canvas itself.
         if (comptime builtin.os.tag != .freestanding) {
-            if (self.renderer != null) self.present();
+            if (self.renderer != null) {
+                self.present();
+                // One shown frame: the desktop loop presents at the display rate (D-152).
+                self.animation_clock +%= 1;
+            }
         }
     }
 

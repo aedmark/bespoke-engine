@@ -1891,6 +1891,38 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** A 320x180 backdrop costs 57,600 bytes plus its header in the package and about 77 KB in a base64 page, so a page holds roughly a dozen within D-141's budget beside the current module. Scripts cannot declare art until P46-03; until then hosts and tests build it with `image.Art.dupe`. The checked-in v24 fixture was written through the Zig API for that reason.
 
+## D-154 The Image Blit: One Canvas Call, Measured by What It Paints (2026-11-21, status: accepted; P46-02)
+
+**Context.** P46-02 draws D-152's indexed art into the shared 1280x720 canvas (D-097), and the band check must measure it (D-124, P43-02). Scripts cannot attach art to scenes until P46-03, so something must call the blit in the meantime.
+
+**Decision.**
+1. **One call.** `Canvas.draw_image(palette, image, frame, x, y)` draws one frame with its top-left corner at a frame pixel. Each art pixel is a 4x4 block; index 0 writes nothing; palette colours are opaque, so a block replaces what is under it without blending. Clipping happens per block, so a sprite mostly off screen costs only its visible part. Desktop and browser share it because both draw on the canvas.
+2. **Placement is the caller's.** The blit takes frame coordinates, not world coordinates or art cells, so a host can anchor a sprite on its hotspot (the image stage stands a lantern on its spot, centred). P46-03 decides the engine's own anchoring for declared art.
+3. **Measured by the opaque bounds.** The probe records one rectangle per call: the bounding box of the pixels the frame painted, clipped to the canvas, under the current layer and the caller's `rect_name` (the image's name if none is set). A sprite's transparent margin is not art, so it neither fails the band nor counts against a scene's clearance. A backdrop drawn on the `.backdrop` layer may run behind the log, as drawn scenery does.
+4. **Until P46-03, hosts call it from theme hooks.** `proofs/image_stage.zig` is a test fixture that draws its backdrop and prop this way in the render and Wasm goldens; it is not a published deck.
+5. **Valid input is a precondition.** The blit asserts the frame index and each palette index rather than skipping them. Every package image has passed `Art.validate` (D-153); a host that builds an image by hand validates it the same way.
+
+**Alternatives:** one probe rectangle per block, rejected because a backdrop alone would overflow the 2,048-entry probe; the sheet frame's full rectangle, rejected because transparent padding would fail sprites that paint clear of the band; blending palette colours with alpha, rejected because D-152's palette has none and index 0 is the only transparency.
+
+**Consequences.** A sprite with one stray opaque pixel low in its frame is measured from that pixel. The blit is not reachable from any published deck yet, so `bespoke-proofs.wasm` did not grow. A scene that draws a backdrop image and the engine's neutral stage shows both, with marks and people on top, until P46-03 decides what declared art replaces.
+
+## D-155 Art Declarations in Scripts: Inline Rows, Bound by Name, Animated by Display Frames (2026-11-21, status: accepted; P46-03)
+
+**Context.** P46-03 lets a script name its images and attach them to scenes, people, and props. PNG import is P46-04, so the pixels need a source before it, and the syntax freezes at 1.0 (D-151). The maintainer chose three points on 2026-11-21: pixels written inline now, with files added in P46-04; walkways and resting mark discs hidden over a backdrop, with hover and target prompts kept; and sprites standing bottom-centre on their spot.
+
+**Decision.**
+1. **One palette block.** `palette:` gives each colour a quoted code of one or two characters, all the same width, and three numbers 0 to 255. The first line is `"<code>" transparent`, index 0. Colours are numbers because `#` begins a comment in BeSpoke, which ruled out the `#rrggbb` form first sketched.
+2. **Images are rows of codes.** `image <Name> [frames <W>x<H>]:` with one quoted row per line. Without `frames` the image is one frame. Names are one word or a quoted name. Declarations may come in any order; the parser resolves them once the script is read and names the line of the first mistake.
+3. **Bindings by name.** `backdrop: <Image>` belongs to the scene above it and must be one 320x180 frame. `sprite <Person or Prop>: <Image>` binds a cast member or prop, one sprite each. The program stores `Backdrop` and `Sprite` entries beside the images in `CompiledProgram.art`; `.bspk` version 25 appends them after the version 24 art section.
+4. **Animations.** `idle` and four walks (`up`, `down`, `left`, `right`), each a list of frames with `for N` display frames (default 6, at most 600, at most 64 steps). A person walking toward the next mark on its path takes the walk for that direction by the larger world-axis distance, horizontal on a tie; a missing walk falls back to idle and a missing idle to frame 0. Frames are referred to by number; named frames were left out as surface 1.0 does not need.
+5. **Declared art wins.** A scene's backdrop replaces the theme's scenery and hides walkways and resting mark discs; a sprite replaces the theme's or the engine's drawing of that person or prop. Sprites are label obstacles, and a person's name sits above the sprite.
+6. **The clock is the host's.** `DisplayWindow.animation_clock` counts shown frames: a window on screen adds one per present, the browser page sets it from elapsed time through `wasm_set_animation_clock`, and offscreen windows leave it where a test puts it. It is never written to the world.
+7. **Art words are not keywords.** `palette`, `image`, `sprite`, and `backdrop` start a declaration only when followed by a colon or a name on the same line, so existing scripts that use them as names are unchanged.
+
+**Alternatives:** PNG files read by the compiler now, rejected because the browser and check paths have no file access and P46-04 owns the decoder; a `kind` for backdrops, rejected as in D-153; per-step durations required, rejected because most animations use one rate; animation by tick, ruled out by D-152.
+
+**Consequences.** A 320x180 backdrop is about 58 KB of script text; P46-04's import keeps large art in files. `bespoke-proofs.wasm` grew from 690,109 to 720,304 bytes with the parser and renderer code. The image stage (`proofs/image_stage.zig`) now declares its art in its script, which moved its P46-02 golden lines, and its replay lines pin the walk animation.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

@@ -6,6 +6,7 @@
 //! buffer to an SDL texture to show it; the browser hands it to an HTML canvas.
 const std = @import("std");
 const font = @import("font.zig");
+const image = @import("../image.zig");
 
 pub const Color = struct {
     r: u8,
@@ -342,6 +343,72 @@ pub const Canvas = struct {
         }
     }
 
+    /// Draws one frame of an indexed image with its top-left corner at (x, y) in frame pixels
+    /// (P46-02, D-152). Each art pixel is an `image.SCALE`-square block of its palette colour;
+    /// index 0 leaves the canvas as it was. Palette colours are opaque, so a block replaces what
+    /// is under it and no blending is needed. Blocks that cross the edge are clipped.
+    ///
+    /// The probe records one rectangle per call: the frame's opaque bounds on screen, under the
+    /// current layer and the caller's `rect_name` (the image's name when none is set). A sprite
+    /// with transparent margins is measured by the pixels it paints, so the band check reads
+    /// image art the way it reads drawn props (P43-02).
+    ///
+    /// `img` must be valid against `palette` (`image.Art.validate`), as every image from a
+    /// package is; `frame` must be below `img.frame_count()`.
+    pub fn draw_image(self: *Canvas, palette: []const image.Colour, img: *const image.Image, frame: u32, x: i32, y: i32) void {
+        std.debug.assert(frame < img.frame_count());
+        const s: i32 = image.SCALE;
+        const fw: i32 = img.frame_width;
+        const fh: i32 = img.frame_height;
+        // The art rows and columns that land on the canvas, so a sprite mostly off screen costs
+        // only its visible part.
+        const ax0: i32 = @max(0, -@divFloor(x, s) - 1);
+        const ay0: i32 = @max(0, -@divFloor(y, s) - 1);
+        const ax1: i32 = @min(fw, @divFloor(self.width - x, s) + 1);
+        const ay1: i32 = @min(fh, @divFloor(self.height - y, s) + 1);
+        var min_x: i32 = fw;
+        var min_y: i32 = fh;
+        var max_x: i32 = -1;
+        var max_y: i32 = -1;
+        var ay = ay0;
+        while (ay < ay1) : (ay += 1) {
+            const py0 = @max(0, y + ay * s);
+            const py1 = @min(self.height, y + ay * s + s);
+            if (py0 >= py1) continue;
+            var ax = ax0;
+            while (ax < ax1) : (ax += 1) {
+                const index = img.frame_pixel(frame, @intCast(ax), @intCast(ay));
+                if (index == image.TRANSPARENT) continue;
+                const px0 = @max(0, x + ax * s);
+                const px1 = @min(self.width, x + ax * s + s);
+                if (px0 >= px1) continue;
+                std.debug.assert(index < palette.len);
+                const c = palette[index];
+                min_x = @min(min_x, ax);
+                max_x = @max(max_x, ax);
+                min_y = @min(min_y, ay);
+                max_y = @max(max_y, ay);
+                var py = py0;
+                while (py < py1) : (py += 1) {
+                    var px = px0;
+                    while (px < px1) : (px += 1) {
+                        const idx: usize = @intCast((py * self.width + px) * 4);
+                        self.pixels[idx..][0..4].* = .{ c.r, c.g, c.b, 255 };
+                    }
+                }
+            }
+        }
+        if (max_x < 0) return;
+        const left = @max(0, x + min_x * s);
+        const top = @max(0, y + min_y * s);
+        const right = @min(self.width, x + (max_x + 1) * s);
+        const bottom = @min(self.height, y + (max_y + 1) * s);
+        const name = self.rect_name;
+        if (name.len == 0) self.rect_name = img.name;
+        defer self.rect_name = name;
+        self.note_rect(left, top, right - left, bottom - top);
+    }
+
     /// Hash of the drawn pixels, for goldens that compare frames.
     pub fn hash(self: *const Canvas) u64 {
         const len: usize = @intCast(self.width * self.height * 4);
@@ -464,4 +531,66 @@ test "P36-02: a translucent colour blends as SDL's blend mode does, and text is 
         }
     }
     try testing.expect(lit > 4);
+}
+
+test "P46-02: an image frame draws each art pixel as a 4x4 block and leaves index 0 alone" {
+    const palette = [_]image.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 200, .g = 10, .b = 20 }, .{ .r = 5, .g = 6, .b = 7 } };
+    // Two 2x2 frames side by side; the second is red with one transparent corner.
+    const pixels = [_]u8{ 2, 2, 0, 1, 2, 2, 1, 1 };
+    const sheet = image.Image{ .name = "Tile", .width = 4, .height = 2, .frame_width = 2, .frame_height = 2, .pixels = &pixels };
+    try sheet.validate(palette.len);
+    var buf: [16 * 16 * 4]u8 = undefined;
+    var cv = Canvas.init(&buf, 16, 16);
+    cv.clear(Color.white);
+    cv.draw_image(&palette, &sheet, 1, 4, 4);
+    const red = Color{ .r = 200, .g = 10, .b = 20 };
+    // The transparent corner (art 0,0) covers frame pixels 4..7 and shows the white beneath.
+    try testing.expectEqual(Color.white, cv.get_pixel(4, 4));
+    try testing.expectEqual(Color.white, cv.get_pixel(7, 7));
+    try testing.expectEqual(red, cv.get_pixel(8, 4));
+    try testing.expectEqual(red, cv.get_pixel(11, 7));
+    try testing.expectEqual(red, cv.get_pixel(4, 8));
+    try testing.expectEqual(red, cv.get_pixel(11, 11));
+    try testing.expectEqual(Color.white, cv.get_pixel(12, 12));
+    try testing.expectEqual(Color.white, cv.get_pixel(3, 3));
+}
+
+test "P46-02: an image clips at the canvas edge and the probe records its opaque bounds" {
+    const palette = [_]image.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 9, .b = 9 } };
+    // A 4x4 frame whose only opaque pixels are the middle two of its third row.
+    const pixels = [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0 };
+    const sprite = image.Image{ .name = "Ledge", .width = 4, .height = 4, .frame_width = 4, .frame_height = 4, .pixels = &pixels };
+    var buf: [16 * 16 * 4]u8 = undefined;
+    var cv = Canvas.init(&buf, 16, 16);
+    var probe = RectProbe{};
+    cv.rect_probe = &probe;
+    cv.clear(Color.black);
+    cv.rect_kind = .prop;
+    cv.draw_image(&palette, &sprite, 0, 0, 0);
+    try testing.expectEqual(@as(usize, 1), probe.count);
+    const d = probe.draws[0];
+    try testing.expectEqualStrings("Ledge", d.get_name());
+    try testing.expectEqual(RectKind.prop, d.kind);
+    try testing.expectEqual(@as(i32, 4), d.x);
+    try testing.expectEqual(@as(i32, 8), d.y);
+    try testing.expectEqual(@as(i32, 8), d.w);
+    try testing.expectEqual(@as(i32, 4), d.h);
+
+    // Hanging off the right and bottom edges: only the visible part is painted and recorded,
+    // under the caller's name when it set one.
+    probe.count = 0;
+    cv.rect_name = "Cliff";
+    cv.draw_image(&palette, &sprite, 0, 10, 6);
+    try testing.expectEqual(@as(usize, 1), probe.count);
+    try testing.expectEqualStrings("Cliff", probe.draws[0].get_name());
+    try testing.expectEqual(@as(i32, 14), probe.draws[0].x);
+    try testing.expectEqual(@as(i32, 2), probe.draws[0].w);
+    try testing.expectEqual(Color{ .r = 9, .g = 9, .b = 9, .a = 255 }, cv.get_pixel(15, 15));
+    try testing.expectEqualStrings("Cliff", cv.rect_name);
+
+    // Wholly off the canvas, or wholly transparent where it lands: nothing is recorded.
+    probe.count = 0;
+    cv.draw_image(&palette, &sprite, 0, -40, -40);
+    cv.draw_image(&palette, &sprite, 0, 0, -12);
+    try testing.expectEqual(@as(usize, 0), probe.count);
 }

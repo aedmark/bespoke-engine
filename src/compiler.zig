@@ -193,6 +193,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.InvalidSpellbook => "invalid spellbook; check word kinds and tiers, and that each spell names a power, an element, and a form",
         error.InvalidDecision => "invalid decision; check its actor, cue, trigger lines, and scored options",
         error.InvalidRedLine => "invalid red lines; each must name an option a decision offers that character, and a decision needs one option left",
+        error.InvalidArt => "invalid pixel art; the parser should have named the declaration, so please report this script",
         error.InvalidDilemma => "invalid dilemma; check its actor, cue, trigger lines, and that no decision shares its name",
         error.UnknownDilemmaAxis => "a dilemma weighs an axis that no 'axis' line declares",
         error.DilemmaCrossesRedLine => "this action is on the actor's red lines, so no tier may take it",
@@ -720,4 +721,96 @@ test "D-072: VM.fire_cue runs nothing when every matching handler's guard fails"
     try testing.expect((try vm.fire_cue(&compiled, "Steal", cat, guard, null)) != null);
     _ = try vm.step_tick();
     try testing.expect(world.has_fact(cheese, world.lookup_relation("Stolen").?, null));
+}
+
+const ART_BASE =
+    \\scene: Shop
+    \\cast: Clerk
+    \\props: Bell
+    \\marks: Till
+    \\
+    \\palette:
+    \\  "." transparent
+    \\  "r" 200 40 40
+    \\  "y" 240 220 60
+    \\
+    \\image BellSheet frames 2x2:
+    \\  "r.yy"
+    \\  "rr.y"
+    \\
+;
+
+test "P46-03: art declarations compile into the program with their bindings" {
+    const testing = std.testing;
+    const script = ART_BASE ++
+        \\sprite Bell: BellSheet
+        \\  idle: 0 for 30, 1
+        \\sprite Clerk: BellSheet
+        \\  walk left: 1 for 4
+        \\image sprite:
+        \\  "ry"
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, script);
+    defer compiled.deinit();
+    const art = compiled.art;
+    try testing.expectEqual(@as(usize, 3), art.palette.len);
+    try testing.expectEqual(@as(u8, 240), art.palette[2].r);
+    const sheet = art.find("BellSheet").?;
+    try testing.expectEqual(@as(u32, 2), sheet.frame_count());
+    try testing.expectEqualSlices(u8, &.{ 1, 0, 2, 2, 1, 1, 0, 2 }, sheet.pixels);
+    // An image may be named with an art word: the words are matched by position, not reserved.
+    try testing.expectEqual(@as(u16, 2), art.find("sprite").?.width);
+    const bell = art.sprite_for(world.lookup_entity("Bell").?).?;
+    try testing.expectEqual(@as(u16, 0), bell.frame_at(.idle, 29));
+    // A step with no `for` shows six display frames (D-152's ten a second).
+    try testing.expectEqual(@as(u16, 1), bell.frame_at(.idle, 35));
+    try testing.expectEqual(@as(u16, 0), bell.frame_at(.idle, 36));
+    const clerk = art.sprite_for(world.lookup_entity("Clerk").?).?;
+    try testing.expectEqual(@as(u16, 1), clerk.frame_at(.walk_left, 0));
+    try testing.expectEqual(@as(u16, 0), clerk.frame_at(.walk_right, 0));
+
+    // The art words stay usable as names elsewhere: a state line and a fact about them.
+    const names = check_source(testing.allocator,
+        \\relation Lit(thing)
+        \\entity palette, sprite
+        \\remember Lit(palette)
+        \\image is a state
+        \\image is lit
+    );
+    try testing.expect(names.is_valid);
+}
+
+test "P46-03: art mistakes are reported on their own line" {
+    const testing = std.testing;
+    const Case = struct { source: []const u8, message: []const u8, line: u32, hint: ?[]const u8 = null };
+    const cases = [_]Case{
+        .{ .source = ART_BASE ++ "sprite Bell: BelSheet", .message = "sprite 'Bell' names image 'BelSheet', which is not declared", .line = 14, .hint = "BellSheet" },
+        .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  idle: 0, 2", .message = "image 'BellSheet' has 2 frame(s), numbered from 0; frame 2 does not exist", .line = 15 },
+        .{ .source = ART_BASE ++ "sprite Bel: BellSheet", .message = "sprite 'Bel' is for a person or prop no scene declares in 'cast:' or 'props:'", .line = 14, .hint = "Bell" },
+        .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  idle: 0 for 0", .message = "sprite 'Bell' shows a frame for 0 display frames; use 1 to 600", .line = 15 },
+        .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  walk sideways: 0", .message = "sprite 'Bell' walks up, down, left, or right, not 'sideways'", .line = 15 },
+        .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  idle: 0\n  idle: 1", .message = "sprite 'Bell' declares the 'idle' animation twice", .line = 16 },
+        .{ .source = ART_BASE ++ "image Odd:\n  \"rq\"", .message = "image 'Odd' row 1 uses code \"q\", which the palette does not declare", .line = 15 },
+        .{ .source = ART_BASE ++ "image Odd:\n  \"ry\"\n  \"r\"", .message = "image 'Odd' row 2 is 1 characters wide; its first row is 2", .line = 16 },
+        .{ .source = ART_BASE ++ "image Odd frames 3x2:\n  \"ryry\"\n  \"ryry\"", .message = "image 'Odd' is 4x2, which frames of 3x2 do not tile", .line = 14 },
+        .{ .source = ART_BASE ++ "image BellSheet:\n  \"r\"", .message = "image 'BellSheet' is declared twice", .line = 14 },
+        .{ .source = "scene: Shop\nbackdrop: Wall\n" ++ ART_BASE[12..] ++ "image Wall:\n  \"r\"", .message = "backdrop 'Wall' of scene 'Shop' is 1x1; a backdrop is one 320x180 frame (D-152)", .line = 2 },
+        .{ .source = "scene: Shop\nbackdrop: Wal\nimage Wall:\n  \"r\"\npalette:\n  \".\" transparent\n  \"r\" 1 2 3", .message = "scene 'Shop' names image 'Wal', which is not declared", .line = 2, .hint = "Wall" },
+        .{ .source = "backdrop: Wall", .message = "a backdrop belongs to a scene; put it under a 'scene:' line", .line = 1 },
+        .{ .source = "image Lone:\n  \"r\"", .message = "image 'Lone' needs a 'palette:' declaration for its codes", .line = 1 },
+        .{ .source = "palette:\n  \"r\" 1 2 3", .message = "the palette's first line is its transparent code, such as '\".\" transparent'; index 0 is never drawn", .line = 2 },
+        .{ .source = "palette:\n  \".\" transparent\n  \"rr\" 1 2 3", .message = "palette code \"rr\" is 2 characters wide, but the first code is 1; every code is the same width", .line = 3 },
+        .{ .source = "palette:\n  \".\" transparent\n  \"r\" 1 2 300", .message = "palette code \"r\" has a colour value of 300; each of red, green, and blue is 0 to 255", .line = 3 },
+        .{ .source = "palette:\n  \".\" transparent\npalette:\n  \".\" transparent", .message = "the palette is declared twice; a game has one palette (D-152)", .line = 3 },
+    };
+    for (cases) |case| {
+        const result = check_source(testing.allocator, case.source);
+        errdefer std.debug.print("art diagnostic source:\n{s}\ngot: {d}: {s}\n", .{ case.source, result.line, result.message() });
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+        try testing.expectEqual(case.line, result.line);
+        if (case.hint) |hint| try testing.expectEqualStrings(hint, result.suggestion() orelse "");
+    }
 }

@@ -239,3 +239,41 @@ test "P43-08: a frame reports the smallest gap a stage draw leaves above the ban
     rect.record(.prop, "foot plate", 40, band_bottom, 32, 32);
     try testing.expectEqual(@as(?i32, 1), Check.measure(720, &text, &rect).clearance);
 }
+
+test "P46-02: an image drawn into the band fails the check unless it is backdrop scenery" {
+    const testing = std.testing;
+    const image = @import("../image.zig");
+    const palette = [_]image.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 90, .g = 60, .b = 30 } };
+    // A 16x16 crate whose bottom four art rows are transparent: it paints 48 frame rows.
+    var pixels: [16 * 16]u8 = undefined;
+    for (&pixels, 0..) |*p, i| p.* = if (i / 16 < 12) 1 else 0;
+    const crate = image.Image{ .name = "Crate", .width = 16, .height = 16, .frame_width = 16, .frame_height = 16, .pixels = &pixels };
+    const buf = try testing.allocator.alloc(u8, 1280 * 720 * 4);
+    defer testing.allocator.free(buf);
+    var cv = canvas.Canvas.init(buf, 1280, 720);
+    var text = canvas.TextProbe{};
+    var rect = canvas.RectProbe{};
+    cv.rect_probe = &rect;
+    const band_top = top(720);
+
+    // Its painted rows end on the band's top row: clear, with no air left.
+    cv.rect_kind = .prop;
+    cv.draw_image(&palette, &crate, 0, 600, band_top - 48);
+    var check = Check.measure(720, &text, &rect);
+    try testing.expectEqual(Verdict.clear, check.verdict);
+    try testing.expectEqual(@as(?i32, 0), check.clearance);
+
+    // One art pixel lower and its opaque rows reach the band, although its transparent rows
+    // already did.
+    rect.count = 0;
+    cv.draw_image(&palette, &crate, 0, 600, band_top - 44);
+    check = Check.measure(720, &text, &rect);
+    try testing.expectEqual(Verdict.art, check.verdict);
+    try testing.expectEqualStrings("Crate", check.art[0].get_name());
+
+    // A backdrop may run behind the log (D-124).
+    rect.count = 0;
+    cv.rect_kind = .backdrop;
+    cv.draw_image(&palette, &crate, 0, 600, band_top);
+    try testing.expectEqual(Verdict.clear, Check.measure(720, &text, &rect).verdict);
+}

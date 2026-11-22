@@ -520,6 +520,43 @@ on cue TalksTo(Ines, Valerius, Mercy):
 - The player must know the value first: `Knows(Ines, "Mercy of Valerius")`. Otherwise the reply is "You don't know what moves them." and nothing changes. A weighing that lands outside neutral teaches everyone in the character's room the value it leaned toward; a script teaches the rest, usually when the player asks (`ask valerius about mercy` fires `TalksTo`).
 - An accepted appeal records `Appealed(Valerius, Mercy)` and fires `on cue Appeals(Ines, Valerius, Mercy):`. A goal need `met Appealed(Valerius, Mercy)` is a Holmesian hint once the player knows `Mercy of Valerius`, and a Doylian one before. Package format version 23 carries appeal lines.
 
+### Pixel art (P46-03, D-152, D-155)
+
+A script can declare its own pixel art: one palette, images written as rows of palette codes, a backdrop per scene, and a sprite sheet for a person or prop with its animations.
+
+```
+scene: Lamp Room
+cast: Lamplighter
+props: Lantern
+marks: Door, Window
+backdrop: LampRoom
+
+palette:
+  "." transparent
+  "b" 176 128 56
+  "l" 250 214 96
+
+image LanternSheet frames 12x20:
+  "....bb..........bb......"
+  ...
+
+sprite Lantern: LanternSheet
+  idle: 1 for 50, 0 for 4
+
+sprite Lamplighter: LamplighterSheet
+  idle: 0 for 40, 1 for 20
+  walk right: 2 for 8, 3 for 8
+  walk left: 4 for 8, 5 for 8
+```
+
+- `palette:` lists up to 256 colours, one per line: a quoted code and three numbers from 0 to 255 for red, green, and blue. The first line is the transparent code (`"." transparent`), palette index 0, which is never drawn. Every code is one or two printable characters, all of the same width. `#` starts a comment, so colours are numbers rather than `#rrggbb`. A game has one palette.
+- `image <Name>:` lists the image's rows below it, one quoted row per line, each code naming a palette colour. Every row is the same width. `frames <W>x<H>` cuts the image into a grid of equal frames, numbered from 0 left to right, then top to bottom; without it the whole image is one frame. A frame is at most 320x180, the art resolution, and is drawn 4x in the 1280x720 frame.
+- `backdrop: <Image>` under a scene draws that image as the room. It must be one 320x180 frame. Over a backdrop the walkways and resting mark discs are hidden; hovering a mark still shows its prompt, and every click target is unchanged.
+- `sprite <Person or Prop>: <Image>` draws that cast member or prop from the image, its frame's bottom edge on the spot and centred across it. Indented lines give animations: `idle:` and `walk up:`, `walk down:`, `walk left:`, `walk right:`, each a list of frames, with `for N` showing a frame for N display frames at 60 Hz (6 when omitted, ten a second). A walking person plays the walk toward the mark it is heading to; with no walk for that direction, or standing still, it idles; with no idle it shows frame 0.
+- Animation is presentation only. The display counts its own frames, and nothing is written to the world, so a save, rewind, or replay is unchanged by it.
+- `palette`, `image`, `sprite`, and `backdrop` are not reserved words: each starts an art declaration only when followed by its colon or a name on the same line.
+- The compiler names the line of an unknown image, a frame past the end of a sheet, a code the palette lacks, a ragged row, frames that do not tile, a backdrop of the wrong size, and a sprite for something no scene lists. Package format version 24 carries the palette and images and version 25 what they are attached to; earlier versions load with none.
+
 ## Test Coverage
 
 P38-01 audits the accepted grammar against this document. Exact Zig test names are listed so a renamed or removed test makes the table visibly stale. Codegen tests parse their source before compiling it; the parser-coverage column names focused AST tests where one exists and the compiling test otherwise.
@@ -544,6 +581,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Dilemmas (P45-03) | `P45-03: a dilemma compiles its axes, leans, and five tiers, and refuses a gap` (`src/compiler/codegen.zig`) | `P45-03: tier boundaries are fixed and mirrored`, `P45-03: each tier boundary selects its line and action`, `P45-03: lean lines read world facts and move the tier`, `P45-03: a neutral weighing waits for evidence and weighs again when it arrives`, and `P45-03: a tier action on the actor's red lines is refused` (`src/dilemma.zig`); `P45-03: a dilemma speaks its tier's line and fires the action through host.tick` (`src/host.zig`); `P45-03: package version 21 round-trips a dilemma and loads a version 20 payload with none` (`src/package.zig`) |
 | Value drift (P45-04) | `P45-04: drift lines compile to signed points on a declared axis` (`src/compiler/codegen.zig`) | `P45-04: drift accumulates whole points and moves a value one step per 5` and `P45-04: one dilemma moves an axis at most two steps, and drift stops at the range` (`src/dilemma.zig`); `P45-04: drift is identical after a save, a rewind, and a replay` (`src/host.zig`); `P45-04: package version 22 round-trips drift lines and loads a version 21 dilemma without them` (`src/package.zig`) |
 | Persuasion (P45-05) | `P45-05: appeal lines compile toward a weighed axis and refuse any other` (`src/compiler/codegen.zig`) | `P45-05: one dilemma resolves differently under two appeals the player learns` and `P45-05: watching a weighing teaches the value it leaned toward to those in the room` (`src/host.zig`); `P45-05: package version 23 round-trips appeal lines and loads a version 22 dilemma without them` (`src/package.zig`) |
+| Pixel art (P46-03) | `P46-03: art declarations compile into the program with their bindings`; `P46-03: art mistakes are reported on their own line` (`src/compiler.zig`) | `P46-03: package version 25 round-trips sprites and their animations, and version 24 loads without them` (`src/package.zig`); `P46-03: the image stage's script declares its art and compiles it into the program` and the `image_stage/replay` render golden lines (`proofs/`) |
 | Goals and hints | `P44-01: goal declarations compile and reject malformed goals` | `P44-01: goal declarations compile and reject malformed goals`; `P44-01: a goal with no hint text yields room, thing, and relation tiers` and `P44-01: a need waits behind its prerequisite, and Rejects beats Knows` (`src/hint.zig`); `P44-01: package version 15 round-trips goals and loads a version 14 payload with none` (`src/package.zig`) |
 | Scores | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts` | `P28-03: score declarations compile, seed scene facts, and play and stop by World facts`; `P28-03: score errors name the script position, the part, and the rule broken` |
 | Typed commands | `P26-01: command and alias declarations compile and reject malformed ones` | `P26-01: command and alias declarations compile and reject malformed ones`; `P26-02: the interpreter resolves commands, asks which, and explains failures` (`src/command.zig`, including the `Presents` frames) |

@@ -219,6 +219,9 @@
   actionButtons.forEach((button) => button.addEventListener('click', () => deckAction(button)));
 
   function loop(now) {
+    // Sprite animations run on 60 Hz display frames counted from elapsed time, so a faster
+    // monitor or a redraw on input does not speed them up (P46-03, D-152).
+    if (exp && exp.wasm_set_animation_clock) exp.wasm_set_animation_clock(Math.floor(now * 60 / 1000) >>> 0);
     if (exp && now - lastTickTime >= TICK_INTERVAL_MS) {
       exp.wasm_step_tick();
       lastTickTime = now;

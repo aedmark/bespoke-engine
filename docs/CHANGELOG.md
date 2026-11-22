@@ -4,6 +4,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Scripts can declare pixel art: a `palette:` of up to 256 colours, `image` blocks written as rows of palette codes and cut into frames, a `backdrop:` for a scene, and a `sprite` for a person or prop with an idle and a walk for each direction, timed in 60 Hz display frames. A scene with a backdrop hides its walkways and resting marks; people and props stand on their spots. The compiler names the line of an unknown image, a missing frame, an unknown colour code, and other art mistakes. Package format version 25 carries the bindings (`D-155`).
+
+- A host can draw pixel art: `Canvas.draw_image` paints one frame of an indexed image at four times its size, leaves palette index 0 transparent, and works the same on desktop and in the browser. The message band check measures the pixels an image paints, so a sprite that reaches the band fails like any other prop (`D-154`).
+
 - A package can carry pixel art: one palette of up to 256 colours and indexed sprite sheets and backdrops, with frames up to 320x180 (`D-152`, `D-153`). Package format version 24 holds it, earlier packages load with no art, and a malformed palette, size, name, or pixel index is refused with an error that names it. Scripts cannot declare art yet; drawing, declarations, and PNG import follow in Phase 46.
 
 ## 0.4.0 - 2026-11-21
