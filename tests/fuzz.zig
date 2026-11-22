@@ -18,6 +18,10 @@ const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
 const command = @embedFile("fixtures/fuzz/command.txt");
+const png_indexed = @embedFile("fixtures/png/indexed.png");
+const png_rgba = @embedFile("fixtures/png/rgba.png");
+const png_grey = @embedFile("fixtures/png/grey.png");
+const png_colours = @embedFile("fixtures/png/too_many_colours.png");
 
 const Check = fn (std.mem.Allocator, []const u8) anyerror!bool;
 
@@ -186,4 +190,41 @@ test "P39-01 MML" {
 
 test "P39-01 command interpreter" {
     try campaign(interpret, &.{command});
+}
+
+/// PNG import (P46-04): a seed must decode; a mutation may be refused, never crash. Decoded
+/// pixels are also mapped onto a palette, so the mapping sees whatever the decoder lets through.
+fn decodePng(allocator: std.mem.Allocator, input: []const u8) !bool {
+    var rgba = bespoke.png.decode(allocator, input) catch return false;
+    defer rgba.deinit(allocator);
+    var palette = std.ArrayListUnmanaged(bespoke.image.Colour).empty;
+    defer palette.deinit(allocator);
+    try palette.append(allocator, .{ .r = 0, .g = 0, .b = 0 });
+    var where = bespoke.art_import.Where{};
+    if (bespoke.art_import.map(allocator, rgba, &palette, &where)) |pixels| allocator.free(pixels) else |_| {}
+    return true;
+}
+
+test "P46-04 PNG decoder" {
+    try campaign(decodePng, &.{ png_indexed, png_rgba, png_grey, png_colours });
+}
+
+/// The same decoder with every chunk's CRC recomputed first, so a mutation reaches the header,
+/// palette, inflate, and filter code instead of stopping at the checksum.
+fn decodePngResealed(allocator: std.mem.Allocator, input: []const u8) !bool {
+    const copy = try allocator.dupe(u8, input);
+    defer allocator.free(copy);
+    var at: usize = 8;
+    while (at + 12 <= copy.len) {
+        const len = std.mem.readInt(u32, copy[at..][0..4], .big);
+        if (len > copy.len - at - 12) break;
+        const crc = std.hash.Crc32.hash(copy[at + 4 .. at + 8 + len]);
+        std.mem.writeInt(u32, copy[at + 8 + len ..][0..4], crc, .big);
+        at += 12 + len;
+    }
+    return decodePng(allocator, copy);
+}
+
+test "P46-04 PNG decoder past its checksums" {
+    try campaign(decodePngResealed, &.{ png_indexed, png_rgba, png_grey, png_colours });
 }

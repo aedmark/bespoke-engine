@@ -13,6 +13,16 @@ const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const image_mod = @import("../image.zig");
+const png_mod = @import("../png.zig");
+const art_import = @import("../art_import.zig");
+
+/// Reads a file a script names, such as `image X from "lamp.png"` (P46-04, D-156). Only the
+/// command line supplies one; the browser and `check_source` compile with none, so a script
+/// that names a file there gets a diagnostic rather than a silent gap.
+pub const FileSource = struct {
+    context: *anyopaque,
+    read: *const fn (context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8,
+};
 const diagnostic_mod = @import("diagnostic.zig");
 const Suggestions = diagnostic_mod.Suggestions;
 pub const Note = draft_mod.Note;
@@ -525,6 +535,8 @@ pub const ImageSource = struct {
     frame_height: u32 = 0,
     frames_at: ?Token = null,
     rows: []const Token,
+    /// `from "<file>.png"` in place of rows (P46-04).
+    file: ?Token = null,
 };
 
 pub const StepSource = struct { frame: u32, duration: u32, at: Token };
@@ -541,6 +553,9 @@ pub const SpriteSource = struct {
 /// their scene or entity by text for codegen to intern. Everything is in the parser's arena.
 pub const ArtDecl = struct {
     palette: []const image_mod.Colour = &.{},
+    /// The codes the `palette:` block declared, in order; colours a PNG added have none. Read
+    /// by `bespoke import` so new codes do not collide with a script's own (P46-04).
+    palette_codes: []const []const u8 = &.{},
     images: []const image_mod.Image = &.{},
     backdrops: []const BackdropBinding = &.{},
     sprites: []const SpriteBinding = &.{},
@@ -677,6 +692,8 @@ pub const Parser = struct {
     score_refs: std.array_list.Managed(ScoreRef),
     /// Art declarations as written, resolved at the end of `parse_program` (P46-03).
     palette_at: ?Token = null,
+    /// Where `image X from "file"` reads from; null outside the command line (P46-04).
+    files: ?FileSource = null,
     palette_src: std.ArrayListUnmanaged(PaletteEntry) = .empty,
     image_srcs: std.ArrayListUnmanaged(ImageSource) = .empty,
     sprite_srcs: std.ArrayListUnmanaged(SpriteSource) = .empty,
@@ -2393,6 +2410,7 @@ pub const Parser = struct {
     fn parse_image(self: *Parser, start: Token) !void {
         const name_tok = try self.take_image_name();
         var src = ImageSource{ .name = name_tok.slice, .at = name_tok, .rows = &.{} };
+        try self.image_from(&src, start);
         if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "frames") and self.current.line == start.line) {
             src.frames_at = self.current;
             try self.advance();
@@ -2407,7 +2425,15 @@ pub const Parser = struct {
                     return self.error_at(x_tok, "image '{s}' expects 'frames <width>x<height>', such as 'frames 16x24'", .{src.name});
             } else src.frame_height = try self.take_u32();
         }
-        if (self.current.tag != .colon) return self.error_at(self.current, "image '{s}' expects ':' and its pixel rows below it", .{src.name});
+        try self.image_from(&src, start);
+        if (src.file != null) {
+            for (self.image_srcs.items) |prior| {
+                if (std.mem.eql(u8, prior.name, src.name)) return self.error_at(name_tok, "image '{s}' is declared twice", .{src.name});
+            }
+            try self.image_srcs.append(self.allocator, src);
+            return;
+        }
+        if (self.current.tag != .colon) return self.error_at(self.current, "image '{s}' expects ':' and its pixel rows below it, or 'from \"<file>.png\"'", .{src.name});
         try self.advance();
         if (self.current.tag != .indent) return self.error_at(name_tok, "image '{s}' has no pixel rows; list them indented below it, one quoted row per line", .{src.name});
         try self.advance();
@@ -2423,6 +2449,47 @@ pub const Parser = struct {
             if (std.mem.eql(u8, prior.name, src.name)) return self.error_at(name_tok, "image '{s}' is declared twice", .{src.name});
         }
         try self.image_srcs.append(self.allocator, src);
+    }
+
+    /// `from "<file>"` on the image's line, before or after `frames`.
+    fn image_from(self: *Parser, src: *ImageSource, start: Token) !void {
+        if (src.file != null) return;
+        if (!(self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "from") and self.current.line == start.line)) return;
+        try self.advance();
+        if (self.current.tag != .string_literal) return self.error_at(self.current, "image '{s}' expects a quoted file name after 'from'", .{src.name});
+        src.file = self.current;
+        try self.advance();
+    }
+
+    /// Reads, decodes, and maps one `image X from "file"` onto the palette being built.
+    fn image_from_file(self: *Parser, src: ImageSource, palette: *std.ArrayListUnmanaged(image_mod.Colour)) !struct { width: usize, height: usize, pixels: []u8 } {
+        const file_tok = src.file.?;
+        const path = file_tok.slice;
+        // The browser module has no file source and carries no PNG decoder: the runtime never
+        // decodes PNG (D-151), so this path is compiled out of freestanding builds.
+        const no_files = comptime @import("builtin").os.tag == .freestanding;
+        const files = (if (no_files) null else self.files) orelse return self.error_at(file_tok, "image '{s}' reads \"{s}\", which only a compile from the command line can do; 'bespoke import' writes its rows into the script instead", .{ src.name, path });
+        const bytes = files.read(files.context, self.allocator, path) catch |err|
+            return self.error_at(file_tok, "image '{s}' cannot read \"{s}\" ({s})", .{ src.name, path, @errorName(err) });
+        const rgba = png_mod.decode(self.allocator, bytes) catch |err| {
+            const why: []const u8 = switch (err) {
+                error.PngSignature => "it is not a PNG",
+                error.PngChecksum, error.PngTruncated, error.PngCorrupt => "it is damaged",
+                error.PngTooLarge => std.fmt.comptimePrint("it is larger than a sheet may be ({d} on a side, {d} pixels)", .{ image_mod.MAX_SHEET_SIDE, image_mod.MAX_SHEET_PIXELS }),
+                error.PngInterlaced => "it is interlaced; save it without interlacing",
+                error.PngUnsupported => "it uses 16-bit channels or a chunk this engine does not read; save it with 8-bit channels",
+                error.PngMissingPalette => "it is indexed but has no palette",
+                error.OutOfMemory => return error.OutOfMemory,
+            };
+            return self.error_at(file_tok, "image '{s}' cannot use \"{s}\": {s}", .{ src.name, path, why });
+        };
+        var where = art_import.Where{};
+        const pixels = art_import.map(self.allocator, rgba, palette, &where) catch |err| switch (err) {
+            error.PartialTransparency => return self.error_at(file_tok, "image '{s}': pixel ({d}, {d}) of \"{s}\" is partly transparent; art pixels are opaque or fully transparent (D-152)", .{ src.name, where.x, where.y, path }),
+            error.TooManyColours => return self.error_at(file_tok, "image '{s}': \"{s}\" brings the palette past {d} colours at pixel ({d}, {d}) (D-152)", .{ src.name, path, image_mod.MAX_COLOURS, where.x, where.y }),
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+        return .{ .width = rgba.width, .height = rgba.height, .pixels = pixels };
     }
 
     fn parse_sprite(self: *Parser, start: Token) !void {
@@ -2491,7 +2558,7 @@ pub const Parser = struct {
     /// wrong at its own line. Runs once the whole script is read, so declarations may come in
     /// any order (P46-03, D-155).
     fn resolve_art(self: *Parser, ast: *AST) !void {
-        var palette = std.array_list.Managed(image_mod.Colour).init(self.allocator);
+        var palette = std.ArrayListUnmanaged(image_mod.Colour).empty;
         var code_width: usize = 0;
         for (self.palette_src.items, 0..) |entry, i| {
             const code = entry.code.slice;
@@ -2506,18 +2573,27 @@ pub const Parser = struct {
             for (self.palette_src.items[0..i]) |prior| if (std.mem.eql(u8, prior.code.slice, code))
                 return self.error_at(entry.code, "palette code \"{s}\" is declared twice", .{code});
             if (i == image_mod.MAX_COLOURS) return self.error_at(entry.code, "the palette has more than {d} colours (D-152)", .{image_mod.MAX_COLOURS});
-            try palette.append(entry.colour orelse .{ .r = 0, .g = 0, .b = 0 });
+            try palette.append(self.allocator, entry.colour orelse .{ .r = 0, .g = 0, .b = 0 });
         }
+        // Colours a PNG brings are added after the declared ones; a script whose art all comes
+        // from files may declare no palette at all, and starts from the transparent entry.
+        if (palette.items.len == 0) for (self.image_srcs.items) |src| {
+            if (src.file != null) {
+                try palette.append(self.allocator, .{ .r = 0, .g = 0, .b = 0 });
+                break;
+            }
+        };
 
         var images = std.array_list.Managed(image_mod.Image).init(self.allocator);
         for (self.image_srcs.items) |src| {
-            if (self.palette_src.items.len == 0) return self.error_at(src.at, "image '{s}' needs a 'palette:' declaration for its codes", .{src.name});
             image_mod.validate_name(src.name) catch return self.error_at(src.at, "image name '{s}' is 1 to {d} printable characters", .{ src.name, image_mod.MAX_NAME });
-            const first = src.rows[0];
-            if (first.slice.len == 0 or first.slice.len % code_width != 0)
+            const decoded = if (src.file != null) try self.image_from_file(src, &palette) else null;
+            if (decoded == null and self.palette_src.items.len == 0) return self.error_at(src.at, "image '{s}' needs a 'palette:' declaration for its codes", .{src.name});
+            const first = if (decoded == null) src.rows[0] else src.at;
+            if (decoded == null and (first.slice.len == 0 or first.slice.len % code_width != 0))
                 return self.error_at(first, "image '{s}' has a row of {d} characters, which is not a whole number of {d}-character codes", .{ src.name, first.slice.len, code_width });
-            const width = first.slice.len / code_width;
-            const height = src.rows.len;
+            const width = if (decoded) |d| d.width else first.slice.len / code_width;
+            const height = if (decoded) |d| d.height else src.rows.len;
             const fw: usize = if (src.frames_at == null) width else src.frame_width;
             const fh: usize = if (src.frames_at == null) height else src.frame_height;
             const size_at = src.frames_at orelse src.at;
@@ -2527,8 +2603,8 @@ pub const Parser = struct {
                 return self.error_at(size_at, "image '{s}' has frames of {d}x{d}; a frame is 1 to {d} wide and 1 to {d} tall (D-152)", .{ src.name, fw, fh, image_mod.ART_WIDTH, image_mod.ART_HEIGHT });
             if (width % fw != 0 or height % fh != 0)
                 return self.error_at(size_at, "image '{s}' is {d}x{d}, which frames of {d}x{d} do not tile", .{ src.name, width, height, fw, fh });
-            const pixels = try self.allocator.alloc(u8, width * height);
-            for (src.rows, 0..) |row, y| {
+            const pixels = if (decoded) |d| d.pixels else try self.allocator.alloc(u8, width * height);
+            if (decoded == null) for (src.rows, 0..) |row, y| {
                 if (row.slice.len != first.slice.len)
                     return self.error_at(row, "image '{s}' row {d} is {d} characters wide; its first row is {d}", .{ src.name, y + 1, row.slice.len, first.slice.len });
                 for (0..width) |x| {
@@ -2538,7 +2614,7 @@ pub const Parser = struct {
                     } else return self.error_at(row, "image '{s}' row {d} uses code \"{s}\", which the palette does not declare", .{ src.name, y + 1, code });
                     pixels[y * width + x] = @intCast(index);
                 }
-            }
+            };
             try images.append(.{
                 .name = src.name,
                 .width = @intCast(width),
@@ -2588,8 +2664,11 @@ pub const Parser = struct {
             }
             try sprites.append(binding);
         }
+        const codes = try self.allocator.alloc([]const u8, self.palette_src.items.len);
+        for (self.palette_src.items, codes) |entry, *code| code.* = entry.code.slice;
         ast.art = .{
-            .palette = try palette.toOwnedSlice(),
+            .palette_codes = codes,
+            .palette = try palette.toOwnedSlice(self.allocator),
             .images = try images.toOwnedSlice(),
             .backdrops = try backdrops.toOwnedSlice(),
             .sprites = try sprites.toOwnedSlice(),

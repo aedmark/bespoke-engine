@@ -1,0 +1,16 @@
+# A scene whose art comes from the PNG files beside it (P46-04).
+scene: Gallery
+cast: Curator
+props: Badge
+marks: Plinth
+
+palette:
+  "." transparent
+  "r" 200 40 40
+
+image BadgeSheet from "rgba.png"
+image LampSheet from "indexed.png" frames 4x4
+
+sprite Badge: BadgeSheet
+sprite Curator: LampSheet
+  idle: 0 for 10, 1 for 10

@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- PNG import: `bespoke import art.png --name Lamp [--frames 12x20] [--script game.bespoke]` prints the image as rows of palette codes with the palette lines it needs, and `image Lamp from "lamp.png"` compiles a PNG beside the script when it is run, compiled, or checked from the command line. Colours map exactly; a partly transparent pixel or a 257th colour is refused, as are interlaced and 16-bit files (`D-156`).
+
 - Scripts can declare pixel art: a `palette:` of up to 256 colours, `image` blocks written as rows of palette codes and cut into frames, a `backdrop:` for a scene, and a `sprite` for a person or prop with an idle and a walk for each direction, timed in 60 Hz display frames. A scene with a backdrop hides its walkways and resting marks; people and props stand on their spots. The compiler names the line of an unknown image, a missing frame, an unknown colour code, and other art mistakes. Package format version 25 carries the bindings (`D-155`).
 
 - A host can draw pixel art: `Canvas.draw_image` paints one frame of an indexed image at four times its size, leaves palette index 0 transparent, and works the same on desktop and in the browser. The message band check measures the pixels an image paints, so a sprite that reaches the band fails like any other prop (`D-154`).

@@ -10,6 +10,7 @@ pub const CompiledProgram = codegen.CompiledProgram;
 pub const AST = parser.AST;
 
 const world_mod = @import("world.zig");
+const image_mod = @import("image.zig");
 const spatial_mod = @import("spatial.zig");
 const World = world_mod.World;
 const SpatialSystem = spatial_mod.SpatialSystem;
@@ -23,6 +24,21 @@ pub fn compile_source(
     spatial: ?*SpatialSystem,
     source: []const u8,
 ) !CompiledProgram {
+    return compile_source_with(allocator, world, spatial, source, null);
+}
+
+/// Reads the files a script names, such as `image X from "lamp.png"` (P46-04).
+pub const FileSource = parser.FileSource;
+
+/// `compile_source` with the files a script may name; the command line passes one that reads
+/// beside the script, and every other caller passes null (P46-04, D-156).
+pub fn compile_source_with(
+    allocator: std.mem.Allocator,
+    world: *World,
+    spatial: ?*SpatialSystem,
+    source: []const u8,
+    files: ?FileSource,
+) !CompiledProgram {
     if (source.len > MAX_SOURCE_SIZE) return error.ScriptTooLarge;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -32,6 +48,7 @@ pub fn compile_source(
     defer lex.deinit();
 
     var parse = try Parser.init(alloc, &lex);
+    parse.files = files;
     const ast = try parse.parse_program();
 
     var cg = Codegen.init(allocator, world, spatial);
@@ -96,7 +113,25 @@ pub const CheckResult = struct {
 };
 
 /// Validates syntax and semantic compilation of BeSpoke DSL source without permanent side effects (P15-03, D-018).
+/// A script's palette: its colours and the codes its `palette:` block declares, which
+/// `bespoke import` extends (P46-04). Everything is allocated in `arena`.
+pub const ScriptPalette = struct { colours: []const image_mod.Colour, codes: []const []const u8 };
+
+/// Parses `source` far enough to read its palette; a script that does not parse returns the
+/// parse error, which `check_source` describes.
+pub fn script_palette(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) !ScriptPalette {
+    var lex = Lexer.init(arena, source);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    return .{ .colours = ast.art.palette, .codes = ast.art.palette_codes };
+}
+
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
+    return check_source_with(allocator, source, null);
+}
+
+pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files: ?FileSource) CheckResult {
     if (source.len > MAX_SOURCE_SIZE) return CheckResult.failure(1, 1, "script exceeds the 16 MiB source limit");
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -106,6 +141,7 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
     defer lex.deinit();
 
     var parse = Parser.init(alloc, &lex) catch |err| return lexer_failure(&lex, err);
+    parse.files = files;
 
     const ast = parse.parse_program() catch |err| {
         // `parse.diagnostic.message` points into `parse.diag_buf`; `failure` copies it out.

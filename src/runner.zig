@@ -9,6 +9,122 @@ const DisplayBridge = bespoke.DisplayBridge;
 const Repl = bespoke.Repl;
 const CompiledProgram = bespoke.CompiledProgram;
 
+/// Reads the files a script names, such as `image X from "lamp.png"`, from beside the script
+/// (P46-04, D-156). A script is untrusted, so a path must be relative, use `/`, and have no `..`
+/// part: a script cannot reach outside its own folder. A file is read up to the PNG limit.
+pub const ScriptFiles = struct {
+    io: std.Io,
+    dir: []const u8,
+
+    pub fn for_script(io: std.Io, script_path: []const u8) ScriptFiles {
+        return .{ .io = io, .dir = std.fs.path.dirname(script_path) orelse "." };
+    }
+
+    pub fn source(self: *ScriptFiles) bespoke.compiler.FileSource {
+        return .{ .context = self, .read = read };
+    }
+
+    fn read(context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+        const self: *ScriptFiles = @ptrCast(@alignCast(context));
+        if (!beside_script(path)) return error.PathOutsideScriptFolder;
+        const full = try std.fs.path.join(allocator, &.{ self.dir, path });
+        defer allocator.free(full);
+        return std.Io.Dir.cwd().readFileAlloc(self.io, full, allocator, .limited(bespoke.png.MAX_FILE));
+    }
+};
+
+fn beside_script(path: []const u8) bool {
+    if (path.len == 0 or std.fs.path.isAbsolute(path) or std.mem.indexOfScalar(u8, path, '\\') != null) return false;
+    var parts = std.mem.splitScalar(u8, path, '/');
+    while (parts.next()) |part| if (std.mem.eql(u8, part, "..")) return false;
+    return true;
+}
+
+pub const ImportOptions = struct {
+    /// The `image` name written into the block.
+    name: []const u8,
+    /// `frames WxH`; null makes the whole PNG one frame.
+    frames: ?[2]u16 = null,
+    /// A script whose palette the image joins: its codes are kept and new colours get unused
+    /// ones. Without one, a whole palette block is written.
+    script: ?[]const u8 = null,
+};
+
+/// `bespoke import`: converts a PNG into an inline `image` block, with the palette lines it
+/// needs, written to `out` (P46-04, D-156). Returns false after printing a refusal to `out`.
+pub fn import_art(allocator: std.mem.Allocator, io: std.Io, png_path: []const u8, options: ImportOptions, out: *std.Io.Writer) !bool {
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const image = bespoke.image;
+
+    image.validate_name(options.name) catch {
+        try out.print("error: an image name is 1 to {d} printable characters\n", .{image.MAX_NAME});
+        return false;
+    };
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, png_path, arena, .limited(bespoke.png.MAX_FILE)) catch |err| {
+        try out.print("error: cannot read '{s}' ({s})\n", .{ png_path, @errorName(err) });
+        return false;
+    };
+    const rgba = bespoke.png.decode(arena, bytes) catch |err| {
+        try out.print("error: '{s}' cannot be imported ({s})\n", .{ png_path, @errorName(err) });
+        return false;
+    };
+    const fw: u16 = if (options.frames) |f| f[0] else rgba.width;
+    const fh: u16 = if (options.frames) |f| f[1] else rgba.height;
+    image.validate_size(rgba.width, rgba.height, fw, fh) catch {
+        try out.print("error: '{s}' is {d}x{d}; frames of {d}x{d} must tile it, and a frame is at most {d}x{d}\n", .{ png_path, rgba.width, rgba.height, fw, fh, image.ART_WIDTH, image.ART_HEIGHT });
+        return false;
+    };
+
+    var existing: bespoke.compiler.ScriptPalette = .{ .colours = &.{}, .codes = &.{} };
+    if (options.script) |script_path| {
+        const source = std.Io.Dir.cwd().readFileAlloc(io, script_path, arena, .limited(bespoke.compiler.MAX_SOURCE_SIZE)) catch |err| {
+            try out.print("error: cannot read '{s}' ({s})\n", .{ script_path, @errorName(err) });
+            return false;
+        };
+        var files = ScriptFiles.for_script(io, script_path);
+        existing = bespoke.compiler.script_palette(arena, source, files.source()) catch {
+            try out.print("error: '{s}' does not compile; run 'bespoke check {s}' first\n", .{ script_path, script_path });
+            return false;
+        };
+    }
+
+    var palette = std.ArrayListUnmanaged(image.Colour).empty;
+    try palette.appendSlice(arena, existing.colours);
+    if (palette.items.len == 0) try palette.append(arena, .{ .r = 0, .g = 0, .b = 0 });
+    var where = bespoke.art_import.Where{};
+    const pixels = bespoke.art_import.map(arena, rgba, &palette, &where) catch |err| {
+        switch (err) {
+            error.PartialTransparency => try out.print("error: pixel ({d}, {d}) of '{s}' is partly transparent; art pixels are opaque or fully transparent\n", .{ where.x, where.y, png_path }),
+            error.TooManyColours => try out.print("error: '{s}' brings the palette past {d} colours at pixel ({d}, {d})\n", .{ png_path, image.MAX_COLOURS, where.x, where.y }),
+            error.OutOfMemory => return error.OutOfMemory,
+        }
+        return false;
+    };
+
+    const width: usize = if (existing.codes.len > 0) existing.codes[0].len else if (palette.items.len <= 94) 1 else 2;
+    const codes = bespoke.art_import.assign_codes(arena, existing.codes, palette.items.len, width) catch |err| switch (err) {
+        error.OutOfCodes => {
+            try out.print("error: the palette's {d}-character codes run out; use two-character codes\n", .{width});
+            return false;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+
+    if (options.script == null) {
+        try out.writeAll("palette:\n");
+        try bespoke.art_import.write_palette_lines(out, palette.items, codes, 0);
+        try out.writeAll("\n");
+    } else if (palette.items.len > existing.codes.len) {
+        try out.writeAll("# Add these lines to the script's palette:\n");
+        try bespoke.art_import.write_palette_lines(out, palette.items, codes, existing.codes.len);
+        try out.writeAll("\n");
+    }
+    try bespoke.art_import.write_image_block(out, options.name, options.frames, rgba.width, rgba.height, pixels, codes);
+    return true;
+}
+
 pub const RunConfig = struct {
     ticks: usize = 20,
     is_headless: bool = false,
@@ -30,7 +146,8 @@ pub fn check_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8, st
     };
     defer allocator.free(source);
 
-    const res = bespoke.check_source(allocator, source);
+    var files = ScriptFiles.for_script(io, path);
+    const res = bespoke.compiler.check_source_with(allocator, source, files.source());
     if (res.is_valid) {
         try stdout.print("[check] '", .{});
         try write_diagnostic_text(stdout, path);
@@ -149,8 +266,9 @@ pub fn compile_file(
     var spatial = SpatialSystem.init(allocator);
     defer spatial.deinit();
 
-    var compiled = bespoke.compile_source(allocator, &world, &spatial, source) catch |err| {
-        const res = bespoke.check_source(allocator, source);
+    var files = ScriptFiles.for_script(io, in_path);
+    var compiled = bespoke.compiler.compile_source_with(allocator, &world, &spatial, source, files.source()) catch |err| {
+        const res = bespoke.compiler.check_source_with(allocator, source, files.source());
         if (!res.is_valid) {
             try write_script_diagnostic(stdout, in_path, source, &res);
         } else {
@@ -200,7 +318,8 @@ pub fn run_file_with_presenter(
     const max_size: usize = 32 * 1024 * 1024;
     const data = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size));
     defer allocator.free(data);
-    try run_bytes_with_presenter(desktop, allocator, io, path, data, config, stdout);
+    var files = ScriptFiles.for_script(io, path);
+    try run_bytes_with_presenter(desktop, allocator, io, path, data, config, files.source(), stdout);
 }
 
 /// Executes a script or `.bspk` package already in memory; `name` labels messages. A game that
@@ -213,7 +332,8 @@ pub fn run_bytes(
     config: RunConfig,
     stdout: anytype,
 ) !void {
-    try run_bytes_with_presenter(true, allocator, io, name, data, config, stdout);
+    // Bytes in memory have no folder, so a script among them cannot name a file.
+    try run_bytes_with_presenter(true, allocator, io, name, data, config, null, stdout);
 }
 
 fn run_bytes_with_presenter(
@@ -223,6 +343,7 @@ fn run_bytes_with_presenter(
     name: []const u8,
     data: []const u8,
     config: RunConfig,
+    files: ?bespoke.compiler.FileSource,
     stdout: anytype,
 ) !void {
     const path = name;
@@ -248,8 +369,8 @@ fn run_bytes_with_presenter(
         };
     } else {
         if (config.verbose) try stdout.print("[Runner] Compiling narrative script '{s}'...\n", .{path});
-        compiled = bespoke.compile_source(allocator, &world, &spatial, data) catch |err| {
-            const res = bespoke.check_source(allocator, data);
+        compiled = bespoke.compiler.compile_source_with(allocator, &world, &spatial, data, files) catch |err| {
+            const res = bespoke.compiler.check_source_with(allocator, data, files);
             if (!res.is_valid) {
                 try write_script_diagnostic(stdout, path, data, &res);
             } else {
@@ -694,4 +815,92 @@ test "P29-02: a script with no routine has no player actor" {
     var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, "entity Lamp\n");
     defer compiled.deinit();
     try testing.expect(player_actor(&compiled) == null);
+}
+
+test "P46-04: a script compiled from its file reads the PNGs beside it onto its palette" {
+    const testing = std.testing;
+    const path = "tests/fixtures/png/gallery.bespoke";
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(64 * 1024));
+    defer testing.allocator.free(source);
+    var files = ScriptFiles.for_script(testing.io, path);
+    var world = try World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var compiled = try bespoke.compiler.compile_source_with(testing.allocator, &world, null, source, files.source());
+    defer compiled.deinit();
+    const art = compiled.art;
+    // The declared red is reused; the badge adds yellow and blue, the lamp three more.
+    try testing.expectEqual(@as(usize, 7), art.palette.len);
+    try testing.expectEqual(bespoke.image.Colour{ .r = 240, .g = 220, .b = 60 }, art.palette[2]);
+    try testing.expectEqualSlices(u8, &.{ 0, 1, 1, 1, 1, 0 }, art.find("BadgeSheet").?.pixels[0..6]);
+    try testing.expectEqual(@as(u32, 2), art.find("LampSheet").?.frame_count());
+    try testing.expectEqual(@as(u16, 1), art.sprite_for(world.lookup_entity("Curator").?).?.frame_at(.idle, 10));
+
+    // Without the command line's file source, the same script is told where it can be read.
+    const check = bespoke.check_source(testing.allocator, source);
+    try testing.expect(!check.is_valid);
+    try testing.expectEqualStrings("image 'BadgeSheet' reads \"rgba.png\", which only a compile from the command line can do; 'bespoke import' writes its rows into the script instead", check.message());
+    try testing.expectEqual(@as(u32, 11), check.line);
+}
+
+test "P46-04: a script cannot read a file outside its folder, and a missing or bad file is named" {
+    const testing = std.testing;
+    var files = ScriptFiles.for_script(testing.io, "tests/fixtures/png/gallery.bespoke");
+    const Case = struct { file: []const u8, message: []const u8 };
+    const cases = [_]Case{
+        .{ .file = "../compat/v0.4.0-package-v24.bspk", .message = "image 'Art' cannot read \"../compat/v0.4.0-package-v24.bspk\" (PathOutsideScriptFolder)" },
+        .{ .file = "/etc/hostname", .message = "image 'Art' cannot read \"/etc/hostname\" (PathOutsideScriptFolder)" },
+        .{ .file = "missing.png", .message = "image 'Art' cannot read \"missing.png\" (FileNotFound)" },
+        .{ .file = "interlaced.png", .message = "image 'Art' cannot use \"interlaced.png\": it is interlaced; save it without interlacing" },
+        .{ .file = "partial_alpha.png", .message = "image 'Art': pixel (1, 0) of \"partial_alpha.png\" is partly transparent; art pixels are opaque or fully transparent (D-152)" },
+        .{ .file = "too_many_colours.png", .message = "image 'Art': \"too_many_colours.png\" brings the palette past 256 colours at pixel (0, 15) (D-152)" },
+        .{ .file = "gallery.bespoke", .message = "image 'Art' cannot use \"gallery.bespoke\": it is not a PNG" },
+    };
+    for (cases) |case| {
+        var buf: [128]u8 = undefined;
+        const source = try std.fmt.bufPrint(&buf, "image Art from \"{s}\"\n", .{case.file});
+        const result = bespoke.compiler.check_source_with(testing.allocator, source, files.source());
+        try testing.expect(!result.is_valid);
+        try testing.expectEqualStrings(case.message, result.message());
+    }
+}
+
+test "P46-04: import writes an indexed and a true-colour PNG as inline blocks, joining a script's palette" {
+    const testing = std.testing;
+    var out = std.Io.Writer.Allocating.init(testing.allocator);
+    defer out.deinit();
+    try testing.expect(try import_art(testing.allocator, testing.io, "tests/fixtures/png/indexed.png", .{ .name = "Lamp", .frames = .{ 4, 4 } }, &out.writer));
+    try testing.expectEqualStrings(
+        \\palette:
+        \\  "." transparent
+        \\  "a" 34 32 52
+        \\  "b" 217 160 102
+        \\  "c" 251 242 54
+        \\
+        \\image Lamp frames 4x4:
+        \\  ".aa..aa."
+        \\  "abbaacca"
+        \\  "abbaacca"
+        \\  ".aa..aa."
+        \\
+    , out.written());
+
+    // Against a script, its codes are kept and only new colours are listed, with unused codes.
+    out.clearRetainingCapacity();
+    try testing.expect(try import_art(testing.allocator, testing.io, "tests/fixtures/png/rgba.png", .{ .name = "Badge", .script = "tests/fixtures/png/gallery.bespoke" }, &out.writer));
+    try testing.expect(std.mem.startsWith(u8, out.written(), "# Add these lines to the script's palette:\n  \"a\" 240 220 60\n  \"b\" 30 30 90\n"));
+    try testing.expect(std.mem.endsWith(u8, out.written(), "image Badge:\n  \".rrrr.\"\n  \"rabbar\"\n  \"raaaar\"\n  \".rrrr.\"\n"));
+
+    // The written block compiles back to the same pixels.
+    out.clearRetainingCapacity();
+    try testing.expect(try import_art(testing.allocator, testing.io, "tests/fixtures/png/rgba.png", .{ .name = "Badge" }, &out.writer));
+    var world = try World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, null, out.written());
+    defer compiled.deinit();
+    try testing.expectEqualSlices(u8, &.{ 0, 1, 1, 1, 1, 0, 1, 2, 3, 3, 2, 1 }, compiled.art.find("Badge").?.pixels[0..12]);
+
+    // More colours than the palette holds is refused, by name.
+    out.clearRetainingCapacity();
+    try testing.expect(!try import_art(testing.allocator, testing.io, "tests/fixtures/png/too_many_colours.png", .{ .name = "Swatch" }, &out.writer));
+    try testing.expectEqualStrings("error: 'tests/fixtures/png/too_many_colours.png' brings the palette past 256 colours at pixel (0, 15)\n", out.written());
 }

@@ -1923,6 +1923,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** A 320x180 backdrop is about 58 KB of script text; P46-04's import keeps large art in files. `bespoke-proofs.wasm` grew from 690,109 to 720,304 bytes with the parser and renderer code. The image stage (`proofs/image_stage.zig`) now declares its art in its script, which moved its P46-02 golden lines, and its replay lines pin the walk animation.
 
+## D-156 PNG Import: Exact Colours, Opaque or Transparent, Read Only by the Command Line (2026-11-21, status: accepted; P46-04)
+
+**Context.** D-151 has authors import PNG files, converted at build time, with the runtime never decoding PNG; D-152 maps colours onto the one game palette and refuses an image that would push it past 256; D-008 keeps the core free of outside dependencies. The maintainer chose on 2026-11-21 (in P46-03's questions) inline rows first and files in P46-04, with the importer able to write inline blocks.
+
+**Decision.**
+1. **A small decoder on std's inflate.** `src/png.zig` reads indexed and grey PNGs at 1, 2, 4, or 8 bits and grey-alpha, RGB, and RGBA at 8 bits, with `tRNS` transparency. It refuses 16-bit channels and interlacing by name rather than reducing them, since either could change a drawn pixel, and refuses unknown critical chunks. Limits: a 4 MiB file and the sheet limits of D-153, checked from the header before allocation; inflate fills a buffer of exactly the implied size.
+2. **Exact colours, binary alpha.** Alpha 0 is index 0; alpha 255 reuses the palette entry of the same colour or appends one; any other alpha is refused with the pixel's position, because the palette has no alpha. No quantizing or nearest-colour matching: art is mapped as drawn or refused.
+3. **Two routes.** `bespoke import` prints an inline block with codes (letters and digits first, `.` for transparent, two characters past 94 colours), reusing a script's codes with `--script`. `image X from "file.png"` compiles a file directly; colours it adds have no code.
+4. **Files only on the command line.** `compile_source_with` and `check_source_with` take a `FileSource`; the runner passes one reading the script's own folder (relative paths with `/` and no `..`), and every other caller passes none, which turns `from` into a diagnostic naming `bespoke import`. The freestanding build compiles the decode path out, so the browser module carries no PNG code.
+
+**Alternatives:** nearest-colour quantizing, rejected because it changes art silently; treating alpha under 128 as transparent, rejected for the same reason; reading files anywhere the process can, rejected because a script is untrusted input; an outside PNG library, ruled out by D-008.
+
+**Consequences.** `bespoke-proofs.wasm` grew 2 KB (messages), not the 25 KB the decoder costs natively. A browser page cannot compile a script that uses `from`; such a game ships its package or its imported rows. PNG input has two fuzz harnesses, one that re-seals chunk CRCs so mutations reach inflate and the filters.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

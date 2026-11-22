@@ -16,6 +16,7 @@ const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts head
     \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N]
     \\  bespoke compile <script.bespoke> -o <game.bspk>
     \\  bespoke check <script.bespoke>
+    \\  bespoke import <art.png> --name <Image> [--frames WxH] [--script <script.bespoke>] [-o <file>]
     \\  bespoke init <name> [--engine <engine checkout>]
     \\  bespoke --version
     \\
@@ -24,7 +25,7 @@ const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts head
     \\
 ;
 
-const Subcommand = enum { run, compile, check, init, help };
+const Subcommand = enum { run, compile, check, init, import, help };
 
 pub fn main(init: std.process.Init) !void {
     // Zig 0.16+: the process supplies the allocator and the I/O that file reads, package
@@ -41,16 +42,26 @@ pub fn main(init: std.process.Init) !void {
     var target_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var engine_root: []const u8 = build_options.engine_root;
+    var image_name: ?[]const u8 = null;
+    var frames: ?[2]u16 = null;
+    var script_file: ?[]const u8 = null;
 
     var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
     defer args.deinit();
     _ = args.next();
     while (args.next()) |arg| {
-        if (std.mem.eql(u8, arg, "run") or std.mem.eql(u8, arg, "compile") or std.mem.eql(u8, arg, "check") or std.mem.eql(u8, arg, "init")) {
+        if (std.mem.eql(u8, arg, "run") or std.mem.eql(u8, arg, "compile") or std.mem.eql(u8, arg, "check") or std.mem.eql(u8, arg, "init") or std.mem.eql(u8, arg, "import")) {
             subcommand = std.meta.stringToEnum(Subcommand, arg).?;
             target_file = args.next();
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             output_file = args.next();
+        } else if (std.mem.eql(u8, arg, "--name")) {
+            image_name = args.next() orelse return fail(stdout, "'--name' needs the image's name");
+        } else if (std.mem.eql(u8, arg, "--script")) {
+            script_file = args.next() orelse return fail(stdout, "'--script' needs a script path");
+        } else if (std.mem.eql(u8, arg, "--frames")) {
+            const text = args.next() orelse return fail(stdout, "'--frames' needs a size such as 16x24");
+            frames = parse_frames(text) orelse return fail(stdout, "'--frames' needs a size such as 16x24");
         } else if (std.mem.eql(u8, arg, "--engine")) {
             engine_root = args.next() orelse return fail(stdout, "'--engine' needs the engine checkout's path");
         } else if (std.mem.eql(u8, arg, "--ticks")) {
@@ -98,6 +109,21 @@ pub fn main(init: std.process.Init) !void {
             };
             try stdout.print("Created {s}/ (engine: {s})\n\n  cd {s}\n  zig build test\n  zig build run\n", .{ name, root, name });
         },
+        .import => {
+            const path = target_file orelse return fail(stdout, "'bespoke import' requires a PNG file path");
+            const name = image_name orelse return fail(stdout, "'bespoke import' requires '--name <Image>'");
+            const options = bespoke.runner.ImportOptions{ .name = name, .frames = frames, .script = script_file };
+            if (output_file) |out_path| {
+                var buf = std.Io.Writer.Allocating.init(allocator);
+                defer buf.deinit();
+                if (!try bespoke.runner.import_art(allocator, io, path, options, &buf.writer)) {
+                    try stdout.writeAll(buf.written());
+                    std.process.exit(1);
+                }
+                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = out_path, .data = buf.written() });
+                try stdout.print("Wrote image '{s}' to {s}\n", .{ name, out_path });
+            } else if (!try bespoke.runner.import_art(allocator, io, path, options, stdout)) std.process.exit(1);
+        },
         .run => {
             const path = target_file orelse return fail(stdout, "'bespoke run' requires a script or package path");
             try bespoke.runner.run_file_with_presenter(build_options.desktop, allocator, io, path, .{
@@ -107,6 +133,14 @@ pub fn main(init: std.process.Init) !void {
             }, stdout);
         },
     }
+}
+
+/// `16x24` as a frame width and height.
+fn parse_frames(text: []const u8) ?[2]u16 {
+    const x = std.mem.indexOfScalar(u8, text, 'x') orelse return null;
+    const w = std.fmt.parseInt(u16, text[0..x], 10) catch return null;
+    const h = std.fmt.parseInt(u16, text[x + 1 ..], 10) catch return null;
+    return .{ w, h };
 }
 
 fn fail(stdout: anytype, msg: []const u8) !void {
