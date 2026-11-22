@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A time branch closes when either `ConvergenceReady` or `LoopClosed` holds, as `D-073` describes. Before, a script that mentioned `ConvergenceReady` anywhere could never close on `LoopClosed`.
 - A cue handler's body reads its parameters: in `on cue Greets(Hero, other):`, `remember Met(Hero, other)` records the entity the cue named, and a variable the `where` guard matched is read the same way (`D-161`). Before, the body wrote about an entity literally called `other`. Package format version 28 carries the new instructions.
 - Breaking: the first letter of a name decides what it is (`D-161`). Names of things start with a capital letter, and a lowercase name is a variable that something must bind, so `entity hero`, `relation lit(x)`, and `remember Holds(Hero, sword)` are now compile errors, with help suggesting the capitalised name. A `when` rule's body cannot use its trigger's variables yet.
 - Breaking: a state word after `is` names the capitalised relation, so `now Lamp is lit` and `Lit(Lamp)` are one fact (`D-161`). A host that looks a state up by name now asks for `Lit`, not `lit`.

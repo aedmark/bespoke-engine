@@ -222,10 +222,13 @@ pub const TemporalHypervisor = struct {
 
         // 2. A `ConvergenceReady` or `LoopClosed` fact must hold. Both names are the engine's
         // neutral vocabulary (D-044); the proof-specific `VortexReady` alias was removed (D-073).
-        const closed_rel = bw.lookup_relation("ConvergenceReady") orelse
-            bw.lookup_relation("LoopClosed") orelse return false;
-
-        return bw.has_fact(null, closed_rel, null);
+        // Each is asked on its own: a script that interns `ConvergenceReady` (any rule that
+        // mentions it does) may still close on `LoopClosed` (P48-03).
+        for ([_][]const u8{ "ConvergenceReady", "LoopClosed" }) |name| {
+            const rel = bw.lookup_relation(name) orelse continue;
+            if (bw.has_fact(null, rel, null)) return true;
+        }
+        return false;
     }
 
     /// Records a dream residue fact to be committed to the Primary World upon loop resolution (P31-01, D-027).
@@ -389,6 +392,24 @@ test "P31-05: active world follows the branch lifecycle" {
     _ = try hypervisor.step_tick(null);
     try testing.expect(!hypervisor.branch_active);
     try testing.expect(hypervisor.active_world() == &primary);
+}
+
+test "P48-03: the loop closes on LoopClosed even when ConvergenceReady is interned and false" {
+    const testing = std.testing;
+    var primary = try World.init(testing.allocator, 1024 * 1024);
+    defer primary.deinit();
+    const hero = try primary.intern_entity("Hero");
+    const keystone = try primary.intern_entity("Keystone");
+    // A rule that mentions `ConvergenceReady` interns it without making it hold.
+    _ = try primary.intern_relation("ConvergenceReady", .set);
+    const closed = try primary.intern_relation("LoopClosed", .set);
+
+    var hypervisor = TemporalHypervisor.init(testing.allocator, &primary);
+    defer hypervisor.deinit();
+    const branch = try hypervisor.fork_branch(50, hero, keystone);
+    try testing.expect(!hypervisor.check_loop_closure(null));
+    _ = try branch.remember(keystone, closed, 0, 0);
+    try testing.expect(hypervisor.check_loop_closure(null));
 }
 
 test "P31-01: TemporalHypervisor resolves loop closure, commits keystone and dream residue" {
