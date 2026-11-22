@@ -18,7 +18,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 | --- | --- |
 | `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` methods, `Diagnostic`, `CompiledProgram` and `CompiledProgram.deinit` |
 | `package` | `PACKAGE_MAGIC`, `PACKAGE_VERSION`, `MIN_PACKAGE_VERSION`, `save_package`, `load_package`, `save_package_file`, `load_package_file`, `version_from_bytes`, `format_unsupported_version` |
-| `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `backdrop_for`, `sprite_for`, `validate`, `dupe`, and `deinit_owned` methods, `Anim`, `Step`, `Backdrop`, `Sprite` and its `frame_at` method, `Error` (P46-01, P46-03) |
+| `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `backdrop_for`, `sprite_for`, `validate`, `dupe`, and `deinit_owned` methods, `Anim`, `Step`, `Backdrop`, `Sprite` and its `frame_at` method, `Area` and `Art.area_for` (P46-05), the limits `MAX_IMAGES`, `MAX_SHEET_SIDE`, `MAX_SHEET_PIXELS`, `MAX_NAME`, and `MAX_BINDINGS`, `Error` (P46-01, P46-03). D-166 replaces indexed art with true colour in P48-12, which revises this row |
 | `png` | `MAX_FILE`, `Error`, `Rgba` and its `deinit`, `decode` (P46-04) |
 | `art_import` | `MapError`, `Where`, `map`, `CodeError`, `assign_codes`, `free_codes`, `write_palette_lines`, `write_image_block` (P46-04) |
 | `runner` | `RunConfig`, `check_file`, `compile_file`, `run_file`, `run_bytes`, `import_art`, `ImportOptions`, `ScriptFiles` (P46-04) |
@@ -41,7 +41,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 | Namespace | Supported surface |
 | --- | --- |
 | `vm` | `VM`, `FiberId`, tick interval constants and `step_tick_interval_slower` / `step_tick_interval_faster` |
-| `host` | `Session`, `Exit`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, `ScriptSociety`, and the functions listed below |
+| `host` | `Session`, `Exit`, `AppealOutcome`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, `ScriptSociety`, and the functions listed below |
 | `dialogue` | `View`, `Selection`, `view` |
 | `command` | `Interpreter`, `WordList`, `Command` |
 | `spell` | `Book`, `Spell`, `Word`, `Kind`, `Refusal`, `Outcome`, `MAX_BOOKS`, `MAX_WORDS_PER_KIND`, `MAX_SPELLS`, `resolve`, `named`, `named_text`, `knows`, `check`, `cast`, `combine` |
@@ -49,7 +49,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 
 Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave_notes`, `set_dialogue_speaker`, `open_generated_dialogue`, `dialogue_view`, `choose`, `sync_dialogue`, `transition_to_scene`, `evaluates_belief`, `assert_belief`, and `reject_belief`. Construct a VM with `host.init_vm`; advance it with `host.tick` or `Session.advance`, never bare `VM.step_tick`.
 
-Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `cast`, `combine`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
+Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `combine`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
 
 `host.present(vm, compiled, actor, evidence, person)` records `Presented(person, evidence)` as a set fact and fires `Presents(actor, person, evidence)`; it returns whether a handler answered (P44-03). The record holds one row per distinct piece of evidence. The default typed frames `present <thing> to <thing>` and `show <thing> to <thing>` use the same action.
 
@@ -62,6 +62,8 @@ Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`,
 All public methods on `Session`, `SpeechLog`, and `ScriptSoundtrack` are supported. `Session` is the preferred owner of ticking, pause, rewind, save/load actions, dialogue selection, frame refresh, and temporal active-world routing. Their storage fields are internal.
 
 `ScriptSociety.init(world, compiled, index)` selects a script declaration by zero-based source order and seeds its initial facts. Construct it once before play or before restoring a matching save. `ScriptSociety.step(vm)` runs society rules once after `host.tick`; the VM must have a spatial system and still use the original world's registries. The compiled program and registries must outlive the society. Do not reinitialize after restore, since that would reseed the saved facts. The wrapper's fields and its diagnostic chronicle are internal (P41-02).
+
+`hint`, `value`, and `dilemma` are internal (D-176). A host asks about goals, decisions, dilemmas, and values through `host` calls; P48-19 adds one per declared feature, and until then the proofs that read those namespaces are engine code, not examples to copy.
 
 ## Display and sound
 
@@ -88,6 +90,12 @@ Supported `wasm` declarations are `Deck`, `ScriptDeckOptions`, `WasmRuntime`, `W
 A deck callback receives `*WasmRuntime`, but only these methods are supported: `set_banner`, `get_banner`, `active_world`, `spatial_system`, `virtual_machine`, `compiled_program`, `player`, `set_player`, `queue_message`, `answer`, `attach_hypervisor`, `clock`, `bind`, `step_tick`, `record_snapshot`, `scrub_to_tick`, `deck_action`, `trigger_catalyst`, `capture`, and `render_frame`. Runtime fields are internal.
 
 Prefer `script_deck` or `script_deck_with` for a script-backed game. A custom `Deck.load` callback may call `load_program`; direct `WasmRuntime.init` and `deinit` are supported for an embedding host.
+
+## Browser module exports
+
+A page that loads a BeSpoke WebAssembly module may call these exports (D-175). They are the ones the page and smoke test from `bespoke init` use, so a generated project depends on them: `wasm_init`, `wasm_step_tick`, `wasm_get_tick`, `wasm_get_fact_count`, `wasm_render_frame`, `wasm_framebuffer_ptr`, `wasm_framebuffer_len`, `wasm_on_pointer_down`, `wasm_on_pointer_move`, `wasm_on_right_click`, `wasm_on_key_down`, `wasm_on_char`, `wasm_command_bar_focused`, `wasm_audio_render`, and `wasm_audio_sample_rate`. `tests/test_browser_exports.py` fails when one of them is not exported, or when a generated page calls an export this list omits.
+
+Every other `wasm_*` export is internal: the showcase pages' deck, verb, dialogue, inspector, message, and animation-clock calls, and `wasm_load_scenario`, `wasm_on_touch`, and `wasm_scrub_to_tick`. A script never learns which platform runs it; a capability that differs by platform reaches scripts, if ever, as a feature fact (D-175).
 
 ## Stability rule
 

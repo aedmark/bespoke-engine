@@ -51,6 +51,29 @@ comptime {
     }
 }
 
+/// P48-04: every name `API.md` lists for the namespaces Phases 44 to 46 added (and the host calls
+/// they brought) must exist, so renaming a supported name fails `zig build test-engine` here.
+fn require(comptime Container: type, comptime names: []const []const u8, comptime where: []const u8) void {
+    inline for (names) |name| {
+        if (!@hasDecl(Container, name)) @compileError("P48-04: " ++ where ++ "." ++ name ++ " is listed in docs/API.md but missing");
+    }
+}
+
+comptime {
+    require(bespoke.spell, &.{ "Book", "Spell", "Word", "Kind", "Refusal", "Outcome", "MAX_BOOKS", "MAX_WORDS_PER_KIND", "MAX_SPELLS", "resolve", "named", "named_text", "knows", "check", "cast", "combine" }, "spell");
+    require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "MAX_DECISIONS", "MAX_CLAUSES", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
+    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
+    require(bespoke.image.Image, &.{ "columns", "frame_count", "frame_pixel", "validate" }, "image.Image");
+    require(bespoke.image.Art, &.{ "is_empty", "find", "backdrop_for", "sprite_for", "area_for", "validate", "dupe", "deinit_owned" }, "image.Art");
+    require(bespoke.image.Sprite, &.{"frame_at"}, "image.Sprite");
+    require(bespoke.png, &.{ "MAX_FILE", "Error", "Rgba", "decode" }, "png");
+    require(bespoke.png.Rgba, &.{"deinit"}, "png.Rgba");
+    require(bespoke.art_import, &.{ "MapError", "Where", "map", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
+    require(bespoke.runner, &.{ "RunConfig", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
+    require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
+    require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine" }, "host");
+}
+
 test "P38-03: a host compiles against only the supported API" {
     const testing = std.testing;
     _ = browser_deck;

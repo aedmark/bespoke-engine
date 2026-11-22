@@ -2164,6 +2164,29 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** When P48-17 lands, the 0.x compatibility fixtures and the loader paths for versions 1 to 28 retire to `docs/archive/` history rather than staying as tests, and `COMPATIBILITY.md` starts its tables at 1.0. Until then the current reader and fixtures stay as they are.
 
+## D-175 The Browser Exports a Generated Project Uses Are Supported; Scripts Never See Their Platform (2026-11-22, status: accepted; answers Q-028 in part)
+
+**Context.** Q-028 asked whether the browser module's `wasm_*` exports are an API. The module exports 25. The page and smoke test that `bespoke init` generates use 15 (`wasm_init`, `wasm_step_tick`, `wasm_get_tick`, `wasm_get_fact_count`, `wasm_render_frame`, `wasm_framebuffer_ptr`, `wasm_framebuffer_len`, `wasm_on_pointer_down`, `wasm_on_pointer_move`, `wasm_on_right_click`, `wasm_on_key_down`, `wasm_on_char`, `wasm_command_bar_focused`, `wasm_audio_render`, `wasm_audio_sample_rate`); proof pages use 8 more, and 3 are used by neither. Peter Spicer's review (2026-11-22): by Hyrum's Law what starter projects already depend on is part of the contract, intended or not; and game code should not depend on its runtime, except for progressive enhancement gated on features ("does it support this") rather than on the platform ("is it the browser").
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. The 15 exports a generated project uses are supported: listed in `API.md` and pinned by a test against the generated page.
+2. The other 10 are internal and documented as such; proof pages may keep using them.
+3. A script never learns which platform runs it. A capability that differs by platform reaches scripts, if ever, as a feature fact, never as a platform name.
+
+**Alternatives:** supporting all 25; a supported JavaScript wrapper with the raw exports internal.
+
+**Consequences.** Renaming or removing one of the 15 is a breaking change from 1.0. P48-04 lists them.
+
+## D-176 Every Feature a Script Declares Has One Supported Question a Front End Can Ask (2026-11-22, status: accepted; answers Q-028)
+
+**Context.** Q-028 asked whether hints, decisions, and dilemmas need `host` entry points, since hosts read `compiled.goals.items` and `compiled.red_lines.items`, tables `API.md` calls internal, and `hint`, `value`, and `dilemma` were not supported names at all. The browser module exports no hint query, so no browser player can ask for a hint. The question as first written was about Zig signatures; the maintainer settled its plain form: should every declared feature be reachable from any front end (desktop window, browser page, the studio) through one documented door?
+
+**Decision.** The maintainer chose on 2026-11-22: yes. `host` gains one supported call per declared feature, alongside `present`, `appeal`, and `cast`: the hint for an actor at a tier, a decision's chosen option and stage, a dilemma's stage and outcome, and a character's known value. None takes a `CompiledProgram` table. The browser module gains matching exports, including a hint key on the stock page.
+
+**Alternatives:** asking the reviewer the reworded question first.
+
+**Consequences.** The `hint`, `value`, and `dilemma` namespaces stay internal except the result types the new calls return. P48-19 builds the calls and exports; P48-04 lists them.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
@@ -2195,4 +2218,4 @@ Questions requiring maintainer or stakeholder input. This is their one home: HAN
 - **Q-025** ~~Which built-in numbers are promises (raised 2026-11-22, P48-04).~~ Answered in part 2026-11-22 (D-167); authored hint tiers beyond three and several spellbooks are still open. Behaviour numbers (axes -10 to +10, tiers at 7 and 3, drift 5 points per step and 2 steps per dilemma, three hint tiers, one spellbook) and capacity ceilings (16 goals, 32 decisions, 8 options, 64 axes, 3 cue parameters, 8 guard variables, 4,096 fibers) are engine constants. Open: which are guaranteed, whether behaviour numbers become author settings with today's defaults, and whether ceilings are promised only never to shrink. Which numbers are promises blocks 1.0; author settings can follow it.
 - **Q-026** ~~What rewind and saves restore of chance and routines (raised 2026-11-22, P48-04).~~ Answered 2026-11-22 by the maintainer with Peter Spicer's review (D-168). `roll` draws from one generator per VM, seeded 42 at VM creation and never saved or snapshotted; `host.Timeline` snapshots hold the world and temporal envelope but not fibers, so a rewind steps facts back while routines continue, and the same action can roll differently. Open: rewind as undo or as try again, whether rewind restores routines, a declared seed, and a separate stream for branch worlds. Blocks 1.0.
 - **Q-027** ~~Source order across files and how often a `when` rule fires (raised 2026-11-22, P48-04).~~ Answered 2026-11-22 (D-169, D-170, D-171, D-173). A game is one file, and D-160 makes source order part of a handler's meaning; a `when` rule keeps one flag for the whole rule, so it fires once however many rows match. Open: the include rule and its order, whether bound `when` bodies (deferred by D-161) fire per matching row (saved state per binding), mods adding handlers, and a reference test suite for D-160 and D-161. Blocks 1.0.
-- **Q-028** ~~Package sections, the version baseline, and the browser exports (raised 2026-11-22, P48-04).~~ Answered in part 2026-11-22 (D-172, D-174); the `wasm_*` exports and `host` entry points are still open. `.bspk` versions 16 to 28 were each a fixed-order append, and a reader refuses any newer version, so a 1.1 package will not load in 1.0 even when it uses nothing new; 1.0 would carry all 28 versions. The `wasm_*` exports are called by `tools/proof_page.js` and by the starter page (`src/scaffold/index.html.tmpl`) but listed nowhere. Open: tagged, skippable sections; a clean baseline with a converter; whether the exports are supported; and `host` entry points for hints, decisions, and dilemmas so no host reads `CompiledProgram` tables. Blocks 1.0.
+- **Q-028** ~~Package sections, the version baseline, and the browser exports (raised 2026-11-22, P48-04).~~ Answered 2026-11-22 (D-172, D-174, D-175, D-176). `.bspk` versions 16 to 28 were each a fixed-order append, and a reader refuses any newer version, so a 1.1 package will not load in 1.0 even when it uses nothing new; 1.0 would carry all 28 versions. The `wasm_*` exports are called by `tools/proof_page.js` and by the starter page (`src/scaffold/index.html.tmpl`) but listed nowhere. Open: tagged, skippable sections; a clean baseline with a converter; whether the exports are supported; and `host` entry points for hints, decisions, and dilemmas so no host reads `CompiledProgram` tables. Blocks 1.0.
