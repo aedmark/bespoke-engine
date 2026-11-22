@@ -82,8 +82,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// fingerprint as the compiler does. Version 30 stores each relation's object kind in the high
 /// bits of its type byte (P48-08, D-178); versions 1 through 29 load with every kind unknown.
 /// Version 31 appends display names and phrase overrides before the program identity (P48-09,
-/// D-179); versions 1 through 30 load with none.
-pub const PACKAGE_VERSION: u32 = 31;
+/// D-179); versions 1 through 30 load with none. Version 32 names engine bookkeeping with a
+/// leading `#` (P48-10, D-180); older packages have those names translated as they load.
+pub const PACKAGE_VERSION: u32 = 32;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -565,6 +566,27 @@ fn read_player_text(allocator: std.mem.Allocator, world: *World, reader: anytype
         phrase_mod.validate(key, text) catch return error.InvalidPlayerText;
         try world.set_phrase(key_name, text);
     }
+}
+
+/// Relations the engine named plainly before package version 32 and names with `#` since
+/// (D-180). The drift pair is matched by its suffix.
+const RENAMED_BOOKKEEPING = [_][]const u8{
+    "DialogueOpen", "DialoguePrompt", "DialogueFiber", "DialogueEnd", "DialogueRevision", "DialogueOption", "DialogueBody",
+    "DialogueAction", "DialogueChosen", "DialogueSpeaker", "DialogueBranchCount", "DialogueBranchText", "DialogueBranchActive",
+    "DialogueBranchFailure", "DilemmaWeighed", "DriftHolding", "PendingAppeal", "EvidenceSeen", "AgendaCooldown",
+    "GridSeeded", "SceneScore", "PlayingScore",
+};
+const MAX_RENAMED_NAME = 160;
+
+fn bookkeeping_name(name: []const u8, buf: []u8) []const u8 {
+    var bookkeeping = std.mem.endsWith(u8, name, " drift") or std.mem.endsWith(u8, name, " drift steps");
+    for (RENAMED_BOOKKEEPING) |old| {
+        if (std.mem.eql(u8, old, name)) bookkeeping = true;
+    }
+    if (!bookkeeping or name.len + 1 > buf.len) return name;
+    buf[0] = '#';
+    @memcpy(buf[1 .. name.len + 1], name);
+    return buf[0 .. name.len + 1];
 }
 
 /// Upper bound on display names a package may carry.
@@ -1708,8 +1730,11 @@ pub fn load_package(
     // 2. Relations
     var r_idx: u32 = 0;
     while (r_idx < header.relation_count) : (r_idx += 1) {
-        const name = try read_str(allocator, pr);
-        defer allocator.free(name);
+        const stored = try read_str(allocator, pr);
+        defer allocator.free(stored);
+        // Before version 32 bookkeeping had plain names; it carries `#` now (D-180).
+        var renamed: [MAX_RENAMED_NAME]u8 = undefined;
+        const name = if (header.version < 32) bookkeeping_name(stored, &renamed) else stored;
         const flags = try pr.takeByte();
         const is_prop = (flags & 0x0f) == 1;
         const relation = try world.intern_relation(name, if (is_prop) .property else .set);
@@ -2410,7 +2435,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 31",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 32",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -3939,7 +3964,7 @@ test "P45-04: package version 22 round-trips drift lines and loads a version 21 
     try testing.expectEqual(@as(usize, 1), drifts.len);
     try testing.expectEqual(@as(i32, 3), drifts[0].points);
     try testing.expectEqualStrings("FixtureMercy", world2.get_relation_meta(drifts[0].axis).?.name);
-    try testing.expectEqualStrings("FixtureMercy drift", world2.get_relation_meta(drifts[0].accumulator).?.name);
+    try testing.expectEqualStrings("#FixtureMercy drift", world2.get_relation_meta(drifts[0].accumulator).?.name);
 
     // Cutting the drift group off the end gives a version 21 package: the dilemma loads, still
     // weighs, and carries no drift.
@@ -4622,7 +4647,7 @@ test "P48-09: checked-in version 31 package fixture names a lamp and replaces a 
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v31.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 31), version_from_bytes(fixture).?);
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     var stream: std.Io.Reader = .fixed(fixture);
@@ -4630,6 +4655,15 @@ test "P48-09: checked-in version 31 package fixture names a lamp and replaces a 
     defer compiled.deinit();
     try testing.expectEqualStrings("the old lamp", world.display_text(world.lookup_entity("FixtureLamp").?).?);
     try testing.expectEqualStrings("Nothing of the kind is here.", phrase_mod.text(&world, .not_here));
+}
+
+test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {
+    const testing = std.testing;
+    var buf: [MAX_RENAMED_NAME]u8 = undefined;
+    try testing.expectEqualStrings("#SceneScore", bookkeeping_name("SceneScore", &buf));
+    try testing.expectEqualStrings("#Mercy drift steps", bookkeeping_name("Mercy drift steps", &buf));
+    try testing.expectEqualStrings("Knows", bookkeeping_name("Knows", &buf));
+    try testing.expectEqualStrings("Ready", bookkeeping_name("Ready", &buf));
 }
 
 test "P46-05: checked-in version 26 package fixture carries prop areas" {

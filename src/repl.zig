@@ -80,8 +80,15 @@ pub const Repl = struct {
                 return ReplResult.ok(msg);
             }
         } else if (std.mem.eql(u8, cmd, "facts")) {
+            // The story's rows, then the engine's `#` bookkeeping apart from them (D-180).
+            var engine: usize = 0;
+            const relations = self.world.facts.slice().items(.relation);
+            for (relations[0..self.world.facts.len]) |rel| {
+                const meta = self.world.get_relation_meta(rel) orelse continue;
+                if (meta.name.len > 0 and meta.name[0] == '#') engine += 1;
+            }
             var buf: [160]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "Active facts: {d} rows (Tick {d})", .{ self.world.fact_count(), self.world.current_tick }) catch "Facts";
+            const msg = std.fmt.bufPrint(&buf, "Active facts: {d} rows, plus {d} engine rows (Tick {d})", .{ self.world.fact_count() - engine, engine, self.world.current_tick }) catch "Facts";
             return ReplResult.ok(msg);
         } else {
             var buf: [96]u8 = undefined;

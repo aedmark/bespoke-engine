@@ -23,7 +23,7 @@ pub const MAX_CLAUSES: usize = 8;
 pub const MAX_AGENDAS: usize = 32;
 
 pub const STATE_RELATION = "AgendaState";
-pub const COOLDOWN_RELATION = "AgendaCooldown";
+pub const COOLDOWN_RELATION = "#AgendaCooldown";
 /// Unary state on an actor while it pursues; `Society` does not move an actor holding it.
 pub const PURSUING_RELATION = "Pursuing";
 pub const STAGE_NAMES = [_][]const u8{ "Idle", "Pursuing", "Done" };

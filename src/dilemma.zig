@@ -64,19 +64,19 @@ pub const MAX_DRIFT: u16 = 10;
 /// Points that move a value one step, and the steps one dilemma may move one axis (D-148).
 pub const DRIFT_THRESHOLD: i32 = 5;
 pub const DRIFT_STEPS_PER_DILEMMA: u32 = 2;
-pub const HOLDING_RELATION = "DriftHolding";
-pub const PENDING_APPEAL_RELATION = "PendingAppeal";
+pub const HOLDING_RELATION = "#DriftHolding";
+pub const PENDING_APPEAL_RELATION = "#PendingAppeal";
 pub const KNOWS_RELATION = "Knows";
 /// Appeal lines per dilemma: the values a player may appeal to (D-149, D-150).
 pub const MAX_APPEALS: usize = 4;
 pub const MAX_APPEAL: u16 = 10;
-pub const WEIGHED_RELATION = "DilemmaWeighed";
+pub const WEIGHED_RELATION = "#DilemmaWeighed";
 /// Tier boundaries, mirrored around zero (D-146).
 pub const STRONG_AT: i32 = 7;
 pub const MODERATE_AT: i32 = 3;
 
 pub const STATE_RELATION = "DilemmaState";
-pub const SEEN_RELATION = "EvidenceSeen";
+pub const SEEN_RELATION = "#EvidenceSeen";
 pub const PRESENTED_RELATION = "Presented";
 pub const CHOSE_RELATION = decision_mod.CHOSE_RELATION;
 pub const STAGE_NAMES = [_][]const u8{ "Idle", "Done", "AwaitsEvidence" };
@@ -127,9 +127,9 @@ pub const Appeal = struct {
 pub fn drift_relations(world: *World, axis: RelationKind) !struct { accumulator: RelationKind, spent: RelationKind } {
     const name = (world.get_relation_meta(axis) orelse return Error.InvalidDilemma).name;
     var buf: [96]u8 = undefined;
-    const acc_name = std.fmt.bufPrint(&buf, "{s} drift", .{name}) catch return Error.InvalidDilemma;
+    const acc_name = std.fmt.bufPrint(&buf, "#{s} drift", .{name}) catch return Error.InvalidDilemma;
     const accumulator = try world.intern_relation_kind(acc_name, .property, .number);
-    const spent_name = std.fmt.bufPrint(&buf, "{s} drift steps", .{name}) catch return Error.InvalidDilemma;
+    const spent_name = std.fmt.bufPrint(&buf, "#{s} drift steps", .{name}) catch return Error.InvalidDilemma;
     const spent = try world.intern_relation_kind(spent_name, .property, .number);
     return .{ .accumulator = accumulator, .spent = spent };
 }

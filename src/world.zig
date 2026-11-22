@@ -60,6 +60,9 @@ pub const RelationMeta = struct {
     name: []const u8,
     rel_type: RelationType,
     object_kind: ObjectKind = .unknown,
+    /// The script declared this relation itself, so an engine feature added after the script's
+    /// language version leaves it alone (P48-10, D-180). Program data; snapshots do not carry it.
+    script_owned: bool = false,
 };
 
 /// A signed range on a property relation (P45-01, D-144). The value slot holds the integer as
@@ -269,6 +272,13 @@ pub const World = struct {
         if (meta.object_kind == .unknown) {
             meta.object_kind = kind;
         } else if (meta.object_kind != kind) return error.MixedRelationObject;
+    }
+
+    /// Marks `relation` as the script's own (D-180).
+    pub fn claim_relation(self: *World, relation: RelationKind) void {
+        const index = relation.to_int();
+        if (index == 0 or index > self.relation_meta.items.len) return;
+        self.relation_meta.items[index - 1].script_owned = true;
     }
 
     pub fn object_kind(self: *const World, relation: RelationKind) ObjectKind {

@@ -6,6 +6,7 @@ const lexer_mod = @import("lexer.zig");
 const bytecode_mod = @import("../bytecode.zig");
 const world_mod = @import("../world.zig");
 const save_mod = @import("../save.zig");
+const reserved_mod = @import("../reserved.zig");
 const spatial_mod = @import("../spatial.zig");
 
 pub const AST = parser_mod.AST;
@@ -460,6 +461,11 @@ fn cue_param_key(param: []const u8) []const u8 {
     return if (param[0] == '?' or param[0] == '_' or std.ascii.isLower(param[0])) CUE_WILDCARD else param;
 }
 
+pub const Warning = struct {
+    context: []const u8,
+    message: []const u8,
+};
+
 pub const Codegen = struct {
     // Borrowed AST text, mapped back to the source by the checker before the arena is freed.
     // These fields never enter CompiledProgram.
@@ -472,6 +478,12 @@ pub const Codegen = struct {
     /// A second source name the diagnostic cites, such as the earlier handler that makes a
     /// later one unreachable (D-160). Mapped to a line by the checker, like `error_context`.
     error_related: []const u8 = "",
+    /// Things worth an author's attention that do not stop the compile (P48-10, D-180). Each
+    /// names the source text it is about, mapped to a line by the checker.
+    warnings: std.ArrayListUnmanaged(Warning) = .empty,
+    /// The engine's author-facing relations, with the release that added each; a test may
+    /// substitute its own (D-180).
+    engine_relations: []const reserved_mod.AuthorRelation = &reserved_mod.AUTHOR_FACING,
     /// Backs `error_suggestion` when the help is built rather than found, such as the
     /// capitalised spelling of an unbound lowercase name (D-161).
     suggestion_buf: [64]u8 = undefined,
@@ -770,10 +782,16 @@ pub const Codegen = struct {
         for (ast.relations.items) |rel| {
             try mut_self.check_thing_name(rel.name);
             mut_self.error_context = rel.name;
-            _ = try mut_self.world.intern_relation(
+            const declared = try mut_self.world.intern_relation(
                 rel.name,
                 if (rel.is_property) .property else .set,
             );
+            // A name a later engine release adopted stays the script's own (D-180).
+            if (reserved_mod.newer_than_language(mut_self.engine_relations, rel.name)) |entry| {
+                mut_self.world.claim_relation(declared);
+                const message = try std.fmt.allocPrint(mut_self.allocator, "BeSpoke {d}.{d} also uses '{s}'; this game keeps its own, and the engine's '{s}' is off for it", .{ entry.since.major, entry.since.minor, rel.name, rel.name });
+                try mut_self.warnings.append(mut_self.allocator, .{ .context = rel.name, .message = message });
+            }
         }
         // Axes are interned before any statement, so a `remember` on one meets a bounded
         // property wherever it appears (P45-01, D-144). An axis may not reuse a declared
@@ -3273,7 +3291,7 @@ test "P28-03: score declarations compile, seed scene facts, and play and stop by
     try testing.expectEqualStrings("t160 o5 l16 L c d e d", compiled.scores.items[1].parts[0]);
     try testing.expectEqual(@as(usize, 0), compiled.scores.items[1].scenes.len);
     // `PlayingScore` is a property, so a second `play score` replaces the first.
-    try testing.expectEqual(world_mod.RelationType.property, world.get_relation_meta(world.lookup_relation("PlayingScore").?).?.rel_type);
+    try testing.expectEqual(world_mod.RelationType.property, world.get_relation_meta(world.lookup_relation("#PlayingScore").?).?.rel_type);
 
     var vm = @import("../vm.zig").VM.init(testing.allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -3792,8 +3810,8 @@ test "P45-04: drift lines compile to signed points on a declared axis" {
     try testing.expectEqual(@as(i32, -4), drifts[1].points);
     try testing.expect(drifts[1].clause.negated);
     try testing.expectEqualStrings("Loyalty", world.get_relation_meta(drifts[1].axis).?.name);
-    try testing.expectEqualStrings("Mercy drift", world.get_relation_meta(drifts[0].accumulator).?.name);
-    try testing.expectEqualStrings("Loyalty drift steps", world.get_relation_meta(drifts[1].spent).?.name);
+    try testing.expectEqualStrings("#Mercy drift", world.get_relation_meta(drifts[0].accumulator).?.name);
+    try testing.expectEqualStrings("#Loyalty drift steps", world.get_relation_meta(drifts[1].spent).?.name);
 
     const cases = [_]struct { source: []const u8, message: []const u8, line: u32 }{
         .{ .source = head ++ "  drifts 3 toward Greed when Rich(Thief)\n" ++ tiers, .message = "a dilemma weighs an axis that no 'axis' line declares", .line = 9 },

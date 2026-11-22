@@ -166,6 +166,13 @@ pub fn check_file_with(allocator: std.mem.Allocator, io: std.Io, path: []const u
 
     var files = ScriptFiles.for_script(io, path);
     const res = bespoke.compiler.check_source_with(allocator, source, files.source());
+    // Warnings never stop a script (P48-10, D-180); they print in the diagnostic's shape.
+    for (res.warnings[0..res.warning_count]) |*w| {
+        try write_diagnostic_text(stdout, path);
+        try stdout.print(":{d}:{d}: warning: ", .{ w.line, w.column });
+        try write_diagnostic_text(stdout, w.message());
+        try stdout.print("\n", .{});
+    }
     if (res.is_valid) {
         try stdout.print("[check] '", .{});
         try write_diagnostic_text(stdout, path);
@@ -858,7 +865,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 32; this engine supports versions 1 through 31\n",
+        "future.bspk: error: unsupported .bspk format version 33; this engine supports versions 1 through 32\n",
         output.buffered(),
     );
 }

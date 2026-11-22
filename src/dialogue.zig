@@ -87,20 +87,20 @@ pub const View = struct {
 };
 
 const Names = struct {
-    open: []const u8 = "DialogueOpen",
-    prompt: []const u8 = "DialoguePrompt",
-    fiber: []const u8 = "DialogueFiber",
-    end: []const u8 = "DialogueEnd",
-    revision: []const u8 = "DialogueRevision",
-    option: []const u8 = "DialogueOption",
-    body: []const u8 = "DialogueBody",
-    action: []const u8 = "DialogueAction",
-    chosen: []const u8 = "DialogueChosen",
-    speaker: []const u8 = "DialogueSpeaker",
-    branch_count: []const u8 = "DialogueBranchCount",
-    branch_text: []const u8 = "DialogueBranchText",
-    branch_active: []const u8 = "DialogueBranchActive",
-    branch_failure: []const u8 = "DialogueBranchFailure",
+    open: []const u8 = "#DialogueOpen",
+    prompt: []const u8 = "#DialoguePrompt",
+    fiber: []const u8 = "#DialogueFiber",
+    end: []const u8 = "#DialogueEnd",
+    revision: []const u8 = "#DialogueRevision",
+    option: []const u8 = "#DialogueOption",
+    body: []const u8 = "#DialogueBody",
+    action: []const u8 = "#DialogueAction",
+    chosen: []const u8 = "#DialogueChosen",
+    speaker: []const u8 = "#DialogueSpeaker",
+    branch_count: []const u8 = "#DialogueBranchCount",
+    branch_text: []const u8 = "#DialogueBranchText",
+    branch_active: []const u8 = "#DialogueBranchActive",
+    branch_failure: []const u8 = "#DialogueBranchFailure",
 };
 
 pub const Relations = struct {

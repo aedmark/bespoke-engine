@@ -35,8 +35,8 @@ pub fn band(fact: *const RenderDebugFact, now: u64) Band {
 }
 
 fn is_branch_text(fact: *const RenderDebugFact) bool {
-    return std.mem.eql(u8, fact.get_relation(), "DialogueBranchText") or
-        std.mem.eql(u8, fact.get_relation(), "DialogueBranchFailure");
+    return std.mem.eql(u8, fact.get_relation(), "#DialogueBranchText") or
+        std.mem.eql(u8, fact.get_relation(), "#DialogueBranchFailure");
 }
 
 fn is_edge(fact: *const RenderDebugFact) bool {
@@ -383,8 +383,8 @@ test "P27-02: next-to-happen facts are ordered by expiry then stable fact identi
 test "P27-02: persisted dialogue branch metadata never steals graph focus" {
     const facts = [_]RenderDebugFact{
         test_fact(1, "Actor", "Carries", 2, "Key", 0),
-        test_fact(50, "Actor~0", "DialogueBranchText", 60, "Ask about the key", 0),
-        test_fact(50, "Actor~0", "DialogueBranchFailure", 61, "missing Carries", 0),
+        test_fact(50, "Actor~0", "#DialogueBranchText", 60, "Ask about the key", 0),
+        test_fact(50, "Actor~0", "#DialogueBranchFailure", 61, "missing Carries", 0),
     };
     try testing.expectEqual(EntityId.from_int(1), default_focus(&facts, .{}).?);
 }
@@ -421,7 +421,7 @@ test "P27-03: the filter cycles all, beliefs, then relations in byte order, and 
         test_fact(5, "Ines", "Volume", 3, null, 0),
         test_fact(5, "Ines", "Carries", 9, "Slip", 0),
         test_fact(5, "Ines", "Believes", 7, "Pell", 0),
-        test_fact(50, "Ines~0", "DialogueBranchText", 60, "Ask", 0),
+        test_fact(50, "Ines~0", "#DialogueBranchText", 60, "Ask", 0),
         test_fact(9, "Slip", "Carries", 10, "Lamp", 0),
     };
     var f = Filter{};

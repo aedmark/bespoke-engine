@@ -65,7 +65,7 @@ pub const Attribute = enum(u8) {
 /// keyed on this marker rather than on attribute presence, because a runtime rule may clear
 /// every attribute of a cell (fire consuming a tapestry) and that cleared state must survive
 /// re-initialisation after a restore.
-pub const SEEDED_RELATION = "GridSeeded";
+pub const SEEDED_RELATION = "#GridSeeded";
 
 pub const Cell = struct {
     x: u16,

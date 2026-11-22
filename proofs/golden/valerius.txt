@@ -21,7 +21,7 @@
   Tam: "I'll earn the day watch, Captain."
   (Winter: Pardon. Valerius's Mercy 3 -> 4 by drift; Justice 4. Spring: Probation.)
 
-final facts: 31, digest 585af30b0b47beed
+final facts: 31, digest 41e55eb0d191ae83
 
 [The appeal to Loyalty]
   Brann: "He took bread from the garrison store, Captain. Hang him, and no one tries it again."  Valerius: "Put the rope away, Sergeant. He is a child, and I will hear it."  "Give me a reason, Hesper. The law, or the boy?"
@@ -36,7 +36,7 @@ final facts: 31, digest 585af30b0b47beed
   Tam: "I won't let the store go hungry again."
   (Winter: OpenStore. Valerius's Mercy 3 -> 5 by drift; Justice 4. Spring: Enlist.)
 
-final facts: 32, digest c3280bb5c435e32d
+final facts: 32, digest 18c829098f2189bb
 
 ===================================================================
   VERIFICATION COMPLETE: two appeals, two winters, two springs.    

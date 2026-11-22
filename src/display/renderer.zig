@@ -1113,6 +1113,9 @@ pub const DisplayWindow = struct {
     show_save_drawer: bool = false,
     save_menu_mode: SaveMenuMode = .save,
     hovered_save_slot: ?u8 = null,
+    /// Shows the engine's `#` bookkeeping in the State tab and debug overlay (D-180). Off by
+    /// default; the State tab's E key flips it, and a host may set it.
+    show_engine_facts: bool = false,
     selected_save_slot: u8 = 1,
     /// The host's I/O (Zig 0.16+), kept by a desktop or offscreen window so the session's tick
     /// clock reads time through it; a browser canvas window has none.
@@ -1832,8 +1835,15 @@ pub const DisplayWindow = struct {
         return self.inspector_focus orelse state_graph.default_focus(facts, self.inspector_filter) orelse state_graph.default_focus(facts, .{});
     }
 
+    /// The facts the State tab and the debug overlay show: the story's, and the engine's `#`
+    /// bookkeeping too once `show_engine_facts` is on (the State tab's E key, D-180).
+    pub fn shown_facts(self: *const DisplayWindow, frame: *const RenderFrame) []const display_mod.RenderDebugFact {
+        const all = frame.debug_facts[0..frame.debug_fact_count];
+        return if (self.show_engine_facts) all else all[0..display_mod.story_fact_count(all)];
+    }
+
     pub fn inspector_layout(self: *DisplayWindow, frame: *const RenderFrame) ?state_graph.Layout {
-        const facts = frame.debug_facts[0..frame.debug_fact_count];
+        const facts = self.shown_facts(frame);
         self.inspector_sync(facts);
         const focus = self.inspector_resolved_focus(facts) orelse return null;
         const g = inspector_geometry(get_save_drawer_rect(self.width, self.height));
@@ -1856,7 +1866,7 @@ pub const DisplayWindow = struct {
 
     /// State tab keys (P27-03, D-059). Returns true when the key was a navigation key.
     pub fn inspector_key(self: *DisplayWindow, frame: *const RenderFrame, sym: Keycode) bool {
-        const facts = frame.debug_facts[0..frame.debug_fact_count];
+        const facts = self.shown_facts(frame);
         const layout = self.inspector_layout(frame);
         const ring_len = if (layout) |l| l.ring_len else 0;
         switch (sym) {
@@ -1883,6 +1893,12 @@ pub const DisplayWindow = struct {
                 self.inspector_history_len = 0;
                 self.inspector_selected = 0;
             },
+            key('e') => {
+                // Engine bookkeeping in or out of the view (D-180); the focus may have gone.
+                self.show_engine_facts = !self.show_engine_facts;
+                self.inspector_focus = null;
+                return true;
+            },
             key('f') => {
                 self.inspector_filter = state_graph.next_filter(facts, self.inspector_filter);
                 self.inspector_selected = 0;
@@ -1903,7 +1919,7 @@ pub const DisplayWindow = struct {
     }
 
     pub fn draw_state_inspector(self: *DisplayWindow, frame: *const RenderFrame, drect: Rect) void {
-        const facts = frame.debug_facts[0..frame.debug_fact_count];
+        const facts = self.shown_facts(frame);
         const g = inspector_geometry(drect);
         const area_x = g.area_x;
         const top = g.top;
@@ -3791,9 +3807,10 @@ pub const DisplayWindow = struct {
             self.draw_text("ACTIVE FACTS:", dbg_x + 12, cur_y, 1, Color.hud_subtext);
             cur_y += 14;
 
+            const overlay_facts = self.shown_facts(frame);
             var fi: usize = 0;
-            while (fi < frame.debug_fact_count and fi < 10) : (fi += 1) {
-                const df = &frame.debug_facts[fi];
+            while (fi < overlay_facts.len and fi < 10) : (fi += 1) {
+                const df = &overlay_facts[fi];
                 var fbuf: [96]u8 = undefined;
                 const fstr = if (df.expires_at_tick > 0)
                     std.fmt.bufPrint(&fbuf, " - {s}({s}, {s}) [exp:{d}]", .{ df.get_relation(), df.get_subject(), df.get_object(), df.expires_at_tick }) catch "?"
@@ -5012,6 +5029,32 @@ test "P27-01: the State tab cycles in with Tab and never saves or loads" {
     _ = Press.key(&window, &frame, c.SDLK_TAB);
     try testing.expectEqual(UserAction.toggle_save_drawer, Press.key(&window, &frame, c.SDLK_ESCAPE));
     try testing.expect(!window.show_save_drawer);
+}
+
+test "P48-10: the State tab shows the story's facts, and E shows the engine's bookkeeping too" {
+    const testing = std.testing;
+    var window = try DisplayWindow.init_offscreen(std.testing.io, 640, 360);
+    defer window.deinit();
+    const make = struct {
+        fn fact(subject_name: []const u8, relation: []const u8) display_mod.RenderDebugFact {
+            var f = std.mem.zeroes(display_mod.RenderDebugFact);
+            @memcpy(f.subject_name[0..subject_name.len], subject_name);
+            f.subject_len = @intCast(subject_name.len);
+            @memcpy(f.relation_name[0..relation.len], relation);
+            f.relation_len = @intCast(relation.len);
+            f.subject = display_mod.EntityId.from_int(5);
+            return f;
+        }
+    };
+    var frame = std.mem.zeroes(RenderFrame);
+    const facts = [_]display_mod.RenderDebugFact{ make.fact("Ines", "Carries"), make.fact("Ines", "Knows"), make.fact("Ines", "#DialogueOpen") };
+    @memcpy(frame.debug_facts[0..facts.len], &facts);
+    frame.debug_fact_count = facts.len;
+    try testing.expectEqual(@as(usize, 2), window.shown_facts(&frame).len);
+    try testing.expect(window.inspector_key(&frame, key('e')));
+    try testing.expectEqual(@as(usize, 3), window.shown_facts(&frame).len);
+    try testing.expect(window.inspector_key(&frame, key('e')));
+    try testing.expectEqual(@as(usize, 2), window.shown_facts(&frame).len);
 }
 
 test "P27-03: State tab keys select, recentre, go back, reset, filter, and click without saving" {

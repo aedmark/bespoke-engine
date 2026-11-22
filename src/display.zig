@@ -126,28 +126,48 @@ pub const MAX_DEBUG_FACTS = 128;
 /// happens to equal (D-058).
 const VALUE_RELATIONS = [_][]const u8{
     "CellFlammable",  "CellLiquid",          "CellBlocking",         "CellBurning",
-    "CellSmoke",      "Volume",              "DialogueOpen",         "DialogueFiber",
-    "DialogueEnd",    "DialogueRevision",    "DialogueBody",         "DialogueAction",
-    "DialogueChosen", "DialogueBranchCount", "DialogueBranchActive",
+    "CellSmoke",      "Volume",              "#DialogueOpen",         "#DialogueFiber",
+    "#DialogueEnd",    "#DialogueRevision",    "#DialogueBody",         "#DialogueAction",
+    "#DialogueChosen", "#DialogueBranchCount", "#DialogueBranchActive",
 };
 
 /// Copies the World's facts for the inspectors (P9-01, D-011, D-058): live facts first, then the
 /// ones that expired this tick, up to `out.len`. Returns the count. The browser runtime calls this
 /// too, so both inspectors read the same capture (P30-04, D-070).
+/// The story's facts come first and the engine's `#` bookkeeping after (D-180), so a full
+/// capture drops bookkeeping before story, and `story_fact_count` finds where the story ends.
 pub fn capture_debug_facts(world: *const World, out: []RenderDebugFact) usize {
     var count: usize = 0;
     const slice = world.facts.slice();
-    for (0..world.facts.len) |fi| {
-        if (count == out.len) break;
-        out[count] = debug_fact(world, slice.get(fi), false);
-        count += 1;
-    }
-    for (world.get_recently_expired()) |fact| {
-        if (count == out.len) break;
-        out[count] = debug_fact(world, fact, true);
-        count += 1;
+    for ([_]bool{ false, true }) |engine| {
+        for (0..world.facts.len) |fi| {
+            if (count == out.len) break;
+            if (is_engine_relation(world, slice.items(.relation)[fi]) != engine) continue;
+            out[count] = debug_fact(world, slice.get(fi), false);
+            count += 1;
+        }
+        for (world.get_recently_expired()) |fact| {
+            if (count == out.len) break;
+            if (is_engine_relation(world, fact.relation) != engine) continue;
+            out[count] = debug_fact(world, fact, true);
+            count += 1;
+        }
     }
     return count;
+}
+
+/// Engine bookkeeping is named with a leading `#`, which no script identifier can spell (D-180).
+pub fn is_engine_relation(world: *const World, relation: world_mod.RelationKind) bool {
+    const meta = world.get_relation_meta(relation) orelse return false;
+    return meta.name.len > 0 and meta.name[0] == '#';
+}
+
+/// How many of a capture's facts are the story's: the ones before the first `#` relation.
+pub fn story_fact_count(facts: []const RenderDebugFact) usize {
+    for (facts, 0..) |f, i| {
+        if (f.relation_len > 0 and f.relation_name[0] == '#') return i;
+    }
+    return facts.len;
 }
 
 fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDebugFact {
@@ -971,6 +991,20 @@ pub const DisplayBridge = struct {
         try writer.print("+-------------------------------------------------------------------+\n", .{});
     }
 };
+
+test "P48-10: a capture lists the story's facts before the engine's bookkeeping" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    const hero = try world.intern_entity("Hero");
+    _ = try world.remember(hero, try world.intern_relation("#DialogueOpen", .property), 1, 0);
+    _ = try world.remember(hero, try world.intern_relation("Ready", .set), 0, 0);
+    var out: [8]RenderDebugFact = undefined;
+    const count = capture_debug_facts(&world, &out);
+    try testing.expectEqual(@as(usize, 2), count);
+    try testing.expectEqualStrings("Ready", out[0].relation_name[0..out[0].relation_len]);
+    try testing.expectEqual(@as(usize, 1), story_fact_count(out[0..count]));
+}
 
 test "P5-01: display bridge captures double-buffered render frames" {
     const testing = std.testing;

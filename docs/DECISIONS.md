@@ -2227,6 +2227,21 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** The English defaults equal today's text, so no golden moves. Display names and phrases are program data, like value bounds: the package carries them and saves do not. P48-09 builds them.
 
+## D-180 Engine Bookkeeping Is Named With `#`; States Scripts Test Stay Reserved Words; the Drawer Hides Bookkeeping Until Asked (2026-11-22, status: accepted; P48-10, refines D-164)
+
+**Context.** D-164 put pure bookkeeping behind a prefix scripts cannot type and made a script's own declaration win over a relation a later engine release adds. Building it needed the list, the prefix, the warning's reach, and the drawer's behaviour. An inventory on 2026-11-22 found no script reading any bookkeeping relation; the spec invites scripts to test `AgendaState(WarnOff, Pursuing)`, while `DecisionState` and `DilemmaState` appeared only in decision records.
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. Behind the prefix: the fourteen `Dialogue*` relations, `DilemmaWeighed`, `DriftHolding`, `PendingAppeal`, `EvidenceSeen`, `AgendaCooldown`, `GridSeeded`, `SceneScore`, `PlayingScore`, and each axis's `drift` and `drift steps` pair.
+2. The prefix is `#` (`#DialogueOpen`), which no identifier can contain; path initialisers already use `#path:`.
+3. `AgendaState`, `DecisionState`, `DilemmaState`, `Knows`, `Believes`, `Rejects`, `Presented`, `Chose`, `Appealed`, `PathActive`, `Pursuing`, the grid cell states, `ConvergenceReady`, and `LoopClosed` are reserved words with documented meanings that scripts may read and, where documented, write.
+4. The engine keeps a table of its author-facing relations with the release that added each. The compiler gains warnings, which `bespoke check` prints; a script that declares a relation the table marks as newer than 1.0 keeps its own, and the engine feature of that name is off for the game. All entries are 1.0 today.
+5. The State drawer and the debug console list the story's facts and leave out `#` relations until a key, or a host option, shows them after the story's.
+
+**Alternatives:** hiding the three state relations too; `engine:` as the prefix; documenting the warning without building it; an always-visible engine section in the drawer.
+
+**Consequences.** Renaming moves final-fact digests and any golden that shows these names. P48-10 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

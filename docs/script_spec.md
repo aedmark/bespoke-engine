@@ -266,7 +266,7 @@ when Warden forgets Alarm:
   stop score
 ```
 
-`play score <Name>` overrides scene music in every scene until `stop score` or another `play score`. Parts loop together from their `L` once every part has ended (D-061). The choice is World state (`SceneScore` facts and the `PlayingScore` property of `Music`), so saves and rewinds restore it.
+`play score <Name>` overrides scene music in every scene until `stop score` or another `play score`. Parts loop together from their `L` once every part has ended (D-061). The choice is World state (`#SceneScore` facts and the `#PlayingScore` property of `Music`), so saves and rewinds restore it.
 
 ### Typed commands (P26-01, D-057)
 
@@ -526,6 +526,12 @@ on cue TalksTo(Ines, Valerius, Mercy):
 - The player must know the value first: `Knows(Ines, "Mercy of Valerius")`. Otherwise the reply is "You don't know what moves them." and nothing changes. A weighing that lands outside neutral teaches everyone in the character's room the value it leaned toward; a script teaches the rest, usually when the player asks (`ask valerius about mercy` fires `TalksTo`).
 - An accepted appeal records `Appealed(Valerius, Mercy)` and fires `on cue Appeals(Ines, Valerius, Mercy):`. A goal need `met Appealed(Valerius, Mercy)` is a Holmesian hint once the player knows `Mercy of Valerius`, and a Doylian one before. Package format version 23 carries appeal lines.
 
+### The engine's relations (P48-10, D-164, D-180)
+
+The engine keeps its own bookkeeping in the World under names that start with `#` (`#DialogueOpen`, `#SceneScore`, `#Mercy drift`), which no script can type, so a script's relations never collide with it. The State drawer and the debug console leave them out until the State tab's `E` key shows them after the story's facts.
+
+These engine relations are reserved words with fixed meanings, which scripts may test and, where this document says, write: `AgendaState`, `DecisionState`, `DilemmaState`, `Knows`, `Believes`, `Rejects`, `Presented`, `Chose`, `Appealed`, `PathActive`, `Pursuing`, `CellFlammable`, `CellLiquid`, `CellBlocking`, `CellBurning`, `CellSmoke`, `InBurningCell`, `InSmokeCell`, `InLiquidCell`, `ConvergenceReady`, and `LoopClosed`. All date from 1.0. If a later release adds one that a script already declares with `relation`, the script keeps its own, the engine feature of that name is off for the game, and `bespoke check` prints a warning. Package format version 32 carries the `#` names; older packages have theirs translated as they load.
+
 ### What players read (P48-09, D-163, D-179)
 
 ```bespoke
@@ -614,6 +620,7 @@ The language conformance suite (P48-18, D-173) pins each frozen rule as runnable
 
 | Rule | Conformance cases (`tests/conformance/`) |
 | --- | --- |
+| Engine relations (D-180) | `src/compiler.zig`: `P48-10: engine bookkeeping cannot be named in a script, and a plain name is the script's own`; `P48-10: a script declaring a relation a later release adopted keeps it, with a warning` |
 | What players read (D-179) | `d179-player-text/`: a name and a phrase reach the player, an unknown phrase key and a name for nothing are refused |
 | Relation object kinds (D-178) | `d178-object-kinds/`: one kind per relation runs, an entity relation tested with a number is refused |
 | Save version (D-162) | `d162-save-version/`: declared once, a whole number from 1, and adds no facts |

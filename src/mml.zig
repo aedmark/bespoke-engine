@@ -107,8 +107,8 @@ pub const MAX_SCORE_SCENES: usize = 16;
 /// Relations the engine reads to choose script music (P28-03, D-062). `PlayingScore` is a
 /// property of the `Music` entity set by `play score` and cleared by `stop score`;
 /// `SceneScore(Scene, Score)` is seeded from each score's `scene` lines.
-pub const PLAYING_RELATION = "PlayingScore";
-pub const SCENE_RELATION = "SceneScore";
+pub const PLAYING_RELATION = "#PlayingScore";
+pub const SCENE_RELATION = "#SceneScore";
 pub const MUSIC_ENTITY = "Music";
 
 pub fn part_kind(index: usize) TrackKind {

@@ -723,7 +723,7 @@ test "P48-08: a build with the same save version loads another build's facts by 
     const coin = try old.intern_entity("Coin");
     const holds = try old.intern_relation_kind("Holds", .set, .entity);
     const count = try old.intern_relation_kind("Count", .property, .number);
-    const prompt = try old.intern_relation_kind("DialoguePrompt", .property, .transient);
+    const prompt = try old.intern_relation_kind("#DialoguePrompt", .property, .transient);
     const lit = try old.intern_relation("Lit", .set);
     _ = try old.remember(hero, holds, coin.to_int(), 0);
     _ = try old.remember(hero, count, 7, 0);
@@ -749,7 +749,7 @@ test "P48-08: a build with the same save version loads another build's facts by 
 
     try testing.expect(new.has_fact(new_hero, new.lookup_relation("Holds").?, new_coin.to_int()));
     try testing.expectEqual(@as(?u32, 7), new.get_property(new_hero, new.lookup_relation("Count").?));
-    try testing.expect(new.lookup_relation("DialoguePrompt") == null or !new.has_fact(new_hero, new.lookup_relation("DialoguePrompt").?, null));
+    try testing.expect(new.lookup_relation("#DialoguePrompt") == null or !new.has_fact(new_hero, new.lookup_relation("#DialoguePrompt").?, null));
     try testing.expect(new.has_fact(new_hero, new.lookup_relation("Lit").?, null));
     try testing.expectEqual(@as(u64, 30), new.current_tick);
     // A timed fact keeps the time it had left.

@@ -10,6 +10,7 @@ pub const CompiledProgram = codegen.CompiledProgram;
 pub const AST = parser.AST;
 
 const world_mod = @import("world.zig");
+const reserved_mod = @import("reserved.zig");
 const image_mod = @import("image.zig");
 const spatial_mod = @import("spatial.zig");
 const World = world_mod.World;
@@ -65,6 +66,18 @@ pub const check_message_capacity = 256;
 /// Outcome of `check_source`. It owns its diagnostic text: the parser's message lives in a
 /// stack-local `Parser.diag_buf` or the check arena, both gone once `check_source` returns,
 /// so the message is copied into `message_buf` before they are freed.
+/// One warning `check_source` reports (P48-10, D-180), owning its text.
+pub const CheckWarning = struct {
+    line: u32,
+    column: u32,
+    text: [check_message_capacity]u8 = undefined,
+    len: usize = 0,
+
+    pub fn message(self: *const CheckWarning) []const u8 {
+        return self.text[0..self.len];
+    }
+};
+
 pub const CheckResult = struct {
     is_valid: bool,
     line: u32 = 0,
@@ -76,6 +89,9 @@ pub const CheckResult = struct {
     /// The error's name, such as `UnboundVariable` (D-173): with the line and column, the part
     /// of a diagnostic 1.0 promises. The message wording may improve in 1.x.
     kind_name: []const u8 = "",
+    /// Warnings from a script that compiles (P48-10, D-180): the first four, each owning its text.
+    warnings: [4]CheckWarning = undefined,
+    warning_count: usize = 0,
     entity_count: usize = 0,
     routine_count: usize = 0,
     rule_count: usize = 0,
@@ -146,6 +162,12 @@ pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResul
 }
 
 pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files: ?FileSource) CheckResult {
+    return check_source_against(allocator, source, files, &reserved_mod.AUTHOR_FACING);
+}
+
+/// `check_source_with` against a given table of engine relations (P48-10, D-180), so a test can
+/// stand in for a later release.
+pub fn check_source_against(allocator: std.mem.Allocator, source: []const u8, files: ?FileSource, engine_relations: []const reserved_mod.AuthorRelation) CheckResult {
     if (source.len > MAX_SOURCE_SIZE) return CheckResult.failure(1, 1, "script exceeds the 16 MiB source limit").with_kind(error.ScriptTooLarge);
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -170,6 +192,7 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
     defer dummy_spatial.deinit();
 
     var cg = Codegen.init(alloc, &dummy_world, &dummy_spatial);
+    cg.engine_relations = engine_relations;
     var compiled = cg.compile(&ast) catch |err| {
         var line = cg.error_line;
         var col = cg.error_column;
@@ -189,7 +212,7 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
     };
     defer compiled.deinit();
 
-    return .{
+    var result = CheckResult{
         .is_valid = true,
         .entity_count = ast.entities.items.len,
         .routine_count = ast.routines.items.len,
@@ -197,6 +220,16 @@ pub fn check_source_with(allocator: std.mem.Allocator, source: []const u8, files
         .scene_count = if (ast.scene_defs.items.len > 0) ast.scene_defs.items.len else ast.scenes.items.len,
         .bytecode_len = compiled.chunk.count(),
     };
+    for (cg.warnings.items) |w| {
+        if (result.warning_count == result.warnings.len) break;
+        const pos = source_position(source, w.context);
+        var line = &result.warnings[result.warning_count];
+        line.* = .{ .line = pos[0], .column = pos[1] };
+        line.len = @min(w.message.len, line.text.len);
+        @memcpy(line.text[0..line.len], w.message[0..line.len]);
+        result.warning_count += 1;
+    }
+    return result;
 }
 
 fn lexer_failure(lex: *const Lexer, err: anyerror) CheckResult {
@@ -1135,6 +1168,57 @@ test "P48-09: name and phrase lines set what players read, and their mistakes ar
     }
     // `name` and `phrase` stay usable as names.
     try testing.expect(check_source(testing.allocator, "entity Name, Phrase\n").is_valid);
+}
+
+test "P48-10: a script declaring a relation a later release adopted keeps it, with a warning" {
+    const testing = std.testing;
+    const later = [_]reserved_mod.AuthorRelation{.{ .name = "Hears", .since = .{ .major = 1, .minor = 1 } }};
+    const source =
+        \\entity Hero, Bell
+        \\relation Hears(who, sound)
+        \\remember Hears(Hero, Bell)
+    ;
+    const res = check_source_against(testing.allocator, source, null, &later);
+    try testing.expect(res.is_valid);
+    try testing.expectEqual(@as(usize, 1), res.warning_count);
+    try testing.expectEqual(@as(u32, 2), res.warnings[0].line);
+    try testing.expectEqual(@as(u32, 10), res.warnings[0].column);
+    try testing.expectEqualStrings("BeSpoke 1.1 also uses 'Hears'; this game keeps its own, and the engine's 'Hears' is off for it", res.warnings[0].message());
+    // Against the real table nothing is newer than 1.0, so the same script is quiet.
+    try testing.expectEqual(@as(usize, 0), check_source(testing.allocator, source).warning_count);
+
+    // The claim is recorded, so a later feature can ask before it uses the name.
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = @import("spatial.zig").SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var lex = Lexer.init(testing.allocator, source);
+    defer lex.deinit();
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var parse = try Parser.init(arena.allocator(), &lex);
+    const ast = try parse.parse_program();
+    var cg = Codegen.init(testing.allocator, &world, &spatial);
+    cg.engine_relations = &later;
+    var compiled = try cg.compile(&ast);
+    defer compiled.deinit();
+    defer {
+        for (cg.warnings.items) |w| testing.allocator.free(w.message);
+        cg.warnings.deinit(testing.allocator);
+    }
+    try testing.expect(!reserved_mod.engine_may_use(&world, "Hears"));
+    try testing.expect(reserved_mod.engine_may_use(&world, "Knows"));
+}
+
+test "P48-10: engine bookkeeping cannot be named in a script, and a plain name is the script's own" {
+    const testing = std.testing;
+    try testing.expect(!check_source(testing.allocator, "entity Hero\nremember #DialogueOpen(Hero)\n").is_valid);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, "entity Hero\nremember DialogueOpen(Hero)\n");
+    defer compiled.deinit();
+    try testing.expect(world.lookup_relation("DialogueOpen") != null);
+    try testing.expect(world.lookup_relation("#DialogueOpen") == null);
 }
 
 const ART_BASE =

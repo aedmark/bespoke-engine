@@ -74,6 +74,9 @@ comptime {
     require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "restart_routines" }, "host");
     require(bespoke.world, &.{"ObjectKind"}, "world");
     require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind", "set_display_name", "display_text", "set_phrase", "phrase_override" }, "world.World");
+    require(bespoke.reserved, &.{ "Release", "LANGUAGE", "AuthorRelation", "AUTHOR_FACING", "newer_than_language", "engine_may_use", "is_bookkeeping" }, "reserved");
+    require(bespoke.compiler, &.{ "CheckWarning", "check_source_against" }, "compiler");
+    require(bespoke.display, &.{ "capture_debug_facts", "story_fact_count", "is_engine_relation" }, "display");
     require(bespoke.phrase, &.{ "Key", "Entry", "ENTRIES", "Arg", "Error", "find", "entry", "text", "validate", "render", "fill" }, "phrase");
     require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for" }, "save");
     require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");

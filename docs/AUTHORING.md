@@ -408,6 +408,10 @@ area ShopDoor: 96 62 24 42
 - A click anywhere in a sprite's frame or a prop's area acts on it, and the player walks to the mark nearest its foot (D-158). Box outlines appear only in the debug overlay.
 - Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world. Art that follows other facts, such as a lit lamp, is drawn by the host's theme, which reads the facts after each tick. `proofs/lamplighter.zig` shows a theme that picks the lamp's frame.
 
+### The engine's relations
+
+The engine's bookkeeping lives under `#` names a script cannot type, and the State drawer hides it until its `E` key. A few engine relations are reserved words a script may test, such as `Knows`, `Chose`, `PathActive`, and `AgendaState`; the script spec lists them (D-180). `bespoke check` prints a warning when a script declares a relation a later release of the engine also uses; the game keeps its own.
+
 ### What players read
 
 `name ExposureSlip: "the slip from the darkroom"` sets what players read for an entity, everywhere it is shown; without it, `ExposureSlip` reads "Exposure Slip". `phrase HintRoom: "Seek out the {room}."` replaces one sentence the engine writes, such as a hint, a command reply, or a walk line; the script spec lists every key and its placeholders (D-179). Write whole sentences: the engine fills in names but never counts, plurals, or articles, so a translation controls every word. A build has one language, and the window draws characters outside printable ASCII as `?` for now.

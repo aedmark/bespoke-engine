@@ -301,8 +301,8 @@ valerius/Greyhold Gate +branch_active: 006f7a6a7cadbef1
 clearance/valerius/Greyhold Gate +branch_active: 47
 valerius/Greyhold Gate +branch_collapsed: a9ad59865868fddb
 clearance/valerius/Greyhold Gate +branch_collapsed: 47
-inspector/Larkspur Observatory: ced1814273961cf6
-inspector-filtered/Larkspur Observatory: 223bc995aafeabae
+inspector/Larkspur Observatory: a5ef8b52271102db
+inspector-filtered/Larkspur Observatory: 6b6b491b1667b01a
 thumb/image_stage/Lamp Room: de2e85e4d9574afc
 image_stage/Lamp Room: c8aac4e5d32c3ab4
 clearance/image_stage/Lamp Room: 124
