@@ -616,6 +616,8 @@ pub const WasmRuntime = struct {
         const program = &self.program.?;
         // The script's art draws on the browser frame as on the desktop (P46-03, D-097).
         self.window.set_art(&program.art);
+        // Browser saves name this build too (P48-08, D-162).
+        self.saves.program = program.identity();
         self.vm.deinit();
         self.vm = VM.init(self.allocator, &self.world, &program.chunk);
         self.vm.spatial = &self.spatial;

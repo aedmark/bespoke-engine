@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Saves record which build of the game wrote them, and the window refuses a save from another build with "Slot #N is from another version of the game" instead of loading it into mismatched code (`D-162`). Scripts declare `save version N`, which packages (format 29) and saves (format 3) carry; loading an older save into a patched build with the same save version arrives next.
 - `bespoke run --headless` can play typed commands from a file (`--input moves.txt`, lines of `<tick> <command>`) and print the facts a run leaves (`--facts`); `bespoke check --kind` names the error's kind. A language conformance suite (`zig build test-conformance`) uses them to pin every frozen rule as runnable scripts (`D-173`).
 - A time branch closes when either `ConvergenceReady` or `LoopClosed` holds, as `D-073` describes. Before, a script that mentioned `ConvergenceReady` anywhere could never close on `LoopClosed`.
 - A cue handler's body reads its parameters: in `on cue Greets(Hero, other):`, `remember Met(Hero, other)` records the entity the cue named, and a variable the `where` guard matched is read the same way (`D-161`). Before, the body wrote about an entity literally called `other`. Package format version 28 carries the new instructions.

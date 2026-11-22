@@ -1,0 +1,7 @@
+# A script declares its save version once.
+# pins: D-162; script_spec.md "save version"
+# expect error: UnexpectedToken 6:1
+
+save version 2
+save version 3
+entity Scout

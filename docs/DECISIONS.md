@@ -2201,6 +2201,16 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** `COMPATIBILITY.md` states the resolution promise when P48-17 rewrites it. P48-20 builds the case check; P48-13 lets authored hints exceed three tiers.
 
+## D-178 A Relation's Object Is Always an Entity or Always a Number (2026-11-22, status: accepted; P48-08, refines D-162)
+
+**Context.** D-162 reloads facts by name when an author declares a patch save-compatible. A fact's object slot is a raw `u32`, an entity in `Holds(Cask, Coin)` and a count in `Clue(Diary, 3)`, and nothing recorded which, so a loader could not know what to translate. A scan on 2026-11-22 of every checked-in script and embedded test script found 68 relations with an object, each used one way only, apart from `Lit` in two engine unit tests.
+
+**Decision.** The maintainer chose on 2026-11-22: each relation's object kind is fixed. The compiler infers it from how the script writes and tests the relation (an entity name makes it an entity relation, a number, `true`, `false`, or an axis value makes it a number relation), and using one relation both ways is a compile error at the second use. Engine relations declare their kind where the engine creates them. The package and the save record each relation's kind, so a compatible load translates entity objects by name and copies numbers unchanged.
+
+**Alternatives:** a flag on every stored fact, which changes the flat four-slot fact layout; translating subjects only, which leaves entity objects pointing at whatever the new build numbered them.
+
+**Consequences.** The two `Lit` tests change to one use. About 85 engine sites that create relations declare a kind. P48-08 builds it after saves record their build.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

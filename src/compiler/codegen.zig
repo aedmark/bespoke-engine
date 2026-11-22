@@ -5,6 +5,7 @@ const parser_mod = @import("parser.zig");
 const lexer_mod = @import("lexer.zig");
 const bytecode_mod = @import("../bytecode.zig");
 const world_mod = @import("../world.zig");
+const save_mod = @import("../save.zig");
 const spatial_mod = @import("../spatial.zig");
 
 pub const AST = parser_mod.AST;
@@ -129,9 +130,19 @@ pub const CompiledProgram = struct {
     /// through along the chain before the search moves to a broader signature. Owned by
     /// `chunk.allocator`.
     cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty,
+    /// The script's `save version N` (P48-08, D-162), 1 when it declares none.
+    save_version: u32 = 1,
+    /// Identifies this build for saves (D-162): see `program_fingerprint`. Never 0 once compiled
+    /// or loaded, since 0 marks a save whose program is unknown.
+    fingerprint: u64 = 0,
     /// The game's palette and indexed images (P46-01, D-152). Presentation only: never written
     /// to the world, so it cannot change a replay. Owned by `chunk.allocator`.
     art: image_mod.Art = .{},
+
+    /// Which build this is, for saves to record and loads to check (D-162).
+    pub fn identity(self: *const CompiledProgram) save_mod.ProgramIdentity {
+        return .{ .fingerprint = self.fingerprint, .save_version = self.save_version };
+    }
 
     pub fn deinit(self: *CompiledProgram) void {
         self.art.deinit_owned(self.chunk.allocator);
@@ -374,6 +385,26 @@ pub const CompiledProgram = struct {
         return self.cue_handler_entries.get(w.buffered());
     }
 };
+
+/// A build's fingerprint (P48-08, D-162): its bytecode and the world's entity and relation
+/// names in id order, which together fix what every id in the bytecode means. A comment or a
+/// blank line changes neither; any change to what the program does or names changes one. The
+/// package loader recomputes it the same way for packages that predate the field.
+pub fn program_fingerprint(code: []const u8, world: *const World) u64 {
+    var h = std.hash.Wyhash.init(0x6265_7370_6f6b_6531);
+    h.update(code);
+    for (world.entity_names.items) |name| {
+        h.update(name);
+        h.update(&.{0});
+    }
+    h.update(&.{0xff});
+    for (world.relation_meta.items) |meta| {
+        h.update(meta.name);
+        h.update(&.{ 0, @intFromEnum(meta.rel_type) });
+    }
+    const value = h.final();
+    return if (value == 0) 1 else value;
+}
 
 /// A lowercase first letter marks a variable wherever a name of a thing can stand (D-037,
 /// D-161). `true` and `false` are values, not names.
@@ -1026,6 +1057,8 @@ pub const Codegen = struct {
             .cast = mut_self.cast,
             .cue_guards = mut_self.cue_guards,
             .cue_handler_chain = mut_self.cue_handler_chain,
+            .save_version = ast.save_version orelse 1,
+            .fingerprint = program_fingerprint(mut_self.chunk.code.items, mut_self.world),
             .art = art,
         };
     }
@@ -2598,7 +2631,6 @@ test "P22-01: weaving by notes, reversed notes, in-script weaves, and fizzles en
 test "P22-01: saving with undispatched weaves is refused" {
     const testing = std.testing;
     const vm_mod = @import("../vm.zig");
-    const save_mod = @import("../save.zig");
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();

@@ -569,6 +569,8 @@ pub const SpriteBinding = struct { target: []const u8, image: u16, animations: [
 pub const AST = struct {
     /// Pixel art and what it is attached to (P46-03, D-155).
     art: ArtDecl = .{},
+    /// `save version N` (P48-08, D-162); 1 when the script declares none.
+    save_version: ?u32 = null,
     entities: std.array_list.Managed([]const u8),
     relations: std.array_list.Managed(RelationDecl),
     initial_stmts: std.array_list.Managed(Stmt),
@@ -1253,6 +1255,21 @@ pub const Parser = struct {
                     // Art lines are matched by text and the token after them, so `image`,
                     // `palette`, `sprite`, and `backdrop` stay usable as names (P46-03).
                     if (try self.art_declaration(&ast, start)) continue;
+                    // `save version N` names which saves this build can load (P48-08, D-162).
+                    // Two words, not keywords, so `save` and `version` stay usable as names.
+                    if (std.mem.eql(u8, start.slice, "save") and self.current.tag == .identifier and
+                        self.current.line == start.line and std.mem.eql(u8, self.current.slice, "version"))
+                    {
+                        try self.advance();
+                        const number = self.current;
+                        if (number.tag != .number or number.line != start.line) return self.error_at(number, "'save version' needs a whole number, such as 'save version 2'", .{});
+                        try self.advance();
+                        if (ast.save_version != null) return self.error_at(start, "'save version' is declared twice", .{});
+                        const value = std.fmt.parseInt(u32, number.slice, 10) catch 0;
+                        if (value == 0) return self.error_at(number, "a save version is a whole number from 1", .{});
+                        ast.save_version = value;
+                        continue;
+                    }
                     // `red lines` is two words, not keywords, so `red` stays usable as a name.
                     if (std.mem.eql(u8, start.slice, "red") and self.current.tag == .identifier and
                         self.current.line == start.line and std.mem.eql(u8, self.current.slice, "lines"))

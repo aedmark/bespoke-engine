@@ -1,0 +1,11 @@
+# A script that declares its save version runs as any other; the line adds no facts.
+# pins: D-162
+# ticks: 2
+# expect fact: Ready(Scout)
+
+save version 3
+entity Scout
+remember Ready(Scout)
+
+routine Idle(Scout):
+  wait 5 ticks

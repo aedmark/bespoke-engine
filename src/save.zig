@@ -20,7 +20,9 @@ pub const InterruptFrame = vm_mod.InterruptFrame;
 
 /// 4-byte magic identifier for BeSpoke persistent save files (P17-01, D-020).
 pub const SAVE_MAGIC = [4]u8{ 'B', 'S', 'A', 'V' };
-pub const SAVE_VERSION: u32 = 2;
+/// Version 3 (P48-08, D-162) adds the program identity after the metadata, and always carries
+/// the temporal flag byte; versions 1 and 2 load unchecked.
+pub const SAVE_VERSION: u32 = 3;
 pub const MIN_SAVE_VERSION: u32 = 1;
 
 /// Number of user-addressable save slots (1..8), plus slot 0 reserved for Quick-Save (P17-02, D-020).
@@ -35,7 +37,32 @@ pub const THUMB_SIZE: usize = THUMB_WIDTH * THUMB_HEIGHT;
 /// Upper bound on save payload allocation at untrusted disk boundary (SECURITY.md).
 pub const MAX_SAVE_PAYLOAD_SIZE: u32 = 32 * 1024 * 1024;
 
+/// Which compiled program wrote a save (P48-08, D-162): a fingerprint of its build and the
+/// script's declared `save version`. A zero fingerprint means unknown, as in saves written
+/// before version 3 or by a host that passed no program; such saves load unchecked.
+pub const ProgramIdentity = struct {
+    fingerprint: u64 = 0,
+    save_version: u32 = 0,
+
+    pub fn known(self: ProgramIdentity) bool {
+        return self.fingerprint != 0;
+    }
+};
+
+/// The refusal a player reads when a save comes from another build of the game (D-162).
+pub fn format_build_mismatch(buf: []u8, saved: ProgramIdentity, current: ProgramIdentity) []const u8 {
+    return std.fmt.bufPrint(buf, "this save is from save version {d} of the game (build {x:0>8}); this build is save version {d} (build {x:0>8}) and cannot load it", .{
+        saved.save_version,
+        @as(u32, @truncate(saved.fingerprint >> 32)),
+        current.save_version,
+        @as(u32, @truncate(current.fingerprint >> 32)),
+    }) catch "this save is from another build of the game";
+}
+
 pub const SaveError = error{
+    /// The save was written by a different build of the game, and the builds' save versions do
+    /// not make it loadable (D-162). Nothing was restored.
+    SaveFromOtherBuild,
     InvalidSaveMagic,
     UnsupportedSaveVersion,
     ChecksumMismatch,
@@ -111,6 +138,8 @@ pub const SaveMetadata = struct {
     actor_count: u8 = 0,
     actors: [8]SaveActorPreview = @as([8]SaveActorPreview, @splat(.{})),
     thumbnail: [THUMB_SIZE]u8 = @as([THUMB_SIZE]u8, @splat(0)),
+    /// The program that wrote the save (version 3); unknown for older saves.
+    program: ProgramIdentity = .{},
 
     pub fn get_scene_name(self: *const SaveMetadata) []const u8 {
         if (self.scene_name_len == 0) return "Default Stage";
@@ -129,6 +158,8 @@ pub const SaveOptions = struct {
     description: []const u8 = "",
     scene_override: ?[]const u8 = null,
     thumbnail: ?*const ThumbnailPainter = null,
+    /// The running program, recorded so a later load can tell whether it is the same build.
+    program: ProgramIdentity = .{},
 };
 
 /// How a game colours its save thumbnails (P32-03d, D-041). Both callbacks return an RGB332
@@ -363,7 +394,7 @@ pub fn write_save_state(
     vm: ?*const VM,
     options: SaveOptions,
 ) !SaveMetadata {
-    return write_save_state_versioned(allocator, writer, world, spatial, vm, null, 1, options);
+    return write_save_state_versioned(allocator, writer, world, spatial, vm, null, SAVE_VERSION, options);
 }
 
 /// Serializes a save that also carries the temporal hypervisor branch and countdown (P31-04, D-048).
@@ -376,7 +407,7 @@ pub fn write_save_state_with_temporal(
     temporal: ?*const TemporalHypervisor,
     options: SaveOptions,
 ) !SaveMetadata {
-    return write_save_state_versioned(allocator, writer, world, spatial, vm, temporal, 2, options);
+    return write_save_state_versioned(allocator, writer, world, spatial, vm, temporal, SAVE_VERSION, options);
 }
 
 fn write_save_state_versioned(
@@ -391,14 +422,20 @@ fn write_save_state_versioned(
 ) !SaveMetadata {
     var meta = build_metadata(world, spatial, vm, options);
     meta.version = version;
+    meta.program = options.program;
 
     var payload = std.array_list.Managed(u8).init(allocator);
     defer payload.deinit();
     var pw_list = ListWriter.init(&payload);
     const pw = &pw_list.writer;
 
-    // 1. Metadata header block
+    // 1. Metadata header block, then (version 3) the program identity, read before anything is
+    // restored so a refused load changes nothing.
     try serialize_metadata(pw, &meta);
+    if (version >= 3) {
+        try pw.writeInt(u64, meta.program.fingerprint, .little);
+        try pw.writeInt(u32, meta.program.save_version, .little);
+    }
 
     // 2. Temporal hypervisor state (format version 2). It precedes the world so a reader can
     // decode and validate the branch before mutating the primary state.
@@ -586,6 +623,87 @@ test "P48-02: a cue handler saved while it waits still reads its arguments after
     try testing.expect(world2.has_fact(world2.lookup_entity("Bard").?, answered, null));
 }
 
+test "P48-08: a save names its build, and a load refuses another build's save untouched" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const hero = try world.intern_entity("Hero");
+    const ready = try world.intern_relation("Ready", .set);
+    _ = try world.remember(hero, ready, 0, 0);
+    const this_build = ProgramIdentity{ .fingerprint = 0x1234_5678_9abc_def0, .save_version = 2 };
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    const meta = try write_save_state(testing.allocator, &lw.writer, &world, null, null, .{ .program = this_build });
+    try testing.expectEqual(this_build, meta.program);
+
+    var inspect: std.Io.Reader = .fixed(bytes.items);
+    try testing.expectEqual(this_build, (try inspect_save_stream(testing.allocator, &inspect)).program);
+
+    // The same build loads, and so does a reader that names no program.
+    var same: std.Io.Reader = .fixed(bytes.items);
+    _ = try read_save_state_for(testing.allocator, &same, &world, null, null, this_build);
+    var unchecked: std.Io.Reader = .fixed(bytes.items);
+    _ = try read_save_state(testing.allocator, &unchecked, &world, null, null);
+
+    // Another build is refused before anything changes, whatever its save version.
+    var other_world = try World.init(testing.allocator, 256 * 1024);
+    defer other_world.deinit();
+    _ = try other_world.intern_entity("Somebody");
+    for ([_]u32{ 2, 3 }) |version| {
+        var other: std.Io.Reader = .fixed(bytes.items);
+        try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &other, &other_world, null, null, .{ .fingerprint = 0x0fed_cba9_8765_4321, .save_version = version }));
+    }
+    try testing.expect(other_world.lookup_entity("Hero") == null);
+    try testing.expect(other_world.lookup_entity("Somebody") != null);
+
+    var buf: [192]u8 = undefined;
+    try testing.expectEqualStrings(
+        "this save is from save version 2 of the game (build 12345678); this build is save version 3 (build 0fedcba9) and cannot load it",
+        format_build_mismatch(&buf, this_build, .{ .fingerprint = 0x0fed_cba9_8765_4321, .save_version = 3 }),
+    );
+}
+
+test "P48-08: a slot from another build is refused, not recovered from its backup" {
+    const testing = std.testing;
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const base_path = try tmp_dir.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(base_path);
+    var sm = try SaveManager.init(testing.allocator, testing.io, base_path);
+    defer sm.deinit();
+
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    _ = try world.intern_entity("Hero");
+    sm.program = .{ .fingerprint = 11, .save_version = 1 };
+    _ = try sm.save_slot(1, &world, null, null, "first");
+    _ = try sm.save_slot(1, &world, null, null, "second"); // the first becomes the backup
+    try testing.expectEqual(@as(u64, 11), sm.get_slot_info(1).?.metadata.program.fingerprint);
+
+    sm.program = .{ .fingerprint = 12, .save_version = 1 };
+    try testing.expectError(SaveError.SaveFromOtherBuild, sm.load_slot(1, &world, null, null));
+    sm.program = .{ .fingerprint = 11, .save_version = 1 };
+    _ = try sm.load_slot(1, &world, null, null);
+}
+
+test "P48-08: checked-in version 3 save fixture names its build" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v3.sav", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(SAVE_VERSION, version_from_bytes(fixture).?);
+    const build = ProgramIdentity{ .fingerprint = 0x5ace_d0c5_0000_0003, .save_version = 2 };
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    const meta = try read_save_state_for(testing.allocator, &stream, &world, null, null, build);
+    try testing.expectEqual(build, meta.program);
+    try testing.expectEqualStrings("P48-08 compatibility fixture", meta.get_description());
+    try testing.expect(world.has_fact(world.lookup_entity("FixtureHero").?, world.lookup_relation("Ready").?, null));
+    var again: std.Io.Reader = .fixed(fixture);
+    try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &again, &world, null, null, .{ .fingerprint = 7, .save_version = 2 }));
+}
+
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
 fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !VerifiedPayload {
     var magic: [4]u8 = undefined;
@@ -620,7 +738,14 @@ pub fn inspect_save_stream(allocator: std.mem.Allocator, reader: anytype) !SaveM
     defer allocator.free(verified.bytes);
 
     var fbs: std.Io.Reader = .fixed(verified.bytes);
-    return try deserialize_metadata(&fbs);
+    var meta = try deserialize_metadata(&fbs);
+    if (verified.version >= 3) {
+        meta.program = .{
+            .fingerprint = try fbs.takeInt(u64, .little),
+            .save_version = try fbs.takeInt(u32, .little),
+        };
+    }
+    return meta;
 }
 
 /// Restores a complete persistent save state (.sav) into World, SpatialSystem, and VM after verifying CRC32 integrity (P17-01, D-020).
@@ -631,7 +756,20 @@ pub fn read_save_state(
     spatial: ?*SpatialSystem,
     vm: ?*VM,
 ) !SaveMetadata {
-    return read_save_state_versioned(allocator, reader, world, spatial, vm, null, false);
+    return read_save_state_versioned(allocator, reader, world, spatial, vm, null, false, .{});
+}
+
+/// `read_save_state` for a known program (P48-08, D-162): a save written by a different build
+/// is refused with `SaveFromOtherBuild` before anything is restored.
+pub fn read_save_state_for(
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    world: *World,
+    spatial: ?*SpatialSystem,
+    vm: ?*VM,
+    program: ProgramIdentity,
+) !SaveMetadata {
+    return read_save_state_versioned(allocator, reader, world, spatial, vm, null, false, program);
 }
 
 /// Restores a temporal save, requiring the matching hypervisor envelope (P31-04, D-048).
@@ -643,7 +781,20 @@ pub fn read_save_state_with_temporal(
     vm: ?*VM,
     temporal: *TemporalHypervisor,
 ) !SaveMetadata {
-    return read_save_state_versioned(allocator, reader, world, spatial, vm, temporal, true);
+    return read_save_state_versioned(allocator, reader, world, spatial, vm, temporal, true, .{});
+}
+
+/// `read_save_state_with_temporal` for a known program (P48-08, D-162).
+pub fn read_save_state_with_temporal_for(
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    world: *World,
+    spatial: ?*SpatialSystem,
+    vm: ?*VM,
+    temporal: *TemporalHypervisor,
+    program: ProgramIdentity,
+) !SaveMetadata {
+    return read_save_state_versioned(allocator, reader, world, spatial, vm, temporal, true, program);
 }
 
 fn read_save_state_versioned(
@@ -654,6 +805,7 @@ fn read_save_state_versioned(
     vm: ?*VM,
     temporal: ?*TemporalHypervisor,
     require_temporal: bool,
+    expected: ProgramIdentity,
 ) !SaveMetadata {
     const verified = try read_verified_payload(allocator, reader);
     defer allocator.free(verified.bytes);
@@ -661,9 +813,20 @@ fn read_save_state_versioned(
     var fbs: std.Io.Reader = .fixed(verified.bytes);
     const pr = &fbs;
 
-    // 1. Metadata
-    const meta = try deserialize_metadata(pr);
+    // 1. Metadata, then the program identity (version 3). A save from another build is refused
+    // here, before any state is touched (D-162). Until compatible loads land, a matching save
+    // version does not admit a different build either.
+    var meta = try deserialize_metadata(pr);
     if (meta.version != verified.version) return SaveError.InvalidTemporalState;
+    if (verified.version >= 3) {
+        meta.program = .{
+            .fingerprint = try pr.takeInt(u64, .little),
+            .save_version = try pr.takeInt(u32, .little),
+        };
+    }
+    if (expected.known() and meta.program.known() and meta.program.fingerprint != expected.fingerprint) {
+        return SaveError.SaveFromOtherBuild;
+    }
 
     var pending_temporal: ?temporal_mod.TemporalSnapshot = null;
     defer if (pending_temporal) |*snapshot| snapshot.deinit();
@@ -864,6 +1027,9 @@ fn now_ms(io: std.Io) i64 {
 pub const SaveManager = struct {
     /// Thumbnail colours for every save this manager writes; set from a display theme.
     thumbnails: ?*const ThumbnailPainter = null,
+    /// The running program (P48-08, D-162). Every save records it, and a load refuses a save
+    /// from another build. Hosts set it when they load a program; unknown loads unchecked.
+    program: ProgramIdentity = .{},
     allocator: std.mem.Allocator,
     save_dir: []const u8,
     slots: [MAX_SLOTS + 1]SaveSlotInfo,
@@ -1036,6 +1202,7 @@ pub const SaveManager = struct {
             .playtime_secs = self.current_playtime_secs(),
             .description = description,
             .timestamp = std.Io.Timestamp.now(self.io, .real).toSeconds(),
+            .program = self.program,
         };
         const meta = if (temporal) |hypervisor|
             try write_save_state_with_temporal(self.allocator, &file_writer.interface, world, spatial, vm, hypervisor, options)
@@ -1101,9 +1268,9 @@ pub const SaveManager = struct {
             var buf: [4096]u8 = undefined;
             var file_reader = file.reader(self.io, &buf);
             const loaded = if (temporal) |hypervisor|
-                read_save_state_with_temporal(self.allocator, &file_reader.interface, world, spatial, vm, hypervisor)
+                read_save_state_with_temporal_for(self.allocator, &file_reader.interface, world, spatial, vm, hypervisor, self.program)
             else
-                read_save_state(self.allocator, &file_reader.interface, world, spatial, vm);
+                read_save_state_for(self.allocator, &file_reader.interface, world, spatial, vm, self.program);
             if (loaded) |meta| {
                 self.accumulated_playtime_secs = meta.playtime_secs;
                 self.session_start_ms = now_ms(self.io);
@@ -1115,7 +1282,10 @@ pub const SaveManager = struct {
                     .metadata = meta,
                     .recovered_from_backup = false,
                 };
-            } else |_| {
+            } else |err| {
+                // A save from another build is intact, so its backup is no better: refuse it
+                // rather than quietly load an older save (D-162).
+                if (err == SaveError.SaveFromOtherBuild) return err;
                 // Primary file failed checksum/magic/version/EOF -> fall through to backup recovery
                 self.slots[slot_id].corrupted = true;
             }
@@ -1136,11 +1306,11 @@ pub const SaveManager = struct {
         var bak_reader = bak_file.reader(self.io, &bak_buf_io);
 
         const recovered_meta = if (temporal) |hypervisor|
-            read_save_state_with_temporal(self.allocator, &bak_reader.interface, world, spatial, vm, hypervisor) catch {
+            read_save_state_with_temporal_for(self.allocator, &bak_reader.interface, world, spatial, vm, hypervisor, self.program) catch {
                 return SaveError.CorruptedSaveUnrecoverable;
             }
         else
-            read_save_state(self.allocator, &bak_reader.interface, world, spatial, vm) catch {
+            read_save_state_for(self.allocator, &bak_reader.interface, world, spatial, vm, self.program) catch {
                 return SaveError.CorruptedSaveUnrecoverable;
             };
 
@@ -1389,12 +1559,12 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .sav format version 99; this engine supports versions 1 through 2",
+        "unsupported .sav format version 99; this engine supports versions 1 through 3",
         format_unsupported_version(&message_buf, version_from_bytes(bad_ver).?),
     );
 }
 
-test "P38-02: checked-in current save fixture loads" {
+test "P38-02: checked-in version 2 save fixture loads" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
@@ -1404,14 +1574,14 @@ test "P38-02: checked-in current save fixture loads" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(SAVE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 2), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     var stream: std.Io.Reader = .fixed(fixture);
     const meta = try read_save_state(testing.allocator, &stream, &world, null, null);
 
-    try testing.expectEqual(SAVE_VERSION, meta.version);
+    try testing.expectEqual(@as(u32, 2), meta.version);
     try testing.expectEqualStrings("P38-02 compatibility fixture", meta.get_description());
     try testing.expect(world.lookup_entity("FixtureHero") != null);
     try testing.expect(world.lookup_relation("Ready") != null);
@@ -1533,7 +1703,7 @@ test "P32-03d: thumbnails are neutral by default and take a painter's colours" {
     try testing.expectEqual(plain[0], other[0]);
 }
 
-test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays readable" {
+test "P31-04: a save restores the hypervisor envelope; one without it stays readable" {
     const testing = std.testing;
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -1560,7 +1730,7 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
         &hypervisor,
         .{},
     );
-    try testing.expectEqual(@as(u32, 2), meta.version);
+    try testing.expectEqual(SAVE_VERSION, meta.version);
 
     // Move both the primary world and the branch past the saved state.
     _ = try world.remember(hero, in_room, engine.to_int(), 0);
@@ -1579,7 +1749,7 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
         null,
         &loaded_hypervisor,
     );
-    try testing.expectEqual(@as(u32, 2), loaded_meta.version);
+    try testing.expectEqual(SAVE_VERSION, loaded_meta.version);
     try testing.expect(loaded_world.has_fact(hero, in_room, room.to_int()));
     try testing.expectEqual(@as(u64, 1), loaded_hypervisor.ticks_elapsed);
     try testing.expect(loaded_hypervisor.branch_world.?.has_fact(hero, in_room, room.to_int()));
@@ -1590,15 +1760,16 @@ test "P31-04: .sav version 2 restores the hypervisor envelope; version 1 stays r
     defer plain_world.deinit();
     var plain_stream: std.Io.Reader = .fixed(buffer.items);
     const plain_meta = try read_save_state(testing.allocator, &plain_stream, &plain_world, null, null);
-    try testing.expectEqual(@as(u32, 2), plain_meta.version);
+    try testing.expectEqual(SAVE_VERSION, plain_meta.version);
     try testing.expect(plain_world.has_fact(hero, in_room, room.to_int()));
 
-    // Version 1 saves remain readable, but cannot satisfy a temporal restore.
+    // A save written without the hypervisor remains readable, but cannot satisfy a temporal
+    // restore: its temporal flag is 0.
     var legacy = std.array_list.Managed(u8).init(testing.allocator);
     defer legacy.deinit();
     var lw3 = ListWriter.init(&legacy);
     const legacy_meta = try write_save_state(testing.allocator, &lw3.writer, &world, null, null, .{});
-    try testing.expectEqual(@as(u32, 1), legacy_meta.version);
+    try testing.expectEqual(SAVE_VERSION, legacy_meta.version);
     var legacy_world = try World.init(testing.allocator, 1024 * 1024);
     defer legacy_world.deinit();
     var legacy_stream: std.Io.Reader = .fixed(legacy.items);

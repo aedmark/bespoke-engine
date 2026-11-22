@@ -1,0 +1,6 @@
+# A save version is a whole number from 1.
+# pins: D-162
+# expect error: UnexpectedToken 5:14
+
+save version 0
+entity Scout

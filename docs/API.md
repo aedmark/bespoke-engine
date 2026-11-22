@@ -16,7 +16,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 
 | Namespace | Supported surface |
 | --- | --- |
-| `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` / `kind` methods (`kind`, P48-18), `Diagnostic`, `CompiledProgram` and `CompiledProgram.deinit` |
+| `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` / `kind` methods (`kind`, P48-18), `Diagnostic`, `CompiledProgram`, `CompiledProgram.deinit`, and `CompiledProgram.identity` (P48-08) |
 | `package` | `PACKAGE_MAGIC`, `PACKAGE_VERSION`, `MIN_PACKAGE_VERSION`, `save_package`, `load_package`, `save_package_file`, `load_package_file`, `version_from_bytes`, `format_unsupported_version` |
 | `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `backdrop_for`, `sprite_for`, `validate`, `dupe`, and `deinit_owned` methods, `Anim`, `Step`, `Backdrop`, `Sprite` and its `frame_at` method, `Area` and `Art.area_for` (P46-05), the limits `MAX_IMAGES`, `MAX_SHEET_SIDE`, `MAX_SHEET_PIXELS`, `MAX_NAME`, and `MAX_BINDINGS`, `Error` (P46-01, P46-03). D-166 replaces indexed art with true colour in P48-12, which revises this row |
 | `png` | `MAX_FILE`, `Error`, `Rgba` and its `deinit`, `decode` (P46-04) |
@@ -78,10 +78,10 @@ All public methods on `DisplayBridge`, `RenderFrame`, and `DisplayWindow` are su
 
 | Namespace | Supported surface |
 | --- | --- |
-| `save` | `SAVE_MAGIC`, `SAVE_VERSION`, `MIN_SAVE_VERSION`, `MAX_SLOTS`, `QUICKSAVE_SLOT`, `SaveError`, `SaveOptions`, `SaveMetadata`, `SaveSlotInfo`, `LoadResult`, `ThumbnailPainter`, `SaveManager`, `write_save_state`, `write_save_state_with_temporal`, `read_save_state`, `read_save_state_with_temporal`, `inspect_save_stream`, `version_from_bytes`, and `format_unsupported_version` |
+| `save` | `SAVE_MAGIC`, `SAVE_VERSION`, `MIN_SAVE_VERSION`, `MAX_SLOTS`, `QUICKSAVE_SLOT`, `SaveError` (with `SaveFromOtherBuild`, P48-08), `ProgramIdentity` and its `known` method, `format_build_mismatch`, `SaveOptions`, `SaveMetadata`, `SaveSlotInfo`, `LoadResult`, `ThumbnailPainter`, `SaveManager`, `write_save_state`, `write_save_state_with_temporal`, `read_save_state`, `read_save_state_with_temporal`, `read_save_state_for`, `read_save_state_with_temporal_for`, `inspect_save_stream`, `version_from_bytes`, and `format_unsupported_version` |
 | `hypervisor` | `TemporalHypervisor`, `BranchCollapseState`, `HypervisorStepResult`, `DreamFact`, `TeleologicalDependency`, `validate_novikov_consistency`, `format_countdown` |
 
-All public `SaveManager`, `SaveMetadata`, `SaveSlotInfo`, `ThumbnailPainter`, and `TemporalHypervisor` methods are supported. Hypervisor storage fields are internal. D-044's tangent, vortex, artifact, and singularity aliases were removed in P38-03; use branch, convergence, keystone, and budget-expiry names.
+`SaveManager.program` and `SaveMetadata.program` are supported fields (P48-08, D-162): a host sets the first to `compiled.identity()` so its saves name the build and its loads refuse another's; `host.Session` and the browser runtime do this themselves. All public `SaveManager`, `SaveMetadata`, `SaveSlotInfo`, `ThumbnailPainter`, and `TemporalHypervisor` methods are supported. Hypervisor storage fields are internal. D-044's tangent, vortex, artifact, and singularity aliases were removed in P38-03; use branch, convergence, keystone, and budget-expiry names.
 
 ## Browser decks
 

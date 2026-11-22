@@ -408,6 +408,10 @@ area ShopDoor: 96 62 24 42
 - A click anywhere in a sprite's frame or a prop's area acts on it, and the player walks to the mark nearest its foot (D-158). Box outlines appear only in the debug overlay.
 - Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world. Art that follows other facts, such as a lit lamp, is drawn by the host's theme, which reads the facts after each tick. `proofs/lamplighter.zig` shows a theme that picks the lamp's frame.
 
+### Saves across updates
+
+Every save records which build of the game wrote it (P48-08, D-162). A player's save loads into the same build; a later build refuses it, and the window says the slot is from another version. Declare `save version N` at the top of the script: when a patch fixes something without changing what saved facts mean, the second half of P48-08 will let a build with the same save version load older saves, keeping their facts and restarting routines. Raise the number when old saves should no longer load.
+
 ## 7. Test the story
 
 `src/game_test.zig` in a generated project compiles the script and runs it headless. Its `Game` helper starts routines, ticks, and asks whether a fact holds. Test what the story depends on, not every line:

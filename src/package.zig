@@ -76,8 +76,10 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// 26 load with one handler per signature, which is how they behaved. Version 28 adds the
 /// `bind_cue_args` and `push_local` opcodes, with which a cue handler body reads its
 /// arguments (P48-02, D-161); versions 1 through 27 hold bytecode that cannot contain them and
-/// load unchanged.
-pub const PACKAGE_VERSION: u32 = 28;
+/// load unchanged. Version 29 appends the program's save version and fingerprint (P48-08,
+/// D-162); for versions 1 through 28 the loader takes save version 1 and computes the
+/// fingerprint as the compiler does.
+pub const PACKAGE_VERSION: u32 = 29;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -483,6 +485,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for ([_]u16{ a.x, a.y, a.w, a.h }) |v| try writer.writeInt(u16, v, .little);
     }
     try write_cue_chain(writer, compiled);
+    // Version 29: which build this is, for saves (D-162).
+    try writer.writeInt(u32, compiled.save_version, .little);
+    try writer.writeInt(u64, compiled.fingerprint, .little);
 }
 
 /// Version 27: each (handler pc, next handler pc) link of handlers sharing a signature
@@ -2094,6 +2099,14 @@ pub fn load_package(
     for (cue_guards.items) |guard| {
         if (!is_first_handler(&cue_handler_entries, guard.handler_pc) and !is_chained_handler(&cue_handler_chain, guard.handler_pc)) return error.InvalidCueGuard;
     }
+    var save_version: u32 = 1;
+    var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
+    if (header.version >= 29) {
+        save_version = try pr.takeInt(u32, .little);
+        fingerprint = try pr.takeInt(u64, .little);
+        // Zero means "unknown program" in a save, so no build may claim it (D-162).
+        if (save_version == 0 or fingerprint == 0) return error.InvalidProgramIdentity;
+    }
 
     return CompiledProgram{
         .drafts = drafts,
@@ -2123,6 +2136,8 @@ pub fn load_package(
         .cast = cast,
         .cue_guards = cue_guards,
         .cue_handler_chain = cue_handler_chain,
+        .save_version = save_version,
+        .fingerprint = fingerprint,
         .art = art,
     };
 }
@@ -2331,7 +2346,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 28",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 29",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2678,8 +2693,10 @@ const EMPTY_TAIL_AFTER_V23: usize = 2 + 4 + EMPTY_TAIL_AFTER_V24;
 const EMPTY_TAIL_AFTER_V24: usize = 4 + 4 + EMPTY_TAIL_AFTER_V25;
 /// The empty area count (version 26), and the empty handler chain after it.
 const EMPTY_TAIL_AFTER_V25: usize = 4 + EMPTY_TAIL_AFTER_V26;
-/// The empty handler chain count (version 27).
-const EMPTY_TAIL_AFTER_V26: usize = 4;
+/// The empty handler chain count (version 27) and the program identity after it.
+const EMPTY_TAIL_AFTER_V26: usize = 4 + IDENTITY_TAIL;
+/// The save version and fingerprint (version 29), present in every package.
+const IDENTITY_TAIL: usize = 4 + 8;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -4085,7 +4102,9 @@ test "P46-01: a program with no art writes an empty art section" {
     defer buffer.deinit();
     var lw = ListWriter.init(&buffer);
     try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-    try testing.expectEqualSlices(u8, &@as([EMPTY_TAIL_AFTER_V23]u8, @splat(0)), buffer.items[buffer.items.len - EMPTY_TAIL_AFTER_V23 ..]);
+    // Everything after the appeal groups is zero except the program identity at the very end.
+    const empty_end = buffer.items.len - IDENTITY_TAIL;
+    try testing.expectEqualSlices(u8, &@as([EMPTY_TAIL_AFTER_V23 - IDENTITY_TAIL]u8, @splat(0)), buffer.items[empty_end - (EMPTY_TAIL_AFTER_V23 - IDENTITY_TAIL) .. empty_end]);
     var loaded = try load_for_test(buffer.items);
     defer loaded.deinit();
     try testing.expect(loaded.art.is_empty());
@@ -4375,8 +4394,8 @@ test "P48-01: package version 27 round-trips handlers that share a signature, an
     try testing.expectEqualSlices(u8, buffer.items, again.items);
 
     // The last link sits in the final eight bytes; the chain count before the three links.
-    const count_at = buffer.items.len - 4 - 3 * 8;
-    const last = buffer.items.len - 8;
+    const count_at = buffer.items.len - IDENTITY_TAIL - 4 - 3 * 8;
+    const last = buffer.items.len - IDENTITY_TAIL - 8;
     const Case = struct { at: usize, value: u32 };
     const cases = [_]Case{
         .{ .at = last + 4, .value = 0xFFFF_FF00 }, // next past the bytecode
@@ -4428,7 +4447,7 @@ test "P48-02: checked-in version 28 package fixture binds a cue handler's argume
     const vm_mod = @import("vm.zig");
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v28.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 28), version_from_bytes(fixture).?);
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     var stream: std.Io.Reader = .fixed(fixture);
@@ -4442,6 +4461,51 @@ test "P48-02: checked-in version 28 package fixture binds a cue handler's argume
     _ = (try vm.fire_cue(&compiled, "Uses", world.lookup_entity("FixtureHero").?, lamp, null)).?;
     _ = try vm.step_tick();
     try testing.expect(world.has_fact(lamp, world.lookup_relation("Burns").?, oil.to_int()));
+}
+
+test "P48-08: a package carries its save version and fingerprint, and older packages get one" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, "save version 4\nentity Hero\nroutine Idle(Hero):\n  wait 1 ticks\n");
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+    var loaded = try load_for_test(buffer.items);
+    defer loaded.deinit();
+    try testing.expectEqual(compiled.identity(), loaded.identity());
+    try testing.expectEqual(@as(u32, 4), loaded.save_version);
+
+    // A zero identity would read as "unknown program" in a save, so it is refused.
+    const zeroed = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(zeroed);
+    @memset(zeroed[zeroed.len - 8 ..], 0);
+    reseal_for_test(zeroed, PACKAGE_VERSION);
+    try testing.expectError(error.InvalidProgramIdentity, load_for_test(zeroed));
+
+    // Without the field (version 28), the loader takes save version 1 and computes a fingerprint.
+    const v28 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - IDENTITY_TAIL]);
+    defer testing.allocator.free(v28);
+    reseal_for_test(v28, 28);
+    var old = try load_for_test(v28);
+    defer old.deinit();
+    try testing.expectEqual(@as(u32, 1), old.save_version);
+    try testing.expect(old.identity().known());
+}
+
+test "P48-08: checked-in version 29 package fixture declares save version 2" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v29.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var compiled = try load_for_test(fixture);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(u32, 2), compiled.save_version);
+    try testing.expect(compiled.identity().known());
+    try testing.expect(compiled.routine_entries.contains("Idle"));
 }
 
 test "P46-05: checked-in version 26 package fixture carries prop areas" {

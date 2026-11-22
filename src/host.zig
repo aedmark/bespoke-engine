@@ -913,6 +913,8 @@ pub const Session = struct {
         s.sync_active_world();
         // The script's own art draws in this window (P46-03); a game without art keeps its theme.
         window.set_art(&compiled.art);
+        // Saves from this window name this build, and loads refuse another's (P48-08, D-162).
+        window.save_manager.program = compiled.identity();
         try initialize_subsystems(s.active_world(), compiled);
         try s.record_snapshot();
         s.refresh();

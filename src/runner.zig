@@ -590,6 +590,8 @@ fn run_bytes_with_presenter(
         window.enable_command_bar(true);
         // Declared backdrops and sprites draw in the stock window (P46-03, D-155).
         window.set_art(&compiled.art);
+        // Saves from this window name this build, and loads refuse another's (P48-08, D-162).
+        window.save_manager.program = compiled.identity();
         var interp = bespoke.command.Interpreter{};
 
         display_bridge.capture_frame(&world, &spatial, &vm);
@@ -843,7 +845,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 29; this engine supports versions 1 through 28\n",
+        "future.bspk: error: unsupported .bspk format version 30; this engine supports versions 1 through 29\n",
         output.buffered(),
     );
 }

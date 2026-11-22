@@ -34,6 +34,8 @@ on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):
 
 Names are case-sensitive, and the first letter decides what a name is (D-161). A name that starts with a capital letter is a thing: an entity, relation, routine, scene, or any other declared name. A name that starts with a lowercase letter, where a thing could stand, is a variable, and something must bind it: a cue handler's parameter, its `where` guard, or a `when` trigger pattern. An unbound one is a compile error whose help offers the capitalised name, and declaring a thing with a lowercase name (`entity hero`) is an error. `_` is the wildcard, and numbers and `true`/`false` are values.
 
+`save version N` (a whole number from 1, at most once; 1 when absent) names which saves this build can load (P48-08, D-162). Every save records the build that wrote it; a save from the same build loads, and one from another build is refused. A patch that keeps the same save version declares old saves loadable, which arrives with the second half of P48-08.
+
 `entity A, B` declares names. `relation R(subject, object)` declares a set relation; `property P(subject, value)` declares a single-value relation, so remembering a new value replaces the old one. Argument names in declarations are descriptive only. A fact pattern is `Relation(A)` or `Relation(A, B)`; square brackets (`Relation[A, B]`) are an accepted equivalent. `_` is a wildcard in guards and triggers.
 
 `remember Fact(...)` asserts a fact. `remember Fact(...) for N ticks` gives it an expiry tick, and `forget Fact(...)` removes it. The stageplay forms `now Actor is State`, `Actor is State`, and their `is not` / `are not` variants assert or remove unary state facts. A state word names the relation with its first letter capitalised, so `now Lamp is lit`, `if Lamp is lit`, and `when Lamp is lit` mean `Lit(Lamp)` (D-161). `in the scene` and `with` may follow a state phrase for readable stage directions; they do not add another fact. A declaration sentence such as `DoorStatus is a state, which can be open or shut.` declares `DoorStatus` as a relation; text after `state` on that line is descriptive.
@@ -570,6 +572,7 @@ The language conformance suite (P48-18, D-173) pins each frozen rule as runnable
 
 | Rule | Conformance cases (`tests/conformance/`) |
 | --- | --- |
+| Save version (D-162) | `d162-save-version/`: declared once, a whole number from 1, and adds no facts |
 | Cue signatures and defaults (D-037) | `d037-cue-signatures/`: specific beats variable, actor-only default, unmatched cue runs nothing |
 | `where` guards (D-072) | `d072-cue-guards/`: a failed guard falls to a broader signature, a holding guard runs, a guard binds its parameter |
 | Handlers sharing a signature (D-160) | `d160-ordered-handlers/`: first holding guard wins, fall-through within a signature, unguarded default last, a handler after an unguarded one is refused |

@@ -72,6 +72,8 @@ comptime {
     require(bespoke.runner, &.{ "RunConfig", "CheckOptions", "check_file_with", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
     require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine" }, "host");
+    require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for" }, "save");
+    require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");
 }
 
 test "P38-03: a host compiles against only the supported API" {

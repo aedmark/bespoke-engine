@@ -993,6 +993,51 @@ test "P48-02: lowercase names of things and unbound variables are refused where 
     }
 }
 
+test "P48-08: a script declares its save version, and its build has a fingerprint" {
+    const testing = std.testing;
+    const base =
+        \\entity Hero
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+    ;
+    const Build = struct {
+        fn identity(source: []const u8) !@import("save.zig").ProgramIdentity {
+            var world = try World.init(testing.allocator, 1024 * 1024);
+            defer world.deinit();
+            var compiled = try compile_source(testing.allocator, &world, null, source);
+            defer compiled.deinit();
+            return compiled.identity();
+        }
+    };
+    const plain = try Build.identity(base);
+    try testing.expectEqual(@as(u32, 1), plain.save_version);
+    try testing.expect(plain.known());
+
+    // A comment changes nothing the program does, so the build is the same.
+    try testing.expectEqual(plain.fingerprint, (try Build.identity("# a note\n" ++ base)).fingerprint);
+    // Waiting longer is a different build; declaring a save version changes only the version.
+    try testing.expect(plain.fingerprint != (try Build.identity("entity Hero\nroutine Idle(Hero):\n  wait 2 ticks\n")).fingerprint);
+    const declared = try Build.identity("save version 3\n" ++ base);
+    try testing.expectEqual(@as(u32, 3), declared.save_version);
+    try testing.expectEqual(plain.fingerprint, declared.fingerprint);
+
+    const cases = [_]struct { source: []const u8, line: u32, column: u32 }{
+        .{ .source = "save version 2\nsave version 3\n", .line = 2, .column = 1 },
+        .{ .source = "save version 0\n", .line = 1, .column = 14 },
+        .{ .source = "save version two\n", .line = 1, .column = 14 },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.source);
+        try testing.expect(!res.is_valid);
+        const d = res.diagnostic() orelse return error.TestUnexpectedResult;
+        try testing.expectEqual(case.line, d.line);
+        try testing.expectEqual(case.column, d.column);
+    }
+    // `save` and `version` stay usable as names.
+    try testing.expect(check_source(testing.allocator, "entity Save, Version\n").is_valid);
+}
+
 const ART_BASE =
     \\scene: Shop
     \\cast: Clerk
