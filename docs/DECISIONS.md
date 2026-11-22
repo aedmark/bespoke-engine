@@ -2078,6 +2078,70 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Still open from Q-025: whether authored hints may add tiers beyond the generated three (Peter: if a fourth tier is presentational it should be adjustable), and what a game with several spellbooks looks like (`host.cast` names a spell, not a book). P48-13 builds the rest.
 
+## D-168 Rewind and Load Restore Everything, Dice Included; the Seed Belongs to the Run, and a Branch Rolls Its Own (2026-11-22, status: accepted; answers Q-026)
+
+**Context.** Q-026: `roll` drew from one generator per VM, seeded 42 at VM creation and never saved or snapshotted, and `host.Timeline` snapshots held the world and temporal envelope but not fibers, so a rewind stepped facts back while routines carried on and the same action could roll differently. Peter Spicer's review (2026-11-22): the question is what the player expects and what the randomness is for, real risk or variety; a player who rewinds to escape bad luck expects a fresh roll, while rewinding to escape a used-up object points to a design problem; a load or rewind should restore routines exactly, since a guard moved by the restore can soft-lock a game that was winnable when saved, and players expect the exact world they left; a game does not seed, it asks for a roll, and the save keeps the seed and generator state and reuses them on reload, with a seed override at start for test suites; and a branch world takes its own source of randomness, the future never affecting the present, with its outcome kept in the saved state so a save can be audited for whether the branch became canonical.
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. A rewind restores the world, every fiber, and the generator, so the same action after a rewind rolls the same. A script whose dice are for variety declares that rewinds reroll.
+2. A load from the same build restores the same (D-162 governs loads across builds).
+3. Scripts never set a seed. A save records the seed and the generator's state and continues from them; a host or command-line option may set the seed when a run starts.
+4. A branch world draws from a generator of its own, and its outcome is kept in the saved state.
+
+**Alternatives:** fresh rolls after a rewind with an author lock; requiring every script that rolls to choose.
+
+**Consequences.** Snapshots grow by the VM's fibers and the generator; saves gain the seed and generator state, a save format change folded into P48-08's. P48-14 builds it.
+
+## D-169 A Game May Span Files: Includes Expand in Place, Once, From the Main Script's Folder (2026-11-22, status: accepted; answers Q-027 in part)
+
+**Context.** Q-027: a game was one file, and D-160 made source order part of a handler's meaning, so splitting a game needed an order rule. Peter Spicer's review (2026-11-22): support it for organisation, a common folder plus one per act keeping code and art together, which also supports modding; a main script at the top level declares what is global and includes the rest; resolve each include at parse time as if the file were pasted at that point; and ignore a second inclusion of the same file.
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. `include "<path>"` expands the named file at that point at parse time; a file already included is skipped.
+2. Every include path, and every art path inside an included file, is relative to the main script's folder, uses `/`, and has no `..` (as D-156 rules for PNGs).
+3. Source order, for D-160 and everywhere else, is the order after expansion.
+4. Diagnostics name the included file and its line.
+
+**Alternatives:** paths relative to the including file.
+
+**Consequences.** Only command-line compiles read included files; a package holds the expanded program, so browsers and hosts are unaffected. Still open from Q-027: how often a bound `when` body fires, whether mods may add handlers to a base game's cues, and a reference test suite for D-160 and D-161. P48-15 builds the include rule.
+
+## D-170 A `when` Rule Fires Once; `when each` Fires per Matching Row and Binds It (2026-11-22, status: accepted; answers Q-027 in part, amends D-161)
+
+**Context.** D-161 refused a `when` body that reads its trigger's variables, leaving binding for later. A rule keeps one on/off flag (saved as one byte), so `when Holds(who, Sword):` fires once however many rows match, and a fire-once body would have no single row to read. Peter Spicer's review (2026-11-22): handle both, since whether every match matters depends on the situation; firing once is the natural default.
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. `when <trigger>:` fires once when the trigger first holds, as now, and its body still cannot read the trigger's variables.
+2. `when each <trigger>:` fires once for each matching row as it starts to hold, and its body reads that row's variables as a cue handler reads its parameters (D-161). Each row's flag is saved state.
+
+**Alternatives:** binding the fire-once body to the first match in fact-table order, which would make an implementation detail part of the language.
+
+**Consequences.** The once form stays exactly as shipped. `each` rules add per-binding flags to the save, folded into P48-08's save format. P48-16 builds it.
+
+## D-171 BeSpoke 1.0 Has No Mod System; Includes Stay the Author's (2026-11-22, status: accepted; answers Q-027 in part)
+
+**Context.** Q-027 asked whether a mod may add a handler for a cue the base game handles, which D-160's fall-through would make possible. Peter Spicer's review (2026-11-22): a story should set its own load order with mods applied on top; mods need more than fall-through: to replace a handler outright, to add behaviour before or after it, or to replace it while still calling the original, as a subclass calls its parent; and what mods are for should be settled before what they may do.
+
+**Decision.** The maintainer chose on 2026-11-22: 1.0 defines no mod mechanism. `include` (D-169) is the author's own organisation, and D-160's fall-through is not a mod hook. Peter's four needs (load order on top of the story's, replace, before and after, call the original) are the brief for a later design, which can arrive in 1.x without changing any 1.0 game.
+
+**Alternatives:** data-only mods in 1.0; designing handler hooks before the freeze.
+
+**Consequences.** Nothing to build for 1.0.
+
+## D-172 Packages Are Tagged Sections Marked Required or Optional; 1.0 Reads Its Own Format, and 0.x Packages Are Converted (2026-11-22, status: accepted; answers Q-028 in part, amends D-106)
+
+**Context.** Q-028: `.bspk` versions 16 to 28 were each a fixed-order append, a reader refused any newer version, and 1.0 would have carried every 0.x version in every browser page. Peter Spicer's review (2026-11-22): skipping unknown sections is safe only where a partial reading is still a valid outcome, so some blocks may be an acceptable loss and others required (key art required, a later lip-sync feature optional); shipping the interpreter with the game makes most of this moot, provided a newer interpreter still runs an older game; the real question is whether 1.0 reads pre-1.0 formats or only its own, and whether 1.1 reads 1.0; and a web build, shipped with its game, should carry only the interpreter features that game needs, while standalone downloads carry everything.
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. From 1.0 a package is a header followed by sections, each with a tag, a length, and a required flag. A reader refuses a package with an unknown required section and skips an unknown optional one.
+2. 1.0 reads the 1.0 format only. `bespoke upgrade` converts a 0.x package (versions 1 to 28) to it; the 0.x fixtures stay as the converter's inputs.
+3. Every 1.x reader loads every earlier 1.x package.
+4. A web build links only the loader code its game's sections need (extending D-147); a standalone build links all of it.
+
+**Alternatives:** fixed versions as before; reading every 0.x version forever.
+
+**Consequences.** `COMPATIBILITY.md` is rewritten around sections. Still open from Q-028: whether the `wasm_*` exports are supported, `host` entry points for hints, decisions, and dilemmas, and whether 1.0 reads 0.x saves. P48-17 builds the format.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
@@ -2107,6 +2171,6 @@ Questions requiring maintainer or stakeholder input. This is their one home: HAN
 - **Q-023** ~~Engine relations share the author's namespace (raised 2026-11-22, P48-04).~~ Answered 2026-11-22 by the maintainer with Peter Spicer's review (D-164). About two dozen engine relations (`Chose`, `DecisionState`, `DriftHolding`, `PendingAppeal`, `EvidenceSeen`, `AgendaState`, `GridSeeded`, `SceneScore`, and others) use ordinary capitalised names, and a script that declares one shares it with no warning; every later engine feature adds to the list. Open: a namespace authors cannot type for bookkeeping, and a documented set of reserved relations with fixed meanings (`Knows`, `Believes`, `PathActive`). Blocks 1.0.
 - **Q-024** ~~Art that follows facts, palettes, resolution, and art size (raised 2026-11-22, P48-04).~~ Answered 2026-11-22 by the maintainer with Peter Spicer's review (D-165, D-166); whether 320x180 is a 1.x promise is still open. Only walking changes a sprite's frame; fact-driven art (the Lamplighter's lamp) needs a Zig theme, which the Phase 47 studio's authors will not write. Open: the script form for fact-driven frames, palettes per scene or state, whether 320x180 is a 1.x promise, and how a many-room game fits the shared module (the Lamplighter's two rooms are 125,943 bytes of package inside a module every page carries).
 - **Q-025** ~~Which built-in numbers are promises (raised 2026-11-22, P48-04).~~ Answered in part 2026-11-22 (D-167); authored hint tiers beyond three and several spellbooks are still open. Behaviour numbers (axes -10 to +10, tiers at 7 and 3, drift 5 points per step and 2 steps per dilemma, three hint tiers, one spellbook) and capacity ceilings (16 goals, 32 decisions, 8 options, 64 axes, 3 cue parameters, 8 guard variables, 4,096 fibers) are engine constants. Open: which are guaranteed, whether behaviour numbers become author settings with today's defaults, and whether ceilings are promised only never to shrink. Which numbers are promises blocks 1.0; author settings can follow it.
-- **Q-026** What rewind and saves restore of chance and routines (raised 2026-11-22, P48-04). `roll` draws from one generator per VM, seeded 42 at VM creation and never saved or snapshotted; `host.Timeline` snapshots hold the world and temporal envelope but not fibers, so a rewind steps facts back while routines continue, and the same action can roll differently. Open: rewind as undo or as try again, whether rewind restores routines, a declared seed, and a separate stream for branch worlds. Blocks 1.0.
-- **Q-027** Source order across files and how often a `when` rule fires (raised 2026-11-22, P48-04). A game is one file, and D-160 makes source order part of a handler's meaning; a `when` rule keeps one flag for the whole rule, so it fires once however many rows match. Open: the include rule and its order, whether bound `when` bodies (deferred by D-161) fire per matching row (saved state per binding), mods adding handlers, and a reference test suite for D-160 and D-161. Blocks 1.0.
-- **Q-028** Package sections, the version baseline, and the browser exports (raised 2026-11-22, P48-04). `.bspk` versions 16 to 28 were each a fixed-order append, and a reader refuses any newer version, so a 1.1 package will not load in 1.0 even when it uses nothing new; 1.0 would carry all 28 versions. The `wasm_*` exports are called by `tools/proof_page.js` and by the starter page (`src/scaffold/index.html.tmpl`) but listed nowhere. Open: tagged, skippable sections; a clean baseline with a converter; whether the exports are supported; and `host` entry points for hints, decisions, and dilemmas so no host reads `CompiledProgram` tables. Blocks 1.0.
+- **Q-026** ~~What rewind and saves restore of chance and routines (raised 2026-11-22, P48-04).~~ Answered 2026-11-22 by the maintainer with Peter Spicer's review (D-168). `roll` draws from one generator per VM, seeded 42 at VM creation and never saved or snapshotted; `host.Timeline` snapshots hold the world and temporal envelope but not fibers, so a rewind steps facts back while routines continue, and the same action can roll differently. Open: rewind as undo or as try again, whether rewind restores routines, a declared seed, and a separate stream for branch worlds. Blocks 1.0.
+- **Q-027** ~~Source order across files and how often a `when` rule fires (raised 2026-11-22, P48-04).~~ Answered in part 2026-11-22 (D-169, D-170, D-171); a reference test suite for D-160 and D-161 is still open. A game is one file, and D-160 makes source order part of a handler's meaning; a `when` rule keeps one flag for the whole rule, so it fires once however many rows match. Open: the include rule and its order, whether bound `when` bodies (deferred by D-161) fire per matching row (saved state per binding), mods adding handlers, and a reference test suite for D-160 and D-161. Blocks 1.0.
+- **Q-028** ~~Package sections, the version baseline, and the browser exports (raised 2026-11-22, P48-04).~~ Answered in part 2026-11-22 (D-172); the `wasm_*` exports, `host` entry points, and 0.x saves are still open. `.bspk` versions 16 to 28 were each a fixed-order append, and a reader refuses any newer version, so a 1.1 package will not load in 1.0 even when it uses nothing new; 1.0 would carry all 28 versions. The `wasm_*` exports are called by `tools/proof_page.js` and by the starter page (`src/scaffold/index.html.tmpl`) but listed nowhere. Open: tagged, skippable sections; a clean baseline with a converter; whether the exports are supported; and `host` entry points for hints, decisions, and dilemmas so no host reads `CompiledProgram` tables. Blocks 1.0.
