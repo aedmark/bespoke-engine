@@ -1,0 +1,64 @@
+===================================================================
+          BeSpoke Engine: The Lamplighter's Round (Pixel Art)       
+  (PNG Import * Backdrops * Animated Sprites * Areas * Art by State) 
+===================================================================
+
+  (Art: 7 images, 58 colours, 2 backdrops, 4 sprites, all imported from PNG.)
+
+
+[Dusk]
+  Hobb: "Nell Brindle! The clock's struck six and not a lamp lit. Pike walks his round at dark."
+  Nell: "Taper, oil, lamps. I know, Hobb. I know."
+> walk to Doorstep
+> LooksAt OilCan
+  Nell: "My oil can, empty. Hobb's cask will fill it."
+> Uses OilCask
+  Hobb: "Oi! Ask before you help yourself to my oil, Nell Brindle."
+> TalksTo Hobb
+  Hobb: "Here's a taper. Fill your can at the cask, and mind you don't drip on my step."
+> Uses OilCask
+  Nell: "Filled to the brim."
+> LooksAt OilCan
+  Nell: "My oil can, full to the brim. Enough for one lamp."
+> walk to LanePost
+> Uses LaneLamp
+  Nell: "Oil, wick, flame. Tallow Lane is lit, and my can is empty."
+> LooksAt OilCan
+  Nell: "My oil can, empty. Hobb's cask will fill it."
+
+[Mrs Jessop]
+> walk to Doorstep
+> Uses OilCask
+  Nell: "Filled to the brim."
+> walk to LaneEnd
+  (Nell goes through to Market Steps.)
+> walk to StepsPost
+> Uses StepsLamp
+  Nell: "Mrs Jessop glares at me from the lamp. I can't light a lamp with a bird in it."
+> walk to FountainSide
+> TalksTo Pike
+  Pike: "That's Mrs Jessop. Nests in the steps lamp every spring and steals my buttons. Only a shinier thing will shift her. Hobb deals in brass."
+> walk to StepsFoot
+  (Nell goes through to Tallow Lane.)
+> walk to Doorstep
+> TalksTo Hobb
+  Hobb: "Mrs Jessop again? Here, a brass thimble, polished this morning. No jackdaw alive can resist it."
+> walk to LaneEnd
+  (Nell goes through to Market Steps.)
+> walk to StepsPost
+> Uses StepsLamp
+  Nell: "A brass thimble for your trouble, Mrs Jessop. She snatches it and is gone over the rooftops."
+
+[Nightfall]
+> Uses StepsLamp
+  Nell: "And the market steps, with the last of my oil. That's the round."
+  Pike: "Both lamps lit before dark, and Mrs Jessop rehoused. Good night, Nell Brindle."
+  Nell: "Round done. Tomorrow I'm buying my own thimble."
+> TalksTo Pike
+  Pike: "Every lamp burning, and not a button missing. A quiet night ahead."
+
+final facts: 6, digest 000b8dedebc4f896
+
+===================================================================
+  VERIFICATION COMPLETE: dusk to nightfall, drawn from imported art. 
+===================================================================

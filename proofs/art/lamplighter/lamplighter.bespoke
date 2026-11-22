@@ -1,0 +1,210 @@
+# The Lamplighter's Round (P46-05): an original proof drawn entirely from the PNG files beside
+# this script. The build compiles it with `bespoke compile`, which reads the PNGs; the desktop
+# proof, its headless run, and its browser page all load that package.
+#
+# Dusk: Nell Brindle, lamplighter, is late. Hobb the chandler gives her a taper and the run of
+# his oil cask; one fill of her can lights one lamp. The lane lamp lights, but a jackdaw, Mrs
+# Jessop, has nested in the market lamp, and only something shinier than Constable Pike's
+# buttons will shift her. Hobb parts with a brass thimble. Nightfall: both lamps burn, Pike walks
+# his round, and Nell has the last word.
+
+scene: Tallow Lane
+cast: Nell, Hobb
+props: OilCask, LaneLamp, ShopWindow, ShopDoor, Archway
+marks: Stoop, Doorstep, LanePost, LaneEnd
+backdrop: TallowLane
+
+scene: Market Steps
+cast: Pike
+props: StepsLamp, Fountain, MarketHall
+marks: StepsFoot, FountainSide, StepsPost
+backdrop: MarketSteps
+
+# Where each prop is on the art, in art pixels (x y width height): a click anywhere inside acts
+# on it. The window, door, archway, fountain, and hall are painted on the backdrops; the lamps
+# are drawn inside their areas by the proof's theme.
+area ShopWindow: 32 62 50 30
+area ShopDoor: 96 62 24 42
+area Archway: 270 50 48 54
+area LaneLamp: 195 71 12 36
+area Fountain: 120 78 56 32
+area MarketHall: 252 36 48 20
+area StepsLamp: 240 71 12 36
+
+image TallowLane from "tallow_lane.png"
+image MarketSteps from "market_steps.png"
+image NellSheet from "nell.png" frames 12x24
+image HobbSheet from "hobb.png" frames 12x24
+image PikeSheet from "pike.png" frames 12x24
+image CaskArt from "cask.png"
+# Dark, lit, and dark with Mrs Jessop nesting. The proof's theme picks the frame from the facts.
+image LampSheet from "lamp.png" frames 12x36
+
+sprite Nell: NellSheet
+  idle: 0 for 40, 1 for 20
+  walk right: 2 for 8, 3 for 8
+  walk left: 4 for 8, 5 for 8
+
+sprite Hobb: HobbSheet
+  idle: 0 for 50, 1 for 30
+
+sprite Pike: PikeSheet
+  idle: 0 for 40, 1 for 20
+  walk right: 2 for 8, 3 for 8
+  walk left: 4 for 8, 5 for 8
+
+sprite OilCask: CaskArt
+
+relation Carries(holder, item)
+relation CanFull(who)
+relation Lit(lamp)
+relation Nesting(bird, lamp)
+relation Heard(who, tale)
+relation RoundDone(who)
+entity OilCan, Taper, Thimble, Jackdaw, JessopTale
+
+remember Nesting(Jackdaw, StepsLamp)
+remember Carries(Nell, OilCan)
+
+# The beginning: Hobb sees the clock before Nell does.
+routine Dusk(Hobb):
+  wait 1 ticks
+  say Hobb: "Nell Brindle! The clock's struck six and not a lamp lit. Pike walks his round at dark."
+  wait 2 ticks
+  say Nell: "Taper, oil, lamps. I know, Hobb. I know."
+
+on cue LooksAt(Nell, Hobb):
+  say Nell: "Hobb the chandler. Forty years of candles and not one lit for himself."
+
+on cue LooksAt(Nell, Pike):
+  say Nell: "Constable Pike. He polishes his buttons twice a round."
+
+on cue LooksAt(Nell, Nell):
+  say Nell: "One can, one taper, two lamps, and the dark coming on."
+
+on cue LooksAt(Nell, ShopWindow):
+  say Nell: "Hobb's candles, row on row, every one of them unlit. He says it's good for trade."
+
+on cue LooksAt(Nell, ShopDoor):
+  say Nell: "The chandlery door, propped open while Hobb waits for custom."
+
+on cue Uses(Nell, ShopDoor):
+  say Nell: "Hobb's closing up. What I need is out here."
+
+on cue LooksAt(Nell, Archway):
+  say Nell: "The arch through to Market Steps."
+
+on cue LooksAt(Nell, Fountain):
+  say Nell: "The market fountain. Wishes in the bottom, mostly buttons."
+
+on cue LooksAt(Nell, MarketHall):
+  say Nell: "The hall lights its own lamps. The street's are mine."
+
+# Nell's things say what state they are in.
+on cue LooksAt(Nell, OilCan):
+  if CanFull(Nell):
+    say Nell: "My oil can, full to the brim. Enough for one lamp."
+  if not CanFull(Nell):
+    say Nell: "My oil can, empty. Hobb's cask will fill it."
+
+on cue LooksAt(Nell, Taper):
+  say Nell: "Hobb's taper, burning steady. It lights a wick, not an empty lamp."
+
+on cue LooksAt(Nell, Thimble):
+  say Nell: "Hobb's brass thimble, polished till it winks. Mrs Jessop would trade her nest for it."
+
+on cue LooksAt(Nell, OilCask):
+  say Nell: "Hobb's lamp oil. One fill of my can lights one lamp."
+
+on cue LooksAt(Nell, LaneLamp):
+  say Nell: "The Tallow Lane lamp. Its wick wants oil and a flame."
+
+on cue LooksAt(Nell, StepsLamp):
+  if Nesting(Jackdaw, StepsLamp):
+    say Nell: "There's a jackdaw in the lamp. She has lined her nest with brass buttons."
+  if not Nesting(Jackdaw, StepsLamp):
+    say Nell: "The lamp at the foot of the market steps, empty of birds at last."
+
+# One handler per cue: a second handler with the same signature would replace the first
+# (Q-020), so each answer is chosen by `if` lines that cannot both hold. Where a branch changes
+# a fact that a later branch tests, the later branch comes first.
+on cue TalksTo(Nell, Hobb):
+  if Carries(Nell, Taper):
+    if Heard(Nell, JessopTale):
+      if not Nesting(Jackdaw, StepsLamp):
+        say Hobb: "My thimble's gone to a jackdaw? Put it on Pike's account."
+      if Carries(Nell, Thimble):
+        say Hobb: "Mind that thimble. It's on loan, and so is my patience."
+      if Nesting(Jackdaw, StepsLamp):
+        if not Carries(Nell, Thimble):
+          remember Carries(Nell, Thimble)
+          say Hobb: "Mrs Jessop again? Here, a brass thimble, polished this morning. No jackdaw alive can resist it."
+    if not Heard(Nell, JessopTale):
+      say Hobb: "One fill, one lamp. The cask is by my door."
+  if not Carries(Nell, Taper):
+    remember Carries(Nell, Taper)
+    say Hobb: "Here's a taper. Fill your can at the cask, and mind you don't drip on my step."
+
+on cue TalksTo(Nell, Pike):
+  if RoundDone(Nell):
+    say Pike: "Every lamp burning, and not a button missing. A quiet night ahead."
+  if not RoundDone(Nell):
+    if not Nesting(Jackdaw, StepsLamp):
+      say Pike: "I walk my round when the lamps are lit, not before."
+    if Nesting(Jackdaw, StepsLamp):
+      remember Heard(Nell, JessopTale)
+      say Pike: "That's Mrs Jessop. Nests in the steps lamp every spring and steals my buttons. Only a shinier thing will shift her. Hobb deals in brass."
+
+on cue Uses(Nell, OilCask):
+  if not Carries(Nell, Taper):
+    say Hobb: "Oi! Ask before you help yourself to my oil, Nell Brindle."
+  if Carries(Nell, Taper):
+    if CanFull(Nell):
+      say Nell: "The can is full already."
+    if not CanFull(Nell):
+      remember CanFull(Nell)
+      say Nell: "Filled to the brim."
+
+on cue Uses(Nell, LaneLamp):
+  if Lit(LaneLamp):
+    say Nell: "That one is burning."
+  if not Lit(LaneLamp):
+    if not Carries(Nell, Taper):
+      say Nell: "No flame and no oil. Hobb will have a taper."
+    if Carries(Nell, Taper):
+      if not CanFull(Nell):
+        say Nell: "Dry. The can needs filling at the cask."
+      if CanFull(Nell):
+        remember Lit(LaneLamp)
+        forget CanFull(Nell)
+        say Nell: "Oil, wick, flame. Tallow Lane is lit, and my can is empty."
+
+on cue Uses(Nell, StepsLamp):
+  if Lit(StepsLamp):
+    say Nell: "That one is burning."
+  if not Lit(StepsLamp):
+    if not Nesting(Jackdaw, StepsLamp):
+      if not Carries(Nell, Taper):
+        say Nell: "No flame and no oil. Hobb will have a taper."
+      if Carries(Nell, Taper):
+        if not CanFull(Nell):
+          say Nell: "Dry. Back to the cask on Tallow Lane."
+        if CanFull(Nell):
+          remember Lit(StepsLamp)
+          forget CanFull(Nell)
+          say Nell: "And the market steps, with the last of my oil. That's the round."
+    if Nesting(Jackdaw, StepsLamp):
+      if not Carries(Nell, Thimble):
+        say Nell: "Mrs Jessop glares at me from the lamp. I can't light a lamp with a bird in it."
+      if Carries(Nell, Thimble):
+        forget Carries(Nell, Thimble)
+        forget Nesting(Jackdaw, StepsLamp)
+        say Nell: "A brass thimble for your trouble, Mrs Jessop. She snatches it and is gone over the rooftops."
+
+# The end: both lamps burn before dark.
+when Lit(LaneLamp) and Lit(StepsLamp):
+  remember RoundDone(Nell)
+  say Pike: "Both lamps lit before dark, and Mrs Jessop rehoused. Good night, Nell Brindle."
+  walk Pike to StepsPost
+  wait 3 ticks
+  say Nell: "Round done. Tomorrow I'm buying my own thimble."

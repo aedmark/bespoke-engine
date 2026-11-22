@@ -32,6 +32,7 @@ const word_foundry = @import("word_foundry.zig");
 const cinder_table = @import("cinder_table.zig");
 const long_gallery = @import("long_gallery.zig");
 const valerius = @import("valerius.zig");
+const lamplighter = @import("lamplighter.zig");
 const golden_digest = @import("golden_digest.zig");
 const bespoke = @import("bespoke");
 
@@ -72,6 +73,7 @@ const proofs = [_]struct { name: []const u8, run: RunFn }{
     .{ .name = "cinder_table", .run = bind(cinder_table.run_headless) },
     .{ .name = "long_gallery", .run = bind(long_gallery.run_headless) },
     .{ .name = "valerius", .run = bind(valerius.run_headless) },
+    .{ .name = "lamplighter", .run = bind(lamplighter.run_headless) },
 };
 
 fn first_difference(expected: []const u8, actual: []const u8) struct { line: usize, want: []const u8, got: []const u8 } {

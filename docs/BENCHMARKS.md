@@ -53,8 +53,8 @@ Use `--lantern-page /path/to/index.html` to include a freshly packed Lantern Wat
 
 | Artifact | Limit per file |
 | --- | ---: |
-| Engine and proof WebAssembly modules | 1 MiB |
+| Engine and proof WebAssembly modules | 1.5 MiB (D-159) |
 | Showcase `site/index.html` | 1.25 MiB |
-| Individual proof pages and Lantern Watch | 1.25 MiB |
+| Individual proof pages and Lantern Watch | 2 MiB (D-157) |
 
-Limits are raw file bytes, before HTTP compression. Standalone HTML counts its embedded module; that makes it possible to detect growth in both the module and the export wrapper. A page embeds the module as base64, so the page budget is 1.25 MiB while the module keeps its 1 MiB tripwire (D-141). Missing files and files over budget fail the check. [The budget manifest](../tools/web_budgets.json) is the single source of limits (D-115).
+Limits are raw file bytes, before HTTP compression. Standalone HTML counts its embedded module; that makes it possible to detect growth in both the module and the export wrapper. A page embeds the module as base64, so the page budget of 2 MiB carries a module of up to 1.5 MiB, the module limit (D-141, D-157, D-159). Missing files and files over budget fail the check. [The budget manifest](../tools/web_budgets.json) is the single source of limits (D-115).

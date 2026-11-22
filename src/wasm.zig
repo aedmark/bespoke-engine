@@ -670,7 +670,7 @@ pub const WasmRuntime = struct {
         _ = proj;
         const frame = self.capture();
         const people = frame.entities[0..frame.entity_count];
-        const i = renderer.hit_test_actor(x, y, people, CANVAS_WIDTH, CANVAS_HEIGHT) orelse return null;
+        const i = renderer.hit_test_actor(x, y, people, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art) orelse return null;
         const pt = renderer.get_entity_screen_pos(i, people, CANVAS_WIDTH, CANVAS_HEIGHT);
         return .{ .entity = people[i].entity, .x = pt.x, .y = pt.y };
     }
@@ -769,6 +769,26 @@ pub const WasmRuntime = struct {
         if (self.spatial.agents.get(target)) |agent| return agent.current_wp;
         for (self.spatial.hotspots.items) |hs| {
             if (hs.entity != target) continue;
+            // A prop with an area is reached from its area's foot, measured on screen as the
+            // desktop does (D-158).
+            if (self.window.art) |a| if (a.area_for(target)) |area| {
+                const r = renderer.area_rect(area);
+                const foot_x = r.x + @divTrunc(r.w, 2);
+                const foot_y = r.y + r.h;
+                var near: ?u16 = null;
+                var near_d: i64 = std.math.maxInt(i64);
+                for (self.spatial.graph.waypoints.items) |wp| {
+                    if (wp.room != hs.room) continue;
+                    const pt = renderer.world_to_screen(wp.pos.x, wp.pos.y, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    const dx: i64 = pt.x - foot_x;
+                    const dy: i64 = pt.y - foot_y;
+                    if (dx * dx + dy * dy < near_d) {
+                        near_d = dx * dx + dy * dy;
+                        near = wp.id;
+                    }
+                }
+                return near;
+            };
             var best: ?u16 = null;
             var best_d: i64 = std.math.maxInt(i64);
             for (self.spatial.graph.waypoints.items) |wp| {
@@ -1322,7 +1342,7 @@ pub const WasmRuntime = struct {
 
                 // 4. People, where the desktop draws them (D-088, D-097).
                 const people = frame.entities[0..frame.entity_count];
-                if (renderer.hit_test_actor(ev.x, ev.y, people, CANVAS_WIDTH, CANVAS_HEIGHT)) |i| {
+                if (renderer.hit_test_actor(ev.x, ev.y, people, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art)) |i| {
                     const who = people[i].entity;
                     // The player can be clicked to use an item in hand on themself (D-094).
                     const on_self = who == self.player_entity and self.selected_item != .none and self.active_verb == .use_with;
@@ -1338,7 +1358,7 @@ pub const WasmRuntime = struct {
                 }
 
                 // 5. Props.
-                if (renderer.hit_test_hotspot(ev.x, ev.y, frame.hotspots[0..frame.hotspot_count], CANVAS_WIDTH, CANVAS_HEIGHT)) |i| {
+                if (renderer.hit_test_hotspot(ev.x, ev.y, frame.hotspots[0..frame.hotspot_count], CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art)) |i| {
                     const target = frame.hotspots[i].entity;
                     for (self.spatial.hotspots.items) |hs| {
                         if (hs.entity != target) continue;

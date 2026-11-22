@@ -330,3 +330,15 @@ image_stage/replay tick 6 clock 0: d356048e33e8de5f
 clearance/image_stage/replay tick 6 clock 0: 124
 image_stage/replay tick 6 clock 8: d356048e33e8de5f
 clearance/image_stage/replay tick 6 clock 8: 124
+thumb/lamplighter/Tallow Lane: 51d74801f2946c77
+lamplighter/Tallow Lane: dfe2f3c56a43d44c
+clearance/lamplighter/Tallow Lane: 76
+lamplighter/Tallow Lane +lane_lamp_lit: c86f06dec9a7068d
+clearance/lamplighter/Tallow Lane +lane_lamp_lit: 76
+thumb/lamplighter/Market Steps: 51d74801f2946c77
+lamplighter/Market Steps: 9398fc47ba091352
+clearance/lamplighter/Market Steps: 76
+lamplighter/Market Steps +steps_lamp_lit: ec670b3d6ed8314a
+clearance/lamplighter/Market Steps +steps_lamp_lit: 76
+lamplighter/Market Steps +jackdaw_nesting: 75a8c34ca8e8dc0e
+clearance/lamplighter/Market Steps +jackdaw_nesting: 76

@@ -1,5 +1,5 @@
 {
-  "wasmModuleBytes": 1048576,
+  "wasmModuleBytes": 1572864,
   "showcasePageBytes": 1310720,
-  "standalonePageBytes": 1310720
+  "standalonePageBytes": 2097152
 }

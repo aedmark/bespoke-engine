@@ -128,6 +128,23 @@ pub const Step = struct { frame: u16, duration: u16 };
 /// A scene drawn over a backdrop image instead of the neutral stage.
 pub const Backdrop = struct { scene: EntityId, image: u16 };
 
+/// A prop's clickable region on the art, in art pixels (P46-05, D-158): the window or door
+/// painted on a backdrop, or the whole of a lamp. A click anywhere inside acts on the prop, the
+/// hover outline is this rectangle, and a prop with an area and no sprite draws nothing of its
+/// own, because the art already shows it.
+pub const Area = struct {
+    entity: EntityId,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+
+    pub fn valid(self: Area) bool {
+        return self.entity != .none and self.w > 0 and self.h > 0 and
+            @as(u32, self.x) + self.w <= ART_WIDTH and @as(u32, self.y) + self.h <= ART_HEIGHT;
+    }
+};
+
 /// A person or prop drawn from a sprite sheet. An empty animation falls back to idle, and an
 /// empty idle shows frame 0.
 pub const Sprite = struct {
@@ -159,9 +176,15 @@ pub const Art = struct {
     images: []const Image = &.{},
     backdrops: []const Backdrop = &.{},
     sprites: []const Sprite = &.{},
+    areas: []const Area = &.{},
 
     pub fn is_empty(self: Art) bool {
-        return self.palette.len == 0 and self.images.len == 0;
+        return self.palette.len == 0 and self.images.len == 0 and self.areas.len == 0;
+    }
+
+    pub fn area_for(self: *const Art, entity: EntityId) ?Area {
+        for (self.areas) |a| if (a.entity == entity) return a;
+        return null;
     }
 
     pub fn find(self: *const Art, name: []const u8) ?*const Image {
@@ -206,6 +229,11 @@ pub const Art = struct {
             }
             for (self.sprites[0..i]) |prior| if (prior.entity == sprite.entity) return Error.InvalidImageBinding;
         }
+        if (self.areas.len > MAX_BINDINGS) return Error.InvalidImageBinding;
+        for (self.areas, 0..) |a, i| {
+            if (!a.valid()) return Error.InvalidImageBinding;
+            for (self.areas[0..i]) |prior| if (prior.entity == a.entity) return Error.InvalidImageBinding;
+        }
     }
 
     /// Validates, then copies everything into memory owned by `allocator`.
@@ -225,6 +253,7 @@ pub const Art = struct {
             copy.pixels = try allocator.dupe(u8, image.pixels);
         }
         art.backdrops = try allocator.dupe(Backdrop, source.backdrops);
+        art.areas = try allocator.dupe(Area, source.areas);
         const sprites = try allocator.alloc(Sprite, source.sprites.len);
         for (sprites) |*sprite| sprite.* = .{ .entity = .none, .image = 0 };
         art.sprites = sprites;
@@ -241,6 +270,7 @@ pub const Art = struct {
         allocator.free(self.images);
         allocator.free(self.palette);
         allocator.free(self.backdrops);
+        allocator.free(self.areas);
         for (self.sprites) |sprite| for (sprite.animations) |steps| allocator.free(steps);
         allocator.free(self.sprites);
         self.* = .{};
@@ -343,4 +373,16 @@ test "P46-03: bindings name real images, a backdrop is one 320x180 frame, and st
     defer art.deinit_owned(std.testing.allocator);
     try std.testing.expectEqual(@as(u16, 1), art.sprite_for(EntityId.from_int(3)).?.frame_at(.idle, 0));
     try std.testing.expect(art.sprite_for(EntityId.from_int(9)) == null);
+}
+
+test "P46-05: an area stays on the art and names one prop once" {
+    const room = Area{ .entity = EntityId.from_int(5), .x = 300, .y = 170, .w = 20, .h = 10 };
+    try std.testing.expect(room.valid());
+    var past = room;
+    past.w = 21;
+    try std.testing.expect(!past.valid());
+    try (Art{ .areas = &.{room} }).validate();
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .areas = &.{ room, room } }).validate());
+    try std.testing.expect(!(Art{ .areas = &.{room} }).is_empty());
+    try std.testing.expectEqual(@as(u16, 300), (Art{ .areas = &.{room} }).area_for(EntityId.from_int(5)).?.x);
 }

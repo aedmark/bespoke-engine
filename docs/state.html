@@ -242,7 +242,7 @@ routine Inspector(Moss):
   <li><strong>A toolchain that ships as one file.</strong> The static Linux download compiles, checks, and runs scripts and creates projects with nothing else installed. Building a game's own executable needs Zig 0.17.1 (and SDL2 for the window).</li>
   <li><strong>Tests that read like a story.</strong> A headless run prints what happens tick by tick; each demo's transcript is recorded and compared byte for byte, along with a pixel hash of every scene, so a behaviour change cannot slip through unnoticed.</li>
   <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>); anything unlisted is internal and may change.</li>
-  <li><strong>File formats that keep working.</strong> Packages and saves carry versions; the reader accepts package versions 1 to 25 and save versions 1 and 2, and files written by earlier releases are loaded on every test run (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
+  <li><strong>File formats that keep working.</strong> Packages and saves carry versions; the reader accepts package versions 1 to 26 and save versions 1 and 2, and files written by earlier releases are loaded on every test run (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
   <li><strong>Hardened input.</strong> The lexer, parser, code generator, package and save loaders, music parser, and command interpreter run under mutation tests, and an unsupported file version is refused with a named error before any game state changes.</li>
   <li><strong>Editor support.</strong> A VS Code syntax grammar generated from the compiler's own word list, so it cannot fall out of date.</li>
   <li><strong>A recorded decision trail.</strong> Over 140 numbered design decisions, each with its context, the alternatives rejected, and when to revisit it.</li>
@@ -297,6 +297,7 @@ routine Inspector(Moss):
   <tr><td><a href="../site/fire-escape.html">The Castle Fire Escape</a></td><td>Fire, smoke, and water spreading across a grid; get the timing right to save the door.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td><a href="../site/observatory.html">The Larkspur Observatory</a></td><td>Staff with their own agendas, typed commands, generated hints, and evidence presented to suspects.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td><a href="../site/valerius.html">Valerius and the Bread</a></td><td>Learn what a captain values and appeal to it. His red lines hold whatever the score, and the winter's outcome changes him by spring.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/lamplighter.html">The Lamplighter's Round</a></td><td>Light two street lamps before the watch walks his round, in rooms, people, and props drawn as pixel art imported from PNG files.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td>The Long Gallery</td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span></td></tr>
   <tr><td>The Word Foundry</td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Headless</span></td></tr>
   <tr><td>The Cinder Table</td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Headless</span></td></tr>
@@ -307,7 +308,7 @@ routine Inspector(Moss):
 <h2 id="limits">What it does not do yet</h2>
 <div class="note">
 <ul>
-  <li><strong>Art is drawn by code.</strong> Rooms, people, and objects are shapes, colours, and labels drawn by the engine. There is no way yet to load your own images or sprite sheets.</li>
+  <li><strong>Pixel art is new.</strong> A game can carry its own pixel art (backdrops and sprite sheets, from PNG files or typed into the script), but a sprite changes animation only when its person walks; art that follows other facts, such as a lit lamp, needs code in the game. Older demos are still drawn by code.</li>
   <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
   <li><strong>The language is still pre-1.0.</strong> It may change before 1.0; removals follow a published deprecation policy, and released packages and saves keep loading.</li>
   <li><strong>Small writing gaps:</strong> inside an event handler, a lowercase placeholder (such as <code>victim</code>) matches any character but is not yet usable in the handler's body; a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options.</li>

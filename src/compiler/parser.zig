@@ -559,7 +559,10 @@ pub const ArtDecl = struct {
     images: []const image_mod.Image = &.{},
     backdrops: []const BackdropBinding = &.{},
     sprites: []const SpriteBinding = &.{},
+    areas: []const AreaBinding = &.{},
 };
+/// `area <Prop>: x y w h` in art pixels (P46-05, D-158).
+pub const AreaBinding = struct { target: []const u8, x: u16, y: u16, w: u16, h: u16, at: Token };
 pub const BackdropBinding = struct { scene: []const u8, image: u16 };
 pub const SpriteBinding = struct { target: []const u8, image: u16, animations: [image_mod.ANIM_COUNT][]const image_mod.Step };
 
@@ -697,6 +700,7 @@ pub const Parser = struct {
     palette_src: std.ArrayListUnmanaged(PaletteEntry) = .empty,
     image_srcs: std.ArrayListUnmanaged(ImageSource) = .empty,
     sprite_srcs: std.ArrayListUnmanaged(SpriteSource) = .empty,
+    area_srcs: std.ArrayListUnmanaged(AreaBinding) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -2369,6 +2373,10 @@ pub const Parser = struct {
             try self.parse_sprite(start);
             return true;
         }
+        if (std.mem.eql(u8, word, "area") and named) {
+            try self.parse_area();
+            return true;
+        }
         return false;
     }
 
@@ -2490,6 +2498,26 @@ pub const Parser = struct {
             error.OutOfMemory => return error.OutOfMemory,
         };
         return .{ .width = rgba.width, .height = rgba.height, .pixels = pixels };
+    }
+
+    /// `area <Prop>: x y w h`, a rectangle in art pixels on the prop's scene (P46-05, D-158).
+    fn parse_area(self: *Parser) !void {
+        const at = self.current;
+        const target = try self.parse_name();
+        if (self.current.tag != .colon) return self.error_at(self.current, "area '{s}' expects ':' and x, y, width, and height in art pixels", .{target});
+        try self.advance();
+        var v: [4]u32 = undefined;
+        for (&v) |*n| {
+            if (self.current.tag != .number or self.current.line != at.line)
+                return self.error_at(at, "area '{s}' expects ':' and x, y, width, and height in art pixels", .{target});
+            n.* = try self.take_u32();
+        }
+        if (v[2] == 0 or v[3] == 0 or v[0] + v[2] > image_mod.ART_WIDTH or v[1] + v[3] > image_mod.ART_HEIGHT)
+            return self.error_at(at, "area '{s}' is {d}x{d} at ({d}, {d}); an area is at least 1x1 and inside the {d}x{d} art", .{ target, v[2], v[3], v[0], v[1], image_mod.ART_WIDTH, image_mod.ART_HEIGHT });
+        for (self.area_srcs.items) |prior| {
+            if (std.mem.eql(u8, prior.target, target)) return self.error_at(at, "'{s}' has two areas; declare one", .{target});
+        }
+        try self.area_srcs.append(self.allocator, .{ .target = target, .x = @intCast(v[0]), .y = @intCast(v[1]), .w = @intCast(v[2]), .h = @intCast(v[3]), .at = at });
     }
 
     fn parse_sprite(self: *Parser, start: Token) !void {
@@ -2664,6 +2692,17 @@ pub const Parser = struct {
             }
             try sprites.append(binding);
         }
+        for (self.area_srcs.items) |a| {
+            const is_prop = for (ast.props.items) |name| {
+                if (std.mem.eql(u8, name, a.target)) break true;
+            } else false;
+            if (!is_prop) {
+                var hints = Suggestions{};
+                for (ast.props.items) |name| hints.consider(a.target, name);
+                self.suggestion = hints.result();
+                return self.error_at(a.at, "area '{s}' is for a prop no scene declares in 'props:'", .{a.target});
+            }
+        }
         const codes = try self.allocator.alloc([]const u8, self.palette_src.items.len);
         for (self.palette_src.items, codes) |entry, *code| code.* = entry.code.slice;
         ast.art = .{
@@ -2672,6 +2711,7 @@ pub const Parser = struct {
             .images = try images.toOwnedSlice(),
             .backdrops = try backdrops.toOwnedSlice(),
             .sprites = try sprites.toOwnedSlice(),
+            .areas = self.area_srcs.items,
         };
     }
 

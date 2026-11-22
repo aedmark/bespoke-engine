@@ -1,5 +1,5 @@
 // Browser wrapper for the standalone proof pages (D-086, D-094, D-122): one page per proof in
-// site/, tavern.html through valerius.html. tools/build_site.py embeds this file and
+// site/, tavern.html through lamplighter.html. tools/build_site.py embeds this file and
 // bespoke-proofs.wasm into each. A page plays one deck, named by its canvas's data-deck
 // attribute; the deck itself (proofs/wasm_deck.zig) runs the proof's own script, so this
 // wrapper holds no game content.

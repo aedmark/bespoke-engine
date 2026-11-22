@@ -1680,7 +1680,7 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Update (P44-07, 2026-11-20):** The first step is done. A routine's own name takes a name with spaces the way the actor does, so every `during Name:` form has a literal `routine Name(Name):` replacement. The shorthand still stays for now; a later deprecation needs only the warning release and the removal.
 
-## D-141 Standalone Proof Pages Get a 1.25 MiB Budget (2026-11-20, status: accepted)
+## D-141 Standalone Proof Pages Get a 1.25 MiB Budget (2026-11-20, status: amended by D-157)
 
 **Context.** P41-01 set two independent limits: each Wasm module at 1 MiB and each standalone page at 1 MiB. A page embeds the module as base64, so the module becomes 4/3 its size before the page wrapper. Phase 44 grew `bespoke-proofs.wasm` to 778,064 bytes; its base64 is 1,037,420 bytes, and the thirteen proof pages are 1,057,255 to 1,059,271 bytes, 8,679 to 10,695 over the page limit while both modules and every other page pass. The module is already `ReleaseSmall`, has no custom or name sections to strip, and holds 646 KB of code plus 130 KB of data, so clearing 8 to 11 KB means removing or refactoring shipped behaviour. Serving the module beside each page would break the standalone `file://` design.
 
@@ -1937,6 +1937,39 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** `bespoke-proofs.wasm` grew 2 KB (messages), not the 25 KB the decoder costs natively. A browser page cannot compile a script that uses `from`; such a game ships its package or its imported rows. PNG input has two fuzz harnesses, one that re-seals chunk CRCs so mutations reach inflate and the filters.
 
+## D-157 Standalone Pages Get a 2 MiB Budget for Pixel Art (2026-11-21, status: accepted, amended by D-159; amends D-141; P46-05)
+
+**Context.** The Lamplighter's Round (P46-05) is the first published deck that loads a package, and the first with imported art. Its 122,773-byte package and the package loader, which no deck had reached before (about 199 KB), took `bespoke-proofs.wasm` from 722,358 to 1,044,462 bytes and every proof page to about 1.41 MB, past D-141's 1.25 MiB. D-141's review asked to shrink the runtime or change the embedding rather than raise the limit again. The maintainer first chose a separate module for the pixel-art page, then, on 2026-11-21, raised the page budget to 2 MB "now that we have graphics involved", which makes the separate module unnecessary.
+
+**Decision.** `standalonePageBytes` is 2 MiB (2,097,152). Every proof page keeps embedding the one shared proof module, as D-086 and D-141 had it. The showcase page limit (1.25 MiB) and the 1 MiB module limit (D-067's tripwire) are unchanged.
+
+**Alternatives:** a separate module for the pixel-art page, chosen first and set aside once the budget rose, because it adds a second module to build, test, and smoke for one page; inline rows in the shared module, rejected because it drops the package path the proof exists to show; compressing the art now, deferred as D-152 left it, because it would not remove the loader code.
+
+**Consequences.** Every proof page carries the Lamplighter's art and the loader, about 430 KB of base64 the other decks do not use. The module stands 4,114 bytes under its 1 MiB limit, so the next growth of `bespoke-proofs.wasm` fails that check: before then, the maintainer chooses between a separate module for art-heavy decks, art compression, or a higher module limit.
+
+## D-158 Props Click Where They Are Drawn: Areas on the Art, Sprites by Their Frame (2026-11-21, status: accepted; P46-05)
+
+**Context.** The first hand-play of The Lamplighter's Round (2026-11-21) found that a person drawn as a 96-pixel sprite was clicked and highlighted only at the disc at their feet, which read as a mark, and that the shop window and door painted on the backdrop could not be clicked at all. The maintainer asked that a click anywhere on the window, the door, Hobb, or the lamp act on it, "like a real game".
+
+**Decision.**
+1. **Areas.** `area <Prop>: x y w h` gives a prop a rectangle in art pixels on the art (inside 320x180, at least 1x1, one per prop, for a prop some scene lists). A click anywhere inside acts on the prop, the hover prompt sits above it (the rectangle itself is drawn only with the debug overlay, as a layout aid, by the maintainer's preference after the second hand-play), a walk to the prop aims for the mark nearest the rectangle's foot (desktop and browser alike), and a prop with an area and no sprite or theme drawing draws nothing of its own. A theme may draw inside an area, as the Lamplighter's lamps do. `CompiledProgram.art.areas`; `.bspk` version 26.
+2. **Sprites by their frame.** A person or prop drawn as a declared sprite is clicked anywhere in its frame, as well as at the disc on its spot; the frame's outline, like an area's, shows only with the debug overlay. `renderer.sprite_box` gives the box drawing, hit tests, and outlines share; `hit_test_actor` and `hit_test_hotspot` take the art.
+3. **Marks stay marks.** Marks are where people stand and walk. A painted door is a prop with an area; the mark in front of it has its own name.
+
+**Alternatives:** per-pixel hit tests on sprites, rejected for now because a transparent gap inside a figure would swallow clicks; areas in world units, rejected because art and world meet only at the 4x scale (D-152) and authors draw in art pixels; enlarging every disc, rejected because discs overlap on a crowded stage.
+
+**Consequences.** Areas are another declaration the studio's room editor writes (P47-03). Image-stage browser frames moved where a hovered sprite lost its ring. The area and hit-test code took `bespoke-proofs.wasm` past its 1 MiB limit, the case D-157 foresaw; D-159 raised the limit.
+
+## D-159 The Wasm Module Limit Is 1.5 MiB (2026-11-21, status: accepted; amends D-067, D-141, D-157)
+
+**Context.** D-158's areas and sprite-frame hit tests took `bespoke-proofs.wasm` to 1,052,988 bytes, 4,412 over the 1 MiB module limit that D-141 kept as D-067's tripwire and D-157 said would fail next. The maintainer chose on 2026-11-21 to raise it.
+
+**Decision.** `wasmModuleBytes` is 1.5 MiB (1,572,864). A 1.5 MiB module is 2 MiB as base64, so the 2 MiB page budget (D-157) remains the binding limit for a page and the module limit stays a tripwire just under it.
+
+**Alternatives:** a separate module for the pixel-art page, which would bring the shared module back to about 730 KB; compressing art (a new package version), which shrinks the package but not the loader code.
+
+**Consequences.** The proof module has about 520 KB of room. Every page still carries the Lamplighter's art and the package loader. Revisit with measured pages when a second art-heavy deck arrives.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
@@ -1960,3 +1993,4 @@ Questions requiring maintainer or stakeholder input. This is their one home: HAN
 - **Q-017** ~~The form of a per-scene clearance budget (P43-08, raised 2026-11-19, session 108). The band check passes a prop whose marker ends one pixel above the band, though its name then flips and its prompt has nowhere to sit. P43-08 asks for each scene's smallest clearance so a crowded room shows up before it fails. Options: record the clearance in `proofs/golden/render.txt` and fail under a fixed floor; report it without failing; or let each proof declare its own minimum, which puts a number in every proof layout.~~ Answered 2026-11-19 by the maintainer: record each scene's smallest clearance in the render golden and fail under a fixed floor of 8 pixels, counting art, marks, and stage strings, with the 1280x720 pass standing for both window sizes (D-133). The floor is one number for every scene rather than a schedule per proof, so a crowded room is a failure to fix rather than a scene to allow.
 - **Q-018** ~~Answering a dialogue by number key after a typed command (raised 2026-11-21, session 118, P42-06). D-057 keeps the command bar focused after Enter submits, so after `talk to pilot` the options appear while every key is still text: pressing `1` types into the bar, and Enter then reports `I don't know the word "1".` The player must press Esc before a number key answers; a click on an option works either way. `docs/AUTHORING.md` says "click one or press its number key" without the Esc. Options: let number keys answer an open choice set while the bar is focused and empty; leave the bar when a choice set opens; or keep D-057 as written and document Esc in the guide and the bar's hint.~~ Answered 2026-11-21 by the maintainer: the number key answers straight after a submitted command (D-142).
 - **Q-019** ~~Pixel art formats for Phase 46 (raised 2026-11-21, D-151).~~ Answered 2026-11-21 by the maintainer: one 256-colour palette per game with index 0 transparent, art at 320x180 scaled 4x, and animation timed in 60 Hz display frames (D-152). The question asked for the palette scheme and colour count, the base resolution and scale, and the animation clock.
+- **Q-020** A second cue handler with the same signature silently replaces the first (raised 2026-11-21, session 128, P46-05). `CompiledProgram.cue_handler_entries` is keyed by signature, so in `on cue Uses(Nell, Lamp) where Lit(Lamp):` followed by `on cue Uses(Nell, Lamp):` only the last is reachable; D-072's fall-through moves to a broader signature form (`Uses(Nell, lamp)`, then `Uses(actor, lamp)`), never to another handler with the same signature. The compiler gives no diagnostic, so the earlier handler and its guard are dead code. In a package the dead guard's `handler_pc` names no entry, and `load_package` refuses the file with `InvalidCueGuard`, so such a script compiles from source but not from its own package. Options: make a repeated signature a compile error; keep every handler of a signature in source order and let a failed guard fall through to the next one before broader forms, which is what authors write; or keep the rule and diagnose only a guard that can never run. The Lamplighter's script avoids it with one handler per cue and nested `if` lines.

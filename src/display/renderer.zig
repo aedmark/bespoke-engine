@@ -364,16 +364,52 @@ pub fn get_entity_screen_pos(
     return get_entity_screen_layout(idx, entities, screen_w, screen_h).pos;
 }
 
-/// Hit-tests screen coordinates against visible actors (P7-02).
+/// The screen box of `entity`'s declared sprite standing on `pt` (P46-03, D-155): the frame's
+/// bottom edge on the spot, centred across it. Null when the entity has no sprite. Drawing,
+/// hit tests, and the hover outline all use it, so what a click reaches is what is drawn.
+pub fn sprite_box(art: ?*const image_mod.Art, entity: EntityId, pt: Point) ?Rect {
+    const a = art orelse return null;
+    // A declared area is the prop's region on the art, wherever its spot is (D-158).
+    if (a.area_for(entity)) |area| return area_rect(area);
+    const sprite = a.sprite_for(entity) orelse return null;
+    const img = a.images[sprite.image];
+    const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
+    const h: i32 = @as(i32, img.frame_height) * image_mod.SCALE;
+    return .{ .x = pt.x - @divTrunc(w, 2), .y = pt.y - h, .w = w, .h = h };
+}
+
+/// An area on screen: art pixels at the 4x scale (D-152).
+pub fn area_rect(area: image_mod.Area) Rect {
+    const s: i32 = image_mod.SCALE;
+    return .{ .x = @as(i32, area.x) * s, .y = @as(i32, area.y) * s, .w = @as(i32, area.w) * s, .h = @as(i32, area.h) * s };
+}
+
+/// Where a walk to a prop aims: the foot of its area when it has one, so the player stands
+/// before the painted door rather than at a spot the art does not show; else its spot.
+pub fn prop_anchor(art: ?*const image_mod.Art, hs: RenderHotspot, screen_w: i32, screen_h: i32) Point {
+    if (art) |a| if (a.area_for(hs.entity)) |area| {
+        const r = area_rect(area);
+        return .{ .x = r.x + @divTrunc(r.w, 2), .y = r.y + r.h };
+    };
+    return world_to_screen(hs.x, hs.y, screen_w, screen_h);
+}
+
+/// Hit-tests screen coordinates against visible actors (P7-02). A person drawn as a declared
+/// sprite is hit anywhere in its frame as well as at the disc on its spot (P46-05).
 pub fn hit_test_actor(
     screen_x: i32,
     screen_y: i32,
     entities: []const RenderEntity,
     screen_w: i32,
     screen_h: i32,
+    art: ?*const image_mod.Art,
 ) ?usize {
-    for (entities, 0..) |_, idx| {
+    for (entities, 0..) |e, idx| {
         const pt = get_entity_screen_pos(idx, entities, screen_w, screen_h);
+        // A sprite answers anywhere in its frame and still at the disc on its spot below it.
+        if (sprite_box(art, e.entity, pt)) |box| {
+            if (box.contains(screen_x, screen_y)) return idx;
+        }
         const dx: i64 = screen_x - pt.x;
         const dy: i64 = screen_y - pt.y;
         const dist_sq = dx * dx + dy * dy;
@@ -385,16 +421,27 @@ pub fn hit_test_actor(
     return null;
 }
 
-/// Hit-tests screen coordinates against visible scene hotspots (P7-01, D-009).
+/// Hit-tests screen coordinates against visible scene hotspots (P7-01, D-009). A prop drawn as
+/// a declared sprite is hit anywhere in its frame (P46-05).
 pub fn hit_test_hotspot(
     screen_x: i32,
     screen_y: i32,
     hotspots: []const RenderHotspot,
     screen_w: i32,
     screen_h: i32,
+    art: ?*const image_mod.Art,
 ) ?usize {
     for (hotspots, 0..) |hs, idx| {
         const pt = world_to_screen(hs.x, hs.y, screen_w, screen_h);
+        // An area is the prop's whole target, since its spot may lie away from the painted
+        // region; a sprite answers in its frame and still at the disc on its spot (D-158).
+        if (art) |a| if (a.area_for(hs.entity)) |area| {
+            if (area_rect(area).contains(screen_x, screen_y)) return idx;
+            continue;
+        };
+        if (sprite_box(art, hs.entity, pt)) |box| {
+            if (box.contains(screen_x, screen_y)) return idx;
+        }
         const dx: i64 = screen_x - pt.x;
         const dy: i64 = screen_y - pt.y;
         const dist_sq = dx * dx + dy * dy;
@@ -2138,8 +2185,8 @@ pub const DisplayWindow = struct {
             self.hovered_choice = hit_test_dialogue_panel(x, y, b, &panel);
         };
         self.hovered_wp = hit_test_waypoint(x, y, frame.waypoints[0..frame.waypoint_count], self.width, self.height);
-        self.hovered_hotspot = hit_test_hotspot(x, y, frame.hotspots[0..frame.hotspot_count], self.width, self.height);
-        self.hovered_actor = hit_test_actor(x, y, frame.entities[0..frame.entity_count], self.width, self.height);
+        self.hovered_hotspot = hit_test_hotspot(x, y, frame.hotspots[0..frame.hotspot_count], self.width, self.height, self.art);
+        self.hovered_actor = hit_test_actor(x, y, frame.entities[0..frame.entity_count], self.width, self.height, self.art);
         self.hovered_party_member = hit_test_party_portrait(x, y, frame.party_count, self.width);
     }
 
@@ -2464,10 +2511,11 @@ pub const DisplayWindow = struct {
                                 frame.hotspots[0..frame.hotspot_count],
                                 self.width,
                                 self.height,
+                                self.art,
                             );
                             if (clicked_hs) |hs_idx| {
                                 const hs = frame.hotspots[hs_idx];
-                                const hs_pt = world_to_screen(hs.x, hs.y, self.width, self.height);
+                                const hs_pt = prop_anchor(self.art, hs, self.width, self.height);
                                 if (find_nearest_waypoint(hs_pt.x, hs_pt.y, frame.waypoints[0..frame.waypoint_count], self.width, self.height)) |wp_id| {
                                     self.target_wp = wp_id;
                                     self.play_sfx(.footstep);
@@ -2485,6 +2533,7 @@ pub const DisplayWindow = struct {
                                 frame.entities[0..frame.entity_count],
                                 self.width,
                                 self.height,
+                                self.art,
                             );
                             if (clicked_actor) |actor_idx| {
                                 const act_ent = frame.entities[actor_idx];
@@ -2517,6 +2566,7 @@ pub const DisplayWindow = struct {
                                 frame.entities[0..frame.entity_count],
                                 self.width,
                                 self.height,
+                                self.art,
                             );
                             if (clicked_actor) |actor_idx| {
                                 // Walk to a person before acting on them (D-092); LOOK and the
@@ -2550,11 +2600,12 @@ pub const DisplayWindow = struct {
                                     frame.hotspots[0..frame.hotspot_count],
                                     self.width,
                                     self.height,
+                                    self.art,
                                 );
                                 if (clicked_hs) |hs_idx| {
                                     // Walk to the mark nearest a prop before using it (D-092).
                                     const hs = frame.hotspots[hs_idx];
-                                    const hs_pt = world_to_screen(hs.x, hs.y, self.width, self.height);
+                                    const hs_pt = prop_anchor(self.art, hs, self.width, self.height);
                                     const reach = find_nearest_waypoint(hs_pt.x, hs_pt.y, frame.waypoints[0..frame.waypoint_count], self.width, self.height);
                                     if (self.selected_inventory_item) |item_idx| {
                                         self.selected_inventory_item = null;
@@ -3050,7 +3101,9 @@ pub const DisplayWindow = struct {
                 .hovered = is_hovered,
                 .labels = &layout_resolver,
             }) else false) else false;
-            if (!prop_drawn) {
+            const prop_area: ?image_mod.Area = if (self.art) |a| a.area_for(hs.entity) else null;
+            // A prop with an area is part of the art: nothing more is drawn for it (D-158).
+            if (!prop_drawn and prop_area == null) {
                 // Default prop
                 self.fill_rect(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color{ .r = 75, .g = 65, .b = 60 });
                 self.draw_rect_outline(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color.panel_border);
@@ -3060,7 +3113,16 @@ pub const DisplayWindow = struct {
 
             // Hover highlight ring and action prompt
             if (is_hovered) {
-                self.draw_circle_outline(pt.x, pt.y, HOTSPOT_SCREEN_RADIUS + 4, Color.wp_hover);
+                // A sprite or area is outlined where it is; a drawn prop keeps its ring, and the
+                // prompt sits above whichever it is (P46-05, D-158).
+                // The box is a layout aid, drawn only with the debug overlay; play shows the
+                // prompt alone, as an adventure game does.
+                const box = sprite_box(self.art, hs.entity, pt);
+                if (box) |b| {
+                    if (self.show_debug_overlay) self.draw_rect_outline(b.x - 2, b.y - 2, b.w + 4, b.h + 4, Color.wp_hover);
+                } else self.draw_circle_outline(pt.x, pt.y, HOTSPOT_SCREEN_RADIUS + 4, Color.wp_hover);
+                const prompt_at: Point = if (box) |b| .{ .x = b.x + @divTrunc(b.w, 2), .y = b.y } else pt;
+                const prompt_gap: i32 = if (box != null) 4 else HOTSPOT_SCREEN_RADIUS + 4;
                 var prompt_buf: [64]u8 = undefined;
                 const prompt = switch (self.active_verb) {
                     .look_at => std.fmt.bufPrint(&prompt_buf, "[Look at {s}]", .{name}) catch "[Look]",
@@ -3071,10 +3133,10 @@ pub const DisplayWindow = struct {
                 };
                 layout_resolver.submit(TextLabel.init(
                     prompt,
-                    pt.x,
-                    pt.y,
+                    prompt_at.x,
+                    prompt_at.y,
                     .above,
-                    HOTSPOT_SCREEN_RADIUS + 4,
+                    prompt_gap,
                     2,
                     to_layout(Color.wp_hover),
                     .hotspot_hover,
@@ -3299,8 +3361,15 @@ pub const DisplayWindow = struct {
             // The person a click would act on gets a gold ring and the action it would take
             // (D-093), as the browser does (D-088); before, only marks and props lit up.
             if (self.hover_target() == .person and self.hovered_actor.? == idx) {
-                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 4, Color.wp_target);
-                self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 5, Color.wp_target);
+                if (sprite_box(self.art, e.entity, pt)) |box| {
+                    if (self.show_debug_overlay) {
+                        self.draw_rect_outline(box.x - 2, box.y - 2, box.w + 4, box.h + 4, Color.wp_target);
+                        self.draw_rect_outline(box.x - 3, box.y - 3, box.w + 6, box.h + 6, Color.wp_target);
+                    }
+                } else {
+                    self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 4, Color.wp_target);
+                    self.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS + 5, Color.wp_target);
+                }
                 var hover_buf: [96]u8 = undefined;
                 const prompt = if (self.selected_inventory_item) |sel| (if (sel < frame.inventory_count)
                     std.fmt.bufPrint(&hover_buf, "[Use {s} on {s}]", .{ words(frame.inventory[sel].get_name()), name }) catch name
@@ -4046,10 +4115,10 @@ test "renderer coordinate conversion and hit testing" {
         },
     };
 
-    const hs_hit = hit_test_hotspot(pt.x, pt.y, &hotspots, 960, 540);
+    const hs_hit = hit_test_hotspot(pt.x, pt.y, &hotspots, 960, 540, null);
     try testing.expectEqual(@as(?usize, 0), hs_hit);
 
-    const hs_miss = hit_test_hotspot(10, 10, &hotspots, 960, 540);
+    const hs_miss = hit_test_hotspot(10, 10, &hotspots, 960, 540, null);
     try testing.expectEqual(@as(?usize, null), hs_miss);
 
     // Hit test verb buttons
@@ -4090,10 +4159,10 @@ test "renderer coordinate conversion and hit testing" {
     try testing.expect(e0_layout.status_y != e1_layout.status_y);
 
     // Hit test actor coordinates
-    const act0_hit = hit_test_actor(e0_layout.pos.x, e0_layout.pos.y, &entities, 960, 540);
+    const act0_hit = hit_test_actor(e0_layout.pos.x, e0_layout.pos.y, &entities, 960, 540, null);
     try testing.expectEqual(@as(?usize, 0), act0_hit);
 
-    const act1_hit = hit_test_actor(e1_layout.pos.x, e1_layout.pos.y, &entities, 960, 540);
+    const act1_hit = hit_test_actor(e1_layout.pos.x, e1_layout.pos.y, &entities, 960, 540, null);
     try testing.expectEqual(@as(?usize, 1), act1_hit);
 }
 
@@ -5245,4 +5314,32 @@ test "D-097: the window's key type is SDL's, so bindings need no SDL to declare"
     try std.testing.expectEqual(@as(Keycode, c.SDLK_ESCAPE), Keys.escape);
     try std.testing.expectEqual(@as(Keycode, c.SDLK_UP), Keys.up);
     try std.testing.expectEqual(@as(Keycode, c.SDLK_DOWN), Keys.down);
+}
+
+test "P46-05: a sprite is clicked anywhere in its frame, and an area anywhere in its rectangle" {
+    const palette = [_]image_mod.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 9, .b = 9 } };
+    var px: [12 * 24]u8 = @splat(1);
+    const sheet = image_mod.Image{ .name = "Keeper", .width = 12, .height = 24, .frame_width = 12, .frame_height = 24, .pixels = &px };
+    const person = EntityId.from_int(7);
+    const door = EntityId.from_int(8);
+    const art = image_mod.Art{
+        .palette = &palette,
+        .images = &.{sheet},
+        .sprites = &.{.{ .entity = person, .image = 0 }},
+        .areas = &.{.{ .entity = door, .x = 96, .y = 62, .w = 24, .h = 42 }},
+    };
+    var entity = RenderEntity{ .entity = person, .name = undefined, .name_len = 0, .x = 10, .y = 4, .current_wp = 1, .is_moving = false };
+    const feet = world_to_screen(10, 4, 1280, 720);
+    // The head, 90 pixels above the feet, hits the sprite; without art only the feet do.
+    try std.testing.expectEqual(@as(?usize, 0), hit_test_actor(feet.x, feet.y - 90, (&entity)[0..1], 1280, 720, &art));
+    try std.testing.expectEqual(@as(?usize, null), hit_test_actor(feet.x, feet.y - 90, (&entity)[0..1], 1280, 720, null));
+    try std.testing.expectEqual(@as(?usize, null), hit_test_actor(feet.x + 30, feet.y - 50, (&entity)[0..1], 1280, 720, &art));
+    try std.testing.expectEqual(@as(?usize, 0), hit_test_actor(feet.x, feet.y, (&entity)[0..1], 1280, 720, &art));
+    var hs = RenderHotspot{ .entity = door, .room = .none, .x = 40, .y = 4, .radius = 6, .name = undefined, .name_len = 0, .examine_text = undefined, .examine_len = 0 };
+    // The door's area is art (96..120, 62..104), screen (384..480, 248..416), whatever its spot.
+    try std.testing.expectEqual(@as(?usize, 0), hit_test_hotspot(400, 260, (&hs)[0..1], 1280, 720, &art));
+    try std.testing.expectEqual(@as(?usize, 0), hit_test_hotspot(479, 415, (&hs)[0..1], 1280, 720, &art));
+    try std.testing.expectEqual(@as(?usize, null), hit_test_hotspot(480, 300, (&hs)[0..1], 1280, 720, &art));
+    // A walk to the door aims for its area's foot.
+    try std.testing.expectEqual(Point{ .x = 432, .y = 416 }, prop_anchor(&art, hs, 1280, 720));
 }

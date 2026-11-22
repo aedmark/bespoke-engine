@@ -4,6 +4,11 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Props click where they are drawn: `area ShopDoor: 96 62 24 42` makes a painted door clickable anywhere on it, and people and props drawn as sprites are clicked anywhere in their frame (`D-158`). Package format version 26 carries areas.
+
+- The Lamplighter's Round is a new proof with its own page (`site/lamplighter.html`, `--lamplighter`): at dusk Nell Brindle, a late lamplighter, lights two streets' lamps before the watch walks his round, once a jackdaw has been bribed out of one. Every room, person, and prop is pixel art imported from PNG files when the game is built, and people walk and idle in animation.
+- Proof pages may be up to 2 MiB (`D-157`), up from 1.25 MiB, and each WebAssembly module up to 1.5 MiB (`D-159`), up from 1 MiB, now that a proof carries its own art.
+
 - PNG import: `bespoke import art.png --name Lamp [--frames 12x20] [--script game.bespoke]` prints the image as rows of palette codes with the palette lines it needs, and `image Lamp from "lamp.png"` compiles a PNG beside the script when it is run, compiled, or checked from the command line. Colours map exactly; a partly transparent pixel or a 257th colour is refused, as are interlaced and 16-bit files (`D-156`).
 
 - Scripts can declare pixel art: a `palette:` of up to 256 colours, `image` blocks written as rows of palette codes and cut into frames, a `backdrop:` for a scene, and a `sprite` for a person or prop with an idle and a walk for each direction, timed in 60 Hz display frames. A scene with a backdrop hides its walkways and resting marks; people and props stand on their spots. The compiler names the line of an unknown image, a missing frame, an unknown colour code, and other art mistakes. Package format version 25 carries the bindings (`D-155`).

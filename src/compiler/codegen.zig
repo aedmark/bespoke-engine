@@ -880,7 +880,7 @@ pub const Codegen = struct {
     }
 
     fn compile_art(self: *Codegen, decl: *const parser_mod.ArtDecl) !image_mod.Art {
-        if (decl.palette.len == 0 and decl.images.len == 0) return .{};
+        if (decl.palette.len == 0 and decl.images.len == 0 and decl.areas.len == 0) return .{};
         const backdrops = try self.allocator.alloc(image_mod.Backdrop, decl.backdrops.len);
         defer self.allocator.free(backdrops);
         for (decl.backdrops, backdrops) |b, *out| out.* = .{ .scene = try self.world.intern_entity(b.scene), .image = b.image };
@@ -891,11 +891,15 @@ pub const Codegen = struct {
             .image = sp.image,
             .animations = sp.animations,
         };
+        const areas = try self.allocator.alloc(image_mod.Area, decl.areas.len);
+        defer self.allocator.free(areas);
+        for (decl.areas, areas) |a, *out| out.* = .{ .entity = try self.world.intern_entity(a.target), .x = a.x, .y = a.y, .w = a.w, .h = a.h };
         return image_mod.Art.dupe(self.allocator, .{
             .palette = decl.palette,
             .images = decl.images,
             .backdrops = backdrops,
             .sprites = sprites,
+            .areas = areas,
         }) catch |err| switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             // The parser checked everything `validate` checks, so this is a compiler fault.

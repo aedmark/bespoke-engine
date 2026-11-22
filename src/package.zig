@@ -70,8 +70,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// game's palette and indexed images (P46-01, D-152, D-153); versions 1 through 23 load with no
 /// art, which is a game drawn by code. Version 25 appends what the art is attached to: scene
 /// backdrops and the sprites of people and props with their animations (P46-03, D-155);
-/// versions 1 through 24 load with none.
-pub const PACKAGE_VERSION: u32 = 25;
+/// versions 1 through 24 load with none. Version 26 appends prop areas, rectangles on the art
+/// that click like the prop (P46-05, D-158); versions 1 through 25 load with none.
+pub const PACKAGE_VERSION: u32 = 26;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -470,6 +471,31 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
 
     try write_art(writer, compiled.art);
     try write_art_bindings(writer, compiled.art);
+    // Version 26: prop areas.
+    try writer.writeInt(u32, @intCast(compiled.art.areas.len), .little);
+    for (compiled.art.areas) |a| {
+        try writer.writeInt(u32, a.entity.to_int(), .little);
+        for ([_]u16{ a.x, a.y, a.w, a.h }) |v| try writer.writeInt(u16, v, .little);
+    }
+}
+
+/// Untrusted input: the count is bounded before allocation, entities must exist, and
+/// `Art.validate` checks each rectangle against the art.
+fn read_art_areas(allocator: std.mem.Allocator, world: *const World, reader: anytype, art: *image_mod.Art) !void {
+    const count = try reader.takeInt(u32, .little);
+    if (count > image_mod.MAX_BINDINGS) return error.InvalidImageBinding;
+    const areas = try allocator.alloc(image_mod.Area, count);
+    art.areas = areas;
+    for (areas) |*a| {
+        const entity = read_entity_ref(world, reader) catch |err| return if (err == error.EndOfStream) err else error.InvalidImageBinding;
+        var v: [4]u16 = undefined;
+        for (&v) |*n| n.* = try reader.takeInt(u16, .little);
+        a.* = .{ .entity = entity, .x = v[0], .y = v[1], .w = v[2], .h = v[3] };
+    }
+    art.validate() catch |err| return switch (err) {
+        error.InvalidImageBinding => error.InvalidImageBinding,
+        else => err,
+    };
 }
 
 /// Version 25: each backdrop's scene and image, then each sprite's entity, image, and its
@@ -1990,6 +2016,7 @@ pub fn load_package(
     errdefer art.deinit_owned(allocator);
     if (header.version >= 24) art = try read_art(allocator, pr);
     if (header.version >= 25) try read_art_bindings(allocator, world, pr, &art);
+    if (header.version >= 26) try read_art_areas(allocator, world, pr, &art);
 
     return CompiledProgram{
         .drafts = drafts,
@@ -2226,7 +2253,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 25",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 26",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2568,8 +2595,11 @@ const EMPTY_TAIL_AFTER_V20: usize = 4 + EMPTY_TAIL_AFTER_V23;
 /// The empty art section (version 24): a zero colour count and a zero image count, and the
 /// empty bindings after it.
 const EMPTY_TAIL_AFTER_V23: usize = 2 + 4 + EMPTY_TAIL_AFTER_V24;
-/// The empty bindings (version 25): zero backdrops and zero sprites.
-const EMPTY_TAIL_AFTER_V24: usize = 4 + 4;
+/// The empty bindings (version 25): zero backdrops and zero sprites, and the empty area count
+/// after them (version 26).
+const EMPTY_TAIL_AFTER_V24: usize = 4 + 4 + EMPTY_TAIL_AFTER_V25;
+/// The empty area count (version 26).
+const EMPTY_TAIL_AFTER_V25: usize = 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -4119,7 +4149,7 @@ test "P46-03: package version 25 round-trips sprites and their animations, and v
     try testing.expectEqual(@as(u16, 1), clerk.frame_at(.walk_left, 0));
 
     // Cutting the bindings off gives a version 24 package: the art loads, attached to nothing.
-    const v24 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - BINDING_SECTION_LEN]);
+    const v24 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - BINDING_SECTION_LEN - EMPTY_TAIL_AFTER_V25]);
     defer testing.allocator.free(v24);
     reseal_for_test(v24, 24);
     var old = try load_for_test(v24);
@@ -4133,7 +4163,7 @@ test "P46-03: a binding to a missing entity, image, or frame is refused" {
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try write_binding_fixture(testing.allocator, &buffer);
-    const second_sprite = buffer.items.len - (4 + 2 + 5 + 1 * 4);
+    const second_sprite = buffer.items.len - EMPTY_TAIL_AFTER_V25 - (4 + 2 + 5 + 1 * 4);
     const Break = struct { at: usize, bytes: []const u8 };
     const breaks = [_]Break{
         // The clerk's entity: an id no entity has.
@@ -4145,13 +4175,13 @@ test "P46-03: a binding to a missing entity, image, or frame is refused" {
         // The same step shown for no display frames.
         .{ .at = second_sprite + 6 + 4 + 2, .bytes = &.{ 0, 0 } },
         // Two hundred backdrops claimed where there are none: the sprite bytes do not parse as them.
-        .{ .at = buffer.items.len - BINDING_SECTION_LEN, .bytes = &.{ 200, 0, 0, 0 } },
+        .{ .at = buffer.items.len - EMPTY_TAIL_AFTER_V25 - BINDING_SECTION_LEN, .bytes = &.{ 200, 0, 0, 0 } },
     };
     for (breaks) |b| {
         const broken = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(broken);
         @memcpy(broken[b.at .. b.at + b.bytes.len], b.bytes);
-        reseal_for_test(broken, 25);
+        reseal_for_test(broken, 26);
         const result = load_for_test(broken);
         if (result) |loaded| {
             var program = loaded;
@@ -4173,12 +4203,69 @@ test "P46-03: checked-in version 25 package fixture carries sprites" {
         .limited(1024 * 1024),
     );
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 25), version_from_bytes(fixture).?);
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     var stream: std.Io.Reader = .fixed(fixture);
     var compiled = try load_package(testing.allocator, &stream, &world, null);
     defer compiled.deinit();
     try testing.expectEqual(@as(usize, 2), compiled.art.sprites.len);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+}
+
+const AREA_FIXTURE =
+    \\scene: FixtureYard
+    \\cast: FixtureKeeper
+    \\props: FixtureGate, FixtureWell
+    \\marks: FixturePath
+    \\area FixtureGate: 10 20 30 40
+    \\area FixtureWell: 200 100 16 16
+    \\routine Idle(FixtureKeeper):
+    \\  wait 1 ticks
+;
+
+test "P46-05: package version 26 round-trips prop areas, and version 25 loads without them" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, AREA_FIXTURE);
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var loaded = try load_package(testing.allocator, &stream, &world2, null);
+    defer loaded.deinit();
+    const gate = loaded.art.area_for(world2.lookup_entity("FixtureGate").?).?;
+    try testing.expectEqual(@as(u16, 30), gate.w);
+    try testing.expectEqual(@as(usize, 2), loaded.art.areas.len);
+
+    // An area off the art is refused; cutting the areas off gives version 25 with none.
+    const broken = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(broken);
+    std.mem.writeInt(u16, broken[broken.len - 4 ..][0..2], 200, .little);
+    reseal_for_test(broken, 26);
+    try testing.expectError(error.InvalidImageBinding, load_for_test(broken));
+    const v25 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - (4 + 2 * (4 + 8))]);
+    defer testing.allocator.free(v25);
+    reseal_for_test(v25, 25);
+    var old = try load_for_test(v25);
+    defer old.deinit();
+    try testing.expectEqual(@as(usize, 0), old.art.areas.len);
+}
+
+test "P46-05: checked-in version 26 package fixture carries prop areas" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v26.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var compiled = try load_for_test(fixture);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.art.areas.len);
     try testing.expect(compiled.routine_entries.contains("Idle"));
 }

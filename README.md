@@ -143,6 +143,7 @@ zig build test-proofs                     # every proof's tests
 | `--word-foundry` | The Word Foundry | Spell words learned from clues; two combinations resolve and a wrong one refuses without changing anything (headless only) |
 | `--cinder-table` | The Cinder Table | Private hands and scored plays: each seat plays only cards it knows, follows the led suit, and leads into a suit an opponent has shown to be void in (headless only) |
 | `--valerius` | Valerius and the Bread | Values, red lines, a five-tier dilemma, appeals the player must learn, and drift carried into a later scene |
+| `--lamplighter` | The Lamplighter's Round | Pixel art imported from PNG files at build time: backdrops, animated sprites, and lamps whose art follows a fact |
 | `--long-gallery` | The Long Gallery | Watching a room the player is not in: an agenda plays out in a locked studio while the gallery frame stays put |
 
 ---

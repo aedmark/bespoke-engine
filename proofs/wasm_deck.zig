@@ -31,6 +31,7 @@ const weathercock = @import("weathercock.zig");
 const grid_puzzle = @import("grid_puzzle.zig");
 const observatory = @import("observatory_puzzle.zig");
 const valerius = @import("valerius.zig");
+const lamplighter = @import("lamplighter.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -194,6 +195,17 @@ pub const decks = [_]wasm.Deck{
         .after_tick = greyhold_after_tick,
         .command_bar = true,
         .on_typed = greyhold_typed,
+    }),
+    // P46-05: drawn entirely from PNG art the build imported; the deck loads that package.
+    wasm.script_deck_with("THE LAMPLIGHTER'S ROUND (PIXEL ART)", lamplighter.PACKAGE, .{
+        .player = "Nell",
+        .intro = lamplighter.INTRO ++ " [S] plays the next step.",
+        .theme = &lamplighter.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 24, .g = 26, .b = 52 },
+        .setup = lamplighter_setup,
+        .catalyst = solver(&LAMPLIGHTER_SOLUTION),
+        .exits = &lamplighter.EXITS,
     }),
 };
 
@@ -1279,7 +1291,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper", "Nell" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -2078,6 +2090,9 @@ test "P36-05: every browser deck draws the frame the desktop window draws for th
         const frame = rt.capture();
         const shown = rt.screen(frame);
         desk.theme = shown.theme;
+        // Declared art and its clock are window state too (P46-03).
+        desk.art = shown.art;
+        desk.animation_clock = shown.animation_clock;
         desk.footer_text = shown.footer_text;
         desk.backdrop_color = shown.backdrop_color;
         desk.active_verb = shown.active_verb;
@@ -2133,8 +2148,25 @@ test "D-100: every mark of every deck is drawn on the stage, where a click can r
     }
 }
 
+/// Deck indices the per-proof tests load by name, so a deck added after them moves nothing.
+const VALERIUS_DECK: u8 = 13;
+const LAMPLIGHTER_DECK: u8 = 14;
+
+test "P46-05: the Lamplighter's [S] lights both lamps from the imported art's package" {
+    const rt = try load(LAMPLIGHTER_DECK);
+    defer unload(rt);
+    try testing.expectEqualStrings("Nell", rt.world.get_entity_name(rt.player_entity).?);
+    const program = &rt.program.?;
+    try testing.expectEqual(@as(usize, 2), program.art.backdrops.len);
+    const nell = try entity(rt, "Nell");
+    var presses: usize = 0;
+    while (!rt.world.has_fact(nell, try relation(rt, "RoundDone"), null) and presses < 20) : (presses += 1) try rt.trigger_catalyst();
+    try testing.expect(rt.world.has_fact(nell, try relation(rt, "RoundDone"), null));
+    try testing.expectEqualStrings(lamplighter.STEPS, rt.world.get_entity_name(rt.vm.current_scene.?).?);
+}
+
 test "P45-06: Valerius and the Bread's [S] types the appeal to Mercy through to spring" {
-    const rt = try load(decks.len - 1);
+    const rt = try load(VALERIUS_DECK);
     defer unload(rt);
     try testing.expectEqualStrings("Hesper", rt.world.get_entity_name(rt.player_entity).?);
     const tam = try entity(rt, "Tam");
@@ -2148,9 +2180,63 @@ test "P45-06: Valerius and the Bread's [S] types the appeal to Mercy through to 
 }
 
 test "P45-06: an appeal Hesper has not earned is refused in the browser too" {
-    const rt = try load(decks.len - 1);
+    const rt = try load(VALERIUS_DECK);
     defer unload(rt);
     for (0..3) |_| try rt.step_tick();
     try type_into(rt, "appeal to loyalty");
     try testing.expectEqualStrings("You don't know what moves them.", rt.get_banner());
 }
+
+// The Lamplighter's Round (P46-05): the desktop's layout, and the program's lamp sheet for the
+// theme, which reads it from the loaded package.
+fn lamplighter_setup(rt: *WasmRuntime) anyerror!void {
+    try lamplighter.configure(&rt.world, &rt.spatial, true);
+    lamplighter.program_art = if (rt.program) |*program| &program.art else null;
+    try rt.vm.transition_to_scene(try entity(rt, lamplighter.LANE));
+    rt.bind();
+}
+
+const LAMPLIGHTER_SOLUTION = [_]Beat{
+    .{ .note = "Nell asks Hobb for a taper before touching his oil.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "Doorstep" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "TalksTo", .actor = "Nell", .a = "Hobb" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Nell fills her can at the oil cask.", .actions = &.{
+        .{ .cue = .{ .name = "Uses", .actor = "Nell", .a = "OilCask" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Nell lights the Tallow Lane lamp.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "LanePost" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "Uses", .actor = "Nell", .a = "LaneLamp" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "One fill lights one lamp, so Nell fills the can again.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "Doorstep" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "Uses", .actor = "Nell", .a = "OilCask" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Nell goes through the archway to Market Steps.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "LaneEnd" } }, .{ .settle = "Nell" },
+        .{ .scene = .{ .scene = lamplighter.STEPS, .actor = "Nell", .mark = "StepsFoot" } },
+    } },
+    .{ .note = "A jackdaw is nesting in the market lamp.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "StepsPost" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "Uses", .actor = "Nell", .a = "StepsLamp" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Pike knows the jackdaw: only something shiny will shift her.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "FountainSide" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "TalksTo", .actor = "Nell", .a = "Pike" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Back to Hobb, who parts with a brass thimble.", .actions = &.{
+        .{ .scene = .{ .scene = lamplighter.LANE, .actor = "Nell", .mark = "LaneEnd" } },
+        .{ .walk = .{ .actor = "Nell", .mark = "Doorstep" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "TalksTo", .actor = "Nell", .a = "Hobb" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Nell offers Mrs Jessop the thimble.", .actions = &.{
+        .{ .walk = .{ .actor = "Nell", .mark = "LaneEnd" } }, .{ .settle = "Nell" },
+        .{ .scene = .{ .scene = lamplighter.STEPS, .actor = "Nell", .mark = "StepsFoot" } },
+        .{ .walk = .{ .actor = "Nell", .mark = "StepsPost" } }, .{ .settle = "Nell" },
+        .{ .cue = .{ .name = "Uses", .actor = "Nell", .a = "StepsLamp" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Nell lights the market lamp, and Pike walks his round.", .actions = &.{
+        .{ .cue = .{ .name = "Uses", .actor = "Nell", .a = "StepsLamp" } }, .{ .ticks = 3 },
+        .{ .require = .{ .subject = "Nell", .relation = "RoundDone" } },
+    } },
+};

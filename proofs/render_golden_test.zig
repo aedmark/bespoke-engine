@@ -41,6 +41,7 @@ const observatory_puzzle = @import("observatory_puzzle.zig");
 const long_gallery = @import("long_gallery.zig");
 const valerius = @import("valerius.zig");
 const image_stage = @import("image_stage.zig");
+const lamplighter = @import("lamplighter.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -110,6 +111,7 @@ const STATUS_VARIANTS = [_][]const u8{
     "bell_ringing",           "bell_beacon_lit",        "village_crime_active", "village_warrant_active",
     "village_arrest_made",    "cheese_holder",          "charmed_target",       "countdown",
     "villagers",              "gallery_door_revealed",  "gallery_fire",
+    "lane_lamp_lit",          "steps_lamp_lit",         "jackdaw_nesting",
 };
 
 const Status = struct {
@@ -571,19 +573,31 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
         return;
     }
     if (std.mem.eql(u8, name, "three_tides")) return three_tides.place_fenn(world, spatial);
+    if (std.mem.eql(u8, name, "lamplighter")) return lamplighter.configure(world, spatial, false);
 }
 
 fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
+    return record_program(rec, name, script, null);
+}
+
+/// `script` is read for its scene headers; `package`, when given, is the program itself, as
+/// for a proof whose art the build imported from PNG files (P46-05).
+fn record_program(rec: *Recorder, name: []const u8, script: []const u8, package: ?[]const u8) !void {
     const allocator = rec.allocator;
     var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
     defer world.deinit();
     var spatial = bespoke.SpatialSystem.init(allocator);
     defer spatial.deinit();
-    var compiled = try bespoke.compile_source(allocator, &world, &spatial, script);
+    var compiled = if (package) |bytes| blk: {
+        var stream: std.Io.Reader = .fixed(bytes);
+        break :blk try bespoke.load_package(allocator, &stream, &world, &spatial);
+    } else try bespoke.compile_source(allocator, &world, &spatial, script);
     defer compiled.deinit();
     // A script's declared art draws in both windows (P46-03); a script without art sets none.
     rec.set_art(&compiled.art);
     defer rec.set_art(null);
+    // The Lamplighter's theme draws its lamps from the loaded program's sheet.
+    if (std.mem.eql(u8, name, "lamplighter")) lamplighter.program_art = &compiled.art;
     // Seed grid layouts so a grid scene shows its opening cells. Only grids: seeding other
     // subsystems here would redraw scenes whose goldens predate it.
     for (compiled.grids.items) |declaration| try bespoke.grid.seed(&world, declaration);
@@ -810,6 +824,20 @@ fn replay_image_stage(rec: *Recorder) !void {
     }
 }
 
+/// P46-05: The Lamplighter's Round, loaded from the package the build compiled from its PNGs,
+/// with its own theme drawing the lamps' dark or lit frame. Its lit lamps are recorded as
+/// progress states through the shared status, like any proof's art.
+fn record_lamplighter(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void {
+    rec.window.set_theme(&lamplighter.theme);
+    big.set_theme(&lamplighter.theme);
+    defer {
+        rec.window.set_theme(&art.theme);
+        big.set_theme(&art.theme);
+        lamplighter.program_art = null;
+    }
+    try record_program(rec, "lamplighter", lamplighter.SCRIPT, lamplighter.PACKAGE);
+}
+
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.array_list.Managed(u8) {
     // The same frames are drawn and band-checked at 1920x1080 in a second window (P43-03); its
     // pixels are thrown away, so no golden grows.
@@ -823,6 +851,7 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     for (scripted) |p| try record_script(&rec, p.name, p.script);
     try record_inspector(&rec);
     try record_image_stage(&rec, &big);
+    try record_lamplighter(&rec, &big);
     if (rec.crowded > 0) {
         std.debug.print("\n{d} recorded frame(s) leave fewer than {d} pixels above the message band (Q-017, P43-08)\n", .{ rec.crowded, CLEARANCE_FLOOR });
         return error.SceneTooCloseToBand;

@@ -23,6 +23,7 @@ pub const word_foundry = @import("word_foundry.zig");
 pub const cinder_table = @import("cinder_table.zig");
 pub const long_gallery = @import("long_gallery.zig");
 pub const valerius = @import("valerius.zig");
+pub const lamplighter = @import("lamplighter.zig");
 
 const Proof = enum {
     tavern,
@@ -42,6 +43,7 @@ const Proof = enum {
     cinder_table,
     long_gallery,
     valerius,
+    lamplighter,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -93,6 +95,8 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "valerius", .proof = .valerius },
     .{ .name = "bread", .proof = .valerius },
     .{ .name = "greyhold", .proof = .valerius },
+    .{ .name = "lamplighter", .proof = .lamplighter },
+    .{ .name = "lamps", .proof = .lamplighter },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -127,6 +131,7 @@ const usage =
     \\  --cinder-table       The Cinder Table (private hands and scored decisions; headless only)
     \\  --long-gallery       The Long Gallery (watching a room the player is not in)
     \\  --valerius           Valerius and the Bread (values, red lines, dilemmas, appeals)
+    \\  --lamplighter        The Lamplighter's Round (imported PNG art, animated sprites)
     \\
 ;
 
@@ -189,6 +194,7 @@ pub fn main(init: std.process.Init) !void {
         .cinder_table => if (headless) try cinder_table.run_headless(allocator, stdout) else try stdout.writeAll("The Cinder Table is a headless proof; run it with --headless.\n"),
         .long_gallery => if (headless) try long_gallery.run_headless(allocator, stdout) else try long_gallery.run_interactive(allocator, io, stdout),
         .valerius => if (headless) try valerius.run_headless(allocator, stdout) else try valerius.run_interactive(allocator, io, stdout),
+        .lamplighter => if (headless) try lamplighter.run_headless(allocator, stdout) else try lamplighter.run_interactive(allocator, io, stdout),
     }
 }
 
@@ -210,6 +216,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = cinder_table;
     _ = long_gallery;
     _ = valerius;
+    _ = lamplighter;
     std.testing.refAllDecls(@This());
 }
 

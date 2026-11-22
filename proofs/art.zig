@@ -3242,6 +3242,12 @@ pub const Status = struct {
     villager_drive_count: usize = 0,
     social_edges: [16]SocialEdge = @as([16]SocialEdge, @splat(.{})),
     social_edge_count: usize = 0,
+    /// The Lamplighter's Round (P46-05): which street lamps burn, so its theme draws the lit
+    /// frame of the imported lamp sheet.
+    lane_lamp_lit: bool = false,
+    steps_lamp_lit: bool = false,
+    /// Mrs Jessop nests in the market lamp until a thimble moves her.
+    jackdaw_nesting: bool = false,
 
     pub fn countdown(self: *const Status) []const u8 {
         return self.branch_countdown[0..self.branch_countdown_len];
@@ -3283,6 +3289,19 @@ pub fn show_branch(bridge: *bespoke.DisplayBridge, hypervisor: *const bespoke.Te
 }
 
 /// Reads the gallery grid's cell facts by the names its script uses (P25-03).
+fn nesting(world: *const bespoke.World) bool {
+    const bird = world.lookup_entity("Jackdaw") orelse return false;
+    const lamp = world.lookup_entity("StepsLamp") orelse return false;
+    const rel = world.lookup_relation("Nesting") orelse return false;
+    return world.find_first(bird, rel, lamp.to_int()) != null;
+}
+
+fn lit(world: *const bespoke.World, lamp: []const u8) bool {
+    const id = world.lookup_entity(lamp) orelse return false;
+    const rel = world.lookup_relation("Lit") orelse return false;
+    return world.find_first(id, rel, null) != null;
+}
+
 fn capture_gallery(world: *const bespoke.World, st: *Status) void {
     st.gallery_cells = @as([GALLERY_CELLS]u8, @splat(0));
     st.gallery_door_revealed = false;
@@ -3479,6 +3498,9 @@ fn entity_in_state(world: *const bespoke.World, entity_name: []const u8, state: 
 pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
     const st = frame.host_status_mut(Status);
     capture_gallery(world, st);
+    st.lane_lamp_lit = lit(world, "LaneLamp");
+    st.steps_lamp_lit = lit(world, "StepsLamp");
+    st.jackdaw_nesting = nesting(world);
     // 5. Query relational facts for status indicators
     st.cheese_holder = .none;
     st.charmed_target = .none;

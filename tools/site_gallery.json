@@ -126,6 +126,15 @@
       "deck": 13,
       "page": "valerius.html",
       "flag": "valerius"
+    },
+    {
+      "id": "lamplighter",
+      "title": "The Lamplighter's Round",
+      "tag": "Pixel art from PNG files",
+      "blurb": "Dusk, and the lamplighter is late. Light both street lamps before the watch walks his round, if the jackdaw nesting in one will let you. Every room, person, and prop is pixel art imported from PNG files.",
+      "deck": 14,
+      "page": "lamplighter.html",
+      "flag": "lamplighter"
     }
   ]
 }

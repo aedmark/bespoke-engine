@@ -166,6 +166,18 @@ pub fn build(b: *std.Build) void {
         bespoke_mod.addImport("sdl", sdl_mod);
     }
 
+    // P46-05 (D-156): The Lamplighter's Round keeps its art as PNG files beside its script. The
+    // CLI compiles them into a package here, which is the one form the desktop proof, its
+    // headless golden, and its browser deck load: the runtime never decodes PNG (D-151).
+    const lamplighter_pack = b.addRunArtifact(exe);
+    lamplighter_pack.addArg("compile");
+    lamplighter_pack.addFileArg(b.path("proofs/art/lamplighter/lamplighter.bespoke"));
+    lamplighter_pack.addArg("-o");
+    const lamplighter_bspk = lamplighter_pack.addOutputFileArg("lamplighter.bspk");
+    for ([_][]const u8{ "tallow_lane", "market_steps", "nell", "hobb", "pike", "cask", "lamp" }) |art_name| {
+        lamplighter_pack.addFileInput(b.path(b.fmt("proofs/art/lamplighter/{s}.png", .{art_name})));
+    }
+
     const proofs_exe = b.addExecutable(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
         // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
@@ -178,6 +190,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     proofs_exe.root_module.addImport("bespoke", bespoke_mod);
+    proofs_exe.root_module.addAnonymousImport("lamplighter_bspk", .{ .root_source_file = lamplighter_bspk });
     proofs_exe.root_module.addOptions("build_options", build_opts);
     proofs_exe.root_module.link_libc = true;
     proofs_exe.root_module.linkSystemLibrary("SDL2", .{});
@@ -270,6 +283,7 @@ pub fn build(b: *std.Build) void {
     });
     proofs_unit_tests.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
+    proofs_unit_tests.root_module.addAnonymousImport("lamplighter_bspk", .{ .root_source_file = lamplighter_bspk });
     proofs_unit_tests.root_module.addOptions("build_options", build_opts);
 
     // Characterization goldens (P32-07): proofs/golden_test.zig compares each proof's headless
@@ -393,6 +407,7 @@ pub fn build(b: *std.Build) void {
     wasm_proofs_exe.root_module.addImport("bespoke", wasm_bespoke);
     // The Tavern Heist deck runs the stock scenario script (P30-05, D-069).
     wasm_proofs_exe.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
+    wasm_proofs_exe.root_module.addAnonymousImport("lamplighter_bspk", .{ .root_source_file = lamplighter_bspk });
     wasm_proofs_exe.entry = .disabled;
     wasm_proofs_exe.rdynamic = true;
     wasm_proofs_exe.stack_size = WASM_STACK_BYTES;

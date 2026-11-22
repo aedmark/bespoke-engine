@@ -840,6 +840,8 @@ test "P46-03: art mistakes are reported on their own line" {
         .{ .source = "palette:\n  \".\" transparent\n  \"rr\" 1 2 3", .message = "palette code \"rr\" is 2 characters wide, but the first code is 1; every code is the same width", .line = 3 },
         .{ .source = "palette:\n  \".\" transparent\n  \"r\" 1 2 300", .message = "palette code \"r\" has a colour value of 300; each of red, green, and blue is 0 to 255", .line = 3 },
         .{ .source = "palette:\n  \".\" transparent\npalette:\n  \".\" transparent", .message = "the palette is declared twice; a game has one palette (D-152)", .line = 3 },
+        .{ .source = ART_BASE ++ "area Bel: 0 0 4 4", .message = "area 'Bel' is for a prop no scene declares in 'props:'", .line = 14, .hint = "Bell" },
+        .{ .source = ART_BASE ++ "area Bell: 300 0 30 4", .message = "area 'Bell' is 30x4 at (300, 0); an area is at least 1x1 and inside the 320x180 art", .line = 14 },
     };
     for (cases) |case| {
         const result = check_source(testing.allocator, case.source);

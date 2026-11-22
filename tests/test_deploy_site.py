@@ -74,7 +74,7 @@ class ExportTests(unittest.TestCase):
                 "index.html", "sw.js", "harbour.html",
                 "tavern.html", "pips.html", "beard.html", "village.html", "donkey.html", "tides.html",
                 "grog.html", "barbs.html", "saltmarket.html", "weathercock.html", "bell-tower.html",
-                "fire-escape.html", "observatory.html", "valerius.html",
+                "fire-escape.html", "observatory.html", "valerius.html", "lamplighter.html",
             ],
             [p.name for p in written],
         )
