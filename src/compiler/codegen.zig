@@ -29,6 +29,7 @@ const spell_mod = @import("../spell.zig");
 const decision_mod = @import("../decision.zig");
 const value_mod = @import("../value.zig");
 const dilemma_mod = @import("../dilemma.zig");
+const image_mod = @import("../image.zig");
 const command_mod = @import("../command.zig");
 const mml = @import("../mml.zig");
 const dialogue_lifecycle = @import("../dialogue.zig");
@@ -110,8 +111,12 @@ pub const CompiledProgram = struct {
     cast: std.ArrayListUnmanaged(CastPlace) = .empty,
     /// `where` guards of cue handlers, in source order (D-072). Handlers without one are absent.
     cue_guards: std.ArrayListUnmanaged(CueGuard) = .empty,
+    /// The game's palette and indexed images (P46-01, D-152). Presentation only: never written
+    /// to the world, so it cannot change a replay. Owned by `chunk.allocator`.
+    art: image_mod.Art = .{},
 
     pub fn deinit(self: *CompiledProgram) void {
+        self.art.deinit_owned(self.chunk.allocator);
         for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
         self.cue_guards.deinit(self.chunk.allocator);
         self.cast.deinit(self.chunk.allocator);

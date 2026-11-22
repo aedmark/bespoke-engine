@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A package can carry pixel art: one palette of up to 256 colours and indexed sprite sheets and backdrops, with frames up to 320x180 (`D-152`, `D-153`). Package format version 24 holds it, earlier packages load with no art, and a malformed palette, size, name, or pixel index is refused with an error that names it. Scripts cannot declare art yet; drawing, declarations, and PNG import follow in Phase 46.
+
 ## 0.4.0 - 2026-11-21
 
 - Valerius and the Bread is a new proof with its own page (`site/valerius.html`, `--valerius`): in a hard winter at the hill-fort of Greyhold, Hesper learns what Captain Valerius values and appeals to it to save her brother Tam, who stole a loaf. His red lines refuse a hanging and a bribe, Mercy and Loyalty end the winter differently, and the outcome drifts his Mercy into the spring scene (`P45-06`).

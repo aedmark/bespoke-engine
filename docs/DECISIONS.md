@@ -1875,6 +1875,22 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Art coordinates and world positions meet at the 4x scale, so hotspots and marks placed on art land on 4-pixel boundaries in the frame. A one-byte index fits every image the format allows. A page can carry many backdrops within its own 1.25 MiB budget (D-141); a page of large art still faces that limit, and compression is a later choice made against measured pages.
 
+## D-153 The Package's Art Section: Raw Indexed Sheets With Fixed Limits (2026-11-21, status: accepted; P46-01)
+
+**Context.** P46-01 puts D-152's art into `.bspk`. The package is untrusted input, so every count and size needs a bound the loader can check before it reads or allocates, and the section's shape is frozen at 1.0 (D-151).
+
+**Decision.**
+1. **One section, version 24.** `CompiledProgram.art` holds the palette and the images (`src/image.zig`). The section follows the version 23 appeal groups: a u16 colour count and RGB triples, a u32 image count, then each image's name, sheet width and height, frame width and height (u16 each), and one index byte per pixel, row by row. A program with no art writes six zero bytes. Versions 1 through 23 load with no art.
+2. **A sheet is a grid of equal frames.** Frames read left to right, then top to bottom. A backdrop is a sheet of one 320x180 frame; the format has no separate kind, and P46-03 decides where a scene requires that size.
+3. **Limits.** At most 256 colours and 1,024 images; a frame is 1 to 320 wide and 1 to 180 tall and divides its sheet exactly; a sheet is at most 2,048 on a side and 1,048,576 pixels; a name is 1 to 64 bytes of printable ASCII and unique. An image needs a palette of at least one colour, and every index is below the palette's length. Index 0 is transparent whatever colour the palette stores there.
+4. **Names are text, not entities.** Art is presentation and never written to the world (D-151), so interning names would add entities no rule can use. This follows the score section (D-062).
+5. **Raw bytes.** No compression in version 24; D-152 leaves compression to measured pages, and adding it later is a new package version.
+6. **Named refusals.** The loader names the first field it finds wrong: `InvalidImagePalette`, `InvalidImageCount`, `InvalidImageName`, `InvalidImageSize`, or `InvalidImageIndex`; a short sheet ends the stream (`EndOfStream`). The writer runs the same validation, so a host cannot write a package the loader refuses.
+
+**Alternatives:** a kind byte for backdrop or sprite, rejected as a second source of truth beside the frame size; a palette per image, ruled out by D-152; entity names, rejected under point 4; run-length encoding now, deferred under point 5; UTF-8 names, rejected because diagnostics and the inspector would need escaping for untrusted text.
+
+**Consequences.** A 320x180 backdrop costs 57,600 bytes plus its header in the package and about 77 KB in a base64 page, so a page holds roughly a dozen within D-141's budget beside the current module. Scripts cannot declare art until P46-03; until then hosts and tests build it with `image.Art.dupe`. The checked-in v24 fixture was written through the Zig API for that reason.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

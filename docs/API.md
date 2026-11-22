@@ -18,6 +18,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 | --- | --- |
 | `compiler` | `compile_source`, `check_source`, `CheckResult` and its `message` / `diagnostic` methods, `Diagnostic`, `CompiledProgram` and `CompiledProgram.deinit` |
 | `package` | `PACKAGE_MAGIC`, `PACKAGE_VERSION`, `MIN_PACKAGE_VERSION`, `save_package`, `load_package`, `save_package_file`, `load_package_file`, `version_from_bytes`, `format_unsupported_version` |
+| `image` | `ART_WIDTH`, `ART_HEIGHT`, `SCALE`, `MAX_COLOURS`, `TRANSPARENT`, `Colour`, `Image` and its `columns`, `frame_count`, `frame_pixel`, and `validate` methods, `Art` and its `is_empty`, `find`, `validate`, `dupe`, and `deinit_owned` methods, `Error` (P46-01) |
 | `runner` | `RunConfig`, `check_file`, `compile_file`, `run_file`, `run_bytes` |
 
 `CompiledProgram` owns its compiled data and must outlive every VM using it. Its fields, bytecode chunk, routine maps, and declaration tables are internal. Use `host.init_vm`, `host.start_script`, and `host.start_routine` instead of reading those tables.

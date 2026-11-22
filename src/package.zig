@@ -16,6 +16,7 @@ const spell_mod = @import("spell.zig");
 const decision_mod = @import("decision.zig");
 const value_mod = @import("value.zig");
 const dilemma_mod = @import("dilemma.zig");
+const image_mod = @import("image.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -65,8 +66,10 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// appends dilemmas with their axes, leans, and tier responses (P45-03, D-146); versions 1 through
 /// 20 load with none. Version 22 appends each dilemma's drift lines (P45-04, D-148); versions 1
 /// through 21 load dilemmas without drift. Version 23 appends each dilemma's appeal lines (P45-05,
-/// D-149); versions 1 through 22 load dilemmas that no appeal moves.
-pub const PACKAGE_VERSION: u32 = 23;
+/// D-149); versions 1 through 22 load dilemmas that no appeal moves. Version 24 appends the
+/// game's palette and indexed images (P46-01, D-152, D-153); versions 1 through 23 load with no
+/// art, which is a game drawn by code.
+pub const PACKAGE_VERSION: u32 = 24;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -462,6 +465,69 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeInt(i32, appeal.points, .little);
         }
     }
+
+    try write_art(writer, compiled.art);
+}
+
+/// Version 24: the palette as RGB triples, then each image's name, sheet size, frame size, and
+/// one index byte per pixel, row by row. Raw bytes for now; compression waits for measured
+/// pages (D-152).
+fn write_art(writer: anytype, art: image_mod.Art) !void {
+    try art.validate();
+    try writer.writeInt(u16, @intCast(art.palette.len), .little);
+    for (art.palette) |colour| try writer.writeAll(&.{ colour.r, colour.g, colour.b });
+    try writer.writeInt(u32, @intCast(art.images.len), .little);
+    for (art.images) |image| {
+        try write_str(writer, image.name);
+        for ([_]u16{ image.width, image.height, image.frame_width, image.frame_height }) |side| try writer.writeInt(u16, side, .little);
+        try writer.writeAll(image.pixels);
+    }
+}
+
+/// Untrusted input. Each count and size is checked before the bytes behind it are read, so a
+/// corrupt package can ask for at most one bounded sheet at a time, and `Art.validate` runs on
+/// the whole set before the program sees it. Errors name the first thing wrong (D-153).
+fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
+    const colour_count = try reader.takeInt(u16, .little);
+    if (colour_count > image_mod.MAX_COLOURS) return error.InvalidImagePalette;
+    const palette = try allocator.alloc(image_mod.Colour, colour_count);
+    var art = image_mod.Art{ .palette = palette };
+    errdefer art.deinit_owned(allocator);
+    for (palette) |*colour| {
+        const rgb = try reader.takeArray(3);
+        colour.* = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] };
+    }
+
+    const image_count = try reader.takeInt(u32, .little);
+    if (image_count > image_mod.MAX_IMAGES) return error.InvalidImageCount;
+    if (image_count > 0 and colour_count == 0) return error.InvalidImagePalette;
+    var images = try std.ArrayListUnmanaged(image_mod.Image).initCapacity(allocator, image_count);
+    errdefer {
+        for (images.items) |image| image_mod.free_image(allocator, image);
+        images.deinit(allocator);
+    }
+    for (0..image_count) |_| {
+        const name = try read_str(allocator, reader);
+        errdefer allocator.free(name);
+        try image_mod.validate_name(name);
+        var sides: [4]u16 = undefined;
+        for (&sides) |*side| side.* = try reader.takeInt(u16, .little);
+        try image_mod.validate_size(sides[0], sides[1], sides[2], sides[3]);
+        const bytes = try reader.take(@as(usize, sides[0]) * sides[1]);
+        try image_mod.validate_indices(bytes, colour_count);
+        const pixels = try allocator.dupe(u8, bytes);
+        images.appendAssumeCapacity(.{
+            .name = name,
+            .width = sides[0],
+            .height = sides[1],
+            .frame_width = sides[2],
+            .frame_height = sides[3],
+            .pixels = pixels,
+        });
+    }
+    art.images = try images.toOwnedSlice(allocator);
+    try art.validate();
+    return art;
 }
 
 /// Untrusted input: entities must exist; `dilemma.validate` checks the axis, the axis entity,
@@ -1859,6 +1925,10 @@ pub fn load_package(
         dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
     }
 
+    var art = image_mod.Art{};
+    errdefer art.deinit_owned(allocator);
+    if (header.version >= 24) art = try read_art(allocator, pr);
+
     return CompiledProgram{
         .drafts = drafts,
         .chunk = chunk,
@@ -1886,6 +1956,7 @@ pub fn load_package(
         .scores = scores,
         .cast = cast,
         .cue_guards = cue_guards,
+        .art = art,
     };
 }
 
@@ -2093,7 +2164,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 23",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 24",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2428,9 +2499,12 @@ const EMPTY_TAIL_AFTER_V18: usize = 4 + EMPTY_TAIL_AFTER_V19;
 /// The red-line and dilemma sections after version 19, for tests that locate version 19
 /// sections from the end.
 const EMPTY_TAIL_AFTER_V19: usize = 4 + EMPTY_TAIL_AFTER_V20;
-/// The empty dilemma count (version 21), for tests that locate version 20 sections from the end.
-/// Version 22's drift groups add nothing when there are no dilemmas.
-const EMPTY_TAIL_AFTER_V20: usize = 4;
+/// The empty dilemma count (version 21) and the art section after it, for tests that locate
+/// version 20 sections from the end. Version 22's drift groups and version 23's appeal groups add
+/// nothing when there are no dilemmas.
+const EMPTY_TAIL_AFTER_V20: usize = 4 + EMPTY_TAIL_AFTER_V23;
+/// The empty art section (version 24): a zero colour count and a zero image count.
+const EMPTY_TAIL_AFTER_V23: usize = 2 + 4;
 
 /// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
 fn reseal_for_test(buf: []u8, version: u32) void {
@@ -3533,7 +3607,7 @@ const CLAUSE_BYTES: usize = 4 + 4 + 4 + 1;
 /// then its version 22 drift group.
 fn dilemma_table_len(d: dilemma_mod.Dilemma) usize {
     return 4 + 12 + 1 + d.clauses.len * CLAUSE_BYTES + 4 + 1 + d.leans.len * (4 + CLAUSE_BYTES) + dilemma_mod.TIER_COUNT * 8 +
-        1 + d.drifts.len * (2 + 4 + CLAUSE_BYTES) + 1 + d.appeals.len * (2 + 4 + 4);
+        1 + d.drifts.len * (2 + 4 + CLAUSE_BYTES) + 1 + d.appeals.len * (2 + 4 + 4) + EMPTY_TAIL_AFTER_V23;
 }
 
 /// Where the counter-axis sits within that table.
@@ -3611,8 +3685,8 @@ test "P45-04: package version 22 round-trips drift lines and loads a version 21 
 
     // Cutting the drift group off the end gives a version 21 package: the dilemma loads, still
     // weighs, and carries no drift.
-    // The version 23 appeal group (one empty byte here) follows the drift group.
-    const drift_group = 1 + drifts.len * (2 + 4 + CLAUSE_BYTES) + 1;
+    // The version 23 appeal group (one empty byte here) and the empty art section follow it.
+    const drift_group = 1 + drifts.len * (2 + 4 + CLAUSE_BYTES) + 1 + EMPTY_TAIL_AFTER_V23;
     const v21 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - drift_group]);
     defer testing.allocator.free(v21);
     reseal_for_test(v21, 21);
@@ -3693,7 +3767,7 @@ test "P45-05: package version 23 round-trips appeal lines and loads a version 22
     try testing.expectEqualStrings("FixtureMercy", world2.get_entity_name(appeals[0].entity).?);
 
     // Cutting the appeal group off the end gives a version 22 package with drift but no appeal.
-    const appeal_group = 1 + appeals.len * (2 + 4 + 4);
+    const appeal_group = 1 + appeals.len * (2 + 4 + 4) + EMPTY_TAIL_AFTER_V23;
     const v22 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - appeal_group]);
     defer testing.allocator.free(v22);
     reseal_for_test(v22, 22);
@@ -3716,7 +3790,7 @@ test "P45-05: checked-in version 23 package fixture carries appeal lines" {
     );
     defer testing.allocator.free(fixture);
 
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 23), version_from_bytes(fixture).?);
 
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -3726,4 +3800,199 @@ test "P45-05: checked-in version 23 package fixture carries appeal lines" {
 
     try testing.expect(compiled.routine_entries.contains("Idle"));
     try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items[0].dilemma.appeals.len);
+}
+
+const ART_FIXTURE =
+    \\entity FixtureHero
+    \\relation Ready(actor)
+    \\routine Idle(FixtureHero):
+    \\  wait 1 ticks
+;
+
+const ART_FIXTURE_PALETTE = [_]image_mod.Colour{
+    .{ .r = 0, .g = 0, .b = 0 },
+    .{ .r = 34, .g = 32, .b = 52 },
+    .{ .r = 217, .g = 160, .b = 102 },
+    .{ .r = 251, .g = 242, .b = 54 },
+};
+
+/// An 8x4 sheet of two 4x4 frames: a lamp unlit, then lit. Index 0 is the transparent corner.
+const ART_FIXTURE_PIXELS = [_]u8{
+    0, 1, 1, 0, 0, 1, 1, 0,
+    1, 2, 2, 1, 1, 3, 3, 1,
+    1, 2, 2, 1, 1, 3, 3, 1,
+    0, 1, 1, 0, 0, 1, 1, 0,
+};
+
+/// The art section of `ART_FIXTURE` sits at the end of the payload: the colour count, four RGB
+/// triples, the image count, the name, four sides, and 32 pixel bytes.
+const ART_FIXTURE_NAME = "FixtureLamp";
+const ART_SECTION_LEN = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2 + ART_FIXTURE_NAME.len + 8 + ART_FIXTURE_PIXELS.len;
+
+fn write_art_fixture(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8)) !void {
+    const compiler = @import("compiler.zig");
+    var world = try World.init(allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(allocator, &world, null, ART_FIXTURE);
+    defer compiled.deinit();
+    compiled.art = try image_mod.Art.dupe(allocator, &ART_FIXTURE_PALETTE, &.{.{
+        .name = ART_FIXTURE_NAME,
+        .width = 8,
+        .height = 4,
+        .frame_width = 4,
+        .frame_height = 4,
+        .pixels = &ART_FIXTURE_PIXELS,
+    }});
+    var lw = ListWriter.init(out);
+    try save_package(allocator, &lw.writer, &compiled, &world, null);
+}
+
+fn load_for_test(bytes: []const u8) !CompiledProgram {
+    var world = try World.init(std.testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(bytes);
+    return load_package(std.testing.allocator, &stream, &world, null);
+}
+
+test "P46-01: package version 24 round-trips the palette and a sprite sheet" {
+    const testing = std.testing;
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try write_art_fixture(testing.allocator, &buffer);
+
+    var compiled = try load_for_test(buffer.items);
+    defer compiled.deinit();
+    const art = compiled.art;
+    try testing.expectEqualSlices(image_mod.Colour, &ART_FIXTURE_PALETTE, art.palette);
+    const lamp = art.find(ART_FIXTURE_NAME).?;
+    try testing.expectEqual(@as(u32, 2), lamp.frame_count());
+    try testing.expectEqualSlices(u8, &ART_FIXTURE_PIXELS, lamp.pixels);
+    try testing.expectEqual(@as(u8, 3), lamp.frame_pixel(1, 1, 1));
+    try testing.expectEqual(image_mod.TRANSPARENT, lamp.frame_pixel(0, 0, 0));
+
+    // Saving the loaded program again writes the same bytes.
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var again_compiled = try blk: {
+        var stream: std.Io.Reader = .fixed(buffer.items);
+        break :blk load_package(testing.allocator, &stream, &world, null);
+    };
+    defer again_compiled.deinit();
+    var again = std.array_list.Managed(u8).init(testing.allocator);
+    defer again.deinit();
+    var lw = ListWriter.init(&again);
+    try save_package(testing.allocator, &lw.writer, &again_compiled, &world, null);
+    try testing.expectEqualSlices(u8, buffer.items, again.items);
+}
+
+test "P46-01: a version 23 package loads with no art" {
+    const testing = std.testing;
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try write_art_fixture(testing.allocator, &buffer);
+    const v23 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - ART_SECTION_LEN]);
+    defer testing.allocator.free(v23);
+    reseal_for_test(v23, 23);
+    var compiled = try load_for_test(v23);
+    defer compiled.deinit();
+    try testing.expect(compiled.art.is_empty());
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+}
+
+test "P46-01: a program with no art writes an empty art section" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, ART_FIXTURE);
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0, 0, 0 }, buffer.items[buffer.items.len - 6 ..]);
+    var loaded = try load_for_test(buffer.items);
+    defer loaded.deinit();
+    try testing.expect(loaded.art.is_empty());
+}
+
+/// One way to break the art fixture: the byte offset inside its art section, the bytes written
+/// there, and the error the loader must name. `tests/fixtures/fuzz/image-*.bspk` are these.
+const ArtBreak = struct { name: []const u8, offset: usize, bytes: []const u8, err: anyerror };
+
+const ART_NAME_AT = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2;
+const ART_SIDES_AT = ART_NAME_AT + ART_FIXTURE_NAME.len;
+const ART_PIXELS_AT = ART_SIDES_AT + 8;
+
+const ART_BREAKS = [_]ArtBreak{
+    // 300 colours: past the one palette of 256 (D-152).
+    .{ .name = "palette", .offset = 0, .bytes = &.{ 0x2c, 0x01 }, .err = error.InvalidImagePalette },
+    // A million images.
+    .{ .name = "count", .offset = 2 + 3 * ART_FIXTURE_PALETTE.len, .bytes = &.{ 0x40, 0x42, 0x0f, 0x00 }, .err = error.InvalidImageCount },
+    // A control byte in the name.
+    .{ .name = "name", .offset = ART_NAME_AT, .bytes = &.{0x01}, .err = error.InvalidImageName },
+    // A frame 5 wide does not tile an 8-wide sheet.
+    .{ .name = "frame", .offset = ART_SIDES_AT + 4, .bytes = &.{ 0x05, 0x00 }, .err = error.InvalidImageSize },
+    // A sheet 4096 wide, past the side limit, before any pixel is read.
+    .{ .name = "size", .offset = ART_SIDES_AT, .bytes = &.{ 0x00, 0x10 }, .err = error.InvalidImageSize },
+    // Index 200 in a palette of four colours.
+    .{ .name = "index", .offset = ART_PIXELS_AT + 9, .bytes = &.{200}, .err = error.InvalidImageIndex },
+};
+
+/// Applies one break to a copy of a version 24 package whose art section is the fixture's,
+/// and reseals the checksum so the loader reaches the art.
+fn break_art(allocator: std.mem.Allocator, package: []const u8, b: ArtBreak) ![]u8 {
+    const out = try allocator.dupe(u8, package);
+    const at = out.len - ART_SECTION_LEN + b.offset;
+    @memcpy(out[at .. at + b.bytes.len], b.bytes);
+    reseal_for_test(out, 24);
+    return out;
+}
+
+test "P46-01: every malformed art section is refused with a named error" {
+    const testing = std.testing;
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try write_art_fixture(testing.allocator, &buffer);
+    for (ART_BREAKS) |b| {
+        const broken = try break_art(testing.allocator, buffer.items, b);
+        defer testing.allocator.free(broken);
+        testing.expectError(b.err, load_for_test(broken)) catch |err| {
+            std.debug.print("art break '{s}'\n", .{b.name});
+            return err;
+        };
+    }
+    // A truncated sheet ends the stream rather than reading past it.
+    const short = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 5]);
+    defer testing.allocator.free(short);
+    reseal_for_test(short, 24);
+    try testing.expectError(error.EndOfStream, load_for_test(short));
+}
+
+test "P46-01: checked-in version 24 package fixture carries a sprite sheet" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(
+        testing.io,
+        "tests/fixtures/compat/v0.4.0-package-v24.bspk",
+        testing.allocator,
+        .limited(1024 * 1024),
+    );
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var compiled = try load_for_test(fixture);
+    defer compiled.deinit();
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expectEqual(@as(usize, 4), compiled.art.palette.len);
+    try testing.expectEqualSlices(u8, &ART_FIXTURE_PIXELS, compiled.art.find(ART_FIXTURE_NAME).?.pixels);
+
+    // The checked-in fuzz seeds are this fixture with one break each.
+    for (ART_BREAKS) |b| {
+        var path_buf: [96]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buf, "tests/fixtures/fuzz/image-{s}.bspk", .{b.name});
+        const seed = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(64 * 1024));
+        defer testing.allocator.free(seed);
+        const expected = try break_art(testing.allocator, fixture, b);
+        defer testing.allocator.free(expected);
+        try testing.expectEqualSlices(u8, expected, seed);
+    }
 }

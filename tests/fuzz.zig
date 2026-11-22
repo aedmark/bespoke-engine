@@ -12,6 +12,7 @@ const red_line_package = @embedFile("fixtures/compat/v0.3.1-package-v20.bspk");
 const dilemma_package = @embedFile("fixtures/compat/v0.3.1-package-v21.bspk");
 const drift_package = @embedFile("fixtures/compat/v0.3.1-package-v22.bspk");
 const appeal_package = @embedFile("fixtures/compat/v0.3.1-package-v23.bspk");
+const art_package = @embedFile("fixtures/compat/v0.4.0-package-v24.bspk");
 const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
@@ -26,6 +27,10 @@ fn campaign(comptime check: Check, seeds: []const []const u8) !void {
         defer arena.deinit();
         try testing.expect(try check(arena.allocator(), seed));
     }
+    try mutate(check, seeds);
+}
+
+fn mutate(comptime check: Check, seeds: []const []const u8) !void {
     const start = std.Io.Clock.awake.now(testing.io);
     var prng = std.Random.DefaultPrng.init(0x39_01);
     const random = prng.random();
@@ -144,7 +149,30 @@ test "P39-01 codegen" {
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package });
+    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package });
+}
+
+/// Malformed art sections (P46-01): the version 24 fixture with one field broken each. Every
+/// seed must be refused with the error that names it before mutation starts from them.
+const art_breaks = [_]struct { seed: []const u8, err: anyerror }{
+    .{ .seed = @embedFile("fixtures/fuzz/image-palette.bspk"), .err = error.InvalidImagePalette },
+    .{ .seed = @embedFile("fixtures/fuzz/image-count.bspk"), .err = error.InvalidImageCount },
+    .{ .seed = @embedFile("fixtures/fuzz/image-name.bspk"), .err = error.InvalidImageName },
+    .{ .seed = @embedFile("fixtures/fuzz/image-frame.bspk"), .err = error.InvalidImageSize },
+    .{ .seed = @embedFile("fixtures/fuzz/image-size.bspk"), .err = error.InvalidImageSize },
+    .{ .seed = @embedFile("fixtures/fuzz/image-index.bspk"), .err = error.InvalidImageIndex },
+};
+
+test "P46-01 package loader refuses malformed art" {
+    var seeds: [art_breaks.len][]const u8 = undefined;
+    for (art_breaks, &seeds) |b, *seed| {
+        seed.* = b.seed;
+        var world = try bespoke.World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var reader: std.Io.Reader = .fixed(b.seed);
+        try testing.expectError(b.err, bespoke.package.load_package(testing.allocator, &reader, &world, null));
+    }
+    try mutate(loadPackage, &seeds);
 }
 
 test "P39-01 save loader" {
