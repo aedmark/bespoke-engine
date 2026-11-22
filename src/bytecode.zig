@@ -21,6 +21,15 @@ pub const Opcode = enum(u8) {
     push_relation = 0x12, // operand: u16 RelationKind
     pop = 0x13,
     dup = 0x14,
+    /// First instruction of a cue handler whose body reads its arguments (P48-02, D-161).
+    /// `VM.fire_cue` consumes it, pushing the handler's three arguments in the order the
+    /// handler declares them and then its guard's eight bindings (0 for none), so they sit at
+    /// stack indexes 0 to 10 beneath everything the body pushes. Reached any other way, it is
+    /// an error: the arguments it stands for were never supplied.
+    bind_cue_args = 0x15,
+    /// Pushes a copy of stack entry `index` (operand: u8) of the running fiber: a handler
+    /// argument (0 to 2) or a guard binding (3 to 10) placed by `bind_cue_args` (D-161).
+    push_local = 0x16,
 
     // --- Arithmetic, Logic & Comparisons ---
     add = 0x20,
@@ -155,6 +164,11 @@ pub const BytecodeChunk = struct {
     pub fn emit_push_entity(self: *BytecodeChunk, entity: EntityId) !void {
         _ = try self.emit_op(.push_entity);
         try self.emit_u32(entity.to_int());
+    }
+
+    pub fn emit_push_local(self: *BytecodeChunk, index: u8) !void {
+        _ = try self.emit_op(.push_local);
+        try self.emit_u8(index);
     }
 
     pub fn emit_push_relation(self: *BytecodeChunk, relation: RelationKind) !void {

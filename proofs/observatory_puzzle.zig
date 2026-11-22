@@ -483,7 +483,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(agency.triggered(&world, compiled.agendas.items[1].agenda), error.AlibiNotTriggered);
     try writer.writeAll("  -> Both agendas hold; Halloran (priority 5) already pursues Ines, so Pell (3) waits.\n");
     try stage.encounter(writer, dissuade_over, 60, error.DirectorNeverArrived);
-    try expect_true(host.has_state(&world, ids.ines, "dissuaded"), error.NotDissuaded);
+    try expect_true(host.has_state(&world, ids.ines, "Dissuaded"), error.NotDissuaded);
     try stage.encounter(writer, alibi_over, 60, error.PellNeverArrived);
     try stage.report(writer);
     try expect_true(holds(&world, ids.ines, "Believes", world.lookup_entity("PellInLibrary")), error.NoFalseAlibi);
@@ -516,7 +516,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Searching taught her the darkroom, and the need it satisfied closes the goal.
     try stage.hint(writer, .room);
     try stage.encounter(writer, dissuade_over, 60, error.DirectorNeverArrived);
-    try expect_true(host.has_state(&world, ids.halloran, "exposed"), error.DirectorNotExposed);
+    try expect_true(host.has_state(&world, ids.halloran, "Exposed"), error.DirectorNotExposed);
 
     try writer.writeAll("\n[Night 2] Ines lingers by the generator shed.\n");
     try stage.walk(writer, ids.shed_wp, 40);
@@ -529,16 +529,16 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     try writer.writeAll("\n[Night 2] Ines shows Pell the glove, then the slip.\n");
     try stage.present(writer, ids.glove, ids.pell);
-    try expect_true(host.has_state(&world, ids.pell, "rattled"), error.PellUnmoved);
+    try expect_true(host.has_state(&world, ids.pell, "Rattled"), error.PellUnmoved);
     try stage.present(writer, ids.slip, ids.pell);
-    try expect_true(host.has_state(&world, ids.pell, "cornered") and host.has_state(&world, ids.pell, "broken") and !holds(&world, ids.ines, "Believes", null), error.CaseOpen);
+    try expect_true(host.has_state(&world, ids.pell, "Cornered") and host.has_state(&world, ids.pell, "Broken") and !holds(&world, ids.ines, "Believes", null), error.CaseOpen);
 
     try writer.writeAll("\n[Rewind] Restore the saved opening for a typed playthrough.\n");
     var again: std.Io.Reader = .fixed(opening.items);
     _ = try bespoke.read_save_state(allocator, &again, &world, &spatial, &vm);
     interp = .{};
     // The record and the composure it drove are World facts, so the rewind clears both.
-    try expect_true(!holds(&world, ids.pell, "Presented", null) and !host.has_state(&world, ids.pell, "rattled"), error.PresentationSurvivedRewind);
+    try expect_true(!holds(&world, ids.pell, "Presented", null) and !host.has_state(&world, ids.pell, "Rattled"), error.PresentationSurvivedRewind);
 
     try writer.writeAll("\n[Typed] The same evidence, by keyboard.\n");
     const which = try stage.typed(writer, "examine the telescope");
@@ -552,7 +552,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true((try stage.typed(writer, "pick up the exposure slip")).fired, error.TypedTakeFailed);
     try stage.tick_until(writer, pell_near, 80, error.PellNeverNear);
     try expect_true((try stage.typed(writer, "present the slip to the rival")).fired, error.TypedPresentFailed);
-    try expect_true(host.has_state(&world, ids.pell, "cornered"), error.CaseOpen);
+    try expect_true(host.has_state(&world, ids.pell, "Cornered"), error.CaseOpen);
 
     try writer.writeAll("\n===================================================================\n");
     try writer.writeAll("  VERIFICATION COMPLETE: plate 41 is in Halloran's office.         \n");
@@ -800,8 +800,8 @@ test "P33-03: window actions give feedback and Pell can be confronted within rea
     while (spatial.is_moving(ids.ines)) try play.advance();
     try play.handle(.{ .custom = action_confront });
     try std.testing.expect(has(play, "Ask Halloran"));
-    try std.testing.expect(host.has_state(&world, ids.pell, "cornered"));
-    try std.testing.expect(host.has_state(&world, ids.pell, "rattled"));
+    try std.testing.expect(host.has_state(&world, ids.pell, "Cornered"));
+    try std.testing.expect(host.has_state(&world, ids.pell, "Rattled"));
 }
 
 test "P33-03: reach is the same mark or one edge away" {

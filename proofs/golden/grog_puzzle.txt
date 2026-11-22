@@ -24,4 +24,4 @@
   VERIFICATION COMPLETE: Ivo is free. Volume and history agree.    
 ===================================================================
 
-final facts: 12, digest 44542dda38ffc50d
+final facts: 12, digest cb8d9bc2b57731e0

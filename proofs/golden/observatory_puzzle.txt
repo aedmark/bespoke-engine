@@ -63,4 +63,4 @@
   VERIFICATION COMPLETE: plate 41 is in Halloran's office.         
 ===================================================================
 
-final facts: 22, digest 6280b19b4673fc63
+final facts: 22, digest 60d3508acc817fec

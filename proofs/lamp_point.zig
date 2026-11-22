@@ -104,7 +104,7 @@ pub const LAMP_POINT_SCRIPT =
 pub fn evaluate_donkey_tangled(world: *const bespoke.World) bool {
     // The exact fact the script's `now Cudgel is tangled` writes (P32-19).
     const donkey = world.lookup_entity("Cudgel") orelse return false;
-    const rel = world.lookup_relation("tangled") orelse return false;
+    const rel = world.lookup_relation("Tangled") orelse return false;
     return world.has_fact(donkey, rel, null);
 }
 

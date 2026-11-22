@@ -167,7 +167,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try expect_true(refusal(outcome) == .no_such_spell, error.FizzleResolved);
     try expect_true(world.fact_count() == before_fizzle, error.FizzleChangedState);
     _ = try host.tick(&vm, &compiled);
-    try expect_true(!host.has_state(&world, ids.crucible, "glowing"), error.FizzleLitTheCrucible);
+    try expect_true(!host.has_state(&world, ids.crucible, "Glowing"), error.FizzleLitTheCrucible);
 
     try writer.writeAll("\n[Kindle] Forge, ember, bolt.\n");
     outcome = try host.combine(&vm, &compiled, ids.maren, ids.forge, ids.ember, ids.bolt, ids.crucible);
@@ -175,14 +175,14 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     _ = try host.tick(&vm, &compiled);
     var speech_buf: [256]u8 = undefined;
     if (host.speech_this_tick(&world, &vm, &speech_buf)) |line| try writer.print("  [ {d}] {s}\n", .{ world.current_tick, line });
-    try expect_true(host.has_state(&world, ids.crucible, "glowing"), error.KindleFailed);
+    try expect_true(host.has_state(&world, ids.crucible, "Glowing"), error.KindleFailed);
 
     try writer.writeAll("\n[Quench] Spark, water, ward.\n");
     outcome = try host.combine(&vm, &compiled, ids.maren, ids.spark, ids.water, ids.ward, ids.crucible);
     try attempt(writer, &world, &.{ ids.spark, ids.water, ids.ward }, outcome);
     _ = try host.tick(&vm, &compiled);
     if (host.speech_this_tick(&world, &vm, &speech_buf)) |line| try writer.print("  [ {d}] {s}\n", .{ world.current_tick, line });
-    try expect_true(host.has_state(&world, ids.crucible, "tempered"), error.QuenchFailed);
+    try expect_true(host.has_state(&world, ids.crucible, "Tempered"), error.QuenchFailed);
 
     try writer.writeAll("\n===================================================================\n");
     try writer.writeAll("  VERIFICATION COMPLETE: two spells found by their words alone.  \n");

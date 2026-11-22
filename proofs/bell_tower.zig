@@ -246,7 +246,7 @@ pub fn knows(world: *const bespoke.World, ids: Ids, draft_name: []const u8) bool
 }
 
 pub fn is_solved(world: *const bespoke.World, ids: Ids) bool {
-    return host.has_state(world, ids.bell, "ringing") and host.has_state(world, ids.beacon, "lit");
+    return host.has_state(world, ids.bell, "Ringing") and host.has_state(world, ids.beacon, "Lit");
 }
 
 pub const PhraseResult = struct {
@@ -360,15 +360,15 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n[Step 4] Weave Kindle (C, D, E, C) on the brazier.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .D, .E, .C }, ids.brazier, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(host.has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
+    try expect_true(host.has_state(&world, ids.brazier, "Lit"), error.BrazierNotLit);
 
     try writer.print("\n[Step 5] Reversed: Douse (C, E, D, C) puts it out; Kindle relights it.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .E, .D, .C }, ids.brazier, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(!host.has_state(&world, ids.brazier, "lit"), error.DouseFailed);
+    try expect_true(!host.has_state(&world, ids.brazier, "Lit"), error.DouseFailed);
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .D, .E, .C }, ids.brazier, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(host.has_state(&world, ids.brazier, "lit"), error.BrazierNotLit);
+    try expect_true(host.has_state(&world, ids.brazier, "Lit"), error.BrazierNotLit);
 
     try writer.print("\n[Step 6] Observation: the ivy teaches Bind (F, E, D, F).\n", .{});
     if (try host.act(&world, &vm, &compiled, "LooksAt", ids.maren, ids.ivy, &buf)) |m| try writer.print("  -> {s}\n", .{m});
@@ -382,18 +382,18 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.print("\n[Step 8] Toll is out of reach: the B note is refused at reach 4.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .G, .A, .B, .G }, ids.bell, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(r.outcome == .fizzled and !host.has_state(&world, ids.bell, "ringing"), error.ReachNotEnforced);
+    try expect_true(r.outcome == .fizzled and !host.has_state(&world, ids.bell, "Ringing"), error.ReachNotEnforced);
 
     try writer.print("\n[Step 9] Bind on the chain only tightens it.\n", .{});
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .F, .E, .D, .F }, ids.chain, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(!host.has_state(&world, ids.chain, "loosed"), error.BindLoosedChain);
+    try expect_true(!host.has_state(&world, ids.chain, "Loosed"), error.BindLoosedChain);
 
     try writer.print("\n[Step 10] Inversion: Bind played backwards is Loose (F, D, E, F).\n", .{});
     try expect_true(!knows(&world, ids, "Loose"), error.LooseWasTaught);
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .F, .D, .E, .F }, ids.chain, &buf);
     try writer.print("  -> {s}\n", .{r.message orelse ""});
-    try expect_true(host.has_state(&world, ids.chain, "loosed"), error.ChainNotLoosed);
+    try expect_true(host.has_state(&world, ids.chain, "Loosed"), error.ChainNotLoosed);
 
     try writer.print("\n[Step 11] Take the tuning fork: the distaff reaches all seven notes.\n", .{});
     if (try host.act(&world, &vm, &compiled, "PicksUp", ids.maren, ids.fork, &buf)) |m| try writer.print("  -> {s}\n", .{m});
@@ -415,11 +415,11 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     _ = try spatial.transition_actor(ids.maren, ids.base, ids.doorway_wp);
     sync_reach(&world, ids, &input);
     try writer.print("  -> Bell ringing: {any}, brazier lit: {any}, reach: {d} (expected false, false, 4)\n", .{
-        host.has_state(&world, ids.bell, "ringing"),
-        host.has_state(&world, ids.brazier, "lit"),
+        host.has_state(&world, ids.bell, "Ringing"),
+        host.has_state(&world, ids.brazier, "Lit"),
         input.reach,
     });
-    try expect_true(!is_solved(&world, ids) and !host.has_state(&world, ids.brazier, "lit") and input.reach == 4, error.RewindFailed);
+    try expect_true(!is_solved(&world, ids) and !host.has_state(&world, ids.brazier, "Lit") and input.reach == 4, error.RewindFailed);
 
     try writer.print("\n===================================================================\n", .{});
     try writer.print("  VERIFICATION COMPLETE: The Bell Tower rings. 100% deterministic.  \n", .{});
@@ -628,14 +628,14 @@ test "P22-03: drafts weave only where the script allows" {
     // Kindle on a target with no Weave handler fizzles and changes nothing.
     var r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .C, .D, .E, .C }, ids.ivy, &buf);
     try std.testing.expectEqual(draft.WeaveOutcome.fizzled, r.outcome);
-    try std.testing.expect(!host.has_state(&world, ids.ivy, "lit"));
+    try std.testing.expect(!host.has_state(&world, ids.ivy, "Lit"));
 
     // Toll would ring the bell, but the chain still holds it even with full reach.
     input.set_reach(7);
     r = try play_phrase(&world, &vm, &compiled, ids, &input, &.{ .G, .A, .B, .G }, ids.bell, &buf);
     try std.testing.expectEqual(draft.WeaveOutcome.woven, r.outcome);
-    try std.testing.expect(!host.has_state(&world, ids.bell, "ringing"));
-    try std.testing.expect(!host.has_state(&world, ids.beacon, "lit"));
+    try std.testing.expect(!host.has_state(&world, ids.bell, "Ringing"));
+    try std.testing.expect(!host.has_state(&world, ids.beacon, "Lit"));
 
     // The fork cannot be taken while the chain lies on it.
     _ = try host.act(&world, &vm, &compiled, "PicksUp", ids.maren, ids.fork, &buf);

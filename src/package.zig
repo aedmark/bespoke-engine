@@ -73,8 +73,11 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// versions 1 through 24 load with none. Version 26 appends prop areas, rectangles on the art
 /// that click like the prop (P46-05, D-158); versions 1 through 25 load with none. Version 27
 /// appends the chain of cue handlers that share a signature (P48-01, D-160); versions 1 through
-/// 26 load with one handler per signature, which is how they behaved.
-pub const PACKAGE_VERSION: u32 = 27;
+/// 26 load with one handler per signature, which is how they behaved. Version 28 adds the
+/// `bind_cue_args` and `push_local` opcodes, with which a cue handler body reads its
+/// arguments (P48-02, D-161); versions 1 through 27 hold bytecode that cannot contain them and
+/// load unchanged.
+pub const PACKAGE_VERSION: u32 = 28;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -2328,7 +2331,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 27",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 28",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -4403,7 +4406,7 @@ test "P48-01: checked-in version 27 package fixture keeps handlers in source ord
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v27.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 27), version_from_bytes(fixture).?);
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
     var stream: std.Io.Reader = .fixed(fixture);
@@ -4418,6 +4421,27 @@ test "P48-01: checked-in version 27 package fixture keeps handlers in source ord
     _ = try world.remember(lamp, try world.intern_relation("Lit", .set), 0, 0);
     try testing.expectEqual(first, compiled.select_cue_handler(&world, "Uses", hero, lamp, null).?);
     try testing.expect(compiled.routine_entries.contains("Idle"));
+}
+
+test "P48-02: checked-in version 28 package fixture binds a cue handler's arguments in its body" {
+    const testing = std.testing;
+    const vm_mod = @import("vm.zig");
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v28.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    const lamp = world.lookup_entity("FixtureLamp").?;
+    const oil = world.lookup_entity("FixtureOil").?;
+    _ = try world.remember(oil, world.lookup_relation("Fuels").?, lamp.to_int(), 0);
+    _ = (try vm.fire_cue(&compiled, "Uses", world.lookup_entity("FixtureHero").?, lamp, null)).?;
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(lamp, world.lookup_relation("Burns").?, oil.to_int()));
 }
 
 test "P46-05: checked-in version 26 package fixture carries prop areas" {

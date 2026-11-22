@@ -1100,7 +1100,7 @@ fn keep_solve(rt: *WasmRuntime) anyerror!void {
         bespoke.grid.has_attribute(&rt.world, decl.grid, cell(grid_puzzle.TAPESTRY_FIRST_CELL), .burning);
     const door_wet = bespoke.grid.has_attribute(&rt.world, decl.grid, cell(grid_puzzle.DOOR_CELL), .liquid);
     if (moving) return rt.step_tick();
-    if (!bespoke.host.has_state(&rt.world, ids.bucket, "full") and !door_wet) {
+    if (!bespoke.host.has_state(&rt.world, ids.bucket, "Full") and !door_wet) {
         if (here != ids.trough_wp) {
             _ = try rt.spatial.walk_to_with_world(&rt.world, wren, ids.trough_wp);
             return perform_settle(rt);
@@ -1188,7 +1188,7 @@ fn larkspur_typed(rt: *WasmRuntime, line: []const u8) anyerror!void {
 fn larkspur_solve(rt: *WasmRuntime) anyerror!void {
     const ids = larkspur_ids orelse return;
     if (rt.spatial.is_moving(ids.ines)) return rt.step_tick();
-    if (bespoke.host.has_state(&rt.world, ids.pell, "cornered")) return;
+    if (bespoke.host.has_state(&rt.world, ids.pell, "Cornered")) return;
     const slip = rt.world.has_fact(ids.ines, try relation(rt, "Carries"), ids.slip.to_int());
     if (!slip) {
         if (rt.spatial.get_current_waypoint(ids.ines) != ids.archive_wp) return larkspur_typed(rt, "go to the archive");
@@ -1337,7 +1337,7 @@ test "P30-05: the solve key plays each puzzle proof to its ending" {
         const rt = try load(6);
         defer unload(rt);
         try solve(rt);
-        try testing.expect(holds(rt, "CellLock", "dissolved", null));
+        try testing.expect(holds(rt, "CellLock", "Dissolved", null));
         try testing.expectEqualStrings("Solved. Press [R] to rewind and play it yourself.", rt.get_banner());
     }
 }
@@ -1407,8 +1407,8 @@ test "P30-01: the Bell Tower deck weaves drafts from note keys and tolls the bel
     try testing.expectEqual(@as(u8, 1), rt.distaff.len);
     rt.distaff.clear();
     try solve(rt);
-    try testing.expect(bespoke.host.has_state(&rt.world, rt.world.lookup_entity("GreatBell").?, "ringing"));
-    try testing.expect(bespoke.host.has_state(&rt.world, rt.world.lookup_entity("Beacon").?, "lit"));
+    try testing.expect(bespoke.host.has_state(&rt.world, rt.world.lookup_entity("GreatBell").?, "Ringing"));
+    try testing.expect(bespoke.host.has_state(&rt.world, rt.world.lookup_entity("Beacon").?, "Lit"));
     try testing.expectEqualStrings(bell_tower.BELFRY_SCENE, rt.world.get_entity_name(rt.vm.current_scene.?).?);
 }
 
@@ -1694,7 +1694,7 @@ test "D-094: the Pip-Spitting Green wins first place with clicks alone" {
         try rt.step_tick();
     }
     try testing.expect(!holds(rt, "JudgeMarrow", "Distracted", null));
-    try tick_until(rt, "Wind", "blowing", null, 80);
+    try tick_until(rt, "Wind", "Blowing", null, 80);
 
     // Then talk to the judge and spit.
     try pick_verb(rt, .talk_to);
@@ -1927,14 +1927,14 @@ test "P34-03: the Castle Fire Escape deck burns the tapestry, saves the door, an
     try testing.expectEqualStrings("Wren", rt.world.get_entity_name(rt.player_entity).?);
     const wren = rt.player_entity;
     var presses: usize = 0;
-    while (!bespoke.host.has_state(&rt.world, wren, "escaped") and presses < 40) : (presses += 1) try rt.trigger_catalyst();
+    while (!bespoke.host.has_state(&rt.world, wren, "Escaped") and presses < 40) : (presses += 1) try rt.trigger_catalyst();
     for (0..20) |_| {
-        if (bespoke.host.has_state(&rt.world, wren, "escaped")) break;
+        if (bespoke.host.has_state(&rt.world, wren, "Escaped")) break;
         try rt.step_tick();
     }
-    try testing.expect(bespoke.host.has_state(&rt.world, wren, "escaped"));
-    try testing.expect(!bespoke.host.has_state(&rt.world, wren, "scorched"));
-    try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "burned"));
+    try testing.expect(bespoke.host.has_state(&rt.world, wren, "Escaped"));
+    try testing.expect(!bespoke.host.has_state(&rt.world, wren, "Scorched"));
+    try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "Burned"));
 }
 
 test "P34-03: the Castle Fire Escape plays by verbs and the page's buttons" {
@@ -1945,10 +1945,10 @@ test "P34-03: the Castle Fire Escape plays by verbs and the page's buttons" {
     try pick_verb(rt, .use_with);
     _ = try click_on(rt, "Trough");
     for (0..20) |_| {
-        if (bespoke.host.has_state(&rt.world, try entity(rt, "Bucket"), "full")) break;
+        if (bespoke.host.has_state(&rt.world, try entity(rt, "Bucket"), "Full")) break;
         try rt.step_tick();
     }
-    try testing.expect(bespoke.host.has_state(&rt.world, try entity(rt, "Bucket"), "full"));
+    try testing.expect(bespoke.host.has_state(&rt.world, try entity(rt, "Bucket"), "Full"));
     // The light button refuses away from the torch and says why.
     try rt.deck_action(KEEP_LIGHT);
     try testing.expectEqualStrings("Wren must stand at the torch.", rt.get_banner());
@@ -1970,11 +1970,11 @@ test "P34-03: the Castle Fire Escape plays by verbs and the page's buttons" {
     try pick_verb(rt, .walk);
     _ = try click_on(rt, "DoorMark");
     for (0..30) |_| {
-        if (bespoke.host.has_state(&rt.world, wren, "escaped")) break;
+        if (bespoke.host.has_state(&rt.world, wren, "Escaped")) break;
         try rt.step_tick();
     }
-    try testing.expect(bespoke.host.has_state(&rt.world, wren, "escaped"));
-    try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "burned"));
+    try testing.expect(bespoke.host.has_state(&rt.world, wren, "Escaped"));
+    try testing.expect(!bespoke.host.has_state(&rt.world, try entity(rt, "HiddenDoor"), "Burned"));
 }
 
 /// Types a line into the runtime the way a visitor does: Enter focuses the bar, each character
@@ -2027,7 +2027,7 @@ test "P34-04: the Larkspur Observatory reaches its ending from typed commands" {
     }
     try type_into(rt, "present the slip to the rival");
     for (0..3) |_| try rt.step_tick();
-    try testing.expect(bespoke.host.has_state(&rt.world, pell, "cornered"));
+    try testing.expect(bespoke.host.has_state(&rt.world, pell, "Cornered"));
 }
 
 test "P34-04: the Larkspur Observatory's [S] types the playthrough to the end" {
@@ -2035,9 +2035,9 @@ test "P34-04: the Larkspur Observatory's [S] types the playthrough to the end" {
     defer unload(rt);
     const pell = try entity(rt, "Pell");
     var presses: usize = 0;
-    while (!bespoke.host.has_state(&rt.world, pell, "cornered") and presses < 60) : (presses += 1) try rt.trigger_catalyst();
+    while (!bespoke.host.has_state(&rt.world, pell, "Cornered") and presses < 60) : (presses += 1) try rt.trigger_catalyst();
     for (0..3) |_| try rt.step_tick();
-    try testing.expect(bespoke.host.has_state(&rt.world, pell, "cornered"));
+    try testing.expect(bespoke.host.has_state(&rt.world, pell, "Cornered"));
 }
 
 test "D-094: the Borrowed Beard's [S] borrows the papers even when pressed before Rook reaches his door" {
@@ -2069,7 +2069,7 @@ test "D-096: the Pip-Spitting Green draws its wind sign, calm and blowing" {
     const streak = .{ 300, 250 };
     rt.render_frame();
     try testing.expect(!std.meta.eql(rt.pixel(streak[0], streak[1]), wasm.RgbaColor.sky_blue));
-    try tick_until(rt, "Wind", "blowing", null, 80);
+    try tick_until(rt, "Wind", "Blowing", null, 80);
     rt.render_frame();
     try testing.expect(std.meta.eql(rt.pixel(streak[0], streak[1]), wasm.RgbaColor.sky_blue));
 }

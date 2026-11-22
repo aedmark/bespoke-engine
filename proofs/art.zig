@@ -3519,15 +3519,15 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
 
     // 5b. Capture Spitting Contest facts (P10-03, D-012)
     st.spit_is_thick = false;
-    if (world.lookup_relation("thick")) |rel| {
+    if (world.lookup_relation("Thick")) |rel| {
         st.spit_is_thick = world.has_fact(null, rel, null);
     }
     st.pegs_tampered = false;
-    if (world.lookup_relation("tampered")) |rel| {
+    if (world.lookup_relation("Tampered")) |rel| {
         st.pegs_tampered = world.has_fact(null, rel, null);
     }
     st.wind_blowing = false;
-    if (world.lookup_relation("blowing")) |rel| {
+    if (world.lookup_relation("Blowing")) |rel| {
         st.wind_blowing = world.has_fact(null, rel, null);
     }
     st.judge_distracted = false;
@@ -3537,7 +3537,7 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
 
     // The Borrowed Beard status flags (P14-02, P35-04)
     st.gap_taped = false;
-    if (world.lookup_relation("taped") orelse world.lookup_relation("Taped")) |rel| {
+    if (world.lookup_relation("Taped")) |rel| {
         st.gap_taped = world.has_fact(null, rel, null);
     }
     st.gap_has_fur = false;
@@ -3545,7 +3545,7 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
         st.gap_has_fur = world.has_fact(null, rel, null);
     }
     st.dog_startled = false;
-    if (world.lookup_relation("startled") orelse world.lookup_relation("Startled")) |rel| {
+    if (world.lookup_relation("Startled")) |rel| {
         st.dog_startled = world.has_fact(null, rel, null);
     }
     st.dog_fur_collected = false;
@@ -3555,7 +3555,7 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
         }
     }
     st.tamsin_disguised = false;
-    if (world.lookup_relation("disguised") orelse world.lookup_relation("Disguised")) |rel| {
+    if (world.lookup_relation("Disguised")) |rel| {
         st.tamsin_disguised = world.has_fact(null, rel, null);
     }
     st.berth_taken = false;
@@ -3646,10 +3646,10 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
 
     // 5c-bell. Capture Bell Tower scenario state (P22-03). Looked up by entity, not just by
     // relation, because `lit` is a generic state other scripts may also use.
-    st.bell_brazier_lit = entity_in_state(world, "Brazier", "lit");
-    st.bell_chain_loosed = entity_in_state(world, "IronChain", "loosed");
-    st.bell_ringing = entity_in_state(world, "GreatBell", "ringing");
-    st.bell_beacon_lit = entity_in_state(world, "Beacon", "lit");
+    st.bell_brazier_lit = entity_in_state(world, "Brazier", "Lit");
+    st.bell_chain_loosed = entity_in_state(world, "IronChain", "Loosed");
+    st.bell_ringing = entity_in_state(world, "GreatBell", "Ringing");
+    st.bell_beacon_lit = entity_in_state(world, "Beacon", "Lit");
     st.bell_fork_taken = false;
     if (world.lookup_relation("Carries")) |carries| {
         if (world.lookup_entity("TuningFork")) |fork| {
@@ -3659,19 +3659,19 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
 
     // 5d. Capture the Donkey of Lamp Point status flags (P20-01..P20-03, D-023, P35-05)
     st.donkey_tangled = false;
-    if (world.lookup_relation("tangled") orelse world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
+    if (world.lookup_relation("Tangled") orelse world.lookup_relation("TangledWith")) |rel| {
         st.donkey_tangled = world.has_fact(null, rel, null);
     }
     st.donkey_retreating = false;
-    if (world.lookup_relation("DonkeyRetreating") orelse world.lookup_relation("retreating")) |rel| {
+    if (world.lookup_relation("DonkeyRetreating") orelse world.lookup_relation("Retreating")) |rel| {
         st.donkey_retreating = world.has_fact(null, rel, null);
     }
     st.tamsin_knocked_down = false;
-    if (world.lookup_relation("KnockedDown") orelse world.lookup_relation("knocked_down")) |rel| {
+    if (world.lookup_relation("KnockedDown") orelse world.lookup_relation("Knocked_down")) |rel| {
         st.tamsin_knocked_down = world.has_fact(null, rel, null);
     }
     st.anchor_moved = false;
-    if (world.lookup_relation("AnchorMoved") orelse world.lookup_relation("anchor_moved")) |rel| {
+    if (world.lookup_relation("AnchorMoved") orelse world.lookup_relation("Anchor_moved")) |rel| {
         st.anchor_moved = world.has_fact(null, rel, null);
     }
 

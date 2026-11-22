@@ -1118,7 +1118,7 @@ pub const Parser = struct {
                         } else if (self.current.tag == .kw_stops) {
                             try self.advance();
                             if (self.current.tag == .kw_being) try self.advance();
-                            const state_name = try self.parse_name();
+                            const state_name = try self.state_word(try self.parse_name());
                             edge = .falling;
                             var pat_args = try self.allocator.alloc([]const u8, 1);
                             pat_args[0] = first_name;
@@ -1128,7 +1128,7 @@ pub const Parser = struct {
                             });
                         } else if (self.current.tag == .kw_is or self.current.tag == .kw_are) {
                             try self.advance();
-                            const state_name = try self.parse_name();
+                            const state_name = try self.state_word(try self.parse_name());
                             edge = .rising;
                             var pat_args = try self.allocator.alloc([]const u8, 1);
                             pat_args[0] = first_name;
@@ -1276,7 +1276,7 @@ pub const Parser = struct {
                             if (self.current.tag == .kw_state) {
                                 const state_line = self.current.line;
                                 try self.advance();
-                                try ast.relations.append(.{ .name = ident, .is_property = false });
+                                try ast.relations.append(.{ .name = try self.state_word(ident), .is_property = false });
                                 while (self.current.line == state_line and self.current.tag != .eof) {
                                     try self.advance();
                                 }
@@ -3115,13 +3115,23 @@ pub const Parser = struct {
         return self.finish_state_stmt(target);
     }
 
+    /// A state word after `is` names a relation, so it takes the relation's capital (D-161):
+    /// `now Lamp is lit` and `Lit(Lamp)` are one fact. A word already capitalised is unchanged
+    /// and keeps pointing into the source; a lowercase one is copied into the parser's arena.
+    fn state_word(self: *Parser, word: []const u8) ![]const u8 {
+        if (word.len == 0 or !std.ascii.isLower(word[0])) return word;
+        const copy = try self.allocator.dupe(u8, word);
+        copy[0] = std.ascii.toUpper(copy[0]);
+        return copy;
+    }
+
     fn finish_state_stmt(self: *Parser, target: []const u8) !Stmt {
         var is_neg = false;
         if (self.current.tag == .kw_not) {
             is_neg = true;
             try self.advance();
         }
-        const state = try self.parse_name();
+        const state = try self.state_word(try self.parse_name());
         if (self.current.tag == .kw_with) {
             try self.advance();
         }
@@ -3252,7 +3262,7 @@ pub const Parser = struct {
                     is_neg = true;
                     try self.advance();
                 }
-                const state = try self.parse_name();
+                const state = try self.state_word(try self.parse_name());
                 if (self.current.tag == .kw_with) try self.advance();
                 var pat_args = try self.allocator.alloc([]const u8, 1);
                 pat_args[0] = first;

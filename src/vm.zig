@@ -117,6 +117,14 @@ pub const PrunedChoice = struct {
     body: []const parser_mod.Stmt,
 };
 
+/// What `fire_cue` hands a cue handler fiber (D-161): the handler, its three arguments in its
+/// declared order, and its guard's eight bindings, as raw values (0 for none).
+const CueArguments = struct {
+    pc: usize,
+    args: [3]u32 = @splat(0),
+    bindings: [8]u32 = @splat(0),
+};
+
 pub const Fiber = struct {
     id: FiberId,
     owner: EntityId,
@@ -502,7 +510,15 @@ pub const VM = struct {
         // The guard is read now, at the cue, not when the handler fiber first runs: a guard
         // describes the moment of the action, and a cue fired before a save must not change
         // its mind after a restore (D-072).
-        const handler_pc = compiled.select_cue_handler(self.world, cue_name, actor, target_a, target_b) orelse return null;
+        // A program that reports what the handler reads binds it (D-161); a test double that
+        // only names the handler runs bodies that read nothing.
+        const found: CueArguments = if (@hasDecl(@TypeOf(compiled.*), "select_cue_match")) blk: {
+            const m = compiled.select_cue_match(self.world, cue_name, actor, target_a, target_b) orelse return null;
+            var a = CueArguments{ .pc = m.pc };
+            for (m.args, 0..) |arg, i| a.args[i] = arg.to_int();
+            for (m.bindings.values, 0..) |v, i| a.bindings[i] = v orelse 0;
+            break :blk a;
+        } else .{ .pc = compiled.select_cue_handler(self.world, cue_name, actor, target_a, target_b) orelse return null };
 
         // Record cue emission for peripheral visual/audio bridge
         var emitted = EmittedCue{
@@ -522,7 +538,22 @@ pub const VM = struct {
         try self.emitted_cues.append(emitted);
 
         // Spawn a routine fiber executing the handler
-        return try self.spawn_routine(actor, handler_pc);
+        return try self.spawn_cue_handler(actor, found);
+    }
+
+    /// Starts a cue handler. One that begins with `bind_cue_args` (D-161) starts after it, with
+    /// its arguments and guard bindings already pushed as stack entries 0 to 10, so a body
+    /// statement reads them with `push_local` and pushes and pops only above them.
+    fn spawn_cue_handler(self: *VM, owner: EntityId, found: CueArguments) !FiberId {
+        const code = self.chunk.code.items;
+        const binds = found.pc < code.len and code[found.pc] == @intFromEnum(Opcode.bind_cue_args);
+        const id = try self.spawn_routine(owner, if (binds) found.pc + 1 else found.pc);
+        if (binds) {
+            const fiber = &self.fibers.items[self.fibers.items.len - 1];
+            for (found.args) |v| try fiber.push(v);
+            for (found.bindings) |v| try fiber.push(v);
+        }
+        return id;
     }
 
     /// Weaves a named draft on a target (P22-01, D-029). Runs the `Weave(caster, draft, target)`
@@ -556,7 +587,7 @@ pub const VM = struct {
         try self.emitted_cues.append(emitted);
 
         const pc = handler_pc orelse return null;
-        return try self.spawn_routine(caster, pc);
+        return try self.spawn_cue_handler(caster, .{ .pc = pc, .args = .{ caster.to_int(), draft.to_int(), target.to_int() } });
     }
 
     /// Resolves four played notes to a draft and weaves it (P22-01, D-029). Reversed playback
@@ -914,6 +945,14 @@ pub const VM = struct {
                     temp_stack[temp_sp] = val;
                     temp_sp += 1;
                 },
+                .push_local => {
+                    // A `wait until` in a handler body may read the handler's locals (D-161).
+                    const index = code[pc];
+                    pc += 1;
+                    if (index >= fiber.sp) return error.MissingCueArguments;
+                    temp_stack[temp_sp] = fiber.stack[index];
+                    temp_sp += 1;
+                },
                 .push_relation => {
                     const val = std.mem.readInt(u16, code[pc..][0..2], .little);
                     pc += 2;
@@ -971,7 +1010,6 @@ pub const VM = struct {
                     break;
                 },
                 else => {
-                    _ = fiber;
                     return false;
                 },
             }
@@ -1019,6 +1057,14 @@ pub const VM = struct {
                     f.pc += 4;
                     try f.push(val);
                 },
+                .push_local => {
+                    // Only a handler started by `fire_cue` has locals beneath its stack (D-161).
+                    const index = code[f.pc];
+                    f.pc += 1;
+                    if (index >= f.sp) return error.MissingCueArguments;
+                    try f.push(f.stack[index]);
+                },
+                .bind_cue_args => return error.MissingCueArguments,
                 .push_relation => {
                     const val = std.mem.readInt(u16, code[f.pc..][0..2], .little);
                     f.pc += 2;

@@ -31,4 +31,4 @@
   VERIFICATION COMPLETE: two spells found by their words alone.  
 ===================================================================
 
-final facts: 8, digest a0887b103b626bc8
+final facts: 8, digest e01e71470810b3ee

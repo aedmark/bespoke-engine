@@ -65,7 +65,7 @@ Everything a game remembers is a fact, including the open dialogue, the chosen m
 
 Time is a whole-number tick. `wait 20 ticks` and `remember X for 20 ticks` count ticks; nothing in a script reads a clock. A cue fired during a tick is handled on the next one, and a rule sees facts as they stood at the end of the previous tick, so order of declaration never changes an outcome.
 
-Names start with a capital letter. A relation declares its argument names only for the reader; `relation Carries(holder, item)` and `relation Carries(a, b)` are the same relation.
+Names of things start with a capital letter; a lowercase name is a variable, and the compiler refuses one that nothing binds (D-161). A state word after `is` is the capitalised relation: `Lamp is lit` is `Lit(Lamp)`. A relation declares its argument names only for the reader; `relation Carries(holder, item)` and `relation Carries(a, b)` are the same relation.
 
 ```bespoke
 # Facts: plain, timed, and property relations.
@@ -464,6 +464,5 @@ A window host follows the loop documented on `host.Session`: poll an action, let
 
 These are recorded under Claims vs. code in [`ARCHITECTURE.md`](ARCHITECTURE.md):
 
-- A cue handler parameter written in lowercase (`on cue Shows(Hero, item):`) matches any entity but is not bound; the body cannot use `item`. Write one handler per concrete name.
-- A `where` guard on an `on cue` handler binds the handler's lowercase parameters to the cue's arguments, but the handler body does not: inside the body, a lowercase parameter is read as an entity name. Name the entities in the body, or check them with `if`.
+- A `when` rule's body cannot use its trigger's variables yet (D-161): `when Holds(who, Sword): remember Armed(who)` is a compile error. Name the entity in the body, or fire a cue whose handler takes it as a parameter.
 - The stock window answers dialogue and typed commands, but clicking a person does not talk to them; type `talk to <name>`.

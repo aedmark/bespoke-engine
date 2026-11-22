@@ -1983,6 +1983,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Guarded alternatives read as written. One cue can now run at most one handler, as before. Built by P48-01 (2026-11-22): `CompiledProgram.cue_handler_chain` maps each handler to the next of its signature, `cue_handler_entries` still names the first, `select_cue_handler` walks the chain before the broader forms, and `.bspk` version 27 appends the links (`InvalidCueChain` refuses a bad one).
 
+## D-161 Case Decides Role: Capitalised Names Are Things, Lowercase Names Are Bound Variables (2026-11-22, status: accepted; P48-02, amends D-037, D-072)
+
+**Context.** P48-02 asked what a lowercase cue parameter means in a handler body: the `where` guard binds it (D-072), but the body read it as an entity name, so `remember CharmedBy(target, Bard)` wrote about an entity called `target`. Answering that needs a case rule. Names were case-sensitive, and case carried meaning only in cue parameters and `when` patterns, where a lowercase name is a variable (D-037); everywhere else a lowercase name was silently an entity (`entity hero` was legal, and `remember Holds(Hero, sword)` interned `sword`). Separately, `now Lamp is lit` and `Lit(Lamp)` were two relations, so `if Lit(Lamp)` was false after `now Lamp is lit` (observed 2026-11-22 with `bespoke run`).
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. Names are case-sensitive, and the first letter decides the role. A name that starts with a capital letter is a thing: an entity, relation, routine, scene, or other declared name. A name that starts with a lowercase letter in an argument position is a variable and must be bound; an unbound one is a compile error whose help suggests the capitalised name. Declaring a thing with a lowercase name (`entity hero`) is an error. `_` stays the wildcard; numbers and values are unchanged.
+2. A cue handler body sees its parameters: a lowercase parameter, and any variable its `where` guard binds, read in the body as the entity the cue was fired with (or the guard matched).
+3. A state word after `is` names the relation with its first letter capitalised: `now Lamp is lit`, `Lamp is lit`, and `when Lamp is lit` use `Lit`, the same relation as `Lit(Lamp)`.
+4. A variable used in a `when` rule body is a compile error for now. Binding it later adds meaning to scripts that do not compile today, so it can follow 1.0 without breaking any.
+
+**Alternatives:** bind only the names a handler declares and keep every other name an entity whatever its case (a typo still creates an entity); case-insensitive names with a sigil such as `?item` for variables (breaks every script's variables); keep state words and capitalised relations distinct; bind `when` bodies now.
+
+**Consequences.** A script's meaning no longer depends on whether a lowercase word happens to be declared. Scripts with lowercase entity or relation names stop compiling and must be capitalised. A handler fiber carries its bindings, so saves carry them too. Proof goldens that print state relation names may move; each move is called out in review.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

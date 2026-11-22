@@ -65,6 +65,19 @@ pub const CueGuard = struct {
     clauses: []const world_mod.PatternClause,
 };
 
+/// The handler a fired cue runs, with what its body reads (P48-02, D-161): the cue's
+/// arguments in the order the handler declares them (a form matched with its targets swapped
+/// swaps them back), and the variables its `where` guard bound, by guard slot.
+pub const CueMatch = struct {
+    pc: usize,
+    args: [MAX_CUE_PARAMS]EntityId = .{ .none, .none, .none },
+    bindings: world_mod.VariableBindings = .{},
+};
+
+/// Stack index of a handler's first guard binding: `bind_cue_args` pushes the three arguments
+/// first (D-161).
+pub const CUE_BINDING_BASE: u8 = MAX_CUE_PARAMS;
+
 pub const CompiledProgram = struct {
     chunk: BytecodeChunk,
     routine_entries: std.StringHashMap(usize),
@@ -221,7 +234,8 @@ pub const CompiledProgram = struct {
         target_b: ?[]const u8,
     ) ?usize {
         const who = actor orelse return null;
-        return self.resolve_cue(null, cue_name, who, target_a, target_b, .{ .none, .none, .none });
+        const found = self.resolve_cue(null, cue_name, who, target_a, target_b, .{ .none, .none, .none }) orelse return null;
+        return found.pc;
     }
 
     /// Finds the handler a fired cue runs (D-009, D-013, D-037, D-072). Tried in order, most
@@ -240,6 +254,19 @@ pub const CompiledProgram = struct {
         target_a: ?EntityId,
         target_b: ?EntityId,
     ) ?usize {
+        const found = self.select_cue_match(world, cue_name, actor, target_a, target_b) orelse return null;
+        return found.pc;
+    }
+
+    /// `select_cue_handler` with what the chosen handler's body reads (D-161).
+    pub fn select_cue_match(
+        self: *const CompiledProgram,
+        world: *const World,
+        cue_name: []const u8,
+        actor: EntityId,
+        target_a: ?EntityId,
+        target_b: ?EntityId,
+    ) ?CueMatch {
         const who = world.get_entity_name(actor) orelse return null;
         const name_a = if (target_a) |ta| world.get_entity_name(ta) else null;
         const name_b = if (target_b) |tb| world.get_entity_name(tb) else null;
@@ -261,7 +288,7 @@ pub const CompiledProgram = struct {
         target_a: ?[]const u8,
         target_b: ?[]const u8,
         ids: [3]EntityId,
-    ) ?usize {
+    ) ?CueMatch {
         const straight = [3]EntityId{ ids[0], ids[1], ids[2] };
         const swapped = [3]EntityId{ ids[0], ids[2], ids[1] };
 
@@ -301,10 +328,14 @@ pub const CompiledProgram = struct {
     /// The first handler of one signature, in source order, whose guard admits `args`
     /// (D-160). Starts at `head`, the handler `cue_handler_entries` names, and follows the
     /// chain; null when every handler of the signature declines.
-    fn first_admitted(self: *const CompiledProgram, world: ?*const World, head: ?usize, args: []const EntityId) ?usize {
+    fn first_admitted(self: *const CompiledProgram, world: ?*const World, head: ?usize, args: []const EntityId) ?CueMatch {
         var next = head;
         while (next) |pc| : (next = self.cue_handler_chain.get(pc)) {
-            if (self.guard_admits(world, pc, args)) return pc;
+            if (self.guard_admits(world, pc, args)) |bindings| {
+                var found = CueMatch{ .pc = pc, .bindings = bindings };
+                for (args, 0..) |arg, i| found.args[i] = arg;
+                return found;
+            }
         }
         return null;
     }
@@ -317,18 +348,19 @@ pub const CompiledProgram = struct {
         return null;
     }
 
-    /// True when the handler at `pc` has no guard, no World was given (name-only lookup), or
-    /// its guard's clauses match the World with each variable parameter bound to its argument.
-    fn guard_admits(self: *const CompiledProgram, world: ?*const World, pc: usize, args: []const EntityId) bool {
-        const w = world orelse return true;
-        const guard = self.find_cue_guard(pc) orelse return true;
+    /// The guard's bindings when the handler at `pc` has no guard (none), no World was given
+    /// (name-only lookup), or its guard's clauses match the World with each variable parameter
+    /// bound to its argument; null when the guard fails.
+    fn guard_admits(self: *const CompiledProgram, world: ?*const World, pc: usize, args: []const EntityId) ?world_mod.VariableBindings {
+        const w = world orelse return .{};
+        const guard = self.find_cue_guard(pc) orelse return .{};
         var bindings = world_mod.VariableBindings{};
         for (guard.param_slots, 0..) |slot, i| {
             const s = slot orelse continue;
-            if (i >= args.len) return false;
-            if (!bindings.set(s, args[i].to_int())) return false;
+            if (i >= args.len) return null;
+            if (!bindings.set(s, args[i].to_int())) return null;
         }
-        return w.find_first_match_from(guard.clauses, bindings) != null;
+        return w.find_first_match_from(guard.clauses, bindings);
     }
 
     fn lookup_cue(self: *const CompiledProgram, cue_name: []const u8, parts: []const []const u8) ?usize {
@@ -342,6 +374,46 @@ pub const CompiledProgram = struct {
         return self.cue_handler_entries.get(w.buffered());
     }
 };
+
+/// A lowercase first letter marks a variable wherever a name of a thing can stand (D-037,
+/// D-161). `true` and `false` are values, not names.
+pub fn is_variable_name(name: []const u8) bool {
+    if (name.len == 0 or !std.ascii.isLower(name[0])) return false;
+    return !std.mem.eql(u8, name, "true") and !std.mem.eql(u8, name, "false");
+}
+
+/// True when any text in `value`, a parsed statement or anything inside one, is exactly
+/// `name`. Conservative: dialogue text that happens to equal the name also counts, which only
+/// costs a handler an unneeded `bind_cue_args`.
+fn mentions(value: anytype, name: []const u8) bool {
+    const T = @TypeOf(value);
+    switch (@typeInfo(T)) {
+        .pointer => |ptr| {
+            if (ptr.size == .slice) {
+                if (ptr.child == u8) return std.mem.eql(u8, value, name);
+                for (value) |item| {
+                    if (mentions(item, name)) return true;
+                }
+                return false;
+            }
+            if (ptr.size == .one) return mentions(value.*, name);
+            return false;
+        },
+        .@"struct" => |st| {
+            inline for (st.field_names) |field_name| {
+                if (mentions(@field(value, field_name), name)) return true;
+            }
+            return false;
+        },
+        .@"union" => {
+            switch (value) {
+                inline else => |payload| return mentions(payload, name),
+            }
+        },
+        .optional => return if (value) |inner| mentions(inner, name) else false,
+        else => return false,
+    }
+}
 
 /// Stands in a handler signature for a parameter declared as a variable (D-037).
 pub const CUE_WILDCARD = "*";
@@ -369,6 +441,15 @@ pub const Codegen = struct {
     /// A second source name the diagnostic cites, such as the earlier handler that makes a
     /// later one unreachable (D-160). Mapped to a line by the checker, like `error_context`.
     error_related: []const u8 = "",
+    /// Backs `error_suggestion` when the help is built rather than found, such as the
+    /// capitalised spelling of an unbound lowercase name (D-161).
+    suggestion_buf: [64]u8 = undefined,
+    /// While a cue handler body compiles: each name its body may read, with the stack index
+    /// `bind_cue_args` puts it at (D-161). Null in every other body.
+    locals: ?*const std.StringHashMap(u8) = null,
+    /// While a `when` rule body compiles: the rule's trigger patterns, so a variable from
+    /// them is reported as unbindable rather than unbound (D-161).
+    when_patterns: ?[]const parser_mod.FactPattern = null,
     allocator: std.mem.Allocator,
     world: *World,
     spatial: ?*SpatialSystem,
@@ -482,6 +563,7 @@ pub const Codegen = struct {
     pub fn compile(mut_self: *Codegen, ast: *const AST) !CompiledProgram {
         // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
+            try mut_self.check_thing_name(name);
             mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
@@ -655,6 +737,7 @@ pub const Codegen = struct {
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
+            try mut_self.check_thing_name(rel.name);
             mut_self.error_context = rel.name;
             _ = try mut_self.world.intern_relation(
                 rel.name,
@@ -827,6 +910,8 @@ pub const Codegen = struct {
             const entry_pc = mut_self.chunk.count();
             try mut_self.when_rule_entries.append(entry_pc);
 
+            mut_self.when_patterns = rule.trigger_patterns;
+            defer mut_self.when_patterns = null;
             if (rule.body.len > 0 and rule.body[0] == .interrupt_with) {
                 const iw = rule.body[0].interrupt_with;
                 target_entity = try mut_self.resolve_entity(iw.entity);
@@ -879,10 +964,30 @@ pub const Codegen = struct {
                 try mut_self.register_cue_handler(&handler_sources, sig, cue, entry_pc);
             }
 
+            // What the body may read (D-161): each variable parameter by its position, then
+            // each variable only the guard binds, by its guard slot above the arguments.
+            var locals = std.StringHashMap(u8).init(mut_self.allocator);
+            defer locals.deinit();
+            for (cue.params, 0..) |param, i| {
+                if (i >= MAX_CUE_PARAMS) break;
+                if (is_variable_name(param) and !locals.contains(param)) try locals.put(param, @intCast(i));
+            }
             if (cue.where_patterns.len > 0) {
-                try mut_self.cue_guards.append(mut_self.allocator, try mut_self.compile_cue_guard(cue, entry_pc));
+                try mut_self.cue_guards.append(mut_self.allocator, try mut_self.compile_cue_guard(cue, entry_pc, &locals));
             }
 
+            // Only a body that mentions a local starts with `bind_cue_args`, so every other
+            // handler compiles to the bytes it always did.
+            var reads_locals = false;
+            var names = locals.keyIterator();
+            while (names.next()) |name| {
+                for (cue.body) |stmt| {
+                    if (mentions(stmt, name.*)) reads_locals = true;
+                }
+            }
+            if (reads_locals) _ = try mut_self.chunk.emit_op(.bind_cue_args);
+            mut_self.locals = if (reads_locals) &locals else null;
+            defer mut_self.locals = null;
             for (cue.body) |stmt| {
                 try mut_self.compile_stmt(stmt);
             }
@@ -1608,40 +1713,47 @@ pub const Codegen = struct {
     fn compile_stmt(self: *Codegen, stmt: Stmt) !void {
         switch (stmt) {
             .remember => |rem| {
-                const subj = try self.resolve_entity(rem.args[0]);
+                const subj = try self.entity_arg(rem.args[0]);
                 const rel = try self.resolve_relation(rem.relation);
-                const obj = try self.fact_object(rem.relation, rem.args);
+                const obj_local = if (rem.args.len > 1) self.local_index(rem.args[1]) else null;
+                const obj = if (obj_local == null) try self.fact_object(rem.relation, rem.args) else 0;
 
-                try self.chunk.emit_push_entity(subj);
+                try self.emit_entity_arg(rem.args[0], subj);
                 try self.chunk.emit_push_relation(rel);
-                try self.chunk.emit_push_const(obj);
+                if (obj_local) |index| try self.chunk.emit_push_local(index) else try self.chunk.emit_push_const(obj);
                 try self.chunk.emit_remember(rem.ttl_ticks);
             },
             .forget => |fg| {
-                const subj = try self.resolve_entity(fg.args[0]);
+                const subj = try self.entity_arg(fg.args[0]);
                 const rel = try self.resolve_relation(fg.relation);
                 const has_obj = fg.args.len > 1 and !std.mem.eql(u8, fg.args[1], "_");
 
-                try self.chunk.emit_push_entity(subj);
+                try self.emit_entity_arg(fg.args[0], subj);
                 try self.chunk.emit_push_relation(rel);
                 if (has_obj) {
-                    const obj = try self.fact_value(fg.relation, fg.args[1]);
-                    try self.chunk.emit_push_const(obj);
+                    if (self.local_index(fg.args[1])) |index| {
+                        try self.chunk.emit_push_local(index);
+                    } else {
+                        const obj = try self.fact_value(fg.relation, fg.args[1]);
+                        try self.chunk.emit_push_const(obj);
+                    }
                 }
                 _ = try self.chunk.emit_op(.forget);
                 try self.chunk.emit_u8(if (has_obj) 1 else 0);
             },
             .walk => |w| {
-                const ent = try self.resolve_entity(w.entity);
+                const ent = try self.entity_arg(w.entity);
                 const wp_id = try self.resolve_waypoint(w.target);
-                try self.chunk.emit_walk_to(ent, wp_id);
+                try self.emit_entity_arg(w.entity, ent);
+                try self.chunk.emit_push_const(wp_id);
+                _ = try self.chunk.emit_op(.walk_to);
             },
             .face => |f| {
-                const ent = try self.resolve_entity(f.entity);
-                const target_id = try self.resolve_entity(f.target);
+                const ent = try self.entity_arg(f.entity);
+                const target_id = try self.entity_arg(f.target);
                 // Emit peripheral cue for face direction
-                try self.chunk.emit_push_entity(ent);
-                try self.chunk.emit_push_entity(target_id);
+                try self.emit_entity_arg(f.entity, ent);
+                try self.emit_entity_arg(f.target, target_id);
                 _ = try self.chunk.emit_op(.emit_cue);
                 try self.chunk.emit_u16(1); // cue 1 = face
                 try self.chunk.emit_u8(2); // 2 args
@@ -1692,7 +1804,7 @@ pub const Codegen = struct {
                 std.mem.writeInt(i16, self.chunk.code.items[jump_false_pc + 1 ..][0..2], offset, .little);
             },
             .interrupt_with => |iw| {
-                const target = try self.resolve_entity(iw.entity);
+                const target = try self.entity_arg(iw.entity);
 
                 // Jump over the interrupt handler in linear execution
                 const jump_over_pc = try self.chunk.emit_op(.jump);
@@ -1710,23 +1822,23 @@ pub const Codegen = struct {
                 std.mem.writeInt(i16, self.chunk.code.items[jump_over_pc + 1 ..][0..2], offset, .little);
 
                 // Emit interrupt opcode
-                try self.chunk.emit_push_entity(target);
+                try self.emit_entity_arg(iw.entity, target);
                 _ = try self.chunk.emit_op(.interrupt);
                 try self.chunk.emit_u16(handler_pc);
             },
             .say => |s| {
-                const speaker = try self.resolve_entity(s.speaker);
+                const speaker = try self.entity_arg(s.speaker);
                 const text_id = try self.world.intern_entity(s.text);
-                try self.chunk.emit_push_entity(speaker);
+                try self.emit_entity_arg(s.speaker, speaker);
                 try self.chunk.emit_push_entity(text_id);
                 _ = try self.chunk.emit_op(.emit_cue);
                 try self.chunk.emit_u16(2); // cue 2 = say
                 try self.chunk.emit_u8(2); // 2 args (speaker, text_entity)
             },
             .animate => |a| {
-                const target_id = try self.resolve_entity(a.target);
+                const target_id = try self.entity_arg(a.target);
                 const clip_id = try self.world.intern_entity(a.clip);
-                try self.chunk.emit_push_entity(target_id);
+                try self.emit_entity_arg(a.target, target_id);
                 try self.chunk.emit_push_entity(clip_id);
                 _ = try self.chunk.emit_op(.emit_cue);
                 try self.chunk.emit_u16(if (a.is_stop) 4 else 3); // cue 3 = animate, cue 4 = stop animate
@@ -1878,12 +1990,16 @@ pub const Codegen = struct {
     fn emit_pattern_args(self: *Codegen, pat: FactPattern, wildcard_subject: bool) !u8 {
         var mask: u8 = 0x02; // bit 1 (rel)
         if (!wildcard_subject or !std.mem.eql(u8, pat.args[0], "_")) {
-            try self.chunk.emit_push_entity(try self.resolve_entity(pat.args[0]));
+            try self.emit_entity_arg(pat.args[0], try self.entity_arg(pat.args[0]));
             mask |= 0x01;
         }
         try self.chunk.emit_push_relation(try self.resolve_relation(pat.relation));
         if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
-            try self.chunk.emit_push_const(try self.fact_value(pat.relation, pat.args[1]));
+            if (self.local_index(pat.args[1])) |index| {
+                try self.chunk.emit_push_local(index);
+            } else {
+                try self.chunk.emit_push_const(try self.fact_value(pat.relation, pat.args[1]));
+            }
             mask |= 0x04;
         }
         return mask;
@@ -1925,8 +2041,58 @@ pub const Codegen = struct {
         }
     }
 
+    /// A name of a thing used as a constant. A lowercase name is a variable (D-161): one this
+    /// body can read is refused here, where no value can stand in for it; any other is not
+    /// bound at all, and the help offers the capitalised name the author probably meant.
     fn resolve_entity(self: *Codegen, name: []const u8) !EntityId {
+        if (is_variable_name(name)) {
+            self.error_context = name;
+            if (self.local_index(name) != null) return error.VariableNotAllowedHere;
+            if (self.when_patterns) |patterns| {
+                for (patterns) |pat| {
+                    for (pat.args) |arg| {
+                        if (std.mem.eql(u8, arg, name)) return error.WhenBodyVariable;
+                    }
+                }
+            }
+            self.suggest_capitalised(name);
+            return error.UnboundVariable;
+        }
         return try self.world.intern_entity(name);
+    }
+
+    /// A declared thing's name must start with a capital letter (D-161).
+    fn check_thing_name(self: *Codegen, name: []const u8) !void {
+        if (name.len == 0 or !std.ascii.isLower(name[0])) return;
+        self.error_context = name;
+        self.suggest_capitalised(name);
+        return error.LowercaseName;
+    }
+
+    fn suggest_capitalised(self: *Codegen, name: []const u8) void {
+        if (name.len > self.suggestion_buf.len) return;
+        @memcpy(self.suggestion_buf[0..name.len], name);
+        self.suggestion_buf[0] = std.ascii.toUpper(name[0]);
+        self.error_suggestion = self.suggestion_buf[0..name.len];
+    }
+
+    fn local_index(self: *const Codegen, name: []const u8) ?u8 {
+        const locals = self.locals orelse return null;
+        return locals.get(name);
+    }
+
+    /// Pushes an entity argument: a handler local when the name is one (D-161), else the
+    /// named entity.
+    fn emit_entity_arg(self: *Codegen, name: []const u8, entity: ?EntityId) !void {
+        if (self.local_index(name)) |index| return self.chunk.emit_push_local(index);
+        try self.chunk.emit_push_entity(entity.?);
+    }
+
+    /// Resolves an entity argument unless it is a handler local, which is read at run time.
+    /// Resolution order decides entity ids, so callers resolve before pushing, as before.
+    fn entity_arg(self: *Codegen, name: []const u8) !?EntityId {
+        if (self.local_index(name) != null) return null;
+        return try self.resolve_entity(name);
     }
 
     fn resolve_relation(self: *Codegen, name: []const u8) !RelationKind {
@@ -1981,7 +2147,7 @@ pub const Codegen = struct {
     /// parameters take the first variable slots, in parameter order, before any variable that
     /// appears only in the guard, so dispatch can bind them to the cue's arguments. A guard
     /// pattern names a state (one argument) or a fact (two); the join has eight slots in all.
-    fn compile_cue_guard(self: *Codegen, cue: parser_mod.CueHandler, entry_pc: usize) !CueGuard {
+    fn compile_cue_guard(self: *Codegen, cue: parser_mod.CueHandler, entry_pc: usize, locals: *std.StringHashMap(u8)) !CueGuard {
         if (cue.params.len > MAX_CUE_PARAMS) {
             self.error_context = cue.params[MAX_CUE_PARAMS];
             return error.TooManyCueParameters;
@@ -2019,6 +2185,11 @@ pub const Codegen = struct {
             if (next_var > 8) return error.TooManyCueGuardVariables;
         }
         guard.clauses = clauses;
+        // A variable only the guard names (`loot`) is read from its binding (D-161).
+        var bound = var_map.iterator();
+        while (bound.next()) |entry| {
+            if (!locals.contains(entry.key_ptr.*)) try locals.put(entry.key_ptr.*, CUE_BINDING_BASE + entry.value_ptr.*);
+        }
         self.error_context = cue.cue_name;
         return guard;
     }

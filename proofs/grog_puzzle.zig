@@ -125,7 +125,7 @@ fn volume(world: *const bespoke.World, system: container.ContainerSystem, vessel
 }
 
 fn solved(world: *const bespoke.World, ids: Ids) bool {
-    return host.has_state(world, ids.lock, "dissolved");
+    return host.has_state(world, ids.lock, "Dissolved");
 }
 
 fn expect_true(value: bool, err: anyerror) !void {

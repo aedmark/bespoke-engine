@@ -686,7 +686,7 @@
             "An option is offered only when its actor knows it: Knows or Believes, with Rejects overriding, so a hand of cards is private without a second knowledge model.",
             "decision.step runs in host.tick after agendas: it sums the offered options whose clauses hold, picks the highest total, and keeps the earlier option on an equal total.",
             "The choice is the set fact Chose(Decision, Option) and the stage is the property DecisionState(Decision, Idle | Done), so a save, rewind, or branch carries the point without a snapshot; a falling trigger re-arms the decision.",
-            "The engine fires the cue with the actor and the winning option. A cue body cannot read lowercase parameters (D-072), so a handler that needs the option names it as an exact argument.",
+            "The engine fires the cue with the actor and the winning option. A handler names the option as an exact argument or takes it as a parameter its body reads (D-161).",
             ".bspk version 18 stores decisions."
           ],
           "why": "Agendas cover pursuit and interception only. A scoring table lets every seat act from its own hand, and because scoring reads facts only, the same state always makes the same choice under replay and rewind.",

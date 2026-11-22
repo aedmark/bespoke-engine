@@ -38,4 +38,4 @@
   VERIFICATION COMPLETE: Wren is out. The keep burned as written.  
 ===================================================================
 
-final facts: 11, digest ec140c47d25b5bf5
+final facts: 11, digest d0c6ac0b7d970831

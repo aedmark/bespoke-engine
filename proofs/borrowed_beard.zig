@@ -403,14 +403,14 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     // Step 8: Tape the gap under the gate with SailTape
     try writer.print("[Step 8: Stretch Sail Tape Across the Gate Gap]\n", .{});
     // State syntax stores the state value (`taped`), not the declaration label (`Taped`).
-    const taped_rel = try world.intern_relation("taped", .set);
+    const taped_rel = try world.intern_relation("Taped", .set);
     const tape_speech = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, sail_tape, gate_gap, 1, &speech_buf);
     try writer.print("   -> {s}\n\n", .{tape_speech orelse "GateGap is now taped."});
     try std.testing.expect(world.has_fact(gate_gap, taped_rel, null));
 
     // Step 9: Soak Bramble with the WateringCan
     try writer.print("[Step 9: Soak Bramble with the Watering Can]\n", .{});
-    const startled_rel = try world.intern_relation("startled", .set);
+    const startled_rel = try world.intern_relation("Startled", .set);
     const gap_fur_rel = try world.intern_relation("GapHasFur", .property);
     const dog_speech = try scripted_action(&world, &vm, &compiled, "Uses", tamsin, watering_can, bramble, 8, &speech_buf);
     try writer.print("   -> {s}\n\n", .{dog_speech orelse "The dog bolted under the gate."});
@@ -628,7 +628,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
     window.set_cue_banner("Brackwater: Search the washstand & rain barrel for items! [I/Y/O] Scenes [0-8] Steps", 180);
 
     const papers_ent = try world.intern_entity("RookPapers");
-    const taped_rel = try world.intern_relation("taped", .set);
+    const taped_rel = try world.intern_relation("Taped", .set);
     const gap_fur_rel = try world.intern_relation("GapHasFur", .property);
     const dog_fur_ent = try world.intern_entity("DogFur");
     const beard_ent = try world.intern_entity("GreyBeard");

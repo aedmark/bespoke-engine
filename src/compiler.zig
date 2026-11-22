@@ -209,6 +209,11 @@ fn failure_message(err: anyerror) []const u8 {
         error.Overflow => "number is outside the supported range",
         error.InvalidCharacter => "invalid numeric literal",
         error.DuplicateRoutineName => "routine name is already in use",
+        error.UnboundVariable => "a lowercase name is a variable, and nothing binds this one here; names of things start with a capital letter",
+        error.VariableNotAllowedHere => "a cue parameter cannot be used in this statement",
+        error.WhenBodyVariable => "a when rule's variables cannot be used in its body yet; name the entity",
+        error.LowercaseName => "names of things start with a capital letter",
+        error.MissingCueArguments => "a cue handler's arguments were read outside the handler",
         error.UnreachableCueHandler => "this handler can never run: an earlier handler has the same signature and no guard",
         error.UnknownArrivalMark => "this arrival rule needs a declared mark",
         error.InvalidProgramText => "could not store this declaration's text",
@@ -865,6 +870,115 @@ test "P48-01: a handler after an unguarded one of the same signature is refused,
     }
 }
 
+test "P48-02: a cue handler body reads the entities its cue was fired with" {
+    const testing = std.testing;
+    const bound_bodies =
+        \\entity Cat, Guard, Bard, Cheese, Lamp, Oil, Hero
+        \\
+        \\on cue Steal(Cat, victim) where Carries(victim, loot):
+        \\  remember Robbed(victim)
+        \\  remember Holds(Cat, loot)
+        \\  forget Carries(victim, loot)
+        \\
+        \\on cue Greets(Hero, other):
+        \\  remember Met(Hero, other)
+        \\  if Charmed(other):
+        \\    remember Smitten(other)
+        \\  say other: "Well met."
+        \\
+        \\on cue Fills(Cat, Lamp, fuel):
+        \\  remember Burns(Lamp, fuel)
+        \\
+        \\on cue Waits(Hero, thing):
+        \\  wait until thing is lit
+        \\  remember Saw(Hero, thing)
+    ;
+    const vm_mod = @import("vm.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, bound_bodies);
+    defer compiled.deinit();
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    const e = struct {
+        fn of(w: *World, name: []const u8) world_mod.EntityId {
+            return w.lookup_entity(name).?;
+        }
+    }.of;
+    const carries = world.lookup_relation("Carries").?;
+
+    // `victim` is the cue's target and `loot` what the guard matched; neither is interned as
+    // a name of its own.
+    _ = try world.remember(e(&world, "Guard"), carries, e(&world, "Cheese").to_int(), 0);
+    _ = (try vm.fire_cue(&compiled, "Steal", e(&world, "Cat"), e(&world, "Guard"), null)).?;
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(e(&world, "Guard"), world.lookup_relation("Robbed").?, null));
+    try testing.expect(world.has_fact(e(&world, "Cat"), world.lookup_relation("Holds").?, e(&world, "Cheese").to_int()));
+    try testing.expect(!world.has_fact(e(&world, "Guard"), carries, e(&world, "Cheese").to_int()));
+    try testing.expect(world.lookup_entity("victim") == null);
+    try testing.expect(world.lookup_entity("loot") == null);
+
+    // An unguarded handler binds too, in a condition and as a speaker.
+    _ = try world.remember(e(&world, "Bard"), try world.intern_relation("Charmed", .set), 0, 0);
+    _ = (try vm.fire_cue(&compiled, "Greets", e(&world, "Hero"), e(&world, "Bard"), null)).?;
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(e(&world, "Hero"), world.lookup_relation("Met").?, e(&world, "Bard").to_int()));
+    try testing.expect(world.has_fact(e(&world, "Bard"), world.lookup_relation("Smitten").?, null));
+    var said = false;
+    for (vm.emitted_cues.items) |cue| {
+        if (cue.cue_id == 2 and cue.args[0] == e(&world, "Bard").to_int()) said = true;
+    }
+    try testing.expect(said);
+
+    // Two items combine in either order (D-013): fired as (Oil, Lamp), `fuel` is still the Oil.
+    _ = (try vm.fire_cue(&compiled, "Fills", e(&world, "Cat"), e(&world, "Oil"), e(&world, "Lamp"))).?;
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(e(&world, "Lamp"), world.lookup_relation("Burns").?, e(&world, "Oil").to_int()));
+
+    // A `wait until` reads the binding on each tick it is checked.
+    _ = (try vm.fire_cue(&compiled, "Waits", e(&world, "Hero"), e(&world, "Lamp"), null)).?;
+    _ = try vm.step_tick();
+    _ = try vm.step_tick();
+    try testing.expect(world.lookup_relation("Saw") == null or !world.has_fact(e(&world, "Hero"), world.lookup_relation("Saw").?, null));
+    _ = try world.remember(e(&world, "Lamp"), world.lookup_relation("Lit").?, 0, 0);
+    _ = try vm.step_tick();
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(e(&world, "Hero"), world.lookup_relation("Saw").?, e(&world, "Lamp").to_int()));
+}
+
+test "P48-02: a state word and its capitalised relation are one fact" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null,
+        \\entity Lamp
+        \\Lamp is lit
+    );
+    defer compiled.deinit();
+    try testing.expect(world.lookup_relation("lit") == null);
+    try testing.expect(world.lookup_relation("Lit") != null);
+}
+
+test "P48-02: lowercase names of things and unbound variables are refused where they are written" {
+    const testing = std.testing;
+    const cases = [_]struct { source: []const u8, line: u32, column: u32, message: []const u8, help: ?[]const u8 }{
+        .{ .source = "entity Hero\nroutine Idle(Hero):\n  remember Holds(Hero, sword)\n", .line = 3, .column = 24, .message = "a lowercase name is a variable, and nothing binds this one here; names of things start with a capital letter", .help = "Sword" },
+        .{ .source = "entity Hero, hero\n", .line = 1, .column = 14, .message = "names of things start with a capital letter", .help = "Hero" },
+        .{ .source = "relation lit(thing)\n", .line = 1, .column = 10, .message = "names of things start with a capital letter", .help = "Lit" },
+        .{ .source = "entity Hero, Sword\nwhen Holds(who, Sword):\n  remember Armed(who)\n", .line = 3, .column = 18, .message = "a when rule's variables cannot be used in its body yet; name the entity", .help = null },
+        .{ .source = "entity Hero\nscene: Yard\nmarks: Gate\non cue Goes(Hero, place):\n  transition to scene place\n", .line = 5, .column = 23, .message = "a cue parameter cannot be used in this statement", .help = null },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.source);
+        try testing.expect(!res.is_valid);
+        const d = res.diagnostic() orelse return error.TestUnexpectedResult;
+        try testing.expectEqualStrings(case.message, d.message);
+        try testing.expectEqual(case.line, d.line);
+        try testing.expectEqual(case.column, d.column);
+        if (case.help) |help| try testing.expectEqualStrings(help, res.suggestion() orelse "") else try testing.expect(res.suggestion() == null);
+    }
+}
+
 const ART_BASE =
     \\scene: Shop
     \\cast: Clerk
@@ -913,13 +1027,16 @@ test "P46-03: art declarations compile into the program with their bindings" {
     try testing.expectEqual(@as(u16, 1), clerk.frame_at(.walk_left, 0));
     try testing.expectEqual(@as(u16, 0), clerk.frame_at(.walk_right, 0));
 
-    // The art words stay usable as names elsewhere: a state line and a fact about them.
+    // The art words stay usable where lowercase words go (D-161): as variables and as state
+    // words.
     const names = check_source(testing.allocator,
         \\relation Lit(thing)
-        \\entity palette, sprite
-        \\remember Lit(palette)
-        \\image is a state
-        \\image is lit
+        \\entity Lamp, Hero
+        \\on cue Shows(Hero, image):
+        \\  remember Lit(image)
+        \\on cue Hides(Hero, sprite) where Lit(sprite):
+        \\  forget Lit(sprite)
+        \\Lamp is palette
     );
     try testing.expect(names.is_valid);
 }

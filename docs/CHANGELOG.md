@@ -4,6 +4,10 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- A cue handler's body reads its parameters: in `on cue Greets(Hero, other):`, `remember Met(Hero, other)` records the entity the cue named, and a variable the `where` guard matched is read the same way (`D-161`). Before, the body wrote about an entity literally called `other`. Package format version 28 carries the new instructions.
+- Breaking: the first letter of a name decides what it is (`D-161`). Names of things start with a capital letter, and a lowercase name is a variable that something must bind, so `entity hero`, `relation lit(x)`, and `remember Holds(Hero, sword)` are now compile errors, with help suggesting the capitalised name. A `when` rule's body cannot use its trigger's variables yet.
+- Breaking: a state word after `is` names the capitalised relation, so `now Lamp is lit` and `Lit(Lamp)` are one fact (`D-161`). A host that looks a state up by name now asks for `Lit`, not `lit`.
+
 - Several `on cue` handlers may share a signature: they are tried in source order, and a handler whose `where` guard fails passes the cue to the next one before a broader handler is tried (`D-160`). Before, the last handler silently replaced the others and the script's package would not load. A handler placed after an unguarded one with the same signature can never run and is now a compile error naming both lines. Package format version 27 carries the order.
 
 - The authoring guide and the manual cover pixel art: palettes, images from PNG files, backdrops, animated sprites, and clickable areas, with the art limits an author meets.

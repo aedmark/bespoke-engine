@@ -18,23 +18,25 @@ on cue PlayLute(Bard, target):
   if roll 2d6 >= 8:
     remember CharmedBy(target, Bard) for 180 ticks
 
-when CharmedBy(listener, musician):
-  interrupt listener with:
-    face listener toward musician
-    wait until not CharmedBy(listener, musician)
+when CharmedBy(Guard, Bard):
+  interrupt Guard with:
+    face Guard toward Bard
+    wait until not CharmedBy(Guard, Bard)
 
 on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):
   forget Carries(victim, loot)
   remember Carries(Cat, loot)
 ```
 
-> **Implementation note (2026-11-13, D-072):** the `where` guard is evaluated when the cue fires. `victim` is bound to the cue's target, both clauses must hold for that same victim, and `loot` matches any entity the victim carries. If the guard fails, dispatch tries the next, less specific handler for the cue (such as `on cue Steal(thief, victim):`), and runs nothing if none is left. A guard pattern takes one argument (a state) or two (a fact), joined with `and`; up to eight distinct variables. The body does not see the bindings yet: inside the handler, `victim` and `loot` are still read as entity names, so the body above writes facts about entities called `victim` and `loot` (Claims vs. code in [docs/ARCHITECTURE.md](ARCHITECTURE.md)). The runnable form of this slice is [`scenarios/tavern_heist.bespoke`](../scenarios/tavern_heist.bespoke).
+> **Implementation note (D-072, D-161):** the `where` guard is evaluated when the cue fires. `victim` is bound to the cue's target, both clauses must hold for that same victim, and `loot` matches any entity the victim carries. If the guard fails, dispatch tries the next handler (D-160), then a less specific one (such as `on cue Steal(thief, victim):`), and runs nothing if none is left. A guard pattern takes one argument (a state) or two (a fact), joined with `and`; up to eight distinct variables. The body reads the bindings: above, `victim` is the entity robbed and `loot` the thing the guard found it carrying. The runnable form of this slice is [`scenarios/tavern_heist.bespoke`](../scenarios/tavern_heist.bespoke).
 
 ## Declarations and Facts
 
+Names are case-sensitive, and the first letter decides what a name is (D-161). A name that starts with a capital letter is a thing: an entity, relation, routine, scene, or any other declared name. A name that starts with a lowercase letter, where a thing could stand, is a variable, and something must bind it: a cue handler's parameter, its `where` guard, or a `when` trigger pattern. An unbound one is a compile error whose help offers the capitalised name, and declaring a thing with a lowercase name (`entity hero`) is an error. `_` is the wildcard, and numbers and `true`/`false` are values.
+
 `entity A, B` declares names. `relation R(subject, object)` declares a set relation; `property P(subject, value)` declares a single-value relation, so remembering a new value replaces the old one. Argument names in declarations are descriptive only. A fact pattern is `Relation(A)` or `Relation(A, B)`; square brackets (`Relation[A, B]`) are an accepted equivalent. `_` is a wildcard in guards and triggers.
 
-`remember Fact(...)` asserts a fact. `remember Fact(...) for N ticks` gives it an expiry tick, and `forget Fact(...)` removes it. The stageplay forms `now Actor is State`, `Actor is State`, and their `is not` / `are not` variants assert or remove unary state facts. `in the scene` and `with` may follow a state phrase for readable stage directions; they do not add another fact. A declaration sentence such as `DoorStatus is a state, which can be open or shut.` declares `DoorStatus` as a relation; text after `state` on that line is descriptive.
+`remember Fact(...)` asserts a fact. `remember Fact(...) for N ticks` gives it an expiry tick, and `forget Fact(...)` removes it. The stageplay forms `now Actor is State`, `Actor is State`, and their `is not` / `are not` variants assert or remove unary state facts. A state word names the relation with its first letter capitalised, so `now Lamp is lit`, `if Lamp is lit`, and `when Lamp is lit` mean `Lit(Lamp)` (D-161). `in the scene` and `with` may follow a state phrase for readable stage directions; they do not add another fact. A declaration sentence such as `DoorStatus is a state, which can be open or shut.` declares `DoorStatus` as a relation; text after `state` on that line is descriptive.
 
 ## Scenes and Execution Blocks
 
@@ -53,7 +55,7 @@ during Crowd:
 
 `scene`, `cast`, `props`, and `marks` describe stages. A scene heading may put the colon before or after its name (`scene: Harbour Office` or `scene Harbour Office:`); the other three use `cast:`, `props:`, and `marks:`. Their visual indentation is optional. Each later `cast`, `props`, or `marks` line belongs to the most recent scene. `routine Name(Actor)` declares a fiber owned by that actor, and the name and the actor may be names with spaces. `during Name` is the stageplay shorthand for `routine Name(Name)`. Routine names are unique across top-level, path, and `during` declarations; a repeated name is a compile error at the second declaration. A top-level `transition to scene Name` seeds an initial transition; the same statement in a body changes scene when that fiber reaches it.
 
-`on cue Name(parameters)` and its synonym `verb Name(parameters)` declare externally fired handlers. Parameters beginning with an uppercase letter match that entity; lowercase parameters match any entity. An optional `where` clause contains fact patterns joined by `and`. See the D-072 limitation above for body bindings.
+`on cue Name(parameters)` and its synonym `verb Name(parameters)` declare externally fired handlers. Parameters beginning with an uppercase letter match that entity; lowercase parameters match any entity. An optional `where` clause contains fact patterns joined by `and`. The body reads each lowercase parameter as the entity the cue was fired with, and each variable the guard binds as the entity it matched (D-161), in `remember`, `forget`, conditions, `wait until`, `say`, `face`, `walk`, `animate`, and `interrupt`. A statement that takes a fixed name, such as `transition to scene` or `weave`, refuses a parameter. A `when` rule body cannot use its trigger's variables yet; name the entity instead.
 
 Several handlers may share a signature (P48-01, D-160). They are tried in source order: a handler whose guard fails passes the cue to the next one with the same signature, and only when all of them decline does dispatch move to a less specific signature. Write the guarded handlers first and an unguarded default last; a handler after an unguarded one of the same signature can never run and is a compile error naming both lines. Parameters declared as variables share one signature whatever they are called, so `Uses(Hero, thing)` and `Uses(Hero, item)` are the same. Package format version 27 carries the order; versions 1 through 26 hold one handler per signature.
 
@@ -427,7 +429,7 @@ decision LeadAtTable:
 - `picks N when <clause>` adds N when the clause holds, `drops N when <clause>` subtracts, and `unless` inverts the clause. Each line's magnitude is 1 to 100.
 - The highest total wins and an equal total keeps the earlier option. A decision whose options are all unoffered resolves to nothing and fires nothing.
 - A decision point is a rising edge: the engine chooses once while the trigger holds and re-arms when it falls. The choice is the set fact `Chose(Decision, Option)`, which a script reads by declaring that relation; it clears on re-arm.
-- The cue fires with the actor and the winning option. A cue body cannot read lowercase parameters (D-072), so a handler that needs the option names it as an exact argument: `on cue CardPlayed(Maren, SaltTwo):`.
+- The cue fires with the actor and the winning option. A handler can name the option exactly (`on cue CardPlayed(Maren, SaltTwo):`) or take it as a parameter its body reads (`on cue CardPlayed(Maren, card):`, D-161).
 - Scoring reads facts and draws no random number, so a replay makes the same choice. Package format version 18 carries decisions; versions 1 through 17 load none.
 
 #### Red lines (P45-02, D-145)
@@ -569,6 +571,7 @@ P38-01 audits the accepted grammar against this document. Exact Zig test names a
 | Spec section | Parser coverage | Codegen or integration test |
 | --- | --- | --- |
 | Opening vertical slice; cue parameters and `where` | `P4-02: parser parses complete tavern heist AST` | `D-072: cue where guards bind cue parameters and fall through to the next handler` (`src/compiler.zig`) |
+| Case decides role; bound handler bodies (P48-02) | `P48-02: lowercase names of things and unbound variables are refused where they are written`; `P48-02: a state word and its capitalised relation are one fact` (`src/compiler.zig`) | `P48-02: a cue handler body reads the entities its cue was fired with` (`src/compiler.zig`); `P48-02: a cue handler saved while it waits still reads its arguments after a load` (`src/save.zig`); `P48-02: checked-in version 28 package fixture binds a cue handler's arguments in its body` (`src/package.zig`) |
 | Handlers sharing a signature (P48-01) | `P48-01: a handler after an unguarded one of the same signature is refused, naming both lines` (`src/compiler.zig`) | `P48-01: handlers that share a signature run in source order, each failed guard falling through` (`src/compiler.zig`); `P48-01: package version 27 round-trips handlers that share a signature, and refuses a bad chain` (`src/package.zig`) |
 | Declarations and Facts | `P4-02: parser parses complete tavern heist AST`; `P10-01: parser parses stageplay taxonomy, state declarations, and falling-edge/expiration rules` | `P4-03: end-to-end compilation from source text to bytecode chunk`; `P38-01: documented core statements parse and compile` |
 | Scenes and Execution Blocks | `P12-02: parser groups multiple scenes with scoped cast, props, and marks`; `D-101: a quoted name keeps characters a word cannot, in scene, cast, props, marks, and transitions` | `P12-01: codegen compiles multi-scene transitions and registers scoped marks`; `P38-01: documented core statements parse and compile` |

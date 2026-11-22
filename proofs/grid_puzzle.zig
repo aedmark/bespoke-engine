@@ -149,7 +149,7 @@ fn fires_burning(world: *const bespoke.World, decl: grid.Declaration) bool {
 /// the cell blocking so no walk can reach the mark.
 pub fn after_tick(world: *bespoke.World, vm: *bespoke.VM, compiled: *const bespoke.CompiledProgram, ids: Ids) !void {
     const decl = try declaration(compiled);
-    if (host.has_state(world, ids.door, "burned")) return;
+    if (host.has_state(world, ids.door, "Burned")) return;
     if (has(world, decl, DOOR_CELL, .burning)) {
         try grid.set_attribute(world, decl.grid, cell(DOOR_CELL), .blocking, true);
         _ = try vm.fire_cue(compiled, "Collapses", ids.wren, ids.door, null);
@@ -182,7 +182,7 @@ pub fn act(world: *bespoke.World, spatial: *const bespoke.SpatialSystem, vm: *be
             _ = try vm.fire_cue(compiled, "Ignites", ids.wren, ids.tapestry, null);
         },
         .throw => {
-            if (!host.has_state(world, ids.bucket, "full")) return "The bucket is empty.";
+            if (!host.has_state(world, ids.bucket, "Full")) return "The bucket is empty.";
             try grid.set_attribute(world, decl.grid, cell(DOOR_CELL), .liquid, true);
             _ = try vm.fire_cue(compiled, "Throws", ids.wren, ids.bucket, null);
         },
@@ -233,20 +233,20 @@ fn at_torch(s: Stage) bool {
     return s.at(s.ids.torch_wp);
 }
 fn scorched(s: Stage) bool {
-    return host.has_state(s.world, s.ids.wren, "scorched");
+    return host.has_state(s.world, s.ids.wren, "Scorched");
 }
 fn door_found(s: Stage) bool {
     const relation = s.world.lookup_relation("WaypointBlocked") orelse return true;
     return !s.world.has_fact(s.world.lookup_entity("DoorMark").?, relation, null);
 }
 fn door_lost(s: Stage) bool {
-    return host.has_state(s.world, s.ids.door, "burned");
+    return host.has_state(s.world, s.ids.door, "Burned");
 }
 fn fire_out(s: Stage) bool {
     return !fires_burning(s.world, declaration(s.compiled) catch return true);
 }
 fn escaped(s: Stage) bool {
-    return host.has_state(s.world, s.ids.wren, "escaped");
+    return host.has_state(s.world, s.ids.wren, "Escaped");
 }
 
 fn expect_true(value: bool, err: anyerror) !void {
@@ -350,7 +350,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try stage.ignite_tapestry(writer);
     try stage.tick_until(writer, door_found, 12, error.DoorNeverFound);
     try print_row(writer, &world, decl);
-    try expect_true(host.has_state(&world, ids.bucket, "full"), error.BucketEmpty);
+    try expect_true(host.has_state(&world, ids.bucket, "Full"), error.BucketEmpty);
     try grid.set_attribute(&world, decl.grid, cell(DOOR_CELL), .liquid, true);
     _ = try vm.fire_cue(&compiled, "Throws", ids.wren, ids.bucket, null);
     try stage.tick(writer);
@@ -462,7 +462,7 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
             try after_tick(&world, &vm, &compiled, ids);
             show_speech(&window, &world, &vm);
         }
-        if (!announced_escape and host.has_state(&world, ids.wren, "escaped")) {
+        if (!announced_escape and host.has_state(&world, ids.wren, "Escaped")) {
             announced_escape = true;
             window.set_cue_banner("Wren is out of Hollin Keep.", 300);
         }

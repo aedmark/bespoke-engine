@@ -374,7 +374,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step 2: Tamsin drinks treacle cider
     try writer.print("\n[Step 2: Tamsin drinks treacle cider] \"Glug glug glug...\"\n", .{});
-    const thick_rel = try world.intern_relation("thick", .set);
+    const thick_rel = try world.intern_relation("Thick", .set);
     var speech_buf: [512]u8 = undefined;
     _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, drink_ent, null, 1, &speech_buf);
     try std.testing.expect(world.has_fact(spit_ent, thick_rel, null));
@@ -409,7 +409,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step 5: Move pegs while distracted!
     try writer.print("\n[Step 5: Tamsin tampers with Pegs while crowd is distracted!]\n", .{});
-    const tampered_rel = try world.intern_relation("tampered", .set);
+    const tampered_rel = try world.intern_relation("Tampered", .set);
     _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, pegs, null, 1, &speech_buf);
     try std.testing.expect(world.has_fact(pegs, tampered_rel, null));
     try writer.print("   -> Fact asserted: Pegs are tampered with (moved closer to line)!\n", .{});
@@ -421,7 +421,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
 
     // Step 6: Wind gust arrives! (Rising edge trigger)
     try writer.print("\n[Step 6: Wind gust cycles in!] Rising edge trigger activates...\n", .{});
-    const blowing_rel = try world.intern_relation("blowing", .set);
+    const blowing_rel = try world.intern_relation("Blowing", .set);
     _ = try script_action(&world, &vm, &compiled, "Gusts", tamsin, null, null, 1, &speech_buf);
     try std.testing.expect(world.has_fact(wind_ent, blowing_rel, null));
 
@@ -496,7 +496,7 @@ pub fn run_gui(allocator: std.mem.Allocator, io: std.Io, stdout: anytype) !void 
     const conch_ent = try world.intern_entity("Conch");
     const drink_ent = try world.intern_entity("TreacleCider");
 
-    const tampered_rel = try world.intern_relation("tampered", .set);
+    const tampered_rel = try world.intern_relation("Tampered", .set);
 
     var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
     defer vm.deinit();
@@ -842,9 +842,9 @@ test "P10-03: spitting contest puzzle systemic progression and resolution" {
     vm.spatial = &spatial;
     try vm.load_compiled_rules(&compiled);
 
-    const thick_rel = world.lookup_relation("thick").?;
-    const tampered_rel = world.lookup_relation("tampered").?;
-    const blowing_rel = world.lookup_relation("blowing").?;
+    const thick_rel = world.lookup_relation("Thick").?;
+    const tampered_rel = world.lookup_relation("Tampered").?;
+    const blowing_rel = world.lookup_relation("Blowing").?;
     const tamsin = world.lookup_entity("Tamsin").?;
     const pegs = world.lookup_entity("Pegs").?;
 
@@ -917,9 +917,9 @@ test "D-129: a distracted judge marks no spit, and the same throw wins once he t
     _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, try world.intern_entity("Conch"), null, 2, &speech_buf);
     try testing.expect(world.has_fact(judge, distracted_rel, null));
     _ = try script_action(&world, &vm, &compiled, "Uses", tamsin, pegs, null, 1, &speech_buf);
-    try testing.expect(world.has_fact(pegs, world.lookup_relation("tampered").?, null));
+    try testing.expect(world.has_fact(pegs, world.lookup_relation("Tampered").?, null));
     _ = try script_action(&world, &vm, &compiled, "Gusts", tamsin, null, null, 1, &speech_buf);
-    try testing.expect(world.has_fact(world.lookup_entity("Wind").?, world.lookup_relation("blowing").?, null));
+    try testing.expect(world.has_fact(world.lookup_entity("Wind").?, world.lookup_relation("Blowing").?, null));
 
     // He is watching the harbour, so the throw is not scored at all.
     try testing.expectEqual(SpitResult.unjudged, try spit(&world, &vm, &compiled));
@@ -991,7 +991,7 @@ test "P35-03: the judge watches the harbour for the whole distraction, and the b
             // No placeholder text reaches the player (the routine once said its own stage note).
             try testing.expect(std.mem.indexOf(u8, line.text, "at random") == null);
         }
-        const blowing = if (world.lookup_relation("blowing")) |r| world.has_fact(wind, r, null) else false;
+        const blowing = if (world.lookup_relation("Blowing")) |r| world.has_fact(wind, r, null) else false;
         if (blowing and first_gust == null) first_gust = world.current_tick;
         if (!blowing and first_gust != null and gust_ends == null) gust_ends = world.current_tick;
         // Once he has walked there (about 4 ticks), he stays until the distraction ends.

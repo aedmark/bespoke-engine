@@ -550,6 +550,42 @@ test "P39-02: an older save can restore more fibers than a new spawn permits" {
     try testing.expectError(error.FiberLimitExceeded, vm.spawn_routine(owner, 0));
 }
 
+test "P48-02: a cue handler saved while it waits still reads its arguments after a load" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const source =
+        \\entity Hero, Bard
+        \\on cue Calls(Hero, who):
+        \\  wait 2 ticks
+        \\  remember Answered(who)
+    ;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    _ = (try vm.fire_cue(&compiled, "Calls", world.lookup_entity("Hero").?, world.lookup_entity("Bard").?, null)).?;
+    _ = try vm.step_tick();
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var list_writer = ListWriter.init(&bytes);
+    _ = try write_save_state(testing.allocator, &list_writer.writer, &world, null, &vm, .{});
+
+    // The handler's arguments are stack entries, which the save already carries (D-161).
+    var world2 = try World.init(testing.allocator, 256 * 1024);
+    defer world2.deinit();
+    var compiled2 = try compiler.compile_source(testing.allocator, &world2, null, source);
+    defer compiled2.deinit();
+    var vm2 = VM.init(testing.allocator, &world2, &compiled2.chunk);
+    defer vm2.deinit();
+    var reader: std.Io.Reader = .fixed(bytes.items);
+    _ = try read_save_state(testing.allocator, &reader, &world2, null, &vm2);
+    for (0..3) |_| _ = try vm2.step_tick();
+    const answered = world2.lookup_relation("Answered").?;
+    try testing.expect(world2.has_fact(world2.lookup_entity("Bard").?, answered, null));
+}
+
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
 fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !VerifiedPayload {
     var magic: [4]u8 = undefined;
