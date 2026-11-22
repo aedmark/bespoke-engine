@@ -128,9 +128,9 @@ pub fn drift_relations(world: *World, axis: RelationKind) !struct { accumulator:
     const name = (world.get_relation_meta(axis) orelse return Error.InvalidDilemma).name;
     var buf: [96]u8 = undefined;
     const acc_name = std.fmt.bufPrint(&buf, "{s} drift", .{name}) catch return Error.InvalidDilemma;
-    const accumulator = try world.intern_relation(acc_name, .property);
+    const accumulator = try world.intern_relation_kind(acc_name, .property, .number);
     const spent_name = std.fmt.bufPrint(&buf, "{s} drift steps", .{name}) catch return Error.InvalidDilemma;
-    const spent = try world.intern_relation(spent_name, .property);
+    const spent = try world.intern_relation_kind(spent_name, .property, .number);
     return .{ .accumulator = accumulator, .spent = spent };
 }
 
@@ -240,10 +240,10 @@ const Vocabulary = struct {
 
     fn intern(world: *World) !Vocabulary {
         var v = Vocabulary{
-            .state = try world.intern_relation(STATE_RELATION, .property),
-            .seen = try world.intern_relation(SEEN_RELATION, .property),
-            .chose = try world.intern_relation(CHOSE_RELATION, .set),
-            .presented = try world.intern_relation(PRESENTED_RELATION, .set),
+            .state = try world.intern_relation_kind(STATE_RELATION, .property, .entity),
+            .seen = try world.intern_relation_kind(SEEN_RELATION, .property, .number),
+            .chose = try world.intern_relation_kind(CHOSE_RELATION, .set, .entity),
+            .presented = try world.intern_relation_kind(PRESENTED_RELATION, .set, .entity),
             .stages = undefined,
         };
         // Declared with another type, a property would append rows and a set would overwrite.
@@ -348,7 +348,7 @@ pub fn step(world: *World, spatial: ?*const spatial_mod.SpatialSystem, declarati
     var out = Outcomes{};
     if (declarations.len == 0) return out;
     const v = try Vocabulary.intern(world);
-    const pending_rel = try world.intern_relation(PENDING_APPEAL_RELATION, .property);
+    const pending_rel = try world.intern_relation_kind(PENDING_APPEAL_RELATION, .property, .entity);
     // Drift reads last tick's weighings: a fact that rises on the tick a dilemma is first
     // weighed was already true when it was weighed, so it is not an outcome of it.
     for (declarations) |decl| try apply_drift(world, decl.dilemma);
@@ -387,7 +387,7 @@ pub fn step(world: *World, spatial: ?*const spatial_mod.SpatialSystem, declarati
         const response = dilemma.responses[@backingInt(tier)];
         _ = world.forget(dilemma.entity, v.chose, null);
         try world.remember(dilemma.entity, v.chose, response.action.to_int(), 0);
-        try world.remember(dilemma.entity, try world.intern_relation(WEIGHED_RELATION, .set), 0, 0);
+        try world.remember(dilemma.entity, try world.intern_relation_kind(WEIGHED_RELATION, .set, .number), 0, 0);
         if (tier == .neutral) {
             try v.set(world, dilemma.entity, .awaits_evidence);
             try world.remember(dilemma.entity, v.seen, presented, 0);
@@ -420,7 +420,7 @@ fn reveal(world: *World, spatial: ?*const spatial_mod.SpatialSystem, dilemma: Di
         .neutral => return,
     };
     const room = room_of(sp, dilemma.actor) orelse return;
-    const knows = try world.intern_relation(KNOWS_RELATION, .set);
+    const knows = try world.intern_relation_kind(KNOWS_RELATION, .set, .entity);
     const value = try value_mod.known_value(world, axis, dilemma.actor);
     var it = sp.agents.iterator();
     while (it.next()) |entry| {
@@ -453,7 +453,7 @@ pub fn appeal_target(world: *const World, declarations: []const Declaration, cha
 
 /// Records an appeal for the next weighing; a newer appeal replaces an unspent one.
 pub fn record_appeal(world: *World, dilemma: *const Dilemma, axis_entity: EntityId) !void {
-    const pending_rel = try world.intern_relation(PENDING_APPEAL_RELATION, .property);
+    const pending_rel = try world.intern_relation_kind(PENDING_APPEAL_RELATION, .property, .entity);
     try world.remember(dilemma.entity, pending_rel, axis_entity.to_int(), 0);
 }
 
@@ -461,8 +461,8 @@ pub fn record_appeal(world: *World, dilemma: *const Dilemma, axis_entity: Entity
 /// of every line whose fact rose this tick (D-148).
 fn apply_drift(world: *World, dilemma: Dilemma) !void {
     if (dilemma.drifts.len == 0) return;
-    const holding_rel = try world.intern_relation(HOLDING_RELATION, .property);
-    const weighed_rel = try world.intern_relation(WEIGHED_RELATION, .set);
+    const holding_rel = try world.intern_relation_kind(HOLDING_RELATION, .property, .number);
+    const weighed_rel = try world.intern_relation_kind(WEIGHED_RELATION, .set, .number);
     const was: u32 = world.get_property(dilemma.entity, holding_rel) orelse 0;
     var now: u32 = 0;
     for (dilemma.drifts, 0..) |drift, i| {

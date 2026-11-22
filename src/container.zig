@@ -94,11 +94,11 @@ pub const ContainerSystem = struct {
         var self = ContainerSystem{
             .config = config,
             .rel = .{
-                .contains = try world.intern_relation(names.contains, .set),
-                .volume = try world.intern_relation(names.volume, .property),
-                .stage = try world.intern_relation(names.stage, .property),
-                .exposure = try world.intern_relation(names.exposure, .property),
-                .failed_at = try world.intern_relation(names.failed_at, .property),
+                .contains = try world.intern_relation_kind(names.contains, .set, .entity),
+                .volume = try world.intern_relation_kind(names.volume, .property, .number),
+                .stage = try world.intern_relation_kind(names.stage, .property, .entity),
+                .exposure = try world.intern_relation_kind(names.exposure, .property, .entity),
+                .failed_at = try world.intern_relation_kind(names.failed_at, .property, .number),
             },
         };
         if (world.get_relation_meta(self.rel.contains).?.rel_type != .set or

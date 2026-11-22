@@ -54,7 +54,7 @@ pub fn declare(world: *World, name: []const u8, poles: [2][]const u8) !Axis {
     if (world.lookup_relation(name)) |existing| {
         if (world.get_relation_meta(existing).?.rel_type != .property) return Error.InvalidAxis;
     }
-    const relation = try world.intern_relation(name, .property);
+    const relation = try world.intern_relation_kind(name, .property, .number);
     world.bound_relation(relation, MIN, MAX) catch return Error.InvalidAxis;
     // The axis is also an entity of the same name, so a typed `appeal to mercy` or `ask Oswin
     // about mercy` can name it (P45-05).

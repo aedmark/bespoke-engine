@@ -137,14 +137,14 @@ pub const Duel = struct {
             .pair_count = config.pairs.len,
             .challenge_ids = undefined,
             .reply_ids = undefined,
-            .heard_rel = try world.intern_relation(r.heard, .set),
-            .mastered_rel = try world.intern_relation(r.mastered, .set),
-            .counters_rel = try world.intern_relation(r.counters, .set),
-            .variant_of_rel = try world.intern_relation(r.variant_of, .set),
-            .tier_rel = try world.intern_relation(r.tier, .property),
-            .advantage_rel = try world.intern_relation(r.advantage, .property),
-            .wins_rel = try world.intern_relation(r.wins, .property),
-            .fumbles_rel = try world.intern_relation(r.fumbles, .property),
+            .heard_rel = try world.intern_relation_kind(r.heard, .set, .entity),
+            .mastered_rel = try world.intern_relation_kind(r.mastered, .set, .entity),
+            .counters_rel = try world.intern_relation_kind(r.counters, .set, .entity),
+            .variant_of_rel = try world.intern_relation_kind(r.variant_of, .set, .entity),
+            .tier_rel = try world.intern_relation_kind(r.tier, .property, .number),
+            .advantage_rel = try world.intern_relation_kind(r.advantage, .property, .number),
+            .wins_rel = try world.intern_relation_kind(r.wins, .property, .number),
+            .fumbles_rel = try world.intern_relation_kind(r.fumbles, .property, .number),
         };
         for (&self.challenge_ids) |*row| @memset(row, EntityId.none);
         @memset(&self.reply_ids, EntityId.none);
@@ -487,13 +487,13 @@ pub const InquiryFatigue = struct {
             .config = config,
             .stage_count = config.stages.len,
             .stage_rels = undefined,
-            .count_rel = try world.intern_relation(config.count_relation, .property),
+            .count_rel = try world.intern_relation_kind(config.count_relation, .property, .number),
         };
         var previous_at: u32 = 0;
         for (config.stages, 0..) |stage, i| {
             if (stage.at <= previous_at or stage.relation.len == 0) return Error.InvalidFatigueConfig;
             previous_at = stage.at;
-            self.stage_rels[i] = try world.intern_relation(stage.relation, .set);
+            self.stage_rels[i] = try world.intern_relation_kind(stage.relation, .set, .entity);
         }
         return self;
     }

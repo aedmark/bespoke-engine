@@ -183,7 +183,7 @@ pub const Declaration = struct {
 };
 
 fn attribute_relation(world: *World, attribute: Attribute) !RelationKind {
-    const relation = try world.intern_relation(attribute.relation_name(), .set);
+    const relation = try world.intern_relation_kind(attribute.relation_name(), .set, .number);
     // A script may already have declared the name as a property; property overwrite would
     // collapse a grid's cells into one row, so refuse rather than corrupt the layout.
     if (world.get_relation_meta(relation).?.rel_type != .set) return Error.InvalidGrid;
@@ -195,7 +195,7 @@ fn attribute_relation(world: *World, attribute: Attribute) !RelationKind {
 pub fn seed(world: *World, declaration: Declaration) !void {
     // `host.tick` calls this every tick; check the marker before the quadratic validation so
     // an already-seeded grid costs one fact scan.
-    const marker = try world.intern_relation(SEEDED_RELATION, .set);
+    const marker = try world.intern_relation_kind(SEEDED_RELATION, .set, .number);
     if (world.has_fact(declaration.grid.entity, marker, null)) return;
     try declaration.validate();
     for (declaration.cells) |cell| {

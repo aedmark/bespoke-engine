@@ -1488,7 +1488,7 @@ pub const DisplayWindow = struct {
                     self.show_save_drawer = false;
                 } else |err| {
                     // A save from another build is intact but refused (D-162); say so.
-                    self.set_cue_banner(if (err == save_mod.SaveError.SaveFromOtherBuild) "That Quick-Save is from another version of the game." else "No valid Quick-Save found to load.", 90);
+                    self.set_cue_banner(if (err == save_mod.SaveError.SaveFromOtherBuild or err == save_mod.SaveError.SaveNotTranslatable) "That Quick-Save is from another version of the game." else "No valid Quick-Save found to load.", 90);
                     self.play_sfx(.click);
                 }
                 return true;
@@ -1535,7 +1535,7 @@ pub const DisplayWindow = struct {
                     self.show_save_drawer = false;
                 } else |err| {
                     var buf: [96]u8 = undefined;
-                    const msg = if (err == save_mod.SaveError.SaveFromOtherBuild)
+                    const msg = if (err == save_mod.SaveError.SaveFromOtherBuild or err == save_mod.SaveError.SaveNotTranslatable)
                         std.fmt.bufPrint(&buf, "Slot #{d} is from another version of the game.", .{slot_id}) catch "That save is from another version."
                     else
                         std.fmt.bufPrint(&buf, "Slot #{d} is empty or unrecoverable.", .{slot_id}) catch "Empty slot.";

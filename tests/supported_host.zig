@@ -71,7 +71,9 @@ comptime {
     require(bespoke.art_import, &.{ "MapError", "Where", "map", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
     require(bespoke.runner, &.{ "RunConfig", "CheckOptions", "check_file_with", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
-    require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine" }, "host");
+    require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "restart_routines" }, "host");
+    require(bespoke.world, &.{"ObjectKind"}, "world");
+    require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind" }, "world.World");
     require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for" }, "save");
     require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");
 }

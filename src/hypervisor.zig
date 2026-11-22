@@ -272,11 +272,11 @@ pub const TemporalHypervisor = struct {
                 // 1. Commit the Keystone Entity to the Primary World
                 const target_keystone = self.keystone_entity;
                 if (target_keystone) |keystone| {
-                    const primary_key_rel = try self.primary_world.intern_relation("KeystoneMaterialized", .set);
+                    const primary_key_rel = try self.primary_world.intern_relation_kind("KeystoneMaterialized", .set, .number);
                     _ = try self.primary_world.remember(keystone, primary_key_rel, 1, 0);
                     // Released scripts can observe this fact. The D-044 Zig alias cleanup
                     // preserves the facts produced by a branch merge.
-                    const primary_art_rel = try self.primary_world.intern_relation("ArtifactMaterialized", .set);
+                    const primary_art_rel = try self.primary_world.intern_relation_kind("ArtifactMaterialized", .set, .number);
                     _ = try self.primary_world.remember(keystone, primary_art_rel, 1, 0);
                 }
 

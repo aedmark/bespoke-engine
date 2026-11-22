@@ -29,10 +29,10 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 
 | Namespace | Supported surface |
 | --- | --- |
-| `world` | `DEFAULT_ARENA_SIZE`, `EntityId`, `RelationKind`, `RelationType`, `Fact`, `PatternTerm`, `PatternClause`, `VariableBindings`, `World`, `QueryIterator` |
+| `world` | `DEFAULT_ARENA_SIZE`, `EntityId`, `RelationKind`, `RelationType`, `ObjectKind` (P48-08), `Fact`, `PatternTerm`, `PatternClause`, `VariableBindings`, `World`, `QueryIterator` |
 | `spatial` | `WaypointId`, `Point2D`, `Waypoint`, `Hotspot`, `SpatialSystem`, `SpatialSystem.Portal`, `SpatialSystem.TransferPolicy` |
 
-Supported `World` methods are `init`, `deinit`, `intern_entity`, `intern_relation`, `lookup_entity`, `lookup_relation`, `get_entity_name`, `get_relation_meta`, `fact_count`, `remember`, `forget`, `transfer_item`, `has_fact`, `find_first`, `get_property`, `query`, `find_first_match`, `find_first_match_from`, `has_multi_match`, `find_all_matches`, `get_recently_expired`, `save_state`, `restore_state`, and `clone`. `EntityId.to_int` / `from_int`, `RelationKind.to_int` / `from_int`, `QueryIterator.next`, and `VariableBindings.get` / `set` are supported.
+Supported `World` methods are `init`, `deinit`, `intern_entity`, `intern_relation`, `intern_relation_kind`, `declare_object_kind`, `object_kind` (P48-08, D-178), `lookup_entity`, `lookup_relation`, `get_entity_name`, `get_relation_meta`, `fact_count`, `remember`, `forget`, `transfer_item`, `has_fact`, `find_first`, `get_property`, `query`, `find_first_match`, `find_first_match_from`, `has_multi_match`, `find_all_matches`, `get_recently_expired`, `save_state`, `restore_state`, and `clone`. `EntityId.to_int` / `from_int`, `RelationKind.to_int` / `from_int`, `QueryIterator.next`, and `VariableBindings.get` / `set` are supported.
 
 Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_room`, `find_grid`, `waypoint_cell`, `agent_cell`, `clear_hotspots`, `register_portal`, `get_portal_in_room`, `add_hotspot`, `find_hotspot_at`, `find_hotspot_at_in_room`, `count_hotspots_in_room`, `transition_actor`, `register_entity`, `walk_to`, `walk_to_with_world`, `waypoint_blocked`, `is_moving`, `has_arrived`, `get_position`, `get_current_waypoint`, `can_transfer_item`, `can_access_portal`, and `can_transfer_item_with_world`. Its graph, agent, hotspot, grid, and portal storage fields are internal.
 
@@ -49,7 +49,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 
 Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave_notes`, `set_dialogue_speaker`, `open_generated_dialogue`, `dialogue_view`, `choose`, `sync_dialogue`, `transition_to_scene`, `evaluates_belief`, `assert_belief`, and `reject_belief`. Construct a VM with `host.init_vm`; advance it with `host.tick` or `Session.advance`, never bare `VM.step_tick`.
 
-Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `combine`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
+Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `restart_routines`, `combine`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
 
 `host.present(vm, compiled, actor, evidence, person)` records `Presented(person, evidence)` as a set fact and fires `Presents(actor, person, evidence)`; it returns whether a handler answered (P44-03). The record holds one row per distinct piece of evidence. The default typed frames `present <thing> to <thing>` and `show <thing> to <thing>` use the same action.
 
@@ -78,10 +78,10 @@ All public methods on `DisplayBridge`, `RenderFrame`, and `DisplayWindow` are su
 
 | Namespace | Supported surface |
 | --- | --- |
-| `save` | `SAVE_MAGIC`, `SAVE_VERSION`, `MIN_SAVE_VERSION`, `MAX_SLOTS`, `QUICKSAVE_SLOT`, `SaveError` (with `SaveFromOtherBuild`, P48-08), `ProgramIdentity` and its `known` method, `format_build_mismatch`, `SaveOptions`, `SaveMetadata`, `SaveSlotInfo`, `LoadResult`, `ThumbnailPainter`, `SaveManager`, `write_save_state`, `write_save_state_with_temporal`, `read_save_state`, `read_save_state_with_temporal`, `read_save_state_for`, `read_save_state_with_temporal_for`, `inspect_save_stream`, `version_from_bytes`, and `format_unsupported_version` |
+| `save` | `SAVE_MAGIC`, `SAVE_VERSION`, `MIN_SAVE_VERSION`, `MAX_SLOTS`, `QUICKSAVE_SLOT`, `SaveError` (with `SaveFromOtherBuild` and `SaveNotTranslatable`, P48-08), `ProgramIdentity` and its `known` method, `format_build_mismatch`, `SaveOptions`, `SaveMetadata`, `SaveSlotInfo`, `LoadResult`, `ThumbnailPainter`, `SaveManager`, `write_save_state`, `write_save_state_with_temporal`, `read_save_state`, `read_save_state_with_temporal`, `read_save_state_for`, `read_save_state_with_temporal_for`, `inspect_save_stream`, `version_from_bytes`, and `format_unsupported_version` |
 | `hypervisor` | `TemporalHypervisor`, `BranchCollapseState`, `HypervisorStepResult`, `DreamFact`, `TeleologicalDependency`, `validate_novikov_consistency`, `format_countdown` |
 
-`SaveManager.program` and `SaveMetadata.program` are supported fields (P48-08, D-162): a host sets the first to `compiled.identity()` so its saves name the build and its loads refuse another's; `host.Session` and the browser runtime do this themselves. All public `SaveManager`, `SaveMetadata`, `SaveSlotInfo`, `ThumbnailPainter`, and `TemporalHypervisor` methods are supported. Hypervisor storage fields are internal. D-044's tangent, vortex, artifact, and singularity aliases were removed in P38-03; use branch, convergence, keystone, and budget-expiry names.
+`SaveManager.program`, `SaveManager.last_load_restarted_routines`, `SaveMetadata.program`, and `SaveMetadata.routines_restarted` are supported fields (P48-08, D-162): a host sets the first to `compiled.identity()` so its saves name the build and its loads refuse another's. After a load whose `routines_restarted` is true, call `host.restart_routines`; `host.Session` and the stock window do both themselves. All public `SaveManager`, `SaveMetadata`, `SaveSlotInfo`, `ThumbnailPainter`, and `TemporalHypervisor` methods are supported. Hypervisor storage fields are internal. D-044's tangent, vortex, artifact, and singularity aliases were removed in P38-03; use branch, convergence, keystone, and budget-expiry names.
 
 ## Browser decks
 

@@ -420,21 +420,21 @@ pub const Society = struct {
         }
         const r = config.relations;
         self.rel = .{
-            .currency = try world.intern_relation(r.currency, .property),
-            .activity = try world.intern_relation(r.activity, .property),
-            .friend = try world.intern_relation(r.friend, .set),
-            .rival = try world.intern_relation(r.rival, .set),
-            .grudge = try world.intern_relation(r.grudge, .set),
-            .owns = try world.intern_relation(r.owns, .set),
-            .carries = try world.intern_relation(r.carries, .set),
-            .stolen_from = try world.intern_relation(r.stolen_from, .set),
-            .crime_scene = try world.intern_relation(r.crime_scene, .set),
-            .witnessed = try world.intern_relation(r.witnessed, .set),
-            .knows_rumor = try world.intern_relation(r.knows_rumor, .set),
-            .warrant_for = try world.intern_relation(r.warrant_for, .set),
-            .arrested = try world.intern_relation(r.arrested, .set),
+            .currency = try world.intern_relation_kind(r.currency, .property, .number),
+            .activity = try world.intern_relation_kind(r.activity, .property, .number),
+            .friend = try world.intern_relation_kind(r.friend, .set, .entity),
+            .rival = try world.intern_relation_kind(r.rival, .set, .entity),
+            .grudge = try world.intern_relation_kind(r.grudge, .set, .entity),
+            .owns = try world.intern_relation_kind(r.owns, .set, .entity),
+            .carries = try world.intern_relation_kind(r.carries, .set, .entity),
+            .stolen_from = try world.intern_relation_kind(r.stolen_from, .set, .entity),
+            .crime_scene = try world.intern_relation_kind(r.crime_scene, .set, .entity),
+            .witnessed = try world.intern_relation_kind(r.witnessed, .set, .entity),
+            .knows_rumor = try world.intern_relation_kind(r.knows_rumor, .set, .entity),
+            .warrant_for = try world.intern_relation_kind(r.warrant_for, .set, .entity),
+            .arrested = try world.intern_relation_kind(r.arrested, .set, .entity),
             // Which stay need a member is meeting. A fact, not a field, so rewind restores it.
-            .tending = try world.intern_relation(r.tending, .property),
+            .tending = try world.intern_relation_kind(r.tending, .property, .number),
         };
 
         for (config.members, 0..) |m, mi| {
@@ -473,7 +473,7 @@ pub const Society = struct {
 
     fn compile_need(world: *World, need: Need) !NeedRule {
         var rule = NeedRule{
-            .relation = try world.intern_relation(need.name, .property),
+            .relation = try world.intern_relation_kind(need.name, .property, .number),
             .name = need.name,
             .worse = need.worse,
             .max = need.max,

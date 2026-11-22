@@ -198,8 +198,8 @@ const Vocabulary = struct {
 
     fn intern(world: *World) !Vocabulary {
         var v = Vocabulary{
-            .state = try world.intern_relation(STATE_RELATION, .property),
-            .chose = try world.intern_relation(CHOSE_RELATION, .set),
+            .state = try world.intern_relation_kind(STATE_RELATION, .property, .entity),
+            .chose = try world.intern_relation_kind(CHOSE_RELATION, .set, .entity),
             .stages = undefined,
         };
         // A script that declared either name with another type would append rows instead of

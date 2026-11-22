@@ -216,8 +216,9 @@ fn type_inputs(
 }
 
 /// Prints every fact as `fact Relation(Subject)` or `fact Relation(Subject, Object)`, sorted,
-/// so the output does not depend on table order (P48-18). An object that names an entity
-/// prints its name; any other object prints its number.
+/// so the output does not depend on table order (P48-18). A number relation's object prints as
+/// its number and an entity relation's as the entity's name (D-178); a relation of unknown kind
+/// prints a name when the object names an entity.
 fn print_facts(allocator: std.mem.Allocator, world: *const World, stdout: anytype) !void {
     var lines = std.array_list.Managed([]u8).init(allocator);
     defer {
@@ -229,9 +230,12 @@ fn print_facts(allocator: std.mem.Allocator, world: *const World, stdout: anytyp
         const subject = world.get_entity_name(slice.items(.subject)[i]) orelse "?";
         const meta = world.get_relation_meta(slice.items(.relation)[i]);
         const relation = if (meta) |m| m.name else "?";
+        const is_number = if (meta) |m| m.object_kind == .number else false;
         const object = slice.items(.object_or_value)[i];
-        const line = if (object == 0)
+        const line = if (object == 0 and !is_number)
             try std.fmt.allocPrint(allocator, "fact {s}({s})", .{ relation, subject })
+        else if (is_number)
+            try std.fmt.allocPrint(allocator, "fact {s}({s}, {d})", .{ relation, subject, object })
         else if (world.get_entity_name(bespoke.EntityId.from_int(object))) |name|
             try std.fmt.allocPrint(allocator, "fact {s}({s}, {s})", .{ relation, subject, name })
         else
@@ -613,7 +617,11 @@ fn run_bytes_with_presenter(
             const action = window.poll_events(display_bridge.get_frame());
             var should_step_now = false;
 
-            _ = window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused);
+            if (window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused)) {
+                const loading = action == .quick_load or action == .load_slot;
+                // A save from another build kept its facts but no routine (D-162).
+                if (loading and window.save_manager.last_load_restarted_routines) try bespoke.host.restart_routines(&world, &spatial, &vm, &compiled);
+            }
             switch (action) {
                 .quit => break,
                 .toggle_pause => {
@@ -845,7 +853,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 30; this engine supports versions 1 through 29\n",
+        "future.bspk: error: unsupported .bspk format version 31; this engine supports versions 1 through 30\n",
         output.buffered(),
     );
 }

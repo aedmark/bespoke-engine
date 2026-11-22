@@ -129,16 +129,16 @@ const NAME_BUF_LEN = 192;
 /// Interns (idempotently) every relation the lifecycle writes.
 pub fn relations(world: *World) !Relations {
     return .{
-        .open = try world.intern_relation(NAMES.open, .property),
-        .prompt = try world.intern_relation(NAMES.prompt, .property),
-        .fiber = try world.intern_relation(NAMES.fiber, .property),
-        .end = try world.intern_relation(NAMES.end, .property),
-        .revision = try world.intern_relation(NAMES.revision, .property),
-        .option = try world.intern_relation(NAMES.option, .set),
-        .body = try world.intern_relation(NAMES.body, .property),
-        .action = try world.intern_relation(NAMES.action, .property),
-        .chosen = try world.intern_relation(NAMES.chosen, .property),
-        .speaker = try world.intern_relation(NAMES.speaker, .property),
+        .open = try world.intern_relation_kind(NAMES.open, .property, .transient),
+        .prompt = try world.intern_relation_kind(NAMES.prompt, .property, .transient),
+        .fiber = try world.intern_relation_kind(NAMES.fiber, .property, .transient),
+        .end = try world.intern_relation_kind(NAMES.end, .property, .transient),
+        .revision = try world.intern_relation_kind(NAMES.revision, .property, .transient),
+        .option = try world.intern_relation_kind(NAMES.option, .set, .transient),
+        .body = try world.intern_relation_kind(NAMES.body, .property, .transient),
+        .action = try world.intern_relation_kind(NAMES.action, .property, .transient),
+        .chosen = try world.intern_relation_kind(NAMES.chosen, .property, .transient),
+        .speaker = try world.intern_relation_kind(NAMES.speaker, .property, .transient),
     };
 }
 
@@ -160,10 +160,10 @@ fn lookup_relations(world: *const World) ?Relations {
 
 fn branch_relations(world: *World) !BranchRelations {
     return .{
-        .branch_count = try world.intern_relation(NAMES.branch_count, .property),
-        .branch_text = try world.intern_relation(NAMES.branch_text, .property),
-        .branch_active = try world.intern_relation(NAMES.branch_active, .property),
-        .branch_failure = try world.intern_relation(NAMES.branch_failure, .property),
+        .branch_count = try world.intern_relation_kind(NAMES.branch_count, .property, .transient),
+        .branch_text = try world.intern_relation_kind(NAMES.branch_text, .property, .transient),
+        .branch_active = try world.intern_relation_kind(NAMES.branch_active, .property, .transient),
+        .branch_failure = try world.intern_relation_kind(NAMES.branch_failure, .property, .transient),
     };
 }
 

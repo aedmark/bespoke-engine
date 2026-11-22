@@ -86,8 +86,8 @@ const Vocabulary = struct {
 
     fn intern(world: *World) !Vocabulary {
         var v = Vocabulary{
-            .state = try world.intern_relation(STATE_RELATION, .property),
-            .cooldown = try world.intern_relation(COOLDOWN_RELATION, .set),
+            .state = try world.intern_relation_kind(STATE_RELATION, .property, .entity),
+            .cooldown = try world.intern_relation_kind(COOLDOWN_RELATION, .set, .number),
             .pursuing = try world.intern_relation(PURSUING_RELATION, .set),
             .stages = undefined,
         };

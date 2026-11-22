@@ -569,7 +569,7 @@ pub const SpatialSystem = struct {
     /// the result on the next tick. An agent outside every grid has no hazard states.
     pub fn update_grid_hazards(self: *const SpatialSystem, world: *World) !void {
         var relations: [HazardStates.len]RelationKind = undefined;
-        for (HazardStates, 0..) |hazard, i| relations[i] = try world.intern_relation(hazard.relation, .set);
+        for (HazardStates, 0..) |hazard, i| relations[i] = try world.intern_relation_kind(hazard.relation, .set, .number);
         var it = self.agents.iterator();
         while (it.next()) |entry| {
             const placed = self.agent_cell(entry.key_ptr.*);

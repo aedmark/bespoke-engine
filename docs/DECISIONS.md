@@ -2209,7 +2209,9 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a flag on every stored fact, which changes the flat four-slot fact layout; translating subjects only, which leaves entity objects pointing at whatever the new build numbered them.
 
-**Consequences.** The two `Lit` tests change to one use. About 85 engine sites that create relations declare a kind. P48-08 builds it after saves record their build.
+**Consequences.** About 85 engine sites that create relations declare a kind. P48-08 builds it after saves record their build.
+
+**Update, 2026-11-22 (P48-08 built).** Building it settled four details. A fourth kind, `transient`, marks engine state that belongs to a running routine (open dialogue, its prompt, fiber, and options); a compatible load drops it, since the routines restart. A fact whose relation is still `unknown` and holds a nonzero object refuses the load (`SaveNotTranslatable`), as does a relation that changed type or kind between the builds; the load checks every fact before changing anything. Motor agents stay where the running session has them, the scene is kept by name, and each `when` rule that already holds counts as fired, so a reached ending does not fire again. A save carrying a temporal envelope never loads into another build. The two `Lit` uses were in separate test programs and needed no change. Kinds ride in the high bits of a relation's type byte in world snapshots (so older snapshots read as `unknown`) and in package format 30.
 
 ## Open questions
 

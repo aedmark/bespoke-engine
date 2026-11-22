@@ -227,6 +227,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.VariableNotAllowedHere => "a cue parameter cannot be used in this statement",
         error.WhenBodyVariable => "a when rule's variables cannot be used in its body yet; name the entity",
         error.LowercaseName => "names of things start with a capital letter",
+        error.MixedRelationObject => "this relation's object is an entity in one place and a number in another; each relation holds one kind",
         error.MissingCueArguments => "a cue handler's arguments were read outside the handler",
         error.UnreachableCueHandler => "this handler can never run: an earlier handler has the same signature and no guard",
         error.UnknownArrivalMark => "this arrival rule needs a declared mark",
@@ -1036,6 +1037,45 @@ test "P48-08: a script declares its save version, and its build has a fingerprin
     }
     // `save` and `version` stay usable as names.
     try testing.expect(check_source(testing.allocator, "entity Save, Version\n").is_valid);
+}
+
+test "P48-08: a relation's object kind is inferred, and using it both ways is refused" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null,
+        \\axis Mercy between Cruelty and Weakness
+        \\entity Hero, Coin, Lamp
+        \\remember Holds(Hero, Coin)
+        \\remember Gold(Hero, 3)
+        \\remember Mercy(Hero, 2)
+        \\remember Lit(Lamp)
+        \\on cue Gives(Hero, thing):
+        \\  remember Owes(Hero, thing)
+    );
+    defer compiled.deinit();
+    const kind = struct {
+        fn of(w: *const World, name: []const u8) world_mod.ObjectKind {
+            return w.object_kind(w.lookup_relation(name).?);
+        }
+    }.of;
+    try testing.expectEqual(world_mod.ObjectKind.entity, kind(&world, "Holds"));
+    try testing.expectEqual(world_mod.ObjectKind.number, kind(&world, "Gold"));
+    try testing.expectEqual(world_mod.ObjectKind.number, kind(&world, "Mercy"));
+    try testing.expectEqual(world_mod.ObjectKind.entity, kind(&world, "Owes"));
+    try testing.expectEqual(world_mod.ObjectKind.unknown, kind(&world, "Lit"));
+
+    const mixed = check_source(testing.allocator,
+        \\entity Hero, Coin
+        \\remember Holds(Hero, Coin)
+        \\routine Idle(Hero):
+        \\  if Holds(Hero, 2):
+        \\    wait 1 ticks
+    );
+    try testing.expect(!mixed.is_valid);
+    try testing.expectEqualStrings("MixedRelationObject", mixed.kind());
+    try testing.expectEqual(@as(u32, 4), mixed.diagnostic().?.line);
+    try testing.expectEqual(@as(u32, 18), mixed.diagnostic().?.column);
 }
 
 const ART_BASE =

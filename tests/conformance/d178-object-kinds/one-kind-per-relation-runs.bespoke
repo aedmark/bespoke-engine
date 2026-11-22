@@ -1,0 +1,12 @@
+# Entity and number relations side by side, each used one way, run as written.
+# pins: D-178
+# ticks: 2
+# expect fact: Holds(Scout, Coin)
+# expect fact: Gold(Scout, 3)
+
+entity Scout, Coin
+remember Holds(Scout, Coin)
+remember Gold(Scout, 3)
+
+routine Idle(Scout):
+  wait 5 ticks

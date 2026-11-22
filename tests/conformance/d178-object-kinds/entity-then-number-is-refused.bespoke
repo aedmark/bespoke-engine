@@ -1,0 +1,10 @@
+# A relation's object is always an entity or always a number.
+# pins: D-178
+# expect error: MixedRelationObject 9:19
+
+entity Scout, Coin
+remember Holds(Scout, Coin)
+
+routine Count(Scout):
+  if Holds(Scout, 2):
+    wait 1 ticks

@@ -78,8 +78,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// arguments (P48-02, D-161); versions 1 through 27 hold bytecode that cannot contain them and
 /// load unchanged. Version 29 appends the program's save version and fingerprint (P48-08,
 /// D-162); for versions 1 through 28 the loader takes save version 1 and computes the
-/// fingerprint as the compiler does.
-pub const PACKAGE_VERSION: u32 = 29;
+/// fingerprint as the compiler does. Version 30 stores each relation's object kind in the high
+/// bits of its type byte (P48-08, D-178); versions 1 through 29 load with every kind unknown.
+pub const PACKAGE_VERSION: u32 = 30;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -1486,7 +1487,8 @@ pub fn save_package(
     const relation_count: u32 = @intCast(world.relation_meta.items.len);
     for (world.relation_meta.items) |rel| {
         try write_str(pw, rel.name);
-        try pw.writeByte(if (rel.rel_type == .property) 1 else 0);
+        // Version 30: the high four bits carry the relation's object kind (D-178).
+        try pw.writeByte(@as(u8, if (rel.rel_type == .property) 1 else 0) | (@as(u8, @intFromEnum(rel.object_kind)) << 4));
     }
 
     // 3. Spatial waypoints and edges
@@ -1652,8 +1654,13 @@ pub fn load_package(
     while (r_idx < header.relation_count) : (r_idx += 1) {
         const name = try read_str(allocator, pr);
         defer allocator.free(name);
-        const is_prop = (try pr.takeByte()) == 1;
-        _ = try world.intern_relation(name, if (is_prop) .property else .set);
+        const flags = try pr.takeByte();
+        const is_prop = (flags & 0x0f) == 1;
+        const relation = try world.intern_relation(name, if (is_prop) .property else .set);
+        if (header.version >= 30) {
+            const kind = std.enums.fromInt(world_mod.ObjectKind, flags >> 4) orelse return error.InvalidRelationKind;
+            world.declare_object_kind(relation, kind) catch return error.InvalidRelationKind;
+        }
     }
 
     // 3. Spatial waypoints, edges, hotspots
@@ -2346,7 +2353,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 29",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 30",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -4500,12 +4507,27 @@ test "P48-08: checked-in version 29 package fixture declares save version 2" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v29.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 29), version_from_bytes(fixture).?);
     var compiled = try load_for_test(fixture);
     defer compiled.deinit();
     try testing.expectEqual(@as(u32, 2), compiled.save_version);
     try testing.expect(compiled.identity().known());
     try testing.expect(compiled.routine_entries.contains("Idle"));
+}
+
+test "P48-08: checked-in version 30 package fixture carries relation object kinds" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v30.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(PACKAGE_VERSION, version_from_bytes(fixture).?);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    try testing.expectEqual(world_mod.ObjectKind.entity, world.object_kind(world.lookup_relation("Holds").?));
+    try testing.expectEqual(world_mod.ObjectKind.number, world.object_kind(world.lookup_relation("Gold").?));
+    try testing.expectEqual(@as(u32, 2), compiled.save_version);
 }
 
 test "P46-05: checked-in version 26 package fixture carries prop areas" {

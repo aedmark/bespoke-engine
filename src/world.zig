@@ -45,9 +45,21 @@ pub const Fact = struct {
     expires_at_tick: u64, // 0 = permanent, >0 = tick when fact expires (D-003)
 };
 
+/// What a relation's object slot holds (P48-08, D-178). Fixed per relation: the compiler infers
+/// it from the script and engine code declares it, so a load into another build of the game
+/// translates entity objects by name, copies numbers, and drops transient state, which belongs
+/// to routines that a compatible load restarts. `unknown` is a relation nothing has said yet.
+pub const ObjectKind = enum(u4) {
+    unknown = 0,
+    entity = 1,
+    number = 2,
+    transient = 3,
+};
+
 pub const RelationMeta = struct {
     name: []const u8,
     rel_type: RelationType,
+    object_kind: ObjectKind = .unknown,
 };
 
 /// A signed range on a property relation (P45-01, D-144). The value slot holds the integer as
@@ -233,6 +245,30 @@ pub const World = struct {
         try self.relation_map.put(alloc, owned_name, new_kind);
 
         return new_kind;
+    }
+
+    /// `intern_relation` that also fixes the object kind (D-178).
+    pub fn intern_relation_kind(self: *World, name: []const u8, rel_type: RelationType, kind: ObjectKind) !RelationKind {
+        const relation = try self.intern_relation(name, rel_type);
+        try self.declare_object_kind(relation, kind);
+        return relation;
+    }
+
+    /// Fixes what `relation`'s object holds (D-178). The first kind said stays; saying the same
+    /// one again is a no-op, and saying a different one is `MixedRelationObject`.
+    pub fn declare_object_kind(self: *World, relation: RelationKind, kind: ObjectKind) error{MixedRelationObject}!void {
+        if (kind == .unknown) return;
+        const index = relation.to_int();
+        if (index == 0 or index > self.relation_meta.items.len) return;
+        const meta = &self.relation_meta.items[index - 1];
+        if (meta.object_kind == .unknown) {
+            meta.object_kind = kind;
+        } else if (meta.object_kind != kind) return error.MixedRelationObject;
+    }
+
+    pub fn object_kind(self: *const World, relation: RelationKind) ObjectKind {
+        const meta = self.get_relation_meta(relation) orelse return .unknown;
+        return meta.object_kind;
     }
 
     /// Bounds a property relation to a signed range (P45-01, D-144). Facts already stored are
@@ -714,7 +750,9 @@ pub const World = struct {
             const len: u16 = @intCast(meta.name.len);
             try writer.writeInt(u16, len, .little);
             try writer.writeAll(meta.name);
-            try writer.writeByte(@intFromEnum(meta.rel_type));
+            // The low four bits are the relation type and the high four its object kind
+            // (D-178), so snapshots written before kinds read as `unknown`.
+            try writer.writeByte(@as(u8, @intFromEnum(meta.rel_type)) | (@as(u8, @intFromEnum(meta.object_kind)) << 4));
         }
     }
 
@@ -782,12 +820,14 @@ pub const World = struct {
             const name_buf = try alloc.alloc(u8, len);
             try reader.readSliceAll(name_buf);
             const rel_type_byte = try reader.takeByte();
-            const rel_type: RelationType = @enumFromInt(rel_type_byte);
+            const rel_type = std.enums.fromInt(RelationType, rel_type_byte & 0x0f) orelse return SnapshotError.UnsupportedVersion;
+            const saved_kind = std.enums.fromInt(ObjectKind, rel_type_byte >> 4) orelse return SnapshotError.UnsupportedVersion;
             const kind_val: u16 = @intCast(self.relation_meta.items.len + 1);
             const kind = RelationKind.from_int(kind_val);
             try self.relation_meta.append(alloc, .{
                 .name = name_buf,
                 .rel_type = rel_type,
+                .object_kind = saved_kind,
             });
             try self.relation_map.put(alloc, name_buf, kind);
         }

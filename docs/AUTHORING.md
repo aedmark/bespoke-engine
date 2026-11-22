@@ -410,7 +410,7 @@ area ShopDoor: 96 62 24 42
 
 ### Saves across updates
 
-Every save records which build of the game wrote it (P48-08, D-162). A player's save loads into the same build; a later build refuses it, and the window says the slot is from another version. Declare `save version N` at the top of the script: when a patch fixes something without changing what saved facts mean, the second half of P48-08 will let a build with the same save version load older saves, keeping their facts and restarting routines. Raise the number when old saves should no longer load.
+Every save records which build of the game wrote it (P48-08, D-162). A player's save loads into the same build; a later build refuses it, and the window says the slot is from another version. Declare `save version N` at the top of the script. When a patch fixes something without changing what saved facts mean, keep the number: the new build loads older saves, keeping their facts (matched by name) and restarting every routine from its beginning, and a `when` rule whose condition already holds does not fire again. Write routines so they can pick up from the facts. Raise the number when old saves should no longer load. Each relation holds either entities or numbers in its second slot, never both.
 
 ## 7. Test the story
 

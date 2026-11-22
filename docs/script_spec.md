@@ -34,7 +34,7 @@ on cue Steal(Cat, victim) where CharmedBy(victim, _) and Carries(victim, loot):
 
 Names are case-sensitive, and the first letter decides what a name is (D-161). A name that starts with a capital letter is a thing: an entity, relation, routine, scene, or any other declared name. A name that starts with a lowercase letter, where a thing could stand, is a variable, and something must bind it: a cue handler's parameter, its `where` guard, or a `when` trigger pattern. An unbound one is a compile error whose help offers the capitalised name, and declaring a thing with a lowercase name (`entity hero`) is an error. `_` is the wildcard, and numbers and `true`/`false` are values.
 
-`save version N` (a whole number from 1, at most once; 1 when absent) names which saves this build can load (P48-08, D-162). Every save records the build that wrote it; a save from the same build loads, and one from another build is refused. A patch that keeps the same save version declares old saves loadable, which arrives with the second half of P48-08.
+`save version N` (a whole number from 1, at most once; 1 when absent) names which saves this build can load (P48-08, D-162). Every save records the build that wrote it; a save from the same build loads as it was. A save from another build with the same save version loads its facts, entities matched by name, and every routine restarts from its beginning, while `when` rules that already hold count as fired; any other save is refused. A relation's object is always an entity or always a number (D-178): the compiler infers which from how the script writes and tests it, and using one relation both ways is an error.
 
 `entity A, B` declares names. `relation R(subject, object)` declares a set relation; `property P(subject, value)` declares a single-value relation, so remembering a new value replaces the old one. Argument names in declarations are descriptive only. A fact pattern is `Relation(A)` or `Relation(A, B)`; square brackets (`Relation[A, B]`) are an accepted equivalent. `_` is a wildcard in guards and triggers.
 
@@ -572,6 +572,7 @@ The language conformance suite (P48-18, D-173) pins each frozen rule as runnable
 
 | Rule | Conformance cases (`tests/conformance/`) |
 | --- | --- |
+| Relation object kinds (D-178) | `d178-object-kinds/`: one kind per relation runs, an entity relation tested with a number is refused |
 | Save version (D-162) | `d162-save-version/`: declared once, a whole number from 1, and adds no facts |
 | Cue signatures and defaults (D-037) | `d037-cue-signatures/`: specific beats variable, actor-only default, unmatched cue runs nothing |
 | `where` guards (D-072) | `d072-cue-guards/`: a failed guard falls to a broader signature, a holding guard runs, a guard binds its parameter |

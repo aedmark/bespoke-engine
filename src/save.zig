@@ -63,6 +63,10 @@ pub const SaveError = error{
     /// The save was written by a different build of the game, and the builds' save versions do
     /// not make it loadable (D-162). Nothing was restored.
     SaveFromOtherBuild,
+    /// The builds declare the same save version, but a saved fact cannot be placed in this one:
+    /// its relation has no known object kind, or changed type or kind (D-178). Nothing was
+    /// restored.
+    SaveNotTranslatable,
     InvalidSaveMagic,
     UnsupportedSaveVersion,
     ChecksumMismatch,
@@ -140,6 +144,10 @@ pub const SaveMetadata = struct {
     thumbnail: [THUMB_SIZE]u8 = @as([THUMB_SIZE]u8, @splat(0)),
     /// The program that wrote the save (version 3); unknown for older saves.
     program: ProgramIdentity = .{},
+    /// Set by a load from another build with the same save version (D-162): facts were
+    /// translated by name, no routine was restored, and the host must restart them
+    /// (`host.restart_routines`). Never written to a file.
+    routines_restarted: bool = false,
 
     pub fn get_scene_name(self: *const SaveMetadata) []const u8 {
         if (self.scene_name_len == 0) return "Default Stage";
@@ -646,14 +654,12 @@ test "P48-08: a save names its build, and a load refuses another build's save un
     var unchecked: std.Io.Reader = .fixed(bytes.items);
     _ = try read_save_state(testing.allocator, &unchecked, &world, null, null);
 
-    // Another build is refused before anything changes, whatever its save version.
+    // Another build with another save version is refused before anything changes.
     var other_world = try World.init(testing.allocator, 256 * 1024);
     defer other_world.deinit();
     _ = try other_world.intern_entity("Somebody");
-    for ([_]u32{ 2, 3 }) |version| {
-        var other: std.Io.Reader = .fixed(bytes.items);
-        try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &other, &other_world, null, null, .{ .fingerprint = 0x0fed_cba9_8765_4321, .save_version = version }));
-    }
+    var other: std.Io.Reader = .fixed(bytes.items);
+    try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &other, &other_world, null, null, .{ .fingerprint = 0x0fed_cba9_8765_4321, .save_version = 3 }));
     try testing.expect(other_world.lookup_entity("Hero") == null);
     try testing.expect(other_world.lookup_entity("Somebody") != null);
 
@@ -681,7 +687,7 @@ test "P48-08: a slot from another build is refused, not recovered from its backu
     _ = try sm.save_slot(1, &world, null, null, "second"); // the first becomes the backup
     try testing.expectEqual(@as(u64, 11), sm.get_slot_info(1).?.metadata.program.fingerprint);
 
-    sm.program = .{ .fingerprint = 12, .save_version = 1 };
+    sm.program = .{ .fingerprint = 12, .save_version = 2 };
     try testing.expectError(SaveError.SaveFromOtherBuild, sm.load_slot(1, &world, null, null));
     sm.program = .{ .fingerprint = 11, .save_version = 1 };
     _ = try sm.load_slot(1, &world, null, null);
@@ -701,7 +707,91 @@ test "P48-08: checked-in version 3 save fixture names its build" {
     try testing.expectEqualStrings("P48-08 compatibility fixture", meta.get_description());
     try testing.expect(world.has_fact(world.lookup_entity("FixtureHero").?, world.lookup_relation("Ready").?, null));
     var again: std.Io.Reader = .fixed(fixture);
-    try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &again, &world, null, null, .{ .fingerprint = 7, .save_version = 2 }));
+    try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &again, &world, null, null, .{ .fingerprint = 7, .save_version = 3 }));
+    // Another build with the same save version loads it, translating its facts.
+    var compatible: std.Io.Reader = .fixed(fixture);
+    try testing.expect((try read_save_state_for(testing.allocator, &compatible, &world, null, null, .{ .fingerprint = 7, .save_version = 2 })).routines_restarted);
+}
+
+test "P48-08: a build with the same save version loads another build's facts by name" {
+    const testing = std.testing;
+    // The old build numbers Hero, Lamp, Coin; the new one meets Coin first and adds Wren.
+    var old = try World.init(testing.allocator, 256 * 1024);
+    defer old.deinit();
+    const hero = try old.intern_entity("Hero");
+    _ = try old.intern_entity("Lamp");
+    const coin = try old.intern_entity("Coin");
+    const holds = try old.intern_relation_kind("Holds", .set, .entity);
+    const count = try old.intern_relation_kind("Count", .property, .number);
+    const prompt = try old.intern_relation_kind("DialoguePrompt", .property, .transient);
+    const lit = try old.intern_relation("Lit", .set);
+    _ = try old.remember(hero, holds, coin.to_int(), 0);
+    _ = try old.remember(hero, count, 7, 0);
+    _ = try old.remember(hero, prompt, 42, 0);
+    _ = try old.remember(hero, lit, 0, 0);
+    old.current_tick = 30;
+    _ = try old.remember(coin, lit, 0, 5); // expires at tick 35
+    const old_build = ProgramIdentity{ .fingerprint = 101, .save_version = 4 };
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    _ = try write_save_state(testing.allocator, &lw.writer, &old, null, null, .{ .program = old_build });
+
+    var new = try World.init(testing.allocator, 256 * 1024);
+    defer new.deinit();
+    const new_coin = try new.intern_entity("Coin");
+    _ = try new.intern_entity("Wren");
+    const new_hero = try new.intern_entity("Hero");
+    _ = try new.intern_relation_kind("Holds", .set, .entity);
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    const meta = try read_save_state_for(testing.allocator, &stream, &new, null, null, .{ .fingerprint = 202, .save_version = 4 });
+    try testing.expect(meta.routines_restarted);
+
+    try testing.expect(new.has_fact(new_hero, new.lookup_relation("Holds").?, new_coin.to_int()));
+    try testing.expectEqual(@as(?u32, 7), new.get_property(new_hero, new.lookup_relation("Count").?));
+    try testing.expect(new.lookup_relation("DialoguePrompt") == null or !new.has_fact(new_hero, new.lookup_relation("DialoguePrompt").?, null));
+    try testing.expect(new.has_fact(new_hero, new.lookup_relation("Lit").?, null));
+    try testing.expectEqual(@as(u64, 30), new.current_tick);
+    // A timed fact keeps the time it had left.
+    const slice = new.facts.slice();
+    var expiry: u64 = 0;
+    for (0..new.facts.len) |i| {
+        if (slice.items(.subject)[i] == new_coin) expiry = slice.items(.expires_at_tick)[i];
+    }
+    try testing.expectEqual(@as(u64, 35), expiry);
+}
+
+test "P48-08: a save whose facts cannot be placed is refused and changes nothing" {
+    const testing = std.testing;
+    var old = try World.init(testing.allocator, 256 * 1024);
+    defer old.deinit();
+    const hero = try old.intern_entity("Hero");
+    _ = try old.remember(hero, try old.intern_relation("Mystery", .set), 9, 0); // no kind, an object
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    _ = try write_save_state(testing.allocator, &lw.writer, &old, null, null, .{ .program = .{ .fingerprint = 1, .save_version = 1 } });
+
+    var new = try World.init(testing.allocator, 256 * 1024);
+    defer new.deinit();
+    const keep = try new.intern_relation("Kept", .set);
+    _ = try new.remember(try new.intern_entity("Wren"), keep, 0, 0);
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    try testing.expectError(SaveError.SaveNotTranslatable, read_save_state_for(testing.allocator, &stream, &new, null, null, .{ .fingerprint = 2, .save_version = 1 }));
+    try testing.expectEqual(@as(usize, 1), new.fact_count());
+
+    // A relation that changed kind between the builds is refused too.
+    var old2 = try World.init(testing.allocator, 256 * 1024);
+    defer old2.deinit();
+    _ = try old2.remember(try old2.intern_entity("Hero"), try old2.intern_relation_kind("Gold", .property, .number), 3, 0);
+    var bytes2 = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes2.deinit();
+    var lw2 = ListWriter.init(&bytes2);
+    _ = try write_save_state(testing.allocator, &lw2.writer, &old2, null, null, .{ .program = .{ .fingerprint = 1, .save_version = 1 } });
+    _ = try new.intern_relation_kind("Gold", .property, .entity);
+    var stream2: std.Io.Reader = .fixed(bytes2.items);
+    try testing.expectError(SaveError.SaveNotTranslatable, read_save_state_for(testing.allocator, &stream2, &new, null, null, .{ .fingerprint = 2, .save_version = 1 }));
+    try testing.expectEqual(@as(usize, 1), new.fact_count());
 }
 
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
@@ -813,9 +903,9 @@ fn read_save_state_versioned(
     var fbs: std.Io.Reader = .fixed(verified.bytes);
     const pr = &fbs;
 
-    // 1. Metadata, then the program identity (version 3). A save from another build is refused
-    // here, before any state is touched (D-162). Until compatible loads land, a matching save
-    // version does not admit a different build either.
+    // 1. Metadata, then the program identity (version 3). A save from another build is decided
+    // here, before any state is touched (D-162): refused unless both builds declare the same
+    // save version, in which case its facts are translated and its routines restart.
     var meta = try deserialize_metadata(pr);
     if (meta.version != verified.version) return SaveError.InvalidTemporalState;
     if (verified.version >= 3) {
@@ -825,7 +915,12 @@ fn read_save_state_versioned(
         };
     }
     if (expected.known() and meta.program.known() and meta.program.fingerprint != expected.fingerprint) {
-        return SaveError.SaveFromOtherBuild;
+        if (meta.program.save_version != expected.save_version) return SaveError.SaveFromOtherBuild;
+        // A branch world belongs to the build that forked it and never crosses (D-162).
+        if (require_temporal or (try pr.takeByte()) != 0) return SaveError.SaveFromOtherBuild;
+        try load_from_other_build(allocator, verified, world, vm);
+        meta.routines_restarted = true;
+        return meta;
     }
 
     var pending_temporal: ?temporal_mod.TemporalSnapshot = null;
@@ -1003,6 +1098,80 @@ fn read_save_state_versioned(
     return meta;
 }
 
+/// Loads a save written by another build that declares the same save version (P48-08, D-162,
+/// D-178). The payload is read whole into a throwaway world and VM, so nothing live changes
+/// until every fact is known to translate: entity objects are matched by name, numbers are
+/// copied, and transient state (open dialogue, which belongs to a running routine) is dropped.
+/// A fact whose relation has no known kind but holds an object, or whose relation changed type
+/// or kind between the builds, refuses the load. Motor agents stay where the running session
+/// has them; the VM keeps its scene by name, loses every fiber, and marks each `when` rule
+/// that already holds as fired, so a satisfied ending does not fire again.
+fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload, world: *World, vm: ?*VM) anyerror!void {
+    var saved = try World.init(allocator, world.arena_buffer.len);
+    defer saved.deinit();
+    var empty_code = @import("bytecode.zig").BytecodeChunk.init(allocator);
+    defer empty_code.deinit();
+    var saved_vm = VM.init(allocator, &saved, &empty_code);
+    defer saved_vm.deinit();
+    {
+        // Re-wrap the verified payload so the ordinary reader parses it, unchecked.
+        var envelope = std.array_list.Managed(u8).init(allocator);
+        defer envelope.deinit();
+        var ew = ListWriter.init(&envelope);
+        try ew.writer.writeAll(&SAVE_MAGIC);
+        try ew.writer.writeInt(u32, verified.version, .little);
+        try ew.writer.writeInt(u32, std.hash.Crc32.hash(verified.bytes), .little);
+        try ew.writer.writeInt(u32, @intCast(verified.bytes.len), .little);
+        try ew.writer.writeAll(verified.bytes);
+        var stream: std.Io.Reader = .fixed(envelope.items);
+        _ = try read_save_state_versioned(allocator, &stream, &saved, null, &saved_vm, null, false, .{});
+    }
+
+    const facts = saved.facts.slice();
+    // Check every fact before changing anything.
+    for (0..saved.facts.len) |i| {
+        const meta = saved.get_relation_meta(facts.items(.relation)[i]) orelse return SaveError.SaveNotTranslatable;
+        if (meta.object_kind == .transient) continue;
+        if (meta.object_kind == .unknown and facts.items(.object_or_value)[i] != 0) return SaveError.SaveNotTranslatable;
+        if (world.lookup_relation(meta.name)) |live| {
+            const now = world.get_relation_meta(live).?;
+            if (now.rel_type != meta.rel_type) return SaveError.SaveNotTranslatable;
+            if (now.object_kind != .unknown and meta.object_kind != .unknown and now.object_kind != meta.object_kind) return SaveError.SaveNotTranslatable;
+        }
+        if (meta.object_kind == .entity and saved.get_entity_name(EntityId.from_int(facts.items(.object_or_value)[i])) == null) return SaveError.SaveNotTranslatable;
+    }
+
+    world.facts.shrinkRetainingCapacity(0);
+    world.recently_expired_count = 0;
+    world.current_tick = saved.current_tick;
+    for (0..saved.facts.len) |i| {
+        const meta = saved.get_relation_meta(facts.items(.relation)[i]).?;
+        if (meta.object_kind == .transient) continue;
+        const subject = try world.intern_entity(saved.get_entity_name(facts.items(.subject)[i]) orelse continue);
+        const relation = try world.intern_relation_kind(meta.name, meta.rel_type, meta.object_kind);
+        const raw = facts.items(.object_or_value)[i];
+        const object: u32 = if (meta.object_kind == .entity)
+            (try world.intern_entity(saved.get_entity_name(EntityId.from_int(raw)).?)).to_int()
+        else
+            raw;
+        const expires = facts.items(.expires_at_tick)[i];
+        if (expires != 0 and expires <= saved.current_tick) continue;
+        try world.remember(subject, relation, object, if (expires == 0) 0 else expires - saved.current_tick);
+    }
+
+    if (vm) |v| {
+        for (v.fibers.items) |*f| f.deinit();
+        v.fibers.clearRetainingCapacity();
+        v.emitted_cues.clearRetainingCapacity();
+        v.pending_weaves.clearRetainingCapacity();
+        v.current_scene = if (saved_vm.current_scene) |scene|
+            (if (saved.get_entity_name(scene)) |name| try world.intern_entity(name) else null)
+        else
+            null;
+        for (v.reactive_rules.items) |*rule| rule.is_active = world.has_multi_match(rule.clauses);
+    }
+}
+
 /// Slot status and metadata tracked by SaveManager (P17-02, D-020).
 pub const SaveSlotInfo = struct {
     slot_id: u8 = 0,
@@ -1030,6 +1199,8 @@ pub const SaveManager = struct {
     /// The running program (P48-08, D-162). Every save records it, and a load refuses a save
     /// from another build. Hosts set it when they load a program; unknown loads unchecked.
     program: ProgramIdentity = .{},
+    /// True after a load from another build: the host must restart routines (D-162).
+    last_load_restarted_routines: bool = false,
     allocator: std.mem.Allocator,
     save_dir: []const u8,
     slots: [MAX_SLOTS + 1]SaveSlotInfo,
@@ -1272,6 +1443,7 @@ pub const SaveManager = struct {
             else
                 read_save_state_for(self.allocator, &file_reader.interface, world, spatial, vm, self.program);
             if (loaded) |meta| {
+                self.last_load_restarted_routines = meta.routines_restarted;
                 self.accumulated_playtime_secs = meta.playtime_secs;
                 self.session_start_ms = now_ms(self.io);
                 self.slots[slot_id].occupied = true;
@@ -1285,7 +1457,7 @@ pub const SaveManager = struct {
             } else |err| {
                 // A save from another build is intact, so its backup is no better: refuse it
                 // rather than quietly load an older save (D-162).
-                if (err == SaveError.SaveFromOtherBuild) return err;
+                if (err == SaveError.SaveFromOtherBuild or err == SaveError.SaveNotTranslatable) return err;
                 // Primary file failed checksum/magic/version/EOF -> fall through to backup recovery
                 self.slots[slot_id].corrupted = true;
             }
@@ -1314,6 +1486,7 @@ pub const SaveManager = struct {
                 return SaveError.CorruptedSaveUnrecoverable;
             };
 
+        self.last_load_restarted_routines = recovered_meta.routines_restarted;
         // Self-heal primary slot file from the verified backup
         std.Io.Dir.cwd().copyFile(bak_path, std.Io.Dir.cwd(), slot_path, self.io, .{}) catch {};
 

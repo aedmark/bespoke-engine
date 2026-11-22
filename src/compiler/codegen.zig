@@ -798,8 +798,8 @@ pub const Codegen = struct {
         // Music relations (P28-03, D-062): interned before any statement so `PlayingScore` is a
         // property (one score at a time) even where a rule mentions it first.
         if (ast.scores.items.len > 0) {
-            _ = try mut_self.world.intern_relation(mml.PLAYING_RELATION, .property);
-            _ = try mut_self.world.intern_relation(mml.SCENE_RELATION, .set);
+            _ = try mut_self.world.intern_relation_kind(mml.PLAYING_RELATION, .property, .entity);
+            _ = try mut_self.world.intern_relation_kind(mml.SCENE_RELATION, .set, .entity);
             _ = try mut_self.world.intern_entity(mml.MUSIC_ENTITY);
         }
 
@@ -827,7 +827,7 @@ pub const Codegen = struct {
             // display can pick a scene's score from World alone and saves carry the binding.
             for (ast.scores.items) |decl| {
                 const score_entity = try mut_self.world.intern_entity(decl.name);
-                const scene_rel = try mut_self.world.intern_relation(mml.SCENE_RELATION, .set);
+                const scene_rel = try mut_self.world.intern_relation_kind(mml.SCENE_RELATION, .set, .entity);
                 for (decl.scenes) |scene| {
                     try mut_self.chunk.emit_push_entity(try mut_self.world.intern_entity(scene));
                     try mut_self.chunk.emit_push_relation(scene_rel);
@@ -1748,6 +1748,7 @@ pub const Codegen = struct {
             .remember => |rem| {
                 const subj = try self.entity_arg(rem.args[0]);
                 const rel = try self.resolve_relation(rem.relation);
+                if (rem.args.len > 1) try self.note_object_kind(rem.relation, rem.args[1]);
                 const obj_local = if (rem.args.len > 1) self.local_index(rem.args[1]) else null;
                 const obj = if (obj_local == null) try self.fact_object(rem.relation, rem.args) else 0;
 
@@ -1760,6 +1761,7 @@ pub const Codegen = struct {
                 const subj = try self.entity_arg(fg.args[0]);
                 const rel = try self.resolve_relation(fg.relation);
                 const has_obj = fg.args.len > 1 and !std.mem.eql(u8, fg.args[1], "_");
+                if (has_obj) try self.note_object_kind(fg.relation, fg.args[1]);
 
                 try self.emit_entity_arg(fg.args[0], subj);
                 try self.chunk.emit_push_relation(rel);
@@ -1885,7 +1887,7 @@ pub const Codegen = struct {
                 // `PlayingScore` is a property of `Music`, so playing replaces the previous
                 // override and `stop score` removes it, returning to the scene default.
                 const music = try self.resolve_entity(mml.MUSIC_ENTITY);
-                const rel = try self.world.intern_relation(mml.PLAYING_RELATION, .property);
+                const rel = try self.world.intern_relation_kind(mml.PLAYING_RELATION, .property, .entity);
                 try self.chunk.emit_push_entity(music);
                 try self.chunk.emit_push_relation(rel);
                 if (name) |score| {
@@ -2028,6 +2030,7 @@ pub const Codegen = struct {
         }
         try self.chunk.emit_push_relation(try self.resolve_relation(pat.relation));
         if (pat.args.len > 1 and !std.mem.eql(u8, pat.args[1], "_")) {
+            try self.note_object_kind(pat.relation, pat.args[1]);
             if (self.local_index(pat.args[1])) |index| {
                 try self.chunk.emit_push_local(index);
             } else {
@@ -2143,6 +2146,30 @@ pub const Codegen = struct {
         return 0;
     }
 
+    /// Fixes `relation`'s object kind from one written object (P48-08, D-178): a number,
+    /// `true`, `false`, or an axis value makes it a number relation, and an entity name or a cue
+    /// parameter an entity relation. A variable a guard or trigger binds, and `_`, say nothing.
+    /// A relation used both ways is refused at the use that disagrees.
+    fn note_object_kind(self: *Codegen, relation: []const u8, arg: []const u8) !void {
+        if (arg.len == 0 or std.mem.eql(u8, arg, "_")) return;
+        const kind: world_mod.ObjectKind = blk: {
+            if (self.axis_bound(relation)) break :blk .number;
+            if (self.local_index(arg)) |index| {
+                if (index < CUE_BINDING_BASE) break :blk .entity;
+                return;
+            }
+            if (std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false")) break :blk .number;
+            if (std.ascii.isDigit(arg[0]) or (arg[0] == '-' and arg.len > 1 and std.ascii.isDigit(arg[1]))) break :blk .number;
+            if (is_variable_name(arg) or arg[0] == '?') return;
+            break :blk .entity;
+        };
+        const rel = try self.resolve_relation(relation);
+        self.world.declare_object_kind(rel, kind) catch |err| {
+            self.error_context = arg;
+            return err;
+        };
+    }
+
     fn axis_bound(self: *Codegen, relation: []const u8) bool {
         const rel = self.world.lookup_relation(relation) orelse return false;
         return self.world.value_bound(rel) != null;
@@ -2236,6 +2263,7 @@ pub const Codegen = struct {
         var_map: *std.StringHashMap(u8),
         next_var: *u8,
     ) !world_mod.PatternTerm {
+        try self.note_object_kind(relation, arg);
         const literal = arg.len > 0 and (std.ascii.isDigit(arg[0]) or arg[0] == '-');
         if (literal and self.axis_bound(relation)) return .{ .constant = try self.fact_value(relation, arg) };
         return self.resolve_pattern_term(arg, var_map, next_var);

@@ -223,7 +223,7 @@ pub fn present(
     evidence: EntityId,
     person: EntityId,
 ) !bool {
-    const presented = try vm.world.intern_relation("Presented", .set);
+    const presented = try vm.world.intern_relation_kind("Presented", .set, .entity);
     try vm.world.remember(person, presented, evidence.to_int(), 0);
     return (try vm.fire_cue(compiled, "Presents", actor, person, evidence)) != null;
 }
@@ -244,7 +244,7 @@ pub fn appeal(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, person
     const known = world.lookup_entity(name) orelse return .unknown_value;
     if (!hint_mod.knows(world, actor, known)) return .unknown_value;
     try dilemma_mod.record_appeal(world, dilemma, value);
-    try world.remember(person, try world.intern_relation("Appealed", .set), value.to_int(), 0);
+    try world.remember(person, try world.intern_relation_kind("Appealed", .set, .entity), value.to_int(), 0);
     _ = try vm.fire_cue(compiled, "Appeals", actor, person, value);
     return .made;
 }
@@ -615,6 +615,19 @@ pub fn player_actor(compiled: *const CompiledProgram) ?[]const u8 {
 pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *const CompiledProgram) !EntityId {
     try run_initial_statements(world, vm, compiled);
     try place_cast(spatial, compiled);
+    try spawn_script_routines(world, spatial, vm, compiled);
+    return world.intern_entity(player_actor(compiled) orelse "Player");
+}
+
+/// Starts every top-level routine again after a load from another build of the game (P48-08,
+/// D-162), which keeps the facts and restores no fiber. Initial statements and cast placement
+/// do not run again: the loaded facts are the story so far. Path routines are the host's to
+/// restart, as they were the host's to start (D-052).
+pub fn restart_routines(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *const CompiledProgram) !void {
+    try spawn_script_routines(world, spatial, vm, compiled);
+}
+
+fn spawn_script_routines(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *const CompiledProgram) !void {
     const first_mark: ?spatial_mod.WaypointId = if (spatial.graph.waypoints.items.len > 0) spatial.graph.waypoints.items[0].id else null;
     // Paths compile after every top-level routine (initializer first, then its routines), so an
     // entry at or past the first initializer belongs to a path. A path's initializer runs when
@@ -638,7 +651,6 @@ pub fn start_script(world: *World, spatial: *SpatialSystem, vm: *VM, compiled: *
         }
         _ = try vm.spawn_routine(actor, entry.value_ptr.*);
     }
-    return world.intern_entity(player_actor(compiled) orelse "Player");
 }
 
 /// Starts one named routine for one named actor. If the script did not place that actor through
@@ -981,6 +993,10 @@ pub const Session = struct {
         if (self.window.handle_save_action_with_temporal(action, self.world, self.spatial, self.vm, self.bridge, &self.is_paused, self.hypervisor)) {
             self.sync_active_world();
             self.vm.sync_dialogue();
+            if (restoring and self.window.save_manager.last_load_restarted_routines) {
+                // A save from another build kept its facts but no routine (D-162).
+                try restart_routines(self.world, self.spatial, self.vm, self.compiled);
+            }
             if (restoring) {
                 // A loaded save has no persisted timeline. Start a new one from the loaded state
                 // so a later rewind cannot jump into the pre-load future.
@@ -1200,6 +1216,87 @@ test "P32-16: act fires a cue, ticks, and returns the scripted reply" {
     try testing.expectEqualStrings("Hero: \"It glows.\"", (try act(&world, &vm, &compiled, "LooksAt", hero, lamp, &buf)).?);
     // A second act still hears its reply: speech is read after the tick, not by a stale index.
     try testing.expectEqualStrings("Hero: \"It glows.\"", (try act(&world, &vm, &compiled, "LooksAt", hero, lamp, &buf)).?);
+}
+
+test "P48-08: a patched build with the same save version loads the facts and restarts routines" {
+    const compiler = @import("compiler.zig");
+    const save_mod = @import("save.zig");
+    const v1 =
+        \\save version 2
+        \\scene: Yard
+        \\cast: Scout
+        \\props: Lamp, Coin
+        \\marks: Gate
+        \\when Lit(Lamp) and Holds(Scout, Coin):
+        \\  remember Ended(Scout)
+        \\routine Rounds(Scout):
+        \\  wait 2 ticks
+        \\  remember Lit(Lamp)
+        \\  remember Holds(Scout, Coin)
+        \\  wait 50 ticks
+    ;
+    // The patch adds an entity first, which renumbers every other, and a new routine line.
+    const v2 =
+        \\save version 2
+        \\entity Wren
+        \\scene: Yard
+        \\cast: Scout
+        \\props: Lamp, Coin
+        \\marks: Gate
+        \\when Lit(Lamp) and Holds(Scout, Coin):
+        \\  remember Ended(Scout)
+        \\routine Rounds(Scout):
+        \\  remember Patched(Scout)
+        \\  wait 2 ticks
+        \\  remember Lit(Lamp)
+        \\  remember Holds(Scout, Coin)
+        \\  wait 50 ticks
+    ;
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    {
+        var world = try World.init(testing.allocator, 1024 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var compiled = try compiler.compile_source(testing.allocator, &world, &spatial, v1);
+        defer compiled.deinit();
+        var vm = try init_vm(testing.allocator, &world, &spatial, &compiled);
+        defer vm.deinit();
+        _ = try start_script(&world, &spatial, &vm, &compiled);
+        for (0..6) |_| _ = try tick(&vm, &compiled);
+        try testing.expect(world.has_fact(world.lookup_entity("Scout").?, world.lookup_relation("Ended").?, null));
+        var lw = ListWriter.init(&bytes);
+        _ = try save_mod.write_save_state(testing.allocator, &lw.writer, &world, &spatial, &vm, .{ .program = compiled.identity() });
+    }
+
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial, v2);
+    defer compiled.deinit();
+    var vm = try init_vm(testing.allocator, &world, &spatial, &compiled);
+    defer vm.deinit();
+    _ = try start_script(&world, &spatial, &vm, &compiled);
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    const meta = try save_mod.read_save_state_for(testing.allocator, &stream, &world, &spatial, &vm, compiled.identity());
+    try testing.expect(meta.routines_restarted);
+    try testing.expectEqual(@as(usize, 0), vm.fibers.items.len);
+    const scout = world.lookup_entity("Scout").?;
+    const coin = world.lookup_entity("Coin").?;
+    const ended = world.lookup_relation("Ended").?;
+    try testing.expect(world.has_fact(scout, world.lookup_relation("Holds").?, coin.to_int()));
+    try testing.expect(world.has_fact(scout, ended, null));
+
+    // The ending already held when the save was made, so the rule counts as fired: with its
+    // fact removed it must not come back.
+    _ = world.forget(scout, ended, null);
+    try restart_routines(&world, &spatial, &vm, &compiled);
+    for (0..4) |_| _ = try tick(&vm, &compiled);
+    try testing.expect(!world.has_fact(scout, ended, null));
+    // The patched routine ran from its start.
+    try testing.expect(world.has_fact(scout, world.lookup_relation("Patched").?, null));
 }
 
 test "P23-01: host lifecycle initializes and advances declared degradation" {
