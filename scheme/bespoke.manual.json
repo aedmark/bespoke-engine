@@ -1066,6 +1066,34 @@
           "related": ["host-kit-api", "standalone-script-runner-and-package-compiler", "branching-dialogue-balloons", "continuous-when-rules"]
         },
         {
+          "id": "script-pixel-art",
+          "title": "Script Pixel Art: Palettes, Sprites, Areas, and PNG Import",
+          "summary": "Scripts declare a palette, images, scene backdrops, animated sprites, and clickable prop areas, from typed rows or PNG files beside the script.",
+          "synopsis": "image TallowLane from \"tallow_lane.png\" | backdrop: TallowLane | sprite Nell: NellSheet (idle, walk lines) | area ShopDoor: 96 62 24 42",
+          "tags": ["art", "pixel-art", "png", "sprites", "dsl", "display"],
+          "what": "A game carries one palette of up to 256 colours and indexed images at 320x180, drawn 4x in the 1280x720 frame. A scene's backdrop draws the room, a sprite draws a person or prop bottom-centre on its spot with idle and walk animations, and an area marks where a painted or theme-drawn prop is so a click anywhere on it acts. bespoke import turns a PNG into inline rows for scripts compiled in the browser.",
+          "how": [
+            "The parser reads palette:, image <Name> [frames WxH] [from \"file.png\"], backdrop:, sprite, and area <Prop>: x y w h as contextual words, resolves them at the end of the script, and names the line of each mistake (unknown image, frame past the sheet, missing code, ragged row, wrong backdrop size).",
+            "src/png.zig decodes PNG files with the standard library's inflate under size limits, and src/art_import.zig maps each pixel onto the palette by exact colour with binary alpha; a partly transparent pixel or a 257th colour is refused. Only a command-line compile reads files, from the script's folder, and the decoder is compiled out of the browser module.",
+            "Canvas.draw_image paints each art pixel as a 4x4 block, skips index 0, clips at the edges, and records its opaque bounds for the band check, on the same path for the desktop window and the browser.",
+            "Sprite.frame_at picks the frame from the display's 60 Hz animation clock and the entity's heading; animation is never written to the world, so saves, rewinds, and goldens are unaffected by it.",
+            "Hit tests take the art: a sprite is hit anywhere in its frame or on its spot's disc, and an area anywhere in its rectangle; box outlines are drawn only in the debug overlay.",
+            "Packages carry the palette and images (version 24), backdrops and sprites (version 25), and areas (version 26); older versions load with no art."
+          ],
+          "why": "Art belongs beside the scenes and props it draws, so a game is one script and its files rather than a host full of drawing code. One fixed palette and exact colour matching keep the import deterministic and the browser module small, and keeping animation out of the world keeps time travel and goldens exact.",
+          "why_basis": "recorded",
+          "evidence": [
+            {"label": "Architectural Decision D-152", "target": "docs/DECISIONS.md#d-152", "kind": "decision"},
+            {"label": "Architectural Decision D-155", "target": "docs/DECISIONS.md#d-155", "kind": "decision"},
+            {"label": "Architectural Decision D-156", "target": "docs/DECISIONS.md#d-156", "kind": "decision"},
+            {"label": "Architectural Decision D-158", "target": "docs/DECISIONS.md#d-158", "kind": "decision"},
+            {"label": "Image and Art Model", "target": "src/image.zig", "kind": "source"},
+            {"label": "PNG Decoder", "target": "src/png.zig", "kind": "source"},
+            {"label": "The Lamplighter's Round Script", "target": "proofs/art/lamplighter/lamplighter.bespoke", "kind": "source"}
+          ],
+          "related": ["authoring-guide-walkthroughs", "scene-hotspots-and-props", "standalone-script-runner-and-package-compiler", "mml-script-scores"]
+        },
+        {
           "id": "starter-template-builds",
           "title": "Starter Template: Bundled Releases, Browser Builds, and CI",
           "summary": "bespoke init writes a project that tests, builds a self-contained release, builds a browser version, and carries a CI workflow for Linux, macOS, Windows, and the web.",

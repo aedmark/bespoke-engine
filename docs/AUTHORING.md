@@ -345,6 +345,7 @@ Each of these is a declaration a script carries; [`script_spec.md`](script_spec.
 | Duels | `duel` | Insult or riddle contests with tiers and fatigue |
 | Degradation | `degradation` | Containers whose contents age, spill, and fail |
 | Scores | `score` | Four-part music in Music Macro Language |
+| Pixel art | `palette`, `image`, `backdrop`, `sprite`, `area` | Rooms, people, and props drawn from PNG files or typed rows |
 
 A `goal` declares what the player must make true and what to say when they ask for help. Knowledge is script-asserted: `Knows` and `Believes` facts about the player are what the character could reason about, and `Rejects` cancels either (P44-01, D-134).
 
@@ -378,6 +379,34 @@ goal RecoverThePlate:
 - `hint 1`, `hint 2`, and `hint 3` replace the generated text for the room, thing, and relation tiers. A tier without text is generated from the names in `met`.
 - A query answers with the first unmet need whose terms the character knows and records which path answered. When no such need is on the frontier, it answers as the author, which may name a place or thing the character has not met.
 - Hints are never stored, so a save, a rewind, and a replay give the same hint for the same world (D-003). Goals travel in package format version 15.
+
+### Pixel art
+
+A script can carry its own art (P46-03 to P46-05). Put the PNG files beside the script and name them; a backdrop draws a scene, a sprite draws a person or prop standing on its spot, and an area makes something painted on the backdrop clickable:
+
+```text
+scene: Tallow Lane
+cast: Nell
+props: ShopDoor
+marks: Doorstep
+backdrop: TallowLane
+
+image TallowLane from "tallow_lane.png"
+image NellSheet from "nell.png" frames 12x24
+
+sprite Nell: NellSheet
+  idle: 0 for 40, 1 for 20
+  walk right: 2 for 8, 3 for 8
+  walk left: 4 for 8, 5 for 8
+
+area ShopDoor: 96 62 24 42
+```
+
+- Art is 320x180 pixels, drawn 4x in the window, with one palette of up to 256 colours for the game (D-152). A backdrop is one 320x180 frame; a sheet is cut into equal frames numbered from 0.
+- PNG colours map exactly onto the palette, and a pixel is either opaque or fully transparent; a partly transparent pixel or a 257th colour is a compile error naming the file (D-156). Draw to a fixed palette rather than relying on the importer to reduce colours.
+- Only a compile from the command line reads PNG files, and only from the script's folder. `bespoke compile` writes a package that carries the art, which is how a browser page loads it; `bespoke import <art.png> --name <Image> --script <script.bespoke>` prints the same art as inline rows for a script compiled in the browser.
+- A click anywhere in a sprite's frame or a prop's area acts on it, and the player walks to the mark nearest its foot (D-158). Box outlines appear only in the debug overlay.
+- Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world. Art that follows other facts, such as a lit lamp, is drawn by the host's theme, which reads the facts after each tick. `proofs/lamplighter.zig` shows a theme that picks the lamp's frame.
 
 ## 7. Test the story
 
@@ -437,4 +466,5 @@ These are recorded under Claims vs. code in [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
 - A cue handler parameter written in lowercase (`on cue Shows(Hero, item):`) matches any entity but is not bound; the body cannot use `item`. Write one handler per concrete name.
 - A `where` guard on an `on cue` handler binds the handler's lowercase parameters to the cue's arguments, but the handler body does not: inside the body, a lowercase parameter is read as an entity name. Name the entities in the body, or check them with `if`.
+- A second `on cue` handler with the same signature replaces the first, guard and all, with no diagnostic, and a package compiled from such a script refuses to load (Q-020). Write one handler per cue and choose the reply with `if` lines inside it.
 - The stock window answers dialogue and typed commands, but clicking a person does not talk to them; type `talk to <name>`.

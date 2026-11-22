@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The authoring guide and the manual cover pixel art: palettes, images from PNG files, backdrops, animated sprites, and clickable areas, with the art limits an author meets. The guide also warns that a second `on cue` handler with the same signature replaces the first (`Q-020`).
+
 - Props click where they are drawn: `area ShopDoor: 96 62 24 42` makes a painted door clickable anywhere on it, and people and props drawn as sprites are clicked anywhere in their frame (`D-158`). Package format version 26 carries areas.
 
 - The Lamplighter's Round is a new proof with its own page (`site/lamplighter.html`, `--lamplighter`): at dusk Nell Brindle, a late lamplighter, lights two streets' lamps before the watch walks his round, once a jackdaw has been bribed out of one. Every room, person, and prop is pixel art imported from PNG files when the game is built, and people walk and idle in animation.
