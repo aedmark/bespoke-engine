@@ -1,0 +1,19 @@
+# An include expands at its line, once: the guarded handler from the first file comes first,
+# so a lit lamp is seen and not lit again, and the second inclusion is skipped.
+# pins: D-169; D-160
+# ticks: 3
+# input: 0 use lamp
+# expect fact: Saw(Scout, Lamp)
+
+scene: Quay
+cast: Scout
+props: Lamp
+marks: Steps
+relation Lit(thing)
+relation Saw(who, thing)
+remember Lit(Lamp)
+include "parts/first-handler.bespoke"
+include "parts/second-handler.bespoke"
+
+routine Idle(Scout):
+  wait 20 ticks

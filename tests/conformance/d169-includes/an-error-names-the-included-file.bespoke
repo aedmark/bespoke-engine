@@ -1,0 +1,6 @@
+# A diagnostic in an included file gives that file's line and column.
+# pins: D-169; D-185
+# expect error: UnboundVariable 2:14
+
+entity Lamp
+include "parts/broken.bespoke"

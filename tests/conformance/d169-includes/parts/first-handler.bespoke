@@ -1,0 +1,2 @@
+on cue Uses(Scout, Lamp) where Lit(Lamp):
+  remember Saw(Scout, Lamp)

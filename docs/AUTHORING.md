@@ -381,6 +381,10 @@ goal RecoverThePlate:
 - A query answers with the first unmet need whose terms the character knows and records which path answered. When no such need is on the frontier, it answers as the author, which may name a place or thing the character has not met.
 - Hints are never stored, so a save, a rewind, and a replay give the same hint for the same world (D-003). Goals travel in package format version 15.
 
+### Several files
+
+A larger game can keep its parts apart: `include "art.bespoke"` reads another file in place, once, with paths from the main script's folder (D-169). Keep what is shared, such as scenes and relations, in the main script and give each act or each kind of thing its own file. `proofs/art/lamplighter/` keeps The Lamplighter's Round's art and talk in `art.bespoke` and `talk.bespoke`. An error names the file it is in.
+
 ### Pixel art
 
 A script can carry its own art (P46-03 to P46-05). Put the PNG files beside the script and name them; a backdrop draws a scene, a sprite draws a person or prop standing on its spot, and an area makes something painted on the backdrop clickable:

@@ -17,7 +17,8 @@ pins and what the stock CLI must report. Directives, one per comment line:
     # expect error: UnboundVariable 3:24
 
 A case with `expect error` must fail `bespoke check --kind` with that kind at that line and
-column; the message wording is not part of the promise. Any other case must pass `bespoke
+column; the message wording is not part of the promise. Files under a `parts/` folder are
+included by cases and are not run on their own. Any other case must pass `bespoke
 check` and is then run headless. Every case must name at least one decision in `pins`.
 """
 from __future__ import annotations
@@ -138,7 +139,8 @@ def check_case(bespoke: Path, case: Case) -> list[str]:
 def discover(paths: list[str]) -> list[Path]:
     if paths:
         return [Path(p).resolve() for p in paths]
-    return sorted(SUITE.rglob("*.bespoke"))
+    # Files under a `parts/` folder are what cases include (D-169), not cases of their own.
+    return sorted(p for p in SUITE.rglob("*.bespoke") if "parts" not in p.relative_to(SUITE).parts)
 
 
 def main(argv: list[str] | None = None) -> int:

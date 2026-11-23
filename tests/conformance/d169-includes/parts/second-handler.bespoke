@@ -1,0 +1,3 @@
+on cue Uses(Scout, Lamp):
+  remember Lit(Lamp)
+include "parts/first-handler.bespoke"

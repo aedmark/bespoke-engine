@@ -2296,6 +2296,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Save format 4 and temporal snapshot version 2 carry the generators; package format 36 carries the reroll flag. A windowed run's rolls differ between plays and match across its own rewinds and loads. P48-14 builds it.
 
+## D-185 Includes Sit at the Top Level and Expand Before Lexing, With a Line Map for Diagnostics (2026-11-23, status: accepted; P48-15, refines D-169)
+
+**Context.** D-169 expands `include "<path>"` in place, once, from the main script's folder, with diagnostics naming the included file. It left open where an include line may sit, and the acceptance asked for a real game split across files.
+
+**Decision.** The maintainer chose on 2026-11-23:
+1. An `include` line starts at column 0, between declarations; an indented one is a compile error. Included files may include others, with paths still from the main script's folder, and a file already included is skipped, which also ends cycles.
+2. The compiler expands includes into one text before lexing and keeps a map from each line back to its file and line, so every diagnostic (lexer, parser, compiler, and warnings) names the file it is in.
+3. The Lamplighter's Round is the split game: its art and its talk move to their own files, and its goldens do not move.
+
+**Alternatives:** includes anywhere, re-indented to the block they sit in; a sample scenario as the split game.
+
+**Consequences.** A diagnostic in an included file reports that file's path; `CheckResult.file()` names it. Only a command-line compile reads includes; a package holds the expanded program. P48-15 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

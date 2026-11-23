@@ -171,7 +171,11 @@ pub fn check_file_with(allocator: std.mem.Allocator, io: std.Io, path: []const u
     const res = bespoke.compiler.check_source_with(allocator, source, files.source());
     // Warnings never stop a script (P48-10, D-180); they print in the diagnostic's shape.
     for (res.warnings[0..res.warning_count]) |*w| {
-        try write_diagnostic_text(stdout, path);
+        if (w.file().len > 0) {
+            try write_diagnostic_text(stdout, std.fs.path.dirname(path) orelse ".");
+            try stdout.print("/", .{});
+            try write_diagnostic_text(stdout, w.file());
+        } else try write_diagnostic_text(stdout, path);
         try stdout.print(":{d}:{d}: warning: ", .{ w.line, w.column });
         try write_diagnostic_text(stdout, w.message());
         try stdout.print("\n", .{});
@@ -187,7 +191,7 @@ pub fn check_file_with(allocator: std.mem.Allocator, io: std.Io, path: []const u
         });
         return true;
     } else {
-        try write_script_diagnostic(stdout, path, source, &res);
+        try write_check_failure(stdout, allocator, files.source(), path, source, &res);
         if (options.kind) try stdout.print("kind: {s}\n", .{res.kind()});
         return false;
     }
@@ -274,6 +278,19 @@ fn write_diagnostic_text(out: anytype, bytes: []const u8) !void {
         start = i + 1;
     }
     if (start < bytes.len) try out.print("{s}", .{bytes[start..]});
+}
+
+/// Writes a check failure, naming the included file it is in when it is not the main script
+/// (P48-15, D-185): that file's path beside the main script, and an excerpt from it.
+fn write_check_failure(out: anytype, allocator: std.mem.Allocator, files: ?bespoke.compiler.FileSource, path: []const u8, source: []const u8, res: *const bespoke.compiler.CheckResult) !void {
+    const included = res.file();
+    if (included.len == 0) return write_script_diagnostic(out, path, source, res);
+    const shown = try std.fs.path.join(allocator, &.{ std.fs.path.dirname(path) orelse ".", included });
+    defer allocator.free(shown);
+    const fs = files orelse return write_script_diagnostic(out, shown, "", res);
+    const bytes = fs.read(fs.context, allocator, included) catch return write_script_diagnostic(out, shown, "", res);
+    defer allocator.free(bytes);
+    try write_script_diagnostic(out, shown, bytes, res);
 }
 
 fn write_script_diagnostic(out: anytype, path: []const u8, source: []const u8, res: *const bespoke.compiler.CheckResult) !void {
@@ -370,7 +387,7 @@ pub fn compile_file(
     var compiled = bespoke.compiler.compile_source_with(allocator, &world, &spatial, source, files.source()) catch |err| {
         const res = bespoke.compiler.check_source_with(allocator, source, files.source());
         if (!res.is_valid) {
-            try write_script_diagnostic(stdout, in_path, source, &res);
+            try write_check_failure(stdout, allocator, files.source(), in_path, source, &res);
         } else {
             try stdout.print("{s}: error: compilation failed ({s})\n", .{ in_path, @errorName(err) });
         }
@@ -472,7 +489,7 @@ fn run_bytes_with_presenter(
         compiled = bespoke.compiler.compile_source_with(allocator, &world, &spatial, data, files) catch |err| {
             const res = bespoke.compiler.check_source_with(allocator, data, files);
             if (!res.is_valid) {
-                try write_script_diagnostic(stdout, path, data, &res);
+                try write_check_failure(stdout, allocator, files, path, data, &res);
             } else {
                 try stdout.print("{s}: error: compilation failed ({s})\n", .{ path, @errorName(err) });
             }

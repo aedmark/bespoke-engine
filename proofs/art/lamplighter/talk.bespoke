@@ -1,0 +1,84 @@
+# The Lamplighter's Round: what Nell sees and hears when she looks at and talks to things
+# (P48-15). Included where these handlers stood, so their source order is unchanged (D-160).
+
+on cue LooksAt(Nell, Hobb):
+  say Nell: "Hobb the chandler. Forty years of candles and not one lit for himself."
+
+on cue LooksAt(Nell, Pike):
+  say Nell: "Constable Pike. He polishes his buttons twice a round."
+
+on cue LooksAt(Nell, Nell):
+  say Nell: "One can, one taper, two lamps, and the dark coming on."
+
+on cue LooksAt(Nell, ShopWindow):
+  say Nell: "Hobb's candles, row on row, every one of them unlit. He says it's good for trade."
+
+on cue LooksAt(Nell, ShopDoor):
+  say Nell: "The chandlery door, propped open while Hobb waits for custom."
+
+on cue Uses(Nell, ShopDoor):
+  say Nell: "Hobb's closing up. What I need is out here."
+
+on cue LooksAt(Nell, Archway):
+  say Nell: "The arch through to Market Steps."
+
+on cue LooksAt(Nell, Fountain):
+  say Nell: "The market fountain. Wishes in the bottom, mostly buttons."
+
+on cue LooksAt(Nell, MarketHall):
+  say Nell: "The hall lights its own lamps. The street's are mine."
+
+# Nell's things say what state they are in.
+on cue LooksAt(Nell, OilCan):
+  if CanFull(Nell):
+    say Nell: "My oil can, full to the brim. Enough for one lamp."
+  if not CanFull(Nell):
+    say Nell: "My oil can, empty. Hobb's cask will fill it."
+
+on cue LooksAt(Nell, Taper):
+  say Nell: "Hobb's taper, burning steady. It lights a wick, not an empty lamp."
+
+on cue LooksAt(Nell, Thimble):
+  say Nell: "Hobb's brass thimble, polished till it winks. Mrs Jessop would trade her nest for it."
+
+on cue LooksAt(Nell, OilCask):
+  say Nell: "Hobb's lamp oil. One fill of my can lights one lamp."
+
+on cue LooksAt(Nell, LaneLamp):
+  say Nell: "The Tallow Lane lamp. Its wick wants oil and a flame."
+
+on cue LooksAt(Nell, StepsLamp):
+  if Nesting(Jackdaw, StepsLamp):
+    say Nell: "There's a jackdaw in the lamp. She has lined her nest with brass buttons."
+  if not Nesting(Jackdaw, StepsLamp):
+    say Nell: "The lamp at the foot of the market steps, empty of birds at last."
+
+# One handler per cue, each answer chosen by `if` lines that cannot both hold. Guarded handlers
+# sharing a signature would also work (D-160); nesting keeps each cue's whole story in one place.
+# Where a branch changes a fact that a later branch tests, the later branch comes first.
+on cue TalksTo(Nell, Hobb):
+  if Carries(Nell, Taper):
+    if Heard(Nell, JessopTale):
+      if not Nesting(Jackdaw, StepsLamp):
+        say Hobb: "My thimble's gone to a jackdaw? Put it on Pike's account."
+      if Carries(Nell, Thimble):
+        say Hobb: "Mind that thimble. It's on loan, and so is my patience."
+      if Nesting(Jackdaw, StepsLamp):
+        if not Carries(Nell, Thimble):
+          remember Carries(Nell, Thimble)
+          say Hobb: "Mrs Jessop again? Here, a brass thimble, polished this morning. No jackdaw alive can resist it."
+    if not Heard(Nell, JessopTale):
+      say Hobb: "One fill, one lamp. The cask is by my door."
+  if not Carries(Nell, Taper):
+    remember Carries(Nell, Taper)
+    say Hobb: "Here's a taper. Fill your can at the cask, and mind you don't drip on my step."
+
+on cue TalksTo(Nell, Pike):
+  if RoundDone(Nell):
+    say Pike: "Every lamp burning, and not a button missing. A quiet night ahead."
+  if not RoundDone(Nell):
+    if not Nesting(Jackdaw, StepsLamp):
+      say Pike: "I walk my round when the lamps are lit, not before."
+    if Nesting(Jackdaw, StepsLamp):
+      remember Heard(Nell, JessopTale)
+      say Pike: "That's Mrs Jessop. Nests in the steps lamp every spring and steals my buttons. Only a shinier thing will shift her. Hobb deals in brass."

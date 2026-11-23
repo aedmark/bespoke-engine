@@ -30,6 +30,7 @@ pub fn compile_source(
 
 /// Reads the files a script names, such as `image X from "lamp.png"` (P46-04).
 pub const FileSource = parser.FileSource;
+pub const includes = @import("compiler/includes.zig");
 
 /// `compile_source` with the files a script may name; the command line passes one that reads
 /// beside the script, and every other caller passes null (P46-04, D-156).
@@ -45,7 +46,11 @@ pub fn compile_source_with(
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var lex = Lexer.init(alloc, source);
+    // Includes expand first, so the program reads as one text in source order (D-169).
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(alloc, source, files, &failure);
+
+    var lex = Lexer.init(alloc, expanded.text);
     defer lex.deinit();
 
     var parse = try Parser.init(alloc, &lex);
@@ -70,11 +75,18 @@ pub const check_message_capacity = 256;
 pub const CheckWarning = struct {
     line: u32,
     column: u32,
+    /// The included file the warning is in; empty for the main script.
+    file_buf: [128]u8 = undefined,
+    file_len: usize = 0,
     text: [check_message_capacity]u8 = undefined,
     len: usize = 0,
 
     pub fn message(self: *const CheckWarning) []const u8 {
         return self.text[0..self.len];
+    }
+
+    pub fn file(self: *const CheckWarning) []const u8 {
+        return self.file_buf[0..self.file_len];
     }
 };
 
@@ -82,6 +94,10 @@ pub const CheckResult = struct {
     is_valid: bool,
     line: u32 = 0,
     column: u32 = 0,
+    /// The included file the diagnostic is in, as its include line wrote it; empty for the
+    /// main script (P48-15, D-185).
+    file_buf: [128]u8 = undefined,
+    file_len: usize = 0,
     message_buf: [check_message_capacity]u8 = undefined,
     message_len: usize = 0,
     hint_buf: [Suggestions.max_len]u8 = undefined,
@@ -108,6 +124,19 @@ pub const CheckResult = struct {
     fn with_kind(self: CheckResult, err: anyerror) CheckResult {
         var res = self;
         res.kind_name = @errorName(err);
+        return res;
+    }
+
+    /// The file the diagnostic is in: empty for the main script, else an included file's path
+    /// from the main script's folder.
+    pub fn file(self: *const CheckResult) []const u8 {
+        return self.file_buf[0..self.file_len];
+    }
+
+    fn in_file(self: CheckResult, path: []const u8) CheckResult {
+        var res = self;
+        res.file_len = @min(path.len, res.file_buf.len);
+        @memcpy(res.file_buf[0..res.file_len], path[0..res.file_len]);
         return res;
     }
 
@@ -150,7 +179,9 @@ pub const ScriptPalette = struct { colours: []const image_mod.Colour, codes: []c
 /// Parses `source` far enough to read its palette; a script that does not parse returns the
 /// parse error, which `check_source` describes.
 pub fn script_palette(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) !ScriptPalette {
-    var lex = Lexer.init(arena, source);
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
     var parse = try Parser.init(arena, &lex);
     parse.files = files;
     const ast = try parse.parse_program();
@@ -173,16 +204,25 @@ pub fn check_source_against(allocator: std.mem.Allocator, source: []const u8, fi
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var lex = Lexer.init(alloc, source);
+    // Includes expand first (D-169); every position below is in the expanded text, and
+    // `placed` maps it back to its file and line (D-185).
+    var include_failure = includes.Failure{};
+    const expanded = includes.expand(alloc, source, files, &include_failure) catch |err| switch (err) {
+        error.IncludeFailed => return CheckResult.failure(include_failure.line, include_failure.column, include_failure.message).in_file(include_failure.file).with_kind(err),
+        error.OutOfMemory => return CheckResult.failure(1, 1, failure_message(err)).with_kind(err),
+    };
+    const text = expanded.text;
+
+    var lex = Lexer.init(alloc, text);
     defer lex.deinit();
 
-    var parse = Parser.init(alloc, &lex) catch |err| return lexer_failure(&lex, err);
+    var parse = Parser.init(alloc, &lex) catch |err| return placed(expanded, lexer_failure(&lex, err));
     parse.files = files;
 
     const ast = parse.parse_program() catch |err| {
         // `parse.diagnostic.message` points into `parse.diag_buf`; `failure` copies it out.
-        if (parse.diagnostic) |d| return CheckResult.failure(d.line, d.column, d.message).with_hint(parse.suggestion).with_kind(err);
-        return lexer_failure(&lex, err);
+        if (parse.diagnostic) |d| return placed(expanded, CheckResult.failure(d.line, d.column, d.message).with_hint(parse.suggestion).with_kind(err));
+        return placed(expanded, lexer_failure(&lex, err));
     };
 
     var dummy_world = World.init(alloc, 1024 * 1024) catch |err| return CheckResult.failure(1, 1, failure_message(err)).with_kind(err);
@@ -197,18 +237,23 @@ pub fn check_source_against(allocator: std.mem.Allocator, source: []const u8, fi
         var line = cg.error_line;
         var col = cg.error_column;
         if (line == 0) {
-            const pos = source_position(source, cg.error_context);
+            const pos = source_position(text, cg.error_context);
             line = pos[0];
             col = pos[1];
         }
         if (err == error.UnreachableCueHandler) {
-            // Name both handlers: the refused one by position, the one that covers it by line.
+            // Name both handlers: the refused one by position, the one that covers it by line,
+            // with its file when it is in another one.
             var buf: [check_message_capacity]u8 = undefined;
-            const earlier = source_position(source, cg.error_related)[0];
-            const text = std.fmt.bufPrint(&buf, "this handler can never run: the handler on line {d} has the same signature and no guard", .{earlier}) catch failure_message(err);
-            return CheckResult.failure(line, col, text).with_kind(err);
+            const earlier = expanded.locate(source_position(text, cg.error_related)[0]);
+            const here = expanded.locate(line);
+            const message_text = if (std.mem.eql(u8, earlier.file, here.file))
+                std.fmt.bufPrint(&buf, "this handler can never run: the handler on line {d} has the same signature and no guard", .{earlier.line}) catch failure_message(err)
+            else
+                std.fmt.bufPrint(&buf, "this handler can never run: the handler on line {d} of {s} has the same signature and no guard", .{ earlier.line, if (earlier.file.len > 0) earlier.file else "the main script" }) catch failure_message(err);
+            return placed(expanded, CheckResult.failure(line, col, message_text).with_kind(err));
         }
-        return CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion).with_kind(err);
+        return placed(expanded, CheckResult.failure(line, col, failure_message(err)).with_hint(cg.error_suggestion).with_kind(err));
     };
     defer compiled.deinit();
 
@@ -222,14 +267,25 @@ pub fn check_source_against(allocator: std.mem.Allocator, source: []const u8, fi
     };
     for (cg.warnings.items) |w| {
         if (result.warning_count == result.warnings.len) break;
-        const pos = source_position(source, w.context);
+        const pos = source_position(text, w.context);
+        const at = expanded.locate(pos[0]);
         var line = &result.warnings[result.warning_count];
-        line.* = .{ .line = pos[0], .column = pos[1] };
+        line.* = .{ .line = at.line, .column = pos[1] };
+        line.file_len = @min(at.file.len, line.file_buf.len);
+        @memcpy(line.file_buf[0..line.file_len], at.file[0..line.file_len]);
         line.len = @min(w.message.len, line.text.len);
         @memcpy(line.text[0..line.len], w.message[0..line.len]);
         result.warning_count += 1;
     }
     return result;
+}
+
+/// Moves a diagnostic from its line in the expanded text to the file and line it came from.
+fn placed(expanded: includes.Expanded, res: CheckResult) CheckResult {
+    const at = expanded.locate(res.line);
+    var moved = res;
+    moved.line = at.line;
+    return moved.in_file(at.file);
 }
 
 fn lexer_failure(lex: *const Lexer, err: anyerror) CheckResult {
@@ -1454,4 +1510,54 @@ test "P48-13: limits raise a ceiling up to its cap, hints may have six tiers, an
     try testing.expectEqual(@as(u8, 4), d.moderate_at);
     try testing.expectEqual(@as(u8, 3), d.drift_cap);
     try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
+}
+
+test "P48-15: an included program compiles in source order, and its errors name their file" {
+    const testing = std.testing;
+    const Files = struct {
+        fn read(context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+            _ = context;
+            if (std.mem.indexOf(u8, path, "..") != null) return error.PathOutsideScriptFolder;
+            if (std.mem.eql(u8, path, "guarded.bespoke")) return allocator.dupe(u8, "on cue Uses(Scout, Lamp) where Lit(Lamp):\n  remember Saw(Scout, Lamp)\n");
+            if (std.mem.eql(u8, path, "default.bespoke")) return allocator.dupe(u8, "on cue Uses(Scout, Lamp):\n  remember Lit(Lamp)\n");
+            if (std.mem.eql(u8, path, "typo.bespoke")) return allocator.dupe(u8, "\n\nremember Lit(lamp)\n");
+            return error.FileNotFound;
+        }
+    };
+    var dummy: u8 = 0;
+    const files = FileSource{ .context = &dummy, .read = Files.read };
+    const head = "entity Scout, Lamp\nrelation Lit(thing)\nrelation Saw(who, thing)\n";
+
+    // Guarded first, then the default: valid, and a repeated include is skipped.
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source_with(testing.allocator, &world, null, head ++ "include \"guarded.bespoke\"\ninclude \"default.bespoke\"\ninclude \"guarded.bespoke\"\n", files);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.cue_handler_chain.count());
+
+    // The default first makes the guarded handler unreachable; both lines are named by file.
+    const order = check_source_with(testing.allocator, head ++ "include \"default.bespoke\"\ninclude \"guarded.bespoke\"\n", files);
+    try testing.expectEqualStrings("UnreachableCueHandler", order.kind());
+    try testing.expectEqualStrings("guarded.bespoke", order.file());
+    try testing.expectEqual(@as(u32, 1), order.line);
+    try testing.expectEqualStrings("this handler can never run: the handler on line 1 of default.bespoke has the same signature and no guard", order.message());
+
+    // An error inside an included file has that file's line; the main script's lines after an
+    // include keep their own numbers.
+    const typo = check_source_with(testing.allocator, head ++ "include \"typo.bespoke\"\n", files);
+    try testing.expectEqualStrings("typo.bespoke", typo.file());
+    try testing.expectEqual(@as(u32, 3), typo.line);
+    try testing.expectEqual(@as(u32, 14), typo.column);
+    const after = check_source_with(testing.allocator, head ++ "include \"guarded.bespoke\"\nremember Lit(lamp)\n", files);
+    try testing.expectEqualStrings("", after.file());
+    try testing.expectEqual(@as(u32, 5), after.line);
+
+    // A missing file and an escaping path are refused at the include line.
+    const missing = check_source_with(testing.allocator, head ++ "include \"gone.bespoke\"\n", files);
+    try testing.expectEqualStrings("include cannot read \"gone.bespoke\" (FileNotFound)", missing.message());
+    try testing.expectEqual(@as(u32, 4), missing.line);
+    const escaping = check_source_with(testing.allocator, "include \"../up.bespoke\"\n", files);
+    try testing.expectEqualStrings("include cannot read \"../up.bespoke\" (PathOutsideScriptFolder)", escaping.message());
+    // Without a file source, as in the browser, an include is refused like a PNG.
+    try testing.expectEqualStrings("IncludeFailed", check_source(testing.allocator, "include \"guarded.bespoke\"\n").kind());
 }

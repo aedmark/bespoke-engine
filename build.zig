@@ -177,6 +177,10 @@ pub fn build(b: *std.Build) void {
     for ([_][]const u8{ "tallow_lane", "market_steps", "nell", "hobb", "pike", "cask", "lamp" }) |art_name| {
         lamplighter_pack.addFileInput(b.path(b.fmt("proofs/art/lamplighter/{s}.png", .{art_name})));
     }
+    // The script includes its art and talk (P48-15, D-169); a change to either rebuilds it.
+    for ([_][]const u8{ "art", "talk" }) |part| {
+        lamplighter_pack.addFileInput(b.path(b.fmt("proofs/art/lamplighter/{s}.bespoke", .{part})));
+    }
 
     const proofs_exe = b.addExecutable(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle

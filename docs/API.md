@@ -16,7 +16,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 
 | Namespace | Supported surface |
 | --- | --- |
-| `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` / `kind` methods (`kind`, P48-18) and `warnings` / `warning_count` fields, `CheckWarning`, `check_source_against` (P48-10), `Diagnostic`, `CompiledProgram`, `CompiledProgram.deinit`, and `CompiledProgram.identity` (P48-08) |
+| `compiler` | `compile_source`, `compile_source_with`, `check_source`, `check_source_with`, `FileSource`, `script_palette`, `ScriptPalette` (P46-04), `CheckResult` and its `message` / `diagnostic` / `kind` / `file` methods (`kind`, P48-18; `file`, the included file a diagnostic is in, P48-15) and `warnings` / `warning_count` fields, `CheckWarning` and its `file` method, `check_source_against` (P48-10), `includes` with `expand`, `Expanded`, `Segment`, `Place`, and `Failure` (P48-15, D-185), `Diagnostic`, `CompiledProgram`, `CompiledProgram.deinit`, and `CompiledProgram.identity` (P48-08) |
 | `package` | `PACKAGE_MAGIC`, `PACKAGE_VERSION`, `MIN_PACKAGE_VERSION`, `save_package`, `load_package`, `save_package_file`, `load_package_file`, `version_from_bytes`, `format_unsupported_version` |
 | `reserved` | `Release`, `LANGUAGE`, `AuthorRelation`, `AUTHOR_FACING`, `newer_than_language`, `engine_may_use`, `is_bookkeeping` (P48-10, D-180) |
 | `phrase` | `Key`, `Entry`, `ENTRIES`, `Arg`, `Error`, `find`, `entry`, `text`, `validate`, `render`, `fill` (P48-09, D-179) |

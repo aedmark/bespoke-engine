@@ -1,0 +1,5 @@
+# Include paths stay inside the main script's folder.
+# pins: D-169
+# expect error: IncludeFailed 5:9
+
+include "../d160-ordered-handlers/parts.bespoke"

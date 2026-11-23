@@ -112,6 +112,24 @@ when Hero arrives at Door:
 
 `draft Name(C, D, E, F)` declares exactly four note names from C through B. `reverse OtherName` optionally names the reversed sequence. Draft names and note sequences must be unambiguous. `weave Name on Target` is valid only in an executable body and the draft may be declared later in the file.
 
+## Includes (P48-15, D-169, D-185)
+
+A game may span files. The main script names the others with `include`, and each is read as if pasted at its line:
+
+```bespoke
+scene: Tallow Lane
+cast: Nell, Hobb
+include "art.bespoke"
+include "acts/one.bespoke"
+```
+
+- An `include` line starts at column 0, between declarations, with one quoted path; an indented one is a compile error.
+- Every path, in the main script and in every file it includes, is relative to the main script's folder, uses `/`, and has no `..` part, the rule PNG paths follow (D-156). So are the PNG paths inside included files.
+- An included file may include others. A file already included is skipped, so including a common file twice, or two files that include each other, reads each once.
+- Source order is the order after expansion: a handler in an included file stands where its include line does (D-160).
+- A diagnostic names the file it is in and that file's line, such as `acts/one.bespoke:3:14: error: ...`.
+- Only a compile from the command line reads includes. A package holds the expanded program, so a browser page or a host loading it never reads the other files; the browser compiles no script with an include.
+
 ## Key Grammar Notes
 1. **`remember` / `forget`:** Declarative database mutations. `remember ... for N ticks` automatically attaches an expiration tick to the relation row, handling temporary buffs and debuffs natively.
 2. **`interrupt ... with`:** Pauses an active routine (like `Patrol`), executes the interruption behavior, and automatically restores the instruction pointer once the condition resolves.

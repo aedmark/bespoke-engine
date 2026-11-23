@@ -1,0 +1,49 @@
+# The Lamplighter's Round: where each thing is on the art and how it is drawn (P48-15). The
+# main script includes this file; its PNG paths, like every path, are from the main script's
+# folder (D-169).
+
+# Where each prop is on the art, in art pixels (x y width height): a click anywhere inside acts
+# on it. The window, door, archway, fountain, and hall are painted on the backdrops; the lamps
+# are sprites whose looks the script picks, drawn inside their areas.
+area ShopWindow: 32 62 50 30
+area ShopDoor: 96 62 24 42
+area Archway: 270 50 48 54
+area LaneLamp: 195 71 12 36
+area Fountain: 120 78 56 32
+area MarketHall: 252 36 48 20
+area StepsLamp: 240 71 12 36
+
+image TallowLane from "tallow_lane.png"
+image MarketSteps from "market_steps.png"
+image NellSheet from "nell.png" frames 12x24
+image HobbSheet from "hobb.png" frames 12x24
+image PikeSheet from "pike.png" frames 12x24
+image CaskArt from "cask.png"
+# Dark, lit, and dark with Mrs Jessop nesting: three looks on one sheet, which the script picks
+# with `Looks` facts as the round goes (D-181). Each lamp draws inside its area.
+image LampSheet from "lamp.png" frames 12x36
+
+look LampDark: LampSheet
+  idle: 0
+look LampLit: LampSheet
+  idle: 1
+look LampNest: LampSheet
+  idle: 2
+
+sprite LaneLamp: LampDark
+sprite StepsLamp: LampDark
+
+sprite Nell: NellSheet
+  idle: 0 for 40, 1 for 20
+  walk right: 2 for 8, 3 for 8
+  walk left: 4 for 8, 5 for 8
+
+sprite Hobb: HobbSheet
+  idle: 0 for 50, 1 for 30
+
+sprite Pike: PikeSheet
+  idle: 0 for 40, 1 for 20
+  walk right: 2 for 8, 3 for 8
+  walk left: 4 for 8, 5 for 8
+
+sprite OilCask: CaskArt
