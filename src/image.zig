@@ -156,19 +156,49 @@ pub const Sprite = struct {
     /// of shown frames; it never enters the world, so a replay draws the same frames when the
     /// host replays the same clock (D-152).
     pub fn frame_at(self: Sprite, anim: Anim, clock: u64) u16 {
-        var steps = self.animations[@intFromEnum(anim)];
-        if (steps.len == 0) steps = self.animations[@intFromEnum(Anim.idle)];
-        if (steps.len == 0) return 0;
-        var total: u64 = 0;
-        for (steps) |step| total += step.duration;
-        var t = clock % total;
-        for (steps) |step| {
-            if (t < step.duration) return step.frame;
-            t -= step.duration;
-        }
-        unreachable;
+        return frame_in(self.animations, anim, clock);
     }
 };
+
+/// The frame `animations` show for `anim` at display frame `clock`: the walk falls back to the
+/// idle, and no idle shows frame 0. Shared by sprites and looks.
+pub fn frame_in(animations: [ANIM_COUNT][]const Step, anim: Anim, clock: u64) u16 {
+    var steps = animations[@intFromEnum(anim)];
+    if (steps.len == 0) steps = animations[@intFromEnum(Anim.idle)];
+    if (steps.len == 0) return 0;
+    var total: u64 = 0;
+    for (steps) |step| total += step.duration;
+    var t = clock % total;
+    for (steps) |step| {
+        if (t < step.duration) return step.frame;
+        t -= step.duration;
+    }
+    unreachable;
+}
+
+/// A named way of showing an image with its own animations (P48-11, D-181), so several looks
+/// can share one sheet. A `Looks(Thing, Look)` fact picks one for a thing.
+pub const Look = struct {
+    name: []const u8,
+    image: u16,
+    animations: [ANIM_COUNT][]const Step = @splat(@as([]const Step, &.{})),
+
+    pub fn frame_at(self: Look, anim: Anim, clock: u64) u16 {
+        return frame_in(self.animations, anim, clock);
+    }
+};
+
+/// A part drawn with its host at an offset in art pixels from the host's anchor (P48-11,
+/// D-181); it follows the host's walking and heading and is clicked as the host.
+pub const Part = struct {
+    entity: EntityId,
+    host: EntityId,
+    dx: i16,
+    dy: i16,
+};
+
+/// The furthest a part may sit from its host's anchor, in art pixels.
+pub const MAX_PART_OFFSET: i16 = ART_WIDTH;
 
 /// A game's palette, images, and what they are attached to. Empty for a game drawn by code.
 pub const Art = struct {
@@ -177,9 +207,21 @@ pub const Art = struct {
     backdrops: []const Backdrop = &.{},
     sprites: []const Sprite = &.{},
     areas: []const Area = &.{},
+    looks: []const Look = &.{},
+    parts: []const Part = &.{},
 
     pub fn is_empty(self: Art) bool {
-        return self.palette.len == 0 and self.images.len == 0 and self.areas.len == 0;
+        return self.palette.len == 0 and self.images.len == 0 and self.areas.len == 0 and self.looks.len == 0 and self.parts.len == 0;
+    }
+
+    pub fn look_named(self: *const Art, name: []const u8) ?*const Look {
+        for (self.looks) |*look| if (std.mem.eql(u8, look.name, name)) return look;
+        return null;
+    }
+
+    pub fn part_for(self: *const Art, entity: EntityId) ?Part {
+        for (self.parts) |part| if (part.entity == entity) return part;
+        return null;
     }
 
     pub fn area_for(self: *const Art, entity: EntityId) ?Area {
@@ -229,6 +271,24 @@ pub const Art = struct {
             }
             for (self.sprites[0..i]) |prior| if (prior.entity == sprite.entity) return Error.InvalidImageBinding;
         }
+        if (self.looks.len > MAX_BINDINGS or self.parts.len > MAX_BINDINGS) return Error.InvalidImageBinding;
+        for (self.looks, 0..) |look, i| {
+            validate_name(look.name) catch return Error.InvalidImageBinding;
+            if (look.image >= self.images.len) return Error.InvalidImageBinding;
+            const frames = self.images[look.image].frame_count();
+            for (look.animations) |steps| {
+                if (steps.len > MAX_STEPS) return Error.InvalidImageBinding;
+                for (steps) |step| {
+                    if (step.frame >= frames or step.duration == 0 or step.duration > MAX_DURATION) return Error.InvalidImageBinding;
+                }
+            }
+            for (self.looks[0..i]) |prior| if (std.mem.eql(u8, prior.name, look.name)) return Error.InvalidImageBinding;
+        }
+        for (self.parts, 0..) |part, i| {
+            if (part.entity == .none or part.host == .none or part.entity == part.host) return Error.InvalidImageBinding;
+            if (@abs(part.dx) > MAX_PART_OFFSET or @abs(part.dy) > MAX_PART_OFFSET) return Error.InvalidImageBinding;
+            for (self.parts[0..i]) |prior| if (prior.entity == part.entity) return Error.InvalidImageBinding;
+        }
         if (self.areas.len > MAX_BINDINGS) return Error.InvalidImageBinding;
         for (self.areas, 0..) |a, i| {
             if (!a.valid()) return Error.InvalidImageBinding;
@@ -254,6 +314,15 @@ pub const Art = struct {
         }
         art.backdrops = try allocator.dupe(Backdrop, source.backdrops);
         art.areas = try allocator.dupe(Area, source.areas);
+        art.parts = try allocator.dupe(Part, source.parts);
+        const looks = try allocator.alloc(Look, source.looks.len);
+        for (looks) |*look| look.* = .{ .name = &.{}, .image = 0 };
+        art.looks = looks;
+        for (source.looks, looks) |look, *copy| {
+            copy.image = look.image;
+            copy.name = try allocator.dupe(u8, look.name);
+            for (look.animations, &copy.animations) |steps, *own| own.* = try allocator.dupe(Step, steps);
+        }
         const sprites = try allocator.alloc(Sprite, source.sprites.len);
         for (sprites) |*sprite| sprite.* = .{ .entity = .none, .image = 0 };
         art.sprites = sprites;
@@ -271,6 +340,12 @@ pub const Art = struct {
         allocator.free(self.palette);
         allocator.free(self.backdrops);
         allocator.free(self.areas);
+        allocator.free(self.parts);
+        for (self.looks) |look| {
+            allocator.free(look.name);
+            for (look.animations) |steps| allocator.free(steps);
+        }
+        allocator.free(self.looks);
         for (self.sprites) |sprite| for (sprite.animations) |steps| allocator.free(steps);
         allocator.free(self.sprites);
         self.* = .{};

@@ -119,6 +119,41 @@ pub const RenderInventoryItem = struct {
 
 /// A party member in a multi-protagonist scenario (P21-01, D-025).
 pub const MAX_PARTY_MEMBERS = 4;
+/// `Looks` facts copied into each frame (P48-11); a scene with more draws the rest as sprites.
+pub const MAX_FRAME_LOOKS = 64;
+
+pub const RenderLook = struct {
+    entity: EntityId,
+    name: [48]u8 = undefined,
+    len: u8 = 0,
+};
+
+/// The look `entity` shows in `frame`, by name, or null (D-181).
+pub fn look_of(frame: *const RenderFrame, entity: EntityId) ?[]const u8 {
+    for (frame.looks[0..frame.look_count]) |*look| {
+        if (look.entity == entity) return look.name[0..look.len];
+    }
+    return null;
+}
+
+/// Fills `out` with the World's `Looks(Thing, Look)` facts (D-181). Returns the count.
+pub fn capture_looks(world: *const World, out: []RenderLook) usize {
+    const relation = world.lookup_relation("Looks") orelse return 0;
+    var count: usize = 0;
+    const slice = world.facts.slice();
+    for (0..world.facts.len) |i| {
+        if (count == out.len) break;
+        if (slice.items(.relation)[i] != relation) continue;
+        const name = world.get_entity_name(EntityId.from_int(slice.items(.object_or_value)[i])) orelse continue;
+        if (name.len > out[count].name.len) continue;
+        out[count] = .{ .entity = slice.items(.subject)[i] };
+        @memcpy(out[count].name[0..name.len], name);
+        out[count].len = @intCast(name.len);
+        count += 1;
+    }
+    return count;
+}
+
 /// Facts copied into each frame for the inspectors (D-058; was 32).
 pub const MAX_DEBUG_FACTS = 128;
 
@@ -393,6 +428,10 @@ pub const RenderFrame = struct {
     dialogue: RenderDialogue = .{},
     debug_facts: [MAX_DEBUG_FACTS]RenderDebugFact,
     debug_fact_count: usize,
+    /// Each thing's `Looks` fact this frame (P48-11, D-181), so the renderer draws the look a
+    /// script picked; a thing with none shows its sprite.
+    looks: [MAX_FRAME_LOOKS]RenderLook = undefined,
+    look_count: usize = 0,
     debug_fibers: [8]RenderDebugFiber,
     debug_fiber_count: usize,
     current_scene: [32]u8 = undefined,
@@ -879,6 +918,7 @@ pub const DisplayBridge = struct {
         // 7. Capture relational facts for the inspectors (P9-01, D-011, D-058): live facts first,
         // then the ones that expired this tick, up to MAX_DEBUG_FACTS.
         self.back_buffer.debug_fact_count = capture_debug_facts(world, &self.back_buffer.debug_facts);
+        self.back_buffer.look_count = capture_looks(world, &self.back_buffer.looks);
 
         // 8. Capture active fibers for debug inspector (P9-01, D-011)
         var fib_count: usize = 0;

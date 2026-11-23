@@ -1,0 +1,26 @@
+# Looks holds one look per thing: a new Looks fact replaces the last.
+# pins: D-181; D-165
+# ticks: 2
+# expect fact: Looks(Bell, BellRung)
+# expect no fact: Looks(Bell, BellQuiet)
+
+scene: Shop
+cast: Clerk
+props: Bell
+marks: Till
+palette:
+  "." transparent
+  "r" 200 40 40
+image BellSheet frames 2x2:
+  "r.r."
+  "rr.r"
+look BellQuiet: BellSheet
+  idle: 0
+look BellRung: BellSheet
+  idle: 1
+sprite Bell: BellQuiet
+remember Looks(Bell, BellQuiet)
+
+routine Ring(Clerk):
+  wait 1 ticks
+  remember Looks(Bell, BellRung)

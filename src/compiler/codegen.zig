@@ -407,6 +407,9 @@ pub fn program_fingerprint(code: []const u8, world: *const World) u64 {
     return if (value == 0) 1 else value;
 }
 
+/// The reserved property that picks a thing's look (P48-11, D-181).
+pub const LOOKS_RELATION = "Looks";
+
 /// A lowercase first letter marks a variable wherever a name of a thing can stand (D-037,
 /// D-161). `true` and `false` are values, not names.
 pub fn is_variable_name(name: []const u8) bool {
@@ -478,6 +481,8 @@ pub const Codegen = struct {
     /// A second source name the diagnostic cites, such as the earlier handler that makes a
     /// later one unreachable (D-160). Mapped to a line by the checker, like `error_context`.
     error_related: []const u8 = "",
+    /// Looks named in `remember Looks(...)` lines, checked against the declared looks (D-181).
+    look_uses: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Things worth an author's attention that do not stop the compile (P48-10, D-180). Each
     /// names the source text it is about, mapped to a line by the checker.
     warnings: std.ArrayListUnmanaged(Warning) = .empty,
@@ -604,6 +609,9 @@ pub const Codegen = struct {
     }
 
     pub fn compile(mut_self: *Codegen, ast: *const AST) !CompiledProgram {
+        // The look names borrow AST text and are checked before compile returns, so the list
+        // lives only for this call.
+        defer mut_self.look_uses.deinit(mut_self.allocator);
         // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
             try mut_self.check_thing_name(name);
@@ -1053,6 +1061,19 @@ pub const Codegen = struct {
         }
         for (ast.phrases.items) |decl| try mut_self.world.set_phrase(decl.key, decl.text);
 
+        for (mut_self.look_uses.items) |name| {
+            const known = for (ast.art.looks) |look| {
+                if (std.mem.eql(u8, look.name, name)) break true;
+            } else false;
+            if (!known) {
+                var hints = Suggestions{};
+                for (ast.art.looks) |look| hints.consider(name, look.name);
+                mut_self.error_context = name;
+                mut_self.error_suggestion = hints.result();
+                return error.UnknownLook;
+            }
+        }
+
         // Art last: nothing after it can fail, so the owned copy never needs an errdefer here
         // (P46-03, D-155). Bindings name their scene or entity by text; interning finds the
         // entity the scene, cast, or props line already made.
@@ -1106,12 +1127,20 @@ pub const Codegen = struct {
         const areas = try self.allocator.alloc(image_mod.Area, decl.areas.len);
         defer self.allocator.free(areas);
         for (decl.areas, areas) |a, *out| out.* = .{ .entity = try self.world.intern_entity(a.target), .x = a.x, .y = a.y, .w = a.w, .h = a.h };
+        const looks = try self.allocator.alloc(image_mod.Look, decl.looks.len);
+        defer self.allocator.free(looks);
+        for (decl.looks, looks) |l, *out| out.* = .{ .name = l.name, .image = l.image, .animations = l.animations };
+        const parts = try self.allocator.alloc(image_mod.Part, decl.parts.len);
+        defer self.allocator.free(parts);
+        for (decl.parts, parts) |pt, *out| out.* = .{ .entity = try self.world.intern_entity(pt.part), .host = try self.world.intern_entity(pt.host), .dx = pt.dx, .dy = pt.dy };
         return image_mod.Art.dupe(self.allocator, .{
             .palette = decl.palette,
             .images = decl.images,
             .backdrops = backdrops,
             .sprites = sprites,
             .areas = areas,
+            .looks = looks,
+            .parts = parts,
         }) catch |err| switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             // The parser checked everything `validate` checks, so this is a compiler fault.
@@ -1776,6 +1805,9 @@ pub const Codegen = struct {
             .remember => |rem| {
                 const subj = try self.entity_arg(rem.args[0]);
                 const rel = try self.resolve_relation(rem.relation);
+                // A look named outright must exist; checked once the art is read (D-181).
+                if (std.mem.eql(u8, rem.relation, LOOKS_RELATION) and rem.args.len > 1 and self.local_index(rem.args[1]) == null)
+                    try self.look_uses.append(self.allocator, rem.args[1]);
                 if (rem.args.len > 1) try self.note_object_kind(rem.relation, rem.args[1]);
                 const obj_local = if (rem.args.len > 1) self.local_index(rem.args[1]) else null;
                 const obj = if (obj_local == null) try self.fact_object(rem.relation, rem.args) else 0;
@@ -2160,6 +2192,8 @@ pub const Codegen = struct {
     }
 
     fn resolve_relation(self: *Codegen, name: []const u8) !RelationKind {
+        // `Looks(Thing, Look)` is a reserved property: a thing shows one look (D-181).
+        if (std.mem.eql(u8, name, LOOKS_RELATION)) return try self.world.intern_relation_kind(name, .property, .entity);
         return try self.world.intern_relation(name, .set);
     }
 

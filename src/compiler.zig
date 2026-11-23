@@ -260,6 +260,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.VariableNotAllowedHere => "a cue parameter cannot be used in this statement",
         error.WhenBodyVariable => "a when rule's variables cannot be used in its body yet; name the entity",
         error.LowercaseName => "names of things start with a capital letter",
+        error.UnknownLook => "this names a look the script does not declare with 'look'",
         error.NameForUnknownThing => "this gives a name to something the script never mentions",
         error.MixedRelationObject => "this relation's object is an entity in one place and a number in another; each relation holds one kind",
         error.MissingCueArguments => "a cue handler's arguments were read outside the handler",
@@ -1221,6 +1222,60 @@ test "P48-10: engine bookkeeping cannot be named in a script, and a plain name i
     try testing.expect(world.lookup_relation("#DialogueOpen") == null);
 }
 
+test "P48-11: looks and parts compile, and their mistakes are named" {
+    const testing = std.testing;
+    const base =
+        \\scene: Shop
+        \\cast: Clerk
+        \\props: Bell
+        \\marks: Till
+        \\palette:
+        \\  "." transparent
+        \\  "r" 200 40 40
+        \\image BellSheet frames 2x2:
+        \\  "r.r."
+        \\  "rr.r"
+        \\
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, base ++
+        \\look BellQuiet: BellSheet
+        \\  idle: 0
+        \\look BellRinging: BellSheet
+        \\  idle: 0 for 4, 1 for 4
+        \\sprite Bell: BellQuiet
+        \\sprite Clapper: BellSheet
+        \\part Clapper of Bell at 0 -2
+        \\remember Looks(Bell, BellRinging)
+    );
+    defer compiled.deinit();
+    const a = compiled.art;
+    try testing.expectEqual(@as(usize, 2), a.looks.len);
+    try testing.expectEqual(@as(u16, 1), a.look_named("BellRinging").?.frame_at(.idle, 5));
+    try testing.expectEqual(@as(i16, -2), a.part_for(world.lookup_entity("Clapper").?).?.dy);
+    try testing.expectEqual(world.lookup_entity("Bell").?, a.part_for(world.lookup_entity("Clapper").?).?.host);
+    try testing.expectEqual(world_mod.RelationType.property, world.get_relation_meta(world.lookup_relation("Looks").?).?.rel_type);
+
+    const cases = [_]struct { tail: []const u8, kind: []const u8, line: u32, column: u32, help: ?[]const u8 = null }{
+        .{ .tail = "look BellQuiet: BellSheet\nremember Looks(Bell, BellQiet)\n", .kind = "UnknownLook", .line = 12, .column = 22, .help = "BellQuiet" },
+        .{ .tail = "look BellSheet: BellSheet\n", .kind = "UnexpectedToken", .line = 11, .column = 6 },
+        .{ .tail = "look BellQuiet: BellSheet\nsprite Bell: BellQuiet\n  idle: 1\n", .kind = "UnexpectedToken", .line = 13, .column = 9 },
+        .{ .tail = "part Clapper of Nobody at 0 0\n", .kind = "UnexpectedToken", .line = 11, .column = 6 },
+        .{ .tail = "part Bell of Bell at 0 0\n", .kind = "UnexpectedToken", .line = 11, .column = 6 },
+    };
+    for (cases) |case| {
+        var buf: [512]u8 = undefined;
+        const source = try std.fmt.bufPrint(&buf, "{s}{s}", .{ base, case.tail });
+        const res = check_source(testing.allocator, source);
+        try testing.expect(!res.is_valid);
+        try testing.expectEqualStrings(case.kind, res.kind());
+        try testing.expectEqual(case.line, res.diagnostic().?.line);
+        try testing.expectEqual(case.column, res.diagnostic().?.column);
+        if (case.help) |help| try testing.expectEqualStrings(help, res.suggestion() orelse "");
+    }
+}
+
 const ART_BASE =
     \\scene: Shop
     \\cast: Clerk
@@ -1289,7 +1344,7 @@ test "P46-03: art mistakes are reported on their own line" {
     const cases = [_]Case{
         .{ .source = ART_BASE ++ "sprite Bell: BelSheet", .message = "sprite 'Bell' names image 'BelSheet', which is not declared", .line = 14, .hint = "BellSheet" },
         .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  idle: 0, 2", .message = "image 'BellSheet' has 2 frame(s), numbered from 0; frame 2 does not exist", .line = 15 },
-        .{ .source = ART_BASE ++ "sprite Bel: BellSheet", .message = "sprite 'Bel' is for a person or prop no scene declares in 'cast:' or 'props:'", .line = 14, .hint = "Bell" },
+        .{ .source = ART_BASE ++ "sprite Bel: BellSheet", .message = "sprite 'Bel' is for a person or prop no scene declares in 'cast:' or 'props:', and no 'part' line names it", .line = 14, .hint = "Bell" },
         .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  idle: 0 for 0", .message = "sprite 'Bell' shows a frame for 0 display frames; use 1 to 600", .line = 15 },
         .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  walk sideways: 0", .message = "sprite 'Bell' walks up, down, left, or right, not 'sideways'", .line = 15 },
         .{ .source = ART_BASE ++ "sprite Bell: BellSheet\n  idle: 0\n  idle: 1", .message = "sprite 'Bell' declares the 'idle' animation twice", .line = 16 },

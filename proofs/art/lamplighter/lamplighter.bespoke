@@ -22,7 +22,7 @@ backdrop: MarketSteps
 
 # Where each prop is on the art, in art pixels (x y width height): a click anywhere inside acts
 # on it. The window, door, archway, fountain, and hall are painted on the backdrops; the lamps
-# are drawn inside their areas by the proof's theme.
+# are sprites whose looks the script picks, drawn inside their areas.
 area ShopWindow: 32 62 50 30
 area ShopDoor: 96 62 24 42
 area Archway: 270 50 48 54
@@ -37,8 +37,19 @@ image NellSheet from "nell.png" frames 12x24
 image HobbSheet from "hobb.png" frames 12x24
 image PikeSheet from "pike.png" frames 12x24
 image CaskArt from "cask.png"
-# Dark, lit, and dark with Mrs Jessop nesting. The proof's theme picks the frame from the facts.
+# Dark, lit, and dark with Mrs Jessop nesting: three looks on one sheet, which the script picks
+# with `Looks` facts as the round goes (D-181). Each lamp draws inside its area.
 image LampSheet from "lamp.png" frames 12x36
+
+look LampDark: LampSheet
+  idle: 0
+look LampLit: LampSheet
+  idle: 1
+look LampNest: LampSheet
+  idle: 2
+
+sprite LaneLamp: LampDark
+sprite StepsLamp: LampDark
 
 sprite Nell: NellSheet
   idle: 0 for 40, 1 for 20
@@ -64,6 +75,7 @@ relation RoundDone(who)
 entity OilCan, Taper, Thimble, Jackdaw, JessopTale
 
 remember Nesting(Jackdaw, StepsLamp)
+remember Looks(StepsLamp, LampNest)
 remember Carries(Nell, OilCan)
 
 # The beginning: Hobb sees the clock before Nell does.
@@ -176,6 +188,7 @@ on cue Uses(Nell, LaneLamp):
         say Nell: "Dry. The can needs filling at the cask."
       if CanFull(Nell):
         remember Lit(LaneLamp)
+        remember Looks(LaneLamp, LampLit)
         forget CanFull(Nell)
         say Nell: "Oil, wick, flame. Tallow Lane is lit, and my can is empty."
 
@@ -191,6 +204,7 @@ on cue Uses(Nell, StepsLamp):
           say Nell: "Dry. Back to the cask on Tallow Lane."
         if CanFull(Nell):
           remember Lit(StepsLamp)
+          remember Looks(StepsLamp, LampLit)
           forget CanFull(Nell)
           say Nell: "And the market steps, with the last of my oil. That's the round."
     if Nesting(Jackdaw, StepsLamp):
@@ -199,6 +213,7 @@ on cue Uses(Nell, StepsLamp):
       if Carries(Nell, Thimble):
         forget Carries(Nell, Thimble)
         forget Nesting(Jackdaw, StepsLamp)
+        remember Looks(StepsLamp, LampDark)
         say Nell: "A brass thimble for your trouble, Mrs Jessop. She snatches it and is gone over the rooftops."
 
 # The end: both lamps burn before dark.

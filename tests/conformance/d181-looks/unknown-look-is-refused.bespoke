@@ -1,0 +1,17 @@
+# A Looks fact names a look the script declares.
+# pins: D-181; D-165
+# expect error: UnknownLook 17:22
+
+scene: Shop
+cast: Clerk
+props: Bell
+marks: Till
+palette:
+  "." transparent
+  "r" 200 40 40
+image BellSheet frames 2x2:
+  "r.r."
+  "rr.r"
+look BellQuiet: BellSheet
+sprite Bell: BellQuiet
+remember Looks(Bell, BellQiet)

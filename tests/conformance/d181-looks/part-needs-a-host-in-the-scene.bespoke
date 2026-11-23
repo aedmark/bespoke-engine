@@ -1,0 +1,15 @@
+# A part is attached to a thing the scene declares.
+# pins: D-181
+# expect error: UnexpectedToken 15:6
+
+scene: Shop
+cast: Clerk
+props: Bell
+marks: Till
+palette:
+  "." transparent
+  "r" 200 40 40
+image BellSheet frames 2x2:
+  "r.r."
+  "rr.r"
+part Clerk of Nobody at 0 0

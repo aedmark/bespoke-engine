@@ -378,6 +378,60 @@ pub fn sprite_box(art: ?*const image_mod.Art, entity: EntityId, pt: Point) ?Rect
     return .{ .x = pt.x - @divTrunc(w, 2), .y = pt.y - h, .w = w, .h = h };
 }
 
+/// What a thing shows (P48-11, D-181): the look its `Looks` fact names, else its sprite.
+pub const Shown = struct {
+    image: u16,
+    animations: [image_mod.ANIM_COUNT][]const image_mod.Step,
+
+    pub fn frame_at(self: Shown, anim: image_mod.Anim, clock: u64) u16 {
+        return image_mod.frame_in(self.animations, anim, clock);
+    }
+};
+
+pub fn shown_for(art: ?*const image_mod.Art, frame: *const RenderFrame, entity: EntityId) ?Shown {
+    const a = art orelse return null;
+    if (display_mod.look_of(frame, entity)) |name| {
+        if (a.look_named(name)) |look| return .{ .image = look.image, .animations = look.animations };
+    }
+    const sprite = a.sprite_for(entity) orelse return null;
+    return .{ .image = sprite.image, .animations = sprite.animations };
+}
+
+/// Where a part of `host` hangs, and the box its sprite takes (D-181): its frame's bottom edge
+/// centred on the host's drawn bottom centre moved by the part's offset in art pixels.
+pub fn part_box(art: *const image_mod.Art, part: image_mod.Part, image: u16, host_bottom: Point) Rect {
+    const img = art.images[image];
+    const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
+    const h: i32 = @as(i32, img.frame_height) * image_mod.SCALE;
+    const x = host_bottom.x + @as(i32, part.dx) * image_mod.SCALE;
+    const y = host_bottom.y + @as(i32, part.dy) * image_mod.SCALE;
+    return .{ .x = x - @divTrunc(w, 2), .y = y - h, .w = w, .h = h };
+}
+
+/// The bottom centre of a thing as drawn: its sprite box's when it has one, else its spot.
+pub fn drawn_bottom(art: ?*const image_mod.Art, entity: EntityId, pt: Point) Point {
+    if (sprite_box(art, entity, pt)) |box| return .{ .x = box.x + @divTrunc(box.w, 2), .y = box.y + box.h };
+    return pt;
+}
+
+/// Whether `entity` is attached to a host. A part is drawn on its host and clicked as it
+/// (D-181), so it is neither drawn nor hit on its own spot.
+pub fn is_part(art: ?*const image_mod.Art, entity: EntityId) bool {
+    const a = art orelse return false;
+    return a.part_for(entity) != null;
+}
+
+/// Whether a click at (x, y) lands on one of `host`'s parts, drawn from their sprites.
+fn hits_part(art: ?*const image_mod.Art, host: EntityId, pt: Point, x: i32, y: i32) bool {
+    const a = art orelse return false;
+    for (a.parts) |part| {
+        if (part.host != host) continue;
+        const sprite = a.sprite_for(part.entity) orelse continue;
+        if (part_box(a, part, sprite.image, drawn_bottom(art, host, pt)).contains(x, y)) return true;
+    }
+    return false;
+}
+
 /// An area on screen: art pixels at the 4x scale (D-152).
 pub fn area_rect(area: image_mod.Area) Rect {
     const s: i32 = image_mod.SCALE;
@@ -405,11 +459,14 @@ pub fn hit_test_actor(
     art: ?*const image_mod.Art,
 ) ?usize {
     for (entities, 0..) |e, idx| {
+        if (is_part(art, e.entity)) continue;
         const pt = get_entity_screen_pos(idx, entities, screen_w, screen_h);
-        // A sprite answers anywhere in its frame and still at the disc on its spot below it.
+        // A sprite answers anywhere in its frame and still at the disc on its spot below it;
+        // its parts answer as it does (D-181).
         if (sprite_box(art, e.entity, pt)) |box| {
             if (box.contains(screen_x, screen_y)) return idx;
         }
+        if (hits_part(art, e.entity, pt, screen_x, screen_y)) return idx;
         const dx: i64 = screen_x - pt.x;
         const dy: i64 = screen_y - pt.y;
         const dist_sq = dx * dx + dy * dy;
@@ -432,13 +489,16 @@ pub fn hit_test_hotspot(
     art: ?*const image_mod.Art,
 ) ?usize {
     for (hotspots, 0..) |hs, idx| {
+        if (is_part(art, hs.entity)) continue;
         const pt = world_to_screen(hs.x, hs.y, screen_w, screen_h);
         // An area is the prop's whole target, since its spot may lie away from the painted
         // region; a sprite answers in its frame and still at the disc on its spot (D-158).
         if (art) |a| if (a.area_for(hs.entity)) |area| {
             if (area_rect(area).contains(screen_x, screen_y)) return idx;
+            if (hits_part(art, hs.entity, pt, screen_x, screen_y)) return idx;
             continue;
         };
+        if (hits_part(art, hs.entity, pt, screen_x, screen_y)) return idx;
         if (sprite_box(art, hs.entity, pt)) |box| {
             if (box.contains(screen_x, screen_y)) return idx;
         }
@@ -1388,13 +1448,27 @@ pub const DisplayWindow = struct {
     /// Draws one sprite frame standing on `pt`: the frame's bottom edge on the spot, centred
     /// across it (D-155). The frame is a label obstacle, so names and prompts settle beside the
     /// art rather than on it. Returns the frame's height in frame pixels, for the label above it.
-    fn draw_sprite(self: *DisplayWindow, sprite: *const image_mod.Sprite, frame_index: u16, pt: Point, labels: *TextLayoutResolver) i32 {
+    /// Draws what `entity` shows, then its parts (P48-11, D-181). A thing with an area draws at
+    /// the area's top-left; anything else stands bottom-centre on `pt`. Returns the height.
+    fn draw_shown(self: *DisplayWindow, frame: *const RenderFrame, entity: EntityId, shown: Shown, anim: image_mod.Anim, pt: Point, labels: *TextLayoutResolver) i32 {
         const art = self.art.?;
-        const img = &art.images[sprite.image];
+        const img = &art.images[shown.image];
         const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
         const h: i32 = @as(i32, img.frame_height) * image_mod.SCALE;
-        if (self.canvas) |*cv| cv.draw_image(art.palette, img, frame_index, pt.x - @divTrunc(w, 2), pt.y - h);
-        labels.add_obstacle(pt.x - @divTrunc(w, 2), pt.y - h, w, h);
+        const origin: Point = if (art.area_for(entity)) |area| blk: {
+            const r = area_rect(area);
+            break :blk .{ .x = r.x, .y = r.y };
+        } else .{ .x = pt.x - @divTrunc(w, 2), .y = pt.y - h };
+        if (self.canvas) |*cv| cv.draw_image(art.palette, img, shown.frame_at(anim, self.animation_clock), origin.x, origin.y);
+        labels.add_obstacle(origin.x, origin.y, w, h);
+        const bottom = Point{ .x = origin.x + @divTrunc(w, 2), .y = origin.y + h };
+        for (art.parts) |part| {
+            if (part.host != entity) continue;
+            const part_shown = shown_for(art, frame, part.entity) orelse continue;
+            const box = part_box(art, part, part_shown.image, bottom);
+            if (self.canvas) |*cv| cv.draw_image(art.palette, &art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y);
+            labels.add_obstacle(box.x, box.y, box.w, box.h);
+        }
         return h;
     }
 
@@ -3107,13 +3181,14 @@ pub const DisplayWindow = struct {
 
         // 3. Render Scene Hotspots / Props (P7-01, D-009)
         for (frame.hotspots[0..frame.hotspot_count], 0..) |hs, idx| {
+            if (is_part(self.art, hs.entity)) continue;
             const pt = world_to_screen(hs.x, hs.y, self.width, self.height);
             const is_hovered = self.hover_target() == .prop and self.hovered_hotspot.? == idx;
             const name = words(hs.get_name());
             if (self.canvas) |*cv| cv.rect_name = hs.get_name();
 
-            const prop_sprite: ?*const image_mod.Sprite = if (self.art) |a| a.sprite_for(hs.entity) else null;
-            if (prop_sprite) |sprite| _ = self.draw_sprite(sprite, sprite.frame_at(.idle, self.animation_clock), pt, &layout_resolver);
+            const prop_sprite: ?Shown = shown_for(self.art, frame, hs.entity);
+            if (prop_sprite) |shown| _ = self.draw_shown(frame, hs.entity, shown, .idle, pt, &layout_resolver);
             const prop_drawn = prop_sprite != null or if (self.theme) |t| (if (t.prop) |draw| draw(&self.canvas.?, frame, .{
                 .hotspot = &hs,
                 .index = idx,
@@ -3332,15 +3407,16 @@ pub const DisplayWindow = struct {
         // 5. Render Actors
         if (self.canvas) |*cv| cv.rect_kind = .actor;
         for (frame.entities[0..frame.entity_count], 0..) |e, idx| {
+            if (is_part(self.art, e.entity)) continue;
             const name = words(e.get_name());
             if (self.canvas) |*cv| cv.rect_name = e.get_name();
             const layout = get_entity_screen_layout(idx, frame.entities[0..frame.entity_count], self.width, self.height);
             const pt = layout.pos;
             layout_resolver.add_obstacle(pt.x - ACTOR_SCREEN_RADIUS, pt.y - ACTOR_SCREEN_RADIUS, ACTOR_SCREEN_RADIUS * 2, ACTOR_SCREEN_RADIUS * 2);
 
-            const actor_sprite: ?*const image_mod.Sprite = if (self.art) |a| a.sprite_for(e.entity) else null;
-            if (actor_sprite) |sprite| {
-                const h = self.draw_sprite(sprite, sprite.frame_at(e.heading, self.animation_clock), pt, &layout_resolver);
+            const actor_sprite: ?Shown = shown_for(self.art, frame, e.entity);
+            if (actor_sprite) |shown| {
+                const h = self.draw_shown(frame, e.entity, shown, e.heading, pt, &layout_resolver);
                 layout_resolver.submit(TextLabel.init(
                     name,
                     pt.x,
@@ -5361,6 +5437,48 @@ test "D-097: the window's key type is SDL's, so bindings need no SDL to declare"
     try std.testing.expectEqual(@as(Keycode, c.SDLK_ESCAPE), Keys.escape);
     try std.testing.expectEqual(@as(Keycode, c.SDLK_UP), Keys.up);
     try std.testing.expectEqual(@as(Keycode, c.SDLK_DOWN), Keys.down);
+}
+
+test "P48-11: a Looks fact picks what a thing shows, and a part is drawn above and clicked as its host" {
+    const palette = [_]image_mod.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 9, .b = 9 } };
+    var px: [12 * 24]u8 = @splat(1);
+    const body = image_mod.Image{ .name = "Body", .width = 12, .height = 24, .frame_width = 12, .frame_height = 12, .pixels = &px };
+    var head_px: [4 * 4]u8 = @splat(1);
+    const head = image_mod.Image{ .name = "Head", .width = 4, .height = 4, .frame_width = 4, .frame_height = 4, .pixels = &head_px };
+    const person = EntityId.from_int(7);
+    const hat = EntityId.from_int(9);
+    const idle_one = [_]image_mod.Step{.{ .frame = 1, .duration = 6 }};
+    const art = image_mod.Art{
+        .palette = &palette,
+        .images = &.{ body, head },
+        .sprites = &.{ .{ .entity = person, .image = 0 }, .{ .entity = hat, .image = 1 } },
+        .looks = &.{.{ .name = "BodyLit", .image = 0, .animations = .{ &idle_one, &.{}, &.{}, &.{}, &.{} } }},
+        .parts = &.{.{ .entity = hat, .host = person, .dx = 0, .dy = -12 }},
+    };
+    try art.validate();
+    var frame = std.mem.zeroes(RenderFrame);
+    // No fact: the sprite, idling on frame 0. A Looks fact: the look, idling on frame 1.
+    try std.testing.expectEqual(@as(u16, 0), shown_for(&art, &frame, person).?.frame_at(.idle, 0));
+    frame.looks[0] = .{ .entity = person };
+    @memcpy(frame.looks[0].name[0..7], "BodyLit");
+    frame.looks[0].len = 7;
+    frame.look_count = 1;
+    try std.testing.expectEqual(@as(u16, 1), shown_for(&art, &frame, person).?.frame_at(.idle, 0));
+
+    // The hat hangs 12 art pixels above the body's bottom centre, above the body's frame, and a
+    // click on it reaches the person.
+    var entity = RenderEntity{ .entity = person, .name = undefined, .name_len = 0, .x = 10, .y = 4, .current_wp = 1, .is_moving = false };
+    const feet = world_to_screen(10, 4, 1280, 720);
+    const box = part_box(&art, art.parts[0], 1, feet);
+    try std.testing.expectEqual(feet.y - 48 - 16, box.y);
+    try std.testing.expectEqual(@as(?usize, 0), hit_test_actor(feet.x, box.y + 4, (&entity)[0..1], 1280, 720, &art));
+    try std.testing.expectEqual(@as(?usize, null), hit_test_actor(feet.x, box.y + 4, (&entity)[0..1], 1280, 720, &image_mod.Art{ .palette = &palette, .images = &.{ body, head }, .sprites = art.sprites }));
+
+    // A part that is also on stage is never hit on its own spot; clicks there pass it by.
+    const both = [_]RenderEntity{ .{ .entity = hat, .name = undefined, .name_len = 0, .x = 30, .y = 4, .current_wp = 1, .is_moving = false }, entity };
+    const hat_feet = get_entity_screen_pos(0, &both, 1280, 720);
+    try std.testing.expect(is_part(&art, hat));
+    try std.testing.expectEqual(@as(?usize, null), hit_test_actor(hat_feet.x, hat_feet.y, &both, 1280, 720, &art));
 }
 
 test "P46-05: a sprite is clicked anywhere in its frame, and an area anywhere in its rectangle" {

@@ -114,6 +114,35 @@ const STATUS_VARIANTS = [_][]const u8{
     "lane_lamp_lit",          "steps_lamp_lit",         "jackdaw_nesting",
 };
 
+/// The Lamplighter's lamps draw from `Looks` facts since P48-11, so their status variants set
+/// the look the script picks in that state, keeping the variant names and pixels unchanged.
+const Looks = struct {
+    fn apply(frame: *bespoke.RenderFrame, variant: []const u8) void {
+        const Pick = struct { variant: []const u8, prop: []const u8, look: []const u8 };
+        const picks = [_]Pick{
+            .{ .variant = "lane_lamp_lit", .prop = "Lane Lamp", .look = "LampLit" },
+            .{ .variant = "steps_lamp_lit", .prop = "Steps Lamp", .look = "LampLit" },
+            .{ .variant = "jackdaw_nesting", .prop = "Steps Lamp", .look = "LampNest" },
+        };
+        for (picks) |pick| {
+            if (!std.mem.eql(u8, pick.variant, variant)) continue;
+            const entity = for (frame.hotspots[0..frame.hotspot_count]) |hs| {
+                if (std.mem.eql(u8, hs.get_name(), pick.prop)) break hs.entity;
+            } else return;
+            const slot = for (frame.looks[0..frame.look_count]) |*look| {
+                if (look.entity == entity) break look;
+            } else blk: {
+                if (frame.look_count == frame.looks.len) return;
+                frame.look_count += 1;
+                break :blk &frame.looks[frame.look_count - 1];
+            };
+            slot.* = .{ .entity = entity };
+            @memcpy(slot.name[0..pick.look.len], pick.look);
+            slot.len = @intCast(pick.look.len);
+        }
+    }
+};
+
 const Status = struct {
     /// Sets one named piece of status on a copy of a captured frame. Returns false when the
     /// frame has nothing to attach it to (no actor to hold the cheese, say).
@@ -123,6 +152,8 @@ const Status = struct {
         inline for (info.field_names, info.field_types) |name, field_type| {
             if (field_type == bool and std.mem.eql(u8, name, variant)) {
                 @field(st, name) = true;
+                // The Lamplighter's lamps show the look the script would pick (D-181).
+                Looks.apply(frame, variant);
                 return true;
             }
         }
@@ -597,7 +628,6 @@ fn record_program(rec: *Recorder, name: []const u8, script: []const u8, package:
     rec.set_art(&compiled.art);
     defer rec.set_art(null);
     // The Lamplighter's theme draws its lamps from the loaded program's sheet.
-    if (std.mem.eql(u8, name, "lamplighter")) lamplighter.program_art = &compiled.art;
     // Seed grid layouts so a grid scene shows its opening cells. Only grids: seeding other
     // subsystems here would redraw scenes whose goldens predate it.
     for (compiled.grids.items) |declaration| try bespoke.grid.seed(&world, declaration);
@@ -833,7 +863,6 @@ fn record_lamplighter(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void
     defer {
         rec.window.set_theme(&art.theme);
         big.set_theme(&art.theme);
-        lamplighter.program_art = null;
     }
     try record_program(rec, "lamplighter", lamplighter.SCRIPT, lamplighter.PACKAGE);
 }

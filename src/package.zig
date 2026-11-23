@@ -84,7 +84,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 31 appends display names and phrase overrides before the program identity (P48-09,
 /// D-179); versions 1 through 30 load with none. Version 32 names engine bookkeeping with a
 /// leading `#` (P48-10, D-180); older packages have those names translated as they load.
-pub const PACKAGE_VERSION: u32 = 32;
+/// Version 33 appends named looks and parts after the player text (P48-11, D-181); versions 1
+/// through 32 load with none.
+pub const PACKAGE_VERSION: u32 = 33;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -491,6 +493,7 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
     }
     try write_cue_chain(writer, compiled);
     try write_player_text(world, writer);
+    try write_art_looks(writer, compiled.art);
     // Version 29: which build this is, for saves (D-162).
     try writer.writeInt(u32, compiled.save_version, .little);
     try writer.writeInt(u64, compiled.fingerprint, .little);
@@ -542,6 +545,67 @@ fn write_player_text(world: *const World, writer: anytype) !void {
         try write_str(writer, entry.name);
         try write_str(writer, text);
     }
+}
+
+/// Version 33: named looks (name, image, animations as in the version 25 sprites), then parts
+/// (entity, host, offset) (P48-11, D-181).
+fn write_art_looks(writer: anytype, art: image_mod.Art) !void {
+    try writer.writeInt(u32, @intCast(art.looks.len), .little);
+    for (art.looks) |look| {
+        try write_str(writer, look.name);
+        try writer.writeInt(u16, look.image, .little);
+        for (look.animations) |steps| {
+            try writer.writeByte(@intCast(steps.len));
+            for (steps) |step| {
+                try writer.writeInt(u16, step.frame, .little);
+                try writer.writeInt(u16, step.duration, .little);
+            }
+        }
+    }
+    try writer.writeInt(u32, @intCast(art.parts.len), .little);
+    for (art.parts) |part| {
+        try writer.writeInt(u32, part.entity.to_int(), .little);
+        try writer.writeInt(u32, part.host.to_int(), .little);
+        try writer.writeInt(i16, part.dx, .little);
+        try writer.writeInt(i16, part.dy, .little);
+    }
+}
+
+/// Untrusted input: counts are bounded before allocation, entities must exist, and
+/// `Art.validate` checks images, frames, names, and offsets.
+fn read_art_looks(allocator: std.mem.Allocator, world: *const World, reader: anytype, art: *image_mod.Art) !void {
+    const look_count = try reader.takeInt(u32, .little);
+    if (look_count > image_mod.MAX_BINDINGS) return error.InvalidImageBinding;
+    const looks = try allocator.alloc(image_mod.Look, look_count);
+    for (looks) |*look| look.* = .{ .name = &.{}, .image = 0 };
+    art.looks = looks;
+    for (looks) |*look| {
+        look.name = try read_str(allocator, reader);
+        look.image = try reader.takeInt(u16, .little);
+        for (&look.animations) |*steps| {
+            const count = try reader.takeByte();
+            if (count > image_mod.MAX_STEPS) return error.InvalidImageBinding;
+            const own = try allocator.alloc(image_mod.Step, count);
+            steps.* = own;
+            for (own) |*step| step.* = .{
+                .frame = try reader.takeInt(u16, .little),
+                .duration = try reader.takeInt(u16, .little),
+            };
+        }
+    }
+    const part_count = try reader.takeInt(u32, .little);
+    if (part_count > image_mod.MAX_BINDINGS) return error.InvalidImageBinding;
+    const parts = try allocator.alloc(image_mod.Part, part_count);
+    art.parts = parts;
+    for (parts) |*part| {
+        const entity = read_entity_ref(world, reader) catch |err| return if (err == error.EndOfStream) err else error.InvalidImageBinding;
+        const host = read_entity_ref(world, reader) catch |err| return if (err == error.EndOfStream) err else error.InvalidImageBinding;
+        part.* = .{ .entity = entity, .host = host, .dx = try reader.takeInt(i16, .little), .dy = try reader.takeInt(i16, .little) };
+    }
+    art.validate() catch |err| return switch (err) {
+        error.InvalidImageBinding => error.InvalidImageBinding,
+        else => err,
+    };
 }
 
 /// Untrusted input: counts are bounded, each name belongs to an entity in the package, and each
@@ -2188,6 +2252,7 @@ pub fn load_package(
         if (!is_first_handler(&cue_handler_entries, guard.handler_pc) and !is_chained_handler(&cue_handler_chain, guard.handler_pc)) return error.InvalidCueGuard;
     }
     if (header.version >= 31) try read_player_text(allocator, world, pr);
+    if (header.version >= 33) try read_art_looks(allocator, world, pr, &art);
     var save_version: u32 = 1;
     var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
     if (header.version >= 29) {
@@ -2435,7 +2500,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 32",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 33",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2785,7 +2850,9 @@ const EMPTY_TAIL_AFTER_V25: usize = 4 + EMPTY_TAIL_AFTER_V26;
 /// The empty handler chain count (version 27) and the program identity after it.
 const EMPTY_TAIL_AFTER_V26: usize = 4 + TEXT_TAIL + IDENTITY_TAIL;
 /// The empty display-name and phrase counts (version 31), before the identity.
-const TEXT_TAIL: usize = 4 + 4;
+const TEXT_TAIL: usize = 4 + 4 + LOOK_TAIL;
+/// The empty look and part counts (version 33), counted in `TEXT_TAIL` since they follow it.
+const LOOK_TAIL: usize = 4 + 4;
 /// The save version and fingerprint (version 29), present in every package.
 const IDENTITY_TAIL: usize = 4 + 8;
 
@@ -4655,6 +4722,79 @@ test "P48-09: checked-in version 31 package fixture names a lamp and replaces a 
     defer compiled.deinit();
     try testing.expectEqualStrings("the old lamp", world.display_text(world.lookup_entity("FixtureLamp").?).?);
     try testing.expectEqualStrings("Nothing of the kind is here.", phrase_mod.text(&world, .not_here));
+}
+
+test "P48-11: a package carries looks and parts, and refuses a part hosted by itself" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const source =
+        \\scene: Yard
+        \\cast: Hero
+        \\props: Lamp
+        \\marks: Gate
+        \\palette:
+        \\  "." transparent
+        \\  "r" 200 40 40
+        \\image Sheet frames 2x2:
+        \\  "r.r."
+        \\  "rr.r"
+        \\look Dark: Sheet
+        \\  idle: 0
+        \\look Lit: Sheet
+        \\  idle: 1
+        \\sprite Lamp: Dark
+        \\part Hero of Lamp at 0 -2
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var loaded = try load_package(testing.allocator, &stream, &world2, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(usize, 2), loaded.art.looks.len);
+    try testing.expectEqual(@as(u16, 1), loaded.art.look_named("Lit").?.frame_at(.idle, 0));
+    const part = loaded.art.part_for(world2.lookup_entity("Hero").?).?;
+    try testing.expectEqual(world2.lookup_entity("Lamp").?, part.host);
+    try testing.expectEqual(@as(i16, -2), part.dy);
+
+    // A part whose host is itself is refused as the package loads.
+    const bad = try testing.allocator.dupe(u8, buffer.items);
+    defer testing.allocator.free(bad);
+    var record: [12]u8 = undefined;
+    std.mem.writeInt(u32, record[0..4], world.lookup_entity("Hero").?.to_int(), .little);
+    std.mem.writeInt(u32, record[4..8], world.lookup_entity("Lamp").?.to_int(), .little);
+    std.mem.writeInt(i16, record[8..10], 0, .little);
+    std.mem.writeInt(i16, record[10..12], -2, .little);
+    const at = std.mem.indexOf(u8, bad, &record).?;
+    @memcpy(bad[at .. at + 4], record[4..8]);
+    reseal_for_test(bad, PACKAGE_VERSION);
+    try testing.expectError(error.InvalidImageBinding, load_for_test(bad));
+}
+
+test "P48-11: checked-in version 33 package fixture shows a look and attaches a part" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v33.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 33), version_from_bytes(fixture).?);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
+    try testing.expect(compiled.art.part_for(world.lookup_entity("FixtureHero").?) != null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
 }
 
 test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {

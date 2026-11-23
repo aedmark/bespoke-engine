@@ -100,35 +100,14 @@ pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem, registe
 
 // --- Presentation -------------------------------------------------------------------------
 
-/// The program whose lamp sheet the theme draws. Each host sets it once its package is loaded.
-pub var program_art: ?*const image.Art = null;
-
-/// Draws a street lamp from the imported lamp sheet inside the lamp's area (D-158): dark, lit,
-/// or, for the market lamp, dark with a jackdaw in it. Every other prop is the engine's to draw,
-/// or part of the backdrop.
-fn prop(cv: *bespoke.display.Canvas, frame: *const bespoke.RenderFrame, view: r.PropView) bool {
-    const a = program_art orelse return false;
-    const name = view.hotspot.get_name();
-    const st = art.status_of(frame);
-    const lane = std.mem.eql(u8, name, "Lane Lamp");
-    if (!lane and !std.mem.eql(u8, name, "Steps Lamp")) return false;
-    const lit = if (lane) st.lane_lamp_lit else st.steps_lamp_lit;
-    // Frame 0 dark, 1 lit, 2 dark with Mrs Jessop in it.
-    const shown: u32 = if (lit) 1 else if (!lane and st.jackdaw_nesting) 2 else 0;
-    const sheet = a.find("LampSheet") orelse return false;
-    const area = a.area_for(view.hotspot.entity) orelse return false;
-    const box = r.area_rect(area);
-    cv.draw_image(a.palette, sheet, shown, box.x, box.y);
-    view.labels.add_obstacle(box.x, box.y, box.w, box.h);
-    return true;
-}
+// The lamps are sprites whose looks the script picks (D-181); the theme only adds a footer.
 
 fn footer(frame: *const bespoke.RenderFrame) ?r.FooterHint {
     _ = frame;
     return .{ .text = "TALK to Hobb | USE the cask, then a lamp | walk through the archway" };
 }
 
-pub const theme = r.Theme{ .prop = prop, .footer = footer, .soundtrack = &art.soundtrack };
+pub const theme = r.Theme{ .footer = footer, .soundtrack = &art.soundtrack };
 
 // --- The round, as a list of moves ---------------------------------------------------------
 
@@ -369,8 +348,6 @@ pub fn run_interactive(allocator: std.mem.Allocator, io: std.Io, stdout: anytype
     var stage: Stage = undefined;
     try stage.init(allocator);
     defer stage.deinit();
-    program_art = &stage.compiled.art;
-    defer program_art = null;
     const nell = stage.world.lookup_entity("Nell").?;
 
     var window = try bespoke.display.DisplayWindow.init(io, "BeSpoke Engine - The Lamplighter's Round", 1280, 720);
@@ -486,7 +463,9 @@ test "P46-05: the package carries the round's imported art" {
     const a = compiled.art;
     try std.testing.expectEqual(@as(usize, 7), a.images.len);
     try std.testing.expectEqual(@as(usize, 2), a.backdrops.len);
-    try std.testing.expectEqual(@as(usize, 4), a.sprites.len);
+    // Nell, Hobb, Pike, the cask, and both lamps; the lamps switch between three looks (D-181).
+    try std.testing.expectEqual(@as(usize, 6), a.sprites.len);
+    try std.testing.expectEqual(@as(usize, 3), a.looks.len);
     try std.testing.expectEqual(@as(u32, 3), a.find("LampSheet").?.frame_count());
     try std.testing.expect(a.backdrop_for(world.lookup_entity(LANE).?) != null);
     try configure(&world, &spatial, false);

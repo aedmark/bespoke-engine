@@ -2242,6 +2242,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Renaming moves final-fact digests and any golden that shows these names. P48-10 builds it.
 
+## D-181 Named Looks Over a Sheet, Switched by `Looks` Facts; Parts Declared With `part`; a Sprite With an Area Draws There (2026-11-22, status: accepted; P48-11, refines D-165)
+
+**Context.** D-165 made what an entity shows a fact and let a sprite carry attached parts. Building it showed that one sheet often holds several states: The Lamplighter's Round draws its lamp from one 12x36 sheet whose frames are dark, lit, and nesting, chosen by a Zig theme hook from `Lit` and `Nesting` and drawn at the top-left of the lamp's area. Sprites draw bottom-centre on their spot.
+
+**Decision.** The maintainer chose on 2026-11-22:
+1. `look <Name>: <Image>` declares a look: an image with its own `idle` and walk lines, written like a sprite block, so several looks can share one sheet. `sprite <Thing>: <Look or Image>` gives the default; an image named as a look idles on frame 0.
+2. `Looks(Thing, Look)` is a reserved property relation, written like any fact (`remember Looks(LaneLamp, LampLit)`), so saves, rewinds, branches, and `when` rules all work on it. With no such fact a thing shows its sprite.
+3. `part <Part> of <Host> at <dx> <dy>` attaches a part at an offset in art pixels from the host's anchor. A part draws just after its host, follows the host's walking and heading, shows its own `Looks` fact or sprite, and is clicked as its host.
+4. A sprite on a prop that has an area draws at the area's top-left, since the area marks where the prop is on the art.
+
+**Alternatives:** whole images as the unit (one sheet declared once per state); a `now X looks Y` statement; parts as facts attached during play; keeping sprites bottom-centre and moving marks.
+
+**Consequences.** The Lamplighter's lamp moves from its theme hook into the script with its goldens unchanged. `Looks` joins the reserved words (D-180). P48-11 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

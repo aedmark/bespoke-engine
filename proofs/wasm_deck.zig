@@ -2187,11 +2187,10 @@ test "P45-06: an appeal Hesper has not earned is refused in the browser too" {
     try testing.expectEqualStrings("You don't know what moves them.", rt.get_banner());
 }
 
-// The Lamplighter's Round (P46-05): the desktop's layout, and the program's lamp sheet for the
-// theme, which reads it from the loaded package.
+// The Lamplighter's Round (P46-05): the desktop's layout. The lamps draw from the package's
+// looks (D-181).
 fn lamplighter_setup(rt: *WasmRuntime) anyerror!void {
     try lamplighter.configure(&rt.world, &rt.spatial, true);
-    lamplighter.program_art = if (rt.program) |*program| &program.art else null;
     try rt.vm.transition_to_scene(try entity(rt, lamplighter.LANE));
     rt.bind();
 }

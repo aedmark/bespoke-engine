@@ -62,10 +62,11 @@ fn require(comptime Container: type, comptime names: []const []const u8, comptim
 comptime {
     require(bespoke.spell, &.{ "Book", "Spell", "Word", "Kind", "Refusal", "Outcome", "MAX_BOOKS", "MAX_WORDS_PER_KIND", "MAX_SPELLS", "resolve", "named", "named_text", "knows", "check", "cast", "combine" }, "spell");
     require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "MAX_DECISIONS", "MAX_CLAUSES", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
-    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
+    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
     require(bespoke.image.Image, &.{ "columns", "frame_count", "frame_pixel", "validate" }, "image.Image");
-    require(bespoke.image.Art, &.{ "is_empty", "find", "backdrop_for", "sprite_for", "area_for", "validate", "dupe", "deinit_owned" }, "image.Art");
+    require(bespoke.image.Art, &.{ "is_empty", "find", "backdrop_for", "sprite_for", "area_for", "look_named", "part_for", "validate", "dupe", "deinit_owned" }, "image.Art");
     require(bespoke.image.Sprite, &.{"frame_at"}, "image.Sprite");
+    require(bespoke.image.Look, &.{"frame_at"}, "image.Look");
     require(bespoke.png, &.{ "MAX_FILE", "Error", "Rgba", "decode" }, "png");
     require(bespoke.png.Rgba, &.{"deinit"}, "png.Rgba");
     require(bespoke.art_import, &.{ "MapError", "Where", "map", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
@@ -76,7 +77,7 @@ comptime {
     require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind", "set_display_name", "display_text", "set_phrase", "phrase_override" }, "world.World");
     require(bespoke.reserved, &.{ "Release", "LANGUAGE", "AuthorRelation", "AUTHOR_FACING", "newer_than_language", "engine_may_use", "is_bookkeeping" }, "reserved");
     require(bespoke.compiler, &.{ "CheckWarning", "check_source_against" }, "compiler");
-    require(bespoke.display, &.{ "capture_debug_facts", "story_fact_count", "is_engine_relation" }, "display");
+    require(bespoke.display, &.{ "capture_debug_facts", "story_fact_count", "is_engine_relation", "RenderLook", "look_of" }, "display");
     require(bespoke.phrase, &.{ "Key", "Entry", "ENTRIES", "Arg", "Error", "find", "entry", "text", "validate", "render", "fill" }, "phrase");
     require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for" }, "save");
     require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");

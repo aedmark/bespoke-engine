@@ -35,7 +35,7 @@ pub const AUTHOR_FACING = [_]AuthorRelation{
     .{ .name = "PathActive" },      .{ .name = "Pursuing" },      .{ .name = "CellFlammable" },
     .{ .name = "CellLiquid" },      .{ .name = "CellBlocking" },  .{ .name = "CellBurning" },
     .{ .name = "CellSmoke" },       .{ .name = "InBurningCell" }, .{ .name = "InSmokeCell" },
-    .{ .name = "InLiquidCell" },    .{ .name = "ConvergenceReady" }, .{ .name = "LoopClosed" },
+    .{ .name = "InLiquidCell" },    .{ .name = "ConvergenceReady" }, .{ .name = "LoopClosed" }, .{ .name = "Looks" },
 };
 
 /// The entry for `name` when it is newer than the language a script is written against.

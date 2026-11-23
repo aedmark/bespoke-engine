@@ -406,7 +406,23 @@ area ShopDoor: 96 62 24 42
 - PNG colours map exactly onto the palette, and a pixel is either opaque or fully transparent; a partly transparent pixel or a 257th colour is a compile error naming the file (D-156). Draw to a fixed palette rather than relying on the importer to reduce colours.
 - Only a compile from the command line reads PNG files, and only from the script's folder. `bespoke compile` writes a package that carries the art, which is how a browser page loads it; `bespoke import <art.png> --name <Image> --script <script.bespoke>` prints the same art as inline rows for a script compiled in the browser.
 - A click anywhere in a sprite's frame or a prop's area acts on it, and the player walks to the mark nearest its foot (D-158). Box outlines appear only in the debug overlay.
-- Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world. Art that follows other facts, such as a lit lamp, is drawn by the host's theme, which reads the facts after each tick. `proofs/lamplighter.zig` shows a theme that picks the lamp's frame.
+- Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world.
+- Art that follows facts is a look (P48-11, D-181). Name each way a sheet can show with `look`, point the sprite at one, and write `Looks` when the story changes it; the display reads the fact each frame, so saves and rewinds show the right look:
+
+```text
+image LampSheet from "lamp.png" frames 12x20
+look LampDark: LampSheet
+  idle: 0
+look LampLit: LampSheet
+  idle: 1 for 50, 0 for 4
+sprite Lamp: LampDark
+
+on cue Uses(Player, Lamp):
+  remember Lit(Lamp)
+  remember Looks(Lamp, LampLit)
+```
+
+- `part Flame of Lamp at 0 -14` draws the flame's sprite above the lamp, offset in art pixels from the lamp's bottom centre; a click on the flame acts on the lamp. A prop with both a sprite and an area draws at the area's top-left. `proofs/art/lamplighter/lamplighter.bespoke` lights its lamps this way.
 
 ### The engine's relations
 

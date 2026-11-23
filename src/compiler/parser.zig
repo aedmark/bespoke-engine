@@ -561,11 +561,23 @@ pub const ArtDecl = struct {
     backdrops: []const BackdropBinding = &.{},
     sprites: []const SpriteBinding = &.{},
     areas: []const AreaBinding = &.{},
+    looks: []const LookBinding = &.{},
+    parts: []const PartBinding = &.{},
 };
 /// `area <Prop>: x y w h` in art pixels (P46-05, D-158).
 pub const AreaBinding = struct { target: []const u8, x: u16, y: u16, w: u16, h: u16, at: Token };
 pub const BackdropBinding = struct { scene: []const u8, image: u16 };
 pub const SpriteBinding = struct { target: []const u8, image: u16, animations: [image_mod.ANIM_COUNT][]const image_mod.Step };
+/// `look <Name>: <Image>` with its animation lines (P48-11, D-181).
+pub const LookSource = struct {
+    name: []const u8,
+    at: Token,
+    image: Token,
+    animations: [image_mod.ANIM_COUNT][]const StepSource = @splat(@as([]const StepSource, &.{})),
+};
+pub const LookBinding = struct { name: []const u8, image: u16, animations: [image_mod.ANIM_COUNT][]const image_mod.Step };
+/// `part <Part> of <Host> at <dx> <dy>` (P48-11, D-181).
+pub const PartBinding = struct { part: []const u8, host: []const u8, dx: i16, dy: i16, at: Token };
 
 pub const NameDecl = struct { entity: []const u8, text: []const u8 };
 pub const PhraseDecl = struct { key: []const u8, text: []const u8 };
@@ -711,6 +723,8 @@ pub const Parser = struct {
     image_srcs: std.ArrayListUnmanaged(ImageSource) = .empty,
     sprite_srcs: std.ArrayListUnmanaged(SpriteSource) = .empty,
     area_srcs: std.ArrayListUnmanaged(AreaBinding) = .empty,
+    look_srcs: std.ArrayListUnmanaged(LookSource) = .empty,
+    part_srcs: std.ArrayListUnmanaged(PartBinding) = .empty,
 
     pub fn init(allocator: std.mem.Allocator, lexer: *Lexer) !Parser {
         var p = Parser{
@@ -2436,6 +2450,14 @@ pub const Parser = struct {
             try self.parse_sprite(start);
             return true;
         }
+        if (std.mem.eql(u8, word, "look") and named) {
+            try self.parse_look();
+            return true;
+        }
+        if (std.mem.eql(u8, word, "part") and named) {
+            try self.parse_part();
+            return true;
+        }
         if (std.mem.eql(u8, word, "area") and named) {
             try self.parse_area();
             return true;
@@ -2590,49 +2612,96 @@ pub const Parser = struct {
         if (self.current.tag != .colon) return self.error_at(self.current, "sprite '{s}' expects ':' and the image it is drawn from", .{target});
         try self.advance();
         var src = SpriteSource{ .target = target, .at = at, .image = try self.take_image_name() };
-        if (self.current.tag == .indent) {
-            try self.advance();
-            while (self.current.tag != .dedent and self.current.tag != .eof) {
-                const anim_tok = self.current;
-                try self.advance();
-                const anim: image_mod.Anim = if (anim_tok.tag == .identifier and std.mem.eql(u8, anim_tok.slice, "idle"))
-                    .idle
-                else if (anim_tok.tag == .kw_walk) blk: {
-                    const dir = self.current;
-                    try self.advance();
-                    const which: ?image_mod.Anim = if (std.mem.eql(u8, dir.slice, "up")) .walk_up else if (std.mem.eql(u8, dir.slice, "down")) .walk_down else if (std.mem.eql(u8, dir.slice, "left")) .walk_left else if (std.mem.eql(u8, dir.slice, "right")) .walk_right else null;
-                    break :blk which orelse return self.error_at(dir, "sprite '{s}' walks up, down, left, or right, not '{s}'", .{ target, dir.slice });
-                } else return self.error_at(anim_tok, "sprite '{s}' has animations 'idle' and 'walk up', 'walk down', 'walk left', 'walk right', not '{s}'", .{ target, anim_tok.slice });
-                const slot = &src.animations[@intFromEnum(anim)];
-                if (slot.len > 0) return self.error_at(anim_tok, "sprite '{s}' declares the '{s}' animation twice", .{ target, @tagName(anim) });
-                _ = try self.expect(.colon);
-                var steps = std.array_list.Managed(StepSource).init(self.allocator);
-                while (true) {
-                    const frame_tok = self.current;
-                    const frame = try self.take_u32();
-                    // Six display frames is ten frames a second (D-152).
-                    var duration: u32 = 6;
-                    if (self.current.tag == .kw_for) {
-                        try self.advance();
-                        const dur_tok = self.current;
-                        duration = try self.take_u32();
-                        if (duration == 0 or duration > image_mod.MAX_DURATION)
-                            return self.error_at(dur_tok, "sprite '{s}' shows a frame for {d} display frames; use 1 to {d}", .{ target, duration, image_mod.MAX_DURATION });
-                    }
-                    try steps.append(.{ .frame = frame, .duration = duration, .at = frame_tok });
-                    if (steps.items.len > image_mod.MAX_STEPS)
-                        return self.error_at(frame_tok, "sprite '{s}' has more than {d} steps in one animation", .{ target, image_mod.MAX_STEPS });
-                    if (self.current.tag != .comma) break;
-                    try self.advance();
-                }
-                slot.* = try steps.toOwnedSlice();
-            }
-            _ = try self.expect(.dedent);
-        }
+        src.animations = try self.parse_animations("sprite", target);
         for (self.sprite_srcs.items) |prior| {
             if (std.mem.eql(u8, prior.target, target)) return self.error_at(at, "'{s}' has two sprites; declare one", .{target});
         }
         try self.sprite_srcs.append(self.allocator, src);
+    }
+
+    /// The indented `idle:` and `walk <dir>:` lines under a sprite or look (P46-03, P48-11).
+    fn parse_animations(self: *Parser, what: []const u8, owner: []const u8) ![image_mod.ANIM_COUNT][]const StepSource {
+        var animations: [image_mod.ANIM_COUNT][]const StepSource = @splat(@as([]const StepSource, &.{}));
+        if (self.current.tag != .indent) return animations;
+        try self.advance();
+        while (self.current.tag != .dedent and self.current.tag != .eof) {
+            const anim_tok = self.current;
+            try self.advance();
+            const anim: image_mod.Anim = if (anim_tok.tag == .identifier and std.mem.eql(u8, anim_tok.slice, "idle"))
+                .idle
+            else if (anim_tok.tag == .kw_walk) blk: {
+                const dir = self.current;
+                try self.advance();
+                const which: ?image_mod.Anim = if (std.mem.eql(u8, dir.slice, "up")) .walk_up else if (std.mem.eql(u8, dir.slice, "down")) .walk_down else if (std.mem.eql(u8, dir.slice, "left")) .walk_left else if (std.mem.eql(u8, dir.slice, "right")) .walk_right else null;
+                break :blk which orelse return self.error_at(dir, "{s} '{s}' walks up, down, left, or right, not '{s}'", .{ what, owner, dir.slice });
+            } else return self.error_at(anim_tok, "{s} '{s}' has animations 'idle' and 'walk up', 'walk down', 'walk left', 'walk right', not '{s}'", .{ what, owner, anim_tok.slice });
+            const slot = &animations[@intFromEnum(anim)];
+            if (slot.len > 0) return self.error_at(anim_tok, "{s} '{s}' declares the '{s}' animation twice", .{ what, owner, @tagName(anim) });
+            _ = try self.expect(.colon);
+            var steps = std.array_list.Managed(StepSource).init(self.allocator);
+            while (true) {
+                const frame_tok = self.current;
+                const frame = try self.take_u32();
+                // Six display frames is ten frames a second (D-152).
+                var duration: u32 = 6;
+                if (self.current.tag == .kw_for) {
+                    try self.advance();
+                    const dur_tok = self.current;
+                    duration = try self.take_u32();
+                    if (duration == 0 or duration > image_mod.MAX_DURATION)
+                        return self.error_at(dur_tok, "{s} '{s}' shows a frame for {d} display frames; use 1 to {d}", .{ what, owner, duration, image_mod.MAX_DURATION });
+                }
+                try steps.append(.{ .frame = frame, .duration = duration, .at = frame_tok });
+                if (steps.items.len > image_mod.MAX_STEPS)
+                    return self.error_at(frame_tok, "{s} '{s}' has more than {d} steps in one animation", .{ what, owner, image_mod.MAX_STEPS });
+                if (self.current.tag != .comma) break;
+                try self.advance();
+            }
+            slot.* = try steps.toOwnedSlice();
+        }
+        _ = try self.expect(.dedent);
+        return animations;
+    }
+
+    /// `look <Name>: <Image>` and its animations (P48-11, D-181).
+    fn parse_look(self: *Parser) !void {
+        const at = self.current;
+        const name = try self.parse_name();
+        if (self.current.tag != .colon) return self.error_at(self.current, "look '{s}' expects ':' and the image it shows", .{name});
+        try self.advance();
+        var src = LookSource{ .name = name, .at = at, .image = try self.take_image_name() };
+        src.animations = try self.parse_animations("look", name);
+        for (self.look_srcs.items) |prior| {
+            if (std.mem.eql(u8, prior.name, name)) return self.error_at(at, "look '{s}' is declared twice", .{name});
+        }
+        try self.look_srcs.append(self.allocator, src);
+    }
+
+    /// `part <Part> of <Host> at <dx> <dy>`, the offset in art pixels (P48-11, D-181).
+    fn parse_part(self: *Parser) !void {
+        const at = self.current;
+        // One word each: `parse_name` would read `Clapper of Bell` as one multi-word name.
+        const part = (try self.expect(.identifier)).slice;
+        if (self.current.tag != .identifier or !std.mem.eql(u8, self.current.slice, "of"))
+            return self.error_at(self.current, "part '{s}' expects 'of <host> at <x> <y>'", .{part});
+        try self.advance();
+        const host = (try self.expect(.identifier)).slice;
+        if (self.current.tag != .identifier or !std.mem.eql(u8, self.current.slice, "at"))
+            return self.error_at(self.current, "part '{s}' expects 'at <x> <y>' after its host", .{part});
+        try self.advance();
+        var offset: [2]i16 = undefined;
+        for (&offset) |*v| {
+            // `-18` is one number token (the lexer reads a minus before a digit as its sign).
+            const tok = try self.expect(.number);
+            const n = std.fmt.parseInt(i32, tok.slice, 10) catch return self.error_at(tok, "invalid integer '{s}'", .{tok.slice});
+            if (@abs(n) > image_mod.MAX_PART_OFFSET) return self.error_at(tok, "part '{s}' sits at most {d} art pixels from its host", .{ part, image_mod.MAX_PART_OFFSET });
+            v.* = @intCast(n);
+        }
+        if (std.mem.eql(u8, part, host)) return self.error_at(at, "part '{s}' cannot be its own host", .{part});
+        for (self.part_srcs.items) |prior| {
+            if (std.mem.eql(u8, prior.part, part)) return self.error_at(at, "'{s}' is a part twice; declare one", .{part});
+        }
+        try self.part_srcs.append(self.allocator, .{ .part = part, .host = host, .dx = offset[0], .dy = offset[1], .at = at });
     }
 
     fn image_index(self: *Parser, tok: Token, what: []const u8, owner: []const u8) !u16 {
@@ -2727,33 +2796,54 @@ pub const Parser = struct {
             try backdrops.append(.{ .scene = scene.name, .image = index });
         }
 
+        // Looks first, so a sprite may name one (P48-11, D-181).
+        var looks = std.array_list.Managed(LookBinding).init(self.allocator);
+        for (self.look_srcs.items) |src| {
+            image_mod.validate_name(src.name) catch return self.error_at(src.at, "look name '{s}' is 1 to {d} printable characters", .{ src.name, image_mod.MAX_NAME });
+            for (self.image_srcs.items) |img| {
+                if (std.mem.eql(u8, img.name, src.name)) return self.error_at(src.at, "look '{s}' has the name of an image; give it its own", .{src.name});
+            }
+            const index = try self.image_index(src.image, "look", src.name);
+            try looks.append(.{ .name = src.name, .image = index, .animations = try self.resolve_steps(src.animations, images.items[index].frame_count(), src.image.slice) });
+        }
+
         var sprites = std.array_list.Managed(SpriteBinding).init(self.allocator);
         for (self.sprite_srcs.items) |src| {
             const on_stage = for (ast.cast.items) |name| {
                 if (std.mem.eql(u8, name, src.target)) break true;
             } else for (ast.props.items) |name| {
                 if (std.mem.eql(u8, name, src.target)) break true;
+            } else for (self.part_srcs.items) |part| {
+                if (std.mem.eql(u8, part.part, src.target)) break true;
             } else false;
             if (!on_stage) {
                 var hints = Suggestions{};
                 for (ast.cast.items) |name| hints.consider(src.target, name);
                 for (ast.props.items) |name| hints.consider(src.target, name);
                 self.suggestion = hints.result();
-                return self.error_at(src.at, "sprite '{s}' is for a person or prop no scene declares in 'cast:' or 'props:'", .{src.target});
+                return self.error_at(src.at, "sprite '{s}' is for a person or prop no scene declares in 'cast:' or 'props:', and no 'part' line names it", .{src.target});
+            }
+            // A sprite may show a look, which brings its image and animations.
+            const named_look = for (looks.items) |look| {
+                if (std.mem.eql(u8, look.name, src.image.slice)) break look;
+            } else null;
+            if (named_look) |look| {
+                for (src.animations) |steps| {
+                    if (steps.len > 0) return self.error_at(steps[0].at, "sprite '{s}' shows look '{s}', which has its own animations; move these lines to the look", .{ src.target, look.name });
+                }
+                try sprites.append(.{ .target = src.target, .image = look.image, .animations = look.animations });
+                continue;
             }
             const index = try self.image_index(src.image, "sprite", src.target);
-            const frames = images.items[index].frame_count();
-            var binding = SpriteBinding{ .target = src.target, .image = index, .animations = undefined };
-            for (src.animations, &binding.animations) |steps, *out| {
-                const own = try self.allocator.alloc(image_mod.Step, steps.len);
-                for (steps, own) |step, *o| {
-                    if (step.frame >= frames)
-                        return self.error_at(step.at, "image '{s}' has {d} frame(s), numbered from 0; frame {d} does not exist", .{ src.image.slice, frames, step.frame });
-                    o.* = .{ .frame = @intCast(step.frame), .duration = @intCast(step.duration) };
-                }
-                out.* = own;
-            }
-            try sprites.append(binding);
+            try sprites.append(.{ .target = src.target, .image = index, .animations = try self.resolve_steps(src.animations, images.items[index].frame_count(), src.image.slice) });
+        }
+        for (self.part_srcs.items) |part| {
+            const host_on_stage = for (ast.cast.items) |name| {
+                if (std.mem.eql(u8, name, part.host)) break true;
+            } else for (ast.props.items) |name| {
+                if (std.mem.eql(u8, name, part.host)) break true;
+            } else false;
+            if (!host_on_stage) return self.error_at(part.at, "part '{s}' is attached to '{s}', which no scene declares in 'cast:' or 'props:'", .{ part.part, part.host });
         }
         for (self.area_srcs.items) |a| {
             const is_prop = for (ast.props.items) |name| {
@@ -2775,7 +2865,24 @@ pub const Parser = struct {
             .backdrops = try backdrops.toOwnedSlice(),
             .sprites = try sprites.toOwnedSlice(),
             .areas = self.area_srcs.items,
+            .looks = try looks.toOwnedSlice(),
+            .parts = self.part_srcs.items,
         };
+    }
+
+    /// Animation lines checked against the image's frames and turned into steps.
+    fn resolve_steps(self: *Parser, animations: [image_mod.ANIM_COUNT][]const StepSource, frames: u32, image_name: []const u8) ![image_mod.ANIM_COUNT][]const image_mod.Step {
+        var out: [image_mod.ANIM_COUNT][]const image_mod.Step = undefined;
+        for (animations, &out) |steps, *slot| {
+            const own = try self.allocator.alloc(image_mod.Step, steps.len);
+            for (steps, own) |step, *o| {
+                if (step.frame >= frames)
+                    return self.error_at(step.at, "image '{s}' has {d} frame(s), numbered from 0; frame {d} does not exist", .{ image_name, frames, step.frame });
+                o.* = .{ .frame = @intCast(step.frame), .duration = @intCast(step.duration) };
+            }
+            slot.* = own;
+        }
+        return out;
     }
 
     fn finish_red_lines(self: *Parser) !RedLinesDecl {
