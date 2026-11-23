@@ -47,8 +47,8 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 | `host` | `Session`, `Exit`, `AppealOutcome`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, `ScriptSociety`, and the functions listed below |
 | `dialogue` | `View`, `Selection`, `view` |
 | `command` | `Interpreter`, `WordList`, `Command` |
-| `spell` | `Book`, `Spell`, `Word`, `Kind`, `Refusal`, `Outcome`, `MAX_BOOKS`, `MAX_WORDS_PER_KIND`, `MAX_SPELLS`, `resolve`, `named`, `named_text`, `knows`, `check`, `cast`, `combine` |
-| `decision` | `Decision`, `Option`, `Pick`, `Clause`, `Choices`, `Stage`, `MAX_DECISIONS`, `MAX_CLAUSES`, `MAX_OPTIONS`, `MAX_PICKS`, `MAX_POINTS`, `validate`, `seed`, `triggered`, `stage_of`, `chosen`, `score_of`, `step` |
+| `spell` | `Book`, `Spell`, `Word`, `Kind`, `Refusal`, `Outcome`, `MAX_BOOKS`, `DEFAULT_WORDS_PER_KIND`, `MAX_WORDS_PER_KIND`, `DEFAULT_SPELLS`, `MAX_SPELLS` (the `MAX_` names are the safety caps a `limit` may reach and the default ceilings are `DEFAULT_`, P48-13, D-183), `resolve`, `named`, `named_text`, `knows`, `check`, `cast`, `combine` |
+| `decision` | `Decision`, `Option`, `Pick`, `Clause`, `Choices`, `Stage`, `DEFAULT_DECISIONS`, `MAX_DECISIONS`, `MAX_CLAUSES`, `DEFAULT_OPTIONS`, `MAX_OPTIONS`, `MAX_PICKS`, `MAX_POINTS`, `validate`, `seed`, `triggered`, `stage_of`, `chosen`, `score_of`, `step` |
 
 Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave_notes`, `set_dialogue_speaker`, `open_generated_dialogue`, `dialogue_view`, `choose`, `sync_dialogue`, `transition_to_scene`, `evaluates_belief`, `assert_belief`, and `reject_belief`. Construct a VM with `host.init_vm`; advance it with `host.tick` or `Session.advance`, never bare `VM.step_tick`.
 

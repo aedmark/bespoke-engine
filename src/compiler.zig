@@ -1372,3 +1372,86 @@ test "P46-03: art mistakes are reported on their own line" {
         if (case.hint) |hint| try testing.expectEqualStrings(hint, result.suggestion() orelse "");
     }
 }
+
+test "P48-13: limits raise a ceiling up to its cap, hints may have six tiers, and tuning lines compile" {
+    const testing = std.testing;
+    const goal =
+        \\entity Ines, Slip, Archive
+        \\relation Carries(holder, item)
+        \\goal Recover:
+        \\  need Take:
+        \\    met Carries(Ines, Slip)
+        \\    room Archive
+        \\    hint 4 "Look under the press."
+        \\    hint 5 "The drawer sticks."
+        \\    hint 6 "Pull hard."
+        \\
+    ;
+    // A limit may follow what it limits.
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compile_source(testing.allocator, &world, null, goal ++ "limit hints 6\n");
+    defer compiled.deinit();
+    const need = compiled.goals.items[0].goal.needs[0];
+    try testing.expectEqual(@as(usize, 6), @import("hint.zig").tier_count(need));
+
+    const cases = [_]struct { source: []const u8, line: u32, column: u32, message: []const u8 }{
+        // Without the limit, the first tier past 3 is named, with the limit the script needs.
+        .{ .source = goal, .line = 7, .column = 10, .message = "4 hint tiers in one need is past the limit of 3; add 'limit hints 6' to raise it, up to 24 (D-183)" },
+        .{ .source = "limit hints 25\n" ++ goal, .line = 1, .column = 13, .message = "'limit hints' is 25; it may raise the default of 3 hint tiers in one need up to 24" },
+        .{ .source = "limit hints 2\n" ++ goal, .line = 1, .column = 13, .message = "'limit hints' is 2; it may raise the default of 3 hint tiers in one need up to 24" },
+        .{ .source = "limit leans 4\n", .line = 1, .column = 7, .message = "there is no limit on 'leans'; a script may raise goals, needs, decisions, options, dilemmas, axes, spells, words, or hints" },
+        .{ .source = "limit hints 6\nlimit hints 7\n", .line = 2, .column = 1, .message = "'limit hints' is declared twice" },
+    };
+    for (cases) |case| {
+        const res = check_source(testing.allocator, case.source);
+        try testing.expect(!res.is_valid);
+        try testing.expectEqualStrings(case.message, res.message());
+        try testing.expectEqual(case.line, res.diagnostic().?.line);
+        try testing.expectEqual(case.column, res.diagnostic().?.column);
+    }
+
+    // A count ceiling: the 65th axis is past the default of 64 until `limit axes 65`.
+    var axes = std.array_list.Managed(u8).init(testing.allocator);
+    defer axes.deinit();
+    for (0..65) |i| try axes.print("axis Virtue{d} between Fault{d} and Excess{d}\n", .{ i, i, i });
+    const over = check_source(testing.allocator, axes.items);
+    try testing.expectEqualStrings("65 axes is past the limit of 64; add 'limit axes 65' to raise it, up to 512 (D-183)", over.message());
+    try testing.expectEqual(@as(u32, 65), over.diagnostic().?.line);
+    try axes.appendSlice("limit axes 65\n");
+    try testing.expect(check_source(testing.allocator, axes.items).is_valid);
+
+    // An axis's drift step and a dilemma's tiers and drift cap reach the program.
+    const tuned =
+        \\entity Valerius, Thief
+        \\relation Accused(who)
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and "Condoning Harm"
+        \\  drift step 4
+        \\dilemma StolenBread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Accused(Thief)
+        \\  weighs Justice against Mercy
+        \\  tiers 8 and 4
+        \\  drift cap 3
+        \\  drifts 2 toward Mercy when Accused(Thief)
+        \\  strong Justice: "The law is the law." -> Hang
+        \\  moderate Justice: "A night in the cells." -> Jail
+        \\  neutral: "Show me why." -> Wait
+        \\  moderate Mercy: "Pay for the loaf." -> Fine
+        \\  strong Mercy: "Go." -> Pardon
+        \\
+    ;
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var program = try compile_source(testing.allocator, &world2, null, tuned);
+    defer program.deinit();
+    try testing.expectEqual(@as(u8, 5), program.axes.items[0].drift_step);
+    try testing.expectEqual(@as(u8, 4), program.axes.items[1].drift_step);
+    const d = program.dilemmas.items[0].dilemma;
+    try testing.expectEqual(@as(u8, 8), d.strong_at);
+    try testing.expectEqual(@as(u8, 4), d.moderate_at);
+    try testing.expectEqual(@as(u8, 3), d.drift_cap);
+    try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
+}

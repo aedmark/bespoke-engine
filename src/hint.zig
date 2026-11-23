@@ -10,18 +10,26 @@
 //! reason about, the search falls back to the author's whole goal graph, which may name a place
 //! or a thing the character has not met. Each result records the path that produced it.
 const std = @import("std");
+const limits_mod = @import("limits.zig");
 const phrase = @import("phrase.zig");
 const world_mod = @import("world.zig");
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
 const value_mod = @import("value.zig");
 
-pub const MAX_GOALS: usize = 16;
-/// Needs per goal. The frontier walk is linear in this, so the ceiling keeps one query cheap.
-pub const MAX_NEEDS: usize = 16;
+/// Goals and needs per goal: sanity ceilings a script raises with `limit` (D-167, D-183). The
+/// `MAX_` values are the fixed safety caps the loader holds untrusted packages to; the
+/// frontier walk is linear in needs, so the cap keeps one query cheap.
+pub const DEFAULT_GOALS: usize = limits_mod.default_of(.goals);
+pub const MAX_GOALS: usize = limits_mod.cap_of(.goals);
+pub const DEFAULT_NEEDS: usize = limits_mod.default_of(.needs);
+pub const MAX_NEEDS: usize = limits_mod.cap_of(.needs);
 pub const MAX_AFTER: usize = 8;
-/// One authored override per tier: room, thing, relation.
-pub const MAX_TIERS: usize = 3;
+/// Tiers 1 to 3 have generated text (room, thing, relation); higher tiers exist only where a
+/// script writes them (D-177, D-183). Tiers per need are a sanity ceiling like the others.
+pub const GENERATED_TIERS: usize = 3;
+pub const DEFAULT_TIERS: usize = limits_mod.default_of(.hints);
+pub const MAX_TIERS: usize = limits_mod.cap_of(.hints);
 pub const MAX_HINT_TEXT: usize = 120;
 pub const MAX_HINT_WORDS: usize = 64;
 
@@ -33,18 +41,26 @@ pub const REJECTS_RELATION = "Rejects";
 
 pub const Error = error{ InvalidGoal, HintTextTooLong };
 
-pub const Tier = enum(u2) {
+/// A hint tier, counted from 1. Tiers 1 to 3 name the room, the thing, and the relation and
+/// have generated text; a higher tier exists only where a script writes it (D-183).
+pub const Tier = enum(u8) {
     room = 1,
     thing = 2,
     relation = 3,
+    _,
 
+    /// The tier numbered `value`, from 1 to the safety cap; null outside it.
     pub fn fromInt(value: u32) ?Tier {
-        return switch (value) {
-            1 => .room,
-            2 => .thing,
-            3 => .relation,
-            else => null,
-        };
+        if (value == 0 or value > MAX_TIERS) return null;
+        return @enumFromInt(value);
+    }
+
+    pub fn number(self: Tier) u8 {
+        return @intFromEnum(self);
+    }
+
+    pub fn generated(self: Tier) bool {
+        return self.number() <= GENERATED_TIERS;
     }
 
     /// Which part of the need the tier names, for a transcript or a test.
@@ -53,6 +69,7 @@ pub const Tier = enum(u2) {
             .room => "room",
             .thing => "thing",
             .relation => "relation",
+            _ => "authored",
         };
     }
 };
@@ -124,7 +141,9 @@ pub fn validate(declaration: Declaration) Error!void {
             };
             if (!found or prerequisite == need.entity) return Error.InvalidGoal;
         }
+        if (need.hints.len > MAX_TIERS) return Error.InvalidGoal;
         for (need.hints, 0..) |hint, hi| {
+            if (Tier.fromInt(hint.tier.number()) == null) return Error.InvalidGoal;
             if (hint.text.len == 0 or hint.text.len > MAX_HINT_TEXT) return Error.InvalidGoal;
             for (need.hints[0..hi]) |prior| if (prior.tier == hint.tier) return Error.InvalidGoal;
         }
@@ -241,6 +260,26 @@ fn authored(need: Need, tier: Tier) ?[]const u8 {
     return null;
 }
 
+/// How many tiers a need offers: the three generated ones, or more when the script wrote a
+/// higher one. A host's hint control steps from 1 to this.
+pub fn tier_count(need: Need) usize {
+    var top: usize = GENERATED_TIERS;
+    for (need.hints) |hint| top = @max(top, hint.tier.number());
+    return top;
+}
+
+/// The tier a need answers `asked` with: the tier itself when the need has it, else the
+/// highest tier below it that it has, so asking past a need's last tier repeats that tier
+/// (D-183). Tiers 1 to 3 always exist.
+pub fn tier_for(need: Need, asked: Tier) Tier {
+    if (asked.generated()) return asked;
+    var best: Tier = .relation;
+    for (need.hints) |hint| {
+        if (hint.tier.number() <= asked.number() and hint.tier.number() > best.number()) best = hint.tier;
+    }
+    return best;
+}
+
 fn human_name(name: []const u8, out: []u8) []const u8 {
     var n: usize = 0;
     for (name, 0..) |ch, i| {
@@ -273,6 +312,8 @@ fn name_of(world: *const World, entity: EntityId, out: []u8) []const u8 {
 /// relation, using the names the script declared.
 fn generate(world: *const World, need: Need, tier: Tier, buf: []u8) Error![]const u8 {
     switch (tier) {
+        // `tier_for` only lands above 3 on a tier the need wrote, so there is no text to make.
+        _ => return Error.InvalidGoal,
         .room => {
             const room = need.room orelse return Error.InvalidGoal;
             var words: [MAX_HINT_WORDS]u8 = undefined;
@@ -302,7 +343,8 @@ fn generate(world: *const World, need: Need, tier: Tier, buf: []u8) Error![]cons
     }
 }
 
-fn report(world: *const World, goal: EntityId, need: Need, tier: Tier, path: Path, buf: []u8) Error!Hint {
+fn report(world: *const World, goal: EntityId, need: Need, asked: Tier, path: Path, buf: []u8) Error!Hint {
+    const tier = tier_for(need, asked);
     const text = authored(need, tier);
     return .{
         .goal = goal,
@@ -314,7 +356,8 @@ fn report(world: *const World, goal: EntityId, need: Need, tier: Tier, path: Pat
     };
 }
 
-/// Reports the nearest unmet need at `tier`. Holmesian first: each goal's frontier need, when
+/// Reports the nearest unmet need at `tier`, or at its highest tier below it (`tier_for`); the
+/// result names the tier it answered with. Holmesian first: each goal's frontier need, when
 /// the player knows its terms. When no goal offers one, the first unmet need in declaration
 /// order answers as the author (D-126). Null means every need of every goal holds.
 pub fn query(
@@ -326,7 +369,7 @@ pub fn query(
 ) Error!?Hint {
     for (goals) |declaration| {
         const need = (frontier(world, declaration.goal.needs) orelse continue).*;
-        if (!terms_known(world, player, need, tier)) continue;
+        if (!terms_known(world, player, need, tier_for(need, tier))) continue;
         return try report(world, declaration.goal.entity, need, tier, .holmesian, buf);
     }
     for (goals) |declaration| {
@@ -500,4 +543,40 @@ test "P44-01: validation refuses a missing room, an unknown prerequisite, and a 
     pair[0].after = &after;
     pair[1].after = &back;
     try testing.expectError(Error.InvalidGoal, validate(.{ .goal = .{ .entity = try world.intern_entity("G"), .needs = &pair } }));
+}
+
+test "P48-13: a need with six authored tiers steps through them, and asking past its last repeats it" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    _ = try world.intern_relation("Carries", .set);
+    const hero = try world.intern_entity("Hero");
+    const slip = try world.intern_entity("ExposureSlip");
+    const archive = try world.intern_entity("Archive");
+    for ([_]EntityId{ slip, archive }) |known| try world.remember(hero, try world.intern_relation("Knows", .set), known.to_int(), 0);
+    const texts = [_][]const u8{ "Somewhere dusty.", "Something paper.", "Pick it up.", "Look under the press.", "The drawer sticks.", "Pull hard." };
+    var hints: [6]Authored = undefined;
+    for (&hints, texts, 1..) |*h, text, n| h.* = .{ .tier = Tier.fromInt(@intCast(n)).?, .text = text };
+    var needs = [_]Need{.{ .entity = try world.intern_entity("TakeTheSlip"), .relation = "Carries", .subject = hero, .object = slip, .room = archive, .hints = &hints }};
+    const declaration = Declaration{ .goal = .{ .entity = try world.intern_entity("RecoverThePlate"), .needs = &needs } };
+    try validate(declaration);
+    try testing.expectEqual(@as(usize, 6), tier_count(needs[0]));
+
+    var buf: [128]u8 = undefined;
+    for (texts, 1..) |text, n| {
+        const hint = (try query(&.{declaration}, &world, hero, Tier.fromInt(@intCast(n)).?, &buf)).?;
+        try testing.expectEqualStrings(text, hint.text);
+        try testing.expectEqual(@as(u8, @intCast(n)), hint.tier.number());
+    }
+    // Tier 9 of a need that stops at 6 answers with tier 6, and says so.
+    const past = (try query(&.{declaration}, &world, hero, Tier.fromInt(9).?, &buf)).?;
+    try testing.expectEqual(@as(u8, 6), past.tier.number());
+    try testing.expectEqualStrings("Pull hard.", past.text);
+
+    // A need with only generated tiers answers tier 5 with its relation tier.
+    needs[0].hints = &.{};
+    const plain = (try query(&.{declaration}, &world, hero, Tier.fromInt(5).?, &buf)).?;
+    try testing.expectEqual(Tier.relation, plain.tier);
+    try testing.expect(!plain.authored);
+    try testing.expect(Tier.fromInt(MAX_TIERS + 1) == null);
 }

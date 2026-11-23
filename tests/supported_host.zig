@@ -60,8 +60,8 @@ fn require(comptime Container: type, comptime names: []const []const u8, comptim
 }
 
 comptime {
-    require(bespoke.spell, &.{ "Book", "Spell", "Word", "Kind", "Refusal", "Outcome", "MAX_BOOKS", "MAX_WORDS_PER_KIND", "MAX_SPELLS", "resolve", "named", "named_text", "knows", "check", "cast", "combine" }, "spell");
-    require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "MAX_DECISIONS", "MAX_CLAUSES", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
+    require(bespoke.spell, &.{ "Book", "Spell", "Word", "Kind", "Refusal", "Outcome", "MAX_BOOKS", "DEFAULT_WORDS_PER_KIND", "MAX_WORDS_PER_KIND", "DEFAULT_SPELLS", "MAX_SPELLS", "resolve", "named", "named_text", "knows", "check", "cast", "combine" }, "spell");
+    require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "DEFAULT_DECISIONS", "MAX_DECISIONS", "MAX_CLAUSES", "DEFAULT_OPTIONS", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
     require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Pixel", "from_indices", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_ART_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
     require(bespoke.image.Pixel, &.{"opaque_colour"}, "image.Pixel");
     require(bespoke.image.Image, &.{ "columns", "frame_count", "frame_pixel", "validate" }, "image.Image");

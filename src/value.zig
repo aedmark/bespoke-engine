@@ -8,6 +8,7 @@
 //! two's complement, and `World` clamps every write into the range, so a host call, a loaded
 //! save, or later drift (P45-04) can never store a value the compiler would have rejected.
 const std = @import("std");
+const limits_mod = @import("limits.zig");
 const world_mod = @import("world.zig");
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
@@ -15,8 +16,16 @@ const RelationKind = world_mod.RelationKind;
 
 pub const MIN: i32 = -10;
 pub const MAX: i32 = 10;
-/// Upper bound on axes one program declares; a larger count in a package is corrupt input.
-pub const MAX_AXES: usize = 64;
+/// Axes one program declares: a sanity ceiling a script raises with `limit`, and `MAX_` the
+/// fixed safety cap past which a package's count is corrupt input (D-183).
+pub const DEFAULT_AXES: usize = limits_mod.default_of(.axes);
+pub const MAX_AXES: usize = limits_mod.cap_of(.axes);
+
+/// Drift points that move a value on this axis one step (D-148, D-183): an author setting,
+/// `drift step N` under the axis. One number per axis, because a character's points on it
+/// pile up across every dilemma that drifts it.
+pub const DEFAULT_DRIFT_STEP: u8 = 5;
+pub const MAX_DRIFT_STEP: u8 = 20;
 
 pub const Error = error{InvalidAxis};
 
@@ -25,6 +34,7 @@ pub const Error = error{InvalidAxis};
 pub const Axis = struct {
     relation: RelationKind,
     poles: [2]EntityId,
+    drift_step: u8 = DEFAULT_DRIFT_STEP,
 };
 
 /// Checks one axis against the world it belongs to: the relation exists, is a property, and
@@ -38,6 +48,14 @@ pub fn validate(world: *const World, axis: Axis) Error!void {
         if (pole == .none or world.get_entity_name(pole) == null) return Error.InvalidAxis;
     }
     if (axis.poles[0] == axis.poles[1]) return Error.InvalidAxis;
+    if (axis.drift_step == 0 or axis.drift_step > MAX_DRIFT_STEP) return Error.InvalidAxis;
+}
+
+/// The drift step of the axis whose relation is `relation`, or the default for an axis the
+/// list does not hold.
+pub fn drift_step_of(axes: []const Axis, relation: RelationKind) u8 {
+    for (axes) |axis| if (axis.relation == relation) return axis.drift_step;
+    return DEFAULT_DRIFT_STEP;
 }
 
 pub fn validate_all(world: *const World, axes: []const Axis) Error!void {

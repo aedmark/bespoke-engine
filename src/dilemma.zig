@@ -28,7 +28,7 @@
 //! over the whole game; points past the cap, or a step past -10 or +10, are discarded rather
 //! than banked. Everything is an integer fact, so save, rewind, branch restore, and replay
 //! reproduce drift exactly:
-//!   <Axis> drift(Actor, points)        property, the signed accumulator, -4 to 4 between steps
+//!   <Axis> drift(Actor, points)        property, the signed accumulator, within one step of zero (-4 to 4 by default)
 //!   <Axis> drift steps(Dilemma, n)     property, the steps this dilemma has spent on the axis
 //!   DriftHolding(Dilemma, mask)        property, which drift lines held last tick (edge state)
 //!   DilemmaWeighed(Dilemma)            state, set at the first weighing and never cleared
@@ -43,6 +43,7 @@
 //! it leaned toward, as `Knows(Witness, <Axis> of <Actor>)` (`value.known_value`).
 
 const std = @import("std");
+const limits_mod = @import("limits.zig");
 const world_mod = @import("world.zig");
 const decision_mod = @import("decision.zig");
 const value_mod = @import("value.zig");
@@ -53,7 +54,9 @@ pub const EntityId = world_mod.EntityId;
 pub const RelationKind = world_mod.RelationKind;
 pub const Clause = decision_mod.Clause;
 
-pub const MAX_DILEMMAS: usize = 32;
+/// A sanity ceiling a script raises with `limit`; `MAX_` is the fixed safety cap (D-183).
+pub const DEFAULT_DILEMMAS: usize = limits_mod.default_of(.dilemmas);
+pub const MAX_DILEMMAS: usize = limits_mod.cap_of(.dilemmas);
 pub const MAX_CLAUSES: usize = decision_mod.MAX_CLAUSES;
 pub const MAX_LEANS: usize = 8;
 /// One lean line's magnitude, the width of half an axis.
@@ -61,9 +64,10 @@ pub const MAX_LEAN: u16 = 10;
 /// Drift lines per dilemma; their edge state is one bit each in `DriftHolding`.
 pub const MAX_DRIFTS: usize = 8;
 pub const MAX_DRIFT: u16 = 10;
-/// Points that move a value one step, and the steps one dilemma may move one axis (D-148).
-pub const DRIFT_THRESHOLD: i32 = 5;
-pub const DRIFT_STEPS_PER_DILEMMA: u32 = 2;
+/// The steps one dilemma may move each axis by default (D-148): `drift cap N` in a dilemma
+/// changes it (D-183). Points per step belong to the axis (`value_mod.DEFAULT_DRIFT_STEP`).
+pub const DEFAULT_DRIFT_CAP: u8 = 2;
+pub const MAX_DRIFT_CAP: u8 = 20;
 pub const HOLDING_RELATION = "#DriftHolding";
 pub const PENDING_APPEAL_RELATION = "#PendingAppeal";
 pub const KNOWS_RELATION = "Knows";
@@ -71,9 +75,12 @@ pub const KNOWS_RELATION = "Knows";
 pub const MAX_APPEALS: usize = 4;
 pub const MAX_APPEAL: u16 = 10;
 pub const WEIGHED_RELATION = "#DilemmaWeighed";
-/// Tier boundaries, mirrored around zero (D-146).
-pub const STRONG_AT: i32 = 7;
-pub const MODERATE_AT: i32 = 3;
+/// Default tier boundaries, mirrored around zero (D-146); `tiers S and M` in a dilemma changes
+/// them (D-183). A delta reaches at most 20 from the values and 80 from eight leans, so a
+/// boundary past 100 could never be met.
+pub const DEFAULT_STRONG_AT: u8 = 7;
+pub const DEFAULT_MODERATE_AT: u8 = 3;
+pub const MAX_TIER_AT: u8 = 100;
 
 pub const STATE_RELATION = "DilemmaState";
 pub const SEEN_RELATION = "#EvidenceSeen";
@@ -111,6 +118,8 @@ pub const Drift = struct {
     clause: Clause,
     accumulator: RelationKind,
     spent: RelationKind,
+    /// Points per step on `axis`, copied from the axis so a drift line needs no axis table.
+    step: u8 = value_mod.DEFAULT_DRIFT_STEP,
 };
 
 /// One appeal line: an appeal to the value `axis` adds `points` to the next weighing's delta,
@@ -153,6 +162,13 @@ pub const Dilemma = struct {
     appeals: []const Appeal = &.{},
     /// Indexed by `Tier`; every tier has a response, so weighing is never silent.
     responses: [TIER_COUNT]Response,
+    strong_at: u8 = DEFAULT_STRONG_AT,
+    moderate_at: u8 = DEFAULT_MODERATE_AT,
+    drift_cap: u8 = DEFAULT_DRIFT_CAP,
+
+    pub fn tier_of(self: Dilemma, delta: i32) Tier {
+        return tier_in(delta, self.strong_at, self.moderate_at);
+    }
 };
 
 pub const Declaration = struct {
@@ -167,13 +183,18 @@ pub const Declaration = struct {
     }
 };
 
-/// The tier a delta falls into. Boundaries are inclusive at their inner edge: 7 is strong, 3 is
-/// moderate, 2 is neutral.
+/// The tier a delta falls into under the default boundaries. Boundaries are inclusive at
+/// their inner edge: 7 is strong, 3 is moderate, 2 is neutral.
 pub fn tier_of(delta: i32) Tier {
-    if (delta >= STRONG_AT) return .strong_axis;
-    if (delta >= MODERATE_AT) return .moderate_axis;
-    if (delta > -MODERATE_AT) return .neutral;
-    if (delta > -STRONG_AT) return .moderate_counter;
+    return tier_in(delta, DEFAULT_STRONG_AT, DEFAULT_MODERATE_AT);
+}
+
+/// The tier a delta falls into when `strong` and `moderate` are the boundaries (D-183).
+pub fn tier_in(delta: i32, strong: u8, moderate: u8) Tier {
+    if (delta >= strong) return .strong_axis;
+    if (delta >= moderate) return .moderate_axis;
+    if (delta > -@as(i32, moderate)) return .neutral;
+    if (delta > -@as(i32, strong)) return .moderate_counter;
     return .strong_counter;
 }
 
@@ -182,6 +203,8 @@ pub fn validate(world: *const World, dilemma: Dilemma) Error!void {
     if (dilemma.clauses.len == 0 or dilemma.clauses.len > MAX_CLAUSES) return Error.InvalidDilemma;
     for (dilemma.clauses) |clause| if (clause.relation.len == 0) return Error.InvalidDilemma;
     if (dilemma.axis == dilemma.counter) return Error.InvalidDilemma;
+    if (dilemma.moderate_at == 0 or dilemma.moderate_at >= dilemma.strong_at or dilemma.strong_at > MAX_TIER_AT) return Error.InvalidDilemma;
+    if (dilemma.drift_cap == 0 or dilemma.drift_cap > MAX_DRIFT_CAP) return Error.InvalidDilemma;
     for ([_]RelationKind{ dilemma.axis, dilemma.counter }) |axis| {
         if (world.value_bound(axis) == null) return Error.InvalidDilemma;
     }
@@ -194,6 +217,7 @@ pub fn validate(world: *const World, dilemma: Dilemma) Error!void {
     for (dilemma.drifts) |drift| {
         if (world.value_bound(drift.axis) == null or drift.clause.relation.len == 0) return Error.InvalidDilemma;
         if (drift.points == 0 or drift.points > MAX_DRIFT or drift.points < -@as(i32, MAX_DRIFT)) return Error.InvalidDilemma;
+        if (drift.step == 0 or drift.step > value_mod.MAX_DRIFT_STEP) return Error.InvalidDilemma;
         for ([_]RelationKind{ drift.accumulator, drift.spent }) |rel| {
             const meta = world.get_relation_meta(rel) orelse return Error.InvalidDilemma;
             if (meta.rel_type != .property) return Error.InvalidDilemma;
@@ -383,7 +407,7 @@ pub fn step(world: *World, spatial: ?*const spatial_mod.SpatialSystem, declarati
             }
             _ = world.forget(dilemma.entity, pending_rel, null);
         }
-        const tier = tier_of(delta);
+        const tier = dilemma.tier_of(delta);
         const response = dilemma.responses[@backingInt(tier)];
         _ = world.forget(dilemma.entity, v.chose, null);
         try world.remember(dilemma.entity, v.chose, response.action.to_int(), 0);
@@ -478,31 +502,32 @@ fn apply_drift(world: *World, dilemma: Dilemma) !void {
 
 /// Adds one line's points to the actor's accumulator and spends whole steps from it, up to the
 /// dilemma's bound. Points that cannot become a step, because the bound is spent or the value
-/// is already at the end of its range, are discarded: the accumulator keeps at most 4.
+/// is already at the end of its range, are discarded: the accumulator keeps less than one step (4 points by default).
 fn add_drift(world: *World, dilemma: Dilemma, drift: Drift) !void {
     var spent: u32 = world.get_property(dilemma.entity, drift.spent) orelse 0;
-    if (spent >= DRIFT_STEPS_PER_DILEMMA) return;
+    if (spent >= dilemma.drift_cap) return;
+    const per_step: i32 = drift.step;
     const bound = world.value_bound(drift.axis) orelse return;
     var acc: i32 = @as(i32, @bitCast(world.get_property(dilemma.actor, drift.accumulator) orelse 0)) + drift.points;
     var value = value_or_zero(world, dilemma.actor, drift.axis);
     const start_value = value;
-    while (acc >= DRIFT_THRESHOLD or acc <= -DRIFT_THRESHOLD) {
+    while (acc >= per_step or acc <= -per_step) {
         const dir: i32 = if (acc > 0) 1 else -1;
-        acc -= dir * DRIFT_THRESHOLD;
-        if (spent >= DRIFT_STEPS_PER_DILEMMA) break;
+        acc -= dir * per_step;
+        if (spent >= dilemma.drift_cap) break;
         // A step past the range would be clamped away (D-144); it spends nothing.
         if ((dir > 0 and value >= bound.max) or (dir < 0 and value <= bound.min)) continue;
         value += dir;
         spent += 1;
     }
-    acc = std.math.clamp(acc, -(DRIFT_THRESHOLD - 1), DRIFT_THRESHOLD - 1);
+    acc = std.math.clamp(acc, -(per_step - 1), per_step - 1);
     if (value != start_value or world.get_property(dilemma.actor, drift.axis) == null)
         try world.remember(dilemma.actor, drift.axis, @bitCast(value), 0);
     try world.remember(dilemma.actor, drift.accumulator, @bitCast(acc), 0);
     try world.remember(dilemma.entity, drift.spent, spent, 0);
 }
 
-/// The actor's undrifted points on an axis: the accumulator between steps, -4 to 4.
+/// The actor's undrifted points on an axis: the accumulator between steps, less than one step either way.
 pub fn drift_points(world: *const World, actor: EntityId, accumulator: RelationKind) i32 {
     return @bitCast(world.get_property(actor, accumulator) orelse 0);
 }
@@ -824,4 +849,47 @@ test "P45-04: one dilemma moves an axis at most two steps, and drift stops at th
     // The bound is untouched, so drift back down still works.
     try pulse(&edge, "Robbed", edge.world.lookup_entity("Miller").?);
     try testing.expectEqual(@as(i32, 9), mercy_of(&edge));
+}
+
+test "P48-13: a dilemma's own tiers pick its tier, and an axis's step and the dilemma's cap set its drift" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    // Justice 7 against Mercy 0 is strong under 7 and 3, moderate under 8 and 4, and neutral
+    // when the moderate boundary is also above it.
+    try rig.set_values(7, 0);
+    try testing.expectEqualStrings("Hang", rig.action_name((try rig.weigh()).items[0]));
+    rig.decls[0].dilemma.strong_at = 8;
+    rig.decls[0].dilemma.moderate_at = 4;
+    try validate_all(&rig.world, &rig.decls, &.{}, &.{});
+    try testing.expectEqualStrings("Jail", rig.action_name((try rig.weigh()).items[0]));
+    try testing.expectEqual(Tier.neutral, tier_in(3, 8, 4));
+    try testing.expectEqual(Tier.moderate_counter, tier_in(-4, 8, 4));
+    try testing.expectEqual(Tier.strong_counter, tier_in(-8, 8, 4));
+
+    // A step of 3 points and a cap of 3 steps: 10 points move Mercy three steps, where the
+    // defaults (5 points, 2 steps) would move it two.
+    var lines: [2]Drift = undefined;
+    try with_drifts(&rig, &lines, 10, -5);
+    for (&lines) |*line| line.step = 3;
+    rig.decls[0].dilemma.drift_cap = 3;
+    try validate_all(&rig.world, &rig.decls, &.{}, &.{});
+    try rig.set_values(4, 0);
+    _ = try rig.weigh();
+    try pulse(&rig, "Repaid", rig.thief);
+    try testing.expectEqual(@as(i32, 3), mercy_of(&rig));
+    try testing.expectEqual(@as(u32, 3), rig.world.get_property(rig.decls[0].dilemma.entity, lines[0].spent).?);
+    // The leftover point stays below one step of 3.
+    try testing.expectEqual(@as(i32, 1), drift_points(&rig.world, rig.actor, lines[0].accumulator));
+
+    // Boundaries out of order, a cap of none, and a step of none are refused.
+    rig.decls[0].dilemma.moderate_at = 8;
+    try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &rig.decls, &.{}, &.{}));
+    rig.decls[0].dilemma.moderate_at = 4;
+    rig.decls[0].dilemma.drift_cap = 0;
+    try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &rig.decls, &.{}, &.{}));
+    rig.decls[0].dilemma.drift_cap = 3;
+    lines[0].step = 0;
+    try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &rig.decls, &.{}, &.{}));
 }

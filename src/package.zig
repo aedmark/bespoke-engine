@@ -88,7 +88,10 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 33 appends named looks and parts after the player text (P48-11, D-181); versions 1
 /// through 32 load with none. Version 34 stores art as true-colour QOI streams (P48-12, D-166,
 /// D-182); versions 24 through 33 load their indexed art through the palette they carry.
-pub const PACKAGE_VERSION: u32 = 34;
+/// Version 35 appends each axis's drift step and each dilemma's tiers and drift cap after the
+/// looks, and lets a hint tier pass 3 (P48-13, D-183); versions 1 through 34 load with the
+/// defaults.
+pub const PACKAGE_VERSION: u32 = 35;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -496,6 +499,7 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
     try write_cue_chain(writer, compiled);
     try write_player_text(world, writer);
     try write_art_looks(writer, compiled.art);
+    try write_tuning(writer, compiled);
     // Version 29: which build this is, for saves (D-162).
     try writer.writeInt(u32, compiled.save_version, .little);
     try writer.writeInt(u64, compiled.fingerprint, .little);
@@ -551,6 +555,39 @@ fn write_player_text(world: *const World, writer: anytype) !void {
 
 /// Version 33: named looks (name, image, animations as in the version 25 sprites), then parts
 /// (entity, host, offset) (P48-11, D-181).
+/// Version 35: the author's numbers (D-183). One drift step per axis and the tiers and drift
+/// cap per dilemma, in the order of the axis and dilemma tables, each count repeated so a
+/// mismatch is caught.
+fn write_tuning(writer: anytype, compiled: *const CompiledProgram) !void {
+    try writer.writeInt(u32, @intCast(compiled.axes.items.len), .little);
+    for (compiled.axes.items) |axis| try writer.writeByte(axis.drift_step);
+    try writer.writeInt(u32, @intCast(compiled.dilemmas.items.len), .little);
+    for (compiled.dilemmas.items) |decl| {
+        try writer.writeAll(&.{ decl.dilemma.strong_at, decl.dilemma.moderate_at, decl.dilemma.drift_cap });
+    }
+}
+
+/// Untrusted input: the counts must match the tables already read, and each number is checked
+/// by `value_mod.validate` and `dilemma_mod.validate`, which the caller runs again. Each drift
+/// line takes its axis's step, as the compiler does.
+fn read_tuning(reader: anytype, axes: []value_mod.Axis, dilemmas: []dilemma_mod.Declaration) !void {
+    if (try reader.takeInt(u32, .little) != axes.len) return error.InvalidAxisConfig;
+    for (axes) |*axis| {
+        axis.drift_step = try reader.takeByte();
+        if (axis.drift_step == 0 or axis.drift_step > value_mod.MAX_DRIFT_STEP) return error.InvalidAxisConfig;
+    }
+    if (try reader.takeInt(u32, .little) != dilemmas.len) return error.InvalidDilemmaConfig;
+    for (dilemmas) |*decl| {
+        const bytes = try reader.takeArray(3);
+        decl.dilemma.strong_at = bytes[0];
+        decl.dilemma.moderate_at = bytes[1];
+        decl.dilemma.drift_cap = bytes[2];
+        // The drifts are owned by the declaration and were read as constants; the step is
+        // the only field set here.
+        for (@constCast(decl.dilemma.drifts)) |*drift| drift.step = value_mod.drift_step_of(axes, drift.axis);
+    }
+}
+
 fn write_art_looks(writer: anytype, art: image_mod.Art) !void {
     try writer.writeInt(u32, @intCast(art.looks.len), .little);
     for (art.looks) |look| {
@@ -2279,6 +2316,10 @@ pub fn load_package(
     }
     if (header.version >= 31) try read_player_text(allocator, world, pr);
     if (header.version >= 33) try read_art_looks(allocator, world, pr, &art);
+    if (header.version >= 35) {
+        try read_tuning(pr, axes.items, dilemmas.items);
+        dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
+    }
     var save_version: u32 = 1;
     var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
     if (header.version >= 29) {
@@ -2526,7 +2567,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 34",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 35",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2878,7 +2919,9 @@ const EMPTY_TAIL_AFTER_V26: usize = 4 + TEXT_TAIL + IDENTITY_TAIL;
 /// The empty display-name and phrase counts (version 31), before the identity.
 const TEXT_TAIL: usize = 4 + 4 + LOOK_TAIL;
 /// The empty look and part counts (version 33), counted in `TEXT_TAIL` since they follow it.
-const LOOK_TAIL: usize = 4 + 4;
+const LOOK_TAIL: usize = 4 + 4 + TUNE_TAIL;
+/// The empty axis and dilemma tuning counts (version 35), after the looks.
+const TUNE_TAIL: usize = 4 + 4;
 /// The save version and fingerprint (version 29), present in every package.
 const IDENTITY_TAIL: usize = 4 + 8;
 
@@ -3669,7 +3712,7 @@ test "P44-01: package version 15 round-trips goals and loads a version 14 payloa
     try testing.expectEqualStrings("ExposureSlip", world2.get_entity_name(take.object.?).?);
     try testing.expectEqualStrings("Archive", world2.get_entity_name(take.room.?).?);
     try testing.expectEqual(@as(usize, 1), take.hints.len);
-    try testing.expectEqual(@as(u2, @intFromEnum(take.hints[0].tier)), @as(u2, @intFromEnum(hint_mod.Tier.thing)));
+    try testing.expectEqual(take.hints[0].tier, hint_mod.Tier.thing);
     try testing.expectEqualStrings("Your notebook names the slip.", take.hints[0].text);
     try testing.expectEqual(@as(usize, 1), goal.needs[1].after.len);
     try testing.expectEqual(take.entity, goal.needs[1].after[0]);
@@ -3775,7 +3818,9 @@ test "P45-01: a package axis on a set relation or with a bad pole is refused" {
     // entity that does not exist.
     const bad_pole = try testing.allocator.dupe(u8, buffer.items);
     defer testing.allocator.free(bad_pole);
-    std.mem.writeInt(u32, bad_pole[bad_pole.len - 4 - EMPTY_TAIL_AFTER_V19 ..][0..4], 0xFFFF_FFF0, .little);
+    // Since version 35 the tail also holds one drift-step byte per axis (D-183).
+    const tuned = compiled1.axes.items.len;
+    std.mem.writeInt(u32, bad_pole[bad_pole.len - 4 - EMPTY_TAIL_AFTER_V19 - tuned ..][0..4], 0xFFFF_FFF0, .little);
     reseal_for_test(bad_pole, PACKAGE_VERSION);
     var world2 = try World.init(testing.allocator, 1024 * 1024);
     defer world2.deinit();
@@ -3785,7 +3830,7 @@ test "P45-01: a package axis on a set relation or with a bad pole is refused" {
     // Point the axis at relation 0, which no table holds.
     const bad_relation = try testing.allocator.dupe(u8, buffer.items);
     defer testing.allocator.free(bad_relation);
-    std.mem.writeInt(u16, bad_relation[bad_relation.len - 10 - EMPTY_TAIL_AFTER_V19 ..][0..2], 0, .little);
+    std.mem.writeInt(u16, bad_relation[bad_relation.len - 10 - EMPTY_TAIL_AFTER_V19 - tuned ..][0..2], 0, .little);
     reseal_for_test(bad_relation, PACKAGE_VERSION);
     var world3 = try World.init(testing.allocator, 1024 * 1024);
     defer world3.deinit();
@@ -4891,6 +4936,97 @@ test "P48-12: checked-in version 34 package fixture carries its art as QOI" {
     try testing.expectEqual(image_mod.Pixel{ .r = 200, .g = 40, .b = 40, .a = 255 }, sheet.frame_pixel(0, 0, 0));
     try testing.expectEqual(image_mod.TRANSPARENT, sheet.frame_pixel(0, 1, 0));
     try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
+}
+
+const TUNED_FIXTURE =
+    \\entity FixtureJudge, FixtureThief, FixtureClerk, FixtureLedger, FixtureOffice
+    \\relation Accused(who)
+    \\relation Holds(holder, item)
+    \\limit hints 6
+    \\axis FixtureJustice between Cruelty and Leniency
+    \\axis FixtureMercy between Vengeance and "Condoning Harm"
+    \\  drift step 4
+    \\dilemma FixtureBread:
+    \\  actor FixtureJudge
+    \\  fires Judged
+    \\  requires Accused(FixtureThief)
+    \\  weighs FixtureJustice against FixtureMercy
+    \\  tiers 8 and 4
+    \\  drift cap 3
+    \\  drifts 2 toward FixtureMercy when Accused(FixtureThief)
+    \\  strong FixtureJustice: "The law is the law." -> Hang
+    \\  moderate FixtureJustice: "A night in the cells." -> Jail
+    \\  neutral: "Show me why." -> Wait
+    \\  moderate FixtureMercy: "Pay for the loaf." -> Fine
+    \\  strong FixtureMercy: "Go." -> Pardon
+    \\goal FixtureAudit:
+    \\  need TakeLedger:
+    \\    met Holds(FixtureClerk, FixtureLedger)
+    \\    room FixtureOffice
+    \\    hint 6 "Pull the drawer hard."
+    \\routine Idle(FixtureJudge):
+    \\  wait 1 ticks
+    \\
+;
+
+test "P48-13: a package carries axis steps, dilemma tiers and caps, and a sixth hint tier" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, TUNED_FIXTURE);
+    defer compiled.deinit();
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    var lw = ListWriter.init(&buffer);
+    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+
+    var world2 = try World.init(testing.allocator, 1024 * 1024);
+    defer world2.deinit();
+    var stream: std.Io.Reader = .fixed(buffer.items);
+    var loaded = try load_package(testing.allocator, &stream, &world2, null);
+    defer loaded.deinit();
+    try testing.expectEqual(@as(u8, 4), loaded.axes.items[1].drift_step);
+    const d = loaded.dilemmas.items[0].dilemma;
+    try testing.expectEqual(@as(u8, 8), d.strong_at);
+    try testing.expectEqual(@as(u8, 4), d.moderate_at);
+    try testing.expectEqual(@as(u8, 3), d.drift_cap);
+    try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
+    try testing.expectEqual(@as(u8, 6), loaded.goals.items[0].goal.needs[0].hints[0].tier.number());
+
+    // The tuning sits just before the identity: the axis count and steps, then the dilemma
+    // count and its three numbers. A count that disagrees, or tiers out of order, is refused.
+    const tuning_at = buffer.items.len - IDENTITY_TAIL - (4 + 2 + 4 + 3);
+    const Case = struct { at: usize, bytes: []const u8, err: anyerror };
+    const cases = [_]Case{
+        .{ .at = tuning_at, .bytes = &.{ 3, 0, 0, 0 }, .err = error.InvalidAxisConfig },
+        .{ .at = tuning_at + 4 + 1, .bytes = &.{0}, .err = error.InvalidAxisConfig },
+        .{ .at = tuning_at + 6, .bytes = &.{ 2, 0, 0, 0 }, .err = error.InvalidDilemmaConfig },
+        .{ .at = tuning_at + 10, .bytes = &.{ 4, 8 }, .err = error.InvalidDilemmaConfig },
+        .{ .at = tuning_at + 12, .bytes = &.{0}, .err = error.InvalidDilemmaConfig },
+    };
+    for (cases) |case| {
+        const bad = try testing.allocator.dupe(u8, buffer.items);
+        defer testing.allocator.free(bad);
+        @memcpy(bad[case.at .. case.at + case.bytes.len], case.bytes);
+        reseal_for_test(bad, PACKAGE_VERSION);
+        try testing.expectError(case.err, load_for_test(bad));
+    }
+}
+
+test "P48-13: checked-in version 35 package fixture is tuned" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v35.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 35), version_from_bytes(fixture).?);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(u8, 8), compiled.dilemmas.items[0].dilemma.strong_at);
+    try testing.expectEqual(@as(u8, 4), compiled.axes.items[1].drift_step);
+    try testing.expectEqual(@as(u8, 6), compiled.goals.items[0].goal.needs[0].hints[0].tier.number());
 }
 
 test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {

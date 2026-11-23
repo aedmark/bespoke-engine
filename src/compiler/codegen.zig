@@ -809,7 +809,9 @@ pub const Codegen = struct {
             for (ast.relations.items) |rel| {
                 if (std.mem.eql(u8, rel.name, decl.name)) return error.InvalidAxis;
             }
-            try mut_self.axes.append(try value_mod.declare(mut_self.world, decl.name, decl.poles));
+            var axis = try value_mod.declare(mut_self.world, decl.name, decl.poles);
+            if (decl.drift_step) |step| axis.drift_step = step;
+            try mut_self.axes.append(axis);
         }
         value_mod.validate_all(mut_self.world, mut_self.axes.items) catch return error.InvalidAxis;
         // Dilemmas weigh declared axes, so they compile once the axes are bounded (P45-03).
@@ -1693,6 +1695,7 @@ pub const Codegen = struct {
                 .clause = try self.compile_clause(source.pattern, source.negated),
                 .accumulator = rels.accumulator,
                 .spent = rels.spent,
+                .step = value_mod.drift_step_of(self.axes.items, rel.?),
             };
         }
         // An appeal names the value appealed to, which may be any declared axis, and leans
@@ -1729,6 +1732,9 @@ pub const Codegen = struct {
             .drifts = drifts,
             .appeals = appeals,
             .responses = responses,
+            .strong_at = if (decl.tiers) |t| t[0] else dilemma_mod.DEFAULT_STRONG_AT,
+            .moderate_at = if (decl.tiers) |t| t[1] else dilemma_mod.DEFAULT_MODERATE_AT,
+            .drift_cap = decl.drift_cap orelse dilemma_mod.DEFAULT_DRIFT_CAP,
         } };
     }
 

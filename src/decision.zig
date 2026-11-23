@@ -23,15 +23,19 @@
 //! options are all vetoed chooses nothing, exactly as an empty hand does.
 
 const std = @import("std");
+const limits_mod = @import("limits.zig");
 const world_mod = @import("world.zig");
 const spell_mod = @import("spell.zig");
 
 pub const World = world_mod.World;
 pub const EntityId = world_mod.EntityId;
 
-pub const MAX_DECISIONS: usize = 32;
+/// Sanity ceilings a script raises with `limit`; `MAX_` is the fixed safety cap (D-183).
+pub const DEFAULT_DECISIONS: usize = limits_mod.default_of(.decisions);
+pub const MAX_DECISIONS: usize = limits_mod.cap_of(.decisions);
 pub const MAX_CLAUSES: usize = 8;
-pub const MAX_OPTIONS: usize = 8;
+pub const DEFAULT_OPTIONS: usize = limits_mod.default_of(.options);
+pub const MAX_OPTIONS: usize = limits_mod.cap_of(.options);
 pub const MAX_PICKS: usize = 8;
 /// A single scored line's magnitude. The sum of a full option stays well inside `i32`.
 pub const MAX_POINTS: u16 = 100;

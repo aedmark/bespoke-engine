@@ -1,0 +1,29 @@
+# A dilemma's 'tiers' line moves its boundaries: Justice 7 against Mercy 0 is strong under
+# the default 7 and 3, and moderate under 8 and 4.
+# pins: D-183; D-167
+# ticks: 3
+# expect fact: Chose(StolenBread, Jail)
+# expect no fact: Chose(StolenBread, Hang)
+
+entity Valerius, Thief
+relation Accused(who)
+axis Justice between Cruelty and Leniency
+axis Mercy between Vengeance and "Condoning Harm"
+remember Justice(Valerius, 7)
+remember Mercy(Valerius, 0)
+
+dilemma StolenBread:
+  actor Valerius
+  fires Judged
+  requires Accused(Thief)
+  weighs Justice against Mercy
+  tiers 8 and 4
+  strong Justice: "The law is the law." -> Hang
+  moderate Justice: "A night in the cells." -> Jail
+  neutral: "Show me why." -> Wait
+  moderate Mercy: "Pay for the loaf." -> Fine
+  strong Mercy: "Go." -> Pardon
+
+routine Accuse(Valerius):
+  wait 1 ticks
+  remember Accused(Thief)

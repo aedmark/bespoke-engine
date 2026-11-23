@@ -14,15 +14,20 @@
 //! refused only when one of its words is not known, and a triple that names no spell is
 //! refused before any cue fires.
 const std = @import("std");
+const limits_mod = @import("limits.zig");
 const world_mod = @import("world.zig");
 const World = world_mod.World;
 const EntityId = world_mod.EntityId;
 
 /// One book per script. A second book would make `host.cast` ambiguous.
 pub const MAX_BOOKS: usize = 1;
-pub const MAX_WORDS_PER_KIND: usize = 12;
+/// Sanity ceilings a script raises with `limit`; `MAX_` is the fixed safety cap (D-183). One
+/// spellbook is a design boundary, not a ceiling (D-177).
+pub const DEFAULT_WORDS_PER_KIND: usize = limits_mod.default_of(.words);
+pub const MAX_WORDS_PER_KIND: usize = limits_mod.cap_of(.words);
 pub const MAX_WORDS: usize = MAX_WORDS_PER_KIND * 3;
-pub const MAX_SPELLS: usize = 16;
+pub const DEFAULT_SPELLS: usize = limits_mod.default_of(.spells);
+pub const MAX_SPELLS: usize = limits_mod.cap_of(.spells);
 pub const MAX_WORD_TEXT: usize = 32;
 
 /// Relations a caster's knowledge is read from, in priority order. `Rejects` beats both.

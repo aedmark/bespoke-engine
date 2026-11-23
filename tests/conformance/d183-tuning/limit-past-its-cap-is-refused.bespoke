@@ -1,0 +1,5 @@
+# A limit raises a ceiling up to eight times its default, and no further.
+# pins: D-183; D-167
+# expect error: UnexpectedToken 5:13
+
+limit hints 25

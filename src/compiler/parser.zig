@@ -9,6 +9,8 @@ const agency_mod = @import("../agency.zig");
 const decision_mod = @import("../decision.zig");
 const dilemma_mod = @import("../dilemma.zig");
 const hint_mod = @import("../hint.zig");
+const value_mod = @import("../value.zig");
+const limits_mod = @import("../limits.zig");
 const spell_mod = @import("../spell.zig");
 const command_mod = @import("../command.zig");
 const phrase_mod = @import("../phrase.zig");
@@ -459,6 +461,8 @@ pub const DecisionDecl = struct {
 pub const AxisDecl = struct {
     name: []const u8,
     poles: [2][]const u8,
+    /// `drift step N` indented under the axis (P48-13, D-183); null keeps the default.
+    drift_step: ?u8 = null,
 };
 
 /// One `leans <N> toward <Axis> when|unless <Fact>` line of a dilemma (P45-03).
@@ -507,6 +511,9 @@ pub const DilemmaDecl = struct {
     drifts: []const DilemmaDriftDecl,
     appeals: []const DilemmaAppealDecl,
     responses: [dilemma_mod.TIER_COUNT]DilemmaResponseDecl,
+    /// `tiers S and M` and `drift cap N` (P48-13, D-183); null keeps the defaults.
+    tiers: ?[2]u8 = null,
+    drift_cap: ?u8 = null,
 };
 
 /// `red lines <Character>: <Option>, <Option>` lists options a character never takes in any
@@ -711,6 +718,11 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
     diagnostic: ?Diagnostic = null,
     suggestion: ?[]const u8 = null,
+    /// `limit` lines (P48-13, D-183), and every item a limit counts, checked once the whole
+    /// script is read so a `limit` line may come anywhere. `value` is the item's place among
+    /// its owner's items, or a hint's tier.
+    limit_lines: std.ArrayListUnmanaged(struct { kind: limits_mod.Kind, value: usize, at: Token }) = .empty,
+    counted: std.ArrayListUnmanaged(struct { kind: limits_mod.Kind, value: usize, at: Token }) = .empty,
     diag_buf: [256]u8 = undefined,
     weave_refs: std.array_list.Managed(WeaveRef),
     arrival_refs: std.array_list.Managed(ArrivalRef),
@@ -978,6 +990,7 @@ pub const Parser = struct {
                     try ast.agendas.append(decl);
                 },
                 .kw_goal => {
+                    try self.count_item(.goals, ast.goals.items.len + 1, self.current);
                     const decl = try self.parse_goal_decl();
                     for (ast.goals.items) |prior| {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("goal '{s}' is declared twice", .{decl.name});
@@ -992,6 +1005,7 @@ pub const Parser = struct {
                     try ast.spellbooks.append(decl);
                 },
                 .kw_decision => {
+                    try self.count_item(.decisions, ast.decisions.items.len + 1, self.current);
                     const decl = try self.parse_decision_decl();
                     for (ast.decisions.items) |prior| {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("decision '{s}' is declared twice", .{decl.name});
@@ -999,6 +1013,7 @@ pub const Parser = struct {
                     try ast.decisions.append(decl);
                 },
                 .kw_dilemma => {
+                    try self.count_item(.dilemmas, ast.dilemmas.items.len + 1, self.current);
                     const decl = try self.parse_dilemma_decl();
                     for (ast.dilemmas.items) |prior| {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("dilemma '{s}' is declared twice", .{decl.name});
@@ -1006,6 +1021,7 @@ pub const Parser = struct {
                     try ast.dilemmas.append(decl);
                 },
                 .kw_axis => {
+                    try self.count_item(.axes, ast.axes.items.len + 1, self.current);
                     const decl = try self.parse_axis_decl();
                     for (ast.axes.items) |prior| {
                         if (std.mem.eql(u8, prior.name, decl.name)) return self.set_error("axis '{s}' is declared twice", .{decl.name});
@@ -1315,6 +1331,12 @@ pub const Parser = struct {
                         try ast.phrases.append(self.allocator, .{ .key = key_tok.slice, .text = text });
                         continue;
                     }
+                    // `limit <name> N` raises a sanity ceiling (P48-13, D-183). One word, matched
+                    // by text with a name after it, so `limit` stays usable elsewhere.
+                    if (std.mem.eql(u8, start.slice, "limit") and self.current.tag == .identifier and self.current.line == start.line) {
+                        try self.parse_limit(start);
+                        continue;
+                    }
                     // `save version N` names which saves this build can load (P48-08, D-162).
                     // Two words, not keywords, so `save` and `version` stay usable as names.
                     if (std.mem.eql(u8, start.slice, "save") and self.current.tag == .identifier and
@@ -1424,6 +1446,7 @@ pub const Parser = struct {
             }
         }
 
+        try self.check_limits();
         try self.resolve_art(&ast);
         return ast;
     }
@@ -1966,6 +1989,7 @@ pub const Parser = struct {
             if (self.current.tag != .identifier or !std.mem.eql(u8, directive, "need"))
                 return self.set_error("goal '{s}' expects a 'need <Name>:' block, found '{s}'", .{ name, directive });
             try self.advance();
+            try self.count_item(.needs, needs.items.len + 1, self.current);
             const need_name = (try self.expect(.identifier)).slice;
             for (needs.items) |prior| {
                 if (std.mem.eql(u8, prior.name, need_name))
@@ -2002,9 +2026,11 @@ pub const Parser = struct {
                     if (room != null) return self.set_error("need '{s}' declares room twice", .{need_name});
                     room = (try self.expect(.identifier)).slice;
                 } else if (std.mem.eql(u8, need_directive, "hint")) {
+                    const tier_tok = self.current;
                     const tier = try self.take_u32();
                     if (hint_mod.Tier.fromInt(tier) == null)
-                        return self.set_error("need '{s}' hint tier is {d}; tiers are 1 (room), 2 (thing), and 3 (relation)", .{ need_name, tier });
+                        return self.error_at(tier_tok, "need '{s}' hint tier is {d}; tiers count from 1 (room), 2 (thing), and 3 (relation), and a script may write more up to {d}", .{ need_name, tier, hint_mod.MAX_TIERS });
+                    try self.count_item(.hints, tier, tier_tok);
                     for (hints.items) |prior| {
                         if (prior.tier == tier) return self.set_error("need '{s}' already has a tier {d} hint", .{ need_name, tier });
                     }
@@ -2055,6 +2081,7 @@ pub const Parser = struct {
                     .form;
                 var count: usize = 0;
                 while (self.current.tag != .dedent and self.current.tag != .eof) {
+                    try self.count_item(.words, count + 1, self.current);
                     const word_name = (try self.expect(.identifier)).slice;
                     if (word_name.len > spell_mod.MAX_WORD_TEXT)
                         return self.set_error("spellbook '{s}' word '{s}' is longer than {d} bytes", .{ name, word_name, spell_mod.MAX_WORD_TEXT });
@@ -2075,6 +2102,7 @@ pub const Parser = struct {
                 }
                 if (count == 0) return self.set_error("spellbook '{s}' declares no {s} words", .{ name, directive });
             } else if (std.mem.eql(u8, directive, "spell")) {
+                try self.count_item(.spells, spells.items.len + 1, self.current);
                 const spell_name = (try self.expect(.identifier)).slice;
                 _ = try self.expect(.colon);
                 const power = (try self.expect(.identifier)).slice;
@@ -2155,6 +2183,7 @@ pub const Parser = struct {
                 if (clauses.items.len > decision_mod.MAX_CLAUSES)
                     return self.set_error("decision '{s}' has more than {d} trigger lines", .{ name, decision_mod.MAX_CLAUSES });
             } else if (std.mem.eql(u8, directive, "option")) {
+                try self.count_item(.options, options.items.len + 1, self.current);
                 const option_name = (try self.expect(.identifier)).slice;
                 for (options.items) |prior| {
                     if (std.mem.eql(u8, prior.name, option_name))
@@ -2226,6 +2255,8 @@ pub const Parser = struct {
         var tiers = std.array_list.Managed(TierLine).init(self.allocator);
         // Where each lean names its axis, so a wrong name is reported on its own line.
         var lean_at = std.array_list.Managed(Token).init(self.allocator);
+        var tier_bounds: ?[2]u8 = null;
+        var drift_cap: ?u8 = null;
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             // Directives are matched by text: `unless` and `when` are keyword tokens.
             const directive_tok = self.current;
@@ -2322,6 +2353,28 @@ pub const Parser = struct {
                 });
                 if (drifts.items.len > dilemma_mod.MAX_DRIFTS)
                     return self.dilemma_fail(self.current, name, &.{std.fmt.comptimePrint("has more than {d} drift lines", .{dilemma_mod.MAX_DRIFTS})});
+            } else if (std.mem.eql(u8, directive, "tiers")) {
+                // `tiers 8 and 4`: the strong and moderate boundaries, mirrored (D-183).
+                if (tier_bounds != null) return self.dilemma_fail(directive_tok, name, &.{"declares tiers twice"});
+                const strong_tok = self.current;
+                const strong = try self.take_u32();
+                if (self.current.tag != .kw_and) return self.dilemma_fail(self.current, name, &.{"expects 'tiers <strong> and <moderate>', such as 'tiers 7 and 3'"});
+                try self.advance();
+                const moderate = try self.take_u32();
+                if (moderate == 0 or moderate >= strong or strong > dilemma_mod.MAX_TIER_AT)
+                    return self.dilemma_fail(strong_tok, name, &.{std.fmt.comptimePrint("has tiers out of order or out of range; the strong boundary comes first and is at most {d}, and the moderate one is from 1 and below it", .{dilemma_mod.MAX_TIER_AT})});
+                tier_bounds = .{ @intCast(strong), @intCast(moderate) };
+            } else if (std.mem.eql(u8, directive, "drift")) {
+                // `drift cap 3`: the steps this dilemma may move each axis (D-183).
+                if (!(self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "cap")))
+                    return self.dilemma_fail(self.current, name, &.{"expects 'drift cap <N>'"});
+                try self.advance();
+                if (drift_cap != null) return self.dilemma_fail(directive_tok, name, &.{"declares its drift cap twice"});
+                const cap_tok = self.current;
+                const n = try self.take_u32();
+                if (n == 0 or n > dilemma_mod.MAX_DRIFT_CAP)
+                    return self.dilemma_fail(cap_tok, name, &.{std.fmt.comptimePrint("has a drift cap outside 1 to {d} steps", .{dilemma_mod.MAX_DRIFT_CAP})});
+                drift_cap = @intCast(n);
             } else if (std.mem.eql(u8, directive, "strong") or std.mem.eql(u8, directive, "moderate") or std.mem.eql(u8, directive, "neutral")) {
                 const neutral = std.mem.eql(u8, directive, "neutral");
                 const toward = if (neutral) "" else (try self.expect(.identifier)).slice;
@@ -2335,7 +2388,7 @@ pub const Parser = struct {
                     .response = .{ .line = line, .action = action },
                     .at = directive_tok,
                 });
-            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'appeals', 'drifts', 'strong', 'moderate', or 'neutral'", .{directive});
+            } else return self.set_error("unknown dilemma directive '{s}'; expected 'actor', 'fires', 'requires', 'unless', 'weighs', 'leans', 'appeals', 'drifts', 'tiers', 'drift cap', 'strong', 'moderate', or 'neutral'", .{directive});
         }
         _ = try self.expect(.dedent);
         if (clauses.items.len == 0)
@@ -2389,6 +2442,8 @@ pub const Parser = struct {
             .drifts = try drifts.toOwnedSlice(),
             .appeals = try appeals.toOwnedSlice(),
             .responses = ordered,
+            .tiers = tier_bounds,
+            .drift_cap = drift_cap,
         };
     }
 
@@ -2721,6 +2776,52 @@ pub const Parser = struct {
     /// Turns the art declarations into pixels and bindings, naming the first thing
     /// wrong at its own line. Runs once the whole script is read, so declarations may come in
     /// any order (P46-03, D-155).
+    fn count_item(self: *Parser, kind: limits_mod.Kind, value: usize, at: Token) !void {
+        try self.counted.append(self.allocator, .{ .kind = kind, .value = value, .at = at });
+    }
+
+    /// `limit <name> N` (P48-13, D-183): the name is one of the nine ceilings, and N lies
+    /// between its default and its safety cap.
+    fn parse_limit(self: *Parser, start: Token) !void {
+        const name_tok = self.current;
+        try self.advance();
+        const kind = limits_mod.find(name_tok.slice) orelse {
+            var hints = Suggestions{};
+            for (limits_mod.ENTRIES) |entry| hints.consider(name_tok.slice, entry.name);
+            self.suggestion = hints.result();
+            return self.error_at(name_tok, "there is no limit on '{s}'; a script may raise goals, needs, decisions, options, dilemmas, axes, spells, words, or hints", .{name_tok.slice});
+        };
+        const entry = limits_mod.ENTRIES[@intFromEnum(kind)];
+        const number = self.current;
+        if (number.tag != .number or number.line != start.line) return self.error_at(number, "'limit {s}' needs a whole number, such as 'limit {s} {d}'", .{ entry.name, entry.name, entry.default * 2 });
+        const value = try self.take_u32();
+        if (value < entry.default or value > limits_mod.cap_of(kind))
+            return self.error_at(number, "'limit {s}' is {d}; it may raise the default of {d} {s} up to {d}", .{ entry.name, value, entry.default, entry.counts, limits_mod.cap_of(kind) });
+        for (self.limit_lines.items) |prior| {
+            if (prior.kind == kind) return self.error_at(start, "'limit {s}' is declared twice", .{entry.name});
+        }
+        try self.limit_lines.append(self.allocator, .{ .kind = kind, .value = value, .at = start });
+    }
+
+    /// Every counted item against its limit, in source order of the items, so the first one
+    /// past a limit is the one named.
+    fn check_limits(self: *Parser) !void {
+        var limits = limits_mod.Limits{};
+        for (self.limit_lines.items) |line| limits.values[@intFromEnum(line.kind)] = line.value;
+        for (self.counted.items) |item| {
+            const limit = limits.get(item.kind);
+            if (item.value <= limit) continue;
+            const entry = limits_mod.ENTRIES[@intFromEnum(item.kind)];
+            // Suggest the limit the whole script needs, not just this item, so following the
+            // help clears every item of the kind at once.
+            var needed = item.value;
+            for (self.counted.items) |other| if (other.kind == item.kind) {
+                needed = @max(needed, other.value);
+            };
+            return self.error_at(item.at, "{d} {s} is past the limit of {d}; add 'limit {s} {d}' to raise it, up to {d} (D-183)", .{ item.value, entry.counts, limit, entry.name, needed, limits_mod.cap_of(item.kind) });
+        }
+    }
+
     fn resolve_art(self: *Parser, ast: *AST) !void {
         var palette = std.ArrayListUnmanaged(image_mod.Colour).empty;
         var code_width: usize = 0;
@@ -2924,7 +3025,24 @@ pub const Parser = struct {
             if (std.mem.eql(u8, pole, name))
                 return self.set_error("axis '{s}' names its virtue as a pole", .{name});
         }
-        return .{ .name = name, .poles = .{ first, second } };
+        var drift_step: ?u8 = null;
+        if (self.current.tag == .indent) {
+            try self.advance();
+            while (self.current.tag != .dedent and self.current.tag != .eof) {
+                const line = self.current;
+                if (!(line.tag == .identifier and std.mem.eql(u8, line.slice, "drift"))) return self.error_at(line, "axis '{s}' takes only 'drift step <N>' below it", .{name});
+                try self.advance();
+                if (!(self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "step"))) return self.error_at(self.current, "axis '{s}' expects 'drift step <N>'", .{name});
+                try self.advance();
+                if (drift_step != null) return self.error_at(line, "axis '{s}' declares its drift step twice", .{name});
+                const number = self.current;
+                const n = try self.take_u32();
+                if (n == 0 or n > value_mod.MAX_DRIFT_STEP) return self.error_at(number, "axis '{s}' drift step is {d}; use 1 to {d} points a step", .{ name, n, value_mod.MAX_DRIFT_STEP });
+                drift_step = @intCast(n);
+            }
+            _ = try self.expect(.dedent);
+        }
+        return .{ .name = name, .poles = .{ first, second }, .drift_step = drift_step };
     }
 
     fn decision_clause(self: *Parser, owner_kind: []const u8, owner: []const u8) !FactPattern {

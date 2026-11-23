@@ -1762,7 +1762,7 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 1. `dilemma <Name>:` is its own block with `actor`, `fires`, and `requires`/`unless` trigger lines, the decision shape (D-137): it weighs once when the trigger rises and re-arms when it falls.
 2. `weighs <Axis> against <Axis>` names two declared axes (D-144). `leans <N> toward <Axis> when|unless <Fact>` adds N toward the named axis or counter-axis; N is 1 to 10, at most 8 lines.
 3. The delta is axis value minus counter-axis value plus the leans that hold. A missing value counts as 0 for weighing only; no fact is written.
-4. Tier boundaries are fixed and mirrored: 7 or more is strong toward the axis, 3 to 6 moderate, -2 to 2 neutral, -6 to -3 moderate toward the counter-axis, -7 or less strong toward it.
+4. Tier boundaries are fixed and mirrored: 7 or more is strong toward the axis, 3 to 6 moderate, -2 to 2 neutral, -6 to -3 moderate toward the counter-axis, -7 or less strong toward it. (Update, 2026-11-23: these are now defaults a dilemma's `tiers S and M` line changes, D-183.)
 5. Each tier is `strong <Axis>: "line" -> Action` (or `moderate`, or `neutral:`), in any order. All five are required; a missing or repeated tier is a compile error naming it, so no weighing is silent.
 6. The actor speaks the tier's line as a `say` would, the engine records `Chose(Dilemma, Action)` (the decision relation), and the cue fires with the actor and the action.
 7. Neutral records `DilemmaState(Dilemma, AwaitsEvidence)` and `EvidenceSeen(Dilemma, n)`, the count of `Presented(Actor, _)` facts at that weighing. Each tick the count has grown, the dilemma weighs again, so evidence that turns a lean on can move it out of neutral; a re-weighing replaces the `Chose` row.
@@ -1798,7 +1798,7 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Decision.**
 1. A dilemma's `drifts <N> toward|away from <Axis> when|unless <Fact>` line adds N points (signed) to the actor's accumulator on that axis each time the fact rises, once the dilemma has first been weighed. A fact already true at the first weighing is not its outcome. N is 1 to 10, at most 8 lines, and the axis may be any declared axis, not only the two the dilemma weighs.
-2. The threshold and bound are fixed: 5 points move the value one step, and one dilemma moves each axis at most 2 steps over the whole game, in either direction.
+2. The threshold and bound are fixed: 5 points move the value one step, and one dilemma moves each axis at most 2 steps over the whole game, in either direction. (Update, 2026-11-23: these are now defaults, the axis's `drift step` and the dilemma's `drift cap`, D-183.)
 3. A step past -10 or +10 is discarded and spends nothing from the bound; points are never banked past the range. Points from a dilemma whose bound is spent are dropped; between steps the accumulator holds -4 to 4. Red lines stay fixed (D-145): drift never adds or lifts one.
 4. State is World facts on generated relations whose names hold a space, which no script name can: `<Axis> drift(Actor, points)`, `<Axis> drift steps(Dilemma, n)`, `DriftHolding(Dilemma, mask)` for the lines' edges, and the `DilemmaWeighed(Dilemma)` state. Save, rewind, branch restore, and replay therefore need nothing new, and the inspector shows them.
 5. Drift on an axis the actor holds no value on starts from 0 and writes the value, so drift can give a character a value it did not have.
@@ -2267,6 +2267,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 **Alternatives:** bare QOI ops in BeSpoke's own record (about 22 bytes smaller per image, readable by no outside tool); keeping the per-image limits with no total; raising the browser heap to 32 MiB to fit 4,194,304 pixels; a total of 1,048,576 pixels.
 
 **Consequences.** Images are RGBA in memory; a transparent pixel is stored as all zeroes. The palette is a compile-time rule and no longer reaches the package. Package format 34 carries QOI art; versions 24 to 33 load their indexed art through their palette. P48-12 builds it.
+
+## D-183 Drift Steps Belong to the Axis, Tiers and Drift Caps to the Dilemma; `limit` Raises Nine Ceilings to Eight Times Their Default; Hint Tiers Past Three Are Authored and Fall Back (2026-11-23, status: accepted; P48-13, refines D-167 and D-177)
+
+**Context.** D-167 made dilemma tiers and drift author settings and sanity ceilings overridable under a fixed safety cap; D-177 let authored hints exceed three tiers. Drift points accumulate per character per axis across every dilemma that drifts that axis (`#Mercy drift`), so points per step must be one number per axis; tiers compare two axes and the drift cap is counted per dilemma (`#Mercy drift steps(StolenBread, n)`).
+
+**Decision.** The maintainer chose on 2026-11-23:
+1. An indented `drift step N` under `axis` sets the points that move that axis one step (default 5). In a dilemma, `tiers S and M` sets the strong and moderate boundaries, mirrored around zero (default 7 and 3), and `drift cap N` the steps the dilemma may move each axis (default 2). Omitted lines keep today's numbers. The axis range stays -10 to +10.
+2. `limit <name> N` raises one of nine ceilings: `goals` (default 16), `needs` per goal (16), `decisions` (32), `options` per decision (8), `dilemmas` (32), `axes` (64), `spells` (16), `words` per kind (12), and `hints`, the tiers per need (3). Each has a fixed safety cap of eight times its default; a limit above it, or below the default, is a compile error, and the package loader refuses counts above the cap. A limit is a compile-time rule and is not stored in the package. Other bounds (leans, drifts, appeals, red lines, cue parameters, guard variables) are unchanged.
+3. Tiers above 3 have no generated text, so each needs a `hint N` line. A query for a tier a need lacks answers with its highest tier below the one asked and reports which tier it gave, so one hint control can step through any count.
+
+**Alternatives:** every setting on the dilemma, with a compile error when two dilemmas disagree about an axis's step; one safety cap of 1,024 for every ceiling; a query that answers nothing for a missing tier.
+
+**Consequences.** Package format 35 carries the axis step, the dilemma tiers and cap, and tiers above 3. Changing a default later is an upgrade note (D-167). P48-13 builds it.
 
 ## Open questions
 

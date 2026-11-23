@@ -349,7 +349,7 @@ goal RecoverThePlate:
 
 - `need <Name> [after <Need>, <Need>]:` opens one need. `met <Fact>` is required and takes one or two arguments, with `_` as a wildcard. `after` lists needs of the same goal that must hold first.
 - `room <Name>` is the place the room tier names. Without it, the need inherits the scene that declares the prop or mark it names. A proof whose rooms are finer than its scenes names the room.
-- `hint <tier> "text"` replaces one generated tier: 1 names the room, 2 the thing, and 3 the relation. Each tier at most once per need.
+- `hint <tier> "text"` replaces one generated tier: 1 names the room, 2 the thing, and 3 the relation. Each tier at most once per need. A need may also write tiers above 3, which have no generated text (P48-13, D-183); past 3 the script needs `limit hints N` covering its highest tier, up to 24. Asking for a tier a need lacks answers with its highest tier below the one asked, and the result names the tier it gave, so one hint control can step through any number of tiers.
 - Declaration order is the search's order. A goal is done when every need holds; a need is on the frontier when it is unmet and every `after` need holds.
 - The query takes the tier and the player entity, and reports the first frontier need whose entities the player knows, together with `holmesian` or `doylian` and whether the text was authored. Knowledge is `Knows` or `Believes` about the player, and `Rejects` cancels either, so a script asserts knowledge when a scene shows the character something.
 - When no frontier need is one the character could reason about, the query reports the first unmet need in declaration order as the author: it may name a room or a thing the character has not met.
@@ -464,6 +464,7 @@ remember Mercy(Valerius, -3)
 - A value on an axis must be a whole number from -10 to +10, in a `remember` and in a condition such as `if Mercy(Valerius, -3):`. Anything else is a compile error, and so is `Mercy(Valerius)` without a value. A negative number is a compile error everywhere except on an axis.
 - An axis cannot reuse the name of a declared `relation` or `property`, and each axis is declared once.
 - At run time every write is clamped into the range, so a host call, a loaded save, or later drift stores -10 or +10 rather than a value past it. The state inspector lists the value as a signed number on its character.
+- `drift step N`, indented under the axis, sets how many drift points move a value on this axis one step (P48-13, D-183): 1 to 20, and 5 when omitted. It belongs to the axis because a character's points on it add up across every dilemma that drifts it.
 - Scoring a decision by value is not part of this item: `picks` and `drops` lines still read facts, and dilemmas that compare two axes arrive with P45-03. Package format version 19 carries axes; versions 1 through 18 load none.
 
 ### Dilemmas (P45-03, D-146)
@@ -490,7 +491,7 @@ dilemma StolenBread:
 
 - `actor`, `fires`, `weighs`, at least one `requires` or `unless` line, and all five tier lines are required. Both axes must be declared with `axis`, and they differ.
 - The delta is the actor's value on the first axis minus its value on the second, plus each `leans` line that holds (`unless` inverts the fact). A value the actor does not hold counts as 0. Each lean is 1 to 10, at most 8 lines, and leans toward one of the two weighed axes.
-- The tiers are fixed: 7 or more is strong toward the first axis, 3 to 6 moderate, -2 to 2 neutral, -6 to -3 moderate toward the second, -7 or less strong toward it. A missing or repeated tier is a compile error that names it, such as `dilemma 'StolenBread' has no line for the strong Mercy tier`.
+- By default 7 or more is strong toward the first axis, 3 to 6 moderate, -2 to 2 neutral, -6 to -3 moderate toward the second, -7 or less strong toward it. `tiers <strong> and <moderate>` sets the two boundaries, mirrored around zero (P48-13, D-183): `tiers 8 and 4` makes 8 or more strong and 4 to 7 moderate. The moderate boundary is from 1 and below the strong one, which is at most 100. A missing or repeated tier is a compile error that names it, such as `dilemma 'StolenBread' has no line for the strong Mercy tier`.
 - When the trigger rises, the actor says the tier's line, the engine records `Chose(StolenBread, Jail)`, and the cue fires with the actor and the action: `on cue Judged(Valerius, Jail):`. The dilemma weighs once while the trigger holds and re-arms when it falls.
 - A neutral result waits for evidence: each tick on which something new has been presented to the actor (`present <thing> to <person>`), the dilemma weighs again, speaking and firing again. Evidence that turns a `leans` line on can move it to another tier.
 - A tier action on the actor's red lines is a compile error. A dilemma may not share a decision's name. Package format version 21 carries dilemmas; versions 1 through 20 load none.
@@ -503,7 +504,7 @@ dilemma StolenBread:
 ```
 
 - A `drifts` line in a dilemma adds points toward or away from an axis each time its fact becomes true, once the dilemma has been weighed at least once. `unless` inverts the fact. Points are 1 to 10, at most 8 lines, and the axis may be any declared axis.
-- Every 5 points move the character's value one step. One dilemma moves each axis at most 2 steps over the whole game; further points from it are dropped.
+- Every 5 points move the character's value one step, or the axis's `drift step`. One dilemma moves each axis at most 2 steps over the whole game, or the number its `drift cap N` line gives (1 to 20, P48-13, D-183); further points from it are dropped.
 - Drift stops at -10 and +10, and points that would push past the end are discarded rather than saved up. Drift never changes red lines.
 - Drift is facts: `Mercy drift(Valerius, 1)` holds the points not yet spent and `Mercy drift steps(StolenBread, 2)` the steps a dilemma has used, so saves and rewinds keep it and a replay reproduces it. Package format version 22 carries drift lines; a version 21 package loads its dilemmas without drift.
 
@@ -525,6 +526,31 @@ on cue TalksTo(Ines, Valerius, Mercy):
 - The player types `appeal to mercy`, or a host calls `host.appeal`. The appeal reaches the first character in the room whose open dilemma lists that value. It counts at the next weighing and is then spent; while the dilemma waits in neutral, the appeal weighs it again.
 - The player must know the value first: `Knows(Ines, "Mercy of Valerius")`. Otherwise the reply is "You don't know what moves them." and nothing changes. A weighing that lands outside neutral teaches everyone in the character's room the value it leaned toward; a script teaches the rest, usually when the player asks (`ask valerius about mercy` fires `TalksTo`).
 - An accepted appeal records `Appealed(Valerius, Mercy)` and fires `on cue Appeals(Ines, Valerius, Mercy):`. A goal need `met Appealed(Valerius, Mercy)` is a Holmesian hint once the player knows `Mercy of Valerius`, and a Doylian one before. Package format version 23 carries appeal lines.
+
+### Limits (P48-13, D-167, D-183)
+
+Some counts have a ceiling that is only a sanity check. A script that needs more raises it with one line, anywhere in the script:
+
+```bespoke
+limit decisions 48
+limit hints 6
+```
+
+| Name | Counts | Default | Most |
+| --- | --- | --- | --- |
+| `goals` | goals | 16 | 128 |
+| `needs` | needs in one goal | 16 | 128 |
+| `decisions` | decisions | 32 | 256 |
+| `options` | options in one decision | 8 | 64 |
+| `dilemmas` | dilemmas | 32 | 256 |
+| `axes` | axes | 64 | 512 |
+| `spells` | spells in the spellbook | 16 | 128 |
+| `words` | words of one kind in the spellbook | 12 | 96 |
+| `hints` | hint tiers in one need | 3 | 24 |
+
+- A limit is at least its default and at most eight times it; anything else, a name not in the table, or a second line for one name is a compile error. Going past a limit is a compile error on the first item past it, and its help names the `limit` line the script needs.
+- A limit is a compile-time rule: the package does not carry it, and the loader holds every package to the most in the table.
+- Other bounds are part of the engine's shape and have no `limit`: three cue parameters, eight guard variables, eight leans and eight drift lines a dilemma, four appeals, one spellbook (D-177), and the three generated hint tiers.
 
 ### The engine's relations (P48-10, D-164, D-180)
 

@@ -1,0 +1,11 @@
+# A hint tier past 3 needs a 'limit hints' line that covers it.
+# pins: D-183; D-177
+# expect error: UnexpectedToken 11:10
+
+entity Ines, Slip, Archive
+relation Carries(holder, item)
+goal Recover:
+  need Take:
+    met Carries(Ines, Slip)
+    room Archive
+    hint 4 "Look under the press."
