@@ -7,6 +7,7 @@
 //! What is on the stage comes from the host's `Deck` table (P32-04, D-042).
 
 const std = @import("std");
+const dice_mod = @import("dice.zig");
 const builtin = @import("builtin");
 const world_mod = @import("world.zig");
 const bytecode_mod = @import("bytecode.zig");
@@ -439,6 +440,9 @@ pub const WasmRuntime = struct {
     command_interp: command_mod.Interpreter = .{},
     window: *renderer.DisplayWindow = undefined,
     saves: *save_mod.SaveManager = undefined,
+    /// The run's seed (D-184): 42 unless the page passes one to `wasm_init`. Every deck the
+    /// runtime loads starts its dice from it.
+    seed: u64 = dice_mod.DEFAULT_SEED,
 
     /// Starts on deck `initial` of `decks`; an index past the end starts on the first deck.
     pub fn init(allocator: std.mem.Allocator, decks: []const Deck, initial: u8) !WasmRuntime {
@@ -451,6 +455,11 @@ pub const WasmRuntime = struct {
 
     /// As `init`, drawing into `pixels` (at least `FRAMEBUFFER_BYTES`), which the caller keeps.
     pub fn init_with_framebuffer(allocator: std.mem.Allocator, decks: []const Deck, initial: u8, pixels: []u8) !WasmRuntime {
+        return init_seeded(allocator, decks, initial, pixels, dice_mod.DEFAULT_SEED);
+    }
+
+    /// As `init_with_framebuffer`, rolling from `seed` (D-184).
+    pub fn init_seeded(allocator: std.mem.Allocator, decks: []const Deck, initial: u8, pixels: []u8, seed: u64) !WasmRuntime {
         const bridge = try allocator.create(display_mod.DisplayBridge);
         errdefer allocator.destroy(bridge);
         bridge.* = display_mod.DisplayBridge.init();
@@ -473,6 +482,7 @@ pub const WasmRuntime = struct {
             .frame_bridge = bridge,
             .saves = saves,
             .window = window,
+            .seed = seed,
         };
         window.* = renderer.DisplayWindow.init_canvas(rt.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT, &rt.audio, saves);
         rt.vm = VM.init(allocator, &rt.world, &rt.chunk);
@@ -555,6 +565,7 @@ pub const WasmRuntime = struct {
         _ = try self.chunk.emit_op(.halt);
         self.vm = VM.init(self.allocator, &self.world, &self.chunk);
         self.vm.spatial = &self.spatial;
+        self.vm.set_seed(self.seed);
 
         self.deck_index = if (index < self.decks.len) index else 0;
         self.window.enable_command_bar(self.decks.len > 0 and self.decks[self.deck_index].command_bar);
@@ -626,6 +637,7 @@ pub const WasmRuntime = struct {
         self.vm.deinit();
         self.vm = VM.init(self.allocator, &self.world, &program.chunk);
         self.vm.spatial = &self.spatial;
+        self.vm.set_seed(self.seed);
         try host_mod.initialize_subsystems(&self.world, program);
         try self.vm.load_compiled_rules(program);
         self.player_entity = try host_mod.start_script(&self.world, &self.spatial, &self.vm, program);
@@ -1100,10 +1112,15 @@ pub const WasmRuntime = struct {
         self.messages.push(speaker, text);
     }
 
+    /// Records the whole run into the next slot: the world, then the walking agents and the
+    /// VM with its dice in the save's own form, then the branch (D-184), so a scrub restores
+    /// routines and rolls as they were.
     pub fn record_snapshot(self: *WasmRuntime) void {
         const slot = self.snapshot_count % MAX_WASM_SNAPSHOTS;
         var writer: std.Io.Writer = .fixed(&self.snapshot_bufs[slot]);
         self.world.save_state(&writer) catch return;
+        save_mod.write_spatial_state(&writer, &self.spatial) catch return;
+        save_mod.write_vm_state(&writer, &self.vm, save_mod.SAVE_VERSION) catch return;
         if (self.hypervisor) |hv| write_temporal(hv, &writer) catch return;
         self.snapshot_lens[slot] = writer.end;
         self.snapshot_ticks[slot] = self.clock();
@@ -1123,6 +1140,7 @@ pub const WasmRuntime = struct {
         if (hv.branch_world) |*branch| try branch.save_state(writer);
         try writer.writeInt(u64, hv.ticks_elapsed, .little);
         try writer.writeByte(@intFromEnum(hv.collapse_state));
+        if (hv.branch_world != null) try (hv.branch_dice orelse return error.InvalidSnapshot).write(writer);
     }
 
     fn read_temporal(self: *WasmRuntime, hv: *TemporalHypervisor, reader: anytype) !void {
@@ -1138,6 +1156,7 @@ pub const WasmRuntime = struct {
         hv.branch_active = had_branch;
         hv.ticks_elapsed = try reader.takeInt(u64, .little);
         hv.collapse_state = std.enums.fromInt(hypervisor_mod.BranchCollapseState, try reader.takeByte()) orelse return error.InvalidSnapshot;
+        hv.branch_dice = if (had_branch) try dice_mod.Dice.read(reader) else null;
     }
 
     pub fn scrub_to_tick(self: *WasmRuntime, target_tick: u64) void {
@@ -1156,7 +1175,13 @@ pub const WasmRuntime = struct {
             // A held action belongs to the timeline being left.
             self.approach = null;
             var fbs: std.Io.Reader = .fixed(self.snapshot_bufs[slot][0..self.snapshot_lens[slot]]);
+            // `rewinds reroll` keeps the run's dice going through a scrub (D-184).
+            const reroll = if (self.compiled_program()) |program| program.rewinds_reroll else false;
+            const dice = self.vm.dice;
             self.world.restore_state(&fbs) catch return;
+            save_mod.read_spatial_state(&fbs, &self.spatial) catch return;
+            save_mod.read_vm_state(&fbs, &self.vm, save_mod.SAVE_VERSION) catch return;
+            if (reroll) self.vm.dice = dice;
             if (self.hypervisor) |hv| self.read_temporal(hv, &fbs) catch {
                 self.set_banner("Could not restore the tangent world here.");
                 return;
@@ -1174,6 +1199,7 @@ pub const WasmRuntime = struct {
         if (self.hypervisor) |hv| return hv;
         const hv = try self.allocator.create(TemporalHypervisor);
         hv.* = TemporalHypervisor.init(self.allocator, &self.world);
+        hv.run_seed = self.seed;
         self.hypervisor = hv;
         return hv;
     }
@@ -1197,6 +1223,7 @@ pub const WasmRuntime = struct {
     /// returned by value from `init`, so every entry point that reaches the VM calls this first.
     pub fn bind(self: *WasmRuntime) void {
         self.vm.world = self.active_world();
+        self.vm.branch_dice = if (self.hypervisor) |hv| hv.active_dice() else null;
         self.vm.spatial = &self.spatial;
         self.vm.chunk = if (self.program) |*program| &program.chunk else &self.chunk;
     }
@@ -1617,15 +1644,20 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             return if (runtime_ready) &global_runtime else null;
         }
 
-        fn wasm_init(scenario_id: u8) callconv(.c) void {
+        /// The page passes its seed as two 32-bit halves (D-184); a page that passes only the
+        /// scenario sends zeros, which mean the default seed, so older pages are unchanged.
+        fn wasm_init(scenario_id: u8, seed_low: u32, seed_high: u32) callconv(.c) void {
             if (runtime_ready) global_runtime.deinit();
             runtime_ready = false;
-            global_runtime = WasmRuntime.init_with_framebuffer(global_heap.allocator(), decks, scenario_id, &framebuffer) catch return;
+            const given = @as(u64, seed_high) << 32 | seed_low;
+            const seed = if (given == 0) dice_mod.DEFAULT_SEED else given;
+            global_runtime = WasmRuntime.init_seeded(global_heap.allocator(), decks, scenario_id, &framebuffer, seed) catch return;
             runtime_ready = true;
         }
 
         fn wasm_load_scenario(scenario_id: u8) callconv(.c) void {
-            wasm_init(scenario_id);
+            const seed = if (runtime_ready) global_runtime.seed else dice_mod.DEFAULT_SEED;
+            wasm_init(scenario_id, @truncate(seed), @truncate(seed >> 32));
         }
 
         fn wasm_step_tick() callconv(.c) void {

@@ -1,0 +1,12 @@
+# A headless run rolls from seed 42, so the same script throws the same every run.
+# pins: D-184; D-168
+# ticks: 2
+# expect no fact: Lucky(Gambler)
+
+entity Gambler
+relation Lucky(who)
+
+routine Throws(Gambler):
+  if roll 1d100 >= 51:
+    remember Lucky(Gambler)
+  wait 1 ticks

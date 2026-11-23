@@ -64,7 +64,12 @@ def build(output: Path, browser_check: bool) -> None:
             "  #command { flex: 1; min-width: 0; background: #17202a; color: inherit; border: 1px solid #58697e; padding: 6px 8px; }\n"
             "</style>"
         ))
-        page = replace_once(page, "  w.wasm_init(0);", "  let started = false;")
+        page = replace_once(
+            page,
+            "  // A new game rolls from the clock; the seed stays with the run through rewinds (D-184).\n"
+            "  w.wasm_init(0, Date.now() >>> 0, (Math.random() * 0x100000000) >>> 0);",
+            "  let started = false;",
+        )
         page = replace_once(
             page, "    w.wasm_render_frame();",
             "    drainText();\n"
@@ -82,7 +87,7 @@ def build(output: Path, browser_check: bool) -> None:
             (GAME / "text_ui.js").read_text(encoding="utf-8")
             + "  const start = document.getElementById('start-watch');\n"
             "  start.addEventListener('click', () => {\n"
-            "    w.wasm_init(0);\n"
+            "    w.wasm_init(0, Date.now() >>> 0, (Math.random() * 0x100000000) >>> 0);\n"
             "    started = true;\n"
             "    document.getElementById('watch-controls').disabled = false;\n"
             "    document.getElementById('start-prompt').hidden = true;\n"

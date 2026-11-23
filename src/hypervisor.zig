@@ -1,4 +1,5 @@
 const std = @import("std");
+const dice_mod = @import("dice.zig");
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const World = world_mod.World;
@@ -95,6 +96,11 @@ pub const TemporalHypervisor = struct {
     teleological_dependencies: std.array_list.Managed(TeleologicalDependency),
     dream_residue_facts: std.array_list.Managed(DreamFact),
 
+    /// The run's seed, which a branch's seed is mixed from; hosts copy it from the VM when a
+    /// run starts (D-184). `branch_dice` lives while a branch does.
+    run_seed: u64 = dice_mod.DEFAULT_SEED,
+    branch_dice: ?dice_mod.Dice = null,
+
     pub fn init(allocator: std.mem.Allocator, primary_world: *World) TemporalHypervisor {
         return TemporalHypervisor{
             .allocator = allocator,
@@ -121,6 +127,15 @@ pub const TemporalHypervisor = struct {
         self.dream_residue_facts.deinit();
     }
 
+    /// The generator a VM bound to the active world should roll from: the branch's while one
+    /// is live, else null for the run's own.
+    pub fn active_dice(self: *TemporalHypervisor) ?*dice_mod.Dice {
+        if (self.branch_active and self.branch_world != null) {
+            if (self.branch_dice) |*d| return d;
+        }
+        return null;
+    }
+
     /// Returns the world that currently receives simulation actions. A live branch is the
     /// authoritative arena until it resolves or expires; outside a branch the primary world is
     /// authoritative. Hosts use this boundary instead of choosing an arena from proof state.
@@ -145,6 +160,8 @@ pub const TemporalHypervisor = struct {
 
         self.branch_world = try self.primary_world.clone(self.allocator);
         self.branch_active = true;
+        // Seeded from the run and the tick, not drawn from the present's dice (D-184).
+        self.branch_dice = dice_mod.Dice.init(dice_mod.branch_seed(self.run_seed, self.primary_world.current_tick));
         self.collapse_budget_ticks = budget_ticks;
         self.ticks_elapsed = 0;
         self.receiver_entity = receiver;
@@ -290,6 +307,7 @@ pub const TemporalHypervisor = struct {
             self.branch_world = null;
         }
         self.branch_active = false;
+        self.branch_dice = null;
     }
 
     /// Returns remaining simulation ticks before countdown budget expiration (P31-01, P32-21, D-027, D-044).

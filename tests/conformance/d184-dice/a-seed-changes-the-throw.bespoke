@@ -1,0 +1,13 @@
+# 'bespoke run --seed N' starts the run's dice from N: seed 9 throws what seed 42 does not.
+# pins: D-184; D-168
+# ticks: 2
+# seed: 9
+# expect fact: Lucky(Gambler)
+
+entity Gambler
+relation Lucky(who)
+
+routine Throws(Gambler):
+  if roll 1d100 >= 51:
+    remember Lucky(Gambler)
+  wait 1 ticks

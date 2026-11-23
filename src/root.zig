@@ -35,6 +35,7 @@ pub const dilemma = @import("dilemma.zig");
 pub const image = @import("image.zig");
 pub const png = @import("png.zig");
 pub const qoi = @import("qoi.zig");
+pub const dice = @import("dice.zig");
 pub const art_import = @import("art_import.zig");
 pub const command = @import("command.zig");
 /// An `std.Io.Writer` that appends to a managed byte list (P37-01).

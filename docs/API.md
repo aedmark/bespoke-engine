@@ -44,6 +44,7 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 | Namespace | Supported surface |
 | --- | --- |
 | `vm` | `VM`, `FiberId`, tick interval constants and `step_tick_interval_slower` / `step_tick_interval_faster` |
+| `dice` | `Dice` with `init`, `roll`, `write`, and `read`, `DEFAULT_SEED`, `ENCODED_LEN`, `branch_seed` (P48-14, D-184) |
 | `host` | `Session`, `Exit`, `AppealOutcome`, `CommandReply`, `Interpreted`, `SpeechLine`, `SpeechLog`, `ScriptSoundtrack`, `ScriptSociety`, and the functions listed below |
 | `dialogue` | `View`, `Selection`, `view` |
 | `command` | `Interpreter`, `WordList`, `Command` |
@@ -61,6 +62,8 @@ Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`,
 `host.cast(vm, compiled, caster, name, target)` resolves a spell in the script's book, checks every word against what the caster knows, and fires the cue named after the spell only when the combination is accepted; it returns `spell.Outcome`, either the resolved spell or a `Refusal` (P44-04). `host.combine(vm, compiled, caster, power, element, form, target)` takes the same path for a player who builds a phrase from three words instead of naming a spell, and returns the same `spell.Outcome`. Words come from `Knows` or `Believes` about the caster, and `Rejects` overrides both.
 
 `host.tick` steps declared decisions after agendas and fires each winner's cue for the next tick (P44-05). `decision.chosen(world, decision)` reports the option at the open decision point, or null between points; `decision.stage_of` reports `Idle` or `Done`, and `decision.score_of(world, option)` reports what an option's offered lines total now. A host that runs a table itself may call `decision.seed` once before play and `decision.step` with the compiled declarations after a tick; the choice is the set fact `Chose(Decision, Option)` and the stage is the property `DecisionState`, so save, rewind, and branch restore need no decision snapshot. Scoring reads facts and draws no random number. The trigger lines and option scores are the script's; the engine only offers, sums, and fires.
+
+A run's dice (P48-14, D-168, D-184): `VM.set_seed(seed)` starts them, before the first tick, and `VM.dice` is a supported field holding the seed and the generator; `Session.seed(seed)` does the same for a session and restarts its timeline. A `Session` in a real window seeds from the clock when it starts; a headless window keeps 42. `TemporalHypervisor.run_seed` is the seed a branch's dice are mixed from, which a session copies from the VM, and `TemporalHypervisor.active_dice()` is the branch's generator while one is live, which a host that binds the VM to the branch world sets as `VM.branch_dice`. A session's rewind restores the whole run, dice included, unless the program's `rewinds_reroll` is set.
 
 All public methods on `Session`, `SpeechLog`, and `ScriptSoundtrack` are supported. `Session` is the preferred owner of ticking, pause, rewind, save/load actions, dialogue selection, frame refresh, and temporal active-world routing. Their storage fields are internal.
 
@@ -99,6 +102,8 @@ Prefer `script_deck` or `script_deck_with` for a script-backed game. A custom `D
 A page that loads a BeSpoke WebAssembly module may call these exports (D-175). They are the ones the page and smoke test from `bespoke init` use, so a generated project depends on them: `wasm_init`, `wasm_step_tick`, `wasm_get_tick`, `wasm_get_fact_count`, `wasm_render_frame`, `wasm_framebuffer_ptr`, `wasm_framebuffer_len`, `wasm_on_pointer_down`, `wasm_on_pointer_move`, `wasm_on_right_click`, `wasm_on_key_down`, `wasm_on_char`, `wasm_command_bar_focused`, `wasm_audio_render`, and `wasm_audio_sample_rate`. `tests/test_browser_exports.py` fails when one of them is not exported, or when a generated page calls an export this list omits.
 
 Every other `wasm_*` export is internal: the showcase pages' deck, verb, dialogue, inspector, message, and animation-clock calls, and `wasm_load_scenario`, `wasm_on_touch`, and `wasm_scrub_to_tick`. A script never learns which platform runs it; a capability that differs by platform reaches scripts, if ever, as a feature fact (D-175).
+
+`wasm_init(scenario, seed_low, seed_high)` takes the run's seed as two 32-bit halves (P48-14, D-184). Zeros, as a page that passes only the scenario sends, mean seed 42; the generated page and the showcase pages pass the clock, so each new game rolls differently and keeps its seed through rewinds.
 
 ## Stability rule
 

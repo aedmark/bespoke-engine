@@ -28,7 +28,8 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | state | A fact with no object, such as `Lit(Lantern)`, true while present | predicate presence (D-043) | flag |
 | expiry tick | The tick at which a fact disappears on its own; set with `remember ... for N ticks` | `expires_at_tick` | TTL, decay, lifetime (TTL is a duration; the fact stores an absolute tick) |
 | snapshot | A copy of the world's fact columns and name tables at one tick, kept in memory | `World.save_state`, `host.Timeline` | memcpy (a snapshot is a serialized copy with a checksum, not one `memcpy`) |
-| rewind | Restoring an earlier snapshot | `restore_state` | time travel (fine for the player-facing feature; say rewind for the mechanism) |
+| rewind | Restoring an earlier snapshot of the whole run: facts, routines, walking people, and dice | `Timeline.restore_run` (D-184) | time travel (fine for the player-facing feature; say rewind for the mechanism) |
+| seed | The number a run's dice start from; the host chooses it and a save keeps it, so a script never does | `VM.set_seed`, `bespoke run --seed` (D-184) | random seed (in user copy, just "the dice") |
 | save | A snapshot written to disk with the map and routine state, in a `.sav` file with a backup | `src/save.zig` | |
 | branch world | A temporary copy of the world that runs on a countdown, then merges back or is discarded | `TemporalHypervisor`, `fork_branch` (D-044) | tangent universe, tangent world, singularity, black hole |
 

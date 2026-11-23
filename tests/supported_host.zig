@@ -71,6 +71,11 @@ comptime {
     require(bespoke.png, &.{ "MAX_FILE", "Error", "Rgba", "decode" }, "png");
     require(bespoke.png.Rgba, &.{"deinit"}, "png.Rgba");
     require(bespoke.qoi, &.{ "Error", "HEADER_LEN", "encode", "decode", "header_size" }, "qoi");
+    require(bespoke.dice, &.{ "Dice", "DEFAULT_SEED", "ENCODED_LEN", "branch_seed" }, "dice");
+    require(bespoke.dice.Dice, &.{ "init", "roll", "write", "read" }, "dice.Dice");
+    require(bespoke.vm.VM, &.{ "set_seed", "active_dice" }, "vm.VM dice");
+    require(bespoke.host.Session, &.{"seed"}, "host.Session seed");
+    require(bespoke.hypervisor.TemporalHypervisor, &.{"active_dice"}, "hypervisor dice");
     require(bespoke.art_import, &.{ "MapError", "PixelError", "Where", "map", "to_pixels", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
     require(bespoke.runner, &.{ "RunConfig", "CheckOptions", "check_file_with", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");

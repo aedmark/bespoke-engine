@@ -302,6 +302,7 @@ Patterns that keep puzzles honest:
 - **Use timed facts for windows.** `remember ... for N ticks` expires by itself; there is no timer to cancel.
 - **`when` triggers list facts that must hold, joined by `and`.** A trigger cannot say `not`; put negative checks inside the body with `if not`, as the bell handler does.
 - **Prefer facts over flags in routines.** A routine that waits with `wait until Signalled(Quay)` resumes correctly after a rewind; a counter in the host does not.
+- **Decide what the dice are for.** A rewind restores the dice with everything else, so a player cannot rewind out of a bad roll. When rolls are for variety, write `rewinds reroll` once in the script. Tests pin a run with `bespoke run --seed N`; without it a headless run always uses seed 42.
 
 Music follows the same idea. A score declared with `scene` is that scene's default; `play score X` overrides it everywhere until `stop score` ([Scores](script_spec.md#scores-p28-03-d-062)).
 

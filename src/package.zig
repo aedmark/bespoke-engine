@@ -88,10 +88,12 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 33 appends named looks and parts after the player text (P48-11, D-181); versions 1
 /// through 32 load with none. Version 34 stores art as true-colour QOI streams (P48-12, D-166,
 /// D-182); versions 24 through 33 load their indexed art through the palette they carry.
+/// Version 36 appends the `rewinds reroll` flag after the tuning (P48-14, D-184); versions 1
+/// through 35 load with rewinds restoring the dice.
 /// Version 35 appends each axis's drift step and each dilemma's tiers and drift cap after the
 /// looks, and lets a hint tier pass 3 (P48-13, D-183); versions 1 through 34 load with the
 /// defaults.
-pub const PACKAGE_VERSION: u32 = 35;
+pub const PACKAGE_VERSION: u32 = 36;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -500,6 +502,7 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
     try write_player_text(world, writer);
     try write_art_looks(writer, compiled.art);
     try write_tuning(writer, compiled);
+    try writer.writeByte(@intFromBool(compiled.rewinds_reroll));
     // Version 29: which build this is, for saves (D-162).
     try writer.writeInt(u32, compiled.save_version, .little);
     try writer.writeInt(u64, compiled.fingerprint, .little);
@@ -2320,6 +2323,12 @@ pub fn load_package(
         try read_tuning(pr, axes.items, dilemmas.items);
         dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
     }
+    var rewinds_reroll = false;
+    if (header.version >= 36) {
+        const flag = try pr.takeByte();
+        if (flag > 1) return error.InvalidProgramIdentity;
+        rewinds_reroll = flag == 1;
+    }
     var save_version: u32 = 1;
     var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
     if (header.version >= 29) {
@@ -2358,6 +2367,7 @@ pub fn load_package(
         .cue_guards = cue_guards,
         .cue_handler_chain = cue_handler_chain,
         .save_version = save_version,
+        .rewinds_reroll = rewinds_reroll,
         .fingerprint = fingerprint,
         .art = art,
     };
@@ -2567,7 +2577,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 35",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 36",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2921,7 +2931,9 @@ const TEXT_TAIL: usize = 4 + 4 + LOOK_TAIL;
 /// The empty look and part counts (version 33), counted in `TEXT_TAIL` since they follow it.
 const LOOK_TAIL: usize = 4 + 4 + TUNE_TAIL;
 /// The empty axis and dilemma tuning counts (version 35), after the looks.
-const TUNE_TAIL: usize = 4 + 4;
+const TUNE_TAIL: usize = 4 + 4 + REROLL_TAIL;
+/// The `rewinds reroll` flag (version 36), after the tuning.
+const REROLL_TAIL: usize = 1;
 /// The save version and fingerprint (version 29), present in every package.
 const IDENTITY_TAIL: usize = 4 + 8;
 
@@ -4994,9 +5006,9 @@ test "P48-13: a package carries axis steps, dilemma tiers and caps, and a sixth 
     try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
     try testing.expectEqual(@as(u8, 6), loaded.goals.items[0].goal.needs[0].hints[0].tier.number());
 
-    // The tuning sits just before the identity: the axis count and steps, then the dilemma
+    // The tuning sits just before the reroll flag and the identity: the axis count and steps, then the dilemma
     // count and its three numbers. A count that disagrees, or tiers out of order, is refused.
-    const tuning_at = buffer.items.len - IDENTITY_TAIL - (4 + 2 + 4 + 3);
+    const tuning_at = buffer.items.len - IDENTITY_TAIL - REROLL_TAIL - (4 + 2 + 4 + 3);
     const Case = struct { at: usize, bytes: []const u8, err: anyerror };
     const cases = [_]Case{
         .{ .at = tuning_at, .bytes = &.{ 3, 0, 0, 0 }, .err = error.InvalidAxisConfig },
@@ -5027,6 +5039,28 @@ test "P48-13: checked-in version 35 package fixture is tuned" {
     try testing.expectEqual(@as(u8, 8), compiled.dilemmas.items[0].dilemma.strong_at);
     try testing.expectEqual(@as(u8, 4), compiled.axes.items[1].drift_step);
     try testing.expectEqual(@as(u8, 6), compiled.goals.items[0].goal.needs[0].hints[0].tier.number());
+}
+
+test "P48-14: a package carries 'rewinds reroll', and the version 36 fixture has it" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v36.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 36), version_from_bytes(fixture).?);
+    var compiled = try load_for_test(fixture);
+    defer compiled.deinit();
+    try testing.expect(compiled.rewinds_reroll);
+    // The version 35 fixture predates the flag and loads with rewinds restoring the dice.
+    const older = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v35.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(older);
+    var old = try load_for_test(older);
+    defer old.deinit();
+    try testing.expect(!old.rewinds_reroll);
+    // A flag byte other than 0 or 1 is refused.
+    const bad = try testing.allocator.dupe(u8, fixture);
+    defer testing.allocator.free(bad);
+    bad[bad.len - IDENTITY_TAIL - REROLL_TAIL] = 2;
+    reseal_for_test(bad, PACKAGE_VERSION);
+    try testing.expectError(error.InvalidProgramIdentity, load_for_test(bad));
 }
 
 test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {

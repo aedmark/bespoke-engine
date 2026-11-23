@@ -27,7 +27,8 @@ const toCanvas = (e) => {
 };
 WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {}).then(({ instance }) => {
   const w = instance.exports;
-  w.wasm_init(0);
+  // A new game rolls from the clock; the seed stays with the run through rewinds (D-184).
+  w.wasm_init(0, Date.now() >>> 0, (Math.random() * 0x100000000) >>> 0);
   const draw = () => {
     w.wasm_render_frame();
     const px = new Uint8ClampedArray(w.memory.buffer, w.wasm_framebuffer_ptr(), w.wasm_framebuffer_len());

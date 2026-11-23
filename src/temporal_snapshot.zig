@@ -6,6 +6,7 @@
 //! that restores a world snapshot without restoring this envelope would leave the branch ahead
 //! of the primary timeline.
 const std = @import("std");
+const dice_mod = @import("dice.zig");
 const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
@@ -21,7 +22,10 @@ const DreamFact = hypervisor_mod.DreamFact;
 const TeleologicalDependency = hypervisor_mod.TeleologicalDependency;
 
 pub const MAGIC = [4]u8{ 'B', 'T', 'S', 'V' };
-pub const VERSION: u32 = 1;
+/// Version 2 adds the run's seed and, with a live branch, the branch's generator after its
+/// world (P48-14, D-184). Version 1 envelopes load with the default seed and, for a live
+/// branch, dice seeded as a new branch at the primary world's tick would be.
+pub const VERSION: u32 = 2;
 
 /// Upper bound for a branch-world snapshot read from disk or a timeline buffer.
 pub const MAX_BRANCH_BYTES: u32 = 64 * 1024 * 1024;
@@ -48,6 +52,8 @@ pub const TemporalSnapshot = struct {
     convergence_waypoint: ?WaypointId = null,
     teleological_dependencies: std.array_list.Managed(TeleologicalDependency),
     dream_residue_facts: std.array_list.Managed(DreamFact),
+    run_seed: u64 = dice_mod.DEFAULT_SEED,
+    branch_dice: ?dice_mod.Dice = null,
 
     pub fn init(allocator: std.mem.Allocator) TemporalSnapshot {
         return .{
@@ -110,6 +116,11 @@ pub const TemporalSnapshot = struct {
             try writer.writeInt(u32, @intCast(bytes.items.len), .little);
             try writer.writeAll(bytes.items);
         }
+        try writer.writeInt(u64, hypervisor.run_seed, .little);
+        if (hypervisor.branch_world != null) {
+            const dice = hypervisor.branch_dice orelse return Error.InconsistentTemporalState;
+            try dice.write(writer);
+        }
     }
 
     /// Decodes and validates a temporal section without mutating `primary_world` or a hypervisor.
@@ -125,7 +136,8 @@ pub const TemporalSnapshot = struct {
         var magic: [4]u8 = undefined;
         try reader.readSliceAll(&magic);
         if (!std.mem.eql(u8, &magic, &MAGIC)) return Error.InvalidTemporalSnapshot;
-        if (try reader.takeInt(u32, .little) != VERSION) return Error.InvalidTemporalSnapshot;
+        const version = try reader.takeInt(u32, .little);
+        if (version == 0 or version > VERSION) return Error.InvalidTemporalSnapshot;
 
         const active_byte = try reader.takeByte();
         if (active_byte > 1) return Error.InvalidTemporalSnapshot;
@@ -191,6 +203,15 @@ pub const TemporalSnapshot = struct {
             snapshot.branch_world = branch;
             branch_owned = false;
         }
+        if (version >= 2) {
+            snapshot.run_seed = try reader.takeInt(u64, .little);
+            if (snapshot.branch_active) snapshot.branch_dice = dice_mod.Dice.read(reader) catch |err| return switch (err) {
+                error.InvalidDice => Error.InvalidTemporalSnapshot,
+                else => err,
+            };
+        } else if (snapshot.branch_world) |*branch| {
+            snapshot.branch_dice = dice_mod.Dice.init(dice_mod.branch_seed(snapshot.run_seed, branch.current_tick));
+        }
 
         // An inactive branch has no world of its own to validate against. The caller validates
         // those references against the primary world after restoring it.
@@ -210,6 +231,8 @@ pub const TemporalSnapshot = struct {
         self.branch_world = null;
 
         hypervisor.branch_active = self.branch_active;
+        hypervisor.run_seed = self.run_seed;
+        hypervisor.branch_dice = self.branch_dice;
         hypervisor.collapse_budget_ticks = self.collapse_budget_ticks;
         hypervisor.ticks_elapsed = self.ticks_elapsed;
         hypervisor.collapse_state = self.collapse_state;

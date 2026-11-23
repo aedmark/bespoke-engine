@@ -69,7 +69,8 @@
 
   function restart() {
     if (!exp) return;
-    exp.wasm_init(DECK);
+    // A new game rolls from the clock (D-184); the module keeps the seed through rewinds.
+    exp.wasm_init(DECK, Date.now() >>> 0, (Math.random() * 0x100000000) >>> 0);
     lastTickTime = performance.now();
     selectVerb(START_VERB);
   }

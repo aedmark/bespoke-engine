@@ -10,6 +10,7 @@ pins and what the stock CLI must report. Directives, one per comment line:
     # pins: D-160; script_spec.md "Several handlers may share a signature"
     # ticks: 6                       headless ticks to run (default 4)
     # input: 0 use lamp              typed for the player after that many ticks
+    # seed: 9                        the run's seed (default 42, D-184)
     # expect fact: Dry(Scout)        a final fact, as `bespoke run --facts` prints it
     # expect no fact: Burning(Scout)
     # expect line: Scout: "Hello"    some output line contains this text
@@ -31,7 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SUITE = ROOT / "tests" / "conformance"
-DIRECTIVE = re.compile(r"^#\s*(pins|ticks|input|expect fact|expect no fact|expect line|expect error):\s*(.*?)\s*$")
+DIRECTIVE = re.compile(r"^#\s*(pins|ticks|input|seed|expect fact|expect no fact|expect line|expect error):\s*(.*?)\s*$")
 ERROR_AT = re.compile(r"^(\w+)\s+(\d+):(\d+)$")
 DIAGNOSTIC = re.compile(r":(\d+):(\d+): error: ")
 
@@ -41,6 +42,7 @@ class Case:
     path: Path
     pins: list[str] = field(default_factory=list)
     ticks: int = 4
+    seed: int | None = None
     inputs: list[str] = field(default_factory=list)
     facts: list[str] = field(default_factory=list)
     no_facts: list[str] = field(default_factory=list)
@@ -61,6 +63,8 @@ def parse_case(path: Path) -> Case:
             case.ticks = int(value)
         elif key == "input":
             case.inputs.append(value)
+        elif key == "seed":
+            case.seed = int(value)
         elif key == "expect fact":
             case.facts.append(value)
         elif key == "expect no fact":
@@ -118,7 +122,8 @@ def check_case(bespoke: Path, case: Case) -> list[str]:
         handle.write("\n".join(case.inputs) + "\n")
         input_path = handle.name
     try:
-        result = run(bespoke, ["run", str(case.path), "--headless", "--ticks", str(case.ticks), "--input", input_path, "--facts"])
+        seed = ["--seed", str(case.seed)] if case.seed is not None else []
+        result = run(bespoke, ["run", str(case.path), "--headless", "--ticks", str(case.ticks), "--input", input_path, "--facts", *seed])
     finally:
         Path(input_path).unlink(missing_ok=True)
     if result.returncode != 0:

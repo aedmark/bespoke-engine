@@ -2281,6 +2281,21 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Package format 35 carries the axis step, the dilemma tiers and cap, and tiers above 3. Changing a default later is an upgrade note (D-167). P48-13 builds it.
 
+## D-184 Snapshots Hold What a Save Holds; `rewinds reroll` Keeps the Generator Going; Windowed Runs Take a Fresh Seed; a Branch's Seed Is Derived (2026-11-23, status: accepted; P48-14, refines D-168)
+
+**Context.** D-168 made rewinds and loads restore every fiber and the generator, kept the seed with the run, and gave a branch world its own generator. Building it left four choices: the seed a run uses when nothing sets one (every run used 42), how a script asks for rerolls, what a rewind snapshot holds beyond fibers and the generator, and where a branch's generator gets its seed without disturbing the present's.
+
+**Decision.** The maintainer chose on 2026-11-23:
+1. Headless runs, tests, goldens, and the conformance suite use seed 42 unless `bespoke run --seed N` or a host sets one. A new game in the desktop window or a browser page takes its seed from the clock. A save records the seed and the generator's state, so a load continues the same run.
+2. `rewinds reroll`, one top-level line of two plain words, makes a rewind restore everything but the generator, which keeps going. Loads still restore it.
+3. A rewind snapshot holds what a save holds: the world, walking agents, the VM's fibers, scene, and rule edges, both generators, and the temporal state, written by the save's own serializer, so a rewind is a load from memory.
+4. A branch's seed is mixed from the run's seed and the tick the branch opens. Opening a branch draws nothing from the present's generator, so the present rolls as if the branch never happened, and the same branch at the same tick rolls the same. The branch generator lives in the temporal state.
+5. A browser page passes its seed to `wasm_init(scenario, seed_low, seed_high)`. The supported export list stays at fifteen (D-175); a page that passes only the scenario, as every generated project so far does, sends zeros, which mean seed 42.
+
+**Alternatives:** seed 42 everywhere until set; a `dice: variety` setting; snapshots of the world, fibers, and generator only; a branch seed from the clock.
+
+**Consequences.** Save format 4 and temporal snapshot version 2 carry the generators; package format 36 carries the reroll flag. A windowed run's rolls differ between plays and match across its own rewinds and loads. P48-14 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

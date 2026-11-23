@@ -13,7 +13,7 @@ const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts head
     \\BeSpoke Engine - Standalone Simulation Spine & Narrative Game DSL
     \\
     \\Usage:
-    \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N] [--input <file>] [--facts]
+    \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N] [--input <file>] [--facts] [--seed N]
     \\  bespoke compile <script.bespoke> -o <game.bspk>
     \\  bespoke check <script.bespoke> [--kind]
     \\  bespoke import <art.png> --name <Image> [--frames WxH] [--script <script.bespoke>] [-o <file>]
@@ -47,6 +47,7 @@ pub fn main(init: std.process.Init) !void {
     var script_file: ?[]const u8 = null;
     var input_file: ?[]const u8 = null;
     var print_facts = false;
+    var seed: ?u64 = null;
     var print_kind = false;
 
     var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
@@ -73,6 +74,9 @@ pub fn main(init: std.process.Init) !void {
             headless = true;
         } else if (std.mem.eql(u8, arg, "--input")) {
             input_file = args.next() orelse return fail(stdout, "'--input' needs a file of '<tick> <command>' lines");
+        } else if (std.mem.eql(u8, arg, "--seed")) {
+            const text = args.next() orelse return fail(stdout, "'--seed' needs a whole number");
+            seed = std.fmt.parseInt(u64, text, 10) catch return fail(stdout, "'--seed' needs a whole number");
         } else if (std.mem.eql(u8, arg, "--facts")) {
             print_facts = true;
         } else if (std.mem.eql(u8, arg, "--kind")) {
@@ -147,6 +151,7 @@ pub fn main(init: std.process.Init) !void {
                 .verbose = true,
                 .input = input,
                 .print_facts = print_facts,
+                .seed = seed,
             }, stdout);
         },
     }

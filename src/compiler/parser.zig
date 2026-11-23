@@ -594,6 +594,8 @@ pub const AST = struct {
     art: ArtDecl = .{},
     /// `save version N` (P48-08, D-162); 1 when the script declares none.
     save_version: ?u32 = null,
+    /// `rewinds reroll` (P48-14, D-184): a rewind keeps the dice going.
+    rewinds_reroll: bool = false,
     /// `name <Thing>: "<text>"` lines (P48-09, D-179).
     display_names: std.ArrayListUnmanaged(NameDecl) = .empty,
     /// `phrase <Key>: "<text>"` lines (P48-09, D-179), already checked against the phrase table.
@@ -1335,6 +1337,16 @@ pub const Parser = struct {
                     // by text with a name after it, so `limit` stays usable elsewhere.
                     if (std.mem.eql(u8, start.slice, "limit") and self.current.tag == .identifier and self.current.line == start.line) {
                         try self.parse_limit(start);
+                        continue;
+                    }
+                    // `rewinds reroll` (P48-14, D-184): the dice are for variety, so a rewind
+                    // keeps them going. Two plain words, so both stay usable as names.
+                    if (std.mem.eql(u8, start.slice, "rewinds") and self.current.tag == .identifier and
+                        self.current.line == start.line and std.mem.eql(u8, self.current.slice, "reroll"))
+                    {
+                        try self.advance();
+                        if (ast.rewinds_reroll) return self.error_at(start, "'rewinds reroll' is declared twice", .{});
+                        ast.rewinds_reroll = true;
                         continue;
                     }
                     // `save version N` names which saves this build can load (P48-08, D-162).

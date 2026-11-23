@@ -136,6 +136,9 @@ pub const RunConfig = struct {
     /// Headless only (P48-18): print the world's facts, sorted, when the clock stops and before
     /// the rewind demonstration, so a run can be compared with what it should have left.
     print_facts: bool = false,
+    /// The run's seed (P48-14, D-184). Null keeps 42 for a headless run and takes one from the
+    /// clock for a game in the window.
+    seed: ?u64 = null,
 };
 
 pub const CheckOptions = struct {
@@ -490,6 +493,9 @@ fn run_bytes_with_presenter(
     defer vm.deinit();
     vm.spatial = &spatial;
     try vm.load_compiled_rules(&compiled);
+    // The run's dice are seeded before the script's first statement can roll (D-184).
+    const windowed = desktop and !config.is_headless;
+    vm.set_seed(config.seed orelse if (windowed) @truncate(@as(u96, @bitCast(std.Io.Timestamp.now(io, .real).toNanoseconds()))) else bespoke.dice.DEFAULT_SEED);
 
     // Top-level statements, the cast in its scenes, then every routine (P29-03, D-066). The
     // window's clicks and typed commands act for the returned player (D-064).
@@ -498,11 +504,9 @@ fn run_bytes_with_presenter(
     var display_bridge = DisplayBridge.init();
     var repl_instance = Repl.init(&world, &spatial, &vm);
 
-    var history_snapshots = std.array_list.Managed(std.array_list.Managed(u8)).init(allocator);
-    defer {
-        for (history_snapshots.items) |*buf| buf.deinit();
-        history_snapshots.deinit();
-    }
+    // Every snapshot is the whole run, so a rewind restores routines and dice too (D-184).
+    var timeline = bespoke.host.Timeline.init(allocator);
+    defer timeline.deinit();
 
     if (!desktop or config.is_headless) {
         try stdout.print("\n>>> STARTING SIMULATION CLOCK (Headless Mode, {d} ticks) <<<\n", .{config.ticks});
@@ -511,10 +515,7 @@ fn run_bytes_with_presenter(
         display_bridge.capture_frame(&world, &spatial, &vm);
         display_bridge.swap();
 
-        var snap0 = std.array_list.Managed(u8).init(allocator);
-        var lw1 = ListWriter.init(&snap0);
-        try world.save_state(&lw1.writer);
-        try history_snapshots.append(snap0);
+        try timeline.record_run(&world, &spatial, &vm, null);
 
         // Headless runs report each change of script music, so a score's triggers can be
         // checked without an audio device. Scripts without scores print nothing.
@@ -539,10 +540,7 @@ fn run_bytes_with_presenter(
             _ = try bespoke.host.tick(&vm, &compiled);
             try story.report(&world, &vm, stdout);
 
-            var snap = std.array_list.Managed(u8).init(allocator);
-            var lw2 = ListWriter.init(&snap);
-            try world.save_state(&lw2.writer);
-            try history_snapshots.append(snap);
+            try timeline.record_run(&world, &spatial, &vm, null);
 
             display_bridge.capture_frame(&world, &spatial, &vm);
             display_bridge.swap();
@@ -572,11 +570,9 @@ fn run_bytes_with_presenter(
         try stdout.print("===================================================================\n\n", .{});
 
         // Time-travel rewind verification
-        if (history_snapshots.items.len > 2) {
+        if (timeline.len() > 2) {
             try stdout.print(">>> DEMONSTRATING TIME-TRAVEL REWIND: REWINDING TO TICK 2 <<<\n", .{});
-            const rewind_snap = history_snapshots.items[2];
-            var stream: std.Io.Reader = .fixed(rewind_snap.items);
-            try world.restore_state(&stream);
+            _ = try timeline.restore_run(&world, &spatial, &vm, null, 2, compiled.rewinds_reroll);
             display_bridge.capture_frame(&world, &spatial, &vm);
             display_bridge.swap();
             try stdout.print("Rewound Simulation Clock Restored: Tick {d}\n", .{world.current_tick});
@@ -612,10 +608,9 @@ fn run_bytes_with_presenter(
         display_bridge.swap();
         bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
 
-        var snap0 = std.array_list.Managed(u8).init(allocator);
-        var lw3 = ListWriter.init(&snap0);
-        try world.save_state(&lw3.writer);
-        try history_snapshots.append(snap0);
+        try timeline.record_run(&world, &spatial, &vm, null);
+        // The snapshot on screen; ticking from an earlier one discards the later ones first.
+        var cursor: usize = 0;
 
         var is_paused = false;
         var last_tick_time = std.Io.Timestamp.now(io, .awake).toMilliseconds();
@@ -630,6 +625,13 @@ fn run_bytes_with_presenter(
                 const loading = action == .quick_load or action == .load_slot;
                 // A save from another build kept its facts but no routine (D-162).
                 if (loading and window.save_manager.last_load_restarted_routines) try bespoke.host.restart_routines(&world, &spatial, &vm, &compiled);
+                if (loading) {
+                    // A loaded save has no timeline; start one from it, so a rewind cannot
+                    // reach the future the load replaced.
+                    timeline.reset();
+                    try timeline.record_run(&world, &spatial, &vm, null);
+                    cursor = 0;
+                }
             }
             switch (action) {
                 .quit => break,
@@ -665,26 +667,21 @@ fn run_bytes_with_presenter(
                     }
                 },
                 .rewind => {
-                    if (history_snapshots.items.len > 2) {
+                    if (timeline.len() > 2) {
                         is_paused = true;
-                        const target_snapshot = history_snapshots.items[2];
-                        var stream: std.Io.Reader = .fixed(target_snapshot.items);
-                        try world.restore_state(&stream);
+                        cursor = (try timeline.restore_run(&world, &spatial, &vm, null, 2, compiled.rewinds_reroll)).?;
                         display_bridge.capture_frame(&world, &spatial, &vm);
-                        display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                        display_bridge.set_max_history_tick(timeline.last_index());
                         display_bridge.swap();
                         window.set_cue_banner("<<< REWOUND TO TICK 2 (PAUSED) <<<", 90);
                     }
                 },
                 .scrub_to_tick => |target_tick| {
-                    if (history_snapshots.items.len > 0) {
-                        const clamped = @min(target_tick, history_snapshots.items.len - 1);
+                    if (timeline.len() > 0) {
                         is_paused = true;
-                        const target_snapshot = history_snapshots.items[clamped];
-                        var stream: std.Io.Reader = .fixed(target_snapshot.items);
-                        try world.restore_state(&stream);
+                        cursor = (try timeline.restore_run(&world, &spatial, &vm, null, target_tick, compiled.rewinds_reroll)).?;
                         display_bridge.capture_frame(&world, &spatial, &vm);
-                        display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                        display_bridge.set_max_history_tick(timeline.last_index());
                         display_bridge.swap();
 
                         var banner_buf: [96]u8 = undefined;
@@ -699,14 +696,12 @@ fn run_bytes_with_presenter(
                     if (res.output_len > 0) {
                         window.set_cue_banner(res.get_text(), 120);
                     }
-                    if (world.current_tick >= history_snapshots.items.len) {
-                        var snap = std.array_list.Managed(u8).init(allocator);
-                        var lw4 = ListWriter.init(&snap);
-                        try world.save_state(&lw4.writer);
-                        try history_snapshots.append(snap);
-                    }
+                    // A console command changes the run between ticks; record it as now.
+                    timeline.discard_after(cursor);
+                    try timeline.record_run(&world, &spatial, &vm, null);
+                    cursor = timeline.last_index();
                     display_bridge.capture_frame(&world, &spatial, &vm);
-                    display_bridge.set_max_history_tick(history_snapshots.items.len - 1);
+                    display_bridge.set_max_history_tick(timeline.last_index());
                     display_bridge.swap();
                 },
                 else => {},
@@ -725,10 +720,9 @@ fn run_bytes_with_presenter(
                 var speech_buf: [256]u8 = undefined;
                 if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |line| window.set_cue_banner(line, 160);
 
-                var snap = std.array_list.Managed(u8).init(allocator);
-                var lw5 = ListWriter.init(&snap);
-                try world.save_state(&lw5.writer);
-                try history_snapshots.append(snap);
+                timeline.discard_after(cursor);
+                try timeline.record_run(&world, &spatial, &vm, null);
+                cursor = timeline.last_index();
 
                 display_bridge.capture_frame(&world, &spatial, &vm);
                 display_bridge.set_max_history_tick(world.current_tick);
@@ -865,7 +859,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 36; this engine supports versions 1 through 35\n",
+        "future.bspk: error: unsupported .bspk format version 37; this engine supports versions 1 through 36\n",
         output.buffered(),
     );
 }

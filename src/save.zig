@@ -3,6 +3,7 @@ const ListWriter = @import("list_writer.zig").ListWriter;
 const world_mod = @import("world.zig");
 const spatial_mod = @import("spatial.zig");
 const vm_mod = @import("vm.zig");
+const dice_mod = @import("dice.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 const temporal_mod = @import("temporal_snapshot.zig");
 
@@ -22,7 +23,9 @@ pub const InterruptFrame = vm_mod.InterruptFrame;
 pub const SAVE_MAGIC = [4]u8{ 'B', 'S', 'A', 'V' };
 /// Version 3 (P48-08, D-162) adds the program identity after the metadata, and always carries
 /// the temporal flag byte; versions 1 and 2 load unchecked.
-pub const SAVE_VERSION: u32 = 3;
+/// Version 4 adds the run's dice, the seed and the generator's state, after the VM's rule
+/// edges (P48-14, D-168, D-184); a version 3 save loads with the dice the VM already has.
+pub const SAVE_VERSION: u32 = 4;
 pub const MIN_SAVE_VERSION: u32 = 1;
 
 /// Number of user-addressable save slots (1..8), plus slot 0 reserved for Quick-Save (P17-02, D-020).
@@ -464,7 +467,28 @@ fn write_save_state_versioned(
     // 3. World relational arena snapshot
     try world.save_state(pw);
 
-    // 4. Spatial motor agents
+    // 4. Spatial motor agents, then 5. VM execution state
+    try write_spatial_state(pw, spatial);
+    try write_vm_state(pw, vm, version);
+
+    // Compute CRC32 integrity checksum over the entire payload
+    if (payload.items.len > MAX_SAVE_PAYLOAD_SIZE) return SaveError.SavePayloadTooLarge;
+    const crc = std.hash.Crc32.hash(payload.items);
+    const payload_len: u32 = @intCast(payload.items.len);
+
+    // Write outer file envelope: magic (4B) + version (4B) + crc32 (4B) + payload_len (4B) + payload
+    try writer.writeAll(&SAVE_MAGIC);
+    try writer.writeInt(u32, version, .little);
+    try writer.writeInt(u32, crc, .little);
+    try writer.writeInt(u32, payload_len, .little);
+    try writer.writeAll(payload.items);
+
+    return meta;
+}
+
+/// The walking agents, as a save and a browser snapshot hold them: a presence byte, then each
+/// agent's position, route, and progress.
+pub fn write_spatial_state(pw: anytype, spatial: ?*const SpatialSystem) !void {
     if (spatial) |sp| {
         try pw.writeByte(1);
         const agent_count: u32 = @intCast(sp.agents.count());
@@ -495,7 +519,11 @@ fn write_save_state_versioned(
         try pw.writeByte(0);
     }
 
-    // 5. VM execution state (current_scene, fibers, interrupt stacks, reactive rule edge flags)
+}
+
+/// The VM's execution state, as a save and a browser snapshot hold it: the scene, every fiber
+/// with its stack and interrupt frames, the rule edges, and (version 4) the run's dice.
+pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
     if (vm) |v| {
         // Queued weaves are not part of the save format. They exist only between `step_tick`
         // and the host's `dispatch_pending_weaves`; saving inside that window would drop them,
@@ -534,23 +562,155 @@ fn write_save_state_versioned(
         for (v.reactive_rules.items) |r| {
             try pw.writeByte(if (r.is_active) 1 else 0);
         }
+        if (version >= 4) try v.dice.write(pw);
     } else {
         try pw.writeByte(0);
     }
 
-    // Compute CRC32 integrity checksum over the entire payload
-    if (payload.items.len > MAX_SAVE_PAYLOAD_SIZE) return SaveError.SavePayloadTooLarge;
-    const crc = std.hash.Crc32.hash(payload.items);
-    const payload_len: u32 = @intCast(payload.items.len);
+}
 
-    // Write outer file envelope: magic (4B) + version (4B) + crc32 (4B) + payload_len (4B) + payload
-    try writer.writeAll(&SAVE_MAGIC);
-    try writer.writeInt(u32, version, .little);
-    try writer.writeInt(u32, crc, .little);
-    try writer.writeInt(u32, payload_len, .little);
-    try writer.writeAll(payload.items);
+/// Reads what `write_spatial_state` wrote into `spatial`, or skips it when there is none.
+pub fn read_spatial_state(pr: anytype, spatial: ?*SpatialSystem) !void {
+    const has_spatial = try pr.takeByte();
+    if (has_spatial != 0) {
+        const agent_count = try pr.takeInt(u32, .little);
+        if (spatial) |sp| {
+            var old_it = sp.agents.valueIterator();
+            while (old_it.next()) |ag| {
+                ag.deinit(sp.allocator);
+            }
+            sp.agents.clearRetainingCapacity();
 
-    return meta;
+            var ai: u32 = 0;
+            while (ai < agent_count) : (ai += 1) {
+                const ent_raw = try pr.takeInt(u32, .little);
+                const px = try pr.takeInt(i32, .little);
+                const py = try pr.takeInt(i32, .little);
+                const cur_wp = try pr.takeInt(u16, .little);
+                const target_wp_raw = try pr.takeInt(u16, .little);
+                const speed = try pr.takeInt(u32, .little);
+                const is_moving = (try pr.takeByte()) != 0;
+                const arrived = (try pr.takeByte()) != 0;
+                const path_index = try pr.takeInt(u16, .little);
+                const path_len = try pr.takeInt(u16, .little);
+
+                var path_slice: ?[]WaypointId = null;
+                if (path_len > 0) {
+                    const pbuf = try sp.allocator.alloc(WaypointId, path_len);
+                    for (0..path_len) |pi| {
+                        pbuf[pi] = try pr.takeInt(u16, .little);
+                    }
+                    path_slice = pbuf;
+                }
+
+                const ent = EntityId.from_int(ent_raw);
+                try sp.agents.put(ent, MotorAgent{
+                    .entity = ent,
+                    .pos = .{ .x = px, .y = py },
+                    .current_wp = cur_wp,
+                    .target_wp = if (target_wp_raw == 0) null else target_wp_raw,
+                    .path = path_slice,
+                    .path_index = path_index,
+                    .speed = speed,
+                    .is_moving = is_moving,
+                    .arrived = arrived,
+                });
+            }
+        } else {
+            // Skip spatial section if caller did not pass a SpatialSystem
+            var ai: u32 = 0;
+            while (ai < agent_count) : (ai += 1) {
+                _ = try pr.takeInt(u32, .little);
+                _ = try pr.takeInt(i32, .little);
+                _ = try pr.takeInt(i32, .little);
+                _ = try pr.takeInt(u16, .little);
+                _ = try pr.takeInt(u16, .little);
+                _ = try pr.takeInt(u32, .little);
+                _ = try pr.takeByte();
+                _ = try pr.takeByte();
+                _ = try pr.takeInt(u16, .little);
+                const path_len = try pr.takeInt(u16, .little);
+                var pi: u16 = 0;
+                while (pi < path_len) : (pi += 1) {
+                    _ = try pr.takeInt(u16, .little);
+                }
+            }
+        }
+    }
+
+}
+
+/// Reads what `write_vm_state` wrote into `vm` for a save of `version`.
+pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
+    const has_vm = try pr.takeByte();
+    if (has_vm != 0) {
+        const cur_scene_raw = try pr.takeInt(u32, .little);
+        const next_fib_id = try pr.takeInt(u32, .little);
+        const fiber_count = try pr.takeInt(u32, .little);
+
+        if (vm) |v| {
+            v.current_scene = if (cur_scene_raw == 0) null else EntityId.from_int(cur_scene_raw);
+            v.next_fiber_id = next_fib_id;
+            v.emitted_cues.clearRetainingCapacity();
+            v.pending_weaves.clearRetainingCapacity();
+
+            for (v.fibers.items) |*f| {
+                f.deinit();
+            }
+            v.fibers.clearRetainingCapacity();
+
+            var fi: u32 = 0;
+            while (fi < fiber_count) : (fi += 1) {
+                const fid = try pr.takeInt(u32, .little);
+                const owner_raw = try pr.takeInt(u32, .little);
+                const pc = try pr.takeInt(u32, .little);
+                const sp_val = try pr.takeInt(u16, .little);
+                const active_prio = try pr.takeInt(u16, .little);
+
+                var fib = Fiber.init(v.allocator, fid, EntityId.from_int(owner_raw), pc);
+                errdefer fib.deinit();
+                fib.sp = @min(sp_val, vm_mod.MAX_STACK);
+                fib.active_priority = active_prio;
+
+                var si: u16 = 0;
+                while (si < sp_val) : (si += 1) {
+                    const sval = try pr.takeInt(u32, .little);
+                    if (si < vm_mod.MAX_STACK) {
+                        fib.stack[si] = sval;
+                    }
+                }
+                fib.state = try read_fiber_state(pr);
+
+                const int_depth = try pr.takeInt(u16, .little);
+                var ii: u16 = 0;
+                while (ii < int_depth) : (ii += 1) {
+                    const ipc = try pr.takeInt(u32, .little);
+                    const isp = try pr.takeInt(u16, .little);
+                    const iprio = try pr.takeInt(u16, .little);
+                    const istate = try read_fiber_state(pr);
+                    try fib.interrupt_stack.append(InterruptFrame{
+                        .pc = ipc,
+                        .sp = isp,
+                        .state = istate,
+                        .priority = iprio,
+                    });
+                }
+
+                try v.fibers.append(fib);
+            }
+
+            const rule_count = try pr.takeInt(u32, .little);
+            var ri: u32 = 0;
+            while (ri < rule_count) : (ri += 1) {
+                const is_act = (try pr.takeByte()) != 0;
+                if (ri < v.reactive_rules.items.len) {
+                    v.reactive_rules.items[ri].is_active = is_act;
+                }
+            }
+            if (version >= 4) v.dice = try dice_mod.Dice.read(pr);
+        }
+    }
+
 }
 
 const VerifiedPayload = struct {
@@ -697,7 +857,7 @@ test "P48-08: checked-in version 3 save fixture names its build" {
     const testing = std.testing;
     const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v3.sav", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(SAVE_VERSION, version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 3), version_from_bytes(fixture).?);
     const build = ProgramIdentity{ .fingerprint = 0x5ace_d0c5_0000_0003, .save_version = 2 };
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -954,142 +1114,9 @@ fn read_save_state_versioned(
     world.recently_expired_count = 0;
     if (pending_temporal) |*snapshot| try snapshot.validate(world);
 
-    // 3. Spatial motor agents
-    const has_spatial = try pr.takeByte();
-    if (has_spatial != 0) {
-        const agent_count = try pr.takeInt(u32, .little);
-        if (spatial) |sp| {
-            var old_it = sp.agents.valueIterator();
-            while (old_it.next()) |ag| {
-                ag.deinit(sp.allocator);
-            }
-            sp.agents.clearRetainingCapacity();
-
-            var ai: u32 = 0;
-            while (ai < agent_count) : (ai += 1) {
-                const ent_raw = try pr.takeInt(u32, .little);
-                const px = try pr.takeInt(i32, .little);
-                const py = try pr.takeInt(i32, .little);
-                const cur_wp = try pr.takeInt(u16, .little);
-                const target_wp_raw = try pr.takeInt(u16, .little);
-                const speed = try pr.takeInt(u32, .little);
-                const is_moving = (try pr.takeByte()) != 0;
-                const arrived = (try pr.takeByte()) != 0;
-                const path_index = try pr.takeInt(u16, .little);
-                const path_len = try pr.takeInt(u16, .little);
-
-                var path_slice: ?[]WaypointId = null;
-                if (path_len > 0) {
-                    const pbuf = try sp.allocator.alloc(WaypointId, path_len);
-                    for (0..path_len) |pi| {
-                        pbuf[pi] = try pr.takeInt(u16, .little);
-                    }
-                    path_slice = pbuf;
-                }
-
-                const ent = EntityId.from_int(ent_raw);
-                try sp.agents.put(ent, MotorAgent{
-                    .entity = ent,
-                    .pos = .{ .x = px, .y = py },
-                    .current_wp = cur_wp,
-                    .target_wp = if (target_wp_raw == 0) null else target_wp_raw,
-                    .path = path_slice,
-                    .path_index = path_index,
-                    .speed = speed,
-                    .is_moving = is_moving,
-                    .arrived = arrived,
-                });
-            }
-        } else {
-            // Skip spatial section if caller did not pass a SpatialSystem
-            var ai: u32 = 0;
-            while (ai < agent_count) : (ai += 1) {
-                _ = try pr.takeInt(u32, .little);
-                _ = try pr.takeInt(i32, .little);
-                _ = try pr.takeInt(i32, .little);
-                _ = try pr.takeInt(u16, .little);
-                _ = try pr.takeInt(u16, .little);
-                _ = try pr.takeInt(u32, .little);
-                _ = try pr.takeByte();
-                _ = try pr.takeByte();
-                _ = try pr.takeInt(u16, .little);
-                const path_len = try pr.takeInt(u16, .little);
-                var pi: u16 = 0;
-                while (pi < path_len) : (pi += 1) {
-                    _ = try pr.takeInt(u16, .little);
-                }
-            }
-        }
-    }
-
-    // 4. VM execution state
-    const has_vm = try pr.takeByte();
-    if (has_vm != 0) {
-        const cur_scene_raw = try pr.takeInt(u32, .little);
-        const next_fib_id = try pr.takeInt(u32, .little);
-        const fiber_count = try pr.takeInt(u32, .little);
-
-        if (vm) |v| {
-            v.current_scene = if (cur_scene_raw == 0) null else EntityId.from_int(cur_scene_raw);
-            v.next_fiber_id = next_fib_id;
-            v.emitted_cues.clearRetainingCapacity();
-            v.pending_weaves.clearRetainingCapacity();
-
-            for (v.fibers.items) |*f| {
-                f.deinit();
-            }
-            v.fibers.clearRetainingCapacity();
-
-            var fi: u32 = 0;
-            while (fi < fiber_count) : (fi += 1) {
-                const fid = try pr.takeInt(u32, .little);
-                const owner_raw = try pr.takeInt(u32, .little);
-                const pc = try pr.takeInt(u32, .little);
-                const sp_val = try pr.takeInt(u16, .little);
-                const active_prio = try pr.takeInt(u16, .little);
-
-                var fib = Fiber.init(v.allocator, fid, EntityId.from_int(owner_raw), pc);
-                errdefer fib.deinit();
-                fib.sp = @min(sp_val, vm_mod.MAX_STACK);
-                fib.active_priority = active_prio;
-
-                var si: u16 = 0;
-                while (si < sp_val) : (si += 1) {
-                    const sval = try pr.takeInt(u32, .little);
-                    if (si < vm_mod.MAX_STACK) {
-                        fib.stack[si] = sval;
-                    }
-                }
-                fib.state = try read_fiber_state(pr);
-
-                const int_depth = try pr.takeInt(u16, .little);
-                var ii: u16 = 0;
-                while (ii < int_depth) : (ii += 1) {
-                    const ipc = try pr.takeInt(u32, .little);
-                    const isp = try pr.takeInt(u16, .little);
-                    const iprio = try pr.takeInt(u16, .little);
-                    const istate = try read_fiber_state(pr);
-                    try fib.interrupt_stack.append(InterruptFrame{
-                        .pc = ipc,
-                        .sp = isp,
-                        .state = istate,
-                        .priority = iprio,
-                    });
-                }
-
-                try v.fibers.append(fib);
-            }
-
-            const rule_count = try pr.takeInt(u32, .little);
-            var ri: u32 = 0;
-            while (ri < rule_count) : (ri += 1) {
-                const is_act = (try pr.takeByte()) != 0;
-                if (ri < v.reactive_rules.items.len) {
-                    v.reactive_rules.items[ri].is_active = is_act;
-                }
-            }
-        }
-    }
+    // 3. Spatial motor agents, then 4. VM execution state
+    try read_spatial_state(pr, spatial);
+    try read_vm_state(pr, vm, verified.version);
 
     if (pending_temporal) |*snapshot| {
         if (temporal) |hypervisor| try snapshot.apply(hypervisor);
@@ -1169,6 +1196,8 @@ fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload
         else
             null;
         for (v.reactive_rules.items) |*rule| rule.is_active = world.has_multi_match(rule.clauses);
+        // The run goes on: the dice continue from where the save left them (D-168).
+        if (verified.version >= 4) v.dice = saved_vm.dice;
     }
 }
 
@@ -1732,7 +1761,7 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .sav format version 99; this engine supports versions 1 through 3",
+        "unsupported .sav format version 99; this engine supports versions 1 through 4",
         format_unsupported_version(&message_buf, version_from_bytes(bad_ver).?),
     );
 }

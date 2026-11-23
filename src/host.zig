@@ -16,6 +16,8 @@ const phrase_mod = @import("phrase.zig");
 const dialogue_mod = @import("dialogue.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 const temporal_mod = @import("temporal_snapshot.zig");
+const save_mod = @import("save.zig");
+const dice_mod = @import("dice.zig");
 const container_mod = @import("container.zig");
 const grid_mod = @import("grid.zig");
 const agency_mod = @import("agency.zig");
@@ -695,6 +697,10 @@ pub const Timeline = struct {
     pub const Snapshot = struct {
         world: std.array_list.Managed(u8),
         temporal: ?std.array_list.Managed(u8) = null,
+        /// A whole run, written by the save's own serializer: the world, walking agents, the
+        /// VM's fibers, scene, and rule edges, the dice, and the temporal state (D-184). Set by
+        /// `record_run`; `world` is then empty.
+        run: bool = false,
 
         pub fn deinit(self: *Snapshot) void {
             self.world.deinit();
@@ -776,6 +782,56 @@ pub const Timeline = struct {
             try temporal.apply(live);
         }
         return i;
+    }
+
+    /// Records the whole run, as a save holds it, so a rewind restores routines and dice
+    /// exactly as they were (D-168, D-184).
+    pub fn record_run(self: *Timeline, world: *const World, spatial: ?*const SpatialSystem, vm: *const VM, hypervisor: ?*const TemporalHypervisor) !void {
+        var snapshot = Snapshot{ .world = std.array_list.Managed(u8).init(self.allocator), .run = true };
+        errdefer snapshot.deinit();
+        var lw = ListWriter.init(&snapshot.world);
+        _ = try save_mod.write_save_state_with_temporal(self.allocator, &lw.writer, world, spatial, vm, hypervisor, .{});
+        try self.snapshots.append(snapshot);
+    }
+
+    /// Restores run snapshot `index` (clamped). With `keep_dice`, the script's `rewinds reroll`,
+    /// the run's generator is left where it is, and so is a live branch's when the snapshot
+    /// is inside the same branch, so the same action can roll differently.
+    pub fn restore_run(
+        self: *const Timeline,
+        world: *World,
+        spatial: ?*SpatialSystem,
+        vm: *VM,
+        hypervisor: ?*TemporalHypervisor,
+        index: usize,
+        keep_dice: bool,
+    ) !?usize {
+        if (self.snapshots.items.len == 0) return null;
+        const i = @min(index, self.snapshots.items.len - 1);
+        const snapshot = &self.snapshots.items[i];
+        if (!snapshot.run) return error.NotARunSnapshot;
+        const run_dice = vm.dice;
+        const branch_dice = if (hypervisor) |hv| hv.branch_dice else null;
+        var stream: std.Io.Reader = .fixed(snapshot.world.items);
+        if (hypervisor) |hv| {
+            _ = try save_mod.read_save_state_with_temporal(self.allocator, &stream, world, spatial, vm, hv);
+        } else {
+            _ = try save_mod.read_save_state(self.allocator, &stream, world, spatial, vm);
+        }
+        if (keep_dice) {
+            vm.dice = run_dice;
+            if (hypervisor) |hv| {
+                if (hv.branch_dice != null and branch_dice != null) hv.branch_dice = branch_dice;
+            }
+        }
+        return i;
+    }
+
+    /// Drops the newest run snapshot and restores the one before it.
+    pub fn step_back_run(self: *Timeline, world: *World, spatial: ?*SpatialSystem, vm: *VM, hypervisor: ?*TemporalHypervisor, keep_dice: bool) !?usize {
+        if (self.snapshots.items.len < 2) return null;
+        self.discard_after(self.snapshots.items.len - 2);
+        return try self.restore_run(world, spatial, vm, hypervisor, self.snapshots.items.len - 1, keep_dice);
     }
 
     /// Drops every snapshot after `index`.
@@ -923,6 +979,13 @@ pub const Session = struct {
             .timeline = Timeline.init(allocator),
             .last_tick_ms = now_ms(window),
         };
+        // A new game in a real window rolls from the clock, so players get variety; a headless
+        // window, as tests and goldens use, keeps the VM's seed (D-184). A host that wants a
+        // particular run calls `seed` afterwards.
+        if (!window.is_headless) {
+            if (window.io) |io| s.vm.set_seed(@truncate(@as(u96, @bitCast(std.Io.Timestamp.now(io, .real).toNanoseconds()))));
+        }
+        if (hypervisor) |hv| hv.run_seed = vm.dice.seed;
         s.sync_active_world();
         // The script's own art draws in this window (P46-03); a game without art keeps its theme.
         window.set_art(&compiled.art);
@@ -956,6 +1019,18 @@ pub const Session = struct {
     /// may be called after a host advances its hypervisor outside `Session.advance`.
     pub fn sync_active_world(self: *Session) void {
         self.vm.bind_world(self.active_world());
+        self.vm.branch_dice = if (self.hypervisor) |hv| hv.active_dice() else null;
+    }
+
+    /// Starts the run's dice from `seed` and records it as the run's (D-168, D-184): a branch
+    /// opened later mixes its seed from this one. The timeline restarts here, since earlier
+    /// snapshots rolled from another seed.
+    pub fn seed(self: *Session, run_seed: u64) !void {
+        self.vm.set_seed(run_seed);
+        if (self.hypervisor) |hv| hv.run_seed = run_seed;
+        self.timeline.reset();
+        try self.record_snapshot();
+        self.cursor = 0;
     }
 
     /// The open dialogue, reconstructed from World facts, or null (P32-30, D-046).
@@ -1022,7 +1097,7 @@ pub const Session = struct {
                 }
             },
             .rewind => {
-                if (try self.timeline.step_back_with_temporal(self.world, self.hypervisor)) |i| {
+                if (try self.timeline.step_back_run(self.world, self.spatial, self.vm, self.hypervisor, self.compiled.rewinds_reroll)) |i| {
                     self.cursor = i;
                     self.sync_active_world();
                     self.vm.sync_dialogue();
@@ -1039,7 +1114,7 @@ pub const Session = struct {
     /// Hosts with their own rewind gesture (jump to the opening, say) call this before
     /// `handle_common` sees the action. Returns the index shown.
     pub fn jump_to(self: *Session, index: usize) !?usize {
-        const i = (try self.timeline.restore_with_temporal(self.world, self.hypervisor, index)) orelse return null;
+        const i = (try self.timeline.restore_run(self.world, self.spatial, self.vm, self.hypervisor, index, self.compiled.rewinds_reroll)) orelse return null;
         self.cursor = i;
         self.sync_active_world();
         self.vm.sync_dialogue();
@@ -1113,12 +1188,9 @@ pub const Session = struct {
         self.refresh();
     }
 
+    /// Every snapshot is the whole run (D-184), so a rewind or a scrub is a load from memory.
     fn record_snapshot(self: *Session) !void {
-        if (self.hypervisor) |hypervisor| {
-            try self.timeline.record_with_temporal(self.world, hypervisor);
-        } else {
-            try self.timeline.record(self.world);
-        }
+        try self.timeline.record_run(self.world, self.spatial, self.vm, self.hypervisor);
     }
 
     pub fn render(self: *Session) void {
@@ -1224,7 +1296,6 @@ test "P32-16: act fires a cue, ticks, and returns the scripted reply" {
 
 test "P48-08: a patched build with the same save version loads the facts and restarts routines" {
     const compiler = @import("compiler.zig");
-    const save_mod = @import("save.zig");
     const v1 =
         \\save version 2
         \\scene: Yard
@@ -2521,4 +2592,166 @@ test "P45-05: watching a weighing teaches the value it leaned toward to those in
     // The dilemma has weighed to a final tier, so an appeal can no longer move it.
     try world.remember(petra, knows, world.lookup_entity("Mercy of Oswin").?.to_int(), 0);
     try testing.expectEqual(AppealOutcome.no_dilemma, try appeal(&vm, &compiled, petra, world.lookup_entity("Oswin").?, world.lookup_entity("Mercy").?));
+}
+
+const DICE_SCRIPT =
+    \\scene: Den
+    \\cast: Gambler
+    \\marks: Table
+    \\relation Lucky(who)
+    \\routine Throws(Gambler):
+    \\  loop:
+    \\    forget Lucky(Gambler)
+    \\    if roll 1d100 >= 51:
+    \\      remember Lucky(Gambler)
+    \\    wait 1 ticks
+    \\
+;
+
+/// A game that throws a die every tick, for the P48-14 tests.
+const DiceRig = struct {
+    world: World,
+    spatial: SpatialSystem,
+    compiled: CompiledProgram,
+    vm: VM,
+
+    fn init(rig: *DiceRig, source: []const u8, seed: ?u64) !void {
+        const compiler = @import("compiler.zig");
+        rig.world = try World.init(testing.allocator, 1024 * 1024);
+        rig.spatial = SpatialSystem.init(testing.allocator);
+        rig.compiled = try compiler.compile_source(testing.allocator, &rig.world, &rig.spatial, source);
+        rig.vm = VM.init(testing.allocator, &rig.world, &rig.compiled.chunk);
+        rig.vm.spatial = &rig.spatial;
+        if (seed) |s| rig.vm.set_seed(s);
+        try rig.vm.load_compiled_rules(&rig.compiled);
+        _ = try start_script(&rig.world, &rig.spatial, &rig.vm, &rig.compiled);
+    }
+
+    fn deinit(rig: *DiceRig) void {
+        rig.vm.deinit();
+        rig.compiled.deinit();
+        rig.spatial.deinit();
+        rig.world.deinit();
+    }
+
+    /// Which of the next `n` ticks were lucky, one bit a tick.
+    fn throws(rig: *DiceRig, n: u6) !u64 {
+        const lucky = rig.world.lookup_relation("Lucky").?;
+        const gambler = rig.world.lookup_entity("Gambler").?;
+        var bits: u64 = 0;
+        for (0..n) |i| {
+            _ = try tick(&rig.vm, &rig.compiled);
+            if (rig.world.has_fact(gambler, lucky, null)) bits |= @as(u64, 1) << @intCast(i);
+        }
+        return bits;
+    }
+};
+
+test "P48-14: a rewind and a load roll the same again, and 'rewinds reroll' rolls afresh" {
+    var rig: DiceRig = undefined;
+    try rig.init(DICE_SCRIPT, null);
+    defer rig.deinit();
+    _ = try rig.throws(3);
+    var timeline = Timeline.init(testing.allocator);
+    defer timeline.deinit();
+    try timeline.record_run(&rig.world, &rig.spatial, &rig.vm, null);
+    var saved = std.array_list.Managed(u8).init(testing.allocator);
+    defer saved.deinit();
+    var lw = ListWriter.init(&saved);
+    _ = try save_mod.write_save_state(testing.allocator, &lw.writer, &rig.world, &rig.spatial, &rig.vm, .{});
+    const first = try rig.throws(40);
+
+    // A rewind restores the fiber mid-loop and the dice: the same forty throws.
+    _ = try timeline.restore_run(&rig.world, &rig.spatial, &rig.vm, null, 0, false);
+    try testing.expectEqual(@as(u64, 3), rig.world.current_tick);
+    try testing.expectEqual(first, try rig.throws(40));
+
+    // A load does the same.
+    var stream: std.Io.Reader = .fixed(saved.items);
+    _ = try save_mod.read_save_state(testing.allocator, &stream, &rig.world, &rig.spatial, &rig.vm);
+    try testing.expectEqual(first, try rig.throws(40));
+
+    // Keeping the dice, as `rewinds reroll` asks, throws differently from the same moment.
+    _ = try timeline.restore_run(&rig.world, &rig.spatial, &rig.vm, null, 0, true);
+    try testing.expectEqual(@as(u64, 3), rig.world.current_tick);
+    try testing.expect(first != try rig.throws(40));
+
+    // The script line reaches the program.
+    var reroll: DiceRig = undefined;
+    try reroll.init("rewinds reroll\n" ++ DICE_SCRIPT, null);
+    defer reroll.deinit();
+    try testing.expect(reroll.compiled.rewinds_reroll);
+    try testing.expect(!rig.compiled.rewinds_reroll);
+}
+
+test "P48-14: a seed changes a run, and the same seed repeats it" {
+    var a: DiceRig = undefined;
+    try a.init(DICE_SCRIPT, null);
+    defer a.deinit();
+    var b: DiceRig = undefined;
+    try b.init(DICE_SCRIPT, 7);
+    defer b.deinit();
+    var c: DiceRig = undefined;
+    try c.init(DICE_SCRIPT, 7);
+    defer c.deinit();
+    const default_run = try a.throws(40);
+    const seven = try b.throws(40);
+    try testing.expect(default_run != seven);
+    try testing.expectEqual(seven, try c.throws(40));
+    try testing.expectEqual(@as(u64, 7), b.vm.dice.seed);
+}
+
+test "P48-14: a branch rolls from its own dice and leaves the present's untouched" {
+    var rig: DiceRig = undefined;
+    try rig.init(DICE_SCRIPT, null);
+    defer rig.deinit();
+    _ = try rig.throws(2);
+    var hypervisor = TemporalHypervisor.init(testing.allocator, &rig.world);
+    defer hypervisor.deinit();
+    const before = rig.vm.dice;
+    const gambler = rig.world.lookup_entity("Gambler").?;
+    _ = try hypervisor.fork_branch(20, gambler, gambler);
+    // The branch's seed is the run's and the tick's, drawn from nothing.
+    try testing.expectEqual(dice_mod.branch_seed(dice_mod.DEFAULT_SEED, 2), hypervisor.branch_dice.?.seed);
+    rig.vm.bind_world(hypervisor.active_world());
+    rig.vm.branch_dice = hypervisor.active_dice();
+    for (0..10) |_| _ = try tick(&rig.vm, &rig.compiled);
+    // Ten throws in the branch moved its dice and not the present's.
+    try testing.expectEqual(before.prng.s, rig.vm.dice.prng.s);
+    try testing.expect(!std.mem.eql(u64, &dice_mod.Dice.init(hypervisor.branch_dice.?.seed).prng.s, &hypervisor.branch_dice.?.prng.s));
+
+    // The branch's dice travel with the temporal state, so a save keeps them.
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    try temporal_mod.TemporalSnapshot.write(&hypervisor, &lw.writer);
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    var decoded = try temporal_mod.TemporalSnapshot.read(testing.allocator, &rig.world, &stream);
+    defer decoded.deinit();
+    try testing.expectEqual(hypervisor.branch_dice.?.prng.s, decoded.branch_dice.?.prng.s);
+
+    try hypervisor.collapse_branch(false);
+    try testing.expect(hypervisor.active_dice() == null);
+}
+
+test "P48-14: checked-in version 4 save fixture continues its run's dice" {
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v4.sav", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 4), save_mod.version_from_bytes(fixture).?);
+    // The fixture is a seed-7 run of `DICE_SCRIPT` saved after three ticks; a fresh seed-7 run
+    // three ticks in throws exactly as the loaded one does.
+    var fresh: DiceRig = undefined;
+    try fresh.init(DICE_SCRIPT, 7);
+    defer fresh.deinit();
+    _ = try fresh.throws(3);
+    var loaded: DiceRig = undefined;
+    try loaded.init(DICE_SCRIPT, null);
+    defer loaded.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    // Loaded without the build check: the fixture keeps the fingerprint of the build that wrote
+    // it, and a later compiler may fingerprint the same script differently.
+    const meta = try save_mod.read_save_state(testing.allocator, &stream, &loaded.world, &loaded.spatial, &loaded.vm);
+    try testing.expectEqualStrings("P48-14 compatibility fixture", meta.get_description());
+    try testing.expectEqual(@as(u64, 7), loaded.vm.dice.seed);
+    try testing.expectEqual(try fresh.throws(40), try loaded.throws(40));
 }

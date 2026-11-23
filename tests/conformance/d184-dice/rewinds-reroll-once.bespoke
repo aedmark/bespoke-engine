@@ -1,0 +1,6 @@
+# 'rewinds reroll' is said once.
+# pins: D-184
+# expect error: UnexpectedToken 6:1
+
+rewinds reroll
+rewinds reroll

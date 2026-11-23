@@ -23,8 +23,10 @@ const text_package = @embedFile("fixtures/compat/v0.4.0-package-v31.bspk");
 const looks_package = @embedFile("fixtures/compat/v0.4.0-package-v33.bspk");
 const qoi_package = @embedFile("fixtures/compat/v0.4.0-package-v34.bspk");
 const tuned_package = @embedFile("fixtures/compat/v0.4.0-package-v35.bspk");
+const reroll_package = @embedFile("fixtures/compat/v0.4.0-package-v36.bspk");
 const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const identified_save = @embedFile("fixtures/compat/v0.4.0-save-v3.sav");
+const dice_save = @embedFile("fixtures/compat/v0.4.0-save-v4.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
 const command = @embedFile("fixtures/fuzz/command.txt");
@@ -164,7 +166,7 @@ test "P39-01 codegen" {
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package, handler_chain_package, bound_body_package, identity_package, kinds_package, text_package, looks_package, qoi_package, tuned_package });
+    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package, handler_chain_package, bound_body_package, identity_package, kinds_package, text_package, looks_package, qoi_package, tuned_package, reroll_package });
 }
 
 /// Malformed art sections (P46-01): the version 24 fixture with one field broken each. Every
@@ -191,7 +193,7 @@ test "P46-01 package loader refuses malformed art" {
 }
 
 test "P39-01 save loader" {
-    try campaign(loadSave, &.{ save, identified_save });
+    try campaign(loadSave, &.{ save, identified_save, dice_save });
 }
 
 test "P39-01 MML" {

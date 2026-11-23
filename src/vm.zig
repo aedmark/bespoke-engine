@@ -1,4 +1,5 @@
 const std = @import("std");
+const dice_mod = @import("dice.zig");
 const world_mod = @import("world.zig");
 const bytecode_mod = @import("bytecode.zig");
 const spatial_mod = @import("spatial.zig");
@@ -182,7 +183,11 @@ pub const VM = struct {
     emitted_cues: std.array_list.Managed(EmittedCue),
     reactive_rules: std.array_list.Managed(ReactiveRule),
     current_scene: ?EntityId = null,
-    prng: std.Random.DefaultPrng,
+    /// The run's dice (D-168, D-184). `branch_dice`, when the host binds the VM to a live
+    /// branch world, points at the branch's own generator in the hypervisor, so a branch's
+    /// rolls never move the present's.
+    dice: dice_mod.Dice = dice_mod.Dice.init(dice_mod.DEFAULT_SEED),
+    branch_dice: ?*dice_mod.Dice = null,
     /// Weaves queued by the `weave` opcode, awaiting `dispatch_pending_weaves` (D-029).
     /// Transient between `step_tick` and the host's dispatch call; `save.zig` refuses to
     /// snapshot while non-empty so a weave can never be silently dropped by save/restore.
@@ -199,7 +204,6 @@ pub const VM = struct {
             .emitted_cues = std.array_list.Managed(EmittedCue).init(allocator),
             .reactive_rules = std.array_list.Managed(ReactiveRule).init(allocator),
             .current_scene = null,
-            .prng = std.Random.DefaultPrng.init(42),
             .pending_weaves = std.array_list.Managed(PendingWeave).init(allocator),
         };
     }
@@ -208,6 +212,17 @@ pub const VM = struct {
     /// this after a branch fork, restore, or collapse so bytecode never mutates a stale arena.
     pub fn bind_world(self: *VM, world: *World) void {
         self.world = world;
+    }
+
+    /// The generator `roll` draws from: the branch's while one is bound, else the run's.
+    pub fn active_dice(self: *VM) *dice_mod.Dice {
+        return self.branch_dice orelse &self.dice;
+    }
+
+    /// Starts the run's dice from `seed`. Hosts call this before the first tick; a script
+    /// cannot (D-168).
+    pub fn set_seed(self: *VM, seed: u64) void {
+        self.dice = dice_mod.Dice.init(seed);
     }
 
     pub fn deinit(self: *VM) void {
@@ -747,7 +762,7 @@ pub const VM = struct {
                 var sum: u32 = 0;
                 var i: u8 = 0;
                 while (i < roll.count) : (i += 1) {
-                    sum += (self.prng.random().int(u32) % roll.sides) + 1;
+                    sum += self.active_dice().roll(roll.sides);
                 }
                 return sum >= roll.threshold;
             },
@@ -1172,7 +1187,7 @@ pub const VM = struct {
 
                     var total: u32 = 0;
                     for (0..count_val) |_| {
-                        const roll = (self.prng.random().int(u32) % sides) + 1;
+                        const roll = self.active_dice().roll(sides);
                         total += roll;
                     }
                     try f.push(total);
