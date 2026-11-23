@@ -1,8 +1,10 @@
-//! Pixel art in the package (P46-01, D-151, D-152, D-153).
+//! Pixel art in the package (P46-01, D-151, D-152, D-166, D-182).
 //!
-//! A game carries one palette of up to 256 colours and any number of indexed images: sprite
-//! sheets and backdrops. Every pixel is one byte, an index into the game palette, and index 0
-//! is transparent whatever colour the palette stores there. Art is drawn at 320x180 and scaled
+//! A game carries any number of images: sprite sheets and backdrops. Every pixel is full colour
+//! with binary alpha, opaque or fully transparent, and a transparent pixel is stored as all
+//! zeroes so equal art compares equal (D-166). A script's `palette:` is a style rule the
+//! compiler checks; it never reaches the package. The package stores each image as a QOI
+//! stream (`qoi.zig`, D-182) and loads it back to these pixels. Art is drawn at 320x180 and scaled
 //! 4x to the 1280x720 frame (D-097), so a frame (one cell of a sheet, or a whole backdrop) is at
 //! most 320x180. A sheet is a grid of equal frames read left to right, then top to bottom.
 //!
@@ -12,7 +14,7 @@
 //!
 //! Every value here may come from a package file, which is untrusted input. `Art.validate` is the
 //! one gate: the package loader and `Art.dupe` both pass through it, so a renderer can index a
-//! sheet with `frame_pixel` and the palette with any stored index without checking again.
+//! sheet with `frame_pixel` without checking again.
 const std = @import("std");
 const EntityId = @import("world.zig").EntityId;
 
@@ -21,15 +23,16 @@ pub const ART_WIDTH: u16 = 320;
 pub const ART_HEIGHT: u16 = 180;
 /// Whole-number scale from art pixels to the 1280x720 frame (D-097, D-152).
 pub const SCALE: u16 = 4;
-/// One palette per game (D-152); one byte per pixel indexes all of it.
+/// The most colours a script's `palette:` may declare (D-182). Art without a palette has no
+/// colour limit.
 pub const MAX_COLOURS: usize = 256;
-/// The palette index drawn as nothing.
-pub const TRANSPARENT: u8 = 0;
-/// Upper bounds a well-formed package never reaches (D-153). They keep a corrupt count or size
-/// from asking for memory before the bytes behind it are read.
+/// Upper bounds a well-formed package never reaches (D-153, D-182). They keep a corrupt count
+/// or size from asking for memory before the bytes behind it are read; the total keeps a game's
+/// decoded art within 8 MiB, half the browser heap (D-071), so the rest has room.
 pub const MAX_IMAGES: usize = 1024;
 pub const MAX_SHEET_SIDE: u16 = 2048;
 pub const MAX_SHEET_PIXELS: usize = 1024 * 1024;
+pub const MAX_ART_PIXELS: usize = 2 * 1024 * 1024;
 pub const MAX_NAME: usize = 64;
 
 pub const Error = error{
@@ -38,19 +41,45 @@ pub const Error = error{
     InvalidImageName,
     InvalidImageSize,
     InvalidImageIndex,
+    InvalidImagePixel,
+    InvalidImageData,
     InvalidImageBinding,
 };
 
+/// A palette colour, as a script declares one.
 pub const Colour = struct { r: u8, g: u8, b: u8 };
 
-/// One indexed image. `pixels` holds `width * height` palette indices, row by row.
+/// One art pixel. Alpha is 0 or 255 (D-166).
+pub const Pixel = extern struct {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+
+    pub fn opaque_colour(c: Colour) Pixel {
+        return .{ .r = c.r, .g = c.g, .b = c.b, .a = 255 };
+    }
+};
+
+/// The pixel drawn as nothing; every transparent pixel is stored this way.
+pub const TRANSPARENT = Pixel{ .r = 0, .g = 0, .b = 0, .a = 0 };
+
+/// Pixels from palette indices, index 0 transparent: art built in code, such as a test's or a
+/// proof's, is often easiest to write this way (D-166 keeps palettes as a style).
+pub fn from_indices(comptime palette: []const Colour, comptime indices: []const u8) [indices.len]Pixel {
+    var out: [indices.len]Pixel = undefined;
+    for (indices, &out) |index, *p| p.* = if (index == 0) TRANSPARENT else Pixel.opaque_colour(palette[index]);
+    return out;
+}
+
+/// One image. `pixels` holds `width * height` pixels, row by row.
 pub const Image = struct {
     name: []const u8,
     width: u16,
     height: u16,
     frame_width: u16,
     frame_height: u16,
-    pixels: []const u8,
+    pixels: []const Pixel,
 
     pub fn columns(self: Image) u32 {
         return self.width / self.frame_width;
@@ -60,22 +89,22 @@ pub const Image = struct {
         return self.columns() * (self.height / self.frame_height);
     }
 
-    /// The palette index at (x, y) inside `frame`. The caller keeps x and y inside the frame
+    /// The pixel at (x, y) inside `frame`. The caller keeps x and y inside the frame
     /// and `frame` below `frame_count`; a validated image then never reads past `pixels`.
-    pub fn frame_pixel(self: Image, frame: u32, x: u16, y: u16) u8 {
+    pub fn frame_pixel(self: Image, frame: u32, x: u16, y: u16) Pixel {
         std.debug.assert(frame < self.frame_count() and x < self.frame_width and y < self.frame_height);
         const left = (frame % self.columns()) * self.frame_width;
         const top = (frame / self.columns()) * self.frame_height;
         return self.pixels[(top + y) * @as(usize, self.width) + left + x];
     }
 
-    /// Checks one image against a palette of `colour_count` colours. The order is the order a
-    /// loader meets the fields in, so a package reports the first thing wrong with it.
-    pub fn validate(self: Image, colour_count: usize) Error!void {
+    /// Checks one image. The order is the order a loader meets the fields in, so a package
+    /// reports the first thing wrong with it.
+    pub fn validate(self: Image) Error!void {
         try validate_name(self.name);
         try validate_size(self.width, self.height, self.frame_width, self.frame_height);
         if (self.pixels.len != @as(usize, self.width) * self.height) return Error.InvalidImageSize;
-        try validate_indices(self.pixels, colour_count);
+        try validate_pixels(self.pixels);
     }
 };
 
@@ -96,10 +125,19 @@ pub fn validate_size(width: u16, height: u16, frame_width: u16, frame_height: u1
     if (width % frame_width != 0 or height % frame_height != 0) return Error.InvalidImageSize;
 }
 
-/// Index 0 is transparent and needs no colour behind it to be drawn, but it is still an index
-/// into the palette, so an image with any pixel at all needs a palette of at least one colour.
+/// Indexed art from a package older than version 34: index 0 is transparent, and every index
+/// is inside the palette that came with it.
 pub fn validate_indices(pixels: []const u8, colour_count: usize) Error!void {
     for (pixels) |index| if (index >= colour_count) return Error.InvalidImageIndex;
+}
+
+/// Alpha is 0 or 255, and a transparent pixel is all zeroes, so a renderer can test alpha
+/// alone and two equal images hold equal bytes.
+pub fn validate_pixels(pixels: []const Pixel) Error!void {
+    for (pixels) |p| {
+        if (p.a == 255) continue;
+        if (!std.meta.eql(p, TRANSPARENT)) return Error.InvalidImagePixel;
+    }
 }
 
 /// What a sprite is doing, which picks its animation (P46-03, D-155). A person walking takes the
@@ -200,9 +238,8 @@ pub const Part = struct {
 /// The furthest a part may sit from its host's anchor, in art pixels.
 pub const MAX_PART_OFFSET: i16 = ART_WIDTH;
 
-/// A game's palette, images, and what they are attached to. Empty for a game drawn by code.
+/// A game's images and what they are attached to. Empty for a game drawn by code.
 pub const Art = struct {
-    palette: []const Colour = &.{},
     images: []const Image = &.{},
     backdrops: []const Backdrop = &.{},
     sprites: []const Sprite = &.{},
@@ -211,7 +248,7 @@ pub const Art = struct {
     parts: []const Part = &.{},
 
     pub fn is_empty(self: Art) bool {
-        return self.palette.len == 0 and self.images.len == 0 and self.areas.len == 0 and self.looks.len == 0 and self.parts.len == 0;
+        return self.images.len == 0 and self.areas.len == 0 and self.looks.len == 0 and self.parts.len == 0;
     }
 
     pub fn look_named(self: *const Art, name: []const u8) ?*const Look {
@@ -245,11 +282,12 @@ pub const Art = struct {
     }
 
     pub fn validate(self: Art) Error!void {
-        if (self.palette.len > MAX_COLOURS) return Error.InvalidImagePalette;
         if (self.images.len > MAX_IMAGES) return Error.InvalidImageCount;
-        if (self.images.len > 0 and self.palette.len == 0) return Error.InvalidImagePalette;
+        var total: usize = 0;
         for (self.images, 0..) |image, i| {
-            try image.validate(self.palette.len);
+            try image.validate();
+            total += image.pixels.len;
+            if (total > MAX_ART_PIXELS) return Error.InvalidImageSize;
             for (self.images[0..i]) |prior| if (std.mem.eql(u8, prior.name, image.name)) return Error.InvalidImageName;
         }
         if (self.backdrops.len > MAX_BINDINGS or self.sprites.len > MAX_BINDINGS) return Error.InvalidImageBinding;
@@ -301,7 +339,6 @@ pub const Art = struct {
         try source.validate();
         var art = Art{};
         errdefer art.deinit_owned(allocator);
-        art.palette = try allocator.dupe(Colour, source.palette);
         const images = try allocator.alloc(Image, source.images.len);
         @memset(images, .{ .name = &.{}, .width = 0, .height = 0, .frame_width = 0, .frame_height = 0, .pixels = &.{} });
         art.images = images;
@@ -310,7 +347,7 @@ pub const Art = struct {
             copy.name = &.{};
             copy.pixels = &.{};
             copy.name = try allocator.dupe(u8, image.name);
-            copy.pixels = try allocator.dupe(u8, image.pixels);
+            copy.pixels = try allocator.dupe(Pixel, image.pixels);
         }
         art.backdrops = try allocator.dupe(Backdrop, source.backdrops);
         art.areas = try allocator.dupe(Area, source.areas);
@@ -337,7 +374,6 @@ pub const Art = struct {
     pub fn deinit_owned(self: *Art, allocator: std.mem.Allocator) void {
         for (self.images) |image| free_image(allocator, image);
         allocator.free(self.images);
-        allocator.free(self.palette);
         allocator.free(self.backdrops);
         allocator.free(self.areas);
         allocator.free(self.parts);
@@ -357,41 +393,62 @@ pub fn free_image(allocator: std.mem.Allocator, image: Image) void {
     allocator.free(image.pixels);
 }
 
-test "P46-01: a sheet's frames read left to right, then top to bottom" {
-    // A 4x2 sheet of four 2x1 frames in two columns and two rows.
-    const pixels = [_]u8{ 1, 1, 2, 2, 3, 3, 0, 1 };
-    const sheet = Image{ .name = "Sheet", .width = 4, .height = 2, .frame_width = 2, .frame_height = 1, .pixels = &pixels };
-    try sheet.validate(4);
-    try std.testing.expectEqual(@as(u32, 4), sheet.frame_count());
-    try std.testing.expectEqual(@as(u8, 2), sheet.frame_pixel(1, 0, 0));
-    try std.testing.expectEqual(@as(u8, 3), sheet.frame_pixel(2, 1, 0));
-    try std.testing.expectEqual(@as(u8, 1), sheet.frame_pixel(3, 1, 0));
+/// A test pixel: 0 is transparent, and any other value an opaque grey of that level.
+fn grey(n: u8) Pixel {
+    return if (n == 0) TRANSPARENT else .{ .r = n, .g = n, .b = n, .a = 255 };
 }
 
-test "P46-01: art validation names what is wrong" {
-    const palette = [_]Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 255, .g = 0, .b = 0 } };
-    const ok = [_]u8{ 0, 1, 1, 0 };
-    const bad_index = [_]u8{ 0, 1, 2, 0 };
+fn greys(comptime levels: []const u8) [levels.len]Pixel {
+    var out: [levels.len]Pixel = undefined;
+    for (levels, &out) |n, *p| p.* = grey(n);
+    return out;
+}
+
+test "P46-01: a sheet's frames read left to right, then top to bottom" {
+    // A 4x2 sheet of four 2x1 frames in two columns and two rows.
+    const pixels = greys(&.{ 1, 1, 2, 2, 3, 3, 0, 1 });
+    const sheet = Image{ .name = "Sheet", .width = 4, .height = 2, .frame_width = 2, .frame_height = 1, .pixels = &pixels };
+    try sheet.validate();
+    try std.testing.expectEqual(@as(u32, 4), sheet.frame_count());
+    try std.testing.expectEqual(grey(2), sheet.frame_pixel(1, 0, 0));
+    try std.testing.expectEqual(grey(3), sheet.frame_pixel(2, 1, 0));
+    try std.testing.expectEqual(grey(1), sheet.frame_pixel(3, 1, 0));
+}
+
+test "P48-12: art validation names what is wrong" {
+    const ok = greys(&.{ 0, 1, 1, 0 });
     const good = Image{ .name = "Lamp", .width = 2, .height = 2, .frame_width = 2, .frame_height = 2, .pixels = &ok };
-    try (Art{ .palette = &palette, .images = &.{good} }).validate();
+    try (Art{ .images = &.{good} }).validate();
     try (Art{}).validate();
 
+    // Alpha is 0 or 255, and a transparent pixel holds no colour.
     var image = good;
-    image.pixels = &bad_index;
-    try std.testing.expectError(Error.InvalidImageIndex, (Art{ .palette = &palette, .images = &.{image} }).validate());
-    try std.testing.expectError(Error.InvalidImagePalette, (Art{ .images = &.{good} }).validate());
+    const half = [_]Pixel{ grey(1), .{ .r = 1, .g = 1, .b = 1, .a = 128 }, grey(1), grey(1) };
+    image.pixels = &half;
+    try std.testing.expectError(Error.InvalidImagePixel, (Art{ .images = &.{image} }).validate());
+    const ghost = [_]Pixel{ grey(1), .{ .r = 9, .g = 0, .b = 0, .a = 0 }, grey(1), grey(1) };
+    image.pixels = &ghost;
+    try std.testing.expectError(Error.InvalidImagePixel, (Art{ .images = &.{image} }).validate());
 
     image = good;
     image.frame_width = 3;
-    try std.testing.expectError(Error.InvalidImageSize, (Art{ .palette = &palette, .images = &.{image} }).validate());
+    try std.testing.expectError(Error.InvalidImageSize, (Art{ .images = &.{image} }).validate());
     image = good;
     image.name = "";
-    try std.testing.expectError(Error.InvalidImageName, (Art{ .palette = &palette, .images = &.{image} }).validate());
-    try std.testing.expectError(Error.InvalidImageName, (Art{ .palette = &palette, .images = &.{ good, good } }).validate());
+    try std.testing.expectError(Error.InvalidImageName, (Art{ .images = &.{image} }).validate());
+    try std.testing.expectError(Error.InvalidImageName, (Art{ .images = &.{ good, good } }).validate());
+    try std.testing.expectError(Error.InvalidImageIndex, validate_indices(&.{ 0, 1, 2 }, 2));
+}
 
-    var big: [MAX_COLOURS + 1]Colour = undefined;
-    @memset(&big, .{ .r = 1, .g = 2, .b = 3 });
-    try std.testing.expectError(Error.InvalidImagePalette, (Art{ .palette = &big }).validate());
+test "P48-12: a game's images together stay under the total pixel cap" {
+    const many = try std.testing.allocator.alloc(Pixel, MAX_SHEET_PIXELS);
+    defer std.testing.allocator.free(many);
+    @memset(many, TRANSPARENT);
+    var sheets: [3]Image = undefined;
+    const names = [_][]const u8{ "A", "B", "C" };
+    for (&sheets, names) |*sheet, name| sheet.* = .{ .name = name, .width = 1024, .height = 1024, .frame_width = 32, .frame_height = 32, .pixels = many };
+    try (Art{ .images = sheets[0..2] }).validate();
+    try std.testing.expectError(Error.InvalidImageSize, (Art{ .images = &sheets }).validate());
 }
 
 test "P46-01: a backdrop is one 320x180 frame and a larger frame is refused" {
@@ -402,12 +459,11 @@ test "P46-01: a backdrop is one 320x180 frame and a larger frame is refused" {
 }
 
 test "P46-01: dupe copies art into owned memory" {
-    const palette = [_]Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 8, .b = 7 } };
-    var pixels = [_]u8{ 1, 0 };
-    var art = try Art.dupe(std.testing.allocator, .{ .palette = &palette, .images = &.{.{ .name = "Dot", .width = 2, .height = 1, .frame_width = 1, .frame_height = 1, .pixels = &pixels }} });
+    var pixels = greys(&.{ 1, 0 });
+    var art = try Art.dupe(std.testing.allocator, .{ .images = &.{.{ .name = "Dot", .width = 2, .height = 1, .frame_width = 1, .frame_height = 1, .pixels = &pixels }} });
     defer art.deinit_owned(std.testing.allocator);
-    pixels[0] = 0;
-    try std.testing.expectEqual(@as(u8, 1), art.find("Dot").?.pixels[0]);
+    pixels[0] = TRANSPARENT;
+    try std.testing.expectEqual(grey(1), art.find("Dot").?.pixels[0]);
     try std.testing.expectEqual(@as(u32, 2), art.find("Dot").?.frame_count());
     try std.testing.expect(art.find("Missing") == null);
 }
@@ -429,22 +485,21 @@ test "P46-03: a sprite plays its steps by display frame and falls back to idle, 
 }
 
 test "P46-03: bindings name real images, a backdrop is one 320x180 frame, and steps stay in the sheet" {
-    const palette = [_]Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 1, .g = 2, .b = 3 } };
-    const sheet_px = [_]u8{ 1, 0, 0, 1 };
+    const sheet_px = greys(&.{ 1, 0, 0, 1 });
     const sheet = Image{ .name = "Sheet", .width = 2, .height = 2, .frame_width = 1, .frame_height = 2, .pixels = &sheet_px };
     const step_ok = [_]Step{.{ .frame = 1, .duration = 6 }};
     const step_bad = [_]Step{.{ .frame = 2, .duration = 6 }};
     var sprite = Sprite{ .entity = EntityId.from_int(3), .image = 0 };
     sprite.animations[0] = &step_ok;
-    try (Art{ .palette = &palette, .images = &.{sheet}, .sprites = &.{sprite} }).validate();
+    try (Art{ .images = &.{sheet}, .sprites = &.{sprite} }).validate();
     sprite.animations[0] = &step_bad;
-    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .palette = &palette, .images = &.{sheet}, .sprites = &.{sprite} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .images = &.{sheet}, .sprites = &.{sprite} }).validate());
     // The sheet is not a 320x180 backdrop, and image 1 does not exist.
-    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .palette = &palette, .images = &.{sheet}, .backdrops = &.{.{ .scene = EntityId.from_int(4), .image = 0 }} }).validate());
-    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .palette = &palette, .images = &.{sheet}, .backdrops = &.{.{ .scene = EntityId.from_int(4), .image = 1 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .images = &.{sheet}, .backdrops = &.{.{ .scene = EntityId.from_int(4), .image = 0 }} }).validate());
+    try std.testing.expectError(Error.InvalidImageBinding, (Art{ .images = &.{sheet}, .backdrops = &.{.{ .scene = EntityId.from_int(4), .image = 1 }} }).validate());
 
     sprite.animations[0] = &step_ok;
-    var art = try Art.dupe(std.testing.allocator, .{ .palette = &palette, .images = &.{sheet}, .sprites = &.{sprite} });
+    var art = try Art.dupe(std.testing.allocator, .{ .images = &.{sheet}, .sprites = &.{sprite} });
     defer art.deinit_owned(std.testing.allocator);
     try std.testing.expectEqual(@as(u16, 1), art.sprite_for(EntityId.from_int(3)).?.frame_at(.idle, 0));
     try std.testing.expect(art.sprite_for(EntityId.from_int(9)) == null);

@@ -3,7 +3,7 @@
   (PNG Import * Backdrops * Animated Sprites * Areas * Art by State) 
 ===================================================================
 
-  (Art: 7 images, 58 colours, 2 backdrops, 6 sprites, all imported from PNG.)
+  (Art: 7 images, 57 colours, 2 backdrops, 6 sprites, all imported from PNG.)
 
 
 [Dusk]

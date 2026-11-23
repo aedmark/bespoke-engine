@@ -1,0 +1,6 @@
+# A palette alone (P48-12): the red that rgba.png's border uses, and no other colour, so an
+# import against it lists the badge's yellow and blue, and a compile of rgba.png under it is
+# refused (D-166).
+palette:
+  "." transparent
+  "r" 200 40 40

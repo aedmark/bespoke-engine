@@ -1067,26 +1067,30 @@
         },
         {
           "id": "script-pixel-art",
-          "title": "Script Pixel Art: Palettes, Sprites, Areas, and PNG Import",
-          "summary": "Scripts declare a palette, images, scene backdrops, animated sprites, and clickable prop areas, from typed rows or PNG files beside the script.",
+          "title": "Script Pixel Art: Images, Looks, Parts, Areas, and PNG Import",
+          "summary": "Scripts declare full-colour images, scene backdrops, animated sprites, looks switched by facts, attached parts, and clickable prop areas, from PNG files beside the script or typed rows.",
           "synopsis": "image TallowLane from \"tallow_lane.png\" | backdrop: TallowLane | sprite Nell: NellSheet (idle, walk lines) | area ShopDoor: 96 62 24 42",
           "tags": ["art", "pixel-art", "png", "sprites", "dsl", "display"],
-          "what": "A game carries one palette of up to 256 colours and indexed images at 320x180, drawn 4x in the 1280x720 frame. A scene's backdrop draws the room, a sprite draws a person or prop bottom-centre on its spot with idle and walk animations, and an area marks where a painted or theme-drawn prop is so a click anywhere on it acts. bespoke import turns a PNG into inline rows for scripts compiled in the browser.",
+          "what": "A game carries full-colour images with binary alpha at 320x180, drawn 4x in the 1280x720 frame; a declared palette of up to 256 colours is an optional style rule its art must follow. A scene's backdrop draws the room, a sprite draws a person or prop bottom-centre on its spot with idle and walk animations, a Looks fact switches it to a named look, a part is drawn above its host and clicked as it, and an area marks where a painted or theme-drawn prop is so a click anywhere on it acts. bespoke import turns a PNG into inline rows for scripts compiled in the browser.",
           "how": [
             "The parser reads palette:, image <Name> [frames WxH] [from \"file.png\"], backdrop:, sprite, and area <Prop>: x y w h as contextual words, resolves them at the end of the script, and names the line of each mistake (unknown image, frame past the sheet, missing code, ragged row, wrong backdrop size).",
-            "src/png.zig decodes PNG files with the standard library's inflate under size limits, and src/art_import.zig maps each pixel onto the palette by exact colour with binary alpha; a partly transparent pixel or a 257th colour is refused. Only a command-line compile reads files, from the script's folder, and the decoder is compiled out of the browser module.",
-            "Canvas.draw_image paints each art pixel as a 4x4 block, skips index 0, clips at the edges, and records its opaque bounds for the band check, on the same path for the desktop window and the browser.",
+            "src/png.zig decodes PNG files with the standard library's inflate under size limits, and src/art_import.zig keeps each pixel's colour with binary alpha; a partly transparent pixel, or a colour a declared palette lacks, is refused. Only a command-line compile reads files, from the script's folder, and the decoder is compiled out of the browser module.",
+            "Canvas.draw_image paints each art pixel as a 4x4 block, skips transparent pixels, clips at the edges, and records its opaque bounds for the band check, on the same path for the desktop window and the browser.",
             "Sprite.frame_at picks the frame from the display's 60 Hz animation clock and the entity's heading; animation is never written to the world, so saves, rewinds, and goldens are unaffected by it.",
             "Hit tests take the art: a sprite is hit anywhere in its frame or on its spot's disc, and an area anywhere in its rectangle; box outlines are drawn only in the debug overlay.",
-            "Packages carry the palette and images (version 24), backdrops and sprites (version 25), and areas (version 26); older versions load with no art."
+            "Packages carry images (version 24), backdrops and sprites (version 25), areas (version 26), and looks and parts (version 33). Since version 34 each image is a standard QOI stream with no palette (src/qoi.zig), which took The Lamplighter's Round's package from 127,001 to 33,989 bytes; versions 24 to 33 load their indexed art as the colours their palette names."
           ],
-          "why": "Art belongs beside the scenes and props it draws, so a game is one script and its files rather than a host full of drawing code. One fixed palette and exact colour matching keep the import deterministic and the browser module small, and keeping animation out of the world keeps time travel and goldens exact.",
+          "why": "Art belongs beside the scenes and props it draws, so a game is one script and its files rather than a host full of drawing code. Exact colours keep the import deterministic, a palette is a style an author chooses rather than a limit the engine imposes, QOI keeps art small with a decoder small enough for the browser module, and keeping animation out of the world keeps time travel and goldens exact.",
           "why_basis": "recorded",
           "evidence": [
             {"label": "Architectural Decision D-152", "target": "docs/DECISIONS.md#d-152", "kind": "decision"},
             {"label": "Architectural Decision D-155", "target": "docs/DECISIONS.md#d-155", "kind": "decision"},
             {"label": "Architectural Decision D-156", "target": "docs/DECISIONS.md#d-156", "kind": "decision"},
             {"label": "Architectural Decision D-158", "target": "docs/DECISIONS.md#d-158", "kind": "decision"},
+            {"label": "Architectural Decision D-166", "target": "docs/DECISIONS.md#d-166", "kind": "decision"},
+            {"label": "Architectural Decision D-181", "target": "docs/DECISIONS.md#d-181", "kind": "decision"},
+            {"label": "Architectural Decision D-182", "target": "docs/DECISIONS.md#d-182", "kind": "decision"},
+            {"label": "QOI Codec", "target": "src/qoi.zig", "kind": "source"},
             {"label": "Image and Art Model", "target": "src/image.zig", "kind": "source"},
             {"label": "PNG Decoder", "target": "src/png.zig", "kind": "source"},
             {"label": "The Lamplighter's Round Script", "target": "proofs/art/lamplighter/lamplighter.bespoke", "kind": "source"}

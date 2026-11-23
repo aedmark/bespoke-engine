@@ -221,6 +221,17 @@ const Round = struct {
 };
 
 /// Deterministic proof: the round from the first refusal to Pike's good night.
+/// How many opaque colours the round's art uses; the transcript reports it as the palette
+/// count did before art became true colour (D-166).
+fn distinct_colours(allocator: std.mem.Allocator, of: bespoke.image.Art) !usize {
+    var seen = std.AutoArrayHashMapUnmanaged(bespoke.image.Pixel, void).empty;
+    defer seen.deinit(allocator);
+    for (of.images) |img| for (img.pixels) |p| {
+        if (p.a != 0) try seen.put(allocator, p, {});
+    };
+    return seen.count();
+}
+
 pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     try writer.writeAll("===================================================================\n");
     try writer.writeAll("          BeSpoke Engine: The Lamplighter's Round (Pixel Art)       \n");
@@ -231,7 +242,7 @@ pub fn run_headless(allocator: std.mem.Allocator, writer: anytype) !void {
     defer round.deinit();
     const art_of = round.compiled.art;
     try writer.print("  (Art: {d} images, {d} colours, {d} backdrops, {d} sprites, all imported from PNG.)\n\n", .{
-        art_of.images.len, art_of.palette.len, art_of.backdrops.len, art_of.sprites.len,
+        art_of.images.len, try distinct_colours(allocator, art_of), art_of.backdrops.len, art_of.sprites.len,
     });
     for (ROUND) |move| switch (move) {
         .chapter => |title| try writer.print("\n[{s}]\n", .{title}),

@@ -348,7 +348,7 @@ pub const Canvas = struct {
     }
 
     /// Draws one frame of an indexed image with its top-left corner at (x, y) in frame pixels
-    /// (P46-02, D-152). Each art pixel is an `image.SCALE`-square block of its palette colour;
+    /// (P46-02, D-152). Each art pixel is an `image.SCALE`-square block of its colour;
     /// index 0 leaves the canvas as it was. Palette colours are opaque, so a block replaces what
     /// is under it and no blending is needed. Blocks that cross the edge are clipped.
     ///
@@ -357,9 +357,9 @@ pub const Canvas = struct {
     /// with transparent margins is measured by the pixels it paints, so the band check reads
     /// image art the way it reads drawn props (P43-02).
     ///
-    /// `img` must be valid against `palette` (`image.Art.validate`), as every image from a
-    /// package is; `frame` must be below `img.frame_count()`.
-    pub fn draw_image(self: *Canvas, palette: []const image.Colour, img: *const image.Image, frame: u32, x: i32, y: i32) void {
+    /// `img` must be valid (`image.Art.validate`), as every image from a package is, so alpha
+    /// is 0 or 255 and no blending is needed; `frame` must be below `img.frame_count()`.
+    pub fn draw_image(self: *Canvas, img: *const image.Image, frame: u32, x: i32, y: i32) void {
         std.debug.assert(frame < img.frame_count());
         const s: i32 = image.SCALE;
         const fw: i32 = img.frame_width;
@@ -381,13 +381,11 @@ pub const Canvas = struct {
             if (py0 >= py1) continue;
             var ax = ax0;
             while (ax < ax1) : (ax += 1) {
-                const index = img.frame_pixel(frame, @intCast(ax), @intCast(ay));
-                if (index == image.TRANSPARENT) continue;
+                const c = img.frame_pixel(frame, @intCast(ax), @intCast(ay));
+                if (c.a == 0) continue;
                 const px0 = @max(0, x + ax * s);
                 const px1 = @min(self.width, x + ax * s + s);
                 if (px0 >= px1) continue;
-                std.debug.assert(index < palette.len);
-                const c = palette[index];
                 min_x = @min(min_x, ax);
                 max_x = @max(max_x, ax);
                 min_y = @min(min_y, ay);
@@ -537,16 +535,16 @@ test "P36-02: a translucent colour blends as SDL's blend mode does, and text is 
     try testing.expect(lit > 4);
 }
 
-test "P46-02: an image frame draws each art pixel as a 4x4 block and leaves index 0 alone" {
+test "P46-02: an image frame draws each art pixel as a 4x4 block and leaves transparent pixels alone" {
     const palette = [_]image.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 200, .g = 10, .b = 20 }, .{ .r = 5, .g = 6, .b = 7 } };
     // Two 2x2 frames side by side; the second is red with one transparent corner.
-    const pixels = [_]u8{ 2, 2, 0, 1, 2, 2, 1, 1 };
+    const pixels = comptime image.from_indices(&palette, &.{ 2, 2, 0, 1, 2, 2, 1, 1 });
     const sheet = image.Image{ .name = "Tile", .width = 4, .height = 2, .frame_width = 2, .frame_height = 2, .pixels = &pixels };
-    try sheet.validate(palette.len);
+    try sheet.validate();
     var buf: [16 * 16 * 4]u8 = undefined;
     var cv = Canvas.init(&buf, 16, 16);
     cv.clear(Color.white);
-    cv.draw_image(&palette, &sheet, 1, 4, 4);
+    cv.draw_image(&sheet, 1, 4, 4);
     const red = Color{ .r = 200, .g = 10, .b = 20 };
     // The transparent corner (art 0,0) covers frame pixels 4..7 and shows the white beneath.
     try testing.expectEqual(Color.white, cv.get_pixel(4, 4));
@@ -562,7 +560,7 @@ test "P46-02: an image frame draws each art pixel as a 4x4 block and leaves inde
 test "P46-02: an image clips at the canvas edge and the probe records its opaque bounds" {
     const palette = [_]image.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 9, .b = 9 } };
     // A 4x4 frame whose only opaque pixels are the middle two of its third row.
-    const pixels = [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0 };
+    const pixels = comptime image.from_indices(&palette, &.{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0 });
     const sprite = image.Image{ .name = "Ledge", .width = 4, .height = 4, .frame_width = 4, .frame_height = 4, .pixels = &pixels };
     var buf: [16 * 16 * 4]u8 = undefined;
     var cv = Canvas.init(&buf, 16, 16);
@@ -570,7 +568,7 @@ test "P46-02: an image clips at the canvas edge and the probe records its opaque
     cv.rect_probe = &probe;
     cv.clear(Color.black);
     cv.rect_kind = .prop;
-    cv.draw_image(&palette, &sprite, 0, 0, 0);
+    cv.draw_image(&sprite, 0, 0, 0);
     try testing.expectEqual(@as(usize, 1), probe.count);
     const d = probe.draws[0];
     try testing.expectEqualStrings("Ledge", d.get_name());
@@ -584,7 +582,7 @@ test "P46-02: an image clips at the canvas edge and the probe records its opaque
     // under the caller's name when it set one.
     probe.count = 0;
     cv.rect_name = "Cliff";
-    cv.draw_image(&palette, &sprite, 0, 10, 6);
+    cv.draw_image(&sprite, 0, 10, 6);
     try testing.expectEqual(@as(usize, 1), probe.count);
     try testing.expectEqualStrings("Cliff", probe.draws[0].get_name());
     try testing.expectEqual(@as(i32, 14), probe.draws[0].x);
@@ -594,7 +592,7 @@ test "P46-02: an image clips at the canvas edge and the probe records its opaque
 
     // Wholly off the canvas, or wholly transparent where it lands: nothing is recorded.
     probe.count = 0;
-    cv.draw_image(&palette, &sprite, 0, -40, -40);
-    cv.draw_image(&palette, &sprite, 0, 0, -12);
+    cv.draw_image(&sprite, 0, -40, -40);
+    cv.draw_image(&sprite, 0, 0, -12);
     try testing.expectEqual(@as(usize, 0), probe.count);
 }

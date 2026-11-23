@@ -865,7 +865,7 @@ test "P38-02: runner reports the package version and supported range" {
         }, &output),
     );
     try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 34; this engine supports versions 1 through 33\n",
+        "future.bspk: error: unsupported .bspk format version 35; this engine supports versions 1 through 34\n",
         output.buffered(),
     );
 }
@@ -929,7 +929,7 @@ test "P29-02: a script with no routine has no player actor" {
     try testing.expect(player_actor(&compiled) == null);
 }
 
-test "P46-04: a script compiled from its file reads the PNGs beside it onto its palette" {
+test "P46-04: a script compiled from its file reads the PNGs beside it in their own colours" {
     const testing = std.testing;
     const path = "tests/fixtures/png/gallery.bespoke";
     const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(64 * 1024));
@@ -940,10 +940,12 @@ test "P46-04: a script compiled from its file reads the PNGs beside it onto its 
     var compiled = try bespoke.compiler.compile_source_with(testing.allocator, &world, null, source, files.source());
     defer compiled.deinit();
     const art = compiled.art;
-    // The declared red is reused; the badge adds yellow and blue, the lamp three more.
-    try testing.expectEqual(@as(usize, 7), art.palette.len);
-    try testing.expectEqual(bespoke.image.Colour{ .r = 240, .g = 220, .b = 60 }, art.palette[2]);
-    try testing.expectEqualSlices(u8, &.{ 0, 1, 1, 1, 1, 0 }, art.find("BadgeSheet").?.pixels[0..6]);
+    // Each pixel keeps the PNG's colour: the badge's red border, then yellow and blue inside.
+    const Pixel = bespoke.image.Pixel;
+    const red = Pixel{ .r = 200, .g = 40, .b = 40, .a = 255 };
+    const badge = art.find("BadgeSheet").?.pixels;
+    try testing.expectEqualSlices(Pixel, &.{ bespoke.image.TRANSPARENT, red, red, red, red, bespoke.image.TRANSPARENT }, badge[0..6]);
+    try testing.expectEqual(Pixel{ .r = 240, .g = 220, .b = 60, .a = 255 }, badge[7]);
     try testing.expectEqual(@as(u32, 2), art.find("LampSheet").?.frame_count());
     try testing.expectEqual(@as(u16, 1), art.sprite_for(world.lookup_entity("Curator").?).?.frame_at(.idle, 10));
 
@@ -951,7 +953,7 @@ test "P46-04: a script compiled from its file reads the PNGs beside it onto its 
     const check = bespoke.check_source(testing.allocator, source);
     try testing.expect(!check.is_valid);
     try testing.expectEqualStrings("image 'BadgeSheet' reads \"rgba.png\", which only a compile from the command line can do; 'bespoke import' writes its rows into the script instead", check.message());
-    try testing.expectEqual(@as(u32, 11), check.line);
+    try testing.expectEqual(@as(u32, 8), check.line);
 }
 
 test "P46-04: a script cannot read a file outside its folder, and a missing or bad file is named" {
@@ -963,8 +965,7 @@ test "P46-04: a script cannot read a file outside its folder, and a missing or b
         .{ .file = "/etc/hostname", .message = "image 'Art' cannot read \"/etc/hostname\" (PathOutsideScriptFolder)" },
         .{ .file = "missing.png", .message = "image 'Art' cannot read \"missing.png\" (FileNotFound)" },
         .{ .file = "interlaced.png", .message = "image 'Art' cannot use \"interlaced.png\": it is interlaced; save it without interlacing" },
-        .{ .file = "partial_alpha.png", .message = "image 'Art': pixel (1, 0) of \"partial_alpha.png\" is partly transparent; art pixels are opaque or fully transparent (D-152)" },
-        .{ .file = "too_many_colours.png", .message = "image 'Art': \"too_many_colours.png\" brings the palette past 256 colours at pixel (0, 15) (D-152)" },
+        .{ .file = "partial_alpha.png", .message = "image 'Art': pixel (1, 0) of \"partial_alpha.png\" is partly transparent; art pixels are opaque or fully transparent (D-166)" },
         .{ .file = "gallery.bespoke", .message = "image 'Art' cannot use \"gallery.bespoke\": it is not a PNG" },
     };
     for (cases) |case| {
@@ -998,7 +999,7 @@ test "P46-04: import writes an indexed and a true-colour PNG as inline blocks, j
 
     // Against a script, its codes are kept and only new colours are listed, with unused codes.
     out.clearRetainingCapacity();
-    try testing.expect(try import_art(testing.allocator, testing.io, "tests/fixtures/png/rgba.png", .{ .name = "Badge", .script = "tests/fixtures/png/gallery.bespoke" }, &out.writer));
+    try testing.expect(try import_art(testing.allocator, testing.io, "tests/fixtures/png/rgba.png", .{ .name = "Badge", .script = "tests/fixtures/png/palette.bespoke" }, &out.writer));
     try testing.expect(std.mem.startsWith(u8, out.written(), "# Add these lines to the script's palette:\n  \"a\" 240 220 60\n  \"b\" 30 30 90\n"));
     try testing.expect(std.mem.endsWith(u8, out.written(), "image Badge:\n  \".rrrr.\"\n  \"rabbar\"\n  \"raaaar\"\n  \".rrrr.\"\n"));
 
@@ -1009,7 +1010,15 @@ test "P46-04: import writes an indexed and a true-colour PNG as inline blocks, j
     defer world.deinit();
     var compiled = try bespoke.compile_source(testing.allocator, &world, null, out.written());
     defer compiled.deinit();
-    try testing.expectEqualSlices(u8, &.{ 0, 1, 1, 1, 1, 0, 1, 2, 3, 3, 2, 1 }, compiled.art.find("Badge").?.pixels[0..12]);
+    var files_for_png = ScriptFiles.for_script(testing.io, "tests/fixtures/png/gallery.bespoke");
+    var direct = try bespoke.compiler.compile_source_with(testing.allocator, &world, null, "image Badge from \"rgba.png\"\n", files_for_png.source());
+    defer direct.deinit();
+    try testing.expectEqualSlices(bespoke.image.Pixel, direct.art.find("Badge").?.pixels, compiled.art.find("Badge").?.pixels);
+
+    // A declared palette is a rule the PNG must follow (D-166): the badge's yellow is not in it.
+    const ruled = bespoke.compiler.check_source_with(testing.allocator, "palette:\n  \".\" transparent\n  \"r\" 200 40 40\nimage Badge from \"rgba.png\"\n", files_for_png.source());
+    try testing.expect(!ruled.is_valid);
+    try testing.expectEqualStrings("image 'Badge': pixel (1, 1) of \"rgba.png\" is 240 220 60, which the script's 'palette:' does not hold; add it or recolour the pixel (D-166)", ruled.message());
 
     // More colours than the palette holds is refused, by name.
     out.clearRetainingCapacity();

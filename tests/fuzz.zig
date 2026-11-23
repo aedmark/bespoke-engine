@@ -21,6 +21,7 @@ const identity_package = @embedFile("fixtures/compat/v0.4.0-package-v29.bspk");
 const kinds_package = @embedFile("fixtures/compat/v0.4.0-package-v30.bspk");
 const text_package = @embedFile("fixtures/compat/v0.4.0-package-v31.bspk");
 const looks_package = @embedFile("fixtures/compat/v0.4.0-package-v33.bspk");
+const qoi_package = @embedFile("fixtures/compat/v0.4.0-package-v34.bspk");
 const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
 const identified_save = @embedFile("fixtures/compat/v0.4.0-save-v3.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
@@ -162,7 +163,7 @@ test "P39-01 codegen" {
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package, handler_chain_package, bound_body_package, identity_package, kinds_package, text_package, looks_package });
+    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package, handler_chain_package, bound_body_package, identity_package, kinds_package, text_package, looks_package, qoi_package });
 }
 
 /// Malformed art sections (P46-01): the version 24 fixture with one field broken each. Every
@@ -231,6 +232,32 @@ fn decodePngResealed(allocator: std.mem.Allocator, input: []const u8) !bool {
         at += 12 + len;
     }
     return decodePng(allocator, copy);
+}
+
+/// The art codec (P48-12, D-182): a seed must decode; a mutation may be refused, never crash
+/// or read past its bytes. The size comes from the stream's own header, bounded as a package's
+/// image record bounds it.
+fn decodeQoi(allocator: std.mem.Allocator, input: []const u8) !bool {
+    const size = bespoke.qoi.header_size(input) catch return false;
+    if (size.width == 0 or size.height == 0 or @as(u64, size.width) * size.height > bespoke.image.MAX_SHEET_PIXELS) return false;
+    const pixels = bespoke.qoi.decode(allocator, input, size.width, size.height) catch return false;
+    allocator.free(pixels);
+    return true;
+}
+
+test "P48-12 QOI decoder" {
+    // Seeds: the PNG fixtures re-encoded, so every op appears.
+    var seeds: [3][]u8 = undefined;
+    for (&seeds, [_][]const u8{ png_indexed, png_rgba, png_grey }) |*seed, png_bytes| {
+        var rgba = try bespoke.png.decode(testing.allocator, png_bytes);
+        defer rgba.deinit(testing.allocator);
+        var where = bespoke.art_import.Where{};
+        const pixels = try bespoke.art_import.to_pixels(testing.allocator, rgba, null, &where);
+        defer testing.allocator.free(pixels);
+        seed.* = try bespoke.qoi.encode(testing.allocator, pixels, rgba.width, rgba.height);
+    }
+    defer for (seeds) |seed| testing.allocator.free(seed);
+    try campaign(decodeQoi, &.{ seeds[0], seeds[1], seeds[2] });
 }
 
 test "P46-04 PNG decoder past its checksums" {

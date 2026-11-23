@@ -1308,11 +1308,11 @@ test "P46-03: art declarations compile into the program with their bindings" {
     var compiled = try compile_source(testing.allocator, &world, null, script);
     defer compiled.deinit();
     const art = compiled.art;
-    try testing.expectEqual(@as(usize, 3), art.palette.len);
-    try testing.expectEqual(@as(u8, 240), art.palette[2].r);
     const sheet = art.find("BellSheet").?;
     try testing.expectEqual(@as(u32, 2), sheet.frame_count());
-    try testing.expectEqualSlices(u8, &.{ 1, 0, 2, 2, 1, 1, 0, 2 }, sheet.pixels);
+    // Codes become the palette's colours; the transparent code is no colour at all (D-166).
+    const palette = [_]image_mod.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 200, .g = 40, .b = 40 }, .{ .r = 240, .g = 220, .b = 60 } };
+    try testing.expectEqualSlices(image_mod.Pixel, &comptime image_mod.from_indices(&palette, &.{ 1, 0, 2, 2, 1, 1, 0, 2 }), sheet.pixels);
     // An image may be named with an art word: the words are matched by position, not reserved.
     try testing.expectEqual(@as(u16, 2), art.find("sprite").?.width);
     const bell = art.sprite_for(world.lookup_entity("Bell").?).?;

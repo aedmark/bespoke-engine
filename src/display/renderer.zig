@@ -1459,14 +1459,14 @@ pub const DisplayWindow = struct {
             const r = area_rect(area);
             break :blk .{ .x = r.x, .y = r.y };
         } else .{ .x = pt.x - @divTrunc(w, 2), .y = pt.y - h };
-        if (self.canvas) |*cv| cv.draw_image(art.palette, img, shown.frame_at(anim, self.animation_clock), origin.x, origin.y);
+        if (self.canvas) |*cv| cv.draw_image(img, shown.frame_at(anim, self.animation_clock), origin.x, origin.y);
         labels.add_obstacle(origin.x, origin.y, w, h);
         const bottom = Point{ .x = origin.x + @divTrunc(w, 2), .y = origin.y + h };
         for (art.parts) |part| {
             if (part.host != entity) continue;
             const part_shown = shown_for(art, frame, part.entity) orelse continue;
             const box = part_box(art, part, part_shown.image, bottom);
-            if (self.canvas) |*cv| cv.draw_image(art.palette, &art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y);
+            if (self.canvas) |*cv| cv.draw_image(&art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y);
             labels.add_obstacle(box.x, box.y, box.w, box.h);
         }
         return h;
@@ -3169,7 +3169,7 @@ pub const DisplayWindow = struct {
         // prompts still show, and every click target is unchanged.
         const art_backdrop: ?*const image_mod.Image = if (self.art) |a| a.backdrop_for(frame.scene_entity) else null;
         if (art_backdrop) |img| {
-            if (self.canvas) |*cv| cv.draw_image(self.art.?.palette, img, 0, 0, 0);
+            if (self.canvas) |*cv| cv.draw_image(img, 0, 0, 0);
         }
         const backdrop_drawn = art_backdrop != null or if (self.theme) |t| (if (t.backdrop) |draw| draw(&self.canvas.?, frame) else false) else false;
         if (!backdrop_drawn) self.render_default_backdrop(frame);
@@ -5440,16 +5440,15 @@ test "D-097: the window's key type is SDL's, so bindings need no SDL to declare"
 }
 
 test "P48-11: a Looks fact picks what a thing shows, and a part is drawn above and clicked as its host" {
-    const palette = [_]image_mod.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 9, .b = 9 } };
-    var px: [12 * 24]u8 = @splat(1);
+    const ink = image_mod.Pixel{ .r = 9, .g = 9, .b = 9, .a = 255 };
+    var px: [12 * 24]image_mod.Pixel = @splat(ink);
     const body = image_mod.Image{ .name = "Body", .width = 12, .height = 24, .frame_width = 12, .frame_height = 12, .pixels = &px };
-    var head_px: [4 * 4]u8 = @splat(1);
+    var head_px: [4 * 4]image_mod.Pixel = @splat(ink);
     const head = image_mod.Image{ .name = "Head", .width = 4, .height = 4, .frame_width = 4, .frame_height = 4, .pixels = &head_px };
     const person = EntityId.from_int(7);
     const hat = EntityId.from_int(9);
     const idle_one = [_]image_mod.Step{.{ .frame = 1, .duration = 6 }};
     const art = image_mod.Art{
-        .palette = &palette,
         .images = &.{ body, head },
         .sprites = &.{ .{ .entity = person, .image = 0 }, .{ .entity = hat, .image = 1 } },
         .looks = &.{.{ .name = "BodyLit", .image = 0, .animations = .{ &idle_one, &.{}, &.{}, &.{}, &.{} } }},
@@ -5472,7 +5471,7 @@ test "P48-11: a Looks fact picks what a thing shows, and a part is drawn above a
     const box = part_box(&art, art.parts[0], 1, feet);
     try std.testing.expectEqual(feet.y - 48 - 16, box.y);
     try std.testing.expectEqual(@as(?usize, 0), hit_test_actor(feet.x, box.y + 4, (&entity)[0..1], 1280, 720, &art));
-    try std.testing.expectEqual(@as(?usize, null), hit_test_actor(feet.x, box.y + 4, (&entity)[0..1], 1280, 720, &image_mod.Art{ .palette = &palette, .images = &.{ body, head }, .sprites = art.sprites }));
+    try std.testing.expectEqual(@as(?usize, null), hit_test_actor(feet.x, box.y + 4, (&entity)[0..1], 1280, 720, &image_mod.Art{ .images = &.{ body, head }, .sprites = art.sprites }));
 
     // A part that is also on stage is never hit on its own spot; clicks there pass it by.
     const both = [_]RenderEntity{ .{ .entity = hat, .name = undefined, .name_len = 0, .x = 30, .y = 4, .current_wp = 1, .is_moving = false }, entity };
@@ -5482,13 +5481,12 @@ test "P48-11: a Looks fact picks what a thing shows, and a part is drawn above a
 }
 
 test "P46-05: a sprite is clicked anywhere in its frame, and an area anywhere in its rectangle" {
-    const palette = [_]image_mod.Colour{ .{ .r = 0, .g = 0, .b = 0 }, .{ .r = 9, .g = 9, .b = 9 } };
-    var px: [12 * 24]u8 = @splat(1);
+    const ink = image_mod.Pixel{ .r = 9, .g = 9, .b = 9, .a = 255 };
+    var px: [12 * 24]image_mod.Pixel = @splat(ink);
     const sheet = image_mod.Image{ .name = "Keeper", .width = 12, .height = 24, .frame_width = 12, .frame_height = 24, .pixels = &px };
     const person = EntityId.from_int(7);
     const door = EntityId.from_int(8);
     const art = image_mod.Art{
-        .palette = &palette,
         .images = &.{sheet},
         .sprites = &.{.{ .entity = person, .image = 0 }},
         .areas = &.{.{ .entity = door, .x = 96, .y = 62, .w = 24, .h = 42 }},

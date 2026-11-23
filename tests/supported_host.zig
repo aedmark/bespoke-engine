@@ -62,14 +62,16 @@ fn require(comptime Container: type, comptime names: []const []const u8, comptim
 comptime {
     require(bespoke.spell, &.{ "Book", "Spell", "Word", "Kind", "Refusal", "Outcome", "MAX_BOOKS", "MAX_WORDS_PER_KIND", "MAX_SPELLS", "resolve", "named", "named_text", "knows", "check", "cast", "combine" }, "spell");
     require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "MAX_DECISIONS", "MAX_CLAUSES", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
-    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
+    require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Pixel", "from_indices", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_ART_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
+    require(bespoke.image.Pixel, &.{"opaque_colour"}, "image.Pixel");
     require(bespoke.image.Image, &.{ "columns", "frame_count", "frame_pixel", "validate" }, "image.Image");
     require(bespoke.image.Art, &.{ "is_empty", "find", "backdrop_for", "sprite_for", "area_for", "look_named", "part_for", "validate", "dupe", "deinit_owned" }, "image.Art");
     require(bespoke.image.Sprite, &.{"frame_at"}, "image.Sprite");
     require(bespoke.image.Look, &.{"frame_at"}, "image.Look");
     require(bespoke.png, &.{ "MAX_FILE", "Error", "Rgba", "decode" }, "png");
     require(bespoke.png.Rgba, &.{"deinit"}, "png.Rgba");
-    require(bespoke.art_import, &.{ "MapError", "Where", "map", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
+    require(bespoke.qoi, &.{ "Error", "HEADER_LEN", "encode", "decode", "header_size" }, "qoi");
+    require(bespoke.art_import, &.{ "MapError", "PixelError", "Where", "map", "to_pixels", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
     require(bespoke.runner, &.{ "RunConfig", "CheckOptions", "check_file_with", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
     require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "restart_routines" }, "host");

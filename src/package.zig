@@ -18,6 +18,7 @@ const decision_mod = @import("decision.zig");
 const value_mod = @import("value.zig");
 const dilemma_mod = @import("dilemma.zig");
 const image_mod = @import("image.zig");
+const qoi_mod = @import("qoi.zig");
 const command_mod = @import("command.zig");
 const mml = @import("mml.zig");
 
@@ -85,8 +86,9 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// D-179); versions 1 through 30 load with none. Version 32 names engine bookkeeping with a
 /// leading `#` (P48-10, D-180); older packages have those names translated as they load.
 /// Version 33 appends named looks and parts after the player text (P48-11, D-181); versions 1
-/// through 32 load with none.
-pub const PACKAGE_VERSION: u32 = 33;
+/// through 32 load with none. Version 34 stores art as true-colour QOI streams (P48-12, D-166,
+/// D-182); versions 24 through 33 load their indexed art through the palette they carry.
+pub const PACKAGE_VERSION: u32 = 34;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -483,7 +485,7 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
-    try write_art(writer, compiled.art);
+    try write_art(compiled.chunk.allocator, writer, compiled.art);
     try write_art_bindings(writer, compiled.art);
     // Version 26: prop areas.
     try writer.writeInt(u32, @intCast(compiled.art.areas.len), .little);
@@ -780,30 +782,35 @@ fn read_art_bindings(allocator: std.mem.Allocator, world: *const World, reader: 
     };
 }
 
-/// Version 24: the palette as RGB triples, then each image's name, sheet size, frame size, and
-/// one index byte per pixel, row by row. Raw bytes for now; compression waits for measured
-/// pages (D-152).
-fn write_art(writer: anytype, art: image_mod.Art) !void {
+/// Version 34: a zero where versions 24 to 33 kept the palette's colour count, so a package
+/// without art is the same bytes in every version from 24; then the image count and each
+/// image's name, sheet size, frame size, and QOI stream with its byte length (D-182).
+fn write_art(allocator: std.mem.Allocator, writer: anytype, art: image_mod.Art) !void {
     try art.validate();
-    try writer.writeInt(u16, @intCast(art.palette.len), .little);
-    for (art.palette) |colour| try writer.writeAll(&.{ colour.r, colour.g, colour.b });
+    try writer.writeInt(u16, 0, .little);
     try writer.writeInt(u32, @intCast(art.images.len), .little);
     for (art.images) |image| {
         try write_str(writer, image.name);
         for ([_]u16{ image.width, image.height, image.frame_width, image.frame_height }) |side| try writer.writeInt(u16, side, .little);
-        try writer.writeAll(image.pixels);
+        const stream = try qoi_mod.encode(allocator, image.pixels, image.width, image.height);
+        defer allocator.free(stream);
+        try writer.writeInt(u32, @intCast(stream.len), .little);
+        try writer.writeAll(stream);
     }
 }
 
 /// Untrusted input. Each count and size is checked before the bytes behind it are read, so a
-/// corrupt package can ask for at most one bounded sheet at a time, and `Art.validate` runs on
-/// the whole set before the program sees it. Errors name the first thing wrong (D-153).
-fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
+/// corrupt package can ask for at most one bounded sheet at a time and 8 MiB of art in all,
+/// and `Art.validate` runs on the whole set before the program sees it. Errors name the first
+/// thing wrong (D-153, D-182). Versions 24 to 33 hold a palette and one index byte a pixel,
+/// which load as the colours they name, index 0 transparent.
+fn read_art(allocator: std.mem.Allocator, reader: anytype, version: u32) !image_mod.Art {
     const colour_count = try reader.takeInt(u16, .little);
     if (colour_count > image_mod.MAX_COLOURS) return error.InvalidImagePalette;
+    const indexed = version < 34;
+    if (!indexed and colour_count != 0) return error.InvalidImagePalette;
     const palette = try allocator.alloc(image_mod.Colour, colour_count);
-    var art = image_mod.Art{ .palette = palette };
-    errdefer art.deinit_owned(allocator);
+    defer allocator.free(palette);
     for (palette) |*colour| {
         const rgb = try reader.takeArray(3);
         colour.* = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] };
@@ -811,12 +818,13 @@ fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
 
     const image_count = try reader.takeInt(u32, .little);
     if (image_count > image_mod.MAX_IMAGES) return error.InvalidImageCount;
-    if (image_count > 0 and colour_count == 0) return error.InvalidImagePalette;
+    if (indexed and image_count > 0 and colour_count == 0) return error.InvalidImagePalette;
     var images = try std.ArrayListUnmanaged(image_mod.Image).initCapacity(allocator, image_count);
     errdefer {
         for (images.items) |image| image_mod.free_image(allocator, image);
         images.deinit(allocator);
     }
+    var total: usize = 0;
     for (0..image_count) |_| {
         const name = try read_str(allocator, reader);
         errdefer allocator.free(name);
@@ -824,9 +832,26 @@ fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
         var sides: [4]u16 = undefined;
         for (&sides) |*side| side.* = try reader.takeInt(u16, .little);
         try image_mod.validate_size(sides[0], sides[1], sides[2], sides[3]);
-        const bytes = try reader.take(@as(usize, sides[0]) * sides[1]);
-        try image_mod.validate_indices(bytes, colour_count);
-        const pixels = try allocator.dupe(u8, bytes);
+        const count = @as(usize, sides[0]) * sides[1];
+        total += count;
+        if (total > image_mod.MAX_ART_PIXELS) return error.InvalidImageSize;
+        const pixels = if (indexed) blk: {
+            const bytes = try reader.take(count);
+            try image_mod.validate_indices(bytes, colour_count);
+            const out = try allocator.alloc(image_mod.Pixel, count);
+            for (bytes, out) |index, *p| p.* = if (index == 0) image_mod.TRANSPARENT else image_mod.Pixel.opaque_colour(palette[index]);
+            break :blk out;
+        } else blk: {
+            // No stream codes a pixel in more than five bytes, so a longer length is corrupt.
+            const len = try reader.takeInt(u32, .little);
+            if (len > qoi_mod.HEADER_LEN + 8 + 5 * count) return error.InvalidImageData;
+            const stream = try reader.take(len);
+            break :blk qoi_mod.decode(allocator, stream, sides[0], sides[1]) catch |err| return switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+                error.QoiAlpha => error.InvalidImagePixel,
+                else => error.InvalidImageData,
+            };
+        };
         images.appendAssumeCapacity(.{
             .name = name,
             .width = sides[0],
@@ -836,7 +861,8 @@ fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
             .pixels = pixels,
         });
     }
-    art.images = try images.toOwnedSlice(allocator);
+    var art = image_mod.Art{ .images = try images.toOwnedSlice(allocator) };
+    errdefer art.deinit_owned(allocator);
     try art.validate();
     return art;
 }
@@ -2242,7 +2268,7 @@ pub fn load_package(
 
     var art = image_mod.Art{};
     errdefer art.deinit_owned(allocator);
-    if (header.version >= 24) art = try read_art(allocator, pr);
+    if (header.version >= 24) art = try read_art(allocator, pr, header.version);
     if (header.version >= 25) try read_art_bindings(allocator, world, pr, &art);
     if (header.version >= 26) try read_art_areas(allocator, world, pr, &art);
     var cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty;
@@ -2500,7 +2526,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 33",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 34",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -4167,17 +4193,20 @@ const ART_FIXTURE_PALETTE = [_]image_mod.Colour{
 };
 
 /// An 8x4 sheet of two 4x4 frames: a lamp unlit, then lit. Index 0 is the transparent corner.
-const ART_FIXTURE_PIXELS = [_]u8{
+/// The version 24 fixture stores these indices with the palette above; from version 34 the
+/// same lamp is stored as the colours they name.
+const ART_FIXTURE_INDICES = [_]u8{
     0, 1, 1, 0, 0, 1, 1, 0,
     1, 2, 2, 1, 1, 3, 3, 1,
     1, 2, 2, 1, 1, 3, 3, 1,
     0, 1, 1, 0, 0, 1, 1, 0,
 };
+const ART_FIXTURE_PIXELS = image_mod.from_indices(&ART_FIXTURE_PALETTE, &ART_FIXTURE_INDICES);
 
-/// The art section of `ART_FIXTURE` sits at the end of the payload: the colour count, four RGB
-/// triples, the image count, the name, four sides, and 32 pixel bytes.
+/// The art section of the version 24 fixture sits at the end of its payload: the colour count,
+/// four RGB triples, the image count, the name, four sides, and 32 index bytes.
 const ART_FIXTURE_NAME = "FixtureLamp";
-const ART_SECTION_LEN = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2 + ART_FIXTURE_NAME.len + 8 + ART_FIXTURE_PIXELS.len;
+const ART_SECTION_LEN = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2 + ART_FIXTURE_NAME.len + 8 + ART_FIXTURE_INDICES.len;
 
 fn write_art_fixture(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8)) !void {
     const compiler = @import("compiler.zig");
@@ -4185,7 +4214,7 @@ fn write_art_fixture(allocator: std.mem.Allocator, out: *std.array_list.Managed(
     defer world.deinit();
     var compiled = try compiler.compile_source(allocator, &world, null, ART_FIXTURE);
     defer compiled.deinit();
-    compiled.art = try image_mod.Art.dupe(allocator, .{ .palette = &ART_FIXTURE_PALETTE, .images = &.{.{
+    compiled.art = try image_mod.Art.dupe(allocator, .{ .images = &.{.{
         .name = ART_FIXTURE_NAME,
         .width = 8,
         .height = 4,
@@ -4197,6 +4226,14 @@ fn write_art_fixture(allocator: std.mem.Allocator, out: *std.array_list.Managed(
     try save_package(allocator, &lw.writer, &compiled, &world, null);
 }
 
+/// The version 34 art section of `write_art_fixture`'s package: the zero colour count, the
+/// image count, the name, four sides, the stream length, and the lamp's QOI stream.
+fn qoi_art_section_len(allocator: std.mem.Allocator) !usize {
+    const stream = try qoi_mod.encode(allocator, &ART_FIXTURE_PIXELS, 8, 4);
+    defer allocator.free(stream);
+    return 2 + 4 + 2 + ART_FIXTURE_NAME.len + 8 + 4 + stream.len;
+}
+
 fn load_for_test(bytes: []const u8) !CompiledProgram {
     var world = try World.init(std.testing.allocator, 1024 * 1024);
     defer world.deinit();
@@ -4204,7 +4241,11 @@ fn load_for_test(bytes: []const u8) !CompiledProgram {
     return load_package(std.testing.allocator, &stream, &world, null);
 }
 
-test "P46-01: package version 24 round-trips the palette and a sprite sheet" {
+fn read_v24_fixture(allocator: std.mem.Allocator) ![]u8 {
+    return std.Io.Dir.cwd().readFileAlloc(std.testing.io, "tests/fixtures/compat/v0.4.0-package-v24.bspk", allocator, .limited(1024 * 1024));
+}
+
+test "P48-12: package version 34 round-trips a sprite sheet as a QOI stream" {
     const testing = std.testing;
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
@@ -4212,13 +4253,15 @@ test "P46-01: package version 24 round-trips the palette and a sprite sheet" {
 
     var compiled = try load_for_test(buffer.items);
     defer compiled.deinit();
-    const art = compiled.art;
-    try testing.expectEqualSlices(image_mod.Colour, &ART_FIXTURE_PALETTE, art.palette);
-    const lamp = art.find(ART_FIXTURE_NAME).?;
+    const lamp = compiled.art.find(ART_FIXTURE_NAME).?;
     try testing.expectEqual(@as(u32, 2), lamp.frame_count());
-    try testing.expectEqualSlices(u8, &ART_FIXTURE_PIXELS, lamp.pixels);
-    try testing.expectEqual(@as(u8, 3), lamp.frame_pixel(1, 1, 1));
+    try testing.expectEqualSlices(image_mod.Pixel, &ART_FIXTURE_PIXELS, lamp.pixels);
+    try testing.expectEqual(image_mod.Pixel.opaque_colour(ART_FIXTURE_PALETTE[3]), lamp.frame_pixel(1, 1, 1));
     try testing.expectEqual(image_mod.TRANSPARENT, lamp.frame_pixel(0, 0, 0));
+    // The stream is a standard QOI file of the sheet.
+    const section = buffer.items.len - EMPTY_TAIL_AFTER_V24 - try qoi_art_section_len(testing.allocator);
+    const stream_at = section + 2 + 4 + 2 + ART_FIXTURE_NAME.len + 8 + 4;
+    try testing.expectEqualStrings("qoif", buffer.items[stream_at..][0..4]);
 
     // Saving the loaded program again writes the same bytes.
     var world = try World.init(testing.allocator, 1024 * 1024);
@@ -4240,7 +4283,7 @@ test "P46-01: a version 23 package loads with no art" {
     var buffer = std.array_list.Managed(u8).init(testing.allocator);
     defer buffer.deinit();
     try write_art_fixture(testing.allocator, &buffer);
-    const v23 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - ART_SECTION_LEN - EMPTY_TAIL_AFTER_V24]);
+    const v23 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - try qoi_art_section_len(testing.allocator) - EMPTY_TAIL_AFTER_V24]);
     defer testing.allocator.free(v23);
     reseal_for_test(v23, 23);
     var compiled = try load_for_test(v23);
@@ -4268,8 +4311,9 @@ test "P46-01: a program with no art writes an empty art section" {
     try testing.expect(loaded.art.is_empty());
 }
 
-/// One way to break the art fixture: the byte offset inside its art section, the bytes written
-/// there, and the error the loader must name. `tests/fixtures/fuzz/image-*.bspk` are these.
+/// One way to break an art section: the byte offset inside it, the bytes written there, and the
+/// error the loader must name. The indexed breaks apply to the version 24 fixture, and
+/// `tests/fixtures/fuzz/image-*.bspk` are these; the QOI breaks apply to a version 34 write.
 const ArtBreak = struct { name: []const u8, offset: usize, bytes: []const u8, err: anyerror };
 
 const ART_NAME_AT = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2;
@@ -4291,24 +4335,43 @@ const ART_BREAKS = [_]ArtBreak{
     .{ .name = "index", .offset = ART_PIXELS_AT + 9, .bytes = &.{200}, .err = error.InvalidImageIndex },
 };
 
-/// Applies one break to a copy of a package whose art section is the fixture's and is followed
-/// by `tail` bytes (0 for the version 24 fixture, the empty bindings for a version 25 write),
-/// and reseals the checksum so the loader reaches the art.
-fn break_art(allocator: std.mem.Allocator, package: []const u8, b: ArtBreak, tail: usize) ![]u8 {
+const QOI_NAME_AT = 2 + 4 + 2;
+const QOI_SIDES_AT = QOI_NAME_AT + ART_FIXTURE_NAME.len;
+const QOI_LEN_AT = QOI_SIDES_AT + 8;
+const QOI_STREAM_AT = QOI_LEN_AT + 4;
+
+const QOI_BREAKS = [_]ArtBreak{
+    // A palette in a version that keeps none.
+    .{ .name = "palette", .offset = 0, .bytes = &.{ 0x04, 0x00 }, .err = error.InvalidImagePalette },
+    .{ .name = "count", .offset = 2, .bytes = &.{ 0x40, 0x42, 0x0f, 0x00 }, .err = error.InvalidImageCount },
+    .{ .name = "name", .offset = QOI_NAME_AT, .bytes = &.{0x01}, .err = error.InvalidImageName },
+    .{ .name = "frame", .offset = QOI_SIDES_AT + 4, .bytes = &.{ 0x05, 0x00 }, .err = error.InvalidImageSize },
+    // A stream claimed longer than any 8x4 sheet's could be.
+    .{ .name = "length", .offset = QOI_LEN_AT, .bytes = &.{ 0x00, 0x10, 0x00, 0x00 }, .err = error.InvalidImageData },
+    // Not a QOI file.
+    .{ .name = "magic", .offset = QOI_STREAM_AT, .bytes = "QOIF", .err = error.InvalidImageData },
+    // The header's width disagrees with the record's.
+    .{ .name = "header", .offset = QOI_STREAM_AT + 7, .bytes = &.{9}, .err = error.InvalidImageData },
+    // The first op becomes a half-transparent literal: art alpha is 0 or 255 (D-166).
+    .{ .name = "alpha", .offset = QOI_STREAM_AT + 14, .bytes = &.{ 0xff, 1, 2, 3, 128 }, .err = error.InvalidImagePixel },
+};
+
+/// Applies one break to a copy of a package whose art section is `section` bytes and is
+/// followed by `tail` bytes, and reseals the checksum so the loader reaches the art.
+fn break_art(allocator: std.mem.Allocator, package: []const u8, b: ArtBreak, section: usize, tail: usize) ![]u8 {
     const out = try allocator.dupe(u8, package);
-    const at = out.len - tail - ART_SECTION_LEN + b.offset;
+    const at = out.len - tail - section + b.offset;
     @memcpy(out[at .. at + b.bytes.len], b.bytes);
     reseal_for_test(out, version_from_bytes(package).?);
     return out;
 }
 
-test "P46-01: every malformed art section is refused with a named error" {
+test "P46-01: every malformed indexed art section is refused with a named error" {
     const testing = std.testing;
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try write_art_fixture(testing.allocator, &buffer);
+    const fixture = try read_v24_fixture(testing.allocator);
+    defer testing.allocator.free(fixture);
     for (ART_BREAKS) |b| {
-        const broken = try break_art(testing.allocator, buffer.items, b, EMPTY_TAIL_AFTER_V24);
+        const broken = try break_art(testing.allocator, fixture, b, ART_SECTION_LEN, 0);
         defer testing.allocator.free(broken);
         testing.expectError(b.err, load_for_test(broken)) catch |err| {
             std.debug.print("art break '{s}'\n", .{b.name});
@@ -4316,27 +4379,43 @@ test "P46-01: every malformed art section is refused with a named error" {
         };
     }
     // A truncated sheet ends the stream rather than reading past it.
+    const short = try testing.allocator.dupe(u8, fixture[0 .. fixture.len - 5]);
+    defer testing.allocator.free(short);
+    reseal_for_test(short, 24);
+    try testing.expectError(error.EndOfStream, load_for_test(short));
+}
+
+test "P48-12: every malformed QOI art section is refused with a named error" {
+    const testing = std.testing;
+    var buffer = std.array_list.Managed(u8).init(testing.allocator);
+    defer buffer.deinit();
+    try write_art_fixture(testing.allocator, &buffer);
+    const section = try qoi_art_section_len(testing.allocator);
+    for (QOI_BREAKS) |b| {
+        const broken = try break_art(testing.allocator, buffer.items, b, section, EMPTY_TAIL_AFTER_V24);
+        defer testing.allocator.free(broken);
+        testing.expectError(b.err, load_for_test(broken)) catch |err| {
+            std.debug.print("QOI break '{s}'\n", .{b.name});
+            return err;
+        };
+    }
+    // A stream cut short ends the package rather than reading past it.
     const short = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V24 - 5]);
     defer testing.allocator.free(short);
-    reseal_for_test(short, 25);
+    reseal_for_test(short, PACKAGE_VERSION);
     try testing.expectError(error.EndOfStream, load_for_test(short));
 }
 
 test "P46-01: checked-in version 24 package fixture carries a sprite sheet" {
     const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.4.0-package-v24.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
+    const fixture = try read_v24_fixture(testing.allocator);
     defer testing.allocator.free(fixture);
     try testing.expectEqual(@as(u32, 24), version_from_bytes(fixture).?);
     var compiled = try load_for_test(fixture);
     defer compiled.deinit();
     try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 4), compiled.art.palette.len);
-    try testing.expectEqualSlices(u8, &ART_FIXTURE_PIXELS, compiled.art.find(ART_FIXTURE_NAME).?.pixels);
+    // Its indices load as the colours its palette names (D-182).
+    try testing.expectEqualSlices(image_mod.Pixel, &ART_FIXTURE_PIXELS, compiled.art.find(ART_FIXTURE_NAME).?.pixels);
 
     // The checked-in fuzz seeds are this fixture with one break each.
     for (ART_BREAKS) |b| {
@@ -4344,7 +4423,7 @@ test "P46-01: checked-in version 24 package fixture carries a sprite sheet" {
         const path = try std.fmt.bufPrint(&path_buf, "tests/fixtures/fuzz/image-{s}.bspk", .{b.name});
         const seed = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(64 * 1024));
         defer testing.allocator.free(seed);
-        const expected = try break_art(testing.allocator, fixture, b, 0);
+        const expected = try break_art(testing.allocator, fixture, b, ART_SECTION_LEN, 0);
         defer testing.allocator.free(expected);
         try testing.expectEqualSlices(u8, expected, seed);
     }
@@ -4405,10 +4484,10 @@ test "P46-03: package version 25 round-trips sprites and their animations, and v
     const clerk = compiled.art.sprite_for(world.lookup_entity("FixtureClerk").?).?;
     try testing.expectEqual(@as(u16, 1), clerk.frame_at(.walk_left, 0));
 
-    // Cutting the bindings off gives a version 24 package: the art loads, attached to nothing.
-    const v24 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - BINDING_SECTION_LEN - EMPTY_TAIL_AFTER_V25]);
+    // A version 24 package has art attached to nothing. Since version 34 stores art as QOI, a
+    // cut-down write is no longer a version 24 file, so the checked-in fixture stands in.
+    const v24 = try read_v24_fixture(testing.allocator);
     defer testing.allocator.free(v24);
-    reseal_for_test(v24, 24);
     var old = try load_for_test(v24);
     defer old.deinit();
     try testing.expectEqual(@as(usize, 1), old.art.images.len);
@@ -4438,7 +4517,7 @@ test "P46-03: a binding to a missing entity, image, or frame is refused" {
         const broken = try testing.allocator.dupe(u8, buffer.items);
         defer testing.allocator.free(broken);
         @memcpy(broken[b.at .. b.at + b.bytes.len], b.bytes);
-        reseal_for_test(broken, 26);
+        reseal_for_test(broken, PACKAGE_VERSION);
         const result = load_for_test(broken);
         if (result) |loaded| {
             var program = loaded;
@@ -4795,6 +4874,23 @@ test "P48-11: checked-in version 33 package fixture shows a look and attaches a 
     try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
     try testing.expect(compiled.art.part_for(world.lookup_entity("FixtureHero").?) != null);
     try testing.expect(compiled.routine_entries.contains("Idle"));
+}
+
+test "P48-12: checked-in version 34 package fixture carries its art as QOI" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v34.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 34), version_from_bytes(fixture).?);
+    try testing.expect(std.mem.indexOf(u8, fixture, "qoif") != null);
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    var compiled = try load_package(testing.allocator, &stream, &world, null);
+    defer compiled.deinit();
+    const sheet = compiled.art.find("FixtureSheet").?;
+    try testing.expectEqual(image_mod.Pixel{ .r = 200, .g = 40, .b = 40, .a = 255 }, sheet.frame_pixel(0, 0, 0));
+    try testing.expectEqual(image_mod.TRANSPARENT, sheet.frame_pixel(0, 1, 0));
+    try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
 }
 
 test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {

@@ -1134,7 +1134,6 @@ pub const Codegen = struct {
         defer self.allocator.free(parts);
         for (decl.parts, parts) |pt, *out| out.* = .{ .entity = try self.world.intern_entity(pt.part), .host = try self.world.intern_entity(pt.host), .dx = pt.dx, .dy = pt.dy };
         return image_mod.Art.dupe(self.allocator, .{
-            .palette = decl.palette,
             .images = decl.images,
             .backdrops = backdrops,
             .sprites = sprites,

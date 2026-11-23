@@ -402,8 +402,8 @@ sprite Nell: NellSheet
 area ShopDoor: 96 62 24 42
 ```
 
-- Art is 320x180 pixels, drawn 4x in the window, with one palette of up to 256 colours for the game (D-152). A backdrop is one 320x180 frame; a sheet is cut into equal frames numbered from 0.
-- PNG colours map exactly onto the palette, and a pixel is either opaque or fully transparent; a partly transparent pixel or a 257th colour is a compile error naming the file (D-156). Draw to a fixed palette rather than relying on the importer to reduce colours.
+- Art is 320x180 pixels, drawn 4x in the window, in full colour (D-166). A backdrop is one 320x180 frame; a sheet is cut into equal frames numbered from 0. A game holds at most 1,024 images and 2,097,152 pixels of art in all (D-182).
+- PNG pixels keep their colours, and a pixel is either opaque or fully transparent; a partly transparent pixel is a compile error naming the file and the pixel (D-156). To hold a game to a fixed set of colours, declare a `palette:` of up to 256: every colour in its art must then come from it, and the compiler names any pixel that does not.
 - Only a compile from the command line reads PNG files, and only from the script's folder. `bespoke compile` writes a package that carries the art, which is how a browser page loads it; `bespoke import <art.png> --name <Image> --script <script.bespoke>` prints the same art as inline rows for a script compiled in the browser.
 - A click anywhere in a sprite's frame or a prop's area acts on it, and the player walks to the mark nearest its foot (D-158). Box outlines appear only in the debug overlay.
 - Animation is presentation only: a sprite idles, or plays the walk toward the mark it is heading to, and nothing about it is written to the world.

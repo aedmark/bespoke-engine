@@ -2256,6 +2256,18 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** The Lamplighter's lamp moves from its theme hook into the script with its goldens unchanged. `Looks` joins the reserved words (D-180). P48-11 builds it.
 
+## D-182 Art Is Stored as Standard QOI Streams; the Art Limits for True Colour Add a Total Pixel Cap (2026-11-23, status: accepted; P48-12, refines D-166, restates D-153)
+
+**Context.** D-166 made art true colour with binary alpha and compressed in the package with a QOI-style codec, and asked for D-153's limits to be restated. A prototype on The Lamplighter's Round's seven images shrank 120,784 raw indexed bytes to about 27,900 with QOI's pixel ops. With no palette there is no per-game colour count to bound memory, and 1,024 sheets of 1,048,576 pixels at four bytes each would let a corrupt package ask for 4 GiB, and the browser runtime's heap is 16 MiB (D-071).
+
+**Decision.** The maintainer chose on 2026-11-23:
+1. Each image in the package is a complete standard QOI stream (the 14-byte `qoif` header, RGBA channels, and the 8-byte end marker), so any QOI tool can open or write one. The loader checks the header's size against the image record and refuses any alpha other than 0 or 255.
+2. The limits are 1,024 images, 2,048 pixels on a side and 1,048,576 pixels per sheet, as before, and at most 2,097,152 pixels across all images (8 MiB decoded, about 36 full backdrops). A declared `palette:` holds at most 256 colours; a game without one has no colour limit. The maintainer first chose 4,194,304 pixels; building it showed that 16 MiB decoded is the whole browser heap (`WASM_HEAP_LIMIT`, D-071), and the maintainer halved the total on 2026-11-23 so the rest of a browser game keeps 8 MiB.
+
+**Alternatives:** bare QOI ops in BeSpoke's own record (about 22 bytes smaller per image, readable by no outside tool); keeping the per-image limits with no total; raising the browser heap to 32 MiB to fit 4,194,304 pixels; a total of 1,048,576 pixels.
+
+**Consequences.** Images are RGBA in memory; a transparent pixel is stored as all zeroes. The palette is a compile-time rule and no longer reaches the package. Package format 34 carries QOI art; versions 24 to 33 load their indexed art through their palette. P48-12 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

@@ -1,16 +1,18 @@
-//! Turning decoded PNG pixels into palette art (P46-04, D-156).
+//! Turning decoded PNG pixels into art (P46-04, D-156, D-166).
 //!
-//! A pixel maps onto the game palette by its exact colour: fully transparent pixels become index
-//! 0, fully opaque ones reuse the palette entry of the same colour or add one, and a partly
-//! transparent pixel is refused, because the palette has no alpha (D-152) and rounding it either
-//! way would change what the author drew. An image that would push the palette past 256 colours
-//! is refused. `bespoke import` writes the result as an inline `image` block with palette codes,
-//! and a compile from a file maps `image X from "file.png"` the same way.
+//! A compile keeps each PNG pixel's colour (`to_pixels`): fully transparent pixels become
+//! `image.TRANSPARENT`, opaque ones keep their colour, and a partly transparent pixel is
+//! refused, because art alpha is binary (D-166) and rounding it either way would change what
+//! the author drew. When the script declares a `palette:`, every opaque colour must be one of
+//! its colours, the style rule D-166 keeps. `bespoke import` instead maps the PNG onto palette
+//! codes (`map`), appending the colours it lacks, and writes an inline `image` block; an image
+//! that would push that palette past 256 colours is refused.
 const std = @import("std");
 const image = @import("image.zig");
 const png = @import("png.zig");
 
 pub const MapError = error{ PartialTransparency, TooManyColours, OutOfMemory };
+pub const PixelError = error{ PartialTransparency, NotInPalette, OutOfMemory };
 
 /// Where a refused pixel is, for the message.
 pub const Where = struct { x: u16 = 0, y: u16 = 0 };
@@ -25,7 +27,7 @@ pub fn map(allocator: std.mem.Allocator, rgba: png.Rgba, palette: *std.ArrayList
     for (0..count) |i| {
         const px = rgba.pixels[i * 4 ..][0..4];
         if (px[3] == 0) {
-            out[i] = image.TRANSPARENT;
+            out[i] = 0;
             continue;
         }
         if (px[3] != 255) {
@@ -46,6 +48,31 @@ pub fn map(allocator: std.mem.Allocator, rgba: png.Rgba, palette: *std.ArrayList
             try palette.append(allocator, colour);
             out[i] = @intCast(palette.items.len - 1);
         }
+    }
+    return out;
+}
+
+/// The image's pixels, row by row. With a `palette` (the script's colours after its transparent
+/// entry), every opaque colour must be in it; without one, any colour is art.
+pub fn to_pixels(allocator: std.mem.Allocator, rgba: png.Rgba, palette: ?[]const image.Colour, where: *Where) PixelError![]image.Pixel {
+    const count = @as(usize, rgba.width) * rgba.height;
+    const out = try allocator.alloc(image.Pixel, count);
+    errdefer allocator.free(out);
+    for (0..count) |i| {
+        const px = rgba.pixels[i * 4 ..][0..4];
+        where.* = .{ .x = @intCast(i % rgba.width), .y = @intCast(i / rgba.width) };
+        if (px[3] == 0) {
+            out[i] = image.TRANSPARENT;
+            continue;
+        }
+        if (px[3] != 255) return PixelError.PartialTransparency;
+        const colour = image.Colour{ .r = px[0], .g = px[1], .b = px[2] };
+        if (palette) |colours| {
+            for (colours) |c| {
+                if (std.meta.eql(c, colour)) break;
+            } else return PixelError.NotInPalette;
+        }
+        out[i] = image.Pixel.opaque_colour(colour);
     }
     return out;
 }
@@ -156,4 +183,23 @@ test "P46-04: new codes skip the ones a script already uses and stay one width" 
     try std.testing.expectEqualStrings("aa", fresh[1]);
     try std.testing.expectEqualStrings("ab", fresh[2]);
     try std.testing.expectError(CodeError.OutOfCodes, assign_codes(allocator, &.{}, ONE.len + 2, 1));
+}
+
+test "P48-12: a compile keeps PNG colours, and a declared palette is a rule they must follow" {
+    const allocator = std.testing.allocator;
+    var px = [_]u8{ 1, 2, 3, 0, 9, 9, 9, 255, 200, 0, 0, 255, 200, 0, 0, 255 };
+    const rgba = png.Rgba{ .width = 2, .height = 2, .pixels = &px };
+    var where = Where{};
+    const free = try to_pixels(allocator, rgba, null, &where);
+    defer allocator.free(free);
+    try std.testing.expectEqual(image.TRANSPARENT, free[0]);
+    try std.testing.expectEqual(image.Pixel{ .r = 200, .g = 0, .b = 0, .a = 255 }, free[3]);
+    const both = [_]image.Colour{ .{ .r = 9, .g = 9, .b = 9 }, .{ .r = 200, .g = 0, .b = 0 } };
+    const ruled = try to_pixels(allocator, rgba, &both, &where);
+    defer allocator.free(ruled);
+    try std.testing.expectEqualSlices(image.Pixel, free, ruled);
+    try std.testing.expectError(PixelError.NotInPalette, to_pixels(allocator, rgba, both[0..1], &where));
+    try std.testing.expectEqual(Where{ .x = 0, .y = 1 }, where);
+    px[3] = 128;
+    try std.testing.expectError(PixelError.PartialTransparency, to_pixels(allocator, rgba, null, &where));
 }

@@ -191,7 +191,6 @@ test "P46-03: the image stage's script declares its art and compiles it into the
     var compiled = try bespoke.compile_source(std.testing.allocator, &world, &spatial, SCRIPT);
     defer compiled.deinit();
     const art = compiled.art;
-    try std.testing.expectEqual(PALETTE.len, art.palette.len);
     try std.testing.expectEqual(@as(usize, 3), art.images.len);
     const room = world.lookup_entity(SCENE).?;
     try std.testing.expectEqualStrings("LampRoom", art.backdrop_for(room).?.name);
@@ -200,5 +199,6 @@ test "P46-03: the image stage's script declares its art and compiles it into the
     try std.testing.expectEqual(@as(u16, 3), lamplighter.frame_at(.walk_right, 8));
     try std.testing.expectEqual(@as(u16, 0), lamplighter.frame_at(.walk_up, 0));
     const lantern = art.sprite_for(world.lookup_entity("Lantern").?).?;
-    try std.testing.expectEqual(idx('l'), art.images[lantern.image].frame_pixel(1, 5, 10));
+    const flame = PALETTE[idx('l')].rgb.?;
+    try std.testing.expectEqual(image.Pixel{ .r = flame[0], .g = flame[1], .b = flame[2], .a = 255 }, art.images[lantern.image].frame_pixel(1, 5, 10));
 }
