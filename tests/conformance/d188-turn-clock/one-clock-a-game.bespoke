@@ -1,0 +1,6 @@
+# A game is turn-based or realtime, never both (D-188).
+# pins: D-188
+# expect error: UnexpectedToken 6:1
+
+clock: turns
+clock: realtime

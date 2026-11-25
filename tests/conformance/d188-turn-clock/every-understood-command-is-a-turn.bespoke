@@ -1,0 +1,26 @@
+# Under a turn clock each command the parser understands takes one turn, and nothing else
+# moves the clock: boarding and four looks bring the boat in.
+# pins: D-188
+# ticks: 50
+# input: 0 use boat
+# input: 0 look at boat
+# input: 0 look at boat
+# input: 0 look at boat
+# input: 0 look at boat
+# expect fact: Landed(Scout)
+
+clock: turns
+scene: Shore
+cast: Scout
+props: Boat
+marks: Jetty
+relation Afloat(thing)
+relation Landed(who)
+
+on cue Uses(Scout, Boat):
+  remember Afloat(Boat)
+
+routine Crossing(Scout):
+  wait until Afloat(Boat)
+  wait 3 ticks
+  remember Landed(Scout)

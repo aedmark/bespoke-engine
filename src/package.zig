@@ -1728,6 +1728,8 @@ fn write_section(comptime which: Section, w: anytype, compiled: *const CompiledP
             try w.writeInt(u32, compiled.save_version, .little);
             try w.writeInt(u64, compiled.fingerprint, .little);
             try w.writeByte(@intFromBool(compiled.rewinds_reroll));
+            // The game's clock (D-188).
+            try w.writeByte(@intFromBool(compiled.turn_clock));
             return true;
         },
         .rules => {
@@ -1974,6 +1976,7 @@ pub fn load_package_linked(
     var save_version: u32 = 1;
     var fingerprint: u64 = 0;
     var rewinds_reroll = false;
+    var turn_clock = false;
     {
         var stream: std.Io.Reader = .fixed(table.get(.code).?);
         const pr = &stream;
@@ -2007,6 +2010,9 @@ pub fn load_package_linked(
         const flag = try pr.takeByte();
         if (flag > 1) return error.InvalidProgramIdentity;
         rewinds_reroll = flag == 1;
+        const clock = try pr.takeByte();
+        if (clock > 1) return error.InvalidProgramIdentity;
+        turn_clock = clock == 1;
         try finish(pr);
     }
     const code_len = chunk.code.items.len;
@@ -2392,6 +2398,7 @@ pub fn load_package_linked(
         .cue_handler_chain = cue_handler_chain,
         .save_version = save_version,
         .rewinds_reroll = rewinds_reroll,
+        .turn_clock = turn_clock,
         .fingerprint = fingerprint,
         .art = art,
     };
@@ -2702,7 +2709,7 @@ test "P48-17: a section's own contents are still checked" {
     try testing.expectError(error.InvalidDraftNote, load_for_test(bad));
     // A zero program identity, which would read as "unknown program" in a save (D-162).
     const code = section_slice(bytes.items, .code);
-    @memset(code[code.len - 1 - 8 .. code.len - 1], 0);
+    @memset(code[code.len - 2 - 8 .. code.len - 2], 0);
     reseal_for_test(bytes.items);
     try testing.expectError(error.InvalidProgramIdentity, load_for_test(bytes.items));
 }
@@ -2741,6 +2748,7 @@ test "P48-17: checked-in 1.0 package fixture loads every part" {
     var compiled = try load_for_test(fixture);
     defer compiled.deinit();
     try testing.expect(compiled.rewinds_reroll);
+    try testing.expect(compiled.turn_clock);
     try testing.expectEqual(@as(u32, 2), compiled.save_version);
     try testing.expectEqual(@as(u8, 8), compiled.dilemmas.items[0].dilemma.strong_at);
     try testing.expect(compiled.reactive_rules.items[0].each);

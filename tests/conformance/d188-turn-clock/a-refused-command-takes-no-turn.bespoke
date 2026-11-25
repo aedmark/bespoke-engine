@@ -1,0 +1,28 @@
+# A command the parser refuses takes no turn: an unknown word, or a thing that is not here.
+# Boarding and three looks leave the boat short of the far side, whatever else is typed.
+# pins: D-188
+# ticks: 50
+# input: 0 use boat
+# input: 0 look at boat
+# input: 0 xyzzy
+# input: 0 look at the moon
+# input: 0 look at boat
+# input: 0 look at boat
+# input: 0 xyzzy
+# expect no fact: Landed(Scout)
+
+clock: turns
+scene: Shore
+cast: Scout
+props: Boat
+marks: Jetty
+relation Afloat(thing)
+relation Landed(who)
+
+on cue Uses(Scout, Boat):
+  remember Afloat(Boat)
+
+routine Crossing(Scout):
+  wait until Afloat(Boat)
+  wait 3 ticks
+  remember Landed(Scout)

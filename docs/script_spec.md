@@ -125,6 +125,21 @@ when each Holds(who, Sword):
 
 `draft Name(C, D, E, F)` declares exactly four note names from C through B. `reverse OtherName` optionally names the reversed sequence. Draft names and note sequences must be unambiguous. `weave Name on Target` is valid only in an executable body and the draft may be declared later in the file.
 
+## The clock (P48-22, D-188)
+
+A game's clock is realtime by default: it ticks once a second (adjustable while playing) whether or not the player acts. A turn game ticks only when the player acts:
+
+```bespoke
+clock: turns
+```
+
+- A typed command takes one turn when the parser resolves it to an action on things that are here, even if the script answers "Nothing happens." A refusal takes none: an unknown word, "You don't see that here.", or "Which do you mean".
+- A click that acts on something takes one turn, as its typed form would. A walk advances the clock one tick at a time until it arrives, so crossing a room passes time, and the clock stops again on arrival.
+- Engine actions never take a turn: saving, loading, rewinding, scrubbing, asking for a hint, or opening the inspector.
+- `wait 3 ticks` in a turn game waits three turns, and `remember X for 3 ticks` lasts three turns.
+- `clock: realtime` may be written for the default. A game has one clock; a second `clock:` line is a compile error. `clock` stays usable as a name.
+- Headless (`bespoke run --headless --input`), a turn game types its input lines in order: each line that takes a turn runs one tick, a walk runs until it arrives, and the run stops when the lines are spent or `--ticks` is reached. A line's leading number is read only by a realtime game.
+
 ## Includes (P48-15, D-169, D-185)
 
 A game may span files. The main script names the others with `include`, and each is read as if pasted at its line:

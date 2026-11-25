@@ -1,0 +1,17 @@
+# Under a turn clock a walk advances the clock until it arrives, then stops.
+# pins: D-188
+# ticks: 50
+# input: 0 go to lighthouse
+# expect fact: Arrived(Scout)
+
+clock: turns
+scene: Shore
+cast: Scout
+marks: Jetty, Dunes, Lighthouse
+relation Arrived(who)
+
+when Scout arrives at Lighthouse:
+  remember Arrived(Scout)
+
+routine Idle(Scout):
+  wait 100 ticks

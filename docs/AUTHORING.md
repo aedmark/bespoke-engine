@@ -381,6 +381,10 @@ goal RecoverThePlate:
 - A query answers with the first unmet need whose terms the character knows and records which path answered. When no such need is on the frontier, it answers as the author, which may name a place or thing the character has not met.
 - Hints are never stored, so a save, a rewind, and a replay give the same hint for the same world (D-003). Goals travel in the package.
 
+### Turns instead of seconds
+
+A classic parser adventure measures time in turns: `clock: turns` makes the clock move only when the player does something the game understands, so a boat that lands three turns after you board is `wait 3 ticks` in its routine. A mistyped command costs nothing, and saving or asking for a hint never takes a turn (D-188). Walking still passes time, one tick a step, until the walker arrives.
+
 ### Several files
 
 A larger game can keep its parts apart: `include "art.bespoke"` reads another file in place, once, with paths from the main script's folder (D-169). Keep what is shared, such as scenes and relations, in the main script and give each act or each kind of thing its own file. `proofs/art/lamplighter/` keeps The Lamplighter's Round's art and talk in `art.bespoke` and `talk.bespoke`. An error names the file it is in.

@@ -598,6 +598,8 @@ pub const AST = struct {
     save_version: ?u32 = null,
     /// `rewinds reroll` (P48-14, D-184): a rewind keeps the dice going.
     rewinds_reroll: bool = false,
+    /// `clock: turns` (P48-22, D-188): the clock moves only when the player acts.
+    turn_clock: ?bool = null,
     /// `name <Thing>: "<text>"` lines (P48-09, D-179).
     display_names: std.ArrayListUnmanaged(NameDecl) = .empty,
     /// `phrase <Key>: "<text>"` lines (P48-09, D-179), already checked against the phrase table.
@@ -1350,6 +1352,19 @@ pub const Parser = struct {
                     // by text with a name after it, so `limit` stays usable elsewhere.
                     if (std.mem.eql(u8, start.slice, "limit") and self.current.tag == .identifier and self.current.line == start.line) {
                         try self.parse_limit(start);
+                        continue;
+                    }
+                    // `clock: turns` or `clock: realtime` (P48-22, D-188). A plain word before a
+                    // colon, so `clock` stays usable as a name elsewhere.
+                    if (std.mem.eql(u8, start.slice, "clock") and self.current.tag == .colon and self.current.line == start.line) {
+                        try self.advance();
+                        const which = self.current;
+                        if (which.tag != .identifier or which.line != start.line or
+                            !(std.mem.eql(u8, which.slice, "turns") or std.mem.eql(u8, which.slice, "realtime")))
+                            return self.error_at(which, "'clock:' is 'turns' or 'realtime'", .{});
+                        try self.advance();
+                        if (ast.turn_clock != null) return self.error_at(start, "a game has one clock; 'clock:' is declared twice", .{});
+                        ast.turn_clock = std.mem.eql(u8, which.slice, "turns");
                         continue;
                     }
                     // `rewinds reroll` (P48-14, D-184): the dice are for variety, so a rewind

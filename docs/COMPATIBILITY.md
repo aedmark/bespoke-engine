@@ -19,7 +19,7 @@ A package is a 16-byte header (magic, format, a CRC32 of the payload, and the pa
 | --- | --- |
 | `NAME` | entities, and relations with their type and object kind |
 | `PLAC` | marks, walkways, and hotspots |
-| `CODE` | bytecode, the first statement, routine and cue handler entries, the handler chain (D-160), the save version and fingerprint (D-162), and `rewinds reroll` (D-184) |
+| `CODE` | bytecode, the first statement, routine and cue handler entries, the handler chain (D-160), the save version and fingerprint (D-162), `rewinds reroll` (D-184), and the clock (D-188) |
 | `RULE` | `when` rules, with each rule's `each` flag and owner (D-186) |
 | `DRFT`, `SOCI`, `DUEL`, `DGRD`, `GRID`, `AGND`, `CMND`, `SCOR`, `CAST`, `GURD`, `GOAL`, `SPEL`, `DCSN`, `AXIS`, `REDL`, `DLMA` | one subsystem each: drafts, societies, duels, degradation, grids, agendas, commands and aliases, scores, cast places, cue guards, goals, spellbooks, decisions, axes, red lines, and dilemmas |
 | `IMGS` | images, as QOI streams (D-182) |

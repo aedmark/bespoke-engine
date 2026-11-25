@@ -148,6 +148,9 @@ pub const CommandReply = struct {
     text: ?[]const u8 = null,
     fired: bool = false,
     walking: bool = false,
+    /// The parser resolved the line to an action, so it takes a turn under a turn clock
+    /// (D-188), whether or not a handler answered; a refusal takes none.
+    turn: bool = false,
 };
 
 /// Interprets one typed line for `actor` and dispatches it: `interpret_command` then
@@ -163,7 +166,11 @@ pub fn run_command(
 ) !CommandReply {
     return switch (interpret_command(vm, compiled, interp, actor, input, buf)) {
         .reply => |text| .{ .text = text },
-        .command => |command| try dispatch_command(vm, compiled, actor, command),
+        .command => |command| blk: {
+            var reply = try dispatch_command(vm, compiled, actor, command);
+            reply.turn = true;
+            break :blk reply;
+        },
     };
 }
 
@@ -1127,12 +1134,27 @@ pub const Session = struct {
     /// step was requested. Consumes the step request and restarts the interval.
     pub fn tick_due(self: *Session) bool {
         const now = now_ms(self.window);
-        const due = self.step_requested or (!self.is_paused and now - self.last_tick_ms >= self.window.current_tick_interval_ms);
+        const due = self.step_requested or (!self.is_paused and self.clock_runs() and now - self.last_tick_ms >= self.window.current_tick_interval_ms);
         if (due) {
             self.step_requested = false;
             self.last_tick_ms = now;
         }
         return due;
+    }
+
+    /// Whether the clock may advance on its own: always for a realtime game, and for a turn
+    /// game only while the player walks, so a walk passes time and stops with them (D-188).
+    pub fn clock_runs(self: *const Session) bool {
+        if (!self.compiled.turn_clock) return true;
+        const p = self.player orelse return false;
+        return self.spatial.is_moving(p);
+    }
+
+    /// Asks for one tick now, as a player action that takes a turn does under a turn clock
+    /// (D-188): a resolved typed command (`CommandReply.turn`) or a click that acts on
+    /// something. Engine actions (save, load, rewind, scrub, hints) never call it.
+    pub fn take_turn(self: *Session) void {
+        self.step_requested = true;
     }
 
     /// Advances one host tick, records it, and publishes the frame. Returns the weaves

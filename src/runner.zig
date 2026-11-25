@@ -229,6 +229,40 @@ fn type_inputs(
     }
 }
 
+/// Types input lines for the player, in order, until one takes a turn (D-188). Returns false
+/// when the lines run out first. A line's leading number is the realtime schedule and is not
+/// read here: in a turn game, time is the lines themselves.
+fn type_next_turn(
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    interp: *bespoke.command.Interpreter,
+    player: bespoke.EntityId,
+    lines: *std.mem.SplitIterator(u8, .scalar),
+    stdout: anytype,
+) !bool {
+    if (player == .none) return false;
+    const actor = player;
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        const space = std.mem.indexOfScalar(u8, line, ' ') orelse return error.InvalidInputLine;
+        _ = std.fmt.parseInt(usize, line[0..space], 10) catch return error.InvalidInputLine;
+        const command = std.mem.trim(u8, line[space + 1 ..], " \t");
+        try stdout.print("[Tick {d:>3}] > ", .{vm.world.current_tick});
+        try write_diagnostic_text(stdout, command);
+        try stdout.print("\n", .{});
+        var buf: [256]u8 = undefined;
+        const reply = try bespoke.host.run_command(vm, compiled, interp, actor, command, &buf);
+        if (reply.text) |text| {
+            try stdout.print("[Tick {d:>3}] < ", .{vm.world.current_tick});
+            try write_diagnostic_text(stdout, text);
+            try stdout.print("\n", .{});
+        }
+        if (reply.turn) return true;
+    }
+    return false;
+}
+
 /// Prints every fact as `fact Relation(Subject)` or `fact Relation(Subject, Object)`, sorted,
 /// so the output does not depend on table order (P48-18). A number relation's object prints as
 /// its number and an entity relation's as the entity's name (D-178); a relation of unknown kind
@@ -552,9 +586,18 @@ fn run_bytes_with_presenter(
         try story.report(&world, &vm, stdout);
 
         var interp = bespoke.command.Interpreter{};
+        // A turn game (D-188) runs its input lines in order: the clock moves one tick for each
+        // line that takes a turn, and on while the player walks, and stops when the lines are
+        // spent. `--ticks` still bounds the run.
+        var turn_lines = std.mem.splitScalar(u8, config.input, '\n');
         var tick_count: usize = 0;
         while (tick_count < config.ticks) : (tick_count += 1) {
-            try type_inputs(&vm, &compiled, &interp, player_entity, config.input, tick_count, stdout);
+            if (compiled.turn_clock) {
+                const walking = player_entity != .none and spatial.is_moving(player_entity);
+                if (!walking and !try type_next_turn(&vm, &compiled, &interp, player_entity, &turn_lines, stdout)) break;
+            } else {
+                try type_inputs(&vm, &compiled, &interp, player_entity, config.input, tick_count, stdout);
+            }
             _ = try bespoke.host.tick(&vm, &compiled);
             try story.report(&world, &vm, stdout);
 
@@ -672,7 +715,8 @@ fn run_bytes_with_presenter(
                     var reply_buf: [160]u8 = undefined;
                     const reply = try bespoke.host.run_command(&vm, &compiled, &interp, player_entity, typed.buf[0..typed.len], &reply_buf);
                     if (reply.text) |text| window.set_cue_banner(text, 180);
-                    if (reply.fired) should_step_now = true;
+                    // Under a turn clock every resolved command is a turn (D-188).
+                    if (if (compiled.turn_clock) reply.turn else reply.fired) should_step_now = true;
                     bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
                 },
                 .examine_hotspot => |hs_idx| {
@@ -682,6 +726,8 @@ fn run_bytes_with_presenter(
                         var banner_buf: [256]u8 = undefined;
                         const text = std.fmt.bufPrint(&banner_buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Examined";
                         window.set_cue_banner(text, 120);
+                        // A click that resolves to an action is a turn, as `look` would be.
+                        if (compiled.turn_clock) should_step_now = true;
                     }
                 },
                 .rewind => {
@@ -726,7 +772,10 @@ fn run_bytes_with_presenter(
             }
 
             const now = std.Io.Timestamp.now(io, .awake).toMilliseconds();
-            if (!is_paused and (now - last_tick_time >= window.current_tick_interval_ms)) {
+            // A turn clock runs on its own only while the player walks, so a walk passes time
+            // and stops with the player (D-188).
+            const clock_runs = !compiled.turn_clock or (player_entity != .none and spatial.is_moving(player_entity));
+            if (!is_paused and clock_runs and (now - last_tick_time >= window.current_tick_interval_ms)) {
                 should_step_now = true;
                 last_tick_time = now;
             }

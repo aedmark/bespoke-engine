@@ -2,6 +2,7 @@
 # later 1.x reader can be checked against what 1.0 wrote.
 save version 2
 rewinds reroll
+clock: turns
 limit hints 4
 
 scene: FixtureYard

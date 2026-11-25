@@ -740,7 +740,8 @@ pub const WasmRuntime = struct {
             .command => |command| {
                 const reply = try host_mod.dispatch_command(&self.vm, program, self.player_entity, command);
                 if (reply.text) |text| self.set_banner(text);
-                if (reply.fired) try self.step_tick();
+                // Under a turn clock every resolved command is a turn (D-188).
+                if (self.turn_clock() or reply.fired) try self.step_tick();
             },
         }
     }
@@ -1230,6 +1231,18 @@ pub const WasmRuntime = struct {
     }
 
     /// Steps one discrete simulation tick across the active scenario spine.
+    /// The deck's program declares `clock: turns` (D-188).
+    pub fn turn_clock(self: *const WasmRuntime) bool {
+        return if (self.program) |*p| p.turn_clock else false;
+    }
+
+    /// Whether the clock may advance on the page's timer: always in realtime, and in a turn
+    /// game only while the player walks.
+    pub fn clock_runs(self: *WasmRuntime) bool {
+        if (!self.turn_clock()) return true;
+        return self.player_entity != .none and self.spatial.is_moving(self.player_entity);
+    }
+
     pub fn step_tick(self: *WasmRuntime) anyerror!void {
         self.bind();
         try self.release_approach();
@@ -1278,7 +1291,15 @@ pub const WasmRuntime = struct {
     }
 
     /// Dispatches a normalized browser mouse, keyboard, or touch event (P19-02, D-008, D-022).
+    /// Routes one browser event. Under a turn clock (D-188), a click or key that acts on
+    /// something takes a turn, as its typed form would.
     pub fn dispatch_event(self: *WasmRuntime, ev: BrowserInputEvent) !BrowserActionTag {
+        const tag = try self.route_event(ev);
+        if (tag == .cue_fired and self.turn_clock()) try self.step_tick();
+        return tag;
+    }
+
+    fn route_event(self: *WasmRuntime, ev: BrowserInputEvent) !BrowserActionTag {
         switch (ev.kind) {
             .pointer_move, .touch_move => {
                 self.hovered_x = ev.x;
@@ -1663,7 +1684,9 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         fn wasm_step_tick() callconv(.c) void {
             if (runtime()) |rt| {
-                if (!rt.is_paused) {
+                // The page calls this on its own timer; a turn clock ignores it unless the
+                // player is walking (D-188).
+                if (!rt.is_paused and rt.clock_runs()) {
                     rt.step_tick() catch {};
                     rt.render_frame();
                 }
@@ -2489,4 +2512,39 @@ test "D-094: the item tray keeps its order, fits the canvas, and uses items alon
         try testing.expect(slot.x >= renderer.INVENTORY_X and slot.x + slot.w <= CANVAS_WIDTH);
         try testing.expectEqual(slot.item, rt.tray_hit(slot.x + 1, slot.y + 1).?);
     }
+}
+
+test "P48-22: a turn game in the browser ticks once per resolved command and not on the page's timer" {
+    const testing = std.testing;
+    const script =
+        \\clock: turns
+        \\scene Quay:
+        \\  cast: Hero
+        \\  props: Rope
+        \\  marks: Steps, Pier
+        \\
+        \\command Takes: "take <thing>"
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+        \\on cue Takes(Hero, Rope):
+        \\  remember Carries(Hero, Rope)
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero", .command_bar = true })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    rt.bind();
+    try testing.expect(rt.turn_clock());
+    const start = rt.clock();
+    // The page's timer does not move a turn clock while the player stands still.
+    try testing.expect(!rt.clock_runs());
+    // A refused command takes no turn; a resolved one takes exactly one.
+    try rt.default_typed("xyzzy");
+    try testing.expectEqual(start, rt.clock());
+    try rt.default_typed("take the rope");
+    try testing.expectEqual(start + 1, rt.clock());
+    try testing.expect(rt.world.has_fact(rt.world.lookup_entity("Hero").?, rt.world.lookup_relation("Carries").?, rt.world.lookup_entity("Rope").?.to_int()));
 }

@@ -139,6 +139,8 @@ pub const CompiledProgram = struct {
     save_version: u32 = 1,
     /// `rewinds reroll`: a rewind restores everything but the dice (D-184).
     rewinds_reroll: bool = false,
+    /// `clock: turns` (D-188): hosts advance the clock only when the player acts.
+    turn_clock: bool = false,
     /// Identifies this build for saves (D-162): see `program_fingerprint`. Never 0 once compiled
     /// or loaded, since 0 marks a save whose program is unknown.
     fingerprint: u64 = 0,
@@ -1147,6 +1149,7 @@ pub const Codegen = struct {
             .cue_handler_chain = mut_self.cue_handler_chain,
             .save_version = ast.save_version orelse 1,
             .rewinds_reroll = ast.rewinds_reroll,
+            .turn_clock = ast.turn_clock orelse false,
             .fingerprint = program_fingerprint(mut_self.chunk.code.items, mut_self.world),
             .art = art,
         };

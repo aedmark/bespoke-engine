@@ -14,7 +14,7 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | package | A compiled, checked script in a `.bspk` file | `CompiledProgram`, `src/package.zig` | bytecode binary |
 | include | A line that reads another script file in place, once, so a game can span files | `include "art.bespoke"`, `compiler/includes.zig` (D-169) | import, module (an include shares one namespace) |
 | host | The program that starts a script and asks the engine for ticks: the desktop window, a headless test, the browser page, or a game's own `main.zig` | `src/host.zig` (the host kit) | runner, harness (except for the stock runner `src/runner.zig`) |
-| tick | One step of the game clock. Everything that happens, happens on a tick. One tick per second by default, adjustable while playing | `world.current_tick`, `host.tick` | frame (a frame is a redraw, at 60 per second, unrelated to ticks) |
+| tick | One step of the game clock. Everything that happens, happens on a tick. One tick per second by default, adjustable while playing; in a game with `clock: turns`, one tick per player action (D-188) | `world.current_tick`, `host.tick` | frame (a frame is a redraw, at 60 per second, unrelated to ticks) |
 | peripheral | Anything that only shows or plays the world: the window, the canvas, audio. It sends player input to the host as actions and never changes facts | `DisplayBridge`, `AudioBridge` | display bridge (in user copy) |
 
 ## The world
