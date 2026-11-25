@@ -150,6 +150,8 @@ pub const WhenRule = struct {
     edge: WhenEdge = .rising,
     trigger_patterns: []const FactPattern,
     body: []const Stmt,
+    /// `when each` (P48-16, D-170, D-186): once per matching row, with the row bound.
+    each: bool = false,
 };
 
 pub const RelationDecl = struct {
@@ -1121,6 +1123,13 @@ pub const Parser = struct {
                 .kw_when => {
                     try self.advance();
                     var edge: WhenEdge = .rising;
+                    // `when each` (D-170): `each` is matched by text before a name on the same
+                    // line, since a capitalised relation could never be spelled `each`.
+                    var each_tok: ?Token = null;
+                    if (self.current.tag == .identifier and std.mem.eql(u8, self.current.slice, "each")) {
+                        each_tok = self.current;
+                        try self.advance();
+                    }
                     if (self.current.tag == .kw_currently) {
                         try self.advance();
                     }
@@ -1203,12 +1212,16 @@ pub const Parser = struct {
                         }
                     }
 
+                    if (each_tok) |tok| {
+                        if (edge != .rising) return self.error_at(tok, "'when each' fires as each row starts to hold; it cannot follow 'stops being', 'forgets', or 'arrives at' (D-186)", .{});
+                    }
                     _ = try self.expect(.colon);
                     _ = try self.expect(.indent);
                     const body = try self.parse_stmt_list();
                     _ = try self.expect(.dedent);
 
                     try ast.when_rules.append(.{
+                        .each = each_tok != null,
                         .edge = edge,
                         .trigger_patterns = try trigger_patterns.toOwnedSlice(),
                         .body = body,

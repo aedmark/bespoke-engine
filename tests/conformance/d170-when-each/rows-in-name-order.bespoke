@@ -1,0 +1,17 @@
+# Rows that start on the same tick run in the order of their bound names: Bram is remembered
+# first, Ada's row runs first, so Bram's is the last word.
+# pins: D-186
+# ticks: 4
+# expect fact: Last(Sword, Bram)
+
+scene: Hall
+cast: Ada, Bram
+marks: Door
+entity Sword
+relation Holds(who, thing)
+property Last(thing, who)
+remember Holds(Bram, Sword)
+remember Holds(Ada, Sword)
+
+when each Holds(who, Sword):
+  remember Last(Sword, who)

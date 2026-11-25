@@ -1,0 +1,17 @@
+# 'when each' fires once for each row as it starts to hold, and its body reads that row.
+# pins: D-170; D-186
+# ticks: 4
+# expect fact: Cheered(Ada)
+# expect fact: Cheered(Bram)
+
+scene: Hall
+cast: Ada, Bram
+marks: Door
+entity Sword
+relation Holds(who, thing)
+relation Cheered(who)
+remember Holds(Ada, Sword)
+remember Holds(Bram, Sword)
+
+when each Holds(who, Sword):
+  remember Cheered(who)

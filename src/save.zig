@@ -23,9 +23,11 @@ pub const InterruptFrame = vm_mod.InterruptFrame;
 pub const SAVE_MAGIC = [4]u8{ 'B', 'S', 'A', 'V' };
 /// Version 3 (P48-08, D-162) adds the program identity after the metadata, and always carries
 /// the temporal flag byte; versions 1 and 2 load unchecked.
+/// Version 5 adds each fiber's and interrupt frame's local base and each `when each` rule's
+/// rows (P48-16, D-170, D-186); older saves load with bases of 0 and no rows held.
 /// Version 4 adds the run's dice, the seed and the generator's state, after the VM's rule
 /// edges (P48-14, D-168, D-184); a version 3 save loads with the dice the VM already has.
-pub const SAVE_VERSION: u32 = 4;
+pub const SAVE_VERSION: u32 = 5;
 pub const MIN_SAVE_VERSION: u32 = 1;
 
 /// Number of user-addressable save slots (1..8), plus slot 0 reserved for Quick-Save (P17-02, D-020).
@@ -546,6 +548,7 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
                 try pw.writeInt(u32, f.stack[si], .little);
             }
             try write_fiber_state(pw, f.state);
+            if (version >= 5) try pw.writeInt(u16, @intCast(f.local_base), .little);
 
             const int_depth: u16 = @intCast(f.interrupt_stack.items.len);
             try pw.writeInt(u16, int_depth, .little);
@@ -554,6 +557,7 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
                 try pw.writeInt(u16, @intCast(iframe.sp), .little);
                 try pw.writeInt(u16, iframe.priority, .little);
                 try write_fiber_state(pw, iframe.state);
+                if (version >= 5) try pw.writeInt(u16, @intCast(iframe.local_base), .little);
             }
         }
 
@@ -563,6 +567,20 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
             try pw.writeByte(if (r.is_active) 1 else 0);
         }
         if (version >= 4) try v.dice.write(pw);
+        if (version >= 5) {
+            // Each rule's rows that hold now, so a load fires only rows that start after it.
+            for (v.reactive_rules.items) |r| {
+                try pw.writeInt(u32, @intCast(r.rows.items.len), .little);
+                for (r.rows.items) |row| {
+                    var mask: u8 = 0;
+                    for (row.values, 0..) |value, k| if (value != null) {
+                        mask |= @as(u8, 1) << @intCast(k);
+                    };
+                    try pw.writeByte(mask);
+                    for (row.values) |value| try pw.writeInt(u32, value orelse 0, .little);
+                }
+            }
+        }
     } else {
         try pw.writeByte(0);
     }
@@ -680,6 +698,10 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
                     }
                 }
                 fib.state = try read_fiber_state(pr);
+                if (version >= 5) {
+                    fib.local_base = try pr.takeInt(u16, .little);
+                    if (fib.local_base > fib.sp) return SaveError.InvalidTemporalState;
+                }
 
                 const int_depth = try pr.takeInt(u16, .little);
                 var ii: u16 = 0;
@@ -688,11 +710,14 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
                     const isp = try pr.takeInt(u16, .little);
                     const iprio = try pr.takeInt(u16, .little);
                     const istate = try read_fiber_state(pr);
+                    const ibase: u16 = if (version >= 5) try pr.takeInt(u16, .little) else 0;
+                    if (ibase > isp) return SaveError.InvalidTemporalState;
                     try fib.interrupt_stack.append(InterruptFrame{
                         .pc = ipc,
                         .sp = isp,
                         .state = istate,
                         .priority = iprio,
+                        .local_base = ibase,
                     });
                 }
 
@@ -708,6 +733,24 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
                 }
             }
             if (version >= 4) v.dice = try dice_mod.Dice.read(pr);
+            for (v.reactive_rules.items) |*r| r.rows.clearRetainingCapacity();
+            if (version >= 5) {
+                // Untrusted counts: one table per rule the save had, each bounded (D-186).
+                var rj: u32 = 0;
+                while (rj < rule_count) : (rj += 1) {
+                    const rows = try pr.takeInt(u32, .little);
+                    if (rows > vm_mod.MAX_EACH_ROWS) return SaveError.SavePayloadTooLarge;
+                    for (0..rows) |_| {
+                        const mask = try pr.takeByte();
+                        var row = world_mod.VariableBindings{};
+                        for (&row.values, 0..) |*value, k| {
+                            const raw = try pr.takeInt(u32, .little);
+                            value.* = if (mask & (@as(u8, 1) << @intCast(k)) != 0) raw else null;
+                        }
+                        if (rj < v.reactive_rules.items.len) try v.reactive_rules.items[rj].rows.append(v.allocator, row);
+                    }
+                }
+            }
         }
     }
 
@@ -1195,7 +1238,16 @@ fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload
             (if (saved.get_entity_name(scene)) |name| try world.intern_entity(name) else null)
         else
             null;
-        for (v.reactive_rules.items) |*rule| rule.is_active = world.has_multi_match(rule.clauses);
+        for (v.reactive_rules.items) |*rule| {
+            rule.is_active = world.has_multi_match(rule.clauses);
+            // A `when each` rule holds every row that matches now, so none fires again (D-186).
+            rule.rows.clearRetainingCapacity();
+            if (rule.each) {
+                const rows = try world.find_all_matches(allocator, rule.clauses);
+                defer allocator.free(rows);
+                for (rows) |row| try rule.rows.append(v.allocator, row);
+            }
+        }
         // The run goes on: the dice continue from where the save left them (D-168).
         if (verified.version >= 4) v.dice = saved_vm.dice;
     }
@@ -1761,7 +1813,7 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .sav format version 99; this engine supports versions 1 through 4",
+        "unsupported .sav format version 99; this engine supports versions 1 through 5",
         format_unsupported_version(&message_buf, version_from_bytes(bad_ver).?),
     );
 }

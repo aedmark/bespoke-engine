@@ -108,6 +108,19 @@ when Hero arrives at Door:
 
 `when` is edge-triggered. It accepts one or more fact patterns joined by `and`, a rising state phrase (`when currently X is Y` is equivalent), a falling state phrase (`stops being`; `being` is optional), an expiry rule (`forgets`), or arrival at a declared mark. A bare `when Ready:` is the unary pattern `Ready(Ready)` and exists only for compatibility; prefer an explicit fact or state phrase.
 
+A plain `when` rule fires once when its trigger starts to hold, however many rows match, so its body cannot read the trigger's variables (D-161, D-170). `when each` fires once for each matching row as that row starts to hold, and its body reads the row's variables as a cue handler reads its parameters (P48-16, D-170, D-186):
+
+```bespoke
+when each Holds(who, Sword):
+  remember Armed(who)
+  say Hero: "Someone has a sword."
+```
+
+- Only the rising form takes `each`; `when each X stops being ...` and `when each X forgets ...` are compile errors.
+- A row that stops holding and starts again fires again. Rows that start on the same tick run in the order of their bound values' names, first trigger variable first.
+- A row's body runs on the entity its first trigger pattern's subject binds: it interrupts that entity's routine, or runs as a fiber of its own when the entity has none. An `interrupt X with:` body names its own target.
+- The rows each rule holds are saved, and rewinds restore them, so a load or a rewind fires only rows that start afterwards. Package format version 37 marks `each` rules, and save format version 5 carries their rows.
+
 ## Musical Drafts
 
 `draft Name(C, D, E, F)` declares exactly four note names from C through B. `reverse OtherName` optionally names the reversed sequence. Draft names and note sequences must be unambiguous. `weave Name on Target` is valid only in an executable body and the draft may be declared later in the file.

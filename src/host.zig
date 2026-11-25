@@ -2634,6 +2634,10 @@ const DiceRig = struct {
         rig.world.deinit();
     }
 
+    fn ticks(rig: *DiceRig, n: usize) !void {
+        for (0..n) |_| _ = try tick(&rig.vm, &rig.compiled);
+    }
+
     /// Which of the next `n` ticks were lucky, one bit a tick.
     fn throws(rig: *DiceRig, n: u6) !u64 {
         const lucky = rig.world.lookup_relation("Lucky").?;
@@ -2754,4 +2758,96 @@ test "P48-14: checked-in version 4 save fixture continues its run's dice" {
     try testing.expectEqualStrings("P48-14 compatibility fixture", meta.get_description());
     try testing.expectEqual(@as(u64, 7), loaded.vm.dice.seed);
     try testing.expectEqual(try fresh.throws(40), try loaded.throws(40));
+}
+
+const EACH_SCRIPT =
+    \\scene: Hall
+    \\cast: Ada, Bram, Cid
+    \\marks: Hearthstone
+    \\entity Sword
+    \\relation Holds(who, thing)
+    \\relation Cheered(who)
+    \\property Last(thing, who)
+    \\routine Waits(Ada):
+    \\  loop:
+    \\    wait 1 ticks
+    \\when each Holds(who, Sword):
+    \\  remember Cheered(who)
+    \\  remember Last(Sword, who)
+    \\
+;
+
+test "P48-16: 'when each' fires per row, in name order, again after a row stops, and not again after a load" {
+    var rig: DiceRig = undefined;
+    try rig.init(EACH_SCRIPT, null);
+    defer rig.deinit();
+    const w = &rig.world;
+    const holds = w.lookup_relation("Holds").?;
+    const cheered = w.lookup_relation("Cheered").?;
+    const last = w.lookup_relation("Last").?;
+    const sword = w.lookup_entity("Sword").?;
+    const ada = w.lookup_entity("Ada").?;
+    const bram = w.lookup_entity("Bram").?;
+    const cid = w.lookup_entity("Cid").?;
+    // Bram is remembered first, so fact order would run him first; names put Ada first.
+    try w.remember(bram, holds, sword.to_int(), 0);
+    try w.remember(ada, holds, sword.to_int(), 0);
+    try rig.ticks(2);
+    try testing.expect(w.has_fact(ada, cheered, null) and w.has_fact(bram, cheered, null));
+    try testing.expectEqual(bram.to_int(), w.get_property(sword, last).?);
+    // Ada's routine was interrupted to run her row's body, and it carries on afterwards.
+    try testing.expectEqual(@as(usize, 1), for (rig.vm.fibers.items) |f| {
+        if (f.owner == ada and f.state != .halted) break @as(usize, 1);
+    } else 0);
+
+    // Rows that still hold do not fire again.
+    _ = w.forget(ada, cheered, null);
+    _ = w.forget(bram, cheered, null);
+    try rig.ticks(2);
+    try testing.expect(!w.has_fact(ada, cheered, null) and !w.has_fact(bram, cheered, null));
+
+    // A save now holds both rows; a load does not fire them, and a new row still fires.
+    var saved = std.array_list.Managed(u8).init(testing.allocator);
+    defer saved.deinit();
+    var lw = ListWriter.init(&saved);
+    _ = try save_mod.write_save_state(testing.allocator, &lw.writer, w, &rig.spatial, &rig.vm, .{});
+    var loaded: DiceRig = undefined;
+    try loaded.init(EACH_SCRIPT, null);
+    defer loaded.deinit();
+    var stream: std.Io.Reader = .fixed(saved.items);
+    _ = try save_mod.read_save_state(testing.allocator, &stream, &loaded.world, &loaded.spatial, &loaded.vm);
+    try loaded.ticks(2);
+    try testing.expect(!loaded.world.has_fact(ada, cheered, null));
+    try loaded.world.remember(cid, holds, sword.to_int(), 0);
+    try loaded.ticks(2);
+    try testing.expect(loaded.world.has_fact(cid, cheered, null));
+    try testing.expect(!loaded.world.has_fact(bram, cheered, null));
+
+    // A row that stops and starts again fires again, alone.
+    _ = w.forget(ada, holds, sword.to_int());
+    try rig.ticks(1);
+    try w.remember(ada, holds, sword.to_int(), 0);
+    try rig.ticks(2);
+    try testing.expect(w.has_fact(ada, cheered, null));
+    try testing.expect(!w.has_fact(bram, cheered, null));
+    try testing.expectEqual(ada.to_int(), w.get_property(sword, last).?);
+}
+
+test "P48-16: checked-in version 5 save fixture holds a 'when each' row, which does not fire again" {
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v5.sav", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 5), save_mod.version_from_bytes(fixture).?);
+    // The fixture is `EACH_SCRIPT` after Ada took the sword and her row fired.
+    var rig: DiceRig = undefined;
+    try rig.init(EACH_SCRIPT, null);
+    defer rig.deinit();
+    var stream: std.Io.Reader = .fixed(fixture);
+    _ = try save_mod.read_save_state(testing.allocator, &stream, &rig.world, &rig.spatial, &rig.vm);
+    const w = &rig.world;
+    const cheered = w.lookup_relation("Cheered").?;
+    const ada = w.lookup_entity("Ada").?;
+    try testing.expectEqual(@as(usize, 1), rig.vm.reactive_rules.items[0].rows.items.len);
+    _ = w.forget(ada, cheered, null);
+    try rig.ticks(2);
+    try testing.expect(!w.has_fact(ada, cheered, null));
 }

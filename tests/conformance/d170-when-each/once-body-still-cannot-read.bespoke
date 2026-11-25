@@ -1,0 +1,8 @@
+# A once 'when' rule fires once however many rows match, so its body has no row to read.
+# pins: D-170; D-161
+# expect error: WhenBodyVariable 8:18
+
+entity Sword
+relation Holds(who, thing)
+when Holds(who, Sword):
+  remember Holds(who, Sword)

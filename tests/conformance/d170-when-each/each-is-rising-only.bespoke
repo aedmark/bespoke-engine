@@ -1,0 +1,7 @@
+# 'when each' fires as rows start to hold; it does not follow 'stops being'.
+# pins: D-186
+# expect error: UnexpectedToken 6:6
+
+entity Lamp
+when each Lamp stops being Lit:
+  forget Lit(Lamp)

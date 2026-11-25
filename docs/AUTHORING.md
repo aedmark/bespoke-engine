@@ -499,5 +499,5 @@ A window host follows the loop documented on `host.Session`: poll an action, let
 
 These are recorded under Claims vs. code in [`ARCHITECTURE.md`](ARCHITECTURE.md):
 
-- A `when` rule's body cannot use its trigger's variables yet (D-161): `when Holds(who, Sword): remember Armed(who)` is a compile error. Name the entity in the body, or fire a cue whose handler takes it as a parameter.
+- A plain `when` rule fires once however many rows match, so its body cannot use its trigger's variables (D-161): `when Holds(who, Sword): remember Armed(who)` is a compile error. Write `when each Holds(who, Sword):` to fire once per row with `who` bound (D-170).
 - The stock window answers dialogue and typed commands, but clicking a person does not talk to them; type `talk to <name>`.

@@ -44,6 +44,10 @@ pub const CompiledWhenRule = struct {
     priority: u16,
     handler_pc: usize,
     edge: WhenEdge = .rising,
+    /// `when each` (D-170, D-186): fires per row; `owner_slot` is the variable of the first
+    /// clause's subject, whose bound entity runs the row's body.
+    each: bool = false,
+    owner_slot: ?u8 = null,
 };
 
 /// Where a cast member starts: the first mark of the scene that lists it (D-065). The program
@@ -971,11 +975,40 @@ pub const Codegen = struct {
             const entry_pc = mut_self.chunk.count();
             try mut_self.when_rule_entries.append(entry_pc);
 
-            mut_self.when_patterns = rule.trigger_patterns;
+            // A `when each` body reads its row (D-170): each trigger variable sits at its guard
+            // slot above the three unused argument places, as in a cue handler (D-161). A once
+            // rule's body still cannot read them.
+            var each_locals = std.StringHashMap(u8).init(mut_self.allocator);
+            defer each_locals.deinit();
+            var owner_slot: ?u8 = null;
+            if (rule.each) {
+                var it = var_map.iterator();
+                while (it.next()) |entry| try each_locals.put(entry.key_ptr.*, CUE_BINDING_BASE + entry.value_ptr.*);
+                if (clauses.items.len > 0) switch (clauses.items[0].subject) {
+                    .variable => |slot| owner_slot = slot,
+                    else => {},
+                };
+                var reads = false;
+                var names = each_locals.keyIterator();
+                while (names.next()) |name| {
+                    for (rule.body) |stmt| {
+                        if (mentions(stmt, name.*)) reads = true;
+                    }
+                }
+                if (reads) {
+                    _ = try mut_self.chunk.emit_op(.bind_cue_args);
+                    mut_self.locals = &each_locals;
+                }
+            } else {
+                mut_self.when_patterns = rule.trigger_patterns;
+            }
             defer mut_self.when_patterns = null;
+            defer mut_self.locals = null;
             if (rule.body.len > 0 and rule.body[0] == .interrupt_with) {
                 const iw = rule.body[0].interrupt_with;
                 target_entity = try mut_self.resolve_entity(iw.entity);
+                // The named target runs the body, whatever the row's first subject is.
+                owner_slot = null;
                 for (iw.body) |s| {
                     try mut_self.compile_stmt(s);
                 }
@@ -998,6 +1031,8 @@ pub const Codegen = struct {
                 .priority = priority,
                 .handler_pc = entry_pc,
                 .edge = rule.edge,
+                .each = rule.each,
+                .owner_slot = owner_slot,
             });
         }
 

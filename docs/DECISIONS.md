@@ -2309,6 +2309,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** A diagnostic in an included file reports that file's path; `CheckResult.file()` names it. Only a command-line compile reads includes; a package holds the expanded program. P48-15 builds it.
 
+## D-186 `when each` Is Rising Only, Runs New Rows in Name Order on Their First Subject, and Keeps Its Rows as Saved VM State (2026-11-24, status: accepted; P48-16, refines D-170)
+
+**Context.** D-170 added `when each <trigger>:`, firing once per matching row as it starts to hold, with the row's variables bound in the body and each row's flag saved. Building it left four choices: which edges take `each`, the order of rows that start together, which fiber runs a row's body, and where the rows' flags live. Fact-table order cannot order rows: forgetting a fact swaps the last row into its place.
+
+**Decision.** The maintainer chose on 2026-11-24:
+1. Only the rising form takes `each`; `when each ... stops being` and `when each X forgets` are compile errors in 1.0.
+2. Rows that start to hold on the same tick run in the order of their bound values' names, trigger variable by trigger variable.
+3. A row's body runs on its first trigger clause's subject, as the once form does with a constant subject: it interrupts that entity's routine, or starts a fiber owned by it; an `interrupt X with:` body names its own target.
+4. Each `each` rule keeps the bindings of its rows that hold now. Saves (format 5) and rewind snapshots carry them; a save holding more rows than the safety bound is refused. Once rules keep their one byte.
+
+**Alternatives:** falling and expiry edges too; ordering by entity ids; a fiber of its own per row; one `#` fact per row, which cannot hold more than two bound values.
+
+**Consequences.** A game that relies on several rows in one tick can say which runs first by naming. P48-16 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

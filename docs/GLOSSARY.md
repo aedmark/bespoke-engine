@@ -41,7 +41,7 @@ The words BeSpoke uses, in plain language, and which word to use where. This is 
 | routine | A character's script that runs over time: walk, wait, speak, repeat. It pauses with `wait` without stopping anything else | `routine`; runs as a fiber in the VM | fiber (an implementation word; fine in architecture docs) |
 | cue | Something that happened and that a script can answer: a player action such as `UsedOn`, or an event fired by a script | `on cue`, `fire_cue` | signal, event (in script docs) |
 | handler | The block of script that answers a cue | `on cue ...:` | callback |
-| rule | A `when` block that fires once on the tick its condition becomes true, and again only after it becomes false and true again | reactive rule, edge-triggered (D-010) | trigger (except "falling-edge trigger" in the spec) |
+| rule | A `when` block that fires once on the tick its condition becomes true, and again only after it becomes false and true again; a `when each` rule does this once per matching row, with the row bound (D-170) | reactive rule, edge-triggered (D-010) | trigger (except "falling-edge trigger" in the spec) |
 | arrival rule | A rule that fires when a character finishes walking to a mark | `when X arrives at M:` (D-036) | |
 | interrupt | A rule or cue pausing a routine to run other script; the routine resumes where it paused | `interrupt ... with` | |
 | agenda | A goal a character pursues on its own when its conditions hold, such as chasing the player | `agenda` (D-056) | |

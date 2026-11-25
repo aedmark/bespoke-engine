@@ -88,12 +88,15 @@ pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
 /// Version 33 appends named looks and parts after the player text (P48-11, D-181); versions 1
 /// through 32 load with none. Version 34 stores art as true-colour QOI streams (P48-12, D-166,
 /// D-182); versions 24 through 33 load their indexed art through the palette they carry.
+/// Version 37 appends, for each `when` rule, whether it is a `when each` rule and the variable
+/// whose entity runs its body (P48-16, D-170, D-186); versions 1 through 36 load every rule as
+/// a once rule.
 /// Version 36 appends the `rewinds reroll` flag after the tuning (P48-14, D-184); versions 1
 /// through 35 load with rewinds restoring the dice.
 /// Version 35 appends each axis's drift step and each dilemma's tiers and drift cap after the
 /// looks, and lets a hint tier pass 3 (P48-13, D-183); versions 1 through 34 load with the
 /// defaults.
-pub const PACKAGE_VERSION: u32 = 36;
+pub const PACKAGE_VERSION: u32 = 37;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
@@ -503,6 +506,8 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
     try write_art_looks(writer, compiled.art);
     try write_tuning(writer, compiled);
     try writer.writeByte(@intFromBool(compiled.rewinds_reroll));
+    try writer.writeInt(u32, @intCast(compiled.reactive_rules.items.len), .little);
+    for (compiled.reactive_rules.items) |r| try writer.writeAll(&.{ @intFromBool(r.each), r.owner_slot orelse NO_OWNER_SLOT });
     // Version 29: which build this is, for saves (D-162).
     try writer.writeInt(u32, compiled.save_version, .little);
     try writer.writeInt(u64, compiled.fingerprint, .little);
@@ -588,6 +593,27 @@ fn read_tuning(reader: anytype, axes: []value_mod.Axis, dilemmas: []dilemma_mod.
         // The drifts are owned by the declaration and were read as constants; the step is
         // the only field set here.
         for (@constCast(decl.dilemma.drifts)) |*drift| drift.step = value_mod.drift_step_of(axes, drift.axis);
+    }
+}
+
+const NO_OWNER_SLOT: u8 = 0xFF;
+
+/// Untrusted input: one entry per `when` rule already read. `each` is only on a rising rule,
+/// and an owner slot must be the variable the first clause's subject is (D-186).
+fn read_each_rules(reader: anytype, rules: []CompiledWhenRule) !void {
+    if (try reader.takeInt(u32, .little) != rules.len) return error.InvalidWhenEdge;
+    for (rules) |*rule| {
+        const bytes = try reader.takeArray(2);
+        if (bytes[0] > 1) return error.InvalidWhenEdge;
+        rule.each = bytes[0] == 1;
+        if (rule.each and rule.edge != .rising) return error.InvalidWhenEdge;
+        if (bytes[1] == NO_OWNER_SLOT) continue;
+        if (!rule.each or rule.clauses.len == 0) return error.InvalidWhenEdge;
+        switch (rule.clauses[0].subject) {
+            .variable => |slot| if (slot != bytes[1]) return error.InvalidWhenEdge,
+            else => return error.InvalidWhenEdge,
+        }
+        rule.owner_slot = bytes[1];
     }
 }
 
@@ -2329,6 +2355,7 @@ pub fn load_package(
         if (flag > 1) return error.InvalidProgramIdentity;
         rewinds_reroll = flag == 1;
     }
+    if (header.version >= 37) try read_each_rules(pr, reactive_rules.items);
     var save_version: u32 = 1;
     var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
     if (header.version >= 29) {
@@ -2577,7 +2604,7 @@ test "P15-02: package loader rejects unsupported version" {
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 36",
+        "unsupported .bspk format version 99; this engine supports versions 1 through 37",
         format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
     );
 }
@@ -2933,7 +2960,9 @@ const LOOK_TAIL: usize = 4 + 4 + TUNE_TAIL;
 /// The empty axis and dilemma tuning counts (version 35), after the looks.
 const TUNE_TAIL: usize = 4 + 4 + REROLL_TAIL;
 /// The `rewinds reroll` flag (version 36), after the tuning.
-const REROLL_TAIL: usize = 1;
+const REROLL_TAIL: usize = 1 + EACH_TAIL;
+/// The `when each` table's count (version 37), with no rules.
+const EACH_TAIL: usize = 4;
 /// The save version and fingerprint (version 29), present in every package.
 const IDENTITY_TAIL: usize = 4 + 8;
 
@@ -5058,9 +5087,38 @@ test "P48-14: a package carries 'rewinds reroll', and the version 36 fixture has
     // A flag byte other than 0 or 1 is refused.
     const bad = try testing.allocator.dupe(u8, fixture);
     defer testing.allocator.free(bad);
-    bad[bad.len - IDENTITY_TAIL - REROLL_TAIL] = 2;
-    reseal_for_test(bad, PACKAGE_VERSION);
+    // The version 36 fixture's flag is the byte before its identity.
+    bad[bad.len - IDENTITY_TAIL - 1] = 2;
+    reseal_for_test(bad, 36);
     try testing.expectError(error.InvalidProgramIdentity, load_for_test(bad));
+}
+
+test "P48-16: a package marks its 'when each' rules, and the version 37 fixture has one" {
+    const testing = std.testing;
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v37.bspk", testing.allocator, .limited(1024 * 1024));
+    defer testing.allocator.free(fixture);
+    try testing.expectEqual(@as(u32, 37), version_from_bytes(fixture).?);
+    var compiled = try load_for_test(fixture);
+    defer compiled.deinit();
+    try testing.expectEqual(@as(usize, 1), compiled.reactive_rules.items.len);
+    const rule = compiled.reactive_rules.items[0];
+    try testing.expect(rule.each);
+    try testing.expectEqual(@as(?u8, 0), rule.owner_slot);
+
+    // The table sits before the reroll flag's identity: its count, then each rule's two bytes.
+    // An owner slot no clause names, and `each` on a rule that is not rising, are refused.
+    const table = fixture.len - IDENTITY_TAIL - 2;
+    const cases = [_]struct { at: usize, byte: u8 }{
+        .{ .at = table + 1, .byte = 5 },
+        .{ .at = table, .byte = 2 },
+    };
+    for (cases) |case| {
+        const bad = try testing.allocator.dupe(u8, fixture);
+        defer testing.allocator.free(bad);
+        bad[case.at] = case.byte;
+        reseal_for_test(bad, 37);
+        try testing.expectError(error.InvalidWhenEdge, load_for_test(bad));
+    }
 }
 
 test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {

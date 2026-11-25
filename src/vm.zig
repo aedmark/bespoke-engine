@@ -84,6 +84,8 @@ pub const InterruptFrame = struct {
     sp: usize,
     state: FiberState,
     priority: u16 = 0,
+    /// The interrupted body's `local_base`, restored with it.
+    local_base: usize = 0,
 };
 
 pub const EmittedCue = struct {
@@ -109,7 +111,16 @@ pub const ReactiveRule = struct {
     handler_pc: usize,
     edge: ReactiveEdge = .rising,
     is_active: bool = false,
+    /// `when each` (D-170, D-186): the rule fires once per matching row, and `rows` holds the
+    /// bindings of the rows that hold now, which saves and snapshots carry. `owner_slot` is the
+    /// variable of the first clause's subject, whose bound entity runs the row's body.
+    each: bool = false,
+    owner_slot: ?u8 = null,
+    rows: std.ArrayListUnmanaged(world_mod.VariableBindings) = .empty,
 };
+
+/// The most rows one `when each` rule may hold, a bound on a save's untrusted count.
+pub const MAX_EACH_ROWS: usize = 65536;
 
 /// A dialogue choice pruned and validated by relational fact guards at balloon spawn time (P13-02, D-015).
 pub const PrunedChoice = struct {
@@ -134,6 +145,10 @@ pub const Fiber = struct {
     sp: usize,
     state: FiberState,
     active_priority: u16 = 0,
+    /// Where the running body's locals start on the stack (D-161): 0 for a handler started
+    /// with them, the routine's stack height for a `when each` body that interrupts it, so
+    /// `push_local` never reads the routine's own values (D-186).
+    local_base: usize = 0,
     is_hyper_temporal: bool = false,
     interrupt_stack: std.array_list.Managed(InterruptFrame),
 
@@ -232,8 +247,9 @@ pub const VM = struct {
         self.fibers.deinit();
         self.emitted_cues.deinit();
         self.pending_weaves.deinit();
-        for (self.reactive_rules.items) |r| {
+        for (self.reactive_rules.items) |*r| {
             self.allocator.free(r.clauses);
+            r.rows.deinit(self.allocator);
         }
         self.reactive_rules.deinit();
     }
@@ -327,6 +343,7 @@ pub const VM = struct {
                     .sp = f.sp,
                     .state = f.state,
                     .priority = f.active_priority,
+                    .local_base = f.local_base,
                 });
                 // Switch execution to interrupt handler with new priority
                 f.pc = handler_pc;
@@ -336,6 +353,80 @@ pub const VM = struct {
             }
         }
         return false;
+    }
+
+    /// `when each` (D-170, D-186): every row that matches now and did not match at the last
+    /// evaluation fires once, in the order of its bound values' names; `rows` becomes the set
+    /// that matches now, so a row that stops can start again. Returns the rows fired.
+    fn evaluate_each(self: *VM, rule: *ReactiveRule) !usize {
+        const found = try self.world.find_all_matches(self.allocator, rule.clauses);
+        defer self.allocator.free(found);
+        var now = std.ArrayListUnmanaged(world_mod.VariableBindings).empty;
+        errdefer now.deinit(self.allocator);
+        var started = std.ArrayListUnmanaged(world_mod.VariableBindings).empty;
+        defer started.deinit(self.allocator);
+        for (found) |row| {
+            if (contains_row(now.items, row)) continue;
+            if (now.items.len == MAX_EACH_ROWS) return error.TooManyEachRows;
+            try now.append(self.allocator, row);
+            if (!contains_row(rule.rows.items, row)) try started.append(self.allocator, row);
+        }
+        rule.rows.deinit(self.allocator);
+        rule.rows = now;
+        std.sort.insertion(world_mod.VariableBindings, started.items, self.world, row_before);
+        for (started.items) |row| try self.fire_each_row(rule, row);
+        return started.items.len;
+    }
+
+    fn contains_row(rows: []const world_mod.VariableBindings, row: world_mod.VariableBindings) bool {
+        for (rows) |r| if (std.mem.eql(?u32, &r.values, &row.values)) return true;
+        return false;
+    }
+
+    /// Name order, slot by slot: a value that names an entity sorts by that name, any other
+    /// by its number, and numbers before names (D-186).
+    fn row_before(world: *const World, a: world_mod.VariableBindings, b: world_mod.VariableBindings) bool {
+        for (a.values, b.values) |va, vb| {
+            const x = va orelse 0;
+            const y = vb orelse 0;
+            if (x == y) continue;
+            const nx = if (x == 0) null else world.get_entity_name(EntityId.from_int(x));
+            const ny = if (y == 0) null else world.get_entity_name(EntityId.from_int(y));
+            if (nx != null and ny != null) {
+                const order = std.mem.order(u8, nx.?, ny.?);
+                if (order != .eq) return order == .lt;
+                continue;
+            }
+            if (nx == null and ny == null) return x < y;
+            return nx == null;
+        }
+        return false;
+    }
+
+    /// Runs a row's body on the entity it names first (D-186): as an interrupt of that
+    /// entity's routine when it has one, else as a fiber it owns. A body that reads the row
+    /// starts after its `bind_cue_args`, with the row's values above the routine's stack.
+    fn fire_each_row(self: *VM, rule: *const ReactiveRule, row: world_mod.VariableBindings) !void {
+        const owner = if (rule.owner_slot) |slot| EntityId.from_int(row.get(slot) orelse 0) else rule.target_entity;
+        var found = CueArguments{ .pc = rule.handler_pc };
+        for (row.values, &found.bindings) |v, *out| out.* = v orelse 0;
+        const code = self.chunk.code.items;
+        const binds = rule.handler_pc < code.len and code[rule.handler_pc] == @intFromEnum(Opcode.bind_cue_args);
+        for (self.fibers.items) |*f| {
+            if (f.owner != owner or f.state == .halted) continue;
+            if (rule.priority < f.active_priority and f.interrupt_stack.items.len > 0) return;
+            try f.interrupt_stack.append(.{ .pc = f.pc, .sp = f.sp, .state = f.state, .priority = f.active_priority, .local_base = f.local_base });
+            f.pc = if (binds) rule.handler_pc + 1 else rule.handler_pc;
+            f.state = .{ .ready = {} };
+            f.active_priority = rule.priority;
+            if (binds) {
+                f.local_base = f.sp;
+                for (found.args) |v| try f.push(v);
+                for (found.bindings) |v| try f.push(v);
+            }
+            return;
+        }
+        _ = try self.spawn_cue_handler(owner, found);
     }
 
     /// Preempts an entity's active fiber with default priority (0).
@@ -458,6 +549,10 @@ pub const VM = struct {
         while (i < self.reactive_rules.items.len) : (i += 1) {
             var rule = &self.reactive_rules.items[i];
             if (rule.edge == .on_expire or rule.edge == .on_arrive) continue;
+            if (rule.each) {
+                fired_count += try self.evaluate_each(rule);
+                continue;
+            }
 
             const matches = self.world.has_multi_match(rule.clauses);
 
@@ -509,6 +604,9 @@ pub const VM = struct {
                 .on_arrive => .on_arrive,
             };
             _ = try self.add_reactive_rule_edge(r.target_entity, r.clauses, r.priority, r.handler_pc, edge);
+            const rule = &self.reactive_rules.items[self.reactive_rules.items.len - 1];
+            rule.each = r.each;
+            rule.owner_slot = r.owner_slot;
         }
     }
 
@@ -962,7 +1060,7 @@ pub const VM = struct {
                 },
                 .push_local => {
                     // A `wait until` in a handler body may read the handler's locals (D-161).
-                    const index = code[pc];
+                    const index = fiber.local_base + code[pc];
                     pc += 1;
                     if (index >= fiber.sp) return error.MissingCueArguments;
                     temp_stack[temp_sp] = fiber.stack[index];
@@ -1074,7 +1172,7 @@ pub const VM = struct {
                 },
                 .push_local => {
                     // Only a handler started by `fire_cue` has locals beneath its stack (D-161).
-                    const index = code[f.pc];
+                    const index = f.local_base + code[f.pc];
                     f.pc += 1;
                     if (index >= f.sp) return error.MissingCueArguments;
                     try f.push(f.stack[index]);
@@ -1299,6 +1397,7 @@ pub const VM = struct {
                         f.sp = frame.sp;
                         f.state = frame.state;
                         f.active_priority = frame.priority;
+                        f.local_base = frame.local_base;
                     } else {
                         f.state = .{ .halted = {} };
                         f.active_priority = 0;
