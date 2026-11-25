@@ -1,0 +1,8 @@
+relation Investigated(who, place)
+agenda WarnOff:
+  actor Keeper
+  target Hero
+  priority 4
+  cooldown 12
+  requires Investigated(Hero, _)
+  unless Warned(Hero)

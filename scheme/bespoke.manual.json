@@ -465,7 +465,7 @@
             "Each set attribute is a CellFlammable, CellLiquid, or CellBlocking fact on the grid entity whose value is the cell index y*W+x; empty cells have no facts.",
             "A grid script declaration compiles into CompiledProgram.grids; host.initialize_subsystems seeds the layout once and marks it with GridSeeded.",
             "place moves a mark to a cell centre and refreshes its edge costs; SpatialSystem.waypoint_blocked treats a blocking cell like WaypointBlocked for world-aware walks.",
-            ".bspk version 7 stores grids; versions 1 through 6 load without them.",
+            "The package stores grids.",
             "Rates burn, spread, dissipate, and flow drive grid.step each host.tick: fires are CellBurning facts whose TTL is their remaining burn, smoke is CellSmoke refreshed by each fire, and liquid floods non-blocking neighbours and douses fire.",
             "All ignitions and floods are decided from the start-of-step state before any applies; agents then carry InBurningCell, InSmokeCell, and InLiquidCell states that when rules react to on the next tick."
           ],
@@ -634,7 +634,7 @@
             "A frame is lowercase words with up to two <thing> slots; the engine provides frames for LooksAt, Uses, TalksTo, and WalksTo, and script command lines add more.",
             "An entity's name splits into words at capitals and separators, and alias lines add words; a noun matches when all its words belong to the entity.",
             "Scope.gather collects agents, hotspots, and marks in the actor's room plus what it Carries or holds InInventory; resolve reports one match, several, or none.",
-            ".bspk version 10 stores command and alias declarations.",
+            "The package stores command and alias declarations.",
             "command.Interpreter matches script frames before the defaults, resolves each slot in scope, and keeps one open Which do you mean question that a following bare noun answers.",
             "host.run_command fires the matched cue, walks for WalksTo, and returns a reply when a word is unknown, a sentence or noun does not fit, or no handler answers (Nothing happens).",
             "DisplayWindow.enable_command_bar shows a bar above the verb row: Enter focuses it, every key is then text, Esc leaves, Up and Down recall history, and Tab completes from host.command_words; submitted lines arrive as UserAction.typed_command."
@@ -687,7 +687,7 @@
             "decision.step runs in host.tick after agendas: it sums the offered options whose clauses hold, picks the highest total, and keeps the earlier option on an equal total.",
             "The choice is the set fact Chose(Decision, Option) and the stage is the property DecisionState(Decision, Idle | Done), so a save, rewind, or branch carries the point without a snapshot; a falling trigger re-arms the decision.",
             "The engine fires the cue with the actor and the winning option. A handler names the option as an exact argument or takes it as a parameter its body reads (D-161).",
-            ".bspk version 18 stores decisions."
+            "The package stores decisions."
           ],
           "why": "Agendas cover pursuit and interception only. A scoring table lets every seat act from its own hand, and because scoring reads facts only, the same state always makes the same choice under replay and rewind.",
           "why_basis": "recorded",
@@ -1022,7 +1022,7 @@
             "@0 sounds like the engine's grid music; @1 to @7 are organ, pluck, long fade, swell, staccato, tremolo, and soft pad, released at each note's written length. v0 to v15 scale volume.",
             "scene lines seed SceneScore(Scene, Score) facts; play score sets the PlayingScore property of Music and stop score removes it. The frame resolves the override, else the scene default, to current_score.",
             "host.ScriptSoundtrack turns a program's scores into a soundtrack whose tracks are named after them; the audio bridge plays the track whose name the frame gives. bespoke run registers it and, headless, prints each change of music.",
-            "Packages (version 11) store the MML text and re-parse it on load."
+            "Packages store the MML text and re-parse it on load."
           ],
           "why": "Music that follows the story belongs in the script, beside the scenes and rules that cause it. Keeping the choice in World facts makes save, rewind, and temporal branches restore the music with everything else, and integer time keeps four parts from drifting.",
           "why_basis": "recorded",
@@ -1078,7 +1078,7 @@
             "Canvas.draw_image paints each art pixel as a 4x4 block, skips transparent pixels, clips at the edges, and records its opaque bounds for the band check, on the same path for the desktop window and the browser.",
             "Sprite.frame_at picks the frame from the display's 60 Hz animation clock and the entity's heading; animation is never written to the world, so saves, rewinds, and goldens are unaffected by it.",
             "Hit tests take the art: a sprite is hit anywhere in its frame or on its spot's disc, and an area anywhere in its rectangle; box outlines are drawn only in the debug overlay.",
-            "Packages carry images (version 24), backdrops and sprites (version 25), areas (version 26), and looks and parts (version 33). Since version 34 each image is a standard QOI stream with no palette (src/qoi.zig), which took The Lamplighter's Round's package from 127,001 to 33,989 bytes; versions 24 to 33 load their indexed art as the colours their palette names."
+            "Packages carry images, as standard QOI streams with no palette (src/qoi.zig), and their backdrops, sprites, areas, looks, and parts; QOI took The Lamplighter's Round's package from 127,001 to 33,989 bytes."
           ],
           "why": "Art belongs beside the scenes and props it draws, so a game is one script and its files rather than a host full of drawing code. Exact colours keep the import deterministic, a palette is a style an author chooses rather than a limit the engine imposes, QOI keeps art small with a decoder small enough for the browser module, and keeping animation out of the world keeps time travel and goldens exact.",
           "why_basis": "recorded",
@@ -1353,7 +1353,7 @@
             "Aware members near a crime scene while the culprit is there record Witnessed, KnowsRumor, and expiring Grudge facts.",
             "Rumors spread one hop per tick between co-located members who are friends, or when the speaker is a witness or broadcaster, or the listener is the enforcer.",
             "The enforcer issues a warrant with a priority fiber interrupt, pursues, arrests on contact, recovers stolen goods, and escorts the culprit to the holding place. All of this is World facts, so rewind and saves cover it.",
-            "CompiledProgram owns society declarations in source order; .bspk format version 4 serializes them and validates their member, waypoint, and entity references."
+            "CompiledProgram owns society declarations in source order; The package serializes them and validates their member, waypoint, and entity references."
           ],
           "why": "Shows that the flat relational fact store, property auto-overwrite, and priority interrupt spine support unscripted systemic emergence for any cast and setting, with full time-travel scrubbing and disk save compatibility.",
           "why_basis": "recorded",
@@ -1383,7 +1383,7 @@
             "Duel.concede lets a fighter give up its turn to attack (D-082): the opponent scores, the fighter's fallback rotation advances, and nobody learns anything.",
             "A fighter with no learned reply is offered one fallback line. The fighter's DuelFumbles count, a fact, picks the line, so successive fumbles rotate through the list and a rewind restores the rotation (D-076).",
             "The Brackwater Barbs proof opens each round as a runtime-generated dialogue set from Duel.replies, resolves the selected reply through Duel.resolve_round, takes turns through the proof's Bout (whoever wins a round attacks next; a master always attacks), moves an attacking opponent to Duel.next_challenge, fires the script's WinsDuel cue for the victory line, and stores the active opponent, barb, and turn as facts so a rewind restores the round (P32-23, D-046).",
-            ".bspk format version 4 serializes complete duel declarations; versions 1 through 3 load with an empty declaration table. Version 14 stores up to eight fallback lines; earlier packages hold at most one."
+            "The package serializes complete duel declarations, with up to eight fallback lines."
           ],
           "why": "Game-facing configuration belongs in distributable .bespoke source. The mechanic remains generic while each game controls its dialogue, tiers, vocabulary, and mood cadence.",
           "why_basis": "recorded",

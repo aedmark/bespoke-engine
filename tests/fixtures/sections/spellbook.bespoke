@@ -1,0 +1,9 @@
+entity FixtureHero
+relation Ready(subject)
+spellbook FixtureGrimoire:
+  power FixturePowerA, FixturePowerB
+  element FixtureElementA, FixtureElementB
+  form FixtureFormA, FixtureFormB
+  spell FixtureSpell: FixturePowerB, FixtureElementA, FixtureFormA
+routine Idle(FixtureHero):
+  wait 1 ticks

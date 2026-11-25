@@ -1,0 +1,8 @@
+degradation TestProfile:
+  substance TestReagent
+  stage Sound 3
+  stage Etched 2
+  stage Failed 0
+  vessel TestVial 8 5 Sound
+  spill 2
+  relations HoldsReagent ReagentVolume VialState ReagentExposure VialFailedAt

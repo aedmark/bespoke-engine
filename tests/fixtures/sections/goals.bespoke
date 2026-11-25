@@ -1,0 +1,14 @@
+entity Hero, TelescopeLog
+relation Carries(holder, item)
+relation Read(who, item)
+scene: PlateArchive
+props: ExposureSlip
+marks: Archive
+goal RecoverThePlate:
+  need TakeTheSlip:
+    met Carries(Hero, ExposureSlip)
+    room Archive
+    hint 2 "Your notebook names the slip."
+  need ReadTheLog after TakeTheSlip:
+    met Read(Hero, TelescopeLog)
+    room Archive

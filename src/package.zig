@@ -35,107 +35,118 @@ const CompiledProgram = codegen_mod.CompiledProgram;
 const CompiledWhenRule = codegen_mod.CompiledWhenRule;
 const WhenEdge = parser_mod.WhenEdge;
 
-/// 4-byte magic for compiled BeSpoke binary asset packages (P15-02, D-018).
-pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' }; // BeSpoke Binary
-/// Version 2 appends the draft note table to the payload tail (P22-01, D-029). Version 1
-/// packages predate drafts and still load, with an empty draft table.
-/// Version 3 adds the arrival edge (byte 3) to reactive rules (P32-18, D-036); the layout is
-/// unchanged, so versions 1 and 2 still load. Version 4 appends script-declared society and
-/// duel configuration tables (P32-22, P32-24); versions 1 through 3 load empty tables. Version 5
-/// appends degradation profiles (P23-01); versions 1 through 4 load an empty profile table.
-/// Version 6 adds per-moving-tick spill volume to each profile (P23-02); version 5 profiles load
-/// with spill disabled. Version 7 appends grid overlays with their initial cell layouts
-/// (P25-01, D-054); versions 1 through 6 load with no grids. Version 8 adds the `burning` and
-/// `smoke` attributes and four automata rates per grid (P25-02, D-055); version 7 grids load
-/// with every rule off. Version 9 appends agendas (P33-01, D-056); versions 1 through 8 load
-/// with none. Version 10 appends typed-command frames and noun aliases (P26-01, D-057);
-/// versions 1 through 9 load with neither. Version 11 appends script scores as MML text with
-/// their scenes (P28-03, D-062); versions 1 through 10 load with none. Version 12 appends each
-/// cast member's starting mark (D-065); versions 1 through 11 load with none, so a host places
-/// nobody for them.
-/// Version 13 appends cue handler `where` guards (D-072); versions 1 through 12 load with none,
-/// so every handler runs as it did unguarded.
-/// Version 14 lets a duel declare up to `duel.MAX_FALLBACKS` fallback lines (D-076); earlier
-/// versions wrote 0 or 1, which the same count byte reads unchanged.
-/// Version 15 appends goals with their needs and authored hints (P44-01, D-134); versions 1
-/// through 14 load with no goals. Version 16 adds the aggregate condition opcodes (P44-02);
-/// versions 1 through 15 hold bytecode that cannot contain them, so they load unchanged.
-/// Version 17 appends spellbooks with their words and combinations (P44-04); versions 1
-/// through 16 load with no spellbook. Version 18 appends decisions with their trigger lines and
-/// scored options (P44-05); versions 1 through 17 load with no decisions. Version 19 appends value
-/// axes with their poles (P45-01, D-144); versions 1 through 18 load with none. Version 20 appends
-/// each character's red lines (P45-02, D-145); versions 1 through 19 load with none. Version 21
-/// appends dilemmas with their axes, leans, and tier responses (P45-03, D-146); versions 1 through
-/// 20 load with none. Version 22 appends each dilemma's drift lines (P45-04, D-148); versions 1
-/// through 21 load dilemmas without drift. Version 23 appends each dilemma's appeal lines (P45-05,
-/// D-149); versions 1 through 22 load dilemmas that no appeal moves. Version 24 appends the
-/// game's palette and indexed images (P46-01, D-152, D-153); versions 1 through 23 load with no
-/// art, which is a game drawn by code. Version 25 appends what the art is attached to: scene
-/// backdrops and the sprites of people and props with their animations (P46-03, D-155);
-/// versions 1 through 24 load with none. Version 26 appends prop areas, rectangles on the art
-/// that click like the prop (P46-05, D-158); versions 1 through 25 load with none. Version 27
-/// appends the chain of cue handlers that share a signature (P48-01, D-160); versions 1 through
-/// 26 load with one handler per signature, which is how they behaved. Version 28 adds the
-/// `bind_cue_args` and `push_local` opcodes, with which a cue handler body reads its
-/// arguments (P48-02, D-161); versions 1 through 27 hold bytecode that cannot contain them and
-/// load unchanged. Version 29 appends the program's save version and fingerprint (P48-08,
-/// D-162); for versions 1 through 28 the loader takes save version 1 and computes the
-/// fingerprint as the compiler does. Version 30 stores each relation's object kind in the high
-/// bits of its type byte (P48-08, D-178); versions 1 through 29 load with every kind unknown.
-/// Version 31 appends display names and phrase overrides before the program identity (P48-09,
-/// D-179); versions 1 through 30 load with none. Version 32 names engine bookkeeping with a
-/// leading `#` (P48-10, D-180); older packages have those names translated as they load.
-/// Version 33 appends named looks and parts after the player text (P48-11, D-181); versions 1
-/// through 32 load with none. Version 34 stores art as true-colour QOI streams (P48-12, D-166,
-/// D-182); versions 24 through 33 load their indexed art through the palette they carry.
-/// Version 37 appends, for each `when` rule, whether it is a `when each` rule and the variable
-/// whose entity runs its body (P48-16, D-170, D-186); versions 1 through 36 load every rule as
-/// a once rule.
-/// Version 36 appends the `rewinds reroll` flag after the tuning (P48-14, D-184); versions 1
-/// through 35 load with rewinds restoring the dice.
-/// Version 35 appends each axis's drift step and each dilemma's tiers and drift cap after the
-/// looks, and lets a hint tier pass 3 (P48-13, D-183); versions 1 through 34 load with the
-/// defaults.
-pub const PACKAGE_VERSION: u32 = 37;
+/// The 1.0 package format (P48-17, D-172, D-174, D-187): a 16-byte header (`BSP1`, the format
+/// number, a CRC32 of the payload, and the payload's length), then sections. Each section is a
+/// four-character tag, a flags byte whose bit 0 says a reader must understand it, its length,
+/// and its bytes. A reader refuses an unknown required section and skips an unknown optional
+/// one, so a 1.x addition is a new section rather than a new format; every 1.0 section is
+/// required. A package writes only the sections its program uses, which is also how a browser
+/// build knows which readers to link (`sections_in`). Every section is read through its own
+/// bounded reader and must be consumed exactly.
+pub const PACKAGE_MAGIC = [4]u8{ 'B', 'S', 'P', '1' };
+/// The magic of packages written before 1.0, which 1.0 does not read (D-174).
+pub const PRE_1_0_MAGIC = [4]u8{ 'B', 'S', 'P', 'B' };
+pub const PACKAGE_FORMAT: u32 = 1;
 pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
-pub const MIN_PACKAGE_VERSION: u32 = 1;
 /// Upper bound on cast entries a package may declare; a larger count is corrupt input.
 const MAX_CAST: u32 = 4096;
+/// The most display names a package may hold; a larger count is corrupt input.
+const MAX_DISPLAY_NAMES: usize = 4096;
 
 pub const PackageHeader = extern struct {
     magic: [4]u8 = PACKAGE_MAGIC,
-    version: u32 = PACKAGE_VERSION,
+    format: u32 = PACKAGE_FORMAT,
     crc32: u32 = 0,
     payload_size: u32 = 0,
-    entity_count: u32 = 0,
-    relation_count: u32 = 0,
-    waypoint_count: u32 = 0,
-    edge_count: u32 = 0,
-    hotspot_count: u32 = 0,
-    bytecode_len: u32 = 0,
-    routine_count: u32 = 0,
-    when_rule_count: u32 = 0,
-    cue_count: u32 = 0,
-    reactive_rule_count: u32 = 0,
-    initial_entry: i64 = -1,
 };
 
-/// Formats the actionable diagnostic shown when a package's schema is outside the range this
-/// engine can read (P38-02, D-106). The error union stays stable for API callers; the message
-/// carries the file's version and the complete supported range.
-pub fn format_unsupported_version(buf: []u8, found: u32) []const u8 {
-    return std.fmt.bufPrint(buf, "unsupported .bspk format version {d}; this engine supports versions {d} through {d}", .{
-        found,
-        MIN_PACKAGE_VERSION,
-        PACKAGE_VERSION,
-    }) catch "unsupported .bspk format version";
+/// The parts of a program, in the order a reader takes them: each later one may refer to an
+/// earlier one (an agenda to entities, a guard to a cue handler, a dilemma to axes).
+pub const Section = enum(u8) {
+    names,
+    places,
+    code,
+    rules,
+    drafts,
+    societies,
+    duels,
+    degradations,
+    grids,
+    agendas,
+    commands,
+    scores,
+    cast,
+    guards,
+    goals,
+    spellbooks,
+    decisions,
+    axes,
+    red_lines,
+    dilemmas,
+    images,
+    art,
+    text,
+
+    pub fn tag(self: Section) [4]u8 {
+        return SECTION_TAGS[@intFromEnum(self)];
+    }
+
+    pub fn from_tag(t: [4]u8) ?Section {
+        for (SECTION_TAGS, 0..) |known, k| if (std.mem.eql(u8, &known, &t)) return @enumFromInt(k);
+        return null;
+    }
+};
+
+pub const SECTION_TAGS = [_][4]u8{
+    "NAME".*, "PLAC".*, "CODE".*, "RULE".*, "DRFT".*, "SOCI".*, "DUEL".*, "DGRD".*,
+    "GRID".*, "AGND".*, "CMND".*, "SCOR".*, "CAST".*, "GURD".*, "GOAL".*, "SPEL".*,
+    "DCSN".*, "AXIS".*, "REDL".*, "DLMA".*, "IMGS".*, "ARTB".*, "TEXT".*,
+};
+
+comptime {
+    if (SECTION_TAGS.len != @typeInfo(Section).@"enum".field_names.len) @compileError("one tag per section");
 }
 
-/// Reads only the version field from an in-memory package envelope. The full loader remains the
-/// authority for magic, checksum, bounds, and payload validation.
+pub const SectionSet = std.EnumSet(Section);
+pub const ALL_SECTIONS = SectionSet.full;
+/// Flags bit 0: a reader that does not know the section must refuse the package.
+pub const SECTION_REQUIRED: u8 = 1;
+const SECTION_HEADER_LEN = 4 + 1 + 4;
+
+/// The diagnostic for a package this engine cannot read: one from before 1.0 (D-174), or a
+/// format newer than it knows.
+pub fn format_unsupported_version(buf: []u8, found: u32) []const u8 {
+    return std.fmt.bufPrint(buf, "unsupported .bspk format {d}; this engine reads format {d}", .{ found, PACKAGE_FORMAT }) catch "unsupported .bspk format";
+}
+
+pub const PRE_1_0_MESSAGE = "this package was built by a BeSpoke before 1.0, which 1.0 does not read; rebuild it from its script with `bespoke compile`";
+
+/// The format number of an in-memory package, or null when it is not a 1.0 package. The
+/// loader remains the authority for the checksum, bounds, and sections.
 pub fn version_from_bytes(bytes: []const u8) ?u32 {
     if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], &PACKAGE_MAGIC)) return null;
     return std.mem.readInt(u32, bytes[4..8], .little);
+}
+
+pub fn is_pre_1_0(bytes: []const u8) bool {
+    return bytes.len >= 4 and std.mem.eql(u8, bytes[0..4], &PRE_1_0_MAGIC);
+}
+
+/// The sections a package holds, read when the module is built from bytes it embeds, so a
+/// browser build links only the readers its game needs (D-172, D-187). A package this cannot
+/// read is a compile error.
+pub fn sections_in(comptime bytes: []const u8) SectionSet {
+    @setEvalBranchQuota(100_000);
+    if (bytes.len < @sizeOf(PackageHeader) or !std.mem.eql(u8, bytes[0..4], &PACKAGE_MAGIC)) @compileError("not a 1.0 package");
+    var set = SectionSet.empty;
+    var at: usize = @sizeOf(PackageHeader);
+    while (at + SECTION_HEADER_LEN <= bytes.len) {
+        const t: [4]u8 = bytes[at..][0..4].*;
+        const len = std.mem.readInt(u32, bytes[at + 5 ..][0..4], .little);
+        if (Section.from_tag(t)) |known| set.insert(known);
+        at += SECTION_HEADER_LEN + len;
+    }
+    return set;
 }
 
 fn write_str(writer: anytype, str: []const u8) !void {
@@ -168,7 +179,7 @@ fn write_optional_waypoint(writer: anytype, value: ?spatial_mod.WaypointId) !voi
     try writer.writeInt(i32, if (value) |v| @intCast(v) else -1, .little);
 }
 
-fn write_program_declarations(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+fn write_societies(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.societies.items.len), .little);
     for (compiled.societies.items) |decl| {
         const config = decl.config;
@@ -260,6 +271,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
+}
+
+fn write_duels(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.duels.items.len), .little);
     for (compiled.duels.items) |decl| {
         try writer.writeInt(u32, @intCast(decl.config.pairs.len), .little);
@@ -270,8 +284,6 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeByte(@intCast(pair.variants.len));
             for (pair.variants) |variant| try write_text_ref(world, writer, variant);
         }
-        // Version 14 reads this byte as a line count; earlier versions wrote 0 or 1 here, which
-        // reads the same, so older packages load unchanged (D-076).
         try writer.writeByte(@intCast(decl.config.fallbacks.len));
         for (decl.config.fallbacks) |line| try write_text_ref(world, writer, line);
         try writer.writeInt(i64, if (decl.config.win_at) |value| @intCast(value) else -1, .little);
@@ -293,6 +305,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
+}
+
+fn write_degradations(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.degradations.items.len), .little);
     for (compiled.degradations.items) |decl| {
         const config = decl.config;
@@ -314,6 +329,10 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for ([_][]const u8{ r.contains, r.volume, r.stage, r.exposure, r.failed_at }) |name| try write_text_ref(world, writer, name);
     }
 
+}
+
+fn write_grids(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.grids.items.len), .little);
     for (compiled.grids.items) |decl| {
         const grid = decl.grid;
@@ -333,6 +352,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for ([_]u32{ r.burn_ticks, r.spread_ticks, r.dissipate_ticks, r.flow_ticks }) |rate| try writer.writeInt(u32, rate, .little);
     }
 
+}
+
+fn write_agendas(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.agendas.items.len), .little);
     for (compiled.agendas.items) |decl| {
         const a = decl.agenda;
@@ -352,6 +374,10 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
+}
+
+fn write_commands(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.commands.items.len), .little);
     for (compiled.commands.items) |c| {
         try write_str(writer, c.cue);
@@ -364,6 +390,10 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for (a.phrases) |phrase| try write_str(writer, phrase);
     }
 
+}
+
+fn write_scores(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.scores.items.len), .little);
     for (compiled.scores.items) |score| {
         try write_str(writer, score.name);
@@ -372,12 +402,20 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for (score.parts) |text| try write_str(writer, text);
     }
 
+}
+
+fn write_cast(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.cast.items.len), .little);
     for (compiled.cast.items) |place| {
         try writer.writeInt(u32, place.actor.to_int(), .little);
         try writer.writeInt(u16, place.mark, .little);
     }
 
+}
+
+fn write_guards(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.cue_guards.items.len), .little);
     for (compiled.cue_guards.items) |guard| {
         try writer.writeInt(u32, @intCast(guard.handler_pc), .little);
@@ -386,6 +424,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for (guard.clauses) |clause| try write_pattern_clause(writer, clause);
     }
 
+}
+
+fn write_goals(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.goals.items.len), .little);
     for (compiled.goals.items) |decl| {
         try writer.writeInt(u32, decl.goal.entity.to_int(), .little);
@@ -407,6 +448,10 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
+}
+
+fn write_spellbooks(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.spellbooks.items.len), .little);
     for (compiled.spellbooks.items) |decl| {
         try writer.writeInt(u32, decl.book.entity.to_int(), .little);
@@ -423,6 +468,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
+}
+
+fn write_decisions(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.decisions.items.len), .little);
     for (compiled.decisions.items) |decl| {
         const decision = decl.decision;
@@ -442,8 +490,10 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         }
     }
 
-    try write_axes(writer, compiled);
+}
 
+fn write_red_lines(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
+    _ = world;
     try writer.writeInt(u32, @intCast(compiled.red_lines.items.len), .little);
     for (compiled.red_lines.items) |decl| {
         try writer.writeInt(u32, decl.red_lines.actor.to_int(), .little);
@@ -451,6 +501,9 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
         for (decl.red_lines.options) |option| try writer.writeInt(u32, option.to_int(), .little);
     }
 
+}
+
+fn write_dilemmas(world: *const World, writer: anytype, compiled: *const CompiledProgram) !void {
     try writer.writeInt(u32, @intCast(compiled.dilemmas.items.len), .little);
     for (compiled.dilemmas.items) |decl| {
         const d = decl.dilemma;
@@ -470,47 +523,22 @@ fn write_program_declarations(world: *const World, writer: anytype, compiled: *c
             try writer.writeInt(u32, response.line.to_int(), .little);
             try writer.writeInt(u32, response.action.to_int(), .little);
         }
-    }
-
-    // Version 22: drift lines, one group per dilemma in the same order, so the version 21
-    // dilemma records above stay byte-for-byte what a version 21 reader expects.
-    for (compiled.dilemmas.items) |decl| {
-        try writer.writeByte(@intCast(decl.dilemma.drifts.len));
-        for (decl.dilemma.drifts) |drift| {
+        try writer.writeByte(@intCast(d.drifts.len));
+        for (d.drifts) |drift| {
             try writer.writeInt(u16, drift.axis.to_int(), .little);
             try writer.writeInt(i32, drift.points, .little);
             try write_decision_clause(world, writer, drift.clause);
         }
-    }
-
-    // Version 23: appeal lines, one group per dilemma in the same order.
-    for (compiled.dilemmas.items) |decl| {
-        try writer.writeByte(@intCast(decl.dilemma.appeals.len));
-        for (decl.dilemma.appeals) |appeal| {
+        try writer.writeByte(@intCast(d.appeals.len));
+        for (d.appeals) |appeal| {
             try writer.writeInt(u16, appeal.axis.to_int(), .little);
             try writer.writeInt(u32, appeal.entity.to_int(), .little);
             try writer.writeInt(i32, appeal.points, .little);
         }
+        // The author's numbers (D-183).
+        try writer.writeAll(&.{ d.strong_at, d.moderate_at, d.drift_cap });
     }
 
-    try write_art(compiled.chunk.allocator, writer, compiled.art);
-    try write_art_bindings(writer, compiled.art);
-    // Version 26: prop areas.
-    try writer.writeInt(u32, @intCast(compiled.art.areas.len), .little);
-    for (compiled.art.areas) |a| {
-        try writer.writeInt(u32, a.entity.to_int(), .little);
-        for ([_]u16{ a.x, a.y, a.w, a.h }) |v| try writer.writeInt(u16, v, .little);
-    }
-    try write_cue_chain(writer, compiled);
-    try write_player_text(world, writer);
-    try write_art_looks(writer, compiled.art);
-    try write_tuning(writer, compiled);
-    try writer.writeByte(@intFromBool(compiled.rewinds_reroll));
-    try writer.writeInt(u32, @intCast(compiled.reactive_rules.items.len), .little);
-    for (compiled.reactive_rules.items) |r| try writer.writeAll(&.{ @intFromBool(r.each), r.owner_slot orelse NO_OWNER_SLOT });
-    // Version 29: which build this is, for saves (D-162).
-    try writer.writeInt(u32, compiled.save_version, .little);
-    try writer.writeInt(u64, compiled.fingerprint, .little);
 }
 
 /// Version 27: each (handler pc, next handler pc) link of handlers sharing a signature
@@ -563,59 +591,7 @@ fn write_player_text(world: *const World, writer: anytype) !void {
 
 /// Version 33: named looks (name, image, animations as in the version 25 sprites), then parts
 /// (entity, host, offset) (P48-11, D-181).
-/// Version 35: the author's numbers (D-183). One drift step per axis and the tiers and drift
-/// cap per dilemma, in the order of the axis and dilemma tables, each count repeated so a
-/// mismatch is caught.
-fn write_tuning(writer: anytype, compiled: *const CompiledProgram) !void {
-    try writer.writeInt(u32, @intCast(compiled.axes.items.len), .little);
-    for (compiled.axes.items) |axis| try writer.writeByte(axis.drift_step);
-    try writer.writeInt(u32, @intCast(compiled.dilemmas.items.len), .little);
-    for (compiled.dilemmas.items) |decl| {
-        try writer.writeAll(&.{ decl.dilemma.strong_at, decl.dilemma.moderate_at, decl.dilemma.drift_cap });
-    }
-}
-
-/// Untrusted input: the counts must match the tables already read, and each number is checked
-/// by `value_mod.validate` and `dilemma_mod.validate`, which the caller runs again. Each drift
-/// line takes its axis's step, as the compiler does.
-fn read_tuning(reader: anytype, axes: []value_mod.Axis, dilemmas: []dilemma_mod.Declaration) !void {
-    if (try reader.takeInt(u32, .little) != axes.len) return error.InvalidAxisConfig;
-    for (axes) |*axis| {
-        axis.drift_step = try reader.takeByte();
-        if (axis.drift_step == 0 or axis.drift_step > value_mod.MAX_DRIFT_STEP) return error.InvalidAxisConfig;
-    }
-    if (try reader.takeInt(u32, .little) != dilemmas.len) return error.InvalidDilemmaConfig;
-    for (dilemmas) |*decl| {
-        const bytes = try reader.takeArray(3);
-        decl.dilemma.strong_at = bytes[0];
-        decl.dilemma.moderate_at = bytes[1];
-        decl.dilemma.drift_cap = bytes[2];
-        // The drifts are owned by the declaration and were read as constants; the step is
-        // the only field set here.
-        for (@constCast(decl.dilemma.drifts)) |*drift| drift.step = value_mod.drift_step_of(axes, drift.axis);
-    }
-}
-
 const NO_OWNER_SLOT: u8 = 0xFF;
-
-/// Untrusted input: one entry per `when` rule already read. `each` is only on a rising rule,
-/// and an owner slot must be the variable the first clause's subject is (D-186).
-fn read_each_rules(reader: anytype, rules: []CompiledWhenRule) !void {
-    if (try reader.takeInt(u32, .little) != rules.len) return error.InvalidWhenEdge;
-    for (rules) |*rule| {
-        const bytes = try reader.takeArray(2);
-        if (bytes[0] > 1) return error.InvalidWhenEdge;
-        rule.each = bytes[0] == 1;
-        if (rule.each and rule.edge != .rising) return error.InvalidWhenEdge;
-        if (bytes[1] == NO_OWNER_SLOT) continue;
-        if (!rule.each or rule.clauses.len == 0) return error.InvalidWhenEdge;
-        switch (rule.clauses[0].subject) {
-            .variable => |slot| if (slot != bytes[1]) return error.InvalidWhenEdge,
-            else => return error.InvalidWhenEdge,
-        }
-        rule.owner_slot = bytes[1];
-    }
-}
 
 fn write_art_looks(writer: anytype, art: image_mod.Art) !void {
     try writer.writeInt(u32, @intCast(art.looks.len), .little);
@@ -700,34 +676,6 @@ fn read_player_text(allocator: std.mem.Allocator, world: *World, reader: anytype
     }
 }
 
-/// Relations the engine named plainly before package version 32 and names with `#` since
-/// (D-180). The drift pair is matched by its suffix.
-const RENAMED_BOOKKEEPING = [_][]const u8{
-    "DialogueOpen", "DialoguePrompt", "DialogueFiber", "DialogueEnd", "DialogueRevision", "DialogueOption", "DialogueBody",
-    "DialogueAction", "DialogueChosen", "DialogueSpeaker", "DialogueBranchCount", "DialogueBranchText", "DialogueBranchActive",
-    "DialogueBranchFailure", "DilemmaWeighed", "DriftHolding", "PendingAppeal", "EvidenceSeen", "AgendaCooldown",
-    "GridSeeded", "SceneScore", "PlayingScore",
-};
-const MAX_RENAMED_NAME = 160;
-
-fn bookkeeping_name(name: []const u8, buf: []u8) []const u8 {
-    var bookkeeping = std.mem.endsWith(u8, name, " drift") or std.mem.endsWith(u8, name, " drift steps");
-    for (RENAMED_BOOKKEEPING) |old| {
-        if (std.mem.eql(u8, old, name)) bookkeeping = true;
-    }
-    if (!bookkeeping or name.len + 1 > buf.len) return name;
-    buf[0] = '#';
-    @memcpy(buf[1 .. name.len + 1], name);
-    return buf[0 .. name.len + 1];
-}
-
-/// Upper bound on display names a package may carry.
-const MAX_DISPLAY_NAMES: usize = 4096;
-
-/// Untrusted input (D-160). A link starts at a signature's first handler or at a handler an
-/// earlier link reached, and its next handler is in the bytecode, is no signature's first
-/// handler, and is reached by no other link; so every chain from a first handler visits
-/// distinct handlers and ends.
 fn read_cue_chain(
     allocator: std.mem.Allocator,
     reader: anytype,
@@ -848,12 +796,10 @@ fn read_art_bindings(allocator: std.mem.Allocator, world: *const World, reader: 
     };
 }
 
-/// Version 34: a zero where versions 24 to 33 kept the palette's colour count, so a package
-/// without art is the same bytes in every version from 24; then the image count and each
-/// image's name, sheet size, frame size, and QOI stream with its byte length (D-182).
+/// The image count, then each image's name, sheet size, frame size, and QOI stream with its
+/// byte length (D-182).
 fn write_art(allocator: std.mem.Allocator, writer: anytype, art: image_mod.Art) !void {
     try art.validate();
-    try writer.writeInt(u16, 0, .little);
     try writer.writeInt(u32, @intCast(art.images.len), .little);
     for (art.images) |image| {
         try write_str(writer, image.name);
@@ -868,23 +814,10 @@ fn write_art(allocator: std.mem.Allocator, writer: anytype, art: image_mod.Art) 
 /// Untrusted input. Each count and size is checked before the bytes behind it are read, so a
 /// corrupt package can ask for at most one bounded sheet at a time and 8 MiB of art in all,
 /// and `Art.validate` runs on the whole set before the program sees it. Errors name the first
-/// thing wrong (D-153, D-182). Versions 24 to 33 hold a palette and one index byte a pixel,
-/// which load as the colours they name, index 0 transparent.
-fn read_art(allocator: std.mem.Allocator, reader: anytype, version: u32) !image_mod.Art {
-    const colour_count = try reader.takeInt(u16, .little);
-    if (colour_count > image_mod.MAX_COLOURS) return error.InvalidImagePalette;
-    const indexed = version < 34;
-    if (!indexed and colour_count != 0) return error.InvalidImagePalette;
-    const palette = try allocator.alloc(image_mod.Colour, colour_count);
-    defer allocator.free(palette);
-    for (palette) |*colour| {
-        const rgb = try reader.takeArray(3);
-        colour.* = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] };
-    }
-
+/// thing wrong (D-153, D-182).
+fn read_art(allocator: std.mem.Allocator, reader: anytype) !image_mod.Art {
     const image_count = try reader.takeInt(u32, .little);
     if (image_count > image_mod.MAX_IMAGES) return error.InvalidImageCount;
-    if (indexed and image_count > 0 and colour_count == 0) return error.InvalidImagePalette;
     var images = try std.ArrayListUnmanaged(image_mod.Image).initCapacity(allocator, image_count);
     errdefer {
         for (images.items) |image| image_mod.free_image(allocator, image);
@@ -901,22 +834,14 @@ fn read_art(allocator: std.mem.Allocator, reader: anytype, version: u32) !image_
         const count = @as(usize, sides[0]) * sides[1];
         total += count;
         if (total > image_mod.MAX_ART_PIXELS) return error.InvalidImageSize;
-        const pixels = if (indexed) blk: {
-            const bytes = try reader.take(count);
-            try image_mod.validate_indices(bytes, colour_count);
-            const out = try allocator.alloc(image_mod.Pixel, count);
-            for (bytes, out) |index, *p| p.* = if (index == 0) image_mod.TRANSPARENT else image_mod.Pixel.opaque_colour(palette[index]);
-            break :blk out;
-        } else blk: {
-            // No stream codes a pixel in more than five bytes, so a longer length is corrupt.
-            const len = try reader.takeInt(u32, .little);
-            if (len > qoi_mod.HEADER_LEN + 8 + 5 * count) return error.InvalidImageData;
-            const stream = try reader.take(len);
-            break :blk qoi_mod.decode(allocator, stream, sides[0], sides[1]) catch |err| return switch (err) {
-                error.OutOfMemory => error.OutOfMemory,
-                error.QoiAlpha => error.InvalidImagePixel,
-                else => error.InvalidImageData,
-            };
+        // No stream codes a pixel in more than five bytes, so a longer length is corrupt.
+        const len = try reader.takeInt(u32, .little);
+        if (len > qoi_mod.HEADER_LEN + 8 + 5 * count) return error.InvalidImageData;
+        const stream = try reader.take(len);
+        const pixels = qoi_mod.decode(allocator, stream, sides[0], sides[1]) catch |err| return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            error.QoiAlpha => error.InvalidImagePixel,
+            else => error.InvalidImageData,
         };
         images.appendAssumeCapacity(.{
             .name = name,
@@ -968,7 +893,7 @@ fn read_drifts(allocator: std.mem.Allocator, world: *World, reader: anytype) ![]
 
 /// Untrusted input: counts are bounded and entities must exist; the caller validates the whole
 /// set against the loaded axes, decisions, and red lines, as the compiler does (P45-03).
-fn read_dilemma(allocator: std.mem.Allocator, world: *const World, reader: anytype) !dilemma_mod.Declaration {
+fn read_dilemma(allocator: std.mem.Allocator, world: *World, axes: []const value_mod.Axis, reader: anytype) !dilemma_mod.Declaration {
     const entity = try read_entity_ref(world, reader);
     const actor = try read_entity_ref(world, reader);
     const cue = try read_entity_ref(world, reader);
@@ -992,6 +917,13 @@ fn read_dilemma(allocator: std.mem.Allocator, world: *const World, reader: anyty
         .line = try read_entity_ref(world, reader),
         .action = try read_entity_ref(world, reader),
     };
+    const drifts = try read_drifts(allocator, world, reader);
+    errdefer allocator.free(drifts);
+    // Each drift line takes its axis's points per step, as the compiler does (D-183).
+    for (@constCast(drifts)) |*drift| drift.step = value_mod.drift_step_of(axes, drift.axis);
+    const appeals = try read_appeals(allocator, world, reader);
+    errdefer allocator.free(appeals);
+    const numbers = try reader.takeArray(3);
     return .{ .dilemma = .{
         .entity = entity,
         .actor = actor,
@@ -1001,6 +933,11 @@ fn read_dilemma(allocator: std.mem.Allocator, world: *const World, reader: anyty
         .counter = counter,
         .leans = leans,
         .responses = responses,
+        .drifts = drifts,
+        .appeals = appeals,
+        .strong_at = numbers[0],
+        .moderate_at = numbers[1],
+        .drift_cap = numbers[2],
     } };
 }
 
@@ -1022,6 +959,7 @@ fn write_axes(writer: anytype, compiled: *const CompiledProgram) !void {
     for (compiled.axes.items) |axis| {
         try writer.writeInt(u16, axis.relation.to_int(), .little);
         for (axis.poles) |pole| try writer.writeInt(u32, pole.to_int(), .little);
+        try writer.writeByte(axis.drift_step);
     }
 }
 
@@ -1035,6 +973,7 @@ fn read_axis(world: *World, reader: anytype) !value_mod.Axis {
     const axis = value_mod.Axis{
         .relation = relation,
         .poles = .{ try read_entity_ref(world, reader), try read_entity_ref(world, reader) },
+        .drift_step = try reader.takeByte(),
     };
     world.bound_relation(relation, value_mod.MIN, value_mod.MAX) catch return error.InvalidAxisConfig;
     value_mod.validate(world, axis) catch return error.InvalidAxisConfig;
@@ -1318,7 +1257,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
     } };
 }
 
-fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, version: u32) !duel_mod.Declaration {
+fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !duel_mod.Declaration {
     const pair_count = try reader.takeInt(u32, .little);
     if (pair_count == 0 or pair_count > duel_mod.MAX_PAIRS) return error.InvalidDuelConfig;
     const pairs = try allocator.alloc(duel_mod.Pair, pair_count);
@@ -1340,7 +1279,7 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
         built += 1;
     }
     const fallback_count = try reader.takeByte();
-    const fallback_limit: usize = if (version >= 14) duel_mod.MAX_FALLBACKS else 1;
+    const fallback_limit: usize = duel_mod.MAX_FALLBACKS;
     if (fallback_count > fallback_limit) return error.InvalidDuelConfig;
     const fallbacks = try allocator.alloc([]const u8, fallback_count);
     errdefer allocator.free(fallbacks);
@@ -1375,7 +1314,7 @@ fn read_duel_declaration(allocator: std.mem.Allocator, world: *const World, read
 /// Untrusted input: entity references, geometry, cell indexes, and attribute bytes are checked
 /// before anything reaches the World or SpatialSystem. The cell count is bounded by the grid
 /// area times the attribute count, the largest layout a valid declaration can hold.
-fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_rules: bool) !grid_mod.Declaration {
+fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !grid_mod.Declaration {
     const grid = grid_mod.Grid{
         .entity = try read_entity_ref(world, reader),
         .room = try read_entity_ref(world, reader),
@@ -1386,8 +1325,7 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
         .origin_y = try reader.takeInt(i32, .little),
     };
     grid_mod.validate_grid(grid) catch return error.InvalidGridConfig;
-    // Version 7 knew only flammable, liquid, and blocking; a later attribute byte there is corrupt.
-    const attribute_count: usize = if (has_rules) std.meta.tags(grid_mod.Attribute).len else 3;
+    const attribute_count: usize = std.meta.tags(grid_mod.Attribute).len;
     const cell_count = try reader.takeInt(u32, .little);
     if (cell_count > grid.cell_count() * attribute_count) return error.InvalidGridConfig;
     const cells = try allocator.alloc(grid_mod.InitialCell, cell_count);
@@ -1399,12 +1337,10 @@ fn read_grid_declaration(allocator: std.mem.Allocator, world: *const World, read
         cell.* = .{ .index = index, .attribute = @enumFromInt(raw) };
     }
     var rules = grid_mod.Rules{};
-    if (has_rules) {
-        rules.burn_ticks = try reader.takeInt(u32, .little);
-        rules.spread_ticks = try reader.takeInt(u32, .little);
-        rules.dissipate_ticks = try reader.takeInt(u32, .little);
-        rules.flow_ticks = try reader.takeInt(u32, .little);
-    }
+    rules.burn_ticks = try reader.takeInt(u32, .little);
+    rules.spread_ticks = try reader.takeInt(u32, .little);
+    rules.dissipate_ticks = try reader.takeInt(u32, .little);
+    rules.flow_ticks = try reader.takeInt(u32, .little);
     const declaration = grid_mod.Declaration{ .grid = grid, .cells = cells, .rules = rules };
     declaration.validate() catch return error.InvalidGridConfig;
     return declaration;
@@ -1658,9 +1594,9 @@ fn read_optional_entity_ref(world: *const World, reader: anytype) !?EntityId {
     return EntityId.from_int(raw);
 }
 
-fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype, has_spill: bool) !container_mod.Declaration {
+fn read_degradation_declaration(allocator: std.mem.Allocator, world: *const World, reader: anytype) !container_mod.Declaration {
     const substance = try read_entity_ref(world, reader);
-    const spill_per_moving_tick = if (has_spill) try reader.takeInt(u32, .little) else 0;
+    const spill_per_moving_tick = try reader.takeInt(u32, .little);
     const stage_count = try reader.takeByte();
     if (stage_count < 2 or stage_count > container_mod.MAX_STAGES) return error.InvalidContainerConfig;
     const stages = try allocator.alloc(container_mod.Stage, stage_count);
@@ -1708,132 +1644,208 @@ pub fn save_package(
 ) !void {
     var payload = std.array_list.Managed(u8).init(allocator);
     defer payload.deinit();
-    var pw_list = ListWriter.init(&payload);
-    const pw = &pw_list.writer;
-
-    // 1. Entity table
-    const entity_count: u32 = @intCast(world.entity_names.items.len);
-    for (world.entity_names.items) |name| {
-        try write_str(pw, name);
-    }
-
-    // 2. Relation table
-    const relation_count: u32 = @intCast(world.relation_meta.items.len);
-    for (world.relation_meta.items) |rel| {
-        try write_str(pw, rel.name);
-        // Version 30: the high four bits carry the relation's object kind (D-178).
-        try pw.writeByte(@as(u8, if (rel.rel_type == .property) 1 else 0) | (@as(u8, @intFromEnum(rel.object_kind)) << 4));
-    }
-
-    // 3. Spatial waypoints and edges
-    var waypoint_count: u32 = 0;
-    var edge_count: u32 = 0;
-    var hotspot_count: u32 = 0;
-
-    if (spatial) |sp| {
-        waypoint_count = @intCast(sp.graph.waypoints.items.len);
-        for (sp.graph.waypoints.items) |wp| {
-            try pw.writeInt(u32, wp.room.to_int(), .little);
-            try pw.writeInt(i32, wp.pos.x, .little);
-            try pw.writeInt(i32, wp.pos.y, .little);
-            try write_str(pw, wp.name);
-        }
-
-        edge_count = @intCast(sp.graph.edges.items.len);
-        for (sp.graph.edges.items) |edge| {
-            try pw.writeInt(u16, edge.from, .little);
-            try pw.writeInt(u16, edge.to, .little);
-            try pw.writeInt(u32, edge.cost, .little);
-        }
-
-        hotspot_count = @intCast(sp.hotspots.items.len);
-        for (sp.hotspots.items) |hs| {
-            try pw.writeInt(u32, hs.entity.to_int(), .little);
-            try pw.writeInt(u32, hs.room.to_int(), .little);
-            try pw.writeInt(i32, hs.pos.x, .little);
-            try pw.writeInt(i32, hs.pos.y, .little);
-            try pw.writeInt(u32, hs.radius, .little);
-            try write_str(pw, hs.name);
-            try write_str(pw, hs.examine_text);
+    var body = std.array_list.Managed(u8).init(allocator);
+    defer body.deinit();
+    inline for (comptime std.enums.values(Section)) |which| {
+        body.clearRetainingCapacity();
+        var bw = ListWriter.init(&body);
+        if (try write_section(which, &bw.writer, compiled, world, spatial)) {
+            var pw = ListWriter.init(&payload);
+            try pw.writer.writeAll(&which.tag());
+            try pw.writer.writeByte(SECTION_REQUIRED);
+            try pw.writer.writeInt(u32, @intCast(body.items.len), .little);
+            try pw.writer.writeAll(body.items);
         }
     }
-
-    // 4. Bytecode instructions
-    const bytecode_len: u32 = @intCast(compiled.chunk.code.items.len);
-    try pw.writeAll(compiled.chunk.code.items);
-
-    // 5. Routine entries
-    const routine_count: u32 = @intCast(compiled.routine_entries.count());
-    var r_it = compiled.routine_entries.iterator();
-    while (r_it.next()) |entry| {
-        try write_str(pw, entry.key_ptr.*);
-        try pw.writeInt(u32, @intCast(entry.value_ptr.*), .little);
-        const actor_name = compiled.routine_entities.get(entry.key_ptr.*) orelse "";
-        try write_str(pw, actor_name);
-    }
-
-    // 6. When rule entries
-    const when_rule_count: u32 = @intCast(compiled.when_rule_entries.items.len);
-    for (compiled.when_rule_entries.items) |pc| {
-        try pw.writeInt(u32, @intCast(pc), .little);
-    }
-
-    // 7. Cue handler entries
-    const cue_count: u32 = @intCast(compiled.cue_handler_entries.count());
-    var c_it = compiled.cue_handler_entries.iterator();
-    while (c_it.next()) |entry| {
-        try write_str(pw, entry.key_ptr.*);
-        try pw.writeInt(u32, @intCast(entry.value_ptr.*), .little);
-    }
-
-    // 8. Reactive simulation rules
-    const reactive_rule_count: u32 = @intCast(compiled.reactive_rules.items.len);
-    for (compiled.reactive_rules.items) |r| {
-        try pw.writeInt(u32, r.target_entity.to_int(), .little);
-        try pw.writeInt(u16, r.priority, .little);
-        try pw.writeInt(u32, @intCast(r.handler_pc), .little);
-        try pw.writeByte(@intFromEnum(r.edge));
-        try pw.writeInt(u16, @intCast(r.clauses.len), .little);
-        for (r.clauses) |clause| try write_pattern_clause(pw, clause);
-    }
-
-    // 9. Draft note table (version 2+)
-    try pw.writeInt(u32, @intCast(compiled.drafts.items.len), .little);
-    for (compiled.drafts.items) |d| {
-        try pw.writeInt(u32, d.entity.to_int(), .little);
-        for (d.notes) |n| try pw.writeByte(@intFromEnum(n));
-        try pw.writeByte(if (d.inverse != null) 1 else 0);
-        try pw.writeInt(u32, if (d.inverse) |inv| inv.to_int() else 0, .little);
-    }
-
-    // 10. Script-declared subsystem configuration (version 4+, degradation in version 5+).
-    try write_program_declarations(world, pw, compiled);
-
-    // Compute CRC32 checksum over the payload
     if (payload.items.len > MAX_PACKAGE_PAYLOAD_SIZE) return error.PackagePayloadTooLarge;
-    const crc = std.hash.Crc32.hash(payload.items);
-
-    var header = PackageHeader{
-        .magic = PACKAGE_MAGIC,
-        .version = PACKAGE_VERSION,
-        .crc32 = crc,
-        .payload_size = @intCast(payload.items.len),
-        .entity_count = entity_count,
-        .relation_count = relation_count,
-        .waypoint_count = waypoint_count,
-        .edge_count = edge_count,
-        .hotspot_count = hotspot_count,
-        .bytecode_len = bytecode_len,
-        .routine_count = routine_count,
-        .when_rule_count = when_rule_count,
-        .cue_count = cue_count,
-        .reactive_rule_count = reactive_rule_count,
-        .initial_entry = if (compiled.initial_entry) |ie| @intCast(ie) else -1,
-    };
-
-    // Write header followed by payload
+    const header = PackageHeader{ .crc32 = std.hash.Crc32.hash(payload.items), .payload_size = @intCast(payload.items.len) };
     try writer.writeAll(std.mem.asBytes(&header));
     try writer.writeAll(payload.items);
+}
+
+/// Writes one section's bytes and says whether the program uses it; an unused section is not
+/// written at all. Names and code are always written.
+fn write_section(comptime which: Section, w: anytype, compiled: *const CompiledProgram, world: *const World, spatial: ?*const SpatialSystem) !bool {
+    switch (which) {
+        .names => {
+            try w.writeInt(u32, @intCast(world.entity_names.items.len), .little);
+            for (world.entity_names.items) |name| try write_str(w, name);
+            try w.writeInt(u32, @intCast(world.relation_meta.items.len), .little);
+            for (world.relation_meta.items) |rel| {
+                try write_str(w, rel.name);
+                // The low four bits are the type, the high four the object kind (D-178).
+                try w.writeByte(@as(u8, if (rel.rel_type == .property) 1 else 0) | (@as(u8, @intFromEnum(rel.object_kind)) << 4));
+            }
+            return true;
+        },
+        .places => {
+            const sp = spatial orelse return false;
+            if (sp.graph.waypoints.items.len == 0 and sp.graph.edges.items.len == 0 and sp.hotspots.items.len == 0) return false;
+            try w.writeInt(u32, @intCast(sp.graph.waypoints.items.len), .little);
+            for (sp.graph.waypoints.items) |wp| {
+                try w.writeInt(u32, wp.room.to_int(), .little);
+                try w.writeInt(i32, wp.pos.x, .little);
+                try w.writeInt(i32, wp.pos.y, .little);
+                try write_str(w, wp.name);
+            }
+            try w.writeInt(u32, @intCast(sp.graph.edges.items.len), .little);
+            for (sp.graph.edges.items) |edge| {
+                try w.writeInt(u16, edge.from, .little);
+                try w.writeInt(u16, edge.to, .little);
+                try w.writeInt(u32, edge.cost, .little);
+            }
+            try w.writeInt(u32, @intCast(sp.hotspots.items.len), .little);
+            for (sp.hotspots.items) |hs| {
+                try w.writeInt(u32, hs.entity.to_int(), .little);
+                try w.writeInt(u32, hs.room.to_int(), .little);
+                try w.writeInt(i32, hs.pos.x, .little);
+                try w.writeInt(i32, hs.pos.y, .little);
+                try w.writeInt(u32, hs.radius, .little);
+                try write_str(w, hs.name);
+                try write_str(w, hs.examine_text);
+            }
+            return true;
+        },
+        .code => {
+            try w.writeInt(u32, @intCast(compiled.chunk.code.items.len), .little);
+            try w.writeAll(compiled.chunk.code.items);
+            try w.writeInt(i64, if (compiled.initial_entry) |ie| @intCast(ie) else -1, .little);
+            try w.writeInt(u32, @intCast(compiled.routine_entries.count()), .little);
+            var r_it = compiled.routine_entries.iterator();
+            while (r_it.next()) |entry| {
+                try write_str(w, entry.key_ptr.*);
+                try w.writeInt(u32, @intCast(entry.value_ptr.*), .little);
+                try write_str(w, compiled.routine_entities.get(entry.key_ptr.*) orelse "");
+            }
+            try w.writeInt(u32, @intCast(compiled.cue_handler_entries.count()), .little);
+            var c_it = compiled.cue_handler_entries.iterator();
+            while (c_it.next()) |entry| {
+                try write_str(w, entry.key_ptr.*);
+                try w.writeInt(u32, @intCast(entry.value_ptr.*), .little);
+            }
+            try write_cue_chain(w, compiled);
+            // Which build this is, for saves (D-162), and whether rewinds reroll (D-184).
+            try w.writeInt(u32, compiled.save_version, .little);
+            try w.writeInt(u64, compiled.fingerprint, .little);
+            try w.writeByte(@intFromBool(compiled.rewinds_reroll));
+            return true;
+        },
+        .rules => {
+            if (compiled.when_rule_entries.items.len == 0 and compiled.reactive_rules.items.len == 0) return false;
+            try w.writeInt(u32, @intCast(compiled.when_rule_entries.items.len), .little);
+            for (compiled.when_rule_entries.items) |pc| try w.writeInt(u32, @intCast(pc), .little);
+            try w.writeInt(u32, @intCast(compiled.reactive_rules.items.len), .little);
+            for (compiled.reactive_rules.items) |r| {
+                try w.writeInt(u32, r.target_entity.to_int(), .little);
+                try w.writeInt(u16, r.priority, .little);
+                try w.writeInt(u32, @intCast(r.handler_pc), .little);
+                try w.writeByte(@intFromEnum(r.edge));
+                // `when each` and the variable whose entity runs its body (D-186).
+                try w.writeAll(&.{ @intFromBool(r.each), r.owner_slot orelse NO_OWNER_SLOT });
+                try w.writeInt(u16, @intCast(r.clauses.len), .little);
+                for (r.clauses) |clause| try write_pattern_clause(w, clause);
+            }
+            return true;
+        },
+        .drafts => {
+            if (compiled.drafts.items.len == 0) return false;
+            try w.writeInt(u32, @intCast(compiled.drafts.items.len), .little);
+            for (compiled.drafts.items) |d| {
+                try w.writeInt(u32, d.entity.to_int(), .little);
+                for (d.notes) |n| try w.writeByte(@intFromEnum(n));
+                try w.writeByte(if (d.inverse != null) 1 else 0);
+                try w.writeInt(u32, if (d.inverse) |inv| inv.to_int() else 0, .little);
+            }
+            return true;
+        },
+        .societies => return used(compiled.societies.items.len) and try done(write_societies(world, w, compiled)),
+        .duels => return used(compiled.duels.items.len) and try done(write_duels(world, w, compiled)),
+        .degradations => return used(compiled.degradations.items.len) and try done(write_degradations(world, w, compiled)),
+        .grids => return used(compiled.grids.items.len) and try done(write_grids(world, w, compiled)),
+        .agendas => return used(compiled.agendas.items.len) and try done(write_agendas(world, w, compiled)),
+        .commands => return used(compiled.commands.items.len + compiled.aliases.items.len) and try done(write_commands(world, w, compiled)),
+        .scores => return used(compiled.scores.items.len) and try done(write_scores(world, w, compiled)),
+        .cast => return used(compiled.cast.items.len) and try done(write_cast(world, w, compiled)),
+        .guards => return used(compiled.cue_guards.items.len) and try done(write_guards(world, w, compiled)),
+        .goals => return used(compiled.goals.items.len) and try done(write_goals(world, w, compiled)),
+        .spellbooks => return used(compiled.spellbooks.items.len) and try done(write_spellbooks(world, w, compiled)),
+        .decisions => return used(compiled.decisions.items.len) and try done(write_decisions(world, w, compiled)),
+        .axes => return used(compiled.axes.items.len) and try done(write_axes(w, compiled)),
+        .red_lines => return used(compiled.red_lines.items.len) and try done(write_red_lines(world, w, compiled)),
+        .dilemmas => return used(compiled.dilemmas.items.len) and try done(write_dilemmas(world, w, compiled)),
+        .images => return used(compiled.art.images.len) and try done(write_art(compiled.chunk.allocator, w, compiled.art)),
+        .art => {
+            const a = compiled.art;
+            if (a.backdrops.len + a.sprites.len + a.areas.len + a.looks.len + a.parts.len == 0) return false;
+            try write_art_bindings(w, a);
+            try w.writeInt(u32, @intCast(a.areas.len), .little);
+            for (a.areas) |area| {
+                try w.writeInt(u32, area.entity.to_int(), .little);
+                for ([_]u16{ area.x, area.y, area.w, area.h }) |v| try w.writeInt(u16, v, .little);
+            }
+            try write_art_looks(w, a);
+            return true;
+        },
+        .text => {
+            var any = world.display_names.count() > 0;
+            for (phrase_mod.ENTRIES) |entry| {
+                if (world.phrase_override(entry.name) != null) any = true;
+            }
+            if (!any) return false;
+            try write_player_text(world, w);
+            return true;
+        },
+    }
+}
+
+fn used(count: usize) bool {
+    return count > 0;
+}
+
+fn done(result: anytype) !bool {
+    try result;
+    return true;
+}
+
+/// The bytes of each section a package holds, found before any is read.
+const SectionTable = struct {
+    bytes: [SECTION_TAGS.len]?[]const u8 = @splat(null),
+
+    fn get(self: *const SectionTable, which: Section) ?[]const u8 {
+        return self.bytes[@intFromEnum(which)];
+    }
+};
+
+/// Untrusted input: section lengths stay inside the payload, a known tag appears once, flag
+/// bits other than `SECTION_REQUIRED` are zero, and an unknown section is skipped only when it
+/// is optional.
+fn read_section_table(payload: []const u8) !SectionTable {
+    var table = SectionTable{};
+    var at: usize = 0;
+    while (at < payload.len) {
+        if (payload.len - at < SECTION_HEADER_LEN) return error.InvalidSection;
+        const t: [4]u8 = payload[at..][0..4].*;
+        const flags = payload[at + 4];
+        const len = std.mem.readInt(u32, payload[at + 5 ..][0..4], .little);
+        at += SECTION_HEADER_LEN;
+        if (flags & ~SECTION_REQUIRED != 0) return error.InvalidSection;
+        if (len > payload.len - at) return error.InvalidSection;
+        const bytes = payload[at .. at + len];
+        at += len;
+        const which = Section.from_tag(t) orelse {
+            if (flags & SECTION_REQUIRED != 0) return error.UnknownRequiredSection;
+            continue;
+        };
+        if (table.bytes[@intFromEnum(which)] != null) return error.InvalidSection;
+        table.bytes[@intFromEnum(which)] = bytes;
+    }
+    if (table.get(.names) == null or table.get(.code) == null) return error.InvalidSection;
+    return table;
+}
+
+/// A section's reader must use every byte of it.
+fn finish(stream: *const std.Io.Reader) !void {
+    if (stream.seek != stream.end) return error.InvalidSection;
 }
 
 /// Loads and validates a binary package stream into a World, SpatialSystem, and CompiledProgram (P15-02, D-018).
@@ -1843,123 +1855,108 @@ pub fn load_package(
     world: *World,
     spatial: ?*SpatialSystem,
 ) !CompiledProgram {
+    return load_package_linked(ALL_SECTIONS, allocator, reader, world, spatial);
+}
+
+/// `load_package` with only the readers for `linked` in the build (D-187); a package holding a
+/// section outside it is refused with `UnlinkedSection`. A host whose package is fixed when it
+/// is built passes `sections_in` of it.
+pub fn load_package_linked(
+    comptime linked: SectionSet,
+    allocator: std.mem.Allocator,
+    reader: anytype,
+    world: *World,
+    spatial: ?*SpatialSystem,
+) !CompiledProgram {
     var header: PackageHeader = undefined;
     const bytes_read = try reader.readSliceShort(std.mem.asBytes(&header));
-    if (bytes_read < @sizeOf(PackageHeader)) {
-        return error.EndOfStream;
-    }
+    if (bytes_read < @sizeOf(PackageHeader)) return error.EndOfStream;
+    if (std.mem.eql(u8, &header.magic, &PRE_1_0_MAGIC)) return error.PackageFromBeforeOne;
+    if (!std.mem.eql(u8, &header.magic, &PACKAGE_MAGIC)) return error.InvalidPackageMagic;
+    if (header.format != PACKAGE_FORMAT) return error.UnsupportedPackageVersion;
+    if (header.payload_size > MAX_PACKAGE_PAYLOAD_SIZE) return error.PackagePayloadTooLarge;
 
-    if (!std.mem.eql(u8, &header.magic, &PACKAGE_MAGIC)) {
-        return error.InvalidPackageMagic;
-    }
-
-    if (header.version < MIN_PACKAGE_VERSION or header.version > PACKAGE_VERSION) {
-        return error.UnsupportedPackageVersion;
-    }
-
-    if (header.payload_size > MAX_PACKAGE_PAYLOAD_SIZE) {
-        return error.PackagePayloadTooLarge;
-    }
-
-    // Read full payload
     const payload = try allocator.alloc(u8, header.payload_size);
     defer allocator.free(payload);
     try reader.readSliceAll(payload);
+    if (std.hash.Crc32.hash(payload) != header.crc32) return error.ChecksumMismatch;
 
-    // Verify CRC32 checksum
-    const computed_crc = std.hash.Crc32.hash(payload);
-    if (computed_crc != header.crc32) {
-        return error.ChecksumMismatch;
+    const table = try read_section_table(payload);
+    inline for (comptime std.enums.values(Section)) |which| {
+        if (comptime !linked.contains(which)) {
+            if (table.get(which) != null) return error.UnlinkedSection;
+        }
     }
 
-    var stream: std.Io.Reader = .fixed(payload);
-    const pr = &stream;
-
-    // 1. Entities
-    var e_idx: u32 = 0;
-    while (e_idx < header.entity_count) : (e_idx += 1) {
-        const name = try read_str(allocator, pr);
-        defer allocator.free(name);
-        _ = try world.intern_entity(name);
-    }
-
-    // 2. Relations
-    var r_idx: u32 = 0;
-    while (r_idx < header.relation_count) : (r_idx += 1) {
-        const stored = try read_str(allocator, pr);
-        defer allocator.free(stored);
-        // Before version 32 bookkeeping had plain names; it carries `#` now (D-180).
-        var renamed: [MAX_RENAMED_NAME]u8 = undefined;
-        const name = if (header.version < 32) bookkeeping_name(stored, &renamed) else stored;
-        const flags = try pr.takeByte();
-        const is_prop = (flags & 0x0f) == 1;
-        const relation = try world.intern_relation(name, if (is_prop) .property else .set);
-        if (header.version >= 30) {
+    // Names: every entity and relation, so later sections can refer to them by id.
+    {
+        var stream: std.Io.Reader = .fixed(table.get(.names).?);
+        const pr = &stream;
+        const entity_count = try pr.takeInt(u32, .little);
+        for (0..entity_count) |_| {
+            const name = try read_str(allocator, pr);
+            defer allocator.free(name);
+            _ = try world.intern_entity(name);
+        }
+        const relation_count = try pr.takeInt(u32, .little);
+        for (0..relation_count) |_| {
+            const name = try read_str(allocator, pr);
+            defer allocator.free(name);
+            const flags = try pr.takeByte();
+            if (flags & 0x0f > 1) return error.InvalidRelationKind;
+            const relation = try world.intern_relation(name, if (flags & 0x0f == 1) .property else .set);
             const kind = std.enums.fromInt(world_mod.ObjectKind, flags >> 4) orelse return error.InvalidRelationKind;
             world.declare_object_kind(relation, kind) catch return error.InvalidRelationKind;
         }
+        try finish(pr);
     }
 
-    // 3. Spatial waypoints, edges, hotspots
-    var wp_idx: u32 = 0;
-    while (wp_idx < header.waypoint_count) : (wp_idx += 1) {
-        const room_int = try pr.takeInt(u32, .little);
-        const x = try pr.takeInt(i32, .little);
-        const y = try pr.takeInt(i32, .little);
-        const name = try read_str(allocator, pr);
-        defer allocator.free(name);
-
-        if (spatial) |sp| {
-            _ = try sp.graph.add_waypoint(EntityId.from_int(room_int), x, y, name);
+    // Places: marks, walkways, and hotspots.
+    var waypoint_count: usize = 0;
+    if (comptime linked.contains(.places)) if (table.get(.places)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const pr = &stream;
+        const wp_count = try pr.takeInt(u32, .little);
+        waypoint_count = wp_count;
+        for (0..wp_count) |_| {
+            const room_int = try pr.takeInt(u32, .little);
+            const x = try pr.takeInt(i32, .little);
+            const y = try pr.takeInt(i32, .little);
+            const name = try read_str(allocator, pr);
+            defer allocator.free(name);
+            if (spatial) |sp| _ = try sp.graph.add_waypoint(EntityId.from_int(room_int), x, y, name);
         }
-    }
-
-    var edge_idx: u32 = 0;
-    while (edge_idx < header.edge_count) : (edge_idx += 1) {
-        const from = try pr.takeInt(u16, .little);
-        const to = try pr.takeInt(u16, .little);
-        const cost = try pr.takeInt(u32, .little);
-
-        if (spatial) |sp| {
-            try sp.graph.connect(from, to, cost);
+        const edge_count = try pr.takeInt(u32, .little);
+        for (0..edge_count) |_| {
+            const from = try pr.takeInt(u16, .little);
+            const to = try pr.takeInt(u16, .little);
+            const cost = try pr.takeInt(u32, .little);
+            // The section holds every edge in both directions, as the graph stores them, so
+            // each is added as written; `connect` would add its reverse a second time.
+            if (spatial) |sp| {
+                if (sp.graph.get_waypoint(from) == null or sp.graph.get_waypoint(to) == null) return error.WaypointNotFound;
+                try sp.graph.edges.append(.{ .from = from, .to = to, .cost = cost });
+            }
         }
-    }
-
-    var hs_idx: u32 = 0;
-    while (hs_idx < header.hotspot_count) : (hs_idx += 1) {
-        const ent_int = try pr.takeInt(u32, .little);
-        const room_int = try pr.takeInt(u32, .little);
-        const x = try pr.takeInt(i32, .little);
-        const y = try pr.takeInt(i32, .little);
-        const radius = try pr.takeInt(u32, .little);
-        const name = try read_str(allocator, pr);
-        defer allocator.free(name);
-        const desc = try read_str(allocator, pr);
-        defer allocator.free(desc);
-
-        if (spatial) |sp| {
-            try sp.add_hotspot(
-                EntityId.from_int(ent_int),
-                EntityId.from_int(room_int),
-                .{ .x = x, .y = y },
-                radius,
-                name,
-                desc,
-            );
+        const hotspot_count = try pr.takeInt(u32, .little);
+        for (0..hotspot_count) |_| {
+            const ent_int = try pr.takeInt(u32, .little);
+            const room_int = try pr.takeInt(u32, .little);
+            const x = try pr.takeInt(i32, .little);
+            const y = try pr.takeInt(i32, .little);
+            const radius = try pr.takeInt(u32, .little);
+            const name = try read_str(allocator, pr);
+            defer allocator.free(name);
+            const desc = try read_str(allocator, pr);
+            defer allocator.free(desc);
+            if (spatial) |sp| try sp.add_hotspot(EntityId.from_int(ent_int), EntityId.from_int(room_int), .{ .x = x, .y = y }, radius, name, desc);
         }
-    }
+        try finish(pr);
+    };
 
-    // 4. Bytecode instructions
+    // Code: bytecode, entry points, the handler chain, and the program's identity.
     var chunk = BytecodeChunk.init(allocator);
     errdefer chunk.deinit();
-    if (header.bytecode_len > 0) {
-        const code_slice = try allocator.alloc(u8, header.bytecode_len);
-        defer allocator.free(code_slice);
-        try pr.readSliceAll(code_slice);
-        try chunk.code.appendSlice(code_slice);
-    }
-
-    // 5. Routine entries
     var routine_entries = std.StringHashMap(usize).init(allocator);
     errdefer routine_entries.deinit();
     var routine_entities = std.StringHashMap([]const u8).init(allocator);
@@ -1969,163 +1966,182 @@ pub fn load_package(
         for (allocated_cue_keys.items) |k| allocator.free(k);
         allocated_cue_keys.deinit();
     }
-
-    var rout_idx: u32 = 0;
-    while (rout_idx < header.routine_count) : (rout_idx += 1) {
-        const rname = try read_str(allocator, pr);
-        try allocated_cue_keys.append(rname);
-        const pc = try pr.takeInt(u32, .little);
-        const actor = try read_str(allocator, pr);
-        try allocated_cue_keys.append(actor);
-        try routine_entries.put(rname, pc);
-        try routine_entities.put(rname, actor);
-    }
-
-    // 6. When rule entries
-    var when_rule_entries = std.array_list.Managed(usize).init(allocator);
-    errdefer when_rule_entries.deinit();
-    var wr_idx: u32 = 0;
-    while (wr_idx < header.when_rule_count) : (wr_idx += 1) {
-        const pc = try pr.takeInt(u32, .little);
-        try when_rule_entries.append(pc);
-    }
-
-    // 7. Cue handler entries
     var cue_handler_entries = std.StringHashMap(usize).init(allocator);
     errdefer cue_handler_entries.deinit();
-    var cue_idx: u32 = 0;
-    while (cue_idx < header.cue_count) : (cue_idx += 1) {
-        const sig = try read_str(allocator, pr);
-        try allocated_cue_keys.append(sig);
-        const pc = try pr.takeInt(u32, .little);
-        try cue_handler_entries.put(sig, pc);
+    var cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty;
+    errdefer cue_handler_chain.deinit(allocator);
+    var initial_entry: ?usize = null;
+    var save_version: u32 = 1;
+    var fingerprint: u64 = 0;
+    var rewinds_reroll = false;
+    {
+        var stream: std.Io.Reader = .fixed(table.get(.code).?);
+        const pr = &stream;
+        const code_len = try pr.takeInt(u32, .little);
+        try chunk.code.appendSlice(try pr.take(code_len));
+        const ie = try pr.takeInt(i64, .little);
+        if (ie < -1 or ie >= @as(i64, code_len)) return error.InvalidProgramIndex;
+        initial_entry = if (ie >= 0) @intCast(ie) else null;
+        const routine_count = try pr.takeInt(u32, .little);
+        for (0..routine_count) |_| {
+            const rname = try read_str(allocator, pr);
+            try allocated_cue_keys.append(rname);
+            const pc = try pr.takeInt(u32, .little);
+            const actor = try read_str(allocator, pr);
+            try allocated_cue_keys.append(actor);
+            try routine_entries.put(rname, pc);
+            try routine_entities.put(rname, actor);
+        }
+        const cue_count = try pr.takeInt(u32, .little);
+        for (0..cue_count) |_| {
+            const sig = try read_str(allocator, pr);
+            try allocated_cue_keys.append(sig);
+            const pc = try pr.takeInt(u32, .little);
+            try cue_handler_entries.put(sig, pc);
+        }
+        cue_handler_chain = try read_cue_chain(allocator, pr, &cue_handler_entries, code_len);
+        save_version = try pr.takeInt(u32, .little);
+        fingerprint = try pr.takeInt(u64, .little);
+        // Zero means "unknown program" in a save, so no build may claim it (D-162).
+        if (save_version == 0 or fingerprint == 0) return error.InvalidProgramIdentity;
+        const flag = try pr.takeByte();
+        if (flag > 1) return error.InvalidProgramIdentity;
+        rewinds_reroll = flag == 1;
+        try finish(pr);
     }
+    const code_len = chunk.code.items.len;
 
-    // 8. Reactive simulation rules
+    // Rules: `when` entry points and reactive rules.
+    var when_rule_entries = std.array_list.Managed(usize).init(allocator);
+    errdefer when_rule_entries.deinit();
     var reactive_rules = std.array_list.Managed(CompiledWhenRule).init(allocator);
     errdefer {
         for (reactive_rules.items) |r| allocator.free(r.clauses);
         reactive_rules.deinit();
     }
+    if (comptime linked.contains(.rules)) if (table.get(.rules)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const pr = &stream;
+        const entry_count = try pr.takeInt(u32, .little);
+        for (0..entry_count) |_| try when_rule_entries.append(try pr.takeInt(u32, .little));
+        const rule_count = try pr.takeInt(u32, .little);
+        for (0..rule_count) |_| {
+            const tent = try pr.takeInt(u32, .little);
+            const priority = try pr.takeInt(u16, .little);
+            const handler_pc = try pr.takeInt(u32, .little);
+            const edge: WhenEdge = switch (try pr.takeByte()) {
+                0 => .rising,
+                1 => .falling,
+                2 => .on_expire,
+                3 => .on_arrive,
+                else => return error.InvalidWhenEdge,
+            };
+            const each_bytes = try pr.takeArray(2);
+            const clause_count = try pr.takeInt(u16, .little);
+            const clauses = try allocator.alloc(PatternClause, clause_count);
+            errdefer allocator.free(clauses);
+            for (clauses) |*cl| cl.* = try read_pattern_clause(pr);
+            var rule = CompiledWhenRule{ .clauses = clauses, .target_entity = EntityId.from_int(tent), .priority = priority, .handler_pc = handler_pc, .edge = edge };
+            try read_each(&rule, each_bytes.*);
+            try reactive_rules.append(rule);
+        }
+        try finish(pr);
+    };
 
-    var rr_idx: u32 = 0;
-    while (rr_idx < header.reactive_rule_count) : (rr_idx += 1) {
-        const tent = try pr.takeInt(u32, .little);
-        const priority = try pr.takeInt(u16, .little);
-        const handler_pc = try pr.takeInt(u32, .little);
-        const edge_byte = try pr.takeByte();
-        const edge: WhenEdge = switch (edge_byte) {
-            0 => .rising,
-            1 => .falling,
-            2 => .on_expire,
-            3 => if (header.version >= 3) .on_arrive else return error.InvalidWhenEdge,
-            else => return error.InvalidWhenEdge,
-        };
-        const clause_count = try pr.takeInt(u16, .little);
-        const clauses = try allocator.alloc(PatternClause, clause_count);
-        errdefer allocator.free(clauses);
-        for (clauses) |*cl| cl.* = try read_pattern_clause(pr);
-
-        try reactive_rules.append(.{
-            .clauses = clauses,
-            .target_entity = EntityId.from_int(tent),
-            .priority = priority,
-            .handler_pc = handler_pc,
-            .edge = edge,
-        });
-    }
-
-    // 9. Draft note table (version 2+). Untrusted input: note bytes and entity ids are checked
-    // against the note range and the entity table loaded above before entering the program.
+    // Drafts. Untrusted input: note bytes and entity ids are checked against the note range
+    // and the entity table loaded above before entering the program.
     var drafts = std.array_list.Managed(draft_mod.CompiledDraft).init(allocator);
     errdefer drafts.deinit();
-    if (header.version >= 2) {
+    if (comptime linked.contains(.drafts)) if (table.get(.drafts)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const pr = &stream;
         const draft_count = try pr.takeInt(u32, .little);
         const entity_limit = world.entity_names.items.len;
-        var di: u32 = 0;
-        while (di < draft_count) : (di += 1) {
+        for (0..draft_count) |_| {
             const ent_raw = try pr.takeInt(u32, .little);
             var notes: draft_mod.Notes = undefined;
-            for (&notes) |*n| {
-                n.* = draft_mod.Note.from_int(try pr.takeByte()) orelse return error.InvalidDraftNote;
-            }
+            for (&notes) |*n| n.* = draft_mod.Note.from_int(try pr.takeByte()) orelse return error.InvalidDraftNote;
             const has_inverse = try pr.takeByte();
             const inv_raw = try pr.takeInt(u32, .little);
             if (ent_raw == 0 or ent_raw > entity_limit) return error.InvalidDraftEntity;
             if (has_inverse > 1) return error.InvalidDraftEntity;
             if (has_inverse == 1 and (inv_raw == 0 or inv_raw > entity_limit)) return error.InvalidDraftEntity;
-            try drafts.append(.{
-                .entity = EntityId.from_int(ent_raw),
-                .notes = notes,
-                .inverse = if (has_inverse == 1) EntityId.from_int(inv_raw) else null,
-            });
+            try drafts.append(.{ .entity = EntityId.from_int(ent_raw), .notes = notes, .inverse = if (has_inverse == 1) EntityId.from_int(inv_raw) else null });
         }
-    }
+        try finish(pr);
+    };
 
     var societies = std.array_list.Managed(society_mod.Declaration).init(allocator);
     errdefer {
         for (societies.items) |*decl| decl.deinit_owned(allocator);
         societies.deinit();
     }
+    if (comptime linked.contains(.societies)) if (table.get(.societies)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        for (0..count) |_| try societies.append(try read_society_declaration(allocator, world, &stream, waypoint_count));
+        try finish(&stream);
+    };
     var duels = std.array_list.Managed(duel_mod.Declaration).init(allocator);
     errdefer {
         for (duels.items) |*decl| decl.deinit_owned(allocator);
         duels.deinit();
     }
+    if (comptime linked.contains(.duels)) if (table.get(.duels)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        for (0..count) |_| try duels.append(try read_duel_declaration(allocator, world, &stream));
+        try finish(&stream);
+    };
     var degradations = std.array_list.Managed(container_mod.Declaration).init(allocator);
     errdefer {
         for (degradations.items) |*decl| decl.deinit_owned(allocator);
         degradations.deinit();
     }
-    if (header.version >= 4) {
-        const society_count = try pr.takeInt(u32, .little);
-        var si: u32 = 0;
-        while (si < society_count) : (si += 1) try societies.append(try read_society_declaration(allocator, world, pr, header.waypoint_count));
-        const duel_count = try pr.takeInt(u32, .little);
-        var di: u32 = 0;
-        while (di < duel_count) : (di += 1) try duels.append(try read_duel_declaration(allocator, world, pr, header.version));
-    }
-    if (header.version >= 5) {
-        const degradation_count = try pr.takeInt(u32, .little);
-        var ci: u32 = 0;
-        while (ci < degradation_count) : (ci += 1) try degradations.append(try read_degradation_declaration(allocator, world, pr, header.version >= 6));
-    }
+    if (comptime linked.contains(.degradations)) if (table.get(.degradations)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        for (0..count) |_| try degradations.append(try read_degradation_declaration(allocator, world, &stream));
+        try finish(&stream);
+    };
     var grids = std.array_list.Managed(grid_mod.Declaration).init(allocator);
     errdefer {
         for (grids.items) |*decl| decl.deinit_owned(allocator);
         grids.deinit();
     }
-    if (header.version >= 7) {
-        const grid_count = try pr.takeInt(u32, .little);
-        if (grid_count > grid_mod.MAX_GRIDS) return error.InvalidGridConfig;
-        var gi: u32 = 0;
-        while (gi < grid_count) : (gi += 1) {
-            var decl = try read_grid_declaration(allocator, world, pr, header.version >= 8);
+    if (comptime linked.contains(.grids)) if (table.get(.grids)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > grid_mod.MAX_GRIDS) return error.InvalidGridConfig;
+        for (0..count) |_| {
+            var decl = try read_grid_declaration(allocator, world, &stream);
             grids.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
             if (spatial) |sp| sp.add_grid(decl.grid) catch return error.InvalidGridConfig;
         }
-    }
+        try finish(&stream);
+    };
     var agendas = std.array_list.Managed(agency_mod.Declaration).init(allocator);
     errdefer {
         for (agendas.items) |*decl| decl.deinit_owned(allocator);
         agendas.deinit();
     }
-    if (header.version >= 9) {
-        const agenda_count = try pr.takeInt(u32, .little);
-        if (agenda_count > agency_mod.MAX_AGENDAS) return error.InvalidAgendaConfig;
-        var ai: u32 = 0;
-        while (ai < agenda_count) : (ai += 1) {
-            var decl = try read_agenda_declaration(allocator, world, pr);
+    if (comptime linked.contains(.agendas)) if (table.get(.agendas)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > agency_mod.MAX_AGENDAS) return error.InvalidAgendaConfig;
+        for (0..count) |_| {
+            var decl = try read_agenda_declaration(allocator, world, &stream);
             agendas.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
         agency_mod.validate_all(agendas.items) catch return error.InvalidAgendaConfig;
-    }
+        try finish(&stream);
+    };
     var commands = std.array_list.Managed(command_mod.CommandDecl).init(allocator);
     errdefer {
         for (commands.items) |*decl| decl.deinit_owned(allocator);
@@ -2136,76 +2152,76 @@ pub fn load_package(
         for (aliases.items) |*decl| decl.deinit_owned(allocator);
         aliases.deinit();
     }
-    if (header.version >= 10) {
-        const command_count = try pr.takeInt(u32, .little);
+    if (comptime linked.contains(.commands)) if (table.get(.commands)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const command_count = try stream.takeInt(u32, .little);
         if (command_count > 256) return error.InvalidCommandConfig;
-        var ci2: u32 = 0;
-        while (ci2 < command_count) : (ci2 += 1) {
-            var decl = try read_command_declaration(allocator, pr);
+        for (0..command_count) |_| {
+            var decl = try read_command_declaration(allocator, &stream);
             commands.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
-        const alias_count = try pr.takeInt(u32, .little);
+        const alias_count = try stream.takeInt(u32, .little);
         if (alias_count > 256) return error.InvalidCommandConfig;
-        var ai2: u32 = 0;
-        while (ai2 < alias_count) : (ai2 += 1) {
-            var decl = try read_alias_declaration(allocator, world, pr);
+        for (0..alias_count) |_| {
+            var decl = try read_alias_declaration(allocator, world, &stream);
             aliases.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
-    }
-
+        try finish(&stream);
+    };
     var scores = std.array_list.Managed(mml.ScoreDecl).init(allocator);
     errdefer {
         for (scores.items) |*decl| decl.deinit_owned(allocator);
         scores.deinit();
     }
-    if (header.version >= 11) {
-        const score_count = try pr.takeInt(u32, .little);
-        if (score_count > 256) return error.InvalidScoreConfig;
-        var si2: u32 = 0;
-        while (si2 < score_count) : (si2 += 1) {
-            var decl = try read_score_declaration(allocator, pr);
+    if (comptime linked.contains(.scores)) if (table.get(.scores)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > 256) return error.InvalidScoreConfig;
+        for (0..count) |_| {
+            var decl = try read_score_declaration(allocator, &stream);
             scores.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
-    }
-
+        try finish(&stream);
+    };
     var cast = std.ArrayListUnmanaged(codegen_mod.CastPlace).empty;
     errdefer cast.deinit(allocator);
-    if (header.version >= 12) {
-        const cast_count = try pr.takeInt(u32, .little);
-        if (cast_count > MAX_CAST) return error.InvalidCastConfig;
-        try cast.ensureTotalCapacity(allocator, cast_count);
-        var ci: u32 = 0;
-        while (ci < cast_count) : (ci += 1) {
-            const actor = try read_entity_ref(world, pr);
-            const mark = try read_waypoint(pr, header.waypoint_count);
+    if (comptime linked.contains(.cast)) if (table.get(.cast)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > MAX_CAST) return error.InvalidCastConfig;
+        try cast.ensureTotalCapacity(allocator, count);
+        for (0..count) |_| {
+            const actor = try read_entity_ref(world, &stream);
+            const mark = try read_waypoint(&stream, waypoint_count);
             cast.appendAssumeCapacity(.{ .actor = actor, .mark = mark });
         }
-    }
-
+        try finish(&stream);
+    };
     var cue_guards = std.ArrayListUnmanaged(codegen_mod.CueGuard).empty;
     errdefer {
         for (cue_guards.items) |guard| allocator.free(guard.clauses);
         cue_guards.deinit(allocator);
     }
-    if (header.version >= 13) {
-        const guard_count = try pr.takeInt(u32, .little);
-        if (guard_count > MAX_CUE_GUARDS) return error.InvalidCueGuard;
-        try cue_guards.ensureTotalCapacity(allocator, guard_count);
-        var gi: u32 = 0;
-        while (gi < guard_count) : (gi += 1) {
+    if (comptime linked.contains(.guards)) if (table.get(.guards)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const pr = &stream;
+        const count = try pr.takeInt(u32, .little);
+        if (count > MAX_CUE_GUARDS) return error.InvalidCueGuard;
+        try cue_guards.ensureTotalCapacity(allocator, count);
+        for (0..count) |_| {
             const handler_pc = try pr.takeInt(u32, .little);
-            // A guard belongs to a cue handler; any other pc would never be consulted. Whether
-            // it names one is checked once the handler chain (version 27) is read.
-            if (handler_pc >= header.bytecode_len) return error.InvalidCueGuard;
+            // A guard belongs to a cue handler: the first of its signature or a chained one.
+            if (handler_pc >= code_len) return error.InvalidCueGuard;
+            if (!is_first_handler(&cue_handler_entries, handler_pc) and !is_chained_handler(&cue_handler_chain, handler_pc)) return error.InvalidCueGuard;
             var guard = codegen_mod.CueGuard{ .handler_pc = handler_pc, .clauses = &.{} };
             for (&guard.param_slots) |*slot| {
                 const raw = try pr.takeByte();
@@ -2219,151 +2235,132 @@ pub fn load_package(
             guard.clauses = clauses;
             cue_guards.appendAssumeCapacity(guard);
         }
-    }
-
+        try finish(pr);
+    };
     var goals = std.array_list.Managed(hint_mod.Declaration).init(allocator);
     errdefer {
         for (goals.items) |*decl| decl.deinit_owned(allocator);
         goals.deinit();
     }
-    if (header.version >= 15) {
-        const goal_count = try pr.takeInt(u32, .little);
-        if (goal_count > hint_mod.MAX_GOALS) return error.InvalidGoalConfig;
-        var gi2: u32 = 0;
-        while (gi2 < goal_count) : (gi2 += 1) {
-            var decl = try read_goal_declaration(allocator, world, pr);
+    if (comptime linked.contains(.goals)) if (table.get(.goals)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > hint_mod.MAX_GOALS) return error.InvalidGoalConfig;
+        for (0..count) |_| {
+            var decl = try read_goal_declaration(allocator, world, &stream);
             goals.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
         hint_mod.validate_all(goals.items) catch return error.InvalidGoalConfig;
-    }
-
+        try finish(&stream);
+    };
     var spellbooks = std.array_list.Managed(spell_mod.Declaration).init(allocator);
     errdefer {
         for (spellbooks.items) |*decl| decl.deinit_owned(allocator);
         spellbooks.deinit();
     }
-    if (header.version >= 17) {
-        const book_count = try pr.takeInt(u32, .little);
-        if (book_count > spell_mod.MAX_BOOKS) return error.InvalidSpellbookConfig;
-        var bi: u32 = 0;
-        while (bi < book_count) : (bi += 1) {
-            var decl = try read_spellbook_declaration(allocator, world, pr);
+    if (comptime linked.contains(.spellbooks)) if (table.get(.spellbooks)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > spell_mod.MAX_BOOKS) return error.InvalidSpellbookConfig;
+        for (0..count) |_| {
+            var decl = try read_spellbook_declaration(allocator, world, &stream);
             spellbooks.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
         spell_mod.validate_all(spellbooks.items) catch return error.InvalidSpellbookConfig;
-    }
-
+        try finish(&stream);
+    };
     var decisions = std.array_list.Managed(decision_mod.Declaration).init(allocator);
     errdefer {
         for (decisions.items) |*decl| decl.deinit_owned(allocator);
         decisions.deinit();
     }
-    if (header.version >= 18) {
-        const decision_count = try pr.takeInt(u32, .little);
-        if (decision_count > decision_mod.MAX_DECISIONS) return error.InvalidDecisionConfig;
-        var di: u32 = 0;
-        while (di < decision_count) : (di += 1) {
-            var decl = try read_decision_declaration(allocator, world, pr);
+    if (comptime linked.contains(.decisions)) if (table.get(.decisions)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > decision_mod.MAX_DECISIONS) return error.InvalidDecisionConfig;
+        for (0..count) |_| {
+            var decl = try read_decision_declaration(allocator, world, &stream);
             decisions.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
         decision_mod.validate_all(decisions.items) catch return error.InvalidDecisionConfig;
-    }
-
+        try finish(&stream);
+    };
     var axes = std.array_list.Managed(value_mod.Axis).init(allocator);
     errdefer axes.deinit();
-    if (header.version >= 19) {
-        const axis_count = try pr.takeInt(u32, .little);
-        if (axis_count > value_mod.MAX_AXES) return error.InvalidAxisConfig;
-        var ai: u32 = 0;
-        while (ai < axis_count) : (ai += 1) try axes.append(try read_axis(world, pr));
+    if (comptime linked.contains(.axes)) if (table.get(.axes)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > value_mod.MAX_AXES) return error.InvalidAxisConfig;
+        for (0..count) |_| try axes.append(try read_axis(world, &stream));
         value_mod.validate_all(world, axes.items) catch return error.InvalidAxisConfig;
-    }
-
+        try finish(&stream);
+    };
     var red_lines = std.array_list.Managed(decision_mod.RedLineDeclaration).init(allocator);
     errdefer {
         for (red_lines.items) |*decl| decl.deinit_owned(allocator);
         red_lines.deinit();
     }
-    if (header.version >= 20) {
-        const set_count = try pr.takeInt(u32, .little);
-        if (set_count > decision_mod.MAX_RED_LINE_SETS) return error.InvalidRedLineConfig;
-        var ri: u32 = 0;
-        while (ri < set_count) : (ri += 1) {
-            var decl = try read_red_lines(allocator, world, pr);
+    if (comptime linked.contains(.red_lines)) if (table.get(.red_lines)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > decision_mod.MAX_RED_LINE_SETS) return error.InvalidRedLineConfig;
+        for (0..count) |_| {
+            var decl = try read_red_lines(allocator, world, &stream);
             red_lines.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
         decision_mod.validate_red_lines(decisions.items, red_lines.items) catch return error.InvalidRedLineConfig;
-    }
-
+        try finish(&stream);
+    };
     var dilemmas = std.array_list.Managed(dilemma_mod.Declaration).init(allocator);
     errdefer {
         for (dilemmas.items) |*decl| decl.deinit_owned(allocator);
         dilemmas.deinit();
     }
-    if (header.version >= 21) {
-        const dilemma_count = try pr.takeInt(u32, .little);
-        if (dilemma_count > dilemma_mod.MAX_DILEMMAS) return error.InvalidDilemmaConfig;
-        var di: u32 = 0;
-        while (di < dilemma_count) : (di += 1) {
-            var decl = try read_dilemma(allocator, world, pr);
+    if (comptime linked.contains(.dilemmas)) if (table.get(.dilemmas)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        const count = try stream.takeInt(u32, .little);
+        if (count > dilemma_mod.MAX_DILEMMAS) return error.InvalidDilemmaConfig;
+        for (0..count) |_| {
+            var decl = try read_dilemma(allocator, world, axes.items, &stream);
             dilemmas.append(decl) catch |err| {
                 decl.deinit_owned(allocator);
                 return err;
             };
         }
-        if (header.version >= 22) {
-            for (dilemmas.items) |*decl| decl.dilemma.drifts = try read_drifts(allocator, world, pr);
-        }
-        if (header.version >= 23) {
-            for (dilemmas.items) |*decl| decl.dilemma.appeals = try read_appeals(allocator, world, pr);
-        }
         dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
-    }
-
+        try finish(&stream);
+    };
     var art = image_mod.Art{};
     errdefer art.deinit_owned(allocator);
-    if (header.version >= 24) art = try read_art(allocator, pr, header.version);
-    if (header.version >= 25) try read_art_bindings(allocator, world, pr, &art);
-    if (header.version >= 26) try read_art_areas(allocator, world, pr, &art);
-    var cue_handler_chain: std.AutoHashMapUnmanaged(usize, usize) = .empty;
-    errdefer cue_handler_chain.deinit(allocator);
-    if (header.version >= 27) cue_handler_chain = try read_cue_chain(allocator, pr, &cue_handler_entries, header.bytecode_len);
-    for (cue_guards.items) |guard| {
-        if (!is_first_handler(&cue_handler_entries, guard.handler_pc) and !is_chained_handler(&cue_handler_chain, guard.handler_pc)) return error.InvalidCueGuard;
-    }
-    if (header.version >= 31) try read_player_text(allocator, world, pr);
-    if (header.version >= 33) try read_art_looks(allocator, world, pr, &art);
-    if (header.version >= 35) {
-        try read_tuning(pr, axes.items, dilemmas.items);
-        dilemma_mod.validate_all(world, dilemmas.items, decisions.items, red_lines.items) catch return error.InvalidDilemmaConfig;
-    }
-    var rewinds_reroll = false;
-    if (header.version >= 36) {
-        const flag = try pr.takeByte();
-        if (flag > 1) return error.InvalidProgramIdentity;
-        rewinds_reroll = flag == 1;
-    }
-    if (header.version >= 37) try read_each_rules(pr, reactive_rules.items);
-    var save_version: u32 = 1;
-    var fingerprint = codegen_mod.program_fingerprint(chunk.code.items, world);
-    if (header.version >= 29) {
-        save_version = try pr.takeInt(u32, .little);
-        fingerprint = try pr.takeInt(u64, .little);
-        // Zero means "unknown program" in a save, so no build may claim it (D-162).
-        if (save_version == 0 or fingerprint == 0) return error.InvalidProgramIdentity;
-    }
+    if (comptime linked.contains(.images)) if (table.get(.images)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        art = try read_art(allocator, &stream);
+        try finish(&stream);
+    };
+    if (comptime linked.contains(.art)) if (table.get(.art)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        try read_art_bindings(allocator, world, &stream, &art);
+        try read_art_areas(allocator, world, &stream, &art);
+        try read_art_looks(allocator, world, &stream, &art);
+        try finish(&stream);
+    };
+    if (comptime linked.contains(.text)) if (table.get(.text)) |bytes| {
+        var stream: std.Io.Reader = .fixed(bytes);
+        try read_player_text(allocator, world, &stream);
+        try finish(&stream);
+    };
 
     return CompiledProgram{
         .drafts = drafts,
@@ -2375,7 +2372,7 @@ pub fn load_package(
         .allocated_cue_keys = allocated_cue_keys,
         .allocated_routine_names = std.array_list.Managed([]const u8).init(allocator),
         .reactive_rules = reactive_rules,
-        .initial_entry = if (header.initial_entry >= 0) @intCast(header.initial_entry) else null,
+        .initial_entry = initial_entry,
         .societies = societies,
         .duels = duels,
         .degradations = degradations,
@@ -2398,6 +2395,21 @@ pub fn load_package(
         .fingerprint = fingerprint,
         .art = art,
     };
+}
+
+/// Untrusted input: `each` is only on a rising rule, and an owner slot must be the variable the
+/// first clause's subject is (D-186).
+fn read_each(rule: *CompiledWhenRule, bytes: [2]u8) !void {
+    if (bytes[0] > 1) return error.InvalidWhenEdge;
+    rule.each = bytes[0] == 1;
+    if (rule.each and rule.edge != .rising) return error.InvalidWhenEdge;
+    if (bytes[1] == NO_OWNER_SLOT) return;
+    if (!rule.each or rule.clauses.len == 0) return error.InvalidWhenEdge;
+    switch (rule.clauses[0].subject) {
+        .variable => |slot| if (slot != bytes[1]) return error.InvalidWhenEdge,
+        else => return error.InvalidWhenEdge,
+    }
+    rule.owner_slot = bytes[1];
 }
 
 /// Saves a compiled program package directly to a file on disk (P15-02).
@@ -2436,2707 +2448,304 @@ pub fn load_package_file(
 // Unit Tests (P15-02)
 // =========================================================================
 
-test "P15-02: package serializes and deserializes CompiledProgram with CRC32 integrity" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const vm_mod = @import("vm.zig");
 
-    const script =
-        \\scene Tavern:
-        \\  cast: Guard, Bard, Cat
-        \\  props: Fireplace, BarCounter
-        \\  marks: Hearth, Bar, Cellar
-        \\
-        \\relation Carries(holder, item)
-        \\relation CharmedBy(listener, musician)
-        \\
-        \\entity Cheese
-        \\remember Carries(Guard, Cheese)
-        \\
-        \\routine Patrol(Guard):
-        \\  walk Guard to Cellar
-        \\  wait 5 ticks
-        \\  walk Guard to Hearth
-        \\
-        \\when CharmedBy(Guard, Bard):
-        \\  interrupt Guard with:
-        \\    wait 4 ticks
-    ;
+// --- Tests (P48-17, D-172, D-187) ---
 
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var spatial1 = SpatialSystem.init(testing.allocator);
-    defer spatial1.deinit();
-
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
-    defer compiled1.deinit();
-
-    // Serialize to in-memory buffer
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    var lw1 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw1.writer, &compiled1, &world1, &spatial1);
-    try testing.expect(buffer.items.len > @sizeOf(PackageHeader));
-
-    // Verify header magic and version
-    const header_slice = buffer.items[0..@sizeOf(PackageHeader)];
-    const header: *const PackageHeader = @ptrCast(@alignCast(header_slice.ptr));
-    try testing.expectEqualStrings("BSPB", &header.magic);
-    try testing.expectEqual(PACKAGE_VERSION, header.version);
-    try testing.expect(header.crc32 != 0);
-
-    // Deserialize into fresh World and SpatialSystem
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var spatial2 = SpatialSystem.init(testing.allocator);
-    defer spatial2.deinit();
-
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
-    defer compiled2.deinit();
-
-    // Verify restored entities and relations
-    try testing.expect(world2.lookup_entity("Guard") != null);
-    try testing.expect(world2.lookup_entity("Bard") != null);
-    try testing.expect(world2.lookup_entity("Cheese") != null);
-    try testing.expect(world2.lookup_relation("Carries") != null);
-
-    // Verify restored spatial waypoints and hotspots
-    try testing.expectEqual(@as(usize, 3), spatial2.graph.waypoints.items.len);
-    try testing.expectEqual(@as(usize, 2), spatial2.hotspots.items.len);
-
-    // Verify restored routine entry and metadata
-    try testing.expect(compiled2.routine_entries.contains("Patrol"));
-    try testing.expectEqualStrings("Guard", compiled2.routine_entities.get("Patrol").?);
-
-    // Verify restored reactive rules
-    try testing.expectEqual(@as(usize, 1), compiled2.reactive_rules.items.len);
-
-    // Execute in VM to verify functional bytecode execution
-    var vm = vm_mod.VM.init(testing.allocator, &world2, &compiled2.chunk);
-    defer vm.deinit();
-    vm.spatial = &spatial2;
-    try vm.load_compiled_rules(&compiled2);
-
-    const guard_id = world2.lookup_entity("Guard").?;
-    const patrol_pc = compiled2.routine_entries.get("Patrol").?;
-    _ = try vm.spawn_routine(guard_id, patrol_pc);
-    try vm.step_tick();
-    try testing.expect(vm.fibers.items.len > 0);
+fn compile_for_test(allocator: std.mem.Allocator, world: *World, spatial: ?*SpatialSystem, source: []const u8) !CompiledProgram {
+    return @import("compiler.zig").compile_source(allocator, world, spatial, source);
 }
 
-test "P15-02: package loader rejects invalid magic header" {
-    const testing = std.testing;
-
-    var header = PackageHeader{
-        .magic = [_]u8{ 'X', 'Y', 'Z', 'W' },
-        .version = 1,
-        .payload_size = 0,
-        .crc32 = 0,
-    };
-    var stream: std.Io.Reader = .fixed(std.mem.asBytes(&header));
-
-    var dummy_world = try World.init(testing.allocator, 1024 * 1024);
-    defer dummy_world.deinit();
-
-    const res = load_package(testing.allocator, &stream, &dummy_world, null);
-    try testing.expectError(error.InvalidPackageMagic, res);
-}
-
-test "P39-02: package loader rejects an oversized payload before reading it" {
-    const testing = std.testing;
-    const header: PackageHeader = .{
-        .magic = PACKAGE_MAGIC,
-        .version = PACKAGE_VERSION,
-        .payload_size = MAX_PACKAGE_PAYLOAD_SIZE + 1,
-    };
-    var reader: std.Io.Reader = .fixed(std.mem.asBytes(&header));
-    var world = try World.init(testing.allocator, 256 * 1024);
-    defer world.deinit();
-    try testing.expectError(error.PackagePayloadTooLarge, load_package(testing.allocator, &reader, &world, null));
-}
-
-test "P15-02: package loader rejects corrupted payload with checksum mismatch" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-
-    const script = "entity Guard\nroutine Patrol(Guard):\n  wait 2 ticks\n";
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, script);
-    defer compiled.deinit();
-
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-
-    var lw2 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw2.writer, &compiled, &world, null);
-
-    // Corrupt one byte in the payload
-    buffer.items[buffer.items.len - 1] ^= 0xFF;
-
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-
-    const res = load_package(testing.allocator, &stream, &world2, null);
-    try testing.expectError(error.ChecksumMismatch, res);
-}
-
-test "P15-02: package loader rejects unsupported version" {
-    const testing = std.testing;
-
-    var header = PackageHeader{
-        .magic = PACKAGE_MAGIC,
-        .version = 99,
-        .payload_size = 0,
-        .crc32 = 0,
-    };
-    var stream: std.Io.Reader = .fixed(std.mem.asBytes(&header));
-
-    var dummy_world = try World.init(testing.allocator, 1024 * 1024);
-    defer dummy_world.deinit();
-
-    const res = load_package(testing.allocator, &stream, &dummy_world, null);
-    try testing.expectError(error.UnsupportedPackageVersion, res);
-
-    var message_buf: [128]u8 = undefined;
-    try testing.expectEqualStrings(
-        "unsupported .bspk format version 99; this engine supports versions 1 through 37",
-        format_unsupported_version(&message_buf, version_from_bytes(std.mem.asBytes(&header)).?),
-    );
-}
-
-test "P38-02: checked-in earlier package fixture still loads" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.1.0-package-v14.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 14), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var spatial = SpatialSystem.init(testing.allocator);
-    defer spatial.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
-    defer compiled.deinit();
-
-    try testing.expect(world.lookup_entity("FixtureHero") != null);
-    try testing.expect(world.lookup_relation("Ready") != null);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 0), compiled.goals.items.len);
-}
-
-test "P44-01: checked-in version 15 package fixture still loads its goal" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.2.0-package-v15.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    // The current writer is version 16; this fixture pins that version 15 still loads.
-    try testing.expectEqual(@as(u32, 15), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var spatial = SpatialSystem.init(testing.allocator);
-    defer spatial.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
-    defer compiled.deinit();
-
-    try testing.expect(world.lookup_entity("FixtureHero") != null);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.goals.items.len);
-    const goal = compiled.goals.items[0].goal;
-    try testing.expectEqualStrings("FinishShift", world.get_entity_name(goal.entity).?);
-    try testing.expectEqual(@as(usize, 1), goal.needs.len);
-    try testing.expectEqualStrings("Sit", world.get_entity_name(goal.needs[0].entity).?);
-    try testing.expectEqualStrings("Ready", goal.needs[0].relation);
-    try testing.expectEqualStrings("Bench", world.get_entity_name(goal.needs[0].room.?).?);
-}
-
-const SPELLBOOK_FIXTURE =
-    \\entity FixtureHero
-    \\relation Ready(subject)
-    \\spellbook FixtureGrimoire:
-    \\  power FixturePowerA, FixturePowerB
-    \\  element FixtureElementA, FixtureElementB
-    \\  form FixtureFormA, FixtureFormB
-    \\  spell FixtureSpell: FixturePowerB, FixtureElementA, FixtureFormA
-    \\routine Idle(FixtureHero):
-    \\  wait 1 ticks
-;
-
-test "P44-04: package version 17 round-trips a spellbook and loads a version 16 payload with none" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, SPELLBOOK_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw17 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw17.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.spellbooks.items.len);
-    const book = &compiled2.spellbooks.items[0].book;
-    try testing.expectEqualStrings("FixtureGrimoire", world2.get_entity_name(book.entity).?);
-    try testing.expectEqual(@as(usize, 6), book.words.len);
-    try testing.expectEqualStrings("FixturePowerB", world2.get_entity_name(book.words[1].entity).?);
-    try testing.expectEqual(spell_mod.Kind.power, book.words[1].kind);
-    try testing.expectEqual(@as(u16, 2), book.words[1].tier);
-    try testing.expectEqual(@as(usize, 1), book.spells.len);
-    const beta_word = world2.lookup_entity("FixturePowerB").?;
-    const gamma_word = world2.lookup_entity("FixtureElementA").?;
-    const epsilon_word = world2.lookup_entity("FixtureFormA").?;
-    try testing.expectEqual(book.spells[0].entity, spell_mod.resolve(book, beta_word, gamma_word, epsilon_word).?.entity);
-
-    // A payload that ends before the spellbook table is a version 16 package and loads none.
-    const v16 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V16]);
-    defer testing.allocator.free(v16);
-    reseal_for_test(v16, 16);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v16_stream: std.Io.Reader = .fixed(v16);
-    var loaded = try load_package(testing.allocator, &v16_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 0), loaded.spellbooks.items.len);
-}
-
-test "P44-04: checked-in version 17 package fixture carries a spellbook" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.2.0-package-v17.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 17), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var spatial = SpatialSystem.init(testing.allocator);
-    defer spatial.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
-    defer compiled.deinit();
-
-    try testing.expect(world.lookup_entity("FixtureHero") != null);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.spellbooks.items.len);
-    const book = &compiled.spellbooks.items[0].book;
-    try testing.expectEqualStrings("FixtureGrimoire", world.get_entity_name(book.entity).?);
-    const kindle = book.spells[0].entity;
-    try testing.expectEqualStrings("FixtureSpell", world.get_entity_name(kindle).?);
-    try testing.expectEqual(kindle, spell_mod.named_text(book, &world, "fixturespell").?.entity);
-}
-
-const DECISION_FIXTURE =
-    \\entity FixtureDecider
-    \\relation Turn(who)
-    \\relation Open(who)
-    \\decision FixtureDecision:
-    \\  actor FixtureDecider
-    \\  fires FixtureChoice
-    \\  requires Turn(FixtureDecider)
-    \\  option FixtureOptionA:
-    \\    picks 3 when Open(FixtureDecider)
-    \\    drops 1 when Turn(FixtureDecider)
-    \\  option FixtureOptionB:
-    \\    picks 1 when Open(FixtureDecider)
-    \\routine Idle(FixtureDecider):
-    \\  wait 1 ticks
-;
-
-test "P44-05: package version 18 round-trips a decision and loads a version 17 payload with none" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, DECISION_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.decisions.items.len);
-    const decision = &compiled2.decisions.items[0].decision;
-    try testing.expectEqualStrings("FixtureDecision", world2.get_entity_name(decision.entity).?);
-    try testing.expectEqualStrings("FixtureDecider", world2.get_entity_name(decision.actor).?);
-    try testing.expectEqualStrings("FixtureChoice", world2.get_entity_name(decision.cue).?);
-    try testing.expectEqual(@as(usize, 1), decision.clauses.len);
-    try testing.expectEqualStrings("Turn", decision.clauses[0].relation);
-    try testing.expectEqual(world2.lookup_entity("FixtureDecider").?, decision.clauses[0].subject.?);
-    try testing.expectEqual(@as(usize, 2), decision.options.len);
-    try testing.expectEqualStrings("FixtureOptionA", world2.get_entity_name(decision.options[0].entity).?);
-    try testing.expectEqual(@as(i32, 3), decision.options[0].picks[0].points);
-    try testing.expectEqual(@as(i32, -1), decision.options[0].picks[1].points);
-    try testing.expectEqual(@as(i32, 1), decision.options[1].picks[0].points);
-
-    // A payload that ends before the decision table is a version 17 package and loads none.
-    const v17 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V17]);
-    defer testing.allocator.free(v17);
-    reseal_for_test(v17, 17);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v17_stream: std.Io.Reader = .fixed(v17);
-    var loaded = try load_package(testing.allocator, &v17_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 0), loaded.decisions.items.len);
-    try testing.expect(loaded.routine_entries.contains("Idle"));
-}
-
-test "P44-05: checked-in version 18 package fixture carries a decision" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.2.0-package-v18.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 18), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-
-    try testing.expect(world.lookup_entity("FixtureDecider") != null);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.decisions.items.len);
-    const decision = &compiled.decisions.items[0].decision;
-    try testing.expectEqualStrings("FixtureDecision", world.get_entity_name(decision.entity).?);
-    try testing.expectEqualStrings("FixtureChoice", world.get_entity_name(decision.cue).?);
-    try testing.expectEqual(@as(usize, 2), decision.options.len);
-}
-
-test "P44-02: checked-in current package fixture carries aggregate conditions" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.2.0-package-v16.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    // The current writer is version 19; this fixture pins that version 16 still loads.
-    try testing.expectEqual(@as(u32, 16), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var spatial = SpatialSystem.init(testing.allocator);
-    defer spatial.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, &spatial);
-    defer compiled.deinit();
-
-    try testing.expect(world.lookup_entity("FixtureHero") != null);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    // The routine's bytecode holds both aggregate opcodes, so the fixture pins version 16.
-    const code = compiled.chunk.code.items;
-    var saw_count = false;
-    var saw_points = false;
-    for (code) |byte| {
-        if (byte == @intFromEnum(Opcode.query_count)) saw_count = true;
-        if (byte == @intFromEnum(Opcode.query_points)) saw_points = true;
-    }
-    try testing.expect(saw_count and saw_points);
-}
-
-test "P15-02: package file save and load roundtrip" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-
-    const script =
-        \\entity Cat, Cheese
-        \\relation Carries(holder, item)
-        \\remember Carries(Cat, Cheese)
-        \\routine Prowl(Cat):
-        \\  wait 3 ticks
-    ;
-
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-
-    // A private directory per run: two test binaries run this test at the same time.
-    var tmp = testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const dir_path = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(dir_path);
-    const tmp_path = try std.fs.path.join(testing.allocator, &.{ dir_path, "test_scenario.bspk" });
-    defer testing.allocator.free(tmp_path);
-
-    try save_package_file(testing.allocator, testing.io, tmp_path, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-
-    var compiled2 = try load_package_file(testing.allocator, testing.io, tmp_path, &world2, null);
-    defer compiled2.deinit();
-
-    try testing.expect(world2.lookup_entity("Cat") != null);
-    try testing.expect(world2.lookup_entity("Cheese") != null);
-    try testing.expect(compiled2.routine_entries.contains("Prowl"));
-    try testing.expectEqualStrings("Cat", compiled2.routine_entities.get("Prowl").?);
-}
-
-/// Bytes that empty sections added after version 9 append to every package tail: the
-/// command and alias counts (version 10) and the score count (version 11). Tests that locate
-/// earlier sections from the end of a package add this; a later version that appends a
-/// section adds its empty size here, so those tests need no other change.
-const EMPTY_TAIL_AFTER_V9: usize = 4 + 4 + EMPTY_TAIL_AFTER_V10;
-/// The empty score count (version 11) and cast count (version 12), for tests that locate
-/// version 10 sections from the end.
-const EMPTY_TAIL_AFTER_V10: usize = 4 + EMPTY_TAIL_AFTER_V11;
-/// The empty cast count (version 12) and cue guard count (version 13).
-const EMPTY_TAIL_AFTER_V11: usize = 4 + EMPTY_TAIL_AFTER_V12;
-/// The empty cue guard count (version 13) and the sections after it.
-const EMPTY_TAIL_AFTER_V12: usize = 4 + EMPTY_TAIL_AFTER_V13;
-/// The empty goal count (version 15) and the sections after it.
-const EMPTY_TAIL_AFTER_V13: usize = 4 + EMPTY_TAIL_AFTER_V16;
-/// The spellbook and decision sections after version 16, for tests that locate version 16
-/// sections from the end.
-const EMPTY_TAIL_AFTER_V16: usize = 4 + EMPTY_TAIL_AFTER_V17;
-/// The decision and axis sections after version 17, for tests that locate version 17 sections
-/// from the end.
-const EMPTY_TAIL_AFTER_V17: usize = 4 + EMPTY_TAIL_AFTER_V18;
-/// The axis and red-line sections after version 18, for tests that locate version 18 sections
-/// from the end.
-const EMPTY_TAIL_AFTER_V18: usize = 4 + EMPTY_TAIL_AFTER_V19;
-/// The red-line and dilemma sections after version 19, for tests that locate version 19
-/// sections from the end.
-const EMPTY_TAIL_AFTER_V19: usize = 4 + EMPTY_TAIL_AFTER_V20;
-/// The empty dilemma count (version 21) and the art section after it, for tests that locate
-/// version 20 sections from the end. Version 22's drift groups and version 23's appeal groups add
-/// nothing when there are no dilemmas.
-const EMPTY_TAIL_AFTER_V20: usize = 4 + EMPTY_TAIL_AFTER_V23;
-/// The empty art section (version 24): a zero colour count and a zero image count, and the
-/// empty bindings after it.
-const EMPTY_TAIL_AFTER_V23: usize = 2 + 4 + EMPTY_TAIL_AFTER_V24;
-/// The empty bindings (version 25): zero backdrops and zero sprites, and the empty area count
-/// after them (version 26).
-const EMPTY_TAIL_AFTER_V24: usize = 4 + 4 + EMPTY_TAIL_AFTER_V25;
-/// The empty area count (version 26), and the empty handler chain after it.
-const EMPTY_TAIL_AFTER_V25: usize = 4 + EMPTY_TAIL_AFTER_V26;
-/// The empty handler chain count (version 27) and the program identity after it.
-const EMPTY_TAIL_AFTER_V26: usize = 4 + TEXT_TAIL + IDENTITY_TAIL;
-/// The empty display-name and phrase counts (version 31), before the identity.
-const TEXT_TAIL: usize = 4 + 4 + LOOK_TAIL;
-/// The empty look and part counts (version 33), counted in `TEXT_TAIL` since they follow it.
-const LOOK_TAIL: usize = 4 + 4 + TUNE_TAIL;
-/// The empty axis and dilemma tuning counts (version 35), after the looks.
-const TUNE_TAIL: usize = 4 + 4 + REROLL_TAIL;
-/// The `rewinds reroll` flag (version 36), after the tuning.
-const REROLL_TAIL: usize = 1 + EACH_TAIL;
-/// The `when each` table's count (version 37), with no rules.
-const EACH_TAIL: usize = 4;
-/// The save version and fingerprint (version 29), present in every package.
-const IDENTITY_TAIL: usize = 4 + 8;
-
-/// Re-seals a hand-edited test package: recomputes payload size and CRC32 in the header.
-fn reseal_for_test(buf: []u8, version: u32) void {
-    const header: *PackageHeader = @ptrCast(@alignCast(buf[0..@sizeOf(PackageHeader)].ptr));
-    const payload = buf[@sizeOf(PackageHeader)..];
-    header.version = version;
-    header.payload_size = @intCast(payload.len);
-    header.crc32 = std.hash.Crc32.hash(payload);
-}
-
-test "P22-01: package round-trips the draft table including declared reverses" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\entity Player
-        \\draft Kindle(C, E, G, E) reverse Douse
-        \\draft Mend(D, A, A, D)
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw3 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw3.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-
-    try testing.expectEqual(@as(usize, 3), compiled2.drafts.items.len);
-    const douse = compiled2.find_draft_by_notes(.{ .E, .G, .E, .C }).?;
-    try testing.expectEqualStrings("Douse", world2.get_entity_name(douse.entity).?);
-    try testing.expectEqualStrings("Kindle", world2.get_entity_name(douse.inverse.?).?);
-    try testing.expect(compiled2.find_draft_by_notes(.{ .D, .A, .A, .D }).?.inverse == null);
-}
-
-test "P22-01: package loader rejects out-of-range draft notes and loads version 1 packages" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script = "entity Player\ndraft Mend(D, A, A, D)\n";
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, script);
-    defer compiled.deinit();
-
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw4 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw4.writer, &compiled, &world, null);
-
-    // Draft tail: count u32, then entity u32, 4 note bytes, inverse flag u8, inverse u32.
-    // The draft table is followed by empty society, duel, degradation, grid, and agenda counts,
-    // then the sections added after version 9.
-    const declaration_tail_len = 20 + EMPTY_TAIL_AFTER_V9;
-    const tail_len = 4 + 4 + 4 + 1 + 4;
-    const first_note = buffer.items.len - declaration_tail_len - tail_len + 8;
-    {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        bad[first_note] = 7; // one past B
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world2 = try World.init(testing.allocator, 1024 * 1024);
-        defer world2.deinit();
-        var stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidDraftNote, load_package(testing.allocator, &stream, &world2, null));
-    }
-    {
-        // A real version 4 payload ends after the duel table and loads no degradation profiles.
-        const v4 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - 12 - EMPTY_TAIL_AFTER_V9]);
-        defer testing.allocator.free(v4);
-        reseal_for_test(v4, 4);
-        var world2 = try World.init(testing.allocator, 1024 * 1024);
-        defer world2.deinit();
-        var stream: std.Io.Reader = .fixed(v4);
-        var loaded = try load_package(testing.allocator, &stream, &world2, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.degradations.items.len);
-    }
-    {
-        // A version 1 package is the same payload without the draft tail.
-        const v1 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - tail_len - declaration_tail_len]);
-        defer testing.allocator.free(v1);
-        reseal_for_test(v1, 1);
-        var world2 = try World.init(testing.allocator, 1024 * 1024);
-        defer world2.deinit();
-        var stream: std.Io.Reader = .fixed(v1);
-        var loaded = try load_package(testing.allocator, &stream, &world2, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.drafts.items.len);
-    }
-}
-
-test "P23-01/P23-02: package round-trips degradation declarations and loads version 5" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\degradation TestProfile:
-        \\  substance TestReagent
-        \\  stage Sound 3
-        \\  stage Etched 2
-        \\  stage Failed 0
-        \\  vessel TestVial 8 5 Sound
-        \\  spill 2
-        \\  relations HoldsReagent ReagentVolume VialState ReagentExposure VialFailedAt
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw5 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw5.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.degradations.items.len);
-    const declaration = &compiled2.degradations.items[0];
-    try testing.expectEqual(@as(usize, 3), declaration.config.stages.len);
-    try testing.expectEqual(@as(u32, 8), declaration.config.vessels[0].capacity);
-    try testing.expectEqual(@as(u32, 2), declaration.config.spill_per_moving_tick);
-    var system = try container_mod.ContainerSystem.init(&world2, declaration.config);
-    const vial = world2.lookup_entity("TestVial").?;
-    _ = world2.step_tick();
-    try system.step(&world2, null);
-    try testing.expectEqual(world2.lookup_entity("Sound").?.to_int(), world2.get_property(vial, system.rel.stage).?);
-
-    // Version 5 stored the same declaration without the u32 spill field and had no grid or
-    // agenda count.
-    const grid_count_len = 4 + 4 + EMPTY_TAIL_AFTER_V9;
-    const bytes_after_spill = 1 + 3 * (4 + 8) + 1 + (4 + 4 + 4 + 1) + 5 * 4 + grid_count_len;
-    const spill_offset = buffer.items.len - bytes_after_spill - 4;
-    var v5 = std.array_list.Managed(u8).init(testing.allocator);
-    defer v5.deinit();
-    try v5.appendSlice(buffer.items[0..spill_offset]);
-    try v5.appendSlice(buffer.items[spill_offset + 4 .. buffer.items.len - grid_count_len]);
-    reseal_for_test(v5.items, 5);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v5_stream: std.Io.Reader = .fixed(v5.items);
-    var compiled3 = try load_package(testing.allocator, &v5_stream, &world3, null);
-    defer compiled3.deinit();
-    try testing.expectEqual(@as(u32, 0), compiled3.degradations.items[0].config.spill_per_moving_tick);
-}
-
-test "P25-01/P25-02: package round-trips grids and rules, rejects bad cells, and loads versions 6 and 7" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\scene: Armory
-        \\marks: ArmoryDoor, ArmoryRack
-        \\
-        \\grid ArmoryFloor in Armory:
-        \\  size 3 2
-        \\  cell 10
-        \\  origin 5 5
-        \\  liquid 0 1 3 1
-        \\  blocking 2 0
-        \\  place ArmoryRack 2 0
-        \\  burn 5
-        \\  spread 2
-        \\  dissipate 7
-        \\  flow 3
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var spatial1 = SpatialSystem.init(testing.allocator);
-    defer spatial1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw6 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw6.writer, &compiled1, &world1, &spatial1);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var spatial2 = SpatialSystem.init(testing.allocator);
-    defer spatial2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.grids.items.len);
-    const grid = spatial2.grid_in_room(world2.lookup_entity("Armory").?).?;
-    try testing.expectEqual(@as(i32, 5), grid.origin_x);
-    try testing.expectEqual(@as(usize, 4), compiled2.grids.items[0].cells.len);
-    try testing.expectEqual(grid_mod.Rules{ .burn_ticks = 5, .spread_ticks = 2, .dissipate_ticks = 7, .flow_ticks = 3 }, compiled2.grids.items[0].rules);
-    const rack = spatial2.graph.find_waypoint("ArmoryRack").?;
-    try testing.expectEqual(grid_mod.Cell{ .x = 2, .y = 0 }, spatial2.waypoint_cell(rack).?.cell);
-    try @import("host.zig").initialize_subsystems(&world2, &compiled2);
-    try testing.expect(spatial2.waypoint_blocked(&world2, rack));
-    try testing.expect(grid_mod.has_attribute(&world2, grid, .{ .x = 1, .y = 1 }, .liquid));
-
-    // Tail layout: grid count, entity, room, width, height, cell size, origin x/y, cell count,
-    // four (index u32, attribute u8) cells, four u32 rates (version 8), then the empty agenda
-    // count (version 9).
-    const cells_len = 4 * (4 + 1);
-    const rules_len = 4 * 4;
-    const agenda_count_len = 4 + EMPTY_TAIL_AFTER_V9;
-    const first_cell_index = buffer.items.len - agenda_count_len - rules_len - cells_len;
-    {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        std.mem.writeInt(u32, bad[first_cell_index..][0..4], 6, .little); // one past the 3x2 area
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        bad[first_cell_index + 4] = 5; // past smoke, the last attribute
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        // A version 7 payload has no rates; its grids load with every rule off.
-        const v7 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - agenda_count_len - rules_len]);
-        defer testing.allocator.free(v7);
-        reseal_for_test(v7, 7);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v7_stream: std.Io.Reader = .fixed(v7);
-        var loaded = try load_package(testing.allocator, &v7_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expect(!loaded.grids.items[0].rules.any());
-
-        // Version 7 predates the burning attribute, so its byte is corrupt there.
-        v7[first_cell_index + 4] = @intFromEnum(grid_mod.Attribute.burning);
-        reseal_for_test(v7, 7);
-        var world4 = try World.init(testing.allocator, 1024 * 1024);
-        defer world4.deinit();
-        var bad_stream: std.Io.Reader = .fixed(v7);
-        try testing.expectError(error.InvalidGridConfig, load_package(testing.allocator, &bad_stream, &world4, null));
-    }
-    {
-        // A version 6 payload ends before the grid table and loads no grids.
-        const grid_section_len = 4 + 4 + 4 + 2 + 2 + 4 + 4 + 4 + 4 + cells_len + rules_len + agenda_count_len;
-        const v6 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - grid_section_len]);
-        defer testing.allocator.free(v6);
-        reseal_for_test(v6, 6);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var spatial3 = SpatialSystem.init(testing.allocator);
-        defer spatial3.deinit();
-        var v6_stream: std.Io.Reader = .fixed(v6);
-        var loaded = try load_package(testing.allocator, &v6_stream, &world3, &spatial3);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.grids.items.len);
-        try testing.expectEqual(@as(usize, 0), spatial3.grids.items.len);
-    }
-}
-
-test "P33-01: package version 9 round-trips agendas, rejects bad flags, and loads version 8" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\relation Investigated(who, place)
-        \\agenda WarnOff:
-        \\  actor Keeper
-        \\  target Hero
-        \\  priority 4
-        \\  cooldown 12
-        \\  requires Investigated(Hero, _)
-        \\  unless Warned(Hero)
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw7 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw7.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.agendas.items.len);
-    const agenda = compiled2.agendas.items[0].agenda;
-    try testing.expectEqual(@as(u16, 4), agenda.priority);
-    try testing.expectEqual(@as(u32, 12), agenda.cooldown_ticks);
-    try testing.expectEqualStrings("Hero", world2.get_entity_name(agenda.target).?);
-    try testing.expectEqual(@as(usize, 2), agenda.clauses.len);
-    try testing.expect(agenda.clauses[0].object == null and !agenda.clauses[0].negated);
-    try testing.expect(agenda.clauses[1].negated and agenda.clauses[1].object == null);
-    try testing.expectEqualStrings("Warned", agenda.clauses[1].relation);
-
-    // Tail: each clause is text ref, subject, object (u32 each) and a negated byte.
-    const clause_len = 4 + 4 + 4 + 1;
-    {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        bad[bad.len - EMPTY_TAIL_AFTER_V9 - 1] = 2; // the last clause's negated flag
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidAgendaConfig, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        // A version 8 payload ends before the agenda table and loads none.
-        const agenda_section_len = 4 + 4 + 4 + 4 + 2 + 4 + 1 + 1 + 2 * clause_len;
-        const v8 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - agenda_section_len - EMPTY_TAIL_AFTER_V9]);
-        defer testing.allocator.free(v8);
-        reseal_for_test(v8, 8);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v8_stream: std.Io.Reader = .fixed(v8);
-        var loaded = try load_package(testing.allocator, &v8_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.agendas.items.len);
-    }
-}
-
-test "P26-01: package version 10 round-trips commands and aliases and loads version 9" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\command Pours: "pour <thing> into <thing>"
-        \\alias OilLamp: "lantern"
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw8 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw8.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqualStrings("pour <thing> into <thing>", compiled2.commands.items[0].text);
-    try testing.expectEqualStrings("lantern", compiled2.aliases.items[0].phrases[0]);
-    try testing.expectEqualStrings("OilLamp", world2.get_entity_name(compiled2.aliases.items[0].entity).?);
-
-    // Tail: command count, cue and frame strings, alias count, entity, phrase count, phrase.
-    const alias_section_len = 4 + 4 + 1 + (2 + "lantern".len);
-    const command_section_len = 4 + (2 + "Pours".len) + (2 + "pour <thing> into <thing>".len);
-    {
-        // A frame whose verb is not lowercase is rejected on load.
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        const frame_start = bad.len - EMPTY_TAIL_AFTER_V10 - alias_section_len - "pour <thing> into <thing>".len;
-        bad[frame_start] = 'P';
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidCommandConfig, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        const v9 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V10 - alias_section_len - command_section_len]);
-        defer testing.allocator.free(v9);
-        reseal_for_test(v9, 9);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v9_stream: std.Io.Reader = .fixed(v9);
-        var loaded = try load_package(testing.allocator, &v9_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.commands.items.len + loaded.aliases.items.len);
-    }
-}
-
-test "P28-03: package version 11 round-trips scores, rejects bad MML, and loads version 10" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\score Night:
-        \\  lead "t96 o5 l8 c e g e"
-        \\  drums "k4 h4"
-        \\  scene Courtyard
-        \\  scene Wine Cellar
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw9 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw9.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    const score = compiled2.scores.items[0];
-    try testing.expectEqualStrings("Night", score.name);
-    try testing.expectEqualStrings("Wine Cellar", score.scenes[1]);
-    try testing.expectEqualStrings("t96 o5 l8 c e g e", score.parts[0]);
-    try testing.expectEqualStrings("", score.parts[1]);
-    try testing.expectEqualStrings("k4 h4", score.parts[3]);
-
-    // Tail: count, name, scene count, two scenes, four parts.
-    const score_section_len = 4 + (2 + "Night".len) + 1 + (2 + "Courtyard".len) + (2 + "Wine Cellar".len) +
-        (2 + "t96 o5 l8 c e g e".len) + 2 + 2 + (2 + "k4 h4".len);
-    {
-        // A drum letter smuggled into the lead part is rejected on load, as the compiler would.
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        const lead_start = bad.len - EMPTY_TAIL_AFTER_V11 - (2 + "k4 h4".len) - 2 - 2 - "t96 o5 l8 c e g e".len;
-        try testing.expectEqual(@as(u8, 't'), bad[lead_start]);
-        bad[lead_start + 4] = 'k';
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidScoreConfig, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        const v10 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - score_section_len - EMPTY_TAIL_AFTER_V11]);
-        defer testing.allocator.free(v10);
-        reseal_for_test(v10, 10);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v10_stream: std.Io.Reader = .fixed(v10);
-        var loaded = try load_package(testing.allocator, &v10_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.scores.items.len);
-    }
-}
-
-test "P24-01: package round-trips path initializers and guarded routines" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const vm_mod = @import("vm.zig");
-    const script =
-        \\entity Hero
-        \\relation ChosenWits(flag)
-        \\relation ChosenFists(flag)
-        \\relation WitsSolved(flag)
-        \\relation FistsSolved(flag)
-        \\path Wits:
-        \\  remember ChosenWits(Hero)
-        \\  routine WitsPlan(Hero):
-        \\    remember WitsSolved(Hero)
-        \\path Fists:
-        \\  remember ChosenFists(Hero)
-        \\  routine FistsPlan(Hero):
-        \\    remember FistsSolved(Hero)
-    ;
-
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw10 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw10.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-
-    try testing.expect(compiled2.find_path("Wits") != null);
-    try testing.expect(compiled2.find_path("Fists") != null);
-
-    var vm = vm_mod.VM.init(testing.allocator, &world2, &compiled2.chunk);
-    defer vm.deinit();
-    _ = try vm.select_path(&compiled2, "Wits");
-    _ = try vm.step_tick();
-
-    const hero = world2.lookup_entity("Hero").?;
-    const chosen_wits = world2.lookup_relation("ChosenWits").?;
-    try testing.expect(world2.has_fact(hero, chosen_wits, null));
-
-    _ = try vm.spawn_routine(hero, compiled2.routine_entries.get("WitsPlan").?);
-    _ = try vm.spawn_routine(hero, compiled2.routine_entries.get("FistsPlan").?);
-    _ = try vm.step_tick();
-    try testing.expect(world2.has_fact(hero, world2.lookup_relation("WitsSolved").?, null));
-    try testing.expect(!world2.has_fact(hero, world2.lookup_relation("FistsSolved").?, null));
-}
-
-test "P32-18: package round-trips an arrival rule and version 2 rejects its edge" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\scene: Yard
-        \\cast: Scout
-        \\marks: Well, Gate
-        \\
-        \\when Scout arrives at Gate:
-        \\  remember ReachedGate(Scout, true)
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var spatial1 = SpatialSystem.init(testing.allocator);
-    defer spatial1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
-    defer compiled1.deinit();
-
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw11 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw11.writer, &compiled1, &world1, &spatial1);
-
-    {
-        var world2 = try World.init(testing.allocator, 1024 * 1024);
-        defer world2.deinit();
-        var spatial2 = SpatialSystem.init(testing.allocator);
-        defer spatial2.deinit();
-        var stream: std.Io.Reader = .fixed(buffer.items);
-        var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
-        defer compiled2.deinit();
-
-        try testing.expectEqual(@as(usize, 1), compiled2.reactive_rules.items.len);
-        const rule = compiled2.reactive_rules.items[0];
-        try testing.expectEqual(WhenEdge.on_arrive, rule.edge);
-        const gate = spatial2.graph.find_waypoint("Gate").?;
-        try testing.expectEqual(@as(u32, gate), rule.clauses[0].object.constant);
-        try testing.expectEqual(world2.lookup_entity("Scout").?.to_int(), rule.clauses[0].subject.constant);
-    }
-    {
-        // The same payload labelled version 2 must not load: that format has no arrival edge.
-        const v2 = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(v2);
-        reseal_for_test(v2, 2);
-        var world2 = try World.init(testing.allocator, 1024 * 1024);
-        defer world2.deinit();
-        var spatial2 = SpatialSystem.init(testing.allocator);
-        defer spatial2.deinit();
-        var stream: std.Io.Reader = .fixed(v2);
-        try testing.expectError(error.InvalidWhenEdge, load_package(testing.allocator, &stream, &world2, &spatial2));
-    }
-}
-
-test "P32-22/P32-24: package version 6 round-trips society and duel declarations" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\scene: Test Square
-        \\cast: Alice, Merchant, Rival
-        \\marks: Home, Market, Square
-        \\society TestSociety:
-        \\  need Hunger high 100 1 0 50 trade Merchant 2 20 0 80 30 0 "a meal"
-        \\  member Alice 5 working:
-        \\    need Hunger 10 none Merchant
-        \\    routine working 2 Home, Square
-        \\  member Merchant 10 working:
-        \\    need Hunger 10 none Merchant
-        \\    routine working 2 Market
-        \\    merchant Market Goods
-        \\    owns Goods
-        \\    carries Goods
-        \\  gathering Square
-        \\  flight Home none 4
-        \\  friend Alice Merchant
-        \\duel TestDuel:
-        \\  pair Riddle:
-        \\    challenge "What speaks without a mouth?"
-        \\    reply "An echo."
-        \\    variant 1 "Voiceless, I answer."
-        \\  fallback "I do not know."
-        \\  fallback "Ask me another."
-        \\  win 3
-        \\  tier Rival 1
-        \\  fatigue Inquiries "calm":
-        \\    stage AnnoyedWith 2 10 "annoyed"
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var spatial1 = SpatialSystem.init(testing.allocator);
-    defer spatial1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw12 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw12.writer, &compiled1, &world1, &spatial1);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var spatial2 = SpatialSystem.init(testing.allocator);
-    defer spatial2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.societies.items.len);
-    try testing.expectEqual(@as(usize, 1), compiled2.duels.items.len);
-    var society = try society_mod.Society.init(&world2, compiled2.societies.items[0].config);
-    const alice = world2.lookup_entity("Alice").?;
-    try testing.expectEqual(@as(u32, 10), society.get_need(&world2, alice, 0));
-    var duel = try duel_mod.Duel.init(&world2, compiled2.duels.items[0].config);
-    try compiled2.duels.items[0].apply_tiers(&duel);
-    const rival = world2.lookup_entity("Rival").?;
-    try testing.expectEqual(@as(u32, 1), world2.get_property(rival, duel.tier_rel).?);
-    // D-076: version 14 keeps both fallback lines in order.
-    const fallbacks = compiled2.duels.items[0].config.fallbacks;
-    try testing.expectEqual(@as(usize, 2), fallbacks.len);
-    try testing.expectEqualStrings("Ask me another.", fallbacks[1]);
-
-    // A version 13 package could only hold one line, so a count of two is corrupt there.
-    const v13 = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(v13);
-    reseal_for_test(v13, 13);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var spatial3 = SpatialSystem.init(testing.allocator);
-    defer spatial3.deinit();
-    var stream3: std.Io.Reader = .fixed(v13);
-    try testing.expectError(error.InvalidDuelConfig, load_package(testing.allocator, &stream3, &world3, &spatial3));
-}
-
-test "D-065: package version 12 round-trips cast places, rejects a bad mark, and loads version 11" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\scene Quay:
-        \\  cast: Pilot
-        \\  marks: Steps, Pier
-        \\scene Ferry:
-        \\  cast: Captain
-        \\  marks: Deck
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var spatial1 = SpatialSystem.init(testing.allocator);
-    defer spatial1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, &spatial1, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw13 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw13.writer, &compiled1, &world1, &spatial1);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var spatial2 = SpatialSystem.init(testing.allocator);
-    defer spatial2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, &spatial2);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 2), compiled2.cast.items.len);
-    const captain = compiled2.cast.items[1];
-    try testing.expectEqualStrings("Captain", world2.get_entity_name(captain.actor).?);
-    try testing.expectEqualStrings("Deck", spatial2.graph.get_waypoint(captain.mark).?.name);
-
-    // Tail: count, then entity and mark per member.
-    const cast_section_len = 4 + 2 * (4 + 2);
-    {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        std.mem.writeInt(u16, bad[bad.len - EMPTY_TAIL_AFTER_V12 - 2 ..][0..2], 99, .little);
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidProgramWaypoint, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        const v11 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - cast_section_len - EMPTY_TAIL_AFTER_V12]);
-        defer testing.allocator.free(v11);
-        reseal_for_test(v11, 11);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v11_stream: std.Io.Reader = .fixed(v11);
-        var loaded = try load_package(testing.allocator, &v11_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.cast.items.len);
-    }
-}
-
-test "D-072: package version 13 round-trips cue guards, rejects a bad slot, and loads version 12" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\entity Cat, Guard, Cheese
-        \\on cue Steal(Cat, victim) where Carries(victim, Cheese):
-        \\  remember Stolen(Cheese)
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled1.cue_guards.items.len);
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw14 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw14.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.cue_guards.items.len);
-    const cat = world2.lookup_entity("Cat").?;
-    const guard_ent = world2.lookup_entity("Guard").?;
-    const cheese = world2.lookup_entity("Cheese").?;
-    // The loaded guard still binds `victim` to the cue's target.
-    try testing.expectEqual(@as(?usize, null), compiled2.select_cue_handler(&world2, "Steal", cat, guard_ent, null));
-    _ = try world2.remember(guard_ent, try world2.intern_relation("Carries", .set), cheese.to_int(), 0);
-    try testing.expect(compiled2.select_cue_handler(&world2, "Steal", cat, guard_ent, null) != null);
-
-    // Tail: count, then pc, three slot bytes, clause count, and one clause of 2 + 5 + 5 bytes.
-    const guard_section_len = 4 + 4 + 3 + 2 + (2 + 5 + 5);
-    {
-        // The clause's subject is the bound `victim`, variable slot 0; slot 9 cannot exist.
-        const bad = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(bad);
-        std.mem.writeInt(u32, bad[bad.len - EMPTY_TAIL_AFTER_V13 - 5 - 4 ..][0..4], 9, .little);
-        reseal_for_test(bad, PACKAGE_VERSION);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var bad_stream: std.Io.Reader = .fixed(bad);
-        try testing.expectError(error.InvalidPatternVariable, load_package(testing.allocator, &bad_stream, &world3, null));
-    }
-    {
-        const v12 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V13 - guard_section_len]);
-        defer testing.allocator.free(v12);
-        reseal_for_test(v12, 12);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v12_stream: std.Io.Reader = .fixed(v12);
-        var loaded = try load_package(testing.allocator, &v12_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.cue_guards.items.len);
-    }
-}
-
-test "P44-01: package version 15 round-trips goals and loads a version 14 payload with none" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const script =
-        \\entity Hero, TelescopeLog
-        \\relation Carries(holder, item)
-        \\relation Read(who, item)
-        \\scene: PlateArchive
-        \\props: ExposureSlip
-        \\marks: Archive
-        \\goal RecoverThePlate:
-        \\  need TakeTheSlip:
-        \\    met Carries(Hero, ExposureSlip)
-        \\    room Archive
-        \\    hint 2 "Your notebook names the slip."
-        \\  need ReadTheLog after TakeTheSlip:
-        \\    met Read(Hero, TelescopeLog)
-        \\    room Archive
-    ;
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, script);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw15 = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw15.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.goals.items.len);
-    const goal = compiled2.goals.items[0].goal;
-    try testing.expectEqualStrings("RecoverThePlate", world2.get_entity_name(goal.entity).?);
-    try testing.expectEqual(@as(usize, 2), goal.needs.len);
-    const take = goal.needs[0];
-    try testing.expectEqualStrings("Carries", take.relation);
-    try testing.expectEqualStrings("Hero", world2.get_entity_name(take.subject.?).?);
-    try testing.expectEqualStrings("ExposureSlip", world2.get_entity_name(take.object.?).?);
-    try testing.expectEqualStrings("Archive", world2.get_entity_name(take.room.?).?);
-    try testing.expectEqual(@as(usize, 1), take.hints.len);
-    try testing.expectEqual(take.hints[0].tier, hint_mod.Tier.thing);
-    try testing.expectEqualStrings("Your notebook names the slip.", take.hints[0].text);
-    try testing.expectEqual(@as(usize, 1), goal.needs[1].after.len);
-    try testing.expectEqual(take.entity, goal.needs[1].after[0]);
-
-    // A payload that ends before the goal table is a version 14 package and loads no goals.
-    {
-        const plain =
-            \\entity FixtureHero
-            \\routine Idle(FixtureHero):
-            \\  wait 1 ticks
-        ;
-        var plain_world = try World.init(testing.allocator, 1024 * 1024);
-        defer plain_world.deinit();
-        var plain_compiled = try compiler.compile_source(testing.allocator, &plain_world, null, plain);
-        defer plain_compiled.deinit();
-        var plain_buffer = std.array_list.Managed(u8).init(testing.allocator);
-        defer plain_buffer.deinit();
-        var lw_plain = ListWriter.init(&plain_buffer);
-        try save_package(testing.allocator, &lw_plain.writer, &plain_compiled, &plain_world, null);
-
-        const v14 = try testing.allocator.dupe(u8, plain_buffer.items[0 .. plain_buffer.items.len - EMPTY_TAIL_AFTER_V13]);
-        defer testing.allocator.free(v14);
-        reseal_for_test(v14, 14);
-        var world3 = try World.init(testing.allocator, 1024 * 1024);
-        defer world3.deinit();
-        var v14_stream: std.Io.Reader = .fixed(v14);
-        var loaded = try load_package(testing.allocator, &v14_stream, &world3, null);
-        defer loaded.deinit();
-        try testing.expectEqual(@as(usize, 0), loaded.goals.items.len);
-    }
-}
-
-const AXIS_FIXTURE =
-    \\entity FixtureCaptain
-    \\axis FixtureJustice between Cruelty and Leniency
-    \\axis FixtureMercy between Vengeance and "Condoning Harm"
-    \\remember FixtureJustice(FixtureCaptain, 8)
-    \\remember FixtureMercy(FixtureCaptain, -3)
-    \\routine Idle(FixtureCaptain):
-    \\  wait 1 ticks
-;
-
-test "P45-01: package version 19 round-trips value axes and loads a version 18 payload with none" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, AXIS_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 2), compiled2.axes.items.len);
-    const mercy = compiled2.axes.items[1];
-    try testing.expectEqualStrings("FixtureMercy", world2.get_relation_meta(mercy.relation).?.name);
-    try testing.expectEqualStrings("Vengeance", world2.get_entity_name(mercy.poles[0]).?);
-    try testing.expectEqualStrings("Condoning Harm", world2.get_entity_name(mercy.poles[1]).?);
-    // The loaded world clamps the axis as the compiling world did.
-    const bound = world2.value_bound(mercy.relation).?;
-    try testing.expectEqual(value_mod.MIN, bound.min);
-    try testing.expectEqual(value_mod.MAX, bound.max);
-    const captain = world2.lookup_entity("FixtureCaptain").?;
-    try world2.remember(captain, mercy.relation, 40, 0);
-    try testing.expectEqual(@as(i32, value_mod.MAX), value_mod.value_of(&world2, captain, mercy).?);
-
-    // A payload that ends before the axis table is a version 18 package and loads none.
-    // The axis table is not empty here, so cut its whole length rather than the empty tail.
-    const axis_table_len = 4 + compiled1.axes.items.len * (2 + 4 + 4) + EMPTY_TAIL_AFTER_V19;
-    const v18_payload = buffer.items[0 .. buffer.items.len - axis_table_len];
-    const v18_owned = try testing.allocator.dupe(u8, v18_payload);
-    defer testing.allocator.free(v18_owned);
-    reseal_for_test(v18_owned, 18);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v18_stream: std.Io.Reader = .fixed(v18_owned);
-    var loaded = try load_package(testing.allocator, &v18_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 0), loaded.axes.items.len);
-    try testing.expect(world3.value_bound(world3.lookup_relation("FixtureMercy").?) == null);
-    try testing.expect(loaded.routine_entries.contains("Idle"));
-}
-
-test "P45-01: a package axis on a set relation or with a bad pole is refused" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, AXIS_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    // The last axis entry, before the empty red-line count, is relation (u16) then two pole ids (u32). Point its second pole at an
-    // entity that does not exist.
-    const bad_pole = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(bad_pole);
-    // Since version 35 the tail also holds one drift-step byte per axis (D-183).
-    const tuned = compiled1.axes.items.len;
-    std.mem.writeInt(u32, bad_pole[bad_pole.len - 4 - EMPTY_TAIL_AFTER_V19 - tuned ..][0..4], 0xFFFF_FFF0, .little);
-    reseal_for_test(bad_pole, PACKAGE_VERSION);
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(bad_pole);
-    try testing.expectError(error.InvalidProgramEntity, load_package(testing.allocator, &stream, &world2, null));
-
-    // Point the axis at relation 0, which no table holds.
-    const bad_relation = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(bad_relation);
-    std.mem.writeInt(u16, bad_relation[bad_relation.len - 10 - EMPTY_TAIL_AFTER_V19 - tuned ..][0..2], 0, .little);
-    reseal_for_test(bad_relation, PACKAGE_VERSION);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var stream3: std.Io.Reader = .fixed(bad_relation);
-    try testing.expectError(error.InvalidAxisConfig, load_package(testing.allocator, &stream3, &world3, null));
-}
-
-test "P45-01: checked-in version 19 package fixture carries value axes" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.3.1-package-v19.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 19), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 2), compiled.axes.items.len);
-    try testing.expectEqualStrings("FixtureJustice", world.get_relation_meta(compiled.axes.items[0].relation).?.name);
-    try testing.expectEqualStrings("Condoning Harm", world.get_entity_name(compiled.axes.items[1].poles[1]).?);
-}
-
-const RED_LINE_FIXTURE =
-    \\entity FixtureJudge
-    \\relation Accused(who)
-    \\red lines FixtureJudge: FixtureExecute
-    \\decision FixtureVerdict:
-    \\  actor FixtureJudge
-    \\  fires FixtureJudged
-    \\  requires Accused(FixtureThief)
-    \\  option FixtureExecute:
-    \\    picks 9 when Accused(FixtureThief)
-    \\  option FixturePardon:
-    \\    picks 1 when Accused(FixtureThief)
-    \\routine Idle(FixtureJudge):
-    \\  wait 1 ticks
-;
-
-test "P45-02: package version 20 round-trips red lines and loads a version 19 payload with none" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, RED_LINE_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.red_lines.items.len);
-    const set = compiled2.red_lines.items[0].red_lines;
-    try testing.expectEqualStrings("FixtureJudge", world2.get_entity_name(set.actor).?);
-    try testing.expectEqualStrings("FixtureExecute", world2.get_entity_name(set.options[0]).?);
-
-    // A payload that ends before the red-line table is a version 19 package and loads none.
-    const red_table_len = 4 + 4 + 1 + 4 + EMPTY_TAIL_AFTER_V20;
-    const v19 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - red_table_len]);
-    defer testing.allocator.free(v19);
-    reseal_for_test(v19, 19);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v19_stream: std.Io.Reader = .fixed(v19);
-    var loaded = try load_package(testing.allocator, &v19_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 0), loaded.red_lines.items.len);
-    try testing.expectEqual(@as(usize, 1), loaded.decisions.items.len);
-
-    // A package whose red line names an option no decision offers that character is refused.
-    const bad = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(bad);
-    // Point the veto at the judge's own entity, which is not an option of any decision.
-    std.mem.writeInt(u32, bad[bad.len - 4 - EMPTY_TAIL_AFTER_V20 ..][0..4], world1.lookup_entity("FixtureJudge").?.to_int(), .little);
-    reseal_for_test(bad, PACKAGE_VERSION);
-    var world4 = try World.init(testing.allocator, 1024 * 1024);
-    defer world4.deinit();
-    var bad_stream: std.Io.Reader = .fixed(bad);
-    try testing.expectError(error.InvalidRedLineConfig, load_package(testing.allocator, &bad_stream, &world4, null));
-}
-
-test "P45-02: checked-in version 20 package fixture carries red lines" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.3.1-package-v20.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 20), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.decisions.items.len);
-    try testing.expectEqual(@as(usize, 1), compiled.red_lines.items.len);
-    try testing.expectEqualStrings("FixtureExecute", world.get_entity_name(compiled.red_lines.items[0].red_lines.options[0]).?);
-}
-
-
-const DILEMMA_FIXTURE =
-    \\entity FixtureJudge
-    \\relation Accused(who)
-    \\relation Criminal(who)
-    \\axis FixtureJustice between Cruelty and Leniency
-    \\axis FixtureMercy between Vengeance and Indulgence
-    \\dilemma FixtureDilemma:
-    \\  actor FixtureJudge
-    \\  fires FixtureJudged
-    \\  requires Accused(FixtureThief)
-    \\  weighs FixtureJustice against FixtureMercy
-    \\  leans 3 toward FixtureJustice when Criminal(FixtureThief)
-    \\  strong FixtureJustice: "Fixture strong justice." -> FixtureHang
-    \\  moderate FixtureJustice: "Fixture moderate justice." -> FixtureJail
-    \\  neutral: "Fixture neutral." -> FixtureWait
-    \\  moderate FixtureMercy: "Fixture moderate mercy." -> FixtureFine
-    \\  strong FixtureMercy: "Fixture strong mercy." -> FixturePardon
-    \\routine Idle(FixtureJudge):
-    \\  wait 1 ticks
-;
-
-test "P45-03: package version 21 round-trips a dilemma and loads a version 20 payload with none" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, DILEMMA_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled2.dilemmas.items.len);
-    const d = compiled2.dilemmas.items[0].dilemma;
-    try testing.expectEqualStrings("FixtureDilemma", world2.get_entity_name(d.entity).?);
-    try testing.expectEqualStrings("FixtureJustice", world2.get_relation_meta(d.axis).?.name);
-    try testing.expectEqualStrings("FixtureMercy", world2.get_relation_meta(d.counter).?.name);
-    try testing.expectEqual(@as(i32, 3), d.leans[0].points);
-    try testing.expectEqualStrings("Fixture neutral.", world2.get_entity_name(d.responses[2].line).?);
-    try testing.expectEqualStrings("FixturePardon", world2.get_entity_name(d.responses[4].action).?);
-
-    // A payload that ends before the dilemma table is a version 20 package and loads none.
-    const v20 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - dilemma_table_len(d)]);
-    defer testing.allocator.free(v20);
-    reseal_for_test(v20, 20);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v20_stream: std.Io.Reader = .fixed(v20);
-    var loaded = try load_package(testing.allocator, &v20_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 0), loaded.dilemmas.items.len);
-    try testing.expectEqual(@as(usize, 2), loaded.axes.items.len);
-
-    // A dilemma whose counter-axis is not a bounded axis is refused: point it at `Accused`.
-    const bad = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(bad);
-    const counter_at = bad.len - (dilemma_table_len(d) - counter_offset(d));
-    std.mem.writeInt(u16, bad[counter_at..][0..2], world1.lookup_relation("Accused").?.to_int(), .little);
-    reseal_for_test(bad, PACKAGE_VERSION);
-    var world4 = try World.init(testing.allocator, 1024 * 1024);
-    defer world4.deinit();
-    var bad_stream: std.Io.Reader = .fixed(bad);
-    try testing.expectError(error.InvalidDilemmaConfig, load_package(testing.allocator, &bad_stream, &world4, null));
-}
-
-/// One decision clause on disk: relation text ref, subject, object, negation flag.
-const CLAUSE_BYTES: usize = 4 + 4 + 4 + 1;
-
-/// The bytes of a one-dilemma table: count, three ids, clauses, two axes, leans, five responses,
-/// then its version 22 drift group.
-fn dilemma_table_len(d: dilemma_mod.Dilemma) usize {
-    return 4 + 12 + 1 + d.clauses.len * CLAUSE_BYTES + 4 + 1 + d.leans.len * (4 + CLAUSE_BYTES) + dilemma_mod.TIER_COUNT * 8 +
-        1 + d.drifts.len * (2 + 4 + CLAUSE_BYTES) + 1 + d.appeals.len * (2 + 4 + 4) + EMPTY_TAIL_AFTER_V23;
-}
-
-/// Where the counter-axis sits within that table.
-fn counter_offset(d: dilemma_mod.Dilemma) usize {
-    return 4 + 12 + 1 + d.clauses.len * CLAUSE_BYTES + 2;
-}
-
-test "P45-03: checked-in version 21 package fixture carries a dilemma" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.3.1-package-v21.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 21), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items.len);
-    try testing.expectEqualStrings("FixtureHang", world.get_entity_name(compiled.dilemmas.items[0].dilemma.responses[0].action).?);
-}
-
-
-const DRIFT_FIXTURE =
-    \\entity FixtureJudge
-    \\relation Accused(who)
-    \\relation Repaid(who)
-    \\axis FixtureJustice between Cruelty and Leniency
-    \\axis FixtureMercy between Vengeance and Indulgence
-    \\dilemma FixtureDilemma:
-    \\  actor FixtureJudge
-    \\  fires FixtureJudged
-    \\  requires Accused(FixtureThief)
-    \\  weighs FixtureJustice against FixtureMercy
-    \\  drifts 3 toward FixtureMercy when Repaid(FixtureThief)
-    \\  strong FixtureJustice: "Fixture strong justice." -> FixtureHang
-    \\  moderate FixtureJustice: "Fixture moderate justice." -> FixtureJail
-    \\  neutral: "Fixture neutral." -> FixtureWait
-    \\  moderate FixtureMercy: "Fixture moderate mercy." -> FixtureFine
-    \\  strong FixtureMercy: "Fixture strong mercy." -> FixturePardon
-    \\routine Idle(FixtureJudge):
-    \\  wait 1 ticks
-;
-
-test "P45-04: package version 22 round-trips drift lines and loads a version 21 dilemma without them" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, DRIFT_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    const drifts = compiled2.dilemmas.items[0].dilemma.drifts;
-    try testing.expectEqual(@as(usize, 1), drifts.len);
-    try testing.expectEqual(@as(i32, 3), drifts[0].points);
-    try testing.expectEqualStrings("FixtureMercy", world2.get_relation_meta(drifts[0].axis).?.name);
-    try testing.expectEqualStrings("#FixtureMercy drift", world2.get_relation_meta(drifts[0].accumulator).?.name);
-
-    // Cutting the drift group off the end gives a version 21 package: the dilemma loads, still
-    // weighs, and carries no drift.
-    // The version 23 appeal group (one empty byte here) and the empty art section follow it.
-    const drift_group = 1 + drifts.len * (2 + 4 + CLAUSE_BYTES) + 1 + EMPTY_TAIL_AFTER_V23;
-    const v21 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - drift_group]);
-    defer testing.allocator.free(v21);
-    reseal_for_test(v21, 21);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v21_stream: std.Io.Reader = .fixed(v21);
-    var loaded = try load_package(testing.allocator, &v21_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 1), loaded.dilemmas.items.len);
-    try testing.expectEqual(@as(usize, 0), loaded.dilemmas.items[0].dilemma.drifts.len);
-}
-
-test "P45-04: checked-in version 22 package fixture carries drift lines" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.3.1-package-v22.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 22), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items[0].dilemma.drifts.len);
-}
-
-
-const APPEAL_FIXTURE =
-    \\entity FixtureJudge
-    \\relation Accused(who)
-    \\relation Repaid(who)
-    \\axis FixtureJustice between Cruelty and Leniency
-    \\axis FixtureMercy between Vengeance and Indulgence
-    \\dilemma FixtureDilemma:
-    \\  actor FixtureJudge
-    \\  fires FixtureJudged
-    \\  requires Accused(FixtureThief)
-    \\  weighs FixtureJustice against FixtureMercy
-    \\  drifts 3 toward FixtureMercy when Repaid(FixtureThief)
-    \\  appeals 4 to FixtureMercy
-    \\  strong FixtureJustice: "Fixture strong justice." -> FixtureHang
-    \\  moderate FixtureJustice: "Fixture moderate justice." -> FixtureJail
-    \\  neutral: "Fixture neutral." -> FixtureWait
-    \\  moderate FixtureMercy: "Fixture moderate mercy." -> FixtureFine
-    \\  strong FixtureMercy: "Fixture strong mercy." -> FixturePardon
-    \\routine Idle(FixtureJudge):
-    \\  wait 1 ticks
-;
-
-test "P45-05: package version 23 round-trips appeal lines and loads a version 22 dilemma without them" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world1 = try World.init(testing.allocator, 1024 * 1024);
-    defer world1.deinit();
-    var compiled1 = try compiler.compile_source(testing.allocator, &world1, null, APPEAL_FIXTURE);
-    defer compiled1.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled1, &world1, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled2 = try load_package(testing.allocator, &stream, &world2, null);
-    defer compiled2.deinit();
-    const appeals = compiled2.dilemmas.items[0].dilemma.appeals;
-    try testing.expectEqual(@as(usize, 1), appeals.len);
-    try testing.expectEqual(@as(i32, -4), appeals[0].points);
-    try testing.expectEqualStrings("FixtureMercy", world2.get_entity_name(appeals[0].entity).?);
-
-    // Cutting the appeal group off the end gives a version 22 package with drift but no appeal.
-    const appeal_group = 1 + appeals.len * (2 + 4 + 4) + EMPTY_TAIL_AFTER_V23;
-    const v22 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - appeal_group]);
-    defer testing.allocator.free(v22);
-    reseal_for_test(v22, 22);
-    var world3 = try World.init(testing.allocator, 1024 * 1024);
-    defer world3.deinit();
-    var v22_stream: std.Io.Reader = .fixed(v22);
-    var loaded = try load_package(testing.allocator, &v22_stream, &world3, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 1), loaded.dilemmas.items[0].dilemma.drifts.len);
-    try testing.expectEqual(@as(usize, 0), loaded.dilemmas.items[0].dilemma.appeals.len);
-}
-
-test "P45-05: checked-in version 23 package fixture carries appeal lines" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.3.1-package-v23.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 23), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    try testing.expectEqual(@as(usize, 1), compiled.dilemmas.items[0].dilemma.appeals.len);
-}
-
-const ART_FIXTURE =
-    \\entity FixtureHero
-    \\relation Ready(actor)
-    \\routine Idle(FixtureHero):
-    \\  wait 1 ticks
-;
-
-const ART_FIXTURE_PALETTE = [_]image_mod.Colour{
-    .{ .r = 0, .g = 0, .b = 0 },
-    .{ .r = 34, .g = 32, .b = 52 },
-    .{ .r = 217, .g = 160, .b = 102 },
-    .{ .r = 251, .g = 242, .b = 54 },
-};
-
-/// An 8x4 sheet of two 4x4 frames: a lamp unlit, then lit. Index 0 is the transparent corner.
-/// The version 24 fixture stores these indices with the palette above; from version 34 the
-/// same lamp is stored as the colours they name.
-const ART_FIXTURE_INDICES = [_]u8{
-    0, 1, 1, 0, 0, 1, 1, 0,
-    1, 2, 2, 1, 1, 3, 3, 1,
-    1, 2, 2, 1, 1, 3, 3, 1,
-    0, 1, 1, 0, 0, 1, 1, 0,
-};
-const ART_FIXTURE_PIXELS = image_mod.from_indices(&ART_FIXTURE_PALETTE, &ART_FIXTURE_INDICES);
-
-/// The art section of the version 24 fixture sits at the end of its payload: the colour count,
-/// four RGB triples, the image count, the name, four sides, and 32 index bytes.
-const ART_FIXTURE_NAME = "FixtureLamp";
-const ART_SECTION_LEN = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2 + ART_FIXTURE_NAME.len + 8 + ART_FIXTURE_INDICES.len;
-
-fn write_art_fixture(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8)) !void {
-    const compiler = @import("compiler.zig");
+/// Writes `source`'s program as a package into `out`.
+fn package_of(allocator: std.mem.Allocator, source: []const u8, out: *std.array_list.Managed(u8)) !void {
     var world = try World.init(allocator, 1024 * 1024);
     defer world.deinit();
-    var compiled = try compiler.compile_source(allocator, &world, null, ART_FIXTURE);
+    var spatial = SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var compiled = try compile_for_test(allocator, &world, &spatial, source);
     defer compiled.deinit();
-    compiled.art = try image_mod.Art.dupe(allocator, .{ .images = &.{.{
-        .name = ART_FIXTURE_NAME,
-        .width = 8,
-        .height = 4,
-        .frame_width = 4,
-        .frame_height = 4,
-        .pixels = &ART_FIXTURE_PIXELS,
-    }} });
     var lw = ListWriter.init(out);
-    try save_package(allocator, &lw.writer, &compiled, &world, null);
-}
-
-/// The version 34 art section of `write_art_fixture`'s package: the zero colour count, the
-/// image count, the name, four sides, the stream length, and the lamp's QOI stream.
-fn qoi_art_section_len(allocator: std.mem.Allocator) !usize {
-    const stream = try qoi_mod.encode(allocator, &ART_FIXTURE_PIXELS, 8, 4);
-    defer allocator.free(stream);
-    return 2 + 4 + 2 + ART_FIXTURE_NAME.len + 8 + 4 + stream.len;
+    try save_package(allocator, &lw.writer, &compiled, &world, &spatial);
 }
 
 fn load_for_test(bytes: []const u8) !CompiledProgram {
     var world = try World.init(std.testing.allocator, 1024 * 1024);
     defer world.deinit();
+    var spatial = SpatialSystem.init(std.testing.allocator);
+    defer spatial.deinit();
     var stream: std.Io.Reader = .fixed(bytes);
-    return load_package(std.testing.allocator, &stream, &world, null);
+    return load_package(std.testing.allocator, &stream, &world, &spatial);
 }
 
-fn read_v24_fixture(allocator: std.mem.Allocator) ![]u8 {
-    return std.Io.Dir.cwd().readFileAlloc(std.testing.io, "tests/fixtures/compat/v0.4.0-package-v24.bspk", allocator, .limited(1024 * 1024));
+/// The sections a package holds, read at run time, for tests.
+fn sections_of(bytes: []const u8) !SectionSet {
+    const table = try read_section_table(bytes[@sizeOf(PackageHeader)..]);
+    var set = SectionSet.empty;
+    for (table.bytes, 0..) |b, k| if (b != null) set.insert(@enumFromInt(k));
+    return set;
 }
 
-test "P48-12: package version 34 round-trips a sprite sheet as a QOI stream" {
-    const testing = std.testing;
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try write_art_fixture(testing.allocator, &buffer);
-
-    var compiled = try load_for_test(buffer.items);
-    defer compiled.deinit();
-    const lamp = compiled.art.find(ART_FIXTURE_NAME).?;
-    try testing.expectEqual(@as(u32, 2), lamp.frame_count());
-    try testing.expectEqualSlices(image_mod.Pixel, &ART_FIXTURE_PIXELS, lamp.pixels);
-    try testing.expectEqual(image_mod.Pixel.opaque_colour(ART_FIXTURE_PALETTE[3]), lamp.frame_pixel(1, 1, 1));
-    try testing.expectEqual(image_mod.TRANSPARENT, lamp.frame_pixel(0, 0, 0));
-    // The stream is a standard QOI file of the sheet.
-    const section = buffer.items.len - EMPTY_TAIL_AFTER_V24 - try qoi_art_section_len(testing.allocator);
-    const stream_at = section + 2 + 4 + 2 + ART_FIXTURE_NAME.len + 8 + 4;
-    try testing.expectEqualStrings("qoif", buffer.items[stream_at..][0..4]);
-
-    // Saving the loaded program again writes the same bytes.
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var again_compiled = try blk: {
-        var stream: std.Io.Reader = .fixed(buffer.items);
-        break :blk load_package(testing.allocator, &stream, &world, null);
-    };
-    defer again_compiled.deinit();
-    var again = std.array_list.Managed(u8).init(testing.allocator);
-    defer again.deinit();
-    var lw = ListWriter.init(&again);
-    try save_package(testing.allocator, &lw.writer, &again_compiled, &world, null);
-    try testing.expectEqualSlices(u8, buffer.items, again.items);
+/// The mutable bytes of one section, for tests that break it.
+fn section_slice(bytes: []u8, which: Section) []u8 {
+    var at: usize = @sizeOf(PackageHeader);
+    while (at + SECTION_HEADER_LEN <= bytes.len) {
+        const len = std.mem.readInt(u32, bytes[at + 5 ..][0..4], .little);
+        if (std.mem.eql(u8, bytes[at..][0..4], &which.tag())) return bytes[at + SECTION_HEADER_LEN ..][0..len];
+        at += SECTION_HEADER_LEN + len;
+    }
+    unreachable;
 }
 
-test "P46-01: a version 23 package loads with no art" {
-    const testing = std.testing;
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try write_art_fixture(testing.allocator, &buffer);
-    const v23 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - try qoi_art_section_len(testing.allocator) - EMPTY_TAIL_AFTER_V24]);
-    defer testing.allocator.free(v23);
-    reseal_for_test(v23, 23);
-    var compiled = try load_for_test(v23);
-    defer compiled.deinit();
-    try testing.expect(compiled.art.is_empty());
-    try testing.expect(compiled.routine_entries.contains("Idle"));
+/// Recomputes a package's checksum after a test changed its payload.
+fn reseal_for_test(bytes: []u8) void {
+    const header: *align(1) PackageHeader = @ptrCast(bytes[0..@sizeOf(PackageHeader)]);
+    header.payload_size = @intCast(bytes.len - @sizeOf(PackageHeader));
+    header.crc32 = std.hash.Crc32.hash(bytes[@sizeOf(PackageHeader)..]);
 }
 
-test "P46-01: a program with no art writes an empty art section" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, ART_FIXTURE);
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-    // Everything after the appeal groups is zero except the program identity at the very end.
-    const empty_end = buffer.items.len - IDENTITY_TAIL;
-    try testing.expectEqualSlices(u8, &@as([EMPTY_TAIL_AFTER_V23 - IDENTITY_TAIL]u8, @splat(0)), buffer.items[empty_end - (EMPTY_TAIL_AFTER_V23 - IDENTITY_TAIL) .. empty_end]);
-    var loaded = try load_for_test(buffer.items);
-    defer loaded.deinit();
-    try testing.expect(loaded.art.is_empty());
-}
-
-/// One way to break an art section: the byte offset inside it, the bytes written there, and the
-/// error the loader must name. The indexed breaks apply to the version 24 fixture, and
-/// `tests/fixtures/fuzz/image-*.bspk` are these; the QOI breaks apply to a version 34 write.
-const ArtBreak = struct { name: []const u8, offset: usize, bytes: []const u8, err: anyerror };
-
-const ART_NAME_AT = 2 + 3 * ART_FIXTURE_PALETTE.len + 4 + 2;
-const ART_SIDES_AT = ART_NAME_AT + ART_FIXTURE_NAME.len;
-const ART_PIXELS_AT = ART_SIDES_AT + 8;
-
-const ART_BREAKS = [_]ArtBreak{
-    // 300 colours: past the one palette of 256 (D-152).
-    .{ .name = "palette", .offset = 0, .bytes = &.{ 0x2c, 0x01 }, .err = error.InvalidImagePalette },
-    // A million images.
-    .{ .name = "count", .offset = 2 + 3 * ART_FIXTURE_PALETTE.len, .bytes = &.{ 0x40, 0x42, 0x0f, 0x00 }, .err = error.InvalidImageCount },
-    // A control byte in the name.
-    .{ .name = "name", .offset = ART_NAME_AT, .bytes = &.{0x01}, .err = error.InvalidImageName },
-    // A frame 5 wide does not tile an 8-wide sheet.
-    .{ .name = "frame", .offset = ART_SIDES_AT + 4, .bytes = &.{ 0x05, 0x00 }, .err = error.InvalidImageSize },
-    // A sheet 4096 wide, past the side limit, before any pixel is read.
-    .{ .name = "size", .offset = ART_SIDES_AT, .bytes = &.{ 0x00, 0x10 }, .err = error.InvalidImageSize },
-    // Index 200 in a palette of four colours.
-    .{ .name = "index", .offset = ART_PIXELS_AT + 9, .bytes = &.{200}, .err = error.InvalidImageIndex },
+/// One script per part of a program, each read from `tests/fixtures/sections/` when the test
+/// runs, with the section it must produce.
+const ROUND_TRIPS = [_]struct { file: []const u8, section: Section }{
+    .{ .file = "drafts.bespoke", .section = .drafts },
+    .{ .file = "degradations.bespoke", .section = .degradations },
+    .{ .file = "grids.bespoke", .section = .grids },
+    .{ .file = "agendas.bespoke", .section = .agendas },
+    .{ .file = "commands.bespoke", .section = .commands },
+    .{ .file = "scores.bespoke", .section = .scores },
+    .{ .file = "paths.bespoke", .section = .code },
+    .{ .file = "arrival.bespoke", .section = .rules },
+    .{ .file = "society-and-duel.bespoke", .section = .societies },
+    .{ .file = "cast.bespoke", .section = .cast },
+    .{ .file = "guards.bespoke", .section = .guards },
+    .{ .file = "goals.bespoke", .section = .goals },
+    .{ .file = "looks-and-parts.bespoke", .section = .art },
+    .{ .file = "spellbook.bespoke", .section = .spellbooks },
+    .{ .file = "decision.bespoke", .section = .decisions },
+    .{ .file = "axes.bespoke", .section = .axes },
+    .{ .file = "red-lines.bespoke", .section = .red_lines },
+    .{ .file = "dilemma.bespoke", .section = .dilemmas },
+    .{ .file = "drift.bespoke", .section = .dilemmas },
+    .{ .file = "appeal.bespoke", .section = .dilemmas },
+    .{ .file = "sprites.bespoke", .section = .images },
+    .{ .file = "areas.bespoke", .section = .art },
+    .{ .file = "tuning.bespoke", .section = .dilemmas },
 };
 
-const QOI_NAME_AT = 2 + 4 + 2;
-const QOI_SIDES_AT = QOI_NAME_AT + ART_FIXTURE_NAME.len;
-const QOI_LEN_AT = QOI_SIDES_AT + 8;
-const QOI_STREAM_AT = QOI_LEN_AT + 4;
-
-const QOI_BREAKS = [_]ArtBreak{
-    // A palette in a version that keeps none.
-    .{ .name = "palette", .offset = 0, .bytes = &.{ 0x04, 0x00 }, .err = error.InvalidImagePalette },
-    .{ .name = "count", .offset = 2, .bytes = &.{ 0x40, 0x42, 0x0f, 0x00 }, .err = error.InvalidImageCount },
-    .{ .name = "name", .offset = QOI_NAME_AT, .bytes = &.{0x01}, .err = error.InvalidImageName },
-    .{ .name = "frame", .offset = QOI_SIDES_AT + 4, .bytes = &.{ 0x05, 0x00 }, .err = error.InvalidImageSize },
-    // A stream claimed longer than any 8x4 sheet's could be.
-    .{ .name = "length", .offset = QOI_LEN_AT, .bytes = &.{ 0x00, 0x10, 0x00, 0x00 }, .err = error.InvalidImageData },
-    // Not a QOI file.
-    .{ .name = "magic", .offset = QOI_STREAM_AT, .bytes = "QOIF", .err = error.InvalidImageData },
-    // The header's width disagrees with the record's.
-    .{ .name = "header", .offset = QOI_STREAM_AT + 7, .bytes = &.{9}, .err = error.InvalidImageData },
-    // The first op becomes a half-transparent literal: art alpha is 0 or 255 (D-166).
-    .{ .name = "alpha", .offset = QOI_STREAM_AT + 14, .bytes = &.{ 0xff, 1, 2, 3, 128 }, .err = error.InvalidImagePixel },
-};
-
-/// Applies one break to a copy of a package whose art section is `section` bytes and is
-/// followed by `tail` bytes, and reseals the checksum so the loader reaches the art.
-fn break_art(allocator: std.mem.Allocator, package: []const u8, b: ArtBreak, section: usize, tail: usize) ![]u8 {
-    const out = try allocator.dupe(u8, package);
-    const at = out.len - tail - section + b.offset;
-    @memcpy(out[at .. at + b.bytes.len], b.bytes);
-    reseal_for_test(out, version_from_bytes(package).?);
-    return out;
+fn round_trip_source(allocator: std.mem.Allocator, index: usize) ![]u8 {
+    var path_buf: [96]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, "tests/fixtures/sections/{s}", .{ROUND_TRIPS[index].file});
+    return std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, allocator, .limited(64 * 1024));
 }
 
-test "P46-01: every malformed indexed art section is refused with a named error" {
+test "P48-17: every part of a program round-trips through its own section, byte for byte" {
     const testing = std.testing;
-    const fixture = try read_v24_fixture(testing.allocator);
-    defer testing.allocator.free(fixture);
-    for (ART_BREAKS) |b| {
-        const broken = try break_art(testing.allocator, fixture, b, ART_SECTION_LEN, 0);
-        defer testing.allocator.free(broken);
-        testing.expectError(b.err, load_for_test(broken)) catch |err| {
-            std.debug.print("art break '{s}'\n", .{b.name});
-            return err;
-        };
-    }
-    // A truncated sheet ends the stream rather than reading past it.
-    const short = try testing.allocator.dupe(u8, fixture[0 .. fixture.len - 5]);
-    defer testing.allocator.free(short);
-    reseal_for_test(short, 24);
-    try testing.expectError(error.EndOfStream, load_for_test(short));
-}
+    for (ROUND_TRIPS, 0..) |case, k| {
+        errdefer std.debug.print("round trip '{s}'\n", .{case.file});
+        const source = try round_trip_source(testing.allocator, k);
+        defer testing.allocator.free(source);
+        var first = std.array_list.Managed(u8).init(testing.allocator);
+        defer first.deinit();
+        try package_of(testing.allocator, source, &first);
+        try testing.expectEqualSlices(u8, &PACKAGE_MAGIC, first.items[0..4]);
+        try testing.expectEqual(PACKAGE_FORMAT, version_from_bytes(first.items).?);
+        const sections = try sections_of(first.items);
+        try testing.expect(sections.contains(.names) and sections.contains(.code) and sections.contains(case.section));
 
-test "P48-12: every malformed QOI art section is refused with a named error" {
-    const testing = std.testing;
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try write_art_fixture(testing.allocator, &buffer);
-    const section = try qoi_art_section_len(testing.allocator);
-    for (QOI_BREAKS) |b| {
-        const broken = try break_art(testing.allocator, buffer.items, b, section, EMPTY_TAIL_AFTER_V24);
-        defer testing.allocator.free(broken);
-        testing.expectError(b.err, load_for_test(broken)) catch |err| {
-            std.debug.print("QOI break '{s}'\n", .{b.name});
-            return err;
-        };
-    }
-    // A stream cut short ends the package rather than reading past it.
-    const short = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V24 - 5]);
-    defer testing.allocator.free(short);
-    reseal_for_test(short, PACKAGE_VERSION);
-    try testing.expectError(error.EndOfStream, load_for_test(short));
-}
-
-test "P46-01: checked-in version 24 package fixture carries a sprite sheet" {
-    const testing = std.testing;
-    const fixture = try read_v24_fixture(testing.allocator);
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 24), version_from_bytes(fixture).?);
-    var compiled = try load_for_test(fixture);
-    defer compiled.deinit();
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-    // Its indices load as the colours its palette names (D-182).
-    try testing.expectEqualSlices(image_mod.Pixel, &ART_FIXTURE_PIXELS, compiled.art.find(ART_FIXTURE_NAME).?.pixels);
-
-    // The checked-in fuzz seeds are this fixture with one break each.
-    for (ART_BREAKS) |b| {
-        var path_buf: [96]u8 = undefined;
-        const path = try std.fmt.bufPrint(&path_buf, "tests/fixtures/fuzz/image-{s}.bspk", .{b.name});
-        const seed = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(64 * 1024));
-        defer testing.allocator.free(seed);
-        const expected = try break_art(testing.allocator, fixture, b, ART_SECTION_LEN, 0);
-        defer testing.allocator.free(expected);
-        try testing.expectEqualSlices(u8, expected, seed);
+        // Loading and saving again writes the same bytes.
+        var world = try World.init(testing.allocator, 1024 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var stream: std.Io.Reader = .fixed(first.items);
+        var loaded = try load_package(testing.allocator, &stream, &world, &spatial);
+        defer loaded.deinit();
+        var again = std.array_list.Managed(u8).init(testing.allocator);
+        defer again.deinit();
+        var lw = ListWriter.init(&again);
+        try save_package(testing.allocator, &lw.writer, &loaded, &world, &spatial);
+        try testing.expectEqualSlices(u8, first.items, again.items);
     }
 }
 
-const BINDING_FIXTURE =
-    \\scene: FixtureShop
-    \\cast: FixtureClerk
-    \\props: FixtureBell
-    \\marks: FixtureCounter
-    \\
-    \\palette:
-    \\  "." transparent
-    \\  "r" 200 40 40
-    \\  "y" 240 220 60
-    \\
-    \\image FixtureBellSheet frames 2x2:
-    \\  "r.yy"
-    \\  "rr.y"
-    \\
-    \\sprite FixtureBell: FixtureBellSheet
-    \\  idle: 0 for 30, 1 for 6
-    \\sprite FixtureClerk: FixtureBellSheet
-    \\  walk left: 1 for 4
-    \\
-    \\routine Idle(FixtureClerk):
+const SMALL_SCRIPT =
+    \\entity Hero
+    \\relation Ready(who)
+    \\routine Idle(Hero):
     \\  wait 1 ticks
+    \\  remember Ready(Hero)
+    \\
 ;
 
-/// The binding section of `BINDING_FIXTURE` at the end of the payload: no backdrops, then two
-/// sprites, each an entity, an image, and five step groups.
-const BINDING_SECTION_LEN = 4 + 4 + (4 + 2 + 5 + 2 * 4) + (4 + 2 + 5 + 1 * 4);
-
-fn write_binding_fixture(allocator: std.mem.Allocator, out: *std.array_list.Managed(u8)) !void {
-    const compiler = @import("compiler.zig");
-    var world = try World.init(allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(allocator, &world, null, BINDING_FIXTURE);
+test "P48-17: a package writes only the sections its program uses" {
+    const testing = std.testing;
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    try package_of(testing.allocator, SMALL_SCRIPT, &bytes);
+    const sections = try sections_of(bytes.items);
+    try testing.expectEqual(@as(usize, 2), sections.count());
+    try testing.expect(sections.contains(.names) and sections.contains(.code));
+    var compiled = try load_for_test(bytes.items);
     defer compiled.deinit();
-    var lw = ListWriter.init(out);
-    try save_package(allocator, &lw.writer, &compiled, &world, null);
+    try testing.expect(compiled.routine_entries.contains("Idle"));
+    try testing.expect(compiled.art.is_empty());
 }
 
-test "P46-03: package version 25 round-trips sprites and their animations, and version 24 loads without them" {
+test "P48-17: an unknown optional section is skipped and an unknown required one refused" {
     const testing = std.testing;
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try write_binding_fixture(testing.allocator, &buffer);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    const bell = compiled.art.sprite_for(world.lookup_entity("FixtureBell").?).?;
-    try testing.expectEqual(@as(u16, 1), bell.frame_at(.idle, 30));
-    try testing.expectEqual(@as(usize, 2), bell.animations[@intFromEnum(image_mod.Anim.idle)].len);
-    const clerk = compiled.art.sprite_for(world.lookup_entity("FixtureClerk").?).?;
-    try testing.expectEqual(@as(u16, 1), clerk.frame_at(.walk_left, 0));
-
-    // A version 24 package has art attached to nothing. Since version 34 stores art as QOI, a
-    // cut-down write is no longer a version 24 file, so the checked-in fixture stands in.
-    const v24 = try read_v24_fixture(testing.allocator);
-    defer testing.allocator.free(v24);
-    var old = try load_for_test(v24);
-    defer old.deinit();
-    try testing.expectEqual(@as(usize, 1), old.art.images.len);
-    try testing.expectEqual(@as(usize, 0), old.art.sprites.len);
-}
-
-test "P46-03: a binding to a missing entity, image, or frame is refused" {
-    const testing = std.testing;
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    try write_binding_fixture(testing.allocator, &buffer);
-    const second_sprite = buffer.items.len - EMPTY_TAIL_AFTER_V25 - (4 + 2 + 5 + 1 * 4);
-    const Break = struct { at: usize, bytes: []const u8 };
-    const breaks = [_]Break{
-        // The clerk's entity: an id no entity has.
-        .{ .at = second_sprite, .bytes = &.{ 0xF0, 0xFF, 0xFF, 0x0F } },
-        // The clerk's image: image 7 of one.
-        .{ .at = second_sprite + 4, .bytes = &.{ 7, 0 } },
-        // The clerk's walk-left step: frame 9 of a two-frame sheet.
-        .{ .at = second_sprite + 6 + 4, .bytes = &.{ 9, 0 } },
-        // The same step shown for no display frames.
-        .{ .at = second_sprite + 6 + 4 + 2, .bytes = &.{ 0, 0 } },
-        // Two hundred backdrops claimed where there are none: the sprite bytes do not parse as them.
-        .{ .at = buffer.items.len - EMPTY_TAIL_AFTER_V25 - BINDING_SECTION_LEN, .bytes = &.{ 200, 0, 0, 0 } },
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    try package_of(testing.allocator, SMALL_SCRIPT, &bytes);
+    const Case = struct { tag: [4]u8, flags: u8, err: ?anyerror };
+    const cases = [_]Case{
+        // A later 1.x section a 1.0 reader does not know, marked optional: the program loads.
+        .{ .tag = "LIPS".*, .flags = 0, .err = null },
+        .{ .tag = "LIPS".*, .flags = SECTION_REQUIRED, .err = error.UnknownRequiredSection },
+        // A flag bit 1.0 does not define, and a known section twice, are corrupt.
+        .{ .tag = "LIPS".*, .flags = 2, .err = error.InvalidSection },
+        .{ .tag = "CODE".*, .flags = SECTION_REQUIRED, .err = error.InvalidSection },
     };
-    for (breaks) |b| {
-        const broken = try testing.allocator.dupe(u8, buffer.items);
-        defer testing.allocator.free(broken);
-        @memcpy(broken[b.at .. b.at + b.bytes.len], b.bytes);
-        reseal_for_test(broken, PACKAGE_VERSION);
-        const result = load_for_test(broken);
-        if (result) |loaded| {
-            var program = loaded;
-            program.deinit();
-            return error.TestExpectedError;
-        } else |err| switch (err) {
-            error.InvalidImageBinding, error.EndOfStream => {},
-            else => return err,
+    for (cases) |case| {
+        var extended = std.array_list.Managed(u8).init(testing.allocator);
+        defer extended.deinit();
+        try extended.appendSlice(bytes.items);
+        try extended.appendSlice(&case.tag);
+        try extended.append(case.flags);
+        var len: [4]u8 = undefined;
+        std.mem.writeInt(u32, &len, 3, .little);
+        try extended.appendSlice(&len);
+        try extended.appendSlice(&.{ 1, 2, 3 });
+        reseal_for_test(extended.items);
+        if (case.err) |err| {
+            try testing.expectError(err, load_for_test(extended.items));
+        } else {
+            var compiled = try load_for_test(extended.items);
+            compiled.deinit();
         }
     }
 }
 
-test "P46-03: checked-in version 25 package fixture carries sprites" {
+test "P48-17: a package's framing is checked before any section is read" {
     const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.4.0-package-v25.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 25), version_from_bytes(fixture).?);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(usize, 2), compiled.art.sprites.len);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-}
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    try package_of(testing.allocator, SMALL_SCRIPT, &bytes);
 
-const AREA_FIXTURE =
-    \\scene: FixtureYard
-    \\cast: FixtureKeeper
-    \\props: FixtureGate, FixtureWell
-    \\marks: FixturePath
-    \\area FixtureGate: 10 20 30 40
-    \\area FixtureWell: 200 100 16 16
-    \\routine Idle(FixtureKeeper):
-    \\  wait 1 ticks
-;
-
-test "P46-05: package version 26 round-trips prop areas, and version 25 loads without them" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, AREA_FIXTURE);
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var loaded = try load_package(testing.allocator, &stream, &world2, null);
-    defer loaded.deinit();
-    const gate = loaded.art.area_for(world2.lookup_entity("FixtureGate").?).?;
-    try testing.expectEqual(@as(u16, 30), gate.w);
-    try testing.expectEqual(@as(usize, 2), loaded.art.areas.len);
-
-    // An area off the art is refused; cutting the areas off gives version 25 with none.
-    const broken = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(broken);
-    std.mem.writeInt(u16, broken[broken.len - EMPTY_TAIL_AFTER_V26 - 4 ..][0..2], 200, .little);
-    reseal_for_test(broken, PACKAGE_VERSION);
-    try testing.expectError(error.InvalidImageBinding, load_for_test(broken));
-    const v25 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - EMPTY_TAIL_AFTER_V26 - (4 + 2 * (4 + 8))]);
-    defer testing.allocator.free(v25);
-    reseal_for_test(v25, 25);
-    var old = try load_for_test(v25);
-    defer old.deinit();
-    try testing.expectEqual(@as(usize, 0), old.art.areas.len);
-}
-
-test "P48-01: package version 27 round-trips handlers that share a signature, and refuses a bad chain" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, compiler.ORDERED_HANDLERS);
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-
-    // The Lamp's three handlers make two links and the Cask's two make one.
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var loaded = try load_package(testing.allocator, &stream, &world2, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(u32, 3), loaded.cue_handler_chain.count());
-    const scout = world2.lookup_entity("Scout").?;
-    const lamp = world2.lookup_entity("Lamp").?;
-    const first = loaded.find_cue_handler("Uses", "Scout", "Lamp", null).?;
-    const second = loaded.cue_handler_chain.get(first).?;
-    const third = loaded.cue_handler_chain.get(second).?;
-    try testing.expectEqual(third, loaded.select_cue_handler(&world2, "Uses", scout, lamp, null).?);
-    _ = try world2.remember(world2.lookup_entity("Oil").?, try world2.intern_relation("Full", .set), 0, 0);
-    try testing.expectEqual(second, loaded.select_cue_handler(&world2, "Uses", scout, lamp, null).?);
-
-    // The same program writes the same bytes.
-    var again = std.array_list.Managed(u8).init(testing.allocator);
-    defer again.deinit();
-    var lw2 = ListWriter.init(&again);
-    try save_package(testing.allocator, &lw2.writer, &compiled, &world, null);
-    try testing.expectEqualSlices(u8, buffer.items, again.items);
-
-    // The last link sits in the final eight bytes; the chain count before the three links.
-    const count_at = buffer.items.len - IDENTITY_TAIL - TEXT_TAIL - 4 - 3 * 8;
-    const last = buffer.items.len - IDENTITY_TAIL - TEXT_TAIL - 8;
-    const Case = struct { at: usize, value: u32 };
+    // Before 1.0, another magic, a later format, a bad checksum, and an oversized payload.
+    const Case = struct { at: usize, bytes: []const u8, err: anyerror, reseal: bool = false };
     const cases = [_]Case{
-        .{ .at = last + 4, .value = 0xFFFF_FF00 }, // next past the bytecode
-        .{ .at = last + 4, .value = @intCast(first) }, // next is a signature's first handler
-        .{ .at = last, .value = std.mem.readInt(u32, buffer.items[count_at + 4 ..][0..4], .little) }, // a pc linked twice
-        .{ .at = last, .value = 0xFFFF_FF00 }, // a link from no handler
-        .{ .at = count_at, .value = MAX_CUE_GUARDS + 1 }, // more links than guards allow
+        .{ .at = 0, .bytes = &PRE_1_0_MAGIC, .err = error.PackageFromBeforeOne },
+        .{ .at = 0, .bytes = "NOPE", .err = error.InvalidPackageMagic },
+        .{ .at = 4, .bytes = &.{ 2, 0, 0, 0 }, .err = error.UnsupportedPackageVersion },
+        .{ .at = @sizeOf(PackageHeader) + 2, .bytes = &.{0x5a}, .err = error.ChecksumMismatch },
+        .{ .at = 12, .bytes = &.{ 0xff, 0xff, 0xff, 0x7f }, .err = error.PackagePayloadTooLarge },
+        // A section longer than what is left of the payload.
+        .{ .at = @sizeOf(PackageHeader) + 5, .bytes = &.{ 0xff, 0xff, 0, 0 }, .err = error.InvalidSection, .reseal = true },
     };
     for (cases) |case| {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
+        const bad = try testing.allocator.dupe(u8, bytes.items);
         defer testing.allocator.free(bad);
-        std.mem.writeInt(u32, bad[case.at..][0..4], case.value, .little);
-        reseal_for_test(bad, PACKAGE_VERSION);
-        try testing.expectError(error.InvalidCueChain, load_for_test(bad));
+        @memcpy(bad[case.at..][0..case.bytes.len], case.bytes);
+        if (case.reseal) reseal_for_test(bad);
+        try testing.expectError(case.err, load_for_test(bad));
     }
 
-    // Without the chain, the later handlers' guards name no handler: version 26 refused such a
-    // script's package, which is the Q-020 failure D-160 removes.
-    const v26 = try testing.allocator.dupe(u8, buffer.items[0..count_at]);
-    defer testing.allocator.free(v26);
-    std.mem.writeInt(u32, v26[v26.len - 4 ..][0..4], 0, .little);
-    reseal_for_test(v26, 26);
-    try testing.expectError(error.InvalidCueGuard, load_for_test(v26));
+    // A section with a byte its reader does not use is corrupt, as is a package without code.
+    var padded = std.array_list.Managed(u8).init(testing.allocator);
+    defer padded.deinit();
+    const names = section_slice(bytes.items, .names);
+    const names_end = @intFromPtr(names.ptr) - @intFromPtr(bytes.items.ptr) + names.len;
+    try padded.appendSlice(bytes.items[0..names_end]);
+    try padded.append(0);
+    try padded.appendSlice(bytes.items[names_end..]);
+    std.mem.writeInt(u32, padded.items[names_end - names.len - 4 ..][0..4], @intCast(names.len + 1), .little);
+    reseal_for_test(padded.items);
+    try testing.expectError(error.InvalidSection, load_for_test(padded.items));
+    const code_only = try testing.allocator.dupe(u8, bytes.items[0..names_end]);
+    defer testing.allocator.free(code_only);
+    reseal_for_test(code_only);
+    try testing.expectError(error.InvalidSection, load_for_test(code_only));
 }
 
-test "P48-01: checked-in version 27 package fixture keeps handlers in source order" {
+test "P48-17: a build that links fewer readers refuses a package that needs another" {
     const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v27.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 27), version_from_bytes(fixture).?);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    const source = try round_trip_source(testing.allocator, 0);
+    defer testing.allocator.free(source);
+    try package_of(testing.allocator, source, &bytes);
     var world = try World.init(testing.allocator, 1024 * 1024);
     defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(u32, 2), compiled.cue_handler_chain.count());
-    const hero = world.lookup_entity("FixtureHero").?;
-    const lamp = world.lookup_entity("FixtureLamp").?;
-    const first = compiled.find_cue_handler("Uses", "FixtureHero", "FixtureLamp", null).?;
-    const third = compiled.cue_handler_chain.get(compiled.cue_handler_chain.get(first).?).?;
-    try testing.expectEqual(third, compiled.select_cue_handler(&world, "Uses", hero, lamp, null).?);
-    _ = try world.remember(lamp, try world.intern_relation("Lit", .set), 0, 0);
-    try testing.expectEqual(first, compiled.select_cue_handler(&world, "Uses", hero, lamp, null).?);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
+    comptime var core = SectionSet.empty;
+    comptime core.insert(.names);
+    comptime core.insert(.code);
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    try testing.expectError(error.UnlinkedSection, load_package_linked(core, testing.allocator, &stream, &world, null));
+
+    // `sections_in` reads the tags of a package known when the module is built.
+    const header = PackageHeader{};
+    const fake = comptime std.mem.asBytes(&header) ++ "NAME".* ++ [_]u8{ 1, 0, 0, 0, 0 } ++ "IMGS".* ++ [_]u8{ 1, 0, 0, 0, 0 };
+    const found = comptime sections_in(fake);
+    try testing.expect(found.contains(.names) and found.contains(.images) and !found.contains(.code));
 }
 
-test "P48-02: checked-in version 28 package fixture binds a cue handler's arguments in its body" {
+test "P48-17: a section's own contents are still checked" {
     const testing = std.testing;
-    const vm_mod = @import("vm.zig");
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v28.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 28), version_from_bytes(fixture).?);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
-    defer vm.deinit();
-    const lamp = world.lookup_entity("FixtureLamp").?;
-    const oil = world.lookup_entity("FixtureOil").?;
-    _ = try world.remember(oil, world.lookup_relation("Fuels").?, lamp.to_int(), 0);
-    _ = (try vm.fire_cue(&compiled, "Uses", world.lookup_entity("FixtureHero").?, lamp, null)).?;
-    _ = try vm.step_tick();
-    try testing.expect(world.has_fact(lamp, world.lookup_relation("Burns").?, oil.to_int()));
-}
-
-test "P48-08: a package carries its save version and fingerprint, and older packages get one" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, "save version 4\nentity Hero\nroutine Idle(Hero):\n  wait 1 ticks\n");
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-    var loaded = try load_for_test(buffer.items);
-    defer loaded.deinit();
-    try testing.expectEqual(compiled.identity(), loaded.identity());
-    try testing.expectEqual(@as(u32, 4), loaded.save_version);
-
-    // A zero identity would read as "unknown program" in a save, so it is refused.
-    const zeroed = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(zeroed);
-    @memset(zeroed[zeroed.len - 8 ..], 0);
-    reseal_for_test(zeroed, PACKAGE_VERSION);
-    try testing.expectError(error.InvalidProgramIdentity, load_for_test(zeroed));
-
-    // Without the field (version 28), the loader takes save version 1 and computes a fingerprint.
-    const v28 = try testing.allocator.dupe(u8, buffer.items[0 .. buffer.items.len - IDENTITY_TAIL]);
-    defer testing.allocator.free(v28);
-    reseal_for_test(v28, 28);
-    var old = try load_for_test(v28);
-    defer old.deinit();
-    try testing.expectEqual(@as(u32, 1), old.save_version);
-    try testing.expect(old.identity().known());
-}
-
-test "P48-08: checked-in version 29 package fixture declares save version 2" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v29.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 29), version_from_bytes(fixture).?);
-    var compiled = try load_for_test(fixture);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(u32, 2), compiled.save_version);
-    try testing.expect(compiled.identity().known());
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-}
-
-test "P48-08: checked-in version 30 package fixture carries relation object kinds" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v30.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 30), version_from_bytes(fixture).?);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    try testing.expectEqual(world_mod.ObjectKind.entity, world.object_kind(world.lookup_relation("Holds").?));
-    try testing.expectEqual(world_mod.ObjectKind.number, world.object_kind(world.lookup_relation("Gold").?));
-    try testing.expectEqual(@as(u32, 2), compiled.save_version);
-}
-
-test "P48-09: a package carries display names and phrases, and refuses a bad phrase" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, "entity Hero, Lamp\nname Lamp: \"the old lamp\"\nphrase NotHere: \"Nothing of the kind is here.\"\nroutine Idle(Hero):\n  wait 1 ticks\n");
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var loaded = try load_package(testing.allocator, &stream, &world2, null);
-    defer loaded.deinit();
-    try testing.expectEqualStrings("the old lamp", world2.display_text(world2.lookup_entity("Lamp").?).?);
-    try testing.expectEqualStrings("Nothing of the kind is here.", phrase_mod.text(&world2, .not_here));
-
-    // A phrase name the engine does not have is refused.
-    const bad = try testing.allocator.dupe(u8, buffer.items);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    const source = try round_trip_source(testing.allocator, 0);
+    defer testing.allocator.free(source);
+    try package_of(testing.allocator, source, &bytes);
+    // A draft note past B.
+    const bad = try testing.allocator.dupe(u8, bytes.items);
     defer testing.allocator.free(bad);
-    const at = std.mem.indexOf(u8, bad, "NotHere").?;
-    bad[at] = 'X';
-    reseal_for_test(bad, PACKAGE_VERSION);
-    try testing.expectError(error.InvalidPlayerText, load_for_test(bad));
+    section_slice(bad, .drafts)[4 + 4] = 99;
+    reseal_for_test(bad);
+    try testing.expectError(error.InvalidDraftNote, load_for_test(bad));
+    // A zero program identity, which would read as "unknown program" in a save (D-162).
+    const code = section_slice(bytes.items, .code);
+    @memset(code[code.len - 1 - 8 .. code.len - 1], 0);
+    reseal_for_test(bytes.items);
+    try testing.expectError(error.InvalidProgramIdentity, load_for_test(bytes.items));
 }
 
-test "P48-09: checked-in version 31 package fixture names a lamp and replaces a reply" {
+test "P48-17: an image stream that is not QOI, or holds partial alpha, is refused" {
     const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v31.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 31), version_from_bytes(fixture).?);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    try testing.expectEqualStrings("the old lamp", world.display_text(world.lookup_entity("FixtureLamp").?).?);
-    try testing.expectEqualStrings("Nothing of the kind is here.", phrase_mod.text(&world, .not_here));
-}
-
-test "P48-11: a package carries looks and parts, and refuses a part hosted by itself" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    const source =
-        \\scene: Yard
-        \\cast: Hero
-        \\props: Lamp
-        \\marks: Gate
-        \\palette:
-        \\  "." transparent
-        \\  "r" 200 40 40
-        \\image Sheet frames 2x2:
-        \\  "r.r."
-        \\  "rr.r"
-        \\look Dark: Sheet
-        \\  idle: 0
-        \\look Lit: Sheet
-        \\  idle: 1
-        \\sprite Lamp: Dark
-        \\part Hero of Lamp at 0 -2
-        \\routine Idle(Hero):
-        \\  wait 1 ticks
-        \\
-    ;
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, source);
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var loaded = try load_package(testing.allocator, &stream, &world2, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(usize, 2), loaded.art.looks.len);
-    try testing.expectEqual(@as(u16, 1), loaded.art.look_named("Lit").?.frame_at(.idle, 0));
-    const part = loaded.art.part_for(world2.lookup_entity("Hero").?).?;
-    try testing.expectEqual(world2.lookup_entity("Lamp").?, part.host);
-    try testing.expectEqual(@as(i16, -2), part.dy);
-
-    // A part whose host is itself is refused as the package loads.
-    const bad = try testing.allocator.dupe(u8, buffer.items);
-    defer testing.allocator.free(bad);
-    var record: [12]u8 = undefined;
-    std.mem.writeInt(u32, record[0..4], world.lookup_entity("Hero").?.to_int(), .little);
-    std.mem.writeInt(u32, record[4..8], world.lookup_entity("Lamp").?.to_int(), .little);
-    std.mem.writeInt(i16, record[8..10], 0, .little);
-    std.mem.writeInt(i16, record[10..12], -2, .little);
-    const at = std.mem.indexOf(u8, bad, &record).?;
-    @memcpy(bad[at .. at + 4], record[4..8]);
-    reseal_for_test(bad, PACKAGE_VERSION);
-    try testing.expectError(error.InvalidImageBinding, load_for_test(bad));
-}
-
-test "P48-11: checked-in version 33 package fixture shows a look and attaches a part" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v33.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 33), version_from_bytes(fixture).?);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
-    try testing.expect(compiled.art.part_for(world.lookup_entity("FixtureHero").?) != null);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-}
-
-test "P48-12: checked-in version 34 package fixture carries its art as QOI" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v34.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 34), version_from_bytes(fixture).?);
-    try testing.expect(std.mem.indexOf(u8, fixture, "qoif") != null);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    const sheet = compiled.art.find("FixtureSheet").?;
-    try testing.expectEqual(image_mod.Pixel{ .r = 200, .g = 40, .b = 40, .a = 255 }, sheet.frame_pixel(0, 0, 0));
-    try testing.expectEqual(image_mod.TRANSPARENT, sheet.frame_pixel(0, 1, 0));
-    try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
-}
-
-const TUNED_FIXTURE =
-    \\entity FixtureJudge, FixtureThief, FixtureClerk, FixtureLedger, FixtureOffice
-    \\relation Accused(who)
-    \\relation Holds(holder, item)
-    \\limit hints 6
-    \\axis FixtureJustice between Cruelty and Leniency
-    \\axis FixtureMercy between Vengeance and "Condoning Harm"
-    \\  drift step 4
-    \\dilemma FixtureBread:
-    \\  actor FixtureJudge
-    \\  fires Judged
-    \\  requires Accused(FixtureThief)
-    \\  weighs FixtureJustice against FixtureMercy
-    \\  tiers 8 and 4
-    \\  drift cap 3
-    \\  drifts 2 toward FixtureMercy when Accused(FixtureThief)
-    \\  strong FixtureJustice: "The law is the law." -> Hang
-    \\  moderate FixtureJustice: "A night in the cells." -> Jail
-    \\  neutral: "Show me why." -> Wait
-    \\  moderate FixtureMercy: "Pay for the loaf." -> Fine
-    \\  strong FixtureMercy: "Go." -> Pardon
-    \\goal FixtureAudit:
-    \\  need TakeLedger:
-    \\    met Holds(FixtureClerk, FixtureLedger)
-    \\    room FixtureOffice
-    \\    hint 6 "Pull the drawer hard."
-    \\routine Idle(FixtureJudge):
-    \\  wait 1 ticks
-    \\
-;
-
-test "P48-13: a package carries axis steps, dilemma tiers and caps, and a sixth hint tier" {
-    const testing = std.testing;
-    const compiler = @import("compiler.zig");
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var compiled = try compiler.compile_source(testing.allocator, &world, null, TUNED_FIXTURE);
-    defer compiled.deinit();
-    var buffer = std.array_list.Managed(u8).init(testing.allocator);
-    defer buffer.deinit();
-    var lw = ListWriter.init(&buffer);
-    try save_package(testing.allocator, &lw.writer, &compiled, &world, null);
-
-    var world2 = try World.init(testing.allocator, 1024 * 1024);
-    defer world2.deinit();
-    var stream: std.Io.Reader = .fixed(buffer.items);
-    var loaded = try load_package(testing.allocator, &stream, &world2, null);
-    defer loaded.deinit();
-    try testing.expectEqual(@as(u8, 4), loaded.axes.items[1].drift_step);
-    const d = loaded.dilemmas.items[0].dilemma;
-    try testing.expectEqual(@as(u8, 8), d.strong_at);
-    try testing.expectEqual(@as(u8, 4), d.moderate_at);
-    try testing.expectEqual(@as(u8, 3), d.drift_cap);
-    try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
-    try testing.expectEqual(@as(u8, 6), loaded.goals.items[0].goal.needs[0].hints[0].tier.number());
-
-    // The tuning sits just before the reroll flag and the identity: the axis count and steps, then the dilemma
-    // count and its three numbers. A count that disagrees, or tiers out of order, is refused.
-    const tuning_at = buffer.items.len - IDENTITY_TAIL - REROLL_TAIL - (4 + 2 + 4 + 3);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    const source = try round_trip_source(testing.allocator, 20);
+    defer testing.allocator.free(source);
+    try package_of(testing.allocator, source, &bytes);
+    // Image count, then the first image's name (u16 length and text), four sides, stream length.
+    const images = section_slice(bytes.items, .images);
+    const name_len = std.mem.readInt(u16, images[4..6], .little);
+    const stream_at = 4 + 2 + name_len + 8 + 4;
     const Case = struct { at: usize, bytes: []const u8, err: anyerror };
     const cases = [_]Case{
-        .{ .at = tuning_at, .bytes = &.{ 3, 0, 0, 0 }, .err = error.InvalidAxisConfig },
-        .{ .at = tuning_at + 4 + 1, .bytes = &.{0}, .err = error.InvalidAxisConfig },
-        .{ .at = tuning_at + 6, .bytes = &.{ 2, 0, 0, 0 }, .err = error.InvalidDilemmaConfig },
-        .{ .at = tuning_at + 10, .bytes = &.{ 4, 8 }, .err = error.InvalidDilemmaConfig },
-        .{ .at = tuning_at + 12, .bytes = &.{0}, .err = error.InvalidDilemmaConfig },
+        .{ .at = stream_at, .bytes = "QOIF", .err = error.InvalidImageData },
+        .{ .at = stream_at + 14, .bytes = &.{ 0xff, 1, 2, 3, 128 }, .err = error.InvalidImagePixel },
+        .{ .at = 0, .bytes = &.{ 0x40, 0x42, 0x0f, 0x00 }, .err = error.InvalidImageCount },
     };
     for (cases) |case| {
-        const bad = try testing.allocator.dupe(u8, buffer.items);
+        const bad = try testing.allocator.dupe(u8, bytes.items);
         defer testing.allocator.free(bad);
-        @memcpy(bad[case.at .. case.at + case.bytes.len], case.bytes);
-        reseal_for_test(bad, PACKAGE_VERSION);
+        @memcpy(section_slice(bad, .images)[case.at..][0..case.bytes.len], case.bytes);
+        reseal_for_test(bad);
         try testing.expectError(case.err, load_for_test(bad));
     }
 }
 
-test "P48-13: checked-in version 35 package fixture is tuned" {
+test "P48-17: checked-in 1.0 package fixture loads every part" {
     const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v35.bspk", testing.allocator, .limited(1024 * 1024));
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/format-1-package.bspk", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 35), version_from_bytes(fixture).?);
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    var compiled = try load_package(testing.allocator, &stream, &world, null);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(u8, 8), compiled.dilemmas.items[0].dilemma.strong_at);
-    try testing.expectEqual(@as(u8, 4), compiled.axes.items[1].drift_step);
-    try testing.expectEqual(@as(u8, 6), compiled.goals.items[0].goal.needs[0].hints[0].tier.number());
-}
-
-test "P48-14: a package carries 'rewinds reroll', and the version 36 fixture has it" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v36.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 36), version_from_bytes(fixture).?);
+    try testing.expectEqual(PACKAGE_FORMAT, version_from_bytes(fixture).?);
     var compiled = try load_for_test(fixture);
     defer compiled.deinit();
     try testing.expect(compiled.rewinds_reroll);
-    // The version 35 fixture predates the flag and loads with rewinds restoring the dice.
-    const older = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v35.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(older);
-    var old = try load_for_test(older);
-    defer old.deinit();
-    try testing.expect(!old.rewinds_reroll);
-    // A flag byte other than 0 or 1 is refused.
-    const bad = try testing.allocator.dupe(u8, fixture);
-    defer testing.allocator.free(bad);
-    // The version 36 fixture's flag is the byte before its identity.
-    bad[bad.len - IDENTITY_TAIL - 1] = 2;
-    reseal_for_test(bad, 36);
-    try testing.expectError(error.InvalidProgramIdentity, load_for_test(bad));
+    try testing.expectEqual(@as(u32, 2), compiled.save_version);
+    try testing.expectEqual(@as(u8, 8), compiled.dilemmas.items[0].dilemma.strong_at);
+    try testing.expect(compiled.reactive_rules.items[0].each);
+    try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
+    const sections = try sections_of(fixture);
+    for ([_]Section{ .names, .places, .code, .rules, .goals, .axes, .dilemmas, .images, .art, .text }) |which| try testing.expect(sections.contains(which));
 }
 
-test "P48-16: a package marks its 'when each' rules, and the version 37 fixture has one" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v37.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 37), version_from_bytes(fixture).?);
-    var compiled = try load_for_test(fixture);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(usize, 1), compiled.reactive_rules.items.len);
-    const rule = compiled.reactive_rules.items[0];
-    try testing.expect(rule.each);
-    try testing.expectEqual(@as(?u8, 0), rule.owner_slot);
-
-    // The table sits before the reroll flag's identity: its count, then each rule's two bytes.
-    // An owner slot no clause names, and `each` on a rule that is not rising, are refused.
-    const table = fixture.len - IDENTITY_TAIL - 2;
-    const cases = [_]struct { at: usize, byte: u8 }{
-        .{ .at = table + 1, .byte = 5 },
-        .{ .at = table, .byte = 2 },
-    };
-    for (cases) |case| {
-        const bad = try testing.allocator.dupe(u8, fixture);
-        defer testing.allocator.free(bad);
-        bad[case.at] = case.byte;
-        reseal_for_test(bad, 37);
-        try testing.expectError(error.InvalidWhenEdge, load_for_test(bad));
-    }
-}
-
-test "P48-10: an older package's bookkeeping names take the engine's prefix as it loads" {
-    const testing = std.testing;
-    var buf: [MAX_RENAMED_NAME]u8 = undefined;
-    try testing.expectEqualStrings("#SceneScore", bookkeeping_name("SceneScore", &buf));
-    try testing.expectEqualStrings("#Mercy drift steps", bookkeeping_name("Mercy drift steps", &buf));
-    try testing.expectEqualStrings("Knows", bookkeeping_name("Knows", &buf));
-    try testing.expectEqualStrings("Ready", bookkeeping_name("Ready", &buf));
-}
-
-test "P46-05: checked-in version 26 package fixture carries prop areas" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-package-v26.bspk", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 26), version_from_bytes(fixture).?);
-    var compiled = try load_for_test(fixture);
-    defer compiled.deinit();
-    try testing.expectEqual(@as(usize, 2), compiled.art.areas.len);
-    try testing.expect(compiled.routine_entries.contains("Idle"));
-}

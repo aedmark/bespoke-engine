@@ -6,29 +6,9 @@ const testing = std.testing;
 const max_input = 4096;
 const script = @embedFile("fixtures/fuzz/room.bespoke");
 const values = @embedFile("fixtures/fuzz/values.bespoke");
-const package = @embedFile("fixtures/compat/v0.1.0-package-v14.bspk");
-const axis_package = @embedFile("fixtures/compat/v0.3.1-package-v19.bspk");
-const red_line_package = @embedFile("fixtures/compat/v0.3.1-package-v20.bspk");
-const dilemma_package = @embedFile("fixtures/compat/v0.3.1-package-v21.bspk");
-const drift_package = @embedFile("fixtures/compat/v0.3.1-package-v22.bspk");
-const appeal_package = @embedFile("fixtures/compat/v0.3.1-package-v23.bspk");
-const art_package = @embedFile("fixtures/compat/v0.4.0-package-v24.bspk");
-const sprite_package = @embedFile("fixtures/compat/v0.4.0-package-v25.bspk");
-const area_package = @embedFile("fixtures/compat/v0.4.0-package-v26.bspk");
-const handler_chain_package = @embedFile("fixtures/compat/v0.4.0-package-v27.bspk");
-const bound_body_package = @embedFile("fixtures/compat/v0.4.0-package-v28.bspk");
-const identity_package = @embedFile("fixtures/compat/v0.4.0-package-v29.bspk");
-const kinds_package = @embedFile("fixtures/compat/v0.4.0-package-v30.bspk");
-const text_package = @embedFile("fixtures/compat/v0.4.0-package-v31.bspk");
-const looks_package = @embedFile("fixtures/compat/v0.4.0-package-v33.bspk");
-const qoi_package = @embedFile("fixtures/compat/v0.4.0-package-v34.bspk");
-const tuned_package = @embedFile("fixtures/compat/v0.4.0-package-v35.bspk");
-const reroll_package = @embedFile("fixtures/compat/v0.4.0-package-v36.bspk");
-const each_package = @embedFile("fixtures/compat/v0.4.0-package-v37.bspk");
-const save = @embedFile("fixtures/compat/v0.1.0-save-v2.sav");
-const identified_save = @embedFile("fixtures/compat/v0.4.0-save-v3.sav");
-const dice_save = @embedFile("fixtures/compat/v0.4.0-save-v4.sav");
-const each_save = @embedFile("fixtures/compat/v0.4.0-save-v5.sav");
+const package = @embedFile("fixtures/compat/format-1-package.bspk");
+const dice_save = @embedFile("fixtures/compat/format-1-save-dice.sav");
+const each_save = @embedFile("fixtures/compat/format-1-save-each.sav");
 const melody = @embedFile("fixtures/fuzz/melody.txt");
 const drums = @embedFile("fixtures/fuzz/drums.txt");
 const command = @embedFile("fixtures/fuzz/command.txt");
@@ -168,34 +148,25 @@ test "P39-01 codegen" {
 }
 
 test "P39-01 package loader" {
-    try campaign(loadPackage, &.{ package, axis_package, red_line_package, dilemma_package, drift_package, appeal_package, art_package, sprite_package, area_package, handler_chain_package, bound_body_package, identity_package, kinds_package, text_package, looks_package, qoi_package, tuned_package, reroll_package, each_package });
+    try campaign(loadPackage, &.{package});
 }
 
-/// Malformed art sections (P46-01): the version 24 fixture with one field broken each. Every
-/// seed must be refused with the error that names it before mutation starts from them.
-const art_breaks = [_]struct { seed: []const u8, err: anyerror }{
-    .{ .seed = @embedFile("fixtures/fuzz/image-palette.bspk"), .err = error.InvalidImagePalette },
-    .{ .seed = @embedFile("fixtures/fuzz/image-count.bspk"), .err = error.InvalidImageCount },
-    .{ .seed = @embedFile("fixtures/fuzz/image-name.bspk"), .err = error.InvalidImageName },
-    .{ .seed = @embedFile("fixtures/fuzz/image-frame.bspk"), .err = error.InvalidImageSize },
-    .{ .seed = @embedFile("fixtures/fuzz/image-size.bspk"), .err = error.InvalidImageSize },
-    .{ .seed = @embedFile("fixtures/fuzz/image-index.bspk"), .err = error.InvalidImageIndex },
-};
+/// The same loader with the package checksum recomputed first, so a mutation reaches the
+/// section table and each section's reader instead of stopping at the CRC (P48-17).
+fn loadPackageResealed(allocator: std.mem.Allocator, input: []const u8) !bool {
+    const copy = try allocator.dupe(u8, input);
+    defer allocator.free(copy);
+    const header_len = @sizeOf(bespoke.package.PackageHeader);
+    if (copy.len >= header_len) std.mem.writeInt(u32, copy[8..12], std.hash.Crc32.hash(copy[header_len..]), .little);
+    return loadPackage(allocator, copy);
+}
 
-test "P46-01 package loader refuses malformed art" {
-    var seeds: [art_breaks.len][]const u8 = undefined;
-    for (art_breaks, &seeds) |b, *seed| {
-        seed.* = b.seed;
-        var world = try bespoke.World.init(testing.allocator, 256 * 1024);
-        defer world.deinit();
-        var reader: std.Io.Reader = .fixed(b.seed);
-        try testing.expectError(b.err, bespoke.package.load_package(testing.allocator, &reader, &world, null));
-    }
-    try mutate(loadPackage, &seeds);
+test "P48-17 package loader past its checksum" {
+    try campaign(loadPackageResealed, &.{package});
 }
 
 test "P39-01 save loader" {
-    try campaign(loadSave, &.{ save, identified_save, dice_save, each_save });
+    try campaign(loadSave, &.{ dice_save, each_save });
 }
 
 test "P39-01 MML" {

@@ -1,0 +1,28 @@
+entity FixtureJudge, FixtureThief, FixtureClerk, FixtureLedger, FixtureOffice
+relation Accused(who)
+relation Holds(holder, item)
+limit hints 6
+axis FixtureJustice between Cruelty and Leniency
+axis FixtureMercy between Vengeance and "Condoning Harm"
+  drift step 4
+dilemma FixtureBread:
+  actor FixtureJudge
+  fires Judged
+  requires Accused(FixtureThief)
+  weighs FixtureJustice against FixtureMercy
+  tiers 8 and 4
+  drift cap 3
+  drifts 2 toward FixtureMercy when Accused(FixtureThief)
+  strong FixtureJustice: "The law is the law." -> Hang
+  moderate FixtureJustice: "A night in the cells." -> Jail
+  neutral: "Show me why." -> Wait
+  moderate FixtureMercy: "Pay for the loaf." -> Fine
+  strong FixtureMercy: "Go." -> Pardon
+goal FixtureAudit:
+  need TakeLedger:
+    met Holds(FixtureClerk, FixtureLedger)
+    room FixtureOffice
+    hint 6 "Pull the drawer hard."
+routine Idle(FixtureJudge):
+  wait 1 ticks
+

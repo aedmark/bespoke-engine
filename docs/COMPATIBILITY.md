@@ -1,34 +1,52 @@
 # File Compatibility
 
-BeSpoke Engine reads released `.bspk` packages and `.sav` saves according to their file-format versions. These versions are independent of the engine's semantic release version.
+BeSpoke reads two kinds of file: packages (`.bspk`, a compiled program) and saves (`.sav`, a run in progress). This page states what each 1.x release reads. The promise starts at 1.0: no 1.x release reads a package or save written before 1.0 (D-174), and each one names such a file rather than misreading it.
 
 ## Current formats
 
-| File | Writer emits | Reader accepts | Unsupported error |
-| --- | ---: | ---: | --- |
-| `.bspk` package | 37 | 1 through 37 | Names the file's version and the supported range |
-| `.sav` save | 5 | 1 through 5 | Names the file's version and the supported range |
+| File | Magic | Writer emits | Reader accepts | Refused with |
+| --- | --- | ---: | ---: | --- |
+| `.bspk` package | `BSP1` | format 1 | format 1 | `UnsupportedPackageVersion` (another format), `PackageFromBeforeOne` (`BSPB`, before 1.0) |
+| `.sav` save | `BSV1` | version 1 | version 1 | `UnsupportedSaveVersion` (another version), `SaveFromBeforeOne` (`BSAV`, before 1.0) |
 
-Package version 16 adds the count and points condition opcodes (P44-02); versions 1 through 15 hold bytecode that cannot contain them and load unchanged. Package version 17 appends spellbooks with their words and combinations (P44-04); versions 1 through 16 load with no spellbook. Package version 18 appends decisions with their trigger lines and scored options (P44-05); versions 1 through 17 load with no decisions. Package version 19 appends value axes with their poles (P45-01); versions 1 through 18 load with no axes. Package version 20 appends each character's red lines (P45-02); versions 1 through 19 load with none. Package version 21 appends dilemmas with their axes, leans, and tier responses (P45-03); versions 1 through 20 load with none. Package version 22 appends each dilemma's drift lines after the version 21 dilemma records (P45-04); versions 1 through 21 load their dilemmas without drift. Package version 23 appends each dilemma's appeal lines after the drift groups (P45-05); versions 1 through 22 load dilemmas that no appeal moves. Package version 24 appends the game's palette and indexed images (P46-01, D-153); versions 1 through 23 load with no art. Package version 25 appends what the art is attached to: scene backdrops and sprites with their animations (P46-03, D-155); versions 1 through 24 load with none. Package version 26 appends prop areas (P46-05, D-158); versions 1 through 25 load with none. Package version 27 appends the order of cue handlers that share a signature (P48-01, D-160); versions 1 through 26 load with one handler per signature. Package version 28 adds the `bind_cue_args` and `push_local` opcodes, with which a cue handler body reads its arguments (P48-02, D-161); versions 1 through 27 hold bytecode that cannot contain them and load unchanged. Package version 29 appends the program's save version and build fingerprint (P48-08, D-162); versions 1 through 28 load with save version 1 and a fingerprint computed as the compiler does. Package version 30 records each relation's object kind (P48-08, D-178); versions 1 through 29 load with every kind unknown. Package version 31 appends display names and phrase overrides (P48-09, D-179); versions 1 through 30 load with none. Package version 32 names engine bookkeeping with a leading `#` (P48-10, D-180); versions 1 through 31 have the old names translated as they load. Package version 33 appends named looks and attached parts after the player text (P48-11, D-181); versions 1 through 32 load with none. Package version 34 stores art as true-colour QOI streams with no palette (P48-12, D-166, D-182); versions 24 through 33 load their indexed art as the colours their palette names, so they draw as before. Package version 35 appends each axis's drift step and each dilemma's tiers and drift cap, and allows hint tiers above 3 (P48-13, D-183); versions 1 through 34 load with the defaults, so their dilemmas weigh and drift as before. Package version 36 appends the `rewinds reroll` flag (P48-14, D-184); versions 1 through 35 load with rewinds restoring the dice. Package version 37 marks each `when each` rule and the variable whose entity runs its body (P48-16, D-170, D-186); versions 1 through 36 load every rule as a once rule. Save version 5 adds each fiber's and interrupt frame's local base and the rows each `when each` rule holds; versions 1 through 4 load with bases of 0 and no rows, so a row that holds at the load fires once. Save version 4 appends the run's dice, its seed and generator state, after the VM's rule edges, and its temporal envelope (version 2) carries the run's seed and a live branch's dice (P48-14, D-168, D-184); a version 3 save loads with the dice the running VM already has, and a version 1 temporal envelope with a live branch gets dice seeded as a branch opened at its tick would be. Save version 3 records the program that wrote the save and always carries the temporal flag; a host that names its program refuses a version 3 save from another build before restoring anything (`SaveFromOtherBuild`) unless both builds declare the same `save version`, in which case the facts load by name and the host restarts routines; versions 1 and 2 load unchecked. The package writer emits only the current format. Save format 1 remains the active plain-world profile; format 2 adds the optional temporal envelope and is emitted by the temporal writer. A reader in the 1.x release line keeps support for every format version that an earlier 1.x release could read. Format version numbers are never reused.
+The command line turns these into a sentence: an unsupported format names the format it found and the one it reads, and a file from before 1.0 says to rebuild the package from its script.
+
+## Packages are sections
+
+A package is a 16-byte header (magic, format, a CRC32 of the payload, and the payload's length) followed by sections (P48-17, D-172, D-187). Each section is a four-character tag, a flags byte, its length, and its bytes. Bit 0 of the flags marks the section required; no other bit is defined, and a set one is corrupt.
+
+| Tag | Holds |
+| --- | --- |
+| `NAME` | entities, and relations with their type and object kind |
+| `PLAC` | marks, walkways, and hotspots |
+| `CODE` | bytecode, the first statement, routine and cue handler entries, the handler chain (D-160), the save version and fingerprint (D-162), and `rewinds reroll` (D-184) |
+| `RULE` | `when` rules, with each rule's `each` flag and owner (D-186) |
+| `DRFT`, `SOCI`, `DUEL`, `DGRD`, `GRID`, `AGND`, `CMND`, `SCOR`, `CAST`, `GURD`, `GOAL`, `SPEL`, `DCSN`, `AXIS`, `REDL`, `DLMA` | one subsystem each: drafts, societies, duels, degradation, grids, agendas, commands and aliases, scores, cast places, cue guards, goals, spellbooks, decisions, axes, red lines, and dilemmas |
+| `IMGS` | images, as QOI streams (D-182) |
+| `ARTB` | backdrops, sprites, areas, looks, and parts |
+| `TEXT` | display names and phrase overrides (D-179) |
+
+- A package writes only the sections its program uses; `NAME` and `CODE` are always present. Every 1.0 section is required.
+- A reader refuses a package with an unknown required section (`UnknownRequiredSection`) and skips an unknown optional one, so a later 1.x adds what it needs as a new section, optional where an older reader may safely ignore it, without a new format.
+- A known section may appear once; its reader must use every byte of it.
+- A browser build reads the packages its decks embed when it is built and links only the readers of the sections they hold (`package.sections_in`, `load_package_linked`).
+
+## Saves
+
+A 1.0 save holds its metadata and program identity (D-162), the temporal envelope when a branch is involved, the world, the walking agents, and the VM: fibers with their local bases, rule edges, the run's dice (D-168), and each `when each` rule's rows (D-186). A save is tied to the build that wrote it: a different build refuses it unless both declare the same `save version`, and then its facts load by name and its routines restart (D-162). A later 1.x that changes the save layout adds a version and still reads every earlier 1.x version.
 
 ## Changing a format
 
-An additive, defaultable change increments the affected file-format version. Its reader defines the old-file default and continues to accept every earlier supported version. Package and save versions advance separately.
+Every 1.x reader loads every earlier 1.x package and save (D-172 point 3). A package change is a new section; a save change is a new save version whose reader keeps the older ones. A change that cannot be expressed that way needs a new format number, which no 1.x release will make.
 
-A change that cannot interpret old bytes without ambiguity does not reuse the existing magic or version. It requires a new format generation, an explicit migration path, and a semantic major release unless the old reader remains available beside it.
-
-Removing or renaming a script-language or supported host API name follows the [deprecation policy](CONTRIBUTING.md#deprecation-policy) (P38-04, D-108). Retiring source syntax leaves existing package and save reader guarantees in force. A language change that alters serialized package meaning must also follow this file policy.
+Removing or renaming a script-language or supported host API name follows the [deprecation policy](CONTRIBUTING.md#deprecation-policy) (P38-04, D-108).
 
 ## Failures
 
-Readers reject versions outside the supported range before allocating for or mutating decoded state. The programmatic result remains `UnsupportedPackageVersion` or `UnsupportedSaveVersion`; user-facing diagnostics state the found version and the complete supported range.
-
-A file whose version is supported but whose magic, checksum, bounds, or payload is invalid is corrupt, not incompatible, and retains its specific validation error.
-
-Save format version 1 has no temporal envelope. Plain save restore accepts versions 1 and 2. A temporal restore requires the version 2 temporal payload; `MissingTemporalState` is a capability mismatch, not an unsupported-format error.
+Readers reject a file they cannot read before allocating for or changing decoded state. A file in a format the reader knows whose checksum, bounds, section table, or contents are invalid is corrupt, not incompatible, and keeps its specific validation error.
 
 ## Compatibility fixtures
 
-Released bytes live in `tests/fixtures/compat/`. Tests embed and load them without rewriting them. When either writer advances, add a fixture named with the engine release and format version; do not replace prior fixtures while their versions remain supported.
+The 1.0 files live in `tests/fixtures/compat/` (`format-1-package.bspk` with its script `format-1.bespoke`, `format-1-save-dice.sav`, and `format-1-save-each.sav`). Tests and the fuzzer load them without rewriting them. When a 1.x release adds a section or a save version, add a fixture that uses it, and keep every earlier one. The fixtures from before 1.0 were retired with their readers (D-174); git history keeps them.
 
-Decision D-106 owns the policy and rationale. `src/package.zig` and `src/save.zig` own the executable version ranges.
+Decisions D-172, D-174, and D-187 own the policy. `src/package.zig` and `src/save.zig` own the executable checks.

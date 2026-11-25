@@ -1,0 +1,6 @@
+scene Quay:
+  cast: Pilot
+  marks: Steps, Pier
+scene Ferry:
+  cast: Captain
+  marks: Deck

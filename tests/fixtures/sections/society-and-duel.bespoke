@@ -1,0 +1,28 @@
+scene: Test Square
+cast: Alice, Merchant, Rival
+marks: Home, Market, Square
+society TestSociety:
+  need Hunger high 100 1 0 50 trade Merchant 2 20 0 80 30 0 "a meal"
+  member Alice 5 working:
+    need Hunger 10 none Merchant
+    routine working 2 Home, Square
+  member Merchant 10 working:
+    need Hunger 10 none Merchant
+    routine working 2 Market
+    merchant Market Goods
+    owns Goods
+    carries Goods
+  gathering Square
+  flight Home none 4
+  friend Alice Merchant
+duel TestDuel:
+  pair Riddle:
+    challenge "What speaks without a mouth?"
+    reply "An echo."
+    variant 1 "Voiceless, I answer."
+  fallback "I do not know."
+  fallback "Ask me another."
+  win 3
+  tier Rival 1
+  fatigue Inquiries "calm":
+    stage AnnoyedWith 2 10 "annoyed"

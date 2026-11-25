@@ -379,7 +379,7 @@ goal RecoverThePlate:
 - `room` names the place the room tier points at. Without it, the need inherits the scene that declares the prop or mark it names.
 - `hint 1`, `hint 2`, and `hint 3` replace the generated text for the room, thing, and relation tiers. A tier without text is generated from the names in `met`. A puzzle that wants more steps of help writes `hint 4` and up, with `limit hints 6` (or however many) once in the script; asking past a need's last tier repeats that tier.
 - A query answers with the first unmet need whose terms the character knows and records which path answered. When no such need is on the frontier, it answers as the author, which may name a place or thing the character has not met.
-- Hints are never stored, so a save, a rewind, and a replay give the same hint for the same world (D-003). Goals travel in package format version 15.
+- Hints are never stored, so a save, a rewind, and a replay give the same hint for the same world (D-003). Goals travel in the package.
 
 ### Several files
 

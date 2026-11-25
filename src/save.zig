@@ -19,15 +19,15 @@ pub const FiberState = vm_mod.FiberState;
 pub const FiberStateTag = vm_mod.FiberStateTag;
 pub const InterruptFrame = vm_mod.InterruptFrame;
 
-/// 4-byte magic identifier for BeSpoke persistent save files (P17-01, D-020).
-pub const SAVE_MAGIC = [4]u8{ 'B', 'S', 'A', 'V' };
-/// Version 3 (P48-08, D-162) adds the program identity after the metadata, and always carries
-/// the temporal flag byte; versions 1 and 2 load unchecked.
-/// Version 5 adds each fiber's and interrupt frame's local base and each `when each` rule's
-/// rows (P48-16, D-170, D-186); older saves load with bases of 0 and no rows held.
-/// Version 4 adds the run's dice, the seed and the generator's state, after the VM's rule
-/// edges (P48-14, D-168, D-184); a version 3 save loads with the dice the VM already has.
-pub const SAVE_VERSION: u32 = 5;
+/// The 1.0 save format (P48-17, D-174, D-187): `BSV1`, format 1, a CRC32, and the payload: the
+/// metadata and the program identity (D-162), the temporal flag and envelope, the world, the
+/// walking agents, and the VM with its fibers, rule edges, dice (D-168), and `when each` rows
+/// (D-186). A later 1.x adds versions and reads every earlier one; 1.0 reads no save written
+/// before it.
+pub const SAVE_MAGIC = [4]u8{ 'B', 'S', 'V', '1' };
+/// The magic of saves written before 1.0, which 1.0 does not read (D-174).
+pub const PRE_1_0_SAVE_MAGIC = [4]u8{ 'B', 'S', 'A', 'V' };
+pub const SAVE_VERSION: u32 = 1;
 pub const MIN_SAVE_VERSION: u32 = 1;
 
 /// Number of user-addressable save slots (1..8), plus slot 0 reserved for Quick-Save (P17-02, D-020).
@@ -73,6 +73,8 @@ pub const SaveError = error{
     /// restored.
     SaveNotTranslatable,
     InvalidSaveMagic,
+    /// The save was written by a BeSpoke before 1.0 (D-174).
+    SaveFromBeforeOne,
     UnsupportedSaveVersion,
     ChecksumMismatch,
     SavePayloadTooLarge,
@@ -86,6 +88,7 @@ pub const SaveError = error{
 /// Formats the actionable diagnostic for a save schema outside this engine's supported range
 /// (P38-02, D-106). Save loaders still return `UnsupportedSaveVersion` for programmatic handling.
 pub fn format_unsupported_version(buf: []u8, found: u32) []const u8 {
+    if (MIN_SAVE_VERSION == SAVE_VERSION) return std.fmt.bufPrint(buf, "unsupported .sav format version {d}; this engine reads version {d}", .{ found, SAVE_VERSION }) catch "unsupported .sav format version";
     return std.fmt.bufPrint(buf, "unsupported .sav format version {d}; this engine supports versions {d} through {d}", .{
         found,
         MIN_SAVE_VERSION,
@@ -445,14 +448,14 @@ fn write_save_state_versioned(
     // 1. Metadata header block, then (version 3) the program identity, read before anything is
     // restored so a refused load changes nothing.
     try serialize_metadata(pw, &meta);
-    if (version >= 3) {
+    {
         try pw.writeInt(u64, meta.program.fingerprint, .little);
         try pw.writeInt(u32, meta.program.save_version, .little);
     }
 
     // 2. Temporal hypervisor state (format version 2). It precedes the world so a reader can
     // decode and validate the branch before mutating the primary state.
-    if (version >= 2) {
+    {
         if (temporal) |hypervisor| {
             var temporal_bytes = std.array_list.Managed(u8).init(allocator);
             defer temporal_bytes.deinit();
@@ -471,7 +474,7 @@ fn write_save_state_versioned(
 
     // 4. Spatial motor agents, then 5. VM execution state
     try write_spatial_state(pw, spatial);
-    try write_vm_state(pw, vm, version);
+    try write_vm_state(pw, vm);
 
     // Compute CRC32 integrity checksum over the entire payload
     if (payload.items.len > MAX_SAVE_PAYLOAD_SIZE) return SaveError.SavePayloadTooLarge;
@@ -525,7 +528,7 @@ pub fn write_spatial_state(pw: anytype, spatial: ?*const SpatialSystem) !void {
 
 /// The VM's execution state, as a save and a browser snapshot hold it: the scene, every fiber
 /// with its stack and interrupt frames, the rule edges, and (version 4) the run's dice.
-pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
+pub fn write_vm_state(pw: anytype, vm: ?*const VM) !void {
     if (vm) |v| {
         // Queued weaves are not part of the save format. They exist only between `step_tick`
         // and the host's `dispatch_pending_weaves`; saving inside that window would drop them,
@@ -548,7 +551,7 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
                 try pw.writeInt(u32, f.stack[si], .little);
             }
             try write_fiber_state(pw, f.state);
-            if (version >= 5) try pw.writeInt(u16, @intCast(f.local_base), .little);
+            try pw.writeInt(u16, @intCast(f.local_base), .little);
 
             const int_depth: u16 = @intCast(f.interrupt_stack.items.len);
             try pw.writeInt(u16, int_depth, .little);
@@ -557,7 +560,7 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
                 try pw.writeInt(u16, @intCast(iframe.sp), .little);
                 try pw.writeInt(u16, iframe.priority, .little);
                 try write_fiber_state(pw, iframe.state);
-                if (version >= 5) try pw.writeInt(u16, @intCast(iframe.local_base), .little);
+                try pw.writeInt(u16, @intCast(iframe.local_base), .little);
             }
         }
 
@@ -566,8 +569,8 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM, version: u32) !void {
         for (v.reactive_rules.items) |r| {
             try pw.writeByte(if (r.is_active) 1 else 0);
         }
-        if (version >= 4) try v.dice.write(pw);
-        if (version >= 5) {
+        try v.dice.write(pw);
+        {
             // Each rule's rows that hold now, so a load fires only rows that start after it.
             for (v.reactive_rules.items) |r| {
                 try pw.writeInt(u32, @intCast(r.rows.items.len), .little);
@@ -659,7 +662,7 @@ pub fn read_spatial_state(pr: anytype, spatial: ?*SpatialSystem) !void {
 }
 
 /// Reads what `write_vm_state` wrote into `vm` for a save of `version`.
-pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
+pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
     const has_vm = try pr.takeByte();
     if (has_vm != 0) {
         const cur_scene_raw = try pr.takeInt(u32, .little);
@@ -698,7 +701,7 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
                     }
                 }
                 fib.state = try read_fiber_state(pr);
-                if (version >= 5) {
+                {
                     fib.local_base = try pr.takeInt(u16, .little);
                     if (fib.local_base > fib.sp) return SaveError.InvalidTemporalState;
                 }
@@ -710,7 +713,7 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
                     const isp = try pr.takeInt(u16, .little);
                     const iprio = try pr.takeInt(u16, .little);
                     const istate = try read_fiber_state(pr);
-                    const ibase: u16 = if (version >= 5) try pr.takeInt(u16, .little) else 0;
+                    const ibase: u16 = try pr.takeInt(u16, .little);
                     if (ibase > isp) return SaveError.InvalidTemporalState;
                     try fib.interrupt_stack.append(InterruptFrame{
                         .pc = ipc,
@@ -732,9 +735,9 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM, version: u32) !void {
                     v.reactive_rules.items[ri].is_active = is_act;
                 }
             }
-            if (version >= 4) v.dice = try dice_mod.Dice.read(pr);
+            v.dice = try dice_mod.Dice.read(pr);
             for (v.reactive_rules.items) |*r| r.rows.clearRetainingCapacity();
-            if (version >= 5) {
+            {
                 // Untrusted counts: one table per rule the save had, each bounded (D-186).
                 var rj: u32 = 0;
                 while (rj < rule_count) : (rj += 1) {
@@ -896,26 +899,6 @@ test "P48-08: a slot from another build is refused, not recovered from its backu
     _ = try sm.load_slot(1, &world, null, null);
 }
 
-test "P48-08: checked-in version 3 save fixture names its build" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v3.sav", testing.allocator, .limited(1024 * 1024));
-    defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 3), version_from_bytes(fixture).?);
-    const build = ProgramIdentity{ .fingerprint = 0x5ace_d0c5_0000_0003, .save_version = 2 };
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    const meta = try read_save_state_for(testing.allocator, &stream, &world, null, null, build);
-    try testing.expectEqual(build, meta.program);
-    try testing.expectEqualStrings("P48-08 compatibility fixture", meta.get_description());
-    try testing.expect(world.has_fact(world.lookup_entity("FixtureHero").?, world.lookup_relation("Ready").?, null));
-    var again: std.Io.Reader = .fixed(fixture);
-    try testing.expectError(SaveError.SaveFromOtherBuild, read_save_state_for(testing.allocator, &again, &world, null, null, .{ .fingerprint = 7, .save_version = 3 }));
-    // Another build with the same save version loads it, translating its facts.
-    var compatible: std.Io.Reader = .fixed(fixture);
-    try testing.expect((try read_save_state_for(testing.allocator, &compatible, &world, null, null, .{ .fingerprint = 7, .save_version = 2 })).routines_restarted);
-}
-
 test "P48-08: a build with the same save version loads another build's facts by name" {
     const testing = std.testing;
     // The old build numbers Hero, Lamp, Coin; the new one meets Coin first and adds Wren.
@@ -1002,6 +985,7 @@ fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !Verifie
     var magic: [4]u8 = undefined;
     const m_read = try reader.readSliceShort(&magic);
     if (m_read < 4) return error.EndOfStream;
+    if (std.mem.eql(u8, &magic, &PRE_1_0_SAVE_MAGIC)) return SaveError.SaveFromBeforeOne;
     if (!std.mem.eql(u8, &magic, &SAVE_MAGIC)) return SaveError.InvalidSaveMagic;
 
     const version = try reader.takeInt(u32, .little);
@@ -1032,7 +1016,7 @@ pub fn inspect_save_stream(allocator: std.mem.Allocator, reader: anytype) !SaveM
 
     var fbs: std.Io.Reader = .fixed(verified.bytes);
     var meta = try deserialize_metadata(&fbs);
-    if (verified.version >= 3) {
+    {
         meta.program = .{
             .fingerprint = try fbs.takeInt(u64, .little),
             .save_version = try fbs.takeInt(u32, .little),
@@ -1111,7 +1095,7 @@ fn read_save_state_versioned(
     // save version, in which case its facts are translated and its routines restart.
     var meta = try deserialize_metadata(pr);
     if (meta.version != verified.version) return SaveError.InvalidTemporalState;
-    if (verified.version >= 3) {
+    {
         meta.program = .{
             .fingerprint = try pr.takeInt(u64, .little),
             .save_version = try pr.takeInt(u32, .little),
@@ -1129,7 +1113,7 @@ fn read_save_state_versioned(
     var pending_temporal: ?temporal_mod.TemporalSnapshot = null;
     defer if (pending_temporal) |*snapshot| snapshot.deinit();
 
-    if (verified.version >= 2) {
+    {
         const has_temporal = try pr.takeByte();
         switch (has_temporal) {
             0 => if (require_temporal) return SaveError.MissingTemporalState,
@@ -1148,8 +1132,6 @@ fn read_save_state_versioned(
             },
             else => return SaveError.InvalidTemporalState,
         }
-    } else if (require_temporal) {
-        return SaveError.MissingTemporalState;
     }
 
     // 2. World relational state
@@ -1159,7 +1141,7 @@ fn read_save_state_versioned(
 
     // 3. Spatial motor agents, then 4. VM execution state
     try read_spatial_state(pr, spatial);
-    try read_vm_state(pr, vm, verified.version);
+    try read_vm_state(pr, vm);
 
     if (pending_temporal) |*snapshot| {
         if (temporal) |hypervisor| try snapshot.apply(hypervisor);
@@ -1249,7 +1231,7 @@ fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload
             }
         }
         // The run goes on: the dice continue from where the save left them (D-168).
-        if (verified.version >= 4) v.dice = saved_vm.dice;
+        v.dice = saved_vm.dice;
     }
 }
 
@@ -1802,6 +1784,12 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var s2: std.Io.Reader = .fixed(bad_magic);
     try testing.expectError(SaveError.InvalidSaveMagic, read_save_state(testing.allocator, &s2, &world, null, null));
+    // A save written before 1.0 is named as such (D-174).
+    const old_save = try testing.allocator.dupe(u8, save_buf.items);
+    defer testing.allocator.free(old_save);
+    @memcpy(old_save[0..4], &PRE_1_0_SAVE_MAGIC);
+    var s_old: std.Io.Reader = .fixed(old_save);
+    try testing.expectError(SaveError.SaveFromBeforeOne, read_save_state(testing.allocator, &s_old, &world, null, null));
 
     // 3. Unsupported version -> UnsupportedSaveVersion
     var bad_ver = try testing.allocator.dupe(u8, save_buf.items);
@@ -1813,32 +1801,9 @@ test "P17-01: .sav rejects corrupted CRC32, invalid magic, and unsupported versi
 
     var message_buf: [128]u8 = undefined;
     try testing.expectEqualStrings(
-        "unsupported .sav format version 99; this engine supports versions 1 through 5",
+        "unsupported .sav format version 99; this engine reads version 1",
         format_unsupported_version(&message_buf, version_from_bytes(bad_ver).?),
     );
-}
-
-test "P38-02: checked-in version 2 save fixture loads" {
-    const testing = std.testing;
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.1.0-save-v2.sav",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(fixture);
-
-    try testing.expectEqual(@as(u32, 2), version_from_bytes(fixture).?);
-
-    var world = try World.init(testing.allocator, 1024 * 1024);
-    defer world.deinit();
-    var stream: std.Io.Reader = .fixed(fixture);
-    const meta = try read_save_state(testing.allocator, &stream, &world, null, null);
-
-    try testing.expectEqual(@as(u32, 2), meta.version);
-    try testing.expectEqualStrings("P38-02 compatibility fixture", meta.get_description());
-    try testing.expect(world.lookup_entity("FixtureHero") != null);
-    try testing.expect(world.lookup_relation("Ready") != null);
 }
 
 test "P17-02: SaveManager numbered slots, quick-save/load, and corrupted save .bak recovery" {

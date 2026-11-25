@@ -1,0 +1,21 @@
+scene: FixtureShop
+cast: FixtureClerk
+props: FixtureBell
+marks: FixtureCounter
+
+palette:
+  "." transparent
+  "r" 200 40 40
+  "y" 240 220 60
+
+image FixtureBellSheet frames 2x2:
+  "r.yy"
+  "rr.y"
+
+sprite FixtureBell: FixtureBellSheet
+  idle: 0 for 30, 1 for 6
+sprite FixtureClerk: FixtureBellSheet
+  walk left: 1 for 4
+
+routine Idle(FixtureClerk):
+  wait 1 ticks

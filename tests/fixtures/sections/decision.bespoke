@@ -1,0 +1,14 @@
+entity FixtureDecider
+relation Turn(who)
+relation Open(who)
+decision FixtureDecision:
+  actor FixtureDecider
+  fires FixtureChoice
+  requires Turn(FixtureDecider)
+  option FixtureOptionA:
+    picks 3 when Open(FixtureDecider)
+    drops 1 when Turn(FixtureDecider)
+  option FixtureOptionB:
+    picks 1 when Open(FixtureDecider)
+routine Idle(FixtureDecider):
+  wait 1 ticks

@@ -1,0 +1,19 @@
+entity FixtureJudge
+relation Accused(who)
+relation Repaid(who)
+axis FixtureJustice between Cruelty and Leniency
+axis FixtureMercy between Vengeance and Indulgence
+dilemma FixtureDilemma:
+  actor FixtureJudge
+  fires FixtureJudged
+  requires Accused(FixtureThief)
+  weighs FixtureJustice against FixtureMercy
+  drifts 3 toward FixtureMercy when Repaid(FixtureThief)
+  appeals 4 to FixtureMercy
+  strong FixtureJustice: "Fixture strong justice." -> FixtureHang
+  moderate FixtureJustice: "Fixture moderate justice." -> FixtureJail
+  neutral: "Fixture neutral." -> FixtureWait
+  moderate FixtureMercy: "Fixture moderate mercy." -> FixtureFine
+  strong FixtureMercy: "Fixture strong mercy." -> FixturePardon
+routine Idle(FixtureJudge):
+  wait 1 ticks

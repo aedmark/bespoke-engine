@@ -1,0 +1,8 @@
+scene: FixtureYard
+cast: FixtureKeeper
+props: FixtureGate, FixtureWell
+marks: FixturePath
+area FixtureGate: 10 20 30 40
+area FixtureWell: 200 100 16 16
+routine Idle(FixtureKeeper):
+  wait 1 ticks

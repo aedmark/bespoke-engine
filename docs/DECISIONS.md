@@ -2323,6 +2323,20 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** A game that relies on several rows in one tick can say which runs first by naming. P48-16 builds it.
 
+## D-187 The 1.0 Package Is 'BSP1' Format 1 With Only the Sections It Uses; the 1.0 Save Is 'BSV1' Format 1; Browser Builds Link Only Their Sections' Readers (2026-11-24, status: accepted; P48-17, refines D-172 and D-174)
+
+**Context.** D-172 made 1.0 packages tagged sections, each with a length and a required flag, and D-174 dropped every 0.x package and save. Building it left four choices: how the header names the new format, which sections a package writes, what the 1.0 save is, and whether P48-17 also makes browser builds link only the readers their game's sections need (D-172 point 4).
+
+**Decision.** The maintainer chose on 2026-11-24:
+1. A 1.0 package opens with the magic `BSP1` and format 1, then its sections. A 1.x addition is a new section; the format number moves only for a change sections cannot express. A pre-1.0 `BSPB` file is refused with a message to rebuild it from its script.
+2. A package writes one section per part of the program, and only the parts the game uses; every 1.0 section is required.
+3. The 1.0 save keeps the version 5 layout under the magic `BSV1` and format 1, and later 1.x saves add versions as before; save versions 1 to 4 and their fixtures retire.
+4. A browser module reads its decks' embedded packages when it is built and links only the readers for the sections they contain, as D-147 does for source and packages.
+
+**Alternatives:** keeping `BSPB` and numbering on from 37; writing every section, empty ones included; sectioned saves; leaving link pruning to 1.x.
+
+**Consequences.** Every 0.x package and save fixture, the fuzz seeds built from them, and the version-by-version loader paths retire to history, and `COMPATIBILITY.md` starts at 1.0. P48-17 builds it.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

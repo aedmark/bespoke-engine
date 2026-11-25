@@ -89,7 +89,9 @@ comptime {
     require(bespoke.compiler.includes, &.{ "expand", "Expanded", "Segment", "Place", "Failure" }, "compiler.includes");
     require(bespoke.display, &.{ "capture_debug_facts", "story_fact_count", "is_engine_relation", "RenderLook", "look_of" }, "display");
     require(bespoke.phrase, &.{ "Key", "Entry", "ENTRIES", "Arg", "Error", "find", "entry", "text", "validate", "render", "fill" }, "phrase");
-    require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for" }, "save");
+    require(bespoke.save, &.{ "ProgramIdentity", "format_build_mismatch", "read_save_state_for", "read_save_state_with_temporal_for", "PRE_1_0_SAVE_MAGIC" }, "save");
+    require(bespoke.package, &.{ "PACKAGE_MAGIC", "PRE_1_0_MAGIC", "PACKAGE_FORMAT", "PackageHeader", "Section", "SECTION_TAGS", "SectionSet", "ALL_SECTIONS", "SECTION_REQUIRED", "save_package", "load_package", "load_package_linked", "sections_in", "save_package_file", "load_package_file", "version_from_bytes", "is_pre_1_0", "format_unsupported_version", "PRE_1_0_MESSAGE" }, "package");
+    require(bespoke.package.Section, &.{ "tag", "from_tag" }, "package.Section");
     require(bespoke.compiler.CompiledProgram, &.{"identity"}, "compiler.CompiledProgram");
 }
 

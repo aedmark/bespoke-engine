@@ -1,0 +1,59 @@
+# The 1.0 package fixture's script (P48-17, D-187): one program that uses most sections, so a
+# later 1.x reader can be checked against what 1.0 wrote.
+save version 2
+rewinds reroll
+limit hints 4
+
+scene: FixtureYard
+cast: FixtureJudge, FixtureThief, FixtureClerk
+props: FixtureLamp
+marks: FixtureGate, FixtureWell
+name FixtureLamp: "the old lamp"
+phrase NotHere: "Nothing of the kind is here."
+
+palette:
+  "." transparent
+  "r" 200 40 40
+image FixtureSheet frames 2x2:
+  "r.r."
+  "rr.r"
+look FixtureDark: FixtureSheet
+  idle: 0
+look FixtureLit: FixtureSheet
+  idle: 1
+sprite FixtureLamp: FixtureDark
+area FixtureLamp: 10 10 4 4
+
+relation Accused(who)
+relation Holds(holder, item)
+relation Cheered(who)
+entity FixtureLedger, FixtureOffice
+
+axis FixtureJustice between Cruelty and Leniency
+axis FixtureMercy between Vengeance and "Condoning Harm"
+  drift step 4
+dilemma FixtureBread:
+  actor FixtureJudge
+  fires Judged
+  requires Accused(FixtureThief)
+  weighs FixtureJustice against FixtureMercy
+  tiers 8 and 4
+  drift cap 3
+  drifts 2 toward FixtureMercy when Accused(FixtureThief)
+  strong FixtureJustice: "The law is the law." -> Hang
+  moderate FixtureJustice: "A night in the cells." -> Jail
+  neutral: "Show me why." -> Wait
+  moderate FixtureMercy: "Pay for the loaf." -> Fine
+  strong FixtureMercy: "Go." -> Pardon
+
+goal FixtureAudit:
+  need TakeLedger:
+    met Holds(FixtureClerk, FixtureLedger)
+    room FixtureOffice
+    hint 4 "Pull the drawer hard."
+
+when each Holds(who, FixtureLedger):
+  remember Cheered(who)
+
+routine Idle(FixtureJudge):
+  wait 1 ticks

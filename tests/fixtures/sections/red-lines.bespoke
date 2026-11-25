@@ -1,0 +1,13 @@
+entity FixtureJudge
+relation Accused(who)
+red lines FixtureJudge: FixtureExecute
+decision FixtureVerdict:
+  actor FixtureJudge
+  fires FixtureJudged
+  requires Accused(FixtureThief)
+  option FixtureExecute:
+    picks 9 when Accused(FixtureThief)
+  option FixturePardon:
+    picks 1 when Accused(FixtureThief)
+routine Idle(FixtureJudge):
+  wait 1 ticks

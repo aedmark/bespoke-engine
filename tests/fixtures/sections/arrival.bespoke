@@ -1,0 +1,6 @@
+scene: Yard
+cast: Scout
+marks: Well, Gate
+
+when Scout arrives at Gate:
+  remember ReachedGate(Scout, true)

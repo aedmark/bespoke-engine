@@ -622,8 +622,9 @@ pub const WasmRuntime = struct {
     pub fn load_program(self: *WasmRuntime, comptime data: []const u8) !void {
         const is_package = comptime data.len >= 4 and std.mem.eql(u8, data[0..4], &package_mod.PACKAGE_MAGIC);
         if (is_package) {
+            // Only the readers for the sections this package holds are linked (D-172, D-187).
             var stream: std.Io.Reader = .fixed(data);
-            self.program = try package_mod.load_package(self.allocator, &stream, &self.world, &self.spatial);
+            self.program = try package_mod.load_package_linked(comptime package_mod.sections_in(data), self.allocator, &stream, &self.world, &self.spatial);
         } else {
             self.program = try compiler_mod.compile_source(self.allocator, &self.world, &self.spatial, data);
         }
@@ -1120,7 +1121,7 @@ pub const WasmRuntime = struct {
         var writer: std.Io.Writer = .fixed(&self.snapshot_bufs[slot]);
         self.world.save_state(&writer) catch return;
         save_mod.write_spatial_state(&writer, &self.spatial) catch return;
-        save_mod.write_vm_state(&writer, &self.vm, save_mod.SAVE_VERSION) catch return;
+        save_mod.write_vm_state(&writer, &self.vm) catch return;
         if (self.hypervisor) |hv| write_temporal(hv, &writer) catch return;
         self.snapshot_lens[slot] = writer.end;
         self.snapshot_ticks[slot] = self.clock();
@@ -1180,7 +1181,7 @@ pub const WasmRuntime = struct {
             const dice = self.vm.dice;
             self.world.restore_state(&fbs) catch return;
             save_mod.read_spatial_state(&fbs, &self.spatial) catch return;
-            save_mod.read_vm_state(&fbs, &self.vm, save_mod.SAVE_VERSION) catch return;
+            save_mod.read_vm_state(&fbs, &self.vm) catch return;
             if (reroll) self.vm.dice = dice;
             if (self.hypervisor) |hv| self.read_temporal(hv, &fbs) catch {
                 self.set_banner("Could not restore the tangent world here.");

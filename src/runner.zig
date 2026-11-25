@@ -470,7 +470,7 @@ fn run_bytes_with_presenter(
     var spatial = SpatialSystem.init(allocator);
     defer spatial.deinit();
 
-    const is_binary = (data.len >= 4 and std.mem.eql(u8, data[0..4], &bespoke.package.PACKAGE_MAGIC));
+    const is_binary = (data.len >= 4 and std.mem.eql(u8, data[0..4], &bespoke.package.PACKAGE_MAGIC)) or bespoke.package.is_pre_1_0(data);
 
     var compiled: CompiledProgram = undefined;
     if (is_binary) {
@@ -482,6 +482,7 @@ fn run_bytes_with_presenter(
                 const found = bespoke.package.version_from_bytes(data) orelse 0;
                 try stdout.print("{s}: error: {s}\n", .{ path, bespoke.package.format_unsupported_version(&message_buf, found) });
             }
+            if (err == error.PackageFromBeforeOne) try stdout.print("{s}: error: {s}\n", .{ path, bespoke.package.PRE_1_0_MESSAGE });
             return err;
         };
     } else {
@@ -845,7 +846,7 @@ test "P15-01: runner checks and compiles external scenario file" {
     // Verify .bspk exists and has valid magic
     var magic_buf: [4]u8 = undefined;
     const head = try std.Io.Dir.cwd().readFile(testing.io, tmp_pkg, &magic_buf);
-    try testing.expectEqualStrings("BSPB", head);
+    try testing.expectEqualStrings("BSP1", head);
 
     // Test run_file on source in headless mode
     try run_file(testing.allocator, testing.io, tmp_script, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
@@ -854,31 +855,29 @@ test "P15-01: runner checks and compiles external scenario file" {
     try run_file(testing.allocator, testing.io, tmp_pkg, .{ .ticks = 5, .is_headless = true, .verbose = false }, null_writer);
 }
 
-test "P38-02: runner reports the package version and supported range" {
+test "P48-17: runner names a package format it cannot read, and one from before 1.0" {
     const testing = std.testing;
-    const unsupported = try std.Io.Dir.cwd().readFileAlloc(
-        testing.io,
-        "tests/fixtures/compat/v0.1.0-package-v14.bspk",
-        testing.allocator,
-        .limited(1024 * 1024),
-    );
-    defer testing.allocator.free(unsupported);
-    std.mem.writeInt(u32, unsupported[4..8], bespoke.package.PACKAGE_VERSION + 1, .little);
+    var world = try World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, null, "entity Hero\nroutine Idle(Hero):\n  wait 1 ticks\n");
+    defer compiled.deinit();
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = bespoke.ListWriter.init(&bytes);
+    try bespoke.package.save_package(testing.allocator, &lw.writer, &compiled, &world, null);
+    std.mem.writeInt(u32, bytes.items[4..8], bespoke.package.PACKAGE_FORMAT + 1, .little);
 
     var output_buf: [256]u8 = undefined;
     var output: std.Io.Writer = .fixed(&output_buf);
-    try testing.expectError(
-        error.UnsupportedPackageVersion,
-        run_bytes(testing.allocator, testing.io, "future.bspk", unsupported, .{
-            .ticks = 0,
-            .is_headless = true,
-            .verbose = false,
-        }, &output),
-    );
-    try testing.expectEqualStrings(
-        "future.bspk: error: unsupported .bspk format version 38; this engine supports versions 1 through 37\n",
-        output.buffered(),
-    );
+    const config = RunConfig{ .ticks = 0, .is_headless = true, .verbose = false };
+    try testing.expectError(error.UnsupportedPackageVersion, run_bytes(testing.allocator, testing.io, "future.bspk", bytes.items, config, &output));
+    try testing.expectEqualStrings("future.bspk: error: unsupported .bspk format 2; this engine reads format 1\n", output.buffered());
+
+    // A package written before 1.0 is named as such (D-174).
+    @memcpy(bytes.items[0..4], &bespoke.package.PRE_1_0_MAGIC);
+    output = .fixed(&output_buf);
+    try testing.expectError(error.PackageFromBeforeOne, run_bytes(testing.allocator, testing.io, "old.bspk", bytes.items, config, &output));
+    try testing.expectEqualStrings("old.bspk: error: " ++ bespoke.package.PRE_1_0_MESSAGE ++ "\n", output.buffered());
 }
 
 test "P29-02: the window acts for the first routine's actor and answers scripted dialogue" {
@@ -972,7 +971,7 @@ test "P46-04: a script cannot read a file outside its folder, and a missing or b
     var files = ScriptFiles.for_script(testing.io, "tests/fixtures/png/gallery.bespoke");
     const Case = struct { file: []const u8, message: []const u8 };
     const cases = [_]Case{
-        .{ .file = "../compat/v0.4.0-package-v24.bspk", .message = "image 'Art' cannot read \"../compat/v0.4.0-package-v24.bspk\" (PathOutsideScriptFolder)" },
+        .{ .file = "../compat/format-1-package.bspk", .message = "image 'Art' cannot read \"../compat/format-1-package.bspk\" (PathOutsideScriptFolder)" },
         .{ .file = "/etc/hostname", .message = "image 'Art' cannot read \"/etc/hostname\" (PathOutsideScriptFolder)" },
         .{ .file = "missing.png", .message = "image 'Art' cannot read \"missing.png\" (FileNotFound)" },
         .{ .file = "interlaced.png", .message = "image 'Art' cannot use \"interlaced.png\": it is interlaced; save it without interlacing" },

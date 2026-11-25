@@ -1,0 +1,7 @@
+entity FixtureCaptain
+axis FixtureJustice between Cruelty and Leniency
+axis FixtureMercy between Vengeance and "Condoning Harm"
+remember FixtureJustice(FixtureCaptain, 8)
+remember FixtureMercy(FixtureCaptain, -3)
+routine Idle(FixtureCaptain):
+  wait 1 ticks

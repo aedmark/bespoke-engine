@@ -1,0 +1,19 @@
+scene: Yard
+cast: Hero
+props: Lamp
+marks: Gate
+palette:
+  "." transparent
+  "r" 200 40 40
+image Sheet frames 2x2:
+  "r.r."
+  "rr.r"
+look Dark: Sheet
+  idle: 0
+look Lit: Sheet
+  idle: 1
+sprite Lamp: Dark
+part Hero of Lamp at 0 -2
+routine Idle(Hero):
+  wait 1 ticks
+

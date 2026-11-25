@@ -1,0 +1,2 @@
+command Pours: "pour <thing> into <thing>"
+alias OilLamp: "lantern"

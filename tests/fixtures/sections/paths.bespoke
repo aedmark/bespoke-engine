@@ -1,0 +1,13 @@
+entity Hero
+relation ChosenWits(flag)
+relation ChosenFists(flag)
+relation WitsSolved(flag)
+relation FistsSolved(flag)
+path Wits:
+  remember ChosenWits(Hero)
+  routine WitsPlan(Hero):
+    remember WitsSolved(Hero)
+path Fists:
+  remember ChosenFists(Hero)
+  routine FistsPlan(Hero):
+    remember FistsSolved(Hero)

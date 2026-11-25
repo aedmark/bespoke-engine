@@ -2738,10 +2738,10 @@ test "P48-14: a branch rolls from its own dice and leaves the present's untouche
     try testing.expect(hypervisor.active_dice() == null);
 }
 
-test "P48-14: checked-in version 4 save fixture continues its run's dice" {
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v4.sav", testing.allocator, .limited(1024 * 1024));
+test "P48-14: checked-in 1.0 save fixture continues its run's dice" {
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/format-1-save-dice.sav", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 4), save_mod.version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 1), save_mod.version_from_bytes(fixture).?);
     // The fixture is a seed-7 run of `DICE_SCRIPT` saved after three ticks; a fresh seed-7 run
     // three ticks in throws exactly as the loaded one does.
     var fresh: DiceRig = undefined;
@@ -2833,10 +2833,10 @@ test "P48-16: 'when each' fires per row, in name order, again after a row stops,
     try testing.expectEqual(ada.to_int(), w.get_property(sword, last).?);
 }
 
-test "P48-16: checked-in version 5 save fixture holds a 'when each' row, which does not fire again" {
-    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/v0.4.0-save-v5.sav", testing.allocator, .limited(1024 * 1024));
+test "P48-16: checked-in 1.0 save fixture holds a 'when each' row, which does not fire again" {
+    const fixture = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/compat/format-1-save-each.sav", testing.allocator, .limited(1024 * 1024));
     defer testing.allocator.free(fixture);
-    try testing.expectEqual(@as(u32, 5), save_mod.version_from_bytes(fixture).?);
+    try testing.expectEqual(@as(u32, 1), save_mod.version_from_bytes(fixture).?);
     // The fixture is `EACH_SCRIPT` after Ada took the sword and her row fired.
     var rig: DiceRig = undefined;
     try rig.init(EACH_SCRIPT, null);
@@ -2851,3 +2851,4 @@ test "P48-16: checked-in version 5 save fixture holds a 'when each' row, which d
     try rig.ticks(2);
     try testing.expect(!w.has_fact(ada, cheered, null));
 }
+

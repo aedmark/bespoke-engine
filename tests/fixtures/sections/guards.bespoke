@@ -1,0 +1,3 @@
+entity Cat, Guard, Cheese
+on cue Steal(Cat, victim) where Carries(victim, Cheese):
+  remember Stolen(Cheese)
