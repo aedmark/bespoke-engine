@@ -385,7 +385,7 @@ const Stage = struct {
     /// author's fallback when she cannot, and nothing once every need holds.
     fn hint(self: Stage, writer: anytype, tier: bespoke.hint.Tier) !void {
         var buf: [160]u8 = undefined;
-        const found = try bespoke.hint.query(self.compiled.goals.items, self.world, self.ids.ines, tier, &buf);
+        const found = try host.hint(self.world, self.compiled, self.ids.ines, tier, &buf);
         if (found) |value| {
             try writer.print("  -> Hint ({s}{s}): {s}\n", .{
                 switch (value.path) {

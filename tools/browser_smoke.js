@@ -233,7 +233,17 @@ async function smoke(pageUrl, starter, layout = false, touchTargets = false, tou
       await waitFor('Observatory deck on its own page', () => evaluate(
         "document.querySelector('#game-canvas')?.dataset.deck === '12' && Boolean(window.bespokePageState && window.bespokePageState().ready)"
       ));
-      console.log('ok  gallery opens each proof on its own page, including the Observatory deck');
+      const frameDigest = () => evaluate(`(() => {
+        const d = document.querySelector('#game-canvas').getContext('2d').getImageData(0, 504, 1280, 90).data;
+        let h = 2166136261;
+        for (let i = 0; i < d.length; i += 4) h = Math.imul(h ^ d[i] ^ (d[i + 1] << 8) ^ (d[i + 2] << 16), 16777619) >>> 0;
+        return h;
+      })()`);
+      const beforeHint = await frameDigest();
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 });
+      await waitFor('hint banner on Observatory page', async () => (await frameDigest()) !== beforeHint);
+      console.log('ok  gallery opens each proof on its own page, including the Observatory deck (and [H] shows a hint)');
       cdp.close();
       return;
     }

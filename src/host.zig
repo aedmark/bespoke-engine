@@ -248,12 +248,12 @@ pub const AppealOutcome = enum { made, unknown_value, no_dilemma };
 pub fn appeal(vm: *VM, compiled: *const CompiledProgram, actor: EntityId, person: EntityId, value: EntityId) !AppealOutcome {
     const world = vm.world;
     const axis = value_mod.axis_of_entity(world, value) orelse return .no_dilemma;
-    const dilemma = dilemma_mod.appeal_target(world, compiled.dilemmas.items, person, value) orelse return .no_dilemma;
+    const dilemma_entity = dilemma_mod.appeal_target(world, compiled.dilemmas.items, person, value) orelse return .no_dilemma;
     var buf: [128]u8 = undefined;
     const name = value_mod.known_value_name(world, axis, person, &buf) catch return .unknown_value;
     const known = world.lookup_entity(name) orelse return .unknown_value;
     if (!hint_mod.knows(world, actor, known)) return .unknown_value;
-    try dilemma_mod.record_appeal(world, dilemma, value);
+    try dilemma_mod.record_appeal(world, dilemma_entity, value);
     try world.remember(person, try world.intern_relation_kind("Appealed", .set, .entity), value.to_int(), 0);
     _ = try vm.fire_cue(compiled, "Appeals", actor, person, value);
     return .made;
@@ -307,6 +307,59 @@ pub fn combine(
     const book = spellbook(compiled) orelse return .{ .refused = .no_such_spell };
     const spell = spell_mod.resolve(book, power, element, form) orelse return .{ .refused = .no_such_spell };
     return dispatch_spell(vm, compiled, caster, spell, target);
+}
+
+/// Returns the hint for `actor` at `tier` (or the highest authored tier below `tier` when no
+/// tier matches directly), writing generated text into `buf` (P48-19, D-176). Returns null when
+/// every need of every declared goal holds or no goal is declared.
+pub fn hint(
+    world: *const World,
+    compiled: *const CompiledProgram,
+    actor: EntityId,
+    tier: hint_mod.Tier,
+    buf: []u8,
+) !?hint_mod.Hint {
+    return hint_mod.query(compiled.goals.items, world, actor, tier, buf);
+}
+
+/// Reports a declared decision's current stage and chosen option (`Chose(decision, option)`),
+/// read from World facts (P48-19, D-176). `stage` is null before seeding or for another entity.
+pub fn decision(world: *const World, entity: EntityId) decision_mod.Status {
+    return .{
+        .stage = decision_mod.stage_of(world, entity),
+        .chosen = decision_mod.chosen(world, entity),
+    };
+}
+
+/// Reports a declared dilemma's current stage and chosen outcome (`Chose(dilemma, action)`),
+/// read from World facts (P48-19, D-176). `stage` is null before seeding or for another entity.
+pub fn dilemma(world: *const World, entity: EntityId) dilemma_mod.Status {
+    return .{
+        .stage = dilemma_mod.stage_of(world, entity),
+        .outcome = dilemma_mod.chosen(world, entity),
+    };
+}
+
+/// Reports `character`'s value on `axis` and whether `observer` knows `<Axis> of <character>`
+/// (`Knows` or `Believes`, with `Rejects` overriding) (P48-19, D-176). When `axis` is not a
+/// declared value axis or `character` holds no value on it, `value` is null.
+pub fn known_value(
+    world: *const World,
+    observer: EntityId,
+    character: EntityId,
+    axis: EntityId,
+) value_mod.KnownValue {
+    const relation = value_mod.axis_of_entity(world, axis) orelse return .{};
+    const raw = world.get_property(character, relation);
+    const val: ?i32 = if (raw) |r| @bitCast(r) else null;
+    var known = false;
+    if (observer != .none) {
+        var buf: [128]u8 = undefined;
+        if (value_mod.known_value_name(world, relation, character, &buf)) |name| {
+            if (world.lookup_entity(name)) |entry| known = hint_mod.knows(world, observer, entry);
+        } else |_| {}
+    }
+    return .{ .known = known, .value = val };
 }
 
 fn spellbook(compiled: *const CompiledProgram) ?*const spell_mod.Book {
@@ -1049,13 +1102,46 @@ pub const Session = struct {
         self.cursor = 0;
     }
 
-    /// The open dialogue, reconstructed from World facts, or null (P32-30, D-046).
-    pub fn dialogue_view(self: *const Session) ?dialogue_mod.View {
-        const world = if (self.hypervisor) |hypervisor|
+    fn current_world(self: *const Session) *const World {
+        return if (self.hypervisor) |hypervisor|
             if (hypervisor.branch_active and hypervisor.branch_world != null) &hypervisor.branch_world.? else self.world
         else
             self.world;
-        return dialogue_mod.view(world);
+    }
+
+    /// The open dialogue, reconstructed from World facts, or null (P32-30, D-046).
+    pub fn dialogue_view(self: *const Session) ?dialogue_mod.View {
+        return dialogue_mod.view(self.current_world());
+    }
+
+    fn active_player_entity(self: *const Session, w: *const World) EntityId {
+        if (self.player) |p| return p;
+        if (player_actor(self.compiled)) |name| {
+            if (w.lookup_entity(name)) |e| return e;
+        }
+        return w.lookup_entity("Player") orelse .none;
+    }
+
+    /// The hint for the session's player at `tier`, or null when all goals hold (P48-19, D-176).
+    pub fn hint(self: *const Session, tier: hint_mod.Tier, buf: []u8) !?hint_mod.Hint {
+        const w = self.current_world();
+        return @import("host.zig").hint(w, self.compiled, self.active_player_entity(w), tier, buf);
+    }
+
+    /// A decision's stage and chosen option in the active world (P48-19, D-176).
+    pub fn decision(self: *const Session, entity: EntityId) decision_mod.Status {
+        return @import("host.zig").decision(self.current_world(), entity);
+    }
+
+    /// A dilemma's stage and outcome in the active world (P48-19, D-176).
+    pub fn dilemma(self: *const Session, entity: EntityId) dilemma_mod.Status {
+        return @import("host.zig").dilemma(self.current_world(), entity);
+    }
+
+    /// A character's value on `axis` and whether the session's player knows it (P48-19, D-176).
+    pub fn known_value(self: *const Session, character: EntityId, axis: EntityId) value_mod.KnownValue {
+        const w = self.current_world();
+        return @import("host.zig").known_value(w, self.active_player_entity(w), character, axis);
     }
 
     /// Selects an offered choice. Scripted choices resume the suspended fiber and advance one
@@ -2182,7 +2268,7 @@ test "P44-05: a decision fires its cue with the winning option, once per rising 
     const table = world.lookup_entity("Table").?;
     try vm.transition_to_scene(table);
     const maren = world.lookup_entity("Maren").?;
-    const decision = world.lookup_entity("LeadAtTable").?;
+    const decision_entity = world.lookup_entity("LeadAtTable").?;
     const ready = try world.intern_relation("Ready", .set);
     const knows = try world.intern_relation("Knows", .set);
     const turn = try world.intern_relation("Turn", .set);
@@ -2196,7 +2282,7 @@ test "P44-05: a decision fires its cue with the winning option, once per rising 
 
     // The choice is recorded when the trigger rises; the handler answers on the next tick.
     _ = try tick(&vm, &compiled);
-    try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision).?);
+    try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision_entity).?);
     try testing.expect(!world.has_fact(maren, ready, 0));
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(maren, ready, 0));
@@ -2209,10 +2295,10 @@ test "P44-05: a decision fires its cue with the winning option, once per rising 
     // Falling and rising again re-arms it, and a second tick runs the new handler.
     _ = world.forget(maren, turn, null);
     _ = try tick(&vm, &compiled);
-    try testing.expectEqual(@as(?world_mod.EntityId, null), decision_mod.chosen(&world, decision));
+    try testing.expectEqual(@as(?world_mod.EntityId, null), decision_mod.chosen(&world, decision_entity));
     try world.remember(maren, turn, 0, 0);
     _ = try tick(&vm, &compiled);
-    try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision).?);
+    try testing.expectEqual(salt_two, decision_mod.chosen(&world, decision_entity).?);
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(maren, ready, 0));
 }
@@ -2310,7 +2396,7 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
     try vm.transition_to_scene(world.lookup_entity("Guardhouse").?);
     const oswin = world.lookup_entity("Oswin").?;
     const thief = world.lookup_entity("Thief").?;
-    const dilemma = world.lookup_entity("StolenBread").?;
+    const dilemma_entity = world.lookup_entity("StolenBread").?;
     try world.remember(thief, try world.intern_relation("Accused", .set), 0, 0);
 
     // Justice 4 minus Mercy 3 is 1: neutral, and Oswin asks to be shown more.
@@ -2319,7 +2405,7 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
     var log = SpeechLog.init(&buf);
     log.collect(&world, &vm);
     try testing.expectEqualStrings("Oswin: \"Show me why I should spare him.\"", log.writer.buffered());
-    try testing.expectEqual(dilemma_mod.Stage.awaits_evidence, dilemma_mod.stage_of(&world, dilemma).?);
+    try testing.expectEqual(dilemma_mod.Stage.awaits_evidence, dilemma_mod.stage_of(&world, dilemma_entity).?);
 
     // The player shows a record of past thefts: the criminal lean adds 3, giving 4, moderate.
     try world.remember(thief, try world.intern_relation("Criminal", .set), 0, 0);
@@ -2330,7 +2416,7 @@ test "P45-03: a dilemma speaks its tier's line and fires the action through host
     var log2 = SpeechLog.init(&buf2);
     log2.collect(&world, &vm);
     try testing.expectEqualStrings("Oswin: \"A night in the cells.\"", log2.writer.buffered());
-    try testing.expectEqual(world.lookup_entity("Jail").?, dilemma_mod.chosen(&world, dilemma).?);
+    try testing.expectEqual(world.lookup_entity("Jail").?, dilemma_mod.chosen(&world, dilemma_entity).?);
     _ = try tick(&vm, &compiled);
     try testing.expect(world.has_fact(thief, world.lookup_relation("Jailed").?, 0));
 }
@@ -3013,5 +3099,118 @@ test "P48-25: Timeline.restore_run rebinds VM and only keeps branch_dice across 
     _ = try timeline.restore_run(&primary, null, &vm, &hv, 0, true);
     try testing.expectEqual(&primary, vm.world);
     try testing.expect(vm.branch_dice == null);
+}
+
+test "P48-19: one host call answers hint, decision, dilemma, and known value without tables" {
+    const script =
+        \\scene: Store
+        \\cast: Valerius, Hesper
+        \\marks: Door
+        \\
+        \\relation Knows(who, what)
+        \\relation Caught(who)
+        \\relation Hearing(who)
+        \\relation ProofHeld(who)
+        \\
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Softness
+        \\
+        \\remember Justice(Valerius, 4)
+        \\remember Mercy(Valerius, 3)
+        \\remember Caught(Hesper)
+        \\remember Knows(Valerius, Hear)
+        \\remember Knows(Valerius, Hang)
+        \\
+        \\red lines Valerius: Hang
+        \\
+        \\decision Counsel:
+        \\  actor Valerius
+        \\  fires Counselled
+        \\  requires Caught(Hesper)
+        \\  option Hang:
+        \\    picks 9 when Caught(Hesper)
+        \\  option Hear:
+        \\    picks 1 when Caught(Hesper)
+        \\
+        \\dilemma Bread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Hearing(Hesper)
+        \\  weighs Justice against Mercy
+        \\  appeals 4 to Mercy
+        \\  strong Justice: "Lashes." -> Flog
+        \\  moderate Justice: "Cells." -> Cells
+        \\  neutral: "Why?" -> Weigh
+        \\  moderate Mercy: "Work." -> Pardon
+        \\  strong Mercy: "Go." -> Free
+        \\
+        \\goal ClearName:
+        \\  need ObtainProof:
+        \\    room Store
+        \\    met ProofHeld(Hesper)
+        \\    hint 2 "Ask Valerius about his mercy."
+        \\
+        \\on cue Counselled(Valerius, Hear):
+        \\  remember Hearing(Hesper)
+    ;
+    var world = try World.init(testing.allocator, world_mod.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try @import("compiler.zig").compile_source(testing.allocator, &world, &spatial, script);
+    defer compiled.deinit();
+    var vm = try init_vm(testing.allocator, &world, &spatial, &compiled);
+    defer vm.deinit();
+
+    const hesper = world.lookup_entity("Hesper").?;
+    const valerius = world.lookup_entity("Valerius").?;
+    const counsel = world.lookup_entity("Counsel").?;
+    const hear = world.lookup_entity("Hear").?;
+    const bread = world.lookup_entity("Bread").?;
+    const weigh = world.lookup_entity("Weigh").?;
+    const pardon = world.lookup_entity("Pardon").?;
+    const mercy = world.lookup_entity("Mercy").?;
+    const store = world.lookup_entity("Store").?;
+
+    // Before initial statements and subsystem seed, decision/dilemma report null stages and held value is null.
+    try testing.expect(decision(&world, counsel).stage == null);
+    try testing.expect(dilemma(&world, bread).stage == null);
+    try testing.expectEqual(@as(?i32, null), known_value(&world, hesper, valerius, mercy).value);
+
+    // Run initial statements: Mercy(Valerius, 3) holds, while .known stays false until Hesper learns it.
+    try run_initial_statements(&world, &vm, &compiled);
+    const before_val = known_value(&world, hesper, valerius, mercy);
+    try testing.expect(!before_val.known);
+    try testing.expectEqual(@as(?i32, 3), before_val.value);
+    try testing.expectEqual(value_mod.KnownValue{}, known_value(&world, hesper, valerius, store));
+
+    // Hint answers at tier 1..3 cleanly via host.hint.
+    var buf: [160]u8 = undefined;
+    const h2 = (try hint(&world, &compiled, hesper, .thing, &buf)).?;
+    try testing.expectEqualStrings("Ask Valerius about his mercy.", h2.text);
+
+    // Tick into Counsel -> Hear, then Bread -> Weigh (awaits_evidence).
+    try initialize_subsystems(&world, &compiled);
+    _ = try tick(&vm, &compiled);
+    const dec_done = decision(&world, counsel);
+    try testing.expectEqual(@as(?decision_mod.Stage, .done), dec_done.stage);
+    try testing.expectEqual(@as(?EntityId, hear), dec_done.chosen);
+
+    _ = try tick(&vm, &compiled);
+    _ = try tick(&vm, &compiled);
+    const dil_wait = dilemma(&world, bread);
+    try testing.expectEqual(@as(?dilemma_mod.Stage, .awaits_evidence), dil_wait.stage);
+    try testing.expectEqual(@as(?EntityId, weigh), dil_wait.outcome);
+
+    // Teach Hesper Mercy of Valerius and appeal -> Pardon (done), known_value now .known = true.
+    try world.remember(hesper, world.lookup_relation("Knows").?, (try world.intern_entity("Mercy of Valerius")).to_int(), 0);
+    const after_val = known_value(&world, hesper, valerius, mercy);
+    try testing.expect(after_val.known);
+    try testing.expectEqual(@as(?i32, 3), after_val.value);
+    try testing.expectEqual(AppealOutcome.made, try appeal(&vm, &compiled, hesper, valerius, mercy));
+    _ = try tick(&vm, &compiled);
+    const dil_done = dilemma(&world, bread);
+    try testing.expectEqual(@as(?dilemma_mod.Stage, .done), dil_done.stage);
+    try testing.expectEqual(@as(?EntityId, pardon), dil_done.outcome);
 }
 

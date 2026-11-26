@@ -194,6 +194,10 @@
       // [N]: Step, as the desktop window's key does (D-094). The runtime steps one tick.
       event.preventDefault();
       key(110);
+    } else if (event.key === 'h' || event.key === 'H') {
+      // [H]: Ask the engine for a hint on the banner (P48-19, D-176).
+      event.preventDefault();
+      if (!open && !pending) key(104);
     } else if ('cdefgab'.includes(event.key.toLowerCase()) && event.key.length === 1) {
       // Distaff notes (D-071): The Bell Tower plays drafts on C to B. Decks whose script
       // declares no drafts ignore them.

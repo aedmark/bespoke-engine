@@ -49,11 +49,14 @@ Supported `SpatialSystem` methods are `init`, `deinit`, `add_grid`, `grid_in_roo
 | `dialogue` | `View`, `Selection`, `view` |
 | `command` | `Interpreter`, `WordList`, `Command` |
 | `spell` | `Book`, `Spell`, `Word`, `Kind`, `Refusal`, `Outcome`, `MAX_BOOKS`, `DEFAULT_WORDS_PER_KIND`, `MAX_WORDS_PER_KIND`, `DEFAULT_SPELLS`, `MAX_SPELLS` (the `MAX_` names are the safety caps a `limit` may reach and the default ceilings are `DEFAULT_`, P48-13, D-183), `resolve`, `named`, `named_text`, `knows`, `check`, `cast`, `combine` |
-| `decision` | `Decision`, `Option`, `Pick`, `Clause`, `Choices`, `Stage`, `DEFAULT_DECISIONS`, `MAX_DECISIONS`, `MAX_CLAUSES`, `DEFAULT_OPTIONS`, `MAX_OPTIONS`, `MAX_PICKS`, `MAX_POINTS`, `validate`, `seed`, `triggered`, `stage_of`, `chosen`, `score_of`, `step` |
+| `decision` | `Decision`, `Option`, `Pick`, `Clause`, `Choices`, `Stage`, `Status`, `DEFAULT_DECISIONS`, `MAX_DECISIONS`, `MAX_CLAUSES`, `DEFAULT_OPTIONS`, `MAX_OPTIONS`, `MAX_PICKS`, `MAX_POINTS`, `validate`, `seed`, `triggered`, `stage_of`, `chosen`, `score_of`, `step` |
+| `hint` | `Hint`, `Tier` (with `fromInt`, `number`, `generated`, and `label`), `Path` (the rest of `hint` is internal, P48-19, D-176) |
+| `dilemma` | `Stage`, `Status` (the rest of `dilemma` is internal, P48-19, D-176) |
+| `value` | `KnownValue` (the rest of `value` is internal, P48-19, D-176) |
 
 Supported direct VM methods are `fire_cue`, `select_path`, `weave_draft`, `weave_notes`, `set_dialogue_speaker`, `open_generated_dialogue`, `dialogue_view`, `choose`, `sync_dialogue`, `transition_to_scene`, `evaluates_belief`, `assert_belief`, and `reject_belief`. Construct a VM with `host.init_vm`; advance it with `host.tick` or `Session.advance`, never bare `VM.step_tick`.
 
-Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `restart_routines`, `combine`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
+Supported host functions are `init_vm`, `initialize_subsystems`, `start_script`, `start_routine`, `run_initial_statements`, `place_cast`, `player_actor`, `tick`, `run_command`, `interpret_command`, `dispatch_command`, `command_words`, `speech_lines`, `speech_this_tick`, `act`, `present`, `appeal`, `cast`, `restart_routines`, `combine`, `hint`, `decision`, `dilemma`, `known_value`, `has_state`, `place_waypoint`, `add_exit_marks`, and `take_exit_here`.
 
 `host.present(vm, compiled, actor, evidence, person)` records `Presented(person, evidence)` as a set fact and fires `Presents(actor, person, evidence)`; it returns whether a handler answered (P44-03). The record holds one row per distinct piece of evidence. The default typed frames `present <thing> to <thing>` and `show <thing> to <thing>` use the same action.
 
@@ -71,7 +74,7 @@ All public methods on `Session`, `SpeechLog`, and `ScriptSoundtrack` are support
 
 `ScriptSociety.init(world, compiled, index)` selects a script declaration by zero-based source order and seeds its initial facts. Construct it once before play or before restoring a matching save. `ScriptSociety.step(vm)` runs society rules once after `host.tick`; the VM must have a spatial system and still use the original world's registries. The compiled program and registries must outlive the society. Do not reinitialize after restore, since that would reseed the saved facts. The wrapper's fields and its diagnostic chronicle are internal (P41-02).
 
-`hint`, `value`, and `dilemma` are internal (D-176). A host asks about goals, decisions, dilemmas, and values through `host` calls; P48-19 adds one per declared feature, and until then the proofs that read those namespaces are engine code, not examples to copy.
+`host.hint(world, compiled, actor, tier, buf)` returns the active hint (`?hint.Hint`) for `actor` at `tier`, falling back to the highest authored tier below `tier`, or null when every need of every declared goal holds (P48-19, D-176). `host.decision(world, entity)` reports a decision's stage and chosen option (`decision.Status`), `host.dilemma(world, entity)` reports a dilemma's stage and chosen outcome (`dilemma.Status`), and `host.known_value(world, observer, character, axis)` reports `character`'s value on `axis` and whether `observer` knows it (`value.KnownValue`). None takes an internal `CompiledProgram` table; all other `hint`, `value`, and `dilemma` declarations stay internal.
 
 ## Display and sound
 
@@ -101,7 +104,7 @@ Prefer `script_deck` or `script_deck_with` for a script-backed game. A custom `D
 
 ## Browser module exports
 
-A page that loads a BeSpoke WebAssembly module may call these exports (D-175). They are the ones the page and smoke test from `bespoke init` use, so a generated project depends on them: `wasm_init`, `wasm_step_tick`, `wasm_get_tick`, `wasm_get_fact_count`, `wasm_render_frame`, `wasm_framebuffer_ptr`, `wasm_framebuffer_len`, `wasm_on_pointer_down`, `wasm_on_pointer_move`, `wasm_on_right_click`, `wasm_on_key_down`, `wasm_on_char`, `wasm_command_bar_focused`, `wasm_audio_render`, and `wasm_audio_sample_rate`. `tests/test_browser_exports.py` fails when one of them is not exported, or when a generated page calls an export this list omits.
+A page that loads a BeSpoke WebAssembly module may call these exports (D-175, D-176). They are the ones the page and smoke test from `bespoke init` and browser feature queries depend on: `wasm_init`, `wasm_step_tick`, `wasm_get_tick`, `wasm_get_fact_count`, `wasm_render_frame`, `wasm_framebuffer_ptr`, `wasm_framebuffer_len`, `wasm_on_pointer_down`, `wasm_on_pointer_move`, `wasm_on_right_click`, `wasm_on_key_down`, `wasm_on_char`, `wasm_command_bar_focused`, `wasm_audio_render`, `wasm_audio_sample_rate`, `wasm_query_ptr`, `wasm_query_len`, `wasm_hint`, `wasm_decision`, `wasm_dilemma`, and `wasm_known_value`. `tests/test_browser_exports.py` fails when one of them is not exported, or when a generated page calls an export this list omits.
 
 Every other `wasm_*` export is internal: the showcase pages' deck, verb, dialogue, inspector, message, and animation-clock calls, and `wasm_load_scenario`, `wasm_on_touch`, and `wasm_scrub_to_tick`. A script never learns which platform runs it; a capability that differs by platform reaches scripts, if ever, as a feature fact (D-175).
 

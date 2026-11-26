@@ -270,13 +270,19 @@ pub const MERCY_PATH = [_][]const u8{ "appeal to mercy", "present the purse to v
 pub const LOYALTY_PATH = [_][]const u8{ "ask valerius about loyalty", "appeal to loyalty", "wait for spring" };
 
 fn value_of(world: *const bespoke.World, ids: Ids, axis: []const u8) i32 {
-    const rel = world.lookup_relation(axis) orelse return 0;
-    return @bitCast(world.get_property(ids.valerius, rel) orelse 0);
+    const entity = world.lookup_entity(axis) orelse return 0;
+    return host.known_value(world, ids.hesper, ids.valerius, entity).value orelse 0;
 }
 
-fn chosen_name(world: *const bespoke.World, dilemma: []const u8) []const u8 {
-    const entity = world.lookup_entity(dilemma) orelse return "none";
-    const action = bespoke.dilemma.chosen(world, entity) orelse return "none";
+fn decision_name(world: *const bespoke.World, name: []const u8) []const u8 {
+    const entity = world.lookup_entity(name) orelse return "none";
+    const chosen = host.decision(world, entity).chosen orelse return "none";
+    return world.get_entity_name(chosen) orelse "none";
+}
+
+fn dilemma_name(world: *const bespoke.World, name: []const u8) []const u8 {
+    const entity = world.lookup_entity(name) orelse return "none";
+    const action = host.dilemma(world, entity).outcome orelse return "none";
     return world.get_entity_name(action) orelse "none";
 }
 
@@ -334,12 +340,12 @@ fn play(allocator: std.mem.Allocator, writer: anytype, title: []const u8, lines:
     defer story.deinit();
     const ids = story.ids;
     for (0..3) |_| try story.tick(writer);
-    try writer.print("  (Brann's counsel: {s}; Hang scored 9 and is a red line.)\n", .{chosen_name(&story.world, "BrannsCounsel")});
+    try writer.print("  (Brann's counsel: {s}; Hang scored 9 and is a red line.)\n", .{decision_name(&story.world, "BrannsCounsel")});
     const mercy_before = value_of(&story.world, ids, "Mercy");
     // The winter's `Chose` clears when spring re-arms the dilemma, so read it first.
     var winter: []const u8 = "none";
     for (lines) |line| {
-        if (std.mem.eql(u8, line, "wait for spring")) winter = chosen_name(&story.world, "StolenLoaf");
+        if (std.mem.eql(u8, line, "wait for spring")) winter = dilemma_name(&story.world, "StolenLoaf");
         try story.say(writer, line);
     }
     for (0..2) |_| try story.tick(writer);
@@ -348,7 +354,7 @@ fn play(allocator: std.mem.Allocator, writer: anytype, title: []const u8, lines:
         mercy_before,
         value_of(&story.world, ids, "Mercy"),
         value_of(&story.world, ids, "Justice"),
-        chosen_name(&story.world, "TheRecruit"),
+        dilemma_name(&story.world, "TheRecruit"),
     });
     if (!story.world.has_fact(ids.tam, story.world.lookup_relation("Settled").?, null)) return error.SpringUnsettled;
     if (story.vm.current_scene != ids.gate) return error.SpringNotReached;

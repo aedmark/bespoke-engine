@@ -90,6 +90,12 @@ pub const STAGE_NAMES = [_][]const u8{ "Idle", "Done", "AwaitsEvidence" };
 
 pub const Stage = enum(u8) { idle = 0, done = 1, awaits_evidence = 2 };
 
+/// Result of `host.dilemma` (P48-19, D-176): a dilemma's current stage and chosen outcome.
+pub const Status = struct {
+    stage: ?Stage = null,
+    outcome: ?EntityId = null,
+};
+
 /// The five tiers, in the order a script lists them from the axis to the counter-axis.
 pub const Tier = enum(u8) {
     strong_axis = 0,

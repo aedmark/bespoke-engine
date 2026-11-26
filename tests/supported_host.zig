@@ -61,7 +61,11 @@ fn require(comptime Container: type, comptime names: []const []const u8, comptim
 
 comptime {
     require(bespoke.spell, &.{ "Book", "Spell", "Word", "Kind", "Refusal", "Outcome", "MAX_BOOKS", "DEFAULT_WORDS_PER_KIND", "MAX_WORDS_PER_KIND", "DEFAULT_SPELLS", "MAX_SPELLS", "resolve", "named", "named_text", "knows", "check", "cast", "combine" }, "spell");
-    require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "DEFAULT_DECISIONS", "MAX_DECISIONS", "MAX_CLAUSES", "DEFAULT_OPTIONS", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
+    require(bespoke.decision, &.{ "Decision", "Option", "Pick", "Clause", "Choices", "Stage", "Status", "DEFAULT_DECISIONS", "MAX_DECISIONS", "MAX_CLAUSES", "DEFAULT_OPTIONS", "MAX_OPTIONS", "MAX_PICKS", "MAX_POINTS", "validate", "seed", "triggered", "stage_of", "chosen", "score_of", "step" }, "decision");
+    require(bespoke.hint, &.{ "Hint", "Tier", "Path" }, "hint");
+    require(bespoke.hint.Tier, &.{ "fromInt", "number", "generated", "label" }, "hint.Tier");
+    require(bespoke.dilemma, &.{ "Stage", "Status" }, "dilemma");
+    require(bespoke.value, &.{"KnownValue"}, "value");
     require(bespoke.image, &.{ "ART_WIDTH", "ART_HEIGHT", "SCALE", "MAX_COLOURS", "TRANSPARENT", "Colour", "Pixel", "from_indices", "Image", "Art", "Anim", "Step", "Backdrop", "Sprite", "Area", "Look", "Part", "MAX_PART_OFFSET", "frame_in", "MAX_IMAGES", "MAX_SHEET_SIDE", "MAX_SHEET_PIXELS", "MAX_ART_PIXELS", "MAX_NAME", "MAX_BINDINGS", "Error" }, "image");
     require(bespoke.image.Pixel, &.{"opaque_colour"}, "image.Pixel");
     require(bespoke.image.Image, &.{ "columns", "frame_count", "frame_pixel", "validate" }, "image.Image");
@@ -74,12 +78,12 @@ comptime {
     require(bespoke.dice, &.{ "Dice", "DEFAULT_SEED", "ENCODED_LEN", "branch_seed" }, "dice");
     require(bespoke.dice.Dice, &.{ "init", "roll", "write", "read" }, "dice.Dice");
     require(bespoke.vm.VM, &.{ "set_seed", "active_dice" }, "vm.VM dice");
-    require(bespoke.host.Session, &.{ "seed", "clock_runs", "take_turn" }, "host.Session");
+    require(bespoke.host.Session, &.{ "seed", "clock_runs", "take_turn", "hint", "decision", "dilemma", "known_value" }, "host.Session");
     require(bespoke.hypervisor.TemporalHypervisor, &.{"active_dice"}, "hypervisor dice");
     require(bespoke.art_import, &.{ "MapError", "PixelError", "Where", "map", "to_pixels", "CodeError", "assign_codes", "free_codes", "write_palette_lines", "write_image_block" }, "art_import");
     require(bespoke.runner, &.{ "RunConfig", "CheckOptions", "check_file_with", "check_file", "compile_file", "run_file", "run_bytes", "import_art", "ImportOptions", "ScriptFiles" }, "runner");
     require(bespoke.compiler, &.{ "compile_source", "compile_source_with", "check_source", "check_source_with", "FileSource", "script_palette", "ScriptPalette", "CheckResult", "Diagnostic", "CompiledProgram" }, "compiler");
-    require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "restart_routines" }, "host");
+    require(bespoke.host, &.{ "present", "appeal", "AppealOutcome", "cast", "combine", "hint", "decision", "dilemma", "known_value", "restart_routines" }, "host");
     require(bespoke.world, &.{"ObjectKind"}, "world");
     require(bespoke.world.World, &.{ "intern_relation_kind", "declare_object_kind", "object_kind", "set_display_name", "display_text", "set_phrase", "phrase_override" }, "world.World");
     require(bespoke.reserved, &.{ "Release", "LANGUAGE", "AuthorRelation", "AUTHOR_FACING", "newer_than_language", "engine_may_use", "is_bookkeeping" }, "reserved");
@@ -127,4 +131,10 @@ test "P38-03: a host compiles against only the supported API" {
 
     var speech_buf: [128]u8 = undefined;
     _ = bespoke.host.speech_this_tick(&world, &vm, &speech_buf);
+
+    var hint_buf: [160]u8 = undefined;
+    _ = try bespoke.host.hint(&world, &program, player, .room, &hint_buf);
+    _ = bespoke.host.decision(&world, player);
+    _ = bespoke.host.dilemma(&world, player);
+    _ = bespoke.host.known_value(&world, player, player, player);
 }

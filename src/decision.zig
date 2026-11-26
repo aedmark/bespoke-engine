@@ -49,6 +49,12 @@ pub const STAGE_NAMES = [_][]const u8{ "Idle", "Done" };
 
 pub const Stage = enum(u8) { idle = 0, done = 1 };
 
+/// Result of `host.decision` (P48-19, D-176): a decision's current stage and chosen option.
+pub const Status = struct {
+    stage: ?Stage = null,
+    chosen: ?EntityId = null,
+};
+
 pub const Error = error{InvalidDecision};
 
 /// One trigger line, the same shape an agenda uses. A null subject or object is the `_`

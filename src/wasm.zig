@@ -20,6 +20,7 @@ const package_mod = @import("package.zig");
 const dialogue_mod = @import("dialogue.zig");
 const command_mod = @import("command.zig");
 const draft_mod = @import("draft.zig");
+const hint_mod = @import("hint.zig");
 const audio_mod = @import("audio.zig");
 const hypervisor_mod = @import("hypervisor.zig");
 pub const TemporalHypervisor = hypervisor_mod.TemporalHypervisor;
@@ -345,7 +346,13 @@ pub const BrowserActionTag = enum(u8) {
     command_edited,
     /// The command bar submitted a line to the deck (P34-04).
     command_typed,
+    /// `H` asked the engine for a hint on the banner (P48-19, D-176).
+    hint_shown,
 };
+
+/// Sentinel returned by `wasm_known_value` / `query_known_value` when unknown or unset.
+/// Axis values are bounded to -10..+10 (P45-01).
+pub const UNKNOWN_VALUE: i32 = -128;
 
 // =============================================================================
 // 1. Pure Zig RGBA8888 Canvas Framebuffer Renderer (P19-01, D-001, D-022)
@@ -394,6 +401,9 @@ pub const WasmRuntime = struct {
     /// Optional watched scene displayed instead of `vm.current_scene` (read-only, D-138).
     /// Peripheral view state, so it is never saved or rewound.
     watch_scene: ?EntityId = null,
+    /// Hint tier tracking for repeated `[H]` presses on the same active need (P48-19).
+    hint_need: EntityId = .none,
+    hint_tier: u8 = 1,
     /// The compiled script of a script deck; null for decks built in Zig (D-066).
     program: ?CompiledProgram = null,
     /// The state inspector overlay (D-070). Its navigation is not World state.
@@ -563,6 +573,8 @@ pub const WasmRuntime = struct {
         self.approach = null;
         self.selected_item = .none;
         self.watch_scene = null;
+        self.hint_need = .none;
+        self.hint_tier = 1;
         // The names belong to the program about to be dropped too (D-179).
         dialogue_panel.clear_display_names();
         // The art is borrowed from the program about to be dropped.
@@ -1087,6 +1099,108 @@ pub const WasmRuntime = struct {
         return true;
     }
 
+    fn active_player(self: *WasmRuntime) EntityId {
+        if (self.player_entity != .none) return self.player_entity;
+        const w = self.active_world();
+        if (self.program) |*p| {
+            if (host_mod.player_actor(p)) |name| {
+                if (w.lookup_entity(name)) |e| return e;
+            }
+        }
+        return w.lookup_entity("Player") orelse .none;
+    }
+
+    fn write_query_text(out: []u8, text: []const u8) usize {
+        const n = @min(text.len, out.len);
+        @memcpy(out[0..n], text[0..n]);
+        return n;
+    }
+
+    /// Steps through hint tiers on the banner for `[H]` (P48-19, D-176): tier 1 first, then each
+    /// successive tier on repeat presses for the same need, wrapping to tier 1 past the last tier.
+    pub fn show_hint(self: *WasmRuntime) !BrowserActionTag {
+        const program = if (self.program) |*p| p else {
+            self.set_banner("No hints available.");
+            return .hint_shown;
+        };
+        if (program.goals.items.len == 0) {
+            self.set_banner("No hints available.");
+            return .hint_shown;
+        }
+        const world = self.active_world();
+        const actor = self.active_player();
+        const asked_num: u8 = if (self.hint_need != .none)
+            @min(@as(u8, @intCast(hint_mod.MAX_TIERS)), self.hint_tier + 1)
+        else
+            1;
+        var buf: [256]u8 = undefined;
+        var found = try host_mod.hint(world, program, actor, hint_mod.Tier.fromInt(asked_num) orelse .room, &buf);
+        if (found) |h| {
+            if (self.hint_need != .none and (h.need != self.hint_need or h.tier.number() <= self.hint_tier)) {
+                found = try host_mod.hint(world, program, actor, .room, &buf);
+            }
+        }
+        if (found) |h| {
+            self.hint_need = h.need;
+            self.hint_tier = h.tier.number();
+            self.set_banner(h.text);
+        } else {
+            self.hint_need = .none;
+            self.hint_tier = 1;
+            self.set_banner("Every goal is already met.");
+        }
+        return .hint_shown;
+    }
+
+    /// Writes the active hint at `tier_num` (1 = room, 2 = thing, 3 = relation, 4+ = authored)
+    /// into `out` and returns the byte count (0 when unavailable or all goals hold).
+    pub fn query_hint(self: *WasmRuntime, tier_num: u8, out: []u8) usize {
+        const program = if (self.program) |*p| p else return 0;
+        const tier = hint_mod.Tier.fromInt(tier_num) orelse return 0;
+        var buf: [256]u8 = undefined;
+        const found = (host_mod.hint(self.active_world(), program, self.active_player(), tier, &buf) catch return 0) orelse return 0;
+        return write_query_text(out, found.text);
+    }
+
+    /// Queries a declared decision by entity `name`. Returns stage (`0` idle, `1` done, `-1` not
+    /// seeded or unknown) and writes the chosen option's script name into `out`.
+    pub fn query_decision(self: *WasmRuntime, name: []const u8, out: []u8, out_len: *usize) i32 {
+        out_len.* = 0;
+        const world = self.active_world();
+        const entity = world.lookup_entity(name) orelse return -1;
+        const st = host_mod.decision(world, entity);
+        const stage = st.stage orelse return -1;
+        if (st.chosen) |c| {
+            if (world.get_entity_name(c)) |cname| out_len.* = write_query_text(out, cname);
+        }
+        return @intFromEnum(stage);
+    }
+
+    /// Queries a declared dilemma by entity `name`. Returns stage (`0` idle, `1` done,
+    /// `2` awaits_evidence, `-1` not seeded or unknown) and writes the outcome's script name.
+    pub fn query_dilemma(self: *WasmRuntime, name: []const u8, out: []u8, out_len: *usize) i32 {
+        out_len.* = 0;
+        const world = self.active_world();
+        const entity = world.lookup_entity(name) orelse return -1;
+        const st = host_mod.dilemma(world, entity);
+        const stage = st.stage orelse return -1;
+        if (st.outcome) |o| {
+            if (world.get_entity_name(o)) |oname| out_len.* = write_query_text(out, oname);
+        }
+        return @intFromEnum(stage);
+    }
+
+    /// Queries a character's value on `axis_name` as known by the player, returning `-10..+10`
+    /// when known or `UNKNOWN_VALUE` (`-128`) when unknown or unset.
+    pub fn query_known_value(self: *WasmRuntime, character_name: []const u8, axis_name: []const u8) i32 {
+        const world = self.active_world();
+        const character = world.lookup_entity(character_name) orelse return UNKNOWN_VALUE;
+        const axis = world.lookup_entity(axis_name) orelse return UNKNOWN_VALUE;
+        const kv = host_mod.known_value(world, self.active_player(), character, axis);
+        if (!kv.known or kv.value == null) return UNKNOWN_VALUE;
+        return kv.value.?;
+    }
+
     fn has_drafts(self: *const WasmRuntime) bool {
         return if (self.program) |*p| p.drafts.items.len > 0 else false;
     }
@@ -1548,6 +1662,9 @@ pub const WasmRuntime = struct {
                         self.scrub_to_tick(0);
                         return .rewound;
                     },
+                    'h', 'H' => {
+                        return try self.show_hint();
+                    },
                     'c', 'C', 'd', 'D', 'e', 'E', 'f', 'F', 'g', 'G', 'a', 'A', 'b', 'B' => {
                         return try self.play_note(ev.key_code);
                     },
@@ -1920,6 +2037,62 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             }
         }
 
+        var query_buf: [256]u8 = undefined;
+        var query_len: u32 = 0;
+
+        fn wasm_query_ptr() callconv(.c) [*]u8 {
+            return &query_buf;
+        }
+
+        fn wasm_query_len() callconv(.c) u32 {
+            return query_len;
+        }
+
+        fn wasm_hint(tier: u8) callconv(.c) u32 {
+            query_len = 0;
+            if (runtime()) |rt| {
+                query_len = @intCast(rt.query_hint(tier, &query_buf));
+                return query_len;
+            }
+            return 0;
+        }
+
+        fn wasm_decision(name_len: u32) callconv(.c) i32 {
+            query_len = 0;
+            if (runtime()) |rt| {
+                if (name_len == 0 or name_len > query_buf.len) return -1;
+                var len: usize = 0;
+                const stage = rt.query_decision(query_buf[0..name_len], &query_buf, &len);
+                query_len = @intCast(len);
+                return stage;
+            }
+            return -1;
+        }
+
+        fn wasm_dilemma(name_len: u32) callconv(.c) i32 {
+            query_len = 0;
+            if (runtime()) |rt| {
+                if (name_len == 0 or name_len > query_buf.len) return -1;
+                var len: usize = 0;
+                const stage = rt.query_dilemma(query_buf[0..name_len], &query_buf, &len);
+                query_len = @intCast(len);
+                return stage;
+            }
+            return -1;
+        }
+
+        fn wasm_known_value(char_len: u32, axis_len: u32) callconv(.c) i32 {
+            query_len = 0;
+            if (runtime()) |rt| {
+                if (char_len == 0 or axis_len == 0) return UNKNOWN_VALUE;
+                if (char_len > query_buf.len or axis_len > query_buf.len - char_len) return UNKNOWN_VALUE;
+                const char_name = query_buf[0..char_len];
+                const axis_name = query_buf[char_len .. char_len + axis_len];
+                return rt.query_known_value(char_name, axis_name);
+            }
+            return UNKNOWN_VALUE;
+        }
+
         fn wasm_get_fact_count() callconv(.c) u32 {
             if (runtime()) |rt| {
                 return @intCast(rt.active_world().fact_count());
@@ -1952,6 +2125,12 @@ pub fn export_runtime(comptime decks: []const Deck) void {
     @export(&Exports.wasm_scrub_to_tick, .{ .name = "wasm_scrub_to_tick" });
     @export(&Exports.wasm_get_tick, .{ .name = "wasm_get_tick" });
     @export(&Exports.wasm_get_fact_count, .{ .name = "wasm_get_fact_count" });
+    @export(&Exports.wasm_query_ptr, .{ .name = "wasm_query_ptr" });
+    @export(&Exports.wasm_query_len, .{ .name = "wasm_query_len" });
+    @export(&Exports.wasm_hint, .{ .name = "wasm_hint" });
+    @export(&Exports.wasm_decision, .{ .name = "wasm_decision" });
+    @export(&Exports.wasm_dilemma, .{ .name = "wasm_dilemma" });
+    @export(&Exports.wasm_known_value, .{ .name = "wasm_known_value" });
 }
 
 // =============================================================================
@@ -2758,4 +2937,93 @@ test "D-138: watch_scene captures another room read-only without moving the VM s
     // Reloading the deck clears watch_scene.
     try rt.load_deck(0);
     try testing.expectEqual(@as(?EntityId, null), rt.watch_scene);
+}
+
+test "P48-19: hint key steps tiers in the browser and feature queries work without tables" {
+    const testing = std.testing;
+    const script =
+        \\scene: Store
+        \\cast: Valerius, Hesper
+        \\marks: Door
+        \\
+        \\relation Knows(who, what)
+        \\relation Caught(who)
+        \\relation Hearing(who)
+        \\relation Solved(who)
+        \\
+        \\axis Justice between Cruelty and Leniency
+        \\axis Mercy between Vengeance and Softness
+        \\
+        \\remember Justice(Valerius, 4)
+        \\remember Mercy(Valerius, 3)
+        \\remember Caught(Hesper)
+        \\remember Knows(Valerius, Hear)
+        \\
+        \\decision Counsel:
+        \\  actor Valerius
+        \\  fires Counselled
+        \\  requires Caught(Hesper)
+        \\  option Hear:
+        \\    picks 1 when Caught(Hesper)
+        \\
+        \\dilemma Bread:
+        \\  actor Valerius
+        \\  fires Judged
+        \\  requires Hearing(Hesper)
+        \\  weighs Justice against Mercy
+        \\  strong Justice: "Lashes." -> Flog
+        \\  moderate Justice: "Cells." -> Cells
+        \\  neutral: "Why?" -> Weigh
+        \\  moderate Mercy: "Work." -> Pardon
+        \\  strong Mercy: "Go." -> Free
+        \\
+        \\goal ClearName:
+        \\  need ObtainProof:
+        \\    room Store
+        \\    met Solved(Hesper)
+        \\    hint 1 "Look around the Store."
+        \\    hint 2 "Speak with Valerius."
+        \\    hint 3 "Settle Hesper's trial."
+        \\
+        \\on cue Counselled(Valerius, Hear):
+        \\  remember Hearing(Hesper)
+    ;
+    const decks = [_]Deck{script_deck_with("QUERY", script, .{ .player = "Hesper" })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    // H steps through tiers 1 -> 2 -> 3 and wraps back to 1 on the banner.
+    try testing.expectEqual(BrowserActionTag.hint_shown, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'h' }));
+    try testing.expectEqualStrings("Look around the Store.", rt.get_banner());
+    try testing.expectEqual(BrowserActionTag.hint_shown, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'H' }));
+    try testing.expectEqualStrings("Speak with Valerius.", rt.get_banner());
+    try testing.expectEqual(BrowserActionTag.hint_shown, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'h' }));
+    try testing.expectEqualStrings("Settle Hesper's trial.", rt.get_banner());
+    try testing.expectEqual(BrowserActionTag.hint_shown, try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'h' }));
+    try testing.expectEqualStrings("Look around the Store.", rt.get_banner());
+
+    // Feature queries work through WasmRuntime without tables.
+    var out: [256]u8 = undefined;
+    var out_len: usize = 0;
+    const h_len = rt.query_hint(2, &out);
+    try testing.expectEqualStrings("Speak with Valerius.", out[0..h_len]);
+    try testing.expectEqual(@as(usize, 0), rt.query_hint(0, &out));
+
+    // Tick into Counsel -> Hear, then Bread -> Weigh.
+    try rt.step_tick();
+    try testing.expectEqual(@as(i32, 1), rt.query_decision("Counsel", &out, &out_len));
+    try testing.expectEqualStrings("Hear", out[0..out_len]);
+
+    try rt.step_tick();
+    try rt.step_tick();
+    try testing.expectEqual(@as(i32, 2), rt.query_dilemma("Bread", &out, &out_len));
+    try testing.expectEqualStrings("Weigh", out[0..out_len]);
+
+    // Before learning Mercy of Valerius, query_known_value hides it; once known, returns 3.
+    try testing.expectEqual(UNKNOWN_VALUE, rt.query_known_value("Valerius", "Mercy"));
+    const hesper = rt.world.lookup_entity("Hesper").?;
+    try rt.world.remember(hesper, rt.world.lookup_relation("Knows").?, (try rt.world.intern_entity("Mercy of Valerius")).to_int(), 0);
+    try testing.expectEqual(@as(i32, 3), rt.query_known_value("Valerius", "Mercy"));
 }

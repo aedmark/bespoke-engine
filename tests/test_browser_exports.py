@@ -33,8 +33,8 @@ def generated_page_calls() -> set[str]:
 
 
 class BrowserExportTests(unittest.TestCase):
-    def test_the_list_is_the_fifteen_d175_names(self):
-        self.assertEqual(len(supported_exports()), 15)
+    def test_the_list_is_the_supported_export_names(self):
+        self.assertEqual(len(supported_exports()), 21)
 
     def test_every_supported_export_is_exported(self):
         missing = supported_exports() - module_exports()

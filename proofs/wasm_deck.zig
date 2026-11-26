@@ -1287,6 +1287,10 @@ fn greyhold_typed(rt: *WasmRuntime, line: []const u8) anyerror!void {
     if (reply.fired) try rt.step_tick();
 }
 
+fn greyhold_axis(rt: *const WasmRuntime, name: []const u8) ?EntityId {
+    return rt.world.lookup_entity(name);
+}
+
 /// `[S]`: the appeal to Mercy, one typed line per press: learn the value, appeal to it, and
 /// wait for spring. Before the hearing opens, a press steps the clock.
 fn greyhold_solve(rt: *WasmRuntime) anyerror!void {
@@ -1297,10 +1301,11 @@ fn greyhold_solve(rt: *WasmRuntime) anyerror!void {
     if (!rt.world.has_fact(ids.tam, try relation(rt, "Hearing"), null)) return rt.step_tick();
     // Judged but not yet answered: the judgement's handler runs on the next tick.
     if (rt.world.lookup_entity("StolenLoaf")) |loaf| {
-        if (bespoke.dilemma.stage_of(&rt.world, loaf) == .done) return rt.step_tick();
+        if (bespoke.host.dilemma(&rt.world, loaf).stage == .done) return rt.step_tick();
     }
-    const known = rt.world.lookup_entity("Mercy of Valerius") orelse return;
-    if (!rt.world.has_fact(ids.hesper, try relation(rt, "Knows"), known.to_int())) return greyhold_typed(rt, "ask valerius about mercy");
+    if (greyhold_axis(rt, "Mercy")) |mercy| {
+        if (!bespoke.host.known_value(&rt.world, ids.hesper, ids.valerius, mercy).known) return greyhold_typed(rt, "ask valerius about mercy");
+    } else return;
     return greyhold_typed(rt, "appeal to mercy");
 }
 

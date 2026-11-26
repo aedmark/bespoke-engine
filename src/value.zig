@@ -29,6 +29,13 @@ pub const MAX_DRIFT_STEP: u8 = 20;
 
 pub const Error = error{InvalidAxis};
 
+/// Result of `host.known_value` (P48-19, D-176): whether `observer` knows `<Axis> of <character>`
+/// and the character's held value on `axis` when one exists.
+pub const KnownValue = struct {
+    known: bool = false,
+    value: ?i32 = null,
+};
+
 /// One declared axis. `relation` is the property relation named after the virtue; `poles` are
 /// entities so a package stores them as references and a later line can name one.
 pub const Axis = struct {

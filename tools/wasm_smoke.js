@@ -59,4 +59,61 @@ for (const [file, decks] of modules) {
   console.log(`${ok ? 'ok  ' : 'FAIL'} bespoke-proofs.wasm audio: energy ${energy}, ${exp.wasm_audio_sample_rate()} Hz`);
   if (!ok) failed = true;
 }
+// P48-19 / D-176: feature query exports and browser hint key work across the Wasm ABI.
+{
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+  const readText = (exp) => {
+    const len = exp.wasm_query_len();
+    return dec.decode(new Uint8Array(exp.memory.buffer, exp.wasm_query_ptr(), len));
+  };
+  const writeNames = (exp, ...parts) => {
+    const buf = new Uint8Array(exp.memory.buffer, exp.wasm_query_ptr(), 256);
+    let offset = 0;
+    const lens = [];
+    for (const part of parts) {
+      const bytes = enc.encode(part);
+      buf.set(bytes, offset);
+      offset += bytes.length;
+      lens.push(bytes.length);
+    }
+    return lens;
+  };
+  const exp = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(bin, 'bespoke-proofs.wasm'))), {}).exports;
+
+  // Deck 12 (The Larkspur Observatory): ask for a hint directly and via the H key.
+  exp.wasm_init(12);
+  const hLen = exp.wasm_hint(1);
+  const hintText = readText(exp);
+  if (hLen === 0 || !hintText.includes('Archive')) {
+    console.log(`FAIL bespoke-proofs.wasm hint: len=${hLen} text=${JSON.stringify(hintText)}`);
+    failed = true;
+  } else {
+    exp.wasm_on_key_down('h'.charCodeAt(0));
+    exp.wasm_render_frame();
+    console.log(`ok  bespoke-proofs.wasm hint (deck 12): ${JSON.stringify(hintText)}`);
+  }
+
+  // Deck 13 (Valerius and the Bread): query decision, dilemma, and known value across S steps.
+  exp.wasm_init(13);
+  for (let k = 0; k < 3; k++) exp.wasm_step_tick();
+  const [decLen] = writeNames(exp, 'BrannsCounsel');
+  const decStage = exp.wasm_decision(decLen);
+  const decChoice = readText(exp);
+  const [dilLen] = writeNames(exp, 'StolenLoaf');
+  const dilStage = exp.wasm_dilemma(dilLen);
+  const dilOutcome = readText(exp);
+  const [cLen1, aLen1] = writeNames(exp, 'Valerius', 'Mercy');
+  const valBefore = exp.wasm_known_value(cLen1, aLen1);
+  // Advance until Valerius reveals his Mercy via [S], then re-query known_value.
+  exp.wasm_on_key_down('S'.charCodeAt(0));
+  const [cLen2, aLen2] = writeNames(exp, 'Valerius', 'Mercy');
+  const valAfter = exp.wasm_known_value(cLen2, aLen2);
+  if (decStage !== 1 || decChoice !== 'HearTheCase' || dilStage !== 2 || dilOutcome !== 'Weigh' || valBefore !== -128 || valAfter !== 3) {
+    console.log(`FAIL bespoke-proofs.wasm queries (deck 13): dec=(${decStage},${decChoice}) dil=(${dilStage},${dilOutcome}) val=(${valBefore}->${valAfter})`);
+    failed = true;
+  } else {
+    console.log(`ok  bespoke-proofs.wasm queries (deck 13): BrannsCounsel=${decChoice}, StolenLoaf=${dilOutcome}, Mercy=${valBefore}->${valAfter}`);
+  }
+}
 process.exit(failed ? 1 : 0);
