@@ -397,6 +397,35 @@ pub fn shown_for(art: ?*const image_mod.Art, frame: *const RenderFrame, entity: 
     return .{ .image = sprite.image, .animations = sprite.animations };
 }
 
+/// The screen box of `entity` as drawn by its active look, area, or sprite (P48-25, D-181).
+pub fn shown_box(art: ?*const image_mod.Art, frame: *const RenderFrame, entity: EntityId, pt: Point) ?Rect {
+    const a = art orelse return null;
+    if (a.area_for(entity)) |area| return area_rect(area);
+    const shown = shown_for(a, frame, entity) orelse return null;
+    const img = a.images[shown.image];
+    const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
+    const h: i32 = @as(i32, img.frame_height) * image_mod.SCALE;
+    return .{ .x = pt.x - @divTrunc(w, 2), .y = pt.y - h, .w = w, .h = h };
+}
+
+fn shown_anchor_bottom(art: *const image_mod.Art, frame: *const RenderFrame, entity: EntityId, pt: Point) Point {
+    if (shown_for(art, frame, entity)) |shown| {
+        if (art.area_for(entity)) |area| {
+            const img = art.images[shown.image];
+            const r = area_rect(area);
+            const w: i32 = @as(i32, img.frame_width) * image_mod.SCALE;
+            const h: i32 = @as(i32, img.frame_height) * image_mod.SCALE;
+            return .{ .x = r.x + @divTrunc(w, 2), .y = r.y + h };
+        }
+        return pt;
+    }
+    if (art.area_for(entity)) |area| {
+        const r = area_rect(area);
+        return .{ .x = r.x + @divTrunc(r.w, 2), .y = r.y + r.h };
+    }
+    return pt;
+}
+
 /// Where a part of `host` hangs, and the box its sprite takes (D-181): its frame's bottom edge
 /// centred on the host's drawn bottom centre moved by the part's offset in art pixels.
 pub fn part_box(art: *const image_mod.Art, part: image_mod.Part, image: u16, host_bottom: Point) Rect {
@@ -421,13 +450,14 @@ pub fn is_part(art: ?*const image_mod.Art, entity: EntityId) bool {
     return a.part_for(entity) != null;
 }
 
-/// Whether a click at (x, y) lands on one of `host`'s parts, drawn from their sprites.
-fn hits_part(art: ?*const image_mod.Art, host: EntityId, pt: Point, x: i32, y: i32) bool {
+/// Whether a click at (x, y) lands on one of `host`'s parts, drawn from their active look or sprite.
+fn hits_part_in(art: ?*const image_mod.Art, frame: ?*const RenderFrame, host: EntityId, pt: Point, x: i32, y: i32) bool {
     const a = art orelse return false;
+    const bottom = if (frame) |f| shown_anchor_bottom(a, f, host, pt) else drawn_bottom(art, host, pt);
     for (a.parts) |part| {
         if (part.host != host) continue;
-        const sprite = a.sprite_for(part.entity) orelse continue;
-        if (part_box(a, part, sprite.image, drawn_bottom(art, host, pt)).contains(x, y)) return true;
+        const img_idx = if (frame) |f| (shown_for(a, f, part.entity) orelse continue).image else (a.sprite_for(part.entity) orelse continue).image;
+        if (part_box(a, part, img_idx, bottom).contains(x, y)) return true;
     }
     return false;
 }
@@ -458,15 +488,40 @@ pub fn hit_test_actor(
     screen_h: i32,
     art: ?*const image_mod.Art,
 ) ?usize {
+    return hit_test_actor_impl(screen_x, screen_y, entities, null, screen_w, screen_h, art);
+}
+
+/// Frame-aware actor hit test honoring active `Looks` facts for both hosts and parts (P48-25).
+pub fn hit_test_actor_in(
+    screen_x: i32,
+    screen_y: i32,
+    frame: *const RenderFrame,
+    screen_w: i32,
+    screen_h: i32,
+    art: ?*const image_mod.Art,
+) ?usize {
+    return hit_test_actor_impl(screen_x, screen_y, frame.entities[0..frame.entity_count], frame, screen_w, screen_h, art);
+}
+
+fn hit_test_actor_impl(
+    screen_x: i32,
+    screen_y: i32,
+    entities: []const RenderEntity,
+    frame: ?*const RenderFrame,
+    screen_w: i32,
+    screen_h: i32,
+    art: ?*const image_mod.Art,
+) ?usize {
     for (entities, 0..) |e, idx| {
         if (is_part(art, e.entity)) continue;
         const pt = get_entity_screen_pos(idx, entities, screen_w, screen_h);
-        // A sprite answers anywhere in its frame and still at the disc on its spot below it;
-        // its parts answer as it does (D-181).
-        if (sprite_box(art, e.entity, pt)) |box| {
+        // A sprite or active look answers anywhere in its frame and still at the disc on its spot
+        // below it; its parts answer as it does (D-181).
+        const box_opt = if (frame) |f| shown_box(art, f, e.entity, pt) else sprite_box(art, e.entity, pt);
+        if (box_opt) |box| {
             if (box.contains(screen_x, screen_y)) return idx;
         }
-        if (hits_part(art, e.entity, pt, screen_x, screen_y)) return idx;
+        if (hits_part_in(art, frame, e.entity, pt, screen_x, screen_y)) return idx;
         const dx: i64 = screen_x - pt.x;
         const dy: i64 = screen_y - pt.y;
         const dist_sq = dx * dx + dy * dy;
@@ -488,6 +543,30 @@ pub fn hit_test_hotspot(
     screen_h: i32,
     art: ?*const image_mod.Art,
 ) ?usize {
+    return hit_test_hotspot_impl(screen_x, screen_y, hotspots, null, screen_w, screen_h, art);
+}
+
+/// Frame-aware hotspot hit test honoring active `Looks` facts for both props and parts (P48-25).
+pub fn hit_test_hotspot_in(
+    screen_x: i32,
+    screen_y: i32,
+    frame: *const RenderFrame,
+    screen_w: i32,
+    screen_h: i32,
+    art: ?*const image_mod.Art,
+) ?usize {
+    return hit_test_hotspot_impl(screen_x, screen_y, frame.hotspots[0..frame.hotspot_count], frame, screen_w, screen_h, art);
+}
+
+fn hit_test_hotspot_impl(
+    screen_x: i32,
+    screen_y: i32,
+    hotspots: []const RenderHotspot,
+    frame: ?*const RenderFrame,
+    screen_w: i32,
+    screen_h: i32,
+    art: ?*const image_mod.Art,
+) ?usize {
     for (hotspots, 0..) |hs, idx| {
         if (is_part(art, hs.entity)) continue;
         const pt = world_to_screen(hs.x, hs.y, screen_w, screen_h);
@@ -495,11 +574,12 @@ pub fn hit_test_hotspot(
         // region; a sprite answers in its frame and still at the disc on its spot (D-158).
         if (art) |a| if (a.area_for(hs.entity)) |area| {
             if (area_rect(area).contains(screen_x, screen_y)) return idx;
-            if (hits_part(art, hs.entity, pt, screen_x, screen_y)) return idx;
+            if (hits_part_in(art, frame, hs.entity, pt, screen_x, screen_y)) return idx;
             continue;
         };
-        if (hits_part(art, hs.entity, pt, screen_x, screen_y)) return idx;
-        if (sprite_box(art, hs.entity, pt)) |box| {
+        if (hits_part_in(art, frame, hs.entity, pt, screen_x, screen_y)) return idx;
+        const box_opt = if (frame) |f| shown_box(art, f, hs.entity, pt) else sprite_box(art, hs.entity, pt);
+        if (box_opt) |box| {
             if (box.contains(screen_x, screen_y)) return idx;
         }
         const dx: i64 = screen_x - pt.x;
@@ -1450,6 +1530,17 @@ pub const DisplayWindow = struct {
     /// art rather than on it. Returns the frame's height in frame pixels, for the label above it.
     /// Draws what `entity` shows, then its parts (P48-11, D-181). A thing with an area draws at
     /// the area's top-left; anything else stands bottom-centre on `pt`. Returns the height.
+    fn draw_parts(self: *DisplayWindow, frame: *const RenderFrame, host: EntityId, bottom: Point, anim: image_mod.Anim, labels: *TextLayoutResolver) void {
+        const art = self.art.?;
+        for (art.parts) |part| {
+            if (part.host != host) continue;
+            const part_shown = shown_for(art, frame, part.entity) orelse continue;
+            const box = part_box(art, part, part_shown.image, bottom);
+            if (self.canvas) |*cv| cv.draw_image(&art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y);
+            labels.add_obstacle(box.x, box.y, box.w, box.h);
+        }
+    }
+
     fn draw_shown(self: *DisplayWindow, frame: *const RenderFrame, entity: EntityId, shown: Shown, anim: image_mod.Anim, pt: Point, labels: *TextLayoutResolver) i32 {
         const art = self.art.?;
         const img = &art.images[shown.image];
@@ -1462,13 +1553,7 @@ pub const DisplayWindow = struct {
         if (self.canvas) |*cv| cv.draw_image(img, shown.frame_at(anim, self.animation_clock), origin.x, origin.y);
         labels.add_obstacle(origin.x, origin.y, w, h);
         const bottom = Point{ .x = origin.x + @divTrunc(w, 2), .y = origin.y + h };
-        for (art.parts) |part| {
-            if (part.host != entity) continue;
-            const part_shown = shown_for(art, frame, part.entity) orelse continue;
-            const box = part_box(art, part, part_shown.image, bottom);
-            if (self.canvas) |*cv| cv.draw_image(&art.images[part_shown.image], part_shown.frame_at(anim, self.animation_clock), box.x, box.y);
-            labels.add_obstacle(box.x, box.y, box.w, box.h);
-        }
+        self.draw_parts(frame, entity, bottom, anim, labels);
         return h;
     }
 
@@ -1968,9 +2053,13 @@ pub const DisplayWindow = struct {
                 self.inspector_selected = 0;
             },
             key('e') => {
-                // Engine bookkeeping in or out of the view (D-180); the focus may have gone.
+                // Engine bookkeeping in or out of the view (D-180); reset navigation and filter
+                // because the visible set and focus may no longer match.
                 self.show_engine_facts = !self.show_engine_facts;
                 self.inspector_focus = null;
+                self.inspector_history_len = 0;
+                self.inspector_selected = 0;
+                self.inspector_filter = .{};
                 return true;
             },
             key('f') => {
@@ -2279,8 +2368,8 @@ pub const DisplayWindow = struct {
             self.hovered_choice = hit_test_dialogue_panel(x, y, b, &panel);
         };
         self.hovered_wp = hit_test_waypoint(x, y, frame.waypoints[0..frame.waypoint_count], self.width, self.height);
-        self.hovered_hotspot = hit_test_hotspot(x, y, frame.hotspots[0..frame.hotspot_count], self.width, self.height, self.art);
-        self.hovered_actor = hit_test_actor(x, y, frame.entities[0..frame.entity_count], self.width, self.height, self.art);
+        self.hovered_hotspot = hit_test_hotspot_in(x, y, frame, self.width, self.height, self.art);
+        self.hovered_actor = hit_test_actor_in(x, y, frame, self.width, self.height, self.art);
         self.hovered_party_member = hit_test_party_portrait(x, y, frame.party_count, self.width);
     }
 
@@ -2599,10 +2688,10 @@ pub const DisplayWindow = struct {
                             }
 
                             // 4b. Check Hotspot clicked with WALK -> walk to nearest waypoint to that prop
-                            const clicked_hs = hit_test_hotspot(
+                            const clicked_hs = hit_test_hotspot_in(
                                 event.button.x,
                                 event.button.y,
-                                frame.hotspots[0..frame.hotspot_count],
+                                frame,
                                 self.width,
                                 self.height,
                                 self.art,
@@ -2621,10 +2710,10 @@ pub const DisplayWindow = struct {
                             }
 
                             // 4c. Check Actor clicked with WALK -> walk to nearest waypoint to that actor
-                            const clicked_actor = hit_test_actor(
+                            const clicked_actor = hit_test_actor_in(
                                 event.button.x,
                                 event.button.y,
-                                frame.entities[0..frame.entity_count],
+                                frame,
                                 self.width,
                                 self.height,
                                 self.art,
@@ -2654,10 +2743,10 @@ pub const DisplayWindow = struct {
                         } else {
                             // Active verb is NOT WALK: Check Actors, Hotspots, or direct Waypoint navigation
                             // 4. Check Actors
-                            const clicked_actor = hit_test_actor(
+                            const clicked_actor = hit_test_actor_in(
                                 event.button.x,
                                 event.button.y,
-                                frame.entities[0..frame.entity_count],
+                                frame,
                                 self.width,
                                 self.height,
                                 self.art,
@@ -2688,10 +2777,10 @@ pub const DisplayWindow = struct {
                                 }
                             } else {
                                 // 5. Check Hotspots / Props
-                                const clicked_hs = hit_test_hotspot(
+                                const clicked_hs = hit_test_hotspot_in(
                                     event.button.x,
                                     event.button.y,
-                                    frame.hotspots[0..frame.hotspot_count],
+                                    frame,
                                     self.width,
                                     self.height,
                                     self.art,
@@ -3185,7 +3274,10 @@ pub const DisplayWindow = struct {
             const pt = world_to_screen(hs.x, hs.y, self.width, self.height);
             const is_hovered = self.hover_target() == .prop and self.hovered_hotspot.? == idx;
             const name = words(hs.get_name());
-            if (self.canvas) |*cv| cv.rect_name = hs.get_name();
+            if (self.canvas) |*cv| {
+                cv.rect_kind = .prop;
+                cv.rect_name = hs.get_name();
+            }
 
             const prop_sprite: ?Shown = shown_for(self.art, frame, hs.entity);
             if (prop_sprite) |shown| _ = self.draw_shown(frame, hs.entity, shown, .idle, pt, &layout_resolver);
@@ -3197,14 +3289,19 @@ pub const DisplayWindow = struct {
                 .labels = &layout_resolver,
             }) else false) else false;
             const prop_area: ?image_mod.Area = if (self.art) |a| a.area_for(hs.entity) else null;
+            if (prop_sprite == null and prop_area != null) {
+                if (self.art) |a| self.draw_parts(frame, hs.entity, shown_anchor_bottom(a, frame, hs.entity, pt), .idle, &layout_resolver);
+            }
             // A prop with an area is part of the art: nothing more is drawn for it (D-158).
             if (!prop_drawn and prop_area == null) {
                 // Default prop
                 self.fill_rect(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color{ .r = 75, .g = 65, .b = 60 });
                 self.draw_rect_outline(pt.x - PROP_MARKER_HALF, pt.y - PROP_MARKER_HALF, PROP_MARKER_HALF * 2, PROP_MARKER_HALF * 2, Color.panel_border);
             }
-            if (self.canvas) |*cv| cv.rect_name = "";
-            if (self.canvas) |*cv| cv.rect_kind = .walkway;
+            if (self.canvas) |*cv| {
+                cv.rect_name = "";
+                cv.rect_kind = .walkway;
+            }
 
             // Hover highlight ring and action prompt
             if (is_hovered) {
@@ -3212,7 +3309,7 @@ pub const DisplayWindow = struct {
                 // prompt sits above whichever it is (P46-05, D-158).
                 // The box is a layout aid, drawn only with the debug overlay; play shows the
                 // prompt alone, as an adventure game does.
-                const box = sprite_box(self.art, hs.entity, pt);
+                const box = shown_box(self.art, frame, hs.entity, pt);
                 if (box) |b| {
                     if (self.show_debug_overlay) self.draw_rect_outline(b.x - 2, b.y - 2, b.w + 4, b.h + 4, Color.wp_hover);
                 } else self.draw_circle_outline(pt.x, pt.y, HOTSPOT_SCREEN_RADIUS + 4, Color.wp_hover);
@@ -3241,6 +3338,7 @@ pub const DisplayWindow = struct {
         }
 
         // 4. Render Corridors / Edges between Waypoints
+        if (self.canvas) |*cv| cv.rect_kind = .walkway;
         if (walkways_shown) {
             for (frame.edges[0..frame.edge_count]) |e| {
                 var wp_a: ?RenderWaypoint = null;
@@ -3457,7 +3555,7 @@ pub const DisplayWindow = struct {
             // The person a click would act on gets a gold ring and the action it would take
             // (D-093), as the browser does (D-088); before, only marks and props lit up.
             if (self.hover_target() == .person and self.hovered_actor.? == idx) {
-                if (sprite_box(self.art, e.entity, pt)) |box| {
+                if (shown_box(self.art, frame, e.entity, pt)) |box| {
                     if (self.show_debug_overlay) {
                         self.draw_rect_outline(box.x - 2, box.y - 2, box.w + 4, box.h + 4, Color.wp_target);
                         self.draw_rect_outline(box.x - 3, box.y - 3, box.w + 6, box.h + 6, Color.wp_target);
@@ -5505,4 +5603,80 @@ test "P46-05: a sprite is clicked anywhere in its frame, and an area anywhere in
     try std.testing.expectEqual(@as(?usize, null), hit_test_hotspot(480, 300, (&hs)[0..1], 1280, 720, &art));
     // A walk to the door aims for its area's foot.
     try std.testing.expectEqual(Point{ .x = 432, .y = 416 }, prop_anchor(&art, hs, 1280, 720));
+}
+
+test "P48-25: prop band probe, Look-only hit testing, area-only parts, and E toggle reset" {
+    const ink = image_mod.Pixel{ .r = 9, .g = 9, .b = 9, .a = 255 };
+    var look_px: [6 * 8]image_mod.Pixel = @splat(ink);
+    const look_sheet = image_mod.Image{ .name = "TallLook", .width = 6, .height = 8, .frame_width = 6, .frame_height = 8, .pixels = &look_px };
+    var part_px: [4 * 4]image_mod.Pixel = @splat(ink);
+    const part_sheet = image_mod.Image{ .name = "FlamePart", .width = 4, .height = 4, .frame_width = 4, .frame_height = 4, .pixels = &part_px };
+
+    const person = EntityId.from_int(10);
+    const door = EntityId.from_int(11);
+    const brazier = EntityId.from_int(12);
+    const spark = EntityId.from_int(13);
+
+    const art = image_mod.Art{
+        .images = &.{ look_sheet, part_sheet },
+        .looks = &.{
+            .{ .name = "Tall", .image = 0 },
+            .{ .name = "Flame", .image = 1 },
+        },
+        .parts = &.{.{ .entity = spark, .host = door, .dx = 0, .dy = -10 }},
+        .areas = &.{.{ .entity = door, .x = 40, .y = 20, .w = 20, .h = 20 }},
+    };
+
+    var frame = std.mem.zeroes(RenderFrame);
+    frame.looks[0] = .{ .entity = person, .len = 4 };
+    @memcpy(frame.looks[0].name[0..4], "Tall");
+    frame.looks[1] = .{ .entity = spark, .len = 5 };
+    @memcpy(frame.looks[1].name[0..5], "Flame");
+    frame.look_count = 2;
+
+    frame.entities[0] = .{ .entity = person, .name = undefined, .name_len = 0, .x = 10, .y = 5, .current_wp = 1, .is_moving = false };
+    frame.entity_count = 1;
+    frame.hotspots[0] = .{ .entity = brazier, .room = .none, .x = 20, .y = 5, .radius = 4, .name = undefined, .name_len = 0, .examine_text = undefined, .examine_len = 0 };
+    frame.hotspots[1] = .{ .entity = door, .room = .none, .x = 30, .y = 5, .radius = 4, .name = undefined, .name_len = 0, .examine_text = undefined, .examine_len = 0 };
+    frame.hotspot_count = 2;
+    @memcpy(frame.hotspots[0].name[0..7], "Brazier");
+    frame.hotspots[0].name_len = 7;
+    @memcpy(frame.hotspots[1].name[0..4], "Door");
+    frame.hotspots[1].name_len = 4;
+
+    // 1. Look-only person (no Sprite entry) is hit at top of TallLook frame (y - 28 px), and
+    //    Look-only part on an area-only prop is hit above the area rect.
+    const feet = world_to_screen(10, 5, 1280, 720);
+    try std.testing.expectEqual(@as(?usize, 0), hit_test_actor_in(feet.x, feet.y - 28, &frame, 1280, 720, &art));
+    const dbox = area_rect(art.areas[0]);
+    try std.testing.expectEqual(@as(?usize, 1), hit_test_hotspot_in(dbox.x + @divTrunc(dbox.w, 2), dbox.y + dbox.h - 48, &frame, 1280, 720, &art));
+
+    // 2. Second hotspot (idx == 1) still probes as `.prop` when rendered.
+    var saves = save_mod.SaveManager{ .allocator = std.testing.allocator, .io = std.Io.failing, .save_dir = "", .slots = undefined, .session_start_ms = 0, .accumulated_playtime_secs = 0 };
+    for (0..save_mod.MAX_SLOTS + 1) |i| saves.slots[i] = .{ .slot_id = @intCast(i) };
+    var audio_bridge = @import("../audio.zig").AudioBridge{};
+    const pixels = try std.testing.allocator.alloc(u8, 1280 * 720 * 4);
+    defer std.testing.allocator.free(pixels);
+    var win = DisplayWindow.init_canvas(pixels, 1280, 720, &audio_bridge, &saves);
+    win.set_art(&art);
+    var probe = canvas_mod.RectProbe{};
+    win.canvas.?.rect_probe = &probe;
+    win.render_frame(&frame, false);
+    var saw_brazier_prop = false;
+    var saw_door_prop = false;
+    for (probe.draws[0..probe.count]) |row| {
+        if (row.kind == .prop and std.mem.eql(u8, row.get_name(), "Brazier")) saw_brazier_prop = true;
+        if (row.kind == .prop and std.mem.eql(u8, row.get_name(), "Door")) saw_door_prop = true;
+    }
+    try std.testing.expect(saw_brazier_prop);
+    try std.testing.expect(saw_door_prop);
+
+    // 3. Pressing 'e' clears inspector_filter and inspector_history_len.
+    win.inspector_history_len = 2;
+    win.inspector_selected = 3;
+    win.inspector_filter = .{ .kind = .beliefs };
+    try std.testing.expect(win.inspector_key(&frame, key('e')));
+    try std.testing.expectEqual(@as(usize, 0), win.inspector_history_len);
+    try std.testing.expectEqual(@as(usize, 0), win.inspector_selected);
+    try std.testing.expectEqual(state_graph.Filter.Kind.all, win.inspector_filter.kind);
 }

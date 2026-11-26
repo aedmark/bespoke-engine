@@ -61,7 +61,8 @@ pub const RelationMeta = struct {
     rel_type: RelationType,
     object_kind: ObjectKind = .unknown,
     /// The script declared this relation itself, so an engine feature added after the script's
-    /// language version leaves it alone (P48-10, D-180). Program data; snapshots do not carry it.
+    /// language version leaves it alone (P48-10, D-180). Snapshots and packages carry it in
+    /// bit 1 of the relation flags byte (P48-23).
     script_owned: bool = false,
 };
 
@@ -122,9 +123,9 @@ pub const SnapshotHeader = extern struct {
     magic: [4]u8 = [_]u8{ 'B', 'S', 'P', 'K' },
     version: u32 = 1,
     current_tick: u64,
-    facts_len: usize,
-    entity_count: usize,
-    relation_count: usize,
+    facts_len: u32,
+    entity_count: u32,
+    relation_count: u32,
     checksum: u32,
 };
 
@@ -735,6 +736,7 @@ pub const World = struct {
         clauses: []const PatternClause,
     ) ![]VariableBindings {
         var results = std.array_list.Managed(VariableBindings).init(alloc);
+        errdefer results.deinit();
         if (clauses.len == 0) return results.toOwnedSlice();
         try self.collect_multi_matches(clauses, 0, VariableBindings{}, &results);
         return results.toOwnedSlice();
@@ -760,13 +762,19 @@ pub const World = struct {
 
         const header = SnapshotHeader{
             .current_tick = self.current_tick,
-            .facts_len = self.facts.len,
-            .entity_count = self.entity_names.items.len,
-            .relation_count = self.relation_meta.items.len,
+            .facts_len = @intCast(self.facts.len),
+            .entity_count = @intCast(self.entity_names.items.len),
+            .relation_count = @intCast(self.relation_meta.items.len),
             .checksum = hasher.final(),
         };
 
-        try writer.writeAll(std.mem.asBytes(&header));
+        try writer.writeAll(&header.magic);
+        try writer.writeInt(u32, header.version, .little);
+        try writer.writeInt(u64, header.current_tick, .little);
+        try writer.writeInt(u32, header.facts_len, .little);
+        try writer.writeInt(u32, header.entity_count, .little);
+        try writer.writeInt(u32, header.relation_count, .little);
+        try writer.writeInt(u32, header.checksum, .little);
 
         // Write SoA fact columns
         try writer.writeAll(subjects_bytes);
@@ -786,34 +794,50 @@ pub const World = struct {
             const len: u16 = @intCast(meta.name.len);
             try writer.writeInt(u16, len, .little);
             try writer.writeAll(meta.name);
-            // The low four bits are the relation type and the high four its object kind
-            // (D-178), so snapshots written before kinds read as `unknown`.
-            try writer.writeByte(@as(u8, @intFromEnum(meta.rel_type)) | (@as(u8, @intFromEnum(meta.object_kind)) << 4));
+            // Low bits: bit 0 is RelationType, bit 1 is `script_owned` (D-180, P48-23).
+            // High four bits: ObjectKind (D-178).
+            try writer.writeByte(
+                @as(u8, @intFromEnum(meta.rel_type)) |
+                    (@as(u8, if (meta.script_owned) 2 else 0)) |
+                    (@as(u8, @intFromEnum(meta.object_kind)) << 4),
+            );
         }
     }
 
     /// Restores the complete World state from a reader.
     pub fn restore_state(self: *World, reader: anytype) !void {
-        var header: SnapshotHeader = undefined;
-        try reader.readSliceAll(std.mem.asBytes(&header));
-
-        if (!std.mem.eql(u8, &header.magic, "BSPK")) {
+        var magic: [4]u8 = undefined;
+        try reader.readSliceAll(&magic);
+        if (!std.mem.eql(u8, &magic, "BSPK")) {
             return SnapshotError.InvalidMagic;
         }
-        if (header.version != 1) {
+        const version = try reader.takeInt(u32, .little);
+        if (version != 1) {
             return SnapshotError.UnsupportedVersion;
         }
-        if (header.facts_len > self.facts.capacity) {
+        const header = SnapshotHeader{
+            .magic = magic,
+            .version = version,
+            .current_tick = try reader.takeInt(u64, .little),
+            .facts_len = try reader.takeInt(u32, .little),
+            .entity_count = try reader.takeInt(u32, .little),
+            .relation_count = try reader.takeInt(u32, .little),
+            .checksum = try reader.takeInt(u32, .little),
+        };
+        if (header.facts_len > self.facts.capacity or header.relation_count > std.math.maxInt(u16)) {
             return SnapshotError.CapacityExceeded;
         }
 
-        self.facts.len = header.facts_len;
-        const slice = self.facts.slice();
+        const flen: usize = header.facts_len;
+        var tmp_facts: std.MultiArrayList(Fact) = .empty;
+        defer tmp_facts.deinit(self.backing_allocator);
+        try tmp_facts.resize(self.backing_allocator, flen);
+        const tmp_slice = tmp_facts.slice();
 
-        const subjects_bytes = std.mem.sliceAsBytes(slice.items(.subject)[0..header.facts_len]);
-        const relations_bytes = std.mem.sliceAsBytes(slice.items(.relation)[0..header.facts_len]);
-        const objects_bytes = std.mem.sliceAsBytes(slice.items(.object_or_value)[0..header.facts_len]);
-        const expirations_bytes = std.mem.sliceAsBytes(slice.items(.expires_at_tick)[0..header.facts_len]);
+        const subjects_bytes = std.mem.sliceAsBytes(tmp_slice.items(.subject)[0..flen]);
+        const relations_bytes = std.mem.sliceAsBytes(tmp_slice.items(.relation)[0..flen]);
+        const objects_bytes = std.mem.sliceAsBytes(tmp_slice.items(.object_or_value)[0..flen]);
+        const expirations_bytes = std.mem.sliceAsBytes(tmp_slice.items(.expires_at_tick)[0..flen]);
 
         try reader.readSliceAll(subjects_bytes);
         try reader.readSliceAll(relations_bytes);
@@ -830,42 +854,108 @@ pub const World = struct {
             return SnapshotError.ChecksumMismatch;
         }
 
-        self.current_tick = header.current_tick;
-
-        // Restore entity names and map
-        self.entity_names.clearRetainingCapacity();
-        self.entity_map.clearRetainingCapacity();
-        const alloc = self.allocator();
-
+        // Read and validate entities and relations into temporary backing memory before mutating
+        // `self`, so a truncated or malformed snapshot leaves the World untouched.
+        var tmp_entities = std.ArrayListUnmanaged([]u8).empty;
+        defer {
+            for (tmp_entities.items) |name| self.backing_allocator.free(name);
+            tmp_entities.deinit(self.backing_allocator);
+        }
         for (0..header.entity_count) |_| {
             const len = try reader.takeInt(u16, .little);
-            const name_buf = try alloc.alloc(u8, len);
-            try reader.readSliceAll(name_buf);
-            const id_val: u32 = @intCast(self.entity_names.items.len + 1);
-            const id = EntityId.from_int(id_val);
-            try self.entity_names.append(alloc, name_buf);
-            try self.entity_map.put(alloc, name_buf, id);
+            const buf = try self.backing_allocator.alloc(u8, len);
+            errdefer self.backing_allocator.free(buf);
+            try reader.readSliceAll(buf);
+            try tmp_entities.append(self.backing_allocator, buf);
         }
 
-        // Restore relation metadata and map
-        self.relation_meta.clearRetainingCapacity();
-        self.relation_map.clearRetainingCapacity();
-
+        const PendingRelation = struct {
+            name: []u8,
+            rel_type: RelationType,
+            object_kind: ObjectKind,
+            script_owned: bool,
+        };
+        var tmp_relations = std.ArrayListUnmanaged(PendingRelation).empty;
+        defer {
+            for (tmp_relations.items) |rel| self.backing_allocator.free(rel.name);
+            tmp_relations.deinit(self.backing_allocator);
+        }
         for (0..header.relation_count) |_| {
             const len = try reader.takeInt(u16, .little);
-            const name_buf = try alloc.alloc(u8, len);
-            try reader.readSliceAll(name_buf);
+            const buf = try self.backing_allocator.alloc(u8, len);
+            errdefer self.backing_allocator.free(buf);
+            try reader.readSliceAll(buf);
             const rel_type_byte = try reader.takeByte();
-            const rel_type = std.enums.fromInt(RelationType, rel_type_byte & 0x0f) orelse return SnapshotError.UnsupportedVersion;
+            const low = rel_type_byte & 0x0f;
+            if (low & ~@as(u8, 0x03) != 0) return SnapshotError.UnsupportedVersion;
+            const rel_type: RelationType = if (low & 0x01 != 0) .property else .set;
+            const script_owned = (low & 0x02) != 0;
             const saved_kind = std.enums.fromInt(ObjectKind, rel_type_byte >> 4) orelse return SnapshotError.UnsupportedVersion;
-            const kind_val: u16 = @intCast(self.relation_meta.items.len + 1);
-            const kind = RelationKind.from_int(kind_val);
-            try self.relation_meta.append(alloc, .{
-                .name = name_buf,
+            try tmp_relations.append(self.backing_allocator, .{
+                .name = buf,
                 .rel_type = rel_type,
                 .object_kind = saved_kind,
+                .script_owned = script_owned,
             });
-            try self.relation_map.put(alloc, name_buf, kind);
+        }
+
+        // Reuse existing interned name slices from `self.fba` so repeated restores do not exhaust
+        // the fixed arena; only names not already interned are duplicated into `self.allocator()`.
+        const alloc = self.allocator();
+        const resolved_entities = try self.backing_allocator.alloc([]const u8, tmp_entities.items.len);
+        defer self.backing_allocator.free(resolved_entities);
+        for (tmp_entities.items, resolved_entities) |name, *out| {
+            out.* = self.entity_map.getKey(name) orelse try alloc.dupe(u8, name);
+        }
+        const resolved_relations = try self.backing_allocator.alloc([]const u8, tmp_relations.items.len);
+        defer self.backing_allocator.free(resolved_relations);
+        for (tmp_relations.items, resolved_relations) |rel, *out| {
+            out.* = self.relation_map.getKey(rel.name) orelse try alloc.dupe(u8, rel.name);
+        }
+
+        if (self.entity_names.capacity < header.entity_count) {
+            try self.entity_names.ensureTotalCapacity(alloc, header.entity_count);
+        }
+        if (self.entity_map.capacity() < header.entity_count) {
+            try self.entity_map.ensureTotalCapacity(alloc, @max(self.entity_map.count(), header.entity_count));
+        }
+        if (self.relation_meta.capacity < header.relation_count) {
+            try self.relation_meta.ensureTotalCapacity(alloc, header.relation_count);
+        }
+        if (self.relation_map.capacity() < header.relation_count) {
+            try self.relation_map.ensureTotalCapacity(alloc, @max(self.relation_map.count(), header.relation_count));
+        }
+
+        // All allocations and validations succeeded; commit atomically.
+        self.facts.len = flen;
+        const dst_slice = self.facts.slice();
+        @memcpy(dst_slice.items(.subject)[0..flen], tmp_slice.items(.subject)[0..flen]);
+        @memcpy(dst_slice.items(.relation)[0..flen], tmp_slice.items(.relation)[0..flen]);
+        @memcpy(dst_slice.items(.object_or_value)[0..flen], tmp_slice.items(.object_or_value)[0..flen]);
+        @memcpy(dst_slice.items(.expires_at_tick)[0..flen], tmp_slice.items(.expires_at_tick)[0..flen]);
+        self.current_tick = header.current_tick;
+
+        self.entity_names.clearRetainingCapacity();
+        self.entity_map.clearRetainingCapacity();
+        for (resolved_entities) |name_buf| {
+            const id_val: u32 = @intCast(self.entity_names.items.len + 1);
+            const id = EntityId.from_int(id_val);
+            self.entity_names.appendAssumeCapacity(name_buf);
+            self.entity_map.putAssumeCapacity(name_buf, id);
+        }
+
+        self.relation_meta.clearRetainingCapacity();
+        self.relation_map.clearRetainingCapacity();
+        for (tmp_relations.items, resolved_relations) |rel, name_buf| {
+            const kind_val: u16 = @intCast(self.relation_meta.items.len + 1);
+            const kind = RelationKind.from_int(kind_val);
+            self.relation_meta.appendAssumeCapacity(.{
+                .name = name_buf,
+                .rel_type = rel.rel_type,
+                .object_kind = rel.object_kind,
+                .script_owned = rel.script_owned,
+            });
+            self.relation_map.putAssumeCapacity(name_buf, kind);
         }
         // A save written before a bound existed, or edited by hand, may hold a value outside it.
         // Bounds are program data and survive the restore (D-144).
@@ -1289,4 +1379,85 @@ test "P45-01: a bounded property clamps writes, restores, and clones" {
     defer branch.deinit();
     try branch.remember(captain, steadiness, 12, 0);
     try testing.expectEqual(@as(u32, 10), branch.get_property(captain, steadiness).?);
+}
+
+test "P48-23: snapshot header is 32-byte little-endian and preserves script_owned across restore and clone" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+
+    const hero = try world.intern_entity("Hero");
+    const claimed = try world.intern_relation_kind("Claimed", .property, .entity);
+    world.claim_relation(claimed);
+    const plain = try world.intern_relation_kind("Plain", .set, .number);
+    try world.remember(hero, claimed, hero.to_int(), 0);
+    try world.remember(hero, plain, 5, 0);
+    world.current_tick = 0x0102_0304_0506_0708;
+
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    try world.save_state(&lw.writer);
+
+    // 32-byte fixed-width little-endian SnapshotHeader regardless of host usize width.
+    try testing.expectEqual(@as(usize, 32), @sizeOf(SnapshotHeader));
+    try testing.expectEqualStrings("BSPK", bytes.items[0..4]);
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, bytes.items[4..8], .little));
+    try testing.expectEqual(@as(u64, 0x0102_0304_0506_0708), std.mem.readInt(u64, bytes.items[8..16], .little));
+    try testing.expectEqual(@as(u32, 2), std.mem.readInt(u32, bytes.items[16..20], .little));
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, bytes.items[20..24], .little));
+    try testing.expectEqual(@as(u32, 2), std.mem.readInt(u32, bytes.items[24..28], .little));
+
+    var restored = try World.init(testing.allocator, 256 * 1024);
+    defer restored.deinit();
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    try restored.restore_state(&stream);
+    try testing.expect(restored.get_relation_meta(restored.lookup_relation("Claimed").?).?.script_owned);
+    try testing.expect(!restored.get_relation_meta(restored.lookup_relation("Plain").?).?.script_owned);
+
+    var cloned = try world.clone(testing.allocator);
+    defer cloned.deinit();
+    try testing.expect(cloned.get_relation_meta(cloned.lookup_relation("Claimed").?).?.script_owned);
+    try testing.expect(!cloned.get_relation_meta(cloned.lookup_relation("Plain").?).?.script_owned);
+}
+
+test "P48-24: restore_state is atomic on error and reuses interned names across repeated restores" {
+    const testing = std.testing;
+    var world = try World.initWithMaxFacts(testing.allocator, 4 * 1024, 32);
+    defer world.deinit();
+
+    const hero = try world.intern_entity("Hero");
+    const tavern = try world.intern_entity("Tavern");
+    const loc = try world.intern_relation("At", .property);
+    try world.remember(hero, loc, tavern.to_int(), 0);
+    world.current_tick = 11;
+
+    var snap = std.array_list.Managed(u8).init(testing.allocator);
+    defer snap.deinit();
+    var lw = ListWriter.init(&snap);
+    try world.save_state(&lw.writer);
+
+    // Mutate world, then attempt restores with a bad checksum and a truncated stream.
+    world.current_tick = 22;
+    try world.remember(hero, loc, hero.to_int(), 0);
+    const bad_crc = try testing.allocator.dupe(u8, snap.items);
+    defer testing.allocator.free(bad_crc);
+    bad_crc[28] ^= 0xff;
+    var s_crc: std.Io.Reader = .fixed(bad_crc);
+    try testing.expectError(SnapshotError.ChecksumMismatch, world.restore_state(&s_crc));
+    try testing.expectEqual(@as(u64, 22), world.current_tick);
+    try testing.expectEqual(@as(?u32, hero.to_int()), world.get_property(hero, loc));
+
+    var s_trunc: std.Io.Reader = .fixed(snap.items[0 .. snap.items.len - 2]);
+    try testing.expectError(error.EndOfStream, world.restore_state(&s_trunc));
+    try testing.expectEqual(@as(u64, 22), world.current_tick);
+    try testing.expectEqual(@as(?u32, hero.to_int()), world.get_property(hero, loc));
+
+    // Repeated save/restore cycles must reuse existing name slices without exhausting fba.
+    for (0..200) |_| {
+        var s_ok: std.Io.Reader = .fixed(snap.items);
+        try world.restore_state(&s_ok);
+    }
+    try testing.expectEqual(@as(u64, 11), world.current_tick);
+    try testing.expectEqual(@as(?u32, tavern.to_int()), world.get_property(hero, loc));
 }

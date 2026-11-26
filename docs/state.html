@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BeSpoke Engine Today</title>
-<meta name="description" content="What the BeSpoke Engine can do on 21 November 2026, in plain language for players and in enough depth for a development team.">
+<meta name="description" content="What the BeSpoke Engine can do on 25 November 2026, in plain language for players and in enough depth for a development team.">
 <style>
   :root {
     --bg: #fbfaf7; --fg: #1f2328; --muted: #5b636e; --rule: #e3e0d8;
@@ -69,7 +69,7 @@
 <body>
 <main>
 
-<p class="eyebrow">BeSpoke Engine 0.4.0 &middot; 21 November 2026</p>
+<p class="eyebrow">BeSpoke Engine 0.4.0 &middot; 25 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
@@ -87,9 +87,9 @@
 </nav>
 
 <div class="facts">
-  <div class="fact"><b>18</b><span>demo games, from a heist to a hard winter's judgement</span></div>
-  <div class="fact"><b>14</b><span>of them play in a web page, no install</span></div>
-  <div class="fact"><b>580+</b><span>automated tests and 18 recorded play-throughs, checked on every change</span></div>
+  <div class="fact"><b>19</b><span>demo games, from a heist to a hard winter's judgement</span></div>
+  <div class="fact"><b>19</b><span>of them play in a web page, no install</span></div>
+  <div class="fact"><b>700+</b><span>automated checks, 43 conformance specs, and 18 recorded play-throughs</span></div>
   <div class="fact"><b>0</b><span>outside libraries in the core engine</span></div>
   <div class="fact"><b>100%</b><span>repeatable: same inputs, same game, every time</span></div>
 </div>
@@ -108,8 +108,8 @@
   </div>
   <div class="card">
     <h3>2. Time moves in ticks</h3>
-    <p>The game advances in counted steps, like a clock's second hand, at one per second by default (adjustable from ten a second to one every three seconds). Nothing depends on how fast your computer is, so the same button presses always produce the same game.</p>
-    <p class="hood"><b>Under the hood:</b> integer ticks only, no floating-point time in the simulation, seeded dice; the display redraws at 60 Hz independently.</p>
+    <p>The game advances in counted steps, like a clock's second hand, at one per second by default (adjustable from ten a second to one every three seconds), or only when the player acts or walks in a turn-based game. Nothing depends on how fast your computer is, so the same inputs always produce the same game.</p>
+    <p class="hood"><b>Under the hood:</b> integer ticks only, no floating-point time in the simulation, <code>clock: realtime</code> or <code>clock: turns</code>, seeded dice; the display redraws at 60 Hz independently.</p>
   </div>
   <div class="card">
     <h3>3. Characters have to-do lists</h3>
@@ -128,7 +128,7 @@
 <h3>A world that runs itself</h3>
 <div class="cards">
   <div class="card"><h3>Routines and interruptions</h3><p>Characters walk their rounds, find their own way between spots and rooms, and drop what they are doing when something matters more.</p><p class="hood"><b>Under the hood:</b> waypoint graphs with A* pathfinding, <code>wait until</code> conditions, <code>interrupt ... with:</code> blocks.</p></div>
-  <div class="card"><h3>Rules that notice</h3><p>"When the cat holds the cheese, the guard turns to look." Rules fire the moment their facts become true together, and again when a fact fades.</p><p class="hood"><b>Under the hood:</b> <code>when A and B:</code>, <code>when X forgets R:</code>, and arrival rules for reaching a spot.</p></div>
+  <div class="card"><h3>Rules that notice</h3><p>"When the cat holds the cheese, the guard turns to look." Rules fire once when facts become true together, per matching row when many do, or when a fact fades, and guarded event handlers try in source order.</p><p class="hood"><b>Under the hood:</b> <code>when A and B:</code>, <code>when each</code> (row bindings in name order), <code>when X forgets R:</code>, arrival rules, and ordered <code>on cue ... where ...:</code> chains reading parameters in their bodies.</p></div>
   <div class="card"><h3>A village with its own life</h3><p>Villagers get hungry and tired, work, trade, and steal; witnesses spread rumours; the law issues a warrant and makes an arrest. None of it is scripted event by event.</p><p class="hood"><b>Under the hood:</b> data-declared needs, roles, witnesses, rumours, and justice in <code>society</code> blocks, all stored as facts.</p></div>
   <div class="card"><h3>Characters with goals</h3><p>A character can decide to pursue someone, cut them off, and confront them, then stand down once the matter is settled.</p><p class="hood"><b>Under the hood:</b> <code>agenda</code> declarations with priority, cooldown, and <code>requires</code>/<code>unless</code> triggers; interception fires a cue.</p></div>
   <div class="card"><h3>Fire, smoke, and water</h3><p>A room can be laid out as a grid where fire spreads to flammable cells, smoke drifts, and water flows and puts fires out.</p><p class="hood"><b>Under the hood:</b> per-room grid overlays with burn, spread, dissipate, and flow rates; fire lifetimes are fact expiries.</p></div>
@@ -166,10 +166,16 @@
 
 <h3>Time, saves, and "what if"</h3>
 <div class="cards">
-  <div class="card"><h3>Rewind anything</h3><p>Rewind to the start or scrub backward and forward through recent history like a video. The world replays exactly, people, routines, and dice included, unless the game asks for fresh rolls.</p><p class="hood"><b>Under the hood:</b> each snapshot is a save held in memory; <code>rewinds reroll</code> keeps the dice going.</p></div>
-  <div class="card"><h3>Safe saves</h3><p>Save slots with a picture of the moment, quick save and load, and automatic recovery from a damaged save file.</p><p class="hood"><b>Under the hood:</b> checksummed <code>.sav</code> files with a <code>.bak</code> fallback; older save versions still load.</p></div>
+  <div class="card"><h3>Rewind anything</h3><p>Rewind to the start or scrub backward and forward through recent history like a video. The world replays exactly, people, routines, and dice included, unless the game asks for fresh rolls.</p><p class="hood"><b>Under the hood:</b> each snapshot is a full-run state in memory; <code>rewinds reroll</code> keeps the dice going, while branch worlds roll their own.</p></div>
+  <div class="card"><h3>Safe saves</h3><p>Save slots with a picture of the moment, quick save and load, automatic recovery from a damaged save file, and fact translation across patched builds of the same save version.</p><p class="hood"><b>Under the hood:</b> checksummed <code>BSV1</code> format-1 saves with a <code>.bak</code> fallback, atomic rollback on bad input, and <code>save version N</code> name remapping.</p></div>
   <div class="card"><h3>Borrowed time</h3><p>Run a temporary copy of the world on a countdown. Close the loop in time and it folds back into reality; fail and it collapses, and you rewind.</p><p class="hood"><b>Under the hood:</b> copy-on-write branch worlds with tick budgets, goal checking, and atomic snapshots of the whole timeline.</p></div>
   <div class="card"><h3>Three eras at once</h3><p>Characters in three different centuries pass objects to each other through a shared well, and a change in the past ripples forward.</p><p class="hood"><b>Under the hood:</b> forward-only causality between eras; a rewind restores every era together.</p></div>
+</div>
+
+<h3>Art, structure, and translation</h3>
+<div class="cards">
+  <div class="card"><h3>True-colour pixel art</h3><p>Draw scenes, characters, and props in scripts or import PNG files with no outside image library. Characters and props switch appearances as facts change and carry attached parts on top.</p><p class="hood"><b>Under the hood:</b> 320x180 RGBA art scaled 4x, QOI-compressed in <code>BSP1</code> packages, <code>look</code> appearances (<code>Looks</code>), clickable <code>area</code>s, and <code>part</code> offsets.</p></div>
+  <div class="card"><h3>Split scripts and clear names</h3><p>Keep large projects organized across files with <code>include</code>, give things readable player names, and replace every engine sentence for your own style or language.</p><p class="hood"><b>Under the hood:</b> canonical <code>include</code> expansion with per-file error maps, UTF-8 <code>name</code> lines, whole-sentence <code>phrase</code> templates, and isolated <code>#</code> engine bookkeeping.</p></div>
 </div>
 
 <h3>Sound and music, built in</h3>
@@ -181,8 +187,8 @@
 <h3>Runs anywhere it is pointed</h3>
 <div class="cards">
   <div class="card"><h3>Desktop window</h3><p>A resizable window with verbs, an inventory, speech, a timeline, save slots, and a state inspector.</p><p class="hood"><b>Under the hood:</b> SDL2, a fixed 1280x720 frame letterboxed to any window size.</p></div>
-  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (about 690 KB with all fourteen browser demos) embedded in the page.</p></div>
-  <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code>.</p></div>
+  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~596 KB for the stock engine, ~985 KB with all eighteen browser proof demos) embedded in the page.</p></div>
+  <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick, or feed scripted commands and assert final facts. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code> (with <code>--input</code>, <code>--facts</code>, and <code>--seed N</code>).</p></div>
   <div class="card"><h3>See inside the world</h3><p>Pause and open the state inspector: a map of who relates to what, why each dialogue option is offered or hidden, and what is about to expire.</p><p class="hood"><b>Under the hood:</b> a fact graph with keyboard and mouse navigation and relation filters, in both window and browser.</p></div>
 </div>
 
@@ -240,19 +246,19 @@ routine Inspector(Moss):
 <ul>
   <li><strong>One command to start.</strong> <code>bespoke init my_game</code> writes a project with a starter story, tests, a desktop build, a single-file web build, and a CI workflow that builds and tests on Linux and macOS and smoke-tests the web version. That workflow has been run on GitHub and passes.</li>
   <li><strong>A toolchain that ships as one file.</strong> The static Linux download compiles, checks, and runs scripts and creates projects with nothing else installed. Building a game's own executable needs Zig 0.17.1 (and SDL2 for the window).</li>
-  <li><strong>Tests that read like a story.</strong> A headless run prints what happens tick by tick; each demo's transcript is recorded and compared byte for byte, along with a pixel hash of every scene, so a behaviour change cannot slip through unnoticed.</li>
-  <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>); anything unlisted is internal and may change.</li>
-  <li><strong>File formats that keep working.</strong> Packages are tagged sections a later 1.x can add to without breaking 1.0 readers, saves carry a version, and the 1.0 files are loaded on every test run (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
-  <li><strong>Hardened input.</strong> The lexer, parser, code generator, package and save loaders, music parser, and command interpreter run under mutation tests, and an unsupported file version is refused with a named error before any game state changes.</li>
+  <li><strong>Tests that read like a story.</strong> A headless run prints what happens tick by tick; each demo's transcript is recorded and compared byte for byte, along with a pixel hash of every scene and 43 language conformance specs (<code>zig build test-conformance</code>), so a behaviour change cannot slip through unnoticed.</li>
+  <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>), and browser embeds use a matching 15-function export contract; anything unlisted is internal.</li>
+  <li><strong>1.0 baseline file formats.</strong> Packages use tagged, length-prefixed <code>BSP1</code> format-1 sections (web builds link only the sections a game uses), saves use checksummed <code>BSV1</code> format 1 with <code>save version N</code> migration, and pre-1.0 formats are retired ahead of the 1.0 freeze (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
+  <li><strong>Hardened input.</strong> The lexer, parser, code generator, QOI and PNG decoders, include loader, music parser, command interpreter, and checksum-resealed package and save loaders run under bounded mutation tests, and malformed inputs fail cleanly before mutating game state.</li>
   <li><strong>Editor support.</strong> A VS Code syntax grammar generated from the compiler's own word list, so it cannot fall out of date.</li>
-  <li><strong>A recorded decision trail.</strong> Over 140 numbered design decisions, each with its context, the alternatives rejected, and when to revisit it.</li>
+  <li><strong>A recorded decision trail.</strong> Over 180 numbered design decisions (through D-188), each with its context, the alternatives rejected, and when to revisit it.</li>
 </ul>
 
 <h3>Platforms</h3>
 <div class="table-wrap">
 <table>
   <tr><th>Platform</th><th>Status</th><th>Notes</th></tr>
-  <tr><td>Linux desktop (x86_64)</td><td><span class="tag">Supported</span></td><td>The thirteen windowed demos were played to their endings for the 0.3 release; static CLI and SDL2 desktop downloads ship with each release.</td></tr>
+  <tr><td>Linux desktop (x86_64)</td><td><span class="tag">Supported</span></td><td>Windowed demos and the stock runner run via SDL2; static CLI and desktop downloads ship with each release.</td></tr>
   <tr><td>Web browsers</td><td><span class="tag">Supported</span></td><td>Checked in Chrome and Firefox, at phone width, and offline; touch controls at least 44 px.</td></tr>
   <tr><td>macOS</td><td><span class="tag">Builds in CI</span></td><td>Generated game projects build, test, and run headless on GitHub's macOS runners; not yet played by hand on a Mac.</td></tr>
   <tr><td>Windows</td><td><span class="tag off">Deferred</span></td><td>Waits for a contributor who uses Windows to maintain it.</td></tr>
@@ -279,7 +285,7 @@ routine Inspector(Moss):
 </ul>
 
 <h2 id="demos">The demo games</h2>
-<p>Each demo exists to prove one or more engine features in a small, complete story. The fourteen with web pages can be played from the <code>site/</code> folder of the repository in any modern browser.</p>
+<p>Each demo exists to prove one or more engine features in a small, complete story. All nineteen have web pages that can be played from the <code>site/</code> folder of the repository in any modern browser.</p>
 <div class="table-wrap">
 <table>
   <tr><th>Demo</th><th>What it shows</th><th>Plays in</th></tr>
@@ -298,9 +304,9 @@ routine Inspector(Moss):
   <tr><td><a href="../site/observatory.html">The Larkspur Observatory</a></td><td>Staff with their own agendas, typed commands, generated hints, and evidence presented to suspects.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td><a href="../site/valerius.html">Valerius and the Bread</a></td><td>Learn what a captain values and appeal to it. His red lines hold whatever the score, and the winter's outcome changes him by spring.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
   <tr><td><a href="../site/lamplighter.html">The Lamplighter's Round</a></td><td>Light two street lamps before the watch walks his round, in rooms, people, and props drawn as pixel art imported from PNG files.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
-  <tr><td>The Long Gallery</td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span></td></tr>
-  <tr><td>The Word Foundry</td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Headless</span></td></tr>
-  <tr><td>The Cinder Table</td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Headless</span></td></tr>
+  <tr><td><a href="../site/long-gallery.html">The Long Gallery</a></td><td>Watch a room you are not in while a pursuit plays out there.</td><td><span class="tag">Window</span><span class="tag">Web</span></td></tr>
+  <tr><td><a href="../site/word-foundry.html">The Word Foundry</a></td><td>Discover spell words from clues and combine them; wrong combinations fizzle.</td><td><span class="tag">Web</span><span class="tag">Headless</span></td></tr>
+  <tr><td><a href="../site/cinder-table.html">The Cinder Table</a></td><td>A card game where each seat plays only from its own hand and what it has seen.</td><td><span class="tag">Web</span><span class="tag">Headless</span></td></tr>
   <tr><td><a href="../site/harbour.html">Lantern Watch: The Harbour</a></td><td>The reference game: ten connected harbour stops played by typed commands, with a six-person society running alongside.</td><td><span class="tag">Web</span><span class="tag">Text</span></td></tr>
 </table>
 </div>
@@ -308,17 +314,18 @@ routine Inspector(Moss):
 <h2 id="limits">What it does not do yet</h2>
 <div class="note">
 <ul>
-  <li><strong>Pixel art is new.</strong> A game can carry its own pixel art (backdrops and sprite sheets, from PNG files or typed into the script), and the script picks what each thing shows from its facts, such as a lamp that lights, with parts drawn on top of their hosts. Older demos are still drawn by code.</li>
+  <li><strong>Pixel art and code themes coexist.</strong> Scripts can carry true-colour RGBA art (QOI-compressed, from PNG files or inline text), <code>look</code> states, clickable <code>area</code>s, and attached <code>part</code>s, while older demos still use code-drawn themes.</li>
   <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
-  <li><strong>The language is still pre-1.0.</strong> It may change before 1.0; removals follow a published deprecation policy, and released packages and saves keep loading.</li>
-  <li><strong>Small writing gaps:</strong> inside an event handler, a lowercase placeholder (such as <code>victim</code>) matches any character but is not yet usable in the handler's body; a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options.</li>
+  <li><strong>The 1.0 freeze is almost complete.</strong> The format 1 baseline is active and hardened, with three small API/font items remaining before tagging 1.0 (and pre-1.0 0.x files are no longer read).</li>
+  <li><strong>Small writing gaps:</strong> a one-shot <code>when</code> rule body cannot read its trigger's variables yet (use <code>when each</code> or <code>on cue</code>); a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options; and non-ASCII glyphs in display names render as <code>?</code> on canvas until the wider font lands.</li>
   <li><strong>Deliberately out of scope:</strong> 3D, physics, and networked multiplayer. BeSpoke is for narrative and systemic games.</li>
 </ul>
 </div>
 
 <h2 id="next">What is next</h2>
 <ul>
-  <li><strong>BeSpoke 1.0,</strong> when the maintainer decides the language and host API are ready to promise.</li>
+  <li><strong>BeSpoke 1.0:</strong> one host query per declared feature, refusing case-only name twins, accented glyphs in the canvas font, and the 1.0 release pass.</li>
+  <li><strong>After 1.0:</strong> BeSpoke Studio (browser editors for pixel art, rooms, dialogue, and values) and classic parser adventure additions (palette colour cycling and a text-first page template).</li>
   <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>
 
@@ -331,7 +338,7 @@ routine Inspector(Moss):
 </ol>
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
-<footer>BeSpoke Engine 0.4.0 &middot; status as of 21 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<footer>BeSpoke Engine 0.4.0 &middot; status as of 25 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 </main>
 </body>
 </html>

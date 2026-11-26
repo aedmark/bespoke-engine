@@ -169,6 +169,37 @@ test "P39-01 save loader" {
     try campaign(loadSave, &.{ dice_save, each_save });
 }
 
+/// The same loader with the save checksum recomputed first, so a mutation reaches the world,
+/// spatial, and VM readers (including rule flags and `when each` rows) instead of stopping
+/// at the envelope CRC (P48-24).
+fn loadSaveResealed(allocator: std.mem.Allocator, input: []const u8) !bool {
+    const copy = try allocator.dupe(u8, input);
+    defer allocator.free(copy);
+    if (copy.len >= 16) std.mem.writeInt(u32, copy[8..12], std.hash.Crc32.hash(copy[16..]), .little);
+    var world = try bespoke.World.init(allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var chunk = bespoke.bytecode.BytecodeChunk.init(allocator);
+    defer chunk.deinit();
+    var vm = bespoke.VM.init(allocator, &world, &chunk);
+    defer vm.deinit();
+    const clause = [_]bespoke.world.PatternClause{.{
+        .relation = bespoke.world.RelationKind.from_int(1),
+        .subject = .{ .variable = 0 },
+        .object = .{ .wildcard = {} },
+    }};
+    _ = try vm.add_reactive_rule(.none, &clause, 50, 0);
+    vm.reactive_rules.items[0].each = true;
+    var reader: std.Io.Reader = .fixed(copy);
+    _ = bespoke.save.read_save_state(allocator, &reader, &world, &spatial, &vm) catch return false;
+    return true;
+}
+
+test "P48-24 save loader past its checksum" {
+    try campaign(loadSaveResealed, &.{ dice_save, each_save });
+}
+
 test "P39-01 MML" {
     try campaign(parseScore, &.{ melody, drums });
 }

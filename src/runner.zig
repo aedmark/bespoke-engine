@@ -29,6 +29,15 @@ pub const ScriptFiles = struct {
         if (!beside_script(path)) return error.PathOutsideScriptFolder;
         const full = try std.fs.path.join(allocator, &.{ self.dir, path });
         defer allocator.free(full);
+        const base_real = try std.Io.Dir.cwd().realPathFileAlloc(self.io, self.dir, allocator);
+        defer allocator.free(base_real);
+        const target_real = try std.Io.Dir.cwd().realPathFileAlloc(self.io, full, allocator);
+        defer allocator.free(target_real);
+        const inside = if (std.mem.endsWith(u8, base_real, "/"))
+            std.mem.startsWith(u8, target_real, base_real)
+        else
+            std.mem.startsWith(u8, target_real, base_real) and target_real.len > base_real.len and target_real[base_real.len] == '/';
+        if (!inside) return error.PathOutsideScriptFolder;
         return std.Io.Dir.cwd().readFileAlloc(self.io, full, allocator, .limited(bespoke.png.MAX_FILE));
     }
 };
@@ -103,7 +112,7 @@ pub fn import_art(allocator: std.mem.Allocator, io: std.Io, png_path: []const u8
         return false;
     };
 
-    const width: usize = if (existing.codes.len > 0) existing.codes[0].len else if (palette.items.len <= 94) 1 else 2;
+    const width: usize = if (existing.codes.len > 0) existing.codes[0].len else if (palette.items.len <= bespoke.art_import.MAX_ONE_CHAR_COLOURS) 1 else 2;
     const codes = bespoke.art_import.assign_codes(arena, existing.codes, palette.items.len, width) catch |err| switch (err) {
         error.OutOfCodes => {
             try out.print("error: the palette's {d}-character codes run out; use two-character codes\n", .{width});
@@ -662,6 +671,7 @@ fn run_bytes_with_presenter(
         window.save_manager.program = compiled.identity();
         // Names on screen read the script's `name` lines (P48-09, D-179).
         bespoke.display.dialogue_panel.use_display_names(&world);
+        defer bespoke.display.dialogue_panel.clear_display_names();
         var interp = bespoke.command.Interpreter{};
 
         display_bridge.capture_frame(&world, &spatial, &vm);
@@ -684,14 +694,19 @@ fn run_bytes_with_presenter(
 
             if (window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused)) {
                 const loading = action == .quick_load or action == .load_slot;
-                // A save from another build kept its facts but no routine (D-162).
-                if (loading and window.save_manager.last_load_restarted_routines) try bespoke.host.restart_routines(&world, &spatial, &vm, &compiled);
-                if (loading) {
+                if (loading and window.save_manager.last_load_succeeded) {
+                    vm.sync_dialogue();
+                    // A save from another build kept its facts but no routine (D-162).
+                    if (window.save_manager.last_load_restarted_routines) try bespoke.host.restart_routines(&world, &spatial, &vm, &compiled);
                     // A loaded save has no timeline; start one from it, so a rewind cannot
                     // reach the future the load replaced.
                     timeline.reset();
                     try timeline.record_run(&world, &spatial, &vm, null);
                     cursor = 0;
+                    display_bridge.capture_frame(&world, &spatial, &vm);
+                    display_bridge.set_max_history_tick(timeline.last_index());
+                    display_bridge.swap();
+                    bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
                 }
             }
             switch (action) {
@@ -703,7 +718,8 @@ fn run_bytes_with_presenter(
                     should_step_now = true;
                 },
                 .walk_player => |wp_id| {
-                    _ = spatial.walk_to(player_entity, wp_id) catch {};
+                    _ = spatial.walk_to_with_world(&world, player_entity, wp_id) catch {};
+                    if (compiled.turn_clock and player_entity != .none and spatial.is_moving(player_entity)) is_paused = false;
                     window.set_cue_banner("Directing actor to mark", 60);
                 },
                 // A click or number key answers the open dialogue. A scripted choice resumes its
@@ -734,9 +750,11 @@ fn run_bytes_with_presenter(
                     if (timeline.len() > 2) {
                         is_paused = true;
                         cursor = (try timeline.restore_run(&world, &spatial, &vm, null, 2, compiled.rewinds_reroll)).?;
+                        vm.sync_dialogue();
                         display_bridge.capture_frame(&world, &spatial, &vm);
                         display_bridge.set_max_history_tick(timeline.last_index());
                         display_bridge.swap();
+                        bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
                         window.set_cue_banner("<<< REWOUND TO TICK 2 (PAUSED) <<<", 90);
                     }
                 },
@@ -744,9 +762,11 @@ fn run_bytes_with_presenter(
                     if (timeline.len() > 0) {
                         is_paused = true;
                         cursor = (try timeline.restore_run(&world, &spatial, &vm, null, target_tick, compiled.rewinds_reroll)).?;
+                        vm.sync_dialogue();
                         display_bridge.capture_frame(&world, &spatial, &vm);
                         display_bridge.set_max_history_tick(timeline.last_index());
                         display_bridge.swap();
+                        bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
 
                         var banner_buf: [96]u8 = undefined;
                         const text = std.fmt.bufPrint(&banner_buf, "<<< TIME-TRAVEL: SCRUBBED TO TICK {d} (PAUSED) <<<", .{world.current_tick}) catch "Scrubbed";
@@ -782,6 +802,7 @@ fn run_bytes_with_presenter(
 
             if (should_step_now) {
                 _ = try bespoke.host.tick(&vm, &compiled);
+                if (compiled.turn_clock and player_entity != .none and spatial.is_moving(player_entity)) is_paused = false;
                 // The window draws script speech only from a banner, so each tick's `say`
                 // lines are passed to it here (P29-02, D-064).
                 var speech_buf: [256]u8 = undefined;
@@ -792,7 +813,7 @@ fn run_bytes_with_presenter(
                 cursor = timeline.last_index();
 
                 display_bridge.capture_frame(&world, &spatial, &vm);
-                display_bridge.set_max_history_tick(world.current_tick);
+                display_bridge.set_max_history_tick(timeline.last_index());
                 display_bridge.swap();
                 bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
             }
@@ -1083,4 +1104,26 @@ test "P46-04: import writes an indexed and a true-colour PNG as inline blocks, j
     out.clearRetainingCapacity();
     try testing.expect(!try import_art(testing.allocator, testing.io, "tests/fixtures/png/too_many_colours.png", .{ .name = "Swatch" }, &out.writer));
     try testing.expectEqualStrings("error: 'tests/fixtures/png/too_many_colours.png' brings the palette past 256 colours at pixel (0, 15)\n", out.written());
+}
+
+test "P48-24: symlink escaping script folder is rejected by ScriptFiles" {
+    const testing = std.testing;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(testing.io, "game");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "outside.bespoke", .data = "entity Secret\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "game/main.bespoke", .data = "include \"escape.bespoke\"\n" });
+    const tmp_real = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(tmp_real);
+    const outside_abs = try std.fs.path.join(testing.allocator, &.{ tmp_real, "outside.bespoke" });
+    defer testing.allocator.free(outside_abs);
+    var game_dir = try tmp.dir.openDir(testing.io, "game", .{});
+    defer game_dir.close(testing.io);
+    try game_dir.symLink(testing.io, outside_abs, "escape.bespoke", .{});
+
+    const main_path = try std.fs.path.join(testing.allocator, &.{ tmp_real, "game", "main.bespoke" });
+    defer testing.allocator.free(main_path);
+    var files = ScriptFiles.for_script(testing.io, main_path);
+    const fs = files.source();
+    try testing.expectError(error.PathOutsideScriptFolder, fs.read(fs.context, testing.allocator, "escape.bespoke"));
 }

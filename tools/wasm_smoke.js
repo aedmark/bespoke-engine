@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const bin = path.join(__dirname, '..', 'zig-out', 'bin');
-const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 15]];
+const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 18]];
 let failed = false;
 // Each module stays under its budget (1.5 MiB, D-159). The runtime's 1.2 MB of state must stay uninitialised; held
 // as an initialised global it ships as zero bytes in the data section (D-067).

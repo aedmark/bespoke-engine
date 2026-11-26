@@ -391,6 +391,9 @@ pub const WasmRuntime = struct {
     /// Peripheral input like the active verb, so it is never saved or rewound; it drops when
     /// the player no longer carries the item.
     selected_item: EntityId = .none,
+    /// Optional watched scene displayed instead of `vm.current_scene` (read-only, D-138).
+    /// Peripheral view state, so it is never saved or rewound.
+    watch_scene: ?EntityId = null,
     /// The compiled script of a script deck; null for decks built in Zig (D-066).
     program: ?CompiledProgram = null,
     /// The state inspector overlay (D-070). Its navigation is not World state.
@@ -424,8 +427,10 @@ pub const WasmRuntime = struct {
 
     // Fixed ring buffer of binary World snapshots for instant browser timeline scrubbing
     snapshot_bufs: [MAX_WASM_SNAPSHOTS][SNAPSHOT_SLOT_BYTES]u8 = undefined,
+    snapshot_scratch: [SNAPSHOT_SLOT_BYTES]u8 = undefined,
     snapshot_lens: [MAX_WASM_SNAPSHOTS]usize = @as([MAX_WASM_SNAPSHOTS]usize, @splat(0)),
     snapshot_ticks: [MAX_WASM_SNAPSHOTS]u64 = @as([MAX_WASM_SNAPSHOTS]u64, @splat(0)),
+    snapshot_head: usize = 0,
     snapshot_count: usize = 0,
 
     /// The frame the page shows: 1280x720 RGBA8888 (D-097). Borrowed from the host in the
@@ -461,16 +466,19 @@ pub const WasmRuntime = struct {
     /// As `init_with_framebuffer`, rolling from `seed` (D-184).
     pub fn init_seeded(allocator: std.mem.Allocator, decks: []const Deck, initial: u8, pixels: []u8, seed: u64) !WasmRuntime {
         const bridge = try allocator.create(display_mod.DisplayBridge);
-        errdefer allocator.destroy(bridge);
+        var bridge_owned = true;
+        errdefer if (bridge_owned) allocator.destroy(bridge);
         bridge.* = display_mod.DisplayBridge.init();
         const saves = try allocator.create(save_mod.SaveManager);
-        errdefer allocator.destroy(saves);
+        var saves_owned = true;
+        errdefer if (saves_owned) allocator.destroy(saves);
         // A save list with no directory: the browser never opens the save drawer. Its `Io` is
         // `std.Io.failing`, so a file operation that reached it would fail rather than act.
         saves.* = .{ .allocator = allocator, .io = std.Io.failing, .save_dir = "", .slots = undefined, .session_start_ms = 0, .accumulated_playtime_secs = 0 };
         for (0..save_mod.MAX_SLOTS + 1) |i| saves.slots[i] = .{ .slot_id = @intCast(i) };
         const window = try allocator.create(renderer.DisplayWindow);
-        errdefer allocator.destroy(window);
+        var window_owned = true;
+        errdefer if (window_owned) allocator.destroy(window);
         var rt = WasmRuntime{
             .allocator = allocator,
             .world = try World.init(allocator, 256 * 1024),
@@ -487,11 +495,16 @@ pub const WasmRuntime = struct {
         window.* = renderer.DisplayWindow.init_canvas(rt.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT, &rt.audio, saves);
         rt.vm = VM.init(allocator, &rt.world, &rt.chunk);
         rt.vm.spatial = &rt.spatial;
+        bridge_owned = false;
+        saves_owned = false;
+        window_owned = false;
+        errdefer rt.deinit();
         try rt.load_deck(initial);
         return rt;
     }
 
     pub fn deinit(self: *WasmRuntime) void {
+        dialogue_panel.clear_display_names();
         self.allocator.destroy(self.window);
         self.allocator.destroy(self.saves);
         self.allocator.destroy(self.frame_bridge);
@@ -549,20 +562,30 @@ pub const WasmRuntime = struct {
         self.banner_len = 0;
         self.approach = null;
         self.selected_item = .none;
+        self.watch_scene = null;
         // The names belong to the program about to be dropped too (D-179).
         dialogue_panel.clear_display_names();
         // The art is borrowed from the program about to be dropped.
         self.window.set_art(null);
+        var new_world = try World.init(self.allocator, 256 * 1024);
+        var new_world_owned = true;
+        errdefer if (new_world_owned) new_world.deinit();
+        var new_chunk = bytecode_mod.BytecodeChunk.init(self.allocator);
+        var new_chunk_owned = true;
+        errdefer if (new_chunk_owned) new_chunk.deinit();
+        _ = try new_chunk.emit_op(.halt);
+
         self.drop_program();
         self.vm.deinit();
         self.chunk.deinit();
         self.spatial.deinit();
         self.world.deinit();
 
-        self.world = try World.init(self.allocator, 256 * 1024);
+        self.world = new_world;
+        new_world_owned = false;
         self.spatial = SpatialSystem.init(self.allocator);
-        self.chunk = bytecode_mod.BytecodeChunk.init(self.allocator);
-        _ = try self.chunk.emit_op(.halt);
+        self.chunk = new_chunk;
+        new_chunk_owned = false;
         self.vm = VM.init(self.allocator, &self.world, &self.chunk);
         self.vm.spatial = &self.spatial;
         self.vm.set_seed(self.seed);
@@ -580,6 +603,7 @@ pub const WasmRuntime = struct {
         self.active_verb = .walk;
         self.is_paused = false;
         self.max_history_tick = 0;
+        self.snapshot_head = 0;
         self.snapshot_count = 0;
 
         if (self.decks.len > 0) try self.decks[self.deck_index].load(self);
@@ -656,10 +680,16 @@ pub const WasmRuntime = struct {
         self.show_story();
     }
 
-    /// The room on stage (D-069): the VM's current scene, as the desktop frame captures it.
-    /// Without a scene every room shows, as on the desktop.
+    /// The room on stage (D-069): the watched room if one is open, or the VM's current scene,
+    /// as the desktop frame captures it. Without a scene every room shows, as on the desktop.
     pub fn projection(self: *const WasmRuntime) Projection {
-        return .{ .room = self.vm.current_scene };
+        return .{ .room = self.watch_scene orelse self.vm.current_scene };
+    }
+
+    pub fn watching_other_scene(self: *const WasmRuntime) bool {
+        const w = self.watch_scene orelse return false;
+        const c = self.vm.current_scene orelse return true;
+        return w != c;
     }
 
     /// The room an agent stands in: the room of the mark it last reached.
@@ -690,7 +720,7 @@ pub const WasmRuntime = struct {
         _ = proj;
         const frame = self.capture();
         const people = frame.entities[0..frame.entity_count];
-        const i = renderer.hit_test_actor(x, y, people, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art) orelse return null;
+        const i = renderer.hit_test_actor_in(x, y, frame, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art) orelse return null;
         const pt = renderer.get_entity_screen_pos(i, people, CANVAS_WIDTH, CANVAS_HEIGHT);
         return .{ .entity = people[i].entity, .x = pt.x, .y = pt.y };
     }
@@ -709,11 +739,12 @@ pub const WasmRuntime = struct {
                 const at = self.spatial.agents.get(self.player_entity);
                 const there = if (at) |a| a.current_wp == wp and !self.spatial.is_moving(self.player_entity) else true;
                 if (!there and try self.plan_walk(wp)) {
+                    const world = self.active_world();
                     self.approach = .{ .verb = self.active_verb, .target = target, .examine = examine, .wp = wp, .asked_tick = self.clock(), .item = item };
                     var name_buf: [48]u8 = undefined;
-                    const name = dialogue_panel.entity_name(&self.world, target, &name_buf) orelse phrase_mod.text(&self.world, .thing_fallback);
+                    const name = dialogue_panel.entity_name(world, target, &name_buf) orelse phrase_mod.text(world, .thing_fallback);
                     var buf: [80]u8 = undefined;
-                    self.set_banner(phrase_mod.render(&self.world, .walking_to, &.{.{ .slot = "mark", .value = name }}, &buf) catch "Walking...");
+                    self.set_banner(phrase_mod.render(world, .walking_to, &.{.{ .slot = "mark", .value = name }}, &buf) catch "Walking...");
                     return .walk_issued;
                 }
             }
@@ -725,7 +756,9 @@ pub const WasmRuntime = struct {
     /// cells), as the desktop hosts that lock routes do (P24-02, D-054); with no such facts it is
     /// a plain walk. Plans in the active world, the branch while one is live.
     fn plan_walk(self: *WasmRuntime, wp: u16) !bool {
-        return self.spatial.walk_to_with_world(self.active_world(), self.player_entity, wp);
+        const ok = try self.spatial.walk_to_with_world(self.active_world(), self.player_entity, wp);
+        if (ok and self.turn_clock()) self.is_paused = false;
+        return ok;
     }
 
     /// A typed line for a deck with no handler of its own: the script's commands, read for the
@@ -742,6 +775,7 @@ pub const WasmRuntime = struct {
                 if (reply.text) |text| self.set_banner(text);
                 // Under a turn clock every resolved command is a turn (D-188).
                 if (self.turn_clock() or reply.fired) try self.step_tick();
+                if (self.turn_clock() and self.spatial.is_moving(self.player_entity)) self.is_paused = false;
             },
         }
     }
@@ -854,6 +888,7 @@ pub const WasmRuntime = struct {
     /// released inside a tick leaves that to the tick already running.
     fn act_now(self: *WasmRuntime, target: EntityId, examine: ?[]const u8, item: EntityId, run_tick: bool) anyerror!?BrowserActionTag {
         const program = if (self.program) |*p| p else return null;
+        const world = self.active_world();
         if (item != .none) {
             // An item used on a person or prop: `Uses(player, item, target)` (D-094).
             const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
@@ -865,7 +900,8 @@ pub const WasmRuntime = struct {
                 if (run_tick) try self.step_tick();
                 return .cue_fired;
             }
-            self.set_banner(phrase_mod.text(&self.world, .nothing_happens));
+            self.set_banner(phrase_mod.text(world, .nothing_happens));
+            if (run_tick and self.turn_clock()) try self.step_tick();
             return .cue_fired;
         }
         if (self.decks.len > 0) if (self.decks[self.deck_index].on_act) |hook| {
@@ -891,12 +927,14 @@ pub const WasmRuntime = struct {
             if (examine) |text| {
                 // A prop with no description of its own reads as its name, in words.
                 var ex_buf: [48]u8 = undefined;
-                const name = self.world.get_entity_name(target) orelse "";
+                const name = world.get_entity_name(target) orelse "";
                 self.set_banner(if (std.mem.eql(u8, text, name)) dialogue_panel.display_name(name, &ex_buf) else text);
+                if (run_tick and self.turn_clock()) try self.step_tick();
                 return .hotspot_inspected;
             }
         }
-        self.set_banner(phrase_mod.text(&self.world, .nothing_happens));
+        self.set_banner(phrase_mod.text(world, .nothing_happens));
+        if (run_tick and self.turn_clock()) try self.step_tick();
         return .cue_fired;
     }
 
@@ -980,9 +1018,10 @@ pub const WasmRuntime = struct {
     /// order, since a script names the pair one way round), and the same item is put away.
     fn click_item(self: *WasmRuntime, item: EntityId) anyerror!BrowserActionTag {
         const program = if (self.program) |*p| p else return .none;
+        const world = self.active_world();
         const cues: VerbCues = if (self.decks.len > 0) self.decks[self.deck_index].cues else .{};
         var name_buf: [48]u8 = undefined;
-        const name = dialogue_panel.entity_name(&self.world, item, &name_buf) orelse phrase_mod.text(&self.world, .thing_fallback);
+        const name = dialogue_panel.entity_name(world, item, &name_buf) orelse phrase_mod.text(world, .thing_fallback);
         var buf: [96]u8 = undefined;
         self.bind();
         if (self.active_verb == .look_at) {
@@ -992,6 +1031,7 @@ pub const WasmRuntime = struct {
                 return .cue_fired;
             }
             self.set_banner(std.fmt.bufPrint(&buf, "It's the {s}.", .{name}) catch name);
+            if (self.turn_clock()) try self.step_tick();
             return .hotspot_inspected;
         }
         const held = self.selected_item;
@@ -1008,7 +1048,10 @@ pub const WasmRuntime = struct {
                 self.narrate(.use_with, held, item);
                 self.audio.enqueue_sfx(.click);
                 try self.step_tick();
-            } else self.set_banner("Those don't go together.");
+            } else {
+                self.set_banner("Those don't go together.");
+                if (self.turn_clock()) try self.step_tick();
+            }
             return .cue_fired;
         }
         if ((try self.vm.fire_cue(program, cues.use, self.player_entity, item, null)) != null) {
@@ -1118,14 +1161,16 @@ pub const WasmRuntime = struct {
     /// VM with its dice in the save's own form, then the branch (D-184), so a scrub restores
     /// routines and rolls as they were.
     pub fn record_snapshot(self: *WasmRuntime) void {
-        const slot = self.snapshot_count % MAX_WASM_SNAPSHOTS;
-        var writer: std.Io.Writer = .fixed(&self.snapshot_bufs[slot]);
+        var writer: std.Io.Writer = .fixed(&self.snapshot_scratch);
         self.world.save_state(&writer) catch return;
         save_mod.write_spatial_state(&writer, &self.spatial) catch return;
         save_mod.write_vm_state(&writer, &self.vm) catch return;
         if (self.hypervisor) |hv| write_temporal(hv, &writer) catch return;
+        const slot = self.snapshot_head;
+        @memcpy(self.snapshot_bufs[slot][0..writer.end], self.snapshot_scratch[0..writer.end]);
         self.snapshot_lens[slot] = writer.end;
         self.snapshot_ticks[slot] = self.clock();
+        self.snapshot_head = (slot + 1) % MAX_WASM_SNAPSHOTS;
         if (self.snapshot_count < MAX_WASM_SNAPSHOTS) {
             self.snapshot_count += 1;
         }
@@ -1180,14 +1225,20 @@ pub const WasmRuntime = struct {
             // `rewinds reroll` keeps the run's dice going through a scrub (D-184).
             const reroll = if (self.compiled_program()) |program| program.rewinds_reroll else false;
             const dice = self.vm.dice;
+            const live_branch_dice = if (self.hypervisor) |hv| hv.branch_dice else null;
             self.world.restore_state(&fbs) catch return;
             save_mod.read_spatial_state(&fbs, &self.spatial) catch return;
             save_mod.read_vm_state(&fbs, &self.vm) catch return;
             if (reroll) self.vm.dice = dice;
-            if (self.hypervisor) |hv| self.read_temporal(hv, &fbs) catch {
-                self.set_banner("Could not restore the tangent world here.");
-                return;
-            };
+            if (self.hypervisor) |hv| {
+                self.read_temporal(hv, &fbs) catch {
+                    self.set_banner("Could not restore the tangent world here.");
+                    return;
+                };
+                if (reroll and hv.branch_world != null) {
+                    if (live_branch_dice) |bd| hv.branch_dice = bd;
+                }
+            }
             self.bind();
             self.is_paused = true;
             var buf: [64]u8 = undefined;
@@ -1237,9 +1288,10 @@ pub const WasmRuntime = struct {
     }
 
     /// Whether the clock may advance on the page's timer: always in realtime, and in a turn
-    /// game only while the player walks.
+    /// game while the player walks or waits for an arrived `approach` to trigger its action.
     pub fn clock_runs(self: *WasmRuntime) bool {
         if (!self.turn_clock()) return true;
+        if (self.approach != null) return true;
         return self.player_entity != .none and self.spatial.is_moving(self.player_entity);
     }
 
@@ -1292,11 +1344,9 @@ pub const WasmRuntime = struct {
 
     /// Dispatches a normalized browser mouse, keyboard, or touch event (P19-02, D-008, D-022).
     /// Routes one browser event. Under a turn clock (D-188), a click or key that acts on
-    /// something takes a turn, as its typed form would.
+    /// Something takes a turn when `act_now`, `click_item`, or `default_typed` handles it.
     pub fn dispatch_event(self: *WasmRuntime, ev: BrowserInputEvent) !BrowserActionTag {
-        const tag = try self.route_event(ev);
-        if (tag == .cue_fired and self.turn_clock()) try self.step_tick();
-        return tag;
+        return try self.route_event(ev);
     }
 
     fn route_event(self: *WasmRuntime, ev: BrowserInputEvent) !BrowserActionTag {
@@ -1377,6 +1427,11 @@ pub const WasmRuntime = struct {
                 }
                 if (self.tray_hit(ev.x, ev.y)) |item| return try self.click_item(item);
 
+                if (self.watching_other_scene()) {
+                    self.set_banner("Watching another room (read-only). Toggle View to return.");
+                    return .none;
+                }
+
                 const marks = frame.waypoints[0..frame.waypoint_count];
 
                 // 3. With WALK, marks come first.
@@ -1397,8 +1452,9 @@ pub const WasmRuntime = struct {
                 }
 
                 // 4. People, where the desktop draws them (D-088, D-097).
+                const world = self.active_world();
                 const people = frame.entities[0..frame.entity_count];
-                if (renderer.hit_test_actor(ev.x, ev.y, people, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art)) |i| {
+                if (renderer.hit_test_actor_in(ev.x, ev.y, frame, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art)) |i| {
                     const who = people[i].entity;
                     // The player can be clicked to use an item in hand on themself (D-094).
                     const on_self = who == self.player_entity and self.selected_item != .none and self.active_verb == .use_with;
@@ -1406,7 +1462,7 @@ pub const WasmRuntime = struct {
                         if (try self.act_on(who, null)) |tag| return tag;
                     }
                     var name_buf: [48]u8 = undefined;
-                    const name = dialogue_panel.entity_name(&self.world, who, &name_buf) orelse phrase_mod.text(&self.world, .someone);
+                    const name = dialogue_panel.entity_name(world, who, &name_buf) orelse phrase_mod.text(world, .someone);
                     var buf: [80]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "[{s}] {s}", .{ self.active_verb.label(), name }) catch name;
                     self.set_banner(msg);
@@ -1414,7 +1470,7 @@ pub const WasmRuntime = struct {
                 }
 
                 // 5. Props.
-                if (renderer.hit_test_hotspot(ev.x, ev.y, frame.hotspots[0..frame.hotspot_count], CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art)) |i| {
+                if (renderer.hit_test_hotspot_in(ev.x, ev.y, frame, CANVAS_WIDTH, CANVAS_HEIGHT, self.window.art)) |i| {
                     const target = frame.hotspots[i].entity;
                     for (self.spatial.hotspots.items) |hs| {
                         if (hs.entity != target) continue;
@@ -1535,9 +1591,10 @@ pub const WasmRuntime = struct {
     fn walk_banner(self: *WasmRuntime, wp_id: WaypointId) void {
         self.window.target_wp = wp_id;
         const wp = self.spatial.graph.get_waypoint(wp_id) orelse return;
+        const world = self.active_world();
         var buf: [64]u8 = undefined;
         var name_buf: [48]u8 = undefined;
-        const msg = phrase_mod.render(&self.world, .walking_to, &.{.{ .slot = "mark", .value = dialogue_panel.display_name(wp.name, &name_buf) }}, &buf) catch "Walking...";
+        const msg = phrase_mod.render(world, .walking_to, &.{.{ .slot = "mark", .value = dialogue_panel.display_name(wp.name, &name_buf) }}, &buf) catch "Walking...";
         self.set_banner(msg);
     }
 
@@ -1550,7 +1607,11 @@ pub const WasmRuntime = struct {
         b.active_player_character = if (self.player_entity != .none) self.player_entity else null;
         b.distaff = if (self.has_drafts()) &self.distaff else null;
         self.bind();
-        b.capture_frame(self.active_world(), &self.spatial, &self.vm);
+        if (self.watch_scene) |scene| {
+            b.capture_scene(self.active_world(), &self.spatial, &self.vm, scene);
+        } else {
+            b.capture_frame(self.active_world(), &self.spatial, &self.vm);
+        }
         b.back_buffer.tick = self.clock();
         b.back_buffer.max_history_tick = self.max_history_tick;
         var items: [MAX_TRAY]EntityId = undefined;
@@ -1588,7 +1649,7 @@ pub const WasmRuntime = struct {
         w.messages = self.messages;
         w.sync_dialogue_balloon(frame);
 
-        if (self.inspector_open) {
+        if (self.inspector_open or self.watching_other_scene()) {
             w.hovered_choice = null;
             w.hovered_wp = null;
             w.hovered_hotspot = null;
@@ -1804,7 +1865,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
         }
 
         fn wasm_dialogue_open() callconv(.c) u8 {
-            if (runtime()) |rt| return @intFromBool(dialogue_mod.view(&rt.world) != null);
+            if (runtime()) |rt| return @intFromBool(dialogue_mod.view(rt.active_world()) != null);
             return 0;
         }
 
@@ -1861,7 +1922,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
 
         fn wasm_get_fact_count() callconv(.c) u32 {
             if (runtime()) |rt| {
-                return @intCast(rt.world.fact_count());
+                return @intCast(rt.active_world().fact_count());
             }
             return 0;
         }
@@ -2547,4 +2608,154 @@ test "P48-22: a turn game in the browser ticks once per resolved command and not
     try rt.default_typed("take the rope");
     try testing.expectEqual(start + 1, rt.clock());
     try testing.expect(rt.world.has_fact(rt.world.lookup_entity("Hero").?, rt.world.lookup_relation("Carries").?, rt.world.lookup_entity("Rope").?.to_int()));
+}
+
+test "P48-25: turn clock ticks once per clicked action, finishes walk-to-act, and wraps snapshots cleanly" {
+    const testing = std.testing;
+    const script =
+        \\clock: turns
+        \\scene Quay:
+        \\  cast: Hero
+        \\  props: Rope, Crate
+        \\  marks: Steps, Pier
+        \\
+        \\relation Pulled(who)
+        \\
+        \\routine Idle(Hero):
+        \\  wait 1 ticks
+        \\
+        \\on cue Takes(Hero, Rope):
+        \\  remember Pulled(Hero)
+        \\  say Hero: "Got the rope."
+    ;
+    const decks = [_]Deck{script_deck_with("QUAY", script, .{ .player = "Hero", .command_bar = false })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    rt.bind();
+
+    // 1. Handled prop click ticks ONCE (not twice).
+    const rope = rt.world.lookup_entity("Rope").?;
+    const crate = rt.world.lookup_entity("Crate").?;
+    const wp0 = rt.spatial.graph.waypoints.items[0].id;
+    const wp1 = rt.spatial.graph.waypoints.items[1].id;
+    const reach_wp = rt.reach_mark(rope).?;
+    try rt.spatial.register_entity(rt.player_entity, reach_wp, 2);
+    const t0 = rt.clock();
+    rt.active_verb = .pick_up;
+    const hs0_screen = renderer.world_to_screen(rt.spatial.hotspots.items[0].pos.x, rt.spatial.hotspots.items[0].pos.y, CANVAS_WIDTH, CANVAS_HEIGHT);
+    const tag1 = try rt.dispatch_event(.{ .kind = .pointer_down, .x = hs0_screen.x, .y = hs0_screen.y });
+    try testing.expectEqual(BrowserActionTag.cue_fired, tag1);
+    try testing.expectEqual(t0 + 1, rt.clock());
+    try testing.expect(rt.world.has_fact(rt.player_entity, rt.world.lookup_relation("Pulled").?, 0));
+
+    // 2. Unhandled LOOK on Crate ticks once in clock: turns.
+    const t1 = rt.clock();
+    rt.active_verb = .look_at;
+    _ = try rt.act_now(crate, "An old crate.", .none, true);
+    try testing.expectEqual(t1 + 1, rt.clock());
+
+    // 3. Walk-to-act keeps clock_runs() true until release_approach fires.
+    const far_wp = if (reach_wp == wp0) wp1 else wp0;
+    try rt.spatial.register_entity(rt.player_entity, far_wp, 100);
+    rt.active_verb = .pick_up;
+    try testing.expectEqual(BrowserActionTag.walk_issued, try rt.dispatch_event(.{ .kind = .pointer_down, .x = hs0_screen.x, .y = hs0_screen.y }));
+    try testing.expect(rt.clock_runs());
+    var guard: usize = 0;
+    while (rt.clock_runs() and guard < 20) : (guard += 1) {
+        try rt.step_tick();
+    }
+    try testing.expect(!rt.clock_runs());
+
+    // 4. Snapshot ring wraps past 32 without losing recent history, and failed record_snapshot
+    //    leaves existing slots intact.
+    for (0..40) |_| try rt.step_tick();
+    try testing.expectEqual(@as(usize, MAX_WASM_SNAPSHOTS), rt.snapshot_count);
+    const newest_tick = rt.clock();
+    rt.scrub_to_tick(newest_tick);
+    try testing.expectEqual(newest_tick, rt.clock());
+    // Scrubbing to an older retained tick (newest - 10) restores an earlier tick cleanly.
+    rt.scrub_to_tick(newest_tick - 10);
+    try testing.expectEqual(newest_tick - 10, rt.clock());
+
+    // Simulate oversized snapshot isolation: fill slot at snapshot_head, make a huge fact string?
+    // Even simpler: verify snapshot_bufs[snapshot_head] isn't zeroed/corrupted when snapshot fails
+    // by testing with PendingWeavesNotDispatched (write_vm_state fails!).
+    const slot_before = rt.snapshot_head;
+    const len_before = rt.snapshot_lens[slot_before];
+    const tick_before = rt.snapshot_ticks[slot_before];
+    var saved_bytes: [64]u8 = undefined;
+    const cmp_len = @min(len_before, saved_bytes.len);
+    @memcpy(saved_bytes[0..cmp_len], rt.snapshot_bufs[slot_before][0..cmp_len]);
+    try rt.vm.pending_weaves.append(.{ .caster = rt.player_entity, .draft = .none, .target = crate });
+    defer rt.vm.pending_weaves.clearRetainingCapacity();
+    rt.record_snapshot();
+    try testing.expectEqual(slot_before, rt.snapshot_head);
+    try testing.expectEqual(len_before, rt.snapshot_lens[slot_before]);
+    try testing.expectEqual(tick_before, rt.snapshot_ticks[slot_before]);
+    try testing.expectEqualSlices(u8, saved_bytes[0..cmp_len], rt.snapshot_bufs[slot_before][0..cmp_len]);
+
+    // 5. Turn-clock walk unpauses after scrub_to_tick so a player click finishes the walk.
+    rt.scrub_to_tick(newest_tick);
+    try testing.expect(rt.is_paused);
+    try rt.spatial.register_entity(rt.player_entity, far_wp, 100);
+    try testing.expect(try rt.plan_walk(reach_wp));
+    try testing.expect(!rt.is_paused);
+    try testing.expect(rt.clock_runs());
+}
+
+test "D-138: watch_scene captures another room read-only without moving the VM scene" {
+    const testing = std.testing;
+    const script =
+        \\scene FrontHall:
+        \\  cast: Watcher, Guest
+        \\  marks: Doorstep
+        \\  props: Lamp
+        \\
+        \\scene BackRoom:
+        \\  marks: EaselSpot
+        \\  props: Easel
+        \\
+        \\routine WatcherLoop(Watcher):
+        \\  wait 5 ticks
+    ;
+    const decks = [_]Deck{script_deck_with("WATCH", script, .{ .player = "Watcher" })};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+    rt.bind();
+
+    const front = rt.world.lookup_entity("FrontHall").?;
+    const back = rt.world.lookup_entity("BackRoom").?;
+    const easel = rt.world.lookup_entity("Easel").?;
+    const easel_wp = rt.spatial.graph.find_waypoint_in_room(back, "EaselSpot").?;
+    try rt.spatial.register_entity(try rt.world.intern_entity("Guest"), easel_wp, 5);
+    try rt.vm.transition_to_scene(front);
+
+    // Capturing normally shows FrontHall.
+    try testing.expect(!rt.watching_other_scene());
+    const front_frame = rt.capture();
+    try testing.expectEqualStrings("FrontHall", front_frame.current_scene[0..front_frame.current_scene_len]);
+    try testing.expectEqual(front, front_frame.scene_entity);
+
+    // Watching BackRoom displays its cast and props without changing vm.current_scene.
+    rt.watch_scene = back;
+    try testing.expect(rt.watching_other_scene());
+    const watched = rt.capture();
+    try testing.expectEqualStrings("BackRoom", watched.current_scene[0..watched.current_scene_len]);
+    try testing.expectEqual(back, watched.scene_entity);
+    try testing.expectEqual(front, rt.vm.current_scene.?);
+    try testing.expectEqual(@as(usize, 1), watched.hotspot_count);
+    try testing.expectEqual(easel, watched.hotspots[0].entity);
+
+    // Stage clicks stay read-only while watching another room.
+    const hs_screen = renderer.world_to_screen(watched.hotspots[0].x, watched.hotspots[0].y, CANVAS_WIDTH, CANVAS_HEIGHT);
+    try testing.expectEqual(BrowserActionTag.none, try rt.dispatch_event(.{ .kind = .pointer_down, .x = hs_screen.x, .y = hs_screen.y }));
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "read-only") != null);
+
+    // Reloading the deck clears watch_scene.
+    try rt.load_deck(0);
+    try testing.expectEqual(@as(?EntityId, null), rt.watch_scene);
 }

@@ -227,6 +227,46 @@ pub const CompiledProgram = struct {
         return null;
     }
 
+    /// Selects the ordered, guard-checked `Weave` handler for `(caster, draft, target)` without
+    /// swapping `draft` and `target` (D-029, D-160, D-161).
+    pub fn select_weave_match(
+        self: *const CompiledProgram,
+        world: ?*const World,
+        caster: EntityId,
+        draft: EntityId,
+        target: EntityId,
+    ) ?CueMatch {
+        const w = world orelse return null;
+        const who = w.get_entity_name(caster) orelse return null;
+        const d = w.get_entity_name(draft) orelse return null;
+        const t = w.get_entity_name(target) orelse return null;
+        const args3 = [3]EntityId{ caster, draft, target };
+        const forms3 = [_][3][]const u8{
+            .{ who, d, t },
+            .{ who, d, CUE_WILDCARD },
+            .{ who, CUE_WILDCARD, t },
+            .{ who, CUE_WILDCARD, CUE_WILDCARD },
+            .{ CUE_WILDCARD, d, t },
+            .{ CUE_WILDCARD, d, CUE_WILDCARD },
+            .{ CUE_WILDCARD, CUE_WILDCARD, t },
+            .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD },
+        };
+        for (forms3) |f| {
+            if (self.first_admitted(w, self.lookup_cue(draft_mod.WEAVE_CUE, &f), &args3)) |m| return m;
+        }
+        const args2 = [2]EntityId{ caster, draft };
+        const forms2 = [_][2][]const u8{
+            .{ who, d },
+            .{ who, CUE_WILDCARD },
+            .{ CUE_WILDCARD, d },
+            .{ CUE_WILDCARD, CUE_WILDCARD },
+        };
+        for (forms2) |f| {
+            if (self.first_admitted(w, self.lookup_cue(draft_mod.WEAVE_CUE, &f), &args2)) |m| return m;
+        }
+        return null;
+    }
+
     pub fn find_draft_by_notes(self: *const CompiledProgram, notes: draft_mod.Notes) ?CompiledDraft {
         return draft_mod.find_by_notes(self.drafts.items, notes);
     }
@@ -315,17 +355,37 @@ pub const CompiledProgram = struct {
         if (target_a != null and target_b != null) {
             const a = target_a.?;
             const b = target_b.?;
-            const Form = struct { parts: [3][]const u8, swap: bool };
-            const forms = [_]Form{
-                .{ .parts = .{ who, a, b }, .swap = false },                       .{ .parts = .{ who, b, a }, .swap = true },
-                .{ .parts = .{ who, a, CUE_WILDCARD }, .swap = false },            .{ .parts = .{ who, CUE_WILDCARD, b }, .swap = false },
-                .{ .parts = .{ who, b, CUE_WILDCARD }, .swap = true },             .{ .parts = .{ who, CUE_WILDCARD, a }, .swap = true },
-                .{ .parts = .{ who, CUE_WILDCARD, CUE_WILDCARD }, .swap = false }, .{ .parts = .{ CUE_WILDCARD, a, b }, .swap = false },
-                .{ .parts = .{ CUE_WILDCARD, b, a }, .swap = true },               .{ .parts = .{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD }, .swap = false },
+            const tier1 = [_]?CueMatch{
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, a, b }), &straight),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, b, a }), &swapped),
             };
-            for (forms) |f| {
-                if (self.first_admitted(world, self.lookup_cue(cue_name, &f.parts), if (f.swap) &swapped else &straight)) |pc| return pc;
-            }
+            if (earliest_match(&tier1)) |m| return m;
+
+            const tier2 = [_]?CueMatch{
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, a, CUE_WILDCARD }), &straight),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, CUE_WILDCARD, b }), &straight),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, b, CUE_WILDCARD }), &swapped),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, CUE_WILDCARD, a }), &swapped),
+            };
+            if (earliest_match(&tier2)) |m| return m;
+
+            if (self.first_admitted(world, self.lookup_cue(cue_name, &.{ who, CUE_WILDCARD, CUE_WILDCARD }), &straight)) |m| return m;
+
+            const tier4 = [_]?CueMatch{
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, a, b }), &straight),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, b, a }), &swapped),
+            };
+            if (earliest_match(&tier4)) |m| return m;
+
+            const tier5 = [_]?CueMatch{
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, a, CUE_WILDCARD }), &straight),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, CUE_WILDCARD, b }), &straight),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, b, CUE_WILDCARD }), &swapped),
+                self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, CUE_WILDCARD, a }), &swapped),
+            };
+            if (earliest_match(&tier5)) |m| return m;
+
+            if (self.first_admitted(world, self.lookup_cue(cue_name, &.{ CUE_WILDCARD, CUE_WILDCARD, CUE_WILDCARD }), &straight)) |m| return m;
         }
 
         if (target_a) |a| {
@@ -343,6 +403,15 @@ pub const CompiledProgram = struct {
         if (self.first_admitted(world, self.lookup_cue(cue_name, &.{who}), straight[0..1])) |pc| return pc;
         if (self.first_admitted(world, self.lookup_cue(cue_name, &.{CUE_WILDCARD}), straight[0..1])) |pc| return pc;
         return null;
+    }
+
+    fn earliest_match(candidates: []const ?CueMatch) ?CueMatch {
+        var best: ?CueMatch = null;
+        for (candidates) |cand| {
+            const m = cand orelse continue;
+            if (best == null or m.pc < best.?.pc) best = m;
+        }
+        return best;
     }
 
     /// The first handler of one signature, in source order, whose guard admits `args`
@@ -466,10 +535,10 @@ pub const CUE_WILDCARD = "*";
 pub const PATH_ROUTINE_PREFIX = "#path:";
 
 /// A cue handler parameter is a variable when it starts with `?`, `_`, or a lowercase letter,
-/// the same rule `when` trigger patterns use. Entity names start with an uppercase letter.
+/// the same rule `when` trigger patterns use, except `true` and `false` values.
 fn cue_param_key(param: []const u8) []const u8 {
     if (param.len == 0) return CUE_WILDCARD;
-    return if (param[0] == '?' or param[0] == '_' or std.ascii.isLower(param[0])) CUE_WILDCARD else param;
+    return if (param[0] == '?' or param[0] == '_' or is_variable_name(param)) CUE_WILDCARD else param;
 }
 
 pub const Warning = struct {
@@ -503,6 +572,8 @@ pub const Codegen = struct {
     /// While a cue handler body compiles: each name its body may read, with the stack index
     /// `bind_cue_args` puts it at (D-161). Null in every other body.
     locals: ?*const std.StringHashMap(u8) = null,
+    /// Subject variables of an active `when each` rule (always entities, not numbers).
+    entity_locals: ?*const std.StringHashMap(void) = null,
     /// While a `when` rule body compiles: the rule's trigger patterns, so a variable from
     /// them is reported as unbindable rather than unbound (D-161).
     when_patterns: ?[]const parser_mod.FactPattern = null,
@@ -565,6 +636,64 @@ pub const Codegen = struct {
         };
     }
 
+    pub fn deinit_owned(self: *Codegen) void {
+        for (self.cue_guards.items) |guard| self.chunk.allocator.free(guard.clauses);
+        self.cue_guards.deinit(self.chunk.allocator);
+        self.cue_handler_chain.deinit(self.chunk.allocator);
+        self.cast.deinit(self.chunk.allocator);
+        for (self.scores.items) |*score| score.deinit_owned(self.chunk.allocator);
+        self.scores.deinit();
+        for (self.societies.items) |*society| society.deinit_owned(self.chunk.allocator);
+        self.societies.deinit();
+        for (self.duels.items) |*duel| duel.deinit_owned(self.chunk.allocator);
+        self.duels.deinit();
+        for (self.degradations.items) |*degradation| degradation.deinit_owned(self.chunk.allocator);
+        self.degradations.deinit();
+        for (self.grids.items) |*grid| grid.deinit_owned(self.chunk.allocator);
+        self.grids.deinit();
+        for (self.agendas.items) |*agenda| agenda.deinit_owned(self.chunk.allocator);
+        self.agendas.deinit();
+        for (self.goals.items) |*goal| goal.deinit_owned(self.chunk.allocator);
+        self.goals.deinit();
+        for (self.spellbooks.items) |*book| book.deinit_owned(self.chunk.allocator);
+        self.spellbooks.deinit();
+        for (self.decisions.items) |*decision| decision.deinit_owned(self.chunk.allocator);
+        self.decisions.deinit();
+        self.axes.deinit();
+        for (self.red_lines.items) |*decl| decl.deinit_owned(self.chunk.allocator);
+        self.red_lines.deinit();
+        for (self.dilemmas.items) |*decl| decl.deinit_owned(self.chunk.allocator);
+        self.dilemmas.deinit();
+        for (self.commands.items) |*c| c.deinit_owned(self.chunk.allocator);
+        self.commands.deinit();
+        for (self.aliases.items) |*a| a.deinit_owned(self.chunk.allocator);
+        self.aliases.deinit();
+        self.chunk.deinit();
+        self.routine_entries.deinit();
+        self.routine_entities.deinit();
+        self.when_rule_entries.deinit();
+        self.cue_handler_entries.deinit();
+        for (self.allocated_cue_keys.items) |k| self.chunk.allocator.free(k);
+        self.allocated_cue_keys.deinit();
+        for (self.allocated_routine_names.items) |name| self.chunk.allocator.free(name);
+        self.allocated_routine_names.deinit();
+        for (self.reactive_rules.items) |r| self.chunk.allocator.free(r.clauses);
+        self.reactive_rules.deinit();
+    }
+
+    fn has_unguarded_cue(
+        mut_self: *Codegen,
+        sources: *const std.AutoHashMap(usize, parser_mod.CueHandler),
+        sig: []const u8,
+    ) ?parser_mod.CueHandler {
+        var next = mut_self.cue_handler_entries.get(sig);
+        while (next) |pc| : (next = mut_self.cue_handler_chain.get(pc)) {
+            const earlier = sources.get(pc) orelse continue;
+            if (earlier.where_patterns.len == 0) return earlier;
+        }
+        return null;
+    }
+
     /// Adds a cue handler under its signature key (D-160). The first handler of a signature is
     /// the key's entry; each later one is chained after the last, in source order, so a failed
     /// guard falls through to it. A handler after an unguarded one of the same signature could
@@ -576,14 +705,17 @@ pub const Codegen = struct {
         cue: parser_mod.CueHandler,
         entry_pc: usize,
     ) !void {
+        var sig_owned = true;
+        errdefer if (sig_owned) mut_self.allocator.free(sig);
         try sources.put(entry_pc, cue);
         const head = mut_self.cue_handler_entries.get(sig) orelse {
-            errdefer mut_self.allocator.free(sig);
             try mut_self.allocated_cue_keys.append(sig);
+            sig_owned = false;
             try mut_self.cue_handler_entries.put(sig, entry_pc);
             return;
         };
         mut_self.allocator.free(sig);
+        sig_owned = false;
         var tail = head;
         while (true) {
             const earlier = sources.get(tail).?;
@@ -601,6 +733,13 @@ pub const Codegen = struct {
     /// into the source, which outlives the program, but a `during` name with spaces is built in
     /// the parser's arena and would dangle once `compile_source` frees it (P44-07).
     fn register_routine(mut_self: *Codegen, routine: parser_mod.Routine, entry_pc: usize) !void {
+        try mut_self.check_thing_name(routine.name);
+        try mut_self.check_thing_name(routine.entity);
+        if (reserved_mod.is_bookkeeping(routine.name)) {
+            mut_self.error_line = routine.line;
+            mut_self.error_column = routine.column;
+            return error.ReservedBookkeepingName;
+        }
         // Top-level, path, and `during` declarations share one name space. A later declaration
         // would silently replace an earlier entry, so refuse it at the duplicate itself.
         if (mut_self.routine_entries.contains(routine.name)) {
@@ -609,9 +748,16 @@ pub const Codegen = struct {
             return error.DuplicateRoutineName;
         }
         const name = try mut_self.chunk.allocator.dupe(u8, routine.name);
+        var name_owned = true;
+        errdefer if (name_owned) mut_self.chunk.allocator.free(name);
         const entity = try mut_self.chunk.allocator.dupe(u8, routine.entity);
-        try mut_self.allocated_routine_names.append(name);
-        try mut_self.allocated_routine_names.append(entity);
+        var entity_owned = true;
+        errdefer if (entity_owned) mut_self.chunk.allocator.free(entity);
+        try mut_self.allocated_routine_names.ensureUnusedCapacity(2);
+        mut_self.allocated_routine_names.appendAssumeCapacity(name);
+        name_owned = false;
+        mut_self.allocated_routine_names.appendAssumeCapacity(entity);
+        entity_owned = false;
         try mut_self.routine_entries.put(name, entry_pc);
         try mut_self.routine_entities.put(name, entity);
     }
@@ -620,6 +766,7 @@ pub const Codegen = struct {
         // The look names borrow AST text and are checked before compile returns, so the list
         // lives only for this call.
         defer mut_self.look_uses.deinit(mut_self.allocator);
+        errdefer mut_self.deinit_owned();
         // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
             try mut_self.check_thing_name(name);
@@ -627,24 +774,35 @@ pub const Codegen = struct {
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.scenes.items) |name| {
+            try mut_self.check_thing_name(name);
             mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.cast.items) |name| {
+            try mut_self.check_thing_name(name);
             mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.props.items) |name| {
+            try mut_self.check_thing_name(name);
             mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.marks.items) |name| {
+            try mut_self.check_thing_name(name);
             mut_self.error_context = name;
             _ = try mut_self.world.intern_entity(name);
         }
         for (ast.paths.items) |path| {
+            try mut_self.check_thing_name(path.name);
             mut_self.error_context = path.name;
             _ = try mut_self.world.intern_entity(path.name);
+        }
+        for (ast.art.parts) |pt| {
+            try mut_self.check_thing_name(pt.part);
+            try mut_self.check_thing_name(pt.host);
+            mut_self.error_context = pt.part;
+            _ = try mut_self.world.intern_entity(pt.part);
         }
 
         // Register stage marks and props in SpatialSystem if present
@@ -786,6 +944,7 @@ pub const Codegen = struct {
             try mut_self.aliases.append(try mut_self.compile_alias(decl));
         }
         for (ast.scores.items) |decl| {
+            try mut_self.check_thing_name(decl.name);
             mut_self.error_context = decl.name;
             var owned = try mml.ScoreDecl.dupe(mut_self.allocator, decl);
             mut_self.scores.append(owned) catch |err| {
@@ -796,12 +955,16 @@ pub const Codegen = struct {
 
         // 2. Intern declared relations
         for (ast.relations.items) |rel| {
+            try mut_self.check_relation_name(rel.name);
             try mut_self.check_thing_name(rel.name);
             mut_self.error_context = rel.name;
-            const declared = try mut_self.world.intern_relation(
-                rel.name,
-                if (rel.is_property) .property else .set,
-            );
+            const declared = if (std.mem.eql(u8, rel.name, LOOKS_RELATION))
+                try mut_self.world.intern_relation_kind(rel.name, .property, .entity)
+            else
+                try mut_self.world.intern_relation(
+                    rel.name,
+                    if (rel.is_property) .property else .set,
+                );
             // A name a later engine release adopted stays the script's own (D-180).
             if (reserved_mod.newer_than_language(mut_self.engine_relations, rel.name)) |entry| {
                 mut_self.world.claim_relation(declared);
@@ -813,6 +976,8 @@ pub const Codegen = struct {
         // property wherever it appears (P45-01, D-144). An axis may not reuse a declared
         // relation's name: the two declarations would disagree on what the value slot means.
         for (ast.axes.items) |decl| {
+            try mut_self.check_relation_name(decl.name);
+            try mut_self.check_thing_name(decl.name);
             mut_self.error_context = decl.name;
             for (ast.relations.items) |rel| {
                 if (std.mem.eql(u8, rel.name, decl.name)) return error.InvalidAxis;
@@ -895,6 +1060,7 @@ pub const Codegen = struct {
         if (ast.paths.items.len > 0) {
             const path_active = try mut_self.world.intern_relation("PathActive", .property);
             for (ast.paths.items) |path| {
+                try mut_self.check_relation_name(path.name);
                 mut_self.error_context = path.name;
                 const path_entity = try mut_self.world.intern_entity(path.name);
                 const init_key = try std.fmt.allocPrint(mut_self.allocator, "{s}{s}", .{ PATH_ROUTINE_PREFIX, path.name });
@@ -932,6 +1098,7 @@ pub const Codegen = struct {
             var next_var: u8 = 0;
 
             var clauses = std.array_list.Managed(world_mod.PatternClause).init(mut_self.allocator);
+            errdefer clauses.deinit();
             for (rule.trigger_patterns) |pat| {
                 mut_self.error_context = pat.relation;
                 const rel = try mut_self.resolve_relation(pat.relation);
@@ -982,10 +1149,17 @@ pub const Codegen = struct {
             // rule's body still cannot read them.
             var each_locals = std.StringHashMap(u8).init(mut_self.allocator);
             defer each_locals.deinit();
+            var each_entity_locals = std.StringHashMap(void).init(mut_self.allocator);
+            defer each_entity_locals.deinit();
             var owner_slot: ?u8 = null;
             if (rule.each) {
                 var it = var_map.iterator();
                 while (it.next()) |entry| try each_locals.put(entry.key_ptr.*, CUE_BINDING_BASE + entry.value_ptr.*);
+                for (rule.trigger_patterns) |pat| {
+                    if (is_variable_name(pat.args[0]) or pat.args[0][0] == '?') {
+                        try each_entity_locals.put(pat.args[0], {});
+                    }
+                }
                 if (clauses.items.len > 0) switch (clauses.items[0].subject) {
                     .variable => |slot| owner_slot = slot,
                     else => {},
@@ -1000,12 +1174,14 @@ pub const Codegen = struct {
                 if (reads) {
                     _ = try mut_self.chunk.emit_op(.bind_cue_args);
                     mut_self.locals = &each_locals;
+                    mut_self.entity_locals = &each_entity_locals;
                 }
             } else {
                 mut_self.when_patterns = rule.trigger_patterns;
             }
             defer mut_self.when_patterns = null;
             defer mut_self.locals = null;
+            defer mut_self.entity_locals = null;
             if (rule.body.len > 0 and rule.body[0] == .interrupt_with) {
                 const iw = rule.body[0].interrupt_with;
                 target_entity = try mut_self.resolve_entity(iw.entity);
@@ -1027,8 +1203,10 @@ pub const Codegen = struct {
             }
             _ = try mut_self.chunk.emit_op(.resume_routine);
 
+            const owned_clauses = try clauses.toOwnedSlice();
+            errdefer mut_self.allocator.free(owned_clauses);
             try mut_self.reactive_rules.append(.{
-                .clauses = try clauses.toOwnedSlice(),
+                .clauses = owned_clauses,
                 .target_entity = target_entity,
                 .priority = priority,
                 .handler_pc = entry_pc,
@@ -1044,7 +1222,12 @@ pub const Codegen = struct {
         var handler_sources = std.AutoHashMap(usize, parser_mod.CueHandler).init(mut_self.allocator);
         defer handler_sources.deinit();
         for (ast.cue_handlers.items) |cue| {
+            try mut_self.check_thing_name(cue.cue_name);
             mut_self.error_context = cue.cue_name;
+            if (cue.params.len > MAX_CUE_PARAMS) {
+                mut_self.error_context = cue.params[MAX_CUE_PARAMS];
+                return error.TooManyCueParameters;
+            }
             const entry_pc = mut_self.chunk.count();
 
             // One key per declared signature. Parameters declared as variables are stored as
@@ -1056,9 +1239,20 @@ pub const Codegen = struct {
             } else if (cue.params.len == 2) {
                 const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]), cue_param_key(cue.params[1]) });
                 try mut_self.register_cue_handler(&handler_sources, sig, cue, entry_pc);
-            } else if (cue.params.len >= 3) {
+            } else if (cue.params.len == 3) {
+                const k0 = cue_param_key(cue.params[0]);
+                const k1 = cue_param_key(cue.params[1]);
+                const k2 = cue_param_key(cue.params[2]);
+                if (!std.mem.eql(u8, cue.cue_name, draft_mod.WEAVE_CUE) and !std.mem.eql(u8, k1, k2)) {
+                    const partner = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, k0, k2, k1 });
+                    defer mut_self.allocator.free(partner);
+                    if (mut_self.has_unguarded_cue(&handler_sources, partner)) |earlier| {
+                        mut_self.error_related = earlier.cue_name;
+                        return error.UnreachableCueHandler;
+                    }
+                }
                 // Uses:Actor:ItemA:ItemB; lookup also tries the two items swapped (D-013).
-                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, cue_param_key(cue.params[0]), cue_param_key(cue.params[1]), cue_param_key(cue.params[2]) });
+                const sig = try std.fmt.allocPrint(mut_self.allocator, "{s}:{s}:{s}:{s}", .{ cue.cue_name, k0, k1, k2 });
                 try mut_self.register_cue_handler(&handler_sources, sig, cue, entry_pc);
             }
 
@@ -1156,7 +1350,7 @@ pub const Codegen = struct {
     }
 
     fn compile_art(self: *Codegen, decl: *const parser_mod.ArtDecl) !image_mod.Art {
-        if (decl.palette.len == 0 and decl.images.len == 0 and decl.areas.len == 0) return .{};
+        if (decl.palette.len == 0 and decl.images.len == 0 and decl.areas.len == 0 and decl.parts.len == 0) return .{};
         const backdrops = try self.allocator.alloc(image_mod.Backdrop, decl.backdrops.len);
         defer self.allocator.free(backdrops);
         for (decl.backdrops, backdrops) |b, *out| out.* = .{ .scene = try self.world.intern_entity(b.scene), .image = b.image };
@@ -1172,7 +1366,10 @@ pub const Codegen = struct {
         for (decl.areas, areas) |a, *out| out.* = .{ .entity = try self.world.intern_entity(a.target), .x = a.x, .y = a.y, .w = a.w, .h = a.h };
         const looks = try self.allocator.alloc(image_mod.Look, decl.looks.len);
         defer self.allocator.free(looks);
-        for (decl.looks, looks) |l, *out| out.* = .{ .name = l.name, .image = l.image, .animations = l.animations };
+        for (decl.looks, looks) |l, *out| {
+            try self.check_thing_name(l.name);
+            out.* = .{ .name = l.name, .image = l.image, .animations = l.animations };
+        }
         const parts = try self.allocator.alloc(image_mod.Part, decl.parts.len);
         defer self.allocator.free(parts);
         for (decl.parts, parts) |pt, *out| out.* = .{ .entity = try self.world.intern_entity(pt.part), .host = try self.world.intern_entity(pt.host), .dx = pt.dx, .dy = pt.dy };
@@ -1193,6 +1390,18 @@ pub const Codegen = struct {
     fn intern_program_text(self: *Codegen, text_value: []const u8) ![]const u8 {
         const entity = try self.world.intern_entity(text_value);
         return self.world.get_entity_name(entity) orelse return error.InvalidProgramText;
+    }
+
+    fn check_relation_name(self: *Codegen, name: []const u8) !void {
+        if (reserved_mod.is_bookkeeping(name)) {
+            self.error_context = name;
+            return error.ReservedBookkeepingName;
+        }
+    }
+
+    fn intern_relation_text(self: *Codegen, name: []const u8) ![]const u8 {
+        try self.check_relation_name(name);
+        return self.intern_program_text(name);
     }
 
     fn society_member_index(self: *Codegen, decl: parser_mod.SocietyDecl, name: []const u8) !usize {
@@ -1260,7 +1469,7 @@ pub const Codegen = struct {
                         .until = stay.until,
                         .activity = try self.activity_from_name(stay.activity),
                         .unaware = stay.unaware,
-                        .state = try self.intern_program_text(stay.state),
+                        .state = try self.intern_relation_text(stay.state),
                         .verb = try self.intern_program_text(stay.verb),
                     } },
                 },
@@ -1346,20 +1555,20 @@ pub const Codegen = struct {
             .warrant_priority = decl.warrant_priority,
             .currency_unit = try self.intern_program_text(decl.currency_unit),
             .relations = .{
-                .currency = try self.intern_program_text(relation_names[0]),
-                .activity = try self.intern_program_text(relation_names[1]),
-                .tending = try self.intern_program_text(relation_names[2]),
-                .friend = try self.intern_program_text(relation_names[3]),
-                .rival = try self.intern_program_text(relation_names[4]),
-                .grudge = try self.intern_program_text(relation_names[5]),
-                .owns = try self.intern_program_text(relation_names[6]),
-                .carries = try self.intern_program_text(relation_names[7]),
-                .stolen_from = try self.intern_program_text(relation_names[8]),
-                .crime_scene = try self.intern_program_text(relation_names[9]),
-                .witnessed = try self.intern_program_text(relation_names[10]),
-                .knows_rumor = try self.intern_program_text(relation_names[11]),
-                .warrant_for = try self.intern_program_text(relation_names[12]),
-                .arrested = try self.intern_program_text(relation_names[13]),
+                .currency = try self.intern_relation_text(relation_names[0]),
+                .activity = try self.intern_relation_text(relation_names[1]),
+                .tending = try self.intern_relation_text(relation_names[2]),
+                .friend = try self.intern_relation_text(relation_names[3]),
+                .rival = try self.intern_relation_text(relation_names[4]),
+                .grudge = try self.intern_relation_text(relation_names[5]),
+                .owns = try self.intern_relation_text(relation_names[6]),
+                .carries = try self.intern_relation_text(relation_names[7]),
+                .stolen_from = try self.intern_relation_text(relation_names[8]),
+                .crime_scene = try self.intern_relation_text(relation_names[9]),
+                .witnessed = try self.intern_relation_text(relation_names[10]),
+                .knows_rumor = try self.intern_relation_text(relation_names[11]),
+                .warrant_for = try self.intern_relation_text(relation_names[12]),
+                .arrested = try self.intern_relation_text(relation_names[13]),
             },
             .friends = friends,
         } };
@@ -1390,7 +1599,7 @@ pub const Codegen = struct {
         const stages = try self.allocator.alloc(duel_mod.Stage, decl.fatigue_stages.len);
         errdefer self.allocator.free(stages);
         for (decl.fatigue_stages, 0..) |source, i| stages[i] = .{
-            .relation = try self.intern_program_text(source.relation),
+            .relation = try self.intern_relation_text(source.relation),
             .at = source.at,
             .ttl = source.ttl,
             .label = try self.intern_program_text(source.label),
@@ -1405,18 +1614,18 @@ pub const Codegen = struct {
                 .fallbacks = fallbacks,
                 .win_at = decl.win_at,
                 .relations = .{
-                    .heard = try self.intern_program_text(r[0]),
-                    .mastered = try self.intern_program_text(r[1]),
-                    .counters = try self.intern_program_text(r[2]),
-                    .variant_of = try self.intern_program_text(r[3]),
-                    .tier = try self.intern_program_text(r[4]),
-                    .advantage = try self.intern_program_text(r[5]),
-                    .wins = try self.intern_program_text(r[6]),
+                    .heard = try self.intern_relation_text(r[0]),
+                    .mastered = try self.intern_relation_text(r[1]),
+                    .counters = try self.intern_relation_text(r[2]),
+                    .variant_of = try self.intern_relation_text(r[3]),
+                    .tier = try self.intern_relation_text(r[4]),
+                    .advantage = try self.intern_relation_text(r[5]),
+                    .wins = try self.intern_relation_text(r[6]),
                 },
             },
             .fatigue = .{
                 .stages = stages,
-                .count_relation = try self.intern_program_text(decl.fatigue_count_relation),
+                .count_relation = try self.intern_relation_text(decl.fatigue_count_relation),
                 .calm_label = try self.intern_program_text(decl.fatigue_calm_label),
             },
             .tiers = tiers,
@@ -1428,6 +1637,8 @@ pub const Codegen = struct {
     /// keep their graph edges, whose costs follow the new positions; packages carry placement
     /// in the existing waypoint table.
     fn compile_grid(self: *Codegen, decl: parser_mod.GridDecl) !grid_mod.Declaration {
+        try self.check_thing_name(decl.name);
+        try self.check_thing_name(decl.room);
         const grid = grid_mod.Grid{
             .entity = try self.world.intern_entity(decl.name),
             .room = try self.world.intern_entity(decl.room),
@@ -1513,12 +1724,16 @@ pub const Codegen = struct {
     }
 
     fn compile_agenda(self: *Codegen, decl: parser_mod.AgendaDecl) !agency_mod.Declaration {
+        try self.check_thing_name(decl.name);
+        try self.check_thing_name(decl.actor);
+        try self.check_thing_name(decl.target);
         const clauses = try self.allocator.alloc(agency_mod.Clause, decl.clauses.len);
         errdefer self.allocator.free(clauses);
         for (decl.clauses, 0..) |source, i| {
             const args = source.pattern.args;
+            if (args.len > 1 and !std.mem.eql(u8, args[1], "_")) try self.note_object_kind(source.pattern.relation, args[1]);
             clauses[i] = .{
-                .relation = try self.intern_program_text(source.pattern.relation),
+                .relation = try self.intern_relation_text(source.pattern.relation),
                 .subject = try self.agenda_term(args[0]),
                 .object = if (args.len > 1) try self.agenda_term(args[1]) else null,
                 .negated = source.negated,
@@ -1539,10 +1754,11 @@ pub const Codegen = struct {
 
     fn agenda_term(self: *Codegen, name: []const u8) !?world_mod.EntityId {
         if (std.mem.eql(u8, name, "_")) return null;
-        return try self.world.intern_entity(name);
+        return try self.resolve_entity(name);
     }
 
     fn compile_goal(self: *Codegen, decl: parser_mod.GoalDecl, scenes: []const parser_mod.SceneDef) !hint_mod.Declaration {
+        try self.check_thing_name(decl.name);
         const needs = try self.allocator.alloc(hint_mod.Need, decl.needs.len);
         var built: usize = 0;
         errdefer {
@@ -1564,7 +1780,10 @@ pub const Codegen = struct {
     }
 
     fn compile_need(self: *Codegen, source: parser_mod.GoalNeedDecl, scenes: []const parser_mod.SceneDef) !hint_mod.Need {
+        try self.check_thing_name(source.name);
+        if (source.room) |room| try self.check_thing_name(room);
         const args = source.pattern.args;
+        if (args.len > 1 and !std.mem.eql(u8, args[1], "_")) try self.note_object_kind(source.pattern.relation, args[1]);
         const after = try self.allocator.alloc(EntityId, source.after.len);
         errdefer self.allocator.free(after);
         for (source.after, 0..) |name, j| after[j] = try self.world.intern_entity(name);
@@ -1584,7 +1803,7 @@ pub const Codegen = struct {
         }
         return .{
             .entity = try self.world.intern_entity(source.name),
-            .relation = try self.intern_program_text(source.pattern.relation),
+            .relation = try self.intern_relation_text(source.pattern.relation),
             .subject = try self.agenda_term(args[0]),
             .object = if (args.len > 1) try self.agenda_term(args[1]) else null,
             .after = after,
@@ -1616,6 +1835,7 @@ pub const Codegen = struct {
     /// Turns a parsed book into program data: words in declaration order carry their tier, and
     /// each spell row carries the entities its three words name (P44-04).
     fn compile_spellbook(self: *Codegen, decl: parser_mod.SpellbookDecl) !spell_mod.Declaration {
+        try self.check_thing_name(decl.name);
         const words = try self.allocator.alloc(spell_mod.Word, decl.words.len);
         errdefer self.allocator.free(words);
         var tiers = [3]u16{ 0, 0, 0 };
@@ -1652,6 +1872,9 @@ pub const Codegen = struct {
     /// Turns a parsed decision into program data: trigger lines, then options in declaration
     /// order, which breaks score ties (P44-05).
     fn compile_decision(self: *Codegen, decl: parser_mod.DecisionDecl) !decision_mod.Declaration {
+        try self.check_thing_name(decl.name);
+        try self.check_thing_name(decl.actor);
+        try self.check_thing_name(decl.cue);
         const clauses = try self.allocator.alloc(decision_mod.Clause, decl.clauses.len);
         errdefer self.allocator.free(clauses);
         for (decl.clauses, 0..) |source, i| clauses[i] = try self.compile_clause(source.pattern, source.negated);
@@ -1687,6 +1910,9 @@ pub const Codegen = struct {
     /// Turns a parsed dilemma into program data. Both axes must be declared, and no tier may act
     /// on its actor's red lines; each refusal names the source text that caused it.
     fn compile_dilemma(self: *Codegen, decl: parser_mod.DilemmaDecl) !dilemma_mod.Declaration {
+        try self.check_thing_name(decl.name);
+        try self.check_thing_name(decl.actor);
+        try self.check_thing_name(decl.cue);
         var axes: [2]world_mod.RelationKind = undefined;
         for ([_][]const u8{ decl.axis, decl.counter }, 0..) |name, i| {
             const rel = self.world.lookup_relation(name);
@@ -1780,8 +2006,9 @@ pub const Codegen = struct {
     }
 
     fn compile_clause(self: *Codegen, pattern: parser_mod.FactPattern, negated: bool) !decision_mod.Clause {
+        if (pattern.args.len > 1 and !std.mem.eql(u8, pattern.args[1], "_")) try self.note_object_kind(pattern.relation, pattern.args[1]);
         return .{
-            .relation = try self.intern_program_text(pattern.relation),
+            .relation = try self.intern_relation_text(pattern.relation),
             .subject = try self.agenda_term(pattern.args[0]),
             .object = if (pattern.args.len > 1) try self.agenda_term(pattern.args[1]) else null,
             .negated = negated,
@@ -1823,11 +2050,11 @@ pub const Codegen = struct {
             .vessels = vessels,
             .spill_per_moving_tick = decl.spill_per_moving_tick,
             .relations = .{
-                .contains = try self.intern_program_text(r[0]),
-                .volume = try self.intern_program_text(r[1]),
-                .stage = try self.intern_program_text(r[2]),
-                .exposure = try self.intern_program_text(r[3]),
-                .failed_at = try self.intern_program_text(r[4]),
+                .contains = try self.intern_relation_text(r[0]),
+                .volume = try self.intern_relation_text(r[1]),
+                .stage = try self.intern_relation_text(r[2]),
+                .exposure = try self.intern_relation_text(r[3]),
+                .failed_at = try self.intern_relation_text(r[4]),
             },
         };
         try container_mod.validate(config);
@@ -1952,8 +2179,18 @@ pub const Codegen = struct {
                 try self.chunk.emit_i16(0);
 
                 const handler_pc: u16 = @intCast(self.chunk.count());
-                for (iw.body) |s| {
-                    try self.compile_stmt(s);
+                {
+                    const saved_locals = self.locals;
+                    const saved_entity_locals = self.entity_locals;
+                    self.locals = null;
+                    self.entity_locals = null;
+                    defer {
+                        self.locals = saved_locals;
+                        self.entity_locals = saved_entity_locals;
+                    }
+                    for (iw.body) |s| {
+                        try self.compile_stmt(s);
+                    }
                 }
                 _ = try self.chunk.emit_op(.resume_routine);
 
@@ -2177,6 +2414,11 @@ pub const Codegen = struct {
                 try self.chunk.emit_query_aggregate(.query_count, mask, c.threshold);
             },
             .points_at_least => |c| {
+                const rel = try self.resolve_relation(c.pattern.relation);
+                self.world.declare_object_kind(rel, .number) catch |err| {
+                    self.error_context = c.pattern.relation;
+                    return err;
+                };
                 const mask = try self.emit_pattern_args(c.pattern, true);
                 try self.chunk.emit_query_aggregate(.query_points, mask, c.threshold);
             },
@@ -2238,6 +2480,8 @@ pub const Codegen = struct {
     }
 
     fn resolve_relation(self: *Codegen, name: []const u8) !RelationKind {
+        try self.check_relation_name(name);
+        try self.check_thing_name(name);
         // `Looks(Thing, Look)` is a reserved property: a thing shows one look (D-181).
         if (std.mem.eql(u8, name, LOOKS_RELATION)) return try self.world.intern_relation_kind(name, .property, .entity);
         return try self.world.intern_relation(name, .set);
@@ -2263,11 +2507,17 @@ pub const Codegen = struct {
         const kind: world_mod.ObjectKind = blk: {
             if (self.axis_bound(relation)) break :blk .number;
             if (self.local_index(arg)) |index| {
-                if (index < CUE_BINDING_BASE) break :blk .entity;
+                if (index < CUE_BINDING_BASE or (self.entity_locals != null and self.entity_locals.?.contains(arg))) break :blk .entity;
                 return;
             }
             if (std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false")) break :blk .number;
-            if (std.ascii.isDigit(arg[0]) or (arg[0] == '-' and arg.len > 1 and std.ascii.isDigit(arg[1]))) break :blk .number;
+            const all_digits = blk_dig: {
+                const digits = if (arg[0] == '-') arg[1..] else arg;
+                if (digits.len == 0) break :blk_dig false;
+                for (digits) |ch| if (!std.ascii.isDigit(ch)) break :blk_dig false;
+                break :blk_dig true;
+            };
+            if (all_digits) break :blk .number;
             if (is_variable_name(arg) or arg[0] == '?') return;
             break :blk .entity;
         };
@@ -2298,6 +2548,8 @@ pub const Codegen = struct {
     }
 
     fn resolve_entity_or_value(self: *Codegen, name: []const u8) !u32 {
+        if (std.mem.eql(u8, name, "true")) return 1;
+        if (std.mem.eql(u8, name, "false")) return 0;
         // Only an axis value may be negative; elsewhere `-3` would become an entity name.
         if (name.len > 1 and name[0] == '-' and std.ascii.isDigit(name[1])) {
             self.error_context = name;
@@ -2305,7 +2557,11 @@ pub const Codegen = struct {
         }
         if (std.fmt.parseInt(u32, name, 10)) |val| {
             return val;
-        } else |_| {
+        } else |err| {
+            if (err == error.Overflow) {
+                self.error_context = name;
+                return error.Overflow;
+            }
             const ent = try self.resolve_entity(name);
             return ent.to_int();
         }
@@ -2386,9 +2642,15 @@ pub const Codegen = struct {
         if (std.mem.eql(u8, arg, "_")) {
             return .{ .wildcard = {} };
         }
-        if (arg.len > 0 and (arg[0] == '?' or std.ascii.isLower(arg[0]))) {
+        if (std.mem.eql(u8, arg, "true")) return .{ .constant = 1 };
+        if (std.mem.eql(u8, arg, "false")) return .{ .constant = 0 };
+        if (arg.len > 0 and (arg[0] == '?' or is_variable_name(arg))) {
             if (var_map.get(arg)) |v_idx| {
                 return .{ .variable = v_idx };
+            }
+            if (next_var.* >= 8) {
+                self.error_context = arg;
+                return error.TooManyCueGuardVariables;
             }
             const v_idx = next_var.*;
             next_var.* += 1;
@@ -2401,7 +2663,11 @@ pub const Codegen = struct {
         }
         if (std.fmt.parseInt(u32, arg, 10)) |num| {
             return .{ .constant = num };
-        } else |_| {
+        } else |err| {
+            if (err == error.Overflow) {
+                self.error_context = arg;
+                return error.Overflow;
+            }
             const ent = try self.resolve_entity(arg);
             return .{ .constant = ent.to_int() };
         }
@@ -2416,6 +2682,19 @@ pub const Codegen = struct {
     }
 
     fn resolve_waypoint(self: *Codegen, name: []const u8) !u16 {
+        if (is_variable_name(name)) {
+            self.error_context = name;
+            if (self.local_index(name) != null) return error.VariableNotAllowedHere;
+            if (self.when_patterns) |patterns| {
+                for (patterns) |pat| {
+                    for (pat.args) |arg| {
+                        if (std.mem.eql(u8, arg, name)) return error.WhenBodyVariable;
+                    }
+                }
+            }
+            self.suggest_capitalised(name);
+            return error.UnboundVariable;
+        }
         if (self.spatial) |sp| {
             for (sp.graph.waypoints.items) |wp| {
                 if (std.mem.eql(u8, wp.name, name)) {
@@ -3995,4 +4274,311 @@ test "D-150: an appeal to an unweighed value names the weighed axis it moves" {
     try testing.expectEqualStrings("dilemma 'StolenBread' declares an appeal to 'Loyalty' twice", twice.message());
     const undeclared = compiler.check_source(testing.allocator, head ++ "  appeals 8 to Greed toward Mercy\n" ++ tiers);
     try testing.expectEqualStrings("a dilemma weighs an axis that no 'axis' line declares", undeclared.message());
+}
+
+test "P48-23: true and false encode as numbers 1 and 0 and are not pattern variables" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    const vm_mod = @import("../vm.zig");
+    const source =
+        \\save version 1
+        \\entity Hero, Lamp
+        \\property Lit(thing, flag)
+        \\relation Wrong(who)
+        \\relation Right(who)
+        \\remember Lit(Lamp, false)
+        \\when Lit(Lamp, true):
+        \\  remember Wrong(Hero)
+        \\when Lit(Lamp, false):
+        \\  remember Right(Hero)
+        \\
+    ;
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+
+    // `true` and `false` never intern as entities and tag `Lit` as `.number`.
+    try testing.expect(world.lookup_entity("true") == null);
+    try testing.expect(world.lookup_entity("false") == null);
+    const lit = world.lookup_relation("Lit").?;
+    try testing.expectEqual(world_mod.ObjectKind.number, world.object_kind(lit));
+
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try vm.load_compiled_rules(&compiled);
+    if (compiled.initial_entry) |init_pc| _ = try vm.spawn_routine(world.lookup_entity("Hero").?, init_pc);
+    try vm.step_tick();
+    try vm.step_tick();
+
+    const hero = world.lookup_entity("Hero").?;
+    const lamp = world.lookup_entity("Lamp").?;
+    try testing.expectEqual(@as(?u32, 0), world.get_property(lamp, lit));
+    try testing.expect(!world.has_fact(hero, world.lookup_relation("Wrong").?, null));
+    try testing.expect(world.has_fact(hero, world.lookup_relation("Right").?, null));
+
+    // Cross-build save load with shifted entity IDs keeps `false` (0) and `true` (1) intact.
+    try world.remember(lamp, lit, 1, 0);
+    var saved = std.array_list.Managed(u8).init(testing.allocator);
+    defer saved.deinit();
+    var lw = ListWriter.init(&saved);
+    _ = try save_mod.write_save_state(testing.allocator, &lw.writer, &world, null, &vm, .{ .program = .{ .fingerprint = 10, .save_version = 1 } });
+
+    var shifted = try World.init(testing.allocator, 1024 * 1024);
+    defer shifted.deinit();
+    _ = try shifted.intern_entity("ExtraFirst");
+    var compiled2 = try compiler.compile_source(testing.allocator, &shifted, null, source);
+    defer compiled2.deinit();
+    var vm2 = vm_mod.VM.init(testing.allocator, &shifted, &compiled2.chunk);
+    defer vm2.deinit();
+    try vm2.load_compiled_rules(&compiled2);
+    var stream: std.Io.Reader = .fixed(saved.items);
+    _ = try save_mod.read_save_state_for(testing.allocator, &stream, &shifted, null, &vm2, .{ .fingerprint = 20, .save_version = 1 });
+    try testing.expectEqual(@as(?u32, 1), shifted.get_property(shifted.lookup_entity("Lamp").?, shifted.lookup_relation("Lit").?));
+}
+
+test "P48-25: interrupt bodies reject caller cue locals while resolving interrupt targets from locals" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    // Using a cue local inside `interrupt target with:` body is refused at compile time.
+    const bad =
+        \\entity Hero, Sentry
+        \\routine Patrol(Sentry):
+        \\  wait 10 ticks
+        \\on cue Distract(Hero, victim):
+        \\  interrupt victim with:
+        \\    remember Saw(victim, Hero)
+    ;
+    const res = compiler.check_source(testing.allocator, bad);
+    try testing.expect(!res.is_valid);
+    try testing.expectEqualStrings("UnboundVariable", res.kind_name);
+
+    // Resolving `victim` as the interrupt target without reading cue locals inside the body succeeds.
+    const good =
+        \\entity Hero, Sentry
+        \\routine Patrol(Sentry):
+        \\  wait 10 ticks
+        \\on cue Distract(Hero, victim):
+        \\  interrupt victim with:
+        \\    remember Alert(Hero)
+    ;
+    try testing.expect(compiler.check_source(testing.allocator, good).is_valid);
+}
+
+test "P48-25: ordered cues preserve swapped-target order, 3-param wildcards, 4-param check, and Weave guards" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+    const vm_mod = @import("../vm.zig");
+
+    // 1. Unguarded 4-parameter cue returns TooManyCueParameters.
+    const too_many =
+        \\entity Hero, A, B, C
+        \\on cue Uses(Hero, A, B, C):
+        \\  remember Done(Hero)
+    ;
+    const too_many_res = compiler.check_source(testing.allocator, too_many);
+    try testing.expect(!too_many_res.is_valid);
+    try testing.expectEqualStrings("TooManyCueParameters", too_many_res.kind_name);
+
+    // 2. Unguarded commutative partner returns UnreachableCueHandler.
+    const dup_swap =
+        \\entity Hero, Oil, Lamp
+        \\on cue Uses(Hero, Oil, Lamp):
+        \\  remember First(Hero)
+        \\on cue Uses(Hero, Lamp, Oil):
+        \\  remember Second(Hero)
+    ;
+    const dup_res = compiler.check_source(testing.allocator, dup_swap);
+    try testing.expect(!dup_res.is_valid);
+    try testing.expectEqualStrings("UnreachableCueHandler", dup_res.kind_name);
+
+    // 3. Guarded swapped-target handler in source order runs first when fired swapped, and
+    //    3-param wildcard `Uses(who, Lamp, fuel)` matches.
+    const src =
+        \\entity Hero, Scout, Oil, Lamp, Flint
+        \\relation Full(x)
+        \\relation First(x)
+        \\relation Swapped(x)
+        \\relation Wild(x)
+        \\on cue Uses(Scout, Oil, Lamp) where Full(Oil):
+        \\  remember First(Scout)
+        \\on cue Uses(Scout, Lamp, Oil):
+        \\  remember Swapped(Scout)
+        \\on cue Uses(who, Lamp, fuel):
+        \\  remember Wild(who)
+    ;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, src);
+    defer compiled.deinit();
+    const scout = world.lookup_entity("Scout").?;
+    const hero = world.lookup_entity("Hero").?;
+    const oil = world.lookup_entity("Oil").?;
+    const lamp = world.lookup_entity("Lamp").?;
+    const flint = world.lookup_entity("Flint").?;
+    const full = world.lookup_relation("Full").?;
+    try world.remember(oil, full, 0, 0);
+
+    var vm = vm_mod.VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    _ = try vm.fire_cue(&compiled, "Uses", scout, lamp, oil);
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(scout, world.lookup_relation("First").?, null));
+    try testing.expect(!world.has_fact(scout, world.lookup_relation("Swapped").?, null));
+
+    _ = world.forget(oil, full, null);
+    _ = try vm.fire_cue(&compiled, "Uses", scout, lamp, oil);
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(scout, world.lookup_relation("Swapped").?, null));
+
+    _ = try vm.fire_cue(&compiled, "Uses", hero, lamp, flint);
+    _ = try vm.step_tick();
+    try testing.expect(world.has_fact(hero, world.lookup_relation("Wild").?, null));
+
+    // 4. Weave honours `where` guards, `cue_handler_chain` fallthrough, guard bindings, and
+    //    never swaps draft and target.
+    const weave_src =
+        \\entity Caster, Ember, Target, Stone
+        \\draft Ember(C, E, G, E)
+        \\relation Primed(x, y)
+        \\relation GuardedRan(x)
+        \\relation BoundItem(x, y)
+        \\relation FallbackRan(x)
+        \\on cue Weave(Caster, Ember, target) where Primed(target, fuel):
+        \\  remember GuardedRan(target)
+        \\  remember BoundItem(Caster, fuel)
+        \\on cue Weave(Caster, Ember, target):
+        \\  remember FallbackRan(target)
+    ;
+    var w2 = try World.init(testing.allocator, 256 * 1024);
+    defer w2.deinit();
+    var c2 = try compiler.compile_source(testing.allocator, &w2, null, weave_src);
+    defer c2.deinit();
+    var vm2 = vm_mod.VM.init(testing.allocator, &w2, &c2.chunk);
+    defer vm2.deinit();
+    const caster = w2.lookup_entity("Caster").?;
+    const ember = w2.lookup_entity("Ember").?;
+    const target_e = w2.lookup_entity("Target").?;
+    const stone = w2.lookup_entity("Stone").?;
+
+    // Guard false -> falls through along chain to unguarded Weave handler.
+    try testing.expect((try vm2.weave_draft(&c2, caster, ember, target_e)) != null);
+    _ = try vm2.step_tick();
+    try testing.expect(w2.has_fact(target_e, w2.lookup_relation("FallbackRan").?, null));
+    try testing.expect(!w2.has_fact(target_e, w2.lookup_relation("GuardedRan").?, null));
+
+    // Guard true -> runs guarded handler with `target` and guard-bound `fuel`.
+    try w2.remember(target_e, w2.lookup_relation("Primed").?, stone.to_int(), 0);
+    try testing.expect((try vm2.weave_draft(&c2, caster, ember, target_e)) != null);
+    _ = try vm2.step_tick();
+    try testing.expect(w2.has_fact(target_e, w2.lookup_relation("GuardedRan").?, null));
+    try testing.expect(w2.has_fact(caster, w2.lookup_relation("BoundItem").?, stone.to_int()));
+
+    // Non-commutative: draft in target slot must fizzle.
+    try testing.expect((try vm2.weave_draft(&c2, caster, target_e, ember)) == null);
+}
+
+test "P48-25: object kind classification, D-161 declarations/walk checks, and part display names" {
+    const testing = std.testing;
+    const compiler = @import("../compiler.zig");
+
+    // 1. "2nd Floor" is `.entity` (not `.number`), and u32 overflow returns Overflow.
+    const floor_src =
+        \\entity Hero, Hall
+        \\relation InZone(who, zone)
+        \\remember InZone(Hero, "2nd Floor")
+        \\remember InZone(Hero, Hall)
+    ;
+    var w1 = try World.init(testing.allocator, 256 * 1024);
+    defer w1.deinit();
+    var c1 = try compiler.compile_source(testing.allocator, &w1, null, floor_src);
+    defer c1.deinit();
+    try testing.expectEqual(world_mod.ObjectKind.entity, w1.object_kind(w1.lookup_relation("InZone").?));
+
+    const ovf = compiler.check_source(testing.allocator, "entity Hero\nremember Gold(Hero, 9999999999)\n");
+    try testing.expect(!ovf.is_valid);
+    try testing.expectEqualStrings("Overflow", ovf.kind_name);
+
+    // 2. `points of` tags relation as `.number` and catches entity mix.
+    const points_mix = compiler.check_source(testing.allocator,
+        \\entity Hero, Gem
+        \\remember Clue(Hero, Gem)
+        \\routine Audit(Hero):
+        \\  if 6 points of Clue(_):
+        \\    wait 1 ticks
+    );
+    try testing.expect(!points_mix.is_valid);
+    try testing.expectEqualStrings("MixedRelationObject", points_mix.kind_name);
+
+    // 3. `when each` subject local tags relation as `.entity`; `relation Looks` keeps `.property`.
+    const each_and_looks =
+        \\scene Yard:
+        \\  cast: Hero, Guard
+        \\  props: Lamp
+        \\  marks: Gate
+        \\relation Looks(thing, appearance)
+        \\palette:
+        \\  "." transparent
+        \\image Sheet:
+        \\  "."
+        \\look Dark: Sheet
+        \\look Bright: Sheet
+        \\remember Looks(Lamp, Dark)
+        \\remember Looks(Lamp, Bright)
+        \\when each Holds(who, _):
+        \\  remember Saw(Guard, who)
+    ;
+    var w2 = try World.init(testing.allocator, 256 * 1024);
+    defer w2.deinit();
+    var sp2 = spatial_mod.SpatialSystem.init(testing.allocator);
+    defer sp2.deinit();
+    var c2 = try compiler.compile_source(testing.allocator, &w2, &sp2, each_and_looks);
+    defer c2.deinit();
+    try testing.expectEqual(world_mod.ObjectKind.entity, w2.object_kind(w2.lookup_relation("Saw").?));
+    const looks_rel = w2.lookup_relation("Looks").?;
+    try testing.expectEqual(world_mod.RelationType.property, w2.get_relation_meta(looks_rel).?.rel_type);
+
+    // 4. `walk` rejects cue local (`VariableNotAllowedHere`) and unbound lowercase (`UnboundVariable`);
+    //    lowercase declarations and subsystem variables are rejected cleanly; `part`-only entity
+    //    accepts `name`.
+    const walk_local = compiler.check_source(testing.allocator,
+        \\scene Yard:
+        \\  cast: Hero
+        \\  marks: Gate
+        \\on cue Goes(Hero, spot):
+        \\  walk Hero to spot
+    );
+    try testing.expectEqualStrings("VariableNotAllowedHere", walk_local.kind_name);
+
+    const walk_typo = compiler.check_source(testing.allocator,
+        \\scene Yard:
+        \\  cast: Hero
+        \\  marks: Gate
+        \\routine Go(Hero):
+        \\  walk Hero to gate
+    );
+    try testing.expectEqualStrings("UnboundVariable", walk_typo.kind_name);
+
+    const lower_rel = compiler.check_source(testing.allocator, "entity Hero, Lamp\nremember lit(Lamp)\n");
+    try testing.expectEqualStrings("LowercaseName", lower_rel.kind_name);
+
+    const part_name_ok =
+        \\scene Belfry:
+        \\  props: Bell
+        \\  marks: Steps
+        \\palette:
+        \\  "." transparent
+        \\image Sheet:
+        \\  "."
+        \\sprite Bell: Sheet
+        \\part Clapper of Bell at 0 -1
+        \\name Clapper: "brass clapper"
+    ;
+    var w3 = try World.init(testing.allocator, 256 * 1024);
+    defer w3.deinit();
+    var sp3 = spatial_mod.SpatialSystem.init(testing.allocator);
+    defer sp3.deinit();
+    var c3 = try compiler.compile_source(testing.allocator, &w3, &sp3, part_name_ok);
+    defer c3.deinit();
+    try testing.expectEqualStrings("brass clapper", w3.display_text(w3.lookup_entity("Clapper").?).?);
 }

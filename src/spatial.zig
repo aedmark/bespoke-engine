@@ -548,6 +548,12 @@ pub const SpatialSystem = struct {
     ) !void {
         const wp = self.graph.get_waypoint(start_wp) orelse return error.WaypointNotFound;
         const agent = MotorAgent.init(entity, start_wp, wp.pos, speed);
+        if (self.agents.getPtr(entity)) |existing| {
+            var old = existing.*;
+            existing.* = agent;
+            old.deinit(self.allocator);
+            return;
+        }
         try self.agents.put(entity, agent);
     }
 
@@ -1473,4 +1479,24 @@ test "P31-02: causal ripple existence decays in integer per mille" {
     // Rounded down to 0 per mille with one tick of 2,000 left: not erased yet.
     try testing.expectEqual(@as(u16, 0), CausalDecayTracker.existence_permille(1999, 0, 2000));
     try testing.expect(!CausalDecayTracker.is_erased(1999, 0, 2000));
+}
+
+test "P48-25: register_entity releases prior walk path when re-registering an existing agent" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = try world.intern_entity("Room");
+    const hero = try world.intern_entity("Hero");
+    const wp1 = try spatial.graph.add_waypoint(room, 0, 0, "A");
+    const wp2 = try spatial.graph.add_waypoint(room, 10, 0, "B");
+    try spatial.graph.connect(wp1, wp2, null);
+
+    try spatial.register_entity(hero, wp1, 2);
+    try testing.expect(try spatial.walk_to(hero, wp2));
+    try testing.expect(spatial.agents.get(hero).?.path != null);
+    try spatial.register_entity(hero, wp1, 2);
+    try testing.expect(spatial.agents.get(hero).?.path == null);
 }

@@ -6,9 +6,8 @@
 //! which matters in the browser module that carries it (D-166 point 3). Each stream is a whole
 //! QOI file, `qoif` header and end marker included, so outside tools can read and write one.
 //!
-//! The decoder reads untrusted package bytes. It is told the size the image record promises and
-//! the most pixels it may produce, checks the header against both before it allocates, and
-//! never reads past the slice it is given.
+//! The decoder reads untrusted package bytes. It checks the header against the promised size
+//! and checks for overflow and truncated or trailing bytes before returning decoded pixels.
 const std = @import("std");
 const image = @import("image.zig");
 const Pixel = image.Pixel;
@@ -34,11 +33,14 @@ fn slot(p: Pixel) u8 {
 
 /// The stream for `pixels`, row by row, `width` by `height`. Caller owns the bytes.
 pub fn encode(allocator: std.mem.Allocator, pixels: []const Pixel, width: u32, height: u32) error{OutOfMemory}![]u8 {
-    std.debug.assert(pixels.len == @as(usize, width) * height);
+    const count = std.math.mul(usize, width, height) catch unreachable;
+    std.debug.assert(pixels.len == count);
     var out = std.ArrayListUnmanaged(u8).empty;
     errdefer out.deinit(allocator);
     // The worst case is five bytes a pixel; reserving it keeps the loop free of failure paths.
-    try out.ensureTotalCapacity(allocator, HEADER_LEN + pixels.len * 5 + END.len);
+    const pixel_bytes = std.math.mul(usize, pixels.len, 5) catch return error.OutOfMemory;
+    const total_cap = std.math.add(usize, HEADER_LEN + END.len, pixel_bytes) catch return error.OutOfMemory;
+    try out.ensureTotalCapacity(allocator, total_cap);
     out.appendSliceAssumeCapacity(MAGIC);
     var be: [4]u8 = undefined;
     std.mem.writeInt(u32, &be, width, .big);
@@ -97,7 +99,10 @@ pub fn header_size(bytes: []const u8) Error!struct { width: u32, height: u32 } {
     const channels = bytes[12];
     const colorspace = bytes[13];
     if ((channels != 3 and channels != 4) or colorspace > 1) return Error.QoiHeader;
-    return .{ .width = std.mem.readInt(u32, bytes[4..8], .big), .height = std.mem.readInt(u32, bytes[8..12], .big) };
+    const width = std.mem.readInt(u32, bytes[4..8], .big);
+    const height = std.mem.readInt(u32, bytes[8..12], .big);
+    if (width == 0 or height == 0) return Error.QoiHeader;
+    return .{ .width = width, .height = height };
 }
 
 /// Decodes a stream that must be exactly `width` by `height`. Every alpha is 0 or 255 (D-166)
@@ -106,10 +111,12 @@ pub fn header_size(bytes: []const u8) Error!struct { width: u32, height: u32 } {
 pub fn decode(allocator: std.mem.Allocator, bytes: []const u8, width: u32, height: u32) Error![]Pixel {
     const size = try header_size(bytes);
     if (size.width != width or size.height != height) return Error.QoiHeader;
-    const count = @as(usize, width) * height;
+    if (bytes.len < HEADER_LEN + END.len) return Error.QoiTruncated;
+    const count = std.math.mul(usize, width, height) catch return Error.QoiHeader;
     // A stream codes at most 62 pixels a byte, so a short one cannot claim a huge image and
     // make the allocation below before its bytes are seen.
-    if (count > (bytes.len - HEADER_LEN) * MAX_RUN) return Error.QoiTruncated;
+    const max_pixels: u64 = @as(u64, bytes.len - HEADER_LEN - END.len) * MAX_RUN;
+    if (@as(u64, count) > max_pixels) return Error.QoiTruncated;
     const pixels = try allocator.alloc(Pixel, count);
     errdefer allocator.free(pixels);
 
@@ -228,4 +235,20 @@ test "P48-12: a long run of one colour encodes in a few bytes" {
     const back = try decode(testing.allocator, bytes, 320, 180);
     defer testing.allocator.free(back);
     try testing.expectEqualSlices(Pixel, &pixels, back);
+}
+
+test "P48-24: QOI rejects zero dimensions and streams shorter than header plus end marker" {
+    var zero: [HEADER_LEN + END.len]u8 = @splat(0);
+    @memcpy(zero[0..4], MAGIC);
+    std.mem.writeInt(u32, zero[4..8], 0, .big);
+    std.mem.writeInt(u32, zero[8..12], 4, .big);
+    zero[12] = 4;
+    try testing.expectError(Error.QoiHeader, header_size(&zero));
+
+    var tiny: [HEADER_LEN + 1]u8 = @splat(0);
+    @memcpy(tiny[0..4], MAGIC);
+    std.mem.writeInt(u32, tiny[4..8], 1, .big);
+    std.mem.writeInt(u32, tiny[8..12], 1, .big);
+    tiny[12] = 4;
+    try testing.expectError(Error.QoiTruncated, decode(testing.allocator, &tiny, 1, 1));
 }

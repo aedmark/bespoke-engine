@@ -35,6 +35,18 @@ track/harbour_office: a76c64e06da5d0e7
 track/wreckers_cellar: 9cfd35880ce7ace9
 track/three_tides: 9d60719f47982f97
 track/bell_tower: 3e74db3a3e222c1b
+track/living_village: c98bbac6a6058a90
+track/lamp_point: 65a14df99c9774c7
+track/caustic_grog: 771029c0200c608d
+track/saltmarket: 0d8a9fdef6760084
+track/weathercock: 5d4a6689efbb8ead
+track/fire_escape: d0ff14f7c1080ed8
+track/observatory: 7999292db6deff66
+track/valerius: 2338b4f91c712f2a
+track/lamplighter: 588aca0b0f64c10e
+track/long_gallery: 6a8dae6df418b32b
+track/word_foundry: a9996e3bb0361b04
+track/cinder_table: bd4fdfe4b7744ff9
 arrangement/tavern: 35 passes, 127.3s before repeat, cd4e65546d801303
 arrangement/cellar: 27 passes, 140.9s before repeat, 1385d5c21ec6a651
 arrangement/spitting_contest: 33 passes, 125.7s before repeat, 3d1f1fb4c01c643a
@@ -46,6 +58,18 @@ arrangement/harbour_office: 31 passes, 126.1s before repeat, 48f9f16b11a96c8c
 arrangement/wreckers_cellar: 45 passes, 128.6s before repeat, 2854d8dbd925f77c
 arrangement/three_tides: 35 passes, 127.3s before repeat, 30c201e8cf36a15c
 arrangement/bell_tower: 22 passes, 146.7s before repeat, e9a0a1202d3eb298
+arrangement/living_village: 28 passes, 124.4s before repeat, 28dd64b61f10e44d
+arrangement/lamp_point: 30 passes, 124.1s before repeat, d6a93926021452fc
+arrangement/caustic_grog: 34 passes, 123.6s before repeat, b10fb5e2c5b28263
+arrangement/saltmarket: 30 passes, 122.0s before repeat, aef90aa7a599ae49
+arrangement/weathercock: 28 passes, 129.2s before repeat, 802607d713c35a48
+arrangement/fire_escape: 36 passes, 127.1s before repeat, dc30d72c969459df
+arrangement/observatory: 26 passes, 130.0s before repeat, a2534a3252b9e713
+arrangement/valerius: 24 passes, 130.9s before repeat, 05fa77ac72bcde80
+arrangement/lamplighter: 26 passes, 122.4s before repeat, 72ca80d39b3f165a
+arrangement/long_gallery: 28 passes, 122.2s before repeat, 9a332a729efc7c00
+arrangement/word_foundry: 26 passes, 124.8s before repeat, cf8dec4ff7d86272
+arrangement/cinder_table: 30 passes, 126.3s before repeat, b7e8d75ac2745f0d
 fade/tavern->cellar: 220c462f0d1045c0 9a0490163f14b986
 scene/: none
 scene/Nowhere In Particular: tavern
@@ -58,16 +82,27 @@ scene/Harbour Office: harbour_office
 scene/Tidewalk: tidewalk
 scene/Fencing Yard: fencing_yard
 scene/Drowned Lantern: lantern
-scene/Living Village: tavern
-scene/Lamp Point: net_loft
+scene/Living Village: living_village
+scene/Lamp Point: lamp_point
 scene/Wreckers Cellar: wreckers_cellar
 scene/Charter Yard: three_tides
 scene/Brine's Boarding House: three_tides
 scene/Gull Roost: three_tides
-scene/Wren's Attic: tavern
-scene/The Customs House: tavern
-scene/Beacon Hill: tavern
+scene/Wren's Attic: weathercock
+scene/The Customs House: weathercock
+scene/Beacon Hill: weathercock
 scene/Bell Tower Base: bell_tower
 scene/Bell Tower Belfry: bell_tower
-scene/Saltglass Stockade: tavern
+scene/Saltglass Stockade: caustic_grog
+scene/Saltmarket: saltmarket
+scene/Hollin Keep Gallery: fire_escape
+scene/Larkspur Observatory: observatory
+scene/Greyhold Store: valerius
+scene/Greyhold Gate: valerius
+scene/Tallow Lane: lamplighter
+scene/Market Steps: lamplighter
+scene/Long Gallery: long_gallery
+scene/Locked Studio: long_gallery
+scene/TheWordFoundry: word_foundry
+scene/TheCinderTable: cinder_table
 mml/demo: e1282e35d0b49a4b

@@ -80,6 +80,8 @@ pub fn to_pixels(allocator: std.mem.Allocator, rgba: png.Rgba, palette: ?[]const
 /// Codes tried for new colours, in order: letters and digits first, then the other printable
 /// characters a code may hold. `.` is left for the transparent code.
 const ONE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!$%&'()*+,-/:;<=>?@[\\]^_`{|}~#";
+/// Total palette size supported by one-character codes (`.` for transparent plus `ONE`).
+pub const MAX_ONE_CHAR_COLOURS: usize = 1 + ONE.len;
 const TWO_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 pub const CodeError = error{ OutOfCodes, OutOfMemory };
@@ -202,4 +204,12 @@ test "P48-12: a compile keeps PNG colours, and a declared palette is a rule they
     try std.testing.expectEqual(Where{ .x = 0, .y = 1 }, where);
     px[3] = 128;
     try std.testing.expectError(PixelError.PartialTransparency, to_pixels(allocator, rgba, null, &where));
+}
+
+test "P48-25: MAX_ONE_CHAR_COLOURS equals transparent plus ONE codes" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectEqual(@as(usize, 93), MAX_ONE_CHAR_COLOURS);
+    const ok = try assign_codes(allocator, &.{}, MAX_ONE_CHAR_COLOURS, 1);
+    defer free_codes(allocator, ok, 0);
+    try std.testing.expectError(CodeError.OutOfCodes, assign_codes(allocator, &.{}, MAX_ONE_CHAR_COLOURS + 1, 1));
 }

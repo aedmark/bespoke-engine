@@ -39,6 +39,9 @@ PROOF_PAGE_NAMES = (
     "observatory.html",
     "valerius.html",
     "lamplighter.html",
+    "long-gallery.html",
+    "word-foundry.html",
+    "cinder-table.html",
 )
 PROOF_PAGE_PATHS = tuple(ROOT / "site" / name for name in PROOF_PAGE_NAMES)
 PROOF_PAGE_JS_PATH = Path(__file__).with_name("proof_page.js")

@@ -15,7 +15,7 @@ const spell = bespoke.spell;
 const ListWriter = bespoke.ListWriter;
 
 /// Twelve cards: four rounds of three seats.
-const TOTAL_PLAYS: usize = 12;
+pub const TOTAL_PLAYS: usize = 12;
 
 pub const CINDER_TABLE_SCRIPT =
     \\scene: TheCinderTable
@@ -189,7 +189,7 @@ pub const CINDER_TABLE_SCRIPT =
     \\  remember Turn(Maren)
 ;
 
-const Ids = struct {
+pub const Ids = struct {
     scene: bespoke.EntityId,
     maren: bespoke.EntityId,
     ossic: bespoke.EntityId,
@@ -199,7 +199,7 @@ const Ids = struct {
     decisions: [3]bespoke.EntityId,
 };
 
-fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const scene = world.lookup_entity("TheCinderTable").?;
     const ids = Ids{
         .scene = scene,

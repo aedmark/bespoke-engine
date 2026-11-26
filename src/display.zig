@@ -124,7 +124,7 @@ pub const MAX_FRAME_LOOKS = 64;
 
 pub const RenderLook = struct {
     entity: EntityId,
-    name: [48]u8 = undefined,
+    name: [64]u8 = undefined,
     len: u8 = 0,
 };
 
@@ -228,6 +228,7 @@ fn debug_fact(world: *const World, fact: world_mod.Fact, expired: bool) RenderDe
         const len = @min(rm.name.len, df.relation_name.len);
         @memcpy(df.relation_name[0..len], rm.name[0..len]);
         df.relation_len = @intCast(len);
+        if (rm.object_kind == .number) value_relation = true;
         for (VALUE_RELATIONS) |v| if (std.mem.eql(u8, v, rm.name)) {
             value_relation = true;
         };
@@ -1342,4 +1343,36 @@ test "P45-01: the inspector lists an axis value as a signed number, not an entit
             try testing.expectEqualStrings("1", shown);
         }
     }
+}
+
+test "P48-25: RenderLook captures 60-byte names and debug_fact renders numeric object_kind as digits" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+
+    const long_name = "LamplighterCoatWithBrassButtonsAndReflectiveTrimNumberTwelve";
+    try testing.expectEqual(@as(usize, 60), long_name.len);
+    const hero = try world.intern_entity("Hero");
+    const look_ent = try world.intern_entity(long_name);
+    const looks_rel = try world.intern_relation_kind("Looks", .property, .entity);
+    const coins_rel = try world.intern_relation_kind("Coins", .property, .number);
+    try world.remember(hero, looks_rel, look_ent.to_int(), 0);
+    // Entity 1 is Hero; numeric relation value 1 must render as "1", never "Hero".
+    try world.remember(hero, coins_rel, 1, 0);
+
+    var look_out: [4]RenderLook = undefined;
+    try testing.expectEqual(@as(usize, 1), capture_looks(&world, &look_out));
+    try testing.expectEqualStrings(long_name, look_out[0].name[0..look_out[0].len]);
+
+    var fact_out: [8]RenderDebugFact = undefined;
+    const count = capture_debug_facts(&world, &fact_out);
+    var saw_coins = false;
+    for (fact_out[0..count]) |fact| {
+        if (std.mem.eql(u8, fact.relation_name[0..fact.relation_len], "Coins")) {
+            saw_coins = true;
+            try testing.expect(!fact.object_is_entity);
+            try testing.expectEqualStrings("1", fact.object_name[0..fact.object_len]);
+        }
+    }
+    try testing.expect(saw_coins);
 }

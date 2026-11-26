@@ -668,6 +668,8 @@ pub const AST = struct {
     }
 
     pub fn deinit(self: *AST) void {
+        self.display_names.deinit(self.allocator);
+        self.phrases.deinit(self.allocator);
         self.entities.deinit();
         self.relations.deinit();
         self.initial_stmts.deinit();
@@ -1695,7 +1697,9 @@ pub const Parser = struct {
                 } else if (std.mem.eql(u8, directive, "grudges")) {
                     grudge_ticks = .{ try self.take_u64(), try self.take_u64() };
                 } else if (std.mem.eql(u8, directive, "priority")) {
-                    warrant_priority = @intCast(try self.take_u32());
+                    const val = try self.take_u32();
+                    if (val > std.math.maxInt(u16)) return self.set_error("priority {d} exceeds {d}", .{ val, std.math.maxInt(u16) });
+                    warrant_priority = @intCast(val);
                 } else if (std.mem.eql(u8, directive, "currency")) {
                     currency_unit = try self.take_atom();
                 } else if (std.mem.eql(u8, directive, "relations")) {
@@ -2107,6 +2111,7 @@ pub const Parser = struct {
         _ = try self.expect(.indent);
         var words = std.array_list.Managed(SpellWordDecl).init(self.allocator);
         var spells = std.array_list.Managed(SpellPatternDecl).init(self.allocator);
+        var kind_counts = [3]usize{ 0, 0, 0 };
         while (self.current.tag != .dedent and self.current.tag != .eof) {
             const directive = self.current.slice;
             if (self.current.tag != .identifier)
@@ -2119,9 +2124,10 @@ pub const Parser = struct {
                     .element
                 else
                     .form;
-                var count: usize = 0;
+                const kind_slot = kind.index();
+                var line_count: usize = 0;
                 while (self.current.tag != .dedent and self.current.tag != .eof) {
-                    try self.count_item(.words, count + 1, self.current);
+                    try self.count_item(.words, kind_counts[kind_slot] + 1, self.current);
                     const word_name = (try self.expect(.identifier)).slice;
                     if (word_name.len > spell_mod.MAX_WORD_TEXT)
                         return self.set_error("spellbook '{s}' word '{s}' is longer than {d} bytes", .{ name, word_name, spell_mod.MAX_WORD_TEXT });
@@ -2133,14 +2139,15 @@ pub const Parser = struct {
                         if (std.mem.eql(u8, prior.name, word_name))
                             return self.set_error("spellbook '{s}' word '{s}' reuses a spell name", .{ name, word_name });
                     }
-                    count += 1;
-                    if (count > spell_mod.MAX_WORDS_PER_KIND)
+                    line_count += 1;
+                    kind_counts[kind_slot] += 1;
+                    if (kind_counts[kind_slot] > spell_mod.MAX_WORDS_PER_KIND)
                         return self.set_error("spellbook '{s}' declares more than {d} {s} words", .{ name, spell_mod.MAX_WORDS_PER_KIND, directive });
                     try words.append(.{ .kind = kind, .name = word_name });
                     if (self.current.tag != .comma) break;
                     try self.advance();
                 }
-                if (count == 0) return self.set_error("spellbook '{s}' declares no {s} words", .{ name, directive });
+                if (line_count == 0) return self.set_error("spellbook '{s}' declares no {s} words", .{ name, directive });
             } else if (std.mem.eql(u8, directive, "spell")) {
                 try self.count_item(.spells, spells.items.len + 1, self.current);
                 const spell_name = (try self.expect(.identifier)).slice;
@@ -2696,7 +2703,9 @@ pub const Parser = struct {
                 return self.error_at(at, "area '{s}' expects ':' and x, y, width, and height in art pixels", .{target});
             n.* = try self.take_u32();
         }
-        if (v[2] == 0 or v[3] == 0 or v[0] + v[2] > image_mod.ART_WIDTH or v[1] + v[3] > image_mod.ART_HEIGHT)
+        if (v[2] == 0 or v[3] == 0 or
+            @as(u64, v[0]) + v[2] > image_mod.ART_WIDTH or
+            @as(u64, v[1]) + v[3] > image_mod.ART_HEIGHT)
             return self.error_at(at, "area '{s}' is {d}x{d} at ({d}, {d}); an area is at least 1x1 and inside the {d}x{d} art", .{ target, v[2], v[3], v[0], v[1], image_mod.ART_WIDTH, image_mod.ART_HEIGHT });
         for (self.area_srcs.items) |prior| {
             if (std.mem.eql(u8, prior.target, target)) return self.error_at(at, "'{s}' has two areas; declare one", .{target});
@@ -2776,15 +2785,24 @@ pub const Parser = struct {
         try self.look_srcs.append(self.allocator, src);
     }
 
+    fn take_part_name(self: *Parser) ![]const u8 {
+        if (self.current.tag == .string_literal) {
+            const s = self.current.slice;
+            try self.advance();
+            return s;
+        }
+        return (try self.expect(.identifier)).slice;
+    }
+
     /// `part <Part> of <Host> at <dx> <dy>`, the offset in art pixels (P48-11, D-181).
     fn parse_part(self: *Parser) !void {
         const at = self.current;
-        // One word each: `parse_name` would read `Clapper of Bell` as one multi-word name.
-        const part = (try self.expect(.identifier)).slice;
+        // Single identifier or quoted string: `parse_name` would consume `of`.
+        const part = try self.take_part_name();
         if (self.current.tag != .identifier or !std.mem.eql(u8, self.current.slice, "of"))
             return self.error_at(self.current, "part '{s}' expects 'of <host> at <x> <y>'", .{part});
         try self.advance();
-        const host = (try self.expect(.identifier)).slice;
+        const host = try self.take_part_name();
         if (self.current.tag != .identifier or !std.mem.eql(u8, self.current.slice, "at"))
             return self.error_at(self.current, "part '{s}' expects 'at <x> <y>' after its host", .{part});
         try self.advance();
@@ -3022,6 +3040,10 @@ pub const Parser = struct {
             for (steps, own) |step, *o| {
                 if (step.frame >= frames)
                     return self.error_at(step.at, "image '{s}' has {d} frame(s), numbered from 0; frame {d} does not exist", .{ image_name, frames, step.frame });
+                if (step.frame > std.math.maxInt(u16))
+                    return self.error_at(step.at, "animation frame {d} exceeds {d}", .{ step.frame, std.math.maxInt(u16) });
+                if (step.duration > std.math.maxInt(u16))
+                    return self.error_at(step.at, "animation step duration {d} exceeds {d} ticks", .{ step.duration, std.math.maxInt(u16) });
                 o.* = .{ .frame = @intCast(step.frame), .duration = @intCast(step.duration) };
             }
             slot.* = own;
@@ -3526,6 +3548,9 @@ pub const Parser = struct {
             if (self.current.tag == .comma) try self.advance();
         }
         _ = try self.expect(end_tag);
+        if (args.items.len == 0) {
+            return self.set_error("fact pattern '{s}' expects at least one argument", .{rel_name});
+        }
 
         return FactPattern{
             .relation = rel_name,
@@ -4427,4 +4452,47 @@ fn expect_decision_error(source: []const u8, needle: []const u8) !void {
         std.debug.print("diagnostic was: {s}\n", .{diag.message});
         return error.TestUnexpectedResult;
     }
+}
+
+test "P48-25: limit words accumulates across split power/element/form lines, and AST.deinit frees display_names/phrases" {
+    const testing = std.testing;
+    // Two power lines totaling 13 words exceed the default words limit of 12.
+    const split_src =
+        \\spellbook SplitWords:
+        \\  power P1, P2, P3, P4, P5, P6, P7
+        \\  power P8, P9, P10, P11, P12, P13
+        \\  element Fire
+        \\  form Bolt
+        \\  spell Spark: P1, Fire, Bolt
+        \\
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex1 = Lexer.init(alloc, split_src);
+    var p1 = try Parser.init(alloc, &lex1);
+    try testing.expectError(error.UnexpectedToken, p1.parse_program());
+    try testing.expect(std.mem.indexOf(u8, p1.get_diagnostic().?.message, "limit words") != null);
+
+    // Adding `limit words 13` allows those 13 split power words to parse cleanly.
+    var lex_ok = Lexer.init(alloc, "limit words 13\n" ++ split_src);
+    var p_ok = try Parser.init(alloc, &lex_ok);
+    _ = try p_ok.parse_program();
+
+    // Non-arena AST.deinit frees display_names and phrases cleanly.
+    const src =
+        \\entity Hero
+        \\name Hero: "The Traveler"
+        \\phrase HintRoom: "Seek {room}."
+        \\
+    ;
+    var lex2 = Lexer.init(alloc, src);
+    var p2 = try Parser.init(alloc, &lex2);
+    const parsed_ast = try p2.parse_program();
+    try testing.expectEqual(@as(usize, 1), parsed_ast.display_names.items.len);
+    try testing.expectEqual(@as(usize, 1), parsed_ast.phrases.items.len);
+    var raw_ast = AST.init(testing.allocator);
+    defer raw_ast.deinit();
+    try raw_ast.display_names.append(testing.allocator, .{ .entity = "Hero", .text = "The Traveler" });
+    try raw_ast.phrases.append(testing.allocator, .{ .key = "thing_fallback", .text = "object" });
 }

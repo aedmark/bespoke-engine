@@ -308,6 +308,9 @@ pub const TemporalHypervisor = struct {
         }
         self.branch_active = false;
         self.branch_dice = null;
+        if (self.collapse_state == .active) {
+            self.collapse_state = if (commit_keystone) .resolved_and_merged else .budget_expired;
+        }
     }
 
     /// Returns remaining simulation ticks before countdown budget expiration (P31-01, P32-21, D-027, D-044).
@@ -572,4 +575,32 @@ test "D-073: the Novikov check reads the candidate action's consequences, and ch
     try hypervisor.register_teleological_dependency(abandon_rel, warn_rel);
     try testing.expect(!hypervisor.is_teleologically_justified(abandon_rel, fetch_rel));
     try testing.expect(hypervisor.is_teleologically_justified(abandon_rel, paradox_rel));
+}
+
+test "P48-25: direct collapse_branch sets collapse_state so snapshots remain valid" {
+    const testing = std.testing;
+    const snap_mod = @import("temporal_snapshot.zig");
+    var primary = try World.init(testing.allocator, 256 * 1024);
+    defer primary.deinit();
+    const hero = try primary.intern_entity("Hero");
+    const engine = try primary.intern_entity("Engine");
+
+    var hv = TemporalHypervisor.init(testing.allocator, &primary);
+    defer hv.deinit();
+
+    _ = try hv.fork_branch(10, hero, engine);
+    try hv.collapse_branch(false);
+    try testing.expectEqual(BranchCollapseState.budget_expired, hv.collapse_state);
+    var buf1 = std.array_list.Managed(u8).init(testing.allocator);
+    defer buf1.deinit();
+    var lw1 = @import("list_writer.zig").ListWriter.init(&buf1);
+    try snap_mod.TemporalSnapshot.write(&hv, &lw1.writer);
+    var r1: std.Io.Reader = .fixed(buf1.items);
+    var s1 = try snap_mod.TemporalSnapshot.read(testing.allocator, &primary, &r1);
+    defer s1.deinit();
+    try testing.expectEqual(BranchCollapseState.budget_expired, s1.collapse_state);
+
+    _ = try hv.fork_branch(10, hero, engine);
+    try hv.collapse_branch(true);
+    try testing.expectEqual(BranchCollapseState.resolved_and_merged, hv.collapse_state);
 }

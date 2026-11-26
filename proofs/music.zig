@@ -1214,6 +1214,1050 @@ const BELL_TOWER_ARRANGEMENT = order(
 pub const bell_tower = Arranged{ .sections = &BELL_TOWER_SECTIONS, .arrangement = &BELL_TOWER_ARRANGEMENT };
 
 // ---------------------------------------------------------------------------
+// The living village: a bright D major morning round, 108 bpm.
+// ---------------------------------------------------------------------------
+
+const VILLAGE_BPM = 108;
+
+const LIVING_VILLAGE_SECTIONS = [_]audio.BgmPattern{
+    section(VILLAGE_BPM,
+        \\d2 - a2 - d2 - a2 - g2 - d2 - a2 - e2 - | d2 - a2 - b2 - f#2 - g2 - a2 - d2 - - -
+    ,
+        \\f#4 a4 d5 - e5 - f#5 d5 b4 - g4 - a4 - - - | d5 - f#5 - d5 b4 a4 f#4 g4 - e4 - d4 - - -
+    ,
+        \\d3 - f#3 - a3 - f#3 - g3 - b3 - a3 - e3 - | d3 - f#3 - b3 - d4 - g3 - a3 - d3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(VILLAGE_BPM,
+        \\d2 - a2 - d2 - a2 - g2 - d2 - a2 - e2 - | b2 - f#2 - g2 - a2 - d2 - - - d2 - - -
+    ,
+        \\f#4 a4 d5 - e5 - f#5 d5 g5 - b4 - c#5 - a4 - | d5 - f#5 - b4 d5 c#5 e5 d5 - - - - - - -
+    ,
+        \\d3 - f#3 - a3 - f#3 - g3 - b3 - a3 - c#4 - | b3 - d4 - g3 - a3 - d3 - f#3 - a3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - - -
+    ),
+    section(VILLAGE_BPM,
+        \\g2 - d3 - g2 - d3 - d2 - a2 - d2 - a2 - | e2 - b2 - e2 - b2 - a2 - e2 - a2 - - -
+    ,
+        \\g4 b4 d5 - b4 - g4 - f#4 a4 d5 - a4 - f#4 - | g4 b4 e5 - b4 - g4 - a4 - - - - - - -
+    ,
+        \\g3 - b3 - d4 - b3 - d3 - f#3 - a3 - f#3 - | e3 - g3 - b3 - g3 - a3 - c#4 - e4 - - -
+    ,
+        \\k h - h s - h - k h - h s - h - | k h - h s - h - k - s - s h s h
+    ),
+    section(VILLAGE_BPM,
+        \\g2 - d3 - b2 - f#2 - e2 - b2 - a2 - e2 - | g2 - a2 - d2 - - - d2 - - - d2 - - -
+    ,
+        \\b4 d5 g5 - f#5 - d5 - e5 g5 b4 - c#5 - a4 - | b4 d5 c#5 e5 d5 - - - d4 - - - - - - -
+    ,
+        \\g3 - b3 - b3 - d4 - e3 - g3 - a3 - c#4 - | g3 - a3 - d3 - f#3 - a3 - - - - - - -
+    ,
+        \\k h - h s - h - k h - h s - h - | k - s - k - - - - - - - - - - -
+    ),
+    section(VILLAGE_BPM,
+        \\b2 - - - f#2 - - - g2 - - - d2 - - - | e2 - - - b2 - - - a2 - - - - - - -
+    ,
+        \\f#5 - - - d5 - b4 - b4 - - - g4 - - - | g4 - b4 - d5 - b4 - a4 - - - - - - -
+    ,
+        \\b3 - d4 - f#4 - d4 - g3 - b3 - d4 - b3 - | e3 - g3 - b3 - g3 - a3 - c#4 - e4 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - h -
+    ),
+    section(VILLAGE_BPM,
+        \\b2 - - - f#2 - - - g2 - - - e2 - - - | a2 - - - e2 - - - d2 - - - d2 - - -
+    ,
+        \\d5 - f#5 - d5 - b4 - d5 - b4 - g4 - - - | e5 - c#5 - a4 - c#5 - d5 - - - - - - -
+    ,
+        \\b3 - d4 - f#4 - d4 - g3 - b3 - e3 - g3 - | a3 - c#4 - e4 - c#4 - d3 - f#3 - a3 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - s - k - - -
+    ),
+    section(VILLAGE_BPM,
+        \\d2 - a2 - d3 - a2 - g2 - d3 - g2 - d3 - | e2 - b2 - a2 - e2 - d2 - a2 - d2 - a2 -
+    ,
+        \\d5 - e5 - f#5 - d5 - g5 - f#5 - e5 - d5 - | e5 - d5 - c#5 - b4 - a4 - b4 - c#5 - d5 -
+    ,
+        \\d3 - - - a3 - - - g3 - - - d4 - - - | e3 - - - a3 - - - d3 - - - f#3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - s -
+    ),
+    section(VILLAGE_BPM,
+        \\g2 - d3 - b2 - f#2 - e2 - b2 - a2 - e2 - | g2 - a2 - d2 - a2 - d2 - - - - - - -
+    ,
+        \\g5 - f#5 - d5 - b4 - e5 - d5 - c#5 - a4 - | b4 - c#5 - d5 - - - d5 - - - - - - -
+    ,
+        \\g3 - - - b3 - - - e3 - - - a3 - - - | g3 - - - a3 - - - d3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const LIVING_VILLAGE_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2 d d2 a a2/lc
+);
+
+pub const living_village = Arranged{ .sections = &LIVING_VILLAGE_SECTIONS, .arrangement = &LIVING_VILLAGE_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// Lamp Point headland: E dorian coastal whistle march, 116 bpm.
+// ---------------------------------------------------------------------------
+
+const HEADLAND_BPM = 116;
+
+const LAMP_POINT_SECTIONS = [_]audio.BgmPattern{
+    section(HEADLAND_BPM,
+        \\e2 - b2 - e2 - b2 - d2 - a2 - d2 - a2 - | c2 - g2 - d2 - a2 - e2 - b2 - e2 - - -
+    ,
+        \\e4 g4 b4 - d5 - b4 a4 f#4 - a4 - d4 - - - | e4 g4 c5 - a4 - f#4 d4 e4 - - - - - - -
+    ,
+        \\e3 - g3 - b3 - g3 - d3 - f#3 - a3 - f#3 - | c3 - e3 - d3 - f#3 - e3 - g3 - b3 - - -
+    ,
+        \\k - - - h - s - k - - - h - s - | k - - - h - s - k - s - k - - -
+    ),
+    section(HEADLAND_BPM,
+        \\e2 - b2 - e2 - b2 - g2 - d3 - d2 - a2 - | b2 - f#2 - d2 - a2 - e2 - - - e2 - - -
+    ,
+        \\b4 - d5 - e5 - b4 g4 b4 - d5 - a4 - - - | f#4 - b4 - a4 - f#4 d4 e4 - - - - - - -
+    ,
+        \\e3 - g3 - b3 - g3 - g3 - b3 - d3 - f#3 - | b3 - d4 - d3 - f#3 - e3 - g3 - b3 - - -
+    ,
+        \\k - - - h - s - k - - - h - s - | k - - - h - s - k - - - s - - -
+    ),
+    section(HEADLAND_BPM,
+        \\g2 - d3 - g2 - d3 - d2 - a2 - d2 - a2 - | e2 - b2 - g2 - d3 - b2 - f#2 - b2 - - -
+    ,
+        \\g5 - d5 b4 d5 - g5 - f#5 - d5 a4 d5 - f#5 - | e5 - b4 g4 d5 - b4 - b4 - - - - - - -
+    ,
+        \\g3 - b3 - d4 - b3 - d3 - f#3 - a3 - f#3 - | e3 - g3 - g3 - b3 - b3 - d4 - f#4 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(HEADLAND_BPM,
+        \\c3 - g2 - d3 - a2 - e2 - b2 - d2 - a2 - | c2 - d2 - e2 - - - e2 - - - e2 - - -
+    ,
+        \\e5 - c5 g4 f#5 - d5 a4 g5 - e5 b4 f#5 - d5 - | e5 - f#5 - e5 - - - e4 - - - - - - -
+    ,
+        \\c4 - e4 - d4 - f#4 - e3 - g3 - d3 - f#3 - | c3 - d3 - e3 - g3 - b3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(HEADLAND_BPM,
+        \\e2 - - - b2 - - - d2 - - - a2 - - - | c2 - - - g2 - - - b2 - - - - - - -
+    ,
+        \\b4 - - - e5 - b4 - a4 - - - f#4 - - - | g4 - e4 - c4 - e4 - f#4 - - - - - - -
+    ,
+        \\e3 - g3 - b3 - g3 - d3 - f#3 - a3 - f#3 - | c3 - e3 - g3 - e3 - b3 - d4 - f#4 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - s -
+    ),
+    section(HEADLAND_BPM,
+        \\e2 - - - b2 - - - d2 - - - b2 - - - | c2 - d2 - e2 - - - e2 - - - e2 - - -
+    ,
+        \\e5 - d5 - b4 - g4 - a4 - f#4 - d5 - b4 - | c5 - d5 - e5 - - - - - - - - - - -
+    ,
+        \\e3 - g3 - b3 - g3 - d3 - f#3 - b3 - d4 - | c3 - d3 - e3 - g3 - b3 - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(HEADLAND_BPM,
+        \\e2 - b2 - e3 - b2 - d2 - a2 - d3 - a2 - | c2 - g2 - c3 - g2 - b2 - f#2 - b2 - f#2 -
+    ,
+        \\e5 - d5 - b4 - g4 - d5 - c5 - a4 - f#4 - | e4 - g4 - c5 - e5 - d5 - b4 - f#4 - b4 -
+    ,
+        \\e3 - - - b3 - - - d3 - - - a3 - - - | c3 - - - g3 - - - b3 - - - f#3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - s -
+    ),
+    section(HEADLAND_BPM,
+        \\e2 - b2 - g2 - d3 - c2 - g2 - d2 - a2 - | b2 - f#2 - e2 - - - e2 - - - - - - -
+    ,
+        \\e5 - g5 - b4 - d5 - c5 - e5 - d5 - f#5 - | b4 - d5 - e5 - - - e5 - - - - - - -
+    ,
+        \\e3 - - - g3 - - - c3 - - - d3 - - - | b3 - - - e3 - - - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const LAMP_POINT_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a-2 a2-2 c c2 d/l d2 b b2 a/d a2 b+2 b2+2 d d2 a a2/lc
+);
+
+pub const lamp_point = Arranged{ .sections = &LAMP_POINT_SECTIONS, .arrangement = &LAMP_POINT_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// Caustic grog: urgent A minor tick-tock caper, 132 bpm.
+// ---------------------------------------------------------------------------
+
+const GROG_BPM = 132;
+
+const CAUSTIC_GROG_SECTIONS = [_]audio.BgmPattern{
+    section(GROG_BPM,
+        \\a2 - e3 - a2 - e3 - g2 - d3 - g2 - d3 - | f2 - c3 - f2 - c3 - e2 - b2 - e2 - b2 -
+    ,
+        \\a4 - c5 - e5 - a5 - g5 - e5 - d5 - b4 - | f4 - a4 - c5 - f5 - e5 - d5 - c5 - b4 -
+    ,
+        \\a3 - - - c4 - - - g3 - - - b3 - - - | f3 - - - a3 - - - e3 - - - g#3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - s -
+    ),
+    section(GROG_BPM,
+        \\a2 - e3 - a2 - e3 - d3 - a3 - d3 - a3 - | f2 - c3 - e2 - b2 - a2 - - - - - - -
+    ,
+        \\a4 - c5 - e5 - c5 - d5 - f5 - a5 - f5 - | c5 - a4 - b4 - g#4 - a4 - - - - - - -
+    ,
+        \\a3 - - - c4 - - - d4 - - - f4 - - - | f3 - - - e3 - - - a3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - s - k - s - k - - - - - - -
+    ),
+    section(GROG_BPM,
+        \\c3 - g3 - c3 - g3 - g2 - d3 - g2 - d3 - | d3 - a3 - d3 - a3 - e2 - b2 - e2 - b2 -
+    ,
+        \\e5 - c5 - g4 - c5 - d5 - b4 - g4 - b4 - | f5 - d5 - a4 - d5 - e5 - b4 - g#4 - e4 -
+    ,
+        \\c4 - - - e4 - - - g3 - - - b3 - - - | d4 - - - f4 - - - e3 - - - g#3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - h - s - s -
+    ),
+    section(GROG_BPM,
+        \\f2 - c3 - d3 - a3 - g2 - d3 - c3 - g3 - | f2 - e2 - a2 - - - a2 - - - - - - -
+    ,
+        \\a4 - c5 - d5 - f5 - b4 - d5 - e5 - c5 - | f5 - e5 - a4 - - - a4 - - - - - - -
+    ,
+        \\f3 - - - d4 - - - g3 - - - c4 - - - | f3 - - - e3 - - - a3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - s - k - s - k - - - - - - -
+    ),
+    section(GROG_BPM,
+        \\a2 - - - - - - - g2 - - - - - - - | f2 - - - - - - - e2 - - - - - - -
+    ,
+        \\a4 - b4 - c5 - e5 - g4 - a4 - b4 - d5 - | f4 - g4 - a4 - c5 - e4 - f4 - g#4 - b4 -
+    ,
+        \\a3 - - - c4 - - - g3 - - - b3 - - - | f3 - - - a3 - - - e3 - - - g#3 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - s -
+    ),
+    section(GROG_BPM,
+        \\d3 - - - - - - - c3 - - - - - - - | b2 - - - - - - - e2 - - - a2 - - -
+    ,
+        \\d5 - e5 - f5 - a5 - c5 - d5 - e5 - g5 - | b4 - c5 - d5 - f5 - e5 - d5 - c5 - a4 -
+    ,
+        \\d4 - - - f4 - - - c4 - - - e4 - - - | b3 - - - d4 - - - e3 - - - a3 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - h - s - k - - - - - - -
+    ),
+    section(GROG_BPM,
+        \\a2 - g2 - f2 - e2 - d2 - c2 - b1 - e2 - | a2 - b2 - c3 - d3 - e3 - b2 - a2 - - -
+    ,
+        \\a5 - g5 - f5 - e5 - d5 - c5 - b4 - g#4 - | a4 - b4 - c5 - d5 - e5 - g#5 - a5 - - -
+    ,
+        \\a3 - g3 - f3 - e3 - | d3 - c3 - b2 - e3 - | a3 - c4 - d4 - e4 - | e3 - g#3 - a3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - - -
+    ),
+    section(GROG_BPM,
+        \\f2 - c3 - g2 - d3 - a2 - e3 - c3 - g3 - | d3 - a3 - e2 - b2 - a2 - - - - - - -
+    ,
+        \\f5 - c5 - g5 - d5 - a5 - e5 - c5 - g5 - | d5 - f5 - e5 - b4 - a4 - - - - - - -
+    ,
+        \\f3 - - - g3 - - - a3 - - - c4 - - - | d4 - - - e3 - - - a3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - s - s - s - k - - - - - - -
+    ),
+};
+
+const CAUSTIC_GROG_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+2 a2+2 c c2 d/l d2 a a2 b/d b2 c+2 c2+2 b b2 c c2 d d2 a/d a2/lc
+);
+
+pub const caustic_grog = Arranged{ .sections = &CAUSTIC_GROG_SECTIONS, .arrangement = &CAUSTIC_GROG_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Saltmarket: bustling D phrygian bazaar groove, 118 bpm.
+// ---------------------------------------------------------------------------
+
+const SALTMARKET_BPM = 118;
+
+const SALTMARKET_SECTIONS = [_]audio.BgmPattern{
+    section(SALTMARKET_BPM,
+        \\d2 - a2 - eb2 - bb2 - d2 - a2 - c2 - g2 - | d2 - eb2 - f#2 - g2 - d2 - a2 - d2 - - -
+    ,
+        \\d5 f#5 g5 f#5 eb5 d5 c5 eb5 d5 - a4 - c5 - bb4 a4 | d5 eb5 f#5 g5 a5 f#5 eb5 d5 d5 - - - - - - -
+    ,
+        \\d3 - f#3 - eb3 - g3 - d3 - f#3 - c3 - eb3 - | d3 - eb3 - f#3 - g3 - d3 - a3 - d3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(SALTMARKET_BPM,
+        \\d2 - a2 - eb2 - bb2 - g2 - d3 - c2 - g2 - | eb2 - bb2 - c2 - g2 - d2 - - - d2 - - -
+    ,
+        \\f#5 - eb5 d5 eb5 - c5 bb4 g4 - bb4 - c5 - eb5 - | d5 c5 bb4 a4 g4 a4 bb4 c5 d5 - - - - - - -
+    ,
+        \\d3 - f#3 - eb3 - g3 - g3 - bb3 - c3 - eb3 - | eb3 - g3 - c3 - eb3 - d3 - f#3 - d3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(SALTMARKET_BPM,
+        \\g2 - d3 - g2 - d3 - c3 - g2 - f2 - c3 - | bb2 - f2 - eb2 - bb2 - a2 - e2 - a2 - - -
+    ,
+        \\g5 f5 eb5 d5 g5 a5 bb5 g5 c5 bb4 a4 g4 f4 g4 a4 c5 | d5 c5 bb4 a4 g4 f4 eb4 d4 e4 - - - a4 - - -
+    ,
+        \\g3 - bb3 - d4 - bb3 - c4 - eb4 - f3 - a3 - | bb3 - d4 - eb3 - g3 - a3 - c#4 - e4 - - -
+    ,
+        \\k - - - h - s - k - h - s - h - | k - - - h - s - k - s - k - s -
+    ),
+    section(SALTMARKET_BPM,
+        \\eb2 - bb2 - d2 - a2 - c2 - g2 - bb2 - f2 - | eb2 - a2 - d2 - - - d2 - - - d2 - - -
+    ,
+        \\eb5 g5 f5 eb5 d5 f#5 a5 f#5 c5 eb5 d5 c5 bb4 d5 c5 bb4 | eb5 d5 c#5 a4 d5 - - - d4 - - - - - - -
+    ,
+        \\eb3 - g3 - d3 - f#3 - c3 - eb3 - bb3 - d4 - | eb3 - a3 - d3 - f#3 - a3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(SALTMARKET_BPM,
+        \\d2 - - - eb2 - - - f#2 - - - g2 - - - | eb2 - - - c2 - - - d2 - - - - - - -
+    ,
+        \\d4 - f#4 a4 eb4 - g4 bb4 f#4 - a4 c5 g4 - bb4 d5 | eb5 - c5 - g4 - eb4 - d4 - - - - - - -
+    ,
+        \\d3 - a3 - eb3 - bb3 - f#3 - c4 - g3 - d4 - | eb3 - g3 - c3 - eb3 - d3 - f#3 - a3 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - h -
+    ),
+    section(SALTMARKET_BPM,
+        \\g2 - - - f2 - - - eb2 - - - d2 - - - | c2 - eb2 - d2 - - - d2 - - - d2 - - -
+    ,
+        \\g4 bb4 d5 - f4 a4 c5 - eb4 g4 bb4 - d4 f#4 a4 - | c4 eb4 g4 c5 d5 - - - - - - - - - - -
+    ,
+        \\g3 - bb3 - f3 - a3 - eb3 - g3 - d3 - f#3 - | c3 - eb3 - d3 - f#3 - d3 - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(SALTMARKET_BPM,
+        \\d2 - a2 - eb2 - bb2 - d2 - a2 - f#2 - c3 - | g2 - d3 - eb2 - bb2 - d2 - a2 - d2 - - -
+    ,
+        \\d5 - f#5 - eb5 - g5 - d5 - a5 - f#5 - c5 - | bb4 - d5 - eb5 - g5 - f#5 - a5 - d5 - - -
+    ,
+        \\d3 - - - eb3 - - - d3 - - - f#3 - - - | g3 - - - eb3 - - - d3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - - -
+    ),
+    section(SALTMARKET_BPM,
+        \\eb2 - bb2 - d2 - a2 - c2 - g2 - bb2 - f2 - | eb2 - a2 - d2 - a2 - d2 - - - - - - -
+    ,
+        \\g5 - f5 - f#5 - d5 - eb5 - d5 - d5 - bb4 - | g4 - a4 - d5 - - - d5 - - - - - - -
+    ,
+        \\eb3 - - - d3 - - - c3 - - - bb3 - - - | eb3 - - - d3 - - - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const SALTMARKET_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2 c c2 d d2 a/d a2/lc
+);
+
+pub const saltmarket = Arranged{ .sections = &SALTMARKET_SECTIONS, .arrangement = &SALTMARKET_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Copper Weathercock: rain-swept F# minor countdown, 104 bpm.
+// ---------------------------------------------------------------------------
+
+const WEATHERCOCK_BPM = 104;
+
+const WEATHERCOCK_SECTIONS = [_]audio.BgmPattern{
+    section(WEATHERCOCK_BPM,
+        \\f#2 - c#3 - e2 - b2 - d2 - a2 - c#2 - g#2 - | b2 - f#2 - c#2 - g#2 - f#2 - - - f#2 - - -
+    ,
+        \\c#5 f#4 a4 c#5 b4 e4 g#4 b4 a4 d4 f#4 a4 g#4 c#4 e#4 g#4 | d5 b4 f#4 d4 c#5 g#4 e#4 c#4 f#4 - - - - - - -
+    ,
+        \\f#3 - a3 - e3 - g#3 - d3 - f#3 - c#3 - e#3 - | b3 - d4 - c#3 - e#3 - f#3 - a3 - c#4 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\f#2 - c#3 - d2 - a2 - e2 - b2 - a2 - e2 - | d2 - a2 - c#2 - g#2 - f#2 - - - f#2 - - -
+    ,
+        \\f#5 c#5 a4 f#4 d5 a4 f#4 d4 e5 b4 g#4 e4 c#5 a4 e4 c#4 | f#5 d5 a4 f#4 e#5 c#5 g#4 e#4 f#5 - - - - - - -
+    ,
+        \\f#3 - a3 - d3 - f#3 - e3 - g#3 - a3 - c#4 - | d3 - f#3 - c#3 - e#3 - f#3 - a3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\a2 - e3 - e2 - b2 - f#2 - c#3 - d2 - a2 - | b2 - f#2 - e2 - b2 - c#2 - g#2 - c#2 - - -
+    ,
+        \\a4 c#5 e5 a5 g#5 e5 b4 g#4 f#5 c#5 a4 f#4 d5 a4 f#4 d4 | d5 f#5 b4 d5 e5 b4 g#4 e4 c#5 - - - - - - -
+    ,
+        \\a3 - c#4 - e3 - g#3 - f#3 - a3 - d3 - f#3 - | b3 - d4 - e3 - g#3 - c#3 - e#3 - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\d2 - a2 - e2 - b2 - f#2 - c#3 - a2 - e2 - | b2 - c#2 - f#2 - - - f#2 - - - f#2 - - -
+    ,
+        \\f#5 a5 d5 f#5 g#5 b5 e5 g#5 a5 f#5 c#5 a4 e5 c#5 a4 e4 | d5 b4 e#5 c#5 f#5 - - - f#4 - - - - - - -
+    ,
+        \\d3 - f#3 - e3 - g#3 - f#3 - a3 - a3 - c#4 - | b3 - c#3 - f#3 - a3 - c#4 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\f#2 - - - e2 - - - d2 - - - c#2 - - - | b1 - - - c#2 - - - f#2 - - - - - - -
+    ,
+        \\c#6 - - - b5 - - - a5 - - - g#5 - - - | f#5 - d5 - e#5 - c#5 - f#5 - - - - - - -
+    ,
+        \\f#3 - a3 - e3 - g#3 - d3 - f#3 - c#3 - e#3 - | b2 - d3 - c#3 - e#3 - f#3 - a3 - c#4 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - k - - - - - - -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\d2 - - - c#2 - - - b1 - - - a1 - - - | g#1 - - - c#2 - - - f#2 - - - f#2 - - -
+    ,
+        \\a4 - d5 - g#4 - c#5 - f#4 - b4 - e4 - a4 - | b4 - d5 - c#5 - e#5 - f#5 - - - - - - -
+    ,
+        \\d3 - f#3 - c#3 - e#3 - b2 - d3 - a2 - c#3 - | g#2 - b2 - c#3 - e#3 - f#3 - a3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\f#2 - c#3 - e2 - b2 - d2 - a2 - c#2 - g#2 - | b2 - f#2 - a2 - e2 - g#2 - d2 - c#2 - g#2 -
+    ,
+        \\f#5 - c#5 - e5 - b4 - d5 - a4 - c#5 - g#4 - | b4 - f#4 - a4 - e4 - g#4 - d4 - c#5 - e#5 -
+    ,
+        \\f#3 - - - e3 - - - d3 - - - c#3 - - - | b3 - - - a3 - - - g#3 - - - c#3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(WEATHERCOCK_BPM,
+        \\d2 - a2 - e2 - b2 - f#2 - c#3 - a2 - e2 - | b2 - c#2 - f#2 - c#2 - f#2 - - - - - - -
+    ,
+        \\d5 - f#5 - e5 - g#5 - f#5 - a5 - a5 - c#5 - | d5 - e#5 - f#5 - - - f#5 - - - - - - -
+    ,
+        \\d3 - - - e3 - - - f#3 - - - a3 - - - | b3 - - - c#3 - - - f#3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const WEATHERCOCK_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a-2 a2-2 c c2 d/l d2 a a2 b/d b2 d d2 a/d a2/lc
+);
+
+pub const weathercock = Arranged{ .sections = &WEATHERCOCK_SECTIONS, .arrangement = &WEATHERCOCK_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Castle Fire Escape: crackling C# minor keep dash, 136 bpm.
+// ---------------------------------------------------------------------------
+
+const FIRE_ESCAPE_BPM = 136;
+
+const FIRE_ESCAPE_SECTIONS = [_]audio.BgmPattern{
+    section(FIRE_ESCAPE_BPM,
+        \\c#2 - g#2 - c#2 - g#2 - a1 - e2 - b1 - f#2 - | c#2 - g#2 - b1 - f#2 - c#2 - - - g#1 - - -
+    ,
+        \\c#5 e5 g#5 e5 c#5 e5 g#5 c#6 a4 c#5 e5 a5 b4 d#5 f#5 b5 | g#5 e5 c#5 e5 f#5 d#5 b4 d#5 c#5 - - - - - - -
+    ,
+        \\c#3 - e3 - g#3 - e3 - a2 - c#3 - b2 - d#3 - | c#3 - e3 - b2 - d#3 - c#3 - g#3 - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - s -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\c#2 - g#2 - a1 - e2 - b1 - f#2 - g#1 - d#2 - | a1 - b1 - c#2 - - - c#2 - - - c#2 - - -
+    ,
+        \\g#5 e5 c#5 g#4 a5 e5 c#5 a4 b5 f#5 d#5 b4 g#5 d#5 b#4 g#4 | a4 c#5 b4 d#5 c#5 - - - c#4 - - - - - - -
+    ,
+        \\c#3 - e3 - a2 - c#3 - b2 - d#3 - g#2 - b#2 - | a2 - b2 - c#3 - e3 - g#3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - s - k - s - k - - - - - - -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\e2 - b2 - e2 - b2 - b1 - f#2 - b1 - f#2 - | c#2 - g#2 - a1 - e2 - b1 - f#2 - b1 - - -
+    ,
+        \\e5 g#5 b5 g#5 e5 g#5 b5 e6 d#5 f#5 b5 f#5 d#5 b4 f#4 b4 | c#5 e5 g#5 e5 a4 c#5 e5 a5 b4 - - - - - - -
+    ,
+        \\e3 - g#3 - b3 - g#3 - b2 - d#3 - f#3 - d#3 - | c#3 - e3 - a2 - c#3 - b2 - d#3 - f#3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\a1 - e2 - b1 - f#2 - c#2 - g#2 - e2 - b2 - | a1 - g#1 - c#2 - - - c#2 - - - c#2 - - -
+    ,
+        \\a5 e5 c#5 a4 b5 f#5 d#5 b4 g#5 e5 c#5 g#4 e5 b4 g#4 e4 | f#4 a4 g#4 b#4 c#5 - - - c#4 - - - - - - -
+    ,
+        \\a2 - c#3 - b2 - d#3 - c#3 - e3 - e3 - g#3 - | a2 - g#2 - c#3 - e3 - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\c#2 - - - b1 - - - a1 - - - g#1 - - - | f#1 - - - g#1 - - - c#2 - - - - - - -
+    ,
+        \\c#5 - e5 g#5 b4 - d#5 f#5 a4 - c#5 e5 g#4 - b#4 d#5 | f#4 - a4 c#5 g#4 - b#4 d#5 c#5 - - - - - - -
+    ,
+        \\c#3 - e3 - b2 - d#3 - a2 - c#3 - g#2 - b#2 - | f#2 - a2 - g#2 - b#2 - c#3 - e3 - g#3 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - h -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\e2 - - - d#2 - - - c#2 - - - b1 - - - | a1 - b1 - c#2 - - - c#2 - - - c#2 - - -
+    ,
+        \\e5 - b4 - d#5 - b4 - c#5 - g#4 - b4 - f#4 - | a4 - b4 - c#5 - - - - - - - - - - -
+    ,
+        \\e3 - g#3 - d#3 - f#3 - c#3 - e3 - b2 - d#3 - | a2 - b2 - c#3 - e3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\c#2 - g#2 - e2 - b2 - a1 - e2 - b1 - f#2 - | c#2 - g#2 - b1 - f#2 - a1 - e2 - g#1 - d#2 -
+    ,
+        \\c#5 - g#5 - e5 - b5 - a4 - e5 - b4 - f#5 - | c#5 - g#5 - b4 - f#5 - a4 - e5 - g#4 - d#5 -
+    ,
+        \\c#3 - - - e3 - - - a2 - - - b2 - - - | c#3 - - - b2 - - - a2 - - - g#2 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - s -
+    ),
+    section(FIRE_ESCAPE_BPM,
+        \\a1 - e2 - b1 - f#2 - c#2 - g#2 - e2 - b2 - | a1 - g#1 - c#2 - g#2 - c#2 - - - - - - -
+    ,
+        \\a5 - e5 - b5 - f#5 - c#6 - g#5 - e5 - b4 - | a4 - b#4 - c#5 - - - c#5 - - - - - - -
+    ,
+        \\a2 - - - b2 - - - c#3 - - - e3 - - - | a2 - - - g#2 - - - c#3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const FIRE_ESCAPE_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+2 a2+2 c c2 d/l d2 a a2 b/d b2 c+2 c2+2 b b2 d d2 c c2 d d2 a/d a2/lc
+);
+
+pub const fire_escape = Arranged{ .sections = &FIRE_ESCAPE_SECTIONS, .arrangement = &FIRE_ESCAPE_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Larkspur Observatory: nocturnal Bb minor stargazing mystery, 96 bpm.
+// ---------------------------------------------------------------------------
+
+const OBSERVATORY_BPM = 96;
+
+const OBSERVATORY_SECTIONS = [_]audio.BgmPattern{
+    section(OBSERVATORY_BPM,
+        \\bb1 - - - f2 - - - gb2 - - - f2 - - - | eb2 - - - bb2 - - - f2 - - - bb1 - - -
+    ,
+        \\bb4 - f5 - db5 - bb4 - gb5 - eb5 - c5 - a4 - | gb4 - eb4 - f4 - db5 - c5 - a4 - bb4 - - -
+    ,
+        \\bb2 - db3 - f3 - db3 - gb2 - bb2 - f2 - a2 - | eb3 - gb3 - f2 - a2 - bb2 - - - - - - -
+    ,
+        \\k - - - - - - - h - - - - - - - | k - - - - - - - h - - - - - k -
+    ),
+    section(OBSERVATORY_BPM,
+        \\bb1 - - - f2 - - - db2 - - - ab2 - - - | gb2 - - - f2 - - - bb1 - - - bb1 - - -
+    ,
+        \\f5 - db5 - bb4 - f4 - ab5 - f5 - db5 - ab4 - | gb5 - eb5 - c5 - a4 - bb4 - - - - - - -
+    ,
+        \\bb2 - db3 - f3 - db3 - db3 - f3 - ab3 - f3 - | gb2 - bb2 - f2 - a2 - bb2 - db3 - - - - -
+    ,
+        \\k - - - - - - - h - - - - - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(OBSERVATORY_BPM,
+        \\db2 - ab2 - db3 - ab2 - gb2 - db3 - gb2 - db3 - | ab2 - eb3 - ab2 - eb3 - f2 - c3 - f2 - - -
+    ,
+        \\db5 f5 ab5 f5 db5 f5 ab5 db6 gb5 eb5 bb4 eb5 gb5 bb5 eb6 gb5 | ab5 eb5 c5 eb5 ab5 f5 eb5 c5 f5 - - - - - - -
+    ,
+        \\db3 - f3 - ab3 - f3 - gb3 - bb3 - db4 - bb3 - | ab3 - c4 - eb4 - c4 - f3 - a3 - c4 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(OBSERVATORY_BPM,
+        \\gb2 - db3 - f2 - c3 - eb2 - bb2 - db2 - ab2 - | gb2 - f2 - bb1 - - - bb1 - - - bb1 - - -
+    ,
+        \\bb5 gb5 db5 bb4 a5 f5 c5 a4 gb5 eb5 bb4 gb4 f5 db5 ab4 f4 | eb5 gb5 f5 a5 bb5 - - - bb4 - - - - - - -
+    ,
+        \\gb3 - bb3 - f3 - a3 - eb3 - gb3 - db3 - f3 - | gb2 - f2 - bb2 - db3 - f3 - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(OBSERVATORY_BPM,
+        \\bb1 - - - - - - - eb2 - - - - - - - | gb2 - - - - - - - f2 - - - - - - -
+    ,
+        \\db5 - f5 - bb5 - f5 - eb5 - gb5 - bb5 - gb5 - | db5 - bb4 - gb4 - bb4 - c5 - a4 - f4 - - -
+    ,
+        \\bb2 - db3 - f3 - db3 - eb3 - gb3 - bb3 - gb3 - | gb2 - bb2 - db3 - bb2 - f2 - a2 - c3 - - -
+    ,
+        \\k - - - - - - - - - - - - - - - | k - - - - - - - h - - - - - - -
+    ),
+    section(OBSERVATORY_BPM,
+        \\gb2 - - - ab2 - - - bb2 - - - f2 - - - | eb2 - f2 - bb1 - - - bb1 - - - bb1 - - -
+    ,
+        \\bb4 - gb4 - c5 - ab4 - db5 - bb4 - a4 - f4 - | gb4 - a4 - bb4 - - - - - - - - - - -
+    ,
+        \\gb2 - bb2 - ab2 - c3 - bb2 - db3 - f2 - a2 - | eb3 - f2 - bb2 - db3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(OBSERVATORY_BPM,
+        \\bb1 - f2 - db2 - f2 - gb2 - db3 - f2 - c3 - | eb2 - bb2 - f2 - c3 - bb1 - f2 - db2 - ab2 -
+    ,
+        \\bb4 - db5 - f5 - bb5 - gb5 - eb5 - c5 - f5 - | eb5 - bb4 - a4 - f4 - db5 - f5 - ab5 - c5 -
+    ,
+        \\bb2 - - - db3 - - - gb2 - - - f2 - - - | eb3 - - - f2 - - - bb2 - - - db3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - s -
+    ),
+    section(OBSERVATORY_BPM,
+        \\gb2 - db3 - ab2 - eb3 - f2 - c3 - bb1 - f2 - | eb2 - f2 - bb1 - - - bb1 - - - - - - -
+    ,
+        \\gb5 - bb5 - ab5 - c5 - a5 - f5 - bb4 - db5 - | eb5 - f5 - bb4 - - - bb4 - - - - - - -
+    ,
+        \\gb2 - - - ab2 - - - f2 - - - bb2 - - - | eb3 - - - f2 - - - bb2 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const OBSERVATORY_ARRANGEMENT = order(
+    \\a/ld a/l a a2 c/d c2 b b2 a a2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2 a/d a2/lc
+);
+
+pub const observatory = Arranged{ .sections = &OBSERVATORY_SECTIONS, .arrangement = &OBSERVATORY_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// Valerius and the Bread: austere F minor garrison hymn & spring thaw, 88 bpm.
+// ---------------------------------------------------------------------------
+
+const VALERIUS_BPM = 88;
+
+const VALERIUS_SECTIONS = [_]audio.BgmPattern{
+    section(VALERIUS_BPM,
+        \\f2 - - - c2 - - - db2 - - - c2 - - - | bb1 - - - c2 - - - f2 - - - f2 - - -
+    ,
+        \\f4 - g4 - ab4 - c5 - db5 - c5 - ab4 - g4 - | f4 - eb4 - e4 - c4 - f4 - - - - - - -
+    ,
+        \\f3 - ab3 - c3 - eb3 - db3 - f3 - c3 - eb3 - | bb2 - db3 - c3 - e3 - f3 - ab3 - - - - -
+    ,
+        \\k - - - - - - - h - - - - - - - | k - - - - - - - k - - - h - - -
+    ),
+    section(VALERIUS_BPM,
+        \\f2 - - - eb2 - - - db2 - - - ab1 - - - | bb1 - - - c2 - - - f2 - - - f2 - - -
+    ,
+        \\c5 - bb4 - ab4 - g4 - f4 - ab4 - c5 - ab4 - | g4 - f4 - e4 - g4 - f4 - - - - - - -
+    ,
+        \\f3 - ab3 - eb3 - g3 - db3 - f3 - ab2 - c3 - | bb2 - db3 - c3 - e3 - f3 - ab3 - - - - -
+    ,
+        \\k - - - - - - - h - - - - - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(VALERIUS_BPM,
+        \\ab2 - eb3 - ab2 - eb3 - eb2 - bb2 - eb2 - bb2 - | db2 - ab2 - db2 - ab2 - c2 - g2 - c2 - - -
+    ,
+        \\ab4 c5 eb5 - c5 - ab4 - g4 bb4 eb5 - bb4 - g4 - | f4 ab4 db5 - ab4 - f4 - g4 - - - - - - -
+    ,
+        \\ab3 - c4 - eb4 - c4 - eb3 - g3 - bb3 - g3 - | db3 - f3 - ab3 - f3 - c3 - e3 - g3 - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(VALERIUS_BPM,
+        \\f2 - c3 - eb2 - bb2 - db2 - ab2 - c2 - g2 - | bb1 - c2 - f2 - - - f2 - - - f2 - - -
+    ,
+        \\c5 - ab4 f4 eb5 - bb4 g4 db5 - ab4 f4 c5 - g4 e4 | f4 db5 c5 e5 f5 - - - f4 - - - - - - -
+    ,
+        \\f3 - ab3 - eb3 - g3 - db3 - f3 - c3 - e3 - | bb2 - c3 - f3 - ab3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(VALERIUS_BPM,
+        \\f2 - - - - - - - c2 - - - - - - - | db2 - - - - - - - c2 - - - - - - -
+    ,
+        \\f4 - - - c5 - - - g4 - - - e4 - - - | f4 - - - ab4 - - - g4 - - - - - - -
+    ,
+        \\f3 - ab3 - c4 - ab3 - c3 - e3 - g3 - e3 - | db3 - f3 - ab3 - f3 - c3 - e3 - g3 - - -
+    ,
+        \\k - - - - - - - - - - - - - - - | k - - - - - - - h - - - - - - -
+    ),
+    section(VALERIUS_BPM,
+        \\bb1 - - - ab1 - - - g1 - - - c2 - - - | db2 - eb2 - f2 - - - f2 - - - f2 - - -
+    ,
+        \\bb4 - f4 - ab4 - eb4 - g4 - db4 - e4 - c4 - | f4 - g4 - ab4 - - - - - - - - - - -
+    ,
+        \\bb2 - db3 - ab2 - c3 - g2 - bb2 - c3 - e3 - | db3 - eb3 - f3 - ab3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(VALERIUS_BPM,
+        \\f2 - c3 - eb2 - bb2 - db2 - ab2 - c2 - g2 - | bb1 - f2 - c2 - g2 - f2 - c3 - f2 - - -
+    ,
+        \\f4 - ab4 - eb5 - g4 - db5 - f4 - c5 - e4 - | db4 - f4 - e4 - g4 - f4 - ab4 - c5 - - -
+    ,
+        \\f3 - - - eb3 - - - db3 - - - c3 - - - | bb2 - - - c3 - - - f3 - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(VALERIUS_BPM,
+        \\ab2 - eb3 - eb2 - bb2 - db2 - ab2 - c2 - g2 - | bb1 - c2 - f2 - - - f2 - - - - - - -
+    ,
+        \\c5 - eb5 - bb4 - g4 - ab4 - f4 - g4 - e4 - | f4 - g4 - f4 - - - f4 - - - - - - -
+    ,
+        \\ab3 - - - eb3 - - - db3 - - - c3 - - - | bb2 - - - f3 - - - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const VALERIUS_ARRANGEMENT = order(
+    \\a/ld a/l a a2 c/d c2 b b2 a a2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2
+);
+
+pub const valerius = Arranged{ .sections = &VALERIUS_SECTIONS, .arrangement = &VALERIUS_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Lamplighter's Round: G minor cobblestone dusk stroll, 102 bpm.
+// ---------------------------------------------------------------------------
+
+const LAMPLIGHTER_BPM = 102;
+
+const LAMPLIGHTER_SECTIONS = [_]audio.BgmPattern{
+    section(LAMPLIGHTER_BPM,
+        \\g2 - d3 - f2 - c3 - eb2 - bb2 - d2 - a2 - | c2 - g2 - d2 - a2 - g2 - - - g2 - - -
+    ,
+        \\g4 - bb4 d5 f5 - d5 c5 eb5 - c5 bb4 a4 - f#4 d4 | g4 - bb4 - a4 - f#4 - g4 - - - - - - -
+    ,
+        \\g3 - bb3 - f3 - a3 - eb3 - g3 - d3 - f#3 - | c3 - eb3 - d3 - f#3 - g3 - bb3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - k - - -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\g2 - d3 - bb2 - f2 - c2 - g2 - d2 - a2 - | eb2 - d2 - g2 - - - g2 - - - g2 - - -
+    ,
+        \\d5 - g5 f5 d5 - bb4 f4 eb5 - c5 g4 f#4 - a4 d5 | g5 eb5 d5 f#5 g5 - - - g4 - - - - - - -
+    ,
+        \\g3 - bb3 - bb3 - d4 - c3 - eb3 - d3 - f#3 - | eb3 - d3 - g3 - bb3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\bb2 - f2 - f2 - c3 - g2 - d3 - eb2 - bb2 - | c2 - g2 - f2 - c3 - d2 - a2 - d2 - - -
+    ,
+        \\bb4 d5 f5 - a4 c5 f5 - g4 bb4 d5 - g4 bb4 eb5 - | c5 eb5 g5 - a4 c5 f5 - d5 - - - - - - -
+    ,
+        \\bb3 - d4 - f3 - a3 - g3 - bb3 - eb3 - g3 - | c3 - eb3 - f3 - a3 - d3 - f#3 - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\eb2 - bb2 - f2 - c3 - bb2 - f2 - g2 - d3 - | c2 - d2 - g2 - - - g2 - - - g2 - - -
+    ,
+        \\eb5 g5 bb5 g5 f5 a5 c6 a5 d5 f5 bb4 d5 g5 d5 bb4 g4 | eb5 c5 f#4 a4 g4 - - - - - - - - - - -
+    ,
+        \\eb3 - g3 - f3 - a3 - bb3 - d4 - g3 - bb3 - | c3 - d3 - g3 - bb3 - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\g2 - - - f2 - - - eb2 - - - d2 - - - | c2 - - - d2 - - - g2 - - - - - - -
+    ,
+        \\d5 - bb4 - c5 - a4 - bb4 - g4 - a4 - f#4 - | g4 - eb4 - f#4 - d4 - g4 - - - - - - -
+    ,
+        \\g3 - bb3 - f3 - a3 - eb3 - g3 - d3 - f#3 - | c3 - eb3 - d3 - f#3 - g3 - bb3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\c2 - - - bb1 - - - a1 - - - d2 - - - | eb2 - f2 - g2 - - - g2 - - - g2 - - -
+    ,
+        \\c5 - g4 - bb4 - f4 - a4 - e4 - f#4 - d4 - | g4 - a4 - bb4 - - - - - - - - - - -
+    ,
+        \\c3 - eb3 - bb2 - d3 - a2 - c3 - d3 - f#3 - | eb3 - f3 - g3 - bb3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\g2 - d3 - f2 - c3 - eb2 - bb2 - d2 - a2 - | c2 - g2 - d2 - a2 - g2 - d3 - g2 - - -
+    ,
+        \\g4 - bb4 - f4 - a4 - eb4 - g4 - d4 - f#4 - | c4 - eb4 - d4 - f#4 - g4 - bb4 - d5 - - -
+    ,
+        \\g3 - - - f3 - - - eb3 - - - d3 - - - | c3 - - - d3 - - - g3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(LAMPLIGHTER_BPM,
+        \\eb2 - bb2 - f2 - c3 - g2 - d3 - bb2 - f2 - | c2 - d2 - g2 - - - g2 - - - - - - -
+    ,
+        \\eb5 - g5 - f5 - a5 - g5 - bb5 - d5 - f5 - | eb5 - f#5 - g5 - - - g5 - - - - - - -
+    ,
+        \\eb3 - - - f3 - - - g3 - - - bb3 - - - | c3 - - - d3 - - - g3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const LAMPLIGHTER_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2 a/d a2/lc
+);
+
+pub const lamplighter = Arranged{ .sections = &LAMPLIGHTER_SECTIONS, .arrangement = &LAMPLIGHTER_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Long Gallery: B minor stealth tiptoe and pursuit next door, 110 bpm.
+// ---------------------------------------------------------------------------
+
+const LONG_GALLERY_BPM = 110;
+
+const LONG_GALLERY_SECTIONS = [_]audio.BgmPattern{
+    section(LONG_GALLERY_BPM,
+        \\b1 - f#2 - a1 - e2 - g1 - d2 - f#1 - c#2 - | e1 - b1 - f#1 - c#2 - b1 - - - b1 - - -
+    ,
+        \\b4 - d5 - f#5 - d5 - e5 - c#5 - a#4 - f#4 - | g4 - b4 - c#5 - a#4 - b4 - - - - - - -
+    ,
+        \\b2 - d3 - a2 - c#3 - g2 - b2 - f#2 - a#2 - | e2 - g2 - f#2 - a#2 - b2 - d3 - - - - -
+    ,
+        \\k - - - h - - - - - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\b1 - f#2 - g1 - d2 - a1 - e2 - d2 - a2 - | e2 - f#2 - b1 - - - b1 - - - b1 - - -
+    ,
+        \\f#5 - d5 b4 g5 - d5 b4 e5 - c#5 a4 d5 - f#5 a5 | g5 e5 c#5 a#4 b4 - - - b3 - - - - - - -
+    ,
+        \\b2 - d3 - g2 - b2 - a2 - c#3 - d3 - f#3 - | e3 - f#2 - b2 - d3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\d2 - a2 - d2 - a2 - a1 - e2 - a1 - e2 - | g1 - d2 - e2 - b2 - f#2 - c#3 - f#2 - - -
+    ,
+        \\d5 f#5 a5 f#5 d5 f#5 a5 d6 c#5 e5 a5 e5 c#5 a4 e4 a4 | b4 d5 g5 d5 e5 g5 b5 g5 f#5 - - - - - - -
+    ,
+        \\d3 - f#3 - a3 - f#3 - a2 - c#3 - e3 - c#3 - | g2 - b2 - e3 - g3 - f#3 - a#3 - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\g1 - d2 - a1 - e2 - b1 - f#2 - d2 - a2 - | g1 - f#1 - b1 - - - b1 - - - b1 - - -
+    ,
+        \\g5 d5 b4 g4 e5 c#5 a4 e4 f#5 d5 b4 f#4 d5 a4 f#4 d4 | g4 b4 a#4 c#5 b4 - - - b3 - - - - - - -
+    ,
+        \\g2 - b2 - a2 - c#3 - b2 - d3 - d3 - f#3 - | g2 - f#2 - b2 - d3 - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\b1 - - - a1 - - - g1 - - - f#1 - - - | e1 - - - f#1 - - - b1 - - - - - - -
+    ,
+        \\b4 - f#5 - a4 - e5 - g4 - d5 - f#4 - c#5 - | e4 - g4 - f#4 - a#4 - b4 - - - - - - -
+    ,
+        \\b2 - d3 - a2 - c#3 - g2 - b2 - f#2 - a#2 - | e2 - g2 - f#2 - a#2 - b2 - d3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\g1 - - - f#1 - - - e1 - - - d2 - - - | g1 - f#1 - b1 - - - b1 - - - b1 - - -
+    ,
+        \\g4 - b4 - f#4 - a#4 - e4 - g4 - d5 - f#4 - | g4 - a#4 - b4 - - - - - - - - - - -
+    ,
+        \\g2 - b2 - f#2 - a#2 - e2 - g2 - d3 - f#3 - | g2 - f#2 - b2 - d3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\b1 - f#2 - a1 - e2 - g1 - d2 - f#1 - c#2 - | e1 - b1 - d2 - a2 - g1 - d2 - f#1 - c#2 -
+    ,
+        \\b4 - d5 - a4 - c#5 - g4 - b4 - f#4 - a#4 - | e4 - g4 - d5 - f#5 - g4 - b4 - f#4 - c#5 -
+    ,
+        \\b2 - - - a2 - - - g2 - - - f#2 - - - | e2 - - - d3 - - - g2 - - - f#2 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(LONG_GALLERY_BPM,
+        \\g1 - d2 - a1 - e2 - b1 - f#2 - d2 - a2 - | e2 - f#2 - b1 - - - b1 - - - - - - -
+    ,
+        \\g5 - b4 - a5 - c#5 - b5 - d5 - f#5 - a4 - | g4 - a#4 - b4 - - - b4 - - - - - - -
+    ,
+        \\g2 - - - a2 - - - b2 - - - d3 - - - | e3 - - - f#2 - - - b2 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const LONG_GALLERY_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2 d d2 a/d a2/lc
+);
+
+pub const long_gallery = Arranged{ .sections = &LONG_GALLERY_SECTIONS, .arrangement = &LONG_GALLERY_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Word Foundry: metallic D dorian/mixolydian anvil & lexicon, 100 bpm.
+// ---------------------------------------------------------------------------
+
+const FOUNDRY_BPM = 100;
+
+const WORD_FOUNDRY_SECTIONS = [_]audio.BgmPattern{
+    section(FOUNDRY_BPM,
+        \\d2 - a2 - c2 - g2 - bb1 - f2 - a1 - e2 - | g1 - d2 - a1 - e2 - d2 - - - d2 - - -
+    ,
+        \\d4 a4 d5 - c4 g4 c5 - bb3 f4 bb4 - a3 e4 a4 - | g4 b4 d5 - a4 c#5 e5 - d5 - - - - - - -
+    ,
+        \\d3 - f3 - c3 - e3 - bb2 - d3 - a2 - c3 - | g2 - b2 - a2 - c#3 - d3 - f3 - - - - -
+    ,
+        \\k - - - s - - - k - - - s - - - | k - - - s - - - k - s - k - - -
+    ),
+    section(FOUNDRY_BPM,
+        \\d2 - a2 - f2 - c3 - c2 - g2 - a1 - e2 - | bb1 - a1 - d2 - - - d2 - - - d2 - - -
+    ,
+        \\d5 a4 f4 d4 f5 c5 a4 f4 e5 c5 g4 e4 c#5 a4 e4 c#4 | d5 bb4 c#5 a4 d5 - - - d4 - - - - - - -
+    ,
+        \\d3 - f3 - f3 - a3 - c3 - e3 - a2 - c#3 - | bb2 - a2 - d3 - f#3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(FOUNDRY_BPM,
+        \\f2 - c3 - f2 - c3 - c2 - g2 - c2 - g2 - | bb1 - f2 - g1 - d2 - a1 - e2 - a1 - - -
+    ,
+        \\f4 a4 c5 f5 e5 c5 a4 f4 c4 e4 g4 c5 b4 g4 e4 c4 | d4 f4 bb4 - g4 b4 d5 - e5 - - - a4 - - -
+    ,
+        \\f3 - a3 - c4 - a3 - c3 - e3 - g3 - e3 - | bb2 - d3 - g2 - b2 - a2 - c#3 - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(FOUNDRY_BPM,
+        \\g1 - d2 - a1 - e2 - d2 - a2 - f2 - c3 - | bb1 - c2 - d2 - - - d2 - - - d2 - - -
+    ,
+        \\g4 b4 d5 g5 a4 c#5 e5 a5 d5 f5 a5 f5 c5 a4 f4 c4 | d5 bb4 e5 c5 d5 - - - - - - - - - - -
+    ,
+        \\g2 - b2 - a2 - c#3 - d3 - f3 - f3 - a3 - | bb2 - c3 - d3 - f#3 - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(FOUNDRY_BPM,
+        \\d2 - - - c2 - - - bb1 - - - a1 - - - | g1 - - - a1 - - - d2 - - - - - - -
+    ,
+        \\d5 - - - e5 - - - f5 - - - e5 - - - | d5 - b4 - c#5 - a4 - d5 - - - - - - -
+    ,
+        \\d3 - f3 - c3 - e3 - bb2 - d3 - a2 - c3 - | g2 - b2 - a2 - c#3 - d3 - f3 - - - - -
+    ,
+        \\k - - - - - - - s - - - - - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(FOUNDRY_BPM,
+        \\bb1 - - - c2 - - - d2 - - - f2 - - - | g2 - a2 - d2 - - - d2 - - - d2 - - -
+    ,
+        \\bb4 - d5 - c5 - e5 - d5 - f5 - a5 - f5 - | g5 - e5 - d5 - - - - - - - - - - -
+    ,
+        \\bb2 - d3 - c3 - e3 - d3 - f3 - f3 - a3 - | g3 - a3 - d3 - f#3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(FOUNDRY_BPM,
+        \\d2 - a2 - c2 - g2 - bb1 - f2 - a1 - e2 - | g1 - d2 - a1 - e2 - d2 - a2 - f2 - c3 -
+    ,
+        \\d5 - a4 - c5 - g4 - bb4 - f4 - a4 - e4 - | g4 - d5 - a4 - e5 - d5 - f5 - a5 - c5 -
+    ,
+        \\d3 - - - c3 - - - bb2 - - - a2 - - - | g2 - - - a2 - - - d3 - - - f3 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(FOUNDRY_BPM,
+        \\bb1 - f2 - c2 - g2 - d2 - a2 - f2 - c3 - | g2 - a2 - d2 - - - d2 - - - - - - -
+    ,
+        \\bb4 - d5 - c5 - e5 - d5 - f5 - c5 - a5 - | g5 - e5 - d5 - - - d5 - - - - - - -
+    ,
+        \\bb2 - - - c3 - - - d3 - - - f3 - - - | g3 - - - a3 - - - d3 - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const WORD_FOUNDRY_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a+5 a2+5 c c2 d/l d2 a a2 b/d b2 a/d a2/lc
+);
+
+pub const word_foundry = Arranged{ .sections = &WORD_FOUNDRY_SECTIONS, .arrangement = &WORD_FOUNDRY_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
+// The Cinder Table: sly Eb major / C minor parlor card sway, 114 bpm.
+// ---------------------------------------------------------------------------
+
+const CINDER_TABLE_BPM = 114;
+
+const CINDER_TABLE_SECTIONS = [_]audio.BgmPattern{
+    section(CINDER_TABLE_BPM,
+        \\eb2 - bb2 - c2 - g2 - ab1 - eb2 - bb1 - f2 - | g1 - d2 - c2 - g2 - eb2 - - - bb1 - - -
+    ,
+        \\g4 - bb4 eb5 c5 - g4 eb4 ab4 - c5 eb5 f4 - d5 bb4 | g4 - b4 d5 c5 - g4 - eb4 - - - - - - -
+    ,
+        \\eb3 - g3 - c3 - eb3 - ab2 - c3 - bb2 - d3 - | g2 - b2 - c3 - eb3 - eb3 - g3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - k - - -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\eb2 - bb2 - g2 - d3 - ab1 - eb2 - bb1 - f2 - | ab1 - bb1 - eb2 - - - eb2 - - - eb2 - - -
+    ,
+        \\eb5 - bb4 g4 d5 - b4 g4 c5 - eb5 c5 d5 - bb4 f4 | ab4 c5 bb4 d5 eb5 - - - eb4 - - - - - - -
+    ,
+        \\eb3 - g3 - g3 - b3 - ab2 - c3 - bb2 - d3 - | ab2 - bb2 - eb3 - g3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - s - - - k - - - - - - -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\c2 - g2 - c2 - g2 - f2 - c3 - f2 - c3 - | bb1 - f2 - eb2 - bb2 - g1 - d2 - g1 - - -
+    ,
+        \\c5 eb5 g5 eb5 c5 g4 eb4 g4 f4 ab4 c5 ab4 f4 c4 f4 ab4 | bb4 d5 f5 d5 eb5 bb4 g4 eb4 d5 - - - - - - -
+    ,
+        \\c3 - eb3 - g3 - eb3 - f3 - ab3 - c4 - ab3 - | bb2 - d3 - eb3 - g3 - g2 - b2 - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - - - s - - -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\ab1 - eb2 - bb1 - f2 - c2 - g2 - g1 - d2 - | ab1 - bb1 - eb2 - - - eb2 - - - eb2 - - -
+    ,
+        \\ab4 c5 eb5 ab5 bb4 d5 f5 bb5 g5 eb5 c5 g4 d5 b4 g4 d4 | c5 eb5 d5 f5 eb5 - - - - - - - - - - -
+    ,
+        \\ab2 - c3 - bb2 - d3 - c3 - eb3 - g2 - b2 - | ab2 - bb2 - eb3 - g3 - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\c2 - - - bb1 - - - ab1 - - - g1 - - - | f1 - - - g1 - - - c2 - - - - - - -
+    ,
+        \\g4 - c5 eb5 f4 - bb4 d5 eb4 - ab4 c5 d4 - g4 b4 | f4 - ab4 - g4 - b4 - c5 - - - - - - -
+    ,
+        \\c3 - eb3 - bb2 - d3 - ab2 - c3 - g2 - b2 - | f2 - ab2 - g2 - b2 - c3 - eb3 - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - - - h - - - s - - - h - - -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\ab1 - - - g1 - - - f1 - - - bb1 - - - | ab1 - bb1 - eb2 - - - eb2 - - - eb2 - - -
+    ,
+        \\c5 - eb5 - b4 - d5 - ab4 - c5 - d5 - bb4 - | c5 - d5 - eb5 - - - - - - - - - - -
+    ,
+        \\ab2 - c3 - g2 - b2 - f2 - ab2 - bb2 - d3 - | ab2 - bb2 - eb3 - g3 - - - - - - - - -
+    ,
+        \\k - - - h - - - s - - - h - - - | k - s - k - - - - - - - - - - -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\eb2 - bb2 - c2 - g2 - ab1 - eb2 - bb1 - f2 - | g1 - d2 - c2 - g2 - f1 - c2 - bb1 - f2 -
+    ,
+        \\eb5 - bb4 - c5 - g4 - ab4 - eb4 - bb4 - d5 - | g4 - d5 - c5 - eb5 - f4 - ab4 - bb4 - d5 -
+    ,
+        \\eb3 - - - c3 - - - ab2 - - - bb2 - - - | g2 - - - c3 - - - f2 - - - bb2 - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - h - s - h - k - s - k - h -
+    ),
+    section(CINDER_TABLE_BPM,
+        \\c2 - g2 - ab1 - eb2 - bb1 - f2 - g1 - d2 - | ab1 - bb1 - eb2 - - - eb2 - - - - - - -
+    ,
+        \\c5 - eb5 - ab4 - c5 - bb4 - d5 - g4 - b4 - | c5 - d5 - eb5 - - - eb5 - - - - - - -
+    ,
+        \\c3 - - - ab2 - - - bb2 - - - g2 - - - | ab2 - - - eb3 - - - - - - - - - - -
+    ,
+        \\k - h - s - h - k - h - s - h - | k - - - s - - - k - - - - - - -
+    ),
+};
+
+const CINDER_TABLE_ARRANGEMENT = order(
+    \\a/ld a/l a a2 b b2 a a2 c/d c2 d d2 b b2 a-2 a2-2 c c2 d/l d2 a a2 b/d b2 c c2 d d2 a/d a2/lc
+);
+
+pub const cinder_table = Arranged{ .sections = &CINDER_TABLE_SECTIONS, .arrangement = &CINDER_TABLE_ARRANGEMENT };
+
+// ---------------------------------------------------------------------------
 // Checks
 // ---------------------------------------------------------------------------
 
@@ -1253,7 +2297,10 @@ pub fn seconds_before_repeat(allocator: std.mem.Allocator, a: Arranged) !f64 {
 }
 
 /// Every arranged track, for the length check.
-pub const ALL = [_]Arranged{ tavern, cellar, spitting_contest, tidewalk, fencing_yard, lantern, net_loft, harbour_office, wreckers_cellar, three_tides, bell_tower };
+pub const ALL = [_]Arranged{
+    tavern, cellar, spitting_contest, tidewalk, fencing_yard, lantern, net_loft, harbour_office, wreckers_cellar, three_tides, bell_tower,
+    living_village, lamp_point, caustic_grog, saltmarket, weathercock, fire_escape, observatory, valerius, lamplighter, long_gallery, word_foundry, cinder_table,
+};
 
 test "P34-08: every proof track plays at least two minutes before it repeats" {
     for (ALL) |a| {

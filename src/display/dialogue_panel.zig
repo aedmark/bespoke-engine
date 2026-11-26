@@ -103,7 +103,7 @@ pub const Layout = struct {
     }
 };
 
-/// Splits `text` into rows of at most `columns` characters, breaking at spaces and splitting a
+/// Splits `text` into rows of at most `columns` codepoints, breaking at spaces and splitting a
 /// word only when it alone is longer than a row. Writes slices of `text` to `out`; returns how
 /// many it wrote, stopping when `out` is full.
 pub fn wrap(text: []const u8, columns: usize, out: [][]const u8) usize {
@@ -111,14 +111,23 @@ pub fn wrap(text: []const u8, columns: usize, out: [][]const u8) usize {
     var count: usize = 0;
     var rest = std.mem.trim(u8, text, " ");
     while (rest.len > 0 and count < out.len) {
-        if (rest.len <= cols) {
+        var i: usize = 0;
+        var cp_count: usize = 0;
+        var last_space: ?usize = null;
+        while (i < rest.len and cp_count < cols) : (cp_count += 1) {
+            if (rest[i] == ' ') last_space = i;
+            const clen = @min(std.unicode.utf8ByteSequenceLength(rest[i]) catch 1, rest.len - i);
+            i += clen;
+        }
+        if (i == rest.len) {
             out[count] = rest;
             count += 1;
             break;
         }
-        // Break at the last space that keeps the row within `cols`, else split the word.
-        var cut: usize = cols;
-        if (std.mem.lastIndexOfScalar(u8, rest[0 .. cols + 1], ' ')) |space| {
+        var cut: usize = i;
+        if (rest[i] == ' ') {
+            cut = i;
+        } else if (last_space) |space| {
             if (space > 0) cut = space;
         }
         out[count] = std.mem.trimEnd(u8, rest[0..cut], " ");
@@ -365,4 +374,22 @@ test "D-077: a panel wraps the prompt and choices and hit-tests every row of a c
     try testing.expectEqual(@as(?u8, 1), l.hit(50, l.choice_top[1] + 4, m.width));
     try testing.expectEqual(@as(?u8, null), l.hit(50, 2, m.width));
     try testing.expectEqual(@as(?u8, null), l.hit(m.width + 1, l.choice_top[1] + 4, m.width));
+}
+
+test "P48-25: wrap counts UTF-8 codepoints and never splits multi-byte characters" {
+    const testing = std.testing;
+    var out: [4][]const u8 = undefined;
+    // Four 2-byte codepoints + space + word = 4 codepoints in row 0, "abc" in row 1.
+    const spaced = "éèêë abc";
+    try testing.expectEqual(@as(usize, 2), wrap(spaced, 4, &out));
+    try testing.expectEqualStrings("éèêë", out[0]);
+    try testing.expectEqualStrings("abc", out[1]);
+
+    // Unspaced multi-byte word split on codepoints, valid UTF-8 on every row.
+    const solid = "éééé";
+    try testing.expectEqual(@as(usize, 2), wrap(solid, 2, &out));
+    try testing.expectEqualStrings("éé", out[0]);
+    try testing.expectEqualStrings("éé", out[1]);
+    try testing.expect(std.unicode.utf8ValidateSlice(out[0]));
+    try testing.expect(std.unicode.utf8ValidateSlice(out[1]));
 }

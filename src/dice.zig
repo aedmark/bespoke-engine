@@ -24,6 +24,7 @@ pub const Dice = struct {
     /// One die of `sides`, from 1 to `sides`. The arithmetic is the one `roll` has always
     /// used, so seed 42 reproduces every transcript written before saves kept the generator.
     pub fn roll(self: *Dice, sides: u32) u32 {
+        if (sides == 0) return 0;
         return (self.prng.random().int(u32) % sides) + 1;
     }
 
@@ -67,4 +68,9 @@ test "P48-14: dice restored from their bytes roll on exactly as the originals" {
     try std.testing.expectError(error.InvalidDice, Dice.read(&zr));
     try std.testing.expect(branch_seed(42, 10) != branch_seed(42, 11));
     try std.testing.expectEqual(branch_seed(7, 3), branch_seed(7, 3));
+}
+
+test "P48-25: Dice.roll(0) returns 0 without dividing by zero" {
+    var dice = Dice.init(DEFAULT_SEED);
+    try std.testing.expectEqual(@as(u32, 0), dice.roll(0));
 }

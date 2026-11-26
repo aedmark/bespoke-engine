@@ -49,7 +49,7 @@ pub const WORD_FOUNDRY_SCRIPT =
     \\  Crucible is tempered
 ;
 
-const Ids = struct {
+pub const Ids = struct {
     scene: bespoke.EntityId,
     maren: bespoke.EntityId,
     crucible: bespoke.EntityId,
@@ -65,7 +65,7 @@ const Ids = struct {
     bench_wp: u16,
 };
 
-fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
+pub fn configure(world: *bespoke.World, spatial: *bespoke.SpatialSystem) !Ids {
     const scene = world.lookup_entity("TheWordFoundry").?;
     const ids = Ids{
         .scene = scene,

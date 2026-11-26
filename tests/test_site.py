@@ -34,6 +34,9 @@ DECK_BY_PAGE = {
     "observatory.html": 12,
     "valerius.html": 13,
     "lamplighter.html": 14,
+    "long-gallery.html": 15,
+    "word-foundry.html": 16,
+    "cinder-table.html": 17,
 }
 
 
@@ -110,7 +113,7 @@ class GalleryTests(unittest.TestCase):
 
     def test_the_real_gallery_covers_every_proof_once_with_valid_decks_and_flags(self):
         gallery = json.loads(build_site.GALLERY_PATH.read_text(encoding="utf-8"))["proofs"]
-        self.assertEqual(len(gallery), 15)
+        self.assertEqual(len(gallery), 18)
         self.assertEqual(len(gallery), len({e["id"] for e in gallery}))
         decks = sorted(e["deck"] for e in gallery)
         self.assertEqual(list(range(len(decks))), decks)

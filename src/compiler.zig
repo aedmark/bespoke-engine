@@ -58,6 +58,10 @@ pub fn compile_source_with(
     const ast = try parse.parse_program();
 
     var cg = Codegen.init(allocator, world, spatial);
+    defer {
+        for (cg.warnings.items) |w| allocator.free(w.message);
+        cg.warnings.deinit(allocator);
+    }
     return try cg.compile(&ast);
 }
 
@@ -339,9 +343,9 @@ fn failure_message(err: anyerror) []const u8 {
         error.UnknownDegradationStage => "no degradation stage has this name",
         error.InvalidConfig => "invalid degradation profile; check stage durations, vessel capacities, and relation names",
         error.DialogueTooLarge => "too many options in one choice set",
-        error.TooManyCueParameters => "a guarded cue can have at most three parameters",
+        error.TooManyCueParameters => "a cue handler can have at most three parameters",
         error.InvalidCueGuardPattern => "a cue guard needs one or two arguments per fact",
-        error.TooManyCueGuardVariables => "a cue guard can bind at most eight variables",
+        error.TooManyCueGuardVariables => "a pattern or cue guard can bind at most eight variables",
         error.InvalidAgenda => "invalid agenda or too many agendas",
         error.UnknownHintRoom => "a need names no room, and no scene declares the prop or mark it names",
         error.InvalidGoal => "invalid goal or too many goals; check need names, prerequisites, rooms, and hint tiers",
@@ -370,6 +374,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.InvalidState => "invalid vessel state",
         error.EntityLimitExceeded => "too many distinct entity names",
         error.EntityNameTooLong => "entity name exceeds 65,535 bytes",
+        error.ReservedBookkeepingName => "names starting with '#' are reserved for the engine",
         error.WaypointNotFound => "waypoint could not be resolved",
         else => "compiler could not validate this script",
     };
@@ -1560,4 +1565,64 @@ test "P48-15: an included program compiles in source order, and its errors name 
     try testing.expectEqualStrings("include cannot read \"../up.bespoke\" (PathOutsideScriptFolder)", escaping.message());
     // Without a file source, as in the browser, an include is refused like a PNG.
     try testing.expectEqualStrings("IncludeFailed", check_source(testing.allocator, "include \"guarded.bespoke\"\n").kind());
+}
+
+test "P48-24: quoted # bookkeeping names and #path routines are refused" {
+    const testing = std.testing;
+    const cases = [_][]const u8{
+        "entity Hero\nnow Hero is \"#DialogueOpen\"\n",
+        "entity Hero\nwhen Hero is \"#GridSeeded\":\n  wait 1 ticks\n",
+        "entity Hero\nroutine Go(Hero):\n  now Hero is \"#Secret\"\n",
+        "entity Hero\nroutine \"#path:Wits\"(Hero):\n  wait 1 ticks\n",
+        "entity Hero\nroutine \"#DialogueChoice\"(Hero):\n  wait 1 ticks\n",
+    };
+    for (cases) |source| {
+        const res = check_source(testing.allocator, source);
+        try testing.expect(!res.is_valid);
+        try testing.expectEqualStrings("ReservedBookkeepingName", res.kind());
+    }
+}
+
+test "P48-24: parser bounds, 9-variable when rules, and failed compile cleanup leak nothing" {
+    const testing = std.testing;
+
+    // 1. 0-arg fact pattern, u32 area addition overflow, and priority > 65535 fail cleanly.
+    const bad_parse = [_][]const u8{
+        "entity Hero\nrelation Flag(who)\nwhen Flag():\n  wait 1 ticks\n",
+        "scene Room:\n  props Lamp\npalette:\n  \".\" transparent\nimage Bg:\n  \"..\"\narea Lamp: 4294967290 0 10 10\n",
+        "entity Guard, Coin\nscene S:\n  marks Gate\nsociety Town:\n  need Hunger rate 1 seek 50 at Gate\n  member Guard owns Coin\n  gathering Gate\n  flight Gate\n  priority 70000\n",
+    };
+    for (bad_parse) |src| {
+        const res = check_source(testing.allocator, src);
+        try testing.expect(!res.is_valid);
+    }
+
+    // 2. A `when` rule with 9 distinct variables is refused instead of wrapping or out-of-bounds.
+    const nine_vars =
+        \\entity E
+        \\relation R(a, b)
+        \\when R(?a, ?b) and R(?c, ?d) and R(?e, ?f) and R(?g, ?h) and R(?i, _):
+        \\  wait 1 ticks
+        \\
+    ;
+    const nine_res = check_source(testing.allocator, nine_vars);
+    try testing.expect(!nine_res.is_valid);
+    try testing.expectEqualStrings("TooManyCueGuardVariables", nine_res.kind());
+
+    // 3. A script that allocates routines, cues, and rules before failing late in compile()
+    //    must leak zero bytes under testing.allocator.
+    const late_fail =
+        \\entity Hero
+        \\relation Ready(who)
+        \\routine Alpha(Hero):
+        \\  remember Ready(Hero)
+        \\on cue Uses(Hero, _):
+        \\  wait 1 ticks
+        \\when Ready(?who):
+        \\  remember Looks(Hero, MissingLook)
+        \\
+    ;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    try testing.expectError(error.UnknownLook, compile_source(testing.allocator, &world, null, late_fail));
 }

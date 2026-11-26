@@ -135,6 +135,33 @@
       "deck": 14,
       "page": "lamplighter.html",
       "flag": "lamplighter"
+    },
+    {
+      "id": "long-gallery",
+      "title": "The Long Gallery",
+      "tag": "Watch another room",
+      "blurb": "Audra keeps the Long Gallery while Corin's agenda moves across the Locked Studio next door to corner Pell. Watch the other room without leaving yours.",
+      "deck": 15,
+      "page": "long-gallery.html",
+      "flag": "long-gallery"
+    },
+    {
+      "id": "word-foundry",
+      "title": "The Word Foundry",
+      "tag": "Spellbook vocabularies",
+      "blurb": "Three clues teach six spell words without naming a recipe. Discover them, combine triples on the crucible, and see unlisted guesses refuse with zero state change.",
+      "deck": 16,
+      "page": "word-foundry.html",
+      "flag": "word-foundry"
+    },
+    {
+      "id": "cinder-table",
+      "title": "The Cinder Table",
+      "tag": "Private hands and decisions",
+      "blurb": "Three seats play four rounds of a trick game. Each decision filters by what that seat knows, until a discard reveals a public void and changes the lead.",
+      "deck": 17,
+      "page": "cinder-table.html",
+      "flag": "cinder-table"
     }
   ]
 }

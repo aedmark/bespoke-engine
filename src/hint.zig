@@ -142,28 +142,42 @@ pub fn validate(declaration: Declaration) Error!void {
             if (!found or prerequisite == need.entity) return Error.InvalidGoal;
         }
         if (need.hints.len > MAX_TIERS) return Error.InvalidGoal;
+        var has_authored_thing = false;
         for (need.hints, 0..) |hint, hi| {
             if (Tier.fromInt(hint.tier.number()) == null) return Error.InvalidGoal;
             if (hint.text.len == 0 or hint.text.len > MAX_HINT_TEXT) return Error.InvalidGoal;
+            if (hint.tier == .thing) has_authored_thing = true;
             for (need.hints[0..hi]) |prior| if (prior.tier == hint.tier) return Error.InvalidGoal;
         }
+        if (need.subject == null and need.object == null and !has_authored_thing) return Error.InvalidGoal;
         for (goal.needs[0..i]) |prior| if (prior.entity == need.entity) return Error.InvalidGoal;
     }
     // A cycle makes every need in it forever unready, so the authoring mistake is refused
     // rather than left to stall the frontier.
-    for (goal.needs) |need| if (reaches(goal.needs, need.entity, need.entity, 0)) return Error.InvalidGoal;
+    if (has_cycle(goal.needs)) return Error.InvalidGoal;
 }
 
-fn reaches(needs: []const Need, from: EntityId, target: EntityId, depth: usize) bool {
-    if (depth > MAX_NEEDS) return true;
-    for (needs) |need| {
-        if (need.entity != from) continue;
-        for (need.after) |next| {
-            if (next == target) return true;
-            if (reaches(needs, next, target, depth + 1)) return true;
-        }
-        return false;
+fn index_of(needs: []const Need, entity: EntityId) ?usize {
+    for (needs, 0..) |need, idx| if (need.entity == entity) return idx;
+    return null;
+}
+
+fn has_cycle(needs: []const Need) bool {
+    var state: [MAX_NEEDS]u8 = @splat(0); // 0 unvisited, 1 on stack, 2 done
+    for (0..needs.len) |i| {
+        if (state[i] == 0 and visit_cycle(needs, i, &state)) return true;
     }
+    return false;
+}
+
+fn visit_cycle(needs: []const Need, idx: usize, state: *[MAX_NEEDS]u8) bool {
+    state[idx] = 1;
+    for (needs[idx].after) |dep| {
+        const dep_idx = index_of(needs, dep) orelse continue;
+        if (state[dep_idx] == 1) return true;
+        if (state[dep_idx] == 0 and visit_cycle(needs, dep_idx, state)) return true;
+    }
+    state[idx] = 2;
     return false;
 }
 
@@ -579,4 +593,49 @@ test "P48-13: a need with six authored tiers steps through them, and asking past
     try testing.expectEqual(Tier.relation, plain.tier);
     try testing.expect(!plain.authored);
     try testing.expect(Tier.fromInt(MAX_TIERS + 1) == null);
+}
+
+test "P48-24: validate handles a 64-need diamond DAG in linear time and refuses all-wildcard needs without a tier-2 hint" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const room = try world.intern_entity("Room");
+    const hero = try world.intern_entity("Hero");
+
+    // Diamond DAG of 64 needs: N[i] waits on N[i+1] and N[i+2].
+    var needs: [64]Need = undefined;
+    var deps: [64][2]EntityId = undefined;
+    for (0..64) |i| {
+        var name_buf: [16]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buf, "N{d}", .{i});
+        needs[i] = .{
+            .entity = try world.intern_entity(name),
+            .relation = "Ready",
+            .subject = hero,
+            .room = room,
+        };
+    }
+    for (0..64) |i| {
+        if (i + 2 < 64) {
+            deps[i] = .{ needs[i + 1].entity, needs[i + 2].entity };
+            needs[i].after = &deps[i];
+        } else if (i + 1 < 64) {
+            deps[i] = .{ needs[i + 1].entity, needs[i + 1].entity };
+            needs[i].after = deps[i][0..1];
+        }
+    }
+    const goal = try world.intern_entity("Diamond");
+    try validate(.{ .goal = .{ .entity = goal, .needs = &needs } });
+
+    // An all-wildcard need without a tier-2 authored hint is refused at validation.
+    var wild = [_]Need{.{ .entity = try world.intern_entity("Wild"), .relation = "Alarm", .room = room }};
+    try testing.expectError(Error.InvalidGoal, validate(.{ .goal = .{ .entity = try world.intern_entity("G2"), .needs = &wild } }));
+
+    // Adding an authored tier-2 hint makes the all-wildcard need valid and queryable.
+    const tier2 = [_]Authored{.{ .tier = .thing, .text = "The bell." }};
+    wild[0].hints = &tier2;
+    const decl = Declaration{ .goal = .{ .entity = try world.intern_entity("G2"), .needs = &wild } };
+    try validate(decl);
+    var buf: [128]u8 = undefined;
+    try testing.expectEqualStrings("The bell.", (try query(&.{decl}, &world, hero, .thing, &buf)).?.text);
 }

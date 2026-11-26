@@ -198,8 +198,13 @@ pub const TemporalSnapshot = struct {
             var branch = try World.init(allocator, primary_world.arena_buffer.len);
             var branch_owned = true;
             errdefer if (branch_owned) branch.deinit();
+            try branch.value_bounds.appendSlice(branch.allocator(), primary_world.value_bounds.items);
             var stream: std.Io.Reader = .fixed(branch_bytes);
             try branch.restore_state(&stream);
+            var names = primary_world.display_names.iterator();
+            while (names.next()) |entry| try branch.set_display_name(EntityId.from_int(entry.key_ptr.*), entry.value_ptr.*);
+            var phrases = primary_world.phrase_overrides.iterator();
+            while (phrases.next()) |entry| try branch.set_phrase(entry.key_ptr.*, entry.value_ptr.*);
             snapshot.branch_world = branch;
             branch_owned = false;
         }
@@ -402,4 +407,38 @@ test "P31-04: temporal snapshot rejects a corrupt branch header" {
 
     var stream: std.Io.Reader = .fixed(bytes.items);
     try testing.expectError(Error.InvalidTemporalSnapshot, TemporalSnapshot.read(testing.allocator, &primary, &stream));
+}
+
+test "P48-25: restored branch keeps value_bounds, display_names, and phrase_overrides" {
+    const testing = std.testing;
+    var primary = try World.init(testing.allocator, 256 * 1024);
+    defer primary.deinit();
+
+    const hero = try primary.intern_entity("Hero");
+    const keystone = try primary.intern_entity("Keystone");
+    const mercy = try primary.intern_relation_kind("Mercy", .property, .number);
+    try primary.bound_relation(mercy, -10, 10);
+    try primary.set_display_name(hero, "Alistair");
+    try primary.set_phrase("thing_fallback", "curio");
+
+    var hv = TemporalHypervisor.init(testing.allocator, &primary);
+    defer hv.deinit();
+    const branch = try hv.fork_branch(10, hero, keystone);
+    try branch.remember(hero, mercy, 5, 0);
+
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw = ListWriter.init(&bytes);
+    try TemporalSnapshot.write(&hv, &lw.writer);
+
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    var decoded = try TemporalSnapshot.read(testing.allocator, &primary, &stream);
+    defer decoded.deinit();
+
+    const b = &decoded.branch_world.?;
+    try testing.expect(b.value_bound(mercy) != null);
+    try b.remember(hero, mercy, 99, 0);
+    try testing.expectEqual(@as(?u32, 10), b.get_property(hero, mercy));
+    try testing.expectEqualStrings("Alistair", b.display_text(hero).?);
+    try testing.expectEqualStrings("curio", b.phrase_override("thing_fallback").?);
 }

@@ -828,8 +828,17 @@ pub const Timeline = struct {
         if (keep_dice) {
             vm.dice = run_dice;
             if (hypervisor) |hv| {
-                if (hv.branch_dice != null and branch_dice != null) hv.branch_dice = branch_dice;
+                if (hv.branch_dice != null and branch_dice != null and hv.branch_dice.?.seed == branch_dice.?.seed) {
+                    hv.branch_dice = branch_dice;
+                }
             }
+        }
+        if (hypervisor) |hv| {
+            vm.bind_world(hv.active_world());
+            vm.branch_dice = hv.active_dice();
+        } else {
+            vm.bind_world(world);
+            vm.branch_dice = null;
         }
         return i;
     }
@@ -1077,13 +1086,15 @@ pub const Session = struct {
             else => false,
         };
         if (self.window.handle_save_action_with_temporal(action, self.world, self.spatial, self.vm, self.bridge, &self.is_paused, self.hypervisor)) {
-            self.sync_active_world();
-            self.vm.sync_dialogue();
-            if (restoring and self.window.save_manager.last_load_restarted_routines) {
-                // A save from another build kept its facts but no routine (D-162).
-                try restart_routines(self.world, self.spatial, self.vm, self.compiled);
+            if (!restoring or self.window.save_manager.last_load_succeeded) {
+                self.sync_active_world();
+                self.vm.sync_dialogue();
             }
-            if (restoring) {
+            if (restoring and self.window.save_manager.last_load_succeeded) {
+                if (self.window.save_manager.last_load_restarted_routines) {
+                    // A save from another build kept its facts but no routine (D-162).
+                    try restart_routines(self.world, self.spatial, self.vm, self.compiled);
+                }
                 // A loaded save has no persisted timeline. Start a new one from the loaded state
                 // so a later rewind cannot jump into the pre-load future.
                 self.timeline.reset();
@@ -1164,6 +1175,11 @@ pub const Session = struct {
         self.sync_active_world();
         const walking_before = if (self.player) |p| self.spatial.is_moving(p) else false;
         const dispatched = try tick(self.vm, self.compiled);
+        if (self.compiled.turn_clock) {
+            if (self.player) |p| if (self.spatial.is_moving(p)) {
+                self.is_paused = false;
+            };
+        }
         // A plain walk that ended on a doorway this tick leaves through it; a walk to act on
         // something (D-092) does not, though the mark beside a prop may be a doorway.
         if (walking_before and self.window.approach == null) {
@@ -1184,6 +1200,7 @@ pub const Session = struct {
         // `walk_to` reports false for a walk to the mark the player already stands on, which
         // is how a click on a doorway underfoot asks to leave.
         const ok = try self.spatial.walk_to(p, wp);
+        if (self.compiled.turn_clock and self.spatial.is_moving(p)) self.is_paused = false;
         if (!self.spatial.is_moving(p) and try self.leave_through(p)) {
             try self.record_now();
             return true;
@@ -2872,5 +2889,129 @@ test "P48-16: checked-in 1.0 save fixture holds a 'when each' row, which does no
     _ = w.forget(ada, cheered, null);
     try rig.ticks(2);
     try testing.expect(!w.has_fact(ada, cheered, null));
+}
+
+test "P48-25: failed loads keep Session timeline and routine count intact, and turn walks unpause after jump_to" {
+    const compiler = @import("compiler.zig");
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const save_dir = try tmp_dir.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(save_dir);
+
+    const script =
+        \\clock: turns
+        \\save version 1
+        \\scene: Quay
+        \\cast: Hero
+        \\marks: Steps, Pier
+        \\routine Idle(Hero):
+        \\  wait 50 ticks
+    ;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial, script);
+    defer compiled.deinit();
+    var vm = try init_vm(testing.allocator, &world, &spatial, &compiled);
+    defer vm.deinit();
+    _ = try start_script(&world, &spatial, &vm, &compiled);
+    const hero = world.lookup_entity("Hero").?;
+
+    var sm = try save_mod.SaveManager.init(testing.allocator, testing.io, save_dir);
+    defer sm.deinit();
+    var bridge = display_mod.DisplayBridge.init();
+    var window = try display_mod.DisplayWindow.init_offscreen(testing.io, 320, 180);
+    defer window.deinit();
+    window.attach_save_manager(&sm);
+
+    var session = try Session.init(testing.allocator, &world, &spatial, &vm, &compiled, &bridge, &window);
+    defer session.deinit();
+    session.player = hero;
+    _ = try session.advance();
+    _ = try session.advance();
+    const saved_len = session.timeline.len();
+    const saved_fibers = vm.fibers.items.len;
+    try testing.expectEqual(@as(usize, 3), saved_len);
+
+    // Failed quick_load (empty slot) must not clear timeline or duplicate routines, even if an
+    // earlier load had set `last_load_restarted_routines`.
+    sm.last_load_restarted_routines = true;
+    try testing.expect(try session.handle_common(.quick_load));
+    try testing.expect(!sm.last_load_succeeded);
+    try testing.expect(!sm.last_load_restarted_routines);
+    try testing.expectEqual(saved_len, session.timeline.len());
+    try testing.expectEqual(saved_fibers, vm.fibers.items.len);
+
+    // Loading a cross-build save also fails safely and leaves the timeline intact.
+    {
+        var other = try World.init(testing.allocator, 256 * 1024);
+        defer other.deinit();
+        sm.program = .{ .fingerprint = compiled.identity().fingerprint ^ 1, .save_version = 99 };
+        _ = try sm.save_slot(2, &other, null, null, "OtherVersion");
+        sm.program = compiled.identity();
+        try testing.expect(try session.handle_common(.{ .load_slot = 2 }));
+        try testing.expect(!sm.last_load_succeeded);
+        try testing.expectEqual(saved_len, session.timeline.len());
+        try testing.expectEqual(saved_fibers, vm.fibers.items.len);
+    }
+
+    // Rewind pauses, then starting a walk in a turn_clock game clears `is_paused`.
+    try testing.expect((try session.jump_to(0)) != null);
+    try testing.expect(session.is_paused);
+    const pier = spatial.graph.find_waypoint("Pier").?;
+    try testing.expect(try session.walk_player(pier));
+    try testing.expect(!session.is_paused);
+}
+
+test "P48-25: Timeline.restore_run rebinds VM and only keeps branch_dice across identical branch seeds" {
+    var primary = try World.init(testing.allocator, 256 * 1024);
+    defer primary.deinit();
+    const actor = try primary.intern_entity("Actor");
+    const keystone = try primary.intern_entity("Keystone");
+
+    var hv = TemporalHypervisor.init(testing.allocator, &primary);
+    defer hv.deinit();
+    hv.run_seed = 42;
+    var chunk = @import("bytecode.zig").BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &primary, &chunk);
+    defer vm.deinit();
+
+    var timeline = Timeline.init(testing.allocator);
+    defer timeline.deinit();
+
+    // Snapshot 0: primary world (no branch).
+    try timeline.record_run(&primary, null, &vm, &hv);
+
+    // Snapshot 1: branch A (opened at tick 0).
+    _ = try hv.fork_branch(10, actor, keystone);
+    vm.bind_world(hv.active_world());
+    vm.branch_dice = hv.active_dice();
+    const seed_a = hv.branch_dice.?.seed;
+    const roll_a_first = hv.branch_dice.?.roll(1000);
+    _ = roll_a_first;
+    try timeline.record_run(&primary, null, &vm, &hv);
+
+    // Advance primary tick and open branch B (different seed).
+    try hv.collapse_branch(true);
+    _ = primary.step_tick();
+    _ = try hv.fork_branch(10, actor, keystone);
+    const seed_b = hv.branch_dice.?.seed;
+    try testing.expect(seed_a != seed_b);
+    _ = hv.branch_dice.?.roll(1000);
+    try timeline.record_run(&primary, null, &vm, &hv);
+
+    // With keep_dice=true, restoring Branch A from Branch B must NOT overwrite Branch A's dice
+    // with Branch B's dice, and must rebind vm.world/branch_dice.
+    _ = try timeline.restore_run(&primary, null, &vm, &hv, 1, true);
+    try testing.expectEqual(seed_a, hv.branch_dice.?.seed);
+    try testing.expectEqual(hv.active_world(), vm.world);
+    try testing.expect(vm.branch_dice != null);
+
+    // Restoring Snapshot 0 (no branch) must rebind vm.world to primary and clear vm.branch_dice.
+    _ = try timeline.restore_run(&primary, null, &vm, &hv, 0, true);
+    try testing.expectEqual(&primary, vm.world);
+    try testing.expect(vm.branch_dice == null);
 }
 

@@ -32,6 +32,9 @@ const grid_puzzle = @import("grid_puzzle.zig");
 const observatory = @import("observatory_puzzle.zig");
 const valerius = @import("valerius.zig");
 const lamplighter = @import("lamplighter.zig");
+const long_gallery = @import("long_gallery.zig");
+const word_foundry = @import("word_foundry.zig");
+const cinder_table = @import("cinder_table.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -200,12 +203,54 @@ pub const decks = [_]wasm.Deck{
     wasm.script_deck_with("THE LAMPLIGHTER'S ROUND (PIXEL ART)", lamplighter.PACKAGE, .{
         .player = "Nell",
         .intro = lamplighter.INTRO ++ " [S] plays the next step.",
+        .soundtrack = &art.soundtrack,
         .theme = &lamplighter.theme,
         .status_hook = art.capture_status,
         .background = .{ .r = 24, .g = 26, .b = 52 },
         .setup = lamplighter_setup,
         .catalyst = solver(&LAMPLIGHTER_SOLUTION),
         .exits = &lamplighter.EXITS,
+    }),
+    wasm.script_deck_with("THE LONG GALLERY (WATCH ANOTHER ROOM)", long_gallery.LONG_GALLERY_SCRIPT, .{
+        .player = "Audra",
+        .intro = "Long Gallery: Audra keeps watch while Corin hunts Pell next door. Press [V] to watch the locked studio, [S] for next step.",
+        .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 22, .g = 24, .b = 32 },
+        .setup = gallery_setup,
+        .catalyst = gallery_solve,
+        .on_act = gallery_act,
+        .on_action = gallery_action,
+    }),
+    wasm.script_deck_with("THE WORD FOUNDRY (SPELLBOOK VOCABULARIES)", word_foundry.WORD_FOUNDRY_SCRIPT, .{
+        .player = "Maren",
+        .intro = "Word Foundry: Look at Bellows, ColdHearth, and PatternBook to learn words, then Use the Crucible or press [C] to combine three.",
+        .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 26, .g = 20, .b = 18 },
+        .setup = foundry_setup,
+        .catalyst = foundry_solve,
+        .after_tick = foundry_after_tick,
+        .on_act = foundry_act,
+        .on_choice = foundry_choice,
+        .on_action = foundry_action,
+        .command_bar = true,
+        .on_typed = foundry_typed,
+    }),
+    wasm.script_deck_with("THE CINDER TABLE (PRIVATE HANDS & DECISIONS)", cinder_table.CINDER_TABLE_SCRIPT, .{
+        .player = "Maren",
+        .intro = "Cinder Table: three seats play four rounds from private hands. Watch each trick play, or press [S] to step.",
+        .soundtrack = &art.soundtrack,
+        .theme = &art.theme,
+        .status_hook = art.capture_status,
+        .background = .{ .r = 24, .g = 18, .b = 18 },
+        .setup = cinder_setup,
+        .catalyst = cinder_solve,
+        .after_tick = cinder_after_tick,
+        .on_act = cinder_act,
+        .on_action = cinder_action,
     }),
 };
 
@@ -1291,7 +1336,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper", "Nell" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper", "Nell", "Audra", "Maren", "Maren" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1518,6 +1563,23 @@ test "P30-01: decks play the engine synthesizer: the proof soundtrack and distaf
         const quiet = energy_over(rt, 3);
         _ = try rt.dispatch_event(.{ .kind = .key_down, .key_code = 'C' });
         try testing.expect(energy_over(rt, 3) > quiet);
+    }
+}
+
+test "each proof deck starts on its own unique arrangement" {
+    var seen: [decks.len]u8 = undefined;
+    for (0..decks.len) |i| {
+        const rt = try load(@intCast(i));
+        defer unload(rt);
+        _ = energy_over(rt, 1);
+        const track = rt.audio.synth.current_track orelse return error.MissingTrack;
+        seen[i] = track;
+        for (0..i) |prev| {
+            if (seen[prev] == track) {
+                std.debug.print("\ndecks {d} and {d} share track {d}\n", .{ prev, i, track });
+                return error.DuplicateDeckTrack;
+            }
+        }
     }
 }
 
@@ -2239,3 +2301,759 @@ const LAMPLIGHTER_SOLUTION = [_]Beat{
         .{ .require = .{ .subject = "Nell", .relation = "RoundDone" } },
     } },
 };
+
+// =============================================================================
+// The Long Gallery: watch Locked Studio read-only while Audra stays in Long Gallery
+// =============================================================================
+
+pub const GALLERY_DECK: u8 = 15;
+pub const GALLERY_WATCH: u8 = 1;
+var gallery_ids: ?long_gallery.Ids = null;
+
+fn gallery_setup(rt: *WasmRuntime) anyerror!void {
+    const ids = try long_gallery.configure(&rt.world, &rt.spatial);
+    gallery_ids = ids;
+    bespoke.host.place_waypoint(&rt.spatial, ids.window_wp, 8, 0);
+    if (rt.spatial.graph.find_waypoint_in_room(ids.gallery, "Bench")) |bench| {
+        bespoke.host.place_waypoint(&rt.spatial, bench, 22, 0);
+    }
+    bespoke.host.place_waypoint(&rt.spatial, ids.easel_wp, 4, 0);
+    bespoke.host.place_waypoint(&rt.spatial, ids.corner_wp, 36, 0);
+    _ = try rt.spatial.transition_actor(ids.audra, ids.gallery, ids.window_wp);
+    _ = try rt.spatial.transition_actor(ids.corin, ids.studio, ids.easel_wp);
+    _ = try rt.spatial.transition_actor(ids.pell, ids.studio, ids.corner_wp);
+    if (rt.spatial.agents.getPtr(ids.corin)) |corin| corin.speed = 2;
+    const rope = rt.world.lookup_entity("VelvetRope") orelse .none;
+    const easel = rt.world.lookup_entity("EaselBoard") orelse .none;
+    for (rt.spatial.hotspots.items) |*hs| {
+        if (hs.entity == rope) hs.pos = .{ .x = 32, .y = -5 };
+        if (hs.entity == easel) hs.pos = .{ .x = 8, .y = -5 };
+    }
+    try rt.vm.transition_to_scene(ids.gallery);
+    rt.bind();
+}
+
+fn gallery_action(rt: *WasmRuntime, id: u8) anyerror!void {
+    if (id != GALLERY_WATCH) return;
+    const ids = gallery_ids orelse return;
+    if (rt.watch_scene != null and rt.watch_scene.? == ids.studio) {
+        rt.watch_scene = null;
+        rt.set_banner("Back in the Long Gallery.");
+    } else {
+        rt.watch_scene = ids.studio;
+        rt.set_banner("Watching the Locked Studio (read-only).");
+    }
+}
+
+fn gallery_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    const ids = gallery_ids orelse return false;
+    const rope = rt.world.lookup_entity("VelvetRope") orelse .none;
+    if (target == rope and verb != .look_at) {
+        rt.set_banner("The velvet rope blocks the studio arch. Press [V] to watch through the transom.");
+        return true;
+    }
+    if (target == ids.audra) {
+        const found = rt.world.lookup_relation("Found");
+        const caught = if (found) |f| rt.world.has_fact(ids.pell, f, null) else false;
+        rt.set_banner(if (caught) "Audra listens at the arch: quiet next door now that Corin caught Pell." else "Audra hears footsteps crossing the Locked Studio. Press [V] to look.");
+        return true;
+    }
+    return false;
+}
+
+fn gallery_solve(rt: *WasmRuntime) anyerror!void {
+    const ids = gallery_ids orelse return;
+    const found = rt.world.lookup_relation("Found") orelse try rt.world.intern_relation("Found", .set);
+    if (!rt.world.has_fact(ids.pell, found, null)) {
+        if (rt.watch_scene == null) {
+            rt.watch_scene = ids.studio;
+            rt.set_banner("Audra looks through the transom into the Locked Studio.");
+            return;
+        }
+        var ticks: usize = 0;
+        while (!rt.world.has_fact(ids.pell, found, null) and ticks < 25) : (ticks += 1) {
+            try rt.step_tick();
+        }
+        rt.set_banner("Corin catches Pell at the easel while Audra stays next door.");
+        return;
+    }
+    if (rt.watch_scene != null) {
+        rt.watch_scene = null;
+        rt.set_banner("Back in the Long Gallery. Press [V] to watch again, or [R] to rewind.");
+        return;
+    }
+    rt.set_banner("Solved. Press [V] to watch the Locked Studio again, or [R] to rewind.");
+}
+
+// =============================================================================
+// The Word Foundry: discover words from props and cast or test spell triples
+// =============================================================================
+
+pub const FOUNDRY_DECK: u8 = 16;
+pub const FOUNDRY_COMBINE: u8 = 1;
+pub const FOUNDRY_WORDS: u8 = 2;
+var foundry_ids: ?word_foundry.Ids = null;
+
+fn foundry_setup(rt: *WasmRuntime) anyerror!void {
+    const ids = try word_foundry.configure(&rt.world, &rt.spatial);
+    foundry_ids = ids;
+    bespoke.host.place_waypoint(&rt.spatial, ids.bench_wp, 10, 0);
+    if (rt.spatial.graph.find_waypoint_in_room(ids.scene, "Anvil")) |anvil| {
+        bespoke.host.place_waypoint(&rt.spatial, anvil, 30, 0);
+    }
+    _ = try rt.spatial.transition_actor(ids.maren, ids.scene, ids.bench_wp);
+    try rt.spatial.add_hotspot(ids.bellows, ids.scene, .{ .x = 6, .y = -6 }, 10, "Bellows", "Cracked leather bellows beside the forge mouth.");
+    try rt.spatial.add_hotspot(ids.hearth, ids.scene, .{ .x = 15, .y = -6 }, 10, "ColdHearth", "Cold grate with grey ash and an iron kettle.");
+    try rt.spatial.add_hotspot(ids.pattern_book, ids.scene, .{ .x = 24, .y = -6 }, 10, "PatternBook", "An open pattern book on an iron lectern.");
+    try rt.spatial.add_hotspot(ids.crucible, ids.scene, .{ .x = 33, .y = -6 }, 10, "Crucible", "Heavy crucible bowl waiting for a three-word phrase.");
+    try rt.vm.transition_to_scene(ids.scene);
+    rt.bind();
+    foundry_words_complete(rt);
+}
+
+fn foundry_after_tick(rt: *WasmRuntime) anyerror!void {
+    if (foundry_ids == null) return;
+    foundry_words_complete(rt);
+}
+
+fn foundry_words_complete(rt: *WasmRuntime) void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = foundry_ids orelse return;
+    bespoke.host.command_words(&rt.vm, program, ids.maren, &rt.window.command_words);
+    const extras = [_][]const u8{
+        "look", "combine", "cast", "words",
+        "spark", "forge", "ember", "water", "bolt", "ward",
+        "kindle", "quench", "bellows", "coldhearth", "patternbook", "crucible",
+    };
+    for (extras) |w| rt.window.command_words.add(w);
+}
+
+fn foundry_report_known(rt: *WasmRuntime, ids: word_foundry.Ids) void {
+    const words = [_]struct { id: EntityId, label: []const u8 }{
+        .{ .id = ids.spark, .label = "Spark" },
+        .{ .id = ids.forge, .label = "Forge" },
+        .{ .id = ids.ember, .label = "Ember" },
+        .{ .id = ids.water, .label = "Water" },
+        .{ .id = ids.bolt, .label = "Bolt" },
+        .{ .id = ids.ward, .label = "Ward" },
+    };
+    var buf: [220]u8 = undefined;
+    var list_buf: [96]u8 = undefined;
+    var list_len: usize = 0;
+    var count: usize = 0;
+    for (words) |entry| {
+        if (!bespoke.spell.knows(rt.active_world(), ids.maren, entry.id)) continue;
+        if (count > 0 and list_len + 2 <= list_buf.len) {
+            @memcpy(list_buf[list_len .. list_len + 2], ", ");
+            list_len += 2;
+        }
+        if (list_len + entry.label.len <= list_buf.len) {
+            @memcpy(list_buf[list_len .. list_len + entry.label.len], entry.label);
+            list_len += entry.label.len;
+        }
+        count += 1;
+    }
+    const crucible_state: []const u8 = if (bespoke.host.has_state(rt.active_world(), ids.crucible, "Tempered"))
+        "tempered"
+    else if (bespoke.host.has_state(rt.active_world(), ids.crucible, "Glowing"))
+        "glowing"
+    else
+        "cold";
+    if (count == 0) {
+        const msg = std.fmt.bufPrint(&buf, "Crucible is {s}. Look at Bellows, ColdHearth, and PatternBook to learn words.", .{crucible_state}) catch "No words yet.";
+        rt.set_banner(msg);
+    } else {
+        const msg = std.fmt.bufPrint(&buf, "Crucible: {s}. Known ({d}/6): {s}. Use Crucible or [C] to combine.", .{ crucible_state, count, list_buf[0..list_len] }) catch "Known words listed.";
+        rt.set_banner(msg);
+    }
+}
+
+fn foundry_power_word(ids: word_foundry.Ids, code: u32) ?EntityId {
+    return switch (code) {
+        1 => ids.spark,
+        2 => ids.forge,
+        else => null,
+    };
+}
+
+fn foundry_element_word(ids: word_foundry.Ids, code: u32) ?EntityId {
+    return switch (code) {
+        1 => ids.ember,
+        2 => ids.water,
+        else => null,
+    };
+}
+
+fn foundry_form_word(ids: word_foundry.Ids, code: u32) ?EntityId {
+    return switch (code) {
+        1 => ids.bolt,
+        2 => ids.ward,
+        else => null,
+    };
+}
+
+fn foundry_open_combiner(rt: *WasmRuntime) anyerror!void {
+    const ids = foundry_ids orelse return;
+    if (bespoke.dialogue.view(&rt.world) != null) return;
+    const world = rt.active_world();
+    var choices: [3]bespoke.dialogue.Choice = undefined;
+    var n: usize = 0;
+    if (bespoke.spell.knows(world, ids.maren, ids.spark)) {
+        choices[n] = .{ .text = "Power: Spark", .action = 0x101 };
+        n += 1;
+    }
+    if (bespoke.spell.knows(world, ids.maren, ids.forge)) {
+        choices[n] = .{ .text = "Power: Forge", .action = 0x102 };
+        n += 1;
+    }
+    if (n == 0) {
+        rt.set_banner("No Power words learned yet. Look at the Bellows first.");
+        return;
+    }
+    choices[n] = .{ .text = "Step back.", .action = 0 };
+    n += 1;
+    _ = try rt.vm.open_generated_dialogue(ids.crucible, "1/3 Choose a Power word to speak:", choices[0..n]);
+}
+
+fn foundry_choice(rt: *WasmRuntime, action: u32) anyerror!void {
+    const ids = foundry_ids orelse return;
+    const world = rt.active_world();
+    if (action == 0) {
+        rt.set_banner("Maren steps back from the crucible.");
+        return;
+    }
+    const stage = action & 0xF00;
+    if (stage == 0x100) {
+        const p = action & 0xF;
+        const pname = if (p == 1) "Spark" else "Forge";
+        var choices: [3]bespoke.dialogue.Choice = undefined;
+        var n: usize = 0;
+        if (bespoke.spell.knows(world, ids.maren, ids.ember)) {
+            choices[n] = .{ .text = "Element: Ember", .action = 0x200 | (p << 4) | 1 };
+            n += 1;
+        }
+        if (bespoke.spell.knows(world, ids.maren, ids.water)) {
+            choices[n] = .{ .text = "Element: Water", .action = 0x200 | (p << 4) | 2 };
+            n += 1;
+        }
+        if (n == 0) {
+            rt.set_banner("No Element words learned yet. Look at the ColdHearth first.");
+            return;
+        }
+        choices[n] = .{ .text = "Cancel.", .action = 0 };
+        n += 1;
+        var pbuf: [64]u8 = undefined;
+        const prompt = std.fmt.bufPrint(&pbuf, "2/3 Pair {s} with an Element:", .{pname}) catch "2/3 Choose an Element:";
+        _ = try rt.vm.open_generated_dialogue(ids.crucible, prompt, choices[0..n]);
+        return;
+    }
+    if (stage == 0x200) {
+        const p = (action >> 4) & 0xF;
+        const e = action & 0xF;
+        const pname = if (p == 1) "Spark" else "Forge";
+        const ename = if (e == 1) "Ember" else "Water";
+        var choices: [3]bespoke.dialogue.Choice = undefined;
+        var n: usize = 0;
+        if (bespoke.spell.knows(world, ids.maren, ids.bolt)) {
+            choices[n] = .{ .text = "Form: Bolt", .action = 0x300 | (p << 8) | (e << 4) | 1 };
+            n += 1;
+        }
+        if (bespoke.spell.knows(world, ids.maren, ids.ward)) {
+            choices[n] = .{ .text = "Form: Ward", .action = 0x300 | (p << 8) | (e << 4) | 2 };
+            n += 1;
+        }
+        if (n == 0) {
+            rt.set_banner("No Form words learned yet. Look at the PatternBook first.");
+            return;
+        }
+        choices[n] = .{ .text = "Cancel.", .action = 0 };
+        n += 1;
+        var pbuf: [64]u8 = undefined;
+        const prompt = std.fmt.bufPrint(&pbuf, "3/3 Shape {s} + {s} with a Form:", .{ pname, ename }) catch "3/3 Choose a Form:";
+        _ = try rt.vm.open_generated_dialogue(ids.crucible, prompt, choices[0..n]);
+        return;
+    }
+    if (stage == 0x300) {
+        const p = foundry_power_word(ids, (action >> 8) & 0xF) orelse return;
+        const e = foundry_element_word(ids, (action >> 4) & 0xF) orelse return;
+        const f = foundry_form_word(ids, action & 0xF) orelse return;
+        try foundry_cast_triple(rt, p, e, f);
+    }
+}
+
+fn foundry_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    const program = if (rt.program) |*p| p else return false;
+    const ids = foundry_ids orelse return false;
+    if (target == ids.crucible) {
+        if (verb == .look_at) {
+            foundry_report_known(rt, ids);
+            return true;
+        }
+        if (verb == .use_with or verb == .talk_to) {
+            try foundry_open_combiner(rt);
+            return true;
+        }
+        return false;
+    }
+    if (verb == .use_with or verb == .talk_to) {
+        if (target == ids.bellows or target == ids.hearth or target == ids.pattern_book) {
+            _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, target, null);
+            try rt.step_tick();
+            return true;
+        }
+    }
+    return false;
+}
+
+fn foundry_cast_triple(rt: *WasmRuntime, p: EntityId, e: EntityId, f: EntityId) anyerror!void {
+    const program = if (rt.program) |*prog| prog else return;
+    const ids = foundry_ids orelse return;
+    const outcome = try bespoke.host.combine(&rt.vm, program, ids.maren, p, e, f, ids.crucible);
+    switch (outcome) {
+        .cast => try rt.step_tick(),
+        .refused => |why| {
+            const world = rt.active_world();
+            const p_name = world.get_entity_name(p) orelse "?";
+            const e_name = world.get_entity_name(e) orelse "?";
+            const f_name = world.get_entity_name(f) orelse "?";
+            const crucible_state: []const u8 = if (bespoke.host.has_state(world, ids.crucible, "Tempered"))
+                "tempered"
+            else if (bespoke.host.has_state(world, ids.crucible, "Glowing"))
+                "glowing"
+            else
+                "cold";
+            var buf: [192]u8 = undefined;
+            const msg = switch (why) {
+                .no_such_spell => std.fmt.bufPrint(&buf, "Fizzle: no spell joins {s}, {s}, {s}. The crucible stays {s}.", .{ p_name, e_name, f_name, crucible_state }),
+                else => std.fmt.bufPrint(&buf, "Fizzle ({s}) on {s}, {s}, {s}. The crucible stays {s}.", .{ why.label(), p_name, e_name, f_name, crucible_state }),
+            } catch "Fizzle: crucible unchanged.";
+            rt.set_banner(msg);
+        },
+    }
+}
+
+fn foundry_cast_name(rt: *WasmRuntime, name: []const u8) anyerror!void {
+    const program = if (rt.program) |*prog| prog else return;
+    const ids = foundry_ids orelse return;
+    const outcome = try bespoke.host.cast(&rt.vm, program, ids.maren, name, ids.crucible);
+    switch (outcome) {
+        .cast => try rt.step_tick(),
+        .refused => |why| {
+            var buf: [160]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Fizzle ({s}): crucible unchanged ({d} facts).", .{ why.label(), rt.world.fact_count() }) catch "Fizzle: crucible unchanged.";
+            rt.set_banner(msg);
+        },
+    }
+}
+
+fn foundry_action(rt: *WasmRuntime, id: u8) anyerror!void {
+    const ids = foundry_ids orelse return;
+    switch (id) {
+        FOUNDRY_COMBINE => try foundry_open_combiner(rt),
+        FOUNDRY_WORDS => foundry_report_known(rt, ids),
+        else => {},
+    }
+}
+
+fn foundry_lookup_word(ids: word_foundry.Ids, token: []const u8) ?EntityId {
+    if (std.ascii.eqlIgnoreCase(token, "spark")) return ids.spark;
+    if (std.ascii.eqlIgnoreCase(token, "forge")) return ids.forge;
+    if (std.ascii.eqlIgnoreCase(token, "ember")) return ids.ember;
+    if (std.ascii.eqlIgnoreCase(token, "water")) return ids.water;
+    if (std.ascii.eqlIgnoreCase(token, "bolt")) return ids.bolt;
+    if (std.ascii.eqlIgnoreCase(token, "ward")) return ids.ward;
+    return null;
+}
+
+fn foundry_word_tier(ids: word_foundry.Ids, w: EntityId) u2 {
+    if (w == ids.spark or w == ids.forge) return 0; // Power
+    if (w == ids.ember or w == ids.water) return 1; // Element
+    return 2; // Form
+}
+
+fn foundry_typed(rt: *WasmRuntime, line: []const u8) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = foundry_ids orelse return;
+    var tokens: [6][]const u8 = undefined;
+    var n: usize = 0;
+    var it = std.mem.tokenizeAny(u8, line, " \t,.:;");
+    while (it.next()) |tok| {
+        if (n == tokens.len) break;
+        tokens[n] = tok;
+        n += 1;
+    }
+    if (n == 0) {
+        foundry_report_known(rt, ids);
+        return;
+    }
+    if (n == 1 and (std.ascii.eqlIgnoreCase(tokens[0], "words") or std.ascii.eqlIgnoreCase(tokens[0], "known"))) {
+        foundry_report_known(rt, ids);
+        return;
+    }
+    for (tokens[0..n]) |tok| {
+        if (std.ascii.eqlIgnoreCase(tok, "bellows")) {
+            _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, ids.bellows, null);
+            try rt.step_tick();
+            return;
+        }
+        if (std.ascii.eqlIgnoreCase(tok, "coldhearth") or std.ascii.eqlIgnoreCase(tok, "hearth")) {
+            _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, ids.hearth, null);
+            try rt.step_tick();
+            return;
+        }
+        if (std.ascii.eqlIgnoreCase(tok, "patternbook") or std.ascii.eqlIgnoreCase(tok, "book") or std.ascii.eqlIgnoreCase(tok, "pattern")) {
+            _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, ids.pattern_book, null);
+            try rt.step_tick();
+            return;
+        }
+        if (std.ascii.eqlIgnoreCase(tok, "crucible")) {
+            foundry_report_known(rt, ids);
+            return;
+        }
+    }
+    var start: usize = 0;
+    if (std.ascii.eqlIgnoreCase(tokens[0], "combine") or std.ascii.eqlIgnoreCase(tokens[0], "cast")) start = 1;
+    const args = tokens[start..n];
+    if (args.len == 1) {
+        if (std.ascii.eqlIgnoreCase(args[0], "kindle") or std.ascii.eqlIgnoreCase(args[0], "quench")) {
+            return foundry_cast_name(rt, args[0]);
+        }
+        if (foundry_lookup_word(ids, args[0])) |w| {
+            const tier_name = switch (foundry_word_tier(ids, w)) {
+                0 => "Power",
+                1 => "Element",
+                else => "Form",
+            };
+            var buf: [160]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "{s} is a {s} word. Combine Power + Element + Form (e.g. type 3 words or press [C]).", .{ rt.active_world().get_entity_name(w) orelse args[0], tier_name }) catch "Combine three words.";
+            rt.set_banner(msg);
+            return;
+        }
+    }
+    if (args.len == 2) {
+        if (foundry_lookup_word(ids, args[0])) |w0| {
+            if (foundry_lookup_word(ids, args[1])) |w1| {
+                const t0 = foundry_word_tier(ids, w0);
+                const t1 = foundry_word_tier(ids, w1);
+                var missing: []const u8 = "third";
+                if (t0 != 0 and t1 != 0) missing = "Power (Spark or Forge)";
+                if (t0 != 1 and t1 != 1) missing = "Element (Ember or Water)";
+                if (t0 != 2 and t1 != 2) missing = "Form (Bolt or Ward)";
+                var buf: [176]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "{s} + {s} still needs a {s} word. Type all three words or press [C].", .{
+                    rt.active_world().get_entity_name(w0) orelse args[0],
+                    rt.active_world().get_entity_name(w1) orelse args[1],
+                    missing,
+                }) catch "A spell needs Power, Element, and Form.";
+                rt.set_banner(msg);
+                return;
+            }
+        }
+    }
+    if (args.len == 3) {
+        if (foundry_lookup_word(ids, args[0])) |w0| {
+            if (foundry_lookup_word(ids, args[1])) |w1| {
+                if (foundry_lookup_word(ids, args[2])) |w2| {
+                    return foundry_cast_triple(rt, w0, w1, w2);
+                }
+            }
+        }
+    }
+    rt.set_banner("Try: look bellows, words, combine forge ember bolt, or press [C].");
+}
+
+fn foundry_solve(rt: *WasmRuntime) anyerror!void {
+    const program = if (rt.program) |*p| p else return;
+    const ids = foundry_ids orelse return;
+    if (!bespoke.spell.knows(rt.active_world(), ids.maren, ids.spark)) {
+        _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, ids.bellows, null);
+        try rt.step_tick();
+        return;
+    }
+    if (!bespoke.spell.knows(rt.active_world(), ids.maren, ids.ember)) {
+        _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, ids.hearth, null);
+        try rt.step_tick();
+        return;
+    }
+    if (!bespoke.spell.knows(rt.active_world(), ids.maren, ids.bolt)) {
+        _ = try rt.vm.fire_cue(program, "LooksAt", ids.maren, ids.pattern_book, null);
+        try rt.step_tick();
+        return;
+    }
+    if (!bespoke.host.has_state(rt.active_world(), ids.crucible, "Glowing")) {
+        return foundry_cast_triple(rt, ids.forge, ids.ember, ids.bolt);
+    }
+    if (!bespoke.host.has_state(rt.active_world(), ids.crucible, "Tempered")) {
+        return foundry_cast_triple(rt, ids.spark, ids.water, ids.ward);
+    }
+    rt.set_banner("Solved: Kindle and Quench both fired. Press [C] to test any triple or [R] to rewind.");
+}
+
+// =============================================================================
+// The Cinder Table: private hands and scored plays over 4 rounds (12 cards)
+// =============================================================================
+
+pub const CINDER_DECK: u8 = 17;
+pub const CINDER_NEXT_ROUND: u8 = 1;
+var cinder_ids: ?cinder_table.Ids = null;
+var cinder_last_count: usize = 0;
+
+fn cinder_setup(rt: *WasmRuntime) anyerror!void {
+    const ids = try cinder_table.configure(&rt.world, &rt.spatial);
+    cinder_ids = ids;
+    cinder_last_count = 0;
+    bespoke.host.place_waypoint(&rt.spatial, ids.bench_wp, 10, 0);
+    if (rt.spatial.graph.find_waypoint_in_room(ids.scene, "Stove")) |stove| {
+        bespoke.host.place_waypoint(&rt.spatial, stove, 30, 0);
+        _ = try rt.spatial.transition_actor(ids.ines, ids.scene, stove);
+    }
+    const center_wp = try rt.spatial.graph.add_waypoint(ids.scene, 20, 0, "TableSeat");
+    _ = rt.spatial.graph.connect(ids.bench_wp, center_wp, null) catch {};
+    _ = try rt.spatial.transition_actor(ids.maren, ids.scene, ids.bench_wp);
+    _ = try rt.spatial.transition_actor(ids.ossic, ids.scene, center_wp);
+    const tally = rt.world.lookup_entity("TallyBoard") orelse .none;
+    const tokens = rt.world.lookup_entity("Tokens") orelse .none;
+    if (tally != .none) try rt.spatial.add_hotspot(tally, ids.scene, .{ .x = 4, .y = -6 }, 10, "TallyBoard", "Scored trick tally and public void declarations.");
+    if (tokens != .none) try rt.spatial.add_hotspot(tokens, ids.scene, .{ .x = 36, .y = -6 }, 10, "Tokens", "Private hand counters for Maren, Ossic, and Ines.");
+    try rt.vm.transition_to_scene(ids.scene);
+    rt.bind();
+}
+
+const PlayedSummary = struct {
+    count: usize = 0,
+    last_actor: EntityId = .none,
+    last_card: EntityId = .none,
+};
+
+fn cinder_card_label(raw: []const u8) []const u8 {
+    const table = [_]struct { raw: []const u8, label: []const u8 }{
+        .{ .raw = "SaltOne", .label = "Salt 1" },
+        .{ .raw = "SaltTwo", .label = "Salt 2" },
+        .{ .raw = "SaltThree", .label = "Salt 3" },
+        .{ .raw = "SaltFour", .label = "Salt 4" },
+        .{ .raw = "ReedOne", .label = "Reed 1" },
+        .{ .raw = "ReedTwo", .label = "Reed 2" },
+        .{ .raw = "ReedThree", .label = "Reed 3" },
+        .{ .raw = "ReedFour", .label = "Reed 4" },
+        .{ .raw = "CinderOne", .label = "Cinder 1" },
+        .{ .raw = "CinderTwo", .label = "Cinder 2" },
+        .{ .raw = "CinderThree", .label = "Cinder 3" },
+        .{ .raw = "CinderFour", .label = "Cinder 4" },
+    };
+    for (table) |entry| {
+        if (std.mem.eql(u8, entry.raw, raw)) return entry.label;
+    }
+    return raw;
+}
+
+fn cinder_play_note(raw: []const u8) []const u8 {
+    if (std.mem.eql(u8, raw, "SaltOne")) return " (opening lead, score 6)";
+    if (std.mem.eql(u8, raw, "ReedOne")) return " (no Cinder left; Void in Cinder declared)";
+    if (std.mem.eql(u8, raw, "CinderTwo")) return " (score raised 4 -> 6 by Ossic's void)";
+    return "";
+}
+
+fn cinder_played_summary(world: *const bespoke.World) PlayedSummary {
+    const played_rel = world.lookup_relation("Played") orelse return .{};
+    const slice = world.facts.slice();
+    const subjects = slice.items(.subject);
+    const relations = slice.items(.relation);
+    const objects = slice.items(.object_or_value);
+    var out = PlayedSummary{};
+    for (0..world.facts.len) |i| {
+        if (relations[i] != played_rel) continue;
+        out.count += 1;
+        out.last_actor = subjects[i];
+        out.last_card = EntityId.from_int(objects[i]);
+    }
+    return out;
+}
+
+fn cinder_after_tick(rt: *WasmRuntime) anyerror!void {
+    const ids = cinder_ids orelse return;
+    _ = ids;
+    const summary = cinder_played_summary(rt.active_world());
+    if (summary.count <= cinder_last_count) {
+        cinder_last_count = summary.count;
+        return;
+    }
+    cinder_last_count = summary.count;
+    if (summary.last_actor == .none or summary.last_card == .none) return;
+    const world = rt.active_world();
+    const actor = world.get_entity_name(summary.last_actor) orelse "?";
+    const card_raw = world.get_entity_name(summary.last_card) orelse "?";
+    const card = cinder_card_label(card_raw);
+    const round = (summary.count + 2) / 3;
+    var buf: [200]u8 = undefined;
+    const msg = if (summary.count >= cinder_table.TOTAL_PLAYS)
+        std.fmt.bufPrint(&buf, "Round {d}: {s} plays {s}. Table finished (12/12 cards played).", .{ round, actor, card }) catch "Table finished."
+    else
+        std.fmt.bufPrint(&buf, "Round {d}: {s} plays {s}{s}.", .{ round, actor, card, cinder_play_note(card_raw) }) catch "Card played.";
+    rt.set_banner(msg);
+}
+
+fn cinder_action(rt: *WasmRuntime, id: u8) anyerror!void {
+    if (id != CINDER_NEXT_ROUND) return;
+    const before = cinder_played_summary(rt.active_world()).count;
+    if (before >= cinder_table.TOTAL_PLAYS) {
+        rt.set_banner("All 4 rounds complete (12 cards played). Press [R] to rewind.");
+        return;
+    }
+    const turn_rel = rt.active_world().lookup_relation("Turn");
+    const maren = if (cinder_ids) |ids| ids.maren else EntityId.none;
+    for (0..3) |step_i| {
+        if (cinder_played_summary(rt.active_world()).count >= cinder_table.TOTAL_PLAYS) break;
+        if (step_i > 0 and turn_rel != null and maren != .none and rt.active_world().has_fact(maren, turn_rel.?, null)) break;
+        try rt.step_tick();
+    }
+}
+
+fn cinder_seat_hand_banner(rt: *WasmRuntime, seat: EntityId, seat_name: []const u8) void {
+    const world = rt.active_world();
+    const knows_rel = world.lookup_relation("Knows") orelse return;
+    const sl = world.facts.slice();
+    const subj = sl.items(.subject);
+    const rel = sl.items(.relation);
+    const obj = sl.items(.object_or_value);
+    var list_buf: [96]u8 = undefined;
+    var list_len: usize = 0;
+    var count: usize = 0;
+    for (0..world.facts.len) |i| {
+        if (rel[i] != knows_rel or subj[i] != seat) continue;
+        const card = cinder_card_label(world.get_entity_name(EntityId.from_int(obj[i])) orelse "?");
+        if (count > 0 and list_len + 2 <= list_buf.len) {
+            @memcpy(list_buf[list_len .. list_len + 2], ", ");
+            list_len += 2;
+        }
+        if (list_len + card.len <= list_buf.len) {
+            @memcpy(list_buf[list_len .. list_len + card.len], card);
+            list_len += card.len;
+        }
+        count += 1;
+    }
+    var buf: [192]u8 = undefined;
+    const msg = if (count == 0)
+        std.fmt.bufPrint(&buf, "{s}'s private hand is empty.", .{seat_name}) catch "Hand empty."
+    else
+        std.fmt.bufPrint(&buf, "{s}'s private hand ({d}): {s}.", .{ seat_name, count, list_buf[0..list_len] }) catch "Hand shown.";
+    rt.set_banner(msg);
+}
+
+fn cinder_act(rt: *WasmRuntime, verb: wasm.WasmVerb, target: EntityId) anyerror!bool {
+    _ = verb;
+    const world = rt.active_world();
+    const tally = world.lookup_entity("TallyBoard") orelse .none;
+    const tokens = world.lookup_entity("Tokens") orelse .none;
+    const ids = cinder_ids orelse return false;
+    var buf: [192]u8 = undefined;
+    if (target == ids.maren or target == ids.ossic or target == ids.ines) {
+        const sname = world.get_entity_name(target) orelse "?";
+        cinder_seat_hand_banner(rt, target, sname);
+        return true;
+    }
+    if (target == tally) {
+        const played = cinder_played_summary(world).count;
+        const void_rel = world.lookup_relation("Void");
+        const cinder = world.lookup_entity("Cinder");
+        const ossic_void = if (void_rel != null and cinder != null) world.has_fact(ids.ossic, void_rel.?, cinder.?.to_int()) else false;
+        const msg = std.fmt.bufPrint(&buf, "Tally: {d}/{d} cards played. {s}", .{
+            played,
+            cinder_table.TOTAL_PLAYS,
+            if (ossic_void) "Ossic is void in Cinder." else "No public voids yet.",
+        }) catch "Tally read.";
+        rt.set_banner(msg);
+        return true;
+    }
+    if (target == tokens) {
+        const knows_rel = world.lookup_relation("Knows") orelse return false;
+        const count_hand = struct {
+            fn of(w: *const bespoke.World, r: bespoke.RelationKind, who: EntityId) usize {
+                var n: usize = 0;
+                const sl = w.facts.slice();
+                const subj = sl.items(.subject);
+                const rel = sl.items(.relation);
+                for (0..w.facts.len) |i| {
+                    if (rel[i] == r and subj[i] == who) n += 1;
+                }
+                return n;
+            }
+        }.of;
+        const msg = std.fmt.bufPrint(&buf, "Private cards remaining: Maren {d}, Ossic {d}, Ines {d}.", .{
+            count_hand(world, knows_rel, ids.maren),
+            count_hand(world, knows_rel, ids.ossic),
+            count_hand(world, knows_rel, ids.ines),
+        }) catch "Private hands counted.";
+        rt.set_banner(msg);
+        return true;
+    }
+    return false;
+}
+
+fn cinder_solve(rt: *WasmRuntime) anyerror!void {
+    if (cinder_played_summary(rt.active_world()).count >= cinder_table.TOTAL_PLAYS) {
+        rt.set_banner("All 4 rounds complete (12 cards played). Press [R] to rewind.");
+        return;
+    }
+    try rt.step_tick();
+}
+
+test "P44-06: Long Gallery toggles Locked Studio read-only in the browser" {
+    const rt = try load(GALLERY_DECK);
+    defer unload(rt);
+    try testing.expectEqualStrings("Long Gallery", rt.capture().current_scene[0..rt.capture().current_scene_len]);
+    try rt.deck_action(GALLERY_WATCH);
+    try testing.expectEqualStrings("Locked Studio", rt.capture().current_scene[0..rt.capture().current_scene_len]);
+    try rt.trigger_catalyst();
+    try testing.expect(holds(rt, "Pell", "Found", null));
+    try rt.deck_action(GALLERY_WATCH);
+    try testing.expectEqualStrings("Long Gallery", rt.capture().current_scene[0..rt.capture().current_scene_len]);
+}
+
+test "P44-04: Word Foundry discovers words, refuses an unknown triple, and casts Kindle and Quench" {
+    const rt = try load(FOUNDRY_DECK);
+    defer unload(rt);
+    const before = rt.world.fact_count();
+    try rt.deck_action(FOUNDRY_COMBINE);
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Bellows") != null);
+    try testing.expectEqual(before, rt.world.fact_count());
+
+    try type_into(rt, "spark ember");
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Form") != null);
+
+    var step: usize = 0;
+    while (!holds(rt, "Crucible", "Tempered", null) and step < 10) : (step += 1) try rt.trigger_catalyst();
+    try testing.expect(holds(rt, "Crucible", "Glowing", null));
+    try testing.expect(holds(rt, "Crucible", "Tempered", null));
+
+    const settled = rt.world.fact_count();
+    try type_into(rt, "combine spark ember bolt");
+    try testing.expectEqual(settled, rt.world.fact_count());
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Fizzle") != null);
+
+    // Three-step interactive crucible chooser opens and resolves cleanly without adding spell state.
+    try rt.deck_action(FOUNDRY_COMBINE);
+    try testing.expect(bespoke.dialogue.view(rt.active_world()) != null);
+    try rt.answer(0); // Spark
+    try rt.answer(0); // Ember
+    try rt.answer(0); // Bolt (Fizzle)
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Fizzle") != null);
+    const after_first_dialog = rt.world.fact_count();
+    try rt.deck_action(FOUNDRY_COMBINE);
+    try rt.answer(0);
+    try rt.answer(0);
+    try rt.answer(0);
+    try testing.expectEqual(after_first_dialog, rt.world.fact_count());
+}
+
+test "P44-05: Cinder Table plays all 12 cards across 4 rounds in the browser" {
+    const rt = try load(CINDER_DECK);
+    defer unload(rt);
+    try rt.trigger_catalyst();
+    try testing.expect(std.mem.indexOf(u8, rt.get_banner(), "Salt 1") != null);
+    var step: usize = 0;
+    while (cinder_played_summary(rt.active_world()).count < cinder_table.TOTAL_PLAYS and step < 20) : (step += 1) {
+        try rt.trigger_catalyst();
+    }
+    try testing.expectEqual(cinder_table.TOTAL_PLAYS, cinder_played_summary(rt.active_world()).count);
+    try testing.expect(holds(rt, "Ossic", "Void", "Cinder"));
+}

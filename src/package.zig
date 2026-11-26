@@ -52,6 +52,14 @@ pub const MAX_PACKAGE_PAYLOAD_SIZE: u32 = 64 * 1024 * 1024;
 const MAX_CAST: u32 = 4096;
 /// The most display names a package may hold; a larger count is corrupt input.
 const MAX_DISPLAY_NAMES: usize = 4096;
+/// Upper bounds on package section counts so corrupt streams fail fast without huge allocations.
+const MAX_SOCIETY_ITEMS: u16 = 256;
+const MAX_SOCIETIES: u32 = 64;
+const MAX_DUELS: u32 = 64;
+const MAX_DEGRADATIONS: u32 = 64;
+const MAX_WAYPOINTS: u32 = std.math.maxInt(u16);
+const MAX_EDGES: u32 = 65535;
+const MAX_HOTSPOTS: u32 = 65535;
 
 pub const PackageHeader = extern struct {
     magic: [4]u8 = PACKAGE_MAGIC,
@@ -157,6 +165,7 @@ fn write_str(writer: anytype, str: []const u8) !void {
 fn read_str(allocator: std.mem.Allocator, reader: anytype) ![]const u8 {
     const len = try reader.takeInt(u16, .little);
     const buf = try allocator.alloc(u8, len);
+    errdefer allocator.free(buf);
     try reader.readSliceAll(buf);
     return buf;
 }
@@ -567,6 +576,7 @@ fn write_cue_chain(writer: anytype, compiled: *const CompiledProgram) !void {
 /// Version 31: display names by entity, then phrase overrides by key, each sorted so the same
 /// program writes the same bytes (P48-09, D-179).
 fn write_player_text(world: *const World, writer: anytype) !void {
+    if (world.display_names.count() > MAX_DISPLAY_NAMES) return error.InvalidPlayerText;
     var ids: [MAX_DISPLAY_NAMES]u32 = undefined;
     var n: usize = 0;
     var names = world.display_names.keyIterator();
@@ -1128,6 +1138,10 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
 
     const member_count = try reader.takeInt(u32, .little);
     if (member_count == 0 or member_count > society_mod.MAX_MEMBERS) return error.InvalidSocietyConfig;
+    for (needs) |need| switch (need.satisfy) {
+        .trade => |trade| if (trade.provider) |idx| if (idx >= member_count) return error.InvalidSocietyConfig,
+        .stay => {},
+    };
     const members = try allocator.alloc(society_mod.Member, member_count);
     var built: usize = 0;
     errdefer {
@@ -1150,6 +1164,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
             const rate_raw = try reader.takeInt(i64, .little);
             if (rate_raw < -1 or rate_raw > std.math.maxInt(u32)) return error.InvalidSocietyConfig;
             const provider = try read_optional_index(reader);
+            if (provider) |idx| if (idx >= member_count) return error.InvalidSocietyConfig;
             need.* = .{ .value = value, .rate = if (rate_raw < 0) null else @intCast(rate_raw), .provider = provider };
         }
         const gold = try reader.takeInt(u32, .little);
@@ -1183,10 +1198,14 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
             1 => true,
             else => return error.InvalidSocietyConfig,
         };
-        const owns = try allocator.alloc(EntityId, try reader.takeInt(u16, .little));
+        const owns_count = try reader.takeInt(u16, .little);
+        if (owns_count > MAX_SOCIETY_ITEMS) return error.InvalidSocietyConfig;
+        const owns = try allocator.alloc(EntityId, owns_count);
         errdefer allocator.free(owns);
         for (owns) |*item| item.* = try read_entity_ref(world, reader);
-        const carries = try allocator.alloc(EntityId, try reader.takeInt(u16, .little));
+        const carries_count = try reader.takeInt(u16, .little);
+        if (carries_count > MAX_SOCIETY_ITEMS) return error.InvalidSocietyConfig;
+        const carries = try allocator.alloc(EntityId, carries_count);
         errdefer allocator.free(carries);
         for (carries) |*item| item.* = try read_entity_ref(world, reader);
         member.* = .{
@@ -1204,6 +1223,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
     }
 
     const enforcer = try read_optional_index(reader);
+    if (enforcer) |idx| if (idx >= member_count) return error.InvalidSocietyConfig;
     const holding = try read_optional_waypoint(reader, waypoint_count);
     const gathering = try read_waypoint(reader, waypoint_count);
     const flight_to = try read_waypoint(reader, waypoint_count);
@@ -1222,6 +1242,7 @@ fn read_society_declaration(allocator: std.mem.Allocator, world: *const World, r
     var relation_names: [14][]const u8 = undefined;
     for (&relation_names) |*name| name.* = try read_text_ref(world, reader);
     const friend_count = try reader.takeInt(u32, .little);
+    if (friend_count > society_mod.MAX_MEMBERS * society_mod.MAX_MEMBERS) return error.InvalidSocietyConfig;
     const friends = try allocator.alloc(society_mod.FriendLink, friend_count);
     errdefer allocator.free(friends);
     for (friends) |*friend| friend.* = .{ .a = try read_entity_ref(world, reader), .b = try read_entity_ref(world, reader) };
@@ -1649,7 +1670,7 @@ pub fn save_package(
     inline for (comptime std.enums.values(Section)) |which| {
         body.clearRetainingCapacity();
         var bw = ListWriter.init(&body);
-        if (try write_section(which, &bw.writer, compiled, world, spatial)) {
+        if (try write_section(allocator, which, &bw.writer, compiled, world, spatial)) {
             var pw = ListWriter.init(&payload);
             try pw.writer.writeAll(&which.tag());
             try pw.writer.writeByte(SECTION_REQUIRED);
@@ -1658,14 +1679,31 @@ pub fn save_package(
         }
     }
     if (payload.items.len > MAX_PACKAGE_PAYLOAD_SIZE) return error.PackagePayloadTooLarge;
-    const header = PackageHeader{ .crc32 = std.hash.Crc32.hash(payload.items), .payload_size = @intCast(payload.items.len) };
-    try writer.writeAll(std.mem.asBytes(&header));
+    const crc = std.hash.Crc32.hash(payload.items);
+    const payload_size: u32 = @intCast(payload.items.len);
+    try writer.writeAll(&PACKAGE_MAGIC);
+    try writer.writeInt(u32, PACKAGE_FORMAT, .little);
+    try writer.writeInt(u32, crc, .little);
+    try writer.writeInt(u32, payload_size, .little);
     try writer.writeAll(payload.items);
+}
+
+fn sorted_map_keys(allocator: std.mem.Allocator, map: anytype) ![][]const u8 {
+    const keys = try allocator.alloc([]const u8, map.count());
+    var i: usize = 0;
+    var it = map.keyIterator();
+    while (it.next()) |k| : (i += 1) keys[i] = k.*;
+    std.mem.sort([]const u8, keys, {}, struct {
+        fn less(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.less);
+    return keys;
 }
 
 /// Writes one section's bytes and says whether the program uses it; an unused section is not
 /// written at all. Names and code are always written.
-fn write_section(comptime which: Section, w: anytype, compiled: *const CompiledProgram, world: *const World, spatial: ?*const SpatialSystem) !bool {
+fn write_section(allocator: std.mem.Allocator, comptime which: Section, w: anytype, compiled: *const CompiledProgram, world: *const World, spatial: ?*const SpatialSystem) !bool {
     switch (which) {
         .names => {
             try w.writeInt(u32, @intCast(world.entity_names.items.len), .little);
@@ -1673,8 +1711,13 @@ fn write_section(comptime which: Section, w: anytype, compiled: *const CompiledP
             try w.writeInt(u32, @intCast(world.relation_meta.items.len), .little);
             for (world.relation_meta.items) |rel| {
                 try write_str(w, rel.name);
-                // The low four bits are the type, the high four the object kind (D-178).
-                try w.writeByte(@as(u8, if (rel.rel_type == .property) 1 else 0) | (@as(u8, @intFromEnum(rel.object_kind)) << 4));
+                // Low bits: bit 0 is RelationType, bit 1 is `script_owned` (D-180, P48-23).
+                // High four bits: ObjectKind (D-178).
+                try w.writeByte(
+                    @as(u8, if (rel.rel_type == .property) 1 else 0) |
+                        (@as(u8, if (rel.script_owned) 2 else 0)) |
+                        (@as(u8, @intFromEnum(rel.object_kind)) << 4),
+                );
             }
             return true;
         },
@@ -1710,18 +1753,20 @@ fn write_section(comptime which: Section, w: anytype, compiled: *const CompiledP
             try w.writeInt(u32, @intCast(compiled.chunk.code.items.len), .little);
             try w.writeAll(compiled.chunk.code.items);
             try w.writeInt(i64, if (compiled.initial_entry) |ie| @intCast(ie) else -1, .little);
-            try w.writeInt(u32, @intCast(compiled.routine_entries.count()), .little);
-            var r_it = compiled.routine_entries.iterator();
-            while (r_it.next()) |entry| {
-                try write_str(w, entry.key_ptr.*);
-                try w.writeInt(u32, @intCast(entry.value_ptr.*), .little);
-                try write_str(w, compiled.routine_entities.get(entry.key_ptr.*) orelse "");
+            const r_keys = try sorted_map_keys(allocator, &compiled.routine_entries);
+            defer allocator.free(r_keys);
+            try w.writeInt(u32, @intCast(r_keys.len), .little);
+            for (r_keys) |key| {
+                try write_str(w, key);
+                try w.writeInt(u32, @intCast(compiled.routine_entries.get(key).?), .little);
+                try write_str(w, compiled.routine_entities.get(key) orelse "");
             }
-            try w.writeInt(u32, @intCast(compiled.cue_handler_entries.count()), .little);
-            var c_it = compiled.cue_handler_entries.iterator();
-            while (c_it.next()) |entry| {
-                try write_str(w, entry.key_ptr.*);
-                try w.writeInt(u32, @intCast(entry.value_ptr.*), .little);
+            const c_keys = try sorted_map_keys(allocator, &compiled.cue_handler_entries);
+            defer allocator.free(c_keys);
+            try w.writeInt(u32, @intCast(c_keys.len), .little);
+            for (c_keys) |key| {
+                try write_str(w, key);
+                try w.writeInt(u32, @intCast(compiled.cue_handler_entries.get(key).?), .little);
             }
             try write_cue_chain(w, compiled);
             // Which build this is, for saves (D-162), and whether rewinds reroll (D-184).
@@ -1870,18 +1915,22 @@ pub fn load_package_linked(
     world: *World,
     spatial: ?*SpatialSystem,
 ) !CompiledProgram {
-    var header: PackageHeader = undefined;
-    const bytes_read = try reader.readSliceShort(std.mem.asBytes(&header));
-    if (bytes_read < @sizeOf(PackageHeader)) return error.EndOfStream;
-    if (std.mem.eql(u8, &header.magic, &PRE_1_0_MAGIC)) return error.PackageFromBeforeOne;
-    if (!std.mem.eql(u8, &header.magic, &PACKAGE_MAGIC)) return error.InvalidPackageMagic;
-    if (header.format != PACKAGE_FORMAT) return error.UnsupportedPackageVersion;
-    if (header.payload_size > MAX_PACKAGE_PAYLOAD_SIZE) return error.PackagePayloadTooLarge;
+    var raw_header: [16]u8 = undefined;
+    const bytes_read = try reader.readSliceShort(&raw_header);
+    if (bytes_read < raw_header.len) return error.EndOfStream;
+    const magic = raw_header[0..4];
+    if (std.mem.eql(u8, magic, &PRE_1_0_MAGIC)) return error.PackageFromBeforeOne;
+    if (!std.mem.eql(u8, magic, &PACKAGE_MAGIC)) return error.InvalidPackageMagic;
+    const format = std.mem.readInt(u32, raw_header[4..8], .little);
+    if (format != PACKAGE_FORMAT) return error.UnsupportedPackageVersion;
+    const expected_crc = std.mem.readInt(u32, raw_header[8..12], .little);
+    const payload_size = std.mem.readInt(u32, raw_header[12..16], .little);
+    if (payload_size > MAX_PACKAGE_PAYLOAD_SIZE) return error.PackagePayloadTooLarge;
 
-    const payload = try allocator.alloc(u8, header.payload_size);
+    const payload = try allocator.alloc(u8, payload_size);
     defer allocator.free(payload);
     try reader.readSliceAll(payload);
-    if (std.hash.Crc32.hash(payload) != header.crc32) return error.ChecksumMismatch;
+    if (std.hash.Crc32.hash(payload) != expected_crc) return error.ChecksumMismatch;
 
     const table = try read_section_table(payload);
     inline for (comptime std.enums.values(Section)) |which| {
@@ -1905,8 +1954,10 @@ pub fn load_package_linked(
             const name = try read_str(allocator, pr);
             defer allocator.free(name);
             const flags = try pr.takeByte();
-            if (flags & 0x0f > 1) return error.InvalidRelationKind;
-            const relation = try world.intern_relation(name, if (flags & 0x0f == 1) .property else .set);
+            const low = flags & 0x0f;
+            if (low & ~@as(u8, 0x03) != 0) return error.InvalidRelationKind;
+            const relation = try world.intern_relation(name, if (low & 0x01 != 0) .property else .set);
+            if (low & 0x02 != 0) world.claim_relation(relation);
             const kind = std.enums.fromInt(world_mod.ObjectKind, flags >> 4) orelse return error.InvalidRelationKind;
             world.declare_object_kind(relation, kind) catch return error.InvalidRelationKind;
         }
@@ -1919,6 +1970,7 @@ pub fn load_package_linked(
         var stream: std.Io.Reader = .fixed(bytes);
         const pr = &stream;
         const wp_count = try pr.takeInt(u32, .little);
+        if (wp_count > MAX_WAYPOINTS) return error.InvalidSection;
         waypoint_count = wp_count;
         for (0..wp_count) |_| {
             const room_int = try pr.takeInt(u32, .little);
@@ -1929,6 +1981,7 @@ pub fn load_package_linked(
             if (spatial) |sp| _ = try sp.graph.add_waypoint(EntityId.from_int(room_int), x, y, name);
         }
         const edge_count = try pr.takeInt(u32, .little);
+        if (edge_count > MAX_EDGES) return error.InvalidSection;
         for (0..edge_count) |_| {
             const from = try pr.takeInt(u16, .little);
             const to = try pr.takeInt(u16, .little);
@@ -1941,6 +1994,7 @@ pub fn load_package_linked(
             }
         }
         const hotspot_count = try pr.takeInt(u32, .little);
+        if (hotspot_count > MAX_HOTSPOTS) return error.InvalidSection;
         for (0..hotspot_count) |_| {
             const ent_int = try pr.takeInt(u32, .little);
             const room_int = try pr.takeInt(u32, .little);
@@ -1988,18 +2042,30 @@ pub fn load_package_linked(
         const routine_count = try pr.takeInt(u32, .little);
         for (0..routine_count) |_| {
             const rname = try read_str(allocator, pr);
-            try allocated_cue_keys.append(rname);
+            var rname_owned = true;
+            errdefer if (rname_owned) allocator.free(rname);
             const pc = try pr.takeInt(u32, .little);
+            if (pc >= code_len) return error.InvalidProgramIndex;
             const actor = try read_str(allocator, pr);
-            try allocated_cue_keys.append(actor);
+            var actor_owned = true;
+            errdefer if (actor_owned) allocator.free(actor);
+            try allocated_cue_keys.ensureUnusedCapacity(2);
+            allocated_cue_keys.appendAssumeCapacity(rname);
+            rname_owned = false;
+            allocated_cue_keys.appendAssumeCapacity(actor);
+            actor_owned = false;
             try routine_entries.put(rname, pc);
             try routine_entities.put(rname, actor);
         }
         const cue_count = try pr.takeInt(u32, .little);
         for (0..cue_count) |_| {
             const sig = try read_str(allocator, pr);
-            try allocated_cue_keys.append(sig);
+            var sig_owned = true;
+            errdefer if (sig_owned) allocator.free(sig);
             const pc = try pr.takeInt(u32, .little);
+            if (pc >= code_len) return error.InvalidProgramIndex;
+            try allocated_cue_keys.append(sig);
+            sig_owned = false;
             try cue_handler_entries.put(sig, pc);
         }
         cue_handler_chain = try read_cue_chain(allocator, pr, &cue_handler_entries, code_len);
@@ -2029,12 +2095,19 @@ pub fn load_package_linked(
         var stream: std.Io.Reader = .fixed(bytes);
         const pr = &stream;
         const entry_count = try pr.takeInt(u32, .little);
-        for (0..entry_count) |_| try when_rule_entries.append(try pr.takeInt(u32, .little));
+        if (entry_count > bytes.len / 4) return error.InvalidSection;
+        try when_rule_entries.ensureTotalCapacity(entry_count);
+        for (0..entry_count) |_| {
+            const pc = try pr.takeInt(u32, .little);
+            if (pc >= code_len) return error.InvalidProgramIndex;
+            when_rule_entries.appendAssumeCapacity(pc);
+        }
         const rule_count = try pr.takeInt(u32, .little);
         for (0..rule_count) |_| {
             const tent = try pr.takeInt(u32, .little);
             const priority = try pr.takeInt(u16, .little);
             const handler_pc = try pr.takeInt(u32, .little);
+            if (handler_pc >= code_len) return error.InvalidProgramIndex;
             const edge: WhenEdge = switch (try pr.takeByte()) {
                 0 => .rising,
                 1 => .falling,
@@ -2044,12 +2117,15 @@ pub fn load_package_linked(
             };
             const each_bytes = try pr.takeArray(2);
             const clause_count = try pr.takeInt(u16, .little);
+            if (clause_count > MAX_GUARD_CLAUSES) return error.InvalidSection;
             const clauses = try allocator.alloc(PatternClause, clause_count);
-            errdefer allocator.free(clauses);
+            var clauses_owned = true;
+            errdefer if (clauses_owned) allocator.free(clauses);
             for (clauses) |*cl| cl.* = try read_pattern_clause(pr);
             var rule = CompiledWhenRule{ .clauses = clauses, .target_entity = EntityId.from_int(tent), .priority = priority, .handler_pc = handler_pc, .edge = edge };
             try read_each(&rule, each_bytes.*);
             try reactive_rules.append(rule);
+            clauses_owned = false;
         }
         try finish(pr);
     };
@@ -2085,7 +2161,14 @@ pub fn load_package_linked(
     if (comptime linked.contains(.societies)) if (table.get(.societies)) |bytes| {
         var stream: std.Io.Reader = .fixed(bytes);
         const count = try stream.takeInt(u32, .little);
-        for (0..count) |_| try societies.append(try read_society_declaration(allocator, world, &stream, waypoint_count));
+        if (count > MAX_SOCIETIES) return error.InvalidSocietyConfig;
+        for (0..count) |_| {
+            var decl = try read_society_declaration(allocator, world, &stream, waypoint_count);
+            societies.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
         try finish(&stream);
     };
     var duels = std.array_list.Managed(duel_mod.Declaration).init(allocator);
@@ -2096,7 +2179,14 @@ pub fn load_package_linked(
     if (comptime linked.contains(.duels)) if (table.get(.duels)) |bytes| {
         var stream: std.Io.Reader = .fixed(bytes);
         const count = try stream.takeInt(u32, .little);
-        for (0..count) |_| try duels.append(try read_duel_declaration(allocator, world, &stream));
+        if (count > MAX_DUELS) return error.InvalidDuelConfig;
+        for (0..count) |_| {
+            var decl = try read_duel_declaration(allocator, world, &stream);
+            duels.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
         try finish(&stream);
     };
     var degradations = std.array_list.Managed(container_mod.Declaration).init(allocator);
@@ -2107,7 +2197,14 @@ pub fn load_package_linked(
     if (comptime linked.contains(.degradations)) if (table.get(.degradations)) |bytes| {
         var stream: std.Io.Reader = .fixed(bytes);
         const count = try stream.takeInt(u32, .little);
-        for (0..count) |_| try degradations.append(try read_degradation_declaration(allocator, world, &stream));
+        if (count > MAX_DEGRADATIONS) return error.InvalidContainerConfig;
+        for (0..count) |_| {
+            var decl = try read_degradation_declaration(allocator, world, &stream);
+            degradations.append(decl) catch |err| {
+                decl.deinit_owned(allocator);
+                return err;
+            };
+        }
         try finish(&stream);
     };
     var grids = std.array_list.Managed(grid_mod.Declaration).init(allocator);
@@ -2755,5 +2852,152 @@ test "P48-17: checked-in 1.0 package fixture loads every part" {
     try testing.expectEqual(@as(usize, 2), compiled.art.looks.len);
     const sections = try sections_of(fixture);
     for ([_]Section{ .names, .places, .code, .rules, .goals, .axes, .dilemmas, .images, .art, .text }) |which| try testing.expect(sections.contains(which));
+}
+
+test "P48-23: packages preserve script_owned, reject reserved relation bits, and sort CODE maps" {
+    const testing = std.testing;
+    const reserved = @import("reserved.zig");
+    const source =
+        \\entity Hero
+        \\relation Claimed(who)
+        \\routine Alpha(Hero):
+        \\  remember Claimed(Hero)
+        \\routine Beta(Hero):
+        \\  wait 1 ticks
+        \\on cue Uses(Hero, _):
+        \\  wait 1 ticks
+        \\on cue LooksAt(Hero, _):
+        \\  wait 1 ticks
+        \\
+    ;
+    var world0 = try World.init(testing.allocator, 1024 * 1024);
+    defer world0.deinit();
+    var compiled0 = try compile_for_test(testing.allocator, &world0, null, source);
+    defer compiled0.deinit();
+    world0.claim_relation(world0.lookup_relation("Claimed").?);
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    var lw0 = ListWriter.init(&bytes);
+    try save_package(testing.allocator, &lw0.writer, &compiled0, &world0, null);
+
+    // Loading restores script_owned so reserved.engine_may_use honors it.
+    var world = try World.init(testing.allocator, 1024 * 1024);
+    defer world.deinit();
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    var loaded = try load_package(testing.allocator, &stream, &world, null);
+    defer loaded.deinit();
+    const claimed = world.lookup_relation("Claimed").?;
+    try testing.expect(world.get_relation_meta(claimed).?.script_owned);
+    try testing.expect(!reserved.engine_may_use(&world, "Claimed"));
+
+    // Saving again produces identical CODE bytes even across different HashMap orders.
+    var again = std.array_list.Managed(u8).init(testing.allocator);
+    defer again.deinit();
+    var lw = ListWriter.init(&again);
+    try save_package(testing.allocator, &lw.writer, &loaded, &world, null);
+    try testing.expectEqualSlices(u8, section_slice(bytes.items, .code), section_slice(again.items, .code));
+
+    // Reserved low flag bits (bit 2+) in NAME are refused.
+    const names = section_slice(bytes.items, .names);
+    names[names.len - 1] |= 0x04;
+    reseal_for_test(bytes.items);
+    try testing.expectError(error.InvalidRelationKind, load_for_test(bytes.items));
+}
+
+test "P48-24: read_str frees buffer on truncated stream and package bounds refuse corrupt counts/PCs" {
+    const testing = std.testing;
+
+    // 1. Truncated read_str does not leak under testing.allocator.
+    var trunc_stream: std.Io.Reader = .fixed(&.{ 10, 0, 'a', 'b' });
+    try testing.expectError(error.EndOfStream, read_str(testing.allocator, &trunc_stream));
+
+    // 2. Out-of-range PCs in CODE (routine and cue) and RULE are rejected.
+    const rule_src =
+        \\entity Hero
+        \\relation Flag(who)
+        \\routine Alpha(Hero):
+        \\  wait 1 ticks
+        \\on cue Uses(Hero, _):
+        \\  wait 1 ticks
+        \\when Flag(?who):
+        \\  wait 1 ticks
+        \\
+    ;
+    var base = std.array_list.Managed(u8).init(testing.allocator);
+    defer base.deinit();
+    try package_of(testing.allocator, rule_src, &base);
+    {
+        const bad = try testing.allocator.dupe(u8, base.items);
+        defer testing.allocator.free(bad);
+        const code = section_slice(bad, .code);
+        const code_len = std.mem.readInt(u32, code[0..4], .little);
+        // After code_len(4) + code + initial_entry(8) + routine_count(4) + rname(u16 + text) sits routine pc.
+        const rname_off = 4 + code_len + 8 + 4;
+        const rname_len = std.mem.readInt(u16, code[rname_off..][0..2], .little);
+        std.mem.writeInt(u32, code[rname_off + 2 + rname_len ..][0..4], code_len, .little);
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidProgramIndex, load_for_test(bad));
+    }
+    {
+        const bad = try testing.allocator.dupe(u8, base.items);
+        defer testing.allocator.free(bad);
+        const rules = section_slice(bad, .rules);
+        // entry_count(4) + entries + rule_count(4) + tent(4) + priority(2) + handler_pc(4)
+        const entry_count = std.mem.readInt(u32, rules[0..4], .little);
+        const pc_off = 4 + entry_count * 4 + 4 + 4 + 2;
+        std.mem.writeInt(u32, rules[pc_off..][0..4], 0x7fffffff, .little);
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidProgramIndex, load_for_test(bad));
+    }
+
+    // 3. Oversized PLAC waypoint count is rejected.
+    const stage_src = try round_trip_source(testing.allocator, 7); // arrival.bespoke uses marks/PLAC
+    defer testing.allocator.free(stage_src);
+    var stage_pkg = std.array_list.Managed(u8).init(testing.allocator);
+    defer stage_pkg.deinit();
+    try package_of(testing.allocator, stage_src, &stage_pkg);
+    {
+        const bad = try testing.allocator.dupe(u8, stage_pkg.items);
+        defer testing.allocator.free(bad);
+        const plac = section_slice(bad, .places);
+        std.mem.writeInt(u32, plac[0..4], MAX_WAYPOINTS + 1, .little);
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidSection, load_for_test(bad));
+    }
+
+    // 4. Out-of-range society enforcer / friend_count is rejected cleanly without leaks.
+    const soc_src = try round_trip_source(testing.allocator, 8); // society-and-duel.bespoke
+    defer testing.allocator.free(soc_src);
+    var soc_pkg = std.array_list.Managed(u8).init(testing.allocator);
+    defer soc_pkg.deinit();
+    try package_of(testing.allocator, soc_src, &soc_pkg);
+    {
+        const bad = try testing.allocator.dupe(u8, soc_pkg.items);
+        defer testing.allocator.free(bad);
+        const soci = section_slice(bad, .societies);
+        // Trailing friend_count sits after society FriendLink array; zero friend_links means last 4 bytes are friend_count = 0.
+        // Instead patch society count? No, patch trailing 4 bytes if friend_count == 0, or walk to friend_count via known layout:
+        // Verify InvalidSocietyConfig when last 4 bytes are overwritten with a huge friend_count (or when FriendLink count is patched).
+        // Let's write society count > MAX_SOCIETIES cleanly first, and test bad enforcer on a known society buffer.
+        std.mem.writeInt(u32, soci[0..4], MAX_SOCIETIES + 1, .little);
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidSocietyConfig, load_for_test(bad));
+    }
+    // Out-of-range enforcer index inside read_society_declaration is rejected cleanly without leaks.
+    var w = try World.init(testing.allocator, 256 * 1024);
+    defer w.deinit();
+    var sp_mut = SpatialSystem.init(testing.allocator);
+    defer sp_mut.deinit();
+    var cp = try compile_for_test(testing.allocator, &w, &sp_mut, soc_src);
+    defer cp.deinit();
+    const orig_enforcer = cp.societies.items[0].config.enforcer;
+    cp.societies.items[0].config.enforcer = 99;
+    defer cp.societies.items[0].config.enforcer = orig_enforcer;
+    var soc_buf = std.array_list.Managed(u8).init(testing.allocator);
+    defer soc_buf.deinit();
+    var sw = ListWriter.init(&soc_buf);
+    try write_societies(&w, &sw.writer, &cp);
+    var soc_stream: std.Io.Reader = .fixed(soc_buf.items[4..]);
+    try testing.expectError(error.InvalidSocietyConfig, read_society_declaration(testing.allocator, &w, &soc_stream, sp_mut.graph.waypoints.items.len));
 }
 

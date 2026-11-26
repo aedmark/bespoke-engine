@@ -75,6 +75,7 @@ class ExportTests(unittest.TestCase):
                 "tavern.html", "pips.html", "beard.html", "village.html", "donkey.html", "tides.html",
                 "grog.html", "barbs.html", "saltmarket.html", "weathercock.html", "bell-tower.html",
                 "fire-escape.html", "observatory.html", "valerius.html", "lamplighter.html",
+                "long-gallery.html", "word-foundry.html", "cinder-table.html",
             ],
             [p.name for p in written],
         )

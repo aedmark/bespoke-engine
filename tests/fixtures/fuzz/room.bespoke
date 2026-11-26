@@ -4,11 +4,13 @@ scene Workshop:
 
 relation Ready(who)
 relation Witnessed(who, what)
+relation Clue(who, weight)
 remember Ready(Hero)
 remember Witnessed(Hero, Door)
+remember Clue(Hero, 2)
 
 routine Patrol(Hero):
   walk Hero to Bench
   if 1 of Witnessed(Hero, _):
     remember Ready(Hero)
-  wait until 2 points of Witnessed(Hero, _)
+  wait until 2 points of Clue(Hero, _)

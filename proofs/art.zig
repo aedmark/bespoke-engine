@@ -132,6 +132,10 @@ const Scene = struct {
 
     is_bell_base_scene: bool = false,
     is_gallery_scene: bool = false,
+    is_long_gallery_scene: bool = false,
+    is_locked_studio_scene: bool = false,
+    is_word_foundry_scene: bool = false,
+    is_cinder_table_scene: bool = false,
     is_observatory_scene: bool = false,
     is_greyhold_store_scene: bool = false,
     is_greyhold_gate_scene: bool = false,
@@ -230,7 +234,15 @@ fn detect(frame: *const RenderFrame) Scene {
 
     if (cur_scene.len > 0) {
         // Checked first: "Bell Tower" scenes must not fall through to substring themes below.
-        if (std.mem.eql(u8, cur_scene, "Greyhold Store")) {
+        if (std.mem.eql(u8, cur_scene, "Long Gallery")) {
+            sc.is_long_gallery_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Locked Studio")) {
+            sc.is_locked_studio_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "TheWordFoundry")) {
+            sc.is_word_foundry_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "TheCinderTable")) {
+            sc.is_cinder_table_scene = true;
+        } else if (std.mem.eql(u8, cur_scene, "Greyhold Store")) {
             sc.is_greyhold_store_scene = true;
         } else if (std.mem.eql(u8, cur_scene, "Greyhold Gate")) {
             sc.is_greyhold_gate_scene = true;
@@ -300,7 +312,9 @@ fn detect(frame: *const RenderFrame) Scene {
     }
 
     // Fallback detection if current_scene wasn't explicitly set
-    if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and !sc.is_observatory_scene and
+    if (!sc.is_bell_base_scene and !sc.is_bell_belfry_scene and !sc.is_gallery_scene and
+        !sc.is_long_gallery_scene and !sc.is_locked_studio_scene and !sc.is_word_foundry_scene and !sc.is_cinder_table_scene and
+        !sc.is_observatory_scene and
         !sc.is_greyhold_store_scene and !sc.is_greyhold_gate_scene and
         !sc.is_tides_past_scene and !sc.is_tides_present_scene and !sc.is_tides_future_scene and
         !sc.is_lamp_point_scene and !sc.is_wreckers_cellar_scene and
@@ -493,7 +507,15 @@ fn detect(frame: *const RenderFrame) Scene {
 
 fn backdrop(w: *Canvas, frame: *const RenderFrame) bool {
     const sc = detect(frame);
-    if (sc.is_gallery_scene) {
+    if (sc.is_long_gallery_scene) {
+        render_long_gallery(w, frame);
+    } else if (sc.is_locked_studio_scene) {
+        render_locked_studio(w, frame);
+    } else if (sc.is_word_foundry_scene) {
+        render_word_foundry(w, frame);
+    } else if (sc.is_cinder_table_scene) {
+        render_cinder_table(w, frame);
+    } else if (sc.is_gallery_scene) {
         render_gallery(w, frame);
     } else if (sc.is_observatory_scene) {
         render_observatory(w);
@@ -1985,6 +2007,73 @@ fn prop(w: *Canvas, frame: *const RenderFrame, view: r.PropView) bool {
         w.draw_rect_outline(pt.x - 14, pt.y - 22, 28, 16, Color{ .r = 200, .g = 170, .b = 140 });
         w.fill_rect(pt.x - 8, pt.y - 18, 16, 8, Color{ .r = 236, .g = 228, .b = 210 });
         w.fill_circle(pt.x, pt.y - 14, 2, Color{ .r = 180, .g = 30, .b = 30 });
+    } else if (std.mem.eql(u8, name, "Velvet Rope") or std.mem.eql(u8, name, "VelvetRope")) {
+        // Long Gallery velvet rope across the far arch
+        w.fill_rect(pt.x - 18, pt.y - 14, 5, 32, Color{ .r = 212, .g = 175, .b = 55 });
+        w.fill_rect(pt.x + 13, pt.y - 14, 5, 32, Color{ .r = 212, .g = 175, .b = 55 });
+        w.fill_circle(pt.x - 16, pt.y - 16, 4, Color{ .r = 245, .g = 198, .b = 80 });
+        w.fill_circle(pt.x + 15, pt.y - 16, 4, Color{ .r = 245, .g = 198, .b = 80 });
+        w.draw_line(pt.x - 14, pt.y - 10, pt.x, pt.y - 3, Color{ .r = 185, .g = 28, .b = 45 });
+        w.draw_line(pt.x, pt.y - 3, pt.x + 14, pt.y - 10, Color{ .r = 185, .g = 28, .b = 45 });
+        w.draw_line(pt.x - 14, pt.y - 8, pt.x, pt.y - 1, Color{ .r = 220, .g = 38, .b = 60 });
+        w.draw_line(pt.x, pt.y - 1, pt.x + 14, pt.y - 8, Color{ .r = 220, .g = 38, .b = 60 });
+    } else if (std.mem.eql(u8, name, "Easel Board") or std.mem.eql(u8, name, "EaselBoard")) {
+        // Locked Studio easel with board turned to the wall
+        w.draw_line(pt.x, pt.y - 26, pt.x - 14, pt.y + 18, Color{ .r = 130, .g = 90, .b = 54 });
+        w.draw_line(pt.x, pt.y - 26, pt.x + 14, pt.y + 18, Color{ .r = 130, .g = 90, .b = 54 });
+        w.fill_rect(pt.x - 15, pt.y - 20, 30, 22, Color{ .r = 186, .g = 160, .b = 120 });
+        w.draw_rect_outline(pt.x - 15, pt.y - 20, 30, 22, Color{ .r = 90, .g = 62, .b = 36 });
+    } else if (std.mem.eql(u8, name, "Bellows")) {
+        // Word Foundry: hinged leather bellows
+        w.fill_rect(pt.x - 18, pt.y - 10, 24, 20, Color{ .r = 120, .g = 72, .b = 38 });
+        w.draw_rect_outline(pt.x - 18, pt.y - 10, 24, 20, Color{ .r = 214, .g = 170, .b = 80 });
+        w.fill_rect(pt.x + 6, pt.y - 3, 14, 6, Color{ .r = 180, .g = 140, .b = 55 });
+    } else if (std.mem.eql(u8, name, "ColdHearth")) {
+        // Word Foundry: cold grate and iron kettle
+        w.fill_rect(pt.x - 20, pt.y - 20, 40, 38, Color{ .r = 68, .g = 60, .b = 58 });
+        w.draw_rect_outline(pt.x - 20, pt.y - 20, 40, 38, Color{ .r = 110, .g = 100, .b = 96 });
+        w.fill_rect(pt.x - 12, pt.y - 6, 24, 22, Color{ .r = 26, .g = 22, .b = 22 });
+        w.fill_circle(pt.x - 4, pt.y + 10, 4, Color{ .r = 180, .g = 64, .b = 36 });
+        w.fill_circle(pt.x + 4, pt.y + 11, 3, Color{ .r = 150, .g = 48, .b = 28 });
+        w.fill_circle(pt.x, pt.y - 1, 7, Color{ .r = 56, .g = 189, .b = 248 });
+        w.draw_circle_outline(pt.x, pt.y - 1, 7, Color{ .r = 148, .g = 163, .b = 184 });
+    } else if (std.mem.eql(u8, name, "PatternBook")) {
+        // Word Foundry: lectern with open folio
+        w.fill_rect(pt.x - 3, pt.y, 6, 20, Color{ .r = 100, .g = 68, .b = 38 });
+        w.fill_rect(pt.x - 18, pt.y - 16, 36, 18, Color{ .r = 236, .g = 224, .b = 196 });
+        w.draw_rect_outline(pt.x - 18, pt.y - 16, 36, 18, Color{ .r = 140, .g = 90, .b = 45 });
+        w.draw_line(pt.x, pt.y - 16, pt.x, pt.y + 2, Color{ .r = 140, .g = 90, .b = 45 });
+    } else if (std.mem.eql(u8, name, "Crucible")) {
+        // Word Foundry: crucible vessel whose glow tracks Kindle / Quench
+        const st = status_of(frame);
+        if (st.foundry_tempered) {
+            w.fill_circle(pt.x, pt.y - 12, 24, Color{ .r = 56, .g = 189, .b = 248, .a = 70 });
+        } else if (st.foundry_glowing) {
+            w.fill_circle(pt.x, pt.y - 12, 24, Color{ .r = 245, .g = 158, .b = 11, .a = 80 });
+        }
+        w.fill_rect(pt.x - 18, pt.y - 10, 36, 26, Color{ .r = 72, .g = 76, .b = 84 });
+        w.draw_rect_outline(pt.x - 18, pt.y - 10, 36, 26, Color{ .r = 148, .g = 163, .b = 184 });
+        const bowl = if (st.foundry_tempered)
+            Color{ .r = 125, .g = 211, .b = 252 }
+        else if (st.foundry_glowing)
+            Color{ .r = 251, .g = 191, .b = 36 }
+        else
+            Color{ .r = 38, .g = 40, .b = 46 };
+        w.fill_rect(pt.x - 14, pt.y - 14, 28, 8, bowl);
+    } else if (std.mem.eql(u8, name, "TallyBoard")) {
+        // Cinder Table: slate chalkboard tally stand
+        w.draw_line(pt.x - 12, pt.y + 18, pt.x - 8, pt.y - 16, Color{ .r = 120, .g = 80, .b = 45 });
+        w.draw_line(pt.x + 12, pt.y + 18, pt.x + 8, pt.y - 16, Color{ .r = 120, .g = 80, .b = 45 });
+        w.fill_rect(pt.x - 16, pt.y - 18, 32, 24, Color{ .r = 30, .g = 36, .b = 44 });
+        w.draw_rect_outline(pt.x - 16, pt.y - 18, 32, 24, Color{ .r = 160, .g = 115, .b = 65 });
+        w.draw_line(pt.x - 10, pt.y - 10, pt.x + 10, pt.y - 10, Color{ .r = 226, .g = 232, .b = 240 });
+        w.draw_line(pt.x - 10, pt.y - 3, pt.x + 6, pt.y - 3, Color{ .r = 245, .g = 158, .b = 11 });
+    } else if (std.mem.eql(u8, name, "Tokens")) {
+        // Cinder Table: wooden tray of brass scoring counters
+        w.fill_rect(pt.x - 16, pt.y - 6, 32, 14, Color{ .r = 110, .g = 70, .b = 35 });
+        w.draw_rect_outline(pt.x - 16, pt.y - 6, 32, 14, Color{ .r = 175, .g = 130, .b = 75 });
+        w.fill_circle(pt.x - 6, pt.y - 1, 5, Color{ .r = 234, .g = 179, .b = 8 });
+        w.fill_circle(pt.x + 5, pt.y - 2, 5, Color{ .r = 250, .g = 204, .b = 21 });
     } else if (sc.is_bell_base_scene or sc.is_bell_belfry_scene) {
         // The Bell Tower draws its props in its backdrop (D-030).
     } else {
@@ -2959,6 +3048,46 @@ fn actor(w: *Canvas, frame: *const RenderFrame, view: r.ActorView) bool {
             .actor_status,
             st_prio,
         ));
+    } else if (std.mem.eql(u8, name, "Audra") and (detect(frame).is_long_gallery_scene or detect(frame).is_locked_studio_scene)) {
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 180, .g = 83, .b = 58 });
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_circle(pt.x, pt.y - 8, 7, Color{ .r = 245, .g = 220, .b = 190 });
+        layout_resolver.submit(TextLabel.init("Audra", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color{ .r = 254, .g = 215, .b = 170 }), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "Corin") and (detect(frame).is_long_gallery_scene or detect(frame).is_locked_studio_scene)) {
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 37, .g = 99, .b = 165 });
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_circle(pt.x + 10, pt.y - 4, 5, Color{ .r = 251, .g = 191, .b = 36 });
+        layout_resolver.submit(TextLabel.init("Corin", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color{ .r = 147, .g = 197, .b = 253 }), .actor_name, .actor_name));
+    } else if (std.mem.eql(u8, name, "Pell") and (detect(frame).is_long_gallery_scene or detect(frame).is_locked_studio_scene)) {
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 16, .g = 135, .b = 110 });
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_rect(pt.x - 8, pt.y - 12, 16, 5, Color{ .r = 226, .g = 232, .b = 240 });
+        layout_resolver.submit(TextLabel.init("Pell", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color{ .r = 167, .g = 243, .b = 208 }), .actor_name, .actor_name));
+        layout_resolver.submit(TextLabel.init(if (status_of(frame).long_gallery_pell_found) "[CAUGHT]" else "[HIDING]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(if (status_of(frame).long_gallery_pell_found) Color{ .r = 248, .g = 113, .b = 113 } else Color{ .r = 167, .g = 243, .b = 208 }), .actor_status, .actor_status));
+    } else if (std.mem.eql(u8, name, "Maren") and detect(frame).is_word_foundry_scene) {
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color{ .r = 217, .g = 119, .b = 6 });
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, Color.white);
+        w.fill_rect(pt.x - 8, pt.y + 2, 16, 8, Color{ .r = 90, .g = 60, .b = 35 });
+        layout_resolver.submit(TextLabel.init("Maren", pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color{ .r = 253, .g = 230, .b = 138 }), .actor_name, .actor_name));
+    } else if (detect(frame).is_cinder_table_scene and (std.mem.eql(u8, name, "Maren") or std.mem.eql(u8, name, "Ossic") or std.mem.eql(u8, name, "Ines"))) {
+        const st = status_of(frame);
+        const is_maren = std.mem.eql(u8, name, "Maren");
+        const is_ossic = std.mem.eql(u8, name, "Ossic");
+        const seat_id: u8 = if (is_maren) 1 else if (is_ossic) 2 else 3;
+        const coat = if (is_maren)
+            Color{ .r = 217, .g = 119, .b = 6 }
+        else if (is_ossic)
+            Color{ .r = 34, .g = 139, .b = 104 }
+        else
+            Color{ .r = 99, .g = 102, .b = 210 };
+        w.fill_circle(pt.x, pt.y, ACTOR_SCREEN_RADIUS, coat);
+        w.draw_circle_outline(pt.x, pt.y, ACTOR_SCREEN_RADIUS, if (st.cinder_turn == seat_id) Color{ .r = 250, .g = 204, .b = 21 } else Color.white);
+        layout_resolver.submit(TextLabel.init(name, pt.x, pt.y, .above, ACTOR_SCREEN_RADIUS + 4, 2, to_layout(Color.white), .actor_name, .actor_name));
+        if (st.cinder_turn == seat_id) {
+            layout_resolver.submit(TextLabel.init("[TURN]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color{ .r = 250, .g = 204, .b = 21 }), .actor_status, .actor_alert));
+        } else if (is_ossic and st.cinder_ossic_void) {
+            layout_resolver.submit(TextLabel.init("[VOID CINDER]", pt.x, pt.y, .below, ACTOR_SCREEN_RADIUS + 4, 1, to_layout(Color{ .r = 251, .g = 146, .b = 60 }), .actor_status, .actor_status));
+        }
     } else {
         return false;
     }
@@ -3020,6 +3149,18 @@ pub const Track = enum(u8) {
     wreckers_cellar,
     three_tides,
     bell_tower,
+    living_village,
+    lamp_point,
+    caustic_grog,
+    saltmarket,
+    weathercock,
+    fire_escape,
+    observatory,
+    valerius,
+    lamplighter,
+    long_gallery,
+    word_foundry,
+    cinder_table,
 };
 
 /// The proofs' sound effects, in soundtrack order.
@@ -3051,7 +3192,7 @@ pub const soundtrack = audio.Soundtrack{
 };
 
 const TRACKS = blk: {
-    @setEvalBranchQuota(20_000);
+    @setEvalBranchQuota(100_000);
     const tags = std.meta.tags(Track);
     var t: [tags.len]audio.Music = undefined;
     for (tags, 0..) |tag, i| {
@@ -3075,6 +3216,18 @@ fn arranged(which: Track) music.Arranged {
         .wreckers_cellar => music.wreckers_cellar,
         .three_tides => music.three_tides,
         .bell_tower => music.bell_tower,
+        .living_village => music.living_village,
+        .lamp_point => music.lamp_point,
+        .caustic_grog => music.caustic_grog,
+        .saltmarket => music.saltmarket,
+        .weathercock => music.weathercock,
+        .fire_escape => music.fire_escape,
+        .observatory => music.observatory,
+        .valerius => music.valerius,
+        .lamplighter => music.lamplighter,
+        .long_gallery => music.long_gallery,
+        .word_foundry => music.word_foundry,
+        .cinder_table => music.cinder_table,
     };
 }
 
@@ -3132,10 +3285,42 @@ fn track_for_scene(scene_name: []const u8) ?u8 {
         std.mem.indexOf(u8, scene_name, "Common") != null)
     {
         return track(.tavern);
+    } else if (std.mem.eql(u8, scene_name, "Living Village")) {
+        return track(.living_village);
+    } else if (std.mem.eql(u8, scene_name, "Lamp Point")) {
+        return track(.lamp_point);
+    } else if (std.mem.eql(u8, scene_name, "Saltglass Stockade")) {
+        return track(.caustic_grog);
+    } else if (std.mem.eql(u8, scene_name, "Saltmarket")) {
+        return track(.saltmarket);
+    } else if (std.mem.eql(u8, scene_name, "Wren's Attic") or
+        std.mem.eql(u8, scene_name, "The Customs House") or
+        std.mem.eql(u8, scene_name, "Beacon Hill"))
+    {
+        return track(.weathercock);
+    } else if (std.mem.indexOf(u8, scene_name, "Hollin Keep") != null) {
+        return track(.fire_escape);
+    } else if (std.mem.indexOf(u8, scene_name, "Larkspur") != null) {
+        return track(.observatory);
+    } else if (std.mem.eql(u8, scene_name, "Greyhold Store") or
+        std.mem.eql(u8, scene_name, "Greyhold Gate"))
+    {
+        return track(.valerius);
+    } else if (std.mem.eql(u8, scene_name, "Tallow Lane") or
+        std.mem.eql(u8, scene_name, "Market Steps"))
+    {
+        return track(.lamplighter);
+    } else if (std.mem.eql(u8, scene_name, "Long Gallery") or
+        std.mem.eql(u8, scene_name, "Locked Studio"))
+    {
+        return track(.long_gallery);
+    } else if (std.mem.eql(u8, scene_name, "TheWordFoundry")) {
+        return track(.word_foundry);
+    } else if (std.mem.eql(u8, scene_name, "TheCinderTable")) {
+        return track(.cinder_table);
     } else if (std.mem.eql(u8, scene_name, "Inn Landing") or
         std.mem.eql(u8, scene_name, "Net Loft Yard") or
         std.mem.indexOf(u8, scene_name, "Garden") != null or
-        std.mem.eql(u8, scene_name, "Lamp Point") or
         std.mem.indexOf(u8, scene_name, "Courtyard") != null or
         std.mem.indexOf(u8, scene_name, "Corridor") != null)
     {
@@ -3248,6 +3433,19 @@ pub const Status = struct {
     steps_lamp_lit: bool = false,
     /// Mrs Jessop nests in the market lamp until a thimble moves her.
     jackdaw_nesting: bool = false,
+    /// The Long Gallery (P44-06): whether Corin has cornered Pell next door.
+    long_gallery_pell_found: bool = false,
+    /// The Word Foundry (P44-04): learned lexicon word bitmask and crucible states.
+    foundry_known_mask: u8 = 0,
+    foundry_glowing: bool = false,
+    foundry_tempered: bool = false,
+    /// The Cinder Table (P44-05): private hands, played card log (1..12), turn, led suit, void.
+    cinder_hands: [3]u8 = .{ 0, 0, 0 },
+    cinder_played: [12]u8 = @as([12]u8, @splat(0)),
+    cinder_played_count: u8 = 0,
+    cinder_turn: u8 = 0,
+    cinder_suit_led: u8 = 0,
+    cinder_ossic_void: bool = false,
 
     pub fn countdown(self: *const Status) []const u8 {
         return self.branch_countdown[0..self.branch_countdown_len];
@@ -3320,6 +3518,211 @@ fn capture_gallery(world: *const bespoke.World, st: *Status) void {
 
 fn gallery_has(st: *const Status, i: usize, attribute: bespoke.grid.Attribute) bool {
     return st.gallery_cells[i] & (@as(u8, 1) << @intCast(@intFromEnum(attribute))) != 0;
+}
+
+fn render_long_gallery(w: *Canvas, frame: *const RenderFrame) void {
+    const st = status_of(frame);
+    const floor_y = world_to_screen(0, 6, w.width, w.height).y;
+    const left = world_to_screen(-4, 0, w.width, w.height).x;
+    const right = world_to_screen(44, 0, w.width, w.height).x;
+    w.fill_rect(0, 0, w.width, w.height, Color{ .r = 20, .g = 22, .b = 30 });
+    w.fill_rect(left, 136, right - left, floor_y - 136, Color{ .r = 46, .g = 50, .b = 62 });
+    w.fill_rect(left, 276, right - left, floor_y - 276, Color{ .r = 68, .g = 52, .b = 38 });
+    w.fill_rect(left, floor_y, right - left, 18, Color{ .r = 92, .g = 68, .b = 42 });
+    w.draw_rect_outline(left, 136, right - left, floor_y - 136, Color{ .r = 88, .g = 96, .b = 116 });
+    // Gilt paintings on gallery wall
+    for ([_]i32{ left + 60, left + 260, left + 460 }) |px| {
+        w.fill_rect(px, 164, 120, 84, Color{ .r = 160, .g = 124, .b = 58 });
+        w.fill_rect(px + 8, 172, 104, 68, Color{ .r = 34, .g = 56, .b = 78 });
+        w.fill_circle(px + 54, 206, 16, Color{ .r = 217, .g = 154, .b = 76 });
+    }
+    // Locked Studio archway and lit transom window at far right
+    const arch_x = right - 180;
+    w.fill_rect(arch_x, 160, 120, floor_y - 160, Color{ .r = 24, .g = 28, .b = 40 });
+    w.draw_rect_outline(arch_x, 160, 120, floor_y - 160, Color{ .r = 148, .g = 120, .b = 70 });
+    w.fill_rect(arch_x + 16, 176, 88, 38, Color{ .r = 56, .g = 110, .b = 155 });
+    w.draw_text("TRANSOM", arch_x + 28, 191, 1, Color{ .r = 224, .g = 242, .b = 254 });
+    w.draw_text("LOCKED", arch_x + 30, 260, 2, Color{ .r = 200, .g = 180, .b = 150 });
+    w.draw_text("THE LONG GALLERY", left + 12, 106, 2, Color{ .r = 253, .g = 230, .b = 138 });
+    if (st.long_gallery_pell_found) {
+        w.draw_text("NEXT DOOR: PELL CORNERED AT EASEL  [PRESS V TO WATCH]", left + 280, 110, 1, Color{ .r = 248, .g = 113, .b = 113 });
+    } else {
+        w.draw_text("NEXT DOOR: CORIN PURSUING PELL  [PRESS V TO WATCH]", left + 280, 110, 1, Color{ .r = 147, .g = 197, .b = 253 });
+    }
+}
+
+fn render_locked_studio(w: *Canvas, frame: *const RenderFrame) void {
+    const st = status_of(frame);
+    const floor_y = world_to_screen(0, 6, w.width, w.height).y;
+    const left = world_to_screen(-4, 0, w.width, w.height).x;
+    const right = world_to_screen(44, 0, w.width, w.height).x;
+    w.fill_rect(0, 0, w.width, w.height, Color{ .r = 12, .g = 18, .b = 28 });
+    w.fill_rect(left, 136, right - left, floor_y - 136, Color{ .r = 32, .g = 42, .b = 58 });
+    w.fill_rect(left, floor_y, right - left, 18, Color{ .r = 58, .g = 62, .b = 72 });
+    // Skylight panes and moonlight shafts
+    w.fill_rect(left + 120, 148, 280, 72, Color{ .r = 72, .g = 116, .b = 160 });
+    w.draw_rect_outline(left + 120, 148, 280, 72, Color{ .r = 148, .g = 163, .b = 184 });
+    w.draw_line(left + 260, 148, left + 260, 220, Color{ .r = 32, .g = 42, .b = 58 });
+    w.draw_rect_outline(left - 6, 98, right - left + 12, floor_y - 76, Color{ .r = 212, .g = 175, .b = 55 });
+    w.draw_text("WATCHING: LOCKED STUDIO (READ-ONLY)", left + 12, 108, 2, Color{ .r = 147, .g = 197, .b = 253 });
+    if (st.long_gallery_pell_found) {
+        w.draw_text("CORIN CAUGHT PELL  [PRESS V TO RETURN]", left + 560, 112, 1, Color{ .r = 251, .g = 191, .b = 36 });
+    } else {
+        w.draw_text("AGENDA ACTIVE: CORIN CROSSING TO CORNER  [PRESS V TO RETURN]", left + 490, 112, 1, Color{ .r = 167, .g = 243, .b = 208 });
+    }
+}
+
+fn render_word_foundry(w: *Canvas, frame: *const RenderFrame) void {
+    const st = status_of(frame);
+    const floor_y = world_to_screen(0, 6, w.width, w.height).y;
+    const left = world_to_screen(-4, 0, w.width, w.height).x;
+    const right = world_to_screen(44, 0, w.width, w.height).x;
+    w.fill_rect(0, 0, w.width, w.height, Color{ .r = 22, .g = 16, .b = 14 });
+    w.fill_rect(left, 130, right - left, floor_y - 130, Color{ .r = 46, .g = 36, .b = 32 });
+    var row: i32 = 160;
+    while (row < floor_y) : (row += 32) w.draw_line(left, row, right, row, Color{ .r = 34, .g = 26, .b = 24 });
+    w.fill_rect(left, floor_y, right - left, 18, Color{ .r = 68, .g = 56, .b = 50 });
+    w.draw_rect_outline(left, 130, right - left, floor_y - 130, Color{ .r = 110, .g = 86, .b = 70 });
+    w.draw_text("THE WORD FOUNDRY", left + 12, 102, 2, Color{ .r = 251, .g = 191, .b = 36 });
+    const c_label = if (st.foundry_tempered) "CRUCIBLE: TEMPERED (QUENCHED)" else if (st.foundry_glowing) "CRUCIBLE: GLOWING (KINDLED)" else "CRUCIBLE: COLD IRON";
+    const c_col = if (st.foundry_tempered) Color{ .r = 125, .g = 211, .b = 252 } else if (st.foundry_glowing) Color{ .r = 251, .g = 191, .b = 36 } else Color.hud_subtext;
+    w.draw_text(c_label, right - 330, 106, 1, c_col);
+
+    // Foundry Lexicon stone board in upper center
+    const bx = left + 130;
+    const by: i32 = 142;
+    const bw: i32 = 600;
+    const bh: i32 = 88;
+    w.fill_rect(bx, by, bw, bh, Color{ .r = 28, .g = 24, .b = 24 });
+    w.draw_rect_outline(bx, by, bw, bh, Color{ .r = 180, .g = 135, .b = 75 });
+    w.draw_text("FOUNDRY LEXICON  (POWER + ELEMENT + FORM)", bx + 16, by + 10, 1, Color{ .r = 214, .g = 198, .b = 170 });
+    const rows = [_]struct { title: []const u8, a: []const u8, a_bit: u3, b: []const u8, b_bit: u3 }{
+        .{ .title = "POWER:  ", .a = "Spark", .a_bit = 0, .b = "Forge", .b_bit = 1 },
+        .{ .title = "ELEMENT:", .a = "Ember", .a_bit = 2, .b = "Water", .b_bit = 3 },
+        .{ .title = "FORM:   ", .a = "Bolt", .a_bit = 4, .b = "Ward", .b_bit = 5 },
+    };
+    for (rows, 0..) |r_info, i| {
+        const ry = by + 30 + @as(i32, @intCast(i)) * 18;
+        w.draw_text(r_info.title, bx + 18, ry, 1, Color.hud_subtext);
+        const knows_a = (st.foundry_known_mask & (@as(u8, 1) << r_info.a_bit)) != 0;
+        const knows_b = (st.foundry_known_mask & (@as(u8, 1) << r_info.b_bit)) != 0;
+        w.draw_text(if (knows_a) r_info.a else "-----", bx + 110, ry, 1, if (knows_a) Color{ .r = 250, .g = 204, .b = 21 } else Color{ .r = 100, .g = 94, .b = 90 });
+        w.draw_text(if (knows_b) r_info.b else "-----", bx + 200, ry, 1, if (knows_b) Color{ .r = 250, .g = 204, .b = 21 } else Color{ .r = 100, .g = 94, .b = 90 });
+    }
+    w.draw_text("Look at Bellows, ColdHearth,", bx + 310, by + 32, 1, Color{ .r = 226, .g = 232, .b = 240 });
+    w.draw_text("PatternBook; Use Crucible or [C].", bx + 310, by + 50, 1, Color{ .r = 226, .g = 232, .b = 240 });
+}
+
+fn cinder_card_name(code: u8) []const u8 {
+    return switch (code) {
+        1 => "Salt 1",
+        2 => "Salt 2",
+        3 => "Salt 3",
+        4 => "Salt 4",
+        5 => "Reed 1",
+        6 => "Reed 2",
+        7 => "Reed 3",
+        8 => "Reed 4",
+        9 => "Cinder 1",
+        10 => "Cinder 2",
+        11 => "Cinder 3",
+        12 => "Cinder 4",
+        else => "--",
+    };
+}
+
+fn cinder_card_colors(code: u8, active: bool) struct { bg: Color, border: Color, text: Color } {
+    if (!active) return .{
+        .bg = Color{ .r = 28, .g = 28, .b = 32 },
+        .border = Color{ .r = 68, .g = 68, .b = 76 },
+        .text = Color{ .r = 110, .g = 110, .b = 120 },
+    };
+    return switch (code) {
+        1...4 => .{ .bg = Color{ .r = 38, .g = 48, .b = 64 }, .border = Color{ .r = 226, .g = 232, .b = 240 }, .text = Color{ .r = 248, .g = 250, .b = 252 } },
+        5...8 => .{ .bg = Color{ .r = 20, .g = 52, .b = 40 }, .border = Color{ .r = 74, .g = 222, .b = 128 }, .text = Color{ .r = 187, .g = 247, .b = 208 } },
+        9...12 => .{ .bg = Color{ .r = 64, .g = 30, .b = 18 }, .border = Color{ .r = 251, .g = 146, .b = 60 }, .text = Color{ .r = 254, .g = 215, .b = 170 } },
+        else => .{ .bg = Color{ .r = 28, .g = 28, .b = 32 }, .border = Color{ .r = 68, .g = 68, .b = 76 }, .text = Color.hud_subtext },
+    };
+}
+
+fn draw_cinder_chip(w: *Canvas, x: i32, y: i32, cw: i32, code: u8, held: bool) void {
+    const col = cinder_card_colors(code, held);
+    w.fill_rect(x, y, cw, 18, col.bg);
+    w.draw_rect_outline(x, y, cw, 18, col.border);
+    w.draw_text(cinder_card_name(code), x + 6, y + 5, 1, col.text);
+}
+
+fn render_cinder_table(w: *Canvas, frame: *const RenderFrame) void {
+    const st = status_of(frame);
+    const floor_y = world_to_screen(0, 6, w.width, w.height).y;
+    const left = world_to_screen(-4, 0, w.width, w.height).x;
+    const right = world_to_screen(44, 0, w.width, w.height).x;
+    w.fill_rect(0, 0, w.width, w.height, Color{ .r = 24, .g = 18, .b = 18 });
+    w.fill_rect(left, 118, right - left, floor_y - 118, Color{ .r = 44, .g = 34, .b = 32 });
+    w.fill_rect(left, floor_y, right - left, 18, Color{ .r = 78, .g = 56, .b = 36 });
+    w.draw_rect_outline(left, 118, right - left, floor_y - 118, Color{ .r = 120, .g = 90, .b = 60 });
+    w.draw_text("THE CINDER TABLE  (PRIVATE HANDS & PUBLIC VOIDS)", left + 12, 98, 2, Color{ .r = 251, .g = 191, .b = 36 });
+    const suit_str = switch (st.cinder_suit_led) {
+        1 => "SUIT LED: SALT",
+        2 => "SUIT LED: REED",
+        3 => "SUIT LED: CINDER",
+        else => "SUIT LED: NONE",
+    };
+    w.draw_text(suit_str, right - 220, 102, 1, Color{ .r = 253, .g = 230, .b = 138 });
+
+    // Three private-hand panels along the upper wall (y = 124..190)
+    const seats = [_]struct { name: []const u8, cards: [4]u8, id: u8 }{
+        .{ .name = "MAREN HAND", .cards = .{ 1, 9, 10, 2 }, .id = 1 },
+        .{ .name = "OSSIC HAND", .cards = .{ 3, 5, 6, 7 }, .id = 2 },
+        .{ .name = "INES HAND", .cards = .{ 4, 11, 12, 8 }, .id = 3 },
+    };
+    const panel_w: i32 = 276;
+    for (seats, 0..) |seat, s_idx| {
+        const px = left + 12 + @as(i32, @intCast(s_idx)) * (panel_w + 14);
+        const py: i32 = 124;
+        const is_turn = st.cinder_turn == seat.id;
+        w.fill_rect(px, py, panel_w, 64, Color{ .r = 26, .g = 22, .b = 24 });
+        w.draw_rect_outline(px, py, panel_w, 64, if (is_turn) Color{ .r = 250, .g = 204, .b = 21 } else Color{ .r = 88, .g = 76, .b = 68 });
+        w.draw_text(seat.name, px + 8, py + 7, 1, if (is_turn) Color{ .r = 250, .g = 204, .b = 21 } else Color{ .r = 226, .g = 232, .b = 240 });
+        if (seat.id == 2 and st.cinder_ossic_void) {
+            w.draw_text("VOID CINDER", px + 168, py + 7, 1, Color{ .r = 251, .g = 146, .b = 60 });
+        } else if (is_turn) {
+            w.draw_text("TURN", px + 228, py + 7, 1, Color{ .r = 250, .g = 204, .b = 21 });
+        }
+        for (seat.cards, 0..) |code, c_idx| {
+            const held = (st.cinder_hands[s_idx] & (@as(u8, 1) << @as(u3, @intCast(c_idx)))) != 0;
+            const cx = px + 8 + @as(i32, @intCast(c_idx % 2)) * 132;
+            const cy = py + 22 + @as(i32, @intCast(c_idx / 2)) * 20;
+            draw_cinder_chip(w, cx, cy, 124, code, held);
+        }
+    }
+
+    // Center 4-round trick board (y = 196..278)
+    const tx = left + 26;
+    const ty: i32 = 196;
+    const tw: i32 = right - left - 52;
+    w.fill_rect(tx, ty, tw, 82, Color{ .r = 24, .g = 46, .b = 36 });
+    w.draw_rect_outline(tx, ty, tw, 82, Color{ .r = 148, .g = 112, .b = 64 });
+    const round_labels = [_][]const u8{ "ROUND 1", "ROUND 2", "ROUND 3", "ROUND 4" };
+    for (0..4) |r_idx| {
+        const rx = tx + 10 + @as(i32, @intCast(r_idx)) * 198;
+        w.draw_text(round_labels[r_idx], rx, ty + 6, 1, Color{ .r = 214, .g = 211, .b = 209 });
+        for (0..3) |p_idx| {
+            const play_i = r_idx * 3 + p_idx;
+            const cy = ty + 20 + @as(i32, @intCast(p_idx)) * 20;
+            const who = switch (p_idx) {
+                0 => "M:",
+                1 => "O:",
+                else => "I:",
+            };
+            w.draw_text(who, rx, cy + 5, 1, Color.hud_subtext);
+            if (play_i < st.cinder_played_count) {
+                draw_cinder_chip(w, rx + 22, cy, 126, st.cinder_played[play_i], true);
+            } else {
+                w.draw_rect_outline(rx + 22, cy, 126, 18, Color{ .r = 52, .g = 76, .b = 64 });
+            }
+        }
+    }
 }
 
 /// Greyhold (P45-06): the garrison store in winter, with the door to the snow on the left and
@@ -3725,6 +4128,102 @@ pub fn capture_status(world: *const bespoke.World, frame: *RenderFrame) void {
     st.weathercock_solved = false;
     if (world.lookup_relation("WeathercockSolved")) |rel| {
         st.weathercock_solved = world.has_fact(null, rel, null);
+    }
+
+    // Long Gallery (P44-06)
+    st.long_gallery_pell_found = entity_in_state(world, "Pell", "Found");
+
+    // Word Foundry (P44-04)
+    st.foundry_known_mask = 0;
+    st.foundry_glowing = entity_in_state(world, "Crucible", "Glowing");
+    st.foundry_tempered = entity_in_state(world, "Crucible", "Tempered");
+    if (world.lookup_entity("Maren")) |maren| {
+        if (world.lookup_relation("Knows")) |knows| {
+            const lex_words = [_][]const u8{ "Spark", "Forge", "Ember", "Water", "Bolt", "Ward" };
+            for (lex_words, 0..) |wname, i| {
+                if (world.lookup_entity(wname)) |we| {
+                    if (world.has_fact(maren, knows, we.to_int())) {
+                        st.foundry_known_mask |= (@as(u8, 1) << @as(u3, @intCast(i)));
+                    }
+                }
+            }
+        }
+    }
+
+    // Cinder Table (P44-05)
+    st.cinder_hands = .{ 0, 0, 0 };
+    st.cinder_played = @as([12]u8, @splat(0));
+    st.cinder_played_count = 0;
+    st.cinder_turn = 0;
+    st.cinder_suit_led = 0;
+    st.cinder_ossic_void = false;
+    if (world.lookup_entity("TheCinderTable") != null) {
+        const card_names = [_][]const u8{
+            "SaltOne", "SaltTwo", "SaltThree", "SaltFour",
+            "ReedOne", "ReedTwo", "ReedThree", "ReedFour",
+            "CinderOne", "CinderTwo", "CinderThree", "CinderFour",
+        };
+        const seat_cards = [3][4]u8{
+            .{ 1, 9, 10, 2 },
+            .{ 3, 5, 6, 7 },
+            .{ 4, 11, 12, 8 },
+        };
+        const seat_names = [3][]const u8{ "Maren", "Ossic", "Ines" };
+        if (world.lookup_relation("Knows")) |knows| {
+            for (seat_names, 0..) |sname, s_idx| {
+                if (world.lookup_entity(sname)) |se| {
+                    for (seat_cards[s_idx], 0..) |code, c_idx| {
+                        if (world.lookup_entity(card_names[code - 1])) |ce| {
+                            if (world.has_fact(se, knows, ce.to_int())) {
+                                st.cinder_hands[s_idx] |= (@as(u8, 1) << @as(u3, @intCast(c_idx)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (world.lookup_relation("Played")) |played| {
+            const sl = world.facts.slice();
+            const rels = sl.items(.relation);
+            const objs = sl.items(.object_or_value);
+            for (0..world.facts.len) |i| {
+                if (rels[i] != played or st.cinder_played_count >= 12) continue;
+                for (card_names, 1..) |cname, code| {
+                    if (world.lookup_entity(cname)) |ce| {
+                        if (objs[i] == ce.to_int()) {
+                            st.cinder_played[st.cinder_played_count] = @intCast(code);
+                            st.cinder_played_count += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (world.lookup_relation("Turn")) |turn| {
+            for (seat_names, 1..) |sname, sid| {
+                if (world.lookup_entity(sname)) |se| {
+                    if (world.has_fact(se, turn, null)) st.cinder_turn = @intCast(sid);
+                }
+            }
+        }
+        if (world.lookup_relation("SuitLed")) |led| {
+            if (world.lookup_entity("Salt")) |s| if (world.has_fact(s, led, null)) {
+                st.cinder_suit_led = 1;
+            };
+            if (world.lookup_entity("Reed")) |r_ent| if (world.has_fact(r_ent, led, null)) {
+                st.cinder_suit_led = 2;
+            };
+            if (world.lookup_entity("Cinder")) |c| if (world.has_fact(c, led, null)) {
+                st.cinder_suit_led = 3;
+            };
+        }
+        if (world.lookup_entity("Ossic")) |ossic| {
+            if (world.lookup_entity("Cinder")) |cinder| {
+                if (world.lookup_relation("Void")) |v_rel| {
+                    st.cinder_ossic_void = world.has_fact(ossic, v_rel, cinder.to_int());
+                }
+            }
+        }
     }
 }
 

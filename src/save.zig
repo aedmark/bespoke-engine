@@ -276,8 +276,14 @@ fn read_fiber_state(reader: anytype) !FiberState {
     return switch (tag) {
         0 => FiberState{ .ready = {} },
         1 => FiberState{ .waiting_ticks = val },
-        2 => FiberState{ .waiting_cond = @intCast(val) },
-        3 => FiberState{ .waiting_motor = EntityId.from_int(@intCast(val)) },
+        2 => blk: {
+            if (val > std.math.maxInt(usize)) return SaveError.InvalidTemporalState;
+            break :blk FiberState{ .waiting_cond = @intCast(val) };
+        },
+        3 => blk: {
+            if (val > std.math.maxInt(u32)) return SaveError.InvalidTemporalState;
+            break :blk FiberState{ .waiting_motor = EntityId.from_int(@intCast(val)) };
+        },
         4 => FiberState{ .halted = {} },
         5 => FiberState{ .paused = {} },
         6 => FiberState{ .waiting_dialogue = {} },
@@ -526,6 +532,14 @@ pub fn write_spatial_state(pw: anytype, spatial: ?*const SpatialSystem) !void {
 
 }
 
+fn find_rule_index(rules: []const vm_mod.ReactiveRule, slot: u32) ?usize {
+    const target_id = slot + 1;
+    for (rules, 0..) |r, idx| {
+        if (r.id == target_id) return idx;
+    }
+    return if (slot < rules.len) @intCast(slot) else null;
+}
+
 /// The VM's execution state, as a save and a browser snapshot hold it: the scene, every fiber
 /// with its stack and interrupt frames, the rule edges, and (version 4) the run's dice.
 pub fn write_vm_state(pw: anytype, vm: ?*const VM) !void {
@@ -566,13 +580,18 @@ pub fn write_vm_state(pw: anytype, vm: ?*const VM) !void {
 
         const rule_count: u32 = @intCast(v.reactive_rules.items.len);
         try pw.writeInt(u32, rule_count, .little);
-        for (v.reactive_rules.items) |r| {
-            try pw.writeByte(if (r.is_active) 1 else 0);
+        // Write rule state in canonical registration order (`id` = 1..rule_count), because
+        // `evaluate_reactive_rules` sorts `reactive_rules` in place by priority on tick 1.
+        for (0..rule_count) |slot| {
+            const idx = find_rule_index(v.reactive_rules.items, @intCast(slot)).?;
+            try pw.writeByte(if (v.reactive_rules.items[idx].is_active) 1 else 0);
         }
         try v.dice.write(pw);
         {
             // Each rule's rows that hold now, so a load fires only rows that start after it.
-            for (v.reactive_rules.items) |r| {
+            for (0..rule_count) |slot| {
+                const idx = find_rule_index(v.reactive_rules.items, @intCast(slot)).?;
+                const r = v.reactive_rules.items[idx];
                 try pw.writeInt(u32, @intCast(r.rows.items.len), .little);
                 for (r.rows.items) |row| {
                     var mask: u8 = 0;
@@ -596,11 +615,11 @@ pub fn read_spatial_state(pr: anytype, spatial: ?*SpatialSystem) !void {
     if (has_spatial != 0) {
         const agent_count = try pr.takeInt(u32, .little);
         if (spatial) |sp| {
-            var old_it = sp.agents.valueIterator();
-            while (old_it.next()) |ag| {
-                ag.deinit(sp.allocator);
+            var staged = std.array_list.Managed(MotorAgent).init(sp.allocator);
+            defer {
+                for (staged.items) |*ag| ag.deinit(sp.allocator);
+                staged.deinit();
             }
-            sp.agents.clearRetainingCapacity();
 
             var ai: u32 = 0;
             while (ai < agent_count) : (ai += 1) {
@@ -615,17 +634,18 @@ pub fn read_spatial_state(pr: anytype, spatial: ?*SpatialSystem) !void {
                 const path_index = try pr.takeInt(u16, .little);
                 const path_len = try pr.takeInt(u16, .little);
 
-                var path_slice: ?[]WaypointId = null;
-                if (path_len > 0) {
+                const path_slice: ?[]WaypointId = if (path_len > 0) blk: {
                     const pbuf = try sp.allocator.alloc(WaypointId, path_len);
+                    errdefer sp.allocator.free(pbuf);
                     for (0..path_len) |pi| {
                         pbuf[pi] = try pr.takeInt(u16, .little);
                     }
-                    path_slice = pbuf;
-                }
+                    break :blk pbuf;
+                } else null;
+                errdefer if (path_slice) |pbuf| sp.allocator.free(pbuf);
 
                 const ent = EntityId.from_int(ent_raw);
-                try sp.agents.put(ent, MotorAgent{
+                try staged.append(.{
                     .entity = ent,
                     .pos = .{ .x = px, .y = py },
                     .current_wp = cur_wp,
@@ -637,6 +657,24 @@ pub fn read_spatial_state(pr: anytype, spatial: ?*SpatialSystem) !void {
                     .arrived = arrived,
                 });
             }
+
+            if (sp.agents.capacity() < staged.items.len) {
+                try sp.agents.ensureTotalCapacity(@intCast(@max(sp.agents.count(), staged.items.len)));
+            }
+            var old_it = sp.agents.valueIterator();
+            while (old_it.next()) |ag| {
+                ag.deinit(sp.allocator);
+            }
+            sp.agents.clearRetainingCapacity();
+            for (staged.items) |ag| {
+                const gop = sp.agents.getOrPutAssumeCapacity(ag.entity);
+                if (gop.found_existing) {
+                    var old = gop.value_ptr.*;
+                    old.deinit(sp.allocator);
+                }
+                gop.value_ptr.* = ag;
+            }
+            staged.clearRetainingCapacity();
         } else {
             // Skip spatial section if caller did not pass a SpatialSystem
             var ai: u32 = 0;
@@ -658,7 +696,6 @@ pub fn read_spatial_state(pr: anytype, spatial: ?*SpatialSystem) !void {
             }
         }
     }
-
 }
 
 /// Reads what `write_vm_state` wrote into `vm` for a save of `version`.
@@ -670,15 +707,11 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
         const fiber_count = try pr.takeInt(u32, .little);
 
         if (vm) |v| {
-            v.current_scene = if (cur_scene_raw == 0) null else EntityId.from_int(cur_scene_raw);
-            v.next_fiber_id = next_fib_id;
-            v.emitted_cues.clearRetainingCapacity();
-            v.pending_weaves.clearRetainingCapacity();
-
-            for (v.fibers.items) |*f| {
-                f.deinit();
+            var staged_fibers = std.array_list.Managed(Fiber).init(v.allocator);
+            defer {
+                for (staged_fibers.items) |*f| f.deinit();
+                staged_fibers.deinit();
             }
-            v.fibers.clearRetainingCapacity();
 
             var fi: u32 = 0;
             while (fi < fiber_count) : (fi += 1) {
@@ -686,31 +719,28 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
                 const owner_raw = try pr.takeInt(u32, .little);
                 const pc = try pr.takeInt(u32, .little);
                 const sp_val = try pr.takeInt(u16, .little);
+                if (sp_val > vm_mod.MAX_STACK) return SaveError.InvalidTemporalState;
                 const active_prio = try pr.takeInt(u16, .little);
 
                 var fib = Fiber.init(v.allocator, fid, EntityId.from_int(owner_raw), pc);
                 errdefer fib.deinit();
-                fib.sp = @min(sp_val, vm_mod.MAX_STACK);
+                fib.sp = sp_val;
                 fib.active_priority = active_prio;
 
                 var si: u16 = 0;
                 while (si < sp_val) : (si += 1) {
-                    const sval = try pr.takeInt(u32, .little);
-                    if (si < vm_mod.MAX_STACK) {
-                        fib.stack[si] = sval;
-                    }
+                    fib.stack[si] = try pr.takeInt(u32, .little);
                 }
                 fib.state = try read_fiber_state(pr);
-                {
-                    fib.local_base = try pr.takeInt(u16, .little);
-                    if (fib.local_base > fib.sp) return SaveError.InvalidTemporalState;
-                }
+                fib.local_base = try pr.takeInt(u16, .little);
+                if (fib.local_base > fib.sp) return SaveError.InvalidTemporalState;
 
                 const int_depth = try pr.takeInt(u16, .little);
                 var ii: u16 = 0;
                 while (ii < int_depth) : (ii += 1) {
                     const ipc = try pr.takeInt(u32, .little);
                     const isp = try pr.takeInt(u16, .little);
+                    if (isp > vm_mod.MAX_STACK) return SaveError.InvalidTemporalState;
                     const iprio = try pr.takeInt(u16, .little);
                     const istate = try read_fiber_state(pr);
                     const ibase: u16 = try pr.takeInt(u16, .little);
@@ -724,39 +754,107 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
                     });
                 }
 
-                try v.fibers.append(fib);
+                try staged_fibers.append(fib);
             }
 
             const rule_count = try pr.takeInt(u32, .little);
+            var staged_active = std.array_list.Managed(bool).init(v.allocator);
+            defer staged_active.deinit();
             var ri: u32 = 0;
             while (ri < rule_count) : (ri += 1) {
-                const is_act = (try pr.takeByte()) != 0;
-                if (ri < v.reactive_rules.items.len) {
-                    v.reactive_rules.items[ri].is_active = is_act;
+                try staged_active.append((try pr.takeByte()) != 0);
+            }
+            const staged_dice = try dice_mod.Dice.read(pr);
+
+            const staged_per_rule = try v.allocator.alloc(std.ArrayListUnmanaged(world_mod.VariableBindings), v.reactive_rules.items.len);
+            @memset(staged_per_rule, .empty);
+            defer {
+                for (staged_per_rule) |*list| list.deinit(v.allocator);
+                v.allocator.free(staged_per_rule);
+            }
+            // Untrusted counts: one table per rule the save had, each bounded (D-186).
+            var rj: u32 = 0;
+            while (rj < rule_count) : (rj += 1) {
+                const rows = try pr.takeInt(u32, .little);
+                if (rows > vm_mod.MAX_EACH_ROWS) return SaveError.SavePayloadTooLarge;
+                const target_idx = find_rule_index(v.reactive_rules.items, rj);
+                for (0..rows) |_| {
+                    const mask = try pr.takeByte();
+                    var row = world_mod.VariableBindings{};
+                    for (&row.values, 0..) |*value, k| {
+                        const raw = try pr.takeInt(u32, .little);
+                        value.* = if (mask & (@as(u8, 1) << @intCast(k)) != 0) raw else null;
+                    }
+                    if (target_idx) |idx| try staged_per_rule[idx].append(v.allocator, row);
                 }
             }
-            v.dice = try dice_mod.Dice.read(pr);
-            for (v.reactive_rules.items) |*r| r.rows.clearRetainingCapacity();
-            {
-                // Untrusted counts: one table per rule the save had, each bounded (D-186).
-                var rj: u32 = 0;
-                while (rj < rule_count) : (rj += 1) {
-                    const rows = try pr.takeInt(u32, .little);
-                    if (rows > vm_mod.MAX_EACH_ROWS) return SaveError.SavePayloadTooLarge;
-                    for (0..rows) |_| {
-                        const mask = try pr.takeByte();
-                        var row = world_mod.VariableBindings{};
-                        for (&row.values, 0..) |*value, k| {
-                            const raw = try pr.takeInt(u32, .little);
-                            value.* = if (mask & (@as(u8, 1) << @intCast(k)) != 0) raw else null;
-                        }
-                        if (rj < v.reactive_rules.items.len) try v.reactive_rules.items[rj].rows.append(v.allocator, row);
-                    }
+
+            if (v.fibers.capacity < staged_fibers.items.len) {
+                try v.fibers.ensureTotalCapacity(staged_fibers.items.len);
+            }
+
+            // All reads and validations succeeded; commit atomically.
+            v.current_scene = if (cur_scene_raw == 0) null else EntityId.from_int(cur_scene_raw);
+            v.next_fiber_id = next_fib_id;
+            v.emitted_cues.clearRetainingCapacity();
+            v.pending_weaves.clearRetainingCapacity();
+
+            for (v.fibers.items) |*f| f.deinit();
+            v.fibers.clearRetainingCapacity();
+            v.fibers.appendSliceAssumeCapacity(staged_fibers.items);
+            staged_fibers.clearRetainingCapacity();
+
+            for (staged_active.items, 0..) |is_act, idx_ri| {
+                if (find_rule_index(v.reactive_rules.items, @intCast(idx_ri))) |idx| {
+                    v.reactive_rules.items[idx].is_active = is_act;
+                }
+            }
+            v.dice = staged_dice;
+            for (v.reactive_rules.items, 0..) |*rule, idx| {
+                std.mem.swap(std.ArrayListUnmanaged(world_mod.VariableBindings), &rule.rows, &staged_per_rule[idx]);
+            }
+        } else {
+            // Validate and consume the VM section when caller did not pass a VM.
+            var fi: u32 = 0;
+            while (fi < fiber_count) : (fi += 1) {
+                _ = try pr.takeInt(u32, .little);
+                _ = try pr.takeInt(u32, .little);
+                _ = try pr.takeInt(u32, .little);
+                const sp_val = try pr.takeInt(u16, .little);
+                if (sp_val > vm_mod.MAX_STACK) return SaveError.InvalidTemporalState;
+                _ = try pr.takeInt(u16, .little);
+                var si: u16 = 0;
+                while (si < sp_val) : (si += 1) _ = try pr.takeInt(u32, .little);
+                _ = try read_fiber_state(pr);
+                const local_base = try pr.takeInt(u16, .little);
+                if (local_base > sp_val) return SaveError.InvalidTemporalState;
+                const int_depth = try pr.takeInt(u16, .little);
+                var ii: u16 = 0;
+                while (ii < int_depth) : (ii += 1) {
+                    _ = try pr.takeInt(u32, .little);
+                    const isp = try pr.takeInt(u16, .little);
+                    if (isp > vm_mod.MAX_STACK) return SaveError.InvalidTemporalState;
+                    _ = try pr.takeInt(u16, .little);
+                    _ = try read_fiber_state(pr);
+                    const ibase = try pr.takeInt(u16, .little);
+                    if (ibase > isp) return SaveError.InvalidTemporalState;
+                }
+            }
+            const rule_count = try pr.takeInt(u32, .little);
+            var ri: u32 = 0;
+            while (ri < rule_count) : (ri += 1) _ = try pr.takeByte();
+            _ = try dice_mod.Dice.read(pr);
+            var rj: u32 = 0;
+            while (rj < rule_count) : (rj += 1) {
+                const rows = try pr.takeInt(u32, .little);
+                if (rows > vm_mod.MAX_EACH_ROWS) return SaveError.SavePayloadTooLarge;
+                for (0..rows) |_| {
+                    _ = try pr.takeByte();
+                    for (0..8) |_| _ = try pr.takeInt(u32, .little);
                 }
             }
         }
     }
-
 }
 
 const VerifiedPayload = struct {
@@ -980,6 +1078,86 @@ test "P48-08: a save whose facts cannot be placed is refused and changes nothing
     try testing.expectEqual(@as(usize, 1), new.fact_count());
 }
 
+test "P48-23: reactive_rules is_active and when-each rows restore by rule id across priority sorting" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const source =
+        \\entity Hero, Guard, Lamp
+        \\relation Holds(who, thing)
+        \\relation Theft(who)
+        \\relation Seen(who)
+        \\relation Alarm(who)
+        \\when each Holds(who, Lamp):
+        \\  remember Seen(who)
+        \\when Theft(Guard):
+        \\  remember Alarm(Guard)
+        \\
+    ;
+
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, null, source);
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    try vm.load_compiled_rules(&compiled);
+
+    // Pre-tick snapshot 0 (before `evaluate_reactive_rules` sorts priority 100 before 50).
+    var snap0 = std.array_list.Managed(u8).init(testing.allocator);
+    defer snap0.deinit();
+    var lw0 = ListWriter.init(&snap0);
+    _ = try write_save_state(testing.allocator, &lw0.writer, &world, null, &vm, .{});
+
+    const hero = world.lookup_entity("Hero").?;
+    const guard = world.lookup_entity("Guard").?;
+    const lamp = world.lookup_entity("Lamp").?;
+    const holds = world.lookup_relation("Holds").?;
+    const theft = world.lookup_relation("Theft").?;
+    const seen = world.lookup_relation("Seen").?;
+    const alarm = world.lookup_relation("Alarm").?;
+
+    try world.remember(hero, holds, lamp.to_int(), 0);
+    try world.remember(guard, theft, 0, 0);
+    try vm.step_tick();
+    try vm.step_tick();
+    try testing.expect(world.has_fact(hero, seen, null));
+    try testing.expect(world.has_fact(guard, alarm, null));
+    // Priority sort placed rule 2 (Theft, priority 100) at index 0.
+    try testing.expectEqual(@as(u32, 2), vm.reactive_rules.items[0].id);
+
+    // Save after sorting, then load into a fresh VM whose reactive_rules are still unsorted.
+    var saved = std.array_list.Managed(u8).init(testing.allocator);
+    defer saved.deinit();
+    var lw1 = ListWriter.init(&saved);
+    _ = try write_save_state(testing.allocator, &lw1.writer, &world, null, &vm, .{});
+
+    var world2 = try World.init(testing.allocator, 256 * 1024);
+    defer world2.deinit();
+    var compiled2 = try compiler.compile_source(testing.allocator, &world2, null, source);
+    defer compiled2.deinit();
+    var vm2 = VM.init(testing.allocator, &world2, &compiled2.chunk);
+    defer vm2.deinit();
+    try vm2.load_compiled_rules(&compiled2);
+
+    var s1: std.Io.Reader = .fixed(saved.items);
+    _ = try read_save_state(testing.allocator, &s1, &world2, null, &vm2);
+    // Forget Seen and Alarm; neither rule should re-fire on the next tick.
+    _ = world2.forget(world2.lookup_entity("Hero").?, world2.lookup_relation("Seen").?, null);
+    _ = world2.forget(world2.lookup_entity("Guard").?, world2.lookup_relation("Alarm").?, null);
+    try vm2.step_tick();
+    try vm2.step_tick();
+    try testing.expect(!world2.has_fact(world2.lookup_entity("Hero").?, world2.lookup_relation("Seen").?, null));
+    try testing.expect(!world2.has_fact(world2.lookup_entity("Guard").?, world2.lookup_relation("Alarm").?, null));
+
+    // Scrubbing back to pre-tick snapshot 0 on the sorted VM also clears both rules cleanly.
+    var s0: std.Io.Reader = .fixed(snap0.items);
+    _ = try read_save_state(testing.allocator, &s0, &world, null, &vm);
+    for (vm.reactive_rules.items) |r| {
+        try testing.expect(!r.is_active);
+        try testing.expectEqual(@as(usize, 0), r.rows.items.len);
+    }
+}
+
 /// Validates a save stream's outer header and CRC32 checksum, returning the verified payload slice.
 fn read_verified_payload(allocator: std.mem.Allocator, reader: anytype) !VerifiedPayload {
     var magic: [4]u8 = undefined;
@@ -1105,7 +1283,7 @@ fn read_save_state_versioned(
         if (meta.program.save_version != expected.save_version) return SaveError.SaveFromOtherBuild;
         // A branch world belongs to the build that forked it and never crosses (D-162).
         if (require_temporal or (try pr.takeByte()) != 0) return SaveError.SaveFromOtherBuild;
-        try load_from_other_build(allocator, verified, world, vm);
+        try load_from_other_build(allocator, verified, world, spatial, vm);
         meta.routines_restarted = true;
         return meta;
     }
@@ -1134,6 +1312,47 @@ fn read_save_state_versioned(
         }
     }
 
+    // Snapshot `world`, `spatial`, and `vm` before restoring so any error in temporal validation,
+    // spatial/VM decode, or trailing-byte check rolls all live state back atomically.
+    var world_rollback = std.array_list.Managed(u8).init(allocator);
+    defer world_rollback.deinit();
+    {
+        var lw = ListWriter.init(&world_rollback);
+        try world.save_state(&lw.writer);
+    }
+    var spatial_rollback = std.array_list.Managed(u8).init(allocator);
+    defer spatial_rollback.deinit();
+    if (spatial != null) {
+        var slw = ListWriter.init(&spatial_rollback);
+        try write_spatial_state(&slw.writer, spatial);
+    }
+    var vm_rollback = std.array_list.Managed(u8).init(allocator);
+    defer vm_rollback.deinit();
+    if (vm) |v| {
+        const saved_weaves = v.pending_weaves;
+        v.pending_weaves = .init(v.allocator);
+        var vlw = ListWriter.init(&vm_rollback);
+        write_vm_state(&vlw.writer, v) catch |err| {
+            v.pending_weaves = saved_weaves;
+            return err;
+        };
+        v.pending_weaves = saved_weaves;
+    }
+    const saved_expired = world.recently_expired_count;
+    errdefer {
+        world.recently_expired_count = saved_expired;
+        var rb: std.Io.Reader = .fixed(world_rollback.items);
+        world.restore_state(&rb) catch {};
+        if (spatial != null) {
+            var srb: std.Io.Reader = .fixed(spatial_rollback.items);
+            read_spatial_state(&srb, spatial) catch {};
+        }
+        if (vm != null) {
+            var vrb: std.Io.Reader = .fixed(vm_rollback.items);
+            read_vm_state(&vrb, vm) catch {};
+        }
+    }
+
     // 2. World relational state
     try world.restore_state(pr);
     world.recently_expired_count = 0;
@@ -1142,6 +1361,7 @@ fn read_save_state_versioned(
     // 3. Spatial motor agents, then 4. VM execution state
     try read_spatial_state(pr, spatial);
     try read_vm_state(pr, vm);
+    if (pr.seek != pr.end) return SaveError.InvalidTemporalState;
 
     if (pending_temporal) |*snapshot| {
         if (temporal) |hypervisor| try snapshot.apply(hypervisor);
@@ -1157,10 +1377,30 @@ fn read_save_state_versioned(
 /// A fact whose relation has no known kind but holds an object, or whose relation changed type
 /// or kind between the builds, refuses the load. Motor agents stay where the running session
 /// has them; the VM keeps its scene by name, loses every fiber, and marks each `when` rule
+fn find_wp_for_room(sp: *const SpatialSystem, room: EntityId, preferred_pos: ?spatial_mod.Point2D) ?spatial_mod.Waypoint {
+    if (preferred_pos) |pos| {
+        for (sp.graph.waypoints.items) |wp| {
+            if (wp.room == room and wp.pos.x == pos.x and wp.pos.y == pos.y) return wp;
+        }
+    }
+    for (sp.graph.waypoints.items) |wp| {
+        if (wp.room == room) return wp;
+    }
+    return null;
+}
+
 /// that already holds as fired, so a satisfied ending does not fire again.
-fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload, world: *World, vm: ?*VM) anyerror!void {
+fn load_from_other_build(
+    allocator: std.mem.Allocator,
+    verified: VerifiedPayload,
+    world: *World,
+    spatial: ?*SpatialSystem,
+    vm: ?*VM,
+) anyerror!void {
     var saved = try World.init(allocator, world.arena_buffer.len);
     defer saved.deinit();
+    var saved_spatial = SpatialSystem.init(allocator);
+    defer saved_spatial.deinit();
     var empty_code = @import("bytecode.zig").BytecodeChunk.init(allocator);
     defer empty_code.deinit();
     var saved_vm = VM.init(allocator, &saved, &empty_code);
@@ -1176,7 +1416,7 @@ fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload
         try ew.writer.writeInt(u32, @intCast(verified.bytes.len), .little);
         try ew.writer.writeAll(verified.bytes);
         var stream: std.Io.Reader = .fixed(envelope.items);
-        _ = try read_save_state_versioned(allocator, &stream, &saved, null, &saved_vm, null, false, .{});
+        _ = try read_save_state_versioned(allocator, &stream, &saved, &saved_spatial, &saved_vm, null, false, .{});
     }
 
     const facts = saved.facts.slice();
@@ -1227,11 +1467,98 @@ fn load_from_other_build(allocator: std.mem.Allocator, verified: VerifiedPayload
             if (rule.each) {
                 const rows = try world.find_all_matches(allocator, rule.clauses);
                 defer allocator.free(rows);
-                for (rows) |row| try rule.rows.append(v.allocator, row);
+                for (rows) |row| {
+                    if (VM.contains_row(rule.rows.items, row)) continue;
+                    if (rule.rows.items.len >= vm_mod.MAX_EACH_ROWS) break;
+                    try rule.rows.append(v.allocator, row);
+                }
             }
         }
         // The run goes on: the dice continue from where the save left them (D-168).
         v.dice = saved_vm.dice;
+    }
+
+    if (spatial) |sp| {
+        var live_it = sp.agents.valueIterator();
+        while (live_it.next()) |ag| {
+            if (ag.path) |p| {
+                sp.allocator.free(p);
+                ag.path = null;
+            }
+            ag.target_wp = null;
+            ag.is_moving = false;
+            ag.arrived = false;
+        }
+        const target_scene = if (vm) |v| v.current_scene else null;
+        const in_room_rel = world.lookup_relation("InRoom");
+        if (saved_spatial.agents.count() > 0) {
+            var saved_it = saved_spatial.agents.valueIterator();
+            while (saved_it.next()) |saved_ag| {
+                const ent_name = saved.get_entity_name(saved_ag.entity) orelse continue;
+                const live_ent = world.lookup_entity(ent_name) orelse continue;
+                var dest_wp: ?spatial_mod.Waypoint = null;
+                if (in_room_rel) |rel| {
+                    if (world.get_property(live_ent, rel)) |room_raw| {
+                        dest_wp = find_wp_for_room(sp, EntityId.from_int(room_raw), saved_ag.pos);
+                    }
+                }
+                if (dest_wp == null) {
+                    for (sp.graph.waypoints.items) |wp| {
+                        if (wp.pos.x == saved_ag.pos.x and wp.pos.y == saved_ag.pos.y) {
+                            if (target_scene == null or wp.room == target_scene.?) {
+                                dest_wp = wp;
+                                break;
+                            } else if (dest_wp == null) {
+                                dest_wp = wp;
+                            }
+                        }
+                    }
+                }
+                if (dest_wp == null) {
+                    if (sp.graph.get_waypoint(saved_ag.current_wp)) |wp| {
+                        if (target_scene == null or wp.room == target_scene.?) dest_wp = wp;
+                    }
+                }
+                if (dest_wp == null) {
+                    if (target_scene) |scene| dest_wp = find_wp_for_room(sp, scene, null);
+                }
+                if (dest_wp) |wp| {
+                    if (sp.agents.getPtr(live_ent)) |ag| {
+                        ag.current_wp = wp.id;
+                        ag.pos = wp.pos;
+                        ag.speed = saved_ag.speed;
+                    } else {
+                        try sp.register_entity(live_ent, wp.id, saved_ag.speed);
+                    }
+                }
+            }
+        } else {
+            var snap_it = sp.agents.valueIterator();
+            while (snap_it.next()) |ag| {
+                var dest_wp: ?spatial_mod.Waypoint = null;
+                if (in_room_rel) |rel| {
+                    if (world.get_property(ag.entity, rel)) |room_raw| {
+                        const room = EntityId.from_int(room_raw);
+                        const cur_room = if (sp.graph.get_waypoint(ag.current_wp)) |cur| cur.room else null;
+                        if (cur_room == null or cur_room.? != room) {
+                            dest_wp = find_wp_for_room(sp, room, ag.pos);
+                        }
+                    }
+                }
+                if (dest_wp == null) {
+                    if (target_scene) |scene| {
+                        const cur_room = if (sp.graph.get_waypoint(ag.current_wp)) |cur| cur.room else null;
+                        if (cur_room == null or cur_room.? != scene) {
+                            dest_wp = find_wp_for_room(sp, scene, null);
+                        }
+                    }
+                }
+                if (dest_wp) |wp| {
+                    ag.current_wp = wp.id;
+                    ag.pos = wp.pos;
+                }
+            }
+        }
     }
 }
 
@@ -1264,6 +1591,8 @@ pub const SaveManager = struct {
     program: ProgramIdentity = .{},
     /// True after a load from another build: the host must restart routines (D-162).
     last_load_restarted_routines: bool = false,
+    /// True only when the most recent load call succeeded.
+    last_load_succeeded: bool = false,
     allocator: std.mem.Allocator,
     save_dir: []const u8,
     slots: [MAX_SLOTS + 1]SaveSlotInfo,
@@ -1489,6 +1818,8 @@ pub const SaveManager = struct {
         vm: ?*VM,
         temporal: ?*TemporalHypervisor,
     ) !LoadResult {
+        self.last_load_succeeded = false;
+        self.last_load_restarted_routines = false;
         if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
 
         var path_buf: [256]u8 = undefined;
@@ -1506,6 +1837,7 @@ pub const SaveManager = struct {
             else
                 read_save_state_for(self.allocator, &file_reader.interface, world, spatial, vm, self.program);
             if (loaded) |meta| {
+                self.last_load_succeeded = true;
                 self.last_load_restarted_routines = meta.routines_restarted;
                 self.accumulated_playtime_secs = meta.playtime_secs;
                 self.session_start_ms = now_ms(self.io);
@@ -1549,6 +1881,7 @@ pub const SaveManager = struct {
                 return SaveError.CorruptedSaveUnrecoverable;
             };
 
+        self.last_load_succeeded = true;
         self.last_load_restarted_routines = recovered_meta.routines_restarted;
         // Self-heal primary slot file from the verified backup
         std.Io.Dir.cwd().copyFile(bak_path, std.Io.Dir.cwd(), slot_path, self.io, .{}) catch {};
@@ -2010,4 +2343,195 @@ test "P31-04: a save restores the hypervisor envelope; one without it stays read
             &legacy_temporal,
         ),
     );
+}
+
+test "P48-24: save loader rejects bad stack depths, bad motor ids, trailing bytes, and rolls back atomically" {
+    const testing = std.testing;
+    const bc = @import("bytecode.zig");
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const hero = try world.intern_entity("Hero");
+    const tavern = try world.intern_entity("Tavern");
+    const loc = try world.intern_relation("At", .property);
+    try world.remember(hero, loc, tavern.to_int(), 0);
+
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    const wp = try spatial.graph.add_waypoint(tavern, 0, 0, "Door");
+    try spatial.register_entity(hero, wp, 2);
+
+    var chunk = bc.BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    _ = try chunk.emit_op(.halt);
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    const fid = try vm.spawn_routine(hero, 0);
+    vm.fibers.items[0].stack[0] = 42;
+    vm.fibers.items[0].sp = 1;
+    vm.fibers.items[0].local_base = 0;
+    try vm.fibers.items[0].interrupt_stack.append(.{
+        .pc = 0,
+        .sp = 1,
+        .state = .{ .ready = {} },
+        .priority = 1,
+        .local_base = 0,
+    });
+    _ = fid;
+
+    var buf = std.array_list.Managed(u8).init(testing.allocator);
+    defer buf.deinit();
+    var lw = ListWriter.init(&buf);
+    _ = try write_save_state(testing.allocator, &lw.writer, &world, &spatial, &vm, .{});
+
+    // Helper to wrap a modified payload in a valid BSV1 envelope.
+    const reseal = struct {
+        fn build(alloc: std.mem.Allocator, payload: []const u8) ![]u8 {
+            var out = try alloc.alloc(u8, 16 + payload.len);
+            @memcpy(out[0..4], &SAVE_MAGIC);
+            std.mem.writeInt(u32, out[4..8], SAVE_VERSION, .little);
+            std.mem.writeInt(u32, out[8..12], std.hash.Crc32.hash(payload), .little);
+            std.mem.writeInt(u32, out[12..16], @intCast(payload.len), .little);
+            @memcpy(out[16..], payload);
+            return out;
+        }
+    }.build;
+
+    const orig_payload = buf.items[16..];
+
+    // 1. Trailing byte after a valid payload is refused and rolls back World, Spatial, and VM.
+    var trailing = try testing.allocator.alloc(u8, orig_payload.len + 1);
+    defer testing.allocator.free(trailing);
+    @memcpy(trailing[0..orig_payload.len], orig_payload);
+    trailing[orig_payload.len] = 0xAA;
+    const trailing_save = try reseal(testing.allocator, trailing);
+    defer testing.allocator.free(trailing_save);
+
+    world.current_tick = 99;
+    try world.remember(hero, loc, hero.to_int(), 0);
+    spatial.agents.getPtr(hero).?.pos.x = 777;
+    vm.fibers.items[0].stack[0] = 888;
+    var s_trail: std.Io.Reader = .fixed(trailing_save);
+    try testing.expectError(SaveError.InvalidTemporalState, read_save_state(testing.allocator, &s_trail, &world, &spatial, &vm));
+    try testing.expectEqual(@as(u64, 99), world.current_tick);
+    try testing.expectEqual(@as(?u32, hero.to_int()), world.get_property(hero, loc));
+    try testing.expectEqual(@as(i32, 777), spatial.agents.get(hero).?.pos.x);
+    try testing.expectEqual(@as(u32, 888), vm.fibers.items[0].stack[0]);
+
+    // 2. Fiber state waiting_motor > maxInt(u32) fails read_fiber_state with InvalidTemporalState.
+    var bad_motor: [9]u8 = undefined;
+    bad_motor[0] = 3;
+    std.mem.writeInt(u64, bad_motor[1..9], @as(u64, std.math.maxInt(u32)) + 1, .little);
+    var m_reader: std.Io.Reader = .fixed(&bad_motor);
+    try testing.expectError(SaveError.InvalidTemporalState, read_fiber_state(&m_reader));
+
+    // 3. VM sp > MAX_STACK and isp > MAX_STACK both fail read_vm_state (and when vm == null).
+    var vm_buf = std.array_list.Managed(u8).init(testing.allocator);
+    defer vm_buf.deinit();
+    var vw = ListWriter.init(&vm_buf);
+    try write_vm_state(&vw.writer, &vm);
+    // Offset in write_vm_state: has_vm(1) + cur_scene(4) + next_fib_id(4) + fiber_count(4) + fid(4) + owner(4) + pc(4) = 25 -> sp_val(u16).
+    const bad_sp = try testing.allocator.dupe(u8, vm_buf.items);
+    defer testing.allocator.free(bad_sp);
+    std.mem.writeInt(u16, bad_sp[25..27], vm_mod.MAX_STACK + 1, .little);
+    var sp_reader: std.Io.Reader = .fixed(bad_sp);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&sp_reader, &vm));
+    sp_reader = .fixed(bad_sp);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&sp_reader, null));
+    try testing.expectEqual(@as(u32, 888), vm.fibers.items[0].stack[0]);
+
+    // Offset to interrupt[0].isp: sp_val=1 -> sp_val_end(27) + active_prio(2) + stack(4) + fiber_state(9) + local_base(2) + int_depth(2) + ipc(4) = 50.
+    const bad_isp = try testing.allocator.dupe(u8, vm_buf.items);
+    defer testing.allocator.free(bad_isp);
+    std.mem.writeInt(u16, bad_isp[50..52], vm_mod.MAX_STACK + 1, .little);
+    var isp_reader: std.Io.Reader = .fixed(bad_isp);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&isp_reader, &vm));
+    isp_reader = .fixed(bad_isp);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&isp_reader, null));
+}
+
+test "P48-25: load_from_other_build syncs spatial room/position and deduplicates when-each rows" {
+    const testing = std.testing;
+    const compiler = @import("compiler.zig");
+    const v1 =
+        \\save version 3
+        \\scene: Quay
+        \\cast: Hero
+        \\marks: Dock
+        \\scene: Hold
+        \\marks: Hatch
+        \\when each Holds(who, _):
+        \\  remember Saw(who)
+    ;
+    const v2 =
+        \\save version 3
+        \\entity Extra
+        \\scene: Quay
+        \\cast: Hero
+        \\marks: Dock
+        \\scene: Hold
+        \\marks: Hatch
+        \\when each Holds(who, _):
+        \\  remember Saw(who)
+    ;
+    var bytes = std.array_list.Managed(u8).init(testing.allocator);
+    defer bytes.deinit();
+    {
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var compiled = try compiler.compile_source(testing.allocator, &world, &spatial, v1);
+        defer compiled.deinit();
+        var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+        defer vm.deinit();
+        vm.spatial = &spatial;
+        try vm.load_compiled_rules(&compiled);
+        const hero = world.lookup_entity("Hero").?;
+        const hold = world.lookup_entity("Hold").?;
+        const hatch = spatial.graph.find_waypoint_in_room(hold, "Hatch").?;
+        try spatial.register_entity(hero, hatch, 2);
+        try vm.transition_to_scene(hold);
+        const holds = try world.intern_relation_kind("Holds", .set, .entity);
+        const oar = try world.intern_entity("Oar");
+        const bell = try world.intern_entity("Bell");
+        // Two facts matching `when each Holds(who, _)` with wildcard `_` yield duplicate `who` rows.
+        try world.remember(hero, holds, oar.to_int(), 0);
+        try world.remember(hero, holds, bell.to_int(), 0);
+        var lw = ListWriter.init(&bytes);
+        _ = try write_save_state(testing.allocator, &lw.writer, &world, &spatial, &vm, .{ .program = compiled.identity() });
+    }
+
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try compiler.compile_source(testing.allocator, &world, &spatial, v2);
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.load_compiled_rules(&compiled);
+
+    const hero = world.lookup_entity("Hero").?;
+    const quay = world.lookup_entity("Quay").?;
+    const hold = world.lookup_entity("Hold").?;
+    const dock = spatial.graph.find_waypoint_in_room(quay, "Dock").?;
+    const hatch = spatial.graph.find_waypoint_in_room(hold, "Hatch").?;
+    // Place hero mid-walk in Quay in the new session before loading the Hold save.
+    try spatial.register_entity(hero, dock, 2);
+    if (spatial.agents.getPtr(hero)) |ag| {
+        ag.is_moving = true;
+        ag.target_wp = hatch;
+    }
+
+    var stream: std.Io.Reader = .fixed(bytes.items);
+    const meta = try read_save_state_for(testing.allocator, &stream, &world, &spatial, &vm, compiled.identity());
+    try testing.expect(meta.routines_restarted);
+    try testing.expectEqual(@as(?EntityId, hold), vm.current_scene);
+    const ag = spatial.agents.get(hero).?;
+    try testing.expectEqual(hatch, ag.current_wp);
+    try testing.expect(!ag.is_moving);
+    try testing.expect(ag.target_wp == null);
+    // Duplicate matching rows for `who = Hero` were deduplicated to 1 entry.
+    try testing.expectEqual(@as(usize, 1), vm.reactive_rules.items[0].rows.items.len);
 }

@@ -326,6 +326,13 @@ pub const Art = struct {
             if (part.entity == .none or part.host == .none or part.entity == part.host) return Error.InvalidImageBinding;
             if (@abs(part.dx) > MAX_PART_OFFSET or @abs(part.dy) > MAX_PART_OFFSET) return Error.InvalidImageBinding;
             for (self.parts[0..i]) |prior| if (prior.entity == part.entity) return Error.InvalidImageBinding;
+            var cur = part.host;
+            var hops: usize = 0;
+            while (hops < self.parts.len) : (hops += 1) {
+                const parent = self.part_for(cur) orelse break;
+                if (parent.host == part.entity) return Error.InvalidImageBinding;
+                cur = parent.host;
+            }
         }
         if (self.areas.len > MAX_BINDINGS) return Error.InvalidImageBinding;
         for (self.areas, 0..) |a, i| {
@@ -515,4 +522,22 @@ test "P46-05: an area stays on the art and names one prop once" {
     try std.testing.expectError(Error.InvalidImageBinding, (Art{ .areas = &.{ room, room } }).validate());
     try std.testing.expect(!(Art{ .areas = &.{room} }).is_empty());
     try std.testing.expectEqual(@as(u16, 300), (Art{ .areas = &.{room} }).area_for(EntityId.from_int(5)).?.x);
+}
+
+test "P48-25: part attachment cycles (2-node and 3-node) are rejected by Art.validate" {
+    const a = EntityId.from_int(1);
+    const b = EntityId.from_int(2);
+    const c = EntityId.from_int(3);
+    const two = Art{ .parts = &.{
+        .{ .entity = a, .host = b, .dx = 0, .dy = 0 },
+        .{ .entity = b, .host = a, .dx = 0, .dy = 0 },
+    } };
+    try std.testing.expectError(Error.InvalidImageBinding, two.validate());
+
+    const three = Art{ .parts = &.{
+        .{ .entity = a, .host = b, .dx = 0, .dy = 0 },
+        .{ .entity = b, .host = c, .dx = 0, .dy = 0 },
+        .{ .entity = c, .host = a, .dx = 0, .dy = 0 },
+    } };
+    try std.testing.expectError(Error.InvalidImageBinding, three.validate());
 }

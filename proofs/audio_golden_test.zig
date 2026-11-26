@@ -37,7 +37,12 @@ const SCENES = [_][]const u8{
     "Gull Roost",       "Wren's Attic",
     "The Customs House",      "Beacon Hill",
     "Bell Tower Base",            "Bell Tower Belfry",
-    "Saltglass Stockade",
+    "Saltglass Stockade",         "Saltmarket",
+    "Hollin Keep Gallery",        "Larkspur Observatory",
+    "Greyhold Store",             "Greyhold Gate",
+    "Tallow Lane",                "Market Steps",
+    "Long Gallery",               "Locked Studio",
+    "TheWordFoundry",             "TheCinderTable",
 };
 
 /// The operations the record needs from the sound system. P32-02d changes how a sound is

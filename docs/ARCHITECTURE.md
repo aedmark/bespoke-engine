@@ -258,7 +258,7 @@ Everything a run leaves on disk or elsewhere, and what may delete it.
 | Failure | User-visible behaviour | Detection | Recovery / runbook |
 | --- | --- | --- | --- |
 | Script Syntax or Semantic Error | File, line, one-based byte column, source excerpt, caret, and an optional suggestion; non-zero exit | `check_source` owns the lexer, parser, or codegen message and suggestion; the runner renders them with the original source (`bespoke check`, `compile`, or source `run`) | Correct the source at the caret |
-| Corrupted or Truncated `.sav` File | Load failure badge in pause drawer; automatic fallback to backup | Magic (`BSAV`), version, or CRC32 checksum mismatch in `SaveManager.load_slot` | Transparently falls back to `<slot>.sav.bak` and restores valid state (D-020) |
+| Corrupted or Truncated `.sav` File | Load failure badge in pause drawer; automatic fallback to backup | Magic (`BSV1`), version, or CRC32 checksum mismatch in `SaveManager.load_slot` | Transparently falls back to `<slot>.sav.bak` and restores valid state (D-020) |
 | Missing Host Audio / Display Hardware | Silent warning; continues running in pure headless simulation | SDL init check failure (`SDL_Init`, `SDL_CreateWindow`, `SDL_OpenAudio`) | Falls back to deterministic headless simulation and offline audio buffers (D-001, D-019) |
 | Canvas Out-of-Bounds | Drawing outside the canvas is dropped | `Canvas.set_pixel` bounds check (`x < width`, `y < height`) | Drops the pixel silently, so shapes may cross the edge without overrunning the buffer (D-022, D-097) |
 
@@ -267,4 +267,5 @@ State what may be logged and what must be redacted. Security consequences and re
 ## Claims vs. code
 
 Places where a doc, a name or a comment says more than the code does, so nobody builds on the claim. When a session encounters friction where the code contradicts a documented claim (or vice versa), record the mismatch here and ask the maintainer rather than papering over the discrepancy in code. Remove a row when the code catches up or the claim is corrected.
+
 

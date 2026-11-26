@@ -373,22 +373,48 @@ pub const VM = struct {
         }
         rule.rows.deinit(self.allocator);
         rule.rows = now;
+        now = .empty;
         std.sort.insertion(world_mod.VariableBindings, started.items, self.world, row_before);
-        for (started.items) |row| try self.fire_each_row(rule, row);
+        const existing_fibers = self.fibers.items.len;
+        const targets = try self.allocator.alloc(?usize, started.items.len);
+        defer self.allocator.free(targets);
+        for (started.items, targets) |row, *out| {
+            const owner = if (rule.owner_slot) |slot| EntityId.from_int(row.get(slot) orelse 0) else rule.target_entity;
+            out.* = for (self.fibers.items[0..existing_fibers], 0..) |*f, fi| {
+                if (f.owner != owner or f.state == .halted) continue;
+                if (rule.priority < f.active_priority and f.interrupt_stack.items.len > 0) continue;
+                break fi;
+            } else null;
+        }
+        // Push interrupts for each existing fiber in reverse order so its LIFO interrupt stack
+        // runs the rows in ascending name order; rows that spawn new fibers spawn in order.
+        var ri = started.items.len;
+        while (ri > 0) {
+            ri -= 1;
+            if (targets[ri]) |fi| {
+                try self.interrupt_each_fiber(rule, started.items[ri], &self.fibers.items[fi]);
+            }
+        }
+        for (started.items, targets) |row, target| {
+            if (target == null) try self.spawn_each_row(rule, row);
+        }
         return started.items.len;
     }
 
-    fn contains_row(rows: []const world_mod.VariableBindings, row: world_mod.VariableBindings) bool {
+    pub fn contains_row(rows: []const world_mod.VariableBindings, row: world_mod.VariableBindings) bool {
         for (rows) |r| if (std.mem.eql(?u32, &r.values, &row.values)) return true;
         return false;
     }
 
-    /// Name order, slot by slot: a value that names an entity sorts by that name, any other
-    /// by its number, and numbers before names (D-186).
+    /// Name order, slot by slot: null before values, values that name entities by name, raw
+    /// numbers in ascending numeric order, and numbers before names (D-186).
     fn row_before(world: *const World, a: world_mod.VariableBindings, b: world_mod.VariableBindings) bool {
         for (a.values, b.values) |va, vb| {
-            const x = va orelse 0;
-            const y = vb orelse 0;
+            if (va == null and vb == null) continue;
+            if (va == null) return true;
+            if (vb == null) return false;
+            const x = va.?;
+            const y = vb.?;
             if (x == y) continue;
             const nx = if (x == 0) null else world.get_entity_name(EntityId.from_int(x));
             const ny = if (y == 0) null else world.get_entity_name(EntityId.from_int(y));
@@ -403,30 +429,30 @@ pub const VM = struct {
         return false;
     }
 
-    /// Runs a row's body on the entity it names first (D-186): as an interrupt of that
-    /// entity's routine when it has one, else as a fiber it owns. A body that reads the row
-    /// starts after its `bind_cue_args`, with the row's values above the routine's stack.
-    fn fire_each_row(self: *VM, rule: *const ReactiveRule, row: world_mod.VariableBindings) !void {
-        const owner = if (rule.owner_slot) |slot| EntityId.from_int(row.get(slot) orelse 0) else rule.target_entity;
+    fn build_each_args(rule: *const ReactiveRule, row: world_mod.VariableBindings) CueArguments {
         var found = CueArguments{ .pc = rule.handler_pc };
         for (row.values, &found.bindings) |v, *out| out.* = v orelse 0;
+        return found;
+    }
+
+    fn interrupt_each_fiber(self: *VM, rule: *const ReactiveRule, row: world_mod.VariableBindings, f: *Fiber) !void {
+        const found = build_each_args(rule, row);
         const code = self.chunk.code.items;
         const binds = rule.handler_pc < code.len and code[rule.handler_pc] == @intFromEnum(Opcode.bind_cue_args);
-        for (self.fibers.items) |*f| {
-            if (f.owner != owner or f.state == .halted) continue;
-            if (rule.priority < f.active_priority and f.interrupt_stack.items.len > 0) return;
-            try f.interrupt_stack.append(.{ .pc = f.pc, .sp = f.sp, .state = f.state, .priority = f.active_priority, .local_base = f.local_base });
-            f.pc = if (binds) rule.handler_pc + 1 else rule.handler_pc;
-            f.state = .{ .ready = {} };
-            f.active_priority = rule.priority;
-            if (binds) {
-                f.local_base = f.sp;
-                for (found.args) |v| try f.push(v);
-                for (found.bindings) |v| try f.push(v);
-            }
-            return;
+        try f.interrupt_stack.append(.{ .pc = f.pc, .sp = f.sp, .state = f.state, .priority = f.active_priority, .local_base = f.local_base });
+        f.pc = if (binds) rule.handler_pc + 1 else rule.handler_pc;
+        f.state = .{ .ready = {} };
+        f.active_priority = rule.priority;
+        if (binds) {
+            f.local_base = f.sp;
+            for (found.args) |v| try f.push(v);
+            for (found.bindings) |v| try f.push(v);
         }
-        _ = try self.spawn_cue_handler(owner, found);
+    }
+
+    fn spawn_each_row(self: *VM, rule: *const ReactiveRule, row: world_mod.VariableBindings) !void {
+        const owner = if (rule.owner_slot) |slot| EntityId.from_int(row.get(slot) orelse 0) else rule.target_entity;
+        _ = try self.spawn_cue_handler(owner, build_each_args(rule, row));
     }
 
     /// Preempts an entity's active fiber with default priority (0).
@@ -612,6 +638,13 @@ pub const VM = struct {
 
     /// Fires an adventure cue for an actor with up to two optional target entities (P11-02, D-009, D-013).
     /// Spawns a fiber executing the matching cue handler and records an EmittedCue for display peripherals.
+    fn cue_args_from_match(m: anytype) CueArguments {
+        var a = CueArguments{ .pc = m.pc };
+        for (m.args, 0..) |arg, i| a.args[i] = arg.to_int();
+        for (m.bindings.values, 0..) |v, i| a.bindings[i] = v orelse 0;
+        return a;
+    }
+
     pub fn fire_cue(
         self: *VM,
         compiled: anytype,
@@ -625,13 +658,10 @@ pub const VM = struct {
         // its mind after a restore (D-072).
         // A program that reports what the handler reads binds it (D-161); a test double that
         // only names the handler runs bodies that read nothing.
-        const found: CueArguments = if (@hasDecl(@TypeOf(compiled.*), "select_cue_match")) blk: {
-            const m = compiled.select_cue_match(self.world, cue_name, actor, target_a, target_b) orelse return null;
-            var a = CueArguments{ .pc = m.pc };
-            for (m.args, 0..) |arg, i| a.args[i] = arg.to_int();
-            for (m.bindings.values, 0..) |v, i| a.bindings[i] = v orelse 0;
-            break :blk a;
-        } else .{ .pc = compiled.select_cue_handler(self.world, cue_name, actor, target_a, target_b) orelse return null };
+        const found: CueArguments = if (@hasDecl(@TypeOf(compiled.*), "select_cue_match"))
+            cue_args_from_match(compiled.select_cue_match(self.world, cue_name, actor, target_a, target_b) orelse return null)
+        else
+            .{ .pc = compiled.select_cue_handler(self.world, cue_name, actor, target_a, target_b) orelse return null };
 
         // Record cue emission for peripheral visual/audio bridge
         var emitted = EmittedCue{
@@ -679,16 +709,12 @@ pub const VM = struct {
         draft: EntityId,
         target: EntityId,
     ) !?FiberId {
-        const handler_pc = if (compiled.find_draft(draft) == null)
+        const match = if (compiled.find_draft(draft) == null)
             null
         else
-            compiled.find_weave_handler(
-                self.world.get_entity_name(caster) orelse "",
-                self.world.get_entity_name(draft) orelse "",
-                self.world.get_entity_name(target) orelse "",
-            );
+            compiled.select_weave_match(self.world, caster, draft, target);
 
-        const cue_name = if (handler_pc != null) draft_mod.WEAVE_CUE else draft_mod.WEAVE_FIZZLED_CUE;
+        const cue_name = if (match != null) draft_mod.WEAVE_CUE else draft_mod.WEAVE_FIZZLED_CUE;
         var emitted = EmittedCue{
             .cue_id = @intCast((try self.world.intern_entity(cue_name)).to_int() & 0xFFFF),
             .args = @as([4]u32, @splat(0)),
@@ -699,8 +725,8 @@ pub const VM = struct {
         emitted.args[2] = target.to_int();
         try self.emitted_cues.append(emitted);
 
-        const pc = handler_pc orelse return null;
-        return try self.spawn_cue_handler(caster, .{ .pc = pc, .args = .{ caster.to_int(), draft.to_int(), target.to_int() } });
+        const found = match orelse return null;
+        return try self.spawn_cue_handler(caster, cue_args_from_match(found));
     }
 
     /// Resolves four played notes to a draft and weaves it (P22-01, D-029). Reversed playback
@@ -1282,6 +1308,7 @@ pub const VM = struct {
                     f.pc += 1;
                     const sides = code[f.pc];
                     f.pc += 1;
+                    if (count_val > 0 and sides == 0) return error.InvalidOpcode;
 
                     var total: u32 = 0;
                     for (0..count_val) |_| {
@@ -2486,4 +2513,127 @@ test "P44-02: a wait-until aggregate counts facts and sums their third slots" {
     // A bound subject that matches nothing counts zero, so any threshold above zero fails.
     const ghost = try world.intern_entity("Ghost");
     try testing.expect(!try aggregate_holds(testing.allocator, &world, ghost, clue, ghost, false, 1));
+}
+
+test "P48-24: evaluate_each does not double-free rule.rows when fire_each_row fails" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const other = try world.intern_entity("Other");
+    const ada = try world.intern_entity("Ada");
+    const sword = try world.intern_entity("Sword");
+    const holds = try world.intern_relation("Holds", .set);
+    try world.remember(ada, holds, sword.to_int(), 0);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    _ = try chunk.emit_op(.halt);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+
+    const clauses = [_]world_mod.PatternClause{.{
+        .relation = holds,
+        .subject = .{ .variable = 0 },
+        .object = .{ .constant = sword.to_int() },
+    }};
+    _ = try vm.add_reactive_rule_edge(ada, &clauses, 50, 0, .rising);
+    vm.reactive_rules.items[0].each = true;
+    vm.reactive_rules.items[0].owner_slot = 0;
+
+    // Fill all fiber slots with active fibers so fire_each_row fails with FiberLimitExceeded.
+    for (0..MAX_FIBERS) |_| _ = try vm.spawn_routine(other, 0);
+    try testing.expectError(error.FiberLimitExceeded, vm.evaluate_reactive_rules());
+    try testing.expectEqual(@as(usize, 1), vm.reactive_rules.items[0].rows.items.len);
+}
+
+test "P48-25: when each runs interrupted rows on one fiber in ascending name order and falls back past higher-priority interrupts" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    const guard = try world.intern_entity("Guard");
+    const ada = try world.intern_entity("Ada");
+    const bram = try world.intern_entity("Bram");
+    const sword = try world.intern_entity("Sword");
+    const holds = try world.intern_relation("Holds", .set);
+    const last = try world.intern_relation("Last", .property);
+    // Remember Bram before Ada so raw arena order differs from name order.
+    try world.remember(bram, holds, sword.to_int(), 0);
+    try world.remember(ada, holds, sword.to_int(), 0);
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    // Main routine @0: halt.
+    const main_pc = chunk.count();
+    _ = try chunk.emit_op(.halt);
+    // Row handler: bind_cue_args, remember Last(Sword, var0), resume_routine.
+    const handler_pc = chunk.count();
+    _ = try chunk.emit_op(.bind_cue_args);
+    try chunk.emit_push_entity(sword);
+    try chunk.emit_push_relation(last);
+    try chunk.emit_push_local(3); // CUE_BINDING_BASE + 0
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.resume_routine);
+
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    _ = try vm.spawn_routine(guard, main_pc);
+
+    const clauses = [_]world_mod.PatternClause{.{
+        .relation = holds,
+        .subject = .{ .variable = 0 },
+        .object = .{ .constant = sword.to_int() },
+    }};
+    _ = try vm.add_reactive_rule_edge(guard, &clauses, 50, handler_pc, .rising);
+    vm.reactive_rules.items[0].each = true;
+    // Ada runs first on tick 1; Bram resumes from the interrupt stack and runs second on tick 2.
+    _ = try vm.step_tick();
+    try testing.expectEqual(@as(?u32, ada.to_int()), world.get_property(sword, last));
+    _ = try vm.step_tick();
+    try testing.expectEqual(@as(?u32, bram.to_int()), world.get_property(sword, last));
+
+    // Part 2: when the target fiber is inside a higher-priority interrupt (priority 80 > rule 50),
+    // the row must still run via a spawned fallback fiber instead of being dropped.
+    const alert = try world.intern_entity("Alert");
+    const saw = try world.intern_relation("Saw", .set);
+    try world.remember(ada, saw, sword.to_int(), 0);
+    var vm2 = VM.init(testing.allocator, &world, &chunk);
+    defer vm2.deinit();
+    const fid = try vm2.spawn_routine(ada, main_pc);
+    _ = fid;
+    // Simulate active priority-80 interrupt on Ada's fiber (waiting in main_pc).
+    try vm2.fibers.items[0].interrupt_stack.append(.{
+        .pc = main_pc,
+        .sp = 0,
+        .state = .{ .ready = {} },
+        .priority = 0,
+        .local_base = 0,
+    });
+    vm2.fibers.items[0].active_priority = 80;
+    vm2.fibers.items[0].pc = handler_pc + 1;
+    // Give Saw rule lower priority 50 targeting Ada (`owner_slot = 0`).
+    const saw_clauses = [_]world_mod.PatternClause{.{
+        .relation = saw,
+        .subject = .{ .variable = 0 },
+        .object = .{ .constant = sword.to_int() },
+    }};
+    const saw_done_pc = chunk.count();
+    try chunk.emit_push_entity(alert);
+    try chunk.emit_push_relation(last);
+    try chunk.emit_push_entity(ada);
+    try chunk.emit_remember(0);
+    _ = try chunk.emit_op(.resume_routine);
+    _ = try vm2.add_reactive_rule_edge(ada, &saw_clauses, 50, saw_done_pc, .rising);
+    vm2.reactive_rules.items[0].each = true;
+    vm2.reactive_rules.items[0].owner_slot = 0;
+
+    _ = world.forget(sword, last, bram.to_int());
+    // Put fiber 0 at wait_ticks(2) so it doesn't finish the priority-80 interrupt immediately.
+    const wait_pc = chunk.count();
+    try chunk.emit_wait_ticks(2);
+    _ = try chunk.emit_op(.resume_routine);
+    vm2.fibers.items[0].pc = wait_pc;
+    _ = try vm2.step_tick();
+    // Fallback fiber must have spawned and asserted Last(Alert, Ada).
+    try testing.expectEqual(@as(?u32, ada.to_int()), world.get_property(alert, last));
 }

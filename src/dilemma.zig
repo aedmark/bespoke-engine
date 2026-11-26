@@ -514,9 +514,15 @@ fn add_drift(world: *World, dilemma: Dilemma, drift: Drift) !void {
     while (acc >= per_step or acc <= -per_step) {
         const dir: i32 = if (acc > 0) 1 else -1;
         acc -= dir * per_step;
-        if (spent >= dilemma.drift_cap) break;
+        if (spent >= dilemma.drift_cap) {
+            acc = 0;
+            break;
+        }
         // A step past the range would be clamped away (D-144); it spends nothing.
-        if ((dir > 0 and value >= bound.max) or (dir < 0 and value <= bound.min)) continue;
+        if ((dir > 0 and value >= bound.max) or (dir < 0 and value <= bound.min)) {
+            acc = 0;
+            break;
+        }
         value += dir;
         spent += 1;
     }
@@ -892,4 +898,24 @@ test "P48-13: a dilemma's own tiers pick its tier, and an axis's step and the di
     rig.decls[0].dilemma.drift_cap = 3;
     lines[0].step = 0;
     try testing.expectError(Error.InvalidDilemma, validate_all(&rig.world, &rig.decls, &.{}, &.{}));
+}
+
+test "P48-25: excess drift points past drift_cap discard leftover points instead of leaving step-1" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+    var lines: [2]Drift = undefined;
+    // Two 9-point pulses at step 5, cap 2 leave acc = 4 after the first, then spend step 2
+    // with 3 excess points (13 -> 8 -> 3) and must discard them cleanly to acc == 0.
+    try with_drifts(&rig, &lines, 9, -5);
+    try rig.set_values(4, 0);
+    _ = try rig.weigh();
+    try pulse(&rig, "Repaid", rig.thief);
+    try testing.expectEqual(@as(i32, 1), mercy_of(&rig));
+    try testing.expectEqual(@as(i32, 4), drift_points(&rig.world, rig.actor, lines[0].accumulator));
+    try pulse(&rig, "Repaid", rig.thief);
+    try testing.expectEqual(@as(i32, 2), mercy_of(&rig));
+    try testing.expectEqual(@as(u32, 2), rig.world.get_property(rig.decls[0].dilemma.entity, lines[0].spent).?);
+    try testing.expectEqual(@as(i32, 0), drift_points(&rig.world, rig.actor, lines[0].accumulator));
 }

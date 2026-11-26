@@ -56,7 +56,7 @@ pub const Error = error{ IncludeFailed, OutOfMemory };
 /// browser, a script with an include fails like one that reads a PNG. Everything is allocated
 /// in `arena`. A script with no include comes back as itself with one segment.
 pub fn expand(arena: std.mem.Allocator, source: []const u8, files: ?FileSource, failure: *Failure) Error!Expanded {
-    var out = Builder{ .arena = arena, .files = files, .failure = failure };
+    var out = Builder{ .arena = arena, .files = files, .failure = failure, .raw_bytes = source.len };
     try out.add_file(source, "");
     // A main script without a final newline keeps it that way, so an error at its end is
     // reported where it always was.
@@ -78,6 +78,8 @@ const Builder = struct {
     seen: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Expanded lines written so far.
     lines: u32 = 0,
+    /// Cumulative raw source bytes loaded so far (main script plus included files).
+    raw_bytes: usize = 0,
 
     fn fail(self: *Builder, file: []const u8, line: u32, column: u32, comptime fmt: []const u8, args: anytype) Error {
         self.failure.* = .{
@@ -124,7 +126,7 @@ const Builder = struct {
             // The include line itself becomes a blank line, so the lines around it keep their
             // numbers in the map and a block before it ends here.
             try self.emit("", file, line_no);
-            const key = normalize(path);
+            const key = try normalize(self.arena, path);
             const already = for (self.seen.items) |prior| {
                 if (std.mem.eql(u8, prior, key)) break true;
             } else false;
@@ -136,6 +138,10 @@ const Builder = struct {
                 error.OutOfMemory => Error.OutOfMemory,
                 else => self.fail(file, line_no, 9, "include cannot read \"{s}\" ({s})", .{ path, @errorName(err) }),
             };
+            if (bytes.len > MAX_EXPANDED or self.raw_bytes > MAX_EXPANDED - bytes.len) {
+                return self.fail(file, line_no, 9, "the script and its includes pass the 16 MiB source limit", .{});
+            }
+            self.raw_bytes += bytes.len;
             try self.add_file(bytes, key);
         }
     }
@@ -161,11 +167,17 @@ fn parse_path(trimmed: []const u8) ?[]const u8 {
     return path;
 }
 
-/// `./acts/one.bespoke` and `acts/one.bespoke` are one file.
-fn normalize(path: []const u8) []const u8 {
-    var p = path;
-    while (std.mem.startsWith(u8, p, "./")) p = p[2..];
-    return p;
+/// `./acts//./one.bespoke` and `acts/one.bespoke` are one file.
+fn normalize(allocator: std.mem.Allocator, path: []const u8) error{OutOfMemory}![]const u8 {
+    var out = std.ArrayListUnmanaged(u8).empty;
+    errdefer out.deinit(allocator);
+    var it = std.mem.splitScalar(u8, path, '/');
+    while (it.next()) |part| {
+        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
+        if (out.items.len > 0) try out.append(allocator, '/');
+        try out.appendSlice(allocator, part);
+    }
+    return out.toOwnedSlice(allocator);
 }
 
 const testing = std.testing;
@@ -181,7 +193,9 @@ const MemFiles = struct {
     fn read(context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
         const self: *MemFiles = @ptrCast(@alignCast(context));
         if (std.mem.indexOf(u8, path, "..") != null) return error.PathOutsideScriptFolder;
-        for (self.names, self.bodies) |n, b| if (std.mem.eql(u8, n, normalize(path))) return allocator.dupe(u8, b);
+        const norm = try normalize(allocator, path);
+        defer allocator.free(norm);
+        for (self.names, self.bodies) |n, b| if (std.mem.eql(u8, n, norm)) return allocator.dupe(u8, b);
         return error.FileNotFound;
     }
 };
@@ -236,4 +250,38 @@ test "P48-15: an include that is indented, unreadable, outside the folder, or br
     var failure = Failure{};
     const out = try expand(arena, "includes_nothing\n", null, &failure);
     try testing.expectEqualStrings("includes_nothing\n", out.text);
+}
+
+test "P48-24: include paths canonicalize dot segments and enforce raw-bytes limit" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // `./acts//./one.bespoke`, `acts/./one.bespoke`, and `acts/one.bespoke` resolve as one include.
+    var mem = MemFiles{
+        .names = &.{"acts/one.bespoke"},
+        .bodies = &.{"entity Guard\n"},
+    };
+    var failure = Failure{};
+    const main =
+        \\entity Hero
+        \\include "./acts//./one.bespoke"
+        \\include "acts/./one.bespoke"
+        \\include "acts/one.bespoke"
+        \\
+    ;
+    const out = try expand(arena, main, mem.source(), &failure);
+    try testing.expectEqualStrings("entity Hero\n\nentity Guard\n\n\n", out.text);
+
+    // A massive comment-only include is rejected by raw_bytes before expanding past 16 MiB.
+    const RawLimitFiles = struct {
+        fn read(_: *anyopaque, alloc: std.mem.Allocator, _: []const u8) anyerror![]const u8 {
+            return alloc.alloc(u8, MAX_EXPANDED + 1);
+        }
+    };
+    var dummy: u8 = 0;
+    const oversized_fs = FileSource{ .context = &dummy, .read = RawLimitFiles.read };
+    var big_failure = Failure{};
+    try testing.expectError(Error.IncludeFailed, expand(arena, "include \"huge.bespoke\"\n", oversized_fs, &big_failure));
+    try testing.expectEqualStrings("the script and its includes pass the 16 MiB source limit", big_failure.message);
 }

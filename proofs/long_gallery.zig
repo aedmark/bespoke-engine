@@ -47,7 +47,7 @@ pub const LONG_GALLERY_SCRIPT =
 /// The theme's binding for V, which toggles the watched view.
 const WATCH_ACTION: u16 = 1;
 
-const Ids = struct {
+pub const Ids = struct {
     gallery: bespoke.EntityId,
     studio: bespoke.EntityId,
     audra: bespoke.EntityId,

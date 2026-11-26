@@ -220,8 +220,9 @@ fn expand(raw: []const u8, h: Header, plte: []const u8, trns: []const u8, out: [
             switch (h.color) {
                 .indexed => {
                     const i = sample(row, h.depth, x);
-                    if (@as(usize, i) * 3 + 3 > plte.len) return Error.PngCorrupt;
-                    px.* = .{ plte[i * 3], plte[i * 3 + 1], plte[i * 3 + 2], if (i < trns.len) trns[i] else 255 };
+                    const idx: usize = @as(usize, i) * 3;
+                    if (idx + 3 > plte.len) return Error.PngCorrupt;
+                    px.* = .{ plte[idx], plte[idx + 1], plte[idx + 2], if (i < trns.len) trns[i] else 255 };
                 },
                 .grey => {
                     const s = sample(row, h.depth, x);
@@ -329,4 +330,46 @@ test "P46-04: the decoder names what it refuses" {
     big[25] = 6;
     std.mem.writeInt(u32, big[29..33], std.hash.Crc32.hash(big[12..29]), .big);
     try std.testing.expectError(Error.PngTooLarge, decode(allocator, &big));
+}
+
+fn append_test_chunk(out: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, tag: *const [4]u8, data: []const u8) !void {
+    var len_be: [4]u8 = undefined;
+    std.mem.writeInt(u32, &len_be, @intCast(data.len), .big);
+    try out.appendSlice(allocator, &len_be);
+    const start = out.items.len;
+    try out.appendSlice(allocator, tag);
+    try out.appendSlice(allocator, data);
+    var crc_be: [4]u8 = undefined;
+    std.mem.writeInt(u32, &crc_be, std.hash.Crc32.hash(out.items[start..]), .big);
+    try out.appendSlice(allocator, &crc_be);
+}
+
+test "P48-24: an 8-bit indexed PNG with palette index >= 85 decodes without u8 overflow" {
+    const allocator = std.testing.allocator;
+    var bytes = std.ArrayListUnmanaged(u8).empty;
+    defer bytes.deinit(allocator);
+    try bytes.appendSlice(allocator, &SIGNATURE);
+
+    // 1x1, 8-bit indexed (color type 3)
+    var ihdr: [13]u8 = @splat(0);
+    std.mem.writeInt(u32, ihdr[0..4], 1, .big);
+    std.mem.writeInt(u32, ihdr[4..8], 1, .big);
+    ihdr[8] = 8;
+    ihdr[9] = 3;
+    try append_test_chunk(&bytes, allocator, "IHDR", &ihdr);
+
+    var plte: [256 * 3]u8 = @splat(0);
+    plte[200 * 3] = 12;
+    plte[200 * 3 + 1] = 34;
+    plte[200 * 3 + 2] = 56;
+    try append_test_chunk(&bytes, allocator, "PLTE", &plte);
+
+    // Uncompressed zlib block for filter 0 + pixel 200 (0xc8), adler32 = 0x00ca00c9
+    const idat = [_]u8{ 0x78, 0x01, 0x01, 0x02, 0x00, 0xfd, 0xff, 0x00, 200, 0x00, 0xca, 0x00, 0xc9 };
+    try append_test_chunk(&bytes, allocator, "IDAT", &idat);
+    try append_test_chunk(&bytes, allocator, "IEND", &.{});
+
+    var rgba = try decode(allocator, bytes.items);
+    defer rgba.deinit(allocator);
+    try std.testing.expectEqualSlices(u8, &.{ 12, 34, 56, 255 }, rgba.pixels[0..4]);
 }
