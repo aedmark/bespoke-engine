@@ -70,7 +70,8 @@ Read it as: the Guard patrols; if the Bard charms him, or the Cat gets the Chees
 | VM & fibers | Cooperative routines, `wait` / `wait until`, priority interrupts, edge-triggered `when` rules |
 | Language | Hand-written lexer, parser, and code generator; `bespoke check` diagnostics with line and column |
 | Spatial | Waypoint graphs, A* pathfinding, scene partitioning, hotspots, portals |
-| Narrative | Dialogue choices pruned by facts, NPC beliefs, item combining and transfer, musical drafts on a distaff |
+| Narrative | Dialogue choices pruned by facts, NPC beliefs, values, red lines, dilemmas and persuasion, derived hints, private-hand decisions, spellbooks, item combining and transfer, musical drafts on a distaff |
+| Art & Formats | True-colour QOI pixel art from PNGs or inline scripts, `look` appearances, clickable `area`s and attached `part`s, `include` files, `clock: turns`, `BSP1` format-1 packages, and `BSV1` version-1 saves |
 | Emergent society | Autonomous needs-driven agents, witnesses, rumor spread, and justice cascades over the fact store, configured per game: any roster, needs, roles, and places (`src/society.zig`) |
 | Time | Rewind and timeline scrubbing; temporary branch worlds on a countdown (`TemporalHypervisor`) |
 | Peripherals | SDL2 window with verb bar and HUD, procedural chiptune audio, CRC32-checked `.sav` slots, `wasm32-freestanding` target |
@@ -117,7 +118,7 @@ The repository has three layers:
 
 ## Proofs of Concept
 
-Each proof is a small playable scene that shows an engine feature working end to end. It runs headless (no window) and checks its own outcome, and most open in the SDL2 window for play. Fourteen of the sixteen also rewind and check that the world matches; the Saltmarket and The Word Foundry do not yet. Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
+Each proof is a small playable scene that shows an engine feature working end to end. All eighteen run headless and check their own outcome with exact rewind/replay where applicable; sixteen open in the SDL2 window on desktop (The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser), and all eighteen have standalone browser pages in [`site/`](site/index.html). Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
 
 ```bash
 zig build run-proof -- --bell-tower       # interactive
@@ -150,10 +151,10 @@ zig build test-proofs                     # every proof's tests
 
 ## Known Limitations
 
-- A `when` rule's body cannot use its trigger's variables yet (D-161); cue handler bodies can.
+- A one-shot `when` rule's body cannot use its trigger's variables (`D-161`); `when each` (`D-186`) and `on cue` handler bodies can.
 - A society has one enforcer.
-- Every proof with a window built before P44-06 has been played by hand on Linux (2026-11-15); The Long Gallery has a window that has not been looked at in this environment. The Word Foundry and The Cinder Table are headless only. A project made by `bespoke init` builds, tests, and runs on Linux and macOS in its own GitHub CI (2026-11-21); Windows is not a release target until a Windows contributor maintains it (D-143). The 0.3.0 [release hand-test](docs/runbooks/release-hand-test.md) passed every section the agents run; the published site is the maintainer's own check.
-- The showcase homepage features The Harbour, and the fourteen windowed proofs other than The Long Gallery have their own pages; The Long Gallery has none yet. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (D-047, D-122). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
+- All sixteen windowed proofs and both headless proofs passed the 1.0.0 [release hand-test](docs/runbooks/release-hand-test.md) on Linux (2026-11-26, `P48-05`); The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser. A project made by `bespoke init` builds, tests, and runs on Linux and macOS in its own GitHub CI; Windows is not a release target until a Windows contributor maintains it (`D-143`). The uploaded showcase site is checked by hand by the maintainer (`D-074`).
+- The showcase homepage features The Harbour, and all eighteen proofs have their own standalone pages in `site/`. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (`D-047`, `D-122`). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
 ---
 
@@ -177,6 +178,7 @@ The [documentation map](docs/README.md) says which document owns which fact. The
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution workflow for human and agent contributors |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | User-visible change notes |
 | [`docs/manual.html`](docs/manual.html) | Standalone interactive 3x What/How/Why manual and developer guide |
+| [`docs/state.html`](docs/state.html) | What the engine can do today, for newcomers and for development teams |
 | [`site/index.html`](site/index.html) | Public showcase website; its gallery links one standalone page per proof |
 | [`docs/whitepaper.md`](docs/whitepaper.md) | The original vision statement (2026-11-04), kept as written |
 
