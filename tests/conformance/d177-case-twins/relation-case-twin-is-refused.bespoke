@@ -1,0 +1,13 @@
+# A relation name differing only in letter case from an existing name is refused.
+# pins: D-177
+# expect error: CaseTwinName 13:12
+
+scene: Yard
+cast: Scout
+props: Lamp
+marks: Gate
+
+relation Lit(thing)
+
+routine Light(Scout):
+  remember LIT(Lamp)

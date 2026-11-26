@@ -1,0 +1,13 @@
+# A routine name differing only in letter case from an existing name is refused.
+# pins: D-177
+# expect error: CaseTwinName 12:9
+
+scene: Yard
+cast: Scout
+marks: Gate
+
+routine Patrol(Scout):
+  wait 1 ticks
+
+routine PATROL(Scout):
+  wait 1 ticks

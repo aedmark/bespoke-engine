@@ -658,7 +658,7 @@ pub fn inventory_layout(screen_w: i32, inventory: []const RenderInventoryItem, o
     var x: i32 = INVENTORY_X;
     for (inventory[0..n], 0..) |item, i| {
         const full = words(item.get_name());
-        const label = if (scale == 1 and full.len > max_chars) full[0..max_chars] else full;
+        const label = if (scale == 1 and font.char_count(full) > max_chars) font.prefix_chars(full, max_chars) else full;
         const w = font.text_width(label, scale) + pad;
         out[i] = .{ .x = x, .w = w, .label = label, .scale = scale };
         x += w + gap;
@@ -1093,16 +1093,16 @@ pub fn footer_split(text: []const u8) ?usize {
     return best;
 }
 
-/// `text` cut to fit `max_w` pixels at `scale`, ending in "..." (D-091).
+/// `text` cut to fit `max_w` pixels at `scale`, ending in "..." (D-091, D-179).
 pub fn fit_with_ellipsis(text: []const u8, max_w: i32, scale: i32, buf: []u8) []const u8 {
     const per = font.char_width(scale);
     const room: usize = @intCast(@max(0, @divTrunc(max_w, per)));
-    if (text.len <= room) return text;
+    if (font.char_count(text) <= room) return text;
     if (room <= 3) return "..."[0..room];
-    const keep = @min(room - 3, buf.len - 3);
-    @memcpy(buf[0..keep], text[0..keep]);
-    @memcpy(buf[keep .. keep + 3], "...");
-    return buf[0 .. keep + 3];
+    const head = font.prefix_chars_fit(text, room - 3, buf.len - 3);
+    @memcpy(buf[0..head.len], head);
+    @memcpy(buf[head.len .. head.len + 3], "...");
+    return buf[0 .. head.len + 3];
 }
 
 
@@ -1740,11 +1740,12 @@ pub const DisplayWindow = struct {
     /// to the newest is not repeated, so a host may set the same banner every frame.
     pub fn set_cue_banner(self: *DisplayWindow, text: []const u8, duration_frames: u32) void {
         _ = duration_frames;
-        const len = @min(text.len, self.cue_banner_text.len);
-        @memcpy(self.cue_banner_text[0..len], text[0..len]);
+        const slice = font.truncate_utf8(text, self.cue_banner_text.len);
+        const len = slice.len;
+        @memcpy(self.cue_banner_text[0..len], slice);
         self.cue_banner_len = len;
         if (len == 0) return;
-        if (self.log_count > 0 and std.mem.eql(u8, self.log_line(self.log_count - 1), text[0..len])) return;
+        if (self.log_count > 0 and std.mem.eql(u8, self.log_line(self.log_count - 1), slice)) return;
         if (self.log_count == LOG_LINES) {
             for (1..LOG_LINES) |i| {
                 self.log_text[i - 1] = self.log_text[i];
@@ -1752,7 +1753,7 @@ pub const DisplayWindow = struct {
             }
             self.log_count -= 1;
         }
-        @memcpy(self.log_text[self.log_count][0..len], text[0..len]);
+        @memcpy(self.log_text[self.log_count][0..len], slice);
         self.log_len[self.log_count] = len;
         self.log_count += 1;
     }
@@ -1906,18 +1907,21 @@ pub const DisplayWindow = struct {
 
         // The panel shows a display name: `HarbourWarden` reads `Harbour Warden` (D-077).
         const shown = dialogue_panel.display_name(speaker_name, &sb.speaker_name);
-        const nlen = @min(shown.len, sb.speaker_name.len);
-        if (@intFromPtr(shown.ptr) != @intFromPtr(&sb.speaker_name)) @memcpy(sb.speaker_name[0..nlen], shown[0..nlen]);
+        const shown_fit = font.truncate_utf8(shown, sb.speaker_name.len);
+        const nlen = shown_fit.len;
+        if (@intFromPtr(shown.ptr) != @intFromPtr(&sb.speaker_name)) @memcpy(sb.speaker_name[0..nlen], shown_fit);
         sb.speaker_name_len = @intCast(nlen);
 
-        const tlen = @min(text.len, sb.text.len);
-        @memcpy(sb.text[0..tlen], text[0..tlen]);
+        const text_fit = font.truncate_utf8(text, sb.text.len);
+        const tlen = text_fit.len;
+        @memcpy(sb.text[0..tlen], text_fit);
         sb.text_len = @intCast(tlen);
 
         for (choices, 0..) |c_text, i| {
             if (i >= 9) break;
-            const clen = @min(c_text.len, sb.choices[i].len);
-            @memcpy(sb.choices[i][0..clen], c_text[0..clen]);
+            const c_fit = font.truncate_utf8(c_text, sb.choices[i].len);
+            const clen = c_fit.len;
+            @memcpy(sb.choices[i][0..clen], c_fit);
             sb.choice_lens[i] = @intCast(clen);
             sb.choice_count += 1;
         }
@@ -5398,6 +5402,32 @@ test "D-091: bar text fits its bar: footers wrap at a separator, long text ends 
     const cut = fit_with_ellipsis("TIMELINE [Tick 12/34] (Click or [< / >] to Scrub)", 60, 1, &buf);
     try testing.expectEqualStrings("TIMELIN...", cut);
     try testing.expect(font.text_width(cut, 1) <= 60);
+}
+
+test "P48-21: ellipsis fitting and inventory layout slice by characters and preserve valid UTF-8" {
+    const testing = std.testing;
+    var buf: [64]u8 = undefined;
+    const epee = "\xc3\x89p\xc3\xa9e d'or"; // 9 chars, 11 bytes
+    try testing.expectEqualStrings(epee, fit_with_ellipsis(epee, 9 * font.char_width(1), 1, &buf));
+    const cafe = "Caf\xc3\xa9 de l'\xc5\x92il"; // 14 chars, 17 bytes
+    const cut = fit_with_ellipsis(cafe, 7 * font.char_width(1), 1, &buf);
+    try testing.expect(std.unicode.utf8ValidateSlice(cut));
+    try testing.expectEqualStrings("Caf\xc3\xa9...", cut);
+    try testing.expect(font.text_width(cut, 1) <= 7 * font.char_width(1));
+
+    var items: [8]RenderInventoryItem = undefined;
+    var slots: [8]InventorySlot = undefined;
+    const long_accented = "\xc3\x89p\xc3\xa9e c\xc3\xa9l\xc3\xa8ste dor\xc3\xa9e"; // 19 chars, 23 bytes
+    for (0..8) |i| {
+        items[i] = std.mem.zeroes(RenderInventoryItem);
+        @memcpy(items[i].name[0..long_accented.len], long_accented);
+        items[i].name_len = long_accented.len;
+    }
+    const laid = inventory_layout(640, &items, &slots);
+    try testing.expectEqual(@as(usize, 8), laid.len);
+    for (laid) |slot| {
+        try testing.expect(std.unicode.utf8ValidateSlice(slot.label));
+    }
 }
 
 test "D-092: an action waits until the player walks to its target, and is never lost" {

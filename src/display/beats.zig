@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const dialogue_panel = @import("dialogue_panel.zig");
+const font = @import("font.zig");
 
 /// Messages one queue holds. A host queues a few per event; more are dropped, not failed.
 pub const CAPACITY: usize = 8;
@@ -45,11 +46,12 @@ pub const Beats = struct {
         const slot = &self.items[(self.head + self.count) % CAPACITY];
         slot.* = .{};
         var name_buf: [SPEAKER_LEN]u8 = undefined;
-        const shown = dialogue_panel.display_name(speaker, &name_buf);
-        slot.speaker_len = @min(shown.len, SPEAKER_LEN);
-        @memcpy(slot.speaker_buf[0..slot.speaker_len], shown[0..slot.speaker_len]);
-        slot.text_len = @min(text.len, TEXT_LEN);
-        @memcpy(slot.text_buf[0..slot.text_len], text[0..slot.text_len]);
+        const shown = font.truncate_utf8(dialogue_panel.display_name(speaker, &name_buf), SPEAKER_LEN);
+        slot.speaker_len = shown.len;
+        @memcpy(slot.speaker_buf[0..slot.speaker_len], shown);
+        const text_fit = font.truncate_utf8(text, TEXT_LEN);
+        slot.text_len = text_fit.len;
+        @memcpy(slot.text_buf[0..slot.text_len], text_fit);
         self.count += 1;
     }
 

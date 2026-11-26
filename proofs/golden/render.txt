@@ -342,3 +342,5 @@ lamplighter/Market Steps +steps_lamp_lit: ec670b3d6ed8314a
 clearance/lamplighter/Market Steps +steps_lamp_lit: 76
 lamplighter/Market Steps +jackdaw_nesting: 75a8c34ca8e8dc0e
 clearance/lamplighter/Market Steps +jackdaw_nesting: 76
+accented_names/BistroRoom: 58b7b1151d99c3c5
+clearance/accented_names/BistroRoom: 95

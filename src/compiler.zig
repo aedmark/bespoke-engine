@@ -152,8 +152,9 @@ pub const CheckResult = struct {
     fn with_hint(self: CheckResult, hint: ?[]const u8) CheckResult {
         var res = self;
         if (hint) |name| {
-            res.hint_len = name.len;
-            @memcpy(res.hint_buf[0..name.len], name);
+            const len = @min(name.len, res.hint_buf.len);
+            res.hint_len = len;
+            @memcpy(res.hint_buf[0..len], name[0..len]);
         }
         return res;
     }
@@ -320,6 +321,7 @@ fn failure_message(err: anyerror) []const u8 {
         error.VariableNotAllowedHere => "a cue parameter cannot be used in this statement",
         error.WhenBodyVariable => "a when rule's variables cannot be used in its body yet; name the entity",
         error.LowercaseName => "names of things start with a capital letter",
+        error.CaseTwinName => "this name differs from an existing name only in letter case; names are case-sensitive",
         error.UnknownLook => "this names a look the script does not declare with 'look'",
         error.NameForUnknownThing => "this gives a name to something the script never mentions",
         error.MixedRelationObject => "this relation's object is an entity in one place and a number in another; each relation holds one kind",
@@ -1625,4 +1627,90 @@ test "P48-24: parser bounds, 9-variable when rules, and failed compile cleanup l
     var world = try World.init(testing.allocator, 256 * 1024);
     defer world.deinit();
     try testing.expectError(error.UnknownLook, compile_source(testing.allocator, &world, null, late_fail));
+}
+
+test "P48-20: case-only twins of entity, relation, routine, and scene names are refused with the existing spelling" {
+    const testing = std.testing;
+
+    // 1. Entity case twin.
+    const entity_twin =
+        \\entity Lamp, LAMP
+        \\
+    ;
+    const entity_res = check_source(testing.allocator, entity_twin);
+    try testing.expect(!entity_res.is_valid);
+    try testing.expectEqualStrings("CaseTwinName", entity_res.kind());
+    try testing.expectEqualStrings("Lamp", entity_res.suggestion().?);
+
+    // 2. Relation case twin.
+    const rel_twin =
+        \\entity Lamp
+        \\relation Lit(x)
+        \\routine Light(Lamp):
+        \\  remember LIT(Lamp)
+        \\
+    ;
+    const rel_res = check_source(testing.allocator, rel_twin);
+    try testing.expect(!rel_res.is_valid);
+    try testing.expectEqualStrings("CaseTwinName", rel_res.kind());
+    try testing.expectEqualStrings("Lit", rel_res.suggestion().?);
+
+    // 3. Routine case twin.
+    const routine_twin =
+        \\entity Hero
+        \\routine Patrol(Hero):
+        \\  wait 1 ticks
+        \\routine PATROL(Hero):
+        \\  wait 1 ticks
+        \\
+    ;
+    const routine_res = check_source(testing.allocator, routine_twin);
+    try testing.expect(!routine_res.is_valid);
+    try testing.expectEqualStrings("CaseTwinName", routine_res.kind());
+    try testing.expectEqualStrings("Patrol", routine_res.suggestion().?);
+
+    // 4. Scene case twin.
+    const scene_twin =
+        \\scene Garden:
+        \\  marks: Gate
+        \\scene GARDEN:
+        \\  marks: Corner
+        \\
+    ;
+    const scene_res = check_source(testing.allocator, scene_twin);
+    try testing.expect(!scene_res.is_valid);
+    try testing.expectEqualStrings("CaseTwinName", scene_res.kind());
+    try testing.expectEqualStrings("Garden", scene_res.suggestion().?);
+
+    // 5. Lowercase variable parameters, same-spelling cross-namespace names, and spoken prose remain allowed.
+    const allowed =
+        \\entity Lamp, Scout, Mercy
+        \\axis Mercy between Cruelty and Weakness
+        \\relation Holds(who, item)
+        \\on cue Uses(Scout, lamp):
+        \\  say Scout: "LAMP"
+        \\  remember Holds(Scout, Lamp)
+        \\  choice "lamp":
+        \\    wait 1 ticks
+        \\
+    ;
+    const allowed_res = check_source(testing.allocator, allowed);
+    try testing.expect(allowed_res.is_valid);
+
+    // 6. Lowercase declarations and exact duplicate routines keep their existing errors.
+    const lower_res = check_source(testing.allocator, "entity Hero, hero\n");
+    try testing.expect(!lower_res.is_valid);
+    try testing.expectEqualStrings("LowercaseName", lower_res.kind());
+
+    const dup_routine =
+        \\entity Hero
+        \\routine Patrol(Hero):
+        \\  wait 1 ticks
+        \\routine Patrol(Hero):
+        \\  wait 1 ticks
+        \\
+    ;
+    const dup_res = check_source(testing.allocator, dup_routine);
+    try testing.expect(!dup_res.is_valid);
+    try testing.expectEqualStrings("DuplicateRoutineName", dup_res.kind());
 }

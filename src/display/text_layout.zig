@@ -99,9 +99,9 @@ pub const TextLabel = struct {
             .priority = priority,
             .visible = true,
         };
-        const len = @min(content.len, label.text.len);
-        @memcpy(label.text[0..len], content[0..len]);
-        label.text_len = len;
+        const slice = font.truncate_utf8(content, label.text.len);
+        @memcpy(label.text[0..slice.len], slice);
+        label.text_len = slice.len;
         label.recompute_dimensions();
         return label;
     }

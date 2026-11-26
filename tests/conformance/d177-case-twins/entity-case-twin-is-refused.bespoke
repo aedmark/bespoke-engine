@@ -1,0 +1,13 @@
+# An entity name differing only in letter case from an existing name is refused.
+# pins: D-177
+# expect error: CaseTwinName 10:14
+
+scene: Yard
+cast: Scout
+props: Lamp, Cask
+marks: Gate
+
+entity Hero, HERO
+
+routine Idle(Scout):
+  wait 20 ticks

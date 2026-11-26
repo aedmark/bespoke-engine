@@ -867,6 +867,98 @@ fn record_lamplighter(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void
     try record_program(rec, "lamplighter", lamplighter.SCRIPT, lamplighter.PACKAGE);
 }
 
+/// P48-21 (D-179): an accented scene, cast, prop, and mark name rendered with display names
+/// enabled, band-checked on both windows, verified by `TextProbe` character widths, and
+/// distinct from replacing accented characters with `?`.
+fn record_accented_names(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void {
+    rec.window.set_theme(null);
+    big.set_theme(null);
+    defer {
+        rec.window.set_theme(&art.theme);
+        big.set_theme(&art.theme);
+        bespoke.display.dialogue_panel.clear_display_names();
+    }
+
+    const accented_script =
+        "scene: BistroRoom\n" ++
+        "cast: Mireille\n" ++
+        "props: EpeeProp\n" ++
+        "marks: TerraceMark\n" ++
+        "name BistroRoom: \"Caf\xc3\xa9 de l'\xc5\x92il\"\n" ++
+        "name Mireille: \"H\xc3\xa9l\xc3\xa8ne\"\n" ++
+        "name EpeeProp: \"\xc3\x89p\xc3\xa9e d'or\"\n" ++
+        "name TerraceMark: \"Br\xc3\xbccke\"\n\n" ++
+        "routine Idle(Mireille):\n" ++
+        "  wait 1 ticks\n";
+
+    const allocator = rec.allocator;
+    var world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(allocator, &world, &spatial, accented_script);
+    defer compiled.deinit();
+    var vm = bespoke.VM.init(allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+
+    try vm.transition_to_scene(world.lookup_entity("BistroRoom").?);
+    const mark_id = spatial.graph.waypoints.items[0].id;
+    try spatial.register_entity(world.lookup_entity("Mireille").?, mark_id, 0);
+
+    bespoke.display.dialogue_panel.use_display_names(&world);
+    try rec.draw("accented_names/BistroRoom", &world, &spatial, &vm);
+
+    const font_mod = bespoke.display.font;
+    var saw_helene = false;
+    var saw_brucke = false;
+    for (rec.text.draws[0..rec.text.count]) |d| {
+        const txt = d.get_text();
+        if (std.mem.eql(u8, txt, "H\xc3\xa9l\xc3\xa8ne")) {
+            saw_helene = true;
+            try std.testing.expectEqual(font_mod.text_width("H\xc3\xa9l\xc3\xa8ne", 2), d.w);
+        } else if (std.mem.eql(u8, txt, "Br\xc3\xbccke")) {
+            saw_brucke = true;
+            try std.testing.expectEqual(font_mod.text_width("Br\xc3\xbccke", 1), d.w);
+        }
+    }
+    if (!saw_helene or !saw_brucke) return error.MissingAccentedLabel;
+    const accented_hash = rec.window.frame_hash() orelse return error.NoOffscreenFrame;
+
+    // Compare against replacing the accented letters with `?`: pixels must differ.
+    const qmark_script =
+        "scene: BistroRoom\n" ++
+        "cast: Mireille\n" ++
+        "props: EpeeProp\n" ++
+        "marks: TerraceMark\n" ++
+        "name BistroRoom: \"Caf? de l'?il\"\n" ++
+        "name Mireille: \"H?l?ne\"\n" ++
+        "name EpeeProp: \"?p?e d'or\"\n" ++
+        "name TerraceMark: \"Br?cke\"\n\n" ++
+        "routine Idle(Mireille):\n" ++
+        "  wait 1 ticks\n";
+    var q_world = try bespoke.World.init(allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer q_world.deinit();
+    var q_spatial = bespoke.SpatialSystem.init(allocator);
+    defer q_spatial.deinit();
+    var q_compiled = try bespoke.compile_source(allocator, &q_world, &q_spatial, qmark_script);
+    defer q_compiled.deinit();
+    var q_vm = bespoke.VM.init(allocator, &q_world, &q_compiled.chunk);
+    defer q_vm.deinit();
+    q_vm.spatial = &q_spatial;
+    try q_vm.transition_to_scene(q_world.lookup_entity("BistroRoom").?);
+    const q_mark_id = q_spatial.graph.waypoints.items[0].id;
+    try q_spatial.register_entity(q_world.lookup_entity("Mireille").?, q_mark_id, 0);
+
+    bespoke.display.dialogue_panel.use_display_names(&q_world);
+    var q_bridge = bespoke.DisplayBridge.init();
+    q_bridge.capture_frame(&q_world, &q_spatial, &q_vm);
+    q_bridge.swap();
+    rec.render_probed(q_bridge.get_frame());
+    const qmark_hash = rec.window.frame_hash() orelse return error.NoOffscreenFrame;
+    if (accented_hash == qmark_hash) return error.AccentedPixelsSameAsPlaceholder;
+}
+
 fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWindow, dump_against: ?[]const u8, variants: bool) !std.array_list.Managed(u8) {
     // The same frames are drawn and band-checked at 1920x1080 in a second window (P43-03); its
     // pixels are thrown away, so no golden grows.
@@ -881,6 +973,7 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     try record_inspector(&rec);
     try record_image_stage(&rec, &big);
     try record_lamplighter(&rec, &big);
+    try record_accented_names(&rec, &big);
     if (rec.crowded > 0) {
         std.debug.print("\n{d} recorded frame(s) leave fewer than {d} pixels above the message band (Q-017, P43-08)\n", .{ rec.crowded, CLEARANCE_FLOOR });
         return error.SceneTooCloseToBand;

@@ -541,6 +541,43 @@ fn cue_param_key(param: []const u8) []const u8 {
     return if (param[0] == '?' or param[0] == '_' or is_variable_name(param)) CUE_WILDCARD else param;
 }
 
+/// Tracks the canonical spelling of every entity, relation, routine, and scene name in a script
+/// folded by ASCII case, refusing any second spelling that differs only in letter case (P48-20,
+/// D-177). Borrowed canonical spellings point into the AST/World strings during `compile()`.
+const CaseTable = struct {
+    entries: std.StringHashMapUnmanaged([]const u8) = .empty,
+    keys: std.ArrayListUnmanaged([]u8) = .empty,
+
+    fn deinit(self: *CaseTable, allocator: std.mem.Allocator) void {
+        for (self.keys.items) |k| allocator.free(k);
+        self.keys.deinit(allocator);
+        self.entries.deinit(allocator);
+    }
+
+    /// Registers `name` on first sight. Returns the existing canonical spelling when a different
+    /// spelling with the same ASCII-folded form has already been registered; otherwise null.
+    fn check_or_add(self: *CaseTable, allocator: std.mem.Allocator, name: []const u8) !?[]const u8 {
+        if (name.len == 0) return null;
+        var stack: [128]u8 = undefined;
+        const heap_fold: ?[]u8 = if (name.len > stack.len) try allocator.alloc(u8, name.len) else null;
+        defer if (heap_fold) |h| allocator.free(h);
+        const folded = heap_fold orelse stack[0..name.len];
+        for (name, 0..) |ch, i| folded[i] = std.ascii.toLower(ch);
+
+        if (self.entries.get(folded)) |existing| {
+            if (!std.mem.eql(u8, existing, name)) return existing;
+            return null;
+        }
+        const key = try allocator.dupe(u8, folded);
+        var key_owned = true;
+        errdefer if (key_owned) allocator.free(key);
+        try self.keys.append(allocator, key);
+        key_owned = false;
+        try self.entries.put(allocator, key, name);
+        return null;
+    }
+};
+
 pub const Warning = struct {
     context: []const u8,
     message: []const u8,
@@ -569,6 +606,8 @@ pub const Codegen = struct {
     /// Backs `error_suggestion` when the help is built rather than found, such as the
     /// capitalised spelling of an unbound lowercase name (D-161).
     suggestion_buf: [64]u8 = undefined,
+    /// Tracks seen script names by ASCII lowercase to refuse case-only twins (P48-20, D-177).
+    seen_names: CaseTable = .{},
     /// While a cue handler body compiles: each name its body may read, with the stack index
     /// `bind_cue_args` puts it at (D-161). Null in every other body.
     locals: ?*const std.StringHashMap(u8) = null,
@@ -747,6 +786,8 @@ pub const Codegen = struct {
             mut_self.error_column = routine.column;
             return error.DuplicateRoutineName;
         }
+        try mut_self.check_case_twin_at(routine.name, routine.line, routine.column);
+        try mut_self.check_case_twin(routine.entity);
         const name = try mut_self.chunk.allocator.dupe(u8, routine.name);
         var name_owned = true;
         errdefer if (name_owned) mut_self.chunk.allocator.free(name);
@@ -766,53 +807,60 @@ pub const Codegen = struct {
         // The look names borrow AST text and are checked before compile returns, so the list
         // lives only for this call.
         defer mut_self.look_uses.deinit(mut_self.allocator);
+        defer mut_self.seen_names.deinit(mut_self.allocator);
         errdefer mut_self.deinit_owned();
         // 1. Intern declared entities, scenes, cast, props, marks
         for (ast.entities.items) |name| {
             try mut_self.check_thing_name(name);
             mut_self.error_context = name;
-            _ = try mut_self.world.intern_entity(name);
+            _ = try mut_self.intern_entity_checked(name);
         }
         for (ast.scenes.items) |name| {
             try mut_self.check_thing_name(name);
             mut_self.error_context = name;
-            _ = try mut_self.world.intern_entity(name);
+            _ = try mut_self.intern_entity_checked(name);
         }
         for (ast.cast.items) |name| {
             try mut_self.check_thing_name(name);
             mut_self.error_context = name;
-            _ = try mut_self.world.intern_entity(name);
+            _ = try mut_self.intern_entity_checked(name);
         }
         for (ast.props.items) |name| {
             try mut_self.check_thing_name(name);
             mut_self.error_context = name;
-            _ = try mut_self.world.intern_entity(name);
+            _ = try mut_self.intern_entity_checked(name);
         }
         for (ast.marks.items) |name| {
             try mut_self.check_thing_name(name);
             mut_self.error_context = name;
-            _ = try mut_self.world.intern_entity(name);
+            _ = try mut_self.intern_entity_checked(name);
         }
         for (ast.paths.items) |path| {
             try mut_self.check_thing_name(path.name);
             mut_self.error_context = path.name;
-            _ = try mut_self.world.intern_entity(path.name);
+            _ = try mut_self.intern_entity_checked(path.name);
         }
         for (ast.art.parts) |pt| {
             try mut_self.check_thing_name(pt.part);
             try mut_self.check_thing_name(pt.host);
+            mut_self.error_context = pt.host;
+            try mut_self.check_case_twin(pt.host);
             mut_self.error_context = pt.part;
-            _ = try mut_self.world.intern_entity(pt.part);
+            _ = try mut_self.intern_entity_checked(pt.part);
         }
 
         // Register stage marks and props in SpatialSystem if present
         if (mut_self.spatial) |sp| {
             if (ast.scene_defs.items.len > 0) {
                 for (ast.scene_defs.items) |*sc_def| {
-                    const sent = mut_self.world.lookup_entity(sc_def.name) orelse try mut_self.world.intern_entity(sc_def.name);
+                    try mut_self.check_thing_name(sc_def.name);
+                    try mut_self.check_case_twin(sc_def.name);
+                    const sent = mut_self.world.lookup_entity(sc_def.name) orelse try mut_self.intern_entity_checked(sc_def.name);
                     var prev_wp: ?u16 = null;
                     var first_wp: ?u16 = null;
                     for (sc_def.marks.items, 0..) |mname, idx| {
+                        try mut_self.check_thing_name(mname);
+                        try mut_self.check_case_twin(mname);
                         const wx: i32 = stage_x(idx, sc_def.marks.items.len);
                         var found = false;
                         for (sp.graph.waypoints.items) |wp| {
@@ -833,7 +881,8 @@ pub const Codegen = struct {
                     }
 
                     for (sc_def.props.items, 0..) |pname, idx| {
-                        const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.world.intern_entity(pname);
+                        try mut_self.check_thing_name(pname);
+                        const pent = mut_self.world.lookup_entity(pname) orelse try mut_self.intern_entity_checked(pname);
                         const px: i32 = 10 + stage_x(idx, sc_def.props.items.len);
                         sp.add_hotspot(pent, sent, .{ .x = px, .y = -6 }, 10, pname, pname) catch {};
                     }
@@ -842,7 +891,8 @@ pub const Codegen = struct {
                     // (D-065). A scene without marks has nowhere to put anyone.
                     if (first_wp) |start| {
                         for (sc_def.cast.items) |cname| {
-                            const cent = mut_self.world.lookup_entity(cname) orelse try mut_self.world.intern_entity(cname);
+                            try mut_self.check_thing_name(cname);
+                            const cent = mut_self.world.lookup_entity(cname) orelse try mut_self.intern_entity_checked(cname);
                             const seen = for (mut_self.cast.items) |c| {
                                 if (c.actor.to_int() == cent.to_int()) break true;
                             } else false;
@@ -923,12 +973,12 @@ pub const Codegen = struct {
         for (ast.red_lines.items) |decl| {
             mut_self.error_context = decl.actor;
             const options = try mut_self.allocator.alloc(EntityId, decl.options.len);
-            for (decl.options, 0..) |name, i| options[i] = try mut_self.world.intern_entity(name);
+            errdefer mut_self.allocator.free(options);
+            for (decl.options, 0..) |name, i| options[i] = try mut_self.intern_entity_checked(name);
             mut_self.red_lines.append(.{ .red_lines = .{
-                .actor = try mut_self.world.intern_entity(decl.actor),
+                .actor = try mut_self.intern_entity_checked(decl.actor),
                 .options = options,
             } }) catch |err| {
-                mut_self.allocator.free(options);
                 return err;
             };
             // Validating each prefix points the diagnostic at the declaration that broke it:
@@ -946,6 +996,7 @@ pub const Codegen = struct {
         for (ast.scores.items) |decl| {
             try mut_self.check_thing_name(decl.name);
             mut_self.error_context = decl.name;
+            try mut_self.check_case_twin(decl.name);
             var owned = try mml.ScoreDecl.dupe(mut_self.allocator, decl);
             mut_self.scores.append(owned) catch |err| {
                 owned.deinit_owned(mut_self.allocator);
@@ -957,6 +1008,7 @@ pub const Codegen = struct {
         for (ast.relations.items) |rel| {
             try mut_self.check_relation_name(rel.name);
             try mut_self.check_thing_name(rel.name);
+            try mut_self.check_case_twin(rel.name);
             mut_self.error_context = rel.name;
             const declared = if (std.mem.eql(u8, rel.name, LOOKS_RELATION))
                 try mut_self.world.intern_relation_kind(rel.name, .property, .entity)
@@ -978,6 +1030,11 @@ pub const Codegen = struct {
         for (ast.axes.items) |decl| {
             try mut_self.check_relation_name(decl.name);
             try mut_self.check_thing_name(decl.name);
+            try mut_self.check_case_twin(decl.name);
+            for (decl.poles) |pole| {
+                try mut_self.check_thing_name(pole);
+                try mut_self.check_case_twin(pole);
+            }
             mut_self.error_context = decl.name;
             for (ast.relations.items) |rel| {
                 if (std.mem.eql(u8, rel.name, decl.name)) return error.InvalidAxis;
@@ -1009,8 +1066,8 @@ pub const Codegen = struct {
         errdefer drafts.deinit();
         for (ast.drafts.items) |d| {
             mut_self.error_context = d.name;
-            const ent = try mut_self.world.intern_entity(d.name);
-            const inv: ?EntityId = if (d.reverse_name) |rn| try mut_self.world.intern_entity(rn) else null;
+            const ent = try mut_self.intern_entity_checked(d.name);
+            const inv: ?EntityId = if (d.reverse_name) |rn| try mut_self.intern_entity_checked(rn) else null;
             try drafts.append(.{ .entity = ent, .notes = d.notes, .inverse = inv });
             if (inv) |ie| {
                 try drafts.append(.{ .entity = ie, .notes = draft_mod.reversed(d.notes), .inverse = ent });
@@ -1027,10 +1084,10 @@ pub const Codegen = struct {
             // Scene defaults are World facts, seeded before the script's own statements, so the
             // display can pick a scene's score from World alone and saves carry the binding.
             for (ast.scores.items) |decl| {
-                const score_entity = try mut_self.world.intern_entity(decl.name);
+                const score_entity = try mut_self.intern_entity_checked(decl.name);
                 const scene_rel = try mut_self.world.intern_relation_kind(mml.SCENE_RELATION, .set, .entity);
                 for (decl.scenes) |scene| {
-                    try mut_self.chunk.emit_push_entity(try mut_self.world.intern_entity(scene));
+                    try mut_self.chunk.emit_push_entity(try mut_self.intern_entity_checked(scene));
                     try mut_self.chunk.emit_push_relation(scene_rel);
                     try mut_self.chunk.emit_push_const(score_entity.to_int());
                     try mut_self.chunk.emit_remember(0);
@@ -1224,6 +1281,12 @@ pub const Codegen = struct {
         for (ast.cue_handlers.items) |cue| {
             try mut_self.check_thing_name(cue.cue_name);
             mut_self.error_context = cue.cue_name;
+            try mut_self.check_case_twin(cue.cue_name);
+            for (cue.params) |param| {
+                if (param.len > 0 and param[0] != '?' and param[0] != '_' and !is_variable_name(param)) {
+                    try mut_self.check_case_twin(param);
+                }
+            }
             if (cue.params.len > MAX_CUE_PARAMS) {
                 mut_self.error_context = cue.params[MAX_CUE_PARAMS];
                 return error.TooManyCueParameters;
@@ -1290,6 +1353,7 @@ pub const Codegen = struct {
         // on the World, like value bounds; the package carries it.
         for (ast.display_names.items) |decl| {
             mut_self.error_context = decl.entity;
+            try mut_self.check_case_twin(decl.entity);
             // A name for something the script never mentions is a typo, not a new thing.
             const entity = mut_self.world.lookup_entity(decl.entity) orelse return error.NameForUnknownThing;
             try mut_self.world.set_display_name(entity, decl.text);
@@ -1353,26 +1417,27 @@ pub const Codegen = struct {
         if (decl.palette.len == 0 and decl.images.len == 0 and decl.areas.len == 0 and decl.parts.len == 0) return .{};
         const backdrops = try self.allocator.alloc(image_mod.Backdrop, decl.backdrops.len);
         defer self.allocator.free(backdrops);
-        for (decl.backdrops, backdrops) |b, *out| out.* = .{ .scene = try self.world.intern_entity(b.scene), .image = b.image };
+        for (decl.backdrops, backdrops) |b, *out| out.* = .{ .scene = try self.intern_entity_checked(b.scene), .image = b.image };
         const sprites = try self.allocator.alloc(image_mod.Sprite, decl.sprites.len);
         defer self.allocator.free(sprites);
         for (decl.sprites, sprites) |sp, *out| out.* = .{
-            .entity = try self.world.intern_entity(sp.target),
+            .entity = try self.intern_entity_checked(sp.target),
             .image = sp.image,
             .animations = sp.animations,
         };
         const areas = try self.allocator.alloc(image_mod.Area, decl.areas.len);
         defer self.allocator.free(areas);
-        for (decl.areas, areas) |a, *out| out.* = .{ .entity = try self.world.intern_entity(a.target), .x = a.x, .y = a.y, .w = a.w, .h = a.h };
+        for (decl.areas, areas) |a, *out| out.* = .{ .entity = try self.intern_entity_checked(a.target), .x = a.x, .y = a.y, .w = a.w, .h = a.h };
         const looks = try self.allocator.alloc(image_mod.Look, decl.looks.len);
         defer self.allocator.free(looks);
         for (decl.looks, looks) |l, *out| {
             try self.check_thing_name(l.name);
+            try self.check_case_twin(l.name);
             out.* = .{ .name = l.name, .image = l.image, .animations = l.animations };
         }
         const parts = try self.allocator.alloc(image_mod.Part, decl.parts.len);
         defer self.allocator.free(parts);
-        for (decl.parts, parts) |pt, *out| out.* = .{ .entity = try self.world.intern_entity(pt.part), .host = try self.world.intern_entity(pt.host), .dx = pt.dx, .dy = pt.dy };
+        for (decl.parts, parts) |pt, *out| out.* = .{ .entity = try self.intern_entity_checked(pt.part), .host = try self.intern_entity_checked(pt.host), .dx = pt.dx, .dy = pt.dy };
         return image_mod.Art.dupe(self.allocator, .{
             .images = decl.images,
             .backdrops = backdrops,
@@ -1401,6 +1466,7 @@ pub const Codegen = struct {
 
     fn intern_relation_text(self: *Codegen, name: []const u8) ![]const u8 {
         try self.check_relation_name(name);
+        try self.check_case_twin(name);
         return self.intern_program_text(name);
     }
 
@@ -1504,12 +1570,12 @@ pub const Codegen = struct {
             for (source.stops, 0..) |stop, si| stops[si] = try self.society_waypoint(stop);
             const owns = try self.allocator.alloc(EntityId, source.owns.len);
             errdefer self.allocator.free(owns);
-            for (source.owns, 0..) |item, oi| owns[oi] = try self.world.intern_entity(item);
+            for (source.owns, 0..) |item, oi| owns[oi] = try self.intern_entity_checked(item);
             const carries = try self.allocator.alloc(EntityId, source.carries.len);
             errdefer self.allocator.free(carries);
-            for (source.carries, 0..) |item, ci| carries[ci] = try self.world.intern_entity(item);
+            for (source.carries, 0..) |item, ci| carries[ci] = try self.intern_entity_checked(item);
             members[i] = .{
-                .entity = try self.world.intern_entity(source.name),
+                .entity = try self.intern_entity_checked(source.name),
                 .needs = member_needs,
                 .gold = source.gold,
                 .idle = try self.activity_from_name(source.idle),
@@ -1526,7 +1592,7 @@ pub const Codegen = struct {
                 },
                 .merchant = if (source.merchant) |merchant| .{
                     .post = try self.society_waypoint(merchant.post),
-                    .goods = try self.world.intern_entity(merchant.goods),
+                    .goods = try self.intern_entity_checked(merchant.goods),
                 } else null,
                 .broadcaster = source.broadcaster,
                 .owns = owns,
@@ -1538,8 +1604,8 @@ pub const Codegen = struct {
         const friends = try self.allocator.alloc(society_mod.FriendLink, decl.friends.len);
         errdefer self.allocator.free(friends);
         for (decl.friends, 0..) |friend, i| friends[i] = .{
-            .a = try self.world.intern_entity(friend[0]),
-            .b = try self.world.intern_entity(friend[1]),
+            .a = try self.intern_entity_checked(friend[0]),
+            .b = try self.intern_entity_checked(friend[1]),
         };
         const relation_names = decl.relations;
         return .{ .config = .{
@@ -1606,7 +1672,7 @@ pub const Codegen = struct {
         };
         const tiers = try self.allocator.alloc(duel_mod.TierAssignment, decl.tiers.len);
         errdefer self.allocator.free(tiers);
-        for (decl.tiers, 0..) |source, i| tiers[i] = .{ .opponent = try self.world.intern_entity(source.opponent), .tier = source.tier };
+        for (decl.tiers, 0..) |source, i| tiers[i] = .{ .opponent = try self.intern_entity_checked(source.opponent), .tier = source.tier };
         const r = decl.relations;
         return .{
             .config = .{
@@ -1640,8 +1706,8 @@ pub const Codegen = struct {
         try self.check_thing_name(decl.name);
         try self.check_thing_name(decl.room);
         const grid = grid_mod.Grid{
-            .entity = try self.world.intern_entity(decl.name),
-            .room = try self.world.intern_entity(decl.room),
+            .entity = try self.intern_entity_checked(decl.name),
+            .room = try self.intern_entity_checked(decl.room),
             .width = @intCast(decl.width),
             .height = @intCast(decl.height),
             .cell_size = decl.cell_size,
@@ -1695,6 +1761,7 @@ pub const Codegen = struct {
     }
 
     fn compile_command(self: *Codegen, decl: parser_mod.CommandDecl) !command_mod.CommandDecl {
+        try self.check_case_twin(decl.cue);
         const cue = try self.allocator.dupe(u8, decl.cue);
         errdefer self.allocator.free(cue);
         const text = try self.allocator.dupe(u8, decl.text);
@@ -1718,7 +1785,7 @@ pub const Codegen = struct {
             phrases[i] = lower;
             made += 1;
         }
-        const alias = command_mod.AliasDecl{ .entity = try self.world.intern_entity(decl.entity), .phrases = phrases };
+        const alias = command_mod.AliasDecl{ .entity = try self.intern_entity_checked(decl.entity), .phrases = phrases };
         try alias.validate();
         return alias;
     }
@@ -1740,9 +1807,9 @@ pub const Codegen = struct {
             };
         }
         const agenda = agency_mod.Agenda{
-            .entity = try self.world.intern_entity(decl.name),
-            .actor = try self.world.intern_entity(decl.actor),
-            .target = try self.world.intern_entity(decl.target),
+            .entity = try self.intern_entity_checked(decl.name),
+            .actor = try self.intern_entity_checked(decl.actor),
+            .target = try self.intern_entity_checked(decl.target),
             .priority = decl.priority,
             .cooldown_ticks = decl.cooldown_ticks,
             .once = decl.once,
@@ -1774,7 +1841,7 @@ pub const Codegen = struct {
             built += 1;
         }
         return .{ .goal = .{
-            .entity = try self.world.intern_entity(decl.name),
+            .entity = try self.intern_entity_checked(decl.name),
             .needs = needs,
         } };
     }
@@ -1786,7 +1853,7 @@ pub const Codegen = struct {
         if (args.len > 1 and !std.mem.eql(u8, args[1], "_")) try self.note_object_kind(source.pattern.relation, args[1]);
         const after = try self.allocator.alloc(EntityId, source.after.len);
         errdefer self.allocator.free(after);
-        for (source.after, 0..) |name, j| after[j] = try self.world.intern_entity(name);
+        for (source.after, 0..) |name, j| after[j] = try self.intern_entity_checked(name);
         const hints = try self.allocator.alloc(hint_mod.Authored, source.hints.len);
         var made: usize = 0;
         errdefer {
@@ -1802,7 +1869,7 @@ pub const Codegen = struct {
             made += 1;
         }
         return .{
-            .entity = try self.world.intern_entity(source.name),
+            .entity = try self.intern_entity_checked(source.name),
             .relation = try self.intern_relation_text(source.pattern.relation),
             .subject = try self.agenda_term(args[0]),
             .object = if (args.len > 1) try self.agenda_term(args[1]) else null,
@@ -1815,14 +1882,14 @@ pub const Codegen = struct {
     /// A need names its room, or inherits the scene that declares the prop or mark it names.
     /// A proof whose rooms are finer than its scenes declares `room` explicitly.
     fn goal_room(self: *Codegen, source: parser_mod.GoalNeedDecl, scenes: []const parser_mod.SceneDef) !EntityId {
-        if (source.room) |room| return try self.world.intern_entity(room);
+        if (source.room) |room| return try self.intern_entity_checked(room);
         const named = if (source.pattern.args.len > 1) source.pattern.args[1] else source.pattern.args[0];
         for (scenes) |scene| {
             for (scene.props.items) |prop| {
-                if (std.mem.eql(u8, prop, named)) return try self.world.intern_entity(scene.name);
+                if (std.mem.eql(u8, prop, named)) return try self.intern_entity_checked(scene.name);
             }
             for (scene.marks.items) |mark| {
-                if (std.mem.eql(u8, mark, named)) return try self.world.intern_entity(scene.name);
+                if (std.mem.eql(u8, mark, named)) return try self.intern_entity_checked(scene.name);
             }
         }
         var suggestions = Suggestions{};
@@ -1843,7 +1910,7 @@ pub const Codegen = struct {
             const slot = source.kind.index();
             tiers[slot] += 1;
             words[i] = .{
-                .entity = try self.world.intern_entity(source.name),
+                .entity = try self.intern_entity_checked(source.name),
                 .kind = source.kind,
                 .tier = tiers[slot],
             };
@@ -1852,16 +1919,16 @@ pub const Codegen = struct {
         errdefer self.allocator.free(spells);
         for (decl.spells, 0..) |source, i| {
             spells[i] = .{
-                .entity = try self.world.intern_entity(source.name),
+                .entity = try self.intern_entity_checked(source.name),
                 .words = .{
-                    try self.world.intern_entity(source.power),
-                    try self.world.intern_entity(source.element),
-                    try self.world.intern_entity(source.form),
+                    try self.intern_entity_checked(source.power),
+                    try self.intern_entity_checked(source.element),
+                    try self.intern_entity_checked(source.form),
                 },
             };
         }
         const declaration = spell_mod.Declaration{ .book = .{
-            .entity = try self.world.intern_entity(decl.name),
+            .entity = try self.intern_entity_checked(decl.name),
             .words = words,
             .spells = spells,
         } };
@@ -1892,14 +1959,14 @@ pub const Codegen = struct {
                 .points = line.points,
                 .clause = try self.compile_clause(line.pattern, line.negated),
             };
-            options[i] = .{ .entity = try self.world.intern_entity(source.name), .picks = picks };
+            options[i] = .{ .entity = try self.intern_entity_checked(source.name), .picks = picks };
             built += 1;
         }
 
         const decision = decision_mod.Decision{
-            .entity = try self.world.intern_entity(decl.name),
-            .actor = try self.world.intern_entity(decl.actor),
-            .cue = try self.world.intern_entity(decl.cue),
+            .entity = try self.intern_entity_checked(decl.name),
+            .actor = try self.intern_entity_checked(decl.actor),
+            .cue = try self.intern_entity_checked(decl.cue),
             .clauses = clauses,
             .options = options,
         };
@@ -1922,10 +1989,10 @@ pub const Codegen = struct {
             }
             axes[i] = rel.?;
         }
-        const actor = try self.world.intern_entity(decl.actor);
+        const actor = try self.intern_entity_checked(decl.actor);
         var responses: [dilemma_mod.TIER_COUNT]dilemma_mod.Response = undefined;
         for (decl.responses, 0..) |source, i| {
-            const action = try self.world.intern_entity(source.action);
+            const action = try self.intern_entity_checked(source.action);
             if (decision_mod.vetoed(self.red_lines.items, actor, action)) {
                 self.error_context = source.action;
                 return error.DilemmaCrossesRedLine;
@@ -1980,7 +2047,7 @@ pub const Codegen = struct {
             const magnitude: i32 = @intCast(source.points);
             appeals[i] = .{
                 .axis = rel.?,
-                .entity = try self.world.intern_entity(source.axis),
+                .entity = try self.intern_entity_checked(source.axis),
                 .points = if (toward_axis) magnitude else -magnitude,
             };
             _ = try value_mod.known_value(self.world, rel.?, actor);
@@ -1989,9 +2056,9 @@ pub const Codegen = struct {
         // script can write `remember Knows(Player, "Mercy of Oswin")` (D-149).
         for (axes) |axis| _ = try value_mod.known_value(self.world, axis, actor);
         return .{ .dilemma = .{
-            .entity = try self.world.intern_entity(decl.name),
+            .entity = try self.intern_entity_checked(decl.name),
             .actor = actor,
-            .cue = try self.world.intern_entity(decl.cue),
+            .cue = try self.intern_entity_checked(decl.cue),
             .clauses = clauses,
             .axis = axes[0],
             .counter = axes[1],
@@ -2019,7 +2086,7 @@ pub const Codegen = struct {
         const stages = try self.allocator.alloc(container_mod.Stage, decl.stages.len);
         errdefer self.allocator.free(stages);
         for (decl.stages, 0..) |source, i| stages[i] = .{
-            .entity = try self.world.intern_entity(source.name),
+            .entity = try self.intern_entity_checked(source.name),
             .duration_ticks = source.duration_ticks,
         };
         const vessels = try self.allocator.alloc(container_mod.Vessel, decl.vessels.len);
@@ -2031,7 +2098,7 @@ pub const Codegen = struct {
                 break;
             };
             vessels[i] = .{
-                .entity = try self.world.intern_entity(source.name),
+                .entity = try self.intern_entity_checked(source.name),
                 .capacity = source.capacity,
                 .initial_volume = source.initial_volume,
                 .initial_stage = initial_stage orelse {
@@ -2045,7 +2112,7 @@ pub const Codegen = struct {
         }
         const r = decl.relations;
         const config = container_mod.Config{
-            .substance = try self.world.intern_entity(decl.substance),
+            .substance = try self.intern_entity_checked(decl.substance),
             .stages = stages,
             .vessels = vessels,
             .spill_per_moving_tick = decl.spill_per_moving_tick,
@@ -2229,7 +2296,7 @@ pub const Codegen = struct {
             .play_score => |name| {
                 // `PlayingScore` is a property of `Music`, so playing replaces the previous
                 // override and `stop score` removes it, returning to the scene default.
-                const music = try self.resolve_entity(mml.MUSIC_ENTITY);
+                const music = try self.world.intern_entity(mml.MUSIC_ENTITY);
                 const rel = try self.world.intern_relation_kind(mml.PLAYING_RELATION, .property, .entity);
                 try self.chunk.emit_push_entity(music);
                 try self.chunk.emit_push_relation(rel);
@@ -2442,6 +2509,7 @@ pub const Codegen = struct {
             self.suggest_capitalised(name);
             return error.UnboundVariable;
         }
+        if (!reserved_mod.is_bookkeeping(name)) try self.check_case_twin(name);
         return try self.world.intern_entity(name);
     }
 
@@ -2458,6 +2526,37 @@ pub const Codegen = struct {
         @memcpy(self.suggestion_buf[0..name.len], name);
         self.suggestion_buf[0] = std.ascii.toUpper(name[0]);
         self.error_suggestion = self.suggestion_buf[0..name.len];
+    }
+
+    fn suggest_existing(self: *Codegen, existing: []const u8) void {
+        if (existing.len > self.suggestion_buf.len) return;
+        @memcpy(self.suggestion_buf[0..existing.len], existing);
+        self.error_suggestion = self.suggestion_buf[0..existing.len];
+    }
+
+    /// Refuse names that differ from an already declared name only in ASCII case (D-177).
+    fn check_case_twin(self: *Codegen, name: []const u8) !void {
+        if (name.len == 0) return;
+        if (try self.seen_names.check_or_add(self.allocator, name)) |existing| {
+            self.error_context = name;
+            self.suggest_existing(existing);
+            return error.CaseTwinName;
+        }
+    }
+
+    fn check_case_twin_at(self: *Codegen, name: []const u8, line: u32, col: u32) !void {
+        if (name.len == 0) return;
+        if (try self.seen_names.check_or_add(self.allocator, name)) |existing| {
+            self.error_line = line;
+            self.error_column = col;
+            self.suggest_existing(existing);
+            return error.CaseTwinName;
+        }
+    }
+
+    fn intern_entity_checked(self: *Codegen, name: []const u8) !EntityId {
+        if (!reserved_mod.is_bookkeeping(name)) try self.check_case_twin(name);
+        return try self.world.intern_entity(name);
     }
 
     fn local_index(self: *const Codegen, name: []const u8) ?u8 {
@@ -2482,6 +2581,7 @@ pub const Codegen = struct {
     fn resolve_relation(self: *Codegen, name: []const u8) !RelationKind {
         try self.check_relation_name(name);
         try self.check_thing_name(name);
+        try self.check_case_twin(name);
         // `Looks(Thing, Look)` is a reserved property: a thing shows one look (D-181).
         if (std.mem.eql(u8, name, LOOKS_RELATION)) return try self.world.intern_relation_kind(name, .property, .entity);
         return try self.world.intern_relation(name, .set);
@@ -2695,6 +2795,7 @@ pub const Codegen = struct {
             self.suggest_capitalised(name);
             return error.UnboundVariable;
         }
+        if (!reserved_mod.is_bookkeeping(name)) try self.check_case_twin(name);
         if (self.spatial) |sp| {
             for (sp.graph.waypoints.items) |wp| {
                 if (std.mem.eql(u8, wp.name, name)) {

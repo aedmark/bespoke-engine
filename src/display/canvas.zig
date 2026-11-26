@@ -86,8 +86,9 @@ pub const TextProbe = struct {
             .h = font.FONT_HEIGHT * scale,
             .kind = kind,
         };
-        draw.text_len = @min(text.len, draw.text.len);
-        @memcpy(draw.text[0..draw.text_len], text[0..draw.text_len]);
+        const slice = font.truncate_utf8(text, draw.text.len);
+        draw.text_len = slice.len;
+        @memcpy(draw.text[0..draw.text_len], slice);
         self.draws[self.count] = draw;
         self.count += 1;
     }
@@ -313,33 +314,27 @@ pub const Canvas = struct {
         }
     }
 
-    /// Text in the 5x7 font, each lit dot a `scale`-sized square.
+    /// Text in the 5x7 font, each lit dot a `scale`-sized square (UTF-8 decoded, D-179).
     pub fn draw_text(self: *Canvas, text: []const u8, start_x: i32, start_y: i32, scale: i32, col: Color) void {
         if (self.text_probe) |probe| probe.record(self.rect_kind, text, start_x, start_y, scale);
         self.text_depth += 1;
         defer self.text_depth -= 1;
         var cur_x = start_x;
-        for (text) |byte| {
-            // UTF-8 (D-179): a continuation byte belongs to the character before it, and a
-            // character the font lacks draws as one placeholder until a wider font lands (P48-21).
-            if (byte >= 0x80 and byte & 0xC0 == 0x80) continue;
-            const ch: u8 = if (byte >= 0x80) font.PLACEHOLDER else byte;
-            if (ch < 32 or ch > 126) {
-                cur_x += font.char_width(scale);
-                continue;
-            }
-            const glyph = font.FONT5X7[ch - 32];
-            for (glyph, 0..) |col_byte, col_idx| {
-                var row: usize = 0;
-                while (row < 7) : (row += 1) {
-                    if ((col_byte >> @intCast(row)) & 1 != 0) {
-                        self.fill_rect(
-                            cur_x + @as(i32, @intCast(col_idx)) * scale,
-                            start_y + @as(i32, @intCast(row)) * scale,
-                            scale,
-                            scale,
-                            col,
-                        );
+        var i: usize = 0;
+        while (font.next_codepoint(text, &i)) |cp| {
+            if (font.glyph_for(cp)) |glyph| {
+                for (glyph, 0..) |col_byte, col_idx| {
+                    var row: usize = 0;
+                    while (row < font.FONT_HEIGHT) : (row += 1) {
+                        if ((col_byte >> @intCast(row)) & 1 != 0) {
+                            self.fill_rect(
+                                cur_x + @as(i32, @intCast(col_idx)) * scale,
+                                start_y + @as(i32, @intCast(row)) * scale,
+                                scale,
+                                scale,
+                                col,
+                            );
+                        }
                     }
                 }
             }
@@ -595,4 +590,36 @@ test "P46-02: an image clips at the canvas edge and the probe records its opaque
     cv.draw_image(&sprite, 0, -40, -40);
     cv.draw_image(&sprite, 0, 0, -12);
     try testing.expectEqual(@as(usize, 0), probe.count);
+}
+
+test "P48-21: draw_text renders accented Latin glyphs distinctly and keeps placeholder for unsupported scripts" {
+    var accent_buf: [64 * 16 * 4]u8 = undefined;
+    var qmark_buf: [64 * 16 * 4]u8 = undefined;
+    var lambda_buf: [64 * 16 * 4]u8 = undefined;
+    var plain_q_buf: [64 * 16 * 4]u8 = undefined;
+
+    var accent_cv = Canvas.init(&accent_buf, 64, 16);
+    var qmark_cv = Canvas.init(&qmark_buf, 64, 16);
+    var lambda_cv = Canvas.init(&lambda_buf, 64, 16);
+    var plain_q_cv = Canvas.init(&plain_q_buf, 64, 16);
+
+    accent_cv.clear(Color.black);
+    qmark_cv.clear(Color.black);
+    lambda_cv.clear(Color.black);
+    plain_q_cv.clear(Color.black);
+
+    var probe = TextProbe{};
+    accent_cv.text_probe = &probe;
+    const helene = "H\xc3\xa9l\xc3\xa8ne";
+    accent_cv.draw_text(helene, 2, 2, 1, Color.white);
+    qmark_cv.draw_text("H?l?ne", 2, 2, 1, Color.white);
+    try testing.expectEqual(@as(usize, 1), probe.count);
+    try testing.expectEqualStrings(helene, probe.draws[0].get_text());
+    try testing.expectEqual(font.text_width(helene, 1), probe.draws[0].w);
+    try testing.expectEqual(@as(i32, 36), probe.draws[0].w);
+    try testing.expect(accent_cv.hash() != qmark_cv.hash());
+
+    lambda_cv.draw_text("\xce\xbb", 2, 2, 1, Color.white);
+    plain_q_cv.draw_text("?", 2, 2, 1, Color.white);
+    try testing.expectEqual(plain_q_cv.hash(), lambda_cv.hash());
 }

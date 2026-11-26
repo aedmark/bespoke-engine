@@ -3027,3 +3027,69 @@ test "P48-19: hint key steps tiers in the browser and feature queries work witho
     try rt.world.remember(hesper, rt.world.lookup_relation("Knows").?, (try rt.world.intern_entity("Mercy of Valerius")).to_int(), 0);
     try testing.expectEqual(@as(i32, 3), rt.query_known_value("Valerius", "Mercy"));
 }
+
+test "P48-21: browser runtime draws accented display names distinctly and measures by characters" {
+    const testing = std.testing;
+    const accented_script =
+        "scene: Bistro\n" ++
+        "cast: Mireille\n" ++
+        "props: Espresso\n" ++
+        "marks: Terrace\n" ++
+        "name Bistro: \"Caf\xc3\xa9 de l'\xc5\x92il\"\n" ++
+        "name Mireille: \"H\xc3\xa9l\xc3\xa8ne\"\n" ++
+        "name Espresso: \"Caf\xc3\xa9 cr\xc3\xa8me\"\n\n" ++
+        "routine Idle(Mireille):\n" ++
+        "  wait 5 ticks\n";
+    const qmark_script =
+        \\scene: Bistro
+        \\cast: Mireille
+        \\props: Espresso
+        \\marks: Terrace
+        \\name Bistro: "Caf? de l'?il"
+        \\name Mireille: "H?l?ne"
+        \\name Espresso: "Caf? cr?me"
+        \\
+        \\routine Idle(Mireille):
+        \\  wait 5 ticks
+    ;
+
+    const a_decks = [_]Deck{script_deck_with("ACCENT", accented_script, .{ .player = "Mireille" })};
+    const q_decks = [_]Deck{script_deck_with("QMARK", qmark_script, .{ .player = "Mireille" })};
+
+    defer dialogue_panel.clear_display_names();
+    const font_mod = @import("display/font.zig");
+    var text = canvas_mod.TextProbe{};
+    var rect = canvas_mod.RectProbe{};
+    var a_hash: u64 = 0;
+    {
+        const a_rt = try testing.allocator.create(WasmRuntime);
+        defer testing.allocator.destroy(a_rt);
+        a_rt.* = try WasmRuntime.init(testing.allocator, &a_decks, 0);
+        defer a_rt.deinit();
+        a_rt.bind();
+        a_rt.render_frame_probed(.{ .text = &text, .rect = &rect });
+        a_hash = std.hash.Wyhash.hash(0, a_rt.framebuffer[0 .. CANVAS_WIDTH * CANVAS_HEIGHT * 4]);
+    }
+
+    var q_hash: u64 = 0;
+    {
+        const q_rt = try testing.allocator.create(WasmRuntime);
+        defer testing.allocator.destroy(q_rt);
+        q_rt.* = try WasmRuntime.init(testing.allocator, &q_decks, 0);
+        defer q_rt.deinit();
+        q_rt.bind();
+        q_rt.render_frame();
+        q_hash = std.hash.Wyhash.hash(0, q_rt.framebuffer[0 .. CANVAS_WIDTH * CANVAS_HEIGHT * 4]);
+    }
+
+    try testing.expect(a_hash != q_hash);
+
+    var found_helene = false;
+    for (text.draws[0..text.count]) |d| {
+        if (std.mem.eql(u8, d.get_text(), "H\xc3\xa9l\xc3\xa8ne")) {
+            found_helene = true;
+            try testing.expectEqual(font_mod.text_width("H\xc3\xa9l\xc3\xa8ne", 2), d.w);
+        }
+    }
+    try testing.expect(found_helene);
+}

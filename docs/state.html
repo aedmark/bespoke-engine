@@ -316,15 +316,15 @@ routine Inspector(Moss):
 <ul>
   <li><strong>Pixel art and code themes coexist.</strong> Scripts can carry true-colour RGBA art (QOI-compressed, from PNG files or inline text), <code>look</code> states, clickable <code>area</code>s, and attached <code>part</code>s, while older demos still use code-drawn themes.</li>
   <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
-  <li><strong>The 1.0 freeze is almost complete.</strong> The format 1 baseline is active and hardened, with three small API/font items remaining before tagging 1.0 (and pre-1.0 0.x files are no longer read).</li>
-  <li><strong>Small writing gaps:</strong> a one-shot <code>when</code> rule body cannot read its trigger's variables yet (use <code>when each</code> or <code>on cue</code>); a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options; and non-ASCII glyphs in display names render as <code>?</code> on canvas until the wider font lands.</li>
+  <li><strong>The 1.0 freeze code items are complete.</strong> The format 1 baseline is active and hardened, leaving the release hand-test and packaging pass before tagging 1.0 (and pre-1.0 0.x files are no longer read).</li>
+  <li><strong>Small writing gaps:</strong> a one-shot <code>when</code> rule body cannot read its trigger's variables yet (use <code>when each</code> or <code>on cue</code>); a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options; and the built-in 5x7 canvas font covers ASCII, Latin-1 Supplement, and common Latin Extended-A letters and punctuation while unsupported scripts render as <code>?</code>.</li>
   <li><strong>Deliberately out of scope:</strong> 3D, physics, and networked multiplayer. BeSpoke is for narrative and systemic games.</li>
 </ul>
 </div>
 
 <h2 id="next">What is next</h2>
 <ul>
-  <li><strong>BeSpoke 1.0:</strong> one host query per declared feature, refusing case-only name twins, accented glyphs in the canvas font, and the 1.0 release pass.</li>
+  <li><strong>BeSpoke 1.0:</strong> the release hand-test pass, starter CI pin update, and 1.0 release packaging.</li>
   <li><strong>After 1.0:</strong> BeSpoke Studio (browser editors for pixel art, rooms, dialogue, and values) and classic parser adventure additions (palette colour cycling and a text-first page template).</li>
   <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>

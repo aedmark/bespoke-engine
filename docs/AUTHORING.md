@@ -439,7 +439,7 @@ The engine's bookkeeping lives under `#` names a script cannot type, and the Sta
 
 ### What players read
 
-`name ExposureSlip: "the slip from the darkroom"` sets what players read for an entity, everywhere it is shown; without it, `ExposureSlip` reads "Exposure Slip". `phrase HintRoom: "Seek out the {room}."` replaces one sentence the engine writes, such as a hint, a command reply, or a walk line; the script spec lists every key and its placeholders (D-179). Write whole sentences: the engine fills in names but never counts, plurals, or articles, so a translation controls every word. A build has one language, and the window draws characters outside printable ASCII as `?` for now.
+`name ExposureSlip: "the slip from the darkroom"` sets what players read for an entity, everywhere it is shown; without it, `ExposureSlip` reads "Exposure Slip". `phrase HintRoom: "Seek out the {room}."` replaces one sentence the engine writes, such as a hint, a command reply, or a walk line; the script spec lists every key and its placeholders (D-179). Write whole sentences: the engine fills in names but never counts, plurals, or articles, so a translation controls every word. A build has one language, and the window's font draws printable ASCII, Latin-1 Supplement, and common Latin Extended-A letters and punctuation (with unsupported scripts shown as `?`).
 
 ### Saves across updates
 
