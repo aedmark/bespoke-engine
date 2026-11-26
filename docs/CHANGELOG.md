@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Generated projects pin their CI engine checkout to `refs/tags/v1.0.0` and drop the pre-1.0 test setup fallback (`P48-06`).
+
 ## 1.0.0 - 2026-11-26
 
 ### What 1.0 promises

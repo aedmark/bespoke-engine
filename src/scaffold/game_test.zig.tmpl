@@ -19,14 +19,7 @@ const Game = struct {
         self.world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
         self.spatial = bespoke.SpatialSystem.init(testing.allocator);
         self.compiled = try bespoke.compile_source(testing.allocator, &self.world, &self.spatial, self.source);
-        // The CI pin still supports v0.1.0, which predates the host constructor.
-        if (comptime @hasDecl(bespoke.host, "init_vm")) {
-            self.vm = try bespoke.host.init_vm(testing.allocator, &self.world, &self.spatial, &self.compiled);
-        } else {
-            self.vm = bespoke.VM.init(testing.allocator, &self.world, &self.compiled.chunk);
-            self.vm.spatial = &self.spatial;
-            try self.vm.load_compiled_rules(&self.compiled);
-        }
+        self.vm = try bespoke.host.init_vm(testing.allocator, &self.world, &self.spatial, &self.compiled);
         try bespoke.host.initialize_subsystems(&self.world, &self.compiled);
         try bespoke.host.run_initial_statements(&self.world, &self.vm, &self.compiled);
         try bespoke.host.place_cast(&self.spatial, &self.compiled);
@@ -42,16 +35,7 @@ const Game = struct {
 
     /// Starts an actor's routine, placing the actor first if no scene lists it.
     fn start(self: *Game, routine: []const u8, actor_name: []const u8) !void {
-        if (comptime @hasDecl(bespoke.host, "start_routine")) {
-            _ = try bespoke.host.start_routine(&self.world, &self.spatial, &self.vm, &self.compiled, routine, actor_name, 10);
-        } else {
-            // Match the startup behavior shipped with v0.1.0.
-            const actor = try self.world.intern_entity(actor_name);
-            if (!self.spatial.agents.contains(actor)) {
-                try self.spatial.register_entity(actor, self.spatial.graph.waypoints.items[0].id, 10);
-            }
-            _ = try self.vm.spawn_routine(actor, self.compiled.routine_entries.get(routine).?);
-        }
+        _ = try bespoke.host.start_routine(&self.world, &self.spatial, &self.vm, &self.compiled, routine, actor_name, 10);
     }
 
     fn run(self: *Game, ticks: usize) !void {
