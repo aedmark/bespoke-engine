@@ -21,8 +21,8 @@
     ],
     "footer": "BeSpoke Engine {{project.version}} · Engine-as-Spine Narrative Simulation · Zero External Dependencies",
     "reviewed": {
-      "date": "2026-11-08",
-      "commit": "3fb57b6",
+      "date": "2026-11-26",
+      "commit": "a1c6e00",
       "by": "BeSpoke Core Team",
       "interval_days": 180
     }
@@ -274,11 +274,12 @@
           "summary": "Compiles high-level narrative DSL script text directly into bytecode chunks and reactive rule tables.",
           "synopsis": "pub fn compile_source(allocator: Allocator, world: *World, spatial: ?*SpatialSystem, source: []const u8) !CompiledProgram",
           "tags": ["compiler", "lexer", "parser", "codegen"],
-          "what": "Transforms plain-text BeSpoke game scripts into executable bytecode, registering entities, relations, stage marks, hotspots, routines, cue handlers, and reactive when rules.",
+          "what": "Transforms plain-text BeSpoke game scripts into executable bytecode, registering entities, relations, stage marks, hotspots, routines, cue handlers, and reactive when rules, while enforcing language invariants (case-decides-role D-161, case-twin refusal D-177, per-relation object kinds D-178, and # bookkeeping protection D-180).",
           "how": [
+            "src/compiler/includes.zig expands top-level include directives in place once from relative paths within the script's folder, preserving file and line mappings for diagnostics (D-185).",
             "src/compiler/lexer.zig scans source into tokens, handling Python-style indentation (indent/dedent), keywords, and comments.",
-            "src/compiler/parser.zig builds an Abstract Syntax Tree (ProgramAst) containing routines, cues, stageplay declarations, and rules.",
-            "src/compiler/codegen.zig lowers the AST into BytecodeChunk instructions, populates entry-point lookup tables, and builds CompiledWhenRule arrays."
+            "src/compiler/parser.zig builds an Abstract Syntax Tree (ProgramAst) containing routines, cues, stageplay declarations, clock mode (D-188), and reactive when / when each rules (D-186).",
+            "src/compiler/codegen.zig lowers the AST into BytecodeChunk instructions, validates case twins (D-177) and relation object kinds (D-178), reserves # bookkeeping names (D-180), populates entry-point lookup tables, and builds CompiledWhenRule arrays."
           ],
           "why": "Writing narrative simulations in raw Zig or assembly is tedious for game designers. The BeSpoke DSL provides clean theatrical syntax while compiling to zero-overhead bytecode.",
           "why_basis": "recorded",
@@ -1135,6 +1136,7 @@
             "host.run_command interprets a typed line for an actor and fires its cue; dialogue.view and VM.choose present and answer the open set of choices.",
             "host.start_script runs the top-level statements, places the cast, starts every routine, and returns the player; the stock runner, the guide test, and browser script decks all start scripts this way (D-066).",
             "host.place_cast puts each cast member on the first mark of its scene unless the host already placed it (D-065); call it before starting routines.",
+            "host.hint, host.decision, host.dilemma, and host.known_value (and their Session methods) let hosts query declared subsystems without reading internal CompiledProgram tables (D-176).",
             "host.Session owns the timeline, rewind, scrub, saves, pause, and single step for a window host."
           ],
           "why": "Hosts that copied loop and speech plumbing drifted apart. One documented kit keeps every host on the same lifecycle, and the authoring guide's table gives authors the contract without reading engine source.",
@@ -1277,10 +1279,10 @@
           "tags": ["cli", "compiler", "package", "runner", "diagnostics"],
           "what": "Enables narrative designers to author external scenario files on disk, validate syntax with line and column diagnostics, compile them into standalone CRC32-checksummed binary packages (.bspk), and execute them directly without recompiling engine source.",
           "how": [
-            "bespoke check validates syntax and semantics, reporting file, line, and column error diagnostics on syntax mistakes.",
-            "bespoke compile lowers narrative DSL text directly to standalone binary asset packages (.bspk) with magic header BSPB and CRC32 payload verification.",
-            "bespoke run executes either text scripts or compiled packages in headless simulation mode or full 60 Hz SDL2 graphical mode.",
-            "The asset loader validates header magic, version, payload checksum, and element bounds before allocation, protecting host boundaries from corrupt packages.",
+            "bespoke check validates syntax and semantics, reporting file, line, and column error diagnostics and warnings, with --kind for automated conformance suites.",
+            "bespoke compile lowers narrative DSL text directly to standalone sectioned binary asset packages (.bspk) with magic header BSP1 format 1, tagged length-prefixed sections, and CRC32 payload verification (D-187).",
+            "bespoke run executes either text scripts or compiled packages in headless simulation mode (with --input, --facts, and --seed) or full 60 Hz SDL2 graphical mode.",
+            "The asset loader validates section tags, header magic, version, payload checksum, and element bounds before allocation, protecting host boundaries from corrupt packages.",
             "bespoke init <name> writes a standalone game project from embedded templates: a build that depends on this engine checkout by relative path, a host, a starter script, and tests (P29-01, D-063)."
           ],
           "why": "Narrative authors require a decoupled toolchain where content can be written, validated in CI, packaged, and distributed without touching the engine's core Zig code.",
@@ -1304,7 +1306,7 @@
             "AudioBridge consumes discrete audio cues from simulation ticks via an atomic/mutex-guarded ring buffer without blocking the simulation clock.",
             "Procedural ChiptuneSynth generates variable-duty pulse waves, linear triangles, sawteeth, and LCG noise using 32-bit integer phase accumulators and a precomputed 44.1 kHz MIDI table borrowed from Whimsy Machine.",
             "SfxVoice pool synthesizes 10 action sound effects (footsteps, pickups, combining items, horn blasts, splashes, sword clashes, alert stingers, dialogue chirps, clicks, whistles) with attack/decay envelopes and pitch sweeps.",
-            "A 4-channel step sequencer plays each host track as arranged two-bar sections, each pass optionally transposed or with parts muted (D-089), so the eleven proof tracks run over two minutes before repeating, with automatic crossfades.",
+            "A 4-channel step sequencer plays each host track as arranged two-bar sections, each pass optionally transposed or with parts muted (D-089), so every proof track runs over two minutes before repeating, each with its own unique arrangement and automatic crossfades.",
             "DisplayWindow initializes an SDL2 audio callback feeding 16-bit stereo PCM samples, falling back gracefully to silent offline rendering in headless mode."
           ],
           "why": "Narrative immersion requires rich auditory feedback, but BeSpoke's Engine-as-Spine tenet forbids external asset dependencies, blocking audio threads, or non-deterministic simulation execution. Pure procedural integer synthesis guarantees zero asset bloat, instant loading, and 100% headless testability.",
@@ -1325,7 +1327,8 @@
           "tags": ["save", "load", "persistence", "slots", "crc32", "thumbnail"],
           "what": "Provides durable cross-session save/load persistence on disk (.sav), managing 8 numbered save slots plus a dedicated Quick-Save slot with metadata headers, miniature visual frame thumbnails, automatic backup recovery, and an interactive SDL2 Save/Load drawer.",
           "how": [
-            "write_save_state and read_save_state serialize and restore World relational arenas, SpatialSystem motor agent paths, and VM fiber/interrupt stacks inside a BSAV binary envelope protected by a 32-bit CRC32 checksum.",
+            "write_save_state and read_save_state serialize and restore World relational arenas, SpatialSystem motor agent paths, VM fiber/interrupt stacks, and dice state (D-184) inside a BSV1 version 1 binary envelope storing build identity, save version (D-162), and a 32-bit CRC32 checksum.",
+            "When save version matches across compatible builds, load_from_other_build remaps stored facts by entity name and restarts routines cleanly (D-162).",
             "SaveMetadata embeds playtime, simulation tick, Unix timestamp, fact count, active scene name, actor coordinates, and a 16x12 RGB332 miniature graphical scene thumbnail.",
             "SaveManager preserves any existing valid save as .sav.bak before overwriting; if a primary .sav file fails checksum or header validation on load, it automatically recovers from .sav.bak and repairs the primary file.",
             "DisplayWindow integrates an in-engine Pause & Save/Load Drawer overlay ([P], [F2], [F3]) and 1-key Quick-Save/Quick-Load ([F5], [F9]), rendering each slot's miniature RGB332 thumbnail and metadata."
@@ -1402,9 +1405,9 @@
           "id": "showcase-gallery-and-viewer",
           "title": "Showcase Gallery and the Standalone Proof Pages",
           "summary": "The showcase lists every proof, and each card opens that proof's own standalone page, which plays its deck in the browser.",
-          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html and thirteen site/*.html pages",
+          "synopsis": "tools/site_gallery.json -> python3 tools/build_site.py -> SITE_GALLERY region in site/index.html, site/harbour.html, and eighteen proof site/*.html pages",
           "tags": ["site", "gallery", "standalone", "diagrams"],
-          "what": "A generated gallery of thirteen proof cards, each linking to a standalone page that plays one deck, and a How It Works section of three inline SVG diagrams. Each page carries its own how-to-play notes, walkthrough, and keys.",
+          "what": "A generated gallery of eighteen proof cards, each linking to a standalone page that plays one deck, The Harbour on the homepage and site/harbour.html, and a How It Works section of three inline SVG diagrams. Each page carries its own how-to-play notes, walkthrough, and keys.",
           "how": [
             "build_site.py reads tools/site_gallery.json and writes one card per proof, linking the page and deck that entry names.",
             "Each page is a checked-in HTML file with the generated-region markers; build_site.py embeds tools/engine_audio.js, tools/proof_page.js, and bespoke-proofs.wasm into it.",
@@ -1434,7 +1437,7 @@
             "export refuses a stale page, then adds OpenGraph, Twitter, and theme-colour tags from the page's own title and description, plus canonical and og:url when --site-url is given.",
             "A registration script added before </body> registers sw.js only over http(s), so the file:// page is unaffected.",
             "sw.js names its cache after a hash of the exported page, deletes older caches on activation, and answers from the network first, falling back to the cache offline.",
-            "The embedded module is small because the wasm runtime's state is an uninitialised global; node tools/wasm_smoke.js fails any module over 1 MiB."
+            "The embedded modules stay lean using linked section readers (D-187) and an uninitialised global runtime state; tools/check_web_budgets.py enforces the 1.5 MiB module limit (D-159) and 2 MiB proof-page limit (D-157)."
           ],
           "why": "Neocities serves static files and allows no custom headers, so caching and metadata live in the files themselves. Publishing stays a manual step the maintainer takes (D-074), so the repository holds no host credentials.",
           "why_basis": "recorded",
@@ -1453,15 +1456,15 @@
           "summary": "Zero-dependency wasm32-freestanding runtime that draws the desktop window's frame, with a browser event bridge; games supply its scenes as decks.",
           "synopsis": "zig build wasm wasm-proofs | wasm_init(deck); wasm_step_tick(); wasm_render_frame(); wasm_on_pointer_down(x, y); wasm_set_verb(i);",
           "tags": ["wasm", "browser", "canvas", "events", "runtime", "framebuffer"],
-          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 1280x720 RGBA8888 framebuffer and a browser mouse/keyboard/touch event bridge. It draws the same frame as the desktop window, with the same code. What is on stage comes from a deck table the host compiles in: the engine's own module has a neutral demo deck and a script deck, and bespoke-proofs.wasm carries thirteen proof decks, and a deck can turn on the desktop's typed-command bar.",
+          "what": "Compiles the BeSpoke Engine simulation spine to a zero-dependency wasm32-freestanding WebAssembly module with a 1280x720 RGBA8888 framebuffer and a browser mouse/keyboard/touch event bridge. It draws the same frame as the desktop window, with the same code and the wider 5x7 Latin font (D-179). What is on stage comes from a deck table the host compiles in: the engine's own module has a neutral demo deck and a script deck, and bespoke-proofs.wasm carries eighteen proof decks, and a deck can turn on the desktop's typed-command bar.",
           "how": [
             "The runtime captures the desktop RenderFrame and draws it with a DisplayWindow made by init_canvas into a 1280x720x4 RGBA8888 buffer in linear memory (D-097): the deck's theme draws its proof's scenery, and the window draws the verb bar, item tray, dialogue panel, banners, and timeline. The desktop draws into the same Canvas (src/display/canvas.zig) and SDL only shows it, so the two match pixel for pixel.",
-            "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots under a 16 MiB capped allocator. Each Deck supplies load, after-tick, and catalyst callbacks, a theme, and a status hook, and wasm.export_runtime(decks) emits the C-ABI exports (wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick) for a build's decks.",
-            "dispatch_event normalizes browser pointer_down, pointer_move, right_click, key_down, and touch events into walk_to motor intents, verb selection, cue firing, item use, catalyst triggers, and timeline scrubbing, hit-testing with the desktop layout.",
+            "WasmRuntime manages World, SpatialSystem, BytecodeChunk, VM, and a 32-slot ring buffer of binary World snapshots under a 16 MiB capped allocator. Each Deck supplies load, after-tick, and catalyst callbacks, a theme, and a status hook, and wasm.export_runtime(decks) emits the 21 supported C-ABI browser exports (including wasm_init, wasm_step_tick, wasm_framebuffer_ptr, wasm_scrub_to_tick, wasm_hint, wasm_decision, wasm_dilemma, and wasm_known_value; D-175, D-176).",
+            "dispatch_event normalizes browser pointer_down, pointer_move, right_click, key_down, and touch events into walk_to motor intents, verb selection, cue firing, item use, catalyst triggers, [H] hint steps, and timeline scrubbing, hit-testing with the desktop layout.",
             "The engine synthesizer plays in the browser (D-071): the runtime's AudioBridge renders the script's scores or a deck's soundtrack, and the page pulls stereo samples with wasm_audio_render into Web Audio. A deck can own a TemporalHypervisor whose live branch the VM, story, and inspector follow and the timeline records; draft decks play notes on C to B.",
-            "I opens the state inspector (D-070, D-098): the desktop State tab itself, drawn in the save drawer's place, with the clock paused and the desktop's keys sent as DOM key codes.",
+            "I opens the state inspector (D-070, D-098): the desktop State tab itself, drawn in the save drawer's place, with the clock paused and the desktop's keys (including E for # engine relations) sent as DOM key codes.",
             "Script decks (wasm.script_deck_with) compile a game's or a proof's script in the browser, start it with host.start_script, and tick through host.tick. Verbs on people and props fire LooksAt, TalksTo, Takes, or Uses for the deck's player; the number keys answer an open dialogue; the stage shows only the current scene, as on desktop (D-066, D-069).",
-            "The showcase gives each proof its own page (D-122); build_site.py embeds bespoke-proofs.wasm into all thirteen via tools/proof_page.js. The homepage loads no proof runtime. tools/wasm_smoke.js exercises both modules in Node."
+            "The showcase gives each proof its own page (D-122); build_site.py embeds bespoke-proofs.wasm into all eighteen via tools/proof_page.js. The homepage loads no proof runtime. tools/wasm_smoke.js exercises both modules in Node."
           ],
           "why": "Targeting wasm32-freestanding with an in-memory RGBA8888 framebuffer preserves BeSpoke's zero-external-dependency guarantee (no Emscripten or SDL2 required). Drawing both surfaces through one canvas means a game's art and interface are written once (D-097). Decks keep game content out of the engine module (D-042), and the interactive simulator lives on the public showcase site rather than inside the reference manual (D-047).",
           "why_basis": "recorded",
