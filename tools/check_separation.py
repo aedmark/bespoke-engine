@@ -39,6 +39,7 @@ MIN_NAME_LENGTH = 4
 GENERIC_NAMES = {
     "Player": "default actor name in the engine runner and REPL",
     "Scene": "default animation target in the compiler",
+    "Mercy": "standard value-axis example in engine docs (D-144); a virtue word, not proof content",
 }
 
 DECL_RE = re.compile(r"^\s*(?:scene|cast|props|marks|entity)\b\s*:?\s*(.+)$", re.M)
