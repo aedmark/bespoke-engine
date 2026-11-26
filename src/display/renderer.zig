@@ -959,17 +959,26 @@ pub fn hit_test_save_slot(mouse_x: i32, mouse_y: i32, drawer_rect: Rect) ?u8 {
     return null;
 }
 
-/// Hit-tests mouse coordinates against the top tab buttons inside the Save/Load drawer (P17-03).
-pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: Rect) ?SaveDrawerTab {
+/// Bounds for each top tab button inside the Pause & Save/Load drawer (P17-03, P48-05).
+/// Drawing and mouse hit-testing share this geometry so labels fit inside every button.
+pub fn get_save_drawer_tab_rect(tab: SaveDrawerTab, drawer_rect: Rect) Rect {
     const tab_y = drawer_rect.y + 42;
     const tab_h: i32 = 28;
-    if (mouse_y < tab_y or mouse_y > tab_y + tab_h) return null;
+    return switch (tab) {
+        .save_mode => .{ .x = drawer_rect.x + 20, .y = tab_y, .w = 136, .h = tab_h },
+        .load_mode => .{ .x = drawer_rect.x + 166, .y = tab_y, .w = 136, .h = tab_h },
+        .state_mode => .{ .x = drawer_rect.x + 312, .y = tab_y, .w = 96, .h = tab_h },
+        .resume_game => .{ .x = drawer_rect.x + drawer_rect.w - 308, .y = tab_y, .w = 168, .h = tab_h },
+        .quit_game => .{ .x = drawer_rect.x + drawer_rect.w - 130, .y = tab_y, .w = 110, .h = tab_h },
+    };
+}
 
-    if (mouse_x >= drawer_rect.x + 20 and mouse_x <= drawer_rect.x + 170) return .save_mode;
-    if (mouse_x >= drawer_rect.x + 180 and mouse_x <= drawer_rect.x + 330) return .load_mode;
-    if (mouse_x >= drawer_rect.x + 340 and mouse_x <= drawer_rect.x + 470) return .state_mode;
-    if (mouse_x >= drawer_rect.x + drawer_rect.w - 270 and mouse_x <= drawer_rect.x + drawer_rect.w - 140) return .resume_game;
-    if (mouse_x >= drawer_rect.x + drawer_rect.w - 130 and mouse_x <= drawer_rect.x + drawer_rect.w - 20) return .quit_game;
+/// Hit-tests mouse coordinates against the top tab buttons inside the Save/Load drawer (P17-03).
+pub fn hit_test_save_drawer_tab(mouse_x: i32, mouse_y: i32, drawer_rect: Rect) ?SaveDrawerTab {
+    for (std.meta.tags(SaveDrawerTab)) |tab| {
+        const r = get_save_drawer_tab_rect(tab, drawer_rect);
+        if (mouse_x >= r.x and mouse_x <= r.x + r.w and mouse_y >= r.y and mouse_y <= r.y + r.h) return tab;
+    }
     return null;
 }
 
@@ -4089,44 +4098,70 @@ pub const DisplayWindow = struct {
 
             // Header Banner
             self.fill_rect(drect.x + 4, drect.y + 4, drect.w - 8, 30, Color{ .r = 22, .g = 32, .b = 54 });
-            self.draw_text(
+            self.draw_text_fit(
                 "=== PAUSE & PERSISTENT SAVE / LOAD MANAGER (P / Esc: Resume | Tab: Mode | 0-8: Slot | F5/F9: Quick) ===",
                 drect.x + 16,
                 drect.y + 14,
+                drect.w - 32,
                 1,
                 Color.wp_hover,
             );
 
-            // Top Tab Bar: [ SAVE MODE ] [ LOAD MODE ] [ RESUME ] [ QUIT ]
-            const tab_y = drect.y + 42;
+            // Top Tab Bar: [ SAVE ] [ LOAD ] [ STATE ] [ RESUME ] [ QUIT ]
             const is_save_mode = (self.save_menu_mode == .save);
-
-            // Save Mode Tab
-            self.fill_rect(drect.x + 20, tab_y, 150, 28, if (is_save_mode) Color.wp_hover else Color{ .r = 30, .g = 41, .b = 59 });
-            self.draw_rect_outline(drect.x + 20, tab_y, 150, 28, if (is_save_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
-            self.draw_text("SAVE GAME [F2]", drect.x + 32, tab_y + 8, 2, if (is_save_mode) Color.black else Color.hud_text);
-
-            // Load Mode Tab
             const is_load_mode = (self.save_menu_mode == .load);
-            self.fill_rect(drect.x + 180, tab_y, 150, 28, if (is_load_mode) Color.wp_target else Color{ .r = 30, .g = 41, .b = 59 });
-            self.draw_rect_outline(drect.x + 180, tab_y, 150, 28, if (is_load_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
-            self.draw_text("LOAD GAME [F3]", drect.x + 192, tab_y + 8, 2, if (is_load_mode) Color.black else Color.hud_text);
-
-            // State Inspector Tab (P27-01, D-058)
             const is_state_mode = (self.save_menu_mode == .state);
-            self.fill_rect(drect.x + 340, tab_y, 130, 28, if (is_state_mode) INSPECTOR_ACCENT else Color{ .r = 30, .g = 41, .b = 59 });
-            self.draw_rect_outline(drect.x + 340, tab_y, 130, 28, if (is_state_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 });
-            self.draw_text("STATE", drect.x + 376, tab_y + 8, 2, if (is_state_mode) Color.black else Color.hud_text);
-
-            // Resume Button
-            self.fill_rect(drect.x + drect.w - 270, tab_y, 130, 28, Color{ .r = 22, .g = 101, .b = 52 });
-            self.draw_rect_outline(drect.x + drect.w - 270, tab_y, 130, 28, Color.status_running);
-            self.draw_text("RESUME [Esc]", drect.x + drect.w - 256, tab_y + 8, 2, Color.white);
-
-            // Quit Button
-            self.fill_rect(drect.x + drect.w - 130, tab_y, 110, 28, Color{ .r = 127, .g = 29, .b = 29 });
-            self.draw_rect_outline(drect.x + drect.w - 130, tab_y, 110, 28, Color.cue_alert);
-            self.draw_text("QUIT [Q]", drect.x + drect.w - 108, tab_y + 8, 2, Color.white);
+            const tabs = [_]struct {
+                tab: SaveDrawerTab,
+                label: []const u8,
+                bg: Color,
+                border: Color,
+                fg: Color,
+            }{
+                .{
+                    .tab = .save_mode,
+                    .label = "SAVE [F2]",
+                    .bg = if (is_save_mode) Color.wp_hover else Color{ .r = 30, .g = 41, .b = 59 },
+                    .border = if (is_save_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 },
+                    .fg = if (is_save_mode) Color.black else Color.hud_text,
+                },
+                .{
+                    .tab = .load_mode,
+                    .label = "LOAD [F3]",
+                    .bg = if (is_load_mode) Color.wp_target else Color{ .r = 30, .g = 41, .b = 59 },
+                    .border = if (is_load_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 },
+                    .fg = if (is_load_mode) Color.black else Color.hud_text,
+                },
+                .{
+                    .tab = .state_mode,
+                    .label = "STATE",
+                    .bg = if (is_state_mode) INSPECTOR_ACCENT else Color{ .r = 30, .g = 41, .b = 59 },
+                    .border = if (is_state_mode) Color.white else Color{ .r = 71, .g = 85, .b = 105 },
+                    .fg = if (is_state_mode) Color.black else Color.hud_text,
+                },
+                .{
+                    .tab = .resume_game,
+                    .label = "RESUME [Esc]",
+                    .bg = Color{ .r = 22, .g = 101, .b = 52 },
+                    .border = Color.status_running,
+                    .fg = Color.white,
+                },
+                .{
+                    .tab = .quit_game,
+                    .label = "QUIT [Q]",
+                    .bg = Color{ .r = 127, .g = 29, .b = 29 },
+                    .border = Color.cue_alert,
+                    .fg = Color.white,
+                },
+            };
+            for (tabs) |t| {
+                const r = get_save_drawer_tab_rect(t.tab, drect);
+                self.fill_rect(r.x, r.y, r.w, r.h, t.bg);
+                self.draw_rect_outline(r.x, r.y, r.w, r.h, t.border);
+                const lx = r.x + @divTrunc(r.w - font.text_width(t.label, 2), 2);
+                const ly = r.y + @divTrunc(r.h - font.FONT_HEIGHT * 2, 2);
+                self.draw_text(t.label, lx, ly, 2, t.fg);
+            }
 
             if (is_state_mode) self.draw_state_inspector(frame, drect);
 
@@ -4207,7 +4242,8 @@ pub const DisplayWindow = struct {
                 else
                     Color.hud_subtext;
 
-                self.draw_text(slot_title, text_x, srect.y + 10, 2, title_col);
+                const card_text_w = srect.w - (text_x - srect.x) - 8;
+                self.draw_text_fit(slot_title, text_x, srect.y + 10, card_text_w, 2, title_col);
 
                 if (sinfo.occupied) {
                     var line1_buf: [96]u8 = undefined;
@@ -4216,18 +4252,25 @@ pub const DisplayWindow = struct {
                         sinfo.metadata.current_tick,
                         sinfo.metadata.fact_count,
                     }) catch "";
-                    self.draw_text(line1, text_x, srect.y + 32, 1, Color.hud_text);
+                    self.draw_text_fit(line1, text_x, srect.y + 32, card_text_w, 1, Color.hud_text);
 
                     var line2_buf: [96]u8 = undefined;
-                    const line2 = std.fmt.bufPrint(&line2_buf, "Playtime: {d}s | Actors: {d} | {s}", .{
-                        sinfo.metadata.playtime_secs,
-                        sinfo.metadata.actor_count,
-                        sinfo.metadata.get_description(),
-                    }) catch "";
-                    self.draw_text(line2, text_x, srect.y + 46, 1, Color.hud_subtext);
+                    const desc = sinfo.metadata.get_description();
+                    const line2 = if (desc.len > 0)
+                        std.fmt.bufPrint(&line2_buf, "Playtime: {d}s | Actors: {d} | {s}", .{
+                            sinfo.metadata.playtime_secs,
+                            sinfo.metadata.actor_count,
+                            desc,
+                        }) catch ""
+                    else
+                        std.fmt.bufPrint(&line2_buf, "Playtime: {d}s | Actors: {d}", .{
+                            sinfo.metadata.playtime_secs,
+                            sinfo.metadata.actor_count,
+                        }) catch "";
+                    self.draw_text_fit(line2, text_x, srect.y + 46, card_text_w, 1, Color.hud_subtext);
                 } else {
                     const hint = if (is_save_mode) "Click or press number key to save state here" else "No saved state in this slot";
-                    self.draw_text(hint, text_x, srect.y + 34, 1, Color.hud_subtext);
+                    self.draw_text_fit(hint, text_x, srect.y + 34, card_text_w, 1, Color.hud_subtext);
                 }
             }
         }
@@ -5709,4 +5752,90 @@ test "P48-25: prop band probe, Look-only hit testing, area-only parts, and E tog
     try std.testing.expectEqual(@as(usize, 0), win.inspector_history_len);
     try std.testing.expectEqual(@as(usize, 0), win.inspector_selected);
     try std.testing.expectEqual(state_graph.Filter.Kind.all, win.inspector_filter.kind);
+}
+
+test "P48-05: save drawer tabs and slot card text stay inside their bounds" {
+    const testing = std.testing;
+    const drect = get_save_drawer_rect(1280, 720);
+    const tabs = [_]struct { tab: SaveDrawerTab, label: []const u8 }{
+        .{ .tab = .save_mode, .label = "SAVE [F2]" },
+        .{ .tab = .load_mode, .label = "LOAD [F3]" },
+        .{ .tab = .state_mode, .label = "STATE" },
+        .{ .tab = .resume_game, .label = "RESUME [Esc]" },
+        .{ .tab = .quit_game, .label = "QUIT [Q]" },
+    };
+
+    var prev_right: i32 = drect.x;
+    for (tabs) |entry| {
+        const r = get_save_drawer_tab_rect(entry.tab, drect);
+        try testing.expect(r.x >= drect.x + 12);
+        try testing.expect(r.x + r.w <= drect.x + drect.w - 12);
+        try testing.expect(r.x > prev_right);
+        prev_right = r.x + r.w;
+        try testing.expect(font.text_width(entry.label, 2) <= r.w - 8);
+        try testing.expectEqual(@as(?SaveDrawerTab, entry.tab), hit_test_save_drawer_tab(r.x + @divTrunc(r.w, 2), r.y + @divTrunc(r.h, 2), drect));
+    }
+
+    var tmp_dir = testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const base_path = try tmp_dir.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(base_path);
+
+    var sm = try save_mod.SaveManager.init(testing.allocator, testing.io, base_path);
+    defer sm.deinit();
+
+    // Slot 0: corrupted with backup and empty description.
+    sm.slots[0].occupied = true;
+    sm.slots[0].corrupted = true;
+    sm.slots[0].has_backup = true;
+
+    // Slot 1: occupied with long scene name and long description inside a half-width card.
+    sm.slots[1].occupied = true;
+    const long_scene = "Harbour Watch Office Courtyard";
+    @memcpy(sm.slots[1].metadata.scene_name[0..long_scene.len], long_scene);
+    sm.slots[1].metadata.scene_name_len = long_scene.len;
+    const long_desc = "Very long description string that would run past a half-width slot card edge";
+    const desc_len = @min(long_desc.len, sm.slots[1].metadata.description.len);
+    @memcpy(sm.slots[1].metadata.description[0..desc_len], long_desc[0..desc_len]);
+    sm.slots[1].metadata.description_len = @intCast(desc_len);
+
+    // Slot 2: occupied with empty description to confirm no trailing separator is rendered.
+    sm.slots[2].occupied = true;
+    sm.slots[2].corrupted = true;
+    sm.slots[2].has_backup = true;
+
+    var win = try DisplayWindow.init_offscreen(testing.io, 1280, 720);
+    defer win.deinit();
+    win.attach_save_manager(&sm);
+    win.show_save_drawer = true;
+
+    var text_probe = canvas_mod.TextProbe{};
+    win.canvas.?.text_probe = &text_probe;
+    defer win.canvas.?.text_probe = null;
+
+    var frame = std.mem.zeroes(RenderFrame);
+    win.render_frame(&frame, true);
+
+    var saw_empty_desc_line = false;
+    var checked_drawer_texts: usize = 0;
+    for (text_probe.draws[0..text_probe.count]) |d| {
+        if (d.y < drect.y or d.y + d.h > drect.y + drect.h) continue;
+        checked_drawer_texts += 1;
+        try testing.expect(d.x >= drect.x);
+        try testing.expect(d.x + d.w <= drect.x + drect.w - 4);
+        const s = d.get_text();
+        try testing.expect(!std.mem.endsWith(u8, s, " | "));
+        if (std.mem.startsWith(u8, s, "Playtime: ")) {
+            if (!std.mem.startsWith(u8, s, "Playtime: 0s | Actors: 0 | Very")) saw_empty_desc_line = true;
+        }
+        for (tabs) |entry| {
+            if (std.mem.eql(u8, s, entry.label)) {
+                const r = get_save_drawer_tab_rect(entry.tab, drect);
+                try testing.expect(d.x >= r.x + 2);
+                try testing.expect(d.x + d.w <= r.x + r.w - 2);
+            }
+        }
+    }
+    try testing.expect(checked_drawer_texts >= 20);
+    try testing.expect(saw_empty_desc_line);
 }

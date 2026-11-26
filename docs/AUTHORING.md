@@ -250,7 +250,7 @@ entity Fog
 alias Matches: "match", "matchbox"
 
 score Waiting: "t80 o4 l4 @4 v8 L e2 d2 c1"
-score Arrival: "t132 o5 l8 @1 L c e g e c e g4"
+score Arrival: "t128 o4 l8 @2 v9 L c e g e c e g4"
 
 remember Carries(Hero, Matches)
 play score Waiting
@@ -314,11 +314,11 @@ relation Alarm(who)
 entity Watch
 
 score Calm:
-  lead "t96 o5 l8 @1 e g a g e4 d4 L c4 e4 g2"
-  bass "o3 l4 @0 c g a e L f c g c"
+  lead "t96 o4 l8 v8 @2 e g a g e4 d4 L c4 e4 g2"
+  bass "o3 l4 v9 @7 c g a e L f c g c"
   scene Quay
 
-score Chase: "t160 o5 l16 @5 L [c d e d]2"
+score Chase: "t140 o4 l8 @2 v9 L [c d e d]2"
 
 when Alarm(Watch):
   play score Chase

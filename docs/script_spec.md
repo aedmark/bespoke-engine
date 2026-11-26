@@ -300,12 +300,12 @@ A `score` declares four-part music in Music Macro Language (D-060). Each part li
 
 ```bespoke
 score Calm:
-  lead "t96 o5 l8 @1 e g a g e4 d4 L c4 e4 g2"
-  bass "o3 l4 c g a e L f c g c"
-  drums "l8 v10 k h h h L k h s h"
+  lead "t96 o4 l8 v8 @2 e g a g e4 d4 L c4 e4 g2"
+  bass "o3 l4 v9 @7 c g a e L f c g c"
+  drums "l8 v7 k h h h L k h s h"
   scene Gatehouse
 
-score Chase: "t160 o5 l16 @5 L [c d e d]2 [e f g f]2"
+score Chase: "t140 o4 l8 @2 v9 L [c d e d]2 [e f g f]2"
 
 when Alarm(watch):
   play score Chase

@@ -12,12 +12,12 @@ relation Warned(who)
 relation LampLit(lamp)
 
 score Tide:
-  lead "t88 o5 l8 @1 e g a g e4 d4 L c4 e4 g2 e4 d4 c2"
-  bass "o3 l4 @0 c g a e L f c g c"
-  chords "o4 l2 v8 @7 e d L f e"
+  lead "t88 o4 l8 v8 @2 e g a g e4 d4 L c4 e4 g2 e4 d4 c2"
+  bass "o3 l4 v9 @7 c g a e L f c g c"
+  chords "o3 l2 v6 @7 e d L f e"
   scene Lighthouse
 
-score Storm: "t150 o5 l16 @5 L [c d e d]2 [e f g f]2"
+score Storm: "t140 o4 l8 @2 v9 L [c d e d]2 [e f g f]2"
 
 agenda WarnOff:
   actor Keeper
@@ -57,3 +57,34 @@ when LampLit(Lamp):
 
 when Lamp forgets LampLit:
   stop score
+
+on cue LooksAt(Hero, Lamp):
+  if LampLit(Lamp):
+    say Hero: "The great Fresnel lens sweeps bright through the gale."
+  if not LampLit(Lamp):
+    say Hero: "The unlit oil lamp sits cold above the gallery."
+
+on cue Uses(Hero, Lamp):
+  if LampLit(Lamp):
+    say Hero: "The lamp is already ablaze."
+  if not LampLit(Lamp):
+    say Hero: "I trim the wick and strike a spark."
+    remember LampLit(Lamp) for 30 ticks
+
+on cue LooksAt(Hero, Logbook):
+  say Hero: "Tide tables and keeper's entries, inked in a hurried hand."
+
+on cue Uses(Hero, Logbook):
+  say Hero: "The last entry breaks off mid-sentence beside last night's tide."
+
+on cue Takes(Hero, Logbook):
+  say Hero: "The Keeper's log belongs on its stand."
+
+on cue LooksAt(Hero, Keeper):
+  say Hero: "Salt-crusted oilskin and an unblinking stare toward the rocks."
+
+on cue TalksTo(Hero, Keeper):
+  if Warned(Hero):
+    say Keeper: "Keep your hands off the gallery lamp."
+  if not Warned(Hero):
+    say Keeper: "Check the logbook if you must, then mind the stairs."

@@ -674,6 +674,7 @@ fn run_bytes_with_presenter(
         defer bespoke.display.dialogue_panel.clear_display_names();
         var interp = bespoke.command.Interpreter{};
 
+        if (player_entity != .none) display_bridge.set_active_character(player_entity);
         display_bridge.capture_frame(&world, &spatial, &vm);
         display_bridge.set_max_history_tick(0);
         display_bridge.swap();
@@ -686,11 +687,21 @@ fn run_bytes_with_presenter(
         var is_paused = false;
         var last_tick_time = std.Io.Timestamp.now(io, .awake).toMilliseconds();
 
-        window.set_cue_banner("BeSpoke Engine: Scenario Loaded. Left-click waypoints to navigate.", 90);
+        if (vm.current_scene) |sc| {
+            var sname_buf: [48]u8 = undefined;
+            var arrive_buf: [96]u8 = undefined;
+            const sname = bespoke.display.dialogue_panel.entity_name(&world, sc, &sname_buf) orelse "";
+            if (sname.len > 0) {
+                const msg = bespoke.phrase.render(&world, .arrive_scene, &.{.{ .slot = "scene", .value = sname }}, &arrive_buf) catch sname;
+                window.set_cue_banner(msg, 90);
+            }
+        }
 
         while (true) {
             const action = window.poll_events(display_bridge.get_frame());
             var should_step_now = false;
+            var pending_narration_buf: [160]u8 = undefined;
+            var pending_narration_len: usize = 0;
 
             if (window.handle_save_action(action, &world, &spatial, &vm, &display_bridge, &is_paused)) {
                 const loading = action == .quick_load or action == .load_slot;
@@ -718,9 +729,19 @@ fn run_bytes_with_presenter(
                     should_step_now = true;
                 },
                 .walk_player => |wp_id| {
-                    _ = spatial.walk_to_with_world(&world, player_entity, wp_id) catch {};
+                    const planned = spatial.walk_to_with_world(&world, player_entity, wp_id) catch false;
                     if (compiled.turn_clock and player_entity != .none and spatial.is_moving(player_entity)) is_paused = false;
-                    window.set_cue_banner("Directing actor to mark", 60);
+                    var msg_buf: [96]u8 = undefined;
+                    if (planned or !spatial.waypoint_blocked(&world, wp_id)) {
+                        if (spatial.graph.get_waypoint(wp_id)) |wp| {
+                            var nbuf: [48]u8 = undefined;
+                            const mname = bespoke.display.dialogue_panel.display_name(wp.name, &nbuf);
+                            const msg = bespoke.phrase.render(&world, .walking_to, &.{.{ .slot = "mark", .value = mname }}, &msg_buf) catch "Walking...";
+                            window.set_cue_banner(msg, 60);
+                        }
+                    } else {
+                        window.set_cue_banner(bespoke.phrase.text(&world, .cannot_get_there), 90);
+                    }
                 },
                 // A click or number key answers the open dialogue. A scripted choice resumes its
                 // fiber, so the chosen body runs on the tick that follows at once.
@@ -739,11 +760,83 @@ fn run_bytes_with_presenter(
                     const frame = display_bridge.get_frame();
                     if (hs_idx < frame.hotspot_count) {
                         const hs = frame.hotspots[hs_idx];
-                        var banner_buf: [256]u8 = undefined;
-                        const text = std.fmt.bufPrint(&banner_buf, "{s}: \"{s}\"", .{ hs.get_name(), hs.get_examine_text() }) catch "Examined";
-                        window.set_cue_banner(text, 120);
-                        // A click that resolves to an action is a turn, as `look` would be.
-                        if (compiled.turn_clock) should_step_now = true;
+                        var fallback_buf: [256]u8 = undefined;
+                        const res = try runner_act(&world, &vm, &compiled, player_entity, .look_at, hs.entity, hs.get_examine_text(), bespoke.EntityId.none, &pending_narration_buf, &fallback_buf);
+                        if (res.fired) {
+                            should_step_now = true;
+                            if (res.text) |t| pending_narration_len = t.len;
+                        } else {
+                            if (res.text) |t| window.set_cue_banner(t, 120);
+                            // A click that resolves to an action is a turn, as `look` would be.
+                            if (compiled.turn_clock) should_step_now = true;
+                        }
+                    }
+                },
+                .interact_hotspot => |act| {
+                    const frame = display_bridge.get_frame();
+                    if (act.hotspot_index < frame.hotspot_count) {
+                        const hs = frame.hotspots[act.hotspot_index];
+                        var fallback_buf: [256]u8 = undefined;
+                        const res = try runner_act(&world, &vm, &compiled, player_entity, act.verb, hs.entity, hs.get_examine_text(), bespoke.EntityId.none, &pending_narration_buf, &fallback_buf);
+                        if (res.fired) {
+                            should_step_now = true;
+                            if (res.text) |t| pending_narration_len = t.len;
+                        } else if (res.text) |t| {
+                            window.set_cue_banner(t, 120);
+                        }
+                    }
+                },
+                .interact_actor => |act| {
+                    const frame = display_bridge.get_frame();
+                    if (act.actor_index < frame.entity_count) {
+                        const target = frame.entities[act.actor_index].entity;
+                        var fallback_buf: [256]u8 = undefined;
+                        const res = try runner_act(&world, &vm, &compiled, player_entity, act.verb, target, null, bespoke.EntityId.none, &pending_narration_buf, &fallback_buf);
+                        if (res.fired) {
+                            should_step_now = true;
+                            if (res.text) |t| pending_narration_len = t.len;
+                        } else if (res.text) |t| {
+                            window.set_cue_banner(t, 120);
+                        }
+                    }
+                },
+                .use_inventory_on_hotspot => |u| {
+                    const frame = display_bridge.get_frame();
+                    if (u.item_index < frame.inventory_count and u.hotspot_index < frame.hotspot_count) {
+                        var fallback_buf: [256]u8 = undefined;
+                        const res = try runner_act(&world, &vm, &compiled, player_entity, .use_with, frame.hotspots[u.hotspot_index].entity, null, frame.inventory[u.item_index].entity, &pending_narration_buf, &fallback_buf);
+                        if (res.fired) {
+                            should_step_now = true;
+                            if (res.text) |t| pending_narration_len = t.len;
+                        } else if (res.text) |t| {
+                            window.set_cue_banner(t, 120);
+                        }
+                    }
+                },
+                .use_inventory_on_actor => |u| {
+                    const frame = display_bridge.get_frame();
+                    if (u.item_index < frame.inventory_count and u.actor_index < frame.entity_count) {
+                        var fallback_buf: [256]u8 = undefined;
+                        const res = try runner_act(&world, &vm, &compiled, player_entity, .use_with, frame.entities[u.actor_index].entity, null, frame.inventory[u.item_index].entity, &pending_narration_buf, &fallback_buf);
+                        if (res.fired) {
+                            should_step_now = true;
+                            if (res.text) |t| pending_narration_len = t.len;
+                        } else if (res.text) |t| {
+                            window.set_cue_banner(t, 120);
+                        }
+                    }
+                },
+                .combine_inventory_items => |c| {
+                    const frame = display_bridge.get_frame();
+                    if (c.primary_index < frame.inventory_count and c.secondary_index < frame.inventory_count) {
+                        var fallback_buf: [256]u8 = undefined;
+                        const res = try runner_act(&world, &vm, &compiled, player_entity, .use_with, frame.inventory[c.secondary_index].entity, null, frame.inventory[c.primary_index].entity, &pending_narration_buf, &fallback_buf);
+                        if (res.fired) {
+                            should_step_now = true;
+                            if (res.text) |t| pending_narration_len = t.len;
+                        } else if (res.text) |t| {
+                            window.set_cue_banner(t, 120);
+                        }
                     }
                 },
                 .rewind => {
@@ -755,7 +848,7 @@ fn run_bytes_with_presenter(
                         display_bridge.set_max_history_tick(timeline.last_index());
                         display_bridge.swap();
                         bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
-                        window.set_cue_banner("<<< REWOUND TO TICK 2 (PAUSED) <<<", 90);
+                        window.set_cue_banner("Rewound to tick 2 (paused).", 90);
                     }
                 },
                 .scrub_to_tick => |target_tick| {
@@ -769,7 +862,7 @@ fn run_bytes_with_presenter(
                         bespoke.host.command_words(&vm, &compiled, player_entity, &window.command_words);
 
                         var banner_buf: [96]u8 = undefined;
-                        const text = std.fmt.bufPrint(&banner_buf, "<<< TIME-TRAVEL: SCRUBBED TO TICK {d} (PAUSED) <<<", .{world.current_tick}) catch "Scrubbed";
+                        const text = std.fmt.bufPrint(&banner_buf, "Scrubbed to tick {d} (paused).", .{world.current_tick}) catch "Scrubbed";
                         window.set_cue_banner(text, 90);
                     }
                 },
@@ -806,7 +899,11 @@ fn run_bytes_with_presenter(
                 // The window draws script speech only from a banner, so each tick's `say`
                 // lines are passed to it here (P29-02, D-064).
                 var speech_buf: [256]u8 = undefined;
-                if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |line| window.set_cue_banner(line, 160);
+                if (bespoke.host.speech_this_tick(&world, &vm, &speech_buf)) |line| {
+                    window.set_cue_banner(line, 160);
+                } else if (pending_narration_len > 0) {
+                    window.set_cue_banner(pending_narration_buf[0..pending_narration_len], 120);
+                }
 
                 timeline.discard_after(cursor);
                 try timeline.record_run(&world, &spatial, &vm, null);
@@ -1126,4 +1223,149 @@ test "P48-24: symlink escaping script folder is rejected by ScriptFiles" {
     var files = ScriptFiles.for_script(testing.io, main_path);
     const fs = files.source();
     try testing.expectError(error.PathOutsideScriptFolder, fs.read(fs.context, testing.allocator, "escape.bespoke"));
+}
+
+const RunnerActOutcome = struct {
+    fired: bool = false,
+    text: ?[]const u8 = null,
+};
+
+fn runner_verb_cue(verb: bespoke.display.renderer.AdventureVerb) []const u8 {
+    return switch (verb) {
+        .walk => "WalksTo",
+        .look_at => "LooksAt",
+        .talk_to => "TalksTo",
+        .pick_up => "Takes",
+        .use_with => "Uses",
+    };
+}
+
+fn runner_narrate(
+    world: *const World,
+    actor: bespoke.EntityId,
+    verb: bespoke.display.renderer.AdventureVerb,
+    item: bespoke.EntityId,
+    target: bespoke.EntityId,
+    out_buf: *[160]u8,
+) ?[]const u8 {
+    var names: [3][48]u8 = undefined;
+    const who = bespoke.display.dialogue_panel.entity_name(world, actor, &names[0]) orelse bespoke.phrase.text(world, .player_fallback);
+    const what = if (item != .none) bespoke.display.dialogue_panel.entity_name(world, item, &names[1]) orelse bespoke.phrase.text(world, .thing_fallback) else "";
+    const on = if (target != .none) bespoke.display.dialogue_panel.entity_name(world, target, &names[2]) orelse bespoke.phrase.text(world, .thing_fallback) else "";
+    const key: bespoke.phrase.Key = switch (verb) {
+        .walk => .narrate_walk,
+        .look_at => .narrate_look,
+        .talk_to => .narrate_talk,
+        .pick_up => .narrate_take,
+        .use_with => .narrate_use,
+    };
+    return (if (item != .none and target != .none)
+        bespoke.phrase.render(world, .narrate_use_on, &.{ .{ .slot = "actor", .value = who }, .{ .slot = "thing", .value = what }, .{ .slot = "target", .value = on } }, out_buf)
+    else
+        bespoke.phrase.render(world, key, &.{ .{ .slot = "actor", .value = who }, .{ .slot = "target", .value = if (item != .none) what else on } }, out_buf)) catch null;
+}
+
+/// Dispatches one desktop verb action through the script's cue handlers, producing either
+/// fallback narration (`{actor} uses {target}.`) for silent handlers, custom examine text on
+/// unhandled LOOK clicks, or the engine's "Nothing happens." phrase (`D-179`).
+fn runner_act(
+    world: *World,
+    vm: *VM,
+    compiled: *const CompiledProgram,
+    actor: bespoke.EntityId,
+    verb: bespoke.display.renderer.AdventureVerb,
+    target: bespoke.EntityId,
+    examine_text: ?[]const u8,
+    item: bespoke.EntityId,
+    narration_buf: *[160]u8,
+    fallback_buf: *[256]u8,
+) !RunnerActOutcome {
+    if (actor == .none) return .{};
+    if (item != .none) {
+        if ((try vm.fire_cue(compiled, "Uses", actor, item, target)) != null) {
+            return .{ .fired = true, .text = runner_narrate(world, actor, .use_with, item, target, narration_buf) };
+        }
+        return .{ .fired = false, .text = bespoke.phrase.text(world, .nothing_happens) };
+    }
+    if ((try vm.fire_cue(compiled, runner_verb_cue(verb), actor, target, null)) != null) {
+        return .{ .fired = true, .text = runner_narrate(world, actor, verb, .none, target, narration_buf) };
+    }
+    if (verb == .look_at) {
+        if (examine_text) |et| {
+            const tname = world.get_entity_name(target) orelse "";
+            if (et.len > 0 and !std.mem.eql(u8, et, tname)) {
+                var nbuf: [48]u8 = undefined;
+                const dname = bespoke.display.dialogue_panel.entity_name(world, target, &nbuf) orelse tname;
+                const msg = std.fmt.bufPrint(fallback_buf, "{s}: \"{s}\"", .{ dname, et }) catch et;
+                return .{ .fired = false, .text = msg };
+            }
+        }
+    }
+    return .{ .fired = false, .text = bespoke.phrase.text(world, .nothing_happens) };
+}
+
+test "P48-05: runner verb helper fires handlers, falls back to examine text or Nothing happens, and narrates silent handlers" {
+    const testing = std.testing;
+    const script =
+        \\scene: Meadow
+        \\cast: Courier
+        \\props: BrassHorn, OakChest
+        \\marks: Milestone
+        \\
+        \\relation Polished(thing)
+        \\
+        \\routine Idle(Courier):
+        \\  wait 10 ticks
+        \\
+        \\on cue LooksAt(Courier, BrassHorn):
+        \\  say Courier: "Gleaming brass."
+        \\
+        \\on cue Uses(Courier, BrassHorn):
+        \\  remember Polished(BrassHorn)
+        \\
+    ;
+    var world = try World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+    var compiled = try bespoke.compile_source(testing.allocator, &world, &spatial, script);
+    defer compiled.deinit();
+    var vm = VM.init(testing.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+
+    const courier = world.lookup_entity("Courier").?;
+    const horn = world.lookup_entity("BrassHorn").?;
+    const chest = world.lookup_entity("OakChest").?;
+    var narration_buf: [160]u8 = undefined;
+    var fallback_buf: [256]u8 = undefined;
+
+    // 1. Speech handler fires and tick captures the spoken line.
+    const look_res = try runner_act(&world, &vm, &compiled, courier, .look_at, horn, "BrassHorn", bespoke.EntityId.none, &narration_buf, &fallback_buf);
+    try testing.expect(look_res.fired);
+    _ = try bespoke.host.tick(&vm, &compiled);
+    var speech_buf: [256]u8 = undefined;
+    try testing.expectEqualStrings("Courier: \"Gleaming brass.\"", bespoke.host.speech_this_tick(&world, &vm, &speech_buf).?);
+
+    // 2. Silent handler returns consistent narration phrase when the tick speaks nothing.
+    const use_res = try runner_act(&world, &vm, &compiled, courier, .use_with, horn, null, bespoke.EntityId.none, &narration_buf, &fallback_buf);
+    try testing.expect(use_res.fired);
+    try testing.expectEqualStrings("Courier uses Brass Horn.", use_res.text.?);
+    _ = try bespoke.host.tick(&vm, &compiled);
+    try testing.expect(bespoke.host.speech_this_tick(&world, &vm, &speech_buf) == null);
+
+    // 3. Unhandled LOOK with only the default entity name shows "Nothing happens.", not redundant "OakChest: OakChest".
+    const default_look = try runner_act(&world, &vm, &compiled, courier, .look_at, chest, "OakChest", bespoke.EntityId.none, &narration_buf, &fallback_buf);
+    try testing.expect(!default_look.fired);
+    try testing.expectEqualStrings("Nothing happens.", default_look.text.?);
+
+    // 4. Unhandled LOOK with distinct custom examine text displays it.
+    const custom_look = try runner_act(&world, &vm, &compiled, courier, .look_at, chest, "An iron-bound travelling chest.", bespoke.EntityId.none, &narration_buf, &fallback_buf);
+    try testing.expect(!custom_look.fired);
+    try testing.expectEqualStrings("Oak Chest: \"An iron-bound travelling chest.\"", custom_look.text.?);
+
+    // 5. Unhandled TAKE falls back cleanly to "Nothing happens."
+    const unhandled_take = try runner_act(&world, &vm, &compiled, courier, .pick_up, chest, null, bespoke.EntityId.none, &narration_buf, &fallback_buf);
+    try testing.expect(!unhandled_take.fired);
+    try testing.expectEqualStrings("Nothing happens.", unhandled_take.text.?);
 }

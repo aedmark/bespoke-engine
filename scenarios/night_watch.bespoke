@@ -3,35 +3,62 @@
 
 scene Gatehouse:
   cast: Warden
+  props: WatchBell, StairDoor
   marks: Gate, Stair
 
 scene Rampart:
+  props: Beacon
   marks: Tower
 
 relation Alarm(watch)
 
 score Calm:
-  lead "t96 o5 l8 @1 e g a g e4 d4 L c4 e4 g2"
-  bass "o3 l4 @0 c g a e L f c g c"
-  chords "o4 l2 v8 @7 e d L f e"
-  drums "l8 v10 k h h h L k h s h"
+  lead "t96 o4 l8 v8 @2 e g a g e4 d4 L c4 e4 g2"
+  bass "o3 l4 v9 @7 c g a e L f c g c"
+  chords "o3 l2 v6 @7 e d L f e"
+  drums "l8 v7 k h h h L k h s h"
   scene Gatehouse
 
 score Wind:
-  lead "t72 o4 l4 @4 v9 L e2 d2 c1"
-  chords "o3 l1 v6 @7 L c < a"
+  lead "t72 o4 l4 @4 v7 L e2 d2 c1"
+  chords "o3 l1 v5 @7 L c < a"
   scene Rampart
 
-score Chase: "t160 o5 l16 @5 L [c d e d]2 [e f g f]2"
+score Chase: "t140 o4 l8 @2 v9 L [c d e d]2 [e f g f]2"
 
 transition to scene Gatehouse
 
 routine Watch(Warden):
+  say Warden: "All quiet at the gatehouse. Click the Watch Bell or Stair Door, or wait."
   wait 10 ticks
+  say Warden: "Someone is forcing the postern gate!"
   remember Alarm(Warden) for 15 ticks
   wait 20 ticks
+  say Warden: "Heading up to the rampart to check the wind."
   transition to scene Rampart
   wait 10 ticks
+  say Warden: "Coast is clear. Back down to the gatehouse."
+  transition to scene Gatehouse
+
+on cue LooksAt(Warden, WatchBell):
+  say Warden: "A brass watch bell. Use it to sound the alarm."
+
+on cue Uses(Warden, WatchBell):
+  say Warden: "Clanging the bell!"
+  remember Alarm(Warden) for 10 ticks
+
+on cue LooksAt(Warden, StairDoor):
+  say Warden: "A narrow stone stair up to the rampart."
+
+on cue Uses(Warden, StairDoor):
+  say Warden: "Climbing to the rampart."
+  transition to scene Rampart
+
+on cue LooksAt(Warden, Beacon):
+  say Warden: "An iron cresset overlooking the harbour. Use it to go back down."
+
+on cue Uses(Warden, Beacon):
+  say Warden: "Returning to the gatehouse."
   transition to scene Gatehouse
 
 when Alarm(watch):
