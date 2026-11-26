@@ -1,6 +1,6 @@
 # Release Hand-Test Pass
 
-Release verification on Linux, in Firefox and Chromium, and on the uploaded showcase. Automated suites are in [TESTING.md](../TESTING.md); headless checks supplement the play and listening pass. Roadmap items: P34-07 and P42-03.
+Release verification on Linux, in Firefox and Chromium, and on the uploaded showcase. Automated suites are in [TESTING.md](../TESTING.md); headless checks supplement the play and listening pass. Roadmap items: P34-07, P42-03, and P48-05.
 
 Work through the sections in order. Each step says what to do and what you should see or hear. Tick the box, or write the failure in the results table at the end. A failure does not stop the pass: note it and move on, unless it blocks the steps after it.
 
@@ -22,16 +22,19 @@ Run these first, so that a hand-test failure cannot be a build that was already 
 ```bash
 python3 tools/check_docs.py
 zig build test
+zig build test-conformance
+zig build test-fuzz --test-timeout 10s
 zig build wasm wasm-proofs harbour && node tools/wasm_smoke.js
 python3 tools/build_site.py --check
+python3 tools/check_web_budgets.py
 python3 -m unittest discover -s tests
 zig build test-template
 ```
 
 - [ ] `check_docs.py` reports 0 errors.
-- [ ] `zig build test` passes with the count in HANDOFF's Verified table.
-- [ ] The smoke check prints `ok` for every deck and for `bespoke-proofs.wasm audio`.
-- [ ] `build_site.py --check` is clean, and the unit tests pass.
+- [ ] `zig build test`, `test-conformance`, and `test-fuzz` pass with the counts in HANDOFF's Verified table.
+- [ ] The smoke check prints `ok` for every deck, feature query, and `bespoke-proofs.wasm audio`.
+- [ ] `build_site.py --check` and `check_web_budgets.py` are clean, and the unit tests pass.
 - [ ] `test-template` passes (about a minute).
 
 Then build the binaries the rest of the pass uses:
@@ -84,6 +87,11 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 | `--saltmarket` | 1 Cunning, 2 Muscle, 3 Crew, T talk, S solve | Choosing a path locks the rival gates and prunes the dialogue. Play each of the three paths once. |
 | `--grid` | 1 fill, 2 torch, 3 throw | Fire spreads on the grid, smoke follows, and water flows back down the corridor and puts it out. |
 | `--observatory` | 1 search, 2 take, 3 read, 4 present or talk; Enter opens the command bar | Staff walk their routines and intercept you. Type commands (`go to the archive`, `take the slip`, `present the slip to the rival`); Up and Down recall history; an ambiguous noun asks which you meant. |
+| `--long-gallery` | `Q` watch Locked Studio, `G` lantern/door, `B` bell, `F` light fire | Toggling into the watched Locked Studio captures Corin without moving Audra; lantern, bell, and fire clues converge to open the studio door. |
+| `--valerius` | 1 to 4 appeal / trial steps | Valerius weighs Justice, Mercy, and Loyalty across four trials; red lines veto forbidden outcomes; learned values teach and sway appeals. |
+| `--lamplighter` | 1 to 5 steps, Enter or clicks on art areas | Imported PNG backdrops and sprites draw the streets; clicked props use pixel areas, and the three lamp looks track story state (`Lit`, jackdaw nest, nightfall). |
+| `--word-foundry --headless` | headless only (`</dev/null`) | Compiles spellbook vocabularies (`Word`, `Power`, `Element`, `Form`) and casts resolved three-word spells gated by discovery. |
+| `--cinder-table --headless` | headless only (`</dev/null`) | Evaluates private hands and scored decisions with deterministic tie-breaking and rising triggers. |
 
 ### 2.3 Shared features (check each in at least one proof)
 
@@ -95,7 +103,7 @@ For every proof: reach the ending, then check the shared items in 2.3 at least o
 - [ ] **Rewind:** R rewinds and the run replays the same way.
 - [ ] **Saves:** F2, save to a slot; the slot shows a small colour thumbnail of the stage. Play on, then F3 and load it: the stage returns to the saved moment. Repeat with F5 and F9.
 - [ ] **Temporal save (`--weathercock`):** save while the branch is live, play on past the collapse, load. The countdown, branch facts, and primary facts agree with the moment of the save.
-- [ ] **State inspector:** P, then Tab or click STATE. Arrows select, Enter centres, Backspace goes back, Home resets, F cycles the relation filter. Closing the drawer resumes play; the inspector never saves or loads.
+- [ ] **State inspector:** P, then Tab or click STATE. Arrows select, Enter centres, Backspace goes back, Home resets, F cycles the relation filter, and E toggles `#` engine bookkeeping relations (`D-180`). Closing the drawer resumes play; the inspector never saves or loads.
 - [ ] **Console (`--tavern`, `--spitting-contest`, `--village`, and `bespoke run`):** `` ` `` opens it; `help` lists the commands; `facts` lists the live world; `remember Carries(Cat, Cheese)` changes the stage on the next tick; `forget` undoes it.
 - [ ] **Party HUD (`--three-tides`):** portraits show, and 1 to 4 switch the active character.
 
@@ -155,8 +163,8 @@ Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.se
 
 - [ ] The homepage has one live game, The Harbour. It leaves the clock stopped before Start. With the map closed, start the watch, enter `read tide board`, then `go forward`; the transcript reports the tide and the Watch office. Open the game on its own page as well.
 - [ ] Every gallery card opens its proof's own page, and each page loads with no console errors (open the developer tools).
-- [ ] All thirteen pages load their deck: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Barbs, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar).
-- [ ] In each page: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys.
+- [ ] All eighteen proof pages load their deck: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Barbs, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar), Valerius and the Bread, The Lamplighter's Round, The Long Gallery, The Word Foundry, and The Cinder Table.
+- [ ] In each page: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys; H steps through available hints on Observatory (and Valerius / Harbour); each proof plays its own unique audio arrangement.
 - [ ] Saltmarket: choosing a way in with 1, 2, or 3 locks the others.
 - [ ] Copper Weathercock: the tick counter never runs backwards; a rewind across the collapse brings the branch back.
 - [ ] Bell Tower: act on something, then C to B notes; the DISTAFF line shows notes, reach, and target, and the tower rings.
@@ -210,7 +218,7 @@ Copy this table into HANDOFF's session log (the "Verified" table holds only the 
 | --- | --- | --- |
 | Commit tested | | |
 | 1. Automated baseline | | |
-| 2. Desktop proofs (13) | | |
+| 2. Desktop proofs (16 windowed, 2 headless) | | |
 | 2.3 Shared features | | |
 | 3. Listening | | |
 | 4. Stock runner | | |
@@ -227,4 +235,4 @@ For each failure:
 - Anything larger becomes a roadmap item with its origin (`found during P34-07`) and an acceptance line.
 - A failure you cannot reproduce goes in HANDOFF under Corrections, with what you saw and where.
 
-For P42-03, record every row, including partial checks and blockers. Keep the item open until its acceptance criteria are met.
+For P42-03 and P48-05, record every row, including partial checks and blockers. Keep the item open until its acceptance criteria are met.
