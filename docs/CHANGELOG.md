@@ -4,6 +4,19 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 1.0.0 - 2026-11-26
+
+### What 1.0 promises
+
+- **Script language ([`script_spec.md`](script_spec.md)):** Every frozen 1.0 construct, naming rule, and error kind is pinned by the 47-case language conformance suite (`zig build test-conformance`) and governed by the [deprecation policy](CONTRIBUTING.md#deprecation-policy).
+- **File formats ([`COMPATIBILITY.md`](COMPATIBILITY.md)):** Packages use `BSP1` format 1 tagged sections (`NAME`, `PLAC`, `CODE`, `RULE`, subsystem sections, `IMGS`, `ARTB`, `TEXT`), and saves use `BSV1` version 1. Every 1.x reader loads every earlier 1.x package and save; pre-1.0 files (`BSPB`, `BSAV`) are refused with a clear diagnostic.
+- **Supported host APIs ([`API.md`](API.md)):** The supported Zig host contract is verified at compile time by `tests/supported_host.zig`, and the 21 supported browser WebAssembly exports are pinned by `tests/test_browser_exports.py`; unlisted declarations remain internal.
+- **Release targets:** Linux x86_64 (static CLI and SDL2 desktop) and modern browsers (Chrome and Firefox, offline and phone width); macOS builds in the starter CI workflow; Windows remains deferred until a contributor maintains it (`D-143`).
+
+### Changes in 1.0.0
+
+- Release hand-test polish (`P48-05`): Save/Load drawer tab labels and slot cards fit within bounds (`src/display/renderer.zig`), the stock runner handles all interactive verbs with consistent `src/phrase.zig` status banners (`src/runner.zig`, `src/scaffold/main.bespoke.tmpl`), `scenarios/night_watch.bespoke` adds interactive prop handlers, and harsh `o5 @1`/`@5` MML scores in `scenarios/night_watch.bespoke`, `src/scaffold/main.bespoke.tmpl`, `docs/AUTHORING.md`, `docs/script_spec.md`, and the tutorial patch in `docs/FIRST_GAME.md` are re-voiced cleanly.
+
 - Wider 5x7 canvas font (`D-179`): display names, dialogue, hints, and stage labels render Latin-1 Supplement, common Latin Extended-A letters, and typographic punctuation identically on desktop and browser, unsupported characters fall back cleanly to a single `?`, and truncation/wrapping count characters rather than bytes.
 - Case-only name twins refused at compile time (`D-177`): declaring or referencing an entity, relation, routine, or scene name that differs from an existing name only in ASCII letter case (`LAMP` beside `Lamp`) is now a compile error whose help names the existing spelling, while lowercase variables, identical spellings across distinct namespaces, and spoken text stay allowed.
 - One `host` question per declared feature and matching browser exports (`D-176`): `host.hint`, `host.decision`, `host.dilemma`, and `host.known_value` (plus `Session` wrappers) replace direct internal table/module reads, and the browser runtime exports `wasm_hint`, `wasm_decision`, `wasm_dilemma`, `wasm_known_value`, `wasm_query_ptr`, and `wasm_query_len` alongside the `[H]` hint key on the stock and showcase pages.

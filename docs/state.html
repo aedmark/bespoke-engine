@@ -69,7 +69,7 @@
 <body>
 <main>
 
-<p class="eyebrow">BeSpoke Engine 0.4.0 &middot; 25 November 2026</p>
+<p class="eyebrow">BeSpoke Engine 1.0.0 &middot; 26 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
@@ -89,7 +89,7 @@
 <div class="facts">
   <div class="fact"><b>19</b><span>demo games, from a heist to a hard winter's judgement</span></div>
   <div class="fact"><b>19</b><span>of them play in a web page, no install</span></div>
-  <div class="fact"><b>700+</b><span>automated checks, 43 conformance specs, and 18 recorded play-throughs</span></div>
+  <div class="fact"><b>700+</b><span>automated checks, 47 conformance specs, and 18 recorded play-throughs</span></div>
   <div class="fact"><b>0</b><span>outside libraries in the core engine</span></div>
   <div class="fact"><b>100%</b><span>repeatable: same inputs, same game, every time</span></div>
 </div>
@@ -187,7 +187,7 @@
 <h3>Runs anywhere it is pointed</h3>
 <div class="cards">
   <div class="card"><h3>Desktop window</h3><p>A resizable window with verbs, an inventory, speech, a timeline, save slots, and a state inspector.</p><p class="hood"><b>Under the hood:</b> SDL2, a fixed 1280x720 frame letterboxed to any window size.</p></div>
-  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~596 KB for the stock engine, ~985 KB with all eighteen browser proof demos) embedded in the page.</p></div>
+  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~612 KB for the stock engine, ~1,002 KB with all eighteen browser proof demos) embedded in the page.</p></div>
   <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick, or feed scripted commands and assert final facts. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code> (with <code>--input</code>, <code>--facts</code>, and <code>--seed N</code>).</p></div>
   <div class="card"><h3>See inside the world</h3><p>Pause and open the state inspector: a map of who relates to what, why each dialogue option is offered or hidden, and what is about to expire.</p><p class="hood"><b>Under the hood:</b> a fact graph with keyboard and mouse navigation and relation filters, in both window and browser.</p></div>
 </div>
@@ -246,8 +246,8 @@ routine Inspector(Moss):
 <ul>
   <li><strong>One command to start.</strong> <code>bespoke init my_game</code> writes a project with a starter story, tests, a desktop build, a single-file web build, and a CI workflow that builds and tests on Linux and macOS and smoke-tests the web version. That workflow has been run on GitHub and passes.</li>
   <li><strong>A toolchain that ships as one file.</strong> The static Linux download compiles, checks, and runs scripts and creates projects with nothing else installed. Building a game's own executable needs Zig 0.17.1 (and SDL2 for the window).</li>
-  <li><strong>Tests that read like a story.</strong> A headless run prints what happens tick by tick; each demo's transcript is recorded and compared byte for byte, along with a pixel hash of every scene and 43 language conformance specs (<code>zig build test-conformance</code>), so a behaviour change cannot slip through unnoticed.</li>
-  <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>), and browser embeds use a matching 15-function export contract; anything unlisted is internal.</li>
+  <li><strong>Tests that read like a story.</strong> A headless run prints what happens tick by tick; each demo's transcript is recorded and compared byte for byte, along with a pixel hash of every scene and 47 language conformance specs (<code>zig build test-conformance</code>), so a behaviour change cannot slip through unnoticed.</li>
+  <li><strong>A host API with a contract.</strong> Zig hosts drive the engine through a documented, supported surface (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/API.md">API.md</a>), and browser embeds use a matching 21-function export contract; anything unlisted is internal.</li>
   <li><strong>1.0 baseline file formats.</strong> Packages use tagged, length-prefixed <code>BSP1</code> format-1 sections (web builds link only the sections a game uses), saves use checksummed <code>BSV1</code> format 1 with <code>save version N</code> migration, and pre-1.0 formats are retired ahead of the 1.0 freeze (<a href="https://github.com/aedmark/bespoke-engine/blob/main/docs/COMPATIBILITY.md">COMPATIBILITY.md</a>).</li>
   <li><strong>Hardened input.</strong> The lexer, parser, code generator, QOI and PNG decoders, include loader, music parser, command interpreter, and checksum-resealed package and save loaders run under bounded mutation tests, and malformed inputs fail cleanly before mutating game state.</li>
   <li><strong>Editor support.</strong> A VS Code syntax grammar generated from the compiler's own word list, so it cannot fall out of date.</li>
@@ -316,7 +316,7 @@ routine Inspector(Moss):
 <ul>
   <li><strong>Pixel art and code themes coexist.</strong> Scripts can carry true-colour RGBA art (QOI-compressed, from PNG files or inline text), <code>look</code> states, clickable <code>area</code>s, and attached <code>part</code>s, while older demos still use code-drawn themes.</li>
   <li><strong>Windows is deferred,</strong> and macOS is checked by automated builds only.</li>
-  <li><strong>The 1.0 freeze code items are complete.</strong> The format 1 baseline is active and hardened, leaving the release hand-test and packaging pass before tagging 1.0 (and pre-1.0 0.x files are no longer read).</li>
+  <li><strong>Pre-1.0 files are retired.</strong> BeSpoke 1.0 reads <code>BSP1</code> format-1 packages and <code>BSV1</code> version-1 saves; packages and saves from before 1.0 must be rebuilt from their scripts.</li>
   <li><strong>Small writing gaps:</strong> a one-shot <code>when</code> rule body cannot read its trigger's variables yet (use <code>when each</code> or <code>on cue</code>); a chosen path in a multi-path puzzle cannot be switched; a choice offers at most nine options; and the built-in 5x7 canvas font covers ASCII, Latin-1 Supplement, and common Latin Extended-A letters and punctuation while unsupported scripts render as <code>?</code>.</li>
   <li><strong>Deliberately out of scope:</strong> 3D, physics, and networked multiplayer. BeSpoke is for narrative and systemic games.</li>
 </ul>
@@ -324,7 +324,7 @@ routine Inspector(Moss):
 
 <h2 id="next">What is next</h2>
 <ul>
-  <li><strong>BeSpoke 1.0:</strong> the release hand-test pass, starter CI pin update, and 1.0 release packaging.</li>
+  <li><strong>Starter CI pin:</strong> once <code>v1.0.0</code> is published, generated projects pin to the 1.0 tag.</li>
   <li><strong>After 1.0:</strong> BeSpoke Studio (browser editors for pixel art, rooms, dialogue, and values) and classic parser adventure additions (palette colour cycling and a text-first page template).</li>
   <li><strong>Windows,</strong> once a contributor who uses Windows can maintain it.</li>
 </ul>
@@ -338,7 +338,7 @@ routine Inspector(Moss):
 </ol>
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
-<footer>BeSpoke Engine 0.4.0 &middot; status as of 25 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<footer>BeSpoke Engine 1.0.0 &middot; status as of 26 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 </main>
 </body>
 </html>

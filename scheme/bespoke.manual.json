@@ -3,7 +3,7 @@
   "project": {
     "name": "BeSpoke Engine",
     "short_name": "BeSpoke",
-    "version": "0.4.0",
+    "version": "1.0.0",
     "repository": "https://github.com/aedmark/bespoke-engine"
   },
   "manual": {
@@ -22,7 +22,7 @@
     "footer": "BeSpoke Engine {{project.version}} · Engine-as-Spine Narrative Simulation · Zero External Dependencies",
     "reviewed": {
       "date": "2026-11-26",
-      "commit": "a1c6e00",
+      "commit": "194c171",
       "by": "BeSpoke Core Team",
       "interval_days": 180
     }

@@ -60,18 +60,18 @@ patch -p0 <<'PATCH'
 +++ scripts/main.bespoke
 @@ -14,5 +14,5 @@
  score Tide:
--  lead "t88 o5 l8 @1 e g a g e4 d4 L c4 e4 g2 e4 d4 c2"
--  bass "o3 l4 @0 c g a e L f c g c"
--  chords "o4 l2 v8 @7 e d L f e"
-+  lead "t88 o5 l4 v9 @1 L e g a g e2 d c d f a f g2 e2 a g e d f2 a2 g e d c d2 r2 c e g e f a g f e2 g2 a2 g e f e d c d f e d c2 g2 c2 r2"
-+  bass "o3 v7 @0 L c2 g2 a2 e2 d2 a2 g2 d2 f2 c2 d2 a2 g2 d2 g2 g2 c2 g2 f2 c2 a2 e2 a2 e2 f2 c2 g2 d2 c2 g2 c1"
-+  chords "o4 v5 @7 L e1 e1 f1 b1 a1 f1 b1 d1 e1 f1 c1 e1 a1 b1 e1 r1"
+-  lead "t88 o4 l8 v8 @2 e g a g e4 d4 L c4 e4 g2 e4 d4 c2"
+-  bass "o3 l4 v9 @7 c g a e L f c g c"
+-  chords "o3 l2 v6 @7 e d L f e"
++  lead "t88 o4 l4 v8 @2 L e g a g e2 d c d f a f g2 e2 a g e d f2 a2 g e d c d2 r2 c e g e f a g f e2 g2 a2 g e f e d c d f e d c2 g2 c2 r2"
++  bass "o3 v7 @7 L c2 g2 a2 e2 d2 a2 g2 d2 f2 c2 d2 a2 g2 d2 g2 g2 c2 g2 f2 c2 a2 e2 a2 e2 f2 c2 g2 d2 c2 g2 c1"
++  chords "o3 v5 @7 L e1 e1 f1 b1 a1 f1 b1 d1 e1 f1 c1 e1 a1 b1 e1 r1"
    scene Lighthouse
 @@ -20 +20,3 @@
--score Storm: "t150 o5 l16 @5 L [c d e d]2 [e f g f]2"
+-score Storm: "t140 o4 l8 @2 v9 L [c d e d]2 [e f g f]2"
 +score Storm:
-+  lead "t108 o5 l4 v9 @5 L d f a g a2 f e d e f a g2 e2 f a b a g f e d e g f e d2 r2 a a g f e2 a2 g f e d f2 a2 b a g f e g a e d2 a2 d2 r2"
-+  bass "o3 l4 v8 @0 L d a d a f c f c d a d a e b e b f c f c g d g d e b e b d2 a2 d a d a a e a e g d g d f c f c g d g d a e a e d a d a d1"
++  lead "t108 o4 l4 v9 @2 L d f a g a2 f e d e f a g2 e2 f a b a g f e d e g f e d2 r2 a a g f e2 a2 g f e d f2 a2 b a g f e g a e d2 a2 d2 r2"
++  bass "o3 l4 v8 @7 L d a d a f c f c d a d a e b e b f c f c g d g d e b e b d2 a2 d a d a a e a e g d g d f c f c g d g d a e a e d a d a d1"
 --- web/index.html
 +++ web/index.html
 @@ -18,5 +18,5 @@
