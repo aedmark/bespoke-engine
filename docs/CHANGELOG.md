@@ -4,7 +4,14 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 1.0.1 - 2026-11-26
+
 - Generated projects pin their CI engine checkout to `refs/tags/v1.0.0` and drop the pre-1.0 test setup fallback (`P48-06`).
+- VM and bytecode boundary hardening (`D-189`): 64 KiB bytecode limit (`MAX_BYTECODE_LEN = 65535`), linear `bytecode.validate` checks on `.bspk` package save/load, runtime bounds/jump/cue-arg/stack checks in `src/vm.zig`, checked `u16`/`i16` compiler emissions (`BytecodeTooLarge`, `JumpOffsetTooLarge`), and restored fiber/interrupt PC validation in `src/save.zig`.
+- Audio thread safety and synthesizer guards (`src/audio.zig`): lock-protected soundtrack switching with ring-buffer compaction and synchronized volume snapshots in `AudioBridge`, zero-divisor/step-count/`i64` phase guards in `ChiptuneSynth`, and host-vs-BGM SFX isolation.
+- Atomic saves, world symmetry, witness ordering, and `ScriptFiles` containment: write-flush-rename with best-effort `.bak` backup in `SaveManager.save_slot_versioned`, `World.intern_relation` bounds, clearing `recently_expired_count` in `World.restore_state`, preserving `facts.capacity` in `World.clone`, ascending `EntityId` witness ordering in `dilemma.reveal`, and realpath-bound reads in `ScriptFiles.read`.
+- Compiler, world, VM, and spatial scaling fixes: `MAX_STMT_DEPTH = 64` parser nesting limit (`NestingTooDeep`), `World.find_all_matches_capped` and `O(N)` `RowKey` deduplication in `when each` and cross-build save loads, overflow-safe `Point2D.distance_to`, `SpatialGraph.add_waypoint` cap (`WaypointLimitExceeded`), and `MotorAgent.step_tick` zero-speed and diagonal-stall fixes.
+- WebAssembly and display-name isolation: in-place `WasmRuntime.init_in_place` eliminating the ~1.2 MiB stack copy, alias-free `wasm_decision`/`wasm_dilemma` query copies, and per-world `shown_owner` display-name isolation in `dialogue_panel.zig`.
 
 ## 1.0.0 - 2026-11-26
 
