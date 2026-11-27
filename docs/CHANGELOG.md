@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+## 1.1.0 - 2026-11-27
+
 - The Sunken Vault classic parser test game (`P49-03`): original 6-room turn-based parser adventure under `scenarios/sunken_vault/` built via `bespoke init --template text` (`tools/build_sunken_vault.py`), featuring 6 colour-cycled 320x180 PNG backdrops, timed turn events, multi-tier hints, `BSV1` save/restore tests, and CI verification in Zig, Node Wasm, and Chrome.
 - The Tide Beacon colour-cycling proof (`--tide-beacon`, `proofs/wasm_deck.zig` deck 18) and standalone showcase page (`site/tide-beacon.html`): four simultaneous palette colour cycles animate waterfall foam, ocean surf, brazier embers, twinkling stars, and the Keeper's hand lantern at 60 Hz on one static 320x180 PNG backdrop without changing world state (`P49-01`, `D-190`).
 - Text-first project template (`P49-02`, `D-191`): `bespoke init <name> --template text` scaffolds a turn-based parser adventure with a transcript, command field, hint button, AudioWorklet sound, and optional animated room picture, supported by `wasm_submit_command` and `wasm_set_animation_clock` in the browser exports.

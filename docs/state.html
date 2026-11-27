@@ -69,7 +69,7 @@
 <body>
 <main>
 
-<p class="eyebrow">BeSpoke Engine 1.0.1 &middot; 26 November 2026</p>
+<p class="eyebrow">BeSpoke Engine 1.1.0 &middot; 27 November 2026</p>
 <h1>A game engine where the world keeps its own story</h1>
 <p class="lede">BeSpoke is a small, self-contained engine and writing language for story-driven games in which characters live their own lives, rules react to what happens, and puzzles can be solved in ways nobody scripted step by step. Every moment can be rewound and replayed exactly.</p>
 <p class="sub">Written for two readers at once: anyone curious about what the engine does, in plain words, and development teams who want the detail underneath. Each feature card ends with an "Under the hood" line for the second reader.</p>
@@ -187,7 +187,7 @@
 <h3>Runs anywhere it is pointed</h3>
 <div class="cards">
   <div class="card"><h3>Desktop window</h3><p>A resizable window with verbs, an inventory, speech, a timeline, save slots, and a state inspector.</p><p class="hood"><b>Under the hood:</b> SDL2, a fixed 1280x720 frame letterboxed to any window size.</p></div>
-  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~612 KB for the stock engine, ~1,030 KB with all nineteen browser proof demos) embedded in the page.</p></div>
+  <div class="card"><h3>One web page</h3><p>The same game in a single HTML file that works offline and on a phone, with touch-sized controls.</p><p class="hood"><b>Under the hood:</b> a freestanding WebAssembly build (~631 KB for the stock engine, ~1,074 KB with all nineteen browser proof demos) embedded in the page.</p></div>
   <div class="card"><h3>No screen at all</h3><p>Run a game as text to see exactly what happens, tick by tick, or feed scripted commands and assert final facts. Ideal for testing and for tools.</p><p class="hood"><b>Under the hood:</b> <code>bespoke run game.bespoke --headless --ticks N</code> (with <code>--input</code>, <code>--facts</code>, and <code>--seed N</code>).</p></div>
   <div class="card"><h3>See inside the world</h3><p>Pause and open the state inspector: a map of who relates to what, why each dialogue option is offered or hidden, and what is about to expire.</p><p class="hood"><b>Under the hood:</b> a fact graph with keyboard and mouse navigation and relation filters, in both window and browser.</p></div>
 </div>
@@ -337,7 +337,7 @@ routine Inspector(Moss):
 </ol>
 <p>Found something odd? Write down the demo and roughly when it happened. Every run plays the same way, so a problem you can describe is a problem that can be reproduced and fixed.</p>
 
-<footer>BeSpoke Engine 1.0.1 &middot; status as of 26 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
+<footer>BeSpoke Engine 1.1.0 &middot; status as of 27 November 2026 &middot; figures from the repository's own checks and <code>docs/BENCHMARKS.md</code>.</footer>
 </main>
 </body>
 </html>
