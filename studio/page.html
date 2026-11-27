@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>BeSpoke Studio</title>
-<!-- Source: studio/page.html, studio/windows.js, studio/studio.js. Built into site/studio.html
+<!-- Source: studio/page.html, studio/windows.js, studio/play.js, studio/studio.js. Built into site/studio.html
      by tools/build_studio.py (P47-01, D-192); edit the sources, not the built page. -->
 <style>
   /* Seven pens, BeSpoke's own (D-192 item 3). Every size is a multiple of --px, one font
@@ -56,6 +56,8 @@
 
   .gad { appearance: none; border: 0; border-radius: 0; margin: 0; font: inherit; color: inherit; background: var(--pen-back); box-shadow: var(--out); min-height: var(--gad); padding: calc(2 * var(--px)) calc(5 * var(--px)); display: inline-flex; align-items: center; justify-content: center; gap: calc(6 * var(--px)); cursor: default; touch-action: manipulation; }
   .gad:active { box-shadow: var(--in); background: var(--pen-fill); color: var(--pen-filltext); }
+  .gad:disabled { opacity: 0.45; }
+  .gad:disabled:active { box-shadow: var(--out); background: var(--pen-back); color: var(--pen-text); }
   .gad:focus-visible { outline: var(--px) dashed currentColor; outline-offset: calc(-3 * var(--px)); }
   .g-close, .g-zoom, .g-depth { width: var(--gad); padding: 0; position: relative; }
   .g-close::before { content: ""; width: calc(3 * var(--px)); height: calc(3 * var(--px)); background: currentColor; box-shadow: 0 0 0 var(--px) var(--pen-shine); }
@@ -99,6 +101,9 @@
   .knob { position: absolute; left: var(--px); right: var(--px); min-height: calc(6 * var(--px)); background: var(--pen-back); box-shadow: var(--out); }
   .prop.full .knob { top: var(--px) !important; bottom: var(--px); height: auto !important; }
 
+  /* The play window's frame (P47-06): the runtime's 1280x720 picture, kept 16:9 and sharp. */
+  .stage { flex: 1; min-height: 0; width: 100%; object-fit: contain; image-rendering: pixelated; background: var(--pen-shadow); box-shadow: var(--in); touch-action: none; }
+
   .blocked .body { pointer-events: none; }
   .veil { position: absolute; inset: calc(var(--gad) + var(--px)) var(--px) var(--px); z-index: 20; display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(rgba(28, 27, 31, 0.35) 0 25%, transparent 0 50%) 0 0 / calc(2 * var(--px)) calc(2 * var(--px)); }
   .req { max-width: 94%; display: flex; flex-direction: column; gap: calc(3 * var(--px)); padding: calc(3 * var(--px)); background: var(--pen-back); box-shadow: var(--out), 0 0 0 var(--px) var(--pen-shadow), calc(3 * var(--px)) calc(3 * var(--px)) 0 var(--pen-shadow); }
@@ -119,6 +124,7 @@
 <!--@FONT-->
 <!--@BUILD-->
 <!--@WINDOWS-->
+<!--@PLAY-->
 <!--@APP-->
 </body>
 </html>

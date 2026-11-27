@@ -1,6 +1,7 @@
 // BeSpoke Studio, P47-01 (D-151, D-192): the workspace screen, a project window that opens a
 // folder or files, checks a script with the engine's compiler, and shows its diagnostics in
-// place. No editors yet. The Studio keeps no project state of its own (D-151 item 6): files are
+// place; and the play window (P47-06, D-195, play.js), which runs the built game in a module of
+// its own. No editors yet. The Studio keeps no project state of its own (D-151 item 6): files are
 // held as the bytes read from disk and nothing is written back unless an editor changed it.
 //
 // Failed modes fall back to a working screen (D-192 item 5): the workspace and its windows
@@ -141,6 +142,21 @@
         if (!ok) throw new Error(`the compiler refused ${f.path}`);
       }
       return true;
+    });
+  }
+
+  // Builds `main` into a package for the play window (D-195). Returns { result, pkg }: the
+  // check's JSON either way, and the package bytes, copied out of the module, when it built.
+  function runBuild(main) {
+    return withCompiler((x) => {
+      const p = put(x, enc.encode(main));
+      const status = x.studio_build(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      const bytes = new Uint8Array(x.memory.buffer, x.studio_result_ptr(), x.studio_result_len());
+      const result = JSON.parse(new TextDecoder().decode(bytes));
+      const pkg = status === 1 ? new Uint8Array(x.memory.buffer, x.studio_package_ptr(), x.studio_package_len()).slice() : null;
+      return { result, pkg };
     });
   }
 
@@ -314,23 +330,49 @@
 
   // ------------------------------------------------------------ check
 
-  async function check() {
+  // What Check and Play both need before they can run: a project, a script, and a compiler.
+  // Returns true when ready; otherwise it has told the author why, in `title`'s requester.
+  async function readyToBuild(title, again) {
     const win = projectWindow();
-    if (!S.project) { await desk.requester(win, { title: 'Check', lines: ['Open a project first.'] }); return null; }
-    if (!S.project.main) { await desk.requester(win, { title: 'Check', lines: ['This project has no .bespoke script to check.'] }); return null; }
+    if (!S.project) { await desk.requester(win, { title, lines: ['Open a project first.'] }); return false; }
+    if (!S.project.main) { await desk.requester(win, { title, lines: ['This project has no .bespoke script.'] }); return false; }
     if (S.compiler.state !== 'ready') {
       const pick = await desk.requester(win, {
-        title: 'Check', tone: 'fault',
-        lines: ["The compiler isn't running, so scripts can't be checked.", S.compiler.error],
+        title, tone: 'fault',
+        lines: ["The compiler isn't running, so scripts can't be checked or built.", S.compiler.error],
         buttons: [{ id: 'retry', label: 'Retry' }, { id: 'ok', label: 'OK' }],
       });
-      if (pick === 'retry' && await startCompiler() && loadIntoCompiler() !== null) return check();
-      return null;
+      if (pick === 'retry' && await startCompiler() && loadIntoCompiler() !== null) await again();
+      return false;
     }
+    return true;
+  }
+
+  async function check() {
+    if (!await readyToBuild('Check', check)) return null;
     document.body.classList.add('busy');
     const r = runCheck(S.project.main);
     document.body.classList.remove('busy');
     if (!r) return null;
+    await showResult(r);
+    return r;
+  }
+
+  // Builds the project and runs it in the play window. A script that does not compile shows
+  // the same diagnostic Check does, and the game keeps whatever it was running.
+  async function play() {
+    if (!await readyToBuild('Play', play)) return null;
+    document.body.classList.add('busy');
+    const built = runBuild(S.project.main);
+    document.body.classList.remove('busy');
+    if (!built) return null;
+    await showResult(built.result);
+    if (!built.pkg) return null;
+    return player.run(built.pkg);
+  }
+
+  async function showResult(r) {
+    const win = projectWindow();
     S.result = r;
     renderProject();
     renderDiagnostics(!r.valid || r.warnings.length > 0);
@@ -345,7 +387,6 @@
       });
       if (pick === 'show') openScript(r.file, r.line, r.column);
     }
-    return r;
   }
 
   function findFile(path) {
@@ -399,6 +440,7 @@
 
   const screen = desk.screen(`BeSpoke Studio ${STUDIO_BUILD.version}`);
   let projectWin = null;
+  const player = createPlay(desk, screen, { build: () => play(), reportFault });
 
   function line(text, cls) {
     const row = document.createElement('div');
@@ -471,7 +513,7 @@
         const warn = r.warnings.length ? `, ${r.warnings.length} warning(s)` : '';
         out.push(line(fit(r.valid ? `Valid: ${counts}${warn}` : `1 error${warn}`, n), r.valid ? '' : 'err'));
       }
-      out.push(buttons(win, [['check', 'Check'], ['save', 'Save'], ['open-folder', 'Open folder']]));
+      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['save', 'Save'], ['open-folder', 'Open folder']]));
     }
     win.body.replaceChildren(...out);
   }
@@ -590,7 +632,7 @@
     const n = cols(aboutWin);
     const lines = [
       `BeSpoke Studio ${STUDIO_BUILD.version}`,
-      'Open a project folder to check its scripts.',
+      'Open a project folder to check its scripts, then Play to run the game.',
       menuHint(),
       'Drag the screen down by its title bar.',
     ];
@@ -613,6 +655,7 @@
           { id: 'open-folder', label: 'Open folder...', key: 'O' },
           { id: 'open-files', label: 'Open files...' },
           { id: 'check', label: 'Check script', key: 'K' },
+          { id: 'play', label: 'Play game', key: 'G' },
           { id: 'save', label: 'Save', key: 'S' },
           { id: 'about', label: 'About the Studio' },
         ],
@@ -622,6 +665,7 @@
         items: [
           { id: 'win-project', label: 'Project' },
           { id: 'win-diagnostics', label: 'Diagnostics' },
+          { id: 'win-play', label: 'Play' },
         ],
       },
       { title: 'Settings', items: [scale(1), scale(2), scale(3)] },
@@ -633,6 +677,8 @@
       case 'open-folder': return openFolder();
       case 'open-files': return openFiles();
       case 'check': return check();
+      case 'play': return play();
+      case 'win-play': return player.open();
       case 'save': return save();
       case 'retry': if (await startCompiler() && S.project && loadIntoCompiler() !== null) await check(); return null;
       case 'about': return about();
@@ -681,6 +727,14 @@
     version: STUDIO_BUILD.version,
     openDirectory,
     check,
+    play,
+    // Hands raw bytes to the play window as if they were a built package, so a test can show
+    // that a package the runtime refuses leaves a working Studio.
+    playBytes: (bytes) => player.run(Uint8Array.from(bytes)),
+    playKey: (code) => player.key(code),
+    // Raises a trap inside the play window's guard, as a game that fails mid-run would, so a
+    // test can show the Studio outlives it and Run starts a fresh module.
+    playTrap: (msg) => player.guard(() => { throw new WebAssembly.RuntimeError(msg); }),
     save,
     command,
     compilerReady: () => S.compiler.state !== 'loading',
@@ -696,6 +750,7 @@
         skipped: S.project.skipped.slice(),
       },
       result: S.result,
+      play: player.state(),
       faults: S.faults.slice(),
       windows: screen.windows.map((w) => w.id),
       requester: (document.querySelector('.req') || { getAttribute: () => null }).getAttribute('aria-label'),

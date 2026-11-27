@@ -6,8 +6,8 @@
 
 The page is one file: studio/page.html with the engine's 5x7 font table (read out of the
 Studio's wasm module by studio/font_table.js, so src/display/font.zig stays its one source),
-the version from build.zig.zon, the wasm module as base64, and the two scripts, inlined at
-their markers. Nothing else in the repository is read or changed.
+the version from build.zig.zon, the Studio and play wasm modules as base64 (D-195), and the
+three scripts, inlined at their markers. Nothing else in the repository is read or changed.
 """
 
 import argparse
@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STUDIO = ROOT / "studio"
 STUDIO_PATH = ROOT / "site" / "studio.html"
 WASM_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-studio.wasm"
-MARKERS = ("<!--@FONT-->", "<!--@BUILD-->", "<!--@WINDOWS-->", "<!--@APP-->")
+PLAY_ARTIFACT = ROOT / "zig-out" / "bin" / "bespoke-play.wasm"
+MARKERS = ("<!--@FONT-->", "<!--@BUILD-->", "<!--@WINDOWS-->", "<!--@PLAY-->", "<!--@APP-->")
 
 
 def version() -> str:
@@ -41,16 +42,21 @@ def script(body: str) -> str:
     return f"<script>\n{body.rstrip()}\n</script>"
 
 
-def render(wasm: bytes, font: dict) -> str:
+def render(wasm: bytes, play: bytes, font: dict) -> str:
     page = (STUDIO / "page.html").read_text(encoding="utf-8")
     for marker in MARKERS:
         if page.count(marker) != 1:
             raise SystemExit(f"studio/page.html must contain {marker} exactly once")
-    build = {"version": version(), "wasm": base64.b64encode(wasm).decode("ascii")}
+    build = {
+        "version": version(),
+        "wasm": base64.b64encode(wasm).decode("ascii"),
+        "play": base64.b64encode(play).decode("ascii"),
+    }
     parts = {
         "<!--@FONT-->": script("const STUDIO_FONT = " + json.dumps(font, separators=(",", ":"), sort_keys=True) + ";"),
         "<!--@BUILD-->": script("const STUDIO_BUILD = " + json.dumps(build, separators=(",", ":")) + ";"),
         "<!--@WINDOWS-->": script((STUDIO / "windows.js").read_text(encoding="utf-8")),
+        "<!--@PLAY-->": script((STUDIO / "play.js").read_text(encoding="utf-8")),
         "<!--@APP-->": script((STUDIO / "studio.js").read_text(encoding="utf-8")),
     }
     for marker, body in parts.items():
@@ -67,12 +73,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="fail when site/studio.html differs from a fresh build")
     parser.add_argument("--wasm", type=Path, default=WASM_ARTIFACT, help="bespoke-studio.wasm to embed")
+    parser.add_argument("--play", type=Path, default=PLAY_ARTIFACT, help="bespoke-play.wasm to embed (P47-06, D-195)")
     args = parser.parse_args()
     try:
         wasm = args.wasm.read_bytes()
     except OSError as exc:
         raise SystemExit(f"Studio module not found at {args.wasm}; run `zig build studio` first") from exc
-    page = render(wasm, font_table(args.wasm))
+    try:
+        play = args.play.read_bytes()
+    except OSError as exc:
+        raise SystemExit(f"play module not found at {args.play}; run `zig build studio` first") from exc
+    page = render(wasm, play, font_table(args.wasm))
     if args.check:
         current = STUDIO_PATH.read_text(encoding="utf-8") if STUDIO_PATH.exists() else None
         if current != page:
@@ -81,7 +92,7 @@ def main() -> int:
         print(f"{STUDIO_PATH.relative_to(ROOT)} is current ({len(page.encode('utf-8'))} bytes)")
         return 0
     STUDIO_PATH.write_text(page, encoding="utf-8")
-    print(f"wrote {STUDIO_PATH.relative_to(ROOT)} ({len(page.encode('utf-8'))} bytes, wasm {len(wasm)} bytes)")
+    print(f"wrote {STUDIO_PATH.relative_to(ROOT)} ({len(page.encode('utf-8'))} bytes, wasm {len(wasm)} + {len(play)} bytes)")
     return 0
 
 

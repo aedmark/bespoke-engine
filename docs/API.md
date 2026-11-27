@@ -100,7 +100,7 @@ Supported `wasm` declarations are `Deck`, `ScriptDeckOptions`, `WasmRuntime`, `W
 
 A deck callback receives `*WasmRuntime`, but only these methods are supported: `set_banner`, `get_banner`, `active_world`, `spatial_system`, `virtual_machine`, `compiled_program`, `player`, `set_player`, `queue_message`, `answer`, `attach_hypervisor`, `clock`, `bind`, `step_tick`, `record_snapshot`, `scrub_to_tick`, `deck_action`, `submit_command`, `trigger_catalyst`, `capture`, and `render_frame`. Runtime fields are internal.
 
-Prefer `script_deck` or `script_deck_with` for a script-backed game. A custom `Deck.load` callback may call `load_program`; direct `WasmRuntime.init` and `deinit` are supported for an embedding host.
+Prefer `script_deck` or `script_deck_with` for a script-backed game. A custom `Deck.load` callback may call `load_program`, or `load_package_bytes` for a `.bspk` package handed over at run time, which links every package section reader and copies what it needs from the bytes (P47-06, D-195); direct `WasmRuntime.init` and `deinit` are supported for an embedding host.
 
 ## Browser module exports
 

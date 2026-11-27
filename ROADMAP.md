@@ -120,8 +120,9 @@ Goal: a browser page where an author makes a whole game without a text editor: a
 - [ ] P47-03 Room editor: a backdrop, marks, props and hotspots, exits, walkways, and the optional grid, written as the scene's declarations.
 - [ ] P47-04 Dialogue map: nodes, choices, and the facts that guard each line, written as `dialogue` and `choice` blocks; a guard that never holds is shown.
 - [ ] P47-05 Cast and values: characters, routines, values, red lines, dilemmas, and appeals (Phase 45).
-- [ ] P47-06 Play beside the editors: run the game in the page with the State drawer, rewind, and hints, and jump from a fact to the script line that wrote it.
+- [x] P47-06 Play beside the editors: run the game in the page with the State drawer, rewind, and hints. Done 2026-11-27 (session 132, D-195): the Studio module builds the project into a package and a second module, `bespoke-play.wasm`, plays it in a Play window with Run, Pause, Step, Rewind, Hint, Verb, State, and Sound gadgets; a refused package or a trap mid-run leaves a working Studio. `tools/studio_smoke.js` plays a real-time fixture and The Sunken Vault in Chrome. The jump from a fact to its script line moved to P47-09. Not yet hand-checked on a phone.
 - [ ] P47-07 Export the game as one HTML page, through the same packer as `bespoke init` projects.
+- [ ] P47-09 Jump from a fact in the State drawer to the script line that wrote it (split from P47-06, D-195). Needs a decision first: a source-line table for compiled code and a record of which instruction wrote each live fact, kept beside the world so the 4-tuple fact layout and saves stay unchanged, and whether shipped games carry either.
 - [ ] P47-08 An original 8-pixel Studio face covering the engine font's Latin-1 and extra glyphs, drawn fresh and not traced from a period system font (D-192 item 7). Taken up only if the 5x7 face falls short in use.
 
 ## Phase 49: Classic Parser Adventures

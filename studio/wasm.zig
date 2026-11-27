@@ -41,6 +41,22 @@ export fn studio_check(path_ptr: [*]const u8, path_len: usize) i32 {
     return if (ok) 1 else 0;
 }
 
+/// Builds the script at the given table path into a `.bspk` package for the play window
+/// (P47-06, D-195). Returns 1 with the package ready, 0 for a diagnostic (the check's JSON is
+/// in the result buffer, as after `studio_check`), and -1 when the build could not run.
+export fn studio_build(path_ptr: [*]const u8, path_len: usize) i32 {
+    const ok = project.build(path_ptr[0..path_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+export fn studio_package_ptr() [*]const u8 {
+    return project.package.items.ptr;
+}
+
+export fn studio_package_len() usize {
+    return project.package.items.len;
+}
+
 export fn studio_result_ptr() [*]const u8 {
     return project.result.items.ptr;
 }

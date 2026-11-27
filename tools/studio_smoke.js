@@ -13,7 +13,10 @@
 //      and the held secondary-button menu and a command key still work beside it;
 //   4. a compiler module that fails to load falls back to the workspace with a fault panel,
 //      and the Studio still opens a project (D-192 item 5);
-//   5. a saved setting the page cannot use is reported and replaced for the visit.
+//   5. a saved setting the page cannot use is reported and replaced for the visit;
+//   6. (P47-06, D-195) The Sunken Vault, PNG art and all, builds and plays in the play
+//      window's own module: the clock runs, the gadgets drive it, a package the runtime refuses
+//      and a trap mid-run each leave a working Studio, and Run starts the game again.
 'use strict';
 
 const fs = require('fs');
@@ -119,6 +122,16 @@ const SNAPSHOT = `(async () => {
   await walk(await top.getDirectoryHandle('project'), '');
   return out;
 })()`;
+
+// The Sunken Vault as it ships: its script and the PNG sheets it names (D-193).
+const VAULT = (() => {
+  const dir = path.join(path.resolve(__dirname, '..'), 'scenarios', 'sunken_vault');
+  const out = { 'main.bespoke': fs.readFileSync(path.join(dir, 'main.bespoke')).toString('base64') };
+  for (const name of fs.readdirSync(path.join(dir, 'art')).filter((n) => n.endsWith('.png')).sort()) {
+    out[`art/${name}`] = fs.readFileSync(path.join(dir, 'art', name)).toString('base64');
+  }
+  return out;
+})();
 
 const PROJECT_DIR = `navigator.storage.getDirectory().then((t) => t.getDirectoryHandle('project'))`;
 
@@ -275,6 +288,94 @@ async function run(pageUrl) {
     await noRequester();
     console.log('ok  Ctrl K checks again; Escape closes the requester');
 
+    // Play on a project that does not compile shows the check's diagnostic and runs nothing.
+    await evaluate('window.bespokeStudio.play(); true');
+    await requester('Script check');
+    await key('Escape', 'Escape', 27);
+    await noRequester();
+    s = await state();
+    if (s.play.status !== 'idle' || s.windows.includes('play')) throw new Error(`broken play: ${JSON.stringify(s.play)}`);
+    console.log('ok  Play on a broken project shows its diagnostic and starts nothing');
+
+    // 6. Play. A real-time project first: the clock runs on its own, Pause holds it, Step
+    // moves it one tick.
+    await evaluate(WRITE_FIXTURE(VALID));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d))`);
+    await click('[data-window="project"] [data-gadget="play"]');
+    await waitFor('the yard running', async () => {
+      const p = (await state()).play;
+      return p.status === 'running' && p.tick >= 3 ? p : null;
+    });
+    await click('[data-window="play"] [data-gadget="play-pause"]');
+    await delay(200);
+    const held = (await state()).play.tick;
+    await delay(400);
+    if ((await state()).play.tick !== held) throw new Error('Pause did not stop the clock');
+    await click('[data-window="play"] [data-gadget="play-step"]');
+    await waitFor('one step', async () => ((await state()).play.tick === held + 1 ? true : null));
+    await click('[data-window="play"] [data-gadget="play-pause"]');
+    await waitFor('the clock again', async () => ((await state()).play.tick > held + 2 ? true : null));
+    console.log(`ok  a real-time game plays in its own module; Pause holds tick ${held}, Step moves one`);
+
+    // The Sunken Vault, PNG art and all, on its turn clock: a typed command is one turn.
+    await evaluate(WRITE_FIXTURE(VAULT));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d))`);
+    s = await state();
+    if (!s.result || !s.result.valid) throw new Error(`vault check: ${JSON.stringify(s.result)}`);
+    await click('[data-window="project"] [data-gadget="play"]');
+    const playing = await waitFor('the Vault running', async () => {
+      const p = (await state()).play;
+      return p.status === 'running' && p.runs === 2 ? p : null;
+    });
+    await delay(300);
+    const painted = await evaluate(`(() => {
+      const c = document.querySelector('[data-window="play"] canvas');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      const seen = new Set();
+      for (let i = 0; i < d.length; i += 4 * 97) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+      return seen.size;
+    })()`);
+    if (painted < 8) throw new Error(`the play frame shows ${painted} colours`);
+    const turn = (await state()).play.tick;
+    await click('[data-window="play"] .bar');
+    await key('Enter', 'Enter', 13);
+    for (const ch of 'look') await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ch, text: ch, code: `Key${ch.toUpperCase()}`, windowsVirtualKeyCode: ch.toUpperCase().charCodeAt(0) });
+    await key('Enter', 'Enter', 13);
+    await waitFor('a turn for "look"', async () => ((await state()).play.tick > turn ? true : null));
+    await click('[data-window="play"] [data-gadget="play-hint"]');
+    await click('[data-window="play"] [data-gadget="play-state"]');
+    await click('[data-window="play"] [data-gadget="play-state"]');
+    if ((await state()).play.status !== 'running') throw new Error(`gadgets: ${JSON.stringify((await state()).play)}`);
+    console.log(`ok  the Vault plays from its PNGs (${painted} colours sampled); "look" took turn ${turn} to ${(await state()).play.tick}; Hint, State`);
+
+    await evaluate('window.bespokeStudio.playBytes([0x42, 0x53, 0x50, 0x4b, 9, 9]); true');
+    await requester('Play');
+    await key('Escape', 'Escape', 27);
+    await noRequester();
+    s = await state();
+    if (s.play.status !== 'failed' || !s.play.failure || s.compiler.state !== 'ready') throw new Error(`refused package: ${JSON.stringify(s.play)}`);
+    console.log(`ok  a refused package: requester (${s.play.failure}), Studio still ready`);
+
+    await click('[data-window="play"] [data-gadget="play-run"]');
+    await waitFor('the Vault again', async () => ((await state()).play.status === 'running' ? true : null));
+    await evaluate("window.bespokeStudio.playTrap('test trap'); true");
+    await waitFor('fault panel', async () => ((await state()).fault ? true : null));
+    s = await state();
+    if (s.play.status !== 'stopped' || !/test trap/.test(s.play.failure)) throw new Error(`trap: ${JSON.stringify(s.play)}`);
+    await click('.fault');
+    await waitFor('fault panel to close', async () => (!(await state()).fault ? true : null));
+    const rechecked = await evaluate('window.bespokeStudio.check().then((r) => r && r.valid)');
+    if (!rechecked) throw new Error('the compiler did not check after the game trapped');
+    const runsBefore = (await state()).play.runs;
+    await click('[data-window="play"] [data-gadget="play-run"]');
+    const again = await waitFor('a fresh play module', async () => {
+      const p = (await state()).play;
+      return p.status === 'running' && p.runs === runsBefore + 1 ? p : null;
+    });
+    await evaluate("document.querySelector('[data-window=\"play\"] .g-close').click(); true");
+    await waitFor('Play closed', async () => (!(await state()).windows.includes('play') ? true : null));
+    console.log(`ok  a trap mid-run: fault panel, Studio checks on, Run starts a fresh module (run ${again.runs})`);
+
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
       source: 'WebAssembly.instantiate = () => Promise.reject(new Error("test fault"));',
@@ -292,8 +393,12 @@ async function run(pageUrl) {
     await requester('Check');
     await key('Escape', 'Escape', 27);
     await noRequester();
+    await evaluate('window.bespokeStudio.play(); true');
+    await requester('Play');
+    await key('Escape', 'Escape', 27);
+    await noRequester();
     await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: hook.identifier });
-    console.log('ok  compiler fault: fault panel, then a working workspace that opens a project and explains Check');
+    console.log('ok  compiler fault: fault panel, then a working workspace that opens a project and explains Check and Play');
 
     // 5. A saved setting the page cannot use.
     await evaluate("localStorage.setItem('bespoke.studio.scale', 'banana'); true");

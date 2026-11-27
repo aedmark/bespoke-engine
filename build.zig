@@ -591,5 +591,26 @@ pub fn build(b: *std.Build) void {
     // A check builds a scratch World and compiler state on the stack, as the runtime does.
     studio_wasm.stack_size = WASM_STACK_BYTES;
     const install_studio = b.addInstallArtifact(studio_wasm, .{});
-    b.step("studio", "Build the Studio's WebAssembly module (bespoke-studio.wasm)").dependOn(&install_studio.step);
+    // P47-06 (D-195): the play module, a second module so a game that fails takes down only
+    // the play window. The engine's browser runtime with one deck that loads a package the
+    // page hands it; the Studio module builds that package.
+    const play_wasm = b.addExecutable(.{
+        .use_llvm = true,
+        .name = "bespoke-play",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("studio/play.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseSmall,
+            .strip = true,
+        }),
+    });
+    play_wasm.root_module.addImport("bespoke", wasm_bespoke);
+    play_wasm.entry = .disabled;
+    play_wasm.rdynamic = true;
+    // The runtime is returned by value on start, as in every browser module.
+    play_wasm.stack_size = WASM_STACK_BYTES;
+    const install_play = b.addInstallArtifact(play_wasm, .{});
+    const studio_step = b.step("studio", "Build the Studio's WebAssembly modules (bespoke-studio.wasm, bespoke-play.wasm)");
+    studio_step.dependOn(&install_studio.step);
+    studio_step.dependOn(&install_play.step);
 }

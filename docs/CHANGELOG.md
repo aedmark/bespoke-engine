@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio plays the game (`P47-06`, `D-195`): Play builds the project and runs it in a Play window beside the other windows, with Run, Pause, Step, Rewind, Hint, Verb, State, and Sound gadgets and the game's own keys. The game runs in its own module, so a game that fails stops only the Play window; Run starts it again. A custom browser deck can load a package handed over at run time with `WasmRuntime.load_package_bytes`.
+
 - Generated projects rebuild when an included script or PNG changes (`P49-06`, `D-194`): `bespoke compile --deps <file>` writes a dependency file of every file the compile read, and the `bespoke init` template passes it to Zig. Projects generated from this template need an engine with the flag.
 
 - BeSpoke Studio shell (`P47-01`, `D-192`): `site/studio.html`, a browser workspace of screens, draggable windows with close, zoom, and depth gadgets, held right-button menus with command keys, and requesters, all drawn in the engine's 5x7 font. It opens a project folder or files, checks the main script with the engine's compiler, and shows diagnostics in a requester, a Diagnostics window, and a read-only script view with the line marked. Saving without edits leaves every file byte-identical. When the compiler module, a saved setting, or a handler fails, the Studio says so and keeps a working workspace. It checks scripts that load PNG art (`image X from "file.png"`) as the command line does; a game's browser runtime still never decodes PNG (`D-193`). No editors yet.

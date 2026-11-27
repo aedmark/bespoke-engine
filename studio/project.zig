@@ -21,6 +21,9 @@ pub const Project = struct {
     files: std.ArrayList(File) = .empty,
     /// The last check, as JSON for the page; see `write_result`.
     result: std.ArrayList(u8) = .empty,
+    /// The last built game, as `.bspk` bytes for the play module (P47-06, D-195); empty when
+    /// the last build failed.
+    package: std.ArrayList(u8) = .empty,
 
     pub fn init(allocator: Allocator) Project {
         return .{ .allocator = allocator };
@@ -30,6 +33,7 @@ pub const Project = struct {
         self.clear();
         self.files.deinit(self.allocator);
         self.result.deinit(self.allocator);
+        self.package.deinit(self.allocator);
     }
 
     pub fn clear(self: *Project) void {
@@ -39,6 +43,7 @@ pub const Project = struct {
         }
         self.files.clearRetainingCapacity();
         self.result.clearRetainingCapacity();
+        self.package.clearRetainingCapacity();
     }
 
     /// Copies `path` and `bytes` in. A second file with the same path replaces the first, so
@@ -77,6 +82,27 @@ pub const Project = struct {
         const res = compiler.check_source_with(self.allocator, source, reader.source());
         try self.write_result(main_path, &res);
         return res.is_valid;
+    }
+
+    /// Builds the script at `main_path` into a package, as `bespoke compile` does, for the
+    /// play window (P47-06, D-195). The check runs first and its JSON lands in `result` either
+    /// way, so a script that does not compile reports the same diagnostic the project window
+    /// shows; only a valid script reaches the compiler. Returns true with `package` filled.
+    pub fn build(self: *Project, main_path: []const u8) !bool {
+        self.package.clearRetainingCapacity();
+        if (!try self.check(main_path)) return false;
+        const source = self.find(main_path).?;
+        var world = try bespoke.World.init(self.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+        defer world.deinit();
+        var spatial = bespoke.SpatialSystem.init(self.allocator);
+        defer spatial.deinit();
+        var reader = Reader{ .project = self, .dir = parent_of(main_path) };
+        var compiled = try compiler.compile_source_with(self.allocator, &world, &spatial, source, reader.source());
+        defer compiled.deinit();
+        var out: std.Io.Writer.Allocating = .fromArrayList(self.allocator, &self.package);
+        defer self.package = out.toArrayList();
+        try bespoke.package.save_package(self.allocator, &out.writer, &compiled, &world, &spatial);
+        return true;
     }
 
     fn write_missing(self: *Project, main_path: []const u8) !void {
@@ -335,4 +361,31 @@ test "json strings escape quotes and control bytes" {
     var w = Json{ .list = &list, .allocator = testing.allocator };
     try w.string("a\"b\\c\n\x01");
     try testing.expectEqualStrings("\"a\\\"b\\\\c\\n\\u0001\"", list.items);
+}
+
+test "a valid project builds to a package the runtime loader reads back" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("game/main.bespoke", "include \"rooms.bespoke\"\n\nroutine Walk(Hero):\n  walk Hero to Pier\n");
+    try p.add("game/rooms.bespoke", "scene Quay:\n  cast: Hero\n  marks: Steps, Pier\n");
+    try std.testing.expect(try p.build("game/main.bespoke"));
+    try std.testing.expect(std.mem.startsWith(u8, p.package.items, &bespoke.package.PACKAGE_MAGIC));
+
+    var world = try bespoke.World.init(std.testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(std.testing.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(p.package.items);
+    var loaded = try bespoke.package.load_package(std.testing.allocator, &stream, &world, &spatial);
+    defer loaded.deinit();
+    try std.testing.expect(world.lookup_entity("Pier") != null);
+}
+
+test "a broken project builds nothing and reports the check's diagnostic" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("main.bespoke", "scene Yard:\n  cast: Walker\n\nroutine Stroll(Walker):\n  walk Walker to\n");
+    try std.testing.expect(!try p.build("main.bespoke"));
+    try std.testing.expectEqual(@as(usize, 0), p.package.items.len);
+    try std.testing.expect(result_has(&p, "\"valid\":false"));
 }

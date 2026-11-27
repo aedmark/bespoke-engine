@@ -37,7 +37,7 @@ def main() -> int:
     parser.add_argument("--sunken-vault-page", type=Path, help="also check a freshly built Sunken Vault export")
     args = parser.parse_args()
     budgets = json.loads(Path(__file__).with_name("web_budgets.json").read_text(encoding="utf-8"))
-    modules = [ROOT / "zig-out" / "bin" / name for name in ("bespoke.wasm", "bespoke-proofs.wasm", "bespoke-studio.wasm")]
+    modules = [ROOT / "zig-out" / "bin" / name for name in ("bespoke.wasm", "bespoke-proofs.wasm", "bespoke-studio.wasm", "bespoke-play.wasm")]
     entries = [(p, budgets["wasmModuleBytes"]) for p in modules]
     entries.append((HTML_PATH, budgets["showcasePageBytes"]))
     entries.append((HARBOUR_PATH, budgets["standalonePageBytes"]))

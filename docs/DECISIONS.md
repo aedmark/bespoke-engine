@@ -2435,6 +2435,22 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** listing `scripts/` at configure time and poisoning the cache, rejected for the cost to every build; `addDirectoryArg` on `scripts/`, rejected because Zig hashes the path, not the folder's contents.
 
+## D-195 The Studio Plays the Game in a Second Module From Package Bytes (2026-11-27, status: accepted; P47-06)
+
+**Context.** P47-06 runs the game beside the editors. The engine's browser runtime ran only a program embedded when its module is built (`load_program` takes `comptime` data), so the page had no way to hand it a game built while the page is open. The Studio module already holds the project's files and the compiler. D-192 item 5 requires that a failed mode leave a working Studio, and a game can trap or exhaust its heap. The roadmap item also promised a jump from a fact to the script line that wrote it; neither the bytecode nor the facts record a source line. The maintainer chose (2026-11-27): keep the Studio and the game in separate modules, hand the game over as package bytes, show the runtime's own frame with Studio gadgets, and split the line jump out.
+
+**Decision.**
+1. The Studio module builds the project with `compiler.compile_source_with` and the supported `package.save_package`, as `bespoke compile` does (`studio_build`, `Project.build`). The check runs first, so a script that does not compile reports the same diagnostic as Check and no package is made.
+2. The play module, `bespoke-play.wasm` (`studio/play.zig`), is the engine's browser runtime through `export_runtime` with one deck whose `load` calls the new `WasmRuntime.load_package_bytes`. The page copies the package in through `play_alloc` and starts it with the supported `wasm_init`; `play_failure_ptr`/`len` name the error when the runtime refuses it. These `play_*` exports belong to the Studio and are not engine API.
+3. `WasmRuntime.load_package_bytes(data)` loads a package handed over at run time and starts it as `load_program` does, through one shared `start_program`. It links every section reader, so only a module that calls it pays for them; a module whose decks embed their program keeps D-147 and D-187. It copies what it needs, so the caller may reuse the buffer.
+4. The play module reads no files and decodes no PNG: the package already holds the art as QOI (D-151, D-182). Only the Studio module opts in to the PNG path (D-193).
+5. The play window draws the runtime's 1280x720 frame and its gadgets press the runtime's own keys (Pause, Step, Rewind, Hint, State) or its right-click (Verb), so a gadget and its key cannot disagree. Every call into the game goes through one guard: a trap ends that instance, the fault panel reports it, and Run starts a fresh instance. The project window, the compiler, and the open files are untouched.
+6. The jump from a fact to the line that wrote it becomes P47-09. It needs a decision on a source-line table for compiled code and a record of writers kept beside the world, so the 4-tuple fact layout and saves stay unchanged.
+
+**Consequences.** The Studio page carries two modules, 470,486 and 560,345 bytes (2026-11-27, ReleaseSmall), within the 1.5 MiB module and 2 MiB page budgets. Sharing `start_program` changes the embedded-program modules: `bespoke.wasm` grows by 14 bytes and `bespoke-proofs.wasm` shrinks by 10,382, because the start code is no longer copied once per embedded deck; the showcase pages are rebuilt for the new proof module, and the Harbour and Sunken Vault pages are unchanged. Sound in the play window plays through the same AudioWorklet as a generated game page.
+
+**Alternatives:** one module carrying both the compiler and the runtime, rejected because a game's failure would take the editor with it; handing source to the play module, rejected because it would duplicate the project table and include plumbing and carry a second compiler; drawing Studio-owned controls instead of pressing the runtime's keys, rejected because two code paths for one action can disagree.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

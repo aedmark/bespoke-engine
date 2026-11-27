@@ -672,6 +672,23 @@ pub const WasmRuntime = struct {
         } else {
             self.program = try compiler_mod.compile_source(self.allocator, &self.world, &self.spatial, data);
         }
+        try self.start_program();
+    }
+
+    /// Loads a `.bspk` package handed over at run time and starts it as `load_program` does. A
+    /// tool that builds the game while the page runs, such as the Studio's play window
+    /// (P47-06, D-195), calls it from a deck's `load`. It links every section reader, so only a
+    /// module that calls it pays for them; a module whose decks embed their program never
+    /// references it and keeps the D-147 and D-187 savings. The package is copied into the
+    /// runtime's own tables, so `data` need not outlive the call.
+    pub fn load_package_bytes(self: *WasmRuntime, data: []const u8) !void {
+        var stream: std.Io.Reader = .fixed(data);
+        self.program = try package_mod.load_package(self.allocator, &stream, &self.world, &self.spatial);
+        try self.start_program();
+    }
+
+    /// Starts the loaded `program` as the stock hosts do (`host.start_script`).
+    fn start_program(self: *WasmRuntime) !void {
         const program = &self.program.?;
         // The script's art draws on the browser frame as on the desktop (P46-03, D-097).
         self.window.set_art(&program.art);
@@ -2538,6 +2555,68 @@ test "D-066: a script deck compiles its script, speaks in the banner, and answer
     // Reloading the deck releases the program and starts again.
     try rt.load_deck(0);
     try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+}
+
+test "D-195: a deck loads a package handed over at run time and keeps no hold on its bytes" {
+    const testing = std.testing;
+    const script =
+        \\scene Quay:
+        \\  cast: Hero, Pilot
+        \\  marks: Steps, Pier
+        \\
+        \\relation Arrived(who)
+        \\
+        \\routine Walk(Hero):
+        \\  walk Hero to Pier
+        \\  remember Arrived(Hero)
+        \\
+        \\when Arrived(Hero):
+        \\  say Pilot: "Mind the gap."
+    ;
+    // The package, built as `bespoke compile` builds it.
+    var built: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer built.deinit();
+    {
+        var world = try World.init(testing.allocator, 256 * 1024);
+        defer world.deinit();
+        var spatial = SpatialSystem.init(testing.allocator);
+        defer spatial.deinit();
+        var compiled = try compiler_mod.compile_source(testing.allocator, &world, &spatial, script);
+        defer compiled.deinit();
+        try package_mod.save_package(testing.allocator, &built.writer, &compiled, &world, &spatial);
+    }
+    const Handed = struct {
+        var bytes: []u8 = &.{};
+        fn load(rt: *WasmRuntime) anyerror!void {
+            try rt.load_package_bytes(bytes);
+        }
+    };
+    Handed.bytes = try testing.allocator.dupe(u8, built.written());
+    defer testing.allocator.free(Handed.bytes);
+
+    const decks = [_]Deck{.{ .title = "HANDED", .load = Handed.load }};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    // The page may reuse its buffer once the load returns.
+    @memset(Handed.bytes, 0xAA);
+    try testing.expectEqualStrings("Hero", rt.world.get_entity_name(rt.player_entity).?);
+    var heard = false;
+    for (0..12) |_| {
+        try rt.step_tick();
+        if (std.mem.indexOf(u8, rt.get_banner(), "Mind the gap.") != null) heard = true;
+    }
+    try testing.expect(heard);
+
+    // The clobbered buffer is no package now: loading it fails the deck, and the runtime
+    // frees what it had built (the testing allocator reports any leak).
+    if (WasmRuntime.init(testing.allocator, &decks, 0)) |ok| {
+        var left = ok;
+        left.deinit();
+        return error.TestUnexpectedResult;
+    } else |_| {}
 }
 
 test "P48-09: the browser shows a script's display names and phrases" {
