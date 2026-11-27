@@ -343,12 +343,14 @@ pub fn build(b: *std.Build) void {
     // Zig 0.17 keeps the configure phase free of file system work, so the folder is cleared and
     // made by a run step; the template check runs on Linux, where `sh`, `rm`, and `mkdir` do.
     const template_root = b.root.joinString(b.allocator, ".zig-cache/tmp") catch @panic("OOM");
+    const engine_here = b.root.joinString(b.allocator, ".") catch @panic("OOM");
     const starter_dir = b.pathJoin(&.{ template_root, "template_check" });
-    const clear_template = b.addSystemCommand(&.{ "sh", "-c", b.fmt("rm -rf '{s}' && mkdir -p '{s}'", .{ starter_dir, template_root }) });
+    const text_dir = b.pathJoin(&.{ template_root, "template_text_check" });
+    const clear_template = b.addSystemCommand(&.{ "sh", "-c", b.fmt("rm -rf '{s}' '{s}' && mkdir -p '{s}'", .{ starter_dir, text_dir, template_root }) });
     clear_template.has_side_effects = true;
     const init_template = b.addRunArtifact(exe);
     init_template.has_side_effects = true;
-    init_template.addArgs(&.{ "init", "template_check", "--engine", b.root.joinString(b.allocator, ".") catch @panic("OOM") });
+    init_template.addArgs(&.{ "init", "template_check", "--engine", engine_here });
     init_template.setCwd(.{ .cwd_relative = template_root });
     init_template.step.dependOn(&clear_template.step);
     const check_template_notice = b.addSystemCommand(&.{"cmp"});
@@ -369,7 +371,32 @@ pub fn build(b: *std.Build) void {
         nested.step.dependOn(previous);
         previous = &nested.step;
     }
-    const test_template_step = b.step("test-template", "Generate a project with `bespoke init` and run its tests, bundle, and web builds");
+
+    const init_text_template = b.addRunArtifact(exe);
+    init_text_template.has_side_effects = true;
+    init_text_template.addArgs(&.{ "init", "template_text_check", "--template", "text", "--engine", engine_here });
+    init_text_template.setCwd(.{ .cwd_relative = template_root });
+    init_text_template.step.dependOn(previous);
+    const check_text_notice = b.addSystemCommand(&.{"cmp"});
+    check_text_notice.addFileArg2(engine_license, .{});
+    check_text_notice.addFileArg2(.{ .cwd_relative = b.pathJoin(&.{ text_dir, "LICENSE-BeSpoke" }) }, .{});
+    check_text_notice.step.dependOn(&init_text_template.step);
+    previous = &check_text_notice.step;
+    for (template_steps) |args| {
+        const nested = b.addSystemCommand(&.{b.graph.zig_exe});
+        nested.addArgs(args);
+        nested.setCwd(.{ .cwd_relative = text_dir });
+        nested.has_side_effects = true;
+        nested.step.dependOn(previous);
+        previous = &nested.step;
+    }
+    const text_smoke = b.addSystemCommand(&.{ "node", "web/smoke.js" });
+    text_smoke.setCwd(.{ .cwd_relative = text_dir });
+    text_smoke.has_side_effects = true;
+    text_smoke.step.dependOn(previous);
+    previous = &text_smoke.step;
+
+    const test_template_step = b.step("test-template", "Generate stage and text projects with `bespoke init` and run their tests, bundle, and web builds");
     test_template_step.dependOn(previous);
 
     // Phase 19 (P19-01): Zero-dependency WebAssembly (wasm32-freestanding) target

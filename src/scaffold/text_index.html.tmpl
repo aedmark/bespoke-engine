@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{name}}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: #14171c; color: #e2e6ee; font: 16px/1.6 Georgia, serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 100vh; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 1px solid #2b323d; padding-bottom: 8px; }
+  h1 { margin: 0; font-size: 1.35rem; font-family: system-ui, sans-serif; }
+  .status { font: 14px system-ui, sans-serif; color: #9aa7b8; display: flex; gap: 12px; }
+  #picture-wrap { border: 1px solid #2c3442; background: #0e1116; }
+  #stage { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  #transcript { flex: 1 1 300px; max-height: 55vh; overflow-y: auto; padding: 12px 14px; background: #191d24; border: 1px solid #2b323d; border-radius: 4px; }
+  #turns p { margin: 0 0 10px; }
+  #turns p:last-child { margin-bottom: 0; }
+  #turns p.command { color: #8ab4f8; font-family: ui-monospace, monospace; font-size: 0.92rem; }
+  #turns p.hint { color: #e5c07b; font-style: italic; }
+  #command-form { display: flex; flex-wrap: wrap; gap: 8px; }
+  #command { flex: 1 1 200px; min-height: 44px; padding: 8px 12px; font: 16px ui-monospace, monospace; background: #0f1217; color: #e2e6ee; border: 1px solid #3a4352; border-radius: 4px; }
+  button { min-height: 44px; min-width: 44px; padding: 0 14px; font: 14px system-ui, sans-serif; background: #242b36; color: #e2e6ee; border: 1px solid #3a4352; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #2f3846; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .help { margin: 0; font: 13px system-ui, sans-serif; color: #9aa7b8; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>{{name}}</h1>
+    <div class="status">
+      <span id="room-name"></span>
+      <span>Turn <span id="turn-count">0</span></span>
+    </div>
+  </header>
+  <div id="picture-wrap" hidden>
+    <canvas id="stage" width="1280" height="720"></canvas>
+  </div>
+  <div id="transcript" role="log" aria-live="polite" aria-label="Story transcript">
+    <div id="turns"></div>
+  </div>
+  <form id="command-form">
+    <label for="command" hidden>Command</label>
+    <input id="command" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="240" placeholder="Type a command, e.g. look">
+    <button type="submit">Send</button>
+  </form>
+  <div class="actions">
+    <button id="picture-toggle" type="button" aria-expanded="false" aria-controls="picture-wrap" hidden>Show picture</button>
+    <button id="hint-btn" type="button">Hint</button>
+    <button id="sound" type="button">Sound: off</button>
+  </div>
+  <p class="help">Commands: look, north, south, take lantern, light lantern.</p>
+</main>
+<script>
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const pictureWrap = document.getElementById('picture-wrap');
+const pictureToggle = document.getElementById('picture-toggle');
+const transcript = document.getElementById('transcript');
+const turns = document.getElementById('turns');
+const roomName = document.getElementById('room-name');
+const turnCount = document.getElementById('turn-count');
+const commandInput = document.getElementById('command');
+
+WebAssembly.instantiateStreaming(fetch('{{name}}.wasm'), {}).then(({ instance }) => {
+  const w = instance.exports;
+  w.wasm_init(0, Date.now() >>> 0, (Math.random() * 0x100000000) >>> 0);
+
+  const showLine = (text, kind) => {
+    const atEnd = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 12;
+    const row = document.createElement('p');
+    row.className = kind;
+    row.textContent = text;
+    turns.append(row);
+    if (turns.childElementCount > 200) turns.firstElementChild.remove();
+    if (atEnd || kind === 'command') transcript.scrollTop = transcript.scrollHeight;
+  };
+
+  const syncHeader = () => {
+    turnCount.textContent = String(w.wasm_get_tick());
+    const slen = w.game_scene_len();
+    roomName.textContent = slen ? decoder.decode(new Uint8Array(w.memory.buffer, w.game_scene_ptr(), slen)) : '';
+  };
+
+  const drainText = () => {
+    const len = w.game_text_len();
+    if (!len) return;
+    const text = decoder.decode(new Uint8Array(w.memory.buffer, w.game_text_ptr(), len));
+    w.game_text_clear();
+    for (const line of text.trimEnd().split('\n')) if (line) showLine(line, 'story');
+  };
+
+  const draw = () => {
+    if (pictureWrap.hidden) return;
+    w.wasm_render_frame();
+    const px = new Uint8ClampedArray(w.memory.buffer, w.wasm_framebuffer_ptr(), w.wasm_framebuffer_len());
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(px), canvas.width, canvas.height), 0, 0);
+  };
+
+  let pictureShown = w.game_has_picture() === 1;
+  if (w.game_has_picture() === 1) {
+    pictureToggle.hidden = false;
+    pictureWrap.hidden = false;
+    pictureToggle.setAttribute('aria-expanded', 'true');
+    pictureToggle.textContent = 'Hide picture';
+  }
+  pictureToggle.addEventListener('click', () => {
+    pictureShown = !pictureShown;
+    pictureWrap.hidden = !pictureShown;
+    pictureToggle.setAttribute('aria-expanded', String(pictureShown));
+    pictureToggle.textContent = pictureShown ? 'Hide picture' : 'Show picture';
+    draw();
+  });
+
+  const startMs = performance.now();
+  const animate = (now) => {
+    if (!pictureWrap.hidden) {
+      w.wasm_set_animation_clock(Math.floor((now - startMs) * 60 / 1000) >>> 0);
+      draw();
+    }
+    requestAnimationFrame(animate);
+  };
+  requestAnimationFrame(animate);
+
+  document.getElementById('command-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const line = commandInput.value.trim();
+    if (!line) return;
+    commandInput.value = '';
+    showLine('> ' + line, 'command');
+    const bytes = encoder.encode(line);
+    if (bytes.length > 256) {
+      showLine('That command is too long.', 'story');
+      return;
+    }
+    new Uint8Array(w.memory.buffer, w.wasm_query_ptr(), bytes.length).set(bytes);
+    w.wasm_submit_command(bytes.length);
+    drainText();
+    syncHeader();
+    draw();
+  });
+
+  let hintTier = 1;
+  document.getElementById('hint-btn').addEventListener('click', () => {
+    const len = w.wasm_hint(hintTier);
+    if (!len) {
+      showLine('No further hints right now.', 'hint');
+      return;
+    }
+    const text = decoder.decode(new Uint8Array(w.memory.buffer, w.wasm_query_ptr(), len));
+    showLine('Hint: ' + text, 'hint');
+    hintTier = hintTier < 3 ? hintTier + 1 : 1;
+  });
+
+  const PLAYER = `class P extends AudioWorkletProcessor {
+    constructor() { super(); this.q = []; this.o = 0; this.port.onmessage = (e) => this.q.push(e.data); }
+    process(_, outs) {
+      const l = outs[0][0], r = outs[0][1] || l; let i = 0;
+      while (i < l.length) {
+        const c = this.q[0]; if (!c) { l.fill(0, i); r.fill(0, i); break; }
+        const n = Math.min(l.length - i, c.l.length - this.o);
+        l.set(c.l.subarray(this.o, this.o + n), i); r.set(c.r.subarray(this.o, this.o + n), i);
+        i += n; this.o += n; if (this.o >= c.l.length) { this.q.shift(); this.o = 0; }
+      }
+      return true;
+    }
+  }
+  registerProcessor('bespoke-engine', P);`;
+  let audio = null;
+  let pump = null;
+  document.getElementById('sound').addEventListener('click', async (e) => {
+    if (audio) {
+      clearInterval(pump);
+      audio.close();
+      audio = null;
+      e.target.textContent = 'Sound: off';
+      return;
+    }
+    audio = new AudioContext({ sampleRate: w.wasm_audio_sample_rate() });
+    await audio.audioWorklet.addModule('data:text/javascript;charset=utf-8,' + encodeURIComponent(PLAYER));
+    const node = new AudioWorkletNode(audio, 'bespoke-engine', { numberOfInputs: 0, outputChannelCount: [2] });
+    node.connect(audio.destination);
+    const start = audio.currentTime;
+    let queued = 0;
+    pump = setInterval(() => {
+      const played = (audio.currentTime - start) * audio.sampleRate;
+      if (queued < played) queued = played;
+      while (queued - played < 0.2 * audio.sampleRate) {
+        const pcm = new Int16Array(w.memory.buffer, w.wasm_audio_render(1024), 2048);
+        const l = new Float32Array(1024), r = new Float32Array(1024);
+        for (let i = 0; i < 1024; i++) { l[i] = pcm[2 * i] / 32768; r[i] = pcm[2 * i + 1] / 32768; }
+        node.port.postMessage({ l, r }, [l.buffer, r.buffer]);
+        queued += 1024;
+      }
+    }, 25);
+    e.target.textContent = 'Sound: on';
+  });
+
+  drainText();
+  syncHeader();
+  draw();
+});
+</script>
+</body>
+</html>

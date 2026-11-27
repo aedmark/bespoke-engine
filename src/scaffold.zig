@@ -13,6 +13,8 @@ pub const Error = error{
     InvalidEngineRoot,
 };
 
+pub const Template = enum { stage, text };
+
 /// One generated file: its path inside the project and its template.
 pub const File = struct {
     path: []const u8,
@@ -32,6 +34,27 @@ pub const FILES = [_]File{
     .{ .path = "README.md", .template = @embedFile("scaffold/README.md.tmpl") },
     .{ .path = ".gitignore", .template = @embedFile("scaffold/gitignore.tmpl") },
 };
+
+pub const TEXT_FILES = [_]File{
+    .{ .path = "build.zig", .template = @embedFile("scaffold/build.zig.tmpl") },
+    .{ .path = "build.zig.zon", .template = @embedFile("scaffold/build.zig.zon.tmpl") },
+    .{ .path = "src/main.zig", .template = @embedFile("scaffold/main.zig.tmpl") },
+    .{ .path = "src/game_test.zig", .template = @embedFile("scaffold/text_game_test.zig.tmpl") },
+    .{ .path = "src/web.zig", .template = @embedFile("scaffold/text_web.zig.tmpl") },
+    .{ .path = "web/index.html", .template = @embedFile("scaffold/text_index.html.tmpl") },
+    .{ .path = "web/smoke.js", .template = @embedFile("scaffold/text_smoke.js.tmpl") },
+    .{ .path = ".github/workflows/build.yml", .template = @embedFile("scaffold/workflow.yml.tmpl") },
+    .{ .path = "scripts/main.bespoke", .template = @embedFile("scaffold/text_main.bespoke.tmpl") },
+    .{ .path = "README.md", .template = @embedFile("scaffold/text_README.md.tmpl") },
+    .{ .path = ".gitignore", .template = @embedFile("scaffold/gitignore.tmpl") },
+};
+
+pub fn files_for(template: Template) []const File {
+    return switch (template) {
+        .stage => &FILES,
+        .text => &TEXT_FILES,
+    };
+}
 
 /// A project name becomes a directory, a Zig package name, and an executable name, so it is
 /// held to what all three accept everywhere: a lowercase letter, then lowercase letters,
@@ -90,6 +113,10 @@ pub fn render(allocator: std.mem.Allocator, template: []const u8, name: []const 
 /// project records it relative to itself, because Zig accepts only relative `.path`
 /// dependencies. Moving the project or the engine therefore means editing `build.zig.zon`.
 pub fn generate(allocator: std.mem.Allocator, io: std.Io, parent: std.Io.Dir, name: []const u8, engine_root: []const u8, engine_license: []const u8) !void {
+    return generate_with(allocator, io, parent, name, engine_root, engine_license, .stage);
+}
+
+pub fn generate_with(allocator: std.mem.Allocator, io: std.Io, parent: std.Io.Dir, name: []const u8, engine_root: []const u8, engine_license: []const u8, template: Template) !void {
     try validate_name(name);
     if (engine_root.len == 0 or !std.fs.path.isAbsolute(engine_root)) return error.InvalidEngineRoot;
     if (parent.access(io, name, .{})) |_| {
@@ -115,7 +142,7 @@ pub fn generate(allocator: std.mem.Allocator, io: std.Io, parent: std.Io.Dir, na
     io.random(&id_bytes);
     var id = std.mem.readInt(u32, &id_bytes, .little);
     if (id == 0 or id == std.math.maxInt(u32)) id = 1;
-    for (FILES) |file| {
+    for (files_for(template)) |file| {
         if (std.fs.path.dirname(file.path)) |dir| try project.createDirPath(io, dir);
         const text = try render(allocator, file.template, name, engine_rel, id);
         defer allocator.free(text);
@@ -142,12 +169,14 @@ test "P29-01: templates substitute the name and escape the engine path for ZON" 
     try testing.expectError(error.InvalidEngineRoot, render(testing.allocator, "{{engine_root}}", "a", "bad\npath", 7));
     // No template keeps a placeholder after rendering. A placeholder is `{{` and a name;
     // GitHub Actions expressions (`${{ matrix.os }}`) start with a space and stay.
-    for (FILES) |file| {
-        const out = try render(testing.allocator, file.template, "tide", "/engine", 7);
-        defer testing.allocator.free(out);
-        var at: usize = 0;
-        while (std.mem.indexOfPos(u8, out, at, "{{")) |i| : (at = i + 2) {
-            try testing.expect(i + 2 < out.len and out[i + 2] == ' ');
+    for ([_][]const File{ &FILES, &TEXT_FILES }) |set| {
+        for (set) |file| {
+            const out = try render(testing.allocator, file.template, "tide", "/engine", 7);
+            defer testing.allocator.free(out);
+            var at: usize = 0;
+            while (std.mem.indexOfPos(u8, out, at, "{{")) |i| : (at = i + 2) {
+                try testing.expect(i + 2 < out.len and out[i + 2] == ' ');
+            }
         }
     }
 }
@@ -200,4 +229,35 @@ test "P29-01: generate writes every file once and never overwrites a project" {
     try testing.expectError(error.ProjectExists, generate(testing.allocator, testing.io, tmp.dir, "taken", engine, notice));
     try testing.expectError(error.InvalidProjectName, generate(testing.allocator, testing.io, tmp.dir, "../escape", engine, notice));
     try testing.expectError(error.InvalidEngineRoot, generate(testing.allocator, testing.io, tmp.dir, "fresh", "relative/engine", notice));
+}
+
+test "P49-02: text template generates a turn-based parser project with transcript page" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(testing.io, "engine", .default_dir);
+    const engine = try tmp.dir.realPathFileAlloc(testing.io, "engine", testing.allocator);
+    defer testing.allocator.free(engine);
+    const notice = "Engine notice, kept verbatim\n";
+    try generate_with(testing.allocator, testing.io, tmp.dir, "watch", engine, notice, .text);
+
+    for (TEXT_FILES) |file| {
+        var path_buf: [64]u8 = undefined;
+        const text = try tmp.dir.readFileAlloc(testing.io, try std.fmt.bufPrint(&path_buf, "watch/{s}", .{file.path}), testing.allocator, .limited(1 << 20));
+        defer testing.allocator.free(text);
+        try testing.expect(text.len > 0);
+    }
+    const html = try tmp.dir.readFileAlloc(testing.io, "watch/web/index.html", testing.allocator, .limited(1 << 16));
+    defer testing.allocator.free(html);
+    try testing.expect(std.mem.indexOf(u8, html, "id=\"transcript\"") != null);
+    try testing.expect(std.mem.indexOf(u8, html, "wasm_submit_command") != null);
+    try testing.expect(std.mem.indexOf(u8, html, "WebAssembly.instantiateStreaming(fetch('watch.wasm'), {})") != null);
+
+    const script = try tmp.dir.readFileAlloc(testing.io, "watch/scripts/main.bespoke", testing.allocator, .limited(1 << 16));
+    defer testing.allocator.free(script);
+    try testing.expect(std.mem.indexOf(u8, script, "clock: turns") != null);
+
+    const readme = try tmp.dir.readFileAlloc(testing.io, "watch/README.md", testing.allocator, .limited(1 << 16));
+    defer testing.allocator.free(readme);
+    try testing.expect(std.mem.indexOf(u8, readme, "[LICENSE-BeSpoke](LICENSE-BeSpoke)") != null);
+    try testing.expect(std.mem.indexOf(u8, readme, "There is no project-wide license") != null);
 }

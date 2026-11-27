@@ -1,0 +1,123 @@
+# {{name}}: a turn-based BeSpoke parser adventure.
+# Edit this file, then run:
+#   zig build test
+#   zig build run -- --headless --ticks 10
+#   zig build web
+
+clock: turns
+
+entity Scene
+
+scene Shore:
+  cast: Hero
+  props: Lantern
+  marks: Pier, Threshold
+
+scene Watchhouse:
+  props: Logbook
+  marks: Desk
+
+palette:
+  "." transparent
+  "w" 30 78 124
+  "y" 68 142 186
+  "g" 144 212 232
+  "l" 238 190 92
+
+cycle "w" "y" "g" every 10
+
+image LanternArt:
+  ".llll."
+  "lwyywl"
+  "lyggyl"
+  "lwyywl"
+  ".llll."
+  "......"
+
+sprite Lantern: LanternArt
+
+relation LanternLit(lantern)
+relation SignalSeen(who)
+relation At(who, place)
+
+command Surveys: "look"
+command Surveys: "l"
+command GoesNorth: "north"
+command GoesNorth: "n"
+command GoesSouth: "south"
+command GoesSouth: "s"
+command Takes: "take <thing>"
+command Lights: "light <thing>"
+
+goal LightTheBeacon:
+  need BeaconLit:
+    room Watchhouse
+    met SignalSeen(Hero)
+    hint 1 "Take the lantern from the shore up to the watchhouse."
+    hint 2 "Light the lantern inside the watchhouse and wait for the signal."
+
+score Tide:
+  lead "t88 o4 l8 v8 @2 e g a g e4 d4 L c4 e4 g2 e4 d4 c2"
+  bass "o3 l4 v9 @7 c g a e L f c g c"
+  scene Shore
+
+transition to scene Shore
+
+routine Ready(Hero):
+  remember At(Hero, Shore)
+  wait 1 ticks
+
+on cue Surveys(Hero):
+  if At(Hero, Shore):
+    if Carries(Hero, Lantern):
+      say Scene: "Cold spray drifts across the stone pier. North stands the watchhouse."
+    if not Carries(Hero, Lantern):
+      say Scene: "Cold spray drifts across the stone pier; a brass lantern sits by the bollards. North stands the watchhouse."
+  if At(Hero, Watchhouse):
+    if LanternLit(Lantern):
+      say Scene: "Warm amber light fills the watchhouse; a logbook lies on the desk. South leads back to the pier."
+    if not LanternLit(Lantern):
+      say Scene: "Shadows fill the stone watchhouse; a logbook lies on the desk. South leads back to the pier."
+
+on cue GoesNorth(Hero):
+  if At(Hero, Watchhouse):
+    say Scene: "Only the cliff wall lies north."
+  if At(Hero, Shore):
+    forget At(Hero, Shore)
+    remember At(Hero, Watchhouse)
+    transition to scene Watchhouse
+    say Scene: "You climb the wet steps into the watchhouse."
+
+on cue GoesSouth(Hero):
+  if At(Hero, Shore):
+    say Scene: "The sea drops away south of the pier."
+  if At(Hero, Watchhouse):
+    forget At(Hero, Watchhouse)
+    remember At(Hero, Shore)
+    transition to scene Shore
+    say Scene: "You step back down onto the windy pier."
+
+on cue Takes(Hero, Lantern):
+  if Carries(Hero, Lantern):
+    say Scene: "You already hold the brass lantern."
+  if not Carries(Hero, Lantern):
+    remember Carries(Hero, Lantern)
+    say Scene: "You lift the brass lantern by its bail."
+
+on cue Lights(Hero, Lantern):
+  if not Carries(Hero, Lantern):
+    say Scene: "You are not carrying the lantern."
+  if Carries(Hero, Lantern):
+    if LanternLit(Lantern):
+      say Scene: "The lantern is already lit."
+    if not LanternLit(Lantern):
+      remember LanternLit(Lantern)
+      say Scene: "You strike a spark and raise the lit lantern."
+
+on cue LooksAt(Hero, Logbook):
+  say Scene: "The keeper's log records an overdue relief boat beyond the headland."
+
+when LanternLit(Lantern):
+  wait 2 ticks
+  remember SignalSeen(Hero)
+  say Scene: "Out beyond the reef, a green flare answers your lantern."

@@ -814,8 +814,18 @@ pub const WasmRuntime = struct {
         return view.count;
     }
 
+    /// Submits a typed command line through the active deck's `on_typed` hook (or default
+    /// handler) and records a snapshot (P49-02, D-191).
+    pub fn submit_command(self: *WasmRuntime, line: []const u8) !void {
+        self.bind();
+        if (self.decks[self.deck_index].on_typed) |hook| {
+            try hook(self, line);
+        } else try self.default_typed(line);
+        self.record_snapshot();
+    }
+
     /// A key while the command bar is focused, with the page's key code turned into the window's
-    /// (the DOM numbers arrows 38 and 40). A submitted line goes to the deck's `on_typed`.
+    /// (the DOM numbers arrows 38 and 40). A submitted line goes to `submit_command`.
     fn command_key(self: *WasmRuntime, code: u8) !BrowserActionTag {
         const sym: renderer.Keycode = switch (code) {
             13 => renderer.Keys.enter,
@@ -828,11 +838,7 @@ pub const WasmRuntime = struct {
         };
         switch (self.window.command_bar_key(sym)) {
             .typed_command => |t| {
-                self.bind();
-                if (self.decks[self.deck_index].on_typed) |hook| {
-                    try hook(self, t.buf[0..t.len]);
-                } else try self.default_typed(t.buf[0..t.len]);
-                self.record_snapshot();
+                try self.submit_command(t.buf[0..t.len]);
                 return .command_typed;
             },
             else => return .command_edited,
@@ -2112,8 +2118,22 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             }
             return 0;
         }
+
+        /// Submits a UTF-8 command line written into `wasm_query_ptr()[0..len]` through the
+        /// active deck's `on_typed` hook (or default typed-command handler) (P49-02, D-191).
+        /// Returns 1 on success, 0 if no runtime is active, the length is invalid, or dispatch fails.
+        fn wasm_submit_command(len: u32) callconv(.c) u8 {
+            const rt = runtime() orelse return 0;
+            if (len == 0 or len > query_buf.len) return 0;
+            var line_buf: [256]u8 = undefined;
+            @memcpy(line_buf[0..len], query_buf[0..len]);
+            rt.submit_command(line_buf[0..len]) catch return 0;
+            rt.render_frame();
+            return 1;
+        }
     };
     @export(&Exports.wasm_init, .{ .name = "wasm_init" });
+    @export(&Exports.wasm_submit_command, .{ .name = "wasm_submit_command" });
     @export(&Exports.wasm_dialogue_open, .{ .name = "wasm_dialogue_open" });
     @export(&Exports.wasm_message_pending, .{ .name = "wasm_message_pending" });
     @export(&Exports.wasm_inspector_open, .{ .name = "wasm_inspector_open" });
@@ -3225,4 +3245,48 @@ test "P49-01: desktop and browser draw identical cycled frames and leave world a
     var w8: std.Io.Writer = .fixed(&buf8);
     try rt.world.save_state(&w8);
     try testing.expectEqualSlices(u8, w0.buffered(), w8.buffered());
+}
+
+test "P49-02: submit_command runs on_typed and default_typed and honours turn clocks" {
+    const testing = std.testing;
+    const script =
+        \\clock: turns
+        \\scene Shore:
+        \\  cast: Hero
+        \\  props: Lamp
+        \\  marks: Pier
+        \\command Surveys: "look"
+        \\on cue Surveys(Hero):
+        \\  remember Looked(Hero)
+    ;
+    const Hooks = struct {
+        var seen: usize = 0;
+        fn typed(rt: *WasmRuntime, line: []const u8) anyerror!void {
+            seen += line.len;
+            try rt.default_typed(line);
+        }
+    };
+    Hooks.seen = 0;
+    const decks = [_]Deck{
+        script_deck_with("HOOKED", script, .{ .on_typed = Hooks.typed }),
+        script_deck("DEFAULT", script),
+    };
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    rt.* = try WasmRuntime.init(testing.allocator, &decks, 0);
+    defer rt.deinit();
+
+    // Unknown command takes no turn; valid command runs hook and advances one turn.
+    try rt.submit_command("xyzzy");
+    try testing.expectEqual(@as(usize, 5), Hooks.seen);
+    try testing.expectEqual(@as(u64, 0), rt.world.current_tick);
+
+    try rt.submit_command("look");
+    try testing.expectEqual(@as(usize, 9), Hooks.seen);
+    try testing.expectEqual(@as(u64, 1), rt.world.current_tick);
+
+    // Default deck without on_typed still resolves via default_typed.
+    try rt.load_deck(1);
+    try rt.submit_command("look");
+    try testing.expectEqual(@as(u64, 1), rt.world.current_tick);
 }

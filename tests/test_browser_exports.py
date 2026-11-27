@@ -27,14 +27,14 @@ def module_exports() -> set[str]:
 
 def generated_page_calls() -> set[str]:
     calls: set[str] = set()
-    for template in ("index.html.tmpl", "smoke.js.tmpl"):
+    for template in ("index.html.tmpl", "smoke.js.tmpl", "text_index.html.tmpl", "text_smoke.js.tmpl"):
         calls |= set(re.findall(r"\b(wasm_[a-z0-9_]+)\b", (SCAFFOLD / template).read_text(encoding="utf-8")))
     return calls
 
 
 class BrowserExportTests(unittest.TestCase):
     def test_the_list_is_the_supported_export_names(self):
-        self.assertEqual(len(supported_exports()), 21)
+        self.assertEqual(len(supported_exports()), 23)
 
     def test_every_supported_export_is_exported(self):
         missing = supported_exports() - module_exports()

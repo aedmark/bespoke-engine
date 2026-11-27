@@ -17,7 +17,7 @@ const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts head
     \\  bespoke compile <script.bespoke> -o <game.bspk>
     \\  bespoke check <script.bespoke> [--kind]
     \\  bespoke import <art.png> --name <Image> [--frames WxH] [--script <script.bespoke>] [-o <file>]
-    \\  bespoke init <name> [--engine <engine checkout>]
+    \\  bespoke init <name> [--template stage|text] [--engine <engine checkout>]
     \\  bespoke --version
     \\
     \\Sample scripts live in scenarios/. Proofs of concept (vertical slices) are a
@@ -42,6 +42,7 @@ pub fn main(init: std.process.Init) !void {
     var target_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var engine_root: []const u8 = build_options.engine_root;
+    var template: scaffold.Template = .stage;
     var image_name: ?[]const u8 = null;
     var frames: ?[2]u16 = null;
     var script_file: ?[]const u8 = null;
@@ -68,6 +69,9 @@ pub fn main(init: std.process.Init) !void {
             frames = parse_frames(text) orelse return fail(stdout, "'--frames' needs a size such as 16x24");
         } else if (std.mem.eql(u8, arg, "--engine")) {
             engine_root = args.next() orelse return fail(stdout, "'--engine' needs the engine checkout's path");
+        } else if (std.mem.eql(u8, arg, "--template")) {
+            const text = args.next() orelse return fail(stdout, "'--template' needs 'stage' or 'text'");
+            template = std.meta.stringToEnum(scaffold.Template, text) orelse return fail(stdout, "'--template' must be 'stage' or 'text'");
         } else if (std.mem.eql(u8, arg, "--ticks")) {
             if (args.next()) |t| ticks = std.fmt.parseInt(usize, t, 10) catch 20;
         } else if (std.mem.eql(u8, arg, "--headless")) {
@@ -115,7 +119,7 @@ pub fn main(init: std.process.Init) !void {
             const root = std.Io.Dir.cwd().realPathFileAlloc(io, engine_root, allocator) catch
                 return fail(stdout, "the engine checkout was not found; pass --engine <path>");
             defer allocator.free(root);
-            scaffold.generate(allocator, io, std.Io.Dir.cwd(), name, root, @embedFile("engine_license")) catch |err| switch (err) {
+            scaffold.generate_with(allocator, io, std.Io.Dir.cwd(), name, root, @embedFile("engine_license"), template) catch |err| switch (err) {
                 error.InvalidProjectName => return fail(stdout, "a project name is a lowercase letter, then lowercase letters, digits, or underscores (at most 32)"),
                 error.ProjectExists => return fail(stdout, "that directory already exists; choose another name"),
                 else => return err,

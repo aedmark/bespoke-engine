@@ -4,6 +4,7 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- Text-first project template (`P49-02`, `D-191`): `bespoke init <name> --template text` scaffolds a turn-based parser adventure with a transcript, command field, hint button, AudioWorklet sound, and optional animated room picture, supported by `wasm_submit_command` and `wasm_set_animation_clock` in the browser exports.
 - Palette colour cycling (`P49-01`, `D-190`): top-level `cycle "<c1>" "<c2>" ... [every N]` rotates declared palette colours forward every `N` 60 Hz display frames across drawn art on both desktop and browser, stored in an optional `CYCL` package section that 1.0 readers skip cleanly.
 
 ## 1.0.1 - 2026-11-26

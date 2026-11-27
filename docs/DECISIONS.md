@@ -2377,6 +2377,17 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** range syntax (`cycle "a" to "c"`); indented inside `palette:`; in-place next-colour rotation; per-scene scoping; true indexed CLUT cycling inside QOI or a second indexed image section (tabled for future consideration because it breaks standard QOI or 1.0 compatibility or reintroduces a second pixel representation).
 
+## D-191 Text-First Projects Use '--template text' and Supported Command/Animation Browser Exports (2026-11-26, status: accepted; P49-02)
+
+**Context.** Classic parser adventures (`P49-02`, `P49-03`) present a transcript and command field with an optional picture of the current room rather than a full-width stage canvas. `bespoke init` previously generated only the stage template (`P29-03`), and Lantern Watch (`scenarios/lantern_watch/web.zig`) relied on the internal `wasm_deck_action` export.
+
+**Decision.**
+1. `bespoke init <name> [--template stage|text] [--engine <path>]` defaults to `stage` (preserving the first-game tutorial and existing projects byte-for-byte) and selects the text-first template with `--template text`.
+2. Promote `wasm_set_animation_clock` and add `wasm_submit_command(len: u32) u8` to the supported browser module exports (`docs/API.md`, 23 exports, pinned by `tests/test_browser_exports.py`). `wasm_submit_command` reads UTF-8 bytes from `wasm_query_ptr()`, dispatches them through the deck's `on_typed` hook (or default typed-command handler), records a snapshot, and renders a frame without re-rendering per keystroke.
+3. The `text` template generates a turn-based (`clock: turns`) parser starter (`scripts/main.bespoke`), matching native tests (`src/game_test.zig`), a transcript/scene/picture bridge (`src/web.zig` exporting `game_text_ptr/len/clear`, `game_scene_ptr/len`, `game_has_picture`), an accessible responsive page (`web/index.html`, 44 px touch targets, optional animated room picture with Show/Hide toggle, Hint button, AudioWorklet sound toggle, and `tools/pack_game_page.py`-compatible `WebAssembly.instantiateStreaming(fetch('<name>.wasm'), {})` loader), and a Node smoke test (`web/smoke.js`).
+
+**Alternatives:** a separate CLI subcommand (`bespoke init-text`); calling `wasm_deck_action` (internal) or looping `wasm_on_char` per character (renders a full frame per keystroke and lacks UTF-8).
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

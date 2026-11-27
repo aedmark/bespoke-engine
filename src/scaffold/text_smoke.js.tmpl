@@ -1,0 +1,53 @@
+// Smoke check for the text-first browser build: load zig-out/web/{{name}}.wasm, submit
+// commands through wasm_submit_command, check turn-clock behaviour, transcript output, and
+// optional room picture rendering. Run after `zig build web`:  node web/smoke.js
+const fs = require('fs');
+const path = require('path');
+const file = path.join(__dirname, '..', 'zig-out', 'web', '{{name}}.wasm');
+const w = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(file)), {}).exports;
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+function drain() {
+  const len = w.game_text_len();
+  if (!len) return '';
+  const text = dec.decode(new Uint8Array(w.memory.buffer, w.game_text_ptr(), len));
+  w.game_text_clear();
+  return text;
+}
+
+function submit(line) {
+  const bytes = enc.encode(line);
+  new Uint8Array(w.memory.buffer, w.wasm_query_ptr(), bytes.length).set(bytes);
+  const ok = w.wasm_submit_command(bytes.length);
+  if (ok !== 1) throw new Error(`wasm_submit_command failed for ${line}`);
+  return drain();
+}
+
+w.wasm_init(0, 42, 0);
+const opening = drain();
+if (!opening.includes('pier')) throw new Error('missing opening prose');
+
+// Refused command takes no turn.
+const startTick = w.wasm_get_tick();
+const refused = submit('xyzzy');
+if (w.wasm_get_tick() !== startTick || !refused.length) throw new Error('refusal changed turn clock');
+
+// Valid commands advance turns and update transcript.
+submit('look');
+submit('take lantern');
+submit('north');
+const lit = submit('light lantern');
+if (!lit.includes('spark')) throw new Error('missing light reply');
+submit('look');
+submit('look');
+const signal = submit('look');
+if (!signal.includes('green flare')) throw new Error('missing timed signal');
+
+w.wasm_render_frame();
+const px = new Uint8Array(w.memory.buffer, w.wasm_framebuffer_ptr(), w.wasm_framebuffer_len());
+const colours = new Set();
+for (let k = 0; k < px.length; k += 4 * 101) colours.add((px[k] << 16) | (px[k + 1] << 8) | px[k + 2]);
+const ok = w.wasm_get_tick() >= 6 && w.wasm_get_fact_count() > 0 && colours.size > 3;
+console.log(`${ok ? 'ok' : 'FAIL'} {{name}}.wasm (text): tick ${w.wasm_get_tick()}, facts ${w.wasm_get_fact_count()}, ${colours.size} colours`);
+process.exit(ok ? 0 : 1);

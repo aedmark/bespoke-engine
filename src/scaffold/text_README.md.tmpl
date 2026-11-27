@@ -1,0 +1,24 @@
+# {{name}}
+
+A turn-based text-first BeSpoke adventure built with `bespoke init {{name}} --template text`.
+
+## Run and Test
+
+```bash
+zig build test
+zig build run
+zig build run -- --headless --ticks 10
+```
+
+## Browser Build
+
+```bash
+zig build web
+node web/smoke.js
+```
+
+Serve `zig-out/web/` over HTTP, or pack it into one self-contained HTML file using `tools/pack_game_page.py` from the BeSpoke engine checkout.
+
+## License
+
+There is no project-wide license assigned to your own game files in this directory. The BeSpoke engine notice is included verbatim in [LICENSE-BeSpoke](LICENSE-BeSpoke) for redistribution with compiled binaries or web builds.

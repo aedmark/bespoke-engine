@@ -1,0 +1,109 @@
+//! Tests for {{name}}: compiles the script and exercises the turn-based parser story.
+const std = @import("std");
+const bespoke = @import("bespoke");
+const testing = std.testing;
+
+const SCRIPT_PATH = "scripts/main.bespoke";
+
+const Game = struct {
+    source: []u8,
+    world: bespoke.World,
+    spatial: bespoke.SpatialSystem,
+    compiled: bespoke.CompiledProgram,
+    vm: bespoke.VM,
+    interp: bespoke.command.Interpreter = .{},
+    actor: bespoke.EntityId = .none,
+
+    fn init(self: *Game) !void {
+        self.interp = .{};
+        self.source = try std.Io.Dir.cwd().readFileAlloc(testing.io, SCRIPT_PATH, testing.allocator, .limited(1 << 20));
+        errdefer testing.allocator.free(self.source);
+        self.world = try bespoke.World.init(testing.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+        errdefer self.world.deinit();
+        self.spatial = bespoke.SpatialSystem.init(testing.allocator);
+        errdefer self.spatial.deinit();
+        self.compiled = try bespoke.compile_source(testing.allocator, &self.world, &self.spatial, self.source);
+        errdefer self.compiled.deinit();
+        self.vm = try bespoke.host.init_vm(testing.allocator, &self.world, &self.spatial, &self.compiled);
+        errdefer self.vm.deinit();
+        try bespoke.host.initialize_subsystems(&self.world, &self.compiled);
+        self.actor = try bespoke.host.start_script(&self.world, &self.spatial, &self.vm, &self.compiled);
+        _ = try bespoke.host.tick(&self.vm, &self.compiled);
+    }
+
+    fn deinit(self: *Game) void {
+        self.vm.deinit();
+        self.compiled.deinit();
+        self.spatial.deinit();
+        self.world.deinit();
+        testing.allocator.free(self.source);
+    }
+
+    fn command(self: *Game, line: []const u8) !bespoke.host.CommandReply {
+        var buf: [256]u8 = undefined;
+        const reply = try bespoke.host.run_command(&self.vm, &self.compiled, &self.interp, self.actor, line, &buf);
+        if (reply.turn) {
+            _ = try bespoke.host.tick(&self.vm, &self.compiled);
+            var guard: usize = 0;
+            while (self.spatial.is_moving(self.actor) and guard < 256) : (guard += 1) {
+                _ = try bespoke.host.tick(&self.vm, &self.compiled);
+            }
+        }
+        return reply;
+    }
+
+    fn holds(self: *const Game, relation: []const u8, subject: []const u8, object: ?[]const u8) bool {
+        const rel = self.world.lookup_relation(relation) orelse return false;
+        const subj = self.world.lookup_entity(subject) orelse return false;
+        const obj: ?u32 = if (object) |o| (self.world.lookup_entity(o) orelse return false).to_int() else null;
+        return self.world.find_first(subj, rel, obj) != null;
+    }
+
+    fn scene(self: *const Game) []const u8 {
+        const s = self.vm.current_scene orelse return "";
+        return self.world.get_entity_name(s) orelse "";
+    }
+};
+
+test "the script compiles with a turn clock" {
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, SCRIPT_PATH, testing.allocator, .limited(1 << 20));
+    defer testing.allocator.free(source);
+    try testing.expect(bespoke.compiler.check_source(testing.allocator, source).is_valid);
+
+    var game: Game = undefined;
+    try game.init();
+    defer game.deinit();
+    try testing.expect(game.compiled.turn_clock);
+}
+
+test "unknown commands take no turn, and lighting the lantern signals the watchhouse" {
+    var game: Game = undefined;
+    try game.init();
+    defer game.deinit();
+
+    const start_tick = game.world.current_tick;
+    const bad = try game.command("xyzzy");
+    try testing.expect(!bad.turn);
+    try testing.expectEqual(start_tick, game.world.current_tick);
+
+    var hint_buf: [128]u8 = undefined;
+    try testing.expect((try bespoke.host.hint(&game.world, &game.compiled, game.actor, bespoke.hint.Tier.fromInt(1).?, &hint_buf)) != null);
+
+    try testing.expect((try game.command("look")).turn);
+    try testing.expect((try game.command("take lantern")).turn);
+    try testing.expect(game.holds("Carries", "Hero", "Lantern"));
+
+    try testing.expect((try game.command("north")).turn);
+    try testing.expectEqualStrings("Watchhouse", game.scene());
+
+    try testing.expect((try game.command("light lantern")).turn);
+    try testing.expect(game.holds("LanternLit", "Lantern", null));
+    try testing.expect(!game.holds("SignalSeen", "Hero", null));
+
+    // Timed turn event fires three turns after lighting the lantern.
+    try testing.expect((try game.command("look")).turn);
+    try testing.expect((try game.command("look")).turn);
+    try testing.expect((try game.command("look")).turn);
+    try testing.expect(game.holds("SignalSeen", "Hero", null));
+    try testing.expect((try bespoke.host.hint(&game.world, &game.compiled, game.actor, bespoke.hint.Tier.fromInt(1).?, &hint_buf)) == null);
+}
