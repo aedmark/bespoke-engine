@@ -162,6 +162,15 @@
       "deck": 17,
       "page": "cinder-table.html",
       "flag": "cinder-table"
+    },
+    {
+      "id": "tide-beacon",
+      "title": "The Tide Beacon",
+      "tag": "Palette colour cycling",
+      "blurb": "Four palette colour cycles animate waterfall foam, ocean surf, brazier embers, stars, and a hand lantern on one static 320x180 PNG backdrop at 60 Hz without touching world state.",
+      "deck": 18,
+      "page": "tide-beacon.html",
+      "flag": "tide-beacon"
     }
   ]
 }

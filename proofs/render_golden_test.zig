@@ -42,6 +42,7 @@ const long_gallery = @import("long_gallery.zig");
 const valerius = @import("valerius.zig");
 const image_stage = @import("image_stage.zig");
 const lamplighter = @import("lamplighter.zig");
+const tide_beacon = @import("tide_beacon.zig");
 
 const WIDTH: i32 = 1280;
 const HEIGHT: i32 = 720;
@@ -605,6 +606,7 @@ fn stage_host(name: []const u8, world: *bespoke.World, spatial: *bespoke.Spatial
     }
     if (std.mem.eql(u8, name, "three_tides")) return three_tides.place_fenn(world, spatial);
     if (std.mem.eql(u8, name, "lamplighter")) return lamplighter.configure(world, spatial, false);
+    if (std.mem.eql(u8, name, "tide_beacon")) return tide_beacon.configure(world, spatial, false);
 }
 
 fn record_script(rec: *Recorder, name: []const u8, script: []const u8) !void {
@@ -867,6 +869,41 @@ fn record_lamplighter(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void
     try record_program(rec, "lamplighter", lamplighter.SCRIPT, lamplighter.PACKAGE);
 }
 
+/// P49-01 (D-190): The Tide Beacon, loaded from its compiled package, with 4 colour cycles
+/// animating on the 60 Hz display clock. Verifies animation_clock 0 vs 12 draw distinct pixels.
+fn record_tide_beacon(rec: *Recorder, big: *bespoke.display.DisplayWindow) !void {
+    rec.window.set_theme(&tide_beacon.theme);
+    big.set_theme(&tide_beacon.theme);
+    defer {
+        rec.window.set_theme(&art.theme);
+        big.set_theme(&art.theme);
+        rec.set_clock(0);
+    }
+    try record_program(rec, "tide_beacon", tide_beacon.SCRIPT, tide_beacon.PACKAGE);
+
+    var world = try bespoke.World.init(rec.allocator, bespoke.world.DEFAULT_ARENA_SIZE);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(rec.allocator);
+    defer spatial.deinit();
+    var stream: std.Io.Reader = .fixed(tide_beacon.PACKAGE);
+    var compiled = try bespoke.load_package(rec.allocator, &stream, &world, &spatial);
+    defer compiled.deinit();
+    rec.set_art(&compiled.art);
+    defer rec.set_art(null);
+    try tide_beacon.configure(&world, &spatial, false);
+    var vm = bespoke.VM.init(rec.allocator, &world, &compiled.chunk);
+    defer vm.deinit();
+    vm.spatial = &spatial;
+    try vm.transition_to_scene(world.lookup_entity(tide_beacon.SCENE).?);
+    rec.set_clock(0);
+    try rec.draw("tide_beacon/Moonlit Cove clock 0", &world, &spatial, &vm);
+    const h0 = rec.window.frame_hash().?;
+    rec.set_clock(12);
+    try rec.draw("tide_beacon/Moonlit Cove clock 12", &world, &spatial, &vm);
+    const h12 = rec.window.frame_hash().?;
+    if (h0 == h12) return error.ColourCycleDidNotAnimate;
+}
+
 /// P48-21 (D-179): an accented scene, cast, prop, and mark name rendered with display names
 /// enabled, band-checked on both windows, verified by `TextProbe` character widths, and
 /// distinct from replacing accented characters with `?`.
@@ -974,6 +1011,7 @@ fn record_all(allocator: std.mem.Allocator, window: *bespoke.display.DisplayWind
     try record_image_stage(&rec, &big);
     try record_lamplighter(&rec, &big);
     try record_accented_names(&rec, &big);
+    try record_tide_beacon(&rec, &big);
     if (rec.crowded > 0) {
         std.debug.print("\n{d} recorded frame(s) leave fewer than {d} pixels above the message band (Q-017, P43-08)\n", .{ rec.crowded, CLEARANCE_FLOOR });
         return error.SceneTooCloseToBand;

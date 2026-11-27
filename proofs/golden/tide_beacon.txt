@@ -1,0 +1,25 @@
+===================================================================
+            BeSpoke Engine: The Tide Beacon (Colour Cycling)       
+   (4 Palette Cycles * PNG Backdrop * Inline Sprite * 60 Hz Clock) 
+===================================================================
+
+  (Art: 2 images, 1 backdrop, 1 sprite, 4 colour cycles.)
+
+> LooksAt Waterfall
+  Cove Keeper: "Cold cliffwater pours down the basalt face and churns into foam."
+> LooksAt TidePool
+  Cove Keeper: "Moonlight shivers across the incoming swell."
+> LooksAt Brazier
+  Cove Keeper: "Salt-cured coals crackle inside the iron brazier."
+> walk to Ledge
+> walk to Pier
+> Uses Brazier
+  Cove Keeper: "You stir the embers and pour a measure of lantern oil over the coals."
+> LooksAt Brazier
+  Cove Keeper: "Fresh oil feeds the iron brazier; bright gold tongues leap high."
+
+final facts: 2, digest d723059c6de53243
+
+===================================================================
+  VERIFICATION COMPLETE: 4 colour cycles active, brazier stoked.   
+===================================================================

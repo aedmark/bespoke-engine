@@ -163,7 +163,7 @@ Open `site/index.html` from `file://`, then again over HTTP (`python3 -m http.se
 
 - [ ] The homepage has one live game, The Harbour. It leaves the clock stopped before Start. With the map closed, start the watch, enter `read tide board`, then `go forward`; the transcript reports the tide and the Watch office. Open the game on its own page as well.
 - [ ] Every gallery card opens its proof's own page, and each page loads with no console errors (open the developer tools).
-- [ ] All eighteen proof pages load their deck: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Barbs, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar), Valerius and the Bread, The Lamplighter's Round, The Long Gallery, The Word Foundry, and The Cinder Table.
+- [ ] All nineteen proof pages load their deck: Tavern, Spit, Beard, Village, Lamp Point, Three Tides, Grog, Barbs, Saltmarket, Copper Weathercock, Bell Tower, Castle Fire Escape, Larkspur Observatory (Enter opens its command bar), Valerius and the Bread, The Lamplighter's Round, The Long Gallery, The Word Foundry, The Cinder Table, and The Tide Beacon.
 - [ ] In each page: S plays a solve step and the stage advances; verbs fire on a click; a dialogue answers to number keys; H steps through available hints on Observatory (and Valerius / Harbour); each proof plays its own unique audio arrangement.
 - [ ] Saltmarket: choosing a way in with 1, 2, or 3 locks the others.
 - [ ] Copper Weathercock: the tick counter never runs backwards; a rewind across the collapse brings the branch back.

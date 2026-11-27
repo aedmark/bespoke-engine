@@ -118,7 +118,7 @@ The repository has three layers:
 
 ## Proofs of Concept
 
-Each proof is a small playable scene that shows an engine feature working end to end. All eighteen run headless and check their own outcome with exact rewind/replay where applicable; sixteen open in the SDL2 window on desktop (The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser), and all eighteen have standalone browser pages in [`site/`](site/index.html). Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
+Each proof is a small playable scene that shows an engine feature working end to end. All nineteen run headless and check their own outcome with exact rewind/replay where applicable; seventeen open in the SDL2 window on desktop (The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser), and all nineteen have standalone browser pages in [`site/`](site/index.html). Proofs depend on the engine; the engine never imports a proof (the compiler enforces this, see [D-031](docs/DECISIONS.md)).
 
 ```bash
 zig build run-proof -- --bell-tower       # interactive
@@ -145,6 +145,7 @@ zig build test-proofs                     # every proof's tests
 | `--cinder-table` | The Cinder Table | Private hands and scored plays: each seat plays only cards it knows, follows the led suit, and leads into a suit an opponent has shown to be void in (headless only) |
 | `--valerius` | Valerius and the Bread | Values, red lines, a five-tier dilemma, appeals the player must learn, and drift carried into a later scene |
 | `--lamplighter` | The Lamplighter's Round | Pixel art imported from PNG files at build time: backdrops, animated sprites, and lamps whose art follows a fact |
+| `--tide-beacon` | The Tide Beacon | Four palette colour cycles animating one static 320x180 PNG backdrop and a hand lantern at 60 Hz without touching world state |
 | `--long-gallery` | The Long Gallery | Watching a room the player is not in: an agenda plays out in a locked studio while the gallery frame stays put |
 
 ---
@@ -154,7 +155,7 @@ zig build test-proofs                     # every proof's tests
 - A one-shot `when` rule's body cannot use its trigger's variables (`D-161`); `when each` (`D-186`) and `on cue` handler bodies can.
 - A society has one enforcer.
 - All sixteen windowed proofs and both headless proofs passed the 1.0.0 [release hand-test](docs/runbooks/release-hand-test.md) on Linux (2026-11-26, `P48-05`); The Word Foundry and The Cinder Table are headless on desktop and interactive in the browser. A project made by `bespoke init` builds, tests, and runs on Linux and macOS in its own GitHub CI; Windows is not a release target until a Windows contributor maintains it (`D-143`). The uploaded showcase site is checked by hand by the maintainer (`D-074`).
-- The showcase homepage features The Harbour, and all eighteen proofs have their own standalone pages in `site/`. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (`D-047`, `D-122`). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
+- The showcase homepage features The Harbour, and all nineteen proofs have their own standalone pages in `site/`. Those pages run their scripts from `file://` with the engine's audio; the manual is a static reference (`D-047`, `D-122`). Run `zig build wasm-proofs harbour` before `python3 tools/build_site.py`.
 
 ---
 

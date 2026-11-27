@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const bin = path.join(__dirname, '..', 'zig-out', 'bin');
-const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 18]];
+const modules = [['bespoke.wasm', 2], ['bespoke-proofs.wasm', 19]];
 let failed = false;
 // Each module stays under its budget (1.5 MiB, D-159). The runtime's 1.2 MB of state must stay uninitialised; held
 // as an initialised global it ships as zero bytes in the data section (D-067).
@@ -114,6 +114,29 @@ for (const [file, decks] of modules) {
     failed = true;
   } else {
     console.log(`ok  bespoke-proofs.wasm queries (deck 13): BrannsCounsel=${decChoice}, StolenLoaf=${dilOutcome}, Mercy=${valBefore}->${valAfter}`);
+  }
+
+  // Deck 18 (The Tide Beacon): advancing animation_clock changes framebuffer pixels without changing tick or facts.
+  exp.wasm_init(18);
+  const tickBefore = exp.wasm_get_tick();
+  const factsBefore = exp.wasm_get_fact_count();
+  exp.wasm_set_animation_clock(0);
+  exp.wasm_render_frame();
+  const ptr = exp.wasm_framebuffer_ptr();
+  const len = exp.wasm_framebuffer_len();
+  const frame0 = new Uint8Array(exp.memory.buffer, ptr, len).slice();
+  exp.wasm_set_animation_clock(12);
+  exp.wasm_render_frame();
+  const frame12 = new Uint8Array(exp.memory.buffer, ptr, len);
+  let diffPixels = 0;
+  for (let i = 0; i < len; i += 4) {
+    if (frame0[i] !== frame12[i] || frame0[i + 1] !== frame12[i + 1] || frame0[i + 2] !== frame12[i + 2]) diffPixels++;
+  }
+  if (diffPixels === 0 || exp.wasm_get_tick() !== tickBefore || exp.wasm_get_fact_count() !== factsBefore) {
+    console.log(`FAIL bespoke-proofs.wasm colour cycling (deck 18): diffPixels=${diffPixels}`);
+    failed = true;
+  } else {
+    console.log(`ok  bespoke-proofs.wasm colour cycling (deck 18): ${diffPixels} pixels changed at clock 12`);
   }
 }
 process.exit(failed ? 1 : 0);

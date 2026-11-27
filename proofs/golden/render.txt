@@ -344,3 +344,10 @@ lamplighter/Market Steps +jackdaw_nesting: 75a8c34ca8e8dc0e
 clearance/lamplighter/Market Steps +jackdaw_nesting: 76
 accented_names/BistroRoom: 58b7b1151d99c3c5
 clearance/accented_names/BistroRoom: 95
+thumb/tide_beacon/Moonlit Cove: 13ae451ddda9a840
+tide_beacon/Moonlit Cove: a72072fa95e808de
+clearance/tide_beacon/Moonlit Cove: 80
+tide_beacon/Moonlit Cove clock 0: a72072fa95e808de
+clearance/tide_beacon/Moonlit Cove clock 0: 80
+tide_beacon/Moonlit Cove clock 12: 1fddea362eaa0d98
+clearance/tide_beacon/Moonlit Cove clock 12: 80

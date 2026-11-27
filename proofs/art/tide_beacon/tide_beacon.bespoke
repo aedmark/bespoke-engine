@@ -1,0 +1,122 @@
+# The Tide Beacon (P49-01, D-190): a colour-cycling pixel-art proof.
+# Four palette cycles animate one static 320x180 PNG backdrop and the Keeper's hand lantern
+# at 60 Hz while world state stays discrete and deterministic.
+
+scene: Moonlit Cove
+  cast: CoveKeeper
+  props: Brazier, Waterfall, TidePool
+  marks: Pier, Ledge
+  backdrop: CoveBackdrop
+
+palette:
+  ".." transparent
+  "s1" 11 14 30
+  "s2" 16 22 44
+  "s3" 24 32 60
+  "mn" 232 234 212
+  "mc" 196 200 182
+  "cd" 26 28 38
+  "cm" 42 45 58
+  "ch" 62 68 84
+  "pd" 34 32 36
+  "pt" 54 50 56
+  "pl" 22 20 26
+  "id" 20 18 22
+  "ih" 74 72 82
+  "bf" 12 15 22
+  "w1" 28 72 128
+  "w2" 44 114 176
+  "w3" 74 166 218
+  "w4" 152 222 244
+  "w5" 220 246 255
+  "w6" 58 134 194
+  "o1" 16 36 70
+  "o2" 24 56 98
+  "o3" 36 84 132
+  "o4" 96 152 198
+  "o5" 48 102 148
+  "o6" 20 44 82
+  "f1" 148 36 22
+  "f2" 212 82 24
+  "f3" 244 148 32
+  "f4" 252 206 72
+  "f5" 255 244 168
+  "t1" 15 20 40
+  "t2" 70 88 136
+  "t3" 190 210 248
+  "t4" 102 124 172
+
+cycle "w1" "w2" "w3" "w4" "w5" "w6" every 5
+cycle "o1" "o2" "o3" "o4" "o5" "o6" every 7
+cycle "f1" "f2" "f3" "f4" "f5" every 4
+cycle "t1" "t2" "t3" "t4" every 14
+
+image CoveBackdrop from "tide_beacon_bg.png"
+
+image KeeperSprite:
+  "............cdcd................"
+  "..........cdchchcd.............."
+  "........cdchcmcmchcd............"
+  "........cdcmcdcdcmcd............"
+  "........cdcmcdcdcmcd............"
+  "........cdcdmnmccdcd............"
+  "........cdcdmnmccdcd............"
+  "..........cdcmcmcd.............."
+  "........cdchcmcmchcd............"
+  "......cdchcmcmcmcmchcd.........."
+  "......cdcmcmcmcmcmcmcd....idid.."
+  "......cdcmcdcmcmcdcmcd..idf4f5id"
+  "......cdcmcdcmcmcdcmcdihf3f5f4id"
+  "......cdcmcdcmcmcdcmcd..idf3f4id"
+  "........cdcdcmcmcdcd......idid.."
+  "........cdcdcmcmcdcd............"
+  "........cdcmcmcmcmcd............"
+  "........cdcmcdcdcmcd............"
+  "........cdcmcdcdcmcd............"
+  "........cdcd..cdcdcd............"
+  "........idid....idid............"
+  "........idid....idid............"
+  "......idihid..idihid............"
+  "................................"
+
+sprite CoveKeeper: KeeperSprite
+
+area Brazier: 74 72 28 34
+area Waterfall: 236 52 44 70
+area TidePool: 132 78 60 44
+
+relation Stoked(brazier)
+
+score Cove:
+  lead "t76 o4 l8 v6 @2 L e4 b4 g4 b4 a4 e4 f+2"
+  bass "o3 l4 v7 @7 L e2 b2 c2 d2"
+  scene "Moonlit Cove"
+
+transition to scene "Moonlit Cove"
+
+routine Watch(CoveKeeper):
+  walk CoveKeeper to Pier
+  loop:
+    wait 20 ticks
+
+on cue LooksAt(CoveKeeper, CoveKeeper):
+  say CoveKeeper: "Oilskin cloak and brass storm lantern; the flame dances with the brazier."
+
+on cue LooksAt(CoveKeeper, Brazier):
+  if Stoked(Brazier):
+    say CoveKeeper: "Fresh oil feeds the iron brazier; bright gold tongues leap high."
+  if not Stoked(Brazier):
+    say CoveKeeper: "Salt-cured coals crackle inside the iron brazier."
+
+on cue Uses(CoveKeeper, Brazier):
+  if Stoked(Brazier):
+    say CoveKeeper: "The signal flame already burns as bright as the oil allows."
+  if not Stoked(Brazier):
+    remember Stoked(Brazier)
+    say CoveKeeper: "You stir the embers and pour a measure of lantern oil over the coals."
+
+on cue LooksAt(CoveKeeper, Waterfall):
+  say CoveKeeper: "Cold cliffwater pours down the basalt face and churns into foam."
+
+on cue LooksAt(CoveKeeper, TidePool):
+  say CoveKeeper: "Moonlight shivers across the incoming swell."

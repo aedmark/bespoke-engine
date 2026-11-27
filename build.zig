@@ -182,6 +182,15 @@ pub fn build(b: *std.Build) void {
         lamplighter_pack.addFileInput(b.path(b.fmt("proofs/art/lamplighter/{s}.bespoke", .{part})));
     }
 
+    // P49-01 (D-190): The Tide Beacon compiles its PNG backdrop and inline Keeper sprite into
+    // a package with 4 palette colour cycles.
+    const tide_beacon_pack = b.addRunArtifact(exe);
+    tide_beacon_pack.addArg("compile");
+    tide_beacon_pack.addFileArg(b.path("proofs/art/tide_beacon/tide_beacon.bespoke"));
+    tide_beacon_pack.addArg("-o");
+    const tide_beacon_bspk = tide_beacon_pack.addOutputFileArg("tide_beacon.bspk");
+    tide_beacon_pack.addFileInput(b.path("proofs/art/tide_beacon/tide_beacon_bg.png"));
+
     const proofs_exe = b.addExecutable(.{
         // Zig 0.15 builds native Debug code with its own backend, whose linker cannot handle
         // the relocations in the SDL2 and C objects we link; LLVM can (P37-01).
@@ -195,6 +204,7 @@ pub fn build(b: *std.Build) void {
     });
     proofs_exe.root_module.addImport("bespoke", bespoke_mod);
     proofs_exe.root_module.addAnonymousImport("lamplighter_bspk", .{ .root_source_file = lamplighter_bspk });
+    proofs_exe.root_module.addAnonymousImport("tide_beacon_bspk", .{ .root_source_file = tide_beacon_bspk });
     proofs_exe.root_module.addOptions("build_options", build_opts);
     proofs_exe.root_module.link_libc = true;
     proofs_exe.root_module.linkSystemLibrary("SDL2", .{});
@@ -296,6 +306,7 @@ pub fn build(b: *std.Build) void {
     proofs_unit_tests.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     proofs_unit_tests.root_module.addImport("bespoke", bespoke_mod);
     proofs_unit_tests.root_module.addAnonymousImport("lamplighter_bspk", .{ .root_source_file = lamplighter_bspk });
+    proofs_unit_tests.root_module.addAnonymousImport("tide_beacon_bspk", .{ .root_source_file = tide_beacon_bspk });
     proofs_unit_tests.root_module.addOptions("build_options", build_opts);
 
     // Characterization goldens (P32-07): proofs/golden_test.zig compares each proof's headless
@@ -447,6 +458,7 @@ pub fn build(b: *std.Build) void {
     // The Tavern Heist deck runs the stock scenario script (P30-05, D-069).
     wasm_proofs_exe.root_module.addAnonymousImport("tavern_script", .{ .root_source_file = b.path("scenarios/tavern_heist.bespoke") });
     wasm_proofs_exe.root_module.addAnonymousImport("lamplighter_bspk", .{ .root_source_file = lamplighter_bspk });
+    wasm_proofs_exe.root_module.addAnonymousImport("tide_beacon_bspk", .{ .root_source_file = tide_beacon_bspk });
     wasm_proofs_exe.entry = .disabled;
     wasm_proofs_exe.rdynamic = true;
     wasm_proofs_exe.stack_size = WASM_STACK_BYTES;

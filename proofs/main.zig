@@ -24,6 +24,7 @@ pub const cinder_table = @import("cinder_table.zig");
 pub const long_gallery = @import("long_gallery.zig");
 pub const valerius = @import("valerius.zig");
 pub const lamplighter = @import("lamplighter.zig");
+pub const tide_beacon = @import("tide_beacon.zig");
 
 const Proof = enum {
     tavern,
@@ -44,6 +45,7 @@ const Proof = enum {
     long_gallery,
     valerius,
     lamplighter,
+    tide_beacon,
 };
 
 /// Flag spellings carried over from the pre-D-031 `bespoke` CLI, so existing commands keep working
@@ -97,6 +99,9 @@ const aliases = [_]struct { name: []const u8, proof: Proof }{
     .{ .name = "greyhold", .proof = .valerius },
     .{ .name = "lamplighter", .proof = .lamplighter },
     .{ .name = "lamps", .proof = .lamplighter },
+    .{ .name = "tide-beacon", .proof = .tide_beacon },
+    .{ .name = "beacon", .proof = .tide_beacon },
+    .{ .name = "colour-cycling", .proof = .tide_beacon },
 };
 
 fn lookup(name: []const u8) ?Proof {
@@ -132,6 +137,7 @@ const usage =
     \\  --long-gallery       The Long Gallery (watching a room the player is not in)
     \\  --valerius           Valerius and the Bread (values, red lines, dilemmas, appeals)
     \\  --lamplighter        The Lamplighter's Round (imported PNG art, animated sprites)
+    \\  --tide-beacon        The Tide Beacon (palette colour cycling at 60 Hz)
     \\
 ;
 
@@ -195,6 +201,7 @@ pub fn main(init: std.process.Init) !void {
         .long_gallery => if (headless) try long_gallery.run_headless(allocator, stdout) else try long_gallery.run_interactive(allocator, io, stdout),
         .valerius => if (headless) try valerius.run_headless(allocator, stdout) else try valerius.run_interactive(allocator, io, stdout),
         .lamplighter => if (headless) try lamplighter.run_headless(allocator, stdout) else try lamplighter.run_interactive(allocator, io, stdout),
+        .tide_beacon => if (headless) try tide_beacon.run_headless(allocator, stdout) else try tide_beacon.run_interactive(allocator, io, stdout),
     }
 }
 
@@ -217,6 +224,7 @@ test "proofs: every proof module compiles and its tests run" {
     _ = long_gallery;
     _ = valerius;
     _ = lamplighter;
+    _ = tide_beacon;
     std.testing.refAllDecls(@This());
 }
 

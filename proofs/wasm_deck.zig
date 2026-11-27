@@ -35,6 +35,7 @@ const lamplighter = @import("lamplighter.zig");
 const long_gallery = @import("long_gallery.zig");
 const word_foundry = @import("word_foundry.zig");
 const cinder_table = @import("cinder_table.zig");
+const tide_beacon = @import("tide_beacon.zig");
 const duel_mod = bespoke.duel;
 
 pub const decks = [_]wasm.Deck{
@@ -251,6 +252,15 @@ pub const decks = [_]wasm.Deck{
         .after_tick = cinder_after_tick,
         .on_act = cinder_act,
         .on_action = cinder_action,
+    }),
+    // P49-01 (D-190): four simultaneous palette colour cycles on one static PNG backdrop.
+    wasm.script_deck_with("THE TIDE BEACON (COLOUR CYCLING)", tide_beacon.PACKAGE, .{
+        .player = "CoveKeeper",
+        .intro = tide_beacon.INTRO ++ " [S] plays the next step.",
+        .theme = &tide_beacon.theme,
+        .background = .{ .r = 11, .g = 14, .b = 30 },
+        .setup = tide_beacon_setup,
+        .catalyst = solver(&TIDE_BEACON_SOLUTION),
     }),
 };
 
@@ -1337,7 +1347,7 @@ fn holds(rt: *WasmRuntime, subject: []const u8, rel: []const u8, object: ?[]cons
 }
 
 test "P30-05: each deck runs its proof's script with its own player" {
-    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper", "Nell", "Audra", "Maren", "Maren" };
+    const players = [_][]const u8{ "Cat", "Tamsin", "Tamsin", "Player", "Tamsin", "Nell", "Mara", "Tamsin", "Tamsin", "Wren", "Maren", "Wren", "Ines", "Hesper", "Nell", "Audra", "Maren", "Maren", "CoveKeeper" };
     for (0..decks.len) |i| {
         const rt = try load(@intCast(i));
         defer unload(rt);
@@ -1573,6 +1583,12 @@ test "each proof deck starts on its own unique arrangement" {
         const rt = try load(@intCast(i));
         defer unload(rt);
         _ = energy_over(rt, 1);
+        if (rt.audio.soundtrack != &art.soundtrack) {
+            // Script-scored decks (such as The Tide Beacon) carry their own MML soundtrack.
+            try testing.expect(rt.script_music != null and rt.script_music.?.has_scores());
+            seen[i] = 255;
+            continue;
+        }
         const track = rt.audio.synth.current_track orelse return error.MissingTrack;
         seen[i] = track;
         for (0..i) |prev| {
@@ -3057,4 +3073,57 @@ test "P44-05: Cinder Table plays all 12 cards across 4 rounds in the browser" {
     }
     try testing.expectEqual(cinder_table.TOTAL_PLAYS, cinder_played_summary(rt.active_world()).count);
     try testing.expect(holds(rt, "Ossic", "Void", "Cinder"));
+}
+
+// =============================================================================
+// The Tide Beacon: four palette colour cycles on one static PNG backdrop
+// =============================================================================
+
+const TIDE_BEACON_DECK: u8 = 18;
+
+fn tide_beacon_setup(rt: *WasmRuntime) anyerror!void {
+    try tide_beacon.configure(&rt.world, &rt.spatial, true);
+    try rt.vm.transition_to_scene(try entity(rt, tide_beacon.SCENE));
+    rt.bind();
+}
+
+const TIDE_BEACON_SOLUTION = [_]Beat{
+    .{ .note = "The waterfall churns down the basalt cliff.", .actions = &.{
+        .{ .cue = .{ .name = "LooksAt", .actor = "CoveKeeper", .a = "Waterfall" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "Moonlight shivers across the tide pool.", .actions = &.{
+        .{ .cue = .{ .name = "LooksAt", .actor = "CoveKeeper", .a = "TidePool" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "CoveKeeper walks to the rocky ledge to check the brazier from afar.", .actions = &.{
+        .{ .walk = .{ .actor = "CoveKeeper", .mark = "Ledge" } }, .{ .settle = "CoveKeeper" },
+        .{ .cue = .{ .name = "LooksAt", .actor = "CoveKeeper", .a = "Brazier" } }, .{ .ticks = 1 },
+    } },
+    .{ .note = "CoveKeeper returns to the pier and stokes the signal brazier.", .actions = &.{
+        .{ .walk = .{ .actor = "CoveKeeper", .mark = "Pier" } }, .{ .settle = "CoveKeeper" },
+        .{ .cue = .{ .name = "Uses", .actor = "CoveKeeper", .a = "Brazier" } }, .{ .ticks = 1 },
+        .{ .require = .{ .subject = "Brazier", .relation = "Stoked" } },
+    } },
+};
+
+test "P49-01: The Tide Beacon deck runs [S] and animates pixels with animation_clock" {
+    const rt = try load(TIDE_BEACON_DECK);
+    defer unload(rt);
+    try testing.expectEqualStrings("CoveKeeper", rt.world.get_entity_name(rt.player_entity).?);
+    try testing.expectEqual(@as(usize, 4), rt.program.?.art.cycles.len);
+
+    const facts_before = rt.world.fact_count();
+    rt.window.animation_clock = 0;
+    rt.render_frame();
+    const h0 = std.hash.Wyhash.hash(0, rt.framebuffer);
+    rt.window.animation_clock = 12;
+    rt.render_frame();
+    const h12 = std.hash.Wyhash.hash(0, rt.framebuffer);
+    try testing.expect(h0 != h12);
+    try testing.expectEqual(facts_before, rt.world.fact_count());
+
+    var presses: usize = 0;
+    while (!holds(rt, "Brazier", "Stoked", null) and presses < 10) : (presses += 1) {
+        try rt.trigger_catalyst();
+    }
+    try testing.expect(holds(rt, "Brazier", "Stoked", null));
 }
