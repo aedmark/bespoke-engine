@@ -5,6 +5,7 @@
 const std = @import("std");
 const bespoke = @import("bespoke");
 const compiler = bespoke.compiler;
+const png_write = @import("png_write.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -24,6 +25,11 @@ pub const Project = struct {
     /// The last built game, as `.bspk` bytes for the play module (P47-06, D-195); empty when
     /// the last build failed.
     package: std.ArrayList(u8) = .empty,
+    /// The pixel editor's last answer (P47-02, D-196): a sheet's RGBA pixels from `pixels`, or
+    /// PNG bytes from `encode`. `blob_width` and `blob_height` size a sheet.
+    blob: std.ArrayList(u8) = .empty,
+    blob_width: u32 = 0,
+    blob_height: u32 = 0,
 
     pub fn init(allocator: Allocator) Project {
         return .{ .allocator = allocator };
@@ -34,6 +40,7 @@ pub const Project = struct {
         self.files.deinit(self.allocator);
         self.result.deinit(self.allocator);
         self.package.deinit(self.allocator);
+        self.blob.deinit(self.allocator);
     }
 
     pub fn clear(self: *Project) void {
@@ -44,6 +51,7 @@ pub const Project = struct {
         self.files.clearRetainingCapacity();
         self.result.clearRetainingCapacity();
         self.package.clearRetainingCapacity();
+        self.blob.clearRetainingCapacity();
     }
 
     /// Copies `path` and `bytes` in. A second file with the same path replaces the first, so
@@ -103,6 +111,106 @@ pub const Project = struct {
         defer self.package = out.toArrayList();
         try bespoke.package.save_package(self.allocator, &out.writer, &compiled, &world, &spatial);
         return true;
+    }
+
+    /// Lists the art the script at `main_path` declares, as JSON in `result`, for the pixel
+    /// editor (P47-02, D-196): each image with the table path of its PNG (empty for inline
+    /// rows) and of the script that declares it, its frames, the sprites' and looks' animations,
+    /// and the declared palette. A script that does not parse gets the check's JSON instead and
+    /// returns false, so the editor shows the same diagnostic the project window does.
+    pub fn art(self: *Project, main_path: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        const source = self.find(main_path) orelse {
+            try self.write_missing(main_path);
+            return false;
+        };
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        var reader = Reader{ .project = self, .dir = parent_of(main_path) };
+        const found = compiler.art_sources(arena.allocator(), source, reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        const dir = parent_of(main_path);
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        var buf: [1024]u8 = undefined;
+        try w.raw("{\"valid\":true,\"images\":[");
+        for (found.images, 0..) |img, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"name\":");
+            try w.string(img.name);
+            try w.raw(",\"file\":");
+            try w.string(if (img.file.len == 0) "" else join_clean(&buf, dir, img.file) orelse "");
+            try w.raw(",\"script\":");
+            try w.string(if (img.script.len == 0) main_path else join_clean(&buf, dir, img.script) orelse main_path);
+            try w.raw(",\"line\":");
+            try w.number(img.line);
+            inline for (.{ "width", "height", "frame_width", "frame_height" }) |field| {
+                try w.raw(",\"" ++ field ++ "\":");
+                try w.number(@field(img, field));
+            }
+            try w.raw("}");
+        }
+        try w.raw("],\"animations\":[");
+        for (found.animations, 0..) |anim, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("{\"owner\":");
+            try w.string(anim.owner);
+            try w.raw(if (anim.look) ",\"look\":true" else ",\"look\":false");
+            try w.raw(",\"image\":");
+            try w.number(anim.image);
+            try w.raw(",\"anim\":");
+            try w.string(@tagName(anim.anim));
+            try w.raw(",\"steps\":[");
+            for (anim.steps, 0..) |step, j| {
+                if (j > 0) try w.raw(",");
+                try w.raw("[");
+                try w.number(step.frame);
+                try w.raw(",");
+                try w.number(step.duration);
+                try w.raw("]");
+            }
+            try w.raw("]}");
+        }
+        try w.raw("],\"palette\":[");
+        for (found.palette, 0..) |c, i| {
+            if (i > 0) try w.raw(",");
+            try w.raw("[");
+            try w.number(c.r);
+            try w.raw(",");
+            try w.number(c.g);
+            try w.raw(",");
+            try w.number(c.b);
+            try w.raw("]");
+        }
+        try w.raw("]}");
+        return true;
+    }
+
+    /// Decodes the PNG at table path `path` with the engine's own reader, the one the compiler
+    /// uses, into `blob` as RGBA. False when the table has no such file or it is not a PNG the
+    /// engine reads.
+    pub fn pixels(self: *Project, path: []const u8) !bool {
+        self.blob.clearRetainingCapacity();
+        const bytes = self.find(path) orelse return false;
+        var rgba = bespoke.png.decode(self.allocator, bytes) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return false;
+        };
+        defer rgba.deinit(self.allocator);
+        try self.blob.appendSlice(self.allocator, rgba.pixels);
+        self.blob_width = rgba.width;
+        self.blob_height = rgba.height;
+        return true;
+    }
+
+    /// Encodes `rgba` as a PNG into `blob`, read back through the engine's decoder first
+    /// (`png_write.encode_checked`). Errors name what was refused.
+    pub fn encode(self: *Project, width: u32, height: u32, rgba: []const u8) png_write.Error!void {
+        self.blob.clearRetainingCapacity();
+        const bytes = try png_write.encode_checked(self.allocator, width, height, rgba);
+        defer self.allocator.free(bytes);
+        try self.blob.appendSlice(self.allocator, bytes);
     }
 
     fn write_missing(self: *Project, main_path: []const u8) !void {
@@ -388,4 +496,50 @@ test "a broken project builds nothing and reports the check's diagnostic" {
     try std.testing.expect(!try p.build("main.bespoke"));
     try std.testing.expectEqual(@as(usize, 0), p.package.items.len);
     try std.testing.expect(result_has(&p, "\"valid\":false"));
+}
+
+test {
+    _ = @import("png_write.zig");
+}
+
+test "the art listing names each PNG by its table path, and an edit round-trips through it" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    // A 2x1 sheet written by the Studio's own encoder, then named by a script in a subfolder.
+    try p.encode(2, 1, &.{ 200, 10, 10, 255, 0, 0, 0, 0 });
+    const sheet = try std.testing.allocator.dupe(u8, p.blob.items);
+    defer std.testing.allocator.free(sheet);
+    try p.add("game/art/lamp.png", sheet);
+    try p.add("game/main.bespoke", "scene Room:\n  props: Lantern\n  marks: Door\n\ninclude \"art.bespoke\"\n");
+    try p.add("game/art.bespoke", "image Lamp from \"art/lamp.png\" frames 1x1\n\nsprite Lantern: Lamp\n  idle: 0 for 10, 1 for 20\n");
+    try std.testing.expect(try p.art("game/main.bespoke"));
+    try std.testing.expect(result_has(&p, "\"file\":\"game/art/lamp.png\""));
+    try std.testing.expect(result_has(&p, "\"script\":\"game/art.bespoke\""));
+    try std.testing.expect(result_has(&p, "\"line\":1"));
+    try std.testing.expect(result_has(&p, "\"frame_width\":1"));
+    try std.testing.expect(result_has(&p, "\"anim\":\"idle\",\"steps\":[[0,10],[1,20]]"));
+    try std.testing.expect(result_has(&p, "\"palette\":[]"));
+
+    // The editor reads the pixels the compiler reads, paints one, and the project still builds.
+    try std.testing.expect(try p.pixels("game/art/lamp.png"));
+    try std.testing.expectEqual(@as(u32, 2), p.blob_width);
+    var edited = try std.testing.allocator.dupe(u8, p.blob.items);
+    defer std.testing.allocator.free(edited);
+    edited[4..8].* = .{ 1, 2, 3, 255 };
+    try p.encode(2, 1, edited);
+    const written = try std.testing.allocator.dupe(u8, p.blob.items);
+    defer std.testing.allocator.free(written);
+    try p.add("game/art/lamp.png", written);
+    try std.testing.expect(try p.build("game/main.bespoke"));
+    try std.testing.expect(try p.pixels("game/art/lamp.png"));
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 255 }, p.blob.items[4..8]);
+}
+
+test "a script that does not parse lists no art and reports the check" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("main.bespoke", "scene Yard:\n  cast: Walker\n\nroutine Stroll(Walker):\n  walk Walker to\n");
+    try std.testing.expect(!try p.art("main.bespoke"));
+    try std.testing.expect(result_has(&p, "\"valid\":false"));
+    try std.testing.expect(!try p.pixels("nope.png"));
 }

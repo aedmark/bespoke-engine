@@ -193,6 +193,74 @@ pub fn script_palette(arena: std.mem.Allocator, source: []const u8, files: ?File
     return .{ .colours = ast.art.palette, .codes = ast.art.palette_codes };
 }
 
+/// One image a script declares (P47-02, D-196): its name, the PNG it reads (`file`, empty for
+/// inline rows) as the `from` line wrote it, the script file and line that declare it, and its
+/// size and frames.
+pub const ArtImage = struct {
+    name: []const u8,
+    file: []const u8,
+    script: []const u8,
+    line: u32,
+    width: u16,
+    height: u16,
+    frame_width: u16,
+    frame_height: u16,
+};
+
+/// One animation of a `sprite` or `look` block: the frames its owner shows for `anim`.
+pub const ArtAnimation = struct {
+    owner: []const u8,
+    look: bool,
+    image: u16,
+    anim: image_mod.Anim,
+    steps: []const image_mod.Step,
+};
+
+/// What a tool needs to edit a script's art: its images, their animations, and the colours a
+/// declared `palette:` allows (empty when the script declares none, so any colour is allowed).
+pub const ArtSources = struct {
+    images: []const ArtImage,
+    animations: []const ArtAnimation,
+    palette: []const image_mod.Colour,
+};
+
+/// Parses `source` far enough to list its art, as `script_palette` does: everything lives in
+/// `arena`. A script that does not parse returns the parse error, which `check_source_with`
+/// describes. Used by the Studio's pixel editor to find the PNG behind each image (D-196).
+pub fn art_sources(arena: std.mem.Allocator, source: []const u8, files: ?FileSource) !ArtSources {
+    var failure = includes.Failure{};
+    const expanded = try includes.expand(arena, source, files, &failure);
+    var lex = Lexer.init(arena, expanded.text);
+    var parse = try Parser.init(arena, &lex);
+    parse.files = files;
+    const ast = try parse.parse_program();
+    const images = try arena.alloc(ArtImage, ast.art.images.len);
+    // The parser resolves images in declaration order, one per source, so index i of both
+    // lists is the same image.
+    for (images, ast.art.images, parse.image_srcs.items) |*out, img, src| {
+        const at = expanded.locate(@intCast(src.at.line));
+        out.* = .{
+            .name = img.name,
+            .file = if (src.file) |f| f.slice else "",
+            .script = at.file,
+            .line = at.line,
+            .width = img.width,
+            .height = img.height,
+            .frame_width = img.frame_width,
+            .frame_height = img.frame_height,
+        };
+    }
+    var anims: std.ArrayList(ArtAnimation) = .empty;
+    for (ast.art.sprites) |sp| for (sp.animations, 0..) |steps, a| if (steps.len > 0)
+        try anims.append(arena, .{ .owner = sp.target, .look = false, .image = sp.image, .anim = @enumFromInt(a), .steps = steps });
+    for (ast.art.looks) |lk| for (lk.animations, 0..) |steps, a| if (steps.len > 0)
+        try anims.append(arena, .{ .owner = lk.name, .look = true, .image = lk.image, .anim = @enumFromInt(a), .steps = steps });
+    // The declared colours follow the transparent first code; a script with no `palette:`
+    // block declares none and allows every colour (D-166).
+    const declared = ast.art.palette_codes.len;
+    return .{ .images = images, .animations = anims.items, .palette = if (declared > 1) ast.art.palette[1..declared] else &.{} };
+}
+
 pub fn check_source(allocator: std.mem.Allocator, source: []const u8) CheckResult {
     return check_source_with(allocator, source, null);
 }
@@ -1522,6 +1590,59 @@ test "P48-13: limits raise a ceiling up to its cap, hints may have six tiers, an
     try testing.expectEqual(@as(u8, 4), d.moderate_at);
     try testing.expectEqual(@as(u8, 3), d.drift_cap);
     try testing.expectEqual(@as(u8, 4), d.drifts[0].step);
+}
+
+test "D-196: art_sources names each image's script, line, and frames, and its animations" {
+    const testing = std.testing;
+    const Files = struct {
+        fn read(context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+            _ = context;
+            if (std.mem.eql(u8, path, "art.bespoke")) return allocator.dupe(u8,
+                \\
+                \\image Lamp frames 1x1:
+                \\  "bl"
+                \\
+                \\sprite Lantern: Lamp
+                \\  idle: 1 for 50, 0 for 4
+                \\
+            );
+            return error.FileNotFound;
+        }
+    };
+    var dummy: u8 = 0;
+    const files = FileSource{ .context = &dummy, .read = Files.read };
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\scene Room:
+        \\  props: Lantern
+        \\  marks: Door
+        \\
+        \\palette:
+        \\  "." transparent
+        \\  "b" 176 128 56
+        \\  "l" 250 214 96
+        \\
+        \\include "art.bespoke"
+        \\
+    ;
+    const art = try art_sources(arena.allocator(), src, files);
+    try testing.expectEqual(@as(usize, 1), art.images.len);
+    const lamp = art.images[0];
+    try testing.expectEqualStrings("Lamp", lamp.name);
+    try testing.expectEqualStrings("", lamp.file);
+    try testing.expectEqualStrings("art.bespoke", lamp.script);
+    try testing.expectEqual(@as(u32, 2), lamp.line);
+    try testing.expectEqual(@as(u16, 2), lamp.width);
+    try testing.expectEqual(@as(u16, 1), lamp.frame_width);
+    try testing.expectEqual(@as(usize, 1), art.animations.len);
+    try testing.expectEqualStrings("Lantern", art.animations[0].owner);
+    try testing.expectEqual(image_mod.Anim.idle, art.animations[0].anim);
+    try testing.expectEqual(@as(usize, 2), art.animations[0].steps.len);
+    try testing.expectEqual(@as(u16, 50), art.animations[0].steps[0].duration);
+    // The declared colours, without the transparent code.
+    try testing.expectEqual(@as(usize, 2), art.palette.len);
+    try testing.expectEqual(@as(u8, 176), art.palette[0].r);
 }
 
 test "P48-15: an included program compiles in source order, and its errors name their file" {

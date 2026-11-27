@@ -57,6 +57,48 @@ export fn studio_package_len() usize {
     return project.package.items.len;
 }
 
+/// Lists the art of the script at the given path as JSON in the result buffer (P47-02,
+/// D-196). 1 listed, 0 the script does not parse (the check's JSON is there instead), -1 out
+/// of memory.
+export fn studio_art(path_ptr: [*]const u8, path_len: usize) i32 {
+    const ok = project.art(path_ptr[0..path_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+/// Decodes the project PNG at the given path with the engine's reader into the blob as RGBA.
+/// 1 decoded, 0 missing or unreadable, -1 out of memory.
+export fn studio_pixels(path_ptr: [*]const u8, path_len: usize) i32 {
+    const ok = project.pixels(path_ptr[0..path_len]) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+/// Encodes `width` x `height` RGBA pixels as a PNG into the blob, checked through the engine's
+/// decoder. 1 encoded; 0 refused, with the reason's name in the result buffer.
+export fn studio_encode(width: u32, height: u32, ptr: [*]const u8, len: usize) i32 {
+    project.encode(width, height, ptr[0..len]) catch |err| {
+        project.result.clearRetainingCapacity();
+        project.result.appendSlice(allocator, @errorName(err)) catch {};
+        return 0;
+    };
+    return 1;
+}
+
+export fn studio_blob_ptr() [*]const u8 {
+    return project.blob.items.ptr;
+}
+
+export fn studio_blob_len() usize {
+    return project.blob.items.len;
+}
+
+export fn studio_blob_width() u32 {
+    return project.blob_width;
+}
+
+export fn studio_blob_height() u32 {
+    return project.blob_height;
+}
+
 export fn studio_result_ptr() [*]const u8 {
     return project.result.items.ptr;
 }

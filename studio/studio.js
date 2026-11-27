@@ -1,7 +1,8 @@
 // BeSpoke Studio, P47-01 (D-151, D-192): the workspace screen, a project window that opens a
 // folder or files, checks a script with the engine's compiler, and shows its diagnostics in
-// place; and the play window (P47-06, D-195, play.js), which runs the built game in a module of
-// its own. No editors yet. The Studio keeps no project state of its own (D-151 item 6): files are
+// place; the play window (P47-06, D-195, play.js), which runs the built game in a module of its
+// own; and the pixel editor (P47-02, D-196, paint.js), which paints the PNG sheets a script
+// names. An edited file's new bytes stay in the page until Save writes them. The Studio keeps no project state of its own (D-151 item 6): files are
 // held as the bytes read from disk and nothing is written back unless an editor changed it.
 //
 // Failed modes fall back to a working screen (D-192 item 5): the workspace and its windows
@@ -186,7 +187,9 @@
     if (acc.total + bytes.length > MAX_TOTAL_BYTES) { acc.skipped.push({ path, why: 'past the 64 MiB project limit' }); return; }
     if (acc.files.some((f) => f.path === path)) { acc.skipped.push({ path, why: 'a second file with this name' }); return; }
     acc.total += bytes.length;
-    acc.files.push({ path, bytes, dirty: false, ...extra });
+    // `original` is what was read; Save compares the disk with it, and an edit is dirty while
+    // its bytes differ from it.
+    acc.files.push({ path, bytes, original: bytes, dirty: false, ...extra });
   }
 
   async function readHandleTree(dir) {
@@ -268,6 +271,7 @@
   async function finishOpen(meta, acc) {
     S.project = { ...meta, files: acc.files, skipped: acc.skipped, main: chooseMain(acc.files) };
     S.result = null;
+    painter.reset();
     for (const w of [...screen.windows]) if (w.id.startsWith('script:') || w.id === 'diagnostics') w.close();
     renderProject();
     if (acc.skipped.length) {
@@ -285,7 +289,23 @@
     return true;
   }
 
+  function dirtyFiles() {
+    return S.project ? S.project.files.filter((f) => f.dirty) : [];
+  }
+
+  // Opening another project drops unsaved edits; the author says so first.
+  async function confirmDiscard() {
+    const dirty = dirtyFiles();
+    if (!dirty.length) return true;
+    const pick = await desk.requester(projectWindow(), {
+      title: 'Open', lines: [`${dirty.length} edited file(s) are not saved:`, ...dirty.slice(0, 4).map((f) => f.path), 'Open another project and lose them?'],
+      buttons: [{ id: 'discard', label: 'Lose edits' }, { id: 'cancel', label: 'Cancel' }],
+    });
+    return pick === 'discard';
+  }
+
   async function openFolder() {
+    if (!await confirmDiscard()) return false;
     if (window.showDirectoryPicker) {
       let handle;
       try { handle = await window.showDirectoryPicker({ id: 'bespoke-project', mode: 'read' }); } catch (err) {
@@ -298,6 +318,7 @@
   }
 
   async function openFiles() {
+    if (!await confirmDiscard()) return false;
     if (window.showOpenFilePicker) {
       let handles;
       try {
@@ -395,22 +416,24 @@
 
   // ------------------------------------------------------------ save
 
-  // Writes only files an editor changed. P47-01 has no editors, so nothing is ever dirty; Save
-  // still compares every opened file with the disk, so an author learns when another program
-  // changed a file underneath the Studio before any editor could overwrite it.
+  // Writes only files an editor changed (D-196 item 5). First every opened file is compared
+  // with the disk: if another program changed one since it was opened, nothing is written and
+  // the author decides. Write permission is asked for only when an edited file needs it. A
+  // folder opened read-only (a browser without the file system access API) offers each edited
+  // file as a download instead.
   async function save() {
     const win = projectWindow();
     const p = S.project;
-    if (!p) { await desk.requester(win, { title: 'Save', lines: ['No project is open.'] }); return { written: 0, changed: [] }; }
-    const dirty = p.files.filter((f) => f.dirty);
-    if (dirty.length) throw new Error('an edited file has no writer yet');
+    const none = { written: 0, changed: [], downloaded: 0, failed: [] };
+    if (!p) { await desk.requester(win, { title: 'Save', lines: ['No project is open.'] }); return none; }
+    const dirty = dirtyFiles();
     const changed = [];
     if (p.writable) {
       for (const f of p.files) {
         if (!f.handle) continue;
         try {
           const disk = new Uint8Array(await (await f.handle.getFile()).arrayBuffer());
-          if (!sameBytes(disk, f.bytes)) changed.push(f.path);
+          if (!sameBytes(disk, f.original)) changed.push(f.path);
         } catch (err) {
           changed.push(`${f.path} (${errText(err)})`);
         }
@@ -421,13 +444,52 @@
         title: 'Save', lines: [`${changed.length} file(s) changed on disk since you opened them:`, ...changed.slice(0, 6), 'Nothing was written.'],
         buttons: [{ id: 'reload', label: 'Reload' }, { id: 'leave', label: 'Leave' }],
       });
-      if (pick === 'reload' && p.handle) await openDirectory(p.handle);
-    } else {
+      if (pick === 'reload' && p.handle && await confirmDiscard()) await openDirectory(p.handle);
+      return { ...none, changed };
+    }
+    if (!dirty.length) {
       const lines = [`Nothing to save: ${p.files.length} file(s) are unchanged.`];
       if (!p.writable) lines.push('This browser opened the folder read-only, so the Studio could not write to it anyway.');
       await desk.requester(win, { title: 'Save', lines });
+      return none;
     }
-    return { written: 0, changed };
+    const written = [];
+    const failed = [];
+    let downloaded = 0;
+    for (const f of dirty) {
+      if (p.writable && f.handle) {
+        try {
+          if (f.handle.queryPermission && await f.handle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+            if (await f.handle.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('the browser did not allow writing');
+          }
+          const out = await f.handle.createWritable();
+          await out.write(f.bytes);
+          await out.close();
+          f.original = f.bytes;
+          f.dirty = false;
+          f.lastModified = (await f.handle.getFile()).lastModified;
+          written.push(f.path);
+        } catch (err) {
+          failed.push(`${f.path} (${errText(err)})`);
+        }
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([f.bytes], { type: 'image/png' }));
+        a.download = f.path.split('/').pop();
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        downloaded += 1;
+      }
+    }
+    renderProject();
+    const lines = [];
+    if (written.length) lines.push(`Saved ${written.length} file(s):`, ...written.slice(0, 4));
+    if (downloaded) lines.push(`This browser opened the folder read-only, so ${downloaded} edited file(s) were offered as downloads.`);
+    if (failed.length) lines.push(`${failed.length} file(s) were not written:`, ...failed.slice(0, 4));
+    await desk.requester(win, { title: 'Save', tone: failed.length ? 'fault' : undefined, lines });
+    return { written: written.length, changed, downloaded, failed };
   }
 
   function sameBytes(a, b) {
@@ -441,6 +503,61 @@
   const screen = desk.screen(`BeSpoke Studio ${STUDIO_BUILD.version}`);
   let projectWin = null;
   const player = createPlay(desk, screen, { build: () => play(), reportFault });
+
+  // The pixel editor's view of the project and the Studio module (D-196).
+  function decodeJson(x) {
+    return JSON.parse(new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.studio_result_ptr(), x.studio_result_len())));
+  }
+  const painter = createPaint(desk, screen, {
+    ready: (title) => readyToBuild(title, () => painter.openArt()),
+    home: () => projectWindow(),
+    showResult: (r) => showResult(r),
+    openScript: (path, l, c) => openScript(path, l, c),
+    isDirty: (path) => Boolean(findFile(path) && findFile(path).dirty),
+    listArt: () => withCompiler((x) => {
+      const p = put(x, enc.encode(S.project.main));
+      const status = x.studio_art(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      return decodeJson(x);
+    }),
+    readPixels: (path) => withCompiler((x) => {
+      const p = put(x, enc.encode(path));
+      const status = x.studio_pixels(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      if (status === 0) return null;
+      const rgba = new Uint8ClampedArray(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice();
+      return { width: x.studio_blob_width(), height: x.studio_blob_height(), rgba };
+    }),
+    encode: (w, h, pixels) => withCompiler((x) => {
+      const d = put(x, pixels);
+      const ok = x.studio_encode(w, h, d.ptr, d.used);
+      x.studio_free(d.ptr, d.len);
+      if (!ok) return { ok: false, error: new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.studio_result_ptr(), x.studio_result_len())) };
+      return { ok: true, bytes: new Uint8Array(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice() };
+    }) || { ok: false, error: 'the compiler is not running' },
+    fileReverted: (path) => { const f = findFile(path); if (f) painterFileChanged(path, f.original); },
+    fileChanged: (path, bytes) => painterFileChanged(path, bytes),
+  });
+  // An edit becomes the file's bytes in the page and in the compiler's table, so Check and Play
+  // use it before Save writes it.
+  function painterFileChanged(path, bytes) {
+    const f = findFile(path);
+    if (!f) return;
+    f.bytes = bytes;
+    f.dirty = !sameBytes(bytes, f.original);
+    withCompiler((x) => {
+      const p = put(x, enc.encode(path));
+      const d = put(x, bytes);
+      const ok = x.studio_add_file(p.ptr, p.used, d.ptr, d.used);
+      x.studio_free(p.ptr, p.len);
+      x.studio_free(d.ptr, d.len);
+      if (!ok) throw new Error(`the compiler refused ${path}`);
+    });
+    renderProject();
+  }
+  window.addEventListener('beforeunload', (e) => { if (dirtyFiles().length) { e.preventDefault(); e.returnValue = ''; } });
 
   function line(text, cls) {
     const row = document.createElement('div');
@@ -513,7 +630,9 @@
         const warn = r.warnings.length ? `, ${r.warnings.length} warning(s)` : '';
         out.push(line(fit(r.valid ? `Valid: ${counts}${warn}` : `1 error${warn}`, n), r.valid ? '' : 'err'));
       }
-      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['save', 'Save'], ['open-folder', 'Open folder']]));
+      const edited = dirtyFiles().length;
+      if (edited) out.push(line(fit(`${edited} edited file(s) not saved`, n), 'err'));
+      out.push(buttons(win, [['check', 'Check'], ['play', 'Play'], ['art', 'Art'], ['save', 'Save'], ['open-folder', 'Open folder']]));
     }
     win.body.replaceChildren(...out);
   }
@@ -632,7 +751,7 @@
     const n = cols(aboutWin);
     const lines = [
       `BeSpoke Studio ${STUDIO_BUILD.version}`,
-      'Open a project folder to check its scripts, then Play to run the game.',
+      'Open a project folder to check its scripts, Play to run the game, and Art to paint its PNGs.',
       menuHint(),
       'Drag the screen down by its title bar.',
     ];
@@ -656,6 +775,7 @@
           { id: 'open-files', label: 'Open files...' },
           { id: 'check', label: 'Check script', key: 'K' },
           { id: 'play', label: 'Play game', key: 'G' },
+          { id: 'art', label: 'Art...' },
           { id: 'save', label: 'Save', key: 'S' },
           { id: 'about', label: 'About the Studio' },
         ],
@@ -666,6 +786,7 @@
           { id: 'win-project', label: 'Project' },
           { id: 'win-diagnostics', label: 'Diagnostics' },
           { id: 'win-play', label: 'Play' },
+          { id: 'win-art', label: 'Art' },
         ],
       },
       { title: 'Settings', items: [scale(1), scale(2), scale(3)] },
@@ -679,6 +800,8 @@
       case 'check': return check();
       case 'play': return play();
       case 'win-play': return player.open();
+      case 'art':
+      case 'win-art': return painter.openArt();
       case 'save': return save();
       case 'retry': if (await startCompiler() && S.project && loadIntoCompiler() !== null) await check(); return null;
       case 'about': return about();
@@ -735,6 +858,11 @@
     // Raises a trap inside the play window's guard, as a game that fails mid-run would, so a
     // test can show the Studio outlives it and Run starts a fresh module.
     playTrap: (msg) => player.guard(() => { throw new WebAssembly.RuntimeError(msg); }),
+    openArt: () => painter.openArt(),
+    openImage: (name) => painter.openImage(name),
+    // For tests: one click of a tool on a sheet pixel, through the editor's own stroke path.
+    paintAt: (name, x, y, tool) => { const e = painter.editor(name); if (!e) return false; e.paintAt(x, y, tool); return true; },
+    pixelAt: (name, x, y) => { const e = painter.editor(name); return e ? e.pixel(x, y) : null; },
     save,
     command,
     compilerReady: () => S.compiler.state !== 'loading',
@@ -746,11 +874,12 @@
         name: S.project.name,
         writable: S.project.writable,
         main: S.project.main,
-        files: S.project.files.map((f) => ({ path: f.path, size: f.bytes.length })),
+        files: S.project.files.map((f) => ({ path: f.path, size: f.bytes.length, dirty: f.dirty })),
         skipped: S.project.skipped.slice(),
       },
       result: S.result,
       play: player.state(),
+      paint: painter.state(),
       faults: S.faults.slice(),
       windows: screen.windows.map((w) => w.id),
       requester: (document.querySelector('.req') || { getAttribute: () => null }).getAttribute('aria-label'),

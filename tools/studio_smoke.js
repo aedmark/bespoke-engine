@@ -16,14 +16,17 @@
 //   5. a saved setting the page cannot use is reported and replaced for the visit;
 //   6. (P47-06, D-195) The Sunken Vault, PNG art and all, builds and plays in the play
 //      window's own module: the clock runs, the gadgets drive it, a package the runtime refuses
-//      and a trap mid-run each leave a working Studio, and Run starts the game again.
+//      and a trap mid-run each leave a working Studio, and Run starts the game again;
+//   7. (P47-02, D-196) the pixel editor paints one pixel of a Vault sheet in a palette colour,
+//      undoes and redoes it, Check and Play use the edit before Save, and Save writes that one
+//      PNG and nothing else; the command line then compiles the saved project.
 'use strict';
 
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const chrome = process.env.CHROME || 'google-chrome';
@@ -375,6 +378,93 @@ async function run(pageUrl) {
     await evaluate("document.querySelector('[data-window=\"play\"] .g-close').click(); true");
     await waitFor('Play closed', async () => (!(await state()).windows.includes('play') ? true : null));
     console.log(`ok  a trap mid-run: fault panel, Studio checks on, Run starts a fresh module (run ${again.runs})`);
+
+    // 7. The pixel editor on the Vault.
+    await evaluate(WRITE_FIXTURE(VAULT));
+    await delay(20);
+    const vaultBefore = await evaluate(SNAPSHOT);
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d))`);
+    await evaluate('window.bespokeStudio.openArt().then(() => true)');
+    s = await state();
+    if (!s.windows.includes('art') || !s.paint.images.length || !s.paint.palette) throw new Error(`art listing: ${JSON.stringify(s.paint)}`);
+    const sheet = s.paint.images.find((i) => i.file);
+    await evaluate(`window.bespokeStudio.openImage(${JSON.stringify(sheet.name)}).then(() => true)`);
+    const paintWin = `[data-window="paint:${sheet.name}"]`;
+    const was = await evaluate(`window.bespokeStudio.pixelAt(${JSON.stringify(sheet.name)}, 0, 0)`);
+    // A palette colour other than the pixel's own.
+    const swatchIndex = await evaluate(`(() => {
+      const list = [...document.querySelectorAll('${paintWin} .swatch')];
+      const want = ${JSON.stringify(was)};
+      return list.findIndex((b) => b.getAttribute('aria-label') !== 'Colour ' + want.slice(0, 3).join(' '));
+    })()`);
+    if (swatchIndex < 0) throw new Error('no other palette colour to paint with');
+    await click(`${paintWin} [data-gadget="colour:${swatchIndex}"]`);
+    await waitFor('colour chosen', async () => ((await state()).paint.editors[0].tool === 'pencil' ? true : null));
+    const colour = (await state()).paint.editors[0].colour;
+    await evaluate(`window.bespokeStudio.paintAt(${JSON.stringify(sheet.name)}, 0, 0, 'pencil')`);
+    const now = await evaluate(`window.bespokeStudio.pixelAt(${JSON.stringify(sheet.name)}, 0, 0)`);
+    if (JSON.stringify(now) !== JSON.stringify([...colour, 255])) throw new Error(`painted ${JSON.stringify(now)}, wanted ${JSON.stringify(colour)}`);
+    await click(`${paintWin} [data-gadget="undo"]`);
+    await waitFor('undo', async () => (JSON.stringify(await evaluate(`window.bespokeStudio.pixelAt(${JSON.stringify(sheet.name)}, 0, 0)`)) === JSON.stringify(was) ? true : null));
+    s = await state();
+    if (s.project.files.find((f) => f.path === sheet.file).dirty) throw new Error('undo to the opened pixels left the file marked edited');
+    await click(`${paintWin} [data-gadget="redo"]`);
+    await waitFor('redo', async () => ((await state()).project.files.find((f) => f.path === sheet.file).dirty ? true : null));
+    const checked = await evaluate('window.bespokeStudio.check().then((r) => r && r.valid)');
+    if (!checked) throw new Error('the edited sheet does not check');
+    const anim = await evaluate(`document.querySelector('${paintWin} [data-gadget="anim:0"]') !== null`);
+    if (anim) {
+      await click(`${paintWin} [data-gadget="anim:0"]`);
+      await waitFor('animation preview', async () => ((await state()).paint.editors[0].frame !== null ? true : null));
+    }
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const wrote = await evaluate('window.__save');
+    if (wrote.written !== 1 || wrote.failed.length || wrote.changed.length) throw new Error(`paint save: ${JSON.stringify(wrote)}`);
+    const vaultAfter = await evaluate(SNAPSHOT);
+    for (const [p, before] of Object.entries(vaultBefore)) {
+      const after = vaultAfter[p];
+      if (p === sheet.file) {
+        if (after.b64 === before.b64) throw new Error(`Save did not write ${p}`);
+      } else if (!after || after.b64 !== before.b64 || after.modified !== before.modified) throw new Error(`Save touched ${p}`);
+    }
+    s = await state();
+    if (s.project.files.some((f) => f.dirty)) throw new Error('files still marked edited after Save');
+    // The command line compiles the saved project, PNG and all, when the CLI is built.
+    const cli = path.join(root, 'zig-out', 'bin', 'bespoke');
+    let cliNote = 'command line not built, not run';
+    if (fs.existsSync(cli)) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-vault-'));
+      try {
+        for (const [p, f] of Object.entries(vaultAfter)) {
+          fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+          fs.writeFileSync(path.join(dir, p), Buffer.from(f.b64, 'base64'));
+        }
+        const run = spawnSync(cli, ['check', path.join(dir, 'main.bespoke')], { encoding: 'utf8' });
+        if (run.status !== 0) throw new Error(`bespoke check on the saved Vault: ${run.stdout}${run.stderr}`);
+        cliNote = 'bespoke check passes on the saved files';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    // The animation preview plays the script's own steps: a two-frame idle shows both frames.
+    const LAMP_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAICAYAAADN5B7xAAAAHklEQVR4nGNgIAecmKbxHxmTrcGm4sR/ZDysNJACAPPNbhWGp3A1AAAAAElFTkSuQmCC';
+    await evaluate(WRITE_FIXTURE({
+      'main.bespoke': b64('scene Quay:\n  cast: Hero\n  props: Lamp\n  marks: Steps, Pier\n\nimage LampSheet from "art/lamp.png" frames 6x8\n\nsprite Lamp: LampSheet\n  idle: 0 for 12, 1 for 12\n\nroutine Walk(Hero):\n  walk Hero to Pier\n'),
+      'art/lamp.png': LAMP_PNG,
+    }));
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate("window.bespokeStudio.openImage('LampSheet').then(() => true)");
+    await click('[data-window="paint:LampSheet"] [data-gadget="anim:0"]');
+    const seen = new Set();
+    await waitFor('both idle frames in the preview', async () => {
+      const ed = (await state()).paint.editors.find((e) => e.name === 'LampSheet');
+      if (ed && ed.frame !== null) seen.add(ed.frame);
+      return seen.size === 2 ? true : null;
+    });
+    console.log(`ok  pixel editor: painted ${sheet.file} (0,0) in a palette colour, undo/redo, Check uses it, Save wrote 1 file and touched no other; ${cliNote}; the preview plays frames 0 and 1`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

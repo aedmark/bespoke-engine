@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>BeSpoke Studio</title>
-<!-- Source: studio/page.html, studio/windows.js, studio/play.js, studio/studio.js. Built into site/studio.html
+<!-- Source: studio/page.html, studio/windows.js, studio/play.js, studio/paint.js, studio/studio.js. Built into site/studio.html
      by tools/build_studio.py (P47-01, D-192); edit the sources, not the built page. -->
 <style>
   /* Seven pens, BeSpoke's own (D-192 item 3). Every size is a multiple of --px, one font
@@ -104,6 +104,16 @@
   /* The play window's frame (P47-06): the runtime's 1280x720 picture, kept 16:9 and sharp. */
   .stage { flex: 1; min-height: 0; width: 100%; object-fit: contain; image-rendering: pixelated; background: var(--pen-shadow); box-shadow: var(--in); touch-action: none; }
 
+  /* The pixel editor (P47-02): the sheet at a whole-number zoom in a scrolling view, colour
+     swatches as gadgets, and the animation preview at 4x like the game's art. */
+  .paint-view { flex: 1; min-height: 0; overflow: auto; background: var(--pen-shine); box-shadow: var(--in); padding: var(--px); touch-action: none; }
+  .paint-canvas { display: block; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
+  .paint-preview { width: calc(var(--fw) * 2 * var(--px)); height: calc(var(--fh) * 2 * var(--px)); max-height: 30vh; object-fit: contain; image-rendering: pixelated; background: var(--pen-shine); box-shadow: var(--in); }
+  .gad.selected { box-shadow: var(--in); background: var(--pen-fill); color: var(--pen-filltext); }
+  .swatches { gap: var(--px); }
+  .gad.swatch { width: var(--gad); padding: 0; background: var(--swatch); }
+  .gad.swatch.selected { outline: calc(2 * var(--px)) solid var(--pen-mark); outline-offset: calc(-2 * var(--px)); background: var(--swatch); }
+
   .blocked .body { pointer-events: none; }
   .veil { position: absolute; inset: calc(var(--gad) + var(--px)) var(--px) var(--px); z-index: 20; display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(rgba(28, 27, 31, 0.35) 0 25%, transparent 0 50%) 0 0 / calc(2 * var(--px)) calc(2 * var(--px)); }
   .req { max-width: 94%; display: flex; flex-direction: column; gap: calc(3 * var(--px)); padding: calc(3 * var(--px)); background: var(--pen-back); box-shadow: var(--out), 0 0 0 var(--px) var(--pen-shadow), calc(3 * var(--px)) calc(3 * var(--px)) 0 var(--pen-shadow); }
@@ -125,6 +135,7 @@
 <!--@BUILD-->
 <!--@WINDOWS-->
 <!--@PLAY-->
+<!--@PAINT-->
 <!--@APP-->
 </body>
 </html>

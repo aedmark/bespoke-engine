@@ -2451,6 +2451,22 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** one module carrying both the compiler and the runtime, rejected because a game's failure would take the editor with it; handing source to the play module, rejected because it would duplicate the project table and include plumbing and carry a second compiler; drawing Studio-owned controls instead of pressing the runtime's keys, rejected because two code paths for one action can disagree.
 
+## D-196 The Pixel Editor Paints Existing PNG Art and Writes Only the PNG It Changed (2026-11-27, status: accepted; P47-02)
+
+**Context.** P47-02 is the Studio's pixel editor. D-151 item 6 keeps scripts as the source of truth and the Studio without project state of its own. Since D-166 art is true colour with binary alpha, and a declared `palette:` is an optional style rule. Both real projects (The Lamplighter's Round, The Sunken Vault) name their art as `image X from "file.png"`; inline `image` rows remain for small scripts. Creating or importing an image needs a new `image` line in a script, and nothing in the Studio writes script text yet. The maintainer chose on 2026-11-27: save edits as PNG files, and split new images and import into their own item.
+
+**Decision.**
+1. The editor opens an image a script names with `from "<file>.png"` and writes only that PNG when it changed. Inline-row images open read-only with a note saying so. P47-02 rewrites no script.
+2. The Studio module encodes the PNG (8-bit RGBA) and decodes the result with the engine's own `png.decode` before anything is written; a mismatch refuses the write. An indexed original therefore becomes RGBA with the same pixels, which the compiler reads identically.
+3. Pixels follow the compiler's rules: alpha 0 or 255 only, and when the script declares `palette:`, only its colours. Without one the colour picker adds any colour. A transparent pixel is written as 0,0,0,0.
+4. The editor shows the sheet cut by the script's `frames WxH` and previews the script's own animations from the compiled art table, so a preview matches the game.
+5. Save asks the browser for write permission on the opened folder only when an edited file needs writing, checks that the file on disk still holds the bytes the Studio opened (as P47-01 does), and leaves every other file untouched. A browser that opened the folder read-only offers the edited PNG as a download instead.
+6. New images and PNG import, which each add one `image ... from` line to a chosen script, are P47-10.
+
+**Consequences.** The Studio module gains a PNG encoder on `std.compress.flate` (`studio/png_write.zig`), which took `bespoke-studio.wasm` from 470,486 to 491,140 bytes (2026-11-27); the play and game runtimes are unchanged (D-151, D-195). The compiled art keeps no file names, so the supported compiler surface gains `art_sources` (with `ArtSources`, `ArtImage`, and `ArtAnimation`): it parses a script as `script_palette` does and lists each image with its PNG as the `from` line wrote it, the file and line that declare it, its frames, the sprites' and looks' animations, and the declared palette. A sheet is at most 2,048 pixels on a side (D-182), within a browser canvas. Undo lives in the page for the visit and is never saved (D-151 item 6); undoing back to the pixels as opened restores the file's own bytes, so Save writes nothing for it. An edit reaches the compiler's file table at once, so Check and Play use it before Save. Opening another project or leaving the page with unsaved edits asks first.
+
+**Alternatives:** writing each image in its own form, rejected for now because splicing inline rows is script editing the Studio does not do yet; inline rows only, rejected because a backdrop becomes 180 lines of 320 or more codes; using the browser's canvas encoder, rejected because colour management and premultiplied alpha are outside the engine's control and its output is not checked by the engine's decoder.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.
