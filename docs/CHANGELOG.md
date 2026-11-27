@@ -4,6 +4,8 @@ User-visible changes to the BeSpoke Engine, newest first.
 
 ## Unreleased
 
+- The Studio makes new images and imports PNGs (`P47-10`, `D-197`): the Art window's New image and Import PNG forms add a transparent sheet or copy a PNG into `art/`, and add one `image ... from` line after the chosen script's last image. The project is checked before the change is kept; an import the compiler would refuse is refused with its reason. Save creates the files and writes the script.
+
 - The Studio paints pixel art (`P47-02`, `D-196`): the Art window lists the images the main script declares, and a Paint window edits a PNG sheet with pencil, eraser, fill, colour picker, zoom, undo, the frame grid, and a preview of the script's own animations. A declared `palette:` limits the colours. Check and Play use an edit at once; Save writes only the PNGs you changed, after checking the engine reads them back as painted. Images written as rows in a script open read-only. `compiler.art_sources` lists a script's images, their files, frames, and animations for tools.
 
 - The Studio plays the game (`P47-06`, `D-195`): Play builds the project and runs it in a Play window beside the other windows, with Run, Pause, Step, Rewind, Hint, Verb, State, and Sound gadgets and the game's own keys. The game runs in its own module, so a game that fails stops only the Play window; Run starts it again. A custom browser deck can load a package handed over at run time with `WasmRuntime.load_package_bytes`.

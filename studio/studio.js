@@ -349,6 +349,34 @@
     });
   }
 
+  // One PNG to import (P47-10): the browser's picker, or a file input where it has none.
+  async function pickPng() {
+    let file = null;
+    if (window.showOpenFilePicker) {
+      try {
+        const [h] = await window.showOpenFilePicker({ id: 'bespoke-import', types: [{ description: 'PNG images', accept: { 'image/png': ['.png'] } }] });
+        file = await h.getFile();
+      } catch (err) {
+        if (err && err.name === 'AbortError') return null;
+        throw err;
+      }
+    } else {
+      file = await new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.png';
+        input.hidden = true;
+        input.addEventListener('change', () => { input.remove(); resolve(input.files[0] || null); });
+        input.addEventListener('cancel', () => { input.remove(); resolve(null); });
+        document.body.appendChild(input);
+        input.click();
+      });
+    }
+    if (!file) return null;
+    if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name} is larger than 16 MiB`);
+    return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+  }
+
   // ------------------------------------------------------------ check
 
   // What Check and Play both need before they can run: a project, a script, and a compiler.
@@ -430,6 +458,11 @@
     const changed = [];
     if (p.writable) {
       for (const f of p.files) {
+        if (f.isNew) {
+          // A file the Studio will create must still not exist on disk (D-197 item 2).
+          if (p.handle && await diskHas(p.handle, f.path)) changed.push(`${f.path} (now exists on disk)`);
+          continue;
+        }
         if (!f.handle) continue;
         try {
           const disk = new Uint8Array(await (await f.handle.getFile()).arrayBuffer());
@@ -456,7 +489,34 @@
     const written = [];
     const failed = [];
     let downloaded = 0;
+    // New files first, so a script is never written naming a PNG that is not there yet.
+    dirty.sort((a, b) => Number(Boolean(b.isNew)) - Number(Boolean(a.isNew)));
     for (const f of dirty) {
+      if (f.isNew && p.writable && p.handle) {
+        try {
+          if (p.handle.queryPermission && await p.handle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+            if (await p.handle.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('the browser did not allow writing');
+          }
+          const parts = f.path.split('/');
+          let d = p.handle;
+          for (const part of parts.slice(0, -1)) d = await d.getDirectoryHandle(part, { create: true });
+          const fh = await d.getFileHandle(parts[parts.length - 1], { create: true });
+          const out = await fh.createWritable();
+          await out.write(f.bytes);
+          await out.close();
+          f.handle = fh;
+          f.original = f.bytes;
+          f.isNew = false;
+          f.dirty = false;
+          f.lastModified = (await fh.getFile()).lastModified;
+          written.push(f.path);
+        } catch (err) {
+          failed.push(`${f.path} (${errText(err)})`);
+          // A script naming a file that was not created is not written either.
+          break;
+        }
+        continue;
+      }
       if (p.writable && f.handle) {
         try {
           if (f.handle.queryPermission && await f.handle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
@@ -474,7 +534,7 @@
         }
       } else {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([f.bytes], { type: 'image/png' }));
+        a.href = URL.createObjectURL(new Blob([f.bytes], { type: /\.png$/i.test(f.path) ? 'image/png' : 'text/plain' }));
         a.download = f.path.split('/').pop();
         document.body.appendChild(a);
         a.click();
@@ -490,6 +550,18 @@
     if (failed.length) lines.push(`${failed.length} file(s) were not written:`, ...failed.slice(0, 4));
     await desk.requester(win, { title: 'Save', tone: failed.length ? 'fault' : undefined, lines });
     return { written: written.length, changed, downloaded, failed };
+  }
+
+  async function diskHas(dir, path) {
+    const parts = path.split('/');
+    try {
+      let d = dir;
+      for (const part of parts.slice(0, -1)) d = await d.getDirectoryHandle(part);
+      await d.getFileHandle(parts[parts.length - 1]);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function sameBytes(a, b) {
@@ -537,7 +609,36 @@
       if (!ok) return { ok: false, error: new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.studio_result_ptr(), x.studio_result_len())) };
       return { ok: true, bytes: new Uint8Array(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice() };
     }) || { ok: false, error: 'the compiler is not running' },
-    fileReverted: (path) => { const f = findFile(path); if (f) painterFileChanged(path, f.original); },
+    fileReverted: (path) => { const f = findFile(path); if (f) painterFileChanged(path, f.original || f.base); },
+    mainScript: () => S.project.main,
+    scripts: () => S.project.files.map((f) => f.path).filter((p) => /\.bespoke$/i.test(p)).sort(),
+    pickPng: () => pickPng(),
+    // One new image (D-197): the module adds the PNG and the line and checks the project; the
+    // page then takes the script's new bytes and the new file as edits waiting for Save.
+    addImage: (req) => withCompiler((x) => {
+      const m = put(x, enc.encode(S.project.main));
+      const sc = put(x, enc.encode(req.script));
+      const nm = put(x, enc.encode(req.name));
+      const fl = put(x, enc.encode(req.file));
+      const pn = put(x, req.png);
+      const status = x.studio_add_image(m.ptr, m.used, sc.ptr, sc.used, nm.ptr, nm.used, fl.ptr, fl.used, req.fw, req.fh, pn.ptr, pn.used);
+      for (const b of [m, sc, nm, fl, pn]) x.studio_free(b.ptr, b.len);
+      if (status < 0) throw new Error('the compiler ran out of memory');
+      const r = decodeJson(x);
+      if (status === 0) return r.added === false ? { refused: r.refused } : { added: false, result: r };
+      const p = put(x, enc.encode(r.script));
+      x.studio_file(p.ptr, p.used);
+      x.studio_free(p.ptr, p.len);
+      const scriptBytes = new Uint8Array(x.memory.buffer, x.studio_blob_ptr(), x.studio_blob_len()).slice();
+      const f = findFile(r.script);
+      f.bytes = scriptBytes;
+      f.dirty = !sameBytes(scriptBytes, f.original);
+      S.project.files.push({ path: r.file, bytes: req.png, original: null, base: req.png, dirty: true, handle: null, isNew: true });
+      S.project.files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      S.result = null;
+      renderProject();
+      return { added: true, script: r.script, file: r.file, line: r.line };
+    }),
     fileChanged: (path, bytes) => painterFileChanged(path, bytes),
   });
   // An edit becomes the file's bytes in the page and in the compiler's table, so Check and Play
@@ -546,7 +647,7 @@
     const f = findFile(path);
     if (!f) return;
     f.bytes = bytes;
-    f.dirty = !sameBytes(bytes, f.original);
+    f.dirty = f.original ? !sameBytes(bytes, f.original) : true;
     withCompiler((x) => {
       const p = put(x, enc.encode(path));
       const d = put(x, bytes);
@@ -860,6 +961,9 @@
     playTrap: (msg) => player.guard(() => { throw new WebAssembly.RuntimeError(msg); }),
     openArt: () => painter.openArt(),
     openImage: (name) => painter.openImage(name),
+    // For tests: the New image and Import forms without the browser's file picker.
+    newImageForm: () => { painter.openForm(null); return true; },
+    importForm: (name, bytes) => { painter.openForm({ name, bytes: Uint8Array.from(bytes) }); return true; },
     // For tests: one click of a tool on a sheet pixel, through the editor's own stroke path.
     paintAt: (name, x, y, tool) => { const e = painter.editor(name); if (!e) return false; e.paintAt(x, y, tool); return true; },
     pixelAt: (name, x, y) => { const e = painter.editor(name); return e ? e.pixel(x, y) : null; },
@@ -874,7 +978,7 @@
         name: S.project.name,
         writable: S.project.writable,
         main: S.project.main,
-        files: S.project.files.map((f) => ({ path: f.path, size: f.bytes.length, dirty: f.dirty })),
+        files: S.project.files.map((f) => ({ path: f.path, size: f.bytes.length, dirty: f.dirty, isNew: Boolean(f.isNew) })),
         skipped: S.project.skipped.slice(),
       },
       result: S.result,

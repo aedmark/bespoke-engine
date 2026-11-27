@@ -2467,6 +2467,22 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** writing each image in its own form, rejected for now because splicing inline rows is script editing the Studio does not do yet; inline rows only, rejected because a backdrop becomes 180 lines of 320 or more codes; using the browser's canvas encoder, rejected because colour management and premultiplied alpha are outside the engine's control and its output is not checked by the engine's decoder.
 
+## D-197 New and Imported Images Add One Script Line After the Last Image, and Nothing Else (2026-11-27, status: accepted; P47-10)
+
+**Context.** P47-10 lets the Studio make a new image or import a PNG, split from P47-02 (D-196). The compiler only knows an image a script declares, so each one needs an `image <Name> from "<file>.png" [frames WxH]` line: the Studio's first write to a script. D-151 item 6 keeps scripts the source of truth, and D-156 maps PNG colours exactly or refuses them. The maintainer chose on 2026-11-27: put the line after the last image, refuse an import the compiler would refuse, and declare only.
+
+**Decision.**
+1. The line goes into a script the author chooses, offered first as the one that already declares PNG images (else the main script), directly after its last `image` declaration (after an inline image's rows), or at its end when it declares none. Every other byte of the script is kept: its line endings (the new line uses the file's own), its byte-order mark, and its last-line newline.
+2. A new image is a fully transparent sheet with the size and frames the author gives; an imported PNG is copied in byte for byte. Either is stored as `art/<name>.png` beside the main script unless the author names another path inside the project, and an existing file is never overwritten.
+3. An import the compiler would refuse (partly transparent pixels, colours outside a declared `palette:`, a PNG the engine cannot read, a sheet past D-182's limits) is refused with the compiler's reason and its first bad pixel; nothing is added. The Studio does not convert.
+4. Before anything is kept, the edited script and the new PNG are checked together with the engine's compiler; if the project does not check, the change is undone and the diagnostic shown.
+5. P47-10 adds only the `image` line. Attaching an image as a backdrop or sprite belongs to the room and cast editors (P47-03, P47-05).
+6. The new PNG and the script edit wait in the page like a painted edit (D-196 item 5): Save creates the file and writes the script after the same on-disk check, asking for write permission on the folder; a read-only folder offers both as downloads.
+
+**Consequences.** `Project.add_image` in `studio/project.zig` makes the change and checks it inside the Studio module, so the page only ever holds a script the compiler accepts; `bespoke-studio.wasm` grew from 491,140 to 496,093 bytes (2026-11-27). The insertion point comes from `compiler.art_sources` (D-196): an inline image's rows are taken to follow its line, one per row. Text fields are the browser's own inputs styled as recessed string gadgets, the first in the Studio. Save writes new files before scripts, and stops at the first new file it cannot create, so a saved script never names a PNG that is missing.
+
+**Alternatives:** appending at the end of the script, rejected because art lines drift apart; converting partial alpha and off-palette colours on import, rejected because D-156 keeps art mapped as drawn; offering a backdrop or sprite binding, deferred to the editors that own those blocks.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

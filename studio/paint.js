@@ -1,5 +1,7 @@
 // BeSpoke Studio, the pixel editor (P47-02, D-196): the Art window lists the images the main
-// script declares, and a Paint window edits one PNG-backed sheet with a pencil, eraser, fill,
+// script declares, makes new ones and imports PNGs (P47-10, D-197: one `image` line added to a
+// chosen script after its last image, checked with the compiler before it is kept), and a
+// Paint window edits one PNG-backed sheet with a pencil, eraser, fill,
 // and colour picker, the frame grid from `frames WxH`, undo, and a preview of the script's own
 // animations. Inline-row images open in the read-only script view at their rows.
 //
@@ -66,6 +68,8 @@ function createPaint(desk, screen, hooks) {
           if (msg.kind === 'close') { artWin.close(); artWin = null; return; }
           if (msg.kind === 'resize') { renderArt(); return; }
           if (msg.kind === 'gadget' && msg.id.startsWith('img:')) await openImage(msg.id.slice(4));
+          if (msg.kind === 'gadget' && msg.id === 'new-image') openForm(null);
+          if (msg.kind === 'gadget' && msg.id === 'import-png') await importPng();
         },
       });
     }
@@ -92,6 +96,10 @@ function createPaint(desk, screen, hooks) {
       }
       out.push(listEl);
     }
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.append(desk.button(artWin, 'new-image', 'New image'), desk.button(artWin, 'import-png', 'Import PNG'));
+    out.push(row);
     artWin.body.replaceChildren(...out);
   }
 
@@ -503,9 +511,155 @@ function createPaint(desk, screen, hooks) {
     return E;
   }
 
+  // ------------------------------------------------------------ new images and import
+
+  let formWin = null;
+
+  // A name the script can use from a file's name: letters, digits, and underscores, starting
+  // with a capital letter (D-197; the module checks the same rule).
+  function nameFrom(stem) {
+    let n = stem.replace(/\.png$/i, '').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!/^[A-Za-z]/.test(n)) n = `Image${n}`;
+    return n.charAt(0).toUpperCase() + n.slice(1);
+  }
+
+  // The script offered first: the one that already declares PNG images, else the main script.
+  function defaultScript() {
+    const counts = new Map();
+    for (const img of (art && art.images) || []) if (img.file) counts.set(img.script, (counts.get(img.script) || 0) + 1);
+    let best = hooks.mainScript();
+    let most = 0;
+    for (const [script, n] of counts) if (n > most) { best = script; most = n; }
+    return best;
+  }
+
+  async function importPng() {
+    if (!await hooks.ready('Import PNG')) return null;
+    const picked = await hooks.pickPng();
+    if (!picked) return null;
+    return openForm(picked);
+  }
+
+  // The form for a new image (`imported` null) or an import ({ name, bytes }). Text fields are
+  // the browser's own inputs, styled as recessed string gadgets; the rest are gadgets.
+  function openForm(imported) {
+    if (formWin) formWin.close();
+    const a = screen.area.getBoundingClientRect();
+    const st = {
+      script: defaultScript(),
+      fileTouched: false,
+    };
+    const fields = {};
+    const input = (id, label, value, opts = {}) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'line field';
+      wrap.appendChild(desk.label(label));
+      const el = document.createElement('input');
+      el.className = 'strgad';
+      el.value = value;
+      el.name = id;
+      el.setAttribute('aria-label', label);
+      el.autocomplete = 'off';
+      el.spellcheck = false;
+      if (opts.number) { el.inputMode = 'numeric'; el.size = 5; }
+      el.addEventListener('keydown', (e) => e.stopPropagation());
+      wrap.appendChild(el);
+      fields[id] = el;
+      return wrap;
+    };
+    const startName = imported ? nameFrom(imported.name) : 'NewImage';
+    const fileFor = (n) => (imported ? `art/${imported.name}` : `art/${n.toLowerCase()}.png`);
+    formWin = desk.window(screen, {
+      id: 'new-image', title: imported ? `Import ${imported.name}` : 'New image', x: Math.max(0, Math.min(200, a.width - 420)), y: 60, w: Math.min(420, a.width), h: Math.min(420, a.height - 60), minW: 220, minH: 200,
+      onMessage: async (msg) => {
+        if (msg.kind === 'close' || (msg.kind === 'gadget' && msg.id === 'form-cancel')) { formWin.close(); formWin = null; return; }
+        if (msg.kind !== 'gadget') return;
+        if (msg.id.startsWith('script:')) { st.script = msg.id.slice(7); render(); return; }
+        if (msg.id === 'form-add') await submit();
+      },
+    });
+    const body = [];
+    body.push(input('name', 'Name', startName));
+    body.push(input('file', 'File', fileFor(startName)));
+    if (!imported) {
+      body.push(input('width', 'Width', '32', { number: true }));
+      body.push(input('height', 'Height', '32', { number: true }));
+    }
+    body.push(input('fw', 'Frame width', '', { number: true }));
+    body.push(input('fh', 'Frame height', '', { number: true }));
+    fields.name.addEventListener('input', () => { if (!st.fileTouched && !imported) fields.file.value = fileFor(fields.name.value); });
+    fields.file.addEventListener('input', () => { st.fileTouched = true; });
+    const scriptsLine = line('Add the line to:');
+    const listEl = document.createElement('div');
+    listEl.className = 'list';
+    const buttonsRow = document.createElement('div');
+    buttonsRow.className = 'row';
+    buttonsRow.append(desk.button(formWin, 'form-add', imported ? 'Import' : 'Add'), desk.button(formWin, 'form-cancel', 'Cancel'));
+    function render() {
+      const n = cols(formWin);
+      listEl.replaceChildren(...hooks.scripts().map((path) => {
+        const b = desk.button(formWin, `script:${path}`, fit(`${path === st.script ? '> ' : '  '}${path}`, n - 2), { cls: 'item' });
+        if (path === st.script) b.classList.add('selected');
+        return b;
+      }));
+    }
+    formWin.body.replaceChildren(...body, scriptsLine, listEl, buttonsRow);
+    render();
+    fields.name.focus();
+    fields.name.select();
+
+    async function submit() {
+      const num = (el, label, required) => {
+        const t = el.value.trim();
+        if (!t && !required) return 0;
+        const v = Number(t);
+        if (!Number.isInteger(v) || v < 1 || v > 2048) throw new Error(`${label} is a whole number from 1 to 2048`);
+        return v;
+      };
+      let req;
+      try {
+        req = {
+          script: st.script,
+          name: fields.name.value.trim(),
+          file: fields.file.value.trim(),
+          fw: num(fields.fw, 'Frame width', false),
+          fh: num(fields.fh, 'Frame height', false),
+        };
+        if (imported) req.png = imported.bytes;
+        else {
+          const w = num(fields.width, 'Width', true);
+          const h = num(fields.height, 'Height', true);
+          const blank = hooks.encode(w, h, new Uint8ClampedArray(w * h * 4));
+          if (!blank.ok) throw new Error(blank.error);
+          req.png = blank.bytes;
+        }
+      } catch (err) {
+        await desk.requester(formWin, { title: imported ? 'Import' : 'New image', lines: [errText(err)] });
+        return;
+      }
+      const r = hooks.addImage(req);
+      if (!r) return;
+      if (r.refused) { await desk.requester(formWin, { title: imported ? 'Import' : 'New image', lines: ['Nothing was added:', r.refused] }); return; }
+      if (!r.added) {
+        // The compiler refused the result; both changes were undone in the module.
+        formWin.close();
+        formWin = null;
+        await hooks.showResult(r.result);
+        return;
+      }
+      formWin.close();
+      formWin = null;
+      await list();
+      renderArt();
+      if (!imported) await openImage(req.name);
+    }
+    return formWin;
+  }
+
   // Closes every editor, as a new project opens.
   function reset() {
     for (const ed of [...editors.values()]) ed.close();
+    if (formWin) { formWin.close(); formWin = null; }
     art = null;
     if (artWin) renderArt();
   }
@@ -513,6 +667,8 @@ function createPaint(desk, screen, hooks) {
   return {
     openArt,
     openImage,
+    openForm,
+    form: () => formWin,
     reset,
     state: () => ({ art: Boolean(art), images: art ? art.images.map((i) => ({ name: i.name, file: i.file })) : [], palette: art ? art.palette.length : 0, editors: [...editors.values()].map((e) => e.state()) }),
     editor: (name) => editors.get(name) || null,

@@ -83,6 +83,43 @@ export fn studio_encode(width: u32, height: u32, ptr: [*]const u8, len: usize) i
     return 1;
 }
 
+/// Adds a new image to the project (P47-10, D-197): the PNG at `file` (relative to the main
+/// script's folder) and one `image` line in `script`, checked together. 1 added, 0 refused
+/// (JSON in the result buffer says why), -1 out of memory.
+export fn studio_add_image(
+    main_ptr: [*]const u8,
+    main_len: usize,
+    script_ptr: [*]const u8,
+    script_len: usize,
+    name_ptr: [*]const u8,
+    name_len: usize,
+    file_ptr: [*]const u8,
+    file_len: usize,
+    frame_width: u32,
+    frame_height: u32,
+    png_ptr: [*]const u8,
+    png_len: usize,
+) i32 {
+    const ok = project.add_image(main_ptr[0..main_len], .{
+        .script = script_ptr[0..script_len],
+        .name = name_ptr[0..name_len],
+        .file = file_ptr[0..file_len],
+        .frame_width = frame_width,
+        .frame_height = frame_height,
+        .png = png_ptr[0..png_len],
+    }) catch return -1;
+    return if (ok) 1 else 0;
+}
+
+/// Copies the table's bytes for `path` into the blob, so the page reads back a script the
+/// module edited. 1 found, 0 not in the table.
+export fn studio_file(path_ptr: [*]const u8, path_len: usize) i32 {
+    const bytes = project.find(path_ptr[0..path_len]) orelse return 0;
+    project.blob.clearRetainingCapacity();
+    project.blob.appendSlice(allocator, bytes) catch return -1;
+    return 1;
+}
+
 export fn studio_blob_ptr() [*]const u8 {
     return project.blob.items.ptr;
 }

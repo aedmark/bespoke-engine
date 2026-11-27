@@ -109,6 +109,11 @@
   .paint-view { flex: 1; min-height: 0; overflow: auto; background: var(--pen-shine); box-shadow: var(--in); padding: var(--px); touch-action: none; }
   .paint-canvas { display: block; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
   .paint-preview { width: calc(var(--fw) * 2 * var(--px)); height: calc(var(--fh) * 2 * var(--px)); max-height: 30vh; object-fit: contain; image-rendering: pixelated; background: var(--pen-shine); box-shadow: var(--in); }
+  /* String gadgets (P47-10): the browser's own text input, recessed like a gadget. */
+  .field { gap: calc(4 * var(--px)); overflow: visible; }
+  .field > .label { flex: none; width: calc(13 * 6 * var(--px)); }
+  .strgad { flex: 1; min-width: 0; min-height: var(--gad); border: 0; border-radius: 0; padding: 0 calc(2 * var(--px)); font: calc(8 * var(--px)) monospace; color: var(--pen-text); background: var(--pen-shine); box-shadow: var(--in); -webkit-user-select: text; user-select: text; }
+  .strgad:focus { outline: var(--px) dashed var(--pen-fill); outline-offset: calc(-3 * var(--px)); }
   .gad.selected { box-shadow: var(--in); background: var(--pen-fill); color: var(--pen-filltext); }
   .swatches { gap: var(--px); }
   .gad.swatch { width: var(--gad); padding: 0; background: var(--swatch); }

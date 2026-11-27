@@ -19,7 +19,10 @@
 //      and a trap mid-run each leave a working Studio, and Run starts the game again;
 //   7. (P47-02, D-196) the pixel editor paints one pixel of a Vault sheet in a palette colour,
 //      undoes and redoes it, Check and Play use the edit before Save, and Save writes that one
-//      PNG and nothing else; the command line then compiles the saved project.
+//      PNG and nothing else; the command line then compiles the saved project;
+//   8. (P47-10, D-197) a new image and a PNG import each add one `image` line after the Vault's
+//      last image and one PNG; an import outside the palette is refused with its pixel and adds
+//      nothing; Save creates both files and writes the script, and nothing else changes.
 'use strict';
 
 const fs = require('fs');
@@ -465,6 +468,81 @@ async function run(pageUrl) {
       return seen.size === 2 ? true : null;
     });
     console.log(`ok  pixel editor: painted ${sheet.file} (0,0) in a palette colour, undo/redo, Check uses it, Save wrote 1 file and touched no other; ${cliNote}; the preview plays frames 0 and 1`);
+
+    // 8. New images and import on the Vault.
+    await evaluate(WRITE_FIXTURE(VAULT));
+    await delay(20);
+    const addBefore = await evaluate(SNAPSHOT);
+    await evaluate(`${PROJECT_DIR}.then((d) => window.bespokeStudio.openDirectory(d)).then(() => true)`);
+    await evaluate('window.bespokeStudio.openArt().then(() => true)');
+    const fillForm = (values) => evaluate(`(() => {
+      const v = ${JSON.stringify(values)};
+      for (const [k, val] of Object.entries(v)) {
+        const el = document.querySelector('[data-window="new-image"] input[name="' + k + '"]');
+        el.value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return true;
+    })()`);
+    await evaluate('window.bespokeStudio.newImageForm()');
+    await fillForm({ name: 'Torch', width: '12', height: '12', fw: '6', fh: '12' });
+    const fileField = await evaluate(`document.querySelector('[data-window="new-image"] input[name="file"]').value`);
+    if (fileField !== 'art/torch.png') throw new Error(`new image file field: ${fileField}`);
+    await click('[data-window="new-image"] [data-gadget="form-add"]');
+    await waitFor('Paint Torch', async () => ((await state()).windows.includes('paint:Torch') ? true : null));
+    // An import in colours the Vault's palette does not hold: refused, nothing added.
+    await evaluate(`window.bespokeStudio.importForm('lamp.png', Array.from(atob(${JSON.stringify(LAMP_PNG)}), (c) => c.charCodeAt(0)))`);
+    await click('[data-window="new-image"] [data-gadget="form-add"]');
+    await requester('Script check');
+    s = await state();
+    if (!/palette/.test(s.result.message) || s.project.files.some((f) => f.path === 'art/lamp.png')) throw new Error(`off-palette import: ${JSON.stringify(s.result)}`);
+    await key('Escape', 'Escape', 27);
+    await noRequester();
+    // A transparent sheet imports, under a name taken from its file.
+    const CLEAR_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAC0lEQVR4nGNgQAcAABIAAXfx+gAAAAAASUVORK5CYII=';
+    await evaluate(`window.bespokeStudio.importForm('crest.png', Array.from(atob(${JSON.stringify(CLEAR_PNG)}), (c) => c.charCodeAt(0)))`);
+    await click('[data-window="new-image"] [data-gadget="form-add"]');
+    await waitFor('Crest listed', async () => ((await state()).paint.images.some((i) => i.name === 'Crest') ? true : null));
+    s = await state();
+    const added = s.project.files.filter((f) => f.isNew).map((f) => f.path).sort();
+    if (JSON.stringify(added) !== JSON.stringify(['art/crest.png', 'art/torch.png'])) throw new Error(`new files: ${added.join(', ')}`);
+    await evaluate('window.__save = window.bespokeStudio.save(); true');
+    await requester('Save');
+    await click('.req-buttons .gad');
+    await noRequester();
+    const addSaved = await evaluate('window.__save');
+    if (addSaved.written !== 3 || addSaved.failed.length) throw new Error(`add save: ${JSON.stringify(addSaved)}`);
+    const addAfter = await evaluate(SNAPSHOT);
+    const text = (f) => Buffer.from(f.b64, 'base64').toString('latin1');
+    const beforeLines = text(addBefore['main.bespoke']).split('\n');
+    const afterLines = text(addAfter['main.bespoke']).split('\n');
+    const last = beforeLines.findIndex((l) => l.startsWith('image ReliquaryArt'));
+    const expectLines = [...beforeLines.slice(0, last + 1), 'image Torch from "art/torch.png" frames 6x12', 'image Crest from "art/crest.png"', ...beforeLines.slice(last + 1)];
+    if (afterLines.join('\n') !== expectLines.join('\n')) throw new Error('main.bespoke is not the old script plus the two image lines after the last image');
+    if (addAfter['art/crest.png'].b64 !== CLEAR_PNG) throw new Error('the import was not copied byte for byte');
+    if (!addAfter['art/torch.png']) throw new Error('art/torch.png was not created');
+    for (const [p, before] of Object.entries(addBefore)) {
+      if (p === 'main.bespoke') continue;
+      const after = addAfter[p];
+      if (!after || after.b64 !== before.b64 || after.modified !== before.modified) throw new Error(`adding images touched ${p}`);
+    }
+    if (Object.keys(addAfter).length !== Object.keys(addBefore).length + 2) throw new Error('adding images made other files');
+    let addCli = 'command line not built, not run';
+    if (fs.existsSync(path.join(root, 'zig-out', 'bin', 'bespoke'))) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bespoke-studio-add-'));
+      try {
+        for (const [p, f] of Object.entries(addAfter)) {
+          fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+          fs.writeFileSync(path.join(dir, p), Buffer.from(f.b64, 'base64'));
+        }
+        const run = spawnSync(path.join(root, 'zig-out', 'bin', 'bespoke'), ['check', path.join(dir, 'main.bespoke')], { encoding: 'utf8' });
+        if (run.status !== 0) throw new Error(`bespoke check after adding images: ${run.stdout}${run.stderr}`);
+        addCli = 'bespoke check passes';
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    console.log(`ok  new image and import: two lines after the last image, two PNGs created, an off-palette import refused, nothing else touched; ${addCli}`);
 
     // 4. The compiler module fails to load.
     const hook = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {

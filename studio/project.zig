@@ -71,6 +71,16 @@ pub const Project = struct {
         try self.files.append(self.allocator, .{ .path = p, .bytes = b });
     }
 
+    /// Drops `path` from the table; nothing happens when it is not there.
+    pub fn remove(self: *Project, path: []const u8) void {
+        for (self.files.items, 0..) |f, i| if (std.mem.eql(u8, f.path, path)) {
+            self.allocator.free(f.path);
+            self.allocator.free(f.bytes);
+            _ = self.files.orderedRemove(i);
+            return;
+        };
+    }
+
     pub fn find(self: *const Project, path: []const u8) ?[]const u8 {
         for (self.files.items) |f| if (std.mem.eql(u8, f.path, path)) return f.bytes;
         return null;
@@ -213,6 +223,94 @@ pub const Project = struct {
         try self.blob.appendSlice(self.allocator, bytes);
     }
 
+    pub const NewImage = struct {
+        /// The script that gets the `image` line, a table path.
+        script: []const u8,
+        /// One word: a letter, then letters, digits, or underscores.
+        name: []const u8,
+        /// The PNG as the `from` line names it, relative to the main script's folder.
+        file: []const u8,
+        /// 0 and 0 for a sheet that is one frame.
+        frame_width: u32 = 0,
+        frame_height: u32 = 0,
+        /// The PNG's bytes, kept exactly (an import) or a fresh transparent sheet.
+        png: []const u8,
+    };
+
+    /// Adds a new image to the project (P47-10, D-197): `img.png` at its table path and one
+    /// `image` line in `img.script` after that script's last image declaration, or at its end.
+    /// The project is then checked with both; when it does not check, both changes are undone.
+    /// `result` holds JSON: `{"added":true,"script":..,"file":..,"line":N}` when kept,
+    /// `{"added":false,"refused":".."}` for a request refused before the check, or the check's
+    /// own JSON when the compiler refused the result. Returns whether the image was added.
+    pub fn add_image(self: *Project, main_path: []const u8, img: NewImage) !bool {
+        self.result.clearRetainingCapacity();
+        const dir = parent_of(main_path);
+        var path_buf: [1024]u8 = undefined;
+        const refusal: ?[]const u8 = blk: {
+            if (!is_image_word(img.name)) break :blk "an image name is one word: a letter, then letters, digits, or underscores";
+            if (!beside_script(img.file) or !std.ascii.endsWithIgnoreCase(img.file, ".png")) break :blk "the file is a .png path inside the project, written with / and no ..";
+            if ((img.frame_width == 0) != (img.frame_height == 0)) break :blk "frames need both a width and a height";
+            if (self.find(img.script) == null) break :blk "the project has no such script";
+            break :blk null;
+        };
+        if (refusal) |why| return self.refuse(why);
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        // Copied out at once: `path_buf` is reused for every join below.
+        const png_owned = try a.dupe(u8, join_clean(&path_buf, dir, img.file) orelse return self.refuse("the file's path is too long"));
+        if (self.find(png_owned) != null) return self.refuse("a file with that path is already in the project");
+        // Names already declared, and where the chosen script's last image ends.
+        var reader = Reader{ .project = self, .dir = dir };
+        const declared = compiler.art_sources(a, self.find(main_path) orelse return self.refuse("the project has no main script"), reader.source()) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            return self.check(main_path);
+        };
+        var after: u32 = 0; // the script line the new line follows; 0 means the end
+        for (declared.images) |existing| {
+            if (std.mem.eql(u8, existing.name, img.name)) return self.refuse("the script already declares an image with that name");
+            const in_script = if (existing.script.len == 0) main_path else join_clean(&path_buf, dir, existing.script) orelse "";
+            if (!std.mem.eql(u8, in_script, img.script)) continue;
+            // An inline image's rows follow its line, one per row.
+            const last = existing.line + if (existing.file.len == 0) @as(u32, existing.height) else 0;
+            after = @max(after, last);
+        }
+        const old_script = try self.allocator.dupe(u8, self.find(img.script).?);
+        defer self.allocator.free(old_script);
+        const line_text = if (img.frame_width == 0)
+            try std.fmt.allocPrint(a, "image {s} from \"{s}\"", .{ img.name, img.file })
+        else
+            try std.fmt.allocPrint(a, "image {s} from \"{s}\" frames {d}x{d}", .{ img.name, img.file, img.frame_width, img.frame_height });
+        const spliced = try insert_line(a, old_script, after, line_text);
+        try self.add(png_owned, img.png);
+        try self.add(img.script, spliced.bytes);
+        if (!try self.check(main_path)) {
+            self.remove(png_owned);
+            try self.add(img.script, old_script);
+            return false;
+        }
+        self.result.clearRetainingCapacity();
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        try w.raw("{\"added\":true,\"script\":");
+        try w.string(img.script);
+        try w.raw(",\"file\":");
+        try w.string(png_owned);
+        try w.raw(",\"line\":");
+        try w.number(spliced.line);
+        try w.raw("}");
+        return true;
+    }
+
+    fn refuse(self: *Project, why: []const u8) !bool {
+        self.result.clearRetainingCapacity();
+        var w = Json{ .list = &self.result, .allocator = self.allocator };
+        try w.raw("{\"added\":false,\"refused\":");
+        try w.string(why);
+        try w.raw("}");
+        return false;
+    }
+
     fn write_missing(self: *Project, main_path: []const u8) !void {
         var w = Json{ .list = &self.result, .allocator = self.allocator };
         try w.raw("{\"valid\":false,\"main\":");
@@ -291,6 +389,53 @@ const Reader = struct {
         return allocator.dupe(u8, bytes);
     }
 };
+
+fn is_image_word(name: []const u8) bool {
+    if (name.len == 0 or name.len > bespoke.image.MAX_NAME or !std.ascii.isAlphabetic(name[0])) return false;
+    for (name) |c| if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+    return true;
+}
+
+/// `text` with `line` inserted after its line `after` (1-based), or at its end when `after`
+/// is 0 or past the end. Every other byte stays: the new line takes the file's own line
+/// ending (CRLF when its first line ends so), a byte-order mark stays first, and a file that
+/// does not end with a newline still does not (D-197 item 1). Returns the new text and the
+/// new line's number.
+fn insert_line(allocator: Allocator, text: []const u8, after: u32, line: []const u8) !struct { bytes: []u8, line: u32 } {
+    const first_nl = std.mem.indexOfScalar(u8, text, '\n');
+    const eol: []const u8 = if (first_nl) |i| (if (i > 0 and text[i - 1] == '\r') "\r\n" else "\n") else "\n";
+    // Byte offset where line `after + 1` starts.
+    var at: ?usize = null;
+    var count: u32 = 1;
+    if (after > 0) {
+        var i: usize = 0;
+        while (i < text.len) : (i += 1) {
+            if (text[i] != '\n') continue;
+            if (count == after) {
+                at = i + 1;
+                break;
+            }
+            count += 1;
+        }
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    if (at) |pos| {
+        try out.appendSlice(allocator, text[0..pos]);
+        try out.appendSlice(allocator, line);
+        try out.appendSlice(allocator, eol);
+        try out.appendSlice(allocator, text[pos..]);
+        return .{ .bytes = try out.toOwnedSlice(allocator), .line = after + 1 };
+    }
+    // At the end: after the last newline, or after a last line that has none.
+    try out.appendSlice(allocator, text);
+    const ends_open = text.len > 0 and text[text.len - 1] != '\n';
+    if (ends_open) try out.appendSlice(allocator, eol);
+    try out.appendSlice(allocator, line);
+    if (!ends_open) try out.appendSlice(allocator, eol);
+    const lines: u32 = @intCast(std.mem.count(u8, out.items, "\n") + @intFromBool(ends_open));
+    return .{ .bytes = try out.toOwnedSlice(allocator), .line = lines };
+}
 
 fn beside_script(path: []const u8) bool {
     if (path.len == 0 or path[0] == '/' or std.mem.indexOfScalar(u8, path, '\\') != null) return false;
@@ -542,4 +687,71 @@ test "a script that does not parse lists no art and reports the check" {
     try std.testing.expect(!try p.art("main.bespoke"));
     try std.testing.expect(result_has(&p, "\"valid\":false"));
     try std.testing.expect(!try p.pixels("nope.png"));
+}
+
+test "a new image line goes after the script's last image, in the file's own line endings" {
+    const a = std.testing.allocator;
+    const r1 = try insert_line(a, "\xef\xbb\xbfone\r\ntwo\r\nthree\r\n", 2, "NEW");
+    defer a.free(r1.bytes);
+    try std.testing.expectEqualStrings("\xef\xbb\xbfone\r\ntwo\r\nNEW\r\nthree\r\n", r1.bytes);
+    try std.testing.expectEqual(@as(u32, 3), r1.line);
+    const r2 = try insert_line(a, "one\ntwo", 0, "NEW");
+    defer a.free(r2.bytes);
+    try std.testing.expectEqualStrings("one\ntwo\nNEW", r2.bytes);
+    try std.testing.expectEqual(@as(u32, 3), r2.line);
+    const r3 = try insert_line(a, "one\n", 0, "NEW");
+    defer a.free(r3.bytes);
+    try std.testing.expectEqualStrings("one\nNEW\n", r3.bytes);
+    try std.testing.expectEqual(@as(u32, 2), r3.line);
+}
+
+test "add_image declares a new sheet after the last image and checks the project" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.encode(2, 1, &.{ 200, 10, 10, 255, 0, 0, 0, 0 });
+    const lamp = try std.testing.allocator.dupe(u8, p.blob.items);
+    defer std.testing.allocator.free(lamp);
+    try p.add("g/art/lamp.png", lamp);
+    try p.add("g/main.bespoke", "scene Room:\n  props: Lantern\n  marks: Door\n\ninclude \"art.bespoke\"\n");
+    const art_before = "image Lamp from \"art/lamp.png\"\n\nsprite Lantern: Lamp\n";
+    try p.add("g/art.bespoke", art_before);
+    const zeros: [32]u8 = @splat(0);
+    try p.encode(4, 2, &zeros);
+    const blank = try std.testing.allocator.dupe(u8, p.blob.items);
+    defer std.testing.allocator.free(blank);
+
+    try std.testing.expect(try p.add_image("g/main.bespoke", .{ .script = "g/art.bespoke", .name = "Door", .file = "art/door.png", .frame_width = 2, .frame_height = 2, .png = blank }));
+    try std.testing.expect(result_has(&p, "\"line\":2"));
+    try std.testing.expectEqualStrings("image Lamp from \"art/lamp.png\"\nimage Door from \"art/door.png\" frames 2x2\n\nsprite Lantern: Lamp\n", p.find("g/art.bespoke").?);
+    try std.testing.expectEqualSlices(u8, blank, p.find("g/art/door.png").?);
+
+    // Refused before the check: a taken name, a taken file, an outside path.
+    try std.testing.expect(!try p.add_image("g/main.bespoke", .{ .script = "g/art.bespoke", .name = "Door", .file = "art/x.png", .png = blank }));
+    try std.testing.expect(result_has(&p, "already declares"));
+    try std.testing.expect(!try p.add_image("g/main.bespoke", .{ .script = "g/art.bespoke", .name = "Gate", .file = "art/door.png", .png = blank }));
+    try std.testing.expect(result_has(&p, "already in the project"));
+    try std.testing.expect(!try p.add_image("g/main.bespoke", .{ .script = "g/art.bespoke", .name = "Gate", .file = "../gate.png", .png = blank }));
+
+    // Refused by the compiler: frames that do not tile. Both changes are undone.
+    const script_now = try std.testing.allocator.dupe(u8, p.find("g/art.bespoke").?);
+    defer std.testing.allocator.free(script_now);
+    try std.testing.expect(!try p.add_image("g/main.bespoke", .{ .script = "g/art.bespoke", .name = "Gate", .file = "art/gate.png", .frame_width = 3, .frame_height = 2, .png = blank }));
+    try std.testing.expect(result_has(&p, "\"valid\":false"));
+    try std.testing.expect(result_has(&p, "do not tile"));
+    try std.testing.expectEqualStrings(script_now, p.find("g/art.bespoke").?);
+    try std.testing.expect(p.find("g/art/gate.png") == null);
+}
+
+test "an import the compiler would refuse adds nothing" {
+    var p = Project.init(std.testing.allocator);
+    defer p.deinit();
+    try p.add("main.bespoke", "scene Room:\n  marks: Door\n\npalette:\n  \".\" transparent\n  \"b\" 176 128 56\n");
+    try p.encode(1, 1, &.{ 1, 2, 3, 255 });
+    const off = try std.testing.allocator.dupe(u8, p.blob.items);
+    defer std.testing.allocator.free(off);
+    try std.testing.expect(!try p.add_image("main.bespoke", .{ .script = "main.bespoke", .name = "Odd", .file = "art/odd.png", .png = off }));
+    try std.testing.expect(result_has(&p, "palette"));
+    try std.testing.expect(result_has(&p, "(0, 0)"));
+    try std.testing.expect(p.find("art/odd.png") == null);
+    try std.testing.expect(std.mem.indexOf(u8, p.find("main.bespoke").?, "Odd") == null);
 }
