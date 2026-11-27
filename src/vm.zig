@@ -188,6 +188,60 @@ pub const Fiber = struct {
     }
 };
 
+const MAX_COND_STACK: usize = 16;
+
+fn read_u8(code: []const u8, pc: *usize) error{TruncatedBytecode}!u8 {
+    if (pc.* >= code.len) return error.TruncatedBytecode;
+    const val = code[pc.*];
+    pc.* += 1;
+    return val;
+}
+
+fn read_u16(code: []const u8, pc: *usize) error{TruncatedBytecode}!u16 {
+    if (code.len - pc.* < 2) return error.TruncatedBytecode;
+    const val = std.mem.readInt(u16, code[pc.*..][0..2], .little);
+    pc.* += 2;
+    return val;
+}
+
+fn read_i16(code: []const u8, pc: *usize) error{TruncatedBytecode}!i16 {
+    if (code.len - pc.* < 2) return error.TruncatedBytecode;
+    const val = std.mem.readInt(i16, code[pc.*..][0..2], .little);
+    pc.* += 2;
+    return val;
+}
+
+fn read_u32(code: []const u8, pc: *usize) error{TruncatedBytecode}!u32 {
+    if (code.len - pc.* < 4) return error.TruncatedBytecode;
+    const val = std.mem.readInt(u32, code[pc.*..][0..4], .little);
+    pc.* += 4;
+    return val;
+}
+
+fn apply_jump(pc: *usize, code_len: usize, offset: i16) error{InvalidJumpTarget}!void {
+    if (offset == std.math.minInt(i16)) return error.InvalidJumpTarget;
+    const target = @as(isize, @intCast(pc.*)) + @as(isize, offset);
+    if (target < 0 or target > @as(isize, @intCast(code_len))) return error.InvalidJumpTarget;
+    pc.* = @intCast(target);
+}
+
+fn to_u16_operand(val: u32) error{InvalidOperand}!u16 {
+    if (val > std.math.maxInt(u16)) return error.InvalidOperand;
+    return @intCast(val);
+}
+
+fn cond_push(stack: *[MAX_COND_STACK]u32, sp: *usize, val: u32) error{StackOverflow}!void {
+    if (sp.* >= MAX_COND_STACK) return error.StackOverflow;
+    stack[sp.*] = val;
+    sp.* += 1;
+}
+
+fn cond_pop(stack: *const [MAX_COND_STACK]u32, sp: *usize) error{StackUnderflow}!u32 {
+    if (sp.* == 0) return error.StackUnderflow;
+    sp.* -= 1;
+    return stack[sp.*];
+}
+
 pub const VM = struct {
     allocator: std.mem.Allocator,
     world: *World,
@@ -355,21 +409,47 @@ pub const VM = struct {
         return false;
     }
 
+    pub const RowKey = struct {
+        mask: u8,
+        vals: [8]u32,
+
+        pub fn from(row: world_mod.VariableBindings) RowKey {
+            var mask: u8 = 0;
+            var vals: [8]u32 = @splat(0);
+            for (row.values, 0..) |v, i| {
+                if (v) |val| {
+                    mask |= @as(u8, 1) << @intCast(i);
+                    vals[i] = val;
+                }
+            }
+            return .{ .mask = mask, .vals = vals };
+        }
+    };
+
     /// `when each` (D-170, D-186): every row that matches now and did not match at the last
     /// evaluation fires once, in the order of its bound values' names; `rows` becomes the set
     /// that matches now, so a row that stops can start again. Returns the rows fired.
     fn evaluate_each(self: *VM, rule: *ReactiveRule) !usize {
-        const found = try self.world.find_all_matches(self.allocator, rule.clauses);
+        const found = try self.world.find_all_matches_capped(self.allocator, rule.clauses, MAX_EACH_ROWS * 16);
         defer self.allocator.free(found);
         var now = std.ArrayListUnmanaged(world_mod.VariableBindings).empty;
         errdefer now.deinit(self.allocator);
         var started = std.ArrayListUnmanaged(world_mod.VariableBindings).empty;
         defer started.deinit(self.allocator);
+        var prev_set: std.AutoHashMapUnmanaged(RowKey, void) = .empty;
+        defer prev_set.deinit(self.allocator);
+        try prev_set.ensureTotalCapacity(self.allocator, @intCast(rule.rows.items.len));
+        for (rule.rows.items) |r| {
+            prev_set.putAssumeCapacity(RowKey.from(r), {});
+        }
+        var now_set: std.AutoHashMapUnmanaged(RowKey, void) = .empty;
+        defer now_set.deinit(self.allocator);
         for (found) |row| {
-            if (contains_row(now.items, row)) continue;
+            const key = RowKey.from(row);
+            if ((try now_set.getOrPut(self.allocator, key)).found_existing) continue;
             if (now.items.len == MAX_EACH_ROWS) return error.TooManyEachRows;
             try now.append(self.allocator, row);
-            if (!contains_row(rule.rows.items, row)) try started.append(self.allocator, row);
+            if (!prev_set.contains(key)) try started.append(self.allocator, row);
         }
         rule.rows.deinit(self.allocator);
         rule.rows = now;
@@ -524,6 +604,7 @@ pub const VM = struct {
                             else => {},
                         }
                         if (match) {
+                            if (rule.handler_pc > std.math.maxInt(u16)) return error.InvalidJumpTarget;
                             const interrupted = try self.interrupt_entity_priority(
                                 rule.target_entity,
                                 @intCast(rule.handler_pc),
@@ -557,6 +638,7 @@ pub const VM = struct {
                 const arrived_at = sp.pending_arrival(actor) orelse continue;
                 if (arrived_at != mark) continue;
 
+                if (rule.handler_pc > std.math.maxInt(u16)) return error.InvalidJumpTarget;
                 const interrupted = try self.interrupt_entity_priority(
                     rule.target_entity,
                     @intCast(rule.handler_pc),
@@ -587,6 +669,7 @@ pub const VM = struct {
                     // Positive edge transition: false -> true
                     rule.is_active = true;
                     if (rule.edge == .rising) {
+                        if (rule.handler_pc > std.math.maxInt(u16)) return error.InvalidJumpTarget;
                         const interrupted = try self.interrupt_entity_priority(
                             rule.target_entity,
                             @intCast(rule.handler_pc),
@@ -603,6 +686,7 @@ pub const VM = struct {
                     // Negative edge transition: true -> false
                     rule.is_active = false;
                     if (rule.edge == .falling) {
+                        if (rule.handler_pc > std.math.maxInt(u16)) return error.InvalidJumpTarget;
                         const interrupted = try self.interrupt_entity_priority(
                             rule.target_entity,
                             @intCast(rule.handler_pc),
@@ -791,6 +875,7 @@ pub const VM = struct {
         const open = dialogue_mod.view(self.world) orelse return null;
         const selection = (try dialogue_mod.choose(self.world, open.speaker, index)) orelse return null;
         if (selection.fiber_id != 0) {
+            if (selection.body_pc > self.chunk.code.items.len) return error.InvalidJumpTarget;
             for (self.fibers.items) |*f| {
                 if (f.id == selection.fiber_id) {
                     f.pc = @intCast(selection.body_pc);
@@ -1062,87 +1147,58 @@ pub const VM = struct {
 
     /// Evaluates a condition bytecode block for wait_until without altering fiber's main stack.
     fn eval_condition(self: *VM, fiber: *Fiber, cond_pc: u16) !bool {
-        var temp_stack: [16]u32 = undefined;
+        var temp_stack: [MAX_COND_STACK]u32 = undefined;
         var temp_sp: usize = 0;
         var pc: usize = cond_pc;
         const code = self.chunk.code.items;
 
         while (pc < code.len) {
-            const op: Opcode = @fromBackingInt(@intCast(code[pc]));
+            const op = bytecode_mod.decode_opcode(code[pc]) orelse return error.InvalidOpcode;
             pc += 1;
 
             switch (op) {
                 .push_const => {
-                    const val = std.mem.readInt(u32, code[pc..][0..4], .little);
-                    pc += 4;
-                    temp_stack[temp_sp] = val;
-                    temp_sp += 1;
+                    const val = try read_u32(code, &pc);
+                    try cond_push(&temp_stack, &temp_sp, val);
                 },
                 .push_entity => {
-                    const val = std.mem.readInt(u32, code[pc..][0..4], .little);
-                    pc += 4;
-                    temp_stack[temp_sp] = val;
-                    temp_sp += 1;
+                    const val = try read_u32(code, &pc);
+                    try cond_push(&temp_stack, &temp_sp, val);
                 },
                 .push_local => {
                     // A `wait until` in a handler body may read the handler's locals (D-161).
-                    const index = fiber.local_base + code[pc];
-                    pc += 1;
+                    const off = try read_u8(code, &pc);
+                    const index = fiber.local_base + off;
                     if (index >= fiber.sp) return error.MissingCueArguments;
-                    temp_stack[temp_sp] = fiber.stack[index];
-                    temp_sp += 1;
+                    try cond_push(&temp_stack, &temp_sp, fiber.stack[index]);
                 },
                 .push_relation => {
-                    const val = std.mem.readInt(u16, code[pc..][0..2], .little);
-                    pc += 2;
-                    temp_stack[temp_sp] = val;
-                    temp_sp += 1;
+                    const val = try read_u16(code, &pc);
+                    try cond_push(&temp_stack, &temp_sp, val);
                 },
                 .query_has => {
-                    const mask = code[pc];
-                    pc += 1;
-                    const obj: ?u32 = if ((mask & 0x04) != 0) blk: {
-                        temp_sp -= 1;
-                        break :blk temp_stack[temp_sp];
-                    } else null;
-                    const rel_raw: ?u16 = if ((mask & 0x02) != 0) blk: {
-                        temp_sp -= 1;
-                        break :blk @intCast(temp_stack[temp_sp]);
-                    } else null;
-                    const subj_raw: ?u32 = if ((mask & 0x01) != 0) blk: {
-                        temp_sp -= 1;
-                        break :blk temp_stack[temp_sp];
-                    } else null;
+                    const mask = try read_u8(code, &pc);
+                    const obj: ?u32 = if ((mask & 0x04) != 0) try cond_pop(&temp_stack, &temp_sp) else null;
+                    const rel_raw: ?u16 = if ((mask & 0x02) != 0) try to_u16_operand(try cond_pop(&temp_stack, &temp_sp)) else null;
+                    const subj_raw: ?u32 = if ((mask & 0x01) != 0) try cond_pop(&temp_stack, &temp_sp) else null;
 
                     const subj = if (subj_raw) |s| EntityId.from_int(s) else null;
                     const rel = if (rel_raw) |r| RelationKind.from_int(r) else null;
                     const has = self.world.has_fact(subj, rel, obj);
-                    temp_stack[temp_sp] = if (has) 1 else 0;
-                    temp_sp += 1;
+                    try cond_push(&temp_stack, &temp_sp, if (has) 1 else 0);
                 },
                 .query_count, .query_points => {
                     const points = op == .query_points;
-                    const mask = code[pc];
-                    pc += 1;
-                    const threshold = std.mem.readInt(u32, code[pc..][0..4], .little);
-                    pc += 4;
-                    const obj: ?u32 = if ((mask & 0x04) != 0) blk: {
-                        temp_sp -= 1;
-                        break :blk temp_stack[temp_sp];
-                    } else null;
-                    const rel_raw: ?u16 = if ((mask & 0x02) != 0) blk: {
-                        temp_sp -= 1;
-                        break :blk @intCast(temp_stack[temp_sp]);
-                    } else null;
-                    const subj_raw: ?u32 = if ((mask & 0x01) != 0) blk: {
-                        temp_sp -= 1;
-                        break :blk temp_stack[temp_sp];
-                    } else null;
+                    const mask = try read_u8(code, &pc);
+                    const threshold = try read_u32(code, &pc);
+                    const obj: ?u32 = if ((mask & 0x04) != 0) try cond_pop(&temp_stack, &temp_sp) else null;
+                    const rel_raw: ?u16 = if ((mask & 0x02) != 0) try to_u16_operand(try cond_pop(&temp_stack, &temp_sp)) else null;
+                    const subj_raw: ?u32 = if ((mask & 0x01) != 0) try cond_pop(&temp_stack, &temp_sp) else null;
                     const total = self.aggregate_total(subj_raw, rel_raw, obj, points);
-                    temp_stack[temp_sp] = if (total >= threshold) 1 else 0;
-                    temp_sp += 1;
+                    try cond_push(&temp_stack, &temp_sp, if (total >= threshold) 1 else 0);
                 },
                 .not => {
+                    if (temp_sp == 0) return error.StackUnderflow;
                     temp_stack[temp_sp - 1] = if (temp_stack[temp_sp - 1] == 0) 1 else 0;
                 },
                 .ret, .halt => {
@@ -1172,7 +1228,7 @@ pub const VM = struct {
             }
             instructions_executed += 1;
 
-            const op: Opcode = @fromBackingInt(@intCast(code[f.pc]));
+            const op = bytecode_mod.decode_opcode(code[f.pc]) orelse return error.InvalidOpcode;
             f.pc += 1;
 
             switch (op) {
@@ -1187,26 +1243,23 @@ pub const VM = struct {
 
                 // --- Stack & Constants ---
                 .push_const => {
-                    const val = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
+                    const val = try read_u32(code, &f.pc);
                     try f.push(val);
                 },
                 .push_entity => {
-                    const val = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
+                    const val = try read_u32(code, &f.pc);
                     try f.push(val);
                 },
                 .push_local => {
                     // Only a handler started by `fire_cue` has locals beneath its stack (D-161).
-                    const index = f.local_base + code[f.pc];
-                    f.pc += 1;
+                    const off = try read_u8(code, &f.pc);
+                    const index = f.local_base + off;
                     if (index >= f.sp) return error.MissingCueArguments;
                     try f.push(f.stack[index]);
                 },
                 .bind_cue_args => return error.MissingCueArguments,
                 .push_relation => {
-                    const val = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const val = try read_u16(code, &f.pc);
                     try f.push(val);
                 },
                 .pop => {
@@ -1219,29 +1272,19 @@ pub const VM = struct {
 
                 // --- Control Flow ---
                 .jump => {
-                    const offset = std.mem.readInt(i16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
-                    if (offset >= 0) {
-                        f.pc += @intCast(offset);
-                    } else {
-                        f.pc -= @intCast(-offset);
-                    }
+                    const offset = try read_i16(code, &f.pc);
+                    try apply_jump(&f.pc, code.len, offset);
                 },
                 .jump_if_false => {
-                    const offset = std.mem.readInt(i16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const offset = try read_i16(code, &f.pc);
                     const condition = try f.pop();
                     if (condition == 0) {
-                        if (offset >= 0) {
-                            f.pc += @intCast(offset);
-                        } else {
-                            f.pc -= @intCast(-offset);
-                        }
+                        try apply_jump(&f.pc, code.len, offset);
                     }
                 },
                 .loop => {
-                    const offset = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const offset = try read_u16(code, &f.pc);
+                    if (offset > f.pc) return error.InvalidJumpTarget;
                     f.pc -= offset;
                 },
 
@@ -1304,10 +1347,8 @@ pub const VM = struct {
 
                 // --- Gameplay / Tabletop Primitives ---
                 .roll_dice => {
-                    const count_val = code[f.pc];
-                    f.pc += 1;
-                    const sides = code[f.pc];
-                    f.pc += 1;
+                    const count_val = try read_u8(code, &f.pc);
+                    const sides = try read_u8(code, &f.pc);
                     if (count_val > 0 and sides == 0) return error.InvalidOpcode;
 
                     var total: u32 = 0;
@@ -1320,38 +1361,35 @@ pub const VM = struct {
 
                 // --- Relational State Operations (P1-02, D-003, D-007) ---
                 .remember => {
-                    const ttl = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
+                    const ttl = try read_u32(code, &f.pc);
                     const obj = try f.pop();
-                    const rel = try f.pop();
+                    const rel = try to_u16_operand(try f.pop());
                     const subj = try f.pop();
 
                     try self.world.remember(
                         EntityId.from_int(subj),
-                        RelationKind.from_int(@intCast(rel)),
+                        RelationKind.from_int(rel),
                         obj,
                         ttl,
                     );
                 },
                 .forget => {
-                    const has_obj = code[f.pc] != 0;
-                    f.pc += 1;
+                    const has_obj = (try read_u8(code, &f.pc)) != 0;
                     const obj: ?u32 = if (has_obj) try f.pop() else null;
-                    const rel = try f.pop();
+                    const rel = try to_u16_operand(try f.pop());
                     const subj = try f.pop();
 
                     _ = self.world.forget(
                         EntityId.from_int(subj),
-                        RelationKind.from_int(@intCast(rel)),
+                        RelationKind.from_int(rel),
                         obj,
                     );
                 },
                 .query_has => {
-                    const mask = code[f.pc];
-                    f.pc += 1;
+                    const mask = try read_u8(code, &f.pc);
 
                     const obj: ?u32 = if ((mask & 0x04) != 0) try f.pop() else null;
-                    const rel_val: ?u16 = if ((mask & 0x02) != 0) @intCast(try f.pop()) else null;
+                    const rel_val: ?u16 = if ((mask & 0x02) != 0) try to_u16_operand(try f.pop()) else null;
                     const subj_val: ?u32 = if ((mask & 0x01) != 0) try f.pop() else null;
 
                     const has = self.world.has_fact(
@@ -1363,23 +1401,21 @@ pub const VM = struct {
                 },
                 .query_count, .query_points => {
                     const points = op == .query_points;
-                    const mask = code[f.pc];
-                    f.pc += 1;
-                    const threshold = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
+                    const mask = try read_u8(code, &f.pc);
+                    const threshold = try read_u32(code, &f.pc);
 
                     const obj: ?u32 = if ((mask & 0x04) != 0) try f.pop() else null;
-                    const rel_val: ?u16 = if ((mask & 0x02) != 0) @intCast(try f.pop()) else null;
+                    const rel_val: ?u16 = if ((mask & 0x02) != 0) try to_u16_operand(try f.pop()) else null;
                     const subj_val: ?u32 = if ((mask & 0x01) != 0) try f.pop() else null;
                     const total = self.aggregate_total(subj_val, rel_val, obj, points);
                     try f.push(if (total >= threshold) 1 else 0);
                 },
                 .query_property => {
-                    const rel = try f.pop();
+                    const rel = try to_u16_operand(try f.pop());
                     const subj = try f.pop();
                     const val = self.world.get_property(
                         EntityId.from_int(subj),
-                        RelationKind.from_int(@intCast(rel)),
+                        RelationKind.from_int(rel),
                     ) orelse 0;
                     try f.push(val);
                 },
@@ -1391,30 +1427,30 @@ pub const VM = struct {
                     return;
                 },
                 .wait_until => {
-                    const cond_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const cond_pc = try read_u16(code, &f.pc);
+                    if (cond_pc >= code.len) return error.InvalidJumpTarget;
                     f.state = .{ .waiting_cond = cond_pc };
                     return;
                 },
                 .walk_to => {
                     const dest = try f.pop();
                     const entity = try f.pop();
+                    const dest_wp = try to_u16_operand(dest);
                     if (self.spatial) |sp| {
-                        _ = try sp.walk_to_with_world(self.world, EntityId.from_int(entity), @intCast(dest));
+                        _ = try sp.walk_to_with_world(self.world, EntityId.from_int(entity), dest_wp);
                         f.state = .{ .waiting_motor = EntityId.from_int(entity) };
                         return;
                     }
                 },
                 .transition_scene => {
-                    const target_scene_val = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
+                    const target_scene_val = try read_u32(code, &f.pc);
                     try self.transition_to_scene(EntityId.from_int(target_scene_val));
                 },
 
                 // --- Preemption & Interruption (P2-04, D-004) ---
                 .interrupt => {
-                    const handler_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const handler_pc = try read_u16(code, &f.pc);
+                    if (handler_pc >= code.len) return error.InvalidJumpTarget;
                     const target_raw = try f.pop();
                     _ = try self.interrupt_entity(EntityId.from_int(target_raw), handler_pc);
                 },
@@ -1434,14 +1470,13 @@ pub const VM = struct {
 
                 // --- Peripheral Bridge Signals (D-001) ---
                 .emit_cue => {
-                    const cue_id = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
-                    const arg_count = code[f.pc];
-                    f.pc += 1;
+                    const cue_id = try read_u16(code, &f.pc);
+                    const arg_count = try read_u8(code, &f.pc);
+                    if (arg_count > bytecode_mod.MAX_CUE_ARGS) return error.InvalidOperand;
 
                     var cue = EmittedCue{
                         .cue_id = cue_id,
-                        .args = undefined,
+                        .args = @splat(0),
                         .arg_count = arg_count,
                     };
                     var idx: usize = arg_count;
@@ -1468,33 +1503,27 @@ pub const VM = struct {
                     try dialogue_mod.begin(self.world, f.owner, f.id);
                 },
                 .offer_choice => {
-                    const text_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
-                    const body_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const text_raw = try read_u32(code, &f.pc);
+                    const body_pc = try read_u16(code, &f.pc);
+                    if (body_pc > code.len) return error.InvalidJumpTarget;
                     try dialogue_mod.offer(self.world, f.owner, EntityId.from_int(text_raw), body_pc);
                 },
                 .offer_choice_inspected => {
-                    const text_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
-                    const body_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
-                    const source_index = code[f.pc];
-                    f.pc += 1;
+                    const text_raw = try read_u32(code, &f.pc);
+                    const body_pc = try read_u16(code, &f.pc);
+                    if (body_pc > code.len) return error.InvalidJumpTarget;
+                    const source_index = try read_u8(code, &f.pc);
                     try dialogue_mod.offer_inspected(self.world, f.owner, EntityId.from_int(text_raw), body_pc, source_index);
                 },
                 .reject_choice => {
-                    const text_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
-                    const source_index = code[f.pc];
-                    f.pc += 1;
-                    const failure_raw = std.mem.readInt(u32, code[f.pc..][0..4], .little);
-                    f.pc += 4;
+                    const text_raw = try read_u32(code, &f.pc);
+                    const source_index = try read_u8(code, &f.pc);
+                    const failure_raw = try read_u32(code, &f.pc);
                     try dialogue_mod.reject(self.world, f.owner, EntityId.from_int(text_raw), source_index, EntityId.from_int(failure_raw));
                 },
                 .choices_end => {
-                    const end_pc = std.mem.readInt(u16, code[f.pc..][0..2], .little);
-                    f.pc += 2;
+                    const end_pc = try read_u16(code, &f.pc);
+                    if (end_pc > code.len) return error.InvalidJumpTarget;
                     const count = try dialogue_mod.finish(self.world, f.owner, end_pc);
                     f.pc = end_pc;
                     if (count > 0) {
@@ -2636,4 +2665,120 @@ test "P48-25: when each runs interrupted rows on one fiber in ascending name ord
     _ = try vm2.step_tick();
     // Fallback fiber must have spawned and asserted Last(Alert, Ada).
     try testing.expectEqual(@as(?u32, ada.to_int()), world.get_property(alert, last));
+}
+
+test "VM bounds checks reject invalid opcodes, truncated operands, bad jumps, condition stack errors, and u16 overflows" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+
+    const run_bytes = struct {
+        fn call(w: *World, bytes: []const u8) !void {
+            var chunk = BytecodeChunk.init(testing.allocator);
+            defer chunk.deinit();
+            try chunk.code.appendSlice(bytes);
+            var vm = VM.init(testing.allocator, w, &chunk);
+            defer vm.deinit();
+            _ = try vm.spawn_routine(.none, 0);
+            try vm.step_tick();
+        }
+    }.call;
+
+    // Undefined opcode, truncated operand, and emit_cue > MAX_CUE_ARGS.
+    try testing.expectError(error.InvalidOpcode, run_bytes(&world, &.{0xFF}));
+    try testing.expectError(error.TruncatedBytecode, run_bytes(&world, &.{ @intFromEnum(Opcode.push_const), 1, 2 }));
+    try testing.expectError(error.InvalidOperand, run_bytes(&world, &.{ @intFromEnum(Opcode.emit_cue), 2, 0, 5 }));
+
+    // Jump minInt(i16), jump underflow, jump past end, and loop underflow.
+    try testing.expectError(error.InvalidJumpTarget, run_bytes(&world, &.{ @intFromEnum(Opcode.jump), 0x00, 0x80 }));
+    try testing.expectError(error.InvalidJumpTarget, run_bytes(&world, &.{ @intFromEnum(Opcode.jump), 0xF0, 0xFF }));
+    try testing.expectError(error.InvalidJumpTarget, run_bytes(&world, &.{ @intFromEnum(Opcode.jump), 0x10, 0x00 }));
+    try testing.expectError(error.InvalidJumpTarget, run_bytes(&world, &.{ @intFromEnum(Opcode.loop), 0x10, 0x00 }));
+
+    // Stack relation/waypoint ID > 65535.
+    try testing.expectError(error.InvalidOperand, run_bytes(&world, &.{
+        @intFromEnum(Opcode.push_const), 1, 0, 0, 0,
+        @intFromEnum(Opcode.push_const), 0, 0, 1, 0,
+        @intFromEnum(Opcode.query_property),
+    }));
+
+    // eval_condition: invalid opcode, stack underflow, and stack overflow.
+    const eval_bytes = struct {
+        fn call(w: *World, bytes: []const u8) !bool {
+            var chunk = BytecodeChunk.init(testing.allocator);
+            defer chunk.deinit();
+            try chunk.code.appendSlice(bytes);
+            var vm = VM.init(testing.allocator, w, &chunk);
+            defer vm.deinit();
+            _ = try vm.spawn_routine(.none, 0);
+            return vm.eval_condition(&vm.fibers.items[0], 0);
+        }
+    }.call;
+
+    try testing.expectError(error.InvalidOpcode, eval_bytes(&world, &.{0xFF}));
+    try testing.expectError(error.StackUnderflow, eval_bytes(&world, &.{@intFromEnum(Opcode.not)}));
+    var overflow_buf: [MAX_COND_STACK * 5 + 5]u8 = undefined;
+    for (0..MAX_COND_STACK + 1) |i| {
+        overflow_buf[i * 5] = @intFromEnum(Opcode.push_const);
+        std.mem.writeInt(u32, overflow_buf[i * 5 + 1 ..][0..4], 1, .little);
+    }
+    try testing.expectError(error.StackOverflow, eval_bytes(&world, &overflow_buf));
+}
+
+test "when each handles many rows with RowKey hash dedup and diff" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 512 * 1024);
+    defer world.deinit();
+    const rel = try world.intern_relation("Tagged", .set);
+    const dup_rel = try world.intern_relation("Dup", .set);
+    const row_count: usize = 300;
+    var first_entity: EntityId = .none;
+    for (0..row_count) |i| {
+        var name_buf: [32]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buf, "E{d}", .{i});
+        const e = try world.intern_entity(name);
+        if (i == 0) first_entity = e;
+        try world.remember(e, rel, 1, 0);
+        // Two Dup facts per entity produce duplicate VariableBindings rows for ?x.
+        try world.remember(e, dup_rel, 1, 0);
+        try world.remember(e, dup_rel, 2, 0);
+    }
+
+    var chunk = BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    const clauses = try testing.allocator.dupe(world_mod.PatternClause, &.{
+        .{
+            .subject = .{ .variable = 0 },
+            .relation = rel,
+            .object = .{ .constant = 1 },
+        },
+        .{
+            .subject = .{ .variable = 0 },
+            .relation = dup_rel,
+            .object = .wildcard,
+        },
+    });
+    try vm.reactive_rules.append(.{
+        .id = 1,
+        .clauses = clauses,
+        .target_entity = .none,
+        .priority = 0,
+        .handler_pc = 0,
+        .each = true,
+        .owner_slot = 0,
+    });
+
+    // First evaluation deduplicates 600 matches into 300 rows; second evaluation fires 0.
+    try testing.expectEqual(row_count, try vm.evaluate_each(&vm.reactive_rules.items[0]));
+    try testing.expectEqual(row_count, vm.reactive_rules.items[0].rows.items.len);
+    try testing.expectEqual(@as(usize, 0), try vm.evaluate_each(&vm.reactive_rules.items[0]));
+
+    // Removing and re-adding one row fires only that row.
+    _ = world.forget(first_entity, rel, 1);
+    try testing.expectEqual(@as(usize, 0), try vm.evaluate_each(&vm.reactive_rules.items[0]));
+    try testing.expectEqual(row_count - 1, vm.reactive_rules.items[0].rows.items.len);
+    try world.remember(first_entity, rel, 1, 0);
+    try testing.expectEqual(@as(usize, 1), try vm.evaluate_each(&vm.reactive_rules.items[0]));
 }

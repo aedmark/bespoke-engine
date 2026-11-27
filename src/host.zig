@@ -1069,7 +1069,9 @@ pub const Session = struct {
     }
 
     pub fn deinit(self: *Session) void {
-        @import("display/dialogue_panel.zig").clear_display_names();
+        const dp = @import("display/dialogue_panel.zig");
+        dp.clear_display_names_for(self.world);
+        dp.clear_display_names_for(self.active_world());
         self.timeline.deinit();
     }
 
@@ -1159,6 +1161,7 @@ pub const Session = struct {
     /// Captures and publishes the current state.
     pub fn refresh(self: *Session) void {
         self.sync_active_world();
+        @import("display/dialogue_panel.zig").use_display_names(self.active_world());
         self.bridge.capture_frame(self.active_world(), self.spatial, self.vm);
         self.bridge.set_max_history_tick(self.timeline.last_index());
         self.bridge.swap();

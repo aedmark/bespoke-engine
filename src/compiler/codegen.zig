@@ -1141,7 +1141,7 @@ pub const Codegen = struct {
                     }
                     const halt_pc = mut_self.chunk.count();
                     _ = try mut_self.chunk.emit_op(.halt);
-                    const offset: i16 = @intCast(halt_pc - (guard_pc + 3));
+                    const offset = try check_jump_i16(guard_pc + 3, halt_pc);
                     std.mem.writeInt(i16, mut_self.chunk.code.items[guard_pc + 1 ..][0..2], offset, .little);
                 }
             }
@@ -1372,6 +1372,8 @@ pub const Codegen = struct {
                 return error.UnknownLook;
             }
         }
+
+        if (mut_self.chunk.count() > bytecode_mod.MAX_BYTECODE_LEN) return error.BytecodeTooLarge;
 
         // Art last: nothing after it can fail, so the owned copy never needs an errdefer here
         // (P46-03, D-155). Bindings name their scene or entity by text; interning finds the
@@ -2128,6 +2130,22 @@ pub const Codegen = struct {
         return .{ .config = config };
     }
 
+fn check_pc_u16(pc: usize) error{BytecodeTooLarge}!u16 {
+    if (pc > bytecode_mod.MAX_BYTECODE_LEN) return error.BytecodeTooLarge;
+    return @intCast(pc);
+}
+
+fn check_jump_i16(from_end: usize, to_pc: usize) error{JumpOffsetTooLarge}!i16 {
+    const diff = @as(isize, @intCast(to_pc)) - @as(isize, @intCast(from_end));
+    if (diff <= std.math.minInt(i16) or diff > std.math.maxInt(i16)) return error.JumpOffsetTooLarge;
+    return @intCast(diff);
+}
+
+fn check_loop_u16(span: usize) error{JumpOffsetTooLarge}!u16 {
+    if (span > std.math.maxInt(u16)) return error.JumpOffsetTooLarge;
+    return @intCast(span);
+}
+
     /// Emits `PathActive(path)` followed by a forward jump that a path routine patches to its
     /// trailing halt. The difficulty is the guard, not the body: inactive routes must not run.
     fn emit_path_guard(self: *Codegen, path_entity: EntityId, path_active: RelationKind) !usize {
@@ -2201,13 +2219,13 @@ pub const Codegen = struct {
                 const jump_over_pc = try self.chunk.emit_op(.jump);
                 try self.chunk.emit_i16(0); // placeholder
 
-                const cond_start_pc: u16 = @intCast(self.chunk.count());
+                const cond_start_pc = try check_pc_u16(self.chunk.count());
                 try self.compile_expr(expr);
                 _ = try self.chunk.emit_op(.ret);
 
                 // Patch jump over
                 const jump_dest = self.chunk.count();
-                const offset: i16 = @intCast(jump_dest - (jump_over_pc + 3));
+                const offset = try check_jump_i16(jump_over_pc + 3, jump_dest);
                 std.mem.writeInt(i16, self.chunk.code.items[jump_over_pc + 1 ..][0..2], offset, .little);
 
                 // Emit wait_until pointing to cond_start_pc
@@ -2220,7 +2238,7 @@ pub const Codegen = struct {
                     try self.compile_stmt(s);
                 }
                 const loop_end_pc = self.chunk.count();
-                const back_offset: u16 = @intCast((loop_end_pc + 3) - loop_start_pc);
+                const back_offset = try check_loop_u16((loop_end_pc + 3) - loop_start_pc);
                 _ = try self.chunk.emit_op(.loop);
                 try self.chunk.emit_u16(back_offset);
             },
@@ -2235,7 +2253,7 @@ pub const Codegen = struct {
 
                 // Patch jump offset
                 const dest_pc = self.chunk.count();
-                const offset: i16 = @intCast(dest_pc - (jump_false_pc + 3));
+                const offset = try check_jump_i16(jump_false_pc + 3, dest_pc);
                 std.mem.writeInt(i16, self.chunk.code.items[jump_false_pc + 1 ..][0..2], offset, .little);
             },
             .interrupt_with => |iw| {
@@ -2245,7 +2263,7 @@ pub const Codegen = struct {
                 const jump_over_pc = try self.chunk.emit_op(.jump);
                 try self.chunk.emit_i16(0);
 
-                const handler_pc: u16 = @intCast(self.chunk.count());
+                const handler_pc = try check_pc_u16(self.chunk.count());
                 {
                     const saved_locals = self.locals;
                     const saved_entity_locals = self.entity_locals;
@@ -2263,7 +2281,7 @@ pub const Codegen = struct {
 
                 // Patch jump over
                 const dest_pc = self.chunk.count();
-                const offset: i16 = @intCast(dest_pc - (jump_over_pc + 3));
+                const offset = try check_jump_i16(jump_over_pc + 3, dest_pc);
                 std.mem.writeInt(i16, self.chunk.code.items[jump_over_pc + 1 ..][0..2], offset, .little);
 
                 // Emit interrupt opcode
@@ -2354,7 +2372,7 @@ pub const Codegen = struct {
                     defer rejection_exits.deinit();
                     for (failures.items) |failure| {
                         const reject_pc = self.chunk.count();
-                        const reject_offset: i16 = @intCast(reject_pc - (failure.jump_pc + 3));
+                        const reject_offset = try check_jump_i16(failure.jump_pc + 3, reject_pc);
                         std.mem.writeInt(i16, self.chunk.code.items[failure.jump_pc + 1 ..][0..2], reject_offset, .little);
                         try self.chunk.emit_reject_choice(text_id, source_index_u8, failure.failure_text);
                         const exit_pc = try self.chunk.emit_op(.jump);
@@ -2363,10 +2381,10 @@ pub const Codegen = struct {
                     }
 
                     const after_choice = self.chunk.count();
-                    const success_offset: i16 = @intCast(after_choice - (success_jump + 3));
+                    const success_offset = try check_jump_i16(success_jump + 3, after_choice);
                     std.mem.writeInt(i16, self.chunk.code.items[success_jump + 1 ..][0..2], success_offset, .little);
                     for (rejection_exits.items) |exit_pc| {
-                        const exit_offset: i16 = @intCast(after_choice - (exit_pc + 3));
+                        const exit_offset = try check_jump_i16(exit_pc + 3, after_choice);
                         std.mem.writeInt(i16, self.chunk.code.items[exit_pc + 1 ..][0..2], exit_offset, .little);
                     }
                 }
@@ -2382,12 +2400,12 @@ pub const Codegen = struct {
                 }
 
                 const end_pc = self.chunk.count();
-                std.mem.writeInt(u16, self.chunk.code.items[choices_end_pc + 1 ..][0..2], @intCast(end_pc), .little);
+                std.mem.writeInt(u16, self.chunk.code.items[choices_end_pc + 1 ..][0..2], try check_pc_u16(end_pc), .little);
                 for (offer_pcs.items, body_pcs.items) |offer_pc, body_pc| {
-                    std.mem.writeInt(u16, self.chunk.code.items[offer_pc + 5 ..][0..2], @intCast(body_pc), .little);
+                    std.mem.writeInt(u16, self.chunk.code.items[offer_pc + 5 ..][0..2], try check_pc_u16(body_pc), .little);
                 }
                 for (body_jumps.items) |jump_pc| {
-                    const offset: i16 = @intCast(end_pc - (jump_pc + 3));
+                    const offset = try check_jump_i16(jump_pc + 3, end_pc);
                     std.mem.writeInt(i16, self.chunk.code.items[jump_pc + 1 ..][0..2], offset, .little);
                 }
             },

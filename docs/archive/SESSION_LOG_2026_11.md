@@ -2,6 +2,12 @@
 
 Historical session log entries moved from `docs/HANDOFF.md` to keep the active log concise (max 10 entries).
 
+### Session 119 (2026-11-21)
+- **Work.** P45-01, value axes (D-144). The maintainer chose (2026-11-21): +10 is the virtue held fully and the poles name its failures; one property relation per axis (`Justice(Valerius, 8)`) instead of the roadmap's three-argument `Value(Valerius, Justice, 8)`, which a one-object fact row cannot hold; `axis <Virtue> between <Pole> and <Pole>` with ordinary `remember` for starting values; and clamping for run-time writes. Decision scoring is untouched and stays with P45-03.
+- **Engine.** `World.bound_relation` gives a property a signed range that `remember`, `restore_state`, and `clone` clamp into; bounds are program data and the save format is unchanged. `src/value.zig` declares and validates axes. The lexer reads `-3` as a number; the compiler accepts a negative only on an axis, where before a stray `-` was silently skipped. The inspector capture formats a bounded value as signed. `.bspk` v19 appends axes, with `tests/fixtures/compat/v0.3.1-package-v19.bspk`; `tests/fixtures/fuzz/values.bespoke` seeds the lexer, parser, and codegen campaigns and the v19 fixture seeds the package loader.
+- **Not done.** `docs/state.html` already lists characters with values as what is next and describes 0.3.1, so it is unchanged until a release carries axes. Conditions test exact values only; comparisons wait for P45-03.
+- **Checks.** Linux x86_64, Zig 0.17.1: `zig build test` (goldens unchanged), `zig build test-fuzz`, `build_editor_grammar.py --check` and its unittest, and `check_docs.py` (0/0) passed; no window or browser run.
+
 ### Session 118 (2026-11-21)
 - **Release.** Cut BeSpoke 0.3.1 (P42-08) on the maintainer's approval: version 0.3.1 in `build.zig`, `build.zig.zon`, the manual, `AGENTS.md`, and the README; the Unreleased changelog entries under `0.3.1 - 2026-11-21`; the three archives in `dist/release/`; tag `v0.3.1` and its GitHub release once the commit's CI passed.
 - **Section 9.** The generated project `starter_check` went to the public `aedmark/bespoke-starter-check`. Its CI failed on `mlugg/setup-zig@v1`, which found no Zig 0.17.1; the template now installs Zig from ziglang.org against pinned checksums. Windows then failed in translate-c on `SDL2/SDL.h`, and the maintainer deferred Windows (D-143, P42-07). Linux, macOS, and web pass against both the fix branch and the generated `v0.1.0` pin, which closes P42-06.

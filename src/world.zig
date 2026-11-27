@@ -176,6 +176,27 @@ pub const World = struct {
         var facts = std.MultiArrayList(Fact){};
         try facts.ensureTotalCapacity(alloc, max_facts);
 
+        return initWithFacts(backing_allocator, buffer, fba, facts);
+    }
+
+    fn initWithExactFacts(backing_allocator: std.mem.Allocator, arena_size: usize, exact_facts: usize) !World {
+        const buffer = try backing_allocator.alloc(u8, arena_size);
+        errdefer backing_allocator.free(buffer);
+        var fba = std.heap.FixedBufferAllocator.init(buffer);
+        const alloc = fba.allocator();
+
+        var facts = std.MultiArrayList(Fact){};
+        try facts.setCapacity(alloc, exact_facts);
+
+        return initWithFacts(backing_allocator, buffer, fba, facts);
+    }
+
+    fn initWithFacts(
+        backing_allocator: std.mem.Allocator,
+        buffer: []u8,
+        fba: std.heap.FixedBufferAllocator,
+        facts: std.MultiArrayList(Fact),
+    ) World {
         return World{
             .backing_allocator = backing_allocator,
             .arena_buffer = buffer,
@@ -243,15 +264,21 @@ pub const World = struct {
         }
 
         const alloc = self.allocator();
+        if (self.relation_meta.items.len == std.math.maxInt(u16)) return error.RelationLimitExceeded;
+        if (name.len > std.math.maxInt(u16)) return error.RelationNameTooLong;
+        // Publish the ID only after every allocation succeeds so arena exhaustion cannot leave
+        // an unindexed entry in `relation_meta`.
+        try self.relation_meta.ensureUnusedCapacity(alloc, 1);
+        try self.relation_map.ensureUnusedCapacity(alloc, 1);
         const owned_name = try alloc.dupe(u8, name);
         const next_kind_val: u16 = @intCast(self.relation_meta.items.len + 1);
         const new_kind = RelationKind.from_int(next_kind_val);
 
-        try self.relation_meta.append(alloc, .{
+        self.relation_meta.appendAssumeCapacity(.{
             .name = owned_name,
             .rel_type = rel_type,
         });
-        try self.relation_map.put(alloc, owned_name, new_kind);
+        self.relation_map.putAssumeCapacityNoClobber(owned_name, new_kind);
 
         return new_kind;
     }
@@ -694,8 +721,12 @@ pub const World = struct {
         clause_idx: usize,
         bindings: VariableBindings,
         results: *std.array_list.Managed(VariableBindings),
+        limit: ?usize,
     ) !void {
         if (clause_idx >= clauses.len) {
+            if (limit) |lim| {
+                if (results.items.len >= lim) return error.TooManyMatches;
+            }
             try results.append(bindings);
             return;
         }
@@ -725,7 +756,7 @@ pub const World = struct {
                 .variable => |v| if (!next_bindings.set(v, fact_obj)) continue,
             }
 
-            try self.collect_multi_matches(clauses, clause_idx + 1, next_bindings, results);
+            try self.collect_multi_matches(clauses, clause_idx + 1, next_bindings, results, limit);
         }
     }
 
@@ -738,7 +769,21 @@ pub const World = struct {
         var results = std.array_list.Managed(VariableBindings).init(alloc);
         errdefer results.deinit();
         if (clauses.len == 0) return results.toOwnedSlice();
-        try self.collect_multi_matches(clauses, 0, VariableBindings{}, &results);
+        try self.collect_multi_matches(clauses, 0, VariableBindings{}, &results, null);
+        return results.toOwnedSlice();
+    }
+
+    /// Bounded variant of `find_all_matches`; returns `error.TooManyMatches` if results exceed `limit`.
+    pub fn find_all_matches_capped(
+        self: *const World,
+        alloc: std.mem.Allocator,
+        clauses: []const PatternClause,
+        limit: usize,
+    ) ![]VariableBindings {
+        var results = std.array_list.Managed(VariableBindings).init(alloc);
+        errdefer results.deinit();
+        if (clauses.len == 0) return results.toOwnedSlice();
+        try self.collect_multi_matches(clauses, 0, VariableBindings{}, &results, limit);
         return results.toOwnedSlice();
     }
 
@@ -927,6 +972,7 @@ pub const World = struct {
         }
 
         // All allocations and validations succeeded; commit atomically.
+        self.recently_expired_count = 0;
         self.facts.len = flen;
         const dst_slice = self.facts.slice();
         @memcpy(dst_slice.items(.subject)[0..flen], tmp_slice.items(.subject)[0..flen]);
@@ -965,7 +1011,7 @@ pub const World = struct {
     /// Creates a complete independent deep copy of this World arena (D-003, D-027).
     /// Used by TemporalHypervisor to fork the branch world from the Primary Universe.
     pub fn clone(self: *const World, backing_allocator: std.mem.Allocator) !World {
-        var cloned = try World.init(backing_allocator, self.arena_buffer.len);
+        var cloned = try World.initWithExactFacts(backing_allocator, self.arena_buffer.len, self.facts.capacity);
         errdefer cloned.deinit();
 
         var stream_buf = std.array_list.Managed(u8).init(backing_allocator);
@@ -1460,4 +1506,75 @@ test "P48-24: restore_state is atomic on error and reuses interned names across 
     }
     try testing.expectEqual(@as(u64, 11), world.current_tick);
     try testing.expectEqual(@as(?u32, tavern.to_int()), world.get_property(hero, loc));
+}
+
+test "intern_relation bounds, restore_state expiry reset, and clone capacity preservation" {
+    const testing = std.testing;
+    var world = try World.initWithMaxFacts(testing.allocator, 4096, 4);
+    defer world.deinit();
+
+    const rel = try world.intern_relation("RelA", .set);
+    const too_large = try testing.allocator.alloc(u8, 4096);
+    defer testing.allocator.free(too_large);
+    @memset(too_large, 'r');
+    try testing.expectError(error.OutOfMemory, world.intern_relation(too_large, .set));
+    try testing.expectEqual(@as(usize, 1), world.relation_meta.items.len);
+    try testing.expectEqual(rel, try world.intern_relation("RelA", .set));
+
+    const long_name = try testing.allocator.alloc(u8, @as(usize, std.math.maxInt(u16)) + 1);
+    defer testing.allocator.free(long_name);
+    @memset(long_name, 'r');
+    try testing.expectError(error.RelationNameTooLong, world.intern_relation(long_name, .set));
+
+    // restore_state clears recently_expired_count so pre-restore expirations cannot leak.
+    const hero = try world.intern_entity("Hero");
+    var snap = std.array_list.Managed(u8).init(testing.allocator);
+    defer snap.deinit();
+    var lw = ListWriter.init(&snap);
+    try world.save_state(&lw.writer);
+
+    try world.remember(hero, rel, hero.to_int(), 1);
+    _ = world.step_tick();
+    try testing.expectEqual(@as(usize, 1), world.get_recently_expired().len);
+    var reader: std.Io.Reader = .fixed(snap.items);
+    try world.restore_state(&reader);
+    try testing.expectEqual(@as(usize, 0), world.get_recently_expired().len);
+
+    // clone preserves non-default fact capacity (smaller and larger than DEFAULT_MAX_FACTS).
+    var small_clone = try world.clone(testing.allocator);
+    defer small_clone.deinit();
+    try testing.expectEqual(world.facts.capacity, small_clone.facts.capacity);
+
+    var big_world = try World.initWithMaxFacts(testing.allocator, 1024 * 1024, DEFAULT_MAX_FACTS * 2);
+    defer big_world.deinit();
+    var big_clone = try big_world.clone(testing.allocator);
+    defer big_clone.deinit();
+    try testing.expectEqual(big_world.facts.capacity, big_clone.facts.capacity);
+}
+
+test "find_all_matches_capped stops at limit and returns TooManyMatches" {
+    const testing = std.testing;
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+
+    const rel = try world.intern_relation("Rel", .set);
+    for (0..5) |i| {
+        var buf: [16]u8 = undefined;
+        const name = try std.fmt.bufPrint(&buf, "E{d}", .{i});
+        const e = try world.intern_entity(name);
+        try world.remember(e, rel, 1, 0);
+    }
+
+    const clauses = [_]PatternClause{
+        .{
+            .subject = .{ .variable = 0 },
+            .relation = rel,
+            .object = .{ .constant = 1 },
+        },
+    };
+    const ok_rows = try world.find_all_matches_capped(testing.allocator, &clauses, 5);
+    defer testing.allocator.free(ok_rows);
+    try testing.expectEqual(@as(usize, 5), ok_rows.len);
+
+    try testing.expectError(error.TooManyMatches, world.find_all_matches_capped(testing.allocator, &clauses, 4));
 }

@@ -284,6 +284,7 @@ pub const SfxVoice = struct {
     step: u8 = 0,
     step_samples_left: u32 = 0,
     volume: u8 = 100, // 0..100
+    from_host: bool = false,
 };
 
 // ---------------------------------------------------------------------------
@@ -459,6 +460,27 @@ pub const ChiptuneSynth = struct {
         var synth = ChiptuneSynth{};
         synth.set_track(null);
         return synth;
+    }
+
+    /// Replaces the active soundtrack and clears any BGM, MML, or host SFX state referencing the prior one.
+    pub fn set_soundtrack(self: *ChiptuneSynth, soundtrack: ?*const Soundtrack) void {
+        self.soundtrack = soundtrack;
+        self.current_track = null;
+        self.target_track = null;
+        self.is_fading_out = false;
+        self.fade_level = 32767;
+        self.active_pattern = SILENT_PATTERN;
+        self.current_step = 0;
+        self.step_sample_counter = 0;
+        self.arrangement_pos = 0;
+        self.mml = .{};
+        for (&self.sfx_voices) |*v| {
+            if (v.from_host) {
+                v.active = false;
+                v.from_host = false;
+                v.patch = &STOCK_SFX[@intFromEnum(SoundEffectKind.click)];
+            }
+        }
     }
 
     /// Sets or changes the active background music track (P16-03).
@@ -710,7 +732,8 @@ pub const ChiptuneSynth = struct {
     pub fn trigger_host_sfx(self: *ChiptuneSynth, index: u8) void {
         const st = self.soundtrack orelse return;
         if (index >= st.sfx.len) return;
-        _ = self.trigger_patch(&st.sfx[index]);
+        const v = self.trigger_patch(&st.sfx[index]);
+        v.from_host = true;
     }
 
     fn trigger_sfx_voice(self: *ChiptuneSynth, kind: SoundEffectKind) *SfxVoice {
@@ -782,7 +805,7 @@ pub const ChiptuneSynth = struct {
         }
         return switch (p.mix) {
             .shift => |n| sum >> n,
-            .div => |d| @divTrunc(sum, d),
+            .div => |d| if (d == 0) 0 else @divTrunc(sum, d),
         };
     }
 
@@ -799,11 +822,13 @@ pub const ChiptuneSynth = struct {
         for (0..frame_count) |f| {
             // 1. Advance BGM Step Sequencer (an MML track runs its own clock instead)
             if (self.current_track != null and self.mml.score == null) {
-                self.step_sample_counter += 1;
-                if (self.step_sample_counter >= self.samples_per_step) {
-                    self.step_sample_counter = 0;
-                    self.current_step = (self.current_step + 1) % self.active_pattern.step_count;
-                    if (self.current_step == 0) self.next_section();
+                const step_count = @min(@as(usize, self.active_pattern.step_count), BGM_STEPS);
+                if (step_count > 0) {
+                    self.step_sample_counter += 1;
+                    if (self.step_sample_counter >= self.samples_per_step) {
+                        self.step_sample_counter = 0;
+                        self.current_step = (self.current_step + 1) % step_count;
+                        if (self.current_step == 0) self.next_section();
 
                     // Trigger new step notes
                     const step = self.current_step;
@@ -839,6 +864,7 @@ pub const ChiptuneSynth = struct {
                         self.hat_env = 24000;
                     }
                 }
+            }
             }
 
             // Track crossfade handling
@@ -878,7 +904,7 @@ pub const ChiptuneSynth = struct {
                     self.lead_vibrato_phase +%= 12000000; // ~5.5 Hz vibrato
                     const vib = eval_triangle(self.lead_vibrato_phase);
                     const delta: i32 = @divTrunc(@as(i32, vib), 80);
-                    const mod_inc: u32 = @intCast(@max(0, @as(i32, @intCast(self.lead_phase_inc)) + delta));
+                    const mod_inc: u32 = @intCast(std.math.clamp(@as(i64, self.lead_phase_inc) + @as(i64, delta), 0, std.math.maxInt(u32)));
                     const raw = eval_pulse(self.lead_phase, 0x40000000);
                     bgm_sample += (@as(i32, raw) * (self.lead_env >> 8)) >> 8;
                     self.lead_phase +%= mod_inc;
@@ -951,8 +977,8 @@ pub const ChiptuneSynth = struct {
                 v.phase1 +%= v.phase_inc1;
                 v.phase2 +%= v.phase_inc2;
                 if (v.pitch_sweep != 0) {
-                    const new_inc = @as(i32, @intCast(v.phase_inc1)) + v.pitch_sweep;
-                    v.phase_inc1 = @intCast(@max(0, new_inc));
+                    const new_inc = @as(i64, v.phase_inc1) + @as(i64, v.pitch_sweep);
+                    v.phase_inc1 = @intCast(std.math.clamp(new_inc, 0, std.math.maxInt(u32)));
                 }
                 v.env_level -= v.env_decay;
                 v.samples_left -= 1;
@@ -1011,8 +1037,11 @@ pub const AudioBridge = struct {
 
     audio_enabled: bool = false,
     last_scene_hash: u32 = 0,
-    /// The host's sounds, as last registered; the synth receives its copy through the queue.
+    /// The host's sounds, as last registered.
     soundtrack: ?*const Soundtrack = null,
+    /// Dedicated synchronized soundtrack switch slot so a full event queue never drops a switch.
+    pending_soundtrack_dirty: bool = false,
+    pending_soundtrack: ?*const Soundtrack = null,
 
     pub fn init() AudioBridge {
         return AudioBridge{};
@@ -1020,28 +1049,13 @@ pub const AudioBridge = struct {
 
     /// Enqueues an action SFX trigger to be played asynchronously by the audio thread.
     pub fn enqueue_sfx(self: *AudioBridge, kind: SoundEffectKind) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const next = (self.queue_head + 1) % MAX_AUDIO_EVENTS;
-        if (next == self.queue_tail) {
-            // Queue full, drop event to avoid stalling simulation clock (D-001)
-            return;
-        }
-        self.event_queue[self.queue_head] = AudioEvent{ .play_sfx = kind };
-        self.queue_head = next;
+        self.push(.{ .play_sfx = kind });
     }
 
     /// Enqueues a distaff note by degree (0 = C .. 6 = B) for the audio thread (P22-02, D-019).
     /// Shares the ring buffer and drop-when-full policy with SFX: input never blocks a tick.
     pub fn enqueue_note(self: *AudioBridge, degree: u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const next = (self.queue_head + 1) % MAX_AUDIO_EVENTS;
-        if (next == self.queue_tail) return;
-        self.event_queue[self.queue_head] = AudioEvent{ .play_note = degree };
-        self.queue_head = next;
+        self.push(.{ .play_note = degree });
     }
 
     /// Enqueues a background music change: a soundtrack track index, or null for silence.
@@ -1057,17 +1071,41 @@ pub const AudioBridge = struct {
         }
     }
 
-    /// Registers a game's tracks, effects, and scene-to-track rule (P32-02d, D-040). The
-    /// audio thread switches to it at its next buffer; scene music is chosen afresh.
+    /// Registers a game's tracks, effects, and scene-to-track rule (P32-02d, D-040). Uses a
+    /// dedicated lock-protected slot so a full event queue never drops a switch, and clears
+    /// stale BGM/MML/host-SFX references to the prior soundtrack on the next audio buffer.
+    /// Callers must still keep a registered `Soundtrack` alive until playback stops or
+    /// synchronizes after `set_soundtrack(null)`.
     pub fn set_soundtrack(self: *AudioBridge, soundtrack: ?*const Soundtrack) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         self.soundtrack = soundtrack;
         self.last_scene_hash = 0;
-        self.push(.{ .set_soundtrack = soundtrack });
+        self.pending_soundtrack = soundtrack;
+        self.pending_soundtrack_dirty = true;
+
+        // Compact the ring buffer in place, dropping queued events tied to the old soundtrack.
+        var kept: [MAX_AUDIO_EVENTS]AudioEvent = undefined;
+        var kept_count: usize = 0;
+        var idx = self.queue_tail;
+        while (idx != self.queue_head) {
+            const ev = self.event_queue[idx];
+            idx = (idx + 1) % MAX_AUDIO_EVENTS;
+            switch (ev) {
+                .set_bgm, .stop_bgm, .play_host_sfx, .set_soundtrack => {},
+                else => {
+                    kept[kept_count] = ev;
+                    kept_count += 1;
+                },
+            }
+        }
+        for (kept[0..kept_count], 0..) |ev, i| self.event_queue[i] = ev;
+        self.queue_tail = 0;
+        self.queue_head = kept_count;
     }
 
     /// Queues an event, dropping it when the queue is full so the caller never blocks (D-001).
-    /// A dropped `set_soundtrack` would leave the synth on the old one; it is sent while the
-    /// queue is nearly empty (window setup), so this has not been observed.
     fn push(self: *AudioBridge, event: AudioEvent) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -1079,13 +1117,7 @@ pub const AudioBridge = struct {
 
     /// Stops background music.
     pub fn stop_bgm(self: *AudioBridge) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const next = (self.queue_head + 1) % MAX_AUDIO_EVENTS;
-        if (next == self.queue_tail) return;
-        self.event_queue[self.queue_head] = .stop_bgm;
-        self.queue_head = next;
+        self.push(.stop_bgm);
     }
 
     /// Sets master output volume (0..100).
@@ -1143,42 +1175,70 @@ pub const AudioBridge = struct {
 
     /// Renders audio into PCM buffer. Called by SDL audio callback or offline test suite.
     pub fn render_samples(self: *AudioBridge, buffer: []i16) void {
-        // 1. Drain pending events under brief mutex lock
+        // 1. Drain pending events, soundtrack switch, and volumes under brief mutex lock
         var pending_events: [MAX_AUDIO_EVENTS]AudioEvent = undefined;
         var pending_count: usize = 0;
+        var master_vol: u8 = 0;
+        var sfx_vol: u8 = 0;
+        var bgm_vol: u8 = 0;
+        var soundtrack_changed = false;
+        var next_soundtrack: ?*const Soundtrack = null;
 
         {
             self.mutex.lock();
             defer self.mutex.unlock();
+
+            soundtrack_changed = self.pending_soundtrack_dirty;
+            next_soundtrack = self.pending_soundtrack;
+            self.pending_soundtrack_dirty = false;
 
             while (self.queue_tail != self.queue_head) {
                 pending_events[pending_count] = self.event_queue[self.queue_tail];
                 self.queue_tail = (self.queue_tail + 1) % MAX_AUDIO_EVENTS;
                 pending_count += 1;
             }
+
+            master_vol = self.master_volume;
+            sfx_vol = self.sfx_volume;
+            bgm_vol = self.bgm_volume;
         }
 
-        // 2. Dispatch events to synthesis engine outside lock
+        // 2. Dispatch soundtrack switch and events to synthesis engine outside lock
+        if (soundtrack_changed) {
+            self.synth.set_soundtrack(next_soundtrack);
+        }
+
         for (pending_events[0..pending_count]) |ev| {
             switch (ev) {
                 .play_sfx => |kind| self.synth.trigger_sfx(kind),
                 .play_host_sfx => |index| self.synth.trigger_host_sfx(index),
-                .set_soundtrack => |st| {
-                    // A new soundtrack's track indices mean different music: stop the old.
-                    self.synth.soundtrack = st;
-                    self.synth.set_track(null);
-                },
+                .set_soundtrack => |st| self.synth.set_soundtrack(st),
                 .play_note => |degree| self.synth.trigger_note(degree),
                 .set_bgm => |track| self.synth.set_track(track),
                 .stop_bgm => self.synth.set_track(null),
-                .set_master_volume => |v| self.master_volume = v,
-                .set_sfx_volume => |v| self.sfx_volume = v,
-                .set_bgm_volume => |v| self.bgm_volume = v,
+                .set_master_volume => |v| {
+                    master_vol = @min(v, 100);
+                    self.mutex.lock();
+                    self.master_volume = master_vol;
+                    self.mutex.unlock();
+                },
+                .set_sfx_volume => |v| {
+                    sfx_vol = @min(v, 100);
+                    self.mutex.lock();
+                    self.sfx_volume = sfx_vol;
+                    self.mutex.unlock();
+                },
+                .set_bgm_volume => |v| {
+                    bgm_vol = @min(v, 100);
+                    self.mutex.lock();
+                    self.bgm_volume = bgm_vol;
+                    self.mutex.unlock();
+                },
             }
         }
 
-        // 3. Render audio synthesis into PCM buffer
-        self.synth.render_stereo(buffer, self.master_volume, self.sfx_volume, self.bgm_volume);
+        // 3. Render audio synthesis into PCM buffer using synchronized volume snapshots
+        self.synth.render_stereo(buffer, master_vol, sfx_vol, bgm_vol);
     }
 };
 
@@ -1196,15 +1256,17 @@ test "P16-01: AudioBridge event queueing and decoupled drainage" {
     bridge.set_soundtrack(&TEST_SOUNDTRACK);
     bridge.set_track(0);
 
-    try testing.expectEqual(@as(usize, 4), bridge.queue_head);
+    try testing.expectEqual(@as(usize, 3), bridge.queue_head);
     try testing.expectEqual(@as(usize, 0), bridge.queue_tail);
+    try testing.expect(bridge.pending_soundtrack_dirty);
 
     // Render into mock PCM buffer
     var pcm: [256]i16 = undefined;
     bridge.render_samples(&pcm);
 
-    // Events were consumed
+    // Events and soundtrack switch were consumed
     try testing.expectEqual(bridge.queue_head, bridge.queue_tail);
+    try testing.expect(!bridge.pending_soundtrack_dirty);
     try testing.expectEqual(@as(?u8, 0), bridge.synth.current_track);
 }
 
@@ -1786,4 +1848,93 @@ test "P34-08: an arrangement pass never reads past its sections or out of MIDI r
     try testing.expectEqual(@as(u8, 41), up.bass_notes[0]);
     const down = arranged_pattern(&music, .{ .section = 0, .transpose = -40 });
     try testing.expectEqual(@as(u8, 0), down.bass_notes[0]);
+}
+
+test "set_soundtrack applies when queue is full, drops stale BGM/host SFX, and clears active MML and host voices" {
+    var d1: mml.Diagnostic = .{};
+    const lead = try mml.parse(testing.allocator, "l4 cdef", .melodic, &d1);
+    defer testing.allocator.free(lead.events);
+    var score = MmlScore{};
+    score.parts[@intFromEnum(MmlPart.lead)] = MmlTrack.of(&lead);
+    const tracks_a = [_]Music{.{ .name = "mml", .score = &score }};
+    const sfx_a = [_]SfxPatch{STOCK_SFX[@intFromEnum(SoundEffectKind.alert)]};
+    const st_a = Soundtrack{ .tracks = &tracks_a, .sfx = &sfx_a };
+    const st_b = TEST_SOUNDTRACK;
+
+    var bridge = AudioBridge.init();
+    bridge.set_soundtrack(&st_a);
+    bridge.set_track(0);
+    bridge.enqueue_sound(.{ .host = 0 });
+    bridge.enqueue_sfx(.click);
+    var pcm: [64]i16 = undefined;
+    bridge.render_samples(&pcm);
+    try testing.expect(bridge.synth.mml.score != null);
+    try testing.expect(bridge.synth.sfx_voices[0].active and bridge.synth.sfx_voices[0].from_host);
+    try testing.expect(bridge.synth.sfx_voices[1].active and !bridge.synth.sfx_voices[1].from_host);
+
+    // Queue a stale track and host SFX, fill the rest of the queue with stock SFX, then switch.
+    bridge.set_track(0);
+    bridge.enqueue_sound(.{ .host = 0 });
+    for (0..MAX_AUDIO_EVENTS) |_| bridge.enqueue_sfx(.footstep);
+    bridge.set_soundtrack(&st_b);
+    bridge.set_track(0);
+    bridge.render_samples(&pcm);
+
+    try testing.expectEqual(@as(?*const Soundtrack, &st_b), bridge.synth.soundtrack);
+    try testing.expect(bridge.synth.mml.score == null);
+    try testing.expect(!bridge.synth.is_fading_out);
+    try testing.expectEqual(@as(?u8, 0), bridge.synth.current_track);
+    for (bridge.synth.sfx_voices) |voice| try testing.expect(!voice.from_host);
+
+    // Clearing to null hard-stops track, MML, and host SFX while keeping stock SFX alive.
+    bridge.enqueue_sound(.{ .host = 0 });
+    bridge.enqueue_sfx(.click);
+    bridge.render_samples(&pcm);
+    var host_slot: usize = 0;
+    var stock_slot: usize = 0;
+    for (bridge.synth.sfx_voices, 0..) |voice, idx| {
+        if (voice.active and voice.from_host) host_slot = idx;
+        if (voice.active and !voice.from_host) stock_slot = idx;
+    }
+    try testing.expect(bridge.synth.sfx_voices[host_slot].from_host);
+    bridge.set_soundtrack(null);
+    bridge.render_samples(&pcm);
+    try testing.expect(bridge.synth.soundtrack == null);
+    try testing.expect(bridge.synth.current_track == null);
+    try testing.expect(!bridge.synth.is_fading_out);
+    try testing.expect(!bridge.synth.sfx_voices[host_slot].active);
+    try testing.expect(bridge.synth.sfx_voices[stock_slot].active);
+}
+
+test "synth guards zero or oversized step_count, u32 phase_inc overflow, and zero mix divisor" {
+    var synth = ChiptuneSynth.init();
+    var p0 = SILENT_PATTERN;
+    p0.step_count = 0;
+    synth.active_pattern = p0;
+    synth.current_track = 0;
+    synth.lead_phase_inc = 0x90000000;
+    synth.lead_env = 28000;
+
+    const div_zero_patch = SfxPatch{
+        .note1 = 60,
+        .terms = &.{osc_term(.osc1, .triangle, 1)},
+        .mix = .{ .div = 0 },
+        .sweep = 0x20000000,
+        .env = 20000,
+        .decay = 1,
+        .samples = 16,
+    };
+    const v = synth.trigger_patch(&div_zero_patch);
+    v.phase_inc1 = 0xF0000000;
+
+    var buf: [64]i16 = undefined;
+    synth.render_stereo(&buf, 100, 100, 100);
+
+    var p64 = SILENT_PATTERN;
+    p64.step_count = 64;
+    synth.active_pattern = p64;
+    synth.step_sample_counter = synth.samples_per_step;
+    synth.current_step = 31;
+    synth.render_stereo(&buf, 100, 100, 100);
+    try testing.expectEqual(@as(usize, 0), synth.current_step);
 }

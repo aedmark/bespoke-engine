@@ -720,12 +720,15 @@ const ScoreRef = struct {
     column: u32,
 };
 
+pub const MAX_STMT_DEPTH: usize = 64;
+
 pub const Parser = struct {
     lexer: *Lexer,
     current: Token,
     allocator: std.mem.Allocator,
     diagnostic: ?Diagnostic = null,
     suggestion: ?[]const u8 = null,
+    stmt_depth: usize = 0,
     /// `limit` lines (P48-13, D-183), and every item a limit counts, checked once the whole
     /// script is read so a `limit` line may come anywhere. `value` is the item's place among
     /// its owner's items, or a hint's tier.
@@ -3245,6 +3248,10 @@ pub const Parser = struct {
     }
 
     fn parse_stmt_list(self: *Parser) ![]const Stmt {
+        if (self.stmt_depth >= MAX_STMT_DEPTH) return error.NestingTooDeep;
+        self.stmt_depth += 1;
+        defer self.stmt_depth -= 1;
+
         var list = std.array_list.Managed(Stmt).init(self.allocator);
 
         while (self.current.tag != .dedent and self.current.tag != .eof) {

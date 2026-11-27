@@ -894,7 +894,7 @@ pub const Bout = struct {
         const foe = self.opponent() orelse return .{};
         const foe_name = self.world.get_entity_name(foe) orelse "";
         var name_buf: [48]u8 = undefined;
-        const name = bespoke.display.dialogue_panel.display_name(self.world.get_entity_name(foe) orelse "The opponent", &name_buf);
+        const name = bespoke.display.dialogue_panel.entity_name(self.world, foe, &name_buf) orelse "The opponent";
         const joke: ?[]const u8 = if (action >= JOKE_ACTION and action - JOKE_ACTION < self.duel.config.fallbacks.len)
             self.duel.config.fallbacks[action - JOKE_ACTION]
         else

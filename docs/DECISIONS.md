@@ -2352,6 +2352,19 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Consequences.** Package format 1's `CODE` section carries the clock. A routine's `wait 3 ticks` in a turn game waits three turns. P48-22 builds it.
 
+## D-189 Format 1 Bytecode Is Bounded to 64 KiB and Validated at Both Package Load and VM Execution (2026-11-26, status: accepted)
+
+**Context.** The 1.0 audit found that `package.zig` appended raw `CODE` bytes without verifying instruction boundaries, while `vm.zig` decoded opcodes via `@fromBackingInt`, read operands without slice bounds checks, wrote past `EmittedCue.args` if `arg_count > 4`, left condition stack pushes/pops unchecked, and could panic on `i16` jump negation or stack-to-`u16` narrowing. Simultaneously, `codegen.zig` emitted 16-bit PCs and jump offsets under unchecked `@intCast` casts despite `SECURITY.md` advertising a 16 MiB source limit.
+
+**Decision.** The maintainer chose on 2026-11-26:
+1. Enforce bytecode validity at both boundaries: `bytecode.validate` performs a linear pass at package load/save time, and `vm.zig` checks every opcode, operand slice, jump target, cue argument count, condition stack slot, and `u16` operand conversion at runtime.
+2. Keep the 65,535-byte (`u16` max) bytecode ceiling for `BSP1` format 1 stability, returning `BytecodeTooLarge` or `JumpOffsetTooLarge` cleanly from the compiler and package loader instead of panicking.
+3. In `save.zig`, cap `waiting_cond` to `u16` in `read_fiber_state` and validate restored fiber and interrupt PCs against `chunk.code.len` whenever bytecode is present (`chunk.code.len > 0`), preserving empty-chunk test harnesses.
+
+**Alternatives:** validating at runtime only; widening `BSP1` format 1 opcodes to 32-bit PCs (which would break format 1 compatibility without new opcodes or sections).
+
+**Consequences.** Corrupt `.bspk` packages and `.sav` files fail cleanly with named errors; games exceeding 65,535 bytes of bytecode or 32,767 bytes in one branch get a compile diagnostic rather than crashing. `loadPackageResealed` in `tests/fuzz.zig` steps two VM ticks after loading so mutated bytecode reaches execution.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

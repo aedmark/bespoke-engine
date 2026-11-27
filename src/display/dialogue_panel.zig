@@ -149,11 +149,13 @@ var shown_key_lens: [MAX_SHOWN]u8 = undefined;
 var shown_texts: [MAX_SHOWN][SHOWN_TEXT]u8 = undefined;
 var shown_text_lens: [MAX_SHOWN]u8 = undefined;
 var shown_count: usize = 0;
+var shown_owner: usize = 0;
 
 /// Makes every displayed name read the program's `name` lines; call when a program loads. Names
 /// past the table's size or length are left derived.
 pub fn use_display_names(world: *const world_mod.World) void {
     shown_count = 0;
+    shown_owner = @intFromPtr(world);
     var it = world.display_names.iterator();
     while (it.next()) |entry| {
         if (shown_count == MAX_SHOWN) break;
@@ -170,6 +172,15 @@ pub fn use_display_names(world: *const world_mod.World) void {
 
 pub fn clear_display_names() void {
     shown_count = 0;
+    shown_owner = 0;
+}
+
+/// Clears the global display-name table only if it is currently owned by `world`.
+pub fn clear_display_names_for(world: *const world_mod.World) void {
+    if (shown_owner == @intFromPtr(world)) {
+        shown_count = 0;
+        shown_owner = 0;
+    }
 }
 
 fn declared_name(name: []const u8) ?[]const u8 {
@@ -180,10 +191,10 @@ fn declared_name(name: []const u8) ?[]const u8 {
 }
 
 /// What players read for an entity (D-179): the script's `name` line when it has one, else
-/// the name derived from its identifier (`display_name`). Null for an entity with no name.
+/// the name derived from its identifier (`derive_display_name`). Null for an entity with no name.
 pub fn entity_name(world: *const world_mod.World, entity: world_mod.EntityId, buf: []u8) ?[]const u8 {
     if (world.display_text(entity)) |text| return text;
-    return display_name(world.get_entity_name(entity) orelse return null, buf);
+    return derive_display_name(world.get_entity_name(entity) orelse return null, buf);
 }
 
 /// `entity_name` for a thing known by its script name, such as a scene an exit names; a name
@@ -192,16 +203,11 @@ pub fn named(world: *const world_mod.World, name: []const u8, buf: []u8) []const
     if (world.lookup_entity(name)) |entity| {
         if (world.display_text(entity)) |text| return text;
     }
-    return display_name(name, buf);
+    return derive_display_name(name, buf);
 }
 
-/// A display name for an entity name: `HarbourWarden` reads `Harbour Warden`, `Deckhand2` stays
-/// `Deckhand2`, and `NPCPorter` reads `NPC Porter`. A space goes before an uppercase letter that
-/// follows a lowercase one, or that starts a word after an acronym, so acronyms stay whole. A
-/// name with an inner capital (`McAllister`) splits wrongly; give it a space in the script.
-/// Names already containing spaces are returned unchanged.
-pub fn display_name(name: []const u8, buf: []u8) []const u8 {
-    if (declared_name(name)) |text| return text;
+/// Pure identifier-to-display-name formatter without reading any global display-name table.
+pub fn derive_display_name(name: []const u8, buf: []u8) []const u8 {
     if (std.mem.indexOfScalar(u8, name, ' ') != null) return name;
     var n: usize = 0;
     for (name, 0..) |ch, i| {
@@ -220,6 +226,16 @@ pub fn display_name(name: []const u8, buf: []u8) []const u8 {
         n += 1;
     }
     return buf[0..n];
+}
+
+/// A display name for an entity name: `HarbourWarden` reads `Harbour Warden`, `Deckhand2` stays
+/// `Deckhand2`, and `NPCPorter` reads `NPC Porter`. A space goes before an uppercase letter that
+/// follows a lowercase one, or that starts a word after an acronym, so acronyms stay whole. A
+/// name with an inner capital (`McAllister`) splits wrongly; give it a space in the script.
+/// Names already containing spaces are returned unchanged.
+pub fn display_name(name: []const u8, buf: []u8) []const u8 {
+    if (declared_name(name)) |text| return text;
+    return derive_display_name(name, buf);
 }
 
 /// Lays out a panel: the speaker on its own row, the prompt wrapped below it, then each choice
@@ -392,4 +408,30 @@ test "P48-25: wrap counts UTF-8 codepoints and never splits multi-byte character
     try testing.expectEqualStrings("éé", out[1]);
     try testing.expect(std.unicode.utf8ValidateSlice(out[0]));
     try testing.expect(std.unicode.utf8ValidateSlice(out[1]));
+}
+
+test "entity_name, named, and clear_display_names_for isolate display names per world" {
+    const testing = std.testing;
+    var world_a = try world_mod.World.init(testing.allocator, 256 * 1024);
+    defer world_a.deinit();
+    var world_b = try world_mod.World.init(testing.allocator, 256 * 1024);
+    defer world_b.deinit();
+
+    const pilot_a = try world_a.intern_entity("Pilot");
+    try world_a.set_display_name(pilot_a, "Old Mara");
+    const pilot_b = try world_b.intern_entity("Pilot");
+
+    use_display_names(&world_a);
+    defer clear_display_names();
+
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("Old Mara", display_name("Pilot", &buf));
+    try testing.expectEqualStrings("Pilot", entity_name(&world_b, pilot_b, &buf).?);
+    try testing.expectEqualStrings("Pilot", named(&world_b, "Pilot", &buf));
+
+    // Clearing for world_b does not drop world_a's table; clearing for world_a does.
+    clear_display_names_for(&world_b);
+    try testing.expectEqualStrings("Old Mara", display_name("Pilot", &buf));
+    clear_display_names_for(&world_a);
+    try testing.expectEqualStrings("Pilot", display_name("Pilot", &buf));
 }

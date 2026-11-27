@@ -277,7 +277,7 @@ fn read_fiber_state(reader: anytype) !FiberState {
         0 => FiberState{ .ready = {} },
         1 => FiberState{ .waiting_ticks = val },
         2 => blk: {
-            if (val > std.math.maxInt(usize)) return SaveError.InvalidTemporalState;
+            if (val > std.math.maxInt(u16)) return SaveError.InvalidTemporalState;
             break :blk FiberState{ .waiting_cond = @intCast(val) };
         },
         3 => blk: {
@@ -718,6 +718,8 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
                 const fid = try pr.takeInt(u32, .little);
                 const owner_raw = try pr.takeInt(u32, .little);
                 const pc = try pr.takeInt(u32, .little);
+                const code_len = v.chunk.code.items.len;
+                if (code_len > 0 and pc > code_len) return SaveError.InvalidTemporalState;
                 const sp_val = try pr.takeInt(u16, .little);
                 if (sp_val > vm_mod.MAX_STACK) return SaveError.InvalidTemporalState;
                 const active_prio = try pr.takeInt(u16, .little);
@@ -732,6 +734,9 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
                     fib.stack[si] = try pr.takeInt(u32, .little);
                 }
                 fib.state = try read_fiber_state(pr);
+                if (code_len > 0 and fib.state == .waiting_cond and fib.state.waiting_cond >= code_len) {
+                    return SaveError.InvalidTemporalState;
+                }
                 fib.local_base = try pr.takeInt(u16, .little);
                 if (fib.local_base > fib.sp) return SaveError.InvalidTemporalState;
 
@@ -739,10 +744,14 @@ pub fn read_vm_state(pr: anytype, vm: ?*VM) !void {
                 var ii: u16 = 0;
                 while (ii < int_depth) : (ii += 1) {
                     const ipc = try pr.takeInt(u32, .little);
+                    if (code_len > 0 and ipc > code_len) return SaveError.InvalidTemporalState;
                     const isp = try pr.takeInt(u16, .little);
                     if (isp > vm_mod.MAX_STACK) return SaveError.InvalidTemporalState;
                     const iprio = try pr.takeInt(u16, .little);
                     const istate = try read_fiber_state(pr);
+                    if (code_len > 0 and istate == .waiting_cond and istate.waiting_cond >= code_len) {
+                        return SaveError.InvalidTemporalState;
+                    }
                     const ibase: u16 = try pr.takeInt(u16, .little);
                     if (ibase > isp) return SaveError.InvalidTemporalState;
                     try fib.interrupt_stack.append(InterruptFrame{
@@ -1465,10 +1474,13 @@ fn load_from_other_build(
             // A `when each` rule holds every row that matches now, so none fires again (D-186).
             rule.rows.clearRetainingCapacity();
             if (rule.each) {
-                const rows = try world.find_all_matches(allocator, rule.clauses);
+                const rows = try world.find_all_matches_capped(allocator, rule.clauses, vm_mod.MAX_EACH_ROWS * 16);
                 defer allocator.free(rows);
+                var seen: std.AutoHashMapUnmanaged(VM.RowKey, void) = .empty;
+                defer seen.deinit(allocator);
                 for (rows) |row| {
-                    if (VM.contains_row(rule.rows.items, row)) continue;
+                    const key = VM.RowKey.from(row);
+                    if ((try seen.getOrPut(allocator, key)).found_existing) continue;
                     if (rule.rows.items.len >= vm_mod.MAX_EACH_ROWS) break;
                     try rule.rows.append(v.allocator, row);
                 }
@@ -1650,6 +1662,15 @@ pub const SaveManager = struct {
         }
     }
 
+    fn format_temp_path(self: *const SaveManager, slot_id: u8, buf: []u8) ![]const u8 {
+        if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
+        if (slot_id == QUICKSAVE_SLOT) {
+            return std.fmt.bufPrint(buf, "{s}/quicksave.sav.tmp", .{self.save_dir});
+        } else {
+            return std.fmt.bufPrint(buf, "{s}/slot_{d}.sav.tmp", .{ self.save_dir, slot_id });
+        }
+    }
+
     /// Inspects a single save file on disk and returns its SaveMetadata if valid.
     fn inspect_file(self: *const SaveManager, path: []const u8) !SaveMetadata {
         const file = try std.Io.Dir.cwd().openFile(self.io, path, .{});
@@ -1664,8 +1685,8 @@ pub const SaveManager = struct {
         var slot_id: u8 = 0;
         while (slot_id <= MAX_SLOTS) : (slot_id += 1) {
             var info = SaveSlotInfo{ .slot_id = slot_id };
-            var path_buf: [256]u8 = undefined;
-            var bak_buf: [256]u8 = undefined;
+            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+            var bak_buf: [std.fs.max_path_bytes]u8 = undefined;
 
             const slot_path = self.format_slot_path(slot_id, &path_buf) catch continue;
             const bak_path = self.format_backup_path(slot_id, &bak_buf) catch continue;
@@ -1744,20 +1765,12 @@ pub const SaveManager = struct {
 
         try std.Io.Dir.cwd().createDirPath(self.io, self.save_dir);
 
-        var path_buf: [256]u8 = undefined;
-        var bak_buf: [256]u8 = undefined;
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var bak_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
         const slot_path = try self.format_slot_path(slot_id, &path_buf);
         const bak_path = try self.format_backup_path(slot_id, &bak_buf);
-
-        // If an existing valid save is present at slot_path, preserve it as slot_path.bak before overwriting
-        if (self.inspect_file(slot_path)) |_| {
-            std.Io.Dir.cwd().copyFile(slot_path, std.Io.Dir.cwd(), bak_path, self.io, .{}) catch {};
-        } else |_| {}
-
-        const file = try std.Io.Dir.cwd().createFile(self.io, slot_path, .{ .truncate = true });
-        defer file.close(self.io);
-        var buf: [4096]u8 = undefined;
-        var file_writer = file.writer(self.io, &buf);
+        const tmp_path = try self.format_temp_path(slot_id, &tmp_buf);
 
         const options = SaveOptions{
             .thumbnail = self.thumbnails,
@@ -1767,13 +1780,35 @@ pub const SaveManager = struct {
             .timestamp = std.Io.Timestamp.now(self.io, .real).toSeconds(),
             .program = self.program,
         };
-        const meta = if (temporal) |hypervisor|
-            try write_save_state_with_temporal(self.allocator, &file_writer.interface, world, spatial, vm, hypervisor, options)
-        else
-            try write_save_state(self.allocator, &file_writer.interface, world, spatial, vm, options);
-        try file_writer.interface.flush();
 
-        const has_bak = (self.inspect_file(bak_path) catch null) != null;
+        var keep_tmp = false;
+        errdefer if (!keep_tmp) std.Io.Dir.cwd().deleteFile(self.io, tmp_path) catch {};
+
+        const meta = blk: {
+            const tmp_file = try std.Io.Dir.cwd().createFile(self.io, tmp_path, .{ .truncate = true });
+            defer tmp_file.close(self.io);
+            var buf: [4096]u8 = undefined;
+            var file_writer = tmp_file.writer(self.io, &buf);
+            const m = if (temporal) |hypervisor|
+                try write_save_state_with_temporal(self.allocator, &file_writer.interface, world, spatial, vm, hypervisor, options)
+            else
+                try write_save_state(self.allocator, &file_writer.interface, world, spatial, vm, options);
+            try file_writer.interface.flush();
+            break :blk m;
+        };
+
+        // If an existing valid save is present at slot_path, preserve it as slot_path.bak before replacing
+        var backed_up = false;
+        if (self.inspect_file(slot_path)) |_| {
+            if (std.Io.Dir.cwd().copyFile(slot_path, std.Io.Dir.cwd(), bak_path, self.io, .{})) |_| {
+                backed_up = true;
+            } else |_| {}
+        } else |_| {}
+
+        try std.Io.Dir.cwd().rename(tmp_path, std.Io.Dir.cwd(), slot_path, self.io);
+        keep_tmp = true;
+
+        const has_bak = backed_up or (self.inspect_file(bak_path) catch null) != null;
         self.slots[slot_id] = SaveSlotInfo{
             .slot_id = slot_id,
             .occupied = true,
@@ -1822,8 +1857,8 @@ pub const SaveManager = struct {
         self.last_load_restarted_routines = false;
         if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
 
-        var path_buf: [256]u8 = undefined;
-        var bak_buf: [256]u8 = undefined;
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var bak_buf: [std.fs.max_path_bytes]u8 = undefined;
         const slot_path = try self.format_slot_path(slot_id, &path_buf);
         const bak_path = try self.format_backup_path(slot_id, &bak_buf);
 
@@ -1947,8 +1982,8 @@ pub const SaveManager = struct {
     pub fn delete_slot(self: *SaveManager, slot_id: u8) !void {
         if (slot_id > MAX_SLOTS) return SaveError.InvalidSlotId;
 
-        var path_buf: [256]u8 = undefined;
-        var bak_buf: [256]u8 = undefined;
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var bak_buf: [std.fs.max_path_bytes]u8 = undefined;
         const slot_path = try self.format_slot_path(slot_id, &path_buf);
         const bak_path = try self.format_backup_path(slot_id, &bak_buf);
 
@@ -2534,4 +2569,107 @@ test "P48-25: load_from_other_build syncs spatial room/position and deduplicates
     try testing.expect(ag.target_wp == null);
     // Duplicate matching rows for `who = Hero` were deduplicated to 1 entry.
     try testing.expectEqual(@as(usize, 1), vm.reactive_rules.items[0].rows.items.len);
+}
+
+test "read_fiber_state caps waiting_cond to u16 and read_vm_state rejects out-of-range PCs" {
+    const testing = std.testing;
+
+    // 1. waiting_cond > maxInt(u16) fails read_fiber_state with InvalidTemporalState.
+    var bad_cond: [9]u8 = undefined;
+    bad_cond[0] = 2;
+    std.mem.writeInt(u64, bad_cond[1..9], @as(u64, std.math.maxInt(u16)) + 1, .little);
+    var c_reader: std.Io.Reader = .fixed(&bad_cond);
+    try testing.expectError(SaveError.InvalidTemporalState, read_fiber_state(&c_reader));
+
+    // 2. Fiber pc > code.len and interrupt ipc > code.len fail against a non-empty chunk.
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var chunk = @import("bytecode.zig").BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    _ = try chunk.emit_op(.halt);
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    _ = try vm.spawn_routine(.none, 0);
+    vm.fibers.items[0].state = .{ .waiting_cond = 0 };
+    try vm.fibers.items[0].interrupt_stack.append(.{
+        .pc = 0,
+        .sp = 0,
+        .state = .{ .ready = {} },
+        .priority = 0,
+        .local_base = 0,
+    });
+
+    var vm_buf = std.array_list.Managed(u8).init(testing.allocator);
+    defer vm_buf.deinit();
+    var vw = ListWriter.init(&vm_buf);
+    try write_vm_state(&vw.writer, &vm);
+
+    // Offset to fiber[0].pc: has_vm(1) + cur_scene(4) + next_fib_id(4) + fiber_count(4) + fid(4) + owner(4) = 21.
+    const bad_pc = try testing.allocator.dupe(u8, vm_buf.items);
+    defer testing.allocator.free(bad_pc);
+    std.mem.writeInt(u32, bad_pc[21..25], 2, .little);
+    var r_pc: std.Io.Reader = .fixed(bad_pc);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&r_pc, &vm));
+
+    // Offset to fiber[0].state waiting_cond value: 21 + pc(4) + sp(2) + prio(2) + tag(1) = 30.
+    const bad_wcond = try testing.allocator.dupe(u8, vm_buf.items);
+    defer testing.allocator.free(bad_wcond);
+    std.mem.writeInt(u64, bad_wcond[30..38], 1, .little);
+    var r_wc: std.Io.Reader = .fixed(bad_wcond);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&r_wc, &vm));
+
+    // Offset to interrupt[0].ipc: 38 + local_base(2) + int_depth(2) = 42.
+    const bad_ipc = try testing.allocator.dupe(u8, vm_buf.items);
+    defer testing.allocator.free(bad_ipc);
+    std.mem.writeInt(u32, bad_ipc[42..46], 2, .little);
+    var r_ipc: std.Io.Reader = .fixed(bad_ipc);
+    try testing.expectError(SaveError.InvalidTemporalState, read_vm_state(&r_ipc, &vm));
+}
+
+test "SaveManager preserves existing slot on failed write and handles paths longer than 256 bytes" {
+    const testing = std.testing;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const sub_dir = try std.fs.path.join(testing.allocator, &.{
+        ".zig-cache", "tmp", &tmp.sub_path,
+        "segment_01_aaaaaaaaaa", "segment_02_bbbbbbbbbb", "segment_03_cccccccccc",
+        "segment_04_dddddddddd", "segment_05_eeeeeeeeee", "segment_06_ffffffffff",
+        "segment_07_gggggggggg", "segment_08_hhhhhhhhhh", "segment_09_iiiiiiiiii",
+        "segment_10_jjjjjjjjjj", "segment_11_kkkkkkkkkk", "segment_12_llllllllll",
+    });
+    defer testing.allocator.free(sub_dir);
+    try testing.expect(sub_dir.len > 260);
+
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var chunk = @import("bytecode.zig").BytecodeChunk.init(testing.allocator);
+    defer chunk.deinit();
+    var vm = VM.init(testing.allocator, &world, &chunk);
+    defer vm.deinit();
+    const hero = try world.intern_entity("Hero");
+    const gold = try world.intern_relation("Gold", .property);
+    try world.remember(hero, gold, 42, 0);
+
+    var sm = try SaveManager.init(testing.allocator, testing.io, sub_dir);
+    defer sm.deinit();
+    _ = try sm.save_slot(1, &world, null, &vm, "Initial");
+
+    // A failing write (PendingWeavesNotDispatched) must leave slot 1 intact and clean up .tmp.
+    try world.remember(hero, gold, 99, 0);
+    try vm.pending_weaves.append(.{ .caster = hero, .draft = hero, .target = hero });
+    try testing.expectError(error.PendingWeavesNotDispatched, sm.save_slot(1, &world, null, &vm, "Broken"));
+    vm.pending_weaves.clearRetainingCapacity();
+
+    var tmp_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try sm.format_temp_path(1, &tmp_buf);
+    try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().openFile(testing.io, tmp_path, .{}));
+
+    sm.refresh_slots();
+    try testing.expect(sm.get_slot_info(1).?.occupied);
+    try testing.expect(!sm.get_slot_info(1).?.corrupted);
+
+    const loaded = try sm.load_slot(1, &world, null, &vm);
+    try testing.expect(!loaded.recovered_from_backup);
+    try testing.expectEqual(@as(?u32, 42), world.get_property(hero, gold));
 }

@@ -38,7 +38,7 @@ pub const ScriptFiles = struct {
         else
             std.mem.startsWith(u8, target_real, base_real) and target_real.len > base_real.len and target_real[base_real.len] == '/';
         if (!inside) return error.PathOutsideScriptFolder;
-        return std.Io.Dir.cwd().readFileAlloc(self.io, full, allocator, .limited(bespoke.png.MAX_FILE));
+        return std.Io.Dir.cwd().readFileAlloc(self.io, target_real, allocator, .limited(bespoke.png.MAX_FILE));
     }
 };
 
@@ -671,7 +671,7 @@ fn run_bytes_with_presenter(
         window.save_manager.program = compiled.identity();
         // Names on screen read the script's `name` lines (P48-09, D-179).
         bespoke.display.dialogue_panel.use_display_names(&world);
-        defer bespoke.display.dialogue_panel.clear_display_names();
+        defer bespoke.display.dialogue_panel.clear_display_names_for(&world);
         var interp = bespoke.command.Interpreter{};
 
         if (player_entity != .none) display_bridge.set_active_character(player_entity);
@@ -735,7 +735,7 @@ fn run_bytes_with_presenter(
                     if (planned or !spatial.waypoint_blocked(&world, wp_id)) {
                         if (spatial.graph.get_waypoint(wp_id)) |wp| {
                             var nbuf: [48]u8 = undefined;
-                            const mname = bespoke.display.dialogue_panel.display_name(wp.name, &nbuf);
+                            const mname = bespoke.display.dialogue_panel.named(&world, wp.name, &nbuf);
                             const msg = bespoke.phrase.render(&world, .walking_to, &.{.{ .slot = "mark", .value = mname }}, &msg_buf) catch "Walking...";
                             window.set_cue_banner(msg, 60);
                         }

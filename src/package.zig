@@ -1750,6 +1750,7 @@ fn write_section(allocator: std.mem.Allocator, comptime which: Section, w: anyty
             return true;
         },
         .code => {
+            if (compiled.chunk.code.items.len > bytecode_mod.MAX_BYTECODE_LEN) return error.BytecodeTooLarge;
             try w.writeInt(u32, @intCast(compiled.chunk.code.items.len), .little);
             try w.writeAll(compiled.chunk.code.items);
             try w.writeInt(i64, if (compiled.initial_entry) |ie| @intCast(ie) else -1, .little);
@@ -2035,7 +2036,12 @@ pub fn load_package_linked(
         var stream: std.Io.Reader = .fixed(table.get(.code).?);
         const pr = &stream;
         const code_len = try pr.takeInt(u32, .little);
+        if (code_len > bytecode_mod.MAX_BYTECODE_LEN) return error.BytecodeTooLarge;
         try chunk.code.appendSlice(try pr.take(code_len));
+        bytecode_mod.validate(chunk.code.items) catch |err| return switch (err) {
+            error.BytecodeTooLarge => error.BytecodeTooLarge,
+            else => error.InvalidBytecode,
+        };
         const ie = try pr.takeInt(i64, .little);
         if (ie < -1 or ie >= @as(i64, code_len)) return error.InvalidProgramIndex;
         initial_entry = if (ie >= 0) @intCast(ie) else null;
@@ -2999,5 +3005,45 @@ test "P48-24: read_str frees buffer on truncated stream and package bounds refus
     try write_societies(&w, &sw.writer, &cp);
     var soc_stream: std.Io.Reader = .fixed(soc_buf.items[4..]);
     try testing.expectError(error.InvalidSocietyConfig, read_society_declaration(testing.allocator, &w, &soc_stream, sp_mut.graph.waypoints.items.len));
+
+    // 5. Malformed bytecode in CODE is rejected at package load time (D-189).
+    var code_pkg = std.array_list.Managed(u8).init(testing.allocator);
+    defer code_pkg.deinit();
+    try package_of(testing.allocator, "entity Hero\nroutine Go(Hero):\n  wait 1 ticks\n", &code_pkg);
+    {
+        const bad = try testing.allocator.dupe(u8, code_pkg.items);
+        defer testing.allocator.free(bad);
+        const code = section_slice(bad, .code);
+        code[4] = 0xFF; // undefined opcode at byte 0 of chunk
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidBytecode, load_for_test(bad));
+    }
+    {
+        const bad = try testing.allocator.dupe(u8, code_pkg.items);
+        defer testing.allocator.free(bad);
+        const code = section_slice(bad, .code);
+        code[4] = @intFromEnum(Opcode.emit_cue);
+        std.mem.writeInt(u16, code[5..7], 2, .little);
+        code[7] = 5; // arg_count > MAX_CUE_ARGS
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidBytecode, load_for_test(bad));
+    }
+    {
+        const bad = try testing.allocator.dupe(u8, code_pkg.items);
+        defer testing.allocator.free(bad);
+        const code = section_slice(bad, .code);
+        const code_len = std.mem.readInt(u32, code[0..4], .little);
+        code[4 + code_len - 1] = @intFromEnum(Opcode.push_const); // truncated operand
+        reseal_for_test(bad);
+        try testing.expectError(error.InvalidBytecode, load_for_test(bad));
+    }
+    {
+        const bad = try testing.allocator.dupe(u8, code_pkg.items);
+        defer testing.allocator.free(bad);
+        const code = section_slice(bad, .code);
+        std.mem.writeInt(u32, code[0..4], bytecode_mod.MAX_BYTECODE_LEN + 1, .little);
+        reseal_for_test(bad);
+        try testing.expectError(error.BytecodeTooLarge, load_for_test(bad));
+    }
 }
 

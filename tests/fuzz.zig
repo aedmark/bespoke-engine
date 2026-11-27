@@ -152,13 +152,26 @@ test "P39-01 package loader" {
 }
 
 /// The same loader with the package checksum recomputed first, so a mutation reaches the
-/// section table and each section's reader instead of stopping at the CRC (P48-17).
+/// section table, each section's reader, and the VM tick loop instead of stopping at the CRC
+/// (P48-17, D-189).
 fn loadPackageResealed(allocator: std.mem.Allocator, input: []const u8) !bool {
     const copy = try allocator.dupe(u8, input);
     defer allocator.free(copy);
     const header_len = @sizeOf(bespoke.package.PackageHeader);
     if (copy.len >= header_len) std.mem.writeInt(u32, copy[8..12], std.hash.Crc32.hash(copy[header_len..]), .little);
-    return loadPackage(allocator, copy);
+    var world = try bespoke.World.init(allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = bespoke.SpatialSystem.init(allocator);
+    defer spatial.deinit();
+    var reader: std.Io.Reader = .fixed(copy);
+    var program = bespoke.package.load_package(allocator, &reader, &world, &spatial) catch return false;
+    defer program.deinit();
+    var vm = bespoke.host.init_vm(allocator, &world, &spatial, &program) catch return false;
+    defer vm.deinit();
+    _ = bespoke.host.start_script(&world, &spatial, &vm, &program) catch return false;
+    _ = bespoke.host.tick(&vm, &program) catch return false;
+    _ = bespoke.host.tick(&vm, &program) catch return false;
+    return true;
 }
 
 test "P48-17 package loader past its checksum" {

@@ -14,9 +14,13 @@ pub const Point2D = struct {
     y: i32,
 
     pub fn distance_to(self: Point2D, other: Point2D) u32 {
-        const dx: u64 = @abs(self.x - other.x);
-        const dy: u64 = @abs(self.y - other.y);
-        return std.math.sqrt(dx * dx + dy * dy);
+        const dx: i64 = @as(i64, self.x) - @as(i64, other.x);
+        const dy: i64 = @as(i64, self.y) - @as(i64, other.y);
+        const adx: u128 = @abs(dx);
+        const ady: u128 = @abs(dy);
+        const sq = adx * adx + ady * ady;
+        const root = std.math.sqrt(sq);
+        return @intCast(@min(root, @as(u128, std.math.maxInt(u32))));
     }
 };
 
@@ -56,8 +60,10 @@ pub const SpatialGraph = struct {
 
     /// Adds a waypoint in a given room.
     pub fn add_waypoint(self: *SpatialGraph, room: EntityId, x: i32, y: i32, name: []const u8) !WaypointId {
+        if (self.waypoints.items.len >= std.math.maxInt(WaypointId)) return error.WaypointLimitExceeded;
         const id: WaypointId = @intCast(self.waypoints.items.len + 1);
         const owned_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_name);
         try self.waypoints.append(.{
             .id = id,
             .room = room,
@@ -302,6 +308,8 @@ pub const MotorAgent = struct {
             return;
         };
 
+        if (self.speed == 0) return;
+
         const dist = self.pos.distance_to(next_wp.pos);
         if (dist <= self.speed) {
             // Reached this waypoint
@@ -316,10 +324,20 @@ pub const MotorAgent = struct {
             }
         } else {
             // Step speed units toward next waypoint
-            const dx = next_wp.pos.x - self.pos.x;
-            const dy = next_wp.pos.y - self.pos.y;
-            const move_x = @divTrunc(dx * @as(i32, @intCast(self.speed)), @as(i32, @intCast(dist)));
-            const move_y = @divTrunc(dy * @as(i32, @intCast(self.speed)), @as(i32, @intCast(dist)));
+            const dx: i64 = @as(i64, next_wp.pos.x) - @as(i64, self.pos.x);
+            const dy: i64 = @as(i64, next_wp.pos.y) - @as(i64, self.pos.y);
+            const spd: i64 = @intCast(self.speed);
+            const d: i64 = @intCast(dist);
+            var move_x: i32 = @intCast(@divTrunc(dx * spd, d));
+            var move_y: i32 = @intCast(@divTrunc(dy * spd, d));
+            // Prevent diagonal stall when speed == 1 and both axes truncate to 0.
+            if (move_x == 0 and move_y == 0) {
+                if (@abs(dx) >= @abs(dy)) {
+                    move_x = if (dx > 0) 1 else -1;
+                } else {
+                    move_y = if (dy > 0) 1 else -1;
+                }
+            }
             self.pos.x += move_x;
             self.pos.y += move_y;
         }
@@ -1499,4 +1517,42 @@ test "P48-25: register_entity releases prior walk path when re-registering an ex
     try testing.expect(spatial.agents.get(hero).?.path != null);
     try spatial.register_entity(hero, wp1, 2);
     try testing.expect(spatial.agents.get(hero).?.path == null);
+}
+
+test "spatial: distance_to avoids i32 overflow, speed 1 diagonal steps without stalling, speed 0 stays put" {
+    const testing = std.testing;
+
+    // Extreme i32 coordinates must not overflow distance_to.
+    const p_min = Point2D{ .x = std.math.minInt(i32), .y = std.math.minInt(i32) };
+    const p_max = Point2D{ .x = std.math.maxInt(i32), .y = std.math.maxInt(i32) };
+    try testing.expectEqual(std.math.maxInt(u32), p_min.distance_to(p_max));
+
+    var world = try World.init(testing.allocator, 256 * 1024);
+    defer world.deinit();
+    var spatial = SpatialSystem.init(testing.allocator);
+    defer spatial.deinit();
+
+    const room = try world.intern_entity("Room");
+    const hero = try world.intern_entity("Hero");
+    const sleeper = try world.intern_entity("Sleeper");
+    const wp1 = try spatial.graph.add_waypoint(room, 0, 0, "Start");
+    const wp2 = try spatial.graph.add_waypoint(room, 10, 10, "Diag");
+    try spatial.graph.connect(wp1, wp2, null);
+
+    // speed == 1 on diagonal (0,0) -> (10,10) previously stalled forever with move_x=0, move_y=0.
+    try spatial.register_entity(hero, wp1, 1);
+    try testing.expect(try spatial.walk_to(hero, wp2));
+    for (0..30) |_| {
+        spatial.step_tick();
+        if (spatial.agents.get(hero).?.arrived) break;
+    }
+    try testing.expect(spatial.agents.get(hero).?.arrived);
+    try testing.expectEqual(wp2, spatial.agents.get(hero).?.current_wp);
+
+    // speed == 0 never moves.
+    try spatial.register_entity(sleeper, wp1, 0);
+    try testing.expect(try spatial.walk_to(sleeper, wp2));
+    spatial.step_tick();
+    try testing.expectEqual(Point2D{ .x = 0, .y = 0 }, spatial.agents.get(sleeper).?.pos);
+    try testing.expect(!spatial.agents.get(sleeper).?.arrived);
 }

@@ -475,6 +475,13 @@ pub const WasmRuntime = struct {
 
     /// As `init_with_framebuffer`, rolling from `seed` (D-184).
     pub fn init_seeded(allocator: std.mem.Allocator, decks: []const Deck, initial: u8, pixels: []u8, seed: u64) !WasmRuntime {
+        var rt: WasmRuntime = undefined;
+        try rt.init_in_place(allocator, decks, initial, pixels, seed);
+        return rt;
+    }
+
+    /// Initializes `self` directly in place so large runtimes avoid a stack temporary and value copy.
+    pub fn init_in_place(self: *WasmRuntime, allocator: std.mem.Allocator, decks: []const Deck, initial: u8, pixels: []u8, seed: u64) !void {
         const bridge = try allocator.create(display_mod.DisplayBridge);
         var bridge_owned = true;
         errdefer if (bridge_owned) allocator.destroy(bridge);
@@ -489,7 +496,7 @@ pub const WasmRuntime = struct {
         const window = try allocator.create(renderer.DisplayWindow);
         var window_owned = true;
         errdefer if (window_owned) allocator.destroy(window);
-        var rt = WasmRuntime{
+        self.* = WasmRuntime{
             .allocator = allocator,
             .world = try World.init(allocator, 256 * 1024),
             .spatial = SpatialSystem.init(allocator),
@@ -502,19 +509,19 @@ pub const WasmRuntime = struct {
             .window = window,
             .seed = seed,
         };
-        window.* = renderer.DisplayWindow.init_canvas(rt.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT, &rt.audio, saves);
-        rt.vm = VM.init(allocator, &rt.world, &rt.chunk);
-        rt.vm.spatial = &rt.spatial;
+        window.* = renderer.DisplayWindow.init_canvas(self.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT, &self.audio, saves);
+        self.vm = VM.init(allocator, &self.world, &self.chunk);
+        self.vm.spatial = &self.spatial;
         bridge_owned = false;
         saves_owned = false;
         window_owned = false;
-        errdefer rt.deinit();
-        try rt.load_deck(initial);
-        return rt;
+        errdefer self.deinit();
+        try self.load_deck(initial);
     }
 
     pub fn deinit(self: *WasmRuntime) void {
-        dialogue_panel.clear_display_names();
+        dialogue_panel.clear_display_names_for(&self.world);
+        if (self.hypervisor) |hv| dialogue_panel.clear_display_names_for(hv.active_world());
         self.allocator.destroy(self.window);
         self.allocator.destroy(self.saves);
         self.allocator.destroy(self.frame_bridge);
@@ -576,7 +583,8 @@ pub const WasmRuntime = struct {
         self.hint_need = .none;
         self.hint_tier = 1;
         // The names belong to the program about to be dropped too (D-179).
-        dialogue_panel.clear_display_names();
+        dialogue_panel.clear_display_names_for(&self.world);
+        if (self.hypervisor) |hv| dialogue_panel.clear_display_names_for(hv.active_world());
         // The art is borrowed from the program about to be dropped.
         self.window.set_art(null);
         var new_world = try World.init(self.allocator, 256 * 1024);
@@ -940,7 +948,7 @@ pub const WasmRuntime = struct {
                 // A prop with no description of its own reads as its name, in words.
                 var ex_buf: [48]u8 = undefined;
                 const name = world.get_entity_name(target) orelse "";
-                self.set_banner(if (std.mem.eql(u8, text, name)) dialogue_panel.display_name(name, &ex_buf) else text);
+                self.set_banner(if (std.mem.eql(u8, text, name)) dialogue_panel.named(world, name, &ex_buf) else text);
                 if (run_tick and self.turn_clock()) try self.step_tick();
                 return .hotspot_inspected;
             }
@@ -1591,7 +1599,7 @@ pub const WasmRuntime = struct {
                         if (try self.act_on(hs.entity, hs.examine_text)) |tag| return tag;
                         // A prop with no description of its own reads as its name, in words.
                         var ex_buf: [48]u8 = undefined;
-                        self.set_banner(if (std.mem.eql(u8, hs.examine_text, hs.name)) dialogue_panel.display_name(hs.name, &ex_buf) else hs.examine_text);
+                        self.set_banner(if (std.mem.eql(u8, hs.examine_text, hs.name)) dialogue_panel.entity_name(world, hs.entity, &ex_buf) orelse hs.name else hs.examine_text);
                         return .hotspot_inspected;
                     }
                 }
@@ -1711,7 +1719,7 @@ pub const WasmRuntime = struct {
         const world = self.active_world();
         var buf: [64]u8 = undefined;
         var name_buf: [48]u8 = undefined;
-        const msg = phrase_mod.render(world, .walking_to, &.{.{ .slot = "mark", .value = dialogue_panel.display_name(wp.name, &name_buf) }}, &buf) catch "Walking...";
+        const msg = phrase_mod.render(world, .walking_to, &.{.{ .slot = "mark", .value = dialogue_panel.named(world, wp.name, &name_buf) }}, &buf) catch "Walking...";
         self.set_banner(msg);
     }
 
@@ -1750,6 +1758,7 @@ pub const WasmRuntime = struct {
     /// the verb, the item in hand, waiting messages, the open dialogue, what is under the pointer,
     /// and the banner. The window is re-pointed at the runtime first, which moves after `init`.
     pub fn screen(self: *WasmRuntime, frame: *const display_mod.RenderFrame) *renderer.DisplayWindow {
+        dialogue_panel.use_display_names(self.active_world());
         const w = self.window;
         w.audio_bridge = &self.audio;
         w.canvas = renderer.Canvas.init(self.framebuffer, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -1851,7 +1860,7 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             runtime_ready = false;
             const given = @as(u64, seed_high) << 32 | seed_low;
             const seed = if (given == 0) dice_mod.DEFAULT_SEED else given;
-            global_runtime = WasmRuntime.init_seeded(global_heap.allocator(), decks, scenario_id, &framebuffer, seed) catch return;
+            global_runtime.init_in_place(global_heap.allocator(), decks, scenario_id, &framebuffer, seed) catch return;
             runtime_ready = true;
         }
 
@@ -2061,8 +2070,10 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             query_len = 0;
             if (runtime()) |rt| {
                 if (name_len == 0 or name_len > query_buf.len) return -1;
+                var name_buf: [query_buf.len]u8 = undefined;
+                @memcpy(name_buf[0..name_len], query_buf[0..name_len]);
                 var len: usize = 0;
-                const stage = rt.query_decision(query_buf[0..name_len], &query_buf, &len);
+                const stage = rt.query_decision(name_buf[0..name_len], &query_buf, &len);
                 query_len = @intCast(len);
                 return stage;
             }
@@ -2073,8 +2084,10 @@ pub fn export_runtime(comptime decks: []const Deck) void {
             query_len = 0;
             if (runtime()) |rt| {
                 if (name_len == 0 or name_len > query_buf.len) return -1;
+                var name_buf: [query_buf.len]u8 = undefined;
+                @memcpy(name_buf[0..name_len], query_buf[0..name_len]);
                 var len: usize = 0;
-                const stage = rt.query_dilemma(query_buf[0..name_len], &query_buf, &len);
+                const stage = rt.query_dilemma(name_buf[0..name_len], &query_buf, &len);
                 query_len = @intCast(len);
                 return stage;
             }
@@ -3092,4 +3105,36 @@ test "P48-21: browser runtime draws accented display names distinctly and measur
         }
     }
     try testing.expect(found_helene);
+}
+
+test "WasmRuntime.init_in_place binds internal pointers without bind() and cleans up on failing deck load" {
+    const testing = std.testing;
+    const pixels = try testing.allocator.alloc(u8, FRAMEBUFFER_BYTES);
+    defer testing.allocator.free(pixels);
+
+    const ok_decks = [_]Deck{.{
+        .title = "OK",
+        .load = struct {
+            fn load(_: *WasmRuntime) anyerror!void {}
+        }.load,
+    }};
+    const rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(rt);
+    try rt.init_in_place(testing.allocator, &ok_decks, 0, pixels, dice_mod.DEFAULT_SEED);
+    defer rt.deinit();
+    try testing.expect(rt.vm.world == &rt.world);
+    try testing.expect(rt.vm.spatial == &rt.spatial);
+    try testing.expect(rt.window.audio_bridge == &rt.audio);
+
+    const fail_decks = [_]Deck{.{
+        .title = "FAIL",
+        .load = struct {
+            fn load(_: *WasmRuntime) anyerror!void {
+                return error.OutOfMemory;
+            }
+        }.load,
+    }};
+    const bad_rt = try testing.allocator.create(WasmRuntime);
+    defer testing.allocator.destroy(bad_rt);
+    try testing.expectError(error.OutOfMemory, bad_rt.init_in_place(testing.allocator, &fail_decks, 0, pixels, dice_mod.DEFAULT_SEED));
 }

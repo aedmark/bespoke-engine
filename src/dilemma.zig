@@ -452,12 +452,24 @@ fn reveal(world: *World, spatial: ?*const spatial_mod.SpatialSystem, dilemma: Di
     const room = room_of(sp, dilemma.actor) orelse return;
     const knows = try world.intern_relation_kind(KNOWS_RELATION, .set, .entity);
     const value = try value_mod.known_value(world, axis, dilemma.actor);
-    var it = sp.agents.iterator();
-    while (it.next()) |entry| {
-        const witness = entry.key_ptr.*;
-        if (witness == dilemma.actor) continue;
-        if ((room_of(sp, witness) orelse continue) != room) continue;
-        try world.remember(witness, knows, value.to_int(), 0);
+    var last_id: u32 = 0;
+    while (true) {
+        var next_id: u32 = std.math.maxInt(u32);
+        var found = false;
+        var it = sp.agents.iterator();
+        while (it.next()) |entry| {
+            const witness = entry.key_ptr.*;
+            const raw = witness.to_int();
+            if (raw <= last_id or witness == dilemma.actor) continue;
+            if ((room_of(sp, witness) orelse continue) != room) continue;
+            if (!found or raw < next_id) {
+                next_id = raw;
+                found = true;
+            }
+        }
+        if (!found) break;
+        try world.remember(EntityId.from_int(next_id), knows, value.to_int(), 0);
+        last_id = next_id;
     }
 }
 
@@ -924,4 +936,32 @@ test "P48-25: excess drift points past drift_cap discard leftover points instead
     try testing.expectEqual(@as(i32, 2), mercy_of(&rig));
     try testing.expectEqual(@as(u32, 2), rig.world.get_property(rig.decls[0].dilemma.entity, lines[0].spent).?);
     try testing.expectEqual(@as(i32, 0), drift_points(&rig.world, rig.actor, lines[0].accumulator));
+}
+
+test "dilemma.reveal records witness Knows facts in ascending EntityId order" {
+    const testing = std.testing;
+    var rig: TestRig = undefined;
+    try rig.init();
+    defer rig.world.deinit();
+
+    var sp = spatial_mod.SpatialSystem.init(testing.allocator);
+    defer sp.deinit();
+    const room = try rig.world.intern_entity("Hall");
+    const wp = try sp.graph.add_waypoint(room, 0, 0, "Bench");
+    const w1 = try rig.world.intern_entity("WitnessOne");
+    const w2 = try rig.world.intern_entity("WitnessTwo");
+    const w3 = try rig.world.intern_entity("WitnessThree");
+    // Register out of EntityId order.
+    try sp.register_entity(w3, wp, 1);
+    try sp.register_entity(rig.actor, wp, 1);
+    try sp.register_entity(w1, wp, 1);
+    try sp.register_entity(w2, wp, 1);
+
+    try reveal(&rig.world, &sp, rig.decls[0].dilemma, .strong_axis);
+    const knows = rig.world.lookup_relation(KNOWS_RELATION).?;
+    var it = rig.world.query(null, knows, null);
+    try testing.expectEqual(w1, it.next().?.subject);
+    try testing.expectEqual(w2, it.next().?.subject);
+    try testing.expectEqual(w3, it.next().?.subject);
+    try testing.expect(it.next() == null);
 }

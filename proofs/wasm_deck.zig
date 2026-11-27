@@ -903,7 +903,7 @@ fn sword_start(rt: *WasmRuntime, opponent_name: []const u8, opening: EntityId) !
     try bout.open(&rt.vm);
     rt.render_frame();
     var name_buf: [48]u8 = undefined;
-    const shown = bespoke.display.dialogue_panel.display_name(opponent_name, &name_buf);
+    const shown = bespoke.display.dialogue_panel.named(rt.active_world(), opponent_name, &name_buf);
     var buf: [96]u8 = undefined;
     rt.set_banner(std.fmt.bufPrint(&buf, "{s} draws. Answer with the number keys, or [S].", .{shown}) catch opponent_name);
 }

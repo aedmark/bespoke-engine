@@ -376,8 +376,13 @@ fn failure_message(err: anyerror) []const u8 {
         error.InvalidState => "invalid vessel state",
         error.EntityLimitExceeded => "too many distinct entity names",
         error.EntityNameTooLong => "entity name exceeds 65,535 bytes",
+        error.RelationLimitExceeded => "too many distinct relation names",
+        error.RelationNameTooLong => "relation name exceeds 65,535 bytes",
         error.ReservedBookkeepingName => "names starting with '#' are reserved for the engine",
         error.WaypointNotFound => "waypoint could not be resolved",
+        error.WaypointLimitExceeded => "too many waypoints (exceeds 65,535)",
+        error.BytecodeTooLarge => "compiled bytecode exceeds the 65,535-byte format 1 limit",
+        error.JumpOffsetTooLarge => "block or branch is too large for a 16-bit jump offset",
         else => "compiler could not validate this script",
     };
 }
@@ -1713,4 +1718,52 @@ test "P48-20: case-only twins of entity, relation, routine, and scene names are 
     const dup_res = check_source(testing.allocator, dup_routine);
     try testing.expect(!dup_res.is_valid);
     try testing.expectEqualStrings("DuplicateRoutineName", dup_res.kind());
+}
+
+test "codegen refuses scripts exceeding 65535 bytecode bytes or 16-bit jump offsets cleanly" {
+    const testing = std.testing;
+    // 1. An `if` body exceeding 32767 bytes returns JumpOffsetTooLarge instead of panicking.
+    var big_if = std.array_list.Managed(u8).init(testing.allocator);
+    defer big_if.deinit();
+    try big_if.appendSlice("entity Hero\nrelation Flag(who)\nroutine Patrol(Hero):\n  if Flag(Hero):\n");
+    // Each `remember Flag(Hero)` emits push_entity(5) + push_relation(3) + push_const(5) + remember(5) = 18 bytes.
+    // 1,900 statements = ~34,200 bytes > 32,767.
+    for (0..1900) |_| {
+        try big_if.appendSlice("    remember Flag(Hero)\n");
+    }
+    const if_res = check_source(testing.allocator, big_if.items);
+    try testing.expect(!if_res.is_valid);
+    try testing.expectEqualStrings("JumpOffsetTooLarge", if_res.kind());
+
+    // 2. Multiple routines totaling > 65535 bytes return BytecodeTooLarge instead of panicking.
+    var big_prog = std.array_list.Managed(u8).init(testing.allocator);
+    defer big_prog.deinit();
+    try big_prog.appendSlice("entity Hero\nrelation Flag(who)\n");
+    for (0..10) |ri| {
+        var hdr: [64]u8 = undefined;
+        try big_prog.appendSlice(try std.fmt.bufPrint(&hdr, "routine R{d}(Hero):\n", .{ri}));
+        for (0..400) |_| {
+            try big_prog.appendSlice("  remember Flag(Hero)\n");
+        }
+    }
+    const prog_res = check_source(testing.allocator, big_prog.items);
+    try testing.expect(!prog_res.is_valid);
+    try testing.expectEqualStrings("BytecodeTooLarge", prog_res.kind());
+}
+
+test "parser rejects statement nesting deeper than MAX_STMT_DEPTH" {
+    const testing = std.testing;
+    var src = std.array_list.Managed(u8).init(testing.allocator);
+    defer src.deinit();
+    try src.appendSlice("entity Hero\nrelation Flag(who)\nroutine Deep(Hero):\n");
+    for (0..parser.MAX_STMT_DEPTH + 2) |depth| {
+        for (0..depth + 1) |_| try src.appendSlice("  ");
+        try src.appendSlice("if Flag(Hero):\n");
+    }
+    for (0..parser.MAX_STMT_DEPTH + 3) |_| try src.appendSlice("  ");
+    try src.appendSlice("remember Flag(Hero)\n");
+
+    const res = check_source(testing.allocator, src.items);
+    try testing.expect(!res.is_valid);
+    try testing.expectEqualStrings("NestingTooDeep", res.kind());
 }

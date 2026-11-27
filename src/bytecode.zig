@@ -110,6 +110,128 @@ pub const Opcode = enum(u8) {
     reject_choice = 0x56,
 };
 
+/// Bytecode format limits for `BSP1` format 1: jumps and PC operands are 16-bit (P48-25 / D-189).
+pub const MAX_BYTECODE_LEN: usize = std.math.maxInt(u16);
+/// Fixed slot capacity of `EmittedCue.args`.
+pub const MAX_CUE_ARGS: u8 = 4;
+
+pub const ValidationError = error{
+    BytecodeTooLarge,
+    InvalidOpcode,
+    TruncatedBytecode,
+    InvalidJumpTarget,
+    InvalidOperand,
+};
+
+/// Decodes a raw byte into a known `Opcode` without risking enum UB on untrusted bytes.
+pub fn decode_opcode(byte: u8) ?Opcode {
+    return std.enums.fromInt(Opcode, byte);
+}
+
+fn take_u16(code: []const u8, pc: *usize) ValidationError!u16 {
+    if (code.len - pc.* < 2) return error.TruncatedBytecode;
+    const val = std.mem.readInt(u16, code[pc.*..][0..2], .little);
+    pc.* += 2;
+    return val;
+}
+
+fn take_i16(code: []const u8, pc: *usize) ValidationError!i16 {
+    if (code.len - pc.* < 2) return error.TruncatedBytecode;
+    const val = std.mem.readInt(i16, code[pc.*..][0..2], .little);
+    pc.* += 2;
+    return val;
+}
+
+fn skip_bytes(code: []const u8, pc: *usize, n: usize) ValidationError!void {
+    if (code.len - pc.* < n) return error.TruncatedBytecode;
+    pc.* += n;
+}
+
+/// Verifies instruction boundaries, opcodes, operand lengths, and jump targets across `code`.
+pub fn validate(code: []const u8) ValidationError!void {
+    if (code.len > MAX_BYTECODE_LEN) return error.BytecodeTooLarge;
+    var pc: usize = 0;
+    while (pc < code.len) {
+        const op = decode_opcode(code[pc]) orelse return error.InvalidOpcode;
+        pc += 1;
+        switch (op) {
+            .nop,
+            .halt,
+            .ret,
+            .pop,
+            .dup,
+            .bind_cue_args,
+            .add,
+            .sub,
+            .mul,
+            .div,
+            .eq,
+            .neq,
+            .lt,
+            .lte,
+            .gt,
+            .gte,
+            .not,
+            .query_property,
+            .yield,
+            .wait_ticks,
+            .walk_to,
+            .resume_routine,
+            .weave,
+            .choices_begin,
+            => {},
+            .push_local, .forget, .query_has => try skip_bytes(code, &pc, 1),
+            .push_relation => try skip_bytes(code, &pc, 2),
+            .push_const, .push_entity, .remember, .transition_scene => try skip_bytes(code, &pc, 4),
+            .query_count, .query_points => try skip_bytes(code, &pc, 5),
+            .roll_dice => {
+                if (code.len - pc < 2) return error.TruncatedBytecode;
+                const count = code[pc];
+                const sides = code[pc + 1];
+                pc += 2;
+                if (count > 0 and sides == 0) return error.InvalidOperand;
+            },
+            .jump, .jump_if_false => {
+                const offset = try take_i16(code, &pc);
+                if (offset == std.math.minInt(i16)) return error.InvalidJumpTarget;
+                const target = @as(isize, @intCast(pc)) + @as(isize, offset);
+                if (target < 0 or target > @as(isize, @intCast(code.len))) return error.InvalidJumpTarget;
+            },
+            .loop => {
+                const offset = try take_u16(code, &pc);
+                if (offset > pc) return error.InvalidJumpTarget;
+            },
+            .call, .wait_until, .interrupt => {
+                const target = try take_u16(code, &pc);
+                if (target >= code.len) return error.InvalidJumpTarget;
+            },
+            .emit_cue => {
+                _ = try take_u16(code, &pc);
+                if (pc >= code.len) return error.TruncatedBytecode;
+                const arg_count = code[pc];
+                pc += 1;
+                if (arg_count > MAX_CUE_ARGS) return error.InvalidOperand;
+            },
+            .offer_choice => {
+                try skip_bytes(code, &pc, 4);
+                const body_pc = try take_u16(code, &pc);
+                if (body_pc > code.len) return error.InvalidJumpTarget;
+            },
+            .choices_end => {
+                const end_pc = try take_u16(code, &pc);
+                if (end_pc > code.len) return error.InvalidJumpTarget;
+            },
+            .offer_choice_inspected => {
+                try skip_bytes(code, &pc, 4);
+                const body_pc = try take_u16(code, &pc);
+                if (body_pc > code.len) return error.InvalidJumpTarget;
+                try skip_bytes(code, &pc, 1);
+            },
+            .reject_choice => try skip_bytes(code, &pc, 9),
+        }
+    }
+}
+
 /// A compiled container of bytecode instructions and constant data.
 pub const BytecodeChunk = struct {
     code: std.array_list.Managed(u8),
@@ -283,4 +405,25 @@ test "bytecode chunk emission and opcode reading" {
     try testing.expectEqual(@as(u8, @intFromEnum(Opcode.transition_scene)), bytes[19]);
     const scene_val = std.mem.readInt(u32, bytes[20..24], .little);
     try testing.expectEqual(@as(u32, 202), scene_val);
+    try validate(bytes);
+}
+
+test "bytecode validate rejects malformed opcodes, operands, jumps, and oversize chunks" {
+    const testing = std.testing;
+    try testing.expectError(error.InvalidOpcode, validate(&.{0xFF}));
+    try testing.expectError(error.TruncatedBytecode, validate(&.{ @intFromEnum(Opcode.push_const), 1, 2 }));
+    try testing.expectError(error.InvalidOperand, validate(&.{ @intFromEnum(Opcode.emit_cue), 2, 0, 5 }));
+    try testing.expectError(error.InvalidOperand, validate(&.{ @intFromEnum(Opcode.roll_dice), 2, 0 }));
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.jump), 0x00, 0x80 })); // minInt(i16)
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.jump), 0xF0, 0xFF })); // underflow
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.jump), 0x10, 0x00 })); // past end
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.loop), 0x10, 0x00 })); // underflow
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.wait_until), 0x10, 0x00 }));
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.offer_choice), 0, 0, 0, 0, 0x10, 0x00 }));
+    try testing.expectError(error.InvalidJumpTarget, validate(&.{ @intFromEnum(Opcode.choices_end), 0x10, 0x00 }));
+
+    const huge = try testing.allocator.alloc(u8, MAX_BYTECODE_LEN + 1);
+    defer testing.allocator.free(huge);
+    @memset(huge, @intFromEnum(Opcode.nop));
+    try testing.expectError(error.BytecodeTooLarge, validate(huge));
 }
