@@ -46,8 +46,11 @@ def build(output: Path, browser_check: bool, force: bool = False) -> None:
             encoding="utf-8",
         )
         shutil.copyfile(GAME / "main.bespoke", project / "scripts" / "main.bespoke")
+        # The script names its art as art/<name>.png, so the generated project keeps the same
+        # layout beside its script, and `bespoke check` works on the scenario folder in place.
+        (project / "scripts" / "art").mkdir()
         for png in sorted((GAME / "art").glob("*.png")):
-            shutil.copyfile(png, project / "scripts" / png.name)
+            shutil.copyfile(png, project / "scripts" / "art" / png.name)
         shutil.copyfile(GAME / "game_test.zig", project / "src" / "game_test.zig")
         shutil.copyfile(GAME / "web.zig", project / "src" / "web.zig")
 

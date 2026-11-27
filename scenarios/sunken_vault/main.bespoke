@@ -81,12 +81,12 @@ cycle "f1" "f2" "f3" "f4" "f5" every 4
 cycle "m1" "m2" "m3" "m4" every 12
 cycle "e1" "e2" "e3" "e4" every 9
 
-image CourtyardArt from "courtyard.png"
-image GuardhouseArt from "guardhouse.png"
-image CisternArt from "cistern.png"
-image SluiceArt from "sluice.png"
-image CryptArt from "crypt.png"
-image ReliquaryArt from "reliquary.png"
+image CourtyardArt from "art/courtyard.png"
+image GuardhouseArt from "art/guardhouse.png"
+image CisternArt from "art/cistern.png"
+image SluiceArt from "art/sluice.png"
+image CryptArt from "art/crypt.png"
+image ReliquaryArt from "art/reliquary.png"
 
 alias Torch: "torch", "brand"
 alias Flint: "flint", "striker", "tinderbox"

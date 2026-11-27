@@ -70,25 +70,27 @@ async function main() {
   if (add('../escape.bespoke', 'x')) fail('the table must refuse a path with ..');
   console.log('ok  a missing main script is a diagnostic; unclean paths are refused');
 
-  // PNG art (D-193): The Sunken Vault's script with its PNGs beside it, as
-  // tools/build_sunken_vault.py lays out the generated project, checks valid; with the PNGs left
-  // in art/, as the scenario sits in the repository, it fails exactly as `bespoke check` does.
+  // PNG art (D-193): The Sunken Vault checks valid both as the scenario folder sits in the
+  // repository and as tools/build_sunken_vault.py lays out its generated project (script in
+  // scripts/, images in scripts/art/), and fails as `bespoke check` does when an image is missing.
   const vault = path.join(__dirname, '..', 'scenarios', 'sunken_vault');
-  const pngs = fs.readdirSync(path.join(vault, 'art')).filter((n) => n.endsWith('.png'));
-  x.studio_reset();
-  add('scripts/main.bespoke', fs.readFileSync(path.join(vault, 'main.bespoke')));
-  for (const n of pngs) add(`scripts/${n}`, fs.readFileSync(path.join(vault, 'art', n)));
-  r = check('scripts/main.bespoke');
-  if (!r.result.valid) fail(`Sunken Vault with its PNGs beside the script: ${JSON.stringify(r.result)}`);
-  console.log(`ok  PNG art decodes: The Sunken Vault checks valid with ${pngs.length} images (${r.result.scenes} scenes)`);
+  const pngs = fs.readdirSync(path.join(vault, 'art')).filter((n) => n.endsWith('.png')).sort();
+  for (const [main, dir] of [['main.bespoke', 'art'], ['scripts/main.bespoke', 'scripts/art']]) {
+    x.studio_reset();
+    add(main, fs.readFileSync(path.join(vault, 'main.bespoke')));
+    for (const n of pngs) add(`${dir}/${n}`, fs.readFileSync(path.join(vault, 'art', n)));
+    r = check(main);
+    if (!r.result.valid) fail(`Sunken Vault at ${main}: ${JSON.stringify(r.result)}`);
+  }
+  console.log(`ok  PNG art decodes: The Sunken Vault checks valid in place and as generated, ${pngs.length} images (${r.result.scenes} scenes)`);
   x.studio_reset();
   add('main.bespoke', fs.readFileSync(path.join(vault, 'main.bespoke')));
-  for (const n of pngs) add(`art/${n}`, fs.readFileSync(path.join(vault, 'art', n)));
+  for (const n of pngs.slice(1)) add(`art/${n}`, fs.readFileSync(path.join(vault, 'art', n)));
   r = check('main.bespoke');
-  if (r.result.valid || r.result.line !== 84 || r.result.column !== 25 || !/cannot read "courtyard.png" \(FileNotFound\)/.test(r.result.message)) {
-    fail(`Sunken Vault as it sits in the repository must match bespoke check: ${JSON.stringify(r.result)}`);
+  if (r.result.valid || r.result.file !== 'main.bespoke' || !/cannot read "art\/cistern.png" \(FileNotFound\)/.test(r.result.message)) {
+    fail(`a missing image must fail as bespoke check does: ${JSON.stringify(r.result)}`);
   }
-  console.log('ok  the scenario folder as committed reports main.bespoke:84:25 FileNotFound, as bespoke check does');
+  console.log(`ok  a missing image reports main.bespoke:${r.result.line}:${r.result.column} FileNotFound, as bespoke check does`);
 
   // Repeated checks must not grow memory without bound: the compiler's arena is freed per check.
   x.studio_reset();
