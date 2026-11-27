@@ -14,7 +14,7 @@ const usage = (if (build_options.desktop) "" else "Static CLI: runs scripts head
     \\
     \\Usage:
     \\  bespoke run <script.bespoke | game.bspk> [--headless] [--ticks N] [--input <file>] [--facts] [--seed N]
-    \\  bespoke compile <script.bespoke> -o <game.bspk>
+    \\  bespoke compile <script.bespoke> -o <game.bspk> [--deps <file.d>]
     \\  bespoke check <script.bespoke> [--kind]
     \\  bespoke import <art.png> --name <Image> [--frames WxH] [--script <script.bespoke>] [-o <file>]
     \\  bespoke init <name> [--template stage|text] [--engine <engine checkout>]
@@ -50,6 +50,7 @@ pub fn main(init: std.process.Init) !void {
     var print_facts = false;
     var seed: ?u64 = null;
     var print_kind = false;
+    var deps_file: ?[]const u8 = null;
 
     var args = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
     defer args.deinit();
@@ -83,6 +84,8 @@ pub fn main(init: std.process.Init) !void {
             seed = std.fmt.parseInt(u64, text, 10) catch return fail(stdout, "'--seed' needs a whole number");
         } else if (std.mem.eql(u8, arg, "--facts")) {
             print_facts = true;
+        } else if (std.mem.eql(u8, arg, "--deps")) {
+            deps_file = args.next() orelse return fail(stdout, "'--deps' needs a path for the dependency file");
         } else if (std.mem.eql(u8, arg, "--kind")) {
             print_kind = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
@@ -109,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
         },
         .compile => {
             const path = target_file orelse return fail(stdout, "'bespoke compile' requires an input script file path");
-            try bespoke.runner.compile_file(allocator, io, path, output_file orelse "game.bspk", stdout);
+            try bespoke.runner.compile_file_with(allocator, io, path, output_file orelse "game.bspk", stdout, .{ .deps = deps_file });
         },
         .init => {
             const name = target_file orelse return fail(stdout, "'bespoke init' requires a project name");

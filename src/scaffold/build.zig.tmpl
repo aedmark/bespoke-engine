@@ -89,7 +89,10 @@ pub fn build(b: *std.Build) void {
 var package_cache: ?std.Build.LazyPath = null;
 
 /// scripts/main.bespoke compiled to a .bspk package by the engine's own `bespoke compile`, built
-/// for the machine running the build. A script error fails the build here.
+/// for the machine running the build. A script error fails the build here. `--deps` writes the
+/// list of every script it included and image it read, and Zig re-runs this step when any of
+/// them changes; listing scripts/ here instead would make Zig re-run this whole file on every
+/// build, since it caches its result only when it reads no files (D-194).
 fn compiled_package(b: *std.Build) std.Build.LazyPath {
     if (package_cache) |path| return path;
     const tools = b.dependency("bespoke", .{ .target = b.graph.host, .optimize = .ReleaseSafe });
@@ -98,6 +101,8 @@ fn compiled_package(b: *std.Build) std.Build.LazyPath {
     compile.addFileArg(b.path("scripts/main.bespoke"));
     compile.addArg("-o");
     const path = compile.addOutputFileArg("game.bspk");
+    compile.addArg("--deps");
+    _ = compile.addDepFileOutputArg2("game.d", .{});
     package_cache = path;
     return path;
 }

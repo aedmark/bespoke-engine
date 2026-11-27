@@ -400,6 +400,13 @@ pub fn build(b: *std.Build) void {
         nested.step.dependOn(previous);
         previous = &nested.step;
     }
+    // P49-06 (D-194): editing only an included script rebuilds the starter's package.
+    const template_deps = b.addSystemCommand(&.{"sh"});
+    template_deps.addFileArg(b.path("tools/check_template_deps.sh"));
+    template_deps.addArgs(&.{ starter_dir, b.graph.zig_exe });
+    template_deps.has_side_effects = true;
+    template_deps.step.dependOn(previous);
+    previous = &template_deps.step;
 
     const init_text_template = b.addRunArtifact(exe);
     init_text_template.has_side_effects = true;

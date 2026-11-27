@@ -24,7 +24,7 @@ Everything else uses its namespace. Older root aliases such as `run_file`, `Save
 | `png` | `MAX_FILE`, `Error`, `Rgba` and its `deinit`, `decode` (P46-04) |
 | `qoi` | `Error`, `HEADER_LEN`, `encode`, `decode`, `header_size`: standard QOI streams of `image.Pixel`, as the package stores art (P48-12, D-182) |
 | `art_import` | `MapError`, `PixelError`, `Where`, `map`, `to_pixels` (P48-12), `CodeError`, `assign_codes`, `free_codes`, `write_palette_lines`, `write_image_block` (P46-04) |
-| `runner` | `RunConfig` (its `input` and `print_facts` fields, P48-18), `CheckOptions`, `check_file_with`, `check_file`, `compile_file`, `run_file`, `run_bytes`, `import_art`, `ImportOptions`, `ScriptFiles` (P46-04) |
+| `runner` | `RunConfig` (its `input` and `print_facts` fields, P48-18), `CheckOptions`, `check_file_with`, `check_file`, `compile_file`, `compile_file_with` and `CompileOptions` (its `deps` field, P49-06, D-194), `run_file`, `run_bytes`, `import_art`, `ImportOptions`, `ScriptFiles` (P46-04) |
 
 `CompiledProgram` owns its compiled data and must outlive every VM using it. Its fields, bytecode chunk, routine maps, and declaration tables are internal. Use `host.init_vm`, `host.start_script`, and `host.start_routine` instead of reading those tables.
 

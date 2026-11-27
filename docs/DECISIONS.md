@@ -2423,6 +2423,18 @@ P43-03 draws every staged frame a second time at 1920x1080 in its own window and
 
 **Alternatives:** a `build.zig` option module, rejected because every module and every standalone `zig test src/...` run would need the import; a Studio-side PNG pass in JavaScript, rejected because it would be a second decoder whose rules could drift from `png.zig`; leaving the gap until P47-02, the maintainer's second choice.
 
+## D-194 Generated Projects Track Their Inputs Through a Dependency File (2026-11-27, status: accepted; P49-06)
+
+**Context.** A project from `bespoke init` compiled `scripts/main.bespoke` in one build step that named only that file, so an edit to an included script or a PNG left the package, the bundled executable, and the browser build stale. Zig 0.17 caches the configure phase: a `build.zig` that lists `scripts/` while it configures marks that cache unusable, so every `zig build` of every game would re-run configure, and `--cache-poison=disallowed` would panic. The maintainer chose a dependency file (2026-11-27).
+
+**Decision.**
+1. `bespoke compile <script> -o <package> --deps <file>` writes one Make rule after a successful compile: the package, then the script and every file the compile read through its `FileSource` (included scripts and `image ... from` PNGs), in first-read order, with spaces, `#`, and backslashes escaped and `$` doubled. A failed compile writes no file. `runner.compile_file_with` and `runner.CompileOptions` carry it for hosts; `compile_file` is unchanged.
+2. The template's `compiled_package` passes `--deps` through `addDepFileOutputArg2`, so Zig re-runs the compile when any listed file changes and the configure cache stays pure.
+
+**Consequences.** A project generated from this template needs an engine whose CLI has `--deps`, so the starter CI pin (`BESPOKE_ENGINE_REF`, still `refs/tags/v1.0.0`) moves to the release that ships it, as it must for the text template's exports (D-191). `zig build test-template` edits only an included script of the generated starter and requires the browser build to change (`tools/check_template_deps.sh`).
+
+**Alternatives:** listing `scripts/` at configure time and poisoning the cache, rejected for the cost to every build; `addDirectoryArg` on `scripts/`, rejected because Zig hashes the path, not the folder's contents.
+
 ## Open questions
 
 Questions requiring maintainer or stakeholder input. This is their one home: HANDOFF and the roadmap refer to them by ID. Numbers are permanent; an answered question stays, with the answer and its date.

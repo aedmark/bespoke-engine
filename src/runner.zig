@@ -416,6 +416,81 @@ pub fn compile_file(
     out_path: []const u8,
     stdout: anytype,
 ) !void {
+    return compile_file_with(allocator, io, in_path, out_path, stdout, .{});
+}
+
+/// Options for `compile_file_with` (P49-06, D-194).
+pub const CompileOptions = struct {
+    /// When set, a Make-style dependency file is written here after a successful compile:
+    /// `<out_path>: <script> <every included script and image the compile read>`. A build
+    /// system that reads it (Zig's `addDepFileOutputArg2`, as `bespoke init` projects do)
+    /// rebuilds the package when any of those files changes, without listing them itself.
+    deps: ?[]const u8 = null,
+};
+
+/// Every path a compile read through its `FileSource`, as the script's folder joined with the
+/// path the script wrote, in first-read order. Only successful reads are kept: a failed read
+/// fails the compile, and a failed compile writes no dependency file.
+const ReadRecorder = struct {
+    inner: bespoke.compiler.FileSource,
+    dir: []const u8,
+    allocator: std.mem.Allocator,
+    paths: std.ArrayList([]const u8) = .empty,
+
+    fn source(self: *ReadRecorder) bespoke.compiler.FileSource {
+        return .{ .context = self, .read = read };
+    }
+
+    fn read(context: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]const u8 {
+        const self: *ReadRecorder = @ptrCast(@alignCast(context));
+        const bytes = try self.inner.read(self.inner.context, allocator, path);
+        errdefer allocator.free(bytes);
+        const full = try std.fs.path.join(self.allocator, &.{ self.dir, path });
+        for (self.paths.items) |seen| if (std.mem.eql(u8, seen, full)) {
+            self.allocator.free(full);
+            return bytes;
+        };
+        try self.paths.append(self.allocator, full);
+        return bytes;
+    }
+
+    fn deinit(self: *ReadRecorder) void {
+        for (self.paths.items) |p| self.allocator.free(p);
+        self.paths.deinit(self.allocator);
+    }
+};
+
+/// One Make rule: `target: dep dep ...`. Spaces, `#`, and `\` are escaped with a backslash and
+/// `$` is doubled, as Make and Zig's dependency tokenizer read them.
+fn write_dep_rule(writer: anytype, target: []const u8, deps: []const []const u8) !void {
+    try write_dep_path(writer, target);
+    try writer.writeAll(":");
+    for (deps) |dep| {
+        try writer.writeAll(" \\\n  ");
+        try write_dep_path(writer, dep);
+    }
+    try writer.writeAll("\n");
+}
+
+fn write_dep_path(writer: anytype, path: []const u8) !void {
+    for (path) |c| switch (c) {
+        ' ', '#', '\\' => {
+            try writer.writeByte('\\');
+            try writer.writeByte(c);
+        },
+        '$' => try writer.writeAll("$$"),
+        else => try writer.writeByte(c),
+    };
+}
+
+pub fn compile_file_with(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    in_path: []const u8,
+    out_path: []const u8,
+    stdout: anytype,
+    options: CompileOptions,
+) !void {
     const max_size = bespoke.compiler.MAX_SOURCE_SIZE;
     const source = try std.Io.Dir.cwd().readFileAlloc(io, in_path, allocator, .limited(max_size));
     defer allocator.free(source);
@@ -427,7 +502,9 @@ pub fn compile_file(
     defer spatial.deinit();
 
     var files = ScriptFiles.for_script(io, in_path);
-    var compiled = bespoke.compiler.compile_source_with(allocator, &world, &spatial, source, files.source()) catch |err| {
+    var recorder = ReadRecorder{ .inner = files.source(), .dir = files.dir, .allocator = allocator };
+    defer recorder.deinit();
+    var compiled = bespoke.compiler.compile_source_with(allocator, &world, &spatial, source, recorder.source()) catch |err| {
         const res = bespoke.compiler.check_source_with(allocator, source, files.source());
         if (!res.is_valid) {
             try write_check_failure(stdout, allocator, files.source(), in_path, source, &res);
@@ -439,6 +516,17 @@ pub fn compile_file(
     defer compiled.deinit();
 
     try bespoke.save_package_file(allocator, io, out_path, &compiled, &world, &spatial);
+
+    if (options.deps) |deps_path| {
+        var list: std.ArrayList([]const u8) = .empty;
+        defer list.deinit(allocator);
+        try list.append(allocator, in_path);
+        try list.appendSlice(allocator, recorder.paths.items);
+        var text: std.Io.Writer.Allocating = .init(allocator);
+        defer text.deinit();
+        try write_dep_rule(&text.writer, out_path, list.items);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = deps_path, .data = text.written() });
+    }
 
     const bytecode_bytes = compiled.chunk.count();
     const entity_count = world.entity_names.items.len;
@@ -1368,4 +1456,45 @@ test "P48-05: runner verb helper fires handlers, falls back to examine text or N
     const unhandled_take = try runner_act(&world, &vm, &compiled, courier, .pick_up, chest, null, bespoke.EntityId.none, &narration_buf, &fallback_buf);
     try testing.expect(!unhandled_take.fired);
     try testing.expectEqualStrings("Nothing happens.", unhandled_take.text.?);
+}
+
+test "P49-06: compile --deps lists the script, its includes, and its images, escaping spaces" {
+    const testing = std.testing;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    // A folder with a space in its name: Make and Zig's dependency reader split on spaces.
+    try tmp.dir.createDirPath(testing.io, "my game/rooms");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "my game/main.bespoke", .data = "include \"rooms/yard.bespoke\"\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "my game/rooms/yard.bespoke", .data = "scene Yard:\n  cast: Walker\n  marks: Gate\n" });
+    const root = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(root);
+    const script = try std.fs.path.join(testing.allocator, &.{ root, "my game", "main.bespoke" });
+    defer testing.allocator.free(script);
+    const package = try std.fs.path.join(testing.allocator, &.{ root, "game.bspk" });
+    defer testing.allocator.free(package);
+    const deps = try std.fs.path.join(testing.allocator, &.{ root, "game.d" });
+    defer testing.allocator.free(deps);
+
+    var discard_buf: [256]u8 = undefined;
+    var discarding: std.Io.Writer.Discarding = .init(&discard_buf);
+    try compile_file_with(testing.allocator, testing.io, script, package, &discarding.writer, .{ .deps = deps });
+
+    const text = try tmp.dir.readFileAlloc(testing.io, "game.d", testing.allocator, .limited(4096));
+    defer testing.allocator.free(text);
+    const expected = try std.fmt.allocPrint(testing.allocator, "{s}/game.bspk: \\\n  {s}/my\\ game/main.bespoke \\\n  {s}/my\\ game/rooms/yard.bespoke\n", .{ root, root, root });
+    defer testing.allocator.free(expected);
+    try testing.expectEqualStrings(expected, text);
+
+    // Without --deps nothing is written.
+    try tmp.dir.deleteFile(testing.io, "game.d");
+    try compile_file(testing.allocator, testing.io, script, package, &discarding.writer);
+    try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "game.d", .{}));
+}
+
+test "P49-06: dependency paths escape the characters Make reads specially" {
+    const testing = std.testing;
+    var storage: [128]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&storage);
+    try write_dep_rule(&out, "out.bspk", &.{ "a b#c\\d$e.png" });
+    try testing.expectEqualStrings("out.bspk: \\\n  a\\ b\\#c\\\\d$$e.png\n", out.buffered());
 }
